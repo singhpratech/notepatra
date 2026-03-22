@@ -139,7 +139,7 @@ See [ROADMAP.md](ROADMAP.md) for the full version plan.
 
 ## License
 
-MIT
+GPL v3 — same as Notepad++. Free and open source.
 
 ---
 
