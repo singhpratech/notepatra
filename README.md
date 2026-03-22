@@ -15,17 +15,19 @@
 
 I'm Prateek Singh. A developer who spent years on Linux watching Windows users open Notepad++ and fix things in seconds — broken JSON, messy SQL, tangled HTML — while I was stuck with Wine hacks or bloated Electron editors eating 500 MB of RAM to show a text file.
 
-Every Linux text editor told me to pick two: **fast**, **powerful**, or **native**. Vim is fast but cryptic. VS Code is powerful but heavy. Notepad++ is both — but it doesn't run on Linux.
+Every text editor told me to pick two: **fast**, **powerful**, or **native**. Vim is fast but cryptic. VS Code is powerful but heavy. Notepad++ is both — but it only runs on Windows.
 
 So I built Notepatra.
 
-Not a port. Not a wrapper. Not "Notepad++ but on Linux." Something new.
+Not a port. Not a wrapper. Not "Notepad++ but on Linux." Something new — **for everyone**.
 
 I took what made Notepad++ legendary — the speed, the simplicity, the "it just works" feeling — and asked: **what would Notepad++ look like if it was built today, in 2026, when AI is part of every developer's workflow?**
 
 The answer: a 4.9 MB native binary with a Rust-powered core, Scintilla editing engine, and local AI integration. An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your local AI to figure it out. No cloud. No telemetry. No subscription. Just you and your code.
 
-**Notepatra isn't trying to replace Notepad++. It's what I wish existed when I switched to Linux.**
+Notepatra started on Linux — because that's where the gap was. But great tools shouldn't have borders. **Notepatra runs on Linux, Windows, and macOS.** Same codebase. Same features. Same 4.9 MB. No one gets left behind.
+
+**Notepatra isn't trying to replace Notepad++. It's what I wish existed — on every platform.**
 
 ---
 
@@ -207,7 +209,15 @@ That's it. Every AI feature in Notepatra now works.
 
 ## Install
 
-### Build from source (Ubuntu/Mint/Debian)
+### Download
+
+| Platform | Download | Status |
+|---|---|---|
+| **Linux** (Ubuntu/Mint/Debian) | [Build from source](#build-from-source) | Available |
+| **Windows** | Coming in v0.2.0 | In development |
+| **macOS** | Coming in v0.2.0 | In development |
+
+### Build from source (Linux — Ubuntu/Mint/Debian)
 ```bash
 # Dependencies
 sudo apt install cmake qtbase5-dev libqscintilla2-qt5-dev libqt5network5-dev
@@ -276,12 +286,12 @@ cp myplugin.so ~/.config/notepatra/plugins/
 
 | Editor | Why Notepatra instead |
 |---|---|
-| **Notepad++** | Windows only. Needs Wine on Linux. No AI. No Rust safety. |
+| **Notepad++** | Windows only. No AI. No Rust safety. No Mac. |
 | **VS Code** | 300+ MB Electron app. Telemetry. Slow on large files. |
 | **Vim/Neovim** | Steep learning curve. Not everyone wants modal editing. |
-| **Sublime Text** | Proprietary. No AI. No built-in formatters. |
-| **Kate/Gedit** | No AI. No JSON/HTML fixer. No Compare. Limited plugins. |
-| **Notepatra** | 4.9 MB. Native. AI formatters. Rust core. 2.5 GB files. Free. |
+| **Sublime Text** | Proprietary. $99. No AI. No built-in formatters. |
+| **Kate/Gedit** | Linux only. No AI. No JSON/HTML fixer. Limited plugins. |
+| **Notepatra** | 4.9 MB. Native on Linux, Windows, Mac. AI formatters. Rust core. 2.5 GB files. Free forever. |
 
 ---
 
@@ -295,5 +305,5 @@ cp myplugin.so ~/.config/notepatra/plugins/
   <strong>Envisioned by Prateek Singh. Inspired by Notepad++. Built by Claude.</strong>
 </p>
 <p align="center">
-  <em>"I didn't build Notepatra because the world needed another text editor.<br>I built it because Linux deserved the one it never had."</em>
+  <em>"I didn't build Notepatra because the world needed another text editor.<br>I built it because every developer — on Linux, Windows, or Mac — deserves one that's fast, free, and smart."</em>
 </p>
