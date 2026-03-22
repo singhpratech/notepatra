@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Notepad++ Linux (Native)
+Comment=Native C++/Rust clone of Notepad++
+Exec=/home/papapratlinux/Documents/notepad-linux-native/build/notepad-pp-linux %F
+Icon=accessories-text-editor
+Terminal=false
+Type=Application
+Categories=Development;TextEditor;
+MimeType=text/plain;text/x-python;text/x-csrc;text/x-c++src;text/html;text/css;text/javascript;application/json;application/xml;
+StartupWMClass=notepad-pp-linux

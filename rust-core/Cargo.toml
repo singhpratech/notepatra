@@ -1,0 +1,30 @@
+[package]
+name = "notepad-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "notepad_core"
+crate-type = ["staticlib"]
+
+[dependencies]
+memmap2 = "0.9"
+encoding_rs = "0.8"
+encoding_rs_io = "0.1"
+aho-corasick = "1.1"
+regex = "1.10"
+md-5 = "0.10"
+sha1 = "0.10"
+sha2 = "0.10"
+base64 = "0.22"
+urlencoding = "2.1"
+rayon = "1.10"
+libc = "0.2"
+similar = "2.6"
+sqlformat = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[profile.release]
+opt-level = 3
+lto = true

@@ -1,0 +1,589 @@
+#include "editor.h"
+#include "rustbridge.h"
+
+#include <Qsci/qscilexerpython.h>
+#include <Qsci/qscilexerjavascript.h>
+#include <Qsci/qscilexercpp.h>
+#include <Qsci/qscilexerhtml.h>
+#include <Qsci/qscilexercss.h>
+#include <Qsci/qscilexersql.h>
+#include <Qsci/qscilexerbash.h>
+#include <Qsci/qscilexerjava.h>
+#include <Qsci/qscilexerruby.h>
+#include <Qsci/qscilexerperl.h>
+#include <Qsci/qscilexerlua.h>
+#include <Qsci/qscilexermarkdown.h>
+#include <Qsci/qscilexerjson.h>
+#include <Qsci/qscilexerxml.h>
+#include <Qsci/qscilexeryaml.h>
+#include <Qsci/qscilexercsharp.h>
+#include <Qsci/qscilexerbatch.h>
+#include <Qsci/qscilexerdiff.h>
+#include <Qsci/qscilexermakefile.h>
+#include <Qsci/qscilexercmake.h>
+#include <Qsci/qscilexerpascal.h>
+
+#include <QFont>
+#include <QColor>
+#include <QFileInfo>
+#include <QHash>
+#include <QMessageBox>
+#include <QMouseEvent>
+#include "gitgutter.h"
+
+Editor::Editor(QWidget *parent) : QsciScintilla(parent) {
+    setupEditor();
+    setupMargins();
+
+    connect(this, &QsciScintilla::cursorPositionChanged, this, &Editor::onCursorMoved);
+    connect(this, &QsciScintilla::marginClicked, this, &Editor::onMarginClicked);
+}
+
+void Editor::setupEditor() {
+    QFont font("Consolas", 11);
+    font.setStyleHint(QFont::Monospace);
+    setFont(font);
+    setMarginsFont(font);
+    setUtf8(true);
+    setCaretLineVisible(true);
+    setCaretLineBackgroundColor(QColor("#E8F5E9"));  // pastel green
+    setCaretWidth(2);
+
+    // Explicit colors — black text on white background
+    setPaper(QColor("#FFFFFF"));
+    setColor(QColor("#000000"));
+    setMarginsBackgroundColor(QColor("#E4E4E4"));
+    setMarginsForegroundColor(QColor("#2B91AF"));
+    setEdgeMode(QsciScintilla::EdgeLine);
+    setEdgeColumn(120);
+    setWrapMode(QsciScintilla::WrapNone);
+    setWhitespaceVisibility(QsciScintilla::WsInvisible);
+    setEolVisibility(false);
+    setEolMode(QsciScintilla::EolUnix);
+    setIndentationsUseTabs(false);
+    setTabWidth(4);
+    setIndentationGuides(true);
+    setAutoIndent(true);
+    setBackspaceUnindents(true);
+    setTabIndents(true);
+    setBraceMatching(QsciScintilla::StrictBraceMatch);
+    setMatchedBraceBackgroundColor(QColor("#FFCCCC"));   // light red background
+    setMatchedBraceForegroundColor(QColor("#CC0000"));   // dark red text
+    setUnmatchedBraceBackgroundColor(QColor("#FF0000")); // bright red = unmatched
+    setUnmatchedBraceForegroundColor(QColor("#FFFFFF")); // white text on red
+
+    // Sticky scrolling — slower scroll speed, scroll past end
+    SendScintilla(SCI_SETMOUSEDWELLTIME, 200);
+    SendScintilla(SCI_SETENDATLASTLINE, 0);  // allow scrolling past last line
+    SendScintilla(SCI_SETSCROLLWIDTH, 1);
+    SendScintilla(SCI_SETSCROLLWIDTHTRACKING, 1);
+
+    setAutoCompletionSource(QsciScintilla::AcsAll);
+    setAutoCompletionThreshold(3);
+    setAutoCompletionCaseSensitivity(false);
+    setAutoCompletionReplaceWord(true);
+    setFolding(QsciScintilla::BoxedTreeFoldStyle, 2);
+}
+
+void Editor::setupMargins() {
+    // Line numbers
+    setMarginType(0, QsciScintilla::NumberMargin);
+    setMarginWidth(0, "00000");
+    setMarginLineNumbers(0, true);
+
+    // Fold margin
+    setMarginType(2, QsciScintilla::SymbolMargin);
+    setMarginWidth(2, 14);
+    setMarginSensitivity(2, true);
+
+    // Bookmark margin
+    setMarginType(1, QsciScintilla::SymbolMargin);
+    setMarginWidth(1, 16);
+    setMarginSensitivity(1, true);
+    markerDefine(QsciScintilla::Circle, 0);
+    setMarkerForegroundColor(QColor("#FF0000"), 0);
+    setMarkerBackgroundColor(QColor("#FF0000"), 0);
+
+    // Git gutter markers (margin 3)
+    setMarginType(3, QsciScintilla::SymbolMargin);
+    setMarginWidth(3, 4);
+    setMarginSensitivity(3, false);
+    // Marker 1 = git added (green bar)
+    markerDefine(QsciScintilla::Background, 1);
+    setMarkerBackgroundColor(QColor("#4CAF50"), 1);
+    // Marker 2 = git modified (yellow bar)
+    markerDefine(QsciScintilla::Background, 2);
+    setMarkerBackgroundColor(QColor("#FFC107"), 2);
+    // Marker 3 = git deleted (red bar)
+    markerDefine(QsciScintilla::Background, 3);
+    setMarkerBackgroundColor(QColor("#F44336"), 3);
+
+    // Setup indicator 9 for double-click word highlight (light orange)
+    SendScintilla(SCI_INDICSETSTYLE, 9, INDIC_ROUNDBOX);
+    SendScintilla(SCI_INDICSETFORE, 9, QColor("#E8A848").rgb() & 0xFFFFFF);
+    SendScintilla(SCI_INDICSETALPHA, 9, 70);
+    SendScintilla(SCI_INDICSETOUTLINEALPHA, 9, 140);
+}
+
+void Editor::mouseDoubleClickEvent(QMouseEvent *event) {
+    QsciScintilla::mouseDoubleClickEvent(event);
+    // After default double-click selects the word, highlight all occurrences
+    if (hasSelectedText()) {
+        QString word = selectedText().trimmed();
+        if (!word.isEmpty() && word.length() > 1) {
+            highlightAllOccurrences(word);
+        }
+    }
+}
+
+void Editor::highlightAllOccurrences(const QString &word) {
+    // Clear previous highlights
+    SendScintilla(SCI_SETINDICATORCURRENT, 9);
+    QByteArray fullText = text().toUtf8();
+    SendScintilla(SCI_INDICATORCLEARRANGE, 0, fullText.size());
+
+    // Find all occurrences using Rust Aho-Corasick (fast)
+    auto positions = RustCore::findAll(text(), word, false, true, true);
+
+    QByteArray wordBytes = word.toUtf8();
+    int wordLen = wordBytes.size();
+
+    for (auto pos : positions) {
+        SendScintilla(SCI_INDICATORFILLRANGE, (int)pos, wordLen);
+    }
+}
+
+bool Editor::loadFile(const QString &path) {
+    // Use Rust core for memory-safe file loading
+    auto result = RustCore::loadFile(path);
+
+    if (result.status == 3) {
+        QMessageBox::warning(this, "Error", result.errorMsg);
+        return false;
+    }
+
+    if (result.status == 1 || result.status == 2) {
+        // Binary or too large — show info text
+        setText(result.text);
+        setReadOnly(true);
+        m_encoding = result.encoding;
+        m_language = "Plain Text";
+        m_eolName = "N/A";
+        m_filePath = path;
+        setModified(false);
+        return true;
+    }
+
+    m_filePath = path;
+    m_encoding = result.encoding;
+
+    switch (result.eolMode) {
+        case 1: setEolMode(QsciScintilla::EolWindows); m_eolName = "Windows (CR LF)"; break;
+        case 2: setEolMode(QsciScintilla::EolMac); m_eolName = "Macintosh (CR)"; break;
+        default: setEolMode(QsciScintilla::EolUnix); m_eolName = "Unix (LF)"; break;
+    }
+
+    setText(result.text);
+    setModified(false);
+
+    if (result.truncated) {
+        setReadOnly(true);
+    }
+
+    // Detect language from extension
+    QFileInfo fi(path);
+    QString ext = fi.suffix().toLower();
+    QString name = fi.fileName();
+
+    // Disable lexer for large files
+    if (result.fileSize > 50 * 1024 * 1024) {
+        applyLexer("Plain Text");
+        setAutoCompletionSource(QsciScintilla::AcsNone);
+        setBraceMatching(QsciScintilla::NoBraceMatch);
+    } else {
+        // Map extensions to languages — 60+ file types
+        static const QHash<QString, QString> extMap = {
+            // Python
+            {"py", "Python"}, {"pyw", "Python"}, {"pyx", "Python"}, {"pyi", "Python"},
+            {"pxd", "Python"}, {"ipynb", "JSON"},
+            // JavaScript / TypeScript
+            {"js", "JavaScript"}, {"mjs", "JavaScript"}, {"cjs", "JavaScript"},
+            {"jsx", "JavaScript"}, {"ts", "TypeScript"}, {"tsx", "TypeScript"},
+            // C / C++
+            {"c", "C"}, {"h", "C"},
+            {"cpp", "C++"}, {"cxx", "C++"}, {"cc", "C++"}, {"hpp", "C++"},
+            {"hxx", "C++"}, {"hh", "C++"}, {"ino", "C++"},
+            // C#
+            {"cs", "C#"},
+            // Java / Kotlin / Scala / Groovy
+            {"java", "Java"}, {"kt", "Java"}, {"kts", "Java"},
+            {"scala", "Java"}, {"groovy", "Java"}, {"gradle", "Java"},
+            // Rust (use C++ lexer — closest syntax)
+            {"rs", "C++"}, {"toml", "YAML"},
+            // Go (use C++ lexer — closest syntax)
+            {"go", "C++"},
+            // Swift (use C++ lexer)
+            {"swift", "C++"},
+            // Web
+            {"html", "HTML"}, {"htm", "HTML"}, {"xhtml", "HTML"},
+            {"vue", "HTML"}, {"svelte", "HTML"}, {"jsp", "HTML"},
+            {"erb", "HTML"}, {"ejs", "HTML"}, {"hbs", "HTML"},
+            {"twig", "HTML"}, {"jinja", "HTML"}, {"jinja2", "HTML"},
+            // CSS
+            {"css", "CSS"}, {"scss", "CSS"}, {"sass", "CSS"}, {"less", "CSS"},
+            // XML / Config
+            {"xml", "XML"}, {"svg", "XML"}, {"xsl", "XML"}, {"xsd", "XML"},
+            {"plist", "XML"}, {"rss", "XML"}, {"atom", "XML"}, {"wsdl", "XML"},
+            // JSON
+            {"json", "JSON"}, {"jsonc", "JSON"}, {"geojson", "JSON"},
+            {"webmanifest", "JSON"},
+            // SQL
+            {"sql", "SQL"}, {"ddl", "SQL"}, {"dml", "SQL"}, {"pgsql", "SQL"},
+            {"plsql", "SQL"}, {"tsql", "SQL"},
+            // Shell
+            {"sh", "Bash"}, {"bash", "Bash"}, {"zsh", "Bash"}, {"fish", "Bash"},
+            {"ksh", "Bash"}, {"csh", "Bash"}, {"tcsh", "Bash"},
+            // Batch / PowerShell
+            {"bat", "Batch"}, {"cmd", "Batch"}, {"ps1", "Batch"},
+            // Ruby
+            {"rb", "Ruby"}, {"rake", "Ruby"}, {"gemspec", "Ruby"},
+            // Perl
+            {"pl", "Perl"}, {"pm", "Perl"}, {"pod", "Perl"}, {"t", "Perl"},
+            // PHP (use Perl lexer — closest syntax)
+            {"php", "Perl"}, {"phtml", "Perl"},
+            // Lua
+            {"lua", "Lua"},
+            // R (use Python lexer — closest syntax)
+            {"r", "Python"}, {"rmd", "Markdown"},
+            // Markdown / reStructuredText
+            {"md", "Markdown"}, {"markdown", "Markdown"}, {"mkd", "Markdown"},
+            {"rst", "Markdown"},
+            // YAML
+            {"yml", "YAML"}, {"yaml", "YAML"},
+            // Diff / Patch
+            {"diff", "Diff"}, {"patch", "Diff"},
+            // Pascal / Delphi
+            {"pas", "Pascal"}, {"pp", "Pascal"}, {"dpr", "Pascal"}, {"dpk", "Pascal"},
+            // LaTeX (use Makefile lexer as fallback)
+            {"tex", "Makefile"}, {"latex", "Makefile"}, {"bib", "Makefile"},
+            // Build systems
+            {"cmake", "CMake"},
+            // Config files (use YAML or Bash lexer)
+            {"ini", "Bash"}, {"cfg", "Bash"}, {"conf", "Bash"},
+            {"env", "Bash"}, {"properties", "Bash"},
+            {"dockerignore", "Bash"}, {"gitignore", "Bash"},
+            {"editorconfig", "Bash"},
+            // Log files
+            {"log", "Plain Text"}, {"out", "Plain Text"},
+            // Data formats
+            {"csv", "Plain Text"}, {"tsv", "Plain Text"},
+        };
+
+        // Map special filenames
+        static const QHash<QString, QString> nameMap = {
+            {"Makefile", "Makefile"}, {"makefile", "Makefile"}, {"GNUmakefile", "Makefile"},
+            {"Dockerfile", "Bash"}, {"Vagrantfile", "Ruby"}, {"Rakefile", "Ruby"},
+            {"Gemfile", "Ruby"}, {"Podfile", "Ruby"},
+            {"CMakeLists.txt", "CMake"}, {"meson.build", "Python"},
+            {".bashrc", "Bash"}, {".bash_profile", "Bash"}, {".zshrc", "Bash"},
+            {".profile", "Bash"}, {".gitignore", "Bash"}, {".dockerignore", "Bash"},
+            {".editorconfig", "Bash"}, {".env", "Bash"},
+            {"Cargo.toml", "YAML"}, {"Cargo.lock", "YAML"},
+            {"package.json", "JSON"}, {"tsconfig.json", "JSON"},
+            {"composer.json", "JSON"}, {".eslintrc", "JSON"},
+            {"requirements.txt", "Plain Text"}, {"go.mod", "Bash"}, {"go.sum", "Plain Text"},
+        };
+
+        QString lang = nameMap.value(name, extMap.value(ext, "Plain Text"));
+
+        // JSON lexer can't handle broken/invalid JSON — shows white text
+        // Use JavaScript lexer instead which handles {key: value} syntax fine
+        if (lang == "JSON") {
+            QString trimmed = result.text.trimmed();
+            // Quick check: valid JSON starts with { or [ and the first key is quoted
+            bool looksValid = (trimmed.startsWith("{\"") || trimmed.startsWith("[")
+                              || trimmed.startsWith("{\n") || trimmed.startsWith("{ "));
+            if (!looksValid) {
+                lang = "JavaScript";  // JS lexer handles unquoted keys, single quotes etc
+            }
+        }
+
+        applyLexer(lang);
+    }
+
+    return true;
+}
+
+bool Editor::saveFile(const QString &path) {
+    QString savePath = path.isEmpty() ? m_filePath : path;
+    if (savePath.isEmpty()) return false;
+
+    bool ok = RustCore::saveFile(savePath, text(), m_encoding);
+    if (ok) {
+        m_filePath = savePath;
+        setModified(false);
+    }
+    return ok;
+}
+
+void Editor::setLanguage(const QString &lang) {
+    applyLexer(lang);
+}
+
+void Editor::applyLexer(const QString &lang) {
+    m_language = lang;
+    QsciLexer *lexer = nullptr;
+
+    QFont font("Consolas", 11);
+    font.setStyleHint(QFont::Monospace);
+
+    if (lang == "Python") lexer = new QsciLexerPython(this);
+    else if (lang == "JavaScript" || lang == "TypeScript") lexer = new QsciLexerJavaScript(this);
+    else if (lang == "C" || lang == "C++") lexer = new QsciLexerCPP(this);
+    else if (lang == "C#") lexer = new QsciLexerCSharp(this);
+    else if (lang == "Java") lexer = new QsciLexerJava(this);
+    else if (lang == "HTML") lexer = new QsciLexerHTML(this);
+    else if (lang == "CSS") lexer = new QsciLexerCSS(this);
+    else if (lang == "XML") lexer = new QsciLexerXML(this);
+    else if (lang == "JSON") lexer = new QsciLexerJSON(this);
+    else if (lang == "SQL") lexer = new QsciLexerSQL(this);
+    else if (lang == "Bash") lexer = new QsciLexerBash(this);
+    else if (lang == "Batch") lexer = new QsciLexerBatch(this);
+    else if (lang == "Ruby") lexer = new QsciLexerRuby(this);
+    else if (lang == "Perl") lexer = new QsciLexerPerl(this);
+    else if (lang == "Lua") lexer = new QsciLexerLua(this);
+    else if (lang == "Markdown") lexer = new QsciLexerMarkdown(this);
+    else if (lang == "YAML") lexer = new QsciLexerYAML(this);
+    else if (lang == "Diff") lexer = new QsciLexerDiff(this);
+    else if (lang == "Pascal") lexer = new QsciLexerPascal(this);
+    else if (lang == "CMake") lexer = new QsciLexerCMake(this);
+    else if (lang == "Makefile") lexer = new QsciLexerMakefile(this);
+
+    if (lexer) {
+        // Only set default font — let lexer handle all colors itself
+        lexer->setDefaultFont(font);
+        setLexer(lexer);
+        // Set paper AFTER setLexer so it applies to the editor, not the lexer styles
+        setPaper(QColor("#FFFFFF"));
+    } else {
+        setLexer(nullptr);
+        setFont(font);
+        setPaper(QColor("#FFFFFF"));
+        setColor(QColor("#000000"));
+    }
+
+    if (!m_themeName.isEmpty()) applyTheme(m_themeName);
+}
+
+void Editor::applyTheme(const QString &themeName) {
+    m_themeName = themeName;
+    // Theme colors applied from mainwindow
+}
+
+void Editor::onCursorMoved(int line, int col) {
+    emit cursorPositionUpdated(line + 1, col + 1);
+    // Clear brace highlight when cursor moves away
+    clearBraceHighlight();
+}
+
+void Editor::onMarginClicked(int margin, int line, Qt::KeyboardModifiers) {
+    if (margin == 2) {
+        foldLine(line);
+    } else if (margin == 1) {
+        if (markersAtLine(line) & 1)
+            markerDelete(line, 0);
+        else
+            markerAdd(line, 0);
+    }
+}
+
+void Editor::gotoLine(int line) {
+    setCursorPosition(line - 1, 0);
+    ensureLineVisible(line - 1);
+}
+
+void Editor::duplicateLine() {
+    int line, col;
+    getCursorPosition(&line, &col);
+    QString lineText = text(line);
+    insertAt(lineText, line + 1, 0);
+}
+
+void Editor::deleteLine() {
+    int line, col;
+    getCursorPosition(&line, &col);
+    setSelection(line, 0, line + 1, 0);
+    removeSelectedText();
+}
+
+void Editor::moveLineUp() {
+    int line, col;
+    getCursorPosition(&line, &col);
+    if (line <= 0) return;
+
+    beginUndoAction();
+    QString current = text(line).trimmed();
+    QString above = text(line - 1).trimmed();
+
+    int endLine = (line < lines() - 1) ? line + 1 : line;
+    int endCol = (line < lines() - 1) ? 0 : text(line).length();
+    setSelection(line - 1, 0, endLine, endCol);
+
+    QString replacement = current + "\n" + above;
+    if (line < lines() - 1) replacement += "\n";
+    replaceSelectedText(replacement);
+
+    setCursorPosition(line - 1, col);
+    endUndoAction();
+}
+
+void Editor::moveLineDown() {
+    int line, col;
+    getCursorPosition(&line, &col);
+    if (line >= lines() - 1) return;
+
+    beginUndoAction();
+    QString current = text(line).trimmed();
+    QString below = text(line + 1).trimmed();
+
+    int endLine = (line + 1 < lines() - 1) ? line + 2 : line + 1;
+    int endCol = (line + 1 < lines() - 1) ? 0 : text(line + 1).length();
+    setSelection(line, 0, endLine, endCol);
+
+    QString replacement = below + "\n" + current;
+    if (line + 1 < lines() - 1) replacement += "\n";
+    replaceSelectedText(replacement);
+
+    setCursorPosition(line + 1, col);
+    endUndoAction();
+}
+
+void Editor::toggleComment() {
+    QsciLexer *lex = lexer();
+    QString comment = "#";
+    if (lex) {
+        QString name = lex->metaObject()->className();
+        if (name.contains("CPP") || name.contains("Java") || name.contains("JavaScript") ||
+            name.contains("CSharp") || name.contains("JSON"))
+            comment = "//";
+        else if (name.contains("SQL") || name.contains("Lua"))
+            comment = "--";
+        else if (name.contains("Batch"))
+            comment = "REM ";
+    }
+
+    int lineFrom, lineTo, colFrom, colTo;
+    if (hasSelectedText()) {
+        getSelection(&lineFrom, &colFrom, &lineTo, &colTo);
+        if (colTo == 0) lineTo--;
+    } else {
+        getCursorPosition(&lineFrom, &colFrom);
+        lineTo = lineFrom;
+    }
+
+    beginUndoAction();
+    bool allCommented = true;
+    for (int i = lineFrom; i <= lineTo; i++) {
+        if (!text(i).trimmed().startsWith(comment)) {
+            allCommented = false;
+            break;
+        }
+    }
+
+    for (int i = lineFrom; i <= lineTo; i++) {
+        if (allCommented) {
+            QString line = text(i);
+            int idx = line.indexOf(comment);
+            if (idx >= 0) {
+                int removeLen = comment.length();
+                if (idx + removeLen < line.length() && line[idx + removeLen] == ' ')
+                    removeLen++;
+                setSelection(i, idx, i, idx + removeLen);
+                removeSelectedText();
+            }
+        } else {
+            insertAt(comment + " ", i, 0);
+        }
+    }
+    endUndoAction();
+}
+
+void Editor::toggleWordWrap() {
+    setWrapMode(wrapMode() == QsciScintilla::WrapNone
+                    ? QsciScintilla::WrapWord
+                    : QsciScintilla::WrapNone);
+}
+
+void Editor::toggleWhitespace() {
+    setWhitespaceVisibility(whitespaceVisibility() == QsciScintilla::WsInvisible
+                                ? QsciScintilla::WsVisible
+                                : QsciScintilla::WsInvisible);
+}
+
+void Editor::toggleEol() {
+    setEolVisibility(!eolVisibility());
+}
+
+void Editor::clearBraceHighlight() {
+    SendScintilla(SCI_BRACEHIGHLIGHT, (unsigned long)-1, (long)-1);
+}
+
+void Editor::goToMatchingBrace() {
+    int pos = (int)SendScintilla(SCI_GETCURRENTPOS);
+
+    auto isBrace = [](int c) {
+        return c == '(' || c == ')' || c == '[' || c == ']' || c == '{' || c == '}';
+    };
+
+    // Find brace at cursor or one before
+    int bracePos = -1;
+    int ch = (int)SendScintilla(SCI_GETCHARAT, (unsigned long)pos, (long)0);
+    if (isBrace(ch)) {
+        bracePos = pos;
+    } else if (pos > 0) {
+        ch = (int)SendScintilla(SCI_GETCHARAT, (unsigned long)(pos - 1), (long)0);
+        if (isBrace(ch)) bracePos = pos - 1;
+    }
+
+    if (bracePos < 0) return;
+
+    int matchPos = (int)SendScintilla(SCI_BRACEMATCH, (unsigned long)bracePos, (long)0);
+
+    if (matchPos < 0) {
+        // No match — flash bad brace
+        SendScintilla(SCI_BRACEBADLIGHT, (unsigned long)bracePos);
+        return;
+    }
+
+    // Highlight both braces (built-in Scintilla brace highlight — guaranteed to work)
+    SendScintilla(SCI_BRACEHIGHLIGHT, (unsigned long)bracePos, (long)matchPos);
+
+    // Select everything between the braces (this IS the visible thread/connection)
+    int startPos = qMin(bracePos, matchPos);
+    int endPos = qMax(bracePos, matchPos);
+    setSelection(
+        (int)SendScintilla(SCI_LINEFROMPOSITION, (unsigned long)startPos, (long)0),
+        (int)SendScintilla(SCI_GETCOLUMN, (unsigned long)startPos, (long)0),
+        (int)SendScintilla(SCI_LINEFROMPOSITION, (unsigned long)(endPos + 1), (long)0),
+        (int)SendScintilla(SCI_GETCOLUMN, (unsigned long)(endPos + 1), (long)0)
+    );
+
+    // Move cursor to the matching brace
+    ensureLineVisible((int)SendScintilla(SCI_LINEFROMPOSITION, (unsigned long)matchPos, (long)0));
+}
+
+void Editor::updateGitGutter() {
+    // Clear existing git markers
+    markerDeleteAll(1);
+    markerDeleteAll(2);
+    markerDeleteAll(3);
+
+    if (m_filePath.isEmpty()) return;
+
+    auto changes = GitGutter::getChangedLines(m_filePath, text());
+    for (const auto &change : changes) {
+        if (change.line > 0 && change.line <= lines()) {
+            markerAdd(change.line - 1, change.status); // 1=added, 2=modified, 3=deleted
+        }
+    }
+}
