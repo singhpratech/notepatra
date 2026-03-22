@@ -921,15 +921,21 @@ void MainWindow::buildMenus() {
 
     // Theme selector
     auto *themeMenu = settings->addMenu("&Theme");
-    auto themes = allThemes();
-    for (auto it = themes.begin(); it != themes.end(); ++it) {
-        QString name = it.key();
-        themeMenu->addAction(name, this, [this, name, themes]() {
-            Config::instance().theme = name;
-            Config::instance().save();
-            applyThemeToAll(themes[name]);
-        });
-    }
+    themeMenu->addAction("Light", this, [this]() {
+        Config::instance().theme = "Light";
+        Config::instance().save();
+        applyThemeToAll(lightTheme());
+    });
+    themeMenu->addAction("Dark", this, [this]() {
+        Config::instance().theme = "Dark";
+        Config::instance().save();
+        applyThemeToAll(darkTheme());
+    });
+    themeMenu->addAction("Monokai", this, [this]() {
+        Config::instance().theme = "Monokai";
+        Config::instance().save();
+        applyThemeToAll(monokaiTheme());
+    });
     settings->addSeparator();
     auto *tabMenu = settings->addMenu("Tab Settings");
     tabMenu->addAction("Use Spaces", this, [E]() { if (auto *e = E()) e->setIndentationsUseTabs(false); });
