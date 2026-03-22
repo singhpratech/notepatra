@@ -1,6 +1,7 @@
 #include "editor.h"
 #include "rustbridge.h"
 
+// ALL 45 QScintilla lexers
 #include <Qsci/qscilexerpython.h>
 #include <Qsci/qscilexerjavascript.h>
 #include <Qsci/qscilexercpp.h>
@@ -22,6 +23,28 @@
 #include <Qsci/qscilexermakefile.h>
 #include <Qsci/qscilexercmake.h>
 #include <Qsci/qscilexerpascal.h>
+// QsciLexerAsm is abstract — use NASM instead for assembly
+#include <Qsci/qscilexeravs.h>
+#include <Qsci/qscilexercoffeescript.h>
+#include <Qsci/qscilexerd.h>
+#include <Qsci/qscilexerfortran.h>
+#include <Qsci/qscilexerfortran77.h>
+#include <Qsci/qscilexeridl.h>
+#include <Qsci/qscilexermatlab.h>
+#include <Qsci/qscilexeroctave.h>
+#include <Qsci/qscilexerpo.h>
+#include <Qsci/qscilexerpostscript.h>
+#include <Qsci/qscilexerpov.h>
+#include <Qsci/qscilexerproperties.h>
+#include <Qsci/qscilexerspice.h>
+#include <Qsci/qscilexertcl.h>
+#include <Qsci/qscilexertex.h>
+#include <Qsci/qscilexerverilog.h>
+#include <Qsci/qscilexervhdl.h>
+#include <Qsci/qscilexermasm.h>
+#include <Qsci/qscilexernasm.h>
+#include <Qsci/qscilexerintelhex.h>
+#include <Qsci/qscilexersrec.h>
 
 #include <QFont>
 #include <QColor>
@@ -201,82 +224,113 @@ bool Editor::loadFile(const QString &path) {
         setAutoCompletionSource(QsciScintilla::AcsNone);
         setBraceMatching(QsciScintilla::NoBraceMatch);
     } else {
-        // Map extensions to languages — 60+ file types
+        // Map extensions to languages — 100+ file types, ALL available lexers
         static const QHash<QString, QString> extMap = {
             // Python
             {"py", "Python"}, {"pyw", "Python"}, {"pyx", "Python"}, {"pyi", "Python"},
-            {"pxd", "Python"}, {"ipynb", "JSON"},
-            // JavaScript / TypeScript
+            {"pxd", "Python"}, {"ipynb", "JSON"}, {"sage", "Python"}, {"bzl", "Python"},
+            // JavaScript / TypeScript / CoffeeScript
             {"js", "JavaScript"}, {"mjs", "JavaScript"}, {"cjs", "JavaScript"},
-            {"jsx", "JavaScript"}, {"ts", "TypeScript"}, {"tsx", "TypeScript"},
-            // C / C++
+            {"jsx", "JavaScript"}, {"ts", "JavaScript"}, {"tsx", "JavaScript"},
+            {"coffee", "CoffeeScript"}, {"litcoffee", "CoffeeScript"},
+            // C / C++ / Objective-C
             {"c", "C"}, {"h", "C"},
             {"cpp", "C++"}, {"cxx", "C++"}, {"cc", "C++"}, {"hpp", "C++"},
             {"hxx", "C++"}, {"hh", "C++"}, {"ino", "C++"},
+            {"m", "C++"}, {"mm", "C++"},
             // C#
             {"cs", "C#"},
             // Java / Kotlin / Scala / Groovy
             {"java", "Java"}, {"kt", "Java"}, {"kts", "Java"},
             {"scala", "Java"}, {"groovy", "Java"}, {"gradle", "Java"},
-            // Rust (use C++ lexer — closest syntax)
-            {"rs", "C++"}, {"toml", "YAML"},
-            // Go (use C++ lexer — closest syntax)
-            {"go", "C++"},
-            // Swift (use C++ lexer)
-            {"swift", "C++"},
+            // D
+            {"d", "D"}, {"di", "D"},
+            // Rust / Go / Swift (use C++ — closest braces syntax)
+            {"rs", "C++"}, {"go", "C++"}, {"swift", "C++"},
             // Web
             {"html", "HTML"}, {"htm", "HTML"}, {"xhtml", "HTML"},
             {"vue", "HTML"}, {"svelte", "HTML"}, {"jsp", "HTML"},
             {"erb", "HTML"}, {"ejs", "HTML"}, {"hbs", "HTML"},
             {"twig", "HTML"}, {"jinja", "HTML"}, {"jinja2", "HTML"},
+            {"php", "HTML"}, {"phtml", "HTML"},
             // CSS
             {"css", "CSS"}, {"scss", "CSS"}, {"sass", "CSS"}, {"less", "CSS"},
             // XML / Config
             {"xml", "XML"}, {"svg", "XML"}, {"xsl", "XML"}, {"xsd", "XML"},
             {"plist", "XML"}, {"rss", "XML"}, {"atom", "XML"}, {"wsdl", "XML"},
+            {"xaml", "XML"}, {"csproj", "XML"}, {"vcxproj", "XML"}, {"sln", "XML"},
             // JSON
             {"json", "JSON"}, {"jsonc", "JSON"}, {"geojson", "JSON"},
-            {"webmanifest", "JSON"},
-            // SQL
-            {"sql", "SQL"}, {"ddl", "SQL"}, {"dml", "SQL"}, {"pgsql", "SQL"},
-            {"plsql", "SQL"}, {"tsql", "SQL"},
+            {"webmanifest", "JSON"}, {"har", "JSON"},
+            // SQL — all variants use same lexer
+            {"sql", "SQL"}, {"ddl", "SQL"}, {"dml", "SQL"},
+            {"pgsql", "SQL"}, {"plsql", "SQL"}, {"tsql", "SQL"},
+            {"mysql", "SQL"}, {"sqlite", "SQL"}, {"hql", "SQL"},
+            {"cql", "SQL"}, {"psql", "SQL"},
             // Shell
             {"sh", "Bash"}, {"bash", "Bash"}, {"zsh", "Bash"}, {"fish", "Bash"},
             {"ksh", "Bash"}, {"csh", "Bash"}, {"tcsh", "Bash"},
             // Batch / PowerShell
-            {"bat", "Batch"}, {"cmd", "Batch"}, {"ps1", "Batch"},
+            {"bat", "Batch"}, {"cmd", "Batch"}, {"ps1", "Batch"}, {"psm1", "Batch"},
             // Ruby
-            {"rb", "Ruby"}, {"rake", "Ruby"}, {"gemspec", "Ruby"},
+            {"rb", "Ruby"}, {"rake", "Ruby"}, {"gemspec", "Ruby"}, {"rbw", "Ruby"},
             // Perl
             {"pl", "Perl"}, {"pm", "Perl"}, {"pod", "Perl"}, {"t", "Perl"},
-            // PHP (use Perl lexer — closest syntax)
-            {"php", "Perl"}, {"phtml", "Perl"},
             // Lua
-            {"lua", "Lua"},
-            // R (use Python lexer — closest syntax)
-            {"r", "Python"}, {"rmd", "Markdown"},
-            // Markdown / reStructuredText
+            {"lua", "Lua"}, {"luau", "Lua"}, {"wlua", "Lua"},
+            // TCL
+            {"tcl", "TCL"}, {"tk", "TCL"},
+            // Fortran
+            {"f", "Fortran"}, {"f90", "Fortran"}, {"f95", "Fortran"},
+            {"f03", "Fortran"}, {"for", "Fortran"}, {"fpp", "Fortran"},
+            {"f77", "Fortran77"},
+            // MATLAB / Octave
+            {"m", "Octave"}, {"mat", "Matlab"}, {"oct", "Octave"},
+            // Assembly
+            {"asm", "ASM"}, {"s", "ASM"}, {"S", "ASM"},
+            {"nasm", "NASM"}, {"masm", "MASM"},
+            // Verilog / VHDL
+            {"v", "Verilog"}, {"sv", "Verilog"}, {"svh", "Verilog"},
+            {"vhd", "VHDL"}, {"vhdl", "VHDL"},
+            // LaTeX / PostScript
+            {"tex", "TeX"}, {"latex", "TeX"}, {"bib", "TeX"}, {"cls", "TeX"}, {"sty", "TeX"},
+            {"ps", "PostScript"}, {"eps", "PostScript"},
+            // IDL
+            {"idl", "IDL"}, {"pro", "IDL"},
+            // Properties / INI
+            {"ini", "Properties"}, {"cfg", "Properties"}, {"conf", "Properties"},
+            {"properties", "Properties"}, {"env", "Properties"},
+            {"editorconfig", "Properties"}, {"gitconfig", "Properties"},
+            // POV-Ray
+            {"pov", "POV"}, {"inc", "POV"},
+            // Spice
+            {"spice", "Spice"}, {"cir", "Spice"},
+            // Markdown
             {"md", "Markdown"}, {"markdown", "Markdown"}, {"mkd", "Markdown"},
             {"rst", "Markdown"},
             // YAML
             {"yml", "YAML"}, {"yaml", "YAML"},
+            // TOML (use Properties)
+            {"toml", "Properties"},
             // Diff / Patch
             {"diff", "Diff"}, {"patch", "Diff"},
             // Pascal / Delphi
             {"pas", "Pascal"}, {"pp", "Pascal"}, {"dpr", "Pascal"}, {"dpk", "Pascal"},
-            // LaTeX (use Makefile lexer as fallback)
-            {"tex", "Makefile"}, {"latex", "Makefile"}, {"bib", "Makefile"},
-            // Build systems
+            // CMake
             {"cmake", "CMake"},
-            // Config files (use YAML or Bash lexer)
-            {"ini", "Bash"}, {"cfg", "Bash"}, {"conf", "Bash"},
-            {"env", "Bash"}, {"properties", "Bash"},
-            {"dockerignore", "Bash"}, {"gitignore", "Bash"},
-            {"editorconfig", "Bash"},
-            // Log files
-            {"log", "Plain Text"}, {"out", "Plain Text"},
-            // Data formats
+            // AVS
+            {"avs", "AVS"}, {"avsi", "AVS"},
+            // R (use Octave — similar)
+            {"r", "Octave"}, {"rmd", "Markdown"},
+            // Hex formats
+            {"hex", "IntelHex"}, {"ihex", "IntelHex"},
+            {"srec", "SRecord"}, {"s19", "SRecord"}, {"s28", "SRecord"},
+            // Log / Text
+            {"log", "Plain Text"}, {"out", "Plain Text"}, {"txt", "Plain Text"},
+            // Data
             {"csv", "Plain Text"}, {"tsv", "Plain Text"},
+            // Docker / Git
+            {"dockerignore", "Bash"}, {"gitignore", "Bash"},
         };
 
         // Map special filenames
@@ -337,12 +391,15 @@ void Editor::applyLexer(const QString &lang) {
     QFont font("Consolas", 11);
     font.setStyleHint(QFont::Monospace);
 
+    // 45 languages — ALL available QScintilla lexers
     if (lang == "Python") lexer = new QsciLexerPython(this);
-    else if (lang == "JavaScript" || lang == "TypeScript") lexer = new QsciLexerJavaScript(this);
+    else if (lang == "JavaScript") lexer = new QsciLexerJavaScript(this);
+    else if (lang == "CoffeeScript") lexer = new QsciLexerCoffeeScript(this);
     else if (lang == "C" || lang == "C++") lexer = new QsciLexerCPP(this);
     else if (lang == "C#") lexer = new QsciLexerCSharp(this);
+    else if (lang == "D") lexer = new QsciLexerD(this);
     else if (lang == "Java") lexer = new QsciLexerJava(this);
-    else if (lang == "HTML") lexer = new QsciLexerHTML(this);
+    else if (lang == "HTML" || lang == "PHP") lexer = new QsciLexerHTML(this);
     else if (lang == "CSS") lexer = new QsciLexerCSS(this);
     else if (lang == "XML") lexer = new QsciLexerXML(this);
     else if (lang == "JSON") lexer = new QsciLexerJSON(this);
@@ -352,6 +409,25 @@ void Editor::applyLexer(const QString &lang) {
     else if (lang == "Ruby") lexer = new QsciLexerRuby(this);
     else if (lang == "Perl") lexer = new QsciLexerPerl(this);
     else if (lang == "Lua") lexer = new QsciLexerLua(this);
+    else if (lang == "TCL") lexer = new QsciLexerTCL(this);
+    else if (lang == "Fortran") lexer = new QsciLexerFortran(this);
+    else if (lang == "Fortran77") lexer = new QsciLexerFortran77(this);
+    else if (lang == "Matlab") lexer = new QsciLexerMatlab(this);
+    else if (lang == "Octave") lexer = new QsciLexerOctave(this);
+    else if (lang == "IDL") lexer = new QsciLexerIDL(this);
+    else if (lang == "ASM" || lang == "NASM") lexer = new QsciLexerNASM(this);
+    else if (lang == "MASM") lexer = new QsciLexerMASM(this);
+    else if (lang == "Verilog") lexer = new QsciLexerVerilog(this);
+    else if (lang == "VHDL") lexer = new QsciLexerVHDL(this);
+    else if (lang == "TeX") lexer = new QsciLexerTeX(this);
+    else if (lang == "PostScript") lexer = new QsciLexerPostScript(this);
+    else if (lang == "POV") lexer = new QsciLexerPOV(this);
+    else if (lang == "Spice") lexer = new QsciLexerSpice(this);
+    else if (lang == "AVS") lexer = new QsciLexerAVS(this);
+    else if (lang == "Properties") lexer = new QsciLexerProperties(this);
+    else if (lang == "PO") lexer = new QsciLexerPO(this);
+    else if (lang == "IntelHex") lexer = new QsciLexerIntelHex(this);
+    else if (lang == "SRecord") lexer = new QsciLexerSRec(this);
     else if (lang == "Markdown") lexer = new QsciLexerMarkdown(this);
     else if (lang == "YAML") lexer = new QsciLexerYAML(this);
     else if (lang == "Diff") lexer = new QsciLexerDiff(this);

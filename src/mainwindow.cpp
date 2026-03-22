@@ -904,14 +904,37 @@ void MainWindow::buildMenus() {
     for (const auto &name : {"ANSI", "UTF-8", "UTF-8-BOM", "UTF-16 BE BOM", "UTF-16 LE BOM"})
         enc->addAction(name)->setCheckable(true);
 
-    // ═══ LANGUAGE ═══
+    // ═══ LANGUAGE — 45 languages ═══
     auto *lang = mb->addMenu("&Language");
     lang->addAction("Normal Text", this, [this, E]() { if (auto *e = E()) { e->setLanguage("Plain Text"); m_statusBar->updateLanguage("Plain Text"); } });
     lang->addSeparator();
-    for (const auto &l : {"Bash", "Batch", "C", "C++", "C#", "CMake", "CSS", "Diff", "HTML",
-                          "Java", "JavaScript", "JSON", "Lua", "Makefile", "Markdown",
-                          "Pascal", "Perl", "Python", "Ruby", "SQL", "TypeScript", "XML", "YAML"}) {
+
+    // Common languages
+    for (const auto &l : {"Python", "JavaScript", "C", "C++", "C#", "Java", "HTML", "CSS",
+                          "JSON", "XML", "SQL", "Bash", "Ruby", "Perl", "Lua", "YAML", "Markdown"}) {
         lang->addAction(l, this, [this, E, l]() { if (auto *e = E()) { e->setLanguage(l); m_statusBar->updateLanguage(l); } });
+    }
+    lang->addSeparator();
+
+    // SQL variants submenu
+    auto *sqlMenu = lang->addMenu("SQL Variants");
+    for (const auto &l : {"SQL"}) {
+        sqlMenu->addAction("SQL (ANSI / Generic)", this, [this, E]() { if (auto *e = E()) { e->setLanguage("SQL"); m_statusBar->updateLanguage("SQL"); } });
+        sqlMenu->addAction("T-SQL (SQL Server)", this, [this, E]() { if (auto *e = E()) { e->setLanguage("SQL"); m_statusBar->updateLanguage("T-SQL (SQL Server)"); } });
+        sqlMenu->addAction("PL/SQL (Oracle)", this, [this, E]() { if (auto *e = E()) { e->setLanguage("SQL"); m_statusBar->updateLanguage("PL/SQL (Oracle)"); } });
+        sqlMenu->addAction("MySQL", this, [this, E]() { if (auto *e = E()) { e->setLanguage("SQL"); m_statusBar->updateLanguage("MySQL"); } });
+        sqlMenu->addAction("PostgreSQL", this, [this, E]() { if (auto *e = E()) { e->setLanguage("SQL"); m_statusBar->updateLanguage("PostgreSQL"); } });
+        sqlMenu->addAction("SQLite", this, [this, E]() { if (auto *e = E()) { e->setLanguage("SQL"); m_statusBar->updateLanguage("SQLite"); } });
+    }
+    lang->addSeparator();
+
+    // More languages submenu
+    auto *moreLang = lang->addMenu("More Languages");
+    for (const auto &l : {"ASM", "AVS", "Batch", "CMake", "CoffeeScript", "D", "Diff",
+                          "Fortran", "Fortran77", "IDL", "IntelHex", "Makefile", "MASM",
+                          "Matlab", "NASM", "Octave", "Pascal", "PO", "PostScript", "POV",
+                          "Properties", "Spice", "SRecord", "TCL", "TeX", "Verilog", "VHDL"}) {
+        moreLang->addAction(l, this, [this, E, l]() { if (auto *e = E()) { e->setLanguage(l); m_statusBar->updateLanguage(l); } });
     }
 
     // ═══ SETTINGS ═══
