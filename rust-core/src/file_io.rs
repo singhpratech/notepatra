@@ -11,8 +11,8 @@ use std::ptr;
 
 const LARGE_THRESHOLD: u64 = 50 * 1024 * 1024;        // 50 MB — disable syntax highlighting
 const HUGE_THRESHOLD: u64 = 500 * 1024 * 1024;        // 500 MB — minimal features
-const MAX_EDITOR_BUFFER: u64 = 512 * 1024 * 1024;     // 512 MB — max QScintilla can handle safely
-const MAX_FILE_SUPPORTED: u64 = 10 * 1024 * 1024 * 1024; // 10 GB — we can open info for any file this size
+const MAX_EDITOR_BUFFER: u64 = 2_000_000_000;          // 2 GB — full file visibility, no truncation
+const MAX_FILE_SUPPORTED: u64 = 10 * 1024 * 1024 * 1024; // 10 GB
 
 pub fn load_file(path: &str) -> FileLoadResult {
     let metadata = match fs::metadata(path) {
