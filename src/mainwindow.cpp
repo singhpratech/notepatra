@@ -33,10 +33,14 @@
 #include <QShortcut>
 #include <QSplitter>
 #include <QToolBar>
+#include <QMimeData>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 
 MainWindow::MainWindow() {
     setWindowTitle("new 1 - Notepatra");
     setMinimumSize(640, 480);
+    setAcceptDrops(true);  // Enable drag-and-drop
 
     // ── Central layout ──
     auto *central = new QWidget;
@@ -160,70 +164,37 @@ MainWindow::MainWindow() {
     buildToolbar();
     setupShortcuts();
 
-    // Apply default theme
-    m_statusBar->applyColors("#C8C8C8", "#000000", "#666666");
-
-    // Custom scrollbar — thicker, distinct color, sticky feel
-    setStyleSheet(R"(
-        QScrollBar:vertical {
-            background: #E8E8E8;
-            width: 14px;
-            margin: 0;
+    // Apply theme from saved config
+    {
+        auto themes = allThemes();
+        QString themeName = Config::instance().theme;
+        if (themes.contains(themeName))
+            applyThemeToAll(themes[themeName]);
+        else {
+            m_statusBar->applyColors("#C8C8C8", "#000000", "#666666");
         }
-        QScrollBar::handle:vertical {
-            background: #A0A0A0;
-            min-height: 30px;
-            border-radius: 4px;
-            margin: 2px;
-        }
-        QScrollBar::handle:vertical:hover {
-            background: #888888;
-        }
-        QScrollBar::handle:vertical:pressed {
-            background: #666666;
-        }
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-            height: 0;
-        }
-        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-            background: #E8E8E8;
-        }
-
-        QScrollBar:horizontal {
-            background: #E8E8E8;
-            height: 14px;
-            margin: 0;
-        }
-        QScrollBar::handle:horizontal {
-            background: #A0A0A0;
-            min-width: 30px;
-            border-radius: 4px;
-            margin: 2px;
-        }
-        QScrollBar::handle:horizontal:hover {
-            background: #888888;
-        }
-        QScrollBar::handle:horizontal:pressed {
-            background: #666666;
-        }
-        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-            width: 0;
-        }
-        QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
-            background: #E8E8E8;
-        }
-    )");
+    }
 
     // Open first empty tab
     newFile();
 
-    // Size to 80% of screen
-    if (auto *screen = QApplication::primaryScreen()) {
-        QRect avail = screen->availableGeometry();
-        int w = avail.width() * 80 / 100;
-        int h = avail.height() * 80 / 100;
-        resize(w, h);
-        move((avail.width() - w) / 2, (avail.height() - h) / 2);
+    // Restore window geometry from config
+    {
+        auto &cfg = Config::instance();
+        if (cfg.maximized) {
+            showMaximized();
+        } else if (cfg.windowW > 100 && cfg.windowH > 100) {
+            resize(cfg.windowW, cfg.windowH);
+            if (cfg.windowX >= 0) move(cfg.windowX, cfg.windowY);
+        } else {
+            if (auto *screen = QApplication::primaryScreen()) {
+                QRect avail = screen->availableGeometry();
+                int w = avail.width() * 80 / 100;
+                int h = avail.height() * 80 / 100;
+                resize(w, h);
+                move((avail.width() - w) / 2, (avail.height() - h) / 2);
+            }
+        }
     }
 
     // Check for crash recovery first
@@ -238,6 +209,12 @@ MainWindow::MainWindow() {
         saveSession();
         autoSaveRecovery();
         checkFileChanges();
+        // Persist window geometry + config
+        auto &cfg = Config::instance();
+        cfg.windowX = x(); cfg.windowY = y();
+        cfg.windowW = width(); cfg.windowH = height();
+        cfg.maximized = isMaximized();
+        cfg.save();
     });
     m_autoSaveTimer->start(10000);  // every 10 seconds
 
@@ -317,6 +294,11 @@ void MainWindow::openFile(const QString &path) {
         m_fileWatcher->addPath(absPath);
         m_fileTimestamps[absPath] = QFileInfo(absPath).lastModified();
     }
+
+    // Add to recent files
+    Config::instance().addRecent(absPath);
+    Config::instance().save();
+    updateRecentMenu();
 }
 
 void MainWindow::saveFile() {
@@ -492,6 +474,9 @@ void MainWindow::buildMenus() {
             }
         }
     }, QKeySequence("Ctrl+P"));
+    file->addSeparator();
+    m_recentMenu = file->addMenu("Recent &Files");
+    updateRecentMenu();
     file->addSeparator();
     file->addAction("E&xit", this, &QMainWindow::close, QKeySequence("Alt+F4"));
 
@@ -932,6 +917,19 @@ void MainWindow::buildMenus() {
     // ═══ SETTINGS ═══
     auto *settings = mb->addMenu("&Settings");
     settings->addAction("&Preferences...", this, [this]() { PreferencesDialog dlg(this); dlg.exec(); });
+    settings->addSeparator();
+
+    // Theme selector
+    auto *themeMenu = settings->addMenu("&Theme");
+    auto themes = allThemes();
+    for (auto it = themes.begin(); it != themes.end(); ++it) {
+        QString name = it.key();
+        themeMenu->addAction(name, this, [this, name, themes]() {
+            Config::instance().theme = name;
+            Config::instance().save();
+            applyThemeToAll(themes[name]);
+        });
+    }
     settings->addSeparator();
     auto *tabMenu = settings->addMenu("Tab Settings");
     tabMenu->addAction("Use Spaces", this, [E]() { if (auto *e = E()) e->setIndentationsUseTabs(false); });
@@ -1932,4 +1930,101 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     }
 
     event->accept();
+}
+
+// ═══════════════════════════════════════
+// Drag and drop — open files by dragging onto window
+// ═══════════════════════════════════════
+
+void MainWindow::dragEnterEvent(QDragEnterEvent *event) {
+    if (event->mimeData()->hasUrls()) event->acceptProposedAction();
+}
+
+void MainWindow::dropEvent(QDropEvent *event) {
+    for (const QUrl &url : event->mimeData()->urls()) {
+        if (url.isLocalFile()) openFile(url.toLocalFile());
+    }
+}
+
+// ═══════════════════════════════════════
+// Recent files menu
+// ═══════════════════════════════════════
+
+void MainWindow::updateRecentMenu() {
+    if (!m_recentMenu) return;
+    m_recentMenu->clear();
+    auto &cfg = Config::instance();
+    for (int i = 0; i < cfg.recentFiles.size(); i++) {
+        const QString &path = cfg.recentFiles[i];
+        m_recentMenu->addAction(QString("&%1: %2").arg(i + 1).arg(path), this, [this, path]() {
+            openFile(path);
+        });
+    }
+    if (!cfg.recentFiles.isEmpty()) {
+        m_recentMenu->addSeparator();
+        m_recentMenu->addAction("Clear Recent Files", this, [this]() {
+            Config::instance().recentFiles.clear();
+            Config::instance().save();
+            updateRecentMenu();
+        });
+    }
+}
+
+// ═══════════════════════════════════════
+// Apply theme to entire application
+// ═══════════════════════════════════════
+
+void MainWindow::applyThemeToAll(const Theme &t) {
+    // Editor tabs
+    if (m_tabs) for (int i = 0; i < m_tabs->count(); i++) {
+        auto *ed = m_tabs->editorAt(i);
+        if (ed) {
+            ed->setPaper(t.editorBg);
+            ed->setColor(t.editorFg);
+            ed->setCaretLineBackgroundColor(t.caretLine);
+            ed->setCaretForegroundColor(t.caret);
+            ed->setSelectionBackgroundColor(t.selection);
+            ed->setMarginsBackgroundColor(t.marginBg);
+            ed->setMarginsForegroundColor(t.marginFg);
+            ed->setFoldMarginColors(t.foldBg, t.foldBg);
+            ed->setMatchedBraceBackgroundColor(t.matchedBraceBg);
+            ed->setMatchedBraceForegroundColor(t.matchedBraceFg);
+            // Re-set lexer paper for all styles
+            if (auto *lex = ed->lexer()) {
+                lex->setDefaultPaper(t.editorBg);
+                lex->setDefaultColor(t.editorFg);
+            }
+        }
+    }
+
+    // Status bar
+    if (m_statusBar)
+        m_statusBar->applyColors(t.statusBg.name(), t.statusFg.name(),
+                                  t.tabBorder.name());
+
+    // Window stylesheet
+    setStyleSheet(QString(
+        "QMainWindow { background-color: %1; }"
+        "QMenuBar { background-color: %2; color: %3; border-bottom: 1px solid %4; }"
+        "QMenuBar::item:selected { background-color: %5; }"
+        "QMenu { background-color: %2; color: %3; border: 1px solid %4; }"
+        "QMenu::item:selected { background-color: %5; }"
+        "QToolBar { background-color: %6; border-bottom: 1px solid %4; }"
+        "QToolBar QToolButton { color: %7; font-size: 11px; padding: 3px 4px; border: none; }"
+        "QToolBar QToolButton:hover { background-color: %5; }"
+        "QTabBar::tab { background-color: %8; color: %9; padding: 5px 12px; border-right: 1px solid %4; }"
+        "QTabBar::tab:selected { background-color: %10; border-bottom: 2px solid #4A90D9; }"
+        "QTabBar::tab:hover:!selected { background-color: %5; }"
+        "QScrollBar:vertical { background: %11; width: 14px; }"
+        "QScrollBar::handle:vertical { background: %12; min-height: 30px; border-radius: 4px; margin: 2px; }"
+        "QScrollBar::handle:vertical:hover { background: %13; }"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+        "QScrollBar:horizontal { background: %11; height: 14px; }"
+        "QScrollBar::handle:horizontal { background: %12; min-width: 30px; border-radius: 4px; margin: 2px; }"
+        "QScrollBar::handle:horizontal:hover { background: %13; }"
+        "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }"
+    ).arg(t.windowBg.name(), t.menuBg.name(), t.menuFg.name(), t.tabBorder.name(),
+          t.menuHover.name(), t.toolbarBg.name(), t.windowFg.name(),
+          t.tabBg.name(), t.tabFg.name(), t.tabActiveBg.name(),
+          t.scrollBg.name(), t.scrollHandle.name(), t.scrollHover.name()));
 }

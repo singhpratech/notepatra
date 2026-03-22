@@ -78,6 +78,8 @@ set(HEADERS
     src/fmtpanel.h
     src/searchresults.h
     src/ollamastatus.h
+    src/themes.h
+    src/config.h
 )
 
 # ── Executable ──

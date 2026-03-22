@@ -19,8 +19,11 @@
 #include "gitpanel.h"
 #include "sqlfmtpanel.h"
 #include "searchresults.h"
+#include "themes.h"
+#include "config.h"
 
 class Editor;
+class QMenu;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -33,6 +36,8 @@ public:
 
 protected:
     void closeEvent(QCloseEvent *event) override;
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
 
 private:
     void buildMenus();
@@ -67,8 +72,11 @@ private:
     QSplitter *m_splitter;
     QWidget *m_minimapContainer;
 
+    void updateRecentMenu();
+    void applyThemeToAll(const Theme &theme);
+
     int m_newCount = 0;
-    QString m_themeName = "Default (Light)";
+    QMenu *m_recentMenu = nullptr;
     PluginManager m_pluginManager;
     QTimer *m_autoSaveTimer = nullptr;
     QFileSystemWatcher *m_fileWatcher = nullptr;
