@@ -295,12 +295,6 @@ cp myplugin.so ~/.config/notepatra/plugins/
 
 ---
 
-## License
-
-**GPL v3** — same as Notepad++. Free and open source forever.
-
----
-
 <p align="center">
   <strong>Envisioned by Prateek Singh. Inspired by Notepad++. Built by Claude.</strong>
 </p>
