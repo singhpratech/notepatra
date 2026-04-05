@@ -18,7 +18,13 @@ void PluginManager::loadPlugins(const QString &pluginDir) {
         dir.mkpath(".");
     }
 
+#ifdef Q_OS_WIN
+    QDirIterator it(pluginDir, {"*.dll"}, QDir::Files);
+#elif defined(Q_OS_MAC)
+    QDirIterator it(pluginDir, {"*.dylib"}, QDir::Files);
+#else
     QDirIterator it(pluginDir, {"*.so"}, QDir::Files);
+#endif
     while (it.hasNext()) {
         QString path = it.next();
         auto *lib = new QLibrary(path);

@@ -11,6 +11,8 @@
 #include <QInputDialog>
 #include <QColorDialog>
 #include <QProcess>
+#include <QDesktopServices>
+#include <QUrl>
 
 TabManager::TabManager(QWidget *parent) : QTabWidget(parent) {
     setTabsClosable(true);
@@ -98,10 +100,17 @@ void TabManager::showTabContextMenu(int index, const QPoint &globalPos) {
 
         // ── Open Into ──
         menu.addAction("Open Containing Folder", this, [editor]() {
-            QProcess::startDetached("xdg-open", {QFileInfo(editor->filePath()).path()});
+            QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(editor->filePath()).path()));
         });
         menu.addAction("Open Terminal Here", this, [editor]() {
-            QProcess::startDetached("x-terminal-emulator", {}, QFileInfo(editor->filePath()).path());
+            QString dir = QFileInfo(editor->filePath()).path();
+#ifdef Q_OS_WIN
+            QProcess::startDetached("cmd.exe", {"/k", "cd /d " + dir}, dir);
+#elif defined(Q_OS_MAC)
+            QProcess::startDetached("open", {"-a", "Terminal", dir});
+#else
+            QProcess::startDetached("x-terminal-emulator", {}, dir);
+#endif
         });
     }
 

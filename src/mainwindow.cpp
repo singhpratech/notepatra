@@ -32,10 +32,13 @@
 #include <QScreen>
 #include <QShortcut>
 #include <QSplitter>
+#include <QStatusBar>
 #include <QToolBar>
 #include <QMimeData>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QDesktopServices>
+#include <QUrl>
 
 MainWindow::MainWindow() {
     setWindowTitle("new 1 - Notepatra");
@@ -1449,9 +1452,17 @@ void MainWindow::buildMenus() {
 
     pluginsMenu->addAction("Open Plugins Folder", this, [pluginDir]() {
         QDir().mkpath(pluginDir);
-        QProcess::startDetached("xdg-open", {pluginDir});
+        QDesktopServices::openUrl(QUrl::fromLocalFile(pluginDir));
     });
     pluginsMenu->addAction("How to Write a Plugin...", this, [this, pluginDir]() {
+        QString compileHint;
+#ifdef Q_OS_WIN
+        compileHint = "Compile:  cl /LD myplugin.cpp /Fe:myplugin.dll";
+#elif defined(Q_OS_MAC)
+        compileHint = "Compile:  g++ -shared -fPIC -o myplugin.dylib myplugin.cpp";
+#else
+        compileHint = "Compile:  g++ -shared -fPIC -o myplugin.so myplugin.cpp";
+#endif
         QMessageBox::information(this, "Write a Plugin",
             "Notepatra Plugin API\n\n"
             "Create myplugin.cpp:\n\n"
@@ -1461,18 +1472,120 @@ void MainWindow::buildMenus() {
             "      // transform text, return malloc'd result\n"
             "    }\n"
             "  }\n\n"
-            "Compile:  g++ -shared -fPIC -o myplugin.so myplugin.cpp\n"
+            + compileHint + "\n"
             "Drop in:  " + pluginDir + "/\n"
             "Restart Notepatra.");
     });
 
     // ═══ MACRO ═══
     auto *macro = mb->addMenu("&Macro");
-    macro->addAction("Start Recording");
-    macro->addAction("Stop Recording");
+
+    m_macroStartAct = macro->addAction("Start &Recording", this, [this, E]() {
+        auto *ed = E();
+        if (!ed) return;
+        // Create a fresh QsciMacro attached to the current editor
+        delete m_macro;
+        m_macro = new QsciMacro(ed);
+        m_savedMacro.clear();
+        m_macroRecording = true;
+        m_macro->startRecording();
+        macroUpdateActions();
+        statusBar()->showMessage("Macro recording started...", 3000);
+    }, QKeySequence("Ctrl+Shift+R"));
+
+    m_macroStopAct = macro->addAction("S&top Recording", this, [this]() {
+        if (!m_macro || !m_macroRecording) return;
+        m_macro->endRecording();
+        m_savedMacro = m_macro->save();
+        m_macroRecording = false;
+        macroUpdateActions();
+        statusBar()->showMessage("Macro recording stopped.", 3000);
+    }, QKeySequence("Ctrl+Shift+T"));
+
     macro->addSeparator();
-    macro->addAction("Playback");
-    macro->addAction("Run Multiple Times...");
+
+    m_macroPlayAct = macro->addAction("&Playback", this, [this, E]() {
+        auto *ed = E();
+        if (!ed) return;
+        if (m_savedMacro.isEmpty() && (!m_macro || m_macro->save().isEmpty())) {
+            statusBar()->showMessage("No macro recorded.", 3000);
+            return;
+        }
+        // Re-attach macro to current editor (may have switched tabs)
+        macroEnsureObject();
+        m_macro->play();
+        statusBar()->showMessage("Macro played.", 2000);
+    }, QKeySequence("Ctrl+Shift+P"));
+
+    m_macroRunMultiAct = macro->addAction("Run &Multiple Times...", this, [this, E]() {
+        auto *ed = E();
+        if (!ed) return;
+        if (m_savedMacro.isEmpty() && (!m_macro || m_macro->save().isEmpty())) {
+            statusBar()->showMessage("No macro recorded.", 3000);
+            return;
+        }
+        bool ok;
+        int times = QInputDialog::getInt(this, "Run Macro Multiple Times",
+                        "Number of times to run:", 1, 1, 10000, 1, &ok);
+        if (!ok) return;
+        macroEnsureObject();
+        for (int i = 0; i < times; i++)
+            m_macro->play();
+        statusBar()->showMessage(QString("Macro played %1 time(s).").arg(times), 3000);
+    });
+
+    macro->addSeparator();
+
+    m_macroSaveAct = macro->addAction("&Save Current Macro...", this, [this]() {
+        if (m_savedMacro.isEmpty() && (!m_macro || m_macro->save().isEmpty())) {
+            statusBar()->showMessage("No macro to save.", 3000);
+            return;
+        }
+        QString data = m_savedMacro.isEmpty() ? m_macro->save() : m_savedMacro;
+        QString path = QFileDialog::getSaveFileName(this, "Save Macro", QDir::homePath(), "Macro Files (*.macro);;All Files (*)");
+        if (path.isEmpty()) return;
+        QFile f(path);
+        if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            QTextStream out(&f);
+            out << data;
+            f.close();
+            statusBar()->showMessage("Macro saved to " + path, 3000);
+        } else {
+            QMessageBox::warning(this, "Save Macro", "Could not write to " + path);
+        }
+    });
+
+    m_macroLoadAct = macro->addAction("&Load Macro...", this, [this, E]() {
+        auto *ed = E();
+        if (!ed) return;
+        QString path = QFileDialog::getOpenFileName(this, "Load Macro", QDir::homePath(), "Macro Files (*.macro);;All Files (*)");
+        if (path.isEmpty()) return;
+        QFile f(path);
+        if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QMessageBox::warning(this, "Load Macro", "Could not read " + path);
+            return;
+        }
+        QTextStream in(&f);
+        QString data = in.readAll();
+        f.close();
+        delete m_macro;
+        m_macro = new QsciMacro(ed);
+        if (m_macro->load(data)) {
+            m_savedMacro = data;
+            macroUpdateActions();
+            statusBar()->showMessage("Macro loaded from " + path, 3000);
+        } else {
+            QMessageBox::warning(this, "Load Macro", "Invalid macro file.");
+            delete m_macro;
+            m_macro = nullptr;
+        }
+    });
+
+    // Initial state: stop/playback/run disabled until a macro exists
+    m_macroStopAct->setEnabled(false);
+    m_macroPlayAct->setEnabled(false);
+    m_macroRunMultiAct->setEnabled(false);
+    m_macroSaveAct->setEnabled(false);
 
     // ═══ RUN ═══
     auto *run = mb->addMenu("&Run");
@@ -1480,16 +1593,29 @@ void MainWindow::buildMenus() {
         bool ok; QString cmd = QInputDialog::getText(this, "Run", "Command:", QLineEdit::Normal, "", &ok);
         if (ok && !cmd.isEmpty()) {
             auto *e = E(); QString dir = (e && !e->filePath().isEmpty()) ? QFileInfo(e->filePath()).path() : QDir::homePath();
+#ifdef Q_OS_WIN
+            QProcess::startDetached("cmd.exe", {"/c", cmd}, dir);
+#else
             QProcess::startDetached("sh", {"-c", cmd}, dir);
+#endif
         }
     }, QKeySequence("F5"));
     run->addSeparator();
     run->addAction("Open Containing Folder", this, [E]() {
-        if (auto *e = E(); e && !e->filePath().isEmpty()) QProcess::startDetached("xdg-open", {QFileInfo(e->filePath()).path()});
+        if (auto *e = E(); e && !e->filePath().isEmpty())
+            QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(e->filePath()).path()));
     });
     run->addAction("Open in Terminal", this, [E]() {
-        if (auto *e = E(); e && !e->filePath().isEmpty())
-            QProcess::startDetached("x-terminal-emulator", {}, QFileInfo(e->filePath()).path());
+        if (auto *e = E(); e && !e->filePath().isEmpty()) {
+            QString dir = QFileInfo(e->filePath()).path();
+#ifdef Q_OS_WIN
+            QProcess::startDetached("cmd.exe", {"/k", "cd /d " + dir}, dir);
+#elif defined(Q_OS_MAC)
+            QProcess::startDetached("open", {"-a", "Terminal", dir});
+#else
+            QProcess::startDetached("x-terminal-emulator", {}, dir);
+#endif
+        }
     });
 
     // ═══ WINDOW ═══
@@ -2090,4 +2216,28 @@ void MainWindow::applyThemeToAll(const Theme &t) {
           t.menuHover.name(), t.toolbarBg.name(), t.windowFg.name(),
           t.tabBg.name(), t.tabFg.name(), t.tabActiveBg.name(),
           t.scrollBg.name(), t.scrollHandle.name(), t.scrollHover.name()));
+}
+
+// ── Macro helpers ──────────────────────────────────────────────────────────
+
+void MainWindow::macroUpdateActions() {
+    bool hasMacro = !m_savedMacro.isEmpty() || (m_macro && !m_macro->save().isEmpty());
+    m_macroStartAct->setEnabled(!m_macroRecording);
+    m_macroStopAct->setEnabled(m_macroRecording);
+    m_macroPlayAct->setEnabled(hasMacro && !m_macroRecording);
+    m_macroRunMultiAct->setEnabled(hasMacro && !m_macroRecording);
+    m_macroSaveAct->setEnabled(hasMacro && !m_macroRecording);
+    m_macroLoadAct->setEnabled(!m_macroRecording);
+}
+
+void MainWindow::macroEnsureObject() {
+    auto *ed = currentEditor();
+    if (!ed) return;
+    // If the macro is already attached to this editor, nothing to do
+    if (m_macro && m_macro->parent() == ed) return;
+    // Re-create the macro object on the current editor and load the saved data
+    delete m_macro;
+    m_macro = new QsciMacro(ed);
+    if (!m_savedMacro.isEmpty())
+        m_macro->load(m_savedMacro);
 }

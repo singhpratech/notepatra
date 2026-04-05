@@ -21,6 +21,7 @@
 #include "searchresults.h"
 #include "themes.h"
 #include "config.h"
+#include <Qsci/qscimacro.h>
 
 class Editor;
 class QMenu;
@@ -89,6 +90,19 @@ private:
     SqlFmtPanel *m_sqlFmtPanel = nullptr;
     SearchResultsPanel *m_searchResults = nullptr;
     QSplitter *m_vertSplitter = nullptr;
+
+    // Macro recording/playback
+    QsciMacro *m_macro = nullptr;
+    bool m_macroRecording = false;
+    QString m_savedMacro;           // serialised macro for persistence across tab switches
+    QAction *m_macroStartAct = nullptr;
+    QAction *m_macroStopAct = nullptr;
+    QAction *m_macroPlayAct = nullptr;
+    QAction *m_macroRunMultiAct = nullptr;
+    QAction *m_macroSaveAct = nullptr;
+    QAction *m_macroLoadAct = nullptr;
+    void macroUpdateActions();
+    void macroEnsureObject();       // (re)create QsciMacro on current editor
 };
 
 #endif

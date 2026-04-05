@@ -111,7 +111,13 @@ void TerminalWidget::runCommand(const QString &cmd) {
     // Run async
     m_input->setEnabled(false);
     m_process->setWorkingDirectory(m_cwd);
+#ifdef Q_OS_WIN
+    m_process->start("cmd.exe", {"/c", cmd});
+#elif defined(Q_OS_MAC)
+    m_process->start("/bin/zsh", {"-c", cmd});
+#else
     m_process->start("/bin/bash", {"-c", cmd});
+#endif
 }
 
 void TerminalWidget::onReadyRead() {
