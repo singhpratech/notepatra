@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1A73E8"/>
+      <stop offset="100%" style="stop-color:#0D47A1"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4CAF50"/>
+      <stop offset="100%" style="stop-color:#2E7D32"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background -->
+  <rect x="16" y="16" width="480" height="480" rx="80" ry="80" fill="url(#bg)"/>
+  <!-- Code bracket left { -->
+  <text x="80" y="340" font-family="Consolas,monospace" font-size="260" font-weight="bold" fill="#FFFFFF" opacity="0.3">{</text>
+  <!-- Letter N -->
+  <text x="155" y="360" font-family="Arial,Helvetica,sans-serif" font-size="280" font-weight="900" fill="#FFFFFF">N</text>
+  <!-- Code bracket right } -->
+  <text x="340" y="340" font-family="Consolas,monospace" font-size="260" font-weight="bold" fill="#FFFFFF" opacity="0.3">}</text>
+  <!-- Green cursor bar -->
+  <rect x="370" y="140" width="8" height="100" rx="4" fill="url(#accent)"/>
+  <!-- Bottom accent line -->
+  <rect x="120" y="400" width="272" height="6" rx="3" fill="url(#accent)"/>
+</svg>
