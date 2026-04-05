@@ -81,8 +81,16 @@ MainWindow::MainWindow() {
                 if (auto *ed = m_tabs->currentEditor()) ed->gotoLine(line);
             }
         } else {
-            // Same file — just jump to line
             if (auto *ed = m_tabs->currentEditor()) ed->gotoLine(line);
+        }
+        // After jumping, try to find and select the search term on that line
+        if (auto *ed = m_tabs->currentEditor()) {
+            // Get the search term from the find dialog
+            if (m_findDialog && !m_findDialog->findInput()->currentText().isEmpty()) {
+                QString term = m_findDialog->findInput()->currentText();
+                int l, c; ed->getCursorPosition(&l, &c);
+                ed->findFirst(term, false, false, false, false, true, l, 0);
+            }
         }
     });
 
@@ -244,6 +252,7 @@ Editor *MainWindow::newFile() {
         if (auto *e = currentEditor()) {
             m_statusBar->updateLines(e->lines());
             m_statusBar->updateLength(e->text().length());
+            m_statusBar->updateWords(e->text().split(QRegularExpression("\\s+"), Qt::SkipEmptyParts).size());
         }
     });
 
@@ -282,6 +291,7 @@ void MainWindow::openFile(const QString &path) {
         if (auto *e = currentEditor()) {
             m_statusBar->updateLines(e->lines());
             m_statusBar->updateLength(e->text().length());
+            m_statusBar->updateWords(e->text().split(QRegularExpression("\\s+"), Qt::SkipEmptyParts).size());
         }
     });
 
@@ -307,6 +317,13 @@ void MainWindow::saveFile() {
     if (!e->filePath().isEmpty()) {
         e->saveFile();
         updateTabTitle(m_tabs->currentIndex());
+        // Auto-refresh git gutter on save
+        e->updateGitGutter();
+        // Update file timestamp so watcher doesn't trigger
+        if (m_fileWatcher) {
+            QString path = e->filePath();
+            m_fileTimestamps[path] = QFileInfo(path).lastModified();
+        }
     } else {
         saveFileAs();
     }
@@ -383,6 +400,7 @@ void MainWindow::updateStatusBar() {
     m_statusBar->updateEol(e->eolModeName());
     m_statusBar->updateLines(e->lines());
     m_statusBar->updateLength(e->text().length());
+            m_statusBar->updateWords(e->text().split(QRegularExpression("\\s+"), Qt::SkipEmptyParts).size());
 }
 
 void MainWindow::updateTabTitle(int index) {
@@ -901,8 +919,24 @@ void MainWindow::buildMenus() {
 
     // ═══ ENCODING ═══
     auto *enc = mb->addMenu("E&ncoding");
-    for (const auto &name : {"ANSI", "UTF-8", "UTF-8-BOM", "UTF-16 BE BOM", "UTF-16 LE BOM"})
-        enc->addAction(name)->setCheckable(true);
+    for (const auto &encName : {"UTF-8", "UTF-8-BOM", "ANSI (Windows-1252)", "ISO-8859-1", "UTF-16 LE", "UTF-16 BE"}) {
+        enc->addAction(encName, this, [this, E, encName]() {
+            auto *e = E(); if (!e) return;
+            // Re-save with new encoding
+            QString text = e->text();
+            QString encStr = QString(encName).split(" ").first();
+            if (encStr == "ANSI") encStr = "Windows-1252";
+            // Update editor's encoding marker
+            e->setUtf8(encStr.contains("UTF-8") || encStr.contains("UTF-16"));
+            m_statusBar->updateEncoding(encName);
+        });
+    }
+    enc->addSeparator();
+    enc->addAction("Convert to UTF-8", this, [this, E]() {
+        auto *e = E(); if (!e) return;
+        e->setUtf8(true);
+        m_statusBar->updateEncoding("UTF-8");
+    });
 
     // ═══ LANGUAGE — 45 languages ═══
     auto *lang = mb->addMenu("&Language");

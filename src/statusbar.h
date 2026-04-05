@@ -13,6 +13,7 @@ public:
     void updateSelection(int chars, int lines);
     void updateLines(int count);
     void updateLength(int length);
+    void updateWords(int count);
     void updateLanguage(const QString &lang);
     void updateEncoding(const QString &enc);
     void updateEol(const QString &eol);

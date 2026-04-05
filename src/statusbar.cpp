@@ -77,6 +77,14 @@ void NppStatusBar::updateLength(int length) {
     m_size->setText(QString("length : %1   %2").arg(length).arg(linesPart));
 }
 
+void NppStatusBar::updateWords(int count) {
+    // Append word count to size label
+    QString t = m_size->text();
+    int wIdx = t.indexOf("words");
+    if (wIdx >= 0) t = t.left(wIdx).trimmed();
+    m_size->setText(t + QString("   words : %1").arg(count));
+}
+
 void NppStatusBar::updateLanguage(const QString &lang) { m_lang->setText(" " + lang); }
 void NppStatusBar::updateEncoding(const QString &enc) { m_enc->setText(enc); }
 void NppStatusBar::updateEol(const QString &eol) { m_eol->setText(eol); }
