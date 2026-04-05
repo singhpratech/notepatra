@@ -880,7 +880,7 @@ void MainWindow::buildMenus() {
             "AI ASSISTANT (Ollama Integration)\n\n"
             "Prerequisites:\n"
             "  1. Install Ollama:  curl -fsSL https://ollama.com/install.sh | sh\n"
-            "  2. Pull a model:    ollama pull qwen3:8b\n"
+            "  2. Pull a model:    ollama pull qwen3.5:9b\n"
             "  3. Start server:    ollama serve\n\n"
             "Usage:\n"
             "  1. Select code in the editor\n"
@@ -896,7 +896,7 @@ void MainWindow::buildMenus() {
             "       Translate   — converts to another language\n"
             "  4. Or type any custom prompt\n"
             "  5. Click 'Insert at Cursor' or 'Replace Selection'\n\n"
-            "Models: qwen3:8b (default), llama3.2:3b, codellama:7b,\n"
+            "Models: qwen3.5:9b (default), llama3.2:3b, codellama:7b,\n"
             "        deepseek-coder:6.7b, mistral:7b, phi3:mini\n\n"
             "All processing is LOCAL. Nothing leaves your machine.");
     });

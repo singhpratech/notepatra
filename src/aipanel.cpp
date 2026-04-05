@@ -25,8 +25,9 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     modelRow->addWidget(new QLabel("Model:"));
     m_modelCombo = new QComboBox;
     m_modelCombo->setEditable(true);
-    m_modelCombo->addItems({"qwen3.5:9b", "qwen3:8b", "qwen3:4b", "llama3.2:3b",
-                            "codellama:7b", "deepseek-coder:6.7b", "mistral:7b"});
+    m_modelCombo->addItems({"qwen3.5:9b", "llama3.2:3b", "codellama:7b",
+                            "deepseek-coder-v2:16b", "mistral:7b", "phi3:mini",
+                            "gemma2:9b", "starcoder2:7b"});
     modelRow->addWidget(m_modelCombo, 1);
     layout->addLayout(modelRow);
 
