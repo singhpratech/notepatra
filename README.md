@@ -214,8 +214,8 @@ That's it. Every AI feature in Notepatra now works.
 | Platform | Download | Status |
 |---|---|---|
 | **Linux** (Ubuntu/Mint/Debian) | [Build from source](#build-from-source) | Available |
-| **Windows** | Coming in v0.2.0 | In development |
-| **macOS** | Coming in v0.2.0 | In development |
+| **Windows** | [Build from source](#build-from-source) | Available (cross-platform code ready) |
+| **macOS** | [Build from source](#build-from-source) | Available (cross-platform code ready) |
 
 ### Build from source (Linux — Ubuntu/Mint/Debian)
 ```bash
