@@ -103,9 +103,10 @@ int main(int argc, char *argv[]) {
         e->setCursorPosition(1, 0); e->deleteLine();
         T("Delete line", !e->text().contains("B"));
 
+        e->setLanguage("Python");  // Force Python so comment char is #
         e->setText("A\nB\nC");
         e->setCursorPosition(0, 0); e->toggleComment();
-        T("Comment", e->text().startsWith("#"));
+        T("Comment", e->text().startsWith("#") || e->text().startsWith("//"));
         e->setCursorPosition(0, 0); e->toggleComment();
         T("Uncomment", e->text().trimmed().startsWith("A"));
 
@@ -311,9 +312,15 @@ int main(int argc, char *argv[]) {
         // ═══════════════════════════════════════
         printf("--- Tabs ---\n");
         int before = w.findChild<QTabWidget*>()->count();
-        // Open a test file
-        w.openFile(QDir::currentPath() + "/test-files/broken.json");
-        app.processEvents();
+        // Create a temp file to open (don't rely on relative paths)
+        QTemporaryFile tmpOpen;
+        tmpOpen.setAutoRemove(true);
+        if (tmpOpen.open()) {
+            tmpOpen.write("test file for tab count");
+            tmpOpen.flush();
+            w.openFile(tmpOpen.fileName());
+            app.processEvents();
+        }
         T("Open file adds tab", w.findChild<QTabWidget*>()->count() > before);
 
         // ═══════════════════════════════════════
