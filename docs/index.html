@@ -363,6 +363,115 @@
             font-weight: 600;
         }
 
+        /* Version history */
+        .version-list {
+            display: grid;
+            gap: 20px;
+        }
+        .version-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+            position: relative;
+        }
+        .version-card.latest {
+            border-color: var(--green);
+            box-shadow: 0 0 0 1px rgba(57,255,20,0.2), 0 12px 40px rgba(0,0,0,0.3);
+        }
+        .version-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 18px;
+            padding-bottom: 18px;
+            border-bottom: 1px solid var(--border);
+        }
+        .version-tag {
+            font-size: 26px;
+            font-weight: 800;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .version-tag .latest-pill {
+            font-size: 11px;
+            padding: 4px 10px;
+            background: var(--green);
+            color: var(--darker);
+            border-radius: 100px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+        .version-meta {
+            color: var(--text-dim);
+            font-size: 13px;
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .version-meta span { white-space: nowrap; }
+        .version-changes {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 20px;
+        }
+        .version-section h5 {
+            color: var(--green);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+        .version-section ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .version-section li {
+            color: var(--text-dim);
+            font-size: 13px;
+            line-height: 1.7;
+            padding-left: 16px;
+            position: relative;
+        }
+        .version-section li::before {
+            content: "·";
+            color: var(--green);
+            position: absolute;
+            left: 4px;
+            font-weight: 700;
+        }
+        .version-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        .version-actions a {
+            font-size: 13px;
+            color: var(--text-dim);
+            text-decoration: none;
+            padding: 6px 14px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+        .version-actions a:hover { color: white; border-color: var(--green); }
+        .roadmap-card {
+            background: rgba(26,115,232,0.04);
+            border: 1px dashed var(--border);
+            border-radius: 16px;
+            padding: 28px;
+            text-align: center;
+        }
+        .roadmap-card h4 { color: white; font-size: 18px; margin-bottom: 8px; }
+        .roadmap-card p { color: var(--text-dim); font-size: 14px; }
+
         /* Feature grid */
         .features-grid {
             display: grid;
@@ -605,6 +714,7 @@
                 <a href="#features">Features</a>
                 <a href="#ai">AI</a>
                 <a href="#plugins">Plugins</a>
+                <a href="#versions">Versions</a>
                 <a href="#download">Download</a>
                 <a href="https://github.com/singhpratech/notepatra" class="btn btn-primary" style="padding: 8px 18px; font-size: 14px;">GitHub</a>
             </div>
@@ -928,6 +1038,98 @@
                 </tr>
             </tbody>
         </table>
+    </section>
+
+    <!-- Version History -->
+    <section id="versions">
+        <div class="section-label">Version History</div>
+        <div class="section-title">Releases</div>
+        <div class="section-desc">Every release of Notepatra, from the very first one. Just like Notepad++ — transparent, append-only, no surprises.</div>
+
+        <div class="version-list">
+            <div class="version-card latest">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.0 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-06</span>
+                        <span>· First public release</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>Core</h5>
+                        <ul>
+                            <li>Native C++ + Rust binary, 5 MB</li>
+                            <li>QScintilla editor, Rust core via FFI</li>
+                            <li>2 GB file support via memory-mapped I/O</li>
+                            <li>Aho-Corasick search, Myers diff (Rust)</li>
+                            <li>105/105 tests passing</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>Editor</h5>
+                        <ul>
+                            <li>100+ file types, 44 language lexers</li>
+                            <li>Tabbed editing with color tags</li>
+                            <li>3 themes: Light, Dark, Monokai</li>
+                            <li>Session persistence + crash recovery</li>
+                            <li>Macro recording &amp; playback</li>
+                            <li>Code folding, bookmarks, brace match</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>Plugins (built-in)</h5>
+                        <ul>
+                            <li>JSON / HTML / SQL / Bracket fixers</li>
+                            <li>Compare / Diff (side-by-side)</li>
+                            <li>Git integration with gutter markers</li>
+                            <li>Built-in terminal &amp; REST client</li>
+                            <li>Hex editor, Markdown converter</li>
+                            <li>External plugin system (.so/.dll/.dylib)</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>AI (local Ollama)</h5>
+                        <ul>
+                            <li>AI Assistant: Explain, Bugs, Refactor, Tests, Docs</li>
+                            <li>AI Fix in JSON / HTML / Bracket tools</li>
+                            <li>Default model: qwen3.5:9b</li>
+                            <li>Zero cloud · zero telemetry · zero API keys</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>Search</h5>
+                        <ul>
+                            <li>5-tab Find/Replace (Find, Replace, In Files, Mark, Go to)</li>
+                            <li>Normal, Extended, Regex modes</li>
+                            <li>Find / Replace All across all open tabs</li>
+                            <li>Search history (last 20)</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>Install</h5>
+                        <ul>
+                            <li>One-command: <code style="color:var(--green);font-size:12px;">curl | sh</code> / <code style="color:var(--green);font-size:12px;">irm | iex</code></li>
+                            <li>GitHub Releases with downloadable binaries</li>
+                            <li>Linux x64, macOS Apple Silicon, Windows x64</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.0">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.0">Commits</a>
+                </div>
+            </div>
+
+            <div class="roadmap-card">
+                <h4>v0.1.1 — coming soon</h4>
+                <p>Bug fixes from community feedback · Linux ARM64 builds · macOS Intel revisit · More language lexers</p>
+            </div>
+        </div>
     </section>
 
     <!-- Story -->
