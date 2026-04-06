@@ -23,28 +23,86 @@
 #include <Qsci/qscilexermakefile.h>
 #include <Qsci/qscilexercmake.h>
 #include <Qsci/qscilexerpascal.h>
-// QsciLexerAsm is abstract — use NASM instead for assembly
+// Optional lexers — available in QScintilla 2.14+ only
+// Use __has_include to gracefully handle older versions
+#if __has_include(<Qsci/qscilexeravs.h>)
 #include <Qsci/qscilexeravs.h>
+#define HAS_LEXER_AVS
+#endif
+#if __has_include(<Qsci/qscilexercoffeescript.h>)
 #include <Qsci/qscilexercoffeescript.h>
+#define HAS_LEXER_COFFEESCRIPT
+#endif
+#if __has_include(<Qsci/qscilexerd.h>)
 #include <Qsci/qscilexerd.h>
+#define HAS_LEXER_D
+#endif
+#if __has_include(<Qsci/qscilexerfortran.h>)
 #include <Qsci/qscilexerfortran.h>
 #include <Qsci/qscilexerfortran77.h>
+#define HAS_LEXER_FORTRAN
+#endif
+#if __has_include(<Qsci/qscilexeridl.h>)
 #include <Qsci/qscilexeridl.h>
+#define HAS_LEXER_IDL
+#endif
+#if __has_include(<Qsci/qscilexermatlab.h>)
 #include <Qsci/qscilexermatlab.h>
 #include <Qsci/qscilexeroctave.h>
+#define HAS_LEXER_MATLAB
+#endif
+#if __has_include(<Qsci/qscilexerpo.h>)
 #include <Qsci/qscilexerpo.h>
+#define HAS_LEXER_PO
+#endif
+#if __has_include(<Qsci/qscilexerpostscript.h>)
 #include <Qsci/qscilexerpostscript.h>
+#define HAS_LEXER_POSTSCRIPT
+#endif
+#if __has_include(<Qsci/qscilexerpov.h>)
 #include <Qsci/qscilexerpov.h>
+#define HAS_LEXER_POV
+#endif
+#if __has_include(<Qsci/qscilexerproperties.h>)
 #include <Qsci/qscilexerproperties.h>
+#define HAS_LEXER_PROPERTIES
+#endif
+#if __has_include(<Qsci/qscilexerspice.h>)
 #include <Qsci/qscilexerspice.h>
+#define HAS_LEXER_SPICE
+#endif
+#if __has_include(<Qsci/qscilexertcl.h>)
 #include <Qsci/qscilexertcl.h>
+#define HAS_LEXER_TCL
+#endif
+#if __has_include(<Qsci/qscilexertex.h>)
 #include <Qsci/qscilexertex.h>
+#define HAS_LEXER_TEX
+#endif
+#if __has_include(<Qsci/qscilexerverilog.h>)
 #include <Qsci/qscilexerverilog.h>
+#define HAS_LEXER_VERILOG
+#endif
+#if __has_include(<Qsci/qscilexervhdl.h>)
 #include <Qsci/qscilexervhdl.h>
+#define HAS_LEXER_VHDL
+#endif
+#if __has_include(<Qsci/qscilexermasm.h>)
 #include <Qsci/qscilexermasm.h>
+#define HAS_LEXER_MASM
+#endif
+#if __has_include(<Qsci/qscilexernasm.h>)
 #include <Qsci/qscilexernasm.h>
+#define HAS_LEXER_NASM
+#endif
+#if __has_include(<Qsci/qscilexerintelhex.h>)
 #include <Qsci/qscilexerintelhex.h>
+#define HAS_LEXER_INTELHEX
+#endif
+#if __has_include(<Qsci/qscilexersrec.h>)
 #include <Qsci/qscilexersrec.h>
+#define HAS_LEXER_SREC
+#endif
 
 #include <QFont>
 #include <QColor>
@@ -394,10 +452,13 @@ void Editor::applyLexer(const QString &lang) {
     // 45 languages — ALL available QScintilla lexers
     if (lang == "Python") lexer = new QsciLexerPython(this);
     else if (lang == "JavaScript") lexer = new QsciLexerJavaScript(this);
-    else if (lang == "CoffeeScript") lexer = new QsciLexerCoffeeScript(this);
+#ifdef HAS_LEXER_COFFEESCRIPT
+#endif
     else if (lang == "C" || lang == "C++") lexer = new QsciLexerCPP(this);
     else if (lang == "C#") lexer = new QsciLexerCSharp(this);
+#ifdef HAS_LEXER_D
     else if (lang == "D") lexer = new QsciLexerD(this);
+#endif
     else if (lang == "Java") lexer = new QsciLexerJava(this);
     else if (lang == "HTML" || lang == "PHP") lexer = new QsciLexerHTML(this);
     else if (lang == "CSS") lexer = new QsciLexerCSS(this);
@@ -409,28 +470,68 @@ void Editor::applyLexer(const QString &lang) {
     else if (lang == "Ruby") lexer = new QsciLexerRuby(this);
     else if (lang == "Perl") lexer = new QsciLexerPerl(this);
     else if (lang == "Lua") lexer = new QsciLexerLua(this);
+#ifdef HAS_LEXER_TCL
     else if (lang == "TCL") lexer = new QsciLexerTCL(this);
+#endif
+#ifdef HAS_LEXER_FORTRAN
     else if (lang == "Fortran") lexer = new QsciLexerFortran(this);
+#endif
+#ifdef HAS_LEXER_FORTRAN
     else if (lang == "Fortran77") lexer = new QsciLexerFortran77(this);
+#endif
+#ifdef HAS_LEXER_MATLAB
     else if (lang == "Matlab") lexer = new QsciLexerMatlab(this);
+#endif
+#ifdef HAS_LEXER_MATLAB
     else if (lang == "Octave") lexer = new QsciLexerOctave(this);
+#endif
+#ifdef HAS_LEXER_IDL
     else if (lang == "IDL") lexer = new QsciLexerIDL(this);
+#endif
+#ifdef HAS_LEXER_NASM
     else if (lang == "ASM" || lang == "NASM") lexer = new QsciLexerNASM(this);
+#endif
+#ifdef HAS_LEXER_MASM
     else if (lang == "MASM") lexer = new QsciLexerMASM(this);
+#endif
+#ifdef HAS_LEXER_VERILOG
     else if (lang == "Verilog") lexer = new QsciLexerVerilog(this);
+#endif
+#ifdef HAS_LEXER_VHDL
     else if (lang == "VHDL") lexer = new QsciLexerVHDL(this);
+#endif
+#ifdef HAS_LEXER_TEX
     else if (lang == "TeX") lexer = new QsciLexerTeX(this);
+#endif
+#ifdef HAS_LEXER_POSTSCRIPT
     else if (lang == "PostScript") lexer = new QsciLexerPostScript(this);
+#endif
+#ifdef HAS_LEXER_POV
     else if (lang == "POV") lexer = new QsciLexerPOV(this);
+#endif
+#ifdef HAS_LEXER_SPICE
     else if (lang == "Spice") lexer = new QsciLexerSpice(this);
+#endif
+#ifdef HAS_LEXER_AVS
     else if (lang == "AVS") lexer = new QsciLexerAVS(this);
+#endif
+#ifdef HAS_LEXER_PROPERTIES
     else if (lang == "Properties") lexer = new QsciLexerProperties(this);
+#endif
+#ifdef HAS_LEXER_PO
     else if (lang == "PO") lexer = new QsciLexerPO(this);
+#endif
+#ifdef HAS_LEXER_INTELHEX
     else if (lang == "IntelHex") lexer = new QsciLexerIntelHex(this);
+#endif
+#ifdef HAS_LEXER_SREC
     else if (lang == "SRecord") lexer = new QsciLexerSRec(this);
+#endif
     else if (lang == "Markdown") lexer = new QsciLexerMarkdown(this);
     else if (lang == "YAML") lexer = new QsciLexerYAML(this);
+#ifdef HAS_LEXER_D
     else if (lang == "Diff") lexer = new QsciLexerDiff(this);
+#endif
     else if (lang == "Pascal") lexer = new QsciLexerPascal(this);
     else if (lang == "CMake") lexer = new QsciLexerCMake(this);
     else if (lang == "Makefile") lexer = new QsciLexerMakefile(this);
