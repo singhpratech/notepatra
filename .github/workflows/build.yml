@@ -192,13 +192,35 @@ jobs:
         id: qscintilla
         shell: pwsh
         run: |
-          # Use Riverbank's OFFICIAL QScintilla source via qmake/nmake — same
-          # path Linux/Mac use, and the only path that ships ALL the lexers
-          # (including Markdown/SQL/JSON which the user reported broken on the
-          # CMake-wrapper build). Every step has explicit LASTEXITCODE checks
-          # so we never silently swallow a failure again.
-          $qtRoot = (Resolve-Path "$env:Qt5_DIR\..\..\..").Path
-          Write-Host "Qt root: $qtRoot"
+          # ROOT CAUSE OF 12+ ITERATIONS: the previous code computed qtRoot via
+          # `Resolve-Path "$env:Qt5_DIR\..\..\.."` which lands ONE LEVEL TOO HIGH
+          # because install-qt-action's Qt5_DIR is at <root>\msvc2019_64\lib\cmake\Qt5
+          # (note the \msvc2019_64\ arch dir). Going up 3 levels lands at
+          # \5.15.2\ instead of \5.15.2\msvc2019_64\. Then $qtRoot\bin\windeployqt.exe
+          # didn't exist and the bundle step bailed at Test-Path. The QScintilla
+          # source build accidentally still worked because qmake was already on
+          # PATH via install-qt-action's own PATH addition, not via our bogus
+          # $qtRoot\bin\ prepend.
+          #
+          # Fix: discover qtRoot by FINDING qmake.exe directly under the runner
+          # temp dir. This is install-qt-action-layout-agnostic.
+          $qmakeExe = (Get-ChildItem -Path "$env:RUNNER_TEMP\Qt" -Recurse -Filter "qmake.exe" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notlike "*\debug\*" -and $_.FullName -notlike "*\Tools\*" } | Select-Object -First 1)
+          if (-not $qmakeExe) {
+            Write-Host "::error::qmake.exe not found anywhere under $env:RUNNER_TEMP\Qt"
+            Write-Host "=== runner temp ==="
+            Get-ChildItem -Path "$env:RUNNER_TEMP\Qt" -Recurse -Filter "*.exe" | Select-Object FullName | Format-Table -AutoSize
+            exit 1
+          }
+          $qtRoot = (Split-Path -Parent (Split-Path -Parent $qmakeExe.FullName))
+          Write-Host "Qt root (derived from qmake.exe location): $qtRoot"
+          Write-Host "qmake.exe at: $($qmakeExe.FullName)"
+
+          # Sanity-check the layout
+          if (-not (Test-Path "$qtRoot\bin\qmake.exe"))         { Write-Host "::error::$qtRoot\bin\qmake.exe missing"; exit 1 }
+          if (-not (Test-Path "$qtRoot\bin\windeployqt.exe"))   { Write-Host "::error::$qtRoot\bin\windeployqt.exe missing"; exit 1 }
+          if (-not (Test-Path "$qtRoot\lib"))                    { Write-Host "::error::$qtRoot\lib missing"; exit 1 }
+          if (-not (Test-Path "$qtRoot\plugins\platforms\qwindows.dll")) { Write-Host "::error::$qtRoot\plugins\platforms\qwindows.dll missing"; exit 1 }
+          Write-Host "✓ Qt layout sanity check passed"
 
           # Make sure qmake from install-qt-action is on PATH
           $env:PATH = "$qtRoot\bin;$env:PATH"
