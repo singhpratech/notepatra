@@ -361,17 +361,50 @@ jobs:
           $totalSize = (Get-ChildItem $outDir -Recurse | Measure-Object Length -Sum).Sum / 1MB
           Write-Host "Total package size: $([math]::Round($totalSize, 1)) MB"
 
-      - name: List notepatra.exe DLL imports (debug aid)
+      - name: Diagnose notepatra.exe imports + Qt plugin loading
         shell: pwsh
         run: |
-          # dumpbin is a real Microsoft tool that lists every DLL the exe
-          # imports. If a future smoke-test failure says "exit code -1073741515"
-          # (0xC0000135 STATUS_DLL_NOT_FOUND), this output tells us exactly
-          # which import couldn't be resolved.
+          # Per the workflow audit agent's recommendation: dump the full
+          # dependency graph of both notepatra.exe and qscintilla2_qt5.dll,
+          # list every file in the bundle, then run notepatra.exe with
+          # QT_DEBUG_PLUGINS=1 so we see WHICH Qt plugin (if any) fails to
+          # load. This step never fails the build — it's pure diagnostics
+          # that the next smoke-test step uses to figure out the root cause.
+
+          Write-Host "════════════ dumpbin /dependents notepatra.exe ════════════"
           dumpbin /dependents .\notepatra-win\notepatra.exe
           if ($LASTEXITCODE -ne 0) {
             Write-Host "::warning::dumpbin not on PATH — skipping dependency listing"
           }
+
+          Write-Host ""
+          Write-Host "════════════ dumpbin /dependents qscintilla2_qt5.dll ════════════"
+          if (Test-Path .\notepatra-win\qscintilla2_qt5.dll) {
+            dumpbin /dependents .\notepatra-win\qscintilla2_qt5.dll
+          } else {
+            Write-Host "::error::qscintilla2_qt5.dll missing from bundle"
+          }
+
+          Write-Host ""
+          Write-Host "════════════ Bundle contents ════════════"
+          Get-ChildItem .\notepatra-win -Recurse | Select-Object FullName, Length | Format-Table -AutoSize
+
+          Write-Host ""
+          Write-Host "════════════ Verify Qt platform plugin exists ════════════"
+          if (Test-Path .\notepatra-win\platforms\qwindows.dll) {
+            Write-Host "✓ platforms\qwindows.dll present"
+          } else {
+            Write-Host "::error::platforms\qwindows.dll MISSING — exe will crash before main()"
+          }
+
+          Write-Host ""
+          Write-Host "════════════ Probing notepatra.exe with QT_DEBUG_PLUGINS=1 ════════════"
+          $env:QT_DEBUG_PLUGINS = "1"
+          $env:PATH = "$PWD\notepatra-win;$env:PATH"
+          # Don't fail if it crashes here — the next step will. We just want the log.
+          & ".\notepatra-win\notepatra.exe" --version 2>&1 | Tee-Object -FilePath diag.log
+          Write-Host "Probe exit code: $LASTEXITCODE (informational; smoke-test step decides pass/fail)"
+          exit 0
 
       - name: Smoke-test the binary (--version)
         shell: pwsh

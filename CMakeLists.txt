@@ -5,16 +5,15 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-# On Windows MSVC, statically link the C++ runtime so we don't ship a binary
-# that depends on vcruntime140.dll / msvcp140.dll being installed on the
-# user's machine. windeployqt doesn't reliably copy these, and the v0.1.0
-# binary crashes at startup on machines without the VC++ Redistributable.
-# /MT (multi-threaded static) instead of the default /MD (multi-threaded DLL).
-# Costs ~200 KB of extra exe size, eliminates an entire class of "DLL not
-# found" failures. Requires CMake >= 3.15.
+# Use the dynamic CRT (/MD) on Windows MSVC, matching Qt5 from install-qt-action.
+# Mixing /MT (static CRT) with /MD-built Qt produces CRT-heap mismatches that
+# crash at runtime — see https://doc.qt.io/qt-5/windows-deployment.html.
+# vcruntime140.dll / msvcp140.dll are preinstalled on Windows Server 2022
+# runners and on every Windows install with the VC++ Redistributable
+# (which most Windows machines already have).
 if(WIN32 AND POLICY CMP0091)
     cmake_policy(SET CMP0091 NEW)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 endif()
 
 # ── Platform detection ──
