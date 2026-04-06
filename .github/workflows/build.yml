@@ -148,6 +148,9 @@ jobs:
           "$QT_PATH/bin/qmake" qscintilla.pro
           make -j$(sysctl -n hw.ncpu)
           sudo make install
+          echo "=== Verify QScintilla install ==="
+          ls -la "$QT_PATH/lib/"libqscintilla2* 2>/dev/null || true
+          ls -la "$QT_PATH/include/Qsci/" 2>/dev/null | head -5 || true
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -157,13 +160,19 @@ jobs:
 
       - name: Build C++
         run: |
-          QT_PATH=$(brew --prefix qt@5)
+          QT_PATH=/opt/homebrew/opt/qt@5
           export PATH="$QT_PATH/bin:$PATH"
-          QSC_LIB=$(find "$QT_PATH" /usr/local /opt/homebrew -name "libqscintilla2_qt5*" -not -name "*.dSYM" 2>/dev/null | head -1)
+
+          # QScintilla installs into the Qt5 prefix via qmake
           QSC_INC="$QT_PATH/include"
-          [ ! -d "$QSC_INC/Qsci" ] && QSC_INC="/opt/homebrew/include"
-          [ ! -d "$QSC_INC/Qsci" ] && QSC_INC="/usr/local/include"
-          echo "Lib: $QSC_LIB | Inc: $QSC_INC"
+          QSC_LIB="$QT_PATH/lib/libqscintilla2_qt5.dylib"
+
+          echo "Qt5 path: $QT_PATH"
+          echo "QScintilla include: $QSC_INC"
+          echo "QScintilla lib: $QSC_LIB"
+          ls -la "$QSC_LIB" || true
+          ls -d "$QSC_INC/Qsci" || true
+
           mkdir -p build && cd build
           cmake .. -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$QT_PATH" \
@@ -191,55 +200,48 @@ jobs:
           arch: 'win64_msvc2019_64'
           dir: '${{ runner.temp }}/Qt'
 
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Build QScintilla from source
         shell: cmd
         run: |
           curl -L -o qscintilla.tar.gz "https://www.riverbankcomputing.com/static/Downloads/QScintilla/2.14.1/QScintilla_src-2.14.1.tar.gz"
           tar xzf qscintilla.tar.gz
           cd QScintilla_src-2.14.1\src
-          call "%Qt5_DIR%\bin\qmake.exe" qscintilla.pro
-          call "%Qt5_DIR%\..\..\..\..\..\..\Tools\QtCreator\bin\jom.exe" /J %NUMBER_OF_PROCESSORS% 2>nul || nmake
+          qmake qscintilla.pro
+          nmake
           nmake install
 
       - name: Locate QScintilla
         id: qscintilla
         shell: pwsh
         run: |
-          # QScintilla installs into the Qt prefix by default
-          $qtDir = $env:Qt5_DIR
-          Write-Host "Qt5_DIR = $qtDir"
+          # install-qt-action sets Qt5_DIR to the cmake config dir, e.g.
+          # .../lib/cmake/Qt5 — the Qt root is three levels up
+          $qtRoot = (Resolve-Path "$env:Qt5_DIR\..\..\..").Path
+          Write-Host "Qt root = $qtRoot"
 
-          # Search for the library
-          $lib = Get-ChildItem -Path $qtDir -Recurse -Filter "qscintilla2_qt5.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $lib) {
-            $lib = Get-ChildItem -Path $qtDir -Recurse -Filter "qscintilla2_qt5*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $lib = Join-Path $qtRoot "lib\qscintilla2_qt5.lib"
+          $inc = Join-Path $qtRoot "include"
+
+          if (-not (Test-Path $lib)) {
+            Write-Host "Lib not at expected path, searching..."
+            $found = Get-ChildItem -Path $qtRoot -Recurse -Filter "qscintilla2_qt5.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { $lib = $found.FullName } else { Write-Error "QScintilla lib not found"; exit 1 }
           }
-          # Also check the QScintilla build directory
-          if (-not $lib) {
-            $lib = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\QScintilla_src-2.14.1" -Recurse -Filter "qscintilla2_qt5.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
-          }
-          if ($lib) {
-            Write-Host "Found QScintilla lib: $($lib.FullName)"
-            "QSC_LIB=$($lib.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          } else {
-            Write-Error "QScintilla library not found"
-            exit 1
+          if (-not (Test-Path (Join-Path $inc "Qsci"))) {
+            Write-Host "Headers not at expected path, searching..."
+            $hdr = Get-ChildItem -Path $qtRoot -Recurse -Filter "qsciscintilla.h" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($hdr) { $inc = $hdr.Directory.Parent.FullName } else { Write-Error "QScintilla headers not found"; exit 1 }
           }
 
-          # Search for the include directory (containing Qsci/qsciscintilla.h)
-          $hdr = Get-ChildItem -Path $qtDir -Recurse -Filter "qsciscintilla.h" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $hdr) {
-            $hdr = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\QScintilla_src-2.14.1" -Recurse -Filter "qsciscintilla.h" -ErrorAction SilentlyContinue | Select-Object -First 1
-          }
-          if ($hdr) {
-            # Include dir is the parent of the Qsci/ folder
-            $incDir = $hdr.Directory.Parent.FullName
-            Write-Host "Found QScintilla include: $incDir"
-            "QSC_INC=$incDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          } else {
-            Write-Error "QScintilla headers not found"
-            exit 1
-          }
+          Write-Host "QScintilla lib: $lib"
+          Write-Host "QScintilla inc: $inc"
+          "QSC_LIB=$lib" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "QSC_INC=$inc" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
