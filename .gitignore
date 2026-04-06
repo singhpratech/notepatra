@@ -4,3 +4,4 @@ rust-core/target/
 *.so
 *.a
 .cache/
+test_lexers

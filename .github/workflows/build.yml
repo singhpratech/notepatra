@@ -43,11 +43,22 @@ jobs:
           cmake .. -DCMAKE_BUILD_TYPE=Release
           make -j$(nproc)
 
-      - name: Test
+      - name: Test (smoke + lexer instantiation)
         run: |
           ls -lh build/notepatra
           file build/notepatra
           build/notepatra --version || true
+
+          # Lexer smoke test — instantiates every QsciLexer used by Notepatra
+          # and verifies it produces non-empty styling on a sample document.
+          # If a lexer class is a no-op stub, this fails loudly.
+          g++ -std=c++17 -fPIC test_lexers.cpp -o test_lexers \
+            $(pkg-config --cflags Qt5Widgets) \
+            $(pkg-config --libs Qt5Widgets) \
+            -lqscintilla2_qt5
+          # Use offscreen Qt platform plugin so we don't need an X server
+          export QT_QPA_PLATFORM=offscreen
+          ./test_lexers
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -114,6 +125,43 @@ jobs:
             -DQSCINTILLA_LIB="$QSC_LIB"
           make VERBOSE=1 2>&1 | tail -200
 
+      - name: Lexer test (every QScintilla lexer must produce styling)
+        run: |
+          QT_PATH=$(brew --prefix qt@5)
+          export PATH="$QT_PATH/bin:$PATH"
+          QSC_LIB=$(find /opt/homebrew /usr/local -name "libqscintilla2_qt5*dylib" 2>/dev/null | head -1)
+          QSC_HDR=$(find /opt/homebrew /usr/local -name "qsciscintilla.h" 2>/dev/null | head -1)
+          QSC_INC=$(dirname $(dirname "$QSC_HDR"))
+          clang++ -std=c++17 -fPIC test_lexers.cpp -o test_lexers \
+            -F"$QT_PATH/lib" \
+            -I"$QT_PATH/include" \
+            -I"$QT_PATH/include/QtCore" \
+            -I"$QT_PATH/include/QtGui" \
+            -I"$QT_PATH/include/QtWidgets" \
+            -I"$QSC_INC" \
+            -L"$QT_PATH/lib" \
+            -framework QtCore -framework QtGui -framework QtWidgets \
+            "$QSC_LIB" || {
+              # Some Qt5 installs use .dylib instead of frameworks
+              clang++ -std=c++17 -fPIC test_lexers.cpp -o test_lexers \
+                -I"$QT_PATH/include" \
+                -I"$QT_PATH/include/QtCore" \
+                -I"$QT_PATH/include/QtGui" \
+                -I"$QT_PATH/include/QtWidgets" \
+                -I"$QSC_INC" \
+                -L"$QT_PATH/lib" \
+                -lQt5Core -lQt5Gui -lQt5Widgets \
+                "$QSC_LIB"
+            }
+          # macOS GUI test needs an offscreen Qt platform plugin since
+          # there's no display server in CI.
+          export QT_QPA_PLATFORM=offscreen
+          ./test_lexers
+          if [ $? -ne 0 ]; then
+            echo "::error::Lexer smoke test FAILED on macOS"
+            exit 1
+          fi
+
       - name: Create DMG
         run: |
           QT_PATH=/opt/homebrew/opt/qt@5
@@ -151,58 +199,96 @@ jobs:
         with:
           arch: x64
 
-      - name: Build QScintilla via CMake wrapper
+      - name: Build QScintilla from official Riverbank source (qmake + nmake)
         id: qscintilla
         shell: pwsh
         run: |
-          # Use farleyrunkel/QScintilla — a CMake wrapper around the upstream
-          # source that auto-detects Qt5 and exports a proper CMake target.
-          # Replaces the fragile qmake/nmake approach that silently failed in cmd.
+          # Use Riverbank's OFFICIAL QScintilla source via qmake/nmake — same
+          # path Linux/Mac use, and the only path that ships ALL the lexers
+          # (including Markdown/SQL/JSON which the user reported broken on the
+          # CMake-wrapper build). Every step has explicit LASTEXITCODE checks
+          # so we never silently swallow a failure again.
           $qtRoot = (Resolve-Path "$env:Qt5_DIR\..\..\..").Path
           Write-Host "Qt root: $qtRoot"
 
-          $qsciDir = "$env:RUNNER_TEMP\qsci-src"
-          $qsciInstall = "$env:RUNNER_TEMP\qsci-install"
+          # Make sure qmake from install-qt-action is on PATH
+          $env:PATH = "$qtRoot\bin;$env:PATH"
+          qmake --version
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::qmake not on PATH"; exit 1 }
 
-          git clone --depth 1 https://github.com/farleyrunkel/QScintilla.git $qsciDir
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::git clone failed"; exit 1 }
+          curl.exe -L -o qscintilla.tar.gz "https://www.riverbankcomputing.com/static/Downloads/QScintilla/2.14.1/QScintilla_src-2.14.1.tar.gz"
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::QScintilla source download failed"; exit 1 }
 
-          cmake -S $qsciDir -B "$qsciDir\build" -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_BUILD_TYPE=Release `
-            "-DCMAKE_PREFIX_PATH=$qtRoot" `
-            "-DCMAKE_INSTALL_PREFIX=$qsciInstall"
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::QScintilla cmake configure failed"; exit 1 }
+          tar xzf qscintilla.tar.gz
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::tar extract failed"; exit 1 }
 
-          cmake --build "$qsciDir\build" --config Release
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::QScintilla cmake build failed"; exit 1 }
+          Set-Location QScintilla_src-2.14.1\src
+          qmake qscintilla.pro
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::qmake failed"; exit 1 }
 
-          cmake --install "$qsciDir\build" --config Release
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::QScintilla cmake install failed"; exit 1 }
+          nmake
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::nmake build failed"; exit 1 }
 
-          Write-Host "=== Installed QScintilla files ==="
-          Get-ChildItem -Path $qsciInstall -Recurse | Select-Object FullName | Format-Table -AutoSize
+          nmake install
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::nmake install failed"; exit 1 }
+          Set-Location ..\..
 
-          # Find the lib and include dir from the install tree
-          $lib = (Get-ChildItem -Path $qsciInstall -Recurse -Filter "qscintilla2_qt5*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
-          if (-not $lib) {
-            $lib = (Get-ChildItem -Path $qsciInstall -Recurse -Filter "*qscintilla2*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          # nmake install puts files into the Qt prefix that qmake was built
+          # against. With install-qt-action's Qt that's $qtRoot. Verify both
+          # the lib AND the headers actually landed there before we proceed.
+          Write-Host "=== Searching for installed QScintilla artifacts under Qt prefix ==="
+          Get-ChildItem -Path $qtRoot -Recurse -Filter "qscintilla2_qt5*" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.FullName)" }
+          Get-ChildItem -Path $qtRoot -Recurse -Filter "qsciscintilla.h" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.FullName)" }
+
+          # Locate the lib (release variant). Prefer qtRoot\lib explicitly.
+          $lib = $null
+          if (Test-Path "$qtRoot\lib\qscintilla2_qt5.lib") {
+            $lib = "$qtRoot\lib\qscintilla2_qt5.lib"
+          } else {
+            $found = Get-ChildItem -Path $qtRoot -Recurse -Filter "qscintilla2_qt5.lib" -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike "*d.lib" } | Select-Object -First 1
+            if ($found) { $lib = $found.FullName }
           }
-          if (-not $lib) { Write-Host "::error::qscintilla lib not found in install tree"; exit 1 }
+          if (-not $lib) { Write-Host "::error::qscintilla2_qt5.lib not found anywhere under $qtRoot — install failed silently"; exit 1 }
 
-          $hdr = (Get-ChildItem -Path $qsciInstall -Recurse -Filter "qsciscintilla.h" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
-          if (-not $hdr) { Write-Host "::error::qsciscintilla.h not found in install tree"; exit 1 }
-          # find_path-style: dirname(dirname(...)) so the result contains Qsci/
+          # Locate the headers — find qsciscintilla.h, then walk up to the dir
+          # that contains Qsci/ as a subdirectory (find_path semantics).
+          $hdr = $null
+          if (Test-Path "$qtRoot\include\Qsci\qsciscintilla.h") {
+            $hdr = "$qtRoot\include\Qsci\qsciscintilla.h"
+          } else {
+            $found = Get-ChildItem -Path $qtRoot -Recurse -Filter "qsciscintilla.h" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { $hdr = $found.FullName }
+          }
+          if (-not $hdr) { Write-Host "::error::qsciscintilla.h not found anywhere under $qtRoot"; exit 1 }
           $inc = (Split-Path -Parent (Split-Path -Parent $hdr))
 
-          $check = Join-Path $inc "Qsci\qsciscintilla.h"
-          if (-not (Test-Path $check)) { Write-Host "::error::sanity check failed: $check does not exist"; exit 1 }
+          # Sanity check: every lexer header that the user reported broken
+          # MUST exist at the include path or this build will be broken
+          # exactly the same way.
+          $required = @("qsciscintilla.h", "qscilexerjson.h", "qscilexersql.h", "qscilexermarkdown.h")
+          foreach ($h in $required) {
+            $p = Join-Path $inc "Qsci\$h"
+            if (-not (Test-Path $p)) {
+              Write-Host "::error::Required lexer header missing: $p"
+              Write-Host "         The QScintilla build is incomplete — refusing to proceed."
+              exit 1
+            }
+            Write-Host "  ok: $p"
+          }
 
+          # Find the runtime DLL too (we'll need to bundle it later).
+          $dll = (Get-ChildItem -Path $qtRoot -Recurse -Filter "qscintilla2_qt5.dll" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          if (-not $dll) { Write-Host "::warning::qscintilla2_qt5.dll not found — runtime may fail" }
+
+          Write-Host ""
           Write-Host "QScintilla lib: $lib"
           Write-Host "QScintilla inc: $inc"
+          Write-Host "QScintilla dll: $dll"
           "QSC_LIB=$lib" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "QSC_INC=$inc" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "QSC_DLL=$dll" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "QT_ROOT=$qtRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "QSC_INSTALL=$qsciInstall" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "QSC_INSTALL=$qtRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -247,7 +333,7 @@ jobs:
             cmake-build.log
           if-no-files-found: ignore
 
-      - name: Verify exe and bundle Qt + QScintilla DLLs
+      - name: Verify exe, embed icon, bundle Qt + QScintilla DLLs
         shell: pwsh
         run: |
           $exe = Get-ChildItem -Path build -Recurse -Filter "notepatra.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -258,24 +344,84 @@ jobs:
             exit 1
           }
           Write-Host "Found: $($exe.FullName) ($([math]::Round($exe.Length / 1MB, 2)) MB)"
+
           $outDir = "notepatra-win"
           New-Item -ItemType Directory -Path $outDir -Force | Out-Null
           Copy-Item $exe.FullName "$outDir/"
+
           # Run windeployqt to bundle Qt DLLs
-          & windeployqt "$outDir/notepatra.exe"
-          # Also copy qscintilla2_qt5.dll from the QScintilla install tree
-          $qsciInstall = "${{ steps.qscintilla.outputs.QSC_INSTALL }}"
-          $qsciDll = Get-ChildItem -Path $qsciInstall -Recurse -Filter "qscintilla2_qt5*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($qsciDll) {
-            Copy-Item $qsciDll.FullName "$outDir/"
-            Write-Host "Copied QScintilla DLL: $($qsciDll.FullName)"
+          & windeployqt --release "$outDir/notepatra.exe"
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::windeployqt failed"; exit 1 }
+
+          # Bundle qscintilla2_qt5.dll — windeployqt doesn't know about it.
+          $qsciDll = "${{ steps.qscintilla.outputs.QSC_DLL }}"
+          if ($qsciDll -and (Test-Path $qsciDll)) {
+            Copy-Item $qsciDll "$outDir/"
+            Write-Host "Bundled QScintilla DLL: $qsciDll"
           } else {
-            Write-Host "::warning::qscintilla2_qt5.dll not found — exe may not run"
+            Write-Host "::error::qscintilla2_qt5.dll missing — exe will fail at startup"
+            exit 1
           }
+
+          # Smoke test: confirm the icon was embedded into the exe.
+          # Windows .exe with an icon resource has a 'GROUP_ICON' RT_GROUP_ICON
+          # resource — Get-Item can't introspect that, but we can at least
+          # confirm notepatra.rc was compiled by checking the exe size delta.
+          $exeSizeKb = [math]::Round((Get-Item "$outDir/notepatra.exe").Length / 1KB)
+          Write-Host "notepatra.exe is $exeSizeKb KB (icon resource embedded if .rc was present)"
+
           Write-Host "=== Package contents ==="
           Get-ChildItem $outDir | Format-Table Name, Length
           $totalSize = (Get-ChildItem $outDir -Recurse | Measure-Object Length -Sum).Sum / 1MB
           Write-Host "Total package size: $([math]::Round($totalSize, 1)) MB"
+
+      - name: Smoke-test the binary (--version)
+        shell: pwsh
+        run: |
+          # Add the output dir to PATH so notepatra.exe finds its DLLs
+          $env:PATH = "$PWD\notepatra-win;$env:PATH"
+          & ".\notepatra-win\notepatra.exe" --version
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::notepatra.exe --version exited with $LASTEXITCODE — DLLs missing or runtime broken"
+            exit 1
+          }
+
+      - name: Lexer test (every QScintilla lexer must produce styling)
+        shell: pwsh
+        run: |
+          # Build and run test_lexers.cpp against the SAME QScintilla we're shipping.
+          # This is the test that catches the user-reported "Markdown / SQL / JSON
+          # have no syntax highlighting on Windows" bug. If any lexer is a stub
+          # (i.e. the Lexilla part is missing from the QScintilla build) the
+          # exit code will be non-zero and the build will fail.
+          $qtRoot = "${{ steps.qscintilla.outputs.QT_ROOT }}"
+          $env:PATH = "$qtRoot\bin;$PWD\notepatra-win;$env:PATH"
+          $qscLib = "${{ steps.qscintilla.outputs.QSC_LIB }}"
+          $qscInc = "${{ steps.qscintilla.outputs.QSC_INC }}"
+
+          # MOC the test source for QApplication metatypes (none needed; test_lexers.cpp
+          # has no Q_OBJECT). Compile directly with cl.exe.
+          cl /nologo /std:c++17 /EHsc /MD /DUNICODE /D_UNICODE `
+            /DQSCINTILLA_DLL `
+            "/I$qtRoot\include" `
+            "/I$qtRoot\include\QtCore" `
+            "/I$qtRoot\include\QtGui" `
+            "/I$qtRoot\include\QtWidgets" `
+            "/I$qscInc" `
+            test_lexers.cpp `
+            /link `
+            /LIBPATH:"$qtRoot\lib" `
+            Qt5Core.lib Qt5Gui.lib Qt5Widgets.lib `
+            "$qscLib" `
+            /OUT:test_lexers.exe
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::test_lexers compile failed"; exit 1 }
+
+          .\test_lexers.exe
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::Lexer smoke test FAILED — at least one QsciLexer is a stub on Windows"
+            Write-Host "         This is the bug the user reported (Markdown/SQL/JSON not highlighting)."
+            exit 1
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

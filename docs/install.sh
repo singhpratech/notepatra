@@ -158,18 +158,32 @@ else
         echo "  Added $INSTALL_DIR to PATH in .bashrc"
     fi
 
-    # Create desktop entry
+    # Install icons to the standard hicolor theme so the launcher and .desktop
+    # file can find them at all sizes (16/32/48/64/128/256).
+    ICON_BASE_URL="https://raw.githubusercontent.com/$REPO/main/resources"
+    for sz in 16 32 48 64 128 256; do
+        ICON_DIR="$HOME/.local/share/icons/hicolor/${sz}x${sz}/apps"
+        mkdir -p "$ICON_DIR"
+        curl -fsSL "$ICON_BASE_URL/notepatra-${sz}.png" -o "$ICON_DIR/notepatra.png" 2>/dev/null || true
+    done
+    gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+
+    # Create desktop entry — Icon=notepatra resolves via hicolor theme search
     mkdir -p "$HOME/.local/share/applications"
     cat > "$HOME/.local/share/applications/notepatra.desktop" << EOF
 [Desktop Entry]
 Name=Notepatra
+GenericName=Code Editor
 Comment=Native C++/Rust code editor with AI-powered formatters
 Exec=$INSTALL_DIR/notepatra %F
-Icon=accessories-text-editor
+Icon=notepatra
 Terminal=false
 Type=Application
-Categories=Development;TextEditor;
-MimeType=text/plain;
+StartupNotify=true
+StartupWMClass=Notepatra
+Categories=Development;TextEditor;Utility;
+MimeType=text/plain;text/x-c;text/x-c++;text/x-python;application/json;text/markdown;text/x-shellscript;
+Keywords=editor;text;code;notepad;ide;
 EOF
     update-desktop-database "$HOME/.local/share/applications/" 2>/dev/null || true
 

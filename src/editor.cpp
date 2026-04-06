@@ -408,14 +408,18 @@ bool Editor::loadFile(const QString &path) {
 
         QString lang = nameMap.value(name, extMap.value(ext, "Plain Text"));
 
-        // JSON lexer can't handle broken/invalid JSON — shows white text
-        // Use JavaScript lexer instead which handles {key: value} syntax fine
+        // JSON lexer can't handle broken/invalid JSON — shows white text.
+        // Use JavaScript lexer instead which handles {key: value} syntax fine.
+        // NOTE: trimmed() already strips whitespace including \r and \n, so a
+        // valid JSON file like "{\n  \"key\":...}" becomes "{\"key\":...}" after
+        // trim. Just check whether the FIRST non-whitespace char is { or [ and
+        // whether anything quoted appears in the first 200 chars — covers
+        // CRLF, LF, BOM, and indented files alike on every platform.
         if (lang == "JSON") {
             QString trimmed = result.text.trimmed();
-            // Quick check: valid JSON starts with { or [ and the first key is quoted
-            bool looksValid = (trimmed.startsWith("{\"") || trimmed.startsWith("[")
-                              || trimmed.startsWith("{\n") || trimmed.startsWith("{ "));
-            if (!looksValid) {
+            bool startsBrace = trimmed.startsWith('{') || trimmed.startsWith('[');
+            bool hasQuoted   = trimmed.left(200).contains('"');
+            if (!startsBrace || !hasQuoted) {
                 lang = "JavaScript";  // JS lexer handles unquoted keys, single quotes etc
             }
         }
@@ -453,6 +457,7 @@ void Editor::applyLexer(const QString &lang) {
     if (lang == "Python") lexer = new QsciLexerPython(this);
     else if (lang == "JavaScript") lexer = new QsciLexerJavaScript(this);
 #ifdef HAS_LEXER_COFFEESCRIPT
+    else if (lang == "CoffeeScript") lexer = new QsciLexerCoffeeScript(this);
 #endif
     else if (lang == "C" || lang == "C++") lexer = new QsciLexerCPP(this);
     else if (lang == "C#") lexer = new QsciLexerCSharp(this);
@@ -529,9 +534,7 @@ void Editor::applyLexer(const QString &lang) {
 #endif
     else if (lang == "Markdown") lexer = new QsciLexerMarkdown(this);
     else if (lang == "YAML") lexer = new QsciLexerYAML(this);
-#ifdef HAS_LEXER_D
     else if (lang == "Diff") lexer = new QsciLexerDiff(this);
-#endif
     else if (lang == "Pascal") lexer = new QsciLexerPascal(this);
     else if (lang == "CMake") lexer = new QsciLexerCMake(this);
     else if (lang == "Makefile") lexer = new QsciLexerMakefile(this);
