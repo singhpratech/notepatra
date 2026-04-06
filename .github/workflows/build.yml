@@ -335,8 +335,12 @@ jobs:
           New-Item -ItemType Directory -Path $outDir -Force | Out-Null
           Copy-Item $exe.FullName "$outDir/"
 
-          # Run windeployqt to bundle Qt DLLs
-          & windeployqt --release "$outDir/notepatra.exe"
+          # Run windeployqt with --compiler-runtime so it bundles the MSVC C++
+          # runtime DLLs (vcruntime140 / msvcp140 / etc) alongside Qt's own DLLs.
+          # The CMakeLists.txt also statically links the C++ runtime via /MT,
+          # so this is belt-and-suspenders — even if the static link missed
+          # something, the bundled DLLs are right there next to the exe.
+          & windeployqt --release --compiler-runtime --no-translations --no-system-d3d-compiler "$outDir/notepatra.exe"
           if ($LASTEXITCODE -ne 0) { Write-Host "::error::windeployqt failed"; exit 1 }
 
           # Bundle qscintilla2_qt5.dll — windeployqt doesn't know about it.
@@ -349,10 +353,6 @@ jobs:
             exit 1
           }
 
-          # Smoke test: confirm the icon was embedded into the exe.
-          # Windows .exe with an icon resource has a 'GROUP_ICON' RT_GROUP_ICON
-          # resource — Get-Item can't introspect that, but we can at least
-          # confirm notepatra.rc was compiled by checking the exe size delta.
           $exeSizeKb = [math]::Round((Get-Item "$outDir/notepatra.exe").Length / 1KB)
           Write-Host "notepatra.exe is $exeSizeKb KB (icon resource embedded if .rc was present)"
 
@@ -361,16 +361,38 @@ jobs:
           $totalSize = (Get-ChildItem $outDir -Recurse | Measure-Object Length -Sum).Sum / 1MB
           Write-Host "Total package size: $([math]::Round($totalSize, 1)) MB"
 
+      - name: List notepatra.exe DLL imports (debug aid)
+        shell: pwsh
+        run: |
+          # dumpbin is a real Microsoft tool that lists every DLL the exe
+          # imports. If a future smoke-test failure says "exit code -1073741515"
+          # (0xC0000135 STATUS_DLL_NOT_FOUND), this output tells us exactly
+          # which import couldn't be resolved.
+          dumpbin /dependents .\notepatra-win\notepatra.exe
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::warning::dumpbin not on PATH — skipping dependency listing"
+          }
+
       - name: Smoke-test the binary (--version)
         shell: pwsh
         run: |
           # Add the output dir to PATH so notepatra.exe finds its DLLs
           $env:PATH = "$PWD\notepatra-win;$env:PATH"
+          Write-Host "Running: .\notepatra-win\notepatra.exe --version"
           & ".\notepatra-win\notepatra.exe" --version
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "::error::notepatra.exe --version exited with $LASTEXITCODE — DLLs missing or runtime broken"
+          $code = $LASTEXITCODE
+          Write-Host "Exit code: $code"
+          if ($code -ne 0) {
+            # Decode known Windows exit codes
+            switch ($code) {
+              -1073741515 { Write-Host "::error::STATUS_DLL_NOT_FOUND (0xC0000135) — a required DLL is missing. See dumpbin output above." }
+              -1073741819 { Write-Host "::error::STATUS_ACCESS_VIOLATION (0xC0000005) — segfault before main()." }
+              -1073741701 { Write-Host "::error::STATUS_INVALID_IMAGE_FORMAT (0xC000007B) — wrong-bitness DLL or corrupt import." }
+              default     { Write-Host "::error::notepatra.exe --version exited with $code" }
+            }
             exit 1
           }
+          Write-Host "✓ Smoke test passed"
 
       - name: Build and run lexer smoke test (CMake target)
         shell: pwsh

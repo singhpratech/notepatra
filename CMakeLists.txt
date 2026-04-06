@@ -5,6 +5,18 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
+# On Windows MSVC, statically link the C++ runtime so we don't ship a binary
+# that depends on vcruntime140.dll / msvcp140.dll being installed on the
+# user's machine. windeployqt doesn't reliably copy these, and the v0.1.0
+# binary crashes at startup on machines without the VC++ Redistributable.
+# /MT (multi-threaded static) instead of the default /MD (multi-threaded DLL).
+# Costs ~200 KB of extra exe size, eliminates an entire class of "DLL not
+# found" failures. Requires CMake >= 3.15.
+if(WIN32 AND POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 # ── Platform detection ──
 if(WIN32)
     set(PLATFORM_NAME "windows")

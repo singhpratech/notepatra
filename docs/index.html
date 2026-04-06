@@ -38,20 +38,157 @@
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       "name": "Notepatra",
-      "operatingSystem": "Linux, Windows, macOS",
+      "alternateName": ["Notepatra Editor", "Notepad++ alternative"],
+      "operatingSystem": ["Linux", "Windows", "macOS"],
       "applicationCategory": "DeveloperApplication",
-      "description": "Native C++/Rust code editor with AI-powered formatters. 5 MB binary. 100+ file types. Free forever.",
+      "applicationSubCategory": "TextEditor",
+      "description": "Native C++/Rust code editor with AI-powered formatters. ~5 MB native executable. 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama. Free forever. Linux, Windows, macOS.",
+      "softwareVersion": "0.1.0",
+      "fileSize": "5 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
+      "installUrl": "https://notepatra.org/#install",
+      "softwareRequirements": "Qt5, optional Ollama for local AI",
+      "screenshot": "https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-512.png",
+      "license": "https://www.gnu.org/licenses/gpl-3.0.html",
       "offers": {
         "@type": "Offer",
         "price": "0",
-        "priceCurrency": "USD"
+        "priceCurrency": "USD",
+        "availability": "https://schema.org/InStock"
       },
       "author": {
         "@type": "Person",
         "name": "Prateek Singh",
         "url": "https://github.com/singhpratech"
-      }
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Notepatra",
+        "url": "https://notepatra.org",
+        "logo": "https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-512.png"
+      },
+      "featureList": [
+        "100+ file types with 44 language lexers",
+        "AI-powered JSON/HTML/SQL/Bracket fixers",
+        "Memory-mapped 2 GB file support",
+        "Side-by-side file comparison with Myers diff",
+        "Built-in Git integration with gutter markers",
+        "Macro recording and playback",
+        "Session persistence and crash recovery",
+        "Plugin system (.so / .dll / .dylib)",
+        "Local AI via Ollama, no cloud, no telemetry"
+      ]
+    }
+    </script>
+
+    <!-- Organization schema for the publisher -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "Notepatra",
+      "url": "https://notepatra.org",
+      "logo": "https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-512.png",
+      "sameAs": [
+        "https://github.com/singhpratech/notepatra",
+        "https://github.com/singhpratech"
+      ]
+    }
+    </script>
+
+    <!-- BreadcrumbList for navigation hierarchy -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://notepatra.org/" },
+        { "@type": "ListItem", "position": 2, "name": "Features", "item": "https://notepatra.org/#features" },
+        { "@type": "ListItem", "position": 3, "name": "Download", "item": "https://notepatra.org/#download" },
+        { "@type": "ListItem", "position": 4, "name": "Security", "item": "https://notepatra.org/#security" }
+      ]
+    }
+    </script>
+
+    <!-- FAQPage schema — Google rich result for "Notepatra" queries -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is Notepatra?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Notepatra is a native C++/Rust code editor inspired by Notepad++ but rebuilt for the AI era. It runs on Linux, macOS Apple Silicon, and Windows, has a 5 MB native executable, supports 100+ file types with 44 language lexers, and includes AI-powered formatters that fix broken JSON, HTML, and brackets via local Ollama (no cloud)."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is Notepatra free? Is there a paid version?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Notepatra is free forever and licensed under GPL-3.0. There is no paid version, no subscription, no enterprise upsell, no telemetry. The source code is open on GitHub."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is Notepatra a Notepad++ alternative for Linux and Mac?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Notepad++ only runs on Windows. Notepatra is the first code editor to bring the same lightweight, native, fast experience to Linux, macOS, and Windows from a single C++/Rust codebase. It uses QScintilla (the same Scintilla editing engine as Notepad++) and adds local AI integration."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How big is Notepatra compared to VS Code?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The Notepatra executable is ~5 MB on Linux, ~3 MB on Windows, and ~3 MB on macOS Apple Silicon. The Linux download is 1.8 MB, the macOS .dmg is 22 MB, and the Windows .zip is 48 MB (sizes differ because Mac and Windows bundle Qt for portability). VS Code is over 300 MB. Notepatra is 6× to 14× smaller than VS Code on every platform."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Notepatra send my code to the cloud?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Notepatra is local-first. The AI features run on your own machine via Ollama (which you install separately). There is no telemetry, no analytics, no API key, no remote server, no phone-home. The only outbound network connections are: localhost Ollama (when you click an AI button), git push/pull (when you click those buttons), and the REST client tab (when you explicitly send a request)."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What languages and file types does Notepatra support?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Notepatra supports 100+ file types with 44 language lexers including Python, JavaScript, TypeScript, C, C++, C#, Java, Rust, Go, HTML, CSS, SQL, JSON, YAML, Markdown, Bash, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, and many more."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I install Notepatra?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "On Linux or macOS run: curl -fsSL https://notepatra.org/install.sh | sh — on Windows PowerShell run: irm https://notepatra.org/install.ps1 | iex. Both scripts auto-detect your OS, download the right binary, verify the SHA-256 checksum, and install. You can also download binaries directly from the GitHub Releases page."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I verify the Notepatra binary I downloaded is genuine?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Every release ships with three independent integrity checks: SHA-256 checksums (sha256sum -c SHA256SUMS), Sigstore cosign signatures (keyless OIDC, recorded in the public Rekor transparency log), and SLSA build provenance attestations (verifiable with gh attestation verify). Full instructions in SECURITY.md."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Who built Notepatra?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Notepatra was envisioned and is maintained by Prateek Singh. It was inspired by Notepad++ (by Don Ho) and built with the help of Claude. It is a single-maintainer open source project, free forever under GPL-3.0."
+          }
+        }
+      ]
     }
     </script>
 
@@ -718,7 +855,7 @@
     <nav>
         <div class="nav-inner">
             <a href="#" class="nav-logo">
-                <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra logo">
+                <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra logo" width="36" height="36" loading="eager" decoding="async">
                 Notepatra
             </a>
             <div class="nav-links">
@@ -726,6 +863,7 @@
                 <a href="#ai">AI</a>
                 <a href="#plugins">Plugins</a>
                 <a href="#security">Security</a>
+                <a href="#faq">FAQ</a>
                 <a href="#versions">Versions</a>
                 <a href="#download">Download</a>
                 <a href="https://github.com/singhpratech/notepatra" class="btn btn-primary" style="padding: 8px 18px; font-size: 14px;">GitHub</a>
@@ -1209,6 +1347,52 @@
             <div class="roadmap-card">
                 <h4>v0.1.1 — coming soon</h4>
                 <p>Bug fixes from community feedback · Linux ARM64 builds · macOS Intel revisit · More language lexers</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ -->
+    <section id="faq">
+        <div class="section-label">FAQ</div>
+        <div class="section-title">Frequently asked questions</div>
+        <div class="section-desc">Quick answers. For deeper docs see the <a href="https://github.com/singhpratech/notepatra#readme" style="color:var(--green);">README</a> and <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md" style="color:var(--green);">SECURITY.md</a>.</div>
+
+        <div class="features-grid">
+            <div class="feature-card">
+                <h3>Is Notepatra a Notepad++ alternative for Linux/Mac?</h3>
+                <p>Yes. Notepad++ is Windows-only. Notepatra brings the same lightweight, native, fast experience to Linux, macOS Apple Silicon, and Windows from one C++/Rust codebase. Same Scintilla editing engine (via QScintilla), plus local AI integration.</p>
+            </div>
+            <div class="feature-card">
+                <h3>Is it really free? What's the catch?</h3>
+                <p>No catch. GPL-3.0, no telemetry, no analytics, no API key, no enterprise tier, no subscription. Source on GitHub. The "catch" is that it's a one-person open-source project — no SLA, no warranty, no support contract. See the disclaimer in the footer.</p>
+            </div>
+            <div class="feature-card">
+                <h3>How big is it compared to VS Code?</h3>
+                <p>The bare executable is ~5 MB on Linux, ~3 MB on Windows, ~3 MB on macOS Apple Silicon. Downloads are 1.8 / 22 / 48 MB (Linux / Mac / Windows — Mac and Windows bundle Qt for portability). VS Code is 300+ MB. Notepatra is <strong>6× to 14× smaller</strong>.</p>
+            </div>
+            <div class="feature-card">
+                <h3>Does my code go to the cloud?</h3>
+                <p>No. Notepatra is local-first. The AI runs on your machine via Ollama (which you install separately). The only outbound connections are: localhost Ollama, git push/pull when you click them, and the REST client when you send a request. Verifiable with <code style="color:var(--green);font-size:12px;">strace</code>.</p>
+            </div>
+            <div class="feature-card">
+                <h3>What languages does it highlight?</h3>
+                <p>100+ file types via 44 language lexers — Python, JavaScript, TypeScript, C, C++, C#, Java, Rust, Go, HTML, CSS, SQL (T-SQL/PL/SQL/MySQL/PostgreSQL/SQLite), JSON, YAML, Markdown, Bash, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, Pascal, CMake, Makefile, and more.</p>
+            </div>
+            <div class="feature-card">
+                <h3>How do I verify a download is genuine?</h3>
+                <p>Every release ships with SHA-256 checksums, cosign signatures (Sigstore + Rekor), and SLSA build provenance. The install scripts verify SHA-256 automatically and refuse to install on mismatch. Full guide in <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md" style="color:var(--green);">SECURITY.md</a>.</p>
+            </div>
+            <div class="feature-card">
+                <h3>Will it open big files?</h3>
+                <p>Yes — up to 2 GB. The Rust core uses memory-mapped I/O (mmap2), so opening a 2 GB log file is instant and doesn't allocate 2 GB of RAM. Files larger than 50 MB automatically disable syntax highlighting and auto-complete to keep things snappy.</p>
+            </div>
+            <div class="feature-card">
+                <h3>Can I write plugins?</h3>
+                <p>Yes. Drop a <code style="color:var(--green);font-size:12px;">.so</code>/<code style="color:var(--green);font-size:12px;">.dylib</code>/<code style="color:var(--green);font-size:12px;">.dll</code> in <code style="color:var(--green);font-size:12px;">~/.config/notepatra/plugins/</code>. The plugin C API is two functions: <code style="color:var(--green);font-size:12px;">notepatra_plugin_name()</code> and <code style="color:var(--green);font-size:12px;">notepatra_plugin_run(text, len)</code>. Example in the README.</p>
+            </div>
+            <div class="feature-card">
+                <h3>Who built it and why?</h3>
+                <p>Built by <a href="https://github.com/singhpratech" style="color:var(--green);">Prateek Singh</a>, inspired by Notepad++ (Don Ho), constructed with Claude. The story is in the section below — short version: Linux deserved a real Notepad++, and 2026 deserved one with AI built in.</p>
             </div>
         </div>
     </section>

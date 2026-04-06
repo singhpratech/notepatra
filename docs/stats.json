@@ -1,0 +1,40 @@
+{
+  "generated_at": "2026-04-06T04:40:03.811647Z",
+  "repo": "singhpratech/notepatra",
+  "stars": 0,
+  "forks": 0,
+  "watchers": 0,
+  "open_issues": 10,
+  "repo_size_kb": 5743,
+  "total_downloads_all_releases": 4,
+  "downloads_by_asset_name": {
+    "notepatra-linux-x64.tar.gz": 1,
+    "notepatra-macos-arm64.dmg": 1,
+    "notepatra-windows-x64.zip": 2
+  },
+  "releases": [
+    {
+      "tag": "v0.1.0",
+      "name": "v0.1.0",
+      "published_at": "2026-04-06T03:28:28Z",
+      "total_downloads": 4,
+      "assets": [
+        {
+          "name": "notepatra-linux-x64.tar.gz",
+          "downloads": 1,
+          "size_bytes": 1888276
+        },
+        {
+          "name": "notepatra-macos-arm64.dmg",
+          "downloads": 1,
+          "size_bytes": 22766709
+        },
+        {
+          "name": "notepatra-windows-x64.zip",
+          "downloads": 2,
+          "size_bytes": 50035813
+        }
+      ]
+    }
+  ]
+}

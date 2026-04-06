@@ -23,6 +23,13 @@
     <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License"></a>
     <a href="SECURITY.md"><img src="https://img.shields.io/badge/security-disclosure%20policy-39FF14" alt="Security"></a>
   </p>
+  <p align="center">
+    <a href="https://github.com/singhpratech/notepatra/releases"><img src="https://img.shields.io/github/downloads/singhpratech/notepatra/total?color=39FF14&label=total%20downloads" alt="Total downloads"></a>
+    <a href="https://github.com/singhpratech/notepatra/stargazers"><img src="https://img.shields.io/github/stars/singhpratech/notepatra?style=flat&color=39FF14" alt="GitHub stars"></a>
+    <a href="https://github.com/singhpratech/notepatra/network/members"><img src="https://img.shields.io/github/forks/singhpratech/notepatra?style=flat" alt="Forks"></a>
+    <a href="https://github.com/singhpratech/notepatra/issues"><img src="https://img.shields.io/github/issues/singhpratech/notepatra?color=blue" alt="Open issues"></a>
+    <a href="https://github.com/singhpratech/notepatra/commits/main"><img src="https://img.shields.io/github/last-commit/singhpratech/notepatra" alt="Last commit"></a>
+  </p>
 </p>
 
 ---

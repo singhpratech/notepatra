@@ -1,0 +1,52 @@
+name: IndexNow ping
+
+# Tells Bing / Yandex / Seznam / Naver / Yep / DuckDuckGo (via Bing) to recrawl
+# notepatra.org whenever the docs/ folder changes. Free, no API key, no signup.
+# https://www.indexnow.org/
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Submit URL list to IndexNow
+        run: |
+          # Submit a JSON payload listing all the canonical URLs we want
+          # search engines to recrawl. The 'key' must match the contents of
+          # docs/4e0be99a5f38f170e2721278d7f518f2.txt (a static challenge file
+          # served at https://notepatra.org/<key>.txt that proves we own the
+          # domain). All major IndexNow endpoints share the same submission
+          # protocol — pinging api.indexnow.org distributes to all of them.
+          curl -fsSL -X POST "https://api.indexnow.org/IndexNow" \
+            -H "Content-Type: application/json; charset=utf-8" \
+            -d '{
+              "host": "notepatra.org",
+              "key": "4e0be99a5f38f170e2721278d7f518f2",
+              "keyLocation": "https://notepatra.org/4e0be99a5f38f170e2721278d7f518f2.txt",
+              "urlList": [
+                "https://notepatra.org/",
+                "https://notepatra.org/#download",
+                "https://notepatra.org/#features",
+                "https://notepatra.org/#ai",
+                "https://notepatra.org/#plugins",
+                "https://notepatra.org/#security",
+                "https://notepatra.org/#faq",
+                "https://notepatra.org/#versions",
+                "https://notepatra.org/sitemap.xml",
+                "https://notepatra.org/SHA256SUMS.v0.1.0.txt"
+              ]
+            }' && echo "✓ IndexNow ping accepted" || echo "::warning::IndexNow ping failed (non-critical)"
+
+      - name: Ping Google sitemap (best-effort, no auth)
+        run: |
+          # Google deprecated this in 2023 — they recommend Search Console.
+          # We try anyway because it's a free no-op if it fails.
+          curl -fsSL "https://www.google.com/ping?sitemap=https://notepatra.org/sitemap.xml" \
+            && echo "✓ Google sitemap ping accepted" \
+            || echo "::warning::Google sitemap ping failed (expected since 2023; use Search Console)"

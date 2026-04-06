@@ -1,0 +1,94 @@
+name: Download stats snapshot
+
+# Daily snapshot of GitHub Releases download counts + repo metrics, written
+# to docs/stats.json. GitHub Pages serves it at https://notepatra.org/stats.json
+# so the website (or any third party) can fetch the latest numbers without
+# needing the GitHub API.
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # daily at 06:00 UTC
+  workflow_dispatch:        # also runnable on demand
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/stats.yml'
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build stats.json
+        run: |
+          set -e
+          REPO="${GITHUB_REPOSITORY}"
+
+          # Fetch repo metadata
+          REPO_JSON=$(curl -fsSL "https://api.github.com/repos/$REPO")
+          STARS=$(echo "$REPO_JSON"   | python3 -c "import json,sys;print(json.load(sys.stdin)['stargazers_count'])")
+          FORKS=$(echo "$REPO_JSON"   | python3 -c "import json,sys;print(json.load(sys.stdin)['forks_count'])")
+          WATCH=$(echo "$REPO_JSON"   | python3 -c "import json,sys;print(json.load(sys.stdin)['watchers_count'])")
+          ISSUES=$(echo "$REPO_JSON"  | python3 -c "import json,sys;print(json.load(sys.stdin)['open_issues_count'])")
+          SIZE=$(echo "$REPO_JSON"    | python3 -c "import json,sys;print(json.load(sys.stdin)['size'])")
+
+          # Fetch every release and sum download counts per asset
+          RELEASES_JSON=$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=100")
+
+          python3 - <<'PY' "$RELEASES_JSON" "$STARS" "$FORKS" "$WATCH" "$ISSUES" "$SIZE" > docs/stats.json
+          import json, sys, datetime
+          releases = json.loads(sys.argv[1])
+          stars, forks, watch, issues, size = (int(x) for x in sys.argv[2:7])
+
+          per_release = []
+          per_asset_total = {}
+          grand_total = 0
+          for r in releases:
+              total_dl = 0
+              assets = []
+              for a in r.get("assets", []):
+                  c = a.get("download_count", 0)
+                  total_dl += c
+                  assets.append({"name": a["name"], "downloads": c, "size_bytes": a.get("size", 0)})
+                  per_asset_total[a["name"]] = per_asset_total.get(a["name"], 0) + c
+              grand_total += total_dl
+              per_release.append({
+                  "tag": r.get("tag_name"),
+                  "name": r.get("name"),
+                  "published_at": r.get("published_at"),
+                  "total_downloads": total_dl,
+                  "assets": assets,
+              })
+
+          out = {
+              "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+              "repo": "singhpratech/notepatra",
+              "stars": stars,
+              "forks": forks,
+              "watchers": watch,
+              "open_issues": issues,
+              "repo_size_kb": size,
+              "total_downloads_all_releases": grand_total,
+              "downloads_by_asset_name": per_asset_total,
+              "releases": per_release,
+          }
+          json.dump(out, sys.stdout, indent=2)
+          PY
+
+          echo "=== docs/stats.json ==="
+          head -40 docs/stats.json
+
+      - name: Commit if changed
+        run: |
+          if git diff --quiet docs/stats.json; then
+            echo "No stats change."
+          else
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add docs/stats.json
+            git commit -m "stats: daily snapshot $(date -u +%F)"
+            git push
+          fi
