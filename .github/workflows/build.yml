@@ -189,41 +189,40 @@ jobs:
         run: cd rust-core && cargo build --release
 
       - name: Build C++ with CMake (MSVC)
-        shell: cmd
-        run: |
-          mkdir build
-          cd build
-          cmake .. -G "Visual Studio 17 2022" -A x64 ^
-            -DCMAKE_PREFIX_PATH="%Qt5_DIR%" ^
-            -DQSCINTILLA_INCLUDE="${{ steps.qscintilla.outputs.QSC_INC }}" ^
-            -DQSCINTILLA_LIB="${{ steps.qscintilla.outputs.QSC_LIB }}"
-          cmake --build . --config Release --verbose 2>&1 | tail -200
-
-      - name: Test
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Continue"
-          $exe = Get-ChildItem -Path build -Recurse -Filter "notepatra.exe" | Select-Object -First 1
+          New-Item -ItemType Directory -Path build -Force | Out-Null
+          Set-Location build
+          cmake .. -G "Visual Studio 17 2022" -A x64 `
+            "-DCMAKE_PREFIX_PATH=$env:Qt5_DIR" `
+            "-DQSCINTILLA_INCLUDE=${{ steps.qscintilla.outputs.QSC_INC }}" `
+            "-DQSCINTILLA_LIB=${{ steps.qscintilla.outputs.QSC_LIB }}"
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::cmake configure failed"; exit 1 }
+          cmake --build . --config Release
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::cmake build failed"; exit 1 }
+          Write-Host "=== Searching for notepatra.exe ==="
+          Get-ChildItem -Path . -Recurse -Filter "notepatra.exe" | ForEach-Object { Write-Host $_.FullName }
+
+      - name: Verify exe and bundle Qt DLLs
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path build -Recurse -Filter "notepatra.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $exe) {
-            Write-Host "::error::notepatra.exe not found"
+            Write-Host "::error::notepatra.exe not found anywhere under build/"
+            Write-Host "=== build dir contents ==="
+            Get-ChildItem -Path build -Recurse | Select-Object FullName
             exit 1
           }
-          Write-Host "Built: $($exe.FullName) ($([math]::Round($exe.Length / 1MB, 2)) MB)"
-          # Don't actually run the exe — Qt DLLs aren't in PATH yet (they get bundled in next step).
-          # The C++ build succeeded, the file exists — that's the test.
-          exit 0
-
-      - name: Package with Qt DLLs
-        shell: pwsh
-        run: |
-          $exe = Get-ChildItem -Path build -Recurse -Filter "notepatra.exe" | Select-Object -First 1
+          Write-Host "Found: $($exe.FullName) ($([math]::Round($exe.Length / 1MB, 2)) MB)"
           $outDir = "notepatra-win"
-          New-Item -ItemType Directory -Path $outDir -Force
+          New-Item -ItemType Directory -Path $outDir -Force | Out-Null
           Copy-Item $exe.FullName "$outDir/"
           # Run windeployqt to bundle Qt DLLs
-          windeployqt "$outDir/notepatra.exe" 2>$null
-          Write-Host "Package contents:"
+          & windeployqt "$outDir/notepatra.exe"
+          Write-Host "=== Package contents ==="
           Get-ChildItem $outDir | Format-Table Name, Length
+          $totalSize = (Get-ChildItem $outDir -Recurse | Measure-Object Length -Sum).Sum / 1MB
+          Write-Host "Total package size: $([math]::Round($totalSize, 1)) MB"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
