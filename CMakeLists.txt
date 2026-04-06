@@ -228,6 +228,8 @@ if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexers.cpp")
         ${QSCINTILLA_INCLUDE}
     )
     target_link_libraries(test_lexers PRIVATE
+        Qt5::Core
+        Qt5::Gui
         Qt5::Widgets
         Qt5::PrintSupport
         ${QSCINTILLA_LIB}
