@@ -196,12 +196,25 @@ jobs:
           cmake .. -G "Visual Studio 17 2022" -A x64 `
             "-DCMAKE_PREFIX_PATH=$env:Qt5_DIR" `
             "-DQSCINTILLA_INCLUDE=${{ steps.qscintilla.outputs.QSC_INC }}" `
-            "-DQSCINTILLA_LIB=${{ steps.qscintilla.outputs.QSC_LIB }}"
+            "-DQSCINTILLA_LIB=${{ steps.qscintilla.outputs.QSC_LIB }}" 2>&1 | Tee-Object -FilePath ../cmake-configure.log
           if ($LASTEXITCODE -ne 0) { Write-Host "::error::cmake configure failed"; exit 1 }
-          cmake --build . --config Release
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::cmake build failed"; exit 1 }
+          cmake --build . --config Release 2>&1 | Tee-Object -FilePath ../cmake-build.log
+          $buildExit = $LASTEXITCODE
+          Write-Host "=== Last 200 lines of cmake build output ==="
+          Get-Content ../cmake-build.log -Tail 200 | ForEach-Object { Write-Host $_ }
+          if ($buildExit -ne 0) { Write-Host "::error::cmake build failed (exit $buildExit)"; exit 1 }
           Write-Host "=== Searching for notepatra.exe ==="
           Get-ChildItem -Path . -Recurse -Filter "notepatra.exe" | ForEach-Object { Write-Host $_.FullName }
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-logs
+          path: |
+            cmake-configure.log
+            cmake-build.log
+          if-no-files-found: ignore
 
       - name: Verify exe and bundle Qt DLLs
         shell: pwsh
