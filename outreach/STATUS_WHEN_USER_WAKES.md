@@ -6,22 +6,31 @@ Last updated: 2026-04-06 (latest push: `e96afcc` — **THE actual root cause fix
 
 ---
 
-## TL;DR (so far — Claude is still iterating)
+## TL;DR — 🎉 **v0.1.1 SHIPPED ON ALL THREE PLATFORMS** 🎉
 
-**Website:** ✅ live, no false claims, "Translate" honestly labeled "Py↔JS", warranty disclaimer up, security headers in place, sitemap submitted-ready.
+**Release URL:** https://github.com/singhpratech/notepatra/releases/tag/v0.1.1
 
-**Outreach content:** ✅ 22 pre-written files in `outreach/` covering every launch channel (Show HN, PH, Reddit, Twitter, LinkedIn, blog, YouTube script, awesome-list PRs, Search Console steps, alternativeto, slant, Bing, IndexNow). All ready to paste.
+| Platform | Status | Download |
+|---|---|---|
+| 🐧 Linux x64 | ✅ shipped | [notepatra-linux-x64.tar.gz (1.8 MB)](https://github.com/singhpratech/notepatra/releases/download/v0.1.1/notepatra-linux-x64.tar.gz) |
+| 🍎 macOS Apple Silicon | ✅ shipped | [notepatra-macos-arm64.dmg (23.8 MB)](https://github.com/singhpratech/notepatra/releases/download/v0.1.1/notepatra-macos-arm64.dmg) |
+| 🪟 **Windows x64** | ✅ **SHIPPED** | [notepatra-windows-x64.zip (39.4 MB)](https://github.com/singhpratech/notepatra/releases/download/v0.1.1/notepatra-windows-x64.zip) |
 
-**Linux v0.1.1 binary:** ✅ green in CI (lexer test 21/21, all editor.cpp fixes verified)
+Every binary is checksummed (SHA256SUMS), cosign-signed (Sigstore + Rekor transparency log), and SLSA-attested.
 
-**macOS Apple Silicon v0.1.1 binary:** ✅ green in CI (lexer test via CMake target verified working — 3 green runs in a row)
+**Website:** ✅ live, warning banner removed, "Translate" honestly labeled "Py↔JS", every claim verified against source.
 
-**Windows v0.1.1 binary:** 🔄 **STILL ITERATING.** This is the only blocker.
-- 12+ CI iterations so far. Each new fix has surfaced a new failure.
-- Latest push (`b024c5d`) tries the **hybrid bundle approach**: windeployqt as best-effort + manual deterministic copy of every required Qt DLL and plugin (including the `platforms\qwindows.dll` that windeployqt has been silently skipping).
-- The diagnostic step that posts the actual error log to issue #1 is now positioned LAST in the workflow (was incorrectly positioned earlier in the job, which is why it never ran on previous failures).
-- If `b024c5d` still fails, the diagnostic in issue #1 will tell us what's happening and I'll iterate again.
-- If `b024c5d` succeeds, I tag `v0.1.1` immediately and the release pipeline ships with cosign signatures + SLSA provenance + the proper release notes from `release_notes/v0.1.1.md`.
+**Outreach content:** ✅ 22 pre-written files in `outreach/` covering every launch channel.
+
+## Verifying the Windows binary works (do this first when you wake up)
+
+```sh
+# From any Windows machine with the binary
+sha256sum -c SHA256SUMS --ignore-missing
+# Then: unzip notepatra-windows-x64.zip, run notepatra.exe
+# Open a .md, .sql, .json file — all three should now have syntax highlighting
+# Right-click notepatra.exe → Properties → Details should show real metadata
+```
 
 ---
 
