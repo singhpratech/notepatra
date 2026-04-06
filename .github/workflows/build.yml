@@ -315,6 +315,20 @@ jobs:
       - name: Verify exe, embed icon, bundle Qt + QScintilla DLLs
         shell: pwsh
         run: |
+          # Hybrid bundle approach:
+          # 1. Copy the exe + QScintilla DLL into the output dir
+          # 2. Try windeployqt (twice — once on exe, once on QScintilla DLL)
+          #    because it's convenient and handles version/edition specifics
+          # 3. Fall through to MANUAL DLL copy as a fallback for anything
+          #    windeployqt missed (most importantly: platforms\qwindows.dll)
+          # 4. Final assertion that all critical files are present, fail
+          #    loudly if not
+          #
+          # The manual fallback exists because windeployqt does NOT recursively
+          # scan third-party DLLs (so qscintilla2_qt5.dll's QtWidgets dep is
+          # invisible to it). Two parallel investigation agents converged on
+          # this root cause.
+
           $exe = Get-ChildItem -Path build -Recurse -Filter "notepatra.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $exe) {
             Write-Host "::error::notepatra.exe not found anywhere under build/"
@@ -327,51 +341,91 @@ jobs:
           New-Item -ItemType Directory -Path $outDir -Force | Out-Null
           Copy-Item $exe.FullName "$outDir\"
 
-          # ROOT CAUSE FOUND BY 2 PARALLEL AGENTS:
-          # windeployqt does NOT recursively scan third-party DLLs. It only
-          # inspects the direct imports of the exe. Since notepatra.exe pulls
-          # in QtWidgets THROUGH qscintilla2_qt5.dll (not directly), windeployqt
-          # never sees QtWidgets as a dependency and SKIPS platforms\qwindows.dll
-          # (the Qt platform abstraction plugin). Without that plugin, every Qt
-          # exe crashes BEFORE main() runs.
-          #
-          # Fix: run windeployqt TWICE — once on notepatra.exe, once on
-          # qscintilla2_qt5.dll. The second pass forces Qt5Widgets +
-          # Qt5PrintSupport + platforms\qwindows.dll discovery.
-          # This is the same approach imgbrd-grabber uses (the only known-good
-          # public Qt5+QScintilla+MSVC project on GitHub Actions).
-
           $qtRoot = "${{ steps.qscintilla.outputs.QT_ROOT }}"
-          $windeployqt = "$qtRoot\bin\windeployqt.exe"
-          if (-not (Test-Path $windeployqt)) {
-            Write-Host "::error::windeployqt not found at $windeployqt"
-            exit 1
-          }
+          $qtBin = "$qtRoot\bin"
+          $qtPlugins = "$qtRoot\plugins"
 
-          # First, copy the QScintilla DLL into the bundle so windeployqt's
-          # second pass can find it.
+          # Bundle the QScintilla DLL (windeployqt doesn't know about it)
           $qsciDll = "${{ steps.qscintilla.outputs.QSC_DLL }}"
           if ($qsciDll -and (Test-Path $qsciDll)) {
             Copy-Item $qsciDll "$outDir\"
             Write-Host "Bundled QScintilla DLL: $qsciDll"
           } else {
-            Write-Host "::error::qscintilla2_qt5.dll missing — exe will fail at startup"
-            exit 1
+            # Search for it under qtRoot as a last resort
+            $found = Get-ChildItem -Path $qtRoot -Recurse -Filter "qscintilla2_qt5.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) {
+              Copy-Item $found.FullName "$outDir\"
+              Write-Host "Bundled QScintilla DLL (found via search): $($found.FullName)"
+            } else {
+              Write-Host "::error::qscintilla2_qt5.dll not found anywhere — exe will fail at startup"
+              exit 1
+            }
           }
 
-          Write-Host ""
-          Write-Host "════════════ windeployqt pass 1: notepatra.exe ════════════"
-          & $windeployqt --release --compiler-runtime --no-translations --no-opengl-sw `
-            --dir "$outDir" "$outDir\notepatra.exe"
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::windeployqt pass 1 failed"; exit 1 }
+          # ── Pass 1: try windeployqt (best effort, never fails the build) ──
+          $windeployqt = "$qtRoot\bin\windeployqt.exe"
+          if (Test-Path $windeployqt) {
+            Write-Host ""
+            Write-Host "════════════ windeployqt pass 1: notepatra.exe ════════════"
+            & $windeployqt --release --compiler-runtime --no-translations --no-opengl-sw `
+              --dir "$outDir" "$outDir\notepatra.exe" 2>&1
+            $code1 = $LASTEXITCODE
+            Write-Host "windeployqt pass 1 exit: $code1"
 
+            Write-Host ""
+            Write-Host "════════════ windeployqt pass 2: qscintilla2_qt5.dll ════════════"
+            & $windeployqt --release --no-translations --no-opengl-sw `
+              --dir "$outDir" "$outDir\qscintilla2_qt5.dll" 2>&1
+            $code2 = $LASTEXITCODE
+            Write-Host "windeployqt pass 2 exit: $code2"
+          } else {
+            Write-Host "::warning::windeployqt not at $windeployqt — skipping, manual copy will handle it"
+          }
+
+          # ── Manual DLL copy: deterministic fallback for everything windeployqt missed ──
+          # This list is the EXACT set of files needed for a Qt5 Widgets desktop app
+          # on Windows. We always copy them, even if windeployqt also did, because
+          # Copy-Item -Force is idempotent and we'd rather have the file twice in
+          # one place than zero times.
           Write-Host ""
-          Write-Host "════════════ windeployqt pass 2: qscintilla2_qt5.dll ════════════"
-          & $windeployqt --release --compiler-runtime --no-translations --no-opengl-sw `
-            --dir "$outDir" "$outDir\qscintilla2_qt5.dll"
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::windeployqt pass 2 failed"; exit 1 }
+          Write-Host "════════════ Manual DLL copy (deterministic fallback) ════════════"
+
+          $coreDlls = @("Qt5Core.dll", "Qt5Gui.dll", "Qt5Widgets.dll", "Qt5Network.dll", "Qt5PrintSupport.dll")
+          foreach ($dll in $coreDlls) {
+            $src = Join-Path $qtBin $dll
+            if (Test-Path $src) {
+              Copy-Item $src "$outDir\" -Force
+              Write-Host "  ✓ $dll"
+            } else {
+              Write-Host "  ✗ MISSING: $src"
+            }
+          }
+
+          # Qt plugins — must keep the subdirectory structure
+          $plugins = @(
+            @{src="platforms\qwindows.dll"; dest="platforms"},
+            @{src="styles\qwindowsvistastyle.dll"; dest="styles"},
+            @{src="imageformats\qico.dll"; dest="imageformats"},
+            @{src="imageformats\qjpeg.dll"; dest="imageformats"},
+            @{src="imageformats\qsvg.dll"; dest="imageformats"},
+            @{src="iconengines\qsvgicon.dll"; dest="iconengines"},
+            @{src="printsupport\windowsprintersupport.dll"; dest="printsupport"},
+            @{src="bearer\qgenericbearer.dll"; dest="bearer"}
+          )
+          foreach ($p in $plugins) {
+            $src = Join-Path $qtPlugins $p.src
+            $destDir = Join-Path $outDir $p.dest
+            New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+            if (Test-Path $src) {
+              Copy-Item $src $destDir -Force
+              Write-Host "  ✓ $($p.src)"
+            } else {
+              Write-Host "  ✗ MISSING: $src"
+            }
+          }
 
           $exeSizeKb = [math]::Round((Get-Item "$outDir\notepatra.exe").Length / 1KB)
+          Write-Host ""
           Write-Host "notepatra.exe is $exeSizeKb KB"
 
           Write-Host ""
@@ -380,14 +434,28 @@ jobs:
           $totalSize = (Get-ChildItem $outDir -Recurse | Measure-Object Length -Sum).Sum / 1MB
           Write-Host "Total package size: $([math]::Round($totalSize, 1)) MB"
 
-          # The non-negotiable file. If this is still missing after 2 windeployqt
-          # passes, something is very wrong and we should fail loudly here
-          # instead of letting the smoke test crash with a cryptic exit code.
-          if (-not (Test-Path "$outDir\platforms\qwindows.dll")) {
-            Write-Host "::error::platforms\qwindows.dll STILL missing after 2 windeployqt passes — bailing out"
+          # ── Critical-files assertion ──
+          # If any of these are missing, the exe will crash before main() and
+          # we should fail the build with a clear message instead of waiting
+          # for the smoke test to surface a cryptic STATUS_DLL_NOT_FOUND.
+          $critical = @(
+            "$outDir\notepatra.exe",
+            "$outDir\Qt5Core.dll",
+            "$outDir\Qt5Gui.dll",
+            "$outDir\Qt5Widgets.dll",
+            "$outDir\qscintilla2_qt5.dll",
+            "$outDir\platforms\qwindows.dll"
+          )
+          $missing = @()
+          foreach ($f in $critical) {
+            if (-not (Test-Path $f)) { $missing += $f }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Host "::error::Critical files missing from bundle:"
+            foreach ($f in $missing) { Write-Host "  - $f" }
             exit 1
           }
-          Write-Host "✓ platforms\qwindows.dll present — exe should start"
+          Write-Host "✓ All critical files present — exe should start"
 
       - name: Diagnose notepatra.exe imports + Qt plugin loading
         shell: pwsh
