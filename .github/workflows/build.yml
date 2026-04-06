@@ -17,8 +17,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake \
-            qtbase5-dev qt5-qmake libqt5network5-dev libqt5printsupport5 \
-            libqscintilla2-qt5-dev libqt5svg5-dev
+            qtbase5-dev libqscintilla2-qt5-dev
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
