@@ -146,70 +146,58 @@ jobs:
         with:
           arch: x64
 
-      - name: Build QScintilla from source
-        shell: pwsh
-        run: |
-          $qtRoot = (Resolve-Path "$env:Qt5_DIR\..\..\..").Path
-          Write-Host "Qt root: $qtRoot"
-          curl.exe -L -o qscintilla.tar.gz "https://www.riverbankcomputing.com/static/Downloads/QScintilla/2.14.1/QScintilla_src-2.14.1.tar.gz"
-          tar xzf qscintilla.tar.gz
-          Set-Location QScintilla_src-2.14.1\src
-          & "$qtRoot\bin\qmake.exe" qscintilla.pro
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::qmake failed"; exit 1 }
-          nmake
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::nmake failed"; exit 1 }
-          nmake install
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::nmake install failed"; exit 1 }
-
-          # nmake install puts the .lib and headers wherever qmake's config says.
-          # Verify they actually landed where we expect (in the Qt prefix).
-          Write-Host "=== Searching for installed QScintilla artifacts ==="
-          Get-ChildItem -Path $qtRoot -Recurse -Filter "qscintilla2_qt5.lib" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "LIB: $($_.FullName)" }
-          Get-ChildItem -Path $qtRoot -Recurse -Filter "qsciscintilla.h" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "HDR: $($_.FullName)" }
-
-      - name: Locate QScintilla and verify install
+      - name: Build QScintilla via CMake wrapper
         id: qscintilla
         shell: pwsh
         run: |
+          # Use farleyrunkel/QScintilla — a CMake wrapper around the upstream
+          # source that auto-detects Qt5 and exports a proper CMake target.
+          # Replaces the fragile qmake/nmake approach that silently failed in cmd.
           $qtRoot = (Resolve-Path "$env:Qt5_DIR\..\..\..").Path
-          Write-Host "Qt root = $qtRoot"
+          Write-Host "Qt root: $qtRoot"
 
-          # Find the lib (it should be in $qtRoot\lib after nmake install)
-          $libCandidates = @(
-            "$qtRoot\lib\qscintilla2_qt5.lib"
-          )
-          $lib = $libCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $qsciDir = "$env:RUNNER_TEMP\qsci-src"
+          $qsciInstall = "$env:RUNNER_TEMP\qsci-install"
+
+          git clone --depth 1 https://github.com/farleyrunkel/QScintilla.git $qsciDir
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::git clone failed"; exit 1 }
+
+          cmake -S $qsciDir -B "$qsciDir\build" -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_BUILD_TYPE=Release `
+            "-DCMAKE_PREFIX_PATH=$qtRoot" `
+            "-DCMAKE_INSTALL_PREFIX=$qsciInstall"
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::QScintilla cmake configure failed"; exit 1 }
+
+          cmake --build "$qsciDir\build" --config Release
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::QScintilla cmake build failed"; exit 1 }
+
+          cmake --install "$qsciDir\build" --config Release
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::QScintilla cmake install failed"; exit 1 }
+
+          Write-Host "=== Installed QScintilla files ==="
+          Get-ChildItem -Path $qsciInstall -Recurse | Select-Object FullName | Format-Table -AutoSize
+
+          # Find the lib and include dir from the install tree
+          $lib = (Get-ChildItem -Path $qsciInstall -Recurse -Filter "qscintilla2_qt5*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
           if (-not $lib) {
-            $found = Get-ChildItem -Path $qtRoot -Recurse -Filter "qscintilla2_qt5.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($found) { $lib = $found.FullName }
+            $lib = (Get-ChildItem -Path $qsciInstall -Recurse -Filter "*qscintilla2*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
           }
-          if (-not $lib) { Write-Host "::error::QScintilla lib not found anywhere under $qtRoot"; exit 1 }
+          if (-not $lib) { Write-Host "::error::qscintilla lib not found in install tree"; exit 1 }
 
-          # Find the include dir — must be the directory CONTAINING Qsci/, since
-          # source uses #include <Qsci/qscilexerXXX.h>
-          $hdr = $null
-          if (Test-Path "$qtRoot\include\Qsci\qsciscintilla.h") {
-            $hdr = "$qtRoot\include\Qsci\qsciscintilla.h"
-          } else {
-            $hdr = (Get-ChildItem -Path $qtRoot -Recurse -Filter "qsciscintilla.h" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
-          }
-          if (-not $hdr) { Write-Host "::error::qsciscintilla.h not found anywhere under $qtRoot"; exit 1 }
-          # The include dir to pass to -I is the parent of Qsci/, i.e. dirname(dirname(qsciscintilla.h))
+          $hdr = (Get-ChildItem -Path $qsciInstall -Recurse -Filter "qsciscintilla.h" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          if (-not $hdr) { Write-Host "::error::qsciscintilla.h not found in install tree"; exit 1 }
+          # find_path-style: dirname(dirname(...)) so the result contains Qsci/
           $inc = (Split-Path -Parent (Split-Path -Parent $hdr))
 
-          # Sanity check: the file <inc>/Qsci/qsciscintilla.h must exist
           $check = Join-Path $inc "Qsci\qsciscintilla.h"
-          if (-not (Test-Path $check)) {
-            Write-Host "::error::sanity check failed: $check does not exist"
-            exit 1
-          }
+          if (-not (Test-Path $check)) { Write-Host "::error::sanity check failed: $check does not exist"; exit 1 }
 
           Write-Host "QScintilla lib: $lib"
           Write-Host "QScintilla inc: $inc"
-          Write-Host "Sanity-checked: $check exists"
           "QSC_LIB=$lib" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "QSC_INC=$inc" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "QT_ROOT=$qtRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "QSC_INSTALL=$qsciInstall" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
