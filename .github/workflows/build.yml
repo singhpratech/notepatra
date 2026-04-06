@@ -284,17 +284,30 @@ jobs:
           $exe = Get-ChildItem -Path build -Recurse -Filter "notepatra.exe" | Select-Object -First 1
           if ($exe) {
             Write-Host "Built: $($exe.FullName) ($([math]::Round($exe.Length / 1MB, 2)) MB)"
-            & $exe.FullName --version 2>$null; $true
+            # --version may fail if Qt DLLs not in PATH, that's OK — binary exists
+            try { & $exe.FullName --version 2>$null } catch { Write-Host "Note: --version needs Qt DLLs" }
           } else {
             Write-Error "notepatra.exe not found"
             exit 1
           }
 
+      - name: Package with Qt DLLs
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path build -Recurse -Filter "notepatra.exe" | Select-Object -First 1
+          $outDir = "notepatra-win"
+          New-Item -ItemType Directory -Path $outDir -Force
+          Copy-Item $exe.FullName "$outDir/"
+          # Run windeployqt to bundle Qt DLLs
+          windeployqt "$outDir/notepatra.exe" 2>$null
+          Write-Host "Package contents:"
+          Get-ChildItem $outDir | Format-Table Name, Length
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: notepatra-windows-x64
-          path: build/Release/notepatra.exe
+          path: notepatra-win/
 
   release:
     needs: [build-linux, build-macos-intel, build-macos-arm, build-windows]
