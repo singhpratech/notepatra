@@ -43,22 +43,26 @@ jobs:
           cmake .. -DCMAKE_BUILD_TYPE=Release
           make -j$(nproc)
 
-      - name: Test (smoke + lexer instantiation)
+      - name: Build lexer smoke test (CMake target)
+        run: |
+          # Reconfigure with -DBUILD_LEXER_TEST=ON to add the test_lexers
+          # target to the same build tree the main exe was built in.
+          # This reuses all of CMakeLists.txt's Qt5/QScintilla discovery and
+          # works identically on every platform — no hand-rolled compiler
+          # invocations to drift from the real build.
+          cd build
+          cmake .. -DBUILD_LEXER_TEST=ON
+          make test_lexers -j$(nproc)
+          ls -lh test_lexers
+
+      - name: Run lexer smoke test
         run: |
           ls -lh build/notepatra
           file build/notepatra
           build/notepatra --version || true
-
-          # Lexer smoke test — instantiates every QsciLexer used by Notepatra
-          # and verifies it produces non-empty styling on a sample document.
-          # If a lexer class is a no-op stub, this fails loudly.
-          g++ -std=c++17 -fPIC test_lexers.cpp -o test_lexers \
-            $(pkg-config --cflags Qt5Widgets) \
-            $(pkg-config --libs Qt5Widgets) \
-            -lqscintilla2_qt5
           # Use offscreen Qt platform plugin so we don't need an X server
           export QT_QPA_PLATFORM=offscreen
-          ./test_lexers
+          ./build/test_lexers
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -125,42 +129,24 @@ jobs:
             -DQSCINTILLA_LIB="$QSC_LIB"
           make VERBOSE=1 2>&1 | tail -200
 
-      - name: Lexer test (every QScintilla lexer must produce styling)
+      - name: Build and run lexer smoke test (CMake target)
         run: |
+          # Reuse the same Qt5/QScintilla discovery the main build did by
+          # reconfiguring the existing build tree with -DBUILD_LEXER_TEST=ON.
           QT_PATH=$(brew --prefix qt@5)
-          export PATH="$QT_PATH/bin:$PATH"
           QSC_LIB=$(find /opt/homebrew /usr/local -name "libqscintilla2_qt5*dylib" 2>/dev/null | head -1)
           QSC_HDR=$(find /opt/homebrew /usr/local -name "qsciscintilla.h" 2>/dev/null | head -1)
           QSC_INC=$(dirname $(dirname "$QSC_HDR"))
-          clang++ -std=c++17 -fPIC test_lexers.cpp -o test_lexers \
-            -F"$QT_PATH/lib" \
-            -I"$QT_PATH/include" \
-            -I"$QT_PATH/include/QtCore" \
-            -I"$QT_PATH/include/QtGui" \
-            -I"$QT_PATH/include/QtWidgets" \
-            -I"$QSC_INC" \
-            -L"$QT_PATH/lib" \
-            -framework QtCore -framework QtGui -framework QtWidgets \
-            "$QSC_LIB" || {
-              # Some Qt5 installs use .dylib instead of frameworks
-              clang++ -std=c++17 -fPIC test_lexers.cpp -o test_lexers \
-                -I"$QT_PATH/include" \
-                -I"$QT_PATH/include/QtCore" \
-                -I"$QT_PATH/include/QtGui" \
-                -I"$QT_PATH/include/QtWidgets" \
-                -I"$QSC_INC" \
-                -L"$QT_PATH/lib" \
-                -lQt5Core -lQt5Gui -lQt5Widgets \
-                "$QSC_LIB"
-            }
-          # macOS GUI test needs an offscreen Qt platform plugin since
-          # there's no display server in CI.
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QT_PATH" \
+            -DQSCINTILLA_INCLUDE="$QSC_INC" \
+            -DQSCINTILLA_LIB="$QSC_LIB" \
+            -DBUILD_LEXER_TEST=ON
+          make test_lexers
+          ls -lh test_lexers
           export QT_QPA_PLATFORM=offscreen
           ./test_lexers
-          if [ $? -ne 0 ]; then
-            echo "::error::Lexer smoke test FAILED on macOS"
-            exit 1
-          fi
 
       - name: Create DMG
         run: |
@@ -386,37 +372,29 @@ jobs:
             exit 1
           }
 
-      - name: Lexer test (every QScintilla lexer must produce styling)
+      - name: Build and run lexer smoke test (CMake target)
         shell: pwsh
         run: |
-          # Build and run test_lexers.cpp against the SAME QScintilla we're shipping.
-          # This is the test that catches the user-reported "Markdown / SQL / JSON
-          # have no syntax highlighting on Windows" bug. If any lexer is a stub
-          # (i.e. the Lexilla part is missing from the QScintilla build) the
-          # exit code will be non-zero and the build will fail.
+          # Reconfigure the existing build tree with -DBUILD_LEXER_TEST=ON so
+          # CMake builds test_lexers as a target using the SAME Qt5 + QScintilla
+          # find_package() discovery the main exe used. This catches the
+          # Markdown/SQL/JSON-not-highlighting bug at CI time.
           $qtRoot = "${{ steps.qscintilla.outputs.QT_ROOT }}"
-          $env:PATH = "$qtRoot\bin;$PWD\notepatra-win;$env:PATH"
-          $qscLib = "${{ steps.qscintilla.outputs.QSC_LIB }}"
-          $qscInc = "${{ steps.qscintilla.outputs.QSC_INC }}"
+          Set-Location build
+          cmake .. -G "Visual Studio 17 2022" -A x64 `
+            "-DCMAKE_PREFIX_PATH=$qtRoot" `
+            "-DQSCINTILLA_INCLUDE=${{ steps.qscintilla.outputs.QSC_INC }}" `
+            "-DQSCINTILLA_LIB=${{ steps.qscintilla.outputs.QSC_LIB }}" `
+            -DBUILD_LEXER_TEST=ON
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::cmake reconfigure for test failed"; exit 1 }
+          cmake --build . --config Release --target test_lexers
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::test_lexers build failed"; exit 1 }
 
-          # MOC the test source for QApplication metatypes (none needed; test_lexers.cpp
-          # has no Q_OBJECT). Compile directly with cl.exe.
-          cl /nologo /std:c++17 /EHsc /MD /DUNICODE /D_UNICODE `
-            /DQSCINTILLA_DLL `
-            "/I$qtRoot\include" `
-            "/I$qtRoot\include\QtCore" `
-            "/I$qtRoot\include\QtGui" `
-            "/I$qtRoot\include\QtWidgets" `
-            "/I$qscInc" `
-            test_lexers.cpp `
-            /link `
-            /LIBPATH:"$qtRoot\lib" `
-            Qt5Core.lib Qt5Gui.lib Qt5Widgets.lib `
-            "$qscLib" `
-            /OUT:test_lexers.exe
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::test_lexers compile failed"; exit 1 }
-
-          .\test_lexers.exe
+          # Find and run the test exe. Add Qt + QScintilla DLLs to PATH so it loads.
+          $testExe = Get-ChildItem -Path . -Recurse -Filter "test_lexers.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $testExe) { Write-Host "::error::test_lexers.exe not found after build"; exit 1 }
+          $env:PATH = "$qtRoot\bin;$PWD\..\notepatra-win;$env:PATH"
+          & $testExe.FullName
           if ($LASTEXITCODE -ne 0) {
             Write-Host "::error::Lexer smoke test FAILED — at least one QsciLexer is a stub on Windows"
             Write-Host "         This is the bug the user reported (Markdown/SQL/JSON not highlighting)."
@@ -453,6 +431,11 @@ jobs:
           ls -la *.tar.gz *.dmg 2>/dev/null
           ls -la *.zip 2>/dev/null || true
 
+      - name: Checkout source for release notes
+        uses: actions/checkout@v4
+        with:
+          path: src
+
       - name: Generate SHA-256 checksums
         run: |
           # Generate a single SHA256SUMS file in the standard format that
@@ -463,6 +446,34 @@ jobs:
           done
           echo "=== SHA256SUMS ==="
           cat SHA256SUMS
+
+      - name: Resolve release notes file for tag
+        id: notes
+        run: |
+          TAG="${GITHUB_REF##*/}"
+          NOTES_FILE="src/release_notes/${TAG}.md"
+          if [ -f "$NOTES_FILE" ]; then
+            echo "found release notes: $NOTES_FILE"
+            echo "notes_file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No release notes file at $NOTES_FILE — will fall back to auto-generated"
+            # Create a minimal stub so action-gh-release has a body
+            mkdir -p src/release_notes
+            cat > "$NOTES_FILE" <<EOF
+          # Notepatra ${TAG}
+
+          See [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/CHANGELOG.md) for the full list of changes in this release.
+
+          ## Verifying this release
+
+          \`\`\`sh
+          sha256sum -c SHA256SUMS --ignore-missing
+          \`\`\`
+
+          See [SECURITY.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/SECURITY.md) for cosign + SLSA verification.
+          EOF
+            echo "notes_file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
@@ -511,28 +522,8 @@ jobs:
             SHA256SUMS.sig
             SHA256SUMS.pem
           fail_on_unmatched_files: false
-          generate_release_notes: true
-          body: |
-            ## Verifying this release
-
-            ### SHA-256 checksums
-            ```
-            sha256sum -c SHA256SUMS
-            ```
-
-            ### Cosign signature (keyless, Sigstore)
-            ```
-            cosign verify-blob \
-              --certificate-identity-regexp '^https://github.com/singhpratech/notepatra/' \
-              --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
-              --certificate notepatra-linux-x64.tar.gz.pem \
-              --signature  notepatra-linux-x64.tar.gz.sig \
-              notepatra-linux-x64.tar.gz
-            ```
-
-            ### Build provenance (SLSA)
-            ```
-            gh attestation verify notepatra-linux-x64.tar.gz --owner singhpratech
-            ```
-
-            See [SECURITY.md](https://github.com/singhpratech/notepatra/blob/main/SECURITY.md) for the full verification guide.
+          # Use the per-version release notes file from release_notes/<tag>.md
+          # instead of the generic auto-generated body. Falls back to a stub
+          # if the file is missing (the resolve step above creates one).
+          body_path: ${{ steps.notes.outputs.notes_file }}
+          generate_release_notes: false

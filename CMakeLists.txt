@@ -215,6 +215,29 @@ else()
     target_link_libraries(${EXE_NAME} PRIVATE pthread dl m)
 endif()
 
+# ── Lexer smoke test (optional, opt in via -DBUILD_LEXER_TEST=ON) ──
+# Builds a tiny test that instantiates every QsciLexer used by Notepatra and
+# verifies each one produces non-empty styling. Catches the user-reported bug
+# where .md / .sql / .json files showed no syntax highlighting because the
+# QScintilla build was missing Lexilla bindings (lexers were no-op stubs).
+option(BUILD_LEXER_TEST "Build the QScintilla lexer smoke test" OFF)
+if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexers.cpp")
+    add_executable(test_lexers test_lexers.cpp)
+    target_include_directories(test_lexers PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_lexers PRIVATE
+        Qt5::Widgets
+        Qt5::PrintSupport
+        ${QSCINTILLA_LIB}
+    )
+    if(WIN32)
+        target_compile_definitions(test_lexers PRIVATE QSCINTILLA_DLL)
+    endif()
+    message(STATUS "Lexer smoke test enabled — target: test_lexers")
+endif()
+
 # ── Install ──
 if(APPLE)
     install(TARGETS ${EXE_NAME} BUNDLE DESTINATION .)
