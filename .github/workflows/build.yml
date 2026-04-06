@@ -48,13 +48,30 @@ jobs:
           path: build/notepatra
 
   build-macos:
-    runs-on: macos-14
+    runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
-          brew install qt@5 qscintilla2 cmake || true
+          brew install qt@5 cmake
+          # Homebrew's qscintilla2 links against Qt6, not Qt5.
+          # We must build QScintilla from source against Qt5.
+          QT_PATH=$(brew --prefix qt@5)
+          export PATH="$QT_PATH/bin:$PATH"
+          export PKG_CONFIG_PATH="$QT_PATH/lib/pkgconfig:$PKG_CONFIG_PATH"
+
+          # Download and build QScintilla 2.14.1 from source against Qt5
+          curl -L -o qscintilla.tar.gz \
+            "https://www.riverbankcomputing.com/static/Downloads/QScintilla/2.14.1/QScintilla_src-2.14.1.tar.gz"
+          tar xzf qscintilla.tar.gz
+          cd QScintilla_src-2.14.1/src
+          "$QT_PATH/bin/qmake" qscintilla.pro
+          make -j$(sysctl -n hw.ncpu)
+          sudo make install
+          echo "=== Installed QScintilla files ==="
+          ls -la "$QT_PATH/lib/"libqscintilla2* 2>/dev/null || true
+          ls -la "$QT_PATH/include/Qsci/" 2>/dev/null | head -5 || true
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -64,26 +81,54 @@ jobs:
 
       - name: Build C++
         run: |
-          echo "=== Brew paths ==="
-          brew --prefix qt@5 || true
-          brew --prefix qscintilla2 || true
-          ls /opt/homebrew/opt/qscintilla2/include/Qsci/ 2>/dev/null | head -5 || true
-          ls /opt/homebrew/include/Qsci/ 2>/dev/null | head -5 || true
-          QT_PATH=$(brew --prefix qt@5 2>/dev/null || echo "/opt/homebrew/opt/qt@5")
-          QSC_PATH=$(brew --prefix qscintilla2 2>/dev/null || echo "/opt/homebrew/opt/qscintilla2")
+          QT_PATH=$(brew --prefix qt@5)
           export PATH="$QT_PATH/bin:$PATH"
+
+          echo "=== Qt5 path ==="
+          echo "$QT_PATH"
+          qmake --version
+
+          echo "=== QScintilla files ==="
+          find "$QT_PATH" -name "libqscintilla2*" 2>/dev/null || true
+          find "$QT_PATH" -name "qsciscintilla.h" 2>/dev/null || true
+          # Also check /usr/local for QScintilla installed by 'make install'
+          find /usr/local -name "libqscintilla2*" 2>/dev/null || true
+          find /usr/local -name "qsciscintilla.h" 2>/dev/null || true
+
+          # Determine where QScintilla was installed
+          # 'make install' for QScintilla typically installs into the Qt prefix
+          QSC_INC="$QT_PATH/include"
+          QSC_LIB=""
+          for dir in "$QT_PATH/lib" "/usr/local/lib"; do
+            if [ -f "$dir/libqscintilla2_qt5.dylib" ]; then
+              QSC_LIB="$dir/libqscintilla2_qt5.dylib"
+              break
+            elif [ -f "$dir/libqscintilla2_qt5.a" ]; then
+              QSC_LIB="$dir/libqscintilla2_qt5.a"
+              break
+            fi
+          done
+          # Fallback: find it anywhere
+          if [ -z "$QSC_LIB" ]; then
+            QSC_LIB=$(find "$QT_PATH" /usr/local -name "libqscintilla2_qt5*" -not -name "*.dSYM" 2>/dev/null | head -1)
+          fi
+
+          echo "=== Using QScintilla ==="
+          echo "Include: $QSC_INC"
+          echo "Lib: $QSC_LIB"
+
           mkdir -p build && cd build
           cmake .. -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$QT_PATH;$QSC_PATH" \
-            -DQSCINTILLA_INCLUDE="$QSC_PATH/include" \
-            -DQSCINTILLA_LIB="$QSC_PATH/lib/libqscintilla2_qt5.dylib"
+            -DCMAKE_PREFIX_PATH="$QT_PATH" \
+            -DQSCINTILLA_INCLUDE="$QSC_INC" \
+            -DQSCINTILLA_LIB="$QSC_LIB"
           make -j$(sysctl -n hw.ncpu)
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: notepatra-macos-x64
-          path: build/notepatra
+          path: build/Notepatra.app
 
   release:
     needs: [build-linux, build-macos]
@@ -99,7 +144,7 @@ jobs:
         run: |
           chmod +x notepatra-linux-x64/notepatra
           tar czf notepatra-linux-x64.tar.gz -C notepatra-linux-x64 notepatra
-          tar czf notepatra-macos-x64.tar.gz -C notepatra-macos-x64 notepatra
+          tar czf notepatra-macos-x64.tar.gz -C notepatra-macos-x64 Notepatra.app
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

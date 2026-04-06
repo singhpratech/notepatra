@@ -23,24 +23,51 @@ message(STATUS "Building for platform: ${PLATFORM_NAME}")
 find_package(Qt5 REQUIRED COMPONENTS Widgets PrintSupport Network)
 
 # ── QScintilla ──
-find_library(QSCINTILLA_LIB qscintilla2_qt5 REQUIRED)
+# Platform-specific search for QScintilla headers and library.
+# On CI, these are typically passed via -DQSCINTILLA_INCLUDE=... -DQSCINTILLA_LIB=...
 if(WIN32)
     find_path(QSCINTILLA_INCLUDE Qsci/qsciscintilla.h
         PATH_SUFFIXES Qsci)
+    find_library(QSCINTILLA_LIB qscintilla2_qt5)
 elseif(APPLE)
+    # When QScintilla is built from source with Qt5's qmake, it installs into
+    # the Qt5 prefix (e.g. /usr/local/opt/qt@5 or /opt/homebrew/opt/qt@5).
+    # Also check Homebrew's own qscintilla2 prefix and common locations.
     find_path(QSCINTILLA_INCLUDE Qsci/qsciscintilla.h
         PATHS /usr/local/include /opt/homebrew/include
               /usr/local/opt/qscintilla2/include /opt/homebrew/opt/qscintilla2/include
               /usr/local/opt/qt@5/include /opt/homebrew/opt/qt@5/include
-        PATH_SUFFIXES Qsci qt5/Qsci)
+        PATH_SUFFIXES "" Qsci qt5/Qsci
+        NO_DEFAULT_PATH)
+    if(NOT QSCINTILLA_INCLUDE)
+        find_path(QSCINTILLA_INCLUDE Qsci/qsciscintilla.h)
+    endif()
     find_library(QSCINTILLA_LIB qscintilla2_qt5
         PATHS /usr/local/lib /opt/homebrew/lib
-              /usr/local/opt/qscintilla2/lib /opt/homebrew/opt/qscintilla2/lib)
+              /usr/local/opt/qscintilla2/lib /opt/homebrew/opt/qscintilla2/lib
+              /usr/local/opt/qt@5/lib /opt/homebrew/opt/qt@5/lib
+        NO_DEFAULT_PATH)
+    if(NOT QSCINTILLA_LIB)
+        find_library(QSCINTILLA_LIB qscintilla2_qt5)
+    endif()
 else()
     find_path(QSCINTILLA_INCLUDE Qsci/qsciscintilla.h
         PATHS /usr/include /usr/include/x86_64-linux-gnu/qt5
         PATH_SUFFIXES Qsci)
+    find_library(QSCINTILLA_LIB qscintilla2_qt5)
 endif()
+
+# Validate that QScintilla was found
+if(NOT QSCINTILLA_LIB)
+    message(FATAL_ERROR "QScintilla library (qscintilla2_qt5) not found. "
+        "Set -DQSCINTILLA_LIB=/path/to/libqscintilla2_qt5.dylib")
+endif()
+if(NOT QSCINTILLA_INCLUDE)
+    message(FATAL_ERROR "QScintilla headers not found. "
+        "Set -DQSCINTILLA_INCLUDE=/path/to/include (containing Qsci/ directory)")
+endif()
+message(STATUS "QScintilla lib: ${QSCINTILLA_LIB}")
+message(STATUS "QScintilla include: ${QSCINTILLA_INCLUDE}")
 
 # ── Rust core library ──
 set(RUST_CORE_DIR ${CMAKE_SOURCE_DIR}/rust-core)
