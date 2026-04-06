@@ -432,3 +432,8 @@ See the full [CHANGELOG](CHANGELOG.md) for every change in every release, or bro
 <p align="center">
   <em>"I didn't build Notepatra because the world needed another text editor.<br>I built it because every developer — on Linux, Windows, or Mac — deserves one that's fast, free, and smart."</em>
 </p>
+
+<p align="center">
+  © 2026 Prateek Singh. All rights reserved.<br>
+  Source code licensed under <a href="LICENSE">GPL-3.0</a>.
+</p>
