@@ -552,40 +552,48 @@ jobs:
       - name: Smoke-test the binary (--version output check)
         shell: pwsh
         run: |
-          # Run notepatra.exe --version and verify it printed the expected output.
+          # Run notepatra.exe --version via cmd.exe with file redirection.
+          # pwsh's `& "...exe"` output capture for native exes is unreliable
+          # due to stream buffering quirks. cmd /c with > and 2>&1 works.
           #
-          # IMPORTANT: We check the OUTPUT, not the exit code. Some Qt DLLs on
-          # Windows have destructors that crash during DLL_PROCESS_DETACH when
-          # the exe exits without ever creating a QApplication (which is exactly
-          # what --version does — it printf's and returns from main BEFORE Qt
-          # is initialized). The destructor crash sets a non-zero exit code on
-          # process termination, but it does NOT affect the actual editor —
-          # users never exit the app before QApplication starts.
-          #
-          # The diag step proved the exe runs correctly (it captured all 3
-          # printf lines from main.cpp's --version handler). The exit code is
-          # not a useful signal here. The lexer test (which DOES use
-          # QApplication) is the real smoke test for editor functionality.
+          # We check the OUTPUT, not the exit code. Some Qt DLLs on Windows
+          # have destructors that crash during DLL_PROCESS_DETACH when the
+          # exe exits without ever creating QApplication (which is what
+          # --version does). The destructor crash sets a non-zero process
+          # exit code, but it does NOT affect the editor — users never exit
+          # before QApplication starts. The lexer test (which DOES use
+          # QApplication) is the real smoke test.
 
           $env:PATH = "$PWD\notepatra-win;$env:PATH"
-          Write-Host "Running: .\notepatra-win\notepatra.exe --version"
-          $output = & ".\notepatra-win\notepatra.exe" --version 2>&1
+          $outFile = "$PWD\smoke-output.txt"
+          Write-Host "Running: cmd /c '.\notepatra-win\notepatra.exe --version > smoke-output.txt 2>&1'"
+
+          # cmd /c is the only invocation method that reliably captures
+          # native exe stdout to a file across pwsh versions.
+          cmd /c ".\notepatra-win\notepatra.exe --version > `"$outFile`" 2>&1"
           $code = $LASTEXITCODE
-          Write-Host "stdout/stderr:"
-          $output | ForEach-Object { Write-Host "  | $_" }
-          Write-Host "Exit code: $code (informational only — destructor cleanup may set this non-zero on Windows when QApplication is never created)"
+
+          Write-Host "Captured output (smoke-output.txt):"
+          if (Test-Path $outFile) {
+            $output = Get-Content $outFile -Raw
+            $output -split "`n" | ForEach-Object { Write-Host "  | $_" }
+          } else {
+            Write-Host "  (smoke-output.txt does not exist)"
+            $output = ""
+          }
+          Write-Host ""
+          Write-Host "Exit code: $code (informational — destructor cleanup may set this non-zero)"
 
           # Pass criterion: the exe printed the expected version line
-          $printed = ($output -join "`n")
-          if ($printed -like "*Notepatra v0.1*") {
-            Write-Host "✓ Smoke test passed (exe printed version line)"
+          if ($output -like "*Notepatra v0.1*") {
+            Write-Host "✓ Smoke test passed (exe printed 'Notepatra v0.1...')"
           } else {
             Write-Host "::error::notepatra.exe did not print 'Notepatra v0.1' to stdout"
-            Write-Host "::error::This means the exe crashed BEFORE reaching main(), likely a missing DLL"
             switch ($code) {
               -1073741515 { Write-Host "::error::STATUS_DLL_NOT_FOUND (0xC0000135)" }
               -1073741819 { Write-Host "::error::STATUS_ACCESS_VIOLATION (0xC0000005)" }
               -1073741701 { Write-Host "::error::STATUS_INVALID_IMAGE_FORMAT (0xC000007B)" }
+              default     { Write-Host "::error::Unknown exit code $code" }
             }
             exit 1
           }
