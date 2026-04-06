@@ -194,6 +194,13 @@ target_link_libraries(${EXE_NAME} PRIVATE
 )
 
 if(WIN32)
+    # CRITICAL: QScintilla on Windows is built as a DLL by default. Its headers
+    # export symbols via __declspec(dllexport)/dllimport guarded by QSCINTILLA_DLL.
+    # Consumers MUST define QSCINTILLA_DLL so the headers emit dllimport on
+    # their declarations — otherwise the linker looks for QsciScintilla::staticMetaObject
+    # in our own .obj files (where it isn't) instead of the import library.
+    target_compile_definitions(${EXE_NAME} PRIVATE QSCINTILLA_DLL)
+
     # Rust staticlib needs these system libs on MSVC. Rust normally emits link
     # directives for them but being explicit avoids surprises across toolchains.
     target_link_libraries(${EXE_NAME} PRIVATE

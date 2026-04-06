@@ -286,7 +286,7 @@ jobs:
             Write-Host "Created new issue"
           }
 
-      - name: Verify exe and bundle Qt DLLs
+      - name: Verify exe and bundle Qt + QScintilla DLLs
         shell: pwsh
         run: |
           $exe = Get-ChildItem -Path build -Recurse -Filter "notepatra.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -302,6 +302,15 @@ jobs:
           Copy-Item $exe.FullName "$outDir/"
           # Run windeployqt to bundle Qt DLLs
           & windeployqt "$outDir/notepatra.exe"
+          # Also copy qscintilla2_qt5.dll from the QScintilla install tree
+          $qsciInstall = "${{ steps.qscintilla.outputs.QSC_INSTALL }}"
+          $qsciDll = Get-ChildItem -Path $qsciInstall -Recurse -Filter "qscintilla2_qt5*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($qsciDll) {
+            Copy-Item $qsciDll.FullName "$outDir/"
+            Write-Host "Copied QScintilla DLL: $($qsciDll.FullName)"
+          } else {
+            Write-Host "::warning::qscintilla2_qt5.dll not found — exe may not run"
+          }
           Write-Host "=== Package contents ==="
           Get-ChildItem $outDir | Format-Table Name, Length
           $totalSize = (Get-ChildItem $outDir -Recurse | Measure-Object Length -Sum).Sum / 1MB
