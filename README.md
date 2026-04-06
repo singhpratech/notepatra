@@ -435,5 +435,61 @@ See the full [CHANGELOG](CHANGELOG.md) for every change in every release, or bro
 
 <p align="center">
   © 2026 Prateek Singh. All rights reserved.<br>
-  Source code licensed under <a href="LICENSE">GPL-3.0</a>.
+  Source code licensed under <a href="LICENSE">GNU General Public License v3.0</a>.
 </p>
+
+---
+
+## License, warranty, and liability
+
+Notepatra is licensed under the **[GNU General Public License v3.0](LICENSE)**. The full legal text lives in the [`LICENSE`](LICENSE) file at the root of this repo. The short version, in plain English:
+
+**You are free to:**
+- Run Notepatra for any purpose, commercial or personal, on any number of machines.
+- Read, study, and modify the source code.
+- Redistribute the source or your modified versions, provided you also distribute them under GPL-3.0 and provide the source.
+
+**You must:**
+- Keep the copyright notice intact when redistributing.
+- License any derivative work under GPL-3.0 (the "copyleft" requirement).
+- Make the source code available to anyone you distribute a binary to.
+
+**You may not:**
+- Distribute Notepatra (or anything based on it) under a proprietary license.
+- Strip out or sue over the no-warranty / no-liability clauses below.
+
+### Disclaimer of warranty (GPL §15, plain English)
+
+> **Notepatra is provided "AS IS", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and non-infringement. The entire risk as to the quality and performance of the program is with you. Should the program prove defective, you assume the cost of all necessary servicing, repair, or correction.**
+
+In other words: I built this in good faith, I run the test suite on every commit, every release is checksummed and signed — but I am one person on the internet shipping a free editor. **Verify your downloads**, **back up your work**, and **don't blame me** if something breaks.
+
+### Limitation of liability (GPL §16, plain English)
+
+> **In no event will Prateek Singh, contributors, or anyone else who modifies or conveys Notepatra be liable to you for any damages — general, special, incidental, or consequential — arising from the use or inability to use the program, including but not limited to loss of data, data being rendered inaccurate, losses sustained by you or third parties, or a failure of the program to operate with any other program — even if I have been advised of the possibility of such damages.**
+
+In other words: if Notepatra eats your file, crashes during a deadline, or fails to highlight your YAML — that's on you. The whole point of the GPL is that you can read the source, fix it, and ship the fix back to everyone. There is no SLA, no support contract, no money changing hands.
+
+### What this means in practice
+
+| Scenario | Who is responsible |
+|---|---|
+| You download the wrong file because of a typo and it bricks your shell | You — verify SHA-256 first ([SECURITY.md](SECURITY.md)) |
+| You install a third-party plugin that exfiltrates your code | You — read plugin source before loading |
+| Notepatra crashes and your unsaved file is gone | You — but crash recovery saves every 10s, check `~/.config/notepatra/recovery/` |
+| Notepatra has an actual security bug | Report it via [private vulnerability disclosure](https://github.com/singhpratech/notepatra/security/advisories/new), I'll fix it |
+| You modified Notepatra and it broke your customer's production | You — that's literally why GPL ships with §15 |
+
+### Third-party components and their licenses
+
+Notepatra links against several open-source libraries. None of them ask for money. Their licenses live in the source trees they ship from:
+
+| Component | License | Purpose |
+|---|---|---|
+| **Qt 5.15** (LGPL-3) | LGPL-3.0 | UI framework |
+| **QScintilla 2.14** (GPL-3) | GPL-3.0 | Editor widget + lexers (Notepatra inherits GPL-3 from this) |
+| **Scintilla / Lexilla** (HPND) | HPND | Editing engine bundled with QScintilla |
+| **Rust crates** (mostly MIT/Apache-2.0) | MIT/Apache-2.0 dual | Memory-safe core: file I/O, search, JSON/HTML/SQL fixers, diff |
+| **Ollama** (when used for AI) | MIT | Optional local AI runtime — runs separately, you install it yourself |
+
+The combination is GPL-3.0 because QScintilla is GPL-3.0 and the GPL is contagious. If you don't like that, the alternative would be to pay Riverbank Computing for a commercial QScintilla license — Notepatra doesn't.
