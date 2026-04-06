@@ -160,18 +160,23 @@ jobs:
 
       - name: Build C++
         run: |
-          QT_PATH=/opt/homebrew/opt/qt@5
+          QT_PATH=$(brew --prefix qt@5)
           export PATH="$QT_PATH/bin:$PATH"
 
-          # QScintilla installs into the Qt5 prefix via qmake
-          QSC_INC="$QT_PATH/include"
-          QSC_LIB="$QT_PATH/lib/libqscintilla2_qt5.dylib"
+          # Find QScintilla wherever make install put it
+          echo "=== Searching for QScintilla ==="
+          find /opt/homebrew /usr/local -name "libqscintilla2*" 2>/dev/null
+          find /opt/homebrew /usr/local -name "qsciscintilla.h" 2>/dev/null
 
-          echo "Qt5 path: $QT_PATH"
-          echo "QScintilla include: $QSC_INC"
-          echo "QScintilla lib: $QSC_LIB"
-          ls -la "$QSC_LIB" || true
-          ls -d "$QSC_INC/Qsci" || true
+          QSC_LIB=$(find /opt/homebrew /usr/local -name "libqscintilla2_qt5*dylib" 2>/dev/null | head -1)
+          [ -z "$QSC_LIB" ] && QSC_LIB=$(find /opt/homebrew /usr/local -name "libqscintilla2*dylib" 2>/dev/null | head -1)
+          [ -z "$QSC_LIB" ] && QSC_LIB=$(find /opt/homebrew /usr/local -name "libqscintilla2*" -not -name "*.dSYM" 2>/dev/null | head -1)
+
+          QSC_HDR=$(find /opt/homebrew /usr/local -name "qsciscintilla.h" 2>/dev/null | head -1)
+          QSC_INC=$(dirname $(dirname "$QSC_HDR"))
+
+          echo "Lib: $QSC_LIB"
+          echo "Inc: $QSC_INC"
 
           mkdir -p build && cd build
           cmake .. -DCMAKE_BUILD_TYPE=Release \
@@ -180,11 +185,23 @@ jobs:
             -DQSCINTILLA_LIB="$QSC_LIB"
           make -j$(sysctl -n hw.ncpu)
 
-      - name: Upload artifact
+      - name: Create DMG
+        run: |
+          QT_PATH=/opt/homebrew/opt/qt@5
+          export PATH="$QT_PATH/bin:$PATH"
+          # Bundle Qt frameworks into the app
+          macdeployqt build/Notepatra.app 2>/dev/null || true
+          # Copy QScintilla dylib into app bundle
+          mkdir -p build/Notepatra.app/Contents/Frameworks
+          cp "$QT_PATH/lib/libqscintilla2_qt5."*.dylib build/Notepatra.app/Contents/Frameworks/ 2>/dev/null || true
+          # Create DMG
+          hdiutil create -volname "Notepatra" -srcfolder build/Notepatra.app -ov -format UDZO build/Notepatra.dmg
+
+      - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
           name: notepatra-macos-arm64
-          path: build/Notepatra.app
+          path: build/Notepatra.dmg
 
   build-windows:
     runs-on: windows-latest
@@ -292,15 +309,18 @@ jobs:
       - name: Package
         run: |
           chmod +x notepatra-linux-x64/notepatra
+          chmod +x notepatra-linux-x64/notepatra
           tar czf notepatra-linux-x64.tar.gz -C notepatra-linux-x64 notepatra
-          tar czf notepatra-macos-x64.tar.gz -C notepatra-macos-x64 Notepatra.app
-          zip -j notepatra-windows-x64.zip notepatra-windows-x64/notepatra.exe
+          cp notepatra-macos-arm64/Notepatra.dmg notepatra-macos-arm64.dmg 2>/dev/null || tar czf notepatra-macos-arm64.tar.gz -C notepatra-macos-arm64 .
+          tar czf notepatra-macos-x64.tar.gz -C notepatra-macos-x64 . 2>/dev/null || true
+          zip -j notepatra-windows-x64.zip notepatra-windows-x64/notepatra.exe 2>/dev/null || true
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             notepatra-linux-x64.tar.gz
+            notepatra-macos-arm64.dmg
             notepatra-macos-x64.tar.gz
             notepatra-windows-x64.zip
           generate_release_notes: true
