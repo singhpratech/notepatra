@@ -64,10 +64,19 @@ jobs:
 
       - name: Build C++
         run: |
+          echo "=== Brew paths ==="
+          brew --prefix qt@5 || true
+          brew --prefix qscintilla2 || true
+          ls /opt/homebrew/opt/qscintilla2/include/Qsci/ 2>/dev/null | head -5 || true
+          ls /opt/homebrew/include/Qsci/ 2>/dev/null | head -5 || true
           QT_PATH=$(brew --prefix qt@5 2>/dev/null || echo "/opt/homebrew/opt/qt@5")
+          QSC_PATH=$(brew --prefix qscintilla2 2>/dev/null || echo "/opt/homebrew/opt/qscintilla2")
           export PATH="$QT_PATH/bin:$PATH"
           mkdir -p build && cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$QT_PATH"
+          cmake .. -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QT_PATH;$QSC_PATH" \
+            -DQSCINTILLA_INCLUDE="$QSC_PATH/include" \
+            -DQSCINTILLA_LIB="$QSC_PATH/lib/libqscintilla2_qt5.dylib"
           make -j$(sysctl -n hw.ncpu)
 
       - name: Upload artifact

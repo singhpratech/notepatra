@@ -30,7 +30,12 @@ if(WIN32)
 elseif(APPLE)
     find_path(QSCINTILLA_INCLUDE Qsci/qsciscintilla.h
         PATHS /usr/local/include /opt/homebrew/include
-        PATH_SUFFIXES Qsci)
+              /usr/local/opt/qscintilla2/include /opt/homebrew/opt/qscintilla2/include
+              /usr/local/opt/qt@5/include /opt/homebrew/opt/qt@5/include
+        PATH_SUFFIXES Qsci qt5/Qsci)
+    find_library(QSCINTILLA_LIB qscintilla2_qt5
+        PATHS /usr/local/lib /opt/homebrew/lib
+              /usr/local/opt/qscintilla2/lib /opt/homebrew/opt/qscintilla2/lib)
 else()
     find_path(QSCINTILLA_INCLUDE Qsci/qsciscintilla.h
         PATHS /usr/include /usr/include/x86_64-linux-gnu/qt5
