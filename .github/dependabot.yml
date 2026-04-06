@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # Rust core: scan Cargo.toml/lock weekly for security and version updates
+  - package-ecosystem: "cargo"
+    directory: "/rust-core"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "rust"
+
+  # GitHub Actions: scan workflow files for action version updates
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"

@@ -26,6 +26,14 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Audit Rust dependencies (cargo-audit)
+        run: |
+          # Install cargo-audit to scan Cargo.lock for known CVEs in transitive
+          # deps. Treat advisories as warnings (don't break the build) but make
+          # them visible in the GH Actions summary.
+          cargo install --locked cargo-audit 2>&1 | tail -5 || true
+          cd rust-core && cargo audit || echo "::warning::cargo-audit reported advisories — review them"
+
       - name: Build Rust core
         run: cd rust-core && cargo build --release
 
@@ -280,7 +288,9 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
-      contents: write
+      contents: write    # publish the release
+      id-token: write    # cosign keyless OIDC signing
+      attestations: write  # SLSA build provenance
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -291,12 +301,52 @@ jobs:
           chmod +x notepatra-linux-x64/notepatra || true
           tar czf notepatra-linux-x64.tar.gz -C notepatra-linux-x64 notepatra
           cp notepatra-macos-arm64/Notepatra.dmg notepatra-macos-arm64.dmg
-          # Windows artifact is optional — bundle if present, skip if not.
           if [ -d notepatra-windows-x64 ]; then
             cd notepatra-windows-x64 && zip -r ../notepatra-windows-x64.zip . && cd ..
           fi
           ls -la *.tar.gz *.dmg 2>/dev/null
           ls -la *.zip 2>/dev/null || true
+
+      - name: Generate SHA-256 checksums
+        run: |
+          # Generate a single SHA256SUMS file in the standard format that
+          # `sha256sum -c` understands. Users can verify with:
+          #   sha256sum -c SHA256SUMS
+          for f in notepatra-linux-x64.tar.gz notepatra-macos-arm64.dmg notepatra-windows-x64.zip; do
+            [ -f "$f" ] && sha256sum "$f" >> SHA256SUMS
+          done
+          echo "=== SHA256SUMS ==="
+          cat SHA256SUMS
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.4.1'
+
+      - name: Sign artifacts with cosign (keyless OIDC)
+        env:
+          COSIGN_YES: "true"
+        run: |
+          # Keyless signing via Sigstore: identity comes from the GitHub
+          # Actions OIDC token, no long-lived secrets. Each .sig is the
+          # detached signature, each .pem is the short-lived cert that
+          # ties the signature to this repo + workflow + commit SHA.
+          for f in notepatra-linux-x64.tar.gz notepatra-macos-arm64.dmg notepatra-windows-x64.zip SHA256SUMS; do
+            [ -f "$f" ] || continue
+            cosign sign-blob --yes \
+              --output-signature "${f}.sig" \
+              --output-certificate "${f}.pem" \
+              "$f"
+          done
+          ls -la *.sig *.pem
+
+      - name: Generate SLSA build provenance attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            notepatra-linux-x64.tar.gz
+            notepatra-macos-arm64.dmg
+            notepatra-windows-x64.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -305,5 +355,38 @@ jobs:
             notepatra-linux-x64.tar.gz
             notepatra-macos-arm64.dmg
             notepatra-windows-x64.zip
+            SHA256SUMS
+            notepatra-linux-x64.tar.gz.sig
+            notepatra-linux-x64.tar.gz.pem
+            notepatra-macos-arm64.dmg.sig
+            notepatra-macos-arm64.dmg.pem
+            notepatra-windows-x64.zip.sig
+            notepatra-windows-x64.zip.pem
+            SHA256SUMS.sig
+            SHA256SUMS.pem
           fail_on_unmatched_files: false
           generate_release_notes: true
+          body: |
+            ## Verifying this release
+
+            ### SHA-256 checksums
+            ```
+            sha256sum -c SHA256SUMS
+            ```
+
+            ### Cosign signature (keyless, Sigstore)
+            ```
+            cosign verify-blob \
+              --certificate-identity-regexp '^https://github.com/singhpratech/notepatra/' \
+              --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+              --certificate notepatra-linux-x64.tar.gz.pem \
+              --signature  notepatra-linux-x64.tar.gz.sig \
+              notepatra-linux-x64.tar.gz
+            ```
+
+            ### Build provenance (SLSA)
+            ```
+            gh attestation verify notepatra-linux-x64.tar.gz --owner singhpratech
+            ```
+
+            See [SECURITY.md](https://github.com/singhpratech/notepatra/blob/main/SECURITY.md) for the full verification guide.

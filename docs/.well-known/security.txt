@@ -1,0 +1,10 @@
+# RFC 9116 — security.txt for notepatra.org
+# https://www.rfc-editor.org/rfc/rfc9116
+
+Contact: https://github.com/singhpratech/notepatra/security/advisories/new
+Contact: https://github.com/singhpratech
+Expires: 2027-04-06T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://notepatra.org/.well-known/security.txt
+Policy: https://github.com/singhpratech/notepatra/blob/main/SECURITY.md
+Acknowledgments: https://github.com/singhpratech/notepatra/blob/main/SECURITY.md#hall-of-fame

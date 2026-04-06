@@ -1,0 +1,11 @@
+# Notepatra v0.1.0 — SHA-256 checksums
+# Generated 2026-04-06 from the published GitHub Release artifacts.
+#
+# Verify a download:
+#   sha256sum -c SHA256SUMS.v0.1.0.txt
+# or on Windows PowerShell:
+#   (Get-FileHash notepatra-windows-x64.zip).Hash -eq "409b9fc77466df5685ab3c0ca0a1ba41fe6da3d00b1d80d27bd8463a8913afdb"
+
+23ac79dfc7531951dea9916c7dc364fc865fc3bcd2340e66d7a55038b7018ffa  notepatra-linux-x64.tar.gz
+7c61ddad6fce7c254dd3f9c02efbc8c925f4cc06b33d240ef976884c407868d9  notepatra-macos-arm64.dmg
+409b9fc77466df5685ab3c0ca0a1ba41fe6da3d00b1d80d27bd8463a8913afdb  notepatra-windows-x64.zip

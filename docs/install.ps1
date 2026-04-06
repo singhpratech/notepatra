@@ -48,8 +48,45 @@ try {
 Write-Host "  Downloading: $fileName" -ForegroundColor Yellow
 $zipPath = "$env:TEMP\notepatra-download.zip"
 
-# Download
+# Download the artifact
 Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -UseBasicParsing
+
+# SHA-256 verification — download SHA256SUMS for this release tag
+$tag = $release.tag_name
+$shaUrl = "https://github.com/$repo/releases/download/$tag/SHA256SUMS"
+$shaFallback = "https://notepatra.org/SHA256SUMS.$tag.txt"
+$shaFile = "$env:TEMP\SHA256SUMS"
+$shaOk = $false
+try {
+    Invoke-WebRequest -Uri $shaUrl -OutFile $shaFile -UseBasicParsing -ErrorAction Stop
+    $shaOk = $true
+} catch {
+    try {
+        Invoke-WebRequest -Uri $shaFallback -OutFile $shaFile -UseBasicParsing -ErrorAction Stop
+        $shaOk = $true
+    } catch {
+        Write-Host "  WARN: SHA256SUMS not available — skipping checksum verification" -ForegroundColor Yellow
+    }
+}
+if ($shaOk) {
+    $expected = (Get-Content $shaFile | Select-String -Pattern $fileName -SimpleMatch | Select-Object -First 1) -replace '^([a-f0-9]+).*','$1'
+    if ($expected) {
+        $actual = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLower()
+        if ($actual -ne $expected.ToLower()) {
+            Write-Host ""
+            Write-Host "  ERROR: SHA-256 mismatch — refusing to install." -ForegroundColor Red
+            Write-Host "    expected: $expected" -ForegroundColor Red
+            Write-Host "    actual:   $actual" -ForegroundColor Red
+            Write-Host "    file:     $fileName" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "  This means the download was corrupted, MITM'd, or the release was tampered with." -ForegroundColor Red
+            Write-Host "  Report at: https://github.com/$repo/issues/new" -ForegroundColor Red
+            Remove-Item $zipPath -Force
+            exit 1
+        }
+        Write-Host "  SHA-256 verified" -ForegroundColor Green
+    }
+}
 
 # Extract
 Write-Host "  Extracting to $installDir..." -ForegroundColor Yellow

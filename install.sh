@@ -78,6 +78,38 @@ fi
 
 echo "  Downloading: $RELEASE_URL"
 
+# Helper: SHA-256 verification
+verify_sha256() {
+    local file="$1"
+    local expected="$2"
+    local actual=""
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual=$(sha256sum "$file" | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+        actual=$(shasum -a 256 "$file" | awk '{print $1}')
+    else
+        echo "  ⚠ No sha256sum or shasum available — skipping checksum verification"
+        return 0
+    fi
+    if [ "$actual" != "$expected" ]; then
+        echo ""
+        echo "  ❌ SHA-256 mismatch — refusing to install."
+        echo "     expected: $expected"
+        echo "     actual:   $actual"
+        echo "     file:     $file"
+        echo ""
+        echo "  This means the download was corrupted, MITM'd, or the release was tampered with."
+        echo "  Report at: https://github.com/$REPO/issues/new"
+        exit 1
+    fi
+    echo "  ✓ SHA-256 verified"
+}
+
+# Fetch SHA256SUMS for the same release tag (sibling of $RELEASE_URL)
+RELEASE_TAG=$(echo "$RELEASE_URL" | sed -E 's|.*/download/([^/]+)/.*|\1|')
+SHA_URL="https://github.com/$REPO/releases/download/$RELEASE_TAG/SHA256SUMS"
+SHA_FALLBACK_URL="https://notepatra.org/SHA256SUMS.${RELEASE_TAG}.txt"
+
 # Create install directory
 mkdir -p "$INSTALL_DIR"
 
@@ -85,6 +117,14 @@ if [ "$OS" = "darwin" ]; then
     # macOS — download and mount DMG or extract app
     TMPDIR=$(mktemp -d)
     curl -sL "$RELEASE_URL" -o "$TMPDIR/notepatra.tar.gz"
+    # Verify SHA-256 if checksums file is available
+    if curl -fsSL "$SHA_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null \
+       || curl -fsSL "$SHA_FALLBACK_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null; then
+        EXPECTED=$(grep "$ARTIFACT" "$TMPDIR/SHA256SUMS" | awk '{print $1}' | head -1)
+        if [ -n "$EXPECTED" ]; then
+            verify_sha256 "$TMPDIR/notepatra.tar.gz" "$EXPECTED"
+        fi
+    fi
     cd "$TMPDIR"
     tar xzf notepatra.tar.gz
     if [ -d "Notepatra.app" ]; then
@@ -99,6 +139,14 @@ else
     # Linux — download binary
     TMPDIR=$(mktemp -d)
     curl -sL "$RELEASE_URL" -o "$TMPDIR/notepatra.tar.gz"
+    # Verify SHA-256 if checksums file is available
+    if curl -fsSL "$SHA_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null \
+       || curl -fsSL "$SHA_FALLBACK_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null; then
+        EXPECTED=$(grep "$ARTIFACT" "$TMPDIR/SHA256SUMS" | awk '{print $1}' | head -1)
+        if [ -n "$EXPECTED" ]; then
+            verify_sha256 "$TMPDIR/notepatra.tar.gz" "$EXPECTED"
+        fi
+    fi
     cd "$TMPDIR"
     tar xzf notepatra.tar.gz
     chmod +x notepatra

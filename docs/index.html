@@ -25,6 +25,13 @@
     <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png">
     <link rel="apple-touch-icon" href="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-256.png">
 
+    <!-- Security headers (via meta tag — GitHub Pages doesn't allow custom HTTP headers) -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://raw.githubusercontent.com https://img.shields.io; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://api.github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
+    <meta http-equiv="Permissions-Policy" content="geolocation=(), camera=(), microphone=(), payment=(), usb=()">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+
     <!-- JSON-LD structured data for SEO -->
     <script type="application/ld+json">
     {
@@ -718,6 +725,7 @@
                 <a href="#features">Features</a>
                 <a href="#ai">AI</a>
                 <a href="#plugins">Plugins</a>
+                <a href="#security">Security</a>
                 <a href="#versions">Versions</a>
                 <a href="#download">Download</a>
                 <a href="https://github.com/singhpratech/notepatra" class="btn btn-primary" style="padding: 8px 18px; font-size: 14px;">GitHub</a>
@@ -1042,6 +1050,46 @@
                 </tr>
             </tbody>
         </table>
+    </section>
+
+    <!-- Security -->
+    <section id="security">
+        <div class="section-label">Security</div>
+        <div class="section-title">Verifiable. Local. Hands off your data.</div>
+        <div class="section-desc">Notepatra never touches the network unless you tell it to. Every release is checksummed and cryptographically signed. Verify before you run.</div>
+
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon fi-green">🔐</div>
+                <h3>SHA-256 checksums</h3>
+                <p>Every release ships a <code style="color:var(--green);font-size:12px;">SHA256SUMS</code> file. <code style="color:var(--green);font-size:12px;">install.sh</code> and <code style="color:var(--green);font-size:12px;">install.ps1</code> verify it automatically and refuse to install on mismatch. <a href="/SHA256SUMS.v0.1.0.txt" style="color:var(--green);">v0.1.0 checksums →</a></p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon fi-blue">✍️</div>
+                <h3>Cosign signatures (Sigstore)</h3>
+                <p>Every artifact is signed via keyless OIDC signing tied to the official GitHub Actions workflow. The cert is recorded in the public Rekor transparency log — no trust in any single key.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon fi-purple">📜</div>
+                <h3>SLSA build provenance</h3>
+                <p>Every binary carries a cryptographic attestation linking it to the exact git commit + workflow file + runner environment that built it. Verify with <code style="color:var(--green);font-size:12px;">gh attestation verify</code>.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon fi-orange">🦀</div>
+                <h3>Rust safety + cargo audit</h3>
+                <p>All untrusted-input code paths (file load, search, parsers) live in Rust. CI runs <code style="color:var(--green);font-size:12px;">cargo audit</code> on every build to flag vulnerable dependencies.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon fi-red">🚫</div>
+                <h3>Zero telemetry</h3>
+                <p>No analytics, no error reporting, no phone-home. The only outbound connections are: localhost Ollama (when you use AI), git push/pull (when you click), and HTTP requests you explicitly send via the REST tab. Verifiable with <code style="color:var(--green);font-size:12px;">strace</code>.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon fi-teal">📬</div>
+                <h3>Responsible disclosure</h3>
+                <p>Found a vulnerability? Use <a href="https://github.com/singhpratech/notepatra/security/advisories/new" style="color:var(--green);">private vulnerability reporting</a>. Full policy in <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md" style="color:var(--green);">SECURITY.md</a> and <a href="/.well-known/security.txt" style="color:var(--green);">/.well-known/security.txt</a>.</p>
+            </div>
+        </div>
     </section>
 
     <!-- Version History -->

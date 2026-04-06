@@ -13,12 +13,15 @@
     <a href="#install">Install</a> ·
     <a href="#plugins">Plugins</a> ·
     <a href="#ai-powered">AI</a> ·
+    <a href="SECURITY.md">Security</a> ·
     <a href="CHANGELOG.md">Changelog</a>
   </p>
   <p align="center">
-    <a href="https://github.com/singhpratech/notepatra/actions"><img src="https://github.com/singhpratech/notepatra/actions/workflows/build.yml/badge.svg" alt="Build"></a>
+    <a href="https://github.com/singhpratech/notepatra/actions/workflows/build.yml"><img src="https://github.com/singhpratech/notepatra/actions/workflows/build.yml/badge.svg" alt="Build"></a>
+    <a href="https://github.com/singhpratech/notepatra/actions/workflows/codeql.yml"><img src="https://github.com/singhpratech/notepatra/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
     <a href="https://github.com/singhpratech/notepatra/releases/latest"><img src="https://img.shields.io/github/v/release/singhpratech/notepatra?color=39FF14&label=release" alt="Release"></a>
     <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License"></a>
+    <a href="SECURITY.md"><img src="https://img.shields.io/badge/security-disclosure%20policy-39FF14" alt="Security"></a>
   </p>
 </p>
 
@@ -251,6 +254,29 @@ That's it. Auto-detects your OS, downloads the right binary, installs it, adds t
 **Why are the download sizes different?** The bare `notepatra` executable is **5.1 MB on Linux**, **3.0 MB on Windows**, and **2.7 MB on macOS Apple Silicon** (clang and MSVC strip more aggressively than gcc). On Linux, Qt5 is a standard system package (`apt install qtbase5-dev libqscintilla2-qt5-dev`), so the download is just the binary — 1.8 MB compressed. On macOS and Windows, Qt isn't pre-installed, so we bundle the Qt frameworks/DLLs alongside the executable for portability — same approach Krita, Kdenlive, and every cross-platform Qt app uses. Even with Qt bundled, Notepatra is still **6× smaller than VS Code** on Windows and **14× smaller** on Linux.
 
 > macOS Intel: not shipped pre-built. Apple stopped selling Intel Macs in 2023 and the GitHub Actions `macos-13` runner has been unreliable. Intel Mac users — `git clone` and run `./build.sh`. Builds in ~3 minutes.
+
+### Verify your download
+
+Every release ships with **SHA-256 checksums**, **Sigstore (cosign) signatures**, and **SLSA build provenance**. The `install.sh` and `install.ps1` scripts above already verify SHA-256 automatically and refuse to install on mismatch — but if you downloaded manually you should verify yourself.
+
+```bash
+# Linux / macOS — checksum
+curl -sL -O https://github.com/singhpratech/notepatra/releases/download/v0.1.0/SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing
+
+# Anywhere — cosign verify (Sigstore)
+cosign verify-blob \
+  --certificate-identity-regexp '^https://github.com/singhpratech/notepatra/' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  --certificate notepatra-linux-x64.tar.gz.pem \
+  --signature  notepatra-linux-x64.tar.gz.sig \
+  notepatra-linux-x64.tar.gz
+
+# Anywhere — SLSA build provenance
+gh attestation verify notepatra-linux-x64.tar.gz --owner singhpratech
+```
+
+Full instructions, threat model, and disclosure policy in [SECURITY.md](SECURITY.md).
 
 ### Build from source
 
