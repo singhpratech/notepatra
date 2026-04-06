@@ -21,7 +21,7 @@ urlencoding = "2.1"
 rayon = "1.10"
 libc = "0.2"
 similar = "2.6"
-sqlformat = "0.3"
+sqlformat = "0.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
