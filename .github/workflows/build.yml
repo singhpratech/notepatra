@@ -341,7 +341,7 @@ jobs:
           ls -la *.sig *.pem
 
       - name: Generate SLSA build provenance attestation
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             notepatra-linux-x64.tar.gz
