@@ -1,6 +1,6 @@
 <p align="center">
-  <img src="resources/notepatra-256.png" alt="Notepatra" width="128" height="128">
-  <h1 align="center">Notepatra</h1>
+  <a href="https://notepatra.org"><img src="resources/notepatra-256.png" alt="Notepatra — click for notepatra.org" width="128" height="128"></a>
+  <h1 align="center"><a href="https://notepatra.org" style="text-decoration:none;color:inherit;">Notepatra</a></h1>
   <p align="center"><em>The first code editor built for the AI era.</em></p>
   <p align="center">
     <strong>C++ + Rust</strong> · <strong>3–5 MB native executable</strong> · <strong>Zero Electron</strong> · <strong>100+ file types</strong> · <strong>Local AI formatters</strong>
