@@ -7,9 +7,13 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-linux:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -44,14 +48,13 @@ jobs:
           path: build/notepatra
 
   build-macos:
-    runs-on: macos-13
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
-          brew update
-          brew install qt@5 qscintilla2 cmake
+          brew install qt@5 qscintilla2 cmake || true
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -60,13 +63,11 @@ jobs:
         run: cd rust-core && cargo build --release
 
       - name: Build C++
-        env:
-          Qt5_DIR: /usr/local/opt/qt@5/lib/cmake/Qt5
-          CMAKE_PREFIX_PATH: /usr/local/opt/qt@5
         run: |
-          export PATH="/usr/local/opt/qt@5/bin:$PATH"
+          QT_PATH=$(brew --prefix qt@5 2>/dev/null || echo "/opt/homebrew/opt/qt@5")
+          export PATH="$QT_PATH/bin:$PATH"
           mkdir -p build && cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/usr/local/opt/qt@5
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$QT_PATH"
           make -j$(sysctl -n hw.ncpu)
 
       - name: Upload artifact
