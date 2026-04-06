@@ -126,6 +126,9 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
 
@@ -215,6 +218,50 @@ jobs:
             cmake-configure.log
             cmake-build.log
           if-no-files-found: ignore
+
+      - name: Post build log to public gist on failure
+        if: failure()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if (-not (Test-Path cmake-build.log)) {
+            Write-Host "No cmake-build.log to post"
+            exit 0
+          }
+          $log = Get-Content cmake-build.log -Raw
+          if ($log.Length -gt 60000) { $log = "...(truncated)...`n" + $log.Substring($log.Length - 60000) }
+          # Filter to errors only
+          $errors = (Get-Content cmake-build.log | Select-String -Pattern "error|Error|fatal" | Select-Object -First 200) -join "`n"
+          $body = @"
+          # Notepatra Windows Build Failure
+
+          - SHA: $env:GITHUB_SHA
+          - Run: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID
+
+          ## Errors only
+
+          ``````
+          $errors
+          ``````
+
+          ## Last 60 KB of build log
+
+          ``````
+          $log
+          ``````
+          "@
+          $body | Out-File -FilePath build-log.md -Encoding utf8
+
+          # Update issue #1 (create if it doesn't exist) with the log so it's readable via public API
+          $exists = gh issue view 1 --repo $env:GITHUB_REPOSITORY --json number 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh issue edit 1 --repo $env:GITHUB_REPOSITORY --body-file build-log.md
+            Write-Host "Updated issue #1"
+          } else {
+            gh issue create --repo $env:GITHUB_REPOSITORY --title "Windows CI build log (auto)" --body-file build-log.md
+            Write-Host "Created new issue"
+          }
 
       - name: Verify exe and bundle Qt DLLs
         shell: pwsh
