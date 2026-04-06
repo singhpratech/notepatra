@@ -3,48 +3,994 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Notepatra — Coming Soon</title>
+    <title>Notepatra — The Code Editor Built for the AI Era</title>
+    <meta name="description" content="Native C++/Rust code editor with AI-powered formatters. 5 MB binary. 100+ file types. 44 language lexers. JSON/HTML/SQL fixers. Local AI via Ollama. Free forever. Linux, Windows, macOS.">
+    <meta name="keywords" content="notepatra, code editor, notepad++, linux, windows, mac, macos, AI, ollama, JSON formatter, HTML fixer, rust, c++, qscintilla, native, lightweight">
+    <meta name="author" content="Prateek Singh">
+    <link rel="canonical" href="https://notepatra.org/">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://notepatra.org/">
+    <meta property="og:title" content="Notepatra — The Code Editor Built for the AI Era">
+    <meta property="og:description" content="5 MB native binary. 100+ file types. AI-powered JSON/HTML/SQL fixers via local Ollama. Linux · Windows · macOS. Free forever.">
+    <meta property="og:image" content="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-512.png">
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Notepatra — Code Editor for the AI Era">
+    <meta name="twitter:description" content="5 MB native binary. 100+ file types. AI-powered formatters. Linux · Windows · macOS.">
+    <meta name="twitter:image" content="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-512.png">
+
     <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png">
+    <link rel="apple-touch-icon" href="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-256.png">
+
+    <!-- JSON-LD structured data for SEO -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Notepatra",
+      "operatingSystem": "Linux, Windows, macOS",
+      "applicationCategory": "DeveloperApplication",
+      "description": "Native C++/Rust code editor with AI-powered formatters. 5 MB binary. 100+ file types. Free forever.",
+      "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "author": {
+        "@type": "Person",
+        "name": "Prateek Singh",
+        "url": "https://github.com/singhpratech"
+      }
+    }
+    </script>
+
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --blue: #1A73E8;
+            --dark-blue: #0D47A1;
+            --green: #39FF14;
+            --green-soft: #4CAF50;
+            --dark: #0F1923;
+            --darker: #080E14;
+            --text: #E0E0E0;
+            --text-dim: #8899AA;
+            --card-bg: #141E2B;
+            --border: #1E2D3D;
+        }
+
+        html { scroll-behavior: smooth; }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0A0A0A;
-            color: #E0E0E0;
+            background: var(--darker);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Animated gradient background */
+        .bg-glow {
+            position: fixed;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 30% 40%, rgba(26,115,232,0.08) 0%, transparent 50%),
+                        radial-gradient(circle at 70% 60%, rgba(57,255,20,0.05) 0%, transparent 50%);
+            animation: float 20s ease-in-out infinite;
+            z-index: -1;
+        }
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(-2%, 2%); }
+        }
+
+        /* Nav */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            z-index: 100;
+            padding: 16px 0;
+            backdrop-filter: blur(20px);
+            background: rgba(8,14,20,0.8);
+            border-bottom: 1px solid var(--border);
+        }
+        .nav-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
             display: flex;
             align-items: center;
-            justify-content: center;
-            min-height: 100vh;
+            justify-content: space-between;
+        }
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            color: white;
+            font-size: 20px;
+            font-weight: 700;
+        }
+        .nav-logo img { width: 36px; height: 36px; border-radius: 8px; }
+        .nav-links { display: flex; gap: 32px; align-items: center; }
+        .nav-links a {
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 14px;
+            transition: color 0.2s;
+        }
+        .nav-links a:hover { color: white; }
+
+        /* Hero */
+        .hero {
+            padding: 160px 24px 60px;
             text-align: center;
+            max-width: 980px;
+            margin: 0 auto;
         }
-        .container { max-width: 500px; padding: 40px; }
-        img { width: 120px; height: 120px; border-radius: 24px; margin-bottom: 32px; }
-        h1 {
-            font-size: 42px;
-            font-weight: 800;
-            margin-bottom: 16px;
-            background: linear-gradient(135deg, #39FF14, #00E676);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-        p { color: #888; font-size: 18px; line-height: 1.6; margin-bottom: 24px; }
-        .badge {
+        .hero-badge {
             display: inline-block;
             padding: 6px 16px;
-            background: rgba(57,255,20,0.1);
+            background: rgba(57,255,20,0.12);
             border: 1px solid rgba(57,255,20,0.3);
             border-radius: 100px;
             font-size: 13px;
-            color: #39FF14;
+            color: var(--green);
+            margin-bottom: 24px;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+        .hero h1 {
+            font-size: clamp(40px, 6vw, 72px);
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 24px;
+            background: linear-gradient(135deg, #FFFFFF 0%, #90CAF9 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .hero p {
+            font-size: 20px;
+            color: var(--text-dim);
+            max-width: 680px;
+            margin: 0 auto 40px;
+            line-height: 1.7;
+        }
+
+        /* Install box */
+        .install-box {
+            max-width: 760px;
+            margin: 0 auto 32px;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 8px;
+        }
+        .install-tabs {
+            display: flex;
+            gap: 4px;
+            border-bottom: 1px solid var(--border);
+            padding: 0 12px;
+        }
+        .install-tab {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            padding: 12px 18px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        .install-tab.active {
+            color: var(--green);
+            border-bottom-color: var(--green);
+        }
+        .install-tab:hover { color: white; }
+        .install-cmd {
+            display: none;
+            padding: 24px;
+            font-family: 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+            color: #E0E0E0;
+            text-align: left;
+            position: relative;
+            white-space: pre;
+            overflow-x: auto;
+        }
+        .install-cmd.active { display: block; }
+        .install-cmd .prompt { color: #6A9955; user-select: none; }
+        .install-cmd .copy-btn {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            background: rgba(57,255,20,0.1);
+            color: var(--green);
+            border: 1px solid rgba(57,255,20,0.3);
+            padding: 6px 14px;
+            font-size: 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .install-cmd .copy-btn:hover { background: rgba(57,255,20,0.2); }
+        .install-cmd .copy-btn.copied { background: var(--green); color: var(--darker); }
+
+        .hero-buttons {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+        .btn {
+            padding: 14px 28px;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            border: none;
+            font-family: inherit;
+        }
+        .btn-primary {
+            background: var(--blue);
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #1565C0;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(26,115,232,0.3);
+        }
+        .btn-secondary {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover {
+            border-color: var(--blue);
+            transform: translateY(-2px);
+        }
+
+        /* Stats bar */
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 48px;
+            padding: 60px 24px 30px;
+            flex-wrap: wrap;
+        }
+        .stat { text-align: center; }
+        .stat-number {
+            font-size: 36px;
+            font-weight: 800;
+            color: white;
+        }
+        .stat-number span { color: var(--green); }
+        .stat-label {
+            font-size: 14px;
+            color: var(--text-dim);
+            margin-top: 4px;
+        }
+
+        /* Section */
+        section {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 80px 24px;
+        }
+        .section-label {
+            font-size: 13px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--green);
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+        .section-title {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            color: white;
+        }
+        .section-desc {
+            font-size: 18px;
+            color: var(--text-dim);
+            max-width: 680px;
+            margin-bottom: 48px;
+        }
+
+        /* Downloads grid */
+        .download-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+        }
+        .download-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 28px;
+            text-align: center;
+            transition: all 0.3s;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+        .download-card:hover {
+            border-color: var(--green);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+        }
+        .download-os {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+        .download-card h4 {
+            color: white;
+            font-size: 18px;
+            margin-bottom: 4px;
+        }
+        .download-card p {
+            color: var(--text-dim);
+            font-size: 13px;
+            margin-bottom: 16px;
+        }
+        .download-btn {
+            display: inline-block;
+            padding: 8px 18px;
+            background: rgba(57,255,20,0.1);
+            border: 1px solid rgba(57,255,20,0.3);
+            color: var(--green);
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        /* Feature grid */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+        }
+        .feature-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+            transition: all 0.3s;
+        }
+        .feature-card:hover {
+            border-color: var(--blue);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+        }
+        .feature-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+        .fi-blue { background: rgba(26,115,232,0.15); }
+        .fi-green { background: rgba(76,175,80,0.15); }
+        .fi-purple { background: rgba(156,39,176,0.15); }
+        .fi-orange { background: rgba(255,152,0,0.15); }
+        .fi-red { background: rgba(244,67,54,0.15); }
+        .fi-teal { background: rgba(0,150,136,0.15); }
+        .feature-card h3 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: white;
+        }
+        .feature-card p {
+            font-size: 14px;
+            color: var(--text-dim);
+            line-height: 1.6;
+        }
+
+        /* AI section */
+        .ai-section {
+            background: linear-gradient(135deg, rgba(26,115,232,0.08), rgba(57,255,20,0.05));
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 64px;
+            margin: 40px auto;
+            max-width: 1200px;
+        }
+        .ai-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 48px;
+            align-items: center;
+        }
+        .ai-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 24px;
+        }
+        .ai-tag {
+            padding: 6px 14px;
+            background: rgba(57,255,20,0.12);
+            border: 1px solid rgba(57,255,20,0.25);
+            border-radius: 8px;
+            font-size: 13px;
+            color: var(--green);
+        }
+        .ai-code {
+            background: var(--dark);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            font-family: 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            line-height: 1.8;
+            overflow-x: auto;
+        }
+        .ai-code .comment { color: #6A9955; }
+        .ai-code .keyword { color: #569CD6; }
+        .ai-code .string { color: #CE9178; }
+        .ai-code .number { color: #B5CEA8; }
+        .ai-code .cursor { animation: blink 1s infinite; color: var(--green); }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+        /* Comparison */
+        .compare-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 32px;
+        }
+        .compare-table th, .compare-table td {
+            padding: 16px 20px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+            font-size: 14px;
+        }
+        .compare-table th {
+            color: var(--text-dim);
+            font-weight: 500;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .compare-table td:first-child { font-weight: 600; color: white; }
+        .check { color: var(--green); }
+        .cross { color: #F44336; }
+        .highlight-row { background: rgba(57,255,20,0.06); }
+        .highlight-row td { color: white; font-weight: 600; }
+
+        /* Plugins */
+        .plugins-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+        }
+        .plugin-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+        }
+        .plugin-icon {
+            font-size: 28px;
+            flex-shrink: 0;
+        }
+        .plugin-card h4 {
+            font-size: 15px;
+            font-weight: 600;
+            color: white;
+            margin-bottom: 4px;
+        }
+        .plugin-card p {
+            font-size: 13px;
+            color: var(--text-dim);
+        }
+        .plugin-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            background: rgba(57,255,20,0.15);
+            color: var(--green);
+            border-radius: 4px;
+            font-size: 11px;
+            margin-top: 6px;
+        }
+
+        /* Story section */
+        .story {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 80px 24px;
+            text-align: center;
+        }
+        .story h2 {
+            font-size: 32px;
+            color: white;
+            margin-bottom: 32px;
+        }
+        .story p {
+            font-size: 17px;
+            color: var(--text-dim);
+            line-height: 1.8;
+            margin-bottom: 20px;
+        }
+        .story p strong { color: var(--green); }
+
+        /* CTA */
+        .cta {
+            text-align: center;
+            padding: 100px 24px;
+        }
+        .cta h2 {
+            font-size: 42px;
+            font-weight: 800;
+            margin-bottom: 16px;
+            background: linear-gradient(135deg, #FFFFFF, #90CAF9);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .cta p {
+            color: var(--text-dim);
+            font-size: 18px;
+            margin-bottom: 32px;
+        }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 48px 24px;
+            text-align: center;
+        }
+        footer p {
+            color: var(--text-dim);
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        footer .quote {
+            font-style: italic;
+            color: #556677;
+            font-size: 15px;
+            margin-top: 16px;
+        }
+        footer a { color: var(--blue); text-decoration: none; }
+        footer a:hover { text-decoration: underline; }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .ai-grid { grid-template-columns: 1fr; }
+            .ai-section { padding: 32px 24px; }
+            .stats { gap: 24px; }
+            .nav-links a:not(.btn) { display: none; }
+            .hero { padding-top: 130px; }
+            section { padding: 60px 20px; }
+            .install-cmd { font-size: 12px; padding: 18px; }
+            .compare-table { font-size: 12px; }
+            .compare-table th, .compare-table td { padding: 10px 8px; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-512.png" alt="Notepatra">
-        <h1>Notepatra</h1>
-        <p>The code editor built for the AI era.<br>Something beautiful is coming.</p>
-        <div class="badge">Coming Soon</div>
+    <div class="bg-glow"></div>
+
+    <nav>
+        <div class="nav-inner">
+            <a href="#" class="nav-logo">
+                <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra logo">
+                Notepatra
+            </a>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#ai">AI</a>
+                <a href="#plugins">Plugins</a>
+                <a href="#download">Download</a>
+                <a href="https://github.com/singhpratech/notepatra" class="btn btn-primary" style="padding: 8px 18px; font-size: 14px;">GitHub</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <div class="hero">
+        <div class="hero-badge">v0.1.0 · Now Available · Linux · Windows · macOS</div>
+        <h1>The code editor built for the AI era</h1>
+        <p>5 MB native binary. C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
+
+        <div class="install-box">
+            <div class="install-tabs">
+                <button class="install-tab active" data-tab="linux">🐧 Linux</button>
+                <button class="install-tab" data-tab="mac">🍎 macOS</button>
+                <button class="install-tab" data-tab="windows">🪟 Windows</button>
+            </div>
+            <div class="install-cmd active" id="cmd-linux"><button class="copy-btn" onclick="copyCmd(this, 'curl -fsSL https://notepatra.org/install.sh | sh')">Copy</button><span class="prompt">$ </span>curl -fsSL https://notepatra.org/install.sh | sh</div>
+            <div class="install-cmd" id="cmd-mac"><button class="copy-btn" onclick="copyCmd(this, 'curl -fsSL https://notepatra.org/install.sh | sh')">Copy</button><span class="prompt">$ </span>curl -fsSL https://notepatra.org/install.sh | sh</div>
+            <div class="install-cmd" id="cmd-windows"><button class="copy-btn" onclick="copyCmd(this, 'irm https://notepatra.org/install.ps1 | iex')">Copy</button><span class="prompt">PS&gt; </span>irm https://notepatra.org/install.ps1 | iex</div>
+        </div>
+
+        <div class="hero-buttons">
+            <a href="#download" class="btn btn-primary">
+                Download Binaries
+            </a>
+            <a href="https://github.com/singhpratech/notepatra" class="btn btn-secondary">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.21 11.39.6.11.79-.26.79-.58v-2.23c-3.34.73-4.03-1.41-4.03-1.41-.55-1.39-1.33-1.76-1.33-1.76-1.09-.74.08-.73.08-.73 1.2.09 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.5 1 .1-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 016.02 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 011.23 3.22c0 4.61-2.81 5.63-5.48 5.92.42.36.81 1.1.81 2.22v3.29c0 .32.18.7.8.58A12.01 12.01 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+                View on GitHub
+            </a>
+        </div>
     </div>
+
+    <!-- Stats -->
+    <div class="stats">
+        <div class="stat"><div class="stat-number"><span>5</span> MB</div><div class="stat-label">Binary Size</div></div>
+        <div class="stat"><div class="stat-number"><span>100</span>+</div><div class="stat-label">File Types</div></div>
+        <div class="stat"><div class="stat-number"><span>44</span></div><div class="stat-label">Language Lexers</div></div>
+        <div class="stat"><div class="stat-number"><span>2</span> GB</div><div class="stat-label">Max File Size</div></div>
+        <div class="stat"><div class="stat-number"><span>105</span></div><div class="stat-label">Tests Passing</div></div>
+        <div class="stat"><div class="stat-number"><span>0</span></div><div class="stat-label">Electron</div></div>
+    </div>
+
+    <!-- Download -->
+    <section id="download">
+        <div class="section-label">Download v0.1.0</div>
+        <div class="section-title">One-command install or direct download</div>
+        <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
+
+        <div class="download-grid">
+            <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
+                <div class="download-os">🐧</div>
+                <h4>Linux x64</h4>
+                <p>Single binary · ~5 MB · Ubuntu, Debian, Fedora, Arch</p>
+                <span class="download-btn">Download .tar.gz</span>
+            </a>
+            <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
+                <div class="download-os">🍎</div>
+                <h4>macOS Apple Silicon</h4>
+                <p>M1 / M2 / M3 / M4 · Notepatra.app · ~10 MB</p>
+                <span class="download-btn">Download .dmg</span>
+            </a>
+            <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
+                <div class="download-os">🪟</div>
+                <h4>Windows x64</h4>
+                <p>notepatra.exe + Qt DLLs · Run anywhere</p>
+                <span class="download-btn">Download .zip</span>
+            </a>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features">
+        <div class="section-label">Features</div>
+        <div class="section-title">Everything you need. Nothing you don't.</div>
+        <div class="section-desc">Built on QScintilla — the same engine that powers Notepad++. With a Rust core for memory safety and zero crashes.</div>
+
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon fi-blue">⚡</div>
+                <h3>Rust-Powered Core</h3>
+                <p>Memory-mapped file I/O. Aho-Corasick search. Myers diff. Zero crashes on 2 GB files. The heavy lifting runs in compiled Rust — no garbage collector, no runtime.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon fi-green">🔍</div>
+                <h3>Advanced Find &amp; Replace</h3>
+                <p>5-tab search dialog. Regex, extended mode (\n, \t, \xNN). Find in all opened documents. Search results panel — double-click to jump to line.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon fi-purple">🔀</div>
+                <h3>File Compare</h3>
+                <p>Side-by-side Scintilla diff. Green for added, red for deleted. Prev/Next navigation. Ignore whitespace, case, empty lines. Pick any two tabs or files.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon fi-orange">📁</div>
+                <h3>Session Persistence</h3>
+                <p>Close Notepatra, reopen tomorrow — same files, same cursors, same window size. Crash recovery saves unsaved work every 10 seconds.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon fi-red">👁</div>
+                <h3>File Change Detection</h3>
+                <p>Someone edits your file externally? Notepatra asks: reload or keep yours. Git gutter shows changed lines in green/yellow/red.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon fi-teal">🎙</div>
+                <h3>Macro Recording</h3>
+                <p>Record keystrokes (Ctrl+Shift+R), playback (Ctrl+Shift+P), run multiple times, save to .macro files, replay tomorrow.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon fi-blue">📑</div>
+                <h3>100+ File Types</h3>
+                <p>44 language lexers — Python, Rust, Go, C/C++, Java, JS/TS, SQL, HTML, CSS, JSON, YAML, Markdown, Bash, Fortran, Verilog, MATLAB, LaTeX and more.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon fi-green">🎨</div>
+                <h3>3 Themes + Color Tags</h3>
+                <p>Light, Dark, Monokai. Color-tag any tab (7 colors + custom). Pastel green current line, double-click word highlight in orange.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon fi-purple">🧩</div>
+                <h3>Plugin System</h3>
+                <p>Drop a .so/.dll/.dylib in the plugins folder. Simple C API — export 2 functions to create a plugin. JSON, HTML, SQL, Bracket tools all built in.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- AI Section -->
+    <div class="ai-section" id="ai">
+        <div class="ai-grid">
+            <div>
+                <div class="section-label">AI Powered</div>
+                <div class="section-title">Local AI. Private. No cloud.</div>
+                <p style="color: var(--text-dim); margin-bottom: 16px;">Every AI feature runs on YOUR machine via Ollama. Nothing leaves your computer. No API key. No subscription. No telemetry.</p>
+                <p style="color: var(--text-dim); margin-bottom: 24px;">When the regex fixer can't repair your broken JSON — the AI can. Hybrid approach: speed of regex, intelligence of AI.</p>
+                <div class="ai-actions">
+                    <span class="ai-tag">Explain Code</span>
+                    <span class="ai-tag">Find Bugs</span>
+                    <span class="ai-tag">Refactor</span>
+                    <span class="ai-tag">Write Tests</span>
+                    <span class="ai-tag">Fix JSON</span>
+                    <span class="ai-tag">Fix HTML</span>
+                    <span class="ai-tag">Fix Brackets</span>
+                    <span class="ai-tag">Add Comments</span>
+                    <span class="ai-tag">Optimize</span>
+                    <span class="ai-tag">Translate</span>
+                </div>
+            </div>
+            <div class="ai-code">
+                <span class="comment">// Broken JSON input</span><br>
+                {users: [{'id': 1, name: 'Alice',}<br>
+                <br>
+                <span class="comment">// Notepatra fixes it instantly:</span><br>
+                <span class="comment">// ✓ single quotes → double quotes</span><br>
+                <span class="comment">// ✓ unquoted keys quoted</span><br>
+                <span class="comment">// ✓ trailing commas removed</span><br>
+                <span class="comment">// ✓ missing braces added</span><br>
+                <br>
+                {<br>
+                &nbsp;&nbsp;<span class="string">"users"</span>: [<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;{<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="string">"id"</span>: <span class="number">1</span>,<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="string">"name"</span>: <span class="string">"Alice"</span><br>
+                &nbsp;&nbsp;&nbsp;&nbsp;}<br>
+                &nbsp;&nbsp;]<br>
+                }<span class="cursor">|</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Plugins -->
+    <section id="plugins">
+        <div class="section-label">Built-in Plugins</div>
+        <div class="section-title">Batteries included</div>
+        <div class="section-desc">Every plugin opens in its own tab with real UI. Format, Fix + Format, or AI Fix. All with Ollama status indicator.</div>
+
+        <div class="plugins-grid">
+            <div class="plugin-card">
+                <div class="plugin-icon">{ }</div>
+                <div>
+                    <h4>JSON Tools</h4>
+                    <p>Format, Minify, Fix+Format, AI Fix. Handles missing braces, trailing commas, unquoted keys, single quotes.</p>
+                    <span class="plugin-badge">+ AI Fix</span>
+                </div>
+            </div>
+            <div class="plugin-card">
+                <div class="plugin-icon">&lt;/&gt;</div>
+                <div>
+                    <h4>HTML Tools</h4>
+                    <p>Format with proper indentation. Fix unclosed tags. Minify. AI repair for broken nesting.</p>
+                    <span class="plugin-badge">+ AI Fix</span>
+                </div>
+            </div>
+            <div class="plugin-card">
+                <div class="plugin-icon">( )</div>
+                <div>
+                    <h4>Bracket Tools</h4>
+                    <p>Check all brackets with line numbers. Auto-fix missing ), ], }. Detects begin/end mismatches.</p>
+                    <span class="plugin-badge">+ AI Fix</span>
+                </div>
+            </div>
+            <div class="plugin-card">
+                <div class="plugin-icon">SQL</div>
+                <div>
+                    <h4>SQL Formatter</h4>
+                    <p>UPPERCASE or lowercase keywords. Configurable indentation. T-SQL, PL/SQL, MySQL, PostgreSQL.</p>
+                </div>
+            </div>
+            <div class="plugin-card">
+                <div class="plugin-icon">⇔</div>
+                <div>
+                    <h4>Compare / Diff</h4>
+                    <p>Side-by-side Scintilla editors. +/- markers. Navigate between diffs. Ignore whitespace/case.</p>
+                </div>
+            </div>
+            <div class="plugin-card">
+                <div class="plugin-icon">⎇</div>
+                <div>
+                    <h4>Git Integration</h4>
+                    <p>Changed files panel. Branch display. Push/Pull. Git gutter margins. Open on GitHub.</p>
+                </div>
+            </div>
+            <div class="plugin-card">
+                <div class="plugin-icon">▸_</div>
+                <div>
+                    <h4>Built-in Terminal</h4>
+                    <p>Real bash/zsh/cmd as a tab. cd works. Run any command without leaving the editor.</p>
+                </div>
+            </div>
+            <div class="plugin-card">
+                <div class="plugin-icon">🌐</div>
+                <div>
+                    <h4>REST Client</h4>
+                    <p>Send HTTP requests, see responses with pretty JSON. Postman built into your editor.</p>
+                </div>
+            </div>
+            <div class="plugin-card">
+                <div class="plugin-icon">0xFF</div>
+                <div>
+                    <h4>Hex Editor</h4>
+                    <p>Color-coded hex dump. Offset, hex bytes, ASCII columns. View any binary file.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Compare -->
+    <section id="compare">
+        <div class="section-label">Why Notepatra</div>
+        <div class="section-title">The honest comparison</div>
+
+        <table class="compare-table">
+            <thead>
+                <tr>
+                    <th>Editor</th>
+                    <th>Size</th>
+                    <th>AI Built-in</th>
+                    <th>JSON Fixer</th>
+                    <th>2 GB Files</th>
+                    <th>Linux</th>
+                    <th>Windows</th>
+                    <th>Mac</th>
+                    <th>Free</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="highlight-row">
+                    <td>Notepatra</td>
+                    <td>5 MB</td>
+                    <td class="check">✓</td>
+                    <td class="check">✓</td>
+                    <td class="check">✓</td>
+                    <td class="check">✓</td>
+                    <td class="check">✓</td>
+                    <td class="check">✓</td>
+                    <td class="check">✓</td>
+                </tr>
+                <tr>
+                    <td>Notepad++</td>
+                    <td>4 MB</td>
+                    <td class="cross">✗</td>
+                    <td class="cross">Plugin</td>
+                    <td class="cross">✗</td>
+                    <td class="cross">✗</td>
+                    <td class="check">✓</td>
+                    <td class="cross">✗</td>
+                    <td class="check">✓</td>
+                </tr>
+                <tr>
+                    <td>VS Code</td>
+                    <td>300 MB</td>
+                    <td class="cross">Extension</td>
+                    <td class="cross">Extension</td>
+                    <td class="cross">✗</td>
+                    <td class="check">✓</td>
+                    <td class="check">✓</td>
+                    <td class="check">✓</td>
+                    <td class="check">✓</td>
+                </tr>
+                <tr>
+                    <td>Sublime Text</td>
+                    <td>30 MB</td>
+                    <td class="cross">✗</td>
+                    <td class="cross">✗</td>
+                    <td class="check">✓</td>
+                    <td class="check">✓</td>
+                    <td class="check">✓</td>
+                    <td class="check">✓</td>
+                    <td class="cross">$99</td>
+                </tr>
+                <tr>
+                    <td>Vim</td>
+                    <td>3 MB</td>
+                    <td class="cross">✗</td>
+                    <td class="cross">✗</td>
+                    <td class="check">✓</td>
+                    <td class="check">✓</td>
+                    <td class="check">✓</td>
+                    <td class="check">✓</td>
+                    <td class="check">✓</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <!-- Story -->
+    <div class="story">
+        <h2>The Story</h2>
+        <p>I'm <strong>Prateek Singh</strong>. A developer who spent years on Linux watching Windows users open Notepad++ and fix things in seconds — broken JSON, messy SQL, tangled HTML — while I was stuck with Wine hacks or bloated Electron editors eating 500 MB of RAM to show a text file.</p>
+        <p>Every text editor told me to pick two: <strong>fast</strong>, <strong>powerful</strong>, or <strong>native</strong>. Vim is fast but cryptic. VS Code is powerful but heavy. Notepad++ is both — but it only runs on Windows.</p>
+        <p>So I built Notepatra. Not a port. Not a wrapper. Something new — for everyone. I asked: <em>what would Notepad++ look like if it was built today, in 2026, when AI is part of every developer's workflow?</em></p>
+        <p>The answer: a 5 MB native binary with a Rust-powered core, Scintilla editing engine, and local AI integration. No cloud. No telemetry. No subscription. Just you and your code — on Linux, Windows, and macOS.</p>
+    </div>
+
+    <!-- CTA -->
+    <div class="cta">
+        <h2>Ready to try?</h2>
+        <p>One command. No installer. No bloat. Just an editor that works.</p>
+        <div class="hero-buttons">
+            <a href="#download" class="btn btn-primary">Get Notepatra</a>
+            <a href="https://github.com/singhpratech/notepatra" class="btn btn-secondary">Star on GitHub</a>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+        <p><strong>Notepatra</strong> — Native C++/Rust code editor for the AI era</p>
+        <p>Envisioned by <a href="https://github.com/singhpratech">Prateek Singh</a>. Inspired by Notepad++. Built by Claude.</p>
+        <p>Free forever · GPL v3 · <a href="https://github.com/singhpratech/notepatra">Source on GitHub</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Changelog</a></p>
+        <p class="quote">"I didn't build Notepatra because the world needed another text editor.<br>I built it because every developer deserves one that's fast, free, and smart."</p>
+    </footer>
+
+    <script>
+        // Tab switching for install commands
+        document.querySelectorAll('.install-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const target = tab.dataset.tab;
+                document.querySelectorAll('.install-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.install-cmd').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById('cmd-' + target).classList.add('active');
+            });
+        });
+
+        // Auto-detect OS and switch tab
+        const ua = navigator.userAgent.toLowerCase();
+        let detectedOS = 'linux';
+        if (ua.includes('mac')) detectedOS = 'mac';
+        else if (ua.includes('win')) detectedOS = 'windows';
+        if (detectedOS !== 'linux') {
+            const t = document.querySelector(`.install-tab[data-tab="${detectedOS}"]`);
+            if (t) t.click();
+        }
+
+        // Copy to clipboard
+        function copyCmd(btn, text) {
+            navigator.clipboard.writeText(text).then(() => {
+                const orig = btn.textContent;
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = orig;
+                    btn.classList.remove('copied');
+                }, 1500);
+            });
+        }
+    </script>
 </body>
 </html>
