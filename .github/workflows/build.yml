@@ -67,7 +67,7 @@ jobs:
           tar xzf qscintilla.tar.gz
           cd QScintilla_src-2.14.1/src
           "$QT_PATH/bin/qmake" qscintilla.pro
-          make -j$(sysctl -n hw.ncpu)
+          make VERBOSE=1 2>&1 | tail -200
           sudo make install
           echo "=== Installed QScintilla files ==="
           ls -la "$QT_PATH/lib/"libqscintilla2* 2>/dev/null || true
@@ -122,7 +122,7 @@ jobs:
             -DCMAKE_PREFIX_PATH="$QT_PATH" \
             -DQSCINTILLA_INCLUDE="$QSC_INC" \
             -DQSCINTILLA_LIB="$QSC_LIB"
-          make -j$(sysctl -n hw.ncpu)
+          make VERBOSE=1 2>&1 | tail -200
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -146,7 +146,7 @@ jobs:
           tar xzf qscintilla.tar.gz
           cd QScintilla_src-2.14.1/src
           "$QT_PATH/bin/qmake" qscintilla.pro
-          make -j$(sysctl -n hw.ncpu)
+          make VERBOSE=1 2>&1 | tail -200
           sudo make install
           echo "=== Verify QScintilla install ==="
           ls -la "$QT_PATH/lib/"libqscintilla2* 2>/dev/null || true
@@ -183,7 +183,7 @@ jobs:
             -DCMAKE_PREFIX_PATH="$QT_PATH" \
             -DQSCINTILLA_INCLUDE="$QSC_INC" \
             -DQSCINTILLA_LIB="$QSC_LIB"
-          make -j$(sysctl -n hw.ncpu)
+          make VERBOSE=1 2>&1 | tail -200
 
       - name: Create DMG
         run: |
@@ -276,7 +276,7 @@ jobs:
             -DCMAKE_PREFIX_PATH="%Qt5_DIR%" ^
             -DQSCINTILLA_INCLUDE="${{ steps.qscintilla.outputs.QSC_INC }}" ^
             -DQSCINTILLA_LIB="${{ steps.qscintilla.outputs.QSC_LIB }}"
-          cmake --build . --config Release
+          cmake --build . --config Release --verbose 2>&1 | tail -200
 
       - name: Test
         shell: pwsh
