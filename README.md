@@ -217,19 +217,35 @@ That's it. Every AI feature in Notepatra now works.
 
 ## Install
 
-### Download
+### One-command install
 
-| Platform | Download | Status |
+**Linux / macOS:**
+```bash
+curl -fsSL https://notepatra.org/install.sh | sh
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://notepatra.org/install.ps1 | iex
+```
+
+That's it. Auto-detects your OS, downloads the right binary, installs it, adds to PATH, creates shortcuts.
+
+### Or download manually
+
+| Platform | Download | What you get |
 |---|---|---|
-| **Linux** x64 | [GitHub Releases](https://github.com/singhpratech/notepatra/releases) | ✅ Available |
-| **macOS** Apple Silicon | [GitHub Releases](https://github.com/singhpratech/notepatra/releases) | ✅ Available (.dmg) |
-| **macOS** Intel | [GitHub Releases](https://github.com/singhpratech/notepatra/releases) | ✅ Available |
-| **Windows** x64 | [GitHub Releases](https://github.com/singhpratech/notepatra/releases) | ✅ Available (.exe) |
+| **Linux** x64 | [Download .tar.gz](https://github.com/singhpratech/notepatra/releases/latest) | Single binary, add to PATH |
+| **macOS** Apple Silicon (M1-M4) | [Download .dmg](https://github.com/singhpratech/notepatra/releases/latest) | Drag to Applications |
+| **macOS** Intel | [Download .tar.gz](https://github.com/singhpratech/notepatra/releases/latest) | Notepatra.app bundle |
+| **Windows** x64 | [Download .zip](https://github.com/singhpratech/notepatra/releases/latest) | .exe + Qt DLLs, run anywhere |
 
 ### Build from source
 
+<details>
+<summary>Linux (Ubuntu/Mint/Debian)</summary>
+
 ```bash
-# Linux (Ubuntu/Mint/Debian)
 sudo apt install cmake qtbase5-dev libqscintilla2-qt5-dev
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
@@ -238,16 +254,40 @@ cd notepatra
 cd rust-core && cargo build --release && cd ..
 mkdir build && cd build && cmake .. && make -j$(nproc)
 ./notepatra
-
-# macOS
-brew install qt@5 cmake
-# Build QScintilla from source (brew's version links Qt6)
-# See build.sh for full instructions
-
-# Windows
-# Install Qt5, Rust, CMake, Visual Studio 2022
-# See .github/workflows/build.yml for full steps
 ```
+</details>
+
+<details>
+<summary>macOS</summary>
+
+```bash
+brew install qt@5 cmake
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+git clone https://github.com/singhpratech/notepatra.git
+cd notepatra
+# Build QScintilla from source (brew's version links Qt6)
+./build.sh
+```
+</details>
+
+<details>
+<summary>Windows</summary>
+
+```
+1. Install Visual Studio 2022 (with C++ workload)
+2. Install Qt5: https://www.qt.io/download-open-source
+3. Install Rust: https://rustup.rs
+4. Install CMake: https://cmake.org/download
+
+git clone https://github.com/singhpratech/notepatra.git
+cd notepatra
+cd rust-core && cargo build --release && cd ..
+mkdir build && cd build
+cmake .. -G "Visual Studio 17 2022"
+cmake --build . --config Release
+```
+</details>
 
 ---
 
