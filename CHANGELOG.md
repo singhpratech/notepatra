@@ -1,59 +1,114 @@
 # Changelog
 
 All notable changes to Notepatra will be documented in this file.
+Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.1.0] — 2026-03-22
+---
 
-### Initial Release
+## [0.1.0] — 2026-04-06
+
+### First Public Release
 
 **Core**
 - Native C++ (Qt5 + QScintilla) editor with Rust core library
-- 60+ file types with syntax highlighting
-- Memory-mapped file I/O handles files up to 2.5 GB
-- Aho-Corasick search engine for fast literal matching
-- Myers diff algorithm for file comparison
-- 4.9 MB standalone binary, no runtime dependencies
+- 100+ file types with 44 language lexers
+- Memory-mapped file I/O handles files up to 2 GB (full visibility, no truncation)
+- Aho-Corasick search engine (Rust) for fast literal matching
+- Myers diff algorithm (Rust) for file comparison
+- 5.1 MB standalone binary
+- 105/105 automated tests passing
+- Cross-platform: Linux, macOS (Intel + Apple Silicon), Windows
 
 **Editor**
-- Tabbed editing with drag, reorder, middle-click close
-- Tab right-click: Close, Close Others, Save, Rename, Copy Path, Color Tag
-- Session persistence — reopens all files on restart
-- Crash recovery — unsaved work restored after unexpected exit
+- Tabbed editing with drag, reorder, middle-click close, double-click new tab
+- Tab right-click: Close, Close Others, Close Left/Right, Save, Save As, Rename, Copy Full Path, Copy Filename, Copy Directory, Open Folder, Open Terminal, Read-Only, Color Tag (7 colors + custom)
+- 3 themes: Light, Dark, Monokai (Settings > Theme, persisted)
+- Session persistence — reopens all files, cursor positions, window size on restart
+- Crash recovery — auto-saves unsaved work every 10 seconds, restores on crash
 - File change detection — notifies when external programs modify open files
-- Double-click word highlight (all occurrences)
-- Ctrl+B brace matching with selection highlight
-- Code folding, bookmarks, auto-complete, indent guides
-- Custom scrollbars, pastel green current line
+- Recent Files menu (persisted across sessions)
+- Drag-and-drop file open
+- Double-click word highlight (all occurrences in orange)
+- Ctrl+B brace matching — highlights both braces + selects everything between
+- Macro recording — Start (Ctrl+Shift+R), Stop (Ctrl+Shift+T), Playback (Ctrl+Shift+P), Run Multiple Times, Save/Load .macro files
+- Code folding, bookmarks, auto-complete, indent guides, line numbers
+- Custom scrollbars (rounded, modern)
+- Pastel green current line highlight
+- Word count in status bar
+- Encoding conversion (UTF-8, ANSI, ISO-8859-1, UTF-16)
+- Git gutter auto-refresh on save
+
+**Languages (44 lexers)**
+- Python, JavaScript, CoffeeScript, C, C++, C#, D, Java, HTML/PHP, CSS, XML, JSON, SQL, Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Fortran77, MATLAB, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV-Ray, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile
+- SQL variants: T-SQL, PL/SQL, MySQL, PostgreSQL, SQLite
 
 **Plugins (inbuilt)**
 - JSON Tools — Format, Minify, Fix+Format (Rust), AI Fix (Ollama)
-- HTML Tools — Format, Minify, Fix+Format, AI Fix (Ollama)
-- Bracket Tools — Check, Auto-Fix (Rust), AI Fix (Ollama)
+  - Fixes: missing braces, trailing commas, single quotes, unquoted keys, missing `{` after `[`, nested object detection
+  - Preserves original key order
+  - Detailed fix report showing every issue found
+- HTML Tools — Format (2/4 spaces), Minify, Fix+Format, AI Fix (Ollama)
+  - Fixes: unclosed tags, missing closers, broken nesting
+- Bracket Tools — Check (with line numbers), Auto-Fix, AI Fix (Ollama)
+  - Detects: mismatched (), [], {}, begin/end, if/fi, do/done
 - SQL Formatter — UPPERCASE/lowercase keywords, configurable indent
-- Compare — Side-by-side Scintilla diff, navigation, ignore options
-- Git Integration — Changed files, branch, push/pull, git gutter
+- Compare / Diff — pick any two tabs or tab vs file
+  - Side-by-side Scintilla editors with syntax highlighting
+  - +/- markers, Prev/Next navigation
+  - Ignore whitespace, case, empty lines
+- Git Integration — changed files panel, branch display, Push/Pull/Refresh, Open on GitHub, git gutter margins
 
-**AI Integration (Ollama)**
-- AI Assistant panel with 8 actions: Explain, Find Bugs, Refactor, Write Tests, Add Comments, Generate Docs, Optimize, Translate
-- AI Fix button in JSON, HTML, and Bracket tools
-- Ollama status indicator (green/red dot) with model selector
+**AI Integration (Ollama — local, private, no cloud)**
+- AI Assistant panel (Ctrl+Shift+A) with 8 actions: Explain, Find Bugs, Refactor, Write Tests, Add Comments, Generate Docs, Optimize, Translate
+- AI Fix button in JSON, HTML, and Bracket tools — hybrid approach (regex for speed, AI for intelligence)
+- Ollama status indicator (green/red dot) with model selector dropdown
+- Default model: qwen3.5:9b, also supports: gemma4:e4b, llama3.2:3b, codellama:7b, deepseek-coder-v2:16b, mistral:7b, starcoder2:7b
 - Setup instructions shown when Ollama not available
 
 **Search**
-- 5-tab Find/Replace: Find, Replace, Find in Files, Mark, Go to
-- 3 search modes: Normal, Extended, Regular expression
-- Find/Replace in all opened documents
-- Search results panel with double-click to jump to line
+- 5-tab Find/Replace: Find, Replace, Find in Files, Mark, Go to Line/Offset
+- 3 search modes: Normal, Extended (\n, \r, \t, \xNN), Regular expression
+- Find All in Current Document — results in bottom panel, double-click to jump
+- Find All in All Opened Documents
+- Replace All in All Opened Documents
+- Find in Files — recursive directory search with file filters
+- Mark All with visual indicators
+- Search history (last 20 searches)
 
 **Features**
-- Built-in Terminal (opens as tab)
-- REST Client (.http files)
-- Hex Editor (binary file viewer)
-- Markdown Converter (text to table/list/code/bold/link)
-- File Explorer sidebar
-- Function List panel
-- Preferences dialog (6 tabs)
+- Built-in Terminal — opens as tab, real bash/cmd/zsh commands, cd works
+- REST Client — send HTTP requests, see responses with pretty JSON
+- Hex Editor — color-coded hex dump (offset, hex bytes, ASCII columns)
+- Markdown Converter — selection to table, list, code block, bold, italic, link, heading, HTML-to-markdown
+- File Explorer sidebar (Ctrl+Shift+E)
+- Function List panel — lists functions/classes, double-click to navigate
+- Preferences dialog (6 tabs: General, Editing, Margins, New Document, Tab Settings, Auto-Completion)
 
 **Plugin System**
-- User plugins via .so shared libraries
-- Simple C API: export 2 functions to create a plugin
+- User plugins via shared libraries (.so Linux, .dylib macOS, .dll Windows)
+- Simple C API: export `notepatra_plugin_name()` and `notepatra_plugin_run()` to create a plugin
+- Plugins appear in menu with author/version info
+
+**CLI**
+- `notepatra --version` — show version
+- `notepatra --help` — show usage
+- `notepatra --line N file` — open file at line N
+- `notepatra --theme Dark` — start with specific theme
+- `notepatra file1 file2 ...` — open multiple files
+
+**Install**
+- One-command install: `curl -fsSL https://notepatra.org/install.sh | sh`
+- Windows: `irm https://notepatra.org/install.ps1 | iex`
+- GitHub Actions CI builds Linux x64, macOS ARM64, macOS x64, Windows x64
+- Auto-creates GitHub Releases with downloadable binaries on tag push
+
+**Security**
+- Zero API keys or secrets in code or git history
+- Ollama connects only to localhost (no external network)
+- Plugin loading restricted to user-controlled directory
+- Crash handler catches SIGSEGV/SIGABRT, saves recovery data
+- No telemetry, no analytics, no phone-home
+
+---
+
+_Envisioned by Prateek Singh. Inspired by Notepad++. Built by Claude._
