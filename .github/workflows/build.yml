@@ -126,9 +126,6 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
-    # Windows build is allowed to fail for now — MSVC + QScintilla source build
-    # is finicky. Linux + Mac ARM ship in v0.1.0; Windows lands in v0.1.1.
-    continue-on-error: true
     permissions:
       contents: read
       issues: write
@@ -150,42 +147,69 @@ jobs:
           arch: x64
 
       - name: Build QScintilla from source
-        shell: cmd
+        shell: pwsh
         run: |
-          curl -L -o qscintilla.tar.gz "https://www.riverbankcomputing.com/static/Downloads/QScintilla/2.14.1/QScintilla_src-2.14.1.tar.gz"
+          $qtRoot = (Resolve-Path "$env:Qt5_DIR\..\..\..").Path
+          Write-Host "Qt root: $qtRoot"
+          curl.exe -L -o qscintilla.tar.gz "https://www.riverbankcomputing.com/static/Downloads/QScintilla/2.14.1/QScintilla_src-2.14.1.tar.gz"
           tar xzf qscintilla.tar.gz
-          cd QScintilla_src-2.14.1\src
-          qmake qscintilla.pro
+          Set-Location QScintilla_src-2.14.1\src
+          & "$qtRoot\bin\qmake.exe" qscintilla.pro
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::qmake failed"; exit 1 }
           nmake
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::nmake failed"; exit 1 }
           nmake install
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::nmake install failed"; exit 1 }
 
-      - name: Locate QScintilla
+          # nmake install puts the .lib and headers wherever qmake's config says.
+          # Verify they actually landed where we expect (in the Qt prefix).
+          Write-Host "=== Searching for installed QScintilla artifacts ==="
+          Get-ChildItem -Path $qtRoot -Recurse -Filter "qscintilla2_qt5.lib" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "LIB: $($_.FullName)" }
+          Get-ChildItem -Path $qtRoot -Recurse -Filter "qsciscintilla.h" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "HDR: $($_.FullName)" }
+
+      - name: Locate QScintilla and verify install
         id: qscintilla
         shell: pwsh
         run: |
-          # install-qt-action sets Qt5_DIR to the cmake config dir, e.g.
-          # .../lib/cmake/Qt5 — the Qt root is three levels up
           $qtRoot = (Resolve-Path "$env:Qt5_DIR\..\..\..").Path
           Write-Host "Qt root = $qtRoot"
 
-          $lib = Join-Path $qtRoot "lib\qscintilla2_qt5.lib"
-          $inc = Join-Path $qtRoot "include"
-
-          if (-not (Test-Path $lib)) {
-            Write-Host "Lib not at expected path, searching..."
+          # Find the lib (it should be in $qtRoot\lib after nmake install)
+          $libCandidates = @(
+            "$qtRoot\lib\qscintilla2_qt5.lib"
+          )
+          $lib = $libCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $lib) {
             $found = Get-ChildItem -Path $qtRoot -Recurse -Filter "qscintilla2_qt5.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($found) { $lib = $found.FullName } else { Write-Error "QScintilla lib not found"; exit 1 }
+            if ($found) { $lib = $found.FullName }
           }
-          if (-not (Test-Path (Join-Path $inc "Qsci"))) {
-            Write-Host "Headers not at expected path, searching..."
-            $hdr = Get-ChildItem -Path $qtRoot -Recurse -Filter "qsciscintilla.h" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($hdr) { $inc = $hdr.Directory.Parent.FullName } else { Write-Error "QScintilla headers not found"; exit 1 }
+          if (-not $lib) { Write-Host "::error::QScintilla lib not found anywhere under $qtRoot"; exit 1 }
+
+          # Find the include dir — must be the directory CONTAINING Qsci/, since
+          # source uses #include <Qsci/qscilexerXXX.h>
+          $hdr = $null
+          if (Test-Path "$qtRoot\include\Qsci\qsciscintilla.h") {
+            $hdr = "$qtRoot\include\Qsci\qsciscintilla.h"
+          } else {
+            $hdr = (Get-ChildItem -Path $qtRoot -Recurse -Filter "qsciscintilla.h" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          }
+          if (-not $hdr) { Write-Host "::error::qsciscintilla.h not found anywhere under $qtRoot"; exit 1 }
+          # The include dir to pass to -I is the parent of Qsci/, i.e. dirname(dirname(qsciscintilla.h))
+          $inc = (Split-Path -Parent (Split-Path -Parent $hdr))
+
+          # Sanity check: the file <inc>/Qsci/qsciscintilla.h must exist
+          $check = Join-Path $inc "Qsci\qsciscintilla.h"
+          if (-not (Test-Path $check)) {
+            Write-Host "::error::sanity check failed: $check does not exist"
+            exit 1
           }
 
           Write-Host "QScintilla lib: $lib"
           Write-Host "QScintilla inc: $inc"
+          Write-Host "Sanity-checked: $check exists"
           "QSC_LIB=$lib" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "QSC_INC=$inc" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "QT_ROOT=$qtRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -199,15 +223,23 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path build -Force | Out-Null
           Set-Location build
+          # CMAKE_PREFIX_PATH must point to the Qt root, NOT to Qt5_DIR
+          # (Qt5_DIR is <root>/lib/cmake/Qt5 — too deep). Use the root so
+          # find_package(Qt5) and find_path/find_library both work.
+          $qtRoot = "${{ steps.qscintilla.outputs.QT_ROOT }}"
           cmake .. -G "Visual Studio 17 2022" -A x64 `
-            "-DCMAKE_PREFIX_PATH=$env:Qt5_DIR" `
+            "-DCMAKE_PREFIX_PATH=$qtRoot" `
             "-DQSCINTILLA_INCLUDE=${{ steps.qscintilla.outputs.QSC_INC }}" `
             "-DQSCINTILLA_LIB=${{ steps.qscintilla.outputs.QSC_LIB }}" 2>&1 | Tee-Object -FilePath ../cmake-configure.log
           if ($LASTEXITCODE -ne 0) { Write-Host "::error::cmake configure failed"; exit 1 }
           cmake --build . --config Release 2>&1 | Tee-Object -FilePath ../cmake-build.log
           $buildExit = $LASTEXITCODE
-          Write-Host "=== Last 200 lines of cmake build output ==="
-          Get-Content ../cmake-build.log -Tail 200 | ForEach-Object { Write-Host $_ }
+          Write-Host "=== First 100 lines of cmake build output ==="
+          Get-Content ../cmake-build.log | Select-Object -First 100 | ForEach-Object { Write-Host $_ }
+          Write-Host "=== Errors and warnings only ==="
+          Get-Content ../cmake-build.log | Select-String -Pattern "error|fatal" | Select-Object -First 50 | ForEach-Object { Write-Host $_ }
+          Write-Host "=== Last 100 lines of cmake build output ==="
+          Get-Content ../cmake-build.log -Tail 100 | ForEach-Object { Write-Host $_ }
           if ($buildExit -ne 0) { Write-Host "::error::cmake build failed (exit $buildExit)"; exit 1 }
           Write-Host "=== Searching for notepatra.exe ==="
           Get-ChildItem -Path . -Recurse -Filter "notepatra.exe" | ForEach-Object { Write-Host $_.FullName }
@@ -294,8 +326,7 @@ jobs:
           path: notepatra-win/
 
   release:
-    # Windows is allowed to fail; release only requires linux + mac-arm.
-    needs: [build-linux, build-macos-arm]
+    needs: [build-linux, build-macos-arm, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:

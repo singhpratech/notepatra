@@ -77,14 +77,15 @@ else()
     set(RUST_LIB ${RUST_CORE_DIR}/target/release/libnotepad_core.a)
 endif()
 
-# Build Rust library as a custom command
-add_custom_command(
-    OUTPUT ${RUST_LIB}
+# Build Rust library as a custom command.
+# Use BYPRODUCTS (not OUTPUT) so multi-config generators (Visual Studio) handle
+# the externally-produced .lib correctly at link time.
+add_custom_target(rust_core
     COMMAND cargo build --release
+    BYPRODUCTS ${RUST_LIB}
     WORKING_DIRECTORY ${RUST_CORE_DIR}
     COMMENT "Building Rust core library..."
 )
-add_custom_target(rust_core DEPENDS ${RUST_LIB})
 
 # ── Sources ──
 set(SOURCES
@@ -180,7 +181,7 @@ add_dependencies(${EXE_NAME} rust_core)
 target_include_directories(${EXE_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/rust-core/include
-    ${QSCINTILLA_INCLUDE}/..
+    ${QSCINTILLA_INCLUDE}
 )
 
 # ── Linking ──
@@ -193,7 +194,13 @@ target_link_libraries(${EXE_NAME} PRIVATE
 )
 
 if(WIN32)
-    target_link_libraries(${EXE_NAME} PRIVATE ws2_32 userenv bcrypt ntdll)
+    # Rust staticlib needs these system libs on MSVC. Rust normally emits link
+    # directives for them but being explicit avoids surprises across toolchains.
+    target_link_libraries(${EXE_NAME} PRIVATE
+        ws2_32 userenv bcrypt ntdll
+        advapi32 ole32 shell32 dbghelp
+        kernel32 user32 gdi32 winspool comdlg32
+    )
 elseif(APPLE)
     target_link_libraries(${EXE_NAME} PRIVATE pthread dl m
         "-framework Security" "-framework CoreFoundation")
