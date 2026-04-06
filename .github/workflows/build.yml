@@ -47,7 +47,7 @@ jobs:
           name: notepatra-linux-x64
           path: build/notepatra
 
-  build-macos:
+  build-macos-intel:
     runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
@@ -130,8 +130,55 @@ jobs:
           name: notepatra-macos-x64
           path: build/Notepatra.app
 
+  build-macos-arm:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install qt@5 cmake
+          QT_PATH=$(brew --prefix qt@5)
+          export PATH="$QT_PATH/bin:$PATH"
+          export PKG_CONFIG_PATH="$QT_PATH/lib/pkgconfig:$PKG_CONFIG_PATH"
+          curl -L -o qscintilla.tar.gz \
+            "https://www.riverbankcomputing.com/static/Downloads/QScintilla/2.14.1/QScintilla_src-2.14.1.tar.gz"
+          tar xzf qscintilla.tar.gz
+          cd QScintilla_src-2.14.1/src
+          "$QT_PATH/bin/qmake" qscintilla.pro
+          make -j$(sysctl -n hw.ncpu)
+          sudo make install
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust core
+        run: cd rust-core && cargo build --release
+
+      - name: Build C++
+        run: |
+          QT_PATH=$(brew --prefix qt@5)
+          export PATH="$QT_PATH/bin:$PATH"
+          QSC_LIB=$(find "$QT_PATH" /usr/local /opt/homebrew -name "libqscintilla2_qt5*" -not -name "*.dSYM" 2>/dev/null | head -1)
+          QSC_INC="$QT_PATH/include"
+          [ ! -d "$QSC_INC/Qsci" ] && QSC_INC="/opt/homebrew/include"
+          [ ! -d "$QSC_INC/Qsci" ] && QSC_INC="/usr/local/include"
+          echo "Lib: $QSC_LIB | Inc: $QSC_INC"
+          mkdir -p build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QT_PATH" \
+            -DQSCINTILLA_INCLUDE="$QSC_INC" \
+            -DQSCINTILLA_LIB="$QSC_LIB"
+          make -j$(sysctl -n hw.ncpu)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepatra-macos-arm64
+          path: build/Notepatra.app
+
   release:
-    needs: [build-linux, build-macos]
+    needs: [build-linux, build-macos-intel, build-macos-arm]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
