@@ -50,7 +50,7 @@ jobs:
           build/notepatra --version || true
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-linux-x64
           path: build/notepatra
@@ -127,7 +127,7 @@ jobs:
           hdiutil create -volname "Notepatra" -srcfolder build/Notepatra.app -ov -format UDZO build/Notepatra.dmg
 
       - name: Upload DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-macos-arm64
           path: build/Notepatra.dmg
@@ -239,7 +239,7 @@ jobs:
 
       - name: Upload build logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-build-logs
           path: |
@@ -278,7 +278,7 @@ jobs:
           Write-Host "Total package size: $([math]::Round($totalSize, 1)) MB"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-windows-x64
           path: notepatra-win/
