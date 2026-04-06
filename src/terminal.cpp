@@ -56,7 +56,7 @@ TerminalWidget::TerminalWidget(QWidget *parent) : QWidget(parent) {
 
     connect(m_process, &QProcess::readyReadStandardOutput, this, &TerminalWidget::onReadyRead);
     connect(m_process, &QProcess::readyRead, this, &TerminalWidget::onReadyRead);
-    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+    connect(m_process, static_cast<void(QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished),
             this, [this](int code, QProcess::ExitStatus) {
         QByteArray remaining = m_process->readAll();
         if (!remaining.isEmpty())

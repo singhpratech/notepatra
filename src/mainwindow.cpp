@@ -1007,8 +1007,9 @@ void MainWindow::buildMenus() {
     // ═══ TOOLS ═══
     auto *tools = mb->addMenu("&Tools");
     auto *hashMenu = tools->addMenu("Hash");
-    for (auto &[name, algo] : std::initializer_list<std::pair<const char*, int>>{{"MD5", 0}, {"SHA-1", 1}, {"SHA-256", 2}, {"SHA-512", 3}}) {
-        hashMenu->addAction(name, this, [this, E, algo]() {
+    struct HashEntry { const char *name; int algo; };
+    for (const auto &h : {HashEntry{"MD5", 0}, HashEntry{"SHA-1", 1}, HashEntry{"SHA-256", 2}, HashEntry{"SHA-512", 3}}) {
+        hashMenu->addAction(h.name, this, [this, E, algo = h.algo]() {
             if (auto *e = E()) {
                 QByteArray d = e->hasSelectedText() ? e->selectedText().toUtf8() : e->text().toUtf8();
                 QString h = RustCore::computeHash(d, algo);
