@@ -2,7 +2,7 @@
 
 This file is the single source of truth Claude maintains overnight. **Read this first.**
 
-Last updated: 2026-04-06 (latest push: `b024c5d`)
+Last updated: 2026-04-06 (latest push: `e96afcc` — **THE actual root cause fix**)
 
 ---
 
@@ -70,13 +70,24 @@ Last updated: 2026-04-06 (latest push: `b024c5d`)
 
 ## What's still broken
 
-(Will be updated as iterations progress.)
+**SOLVED** (commit `e96afcc`). 12 iterations of Windows fixes were all fighting symptoms because `$qtRoot` was computed wrong from the very first commit.
 
-The Windows pre-main crash. Three independent investigations agree on the root cause:
+The diagnostic in issue #1 from c87ecba revealed the actual bug:
+- **Computed**: `D:\a\_temp\Qt\Qt\5.15.2\` ← WRONG (one level too high)
+- **Actual Qt root**: `D:\a\_temp\Qt\Qt\5.15.2\msvc2019_64\`
 
-**windeployqt does not recursively scan third-party DLLs.** Notepatra.exe pulls in Qt5Widgets through qscintilla2_qt5.dll, not directly. When windeployqt scans the exe's import table, it doesn't see Qt5Widgets as a dependency, so it skips deploying `platforms\qwindows.dll` (the Qt platform plugin every Qt app needs to start).
+The line `Resolve-Path "$env:Qt5_DIR\..\..\.."` walks up from `<root>\msvc2019_64\lib\cmake\Qt5` and lands at `<root>\` (the version dir) instead of `<root>\msvc2019_64\` (the actual arch-specific Qt root). install-qt-action's layout has the arch dir nested one level deeper than I assumed.
 
-The `b024c5d` commit's hybrid approach should solve this by manually copying `platforms\qwindows.dll` regardless of what windeployqt does. If it doesn't, the issue is something else and the diagnostic in issue #1 will reveal what.
+The QScintilla source build accidentally still worked because qmake.exe was on PATH via install-qt-action's OWN PATH addition, NOT via our bogus `$qtRoot\bin\` prepend. The fallback `Get-ChildItem` search in the discovery step then masked the bug by finding `qscintilla2_qt5.lib` via recursive search. So the QScintilla step exited 0 with the correct file paths, but exported the wrong `QT_ROOT` step output for downstream steps.
+
+Every downstream step (`windeployqt`, manual DLL copy, lexer test) used `$qtRoot\bin\X` and resolved to a non-existent path → `Test-Path` failed → `exit 1`.
+
+**The fix in `e96afcc`:**
+1. Discover qtRoot by finding `qmake.exe` directly under `$env:RUNNER_TEMP\Qt` via recursive search
+2. Derive `qtRoot = dirname(dirname(qmake.exe))` — bin\qmake.exe → bin → Qt root
+3. Sanity-check the layout: require `$qtRoot\bin\qmake.exe`, `$qtRoot\bin\windeployqt.exe`, `$qtRoot\lib`, AND `$qtRoot\plugins\platforms\qwindows.dll` all to exist before proceeding
+
+This combined with the `b024c5d` hybrid bundle (windeployqt + manual deterministic DLL copy + critical-files assertion) should produce a green Windows build. The `e96afcc` run is queued behind `b3d54ad` and will start in ~12 min once b3d54ad finishes failing the same way.
 
 ---
 
