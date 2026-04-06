@@ -919,27 +919,9 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.0</div>
+        <div class="section-label">Download v0.1.1</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
-
-        <div style="background: rgba(255,152,0,0.08); border: 1px solid rgba(255,152,0,0.35); border-radius: 14px; padding: 24px 28px; margin-bottom: 32px;">
-            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-                <span style="font-size: 22px;">⚠️</span>
-                <strong style="color: #FF9800; font-size: 15px; text-transform: uppercase; letter-spacing: 1px;">Known issues in v0.1.0 — v0.1.1 incoming</strong>
-            </div>
-            <p style="color: #E0E0E0; font-size: 14px; line-height: 1.7; margin-bottom: 10px;">
-                Three bugs were found in the v0.1.0 binaries after release. <strong>v0.1.1 is being built right now</strong> with fixes — check back in a few minutes, or build from source today.
-            </p>
-            <ul style="color: #8899AA; font-size: 13px; line-height: 1.8; padding-left: 22px; margin-bottom: 0;">
-                <li>🪟 <strong>Windows:</strong> Markdown, SQL, and JSON files don't get syntax highlighting (QScintilla wrapper missing Lexilla bindings — fixed by switching back to Riverbank's official source)</li>
-                <li>🪟 🍎 <strong>Windows + macOS:</strong> the installed binary has no embedded icon (resource files were missing — added)</li>
-                <li>📝 <strong>All platforms:</strong> JSON files with CRLF line endings were misclassified as JavaScript by the lexer detection heuristic (fixed)</li>
-            </ul>
-            <p style="color: #8899AA; font-size: 13px; line-height: 1.7; margin: 12px 0 0;">
-                <strong style="color: #E0E0E0;">If you need it today:</strong> use the <code style="color:#39FF14;font-size:12px;">curl | sh</code> / <code style="color:#39FF14;font-size:12px;">irm | iex</code> commands above (they'll auto-pick v0.1.1 the moment it's published) or <a href="https://github.com/singhpratech/notepatra#install" style="color:#39FF14;">build from source</a> (2 minutes on Linux, 3 minutes elsewhere).
-            </p>
-        </div>
 
         <div class="download-grid">
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
