@@ -1,0 +1,130 @@
+name: Build Notepatra
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake qtbase5-dev libqscintilla2-qt5-dev libqt5network5-dev libqt5printsupport5
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust core
+        run: cd rust-core && cargo build --release
+
+      - name: Build C++
+        run: |
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+          make -j$(nproc)
+
+      - name: Run tests
+        run: |
+          cd build
+          ./notepatra --version
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepatra-linux-x64
+          path: build/notepatra
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '5.15.2'
+          modules: 'qtnetworkauth'
+
+      - name: Install QScintilla
+        run: |
+          git clone https://github.com/nickg/qscintilla.git C:\qscintilla
+          cd C:\qscintilla\src
+          qmake
+          nmake
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust core
+        run: cd rust-core && cargo build --release
+
+      - name: Build C++
+        run: |
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="C:\qscintilla"
+          cmake --build . --config Release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepatra-windows-x64
+          path: build/Release/notepatra.exe
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install cmake qt@5 qscintilla2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust core
+        run: cd rust-core && cargo build --release
+
+      - name: Build C++
+        run: |
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=$(brew --prefix qt@5)
+          make -j$(sysctl -n hw.ncpu)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepatra-macos-x64
+          path: build/notepatra
+
+  # Create release with all binaries when a tag is pushed
+  release:
+    needs: [build-linux, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Package
+        run: |
+          chmod +x notepatra-linux-x64/notepatra
+          tar czf notepatra-linux-x64.tar.gz -C notepatra-linux-x64 notepatra
+          tar czf notepatra-macos-x64.tar.gz -C notepatra-macos-x64 notepatra
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            notepatra-linux-x64.tar.gz
+            notepatra-macos-x64.tar.gz
+          generate_release_notes: true
