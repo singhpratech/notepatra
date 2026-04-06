@@ -126,6 +126,9 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
+    # Windows build is allowed to fail for now — MSVC + QScintilla source build
+    # is finicky. Linux + Mac ARM ship in v0.1.0; Windows lands in v0.1.1.
+    continue-on-error: true
     permissions:
       contents: read
       issues: write
@@ -291,7 +294,8 @@ jobs:
           path: notepatra-win/
 
   release:
-    needs: [build-linux, build-macos-arm, build-windows]
+    # Windows is allowed to fail; release only requires linux + mac-arm.
+    needs: [build-linux, build-macos-arm]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -306,8 +310,12 @@ jobs:
           chmod +x notepatra-linux-x64/notepatra || true
           tar czf notepatra-linux-x64.tar.gz -C notepatra-linux-x64 notepatra
           cp notepatra-macos-arm64/Notepatra.dmg notepatra-macos-arm64.dmg
-          cd notepatra-windows-x64 && zip -r ../notepatra-windows-x64.zip . && cd ..
-          ls -la *.tar.gz *.dmg *.zip
+          # Windows artifact is optional — bundle if present, skip if not.
+          if [ -d notepatra-windows-x64 ]; then
+            cd notepatra-windows-x64 && zip -r ../notepatra-windows-x64.zip . && cd ..
+          fi
+          ls -la *.tar.gz *.dmg 2>/dev/null
+          ls -la *.zip 2>/dev/null || true
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -316,4 +324,5 @@ jobs:
             notepatra-linux-x64.tar.gz
             notepatra-macos-arm64.dmg
             notepatra-windows-x64.zip
+          fail_on_unmatched_files: false
           generate_release_notes: true
