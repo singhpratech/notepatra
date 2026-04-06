@@ -177,8 +177,108 @@ jobs:
           name: notepatra-macos-arm64
           path: build/Notepatra.app
 
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt5
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '5.15.2'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2019_64'
+          dir: '${{ runner.temp }}/Qt'
+
+      - name: Build QScintilla from source
+        shell: cmd
+        run: |
+          curl -L -o qscintilla.tar.gz "https://www.riverbankcomputing.com/static/Downloads/QScintilla/2.14.1/QScintilla_src-2.14.1.tar.gz"
+          tar xzf qscintilla.tar.gz
+          cd QScintilla_src-2.14.1\src
+          call "%Qt5_DIR%\bin\qmake.exe" qscintilla.pro
+          call "%Qt5_DIR%\..\..\..\..\..\..\Tools\QtCreator\bin\jom.exe" /J %NUMBER_OF_PROCESSORS% 2>nul || nmake
+          nmake install
+
+      - name: Locate QScintilla
+        id: qscintilla
+        shell: pwsh
+        run: |
+          # QScintilla installs into the Qt prefix by default
+          $qtDir = $env:Qt5_DIR
+          Write-Host "Qt5_DIR = $qtDir"
+
+          # Search for the library
+          $lib = Get-ChildItem -Path $qtDir -Recurse -Filter "qscintilla2_qt5.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $lib) {
+            $lib = Get-ChildItem -Path $qtDir -Recurse -Filter "qscintilla2_qt5*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          # Also check the QScintilla build directory
+          if (-not $lib) {
+            $lib = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\QScintilla_src-2.14.1" -Recurse -Filter "qscintilla2_qt5.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if ($lib) {
+            Write-Host "Found QScintilla lib: $($lib.FullName)"
+            "QSC_LIB=$($lib.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            Write-Error "QScintilla library not found"
+            exit 1
+          }
+
+          # Search for the include directory (containing Qsci/qsciscintilla.h)
+          $hdr = Get-ChildItem -Path $qtDir -Recurse -Filter "qsciscintilla.h" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $hdr) {
+            $hdr = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\QScintilla_src-2.14.1" -Recurse -Filter "qsciscintilla.h" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if ($hdr) {
+            # Include dir is the parent of the Qsci/ folder
+            $incDir = $hdr.Directory.Parent.FullName
+            Write-Host "Found QScintilla include: $incDir"
+            "QSC_INC=$incDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            Write-Error "QScintilla headers not found"
+            exit 1
+          }
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust core
+        shell: cmd
+        run: cd rust-core && cargo build --release
+
+      - name: Build C++ with CMake (MSVC)
+        shell: cmd
+        run: |
+          mkdir build
+          cd build
+          cmake .. -G "Visual Studio 17 2022" -A x64 ^
+            -DCMAKE_PREFIX_PATH="%Qt5_DIR%" ^
+            -DQSCINTILLA_INCLUDE="${{ steps.qscintilla.outputs.QSC_INC }}" ^
+            -DQSCINTILLA_LIB="${{ steps.qscintilla.outputs.QSC_LIB }}"
+          cmake --build . --config Release
+
+      - name: Test
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path build -Recurse -Filter "notepatra.exe" | Select-Object -First 1
+          if ($exe) {
+            Write-Host "Built: $($exe.FullName) ($([math]::Round($exe.Length / 1MB, 2)) MB)"
+            & $exe.FullName --version 2>$null; $true
+          } else {
+            Write-Error "notepatra.exe not found"
+            exit 1
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepatra-windows-x64
+          path: build/Release/notepatra.exe
+
   release:
-    needs: [build-linux, build-macos-intel, build-macos-arm]
+    needs: [build-linux, build-macos-intel, build-macos-arm, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -192,6 +292,7 @@ jobs:
           chmod +x notepatra-linux-x64/notepatra
           tar czf notepatra-linux-x64.tar.gz -C notepatra-linux-x64 notepatra
           tar czf notepatra-macos-x64.tar.gz -C notepatra-macos-x64 Notepatra.app
+          zip -j notepatra-windows-x64.zip notepatra-windows-x64/notepatra.exe
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -199,4 +300,5 @@ jobs:
           files: |
             notepatra-linux-x64.tar.gz
             notepatra-macos-x64.tar.gz
+            notepatra-windows-x64.zip
           generate_release_notes: true
