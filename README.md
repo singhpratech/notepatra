@@ -1,11 +1,15 @@
 <p align="center">
+  <img src="resources/notepatra-256.png" alt="Notepatra" width="128" height="128">
   <h1 align="center">Notepatra</h1>
   <p align="center"><em>The first code editor built for the AI era.</em></p>
   <p align="center">
-    <strong>C++ + Rust</strong> · <strong>4.9 MB binary</strong> · <strong>Zero Electron</strong> · <strong>60+ languages</strong> · <strong>AI-powered formatters</strong>
+    <strong>C++ + Rust</strong> · <strong>5 MB binary</strong> · <strong>Zero Electron</strong> · <strong>100+ file types</strong> · <strong>AI-powered formatters</strong>
   </p>
   <p align="center">
-    <a href="#features">Features</a> · <a href="#the-story">The Story</a> · <a href="#install">Install</a> · <a href="#plugins">Plugins</a> · <a href="#ai-powered">AI Powered</a> · <a href="#contributing">Contributing</a>
+    <a href="https://notepatra.org">Website</a> · <a href="#features">Features</a> · <a href="#the-story">The Story</a> · <a href="#install">Install</a> · <a href="#plugins">Plugins</a> · <a href="#ai-powered">AI Powered</a>
+  </p>
+  <p align="center">
+    <a href="https://github.com/singhpratech/notepatra/actions"><img src="https://github.com/singhpratech/notepatra/actions/workflows/build.yml/badge.svg" alt="Build"></a>
   </p>
 </p>
 
@@ -23,9 +27,9 @@ Not a port. Not a wrapper. Not "Notepad++ but on Linux." Something new — **for
 
 I took what made Notepad++ legendary — the speed, the simplicity, the "it just works" feeling — and asked: **what would Notepad++ look like if it was built today, in 2026, when AI is part of every developer's workflow?**
 
-The answer: a 4.9 MB native binary with a Rust-powered core, Scintilla editing engine, and local AI integration. An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your local AI to figure it out. No cloud. No telemetry. No subscription. Just you and your code.
+The answer: a 5 MB native binary with a Rust-powered core, Scintilla editing engine, and local AI integration. An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your local AI to figure it out. No cloud. No telemetry. No subscription. Just you and your code.
 
-Notepatra started on Linux — because that's where the gap was. But great tools shouldn't have borders. **Notepatra runs on Linux, Windows, and macOS.** Same codebase. Same features. Same 4.9 MB. No one gets left behind.
+Notepatra started on Linux — because that's where the gap was. But great tools shouldn't have borders. **Notepatra runs on Linux, Windows, and macOS.** Same codebase. Same features. Same 5 MB. No one gets left behind.
 
 **Notepatra isn't trying to replace Notepad++. It's what I wish existed — on every platform.**
 
@@ -34,15 +38,17 @@ Notepatra started on Linux — because that's where the gap was. But great tools
 ## Features
 
 ### Editor — Battle-tested basics done right
-- **60+ file types** with full syntax highlighting — Python, Rust, Go, C/C++, Java, JavaScript, TypeScript, SQL, HTML, CSS, JSON, YAML, Markdown, Bash, and many more
+- **100+ file types** with full syntax highlighting across **44 language lexers** — Python, Rust, Go, C/C++, Java, JavaScript, TypeScript, SQL, HTML, CSS, JSON, YAML, Markdown, Bash, Fortran, VHDL, Verilog, MATLAB, LaTeX, and many more
 - **Tabbed editing** — drag, reorder, middle-click close, double-click empty area for new tab
 - **Tab right-click menu** — Close, Close Others, Close Left/Right, Save, Rename, Copy Full Path, Copy Filename, Copy Directory, Open Folder, Open Terminal, Read-Only toggle, **Color Tag** (7 colors + custom)
+- **3 themes** — Light, Dark, Monokai (Settings > Theme)
 - **Session persistence** — close Notepatra, reopen tomorrow, same files, same cursor positions, same window size
 - **Crash recovery** — if Notepatra crashes (it shouldn't, but life happens), your unsaved work is recovered on next launch
 - **File change detection** — someone else edits your file? Notepatra asks: reload or keep yours?
-- **2.5 GB file support** — memory-mapped I/O via Rust, opens massive files without choking
+- **2 GB file support** — memory-mapped I/O via Rust, opens massive files without truncation
 - **Double-click word highlight** — double-click any word, all occurrences light up in orange
 - **Ctrl+B brace matching** — jump between matching `{}` `[]` `()`, highlights both braces + selects everything between
+- **Macro recording** — Start Recording (Ctrl+Shift+R), Stop, Playback (Ctrl+Shift+P), Run Multiple Times, Save/Load macros
 - **Code folding**, **bookmarks**, **auto-complete**, **indent guides**, **line numbers**
 - **Custom scrollbars** — clean, modern, rounded
 
@@ -86,7 +92,7 @@ Every plugin opens in its own tab. Real UI, not just a menu click.
 #### SQL Formatter (inbuilt)
 - Format with **UPPERCASE** or **lowercase** keywords
 - Configurable indent width
-- Powered by Rust `sqlformat` crate
+- Supports T-SQL, PL/SQL, MySQL, PostgreSQL, SQLite
 
 #### Compare / Diff (inbuilt)
 - Pick **any two tabs** or **any tab vs file on disk**
@@ -110,7 +116,7 @@ Every AI feature uses **Ollama** running on YOUR machine. Nothing leaves your co
 **Ollama Status Bar** in every AI tool shows:
 - 🟢 Green dot = Ollama running, model ready
 - 🔴 Red dot = not running, shows setup steps
-- **Model selector dropdown** — pick any installed model
+- **Model selector dropdown** — pick any installed model (qwen3.5:9b, gemma4:e4b, llama3.2, codellama, mistral, starcoder2)
 
 #### AI Assistant (Ctrl+Shift+A)
 Opens as a tab. Select code, then:
@@ -143,7 +149,7 @@ That's it. Every AI feature in Notepatra now works.
 
 | Feature | Shortcut |
 |---|---|
-| **Built-in Terminal** | `Ctrl+`` — opens as a tab, runs real bash commands |
+| **Built-in Terminal** | `Ctrl+`` — opens as a tab, runs real commands |
 | **REST Client** | `Ctrl+Shift+R` — send HTTP requests, see responses with pretty JSON |
 | **Hex Editor** | View > Hex Editor — color-coded hex dump of any binary file |
 | **Markdown Converter** | Features > Markdown — convert selection to table, list, code block, bold, link, heading, or strip HTML to markdown |
@@ -173,9 +179,11 @@ That's it. Every AI feature in Notepatra now works.
 | **View** | `F11` | Full screen |
 | | `Ctrl+=` / `Ctrl+-` | Zoom in / out |
 | | `Alt+0` | Fold all |
+| **Macro** | `Ctrl+Shift+R` | Start recording |
+| | `Ctrl+Shift+T` | Stop recording |
+| | `Ctrl+Shift+P` | Playback |
 | **Features** | `Ctrl+`` | Terminal |
 | | `Ctrl+Shift+A` | AI Assistant |
-| | `Ctrl+Shift+R` | REST Client |
 | | `Ctrl+Shift+E` | File Explorer |
 | **Tabs** | `Ctrl+Tab` | Next tab |
 | | Middle-click | Close tab |
@@ -203,7 +211,7 @@ That's it. Every AI feature in Notepatra now works.
 **Why this hybrid?**
 - **C++** because Qt and QScintilla are C++ — zero friction for UI
 - **Rust** because file I/O, text processing, and parsing must never crash — Rust's ownership system guarantees memory safety
-- **Result**: the speed of C++, the safety of Rust, in a 4.9 MB binary
+- **Result**: the speed of C++, the safety of Rust, in a 5 MB binary
 
 ---
 
@@ -213,51 +221,42 @@ That's it. Every AI feature in Notepatra now works.
 
 | Platform | Download | Status |
 |---|---|---|
-| **Linux** (Ubuntu/Mint/Debian) | [Build from source](#build-from-source) | Available |
-| **Windows** | [Build from source](#build-from-source) | Available (cross-platform code ready) |
-| **macOS** | [Build from source](#build-from-source) | Available (cross-platform code ready) |
+| **Linux** x64 | [GitHub Releases](https://github.com/singhpratech/notepatra/releases) | ✅ Available |
+| **macOS** Apple Silicon | [GitHub Releases](https://github.com/singhpratech/notepatra/releases) | ✅ Available (.dmg) |
+| **macOS** Intel | [GitHub Releases](https://github.com/singhpratech/notepatra/releases) | ✅ Available |
+| **Windows** x64 | [GitHub Releases](https://github.com/singhpratech/notepatra/releases) | ✅ Available (.exe) |
 
-### Build from source (Linux — Ubuntu/Mint/Debian)
+### Build from source
+
 ```bash
-# Dependencies
-sudo apt install cmake qtbase5-dev libqscintilla2-qt5-dev libqt5network5-dev
-
-# Rust
+# Linux (Ubuntu/Mint/Debian)
+sudo apt install cmake qtbase5-dev libqscintilla2-qt5-dev
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
-
-# Build
 git clone https://github.com/singhpratech/notepatra.git
 cd notepatra
 cd rust-core && cargo build --release && cd ..
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
+mkdir build && cd build && cmake .. && make -j$(nproc)
+./notepatra
 
-# Run
-./notepad-pp-linux
-```
+# macOS
+brew install qt@5 cmake
+# Build QScintilla from source (brew's version links Qt6)
+# See build.sh for full instructions
 
-### Desktop entry
-```bash
-cp notepad-pp-linux ~/.local/bin/notepatra
-cat > ~/.local/share/applications/notepatra.desktop << EOF
-[Desktop Entry]
-Name=Notepatra
-Comment=Native C++/Rust code editor with AI-powered formatters
-Exec=$HOME/.local/bin/notepatra %F
-Icon=accessories-text-editor
-Terminal=false
-Type=Application
-Categories=Development;TextEditor;
-EOF
+# Windows
+# Install Qt5, Rust, CMake, Visual Studio 2022
+# See .github/workflows/build.yml for full steps
 ```
 
 ---
 
 ## Plugin System
 
-Drop a `.so` shared library in `~/.config/notepatra/plugins/` and restart.
+Drop a shared library in `~/.config/notepatra/plugins/` and restart.
+- Linux: `.so` files
+- macOS: `.dylib` files
+- Windows: `.dll` files
 
 ### Write your own plugin in 30 seconds:
 
@@ -276,8 +275,14 @@ extern "C" {
 ```
 
 ```bash
+# Linux
 g++ -shared -fPIC -o myplugin.so myplugin.cpp
-cp myplugin.so ~/.config/notepatra/plugins/
+
+# macOS
+clang++ -shared -o myplugin.dylib myplugin.cpp
+
+# Windows
+cl /LD myplugin.cpp /Fe:myplugin.dll
 ```
 
 ---
@@ -291,7 +296,14 @@ cp myplugin.so ~/.config/notepatra/plugins/
 | **Vim/Neovim** | Steep learning curve. Not everyone wants modal editing. |
 | **Sublime Text** | Proprietary. $99. No AI. No built-in formatters. |
 | **Kate/Gedit** | Linux only. No AI. No JSON/HTML fixer. Limited plugins. |
-| **Notepatra** | 4.9 MB. Native on Linux, Windows, Mac. AI formatters. Rust core. 2.5 GB files. Free forever. |
+| **Notepatra** | 5 MB. Native on Linux, Windows, Mac. AI formatters. Rust core. 2 GB files. Free forever. |
+
+---
+
+## Tests
+
+105/105 automated tests passing across 20 categories:
+Window, Menus, Editor, Rust Core (Text, Search, Hash, JSON, HTML, Brackets, SQL, Diff, File I/O), Find/Replace, Languages, Bookmarks, Zoom, View, Tabs, Edge Cases, Config.
 
 ---
 
