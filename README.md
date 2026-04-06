@@ -3,13 +3,22 @@
   <h1 align="center">Notepatra</h1>
   <p align="center"><em>The first code editor built for the AI era.</em></p>
   <p align="center">
-    <strong>C++ + Rust</strong> · <strong>5 MB binary</strong> · <strong>Zero Electron</strong> · <strong>100+ file types</strong> · <strong>AI-powered formatters</strong>
+    <strong>C++ + Rust</strong> · <strong>5 MB native executable</strong> · <strong>Zero Electron</strong> · <strong>100+ file types</strong> · <strong>Local AI formatters</strong>
   </p>
   <p align="center">
-    <a href="https://notepatra.org">Website</a> · <a href="#features">Features</a> · <a href="#the-story">The Story</a> · <a href="#install">Install</a> · <a href="#plugins">Plugins</a> · <a href="#ai-powered">AI Powered</a>
+    <a href="https://notepatra.org">Website</a> ·
+    <a href="https://github.com/singhpratech/notepatra/releases/latest">Download</a> ·
+    <a href="#features">Features</a> ·
+    <a href="#the-story">The Story</a> ·
+    <a href="#install">Install</a> ·
+    <a href="#plugins">Plugins</a> ·
+    <a href="#ai-powered">AI</a> ·
+    <a href="CHANGELOG.md">Changelog</a>
   </p>
   <p align="center">
     <a href="https://github.com/singhpratech/notepatra/actions"><img src="https://github.com/singhpratech/notepatra/actions/workflows/build.yml/badge.svg" alt="Build"></a>
+    <a href="https://github.com/singhpratech/notepatra/releases/latest"><img src="https://img.shields.io/github/v/release/singhpratech/notepatra?color=39FF14&label=release" alt="Release"></a>
+    <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License"></a>
   </p>
 </p>
 
@@ -27,9 +36,9 @@ Not a port. Not a wrapper. Not "Notepad++ but on Linux." Something new — **for
 
 I took what made Notepad++ legendary — the speed, the simplicity, the "it just works" feeling — and asked: **what would Notepad++ look like if it was built today, in 2026, when AI is part of every developer's workflow?**
 
-The answer: a 5 MB native binary with a Rust-powered core, Scintilla editing engine, and local AI integration. An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your local AI to figure it out. No cloud. No telemetry. No subscription. Just you and your code.
+The answer: a 5 MB native executable with a Rust-powered core, Scintilla editing engine, and local AI integration. An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your local AI to figure it out. No cloud. No telemetry. No subscription. Just you and your code.
 
-Notepatra started on Linux — because that's where the gap was. But great tools shouldn't have borders. **Notepatra runs on Linux, Windows, and macOS.** Same codebase. Same features. Same 5 MB. No one gets left behind.
+Notepatra started on Linux — because that's where the gap was. But great tools shouldn't have borders. **Notepatra runs on Linux, Windows, and macOS.** Same codebase. Same features. No one gets left behind.
 
 **Notepatra isn't trying to replace Notepad++. It's what I wish existed — on every platform.**
 
@@ -231,14 +240,17 @@ irm https://notepatra.org/install.ps1 | iex
 
 That's it. Auto-detects your OS, downloads the right binary, installs it, adds to PATH, creates shortcuts.
 
-### Or download manually
+### Or download manually — [Latest release: v0.1.0](https://github.com/singhpratech/notepatra/releases/latest)
 
-| Platform | Download | What you get |
-|---|---|---|
-| **Linux** x64 | [Download .tar.gz](https://github.com/singhpratech/notepatra/releases/latest) | Single binary, add to PATH |
-| **macOS** Apple Silicon (M1-M4) | [Download .dmg](https://github.com/singhpratech/notepatra/releases/latest) | Drag to Applications |
-| **macOS** Intel | [Download .tar.gz](https://github.com/singhpratech/notepatra/releases/latest) | Notepatra.app bundle |
-| **Windows** x64 | [Download .zip](https://github.com/singhpratech/notepatra/releases/latest) | .exe + Qt DLLs, run anywhere |
+| Platform | Download | Size | What's inside |
+|---|---|---|---|
+| 🐧 **Linux x64** | [`.tar.gz`](https://github.com/singhpratech/notepatra/releases/latest) | **1.8 MB** | Bare `notepatra` binary. Qt5 from your distro. |
+| 🍎 **macOS Apple Silicon** (M1–M4) | [`.dmg`](https://github.com/singhpratech/notepatra/releases/latest) | **22 MB** | `Notepatra.app` with Qt frameworks bundled. Drag to Applications. |
+| 🪟 **Windows x64** | [`.zip`](https://github.com/singhpratech/notepatra/releases/latest) | **48 MB** | `notepatra.exe` + Qt DLLs + QScintilla DLL. Unzip and run anywhere. |
+
+**Why are the sizes different?** The `notepatra` executable itself is **~5 MB on every platform**. On Linux, Qt5 is a standard system package (`apt install qtbase5-dev libqscintilla2-qt5-dev`), so the download is just the binary. On macOS and Windows, Qt isn't pre-installed, so we bundle the Qt frameworks/DLLs alongside the executable for portability — same approach Krita, Kdenlive, and every cross-platform Qt app uses. Even with Qt bundled, Notepatra is still **6× smaller than VS Code** on Windows and **14× smaller** on Linux.
+
+> macOS Intel: not shipped pre-built. Apple stopped selling Intel Macs in 2023 and the GitHub Actions `macos-13` runner has been unreliable. Intel Mac users — `git clone` and run `./build.sh`. Builds in ~3 minutes.
 
 ### Build from source
 
@@ -272,21 +284,48 @@ cd notepatra
 </details>
 
 <details>
-<summary>Windows</summary>
+<summary>Windows (MSVC)</summary>
 
+**Prerequisites**
+1. **Visual Studio 2022** with the *"Desktop development with C++"* workload
+2. **Qt 5.15.2** for `msvc2019_64` — install via [Qt Online Installer](https://www.qt.io/download-qt-installer) or [aqtinstall](https://github.com/miurahr/aqtinstall)
+3. **CMake** ≥ 3.16 — `winget install Kitware.CMake` or [cmake.org/download](https://cmake.org/download)
+4. **Rust** stable — [rustup.rs](https://rustup.rs)
+
+**Build QScintilla via the CMake wrapper** *(once)*
+```powershell
+git clone --depth 1 https://github.com/farleyrunkel/QScintilla.git $env:TEMP\qsci-src
+cmake -S $env:TEMP\qsci-src -B $env:TEMP\qsci-src\build -G "Visual Studio 17 2022" -A x64 `
+  -DCMAKE_BUILD_TYPE=Release `
+  "-DCMAKE_PREFIX_PATH=C:\Qt\5.15.2\msvc2019_64" `
+  "-DCMAKE_INSTALL_PREFIX=$env:TEMP\qsci-install"
+cmake --build $env:TEMP\qsci-src\build --config Release
+cmake --install $env:TEMP\qsci-src\build --config Release
 ```
-1. Install Visual Studio 2022 (with C++ workload)
-2. Install Qt5: https://www.qt.io/download-open-source
-3. Install Rust: https://rustup.rs
-4. Install CMake: https://cmake.org/download
 
+**Build Notepatra**
+```powershell
 git clone https://github.com/singhpratech/notepatra.git
 cd notepatra
-cd rust-core && cargo build --release && cd ..
-mkdir build && cd build
-cmake .. -G "Visual Studio 17 2022"
+cd rust-core; cargo build --release; cd ..
+mkdir build; cd build
+cmake .. -G "Visual Studio 17 2022" -A x64 `
+  "-DCMAKE_PREFIX_PATH=C:\Qt\5.15.2\msvc2019_64" `
+  "-DQSCINTILLA_INCLUDE=$env:TEMP\qsci-install\include" `
+  "-DQSCINTILLA_LIB=$env:TEMP\qsci-install\lib\qscintilla2_qt5.lib"
 cmake --build . --config Release
 ```
+
+**Bundle Qt + QScintilla DLLs next to the exe**
+```powershell
+mkdir notepatra-win
+copy build\Release\notepatra.exe notepatra-win\
+windeployqt notepatra-win\notepatra.exe
+copy $env:TEMP\qsci-install\bin\qscintilla2_qt5.dll notepatra-win\
+.\notepatra-win\notepatra.exe
+```
+
+> If you hit `LNK2019 unresolved external symbol QsciScintilla::staticMetaObject` — verify `CMakeLists.txt` defines `QSCINTILLA_DLL` for Windows targets. Without it, MSVC won't emit `__declspec(dllimport)` and the linker will fail to resolve symbols against the import library. This is the gotcha that took 12 CI iterations to find.
 </details>
 
 ---
@@ -329,14 +368,16 @@ cl /LD myplugin.cpp /Fe:myplugin.dll
 
 ## Why not just use...?
 
-| Editor | Why Notepatra instead |
-|---|---|
-| **Notepad++** | Windows only. No AI. No Rust safety. No Mac. |
-| **VS Code** | 300+ MB Electron app. Telemetry. Slow on large files. |
-| **Vim/Neovim** | Steep learning curve. Not everyone wants modal editing. |
-| **Sublime Text** | Proprietary. $99. No AI. No built-in formatters. |
-| **Kate/Gedit** | Linux only. No AI. No JSON/HTML fixer. Limited plugins. |
-| **Notepatra** | 5 MB. Native on Linux, Windows, Mac. AI formatters. Rust core. 2 GB files. Free forever. |
+| Editor | Download size | Native | Local AI | Built-in JSON fixer | 2 GB files | Linux | Win | Mac | Free |
+|---|---|---|---|---|---|---|---|---|---|
+| **Notepad++** | ~4 MB | ✓ | ✗ | plugin only | ✗ | ✗ | ✓ | ✗ | ✓ |
+| **VS Code** | ~300 MB | ✗ Electron | extension | extension | ✗ | ✓ | ✓ | ✓ | ✓ |
+| **Vim / Neovim** | ~3 MB | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Sublime Text** | ~30 MB | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | $99 |
+| **Kate / Gedit** | ~30 MB | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✓ |
+| **Notepatra** | **1.8 / 22 / 48 MB** | ✓ C++/Rust | ✓ Ollama | ✓ regex + AI | ✓ Rust mmap | ✓ | ✓ | ✓ | ✓ GPL-3 |
+
+> *Notepatra download sizes are Linux / macOS / Windows. Linux is just the binary (Qt is system-installed). Mac and Windows include bundled Qt. The actual `notepatra` executable is ~5 MB on every platform.*
 
 ---
 
@@ -344,6 +385,18 @@ cl /LD myplugin.cpp /Fe:myplugin.dll
 
 105/105 automated tests passing across 20 categories:
 Window, Menus, Editor, Rust Core (Text, Search, Hash, JSON, HTML, Brackets, SQL, Diff, File I/O), Find/Replace, Languages, Bookmarks, Zoom, View, Tabs, Edge Cases, Config.
+
+---
+
+## Releases
+
+Notepatra follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Versioning](https://semver.org/). Every release is tagged, signed, and published to GitHub Releases with binaries for all three platforms.
+
+| Version | Date | Highlights |
+|---|---|---|
+| [**v0.1.0**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.0) | 2026-04-06 | First public release. Linux x64, macOS Apple Silicon, Windows x64. 100+ file types, 44 lexers, AI formatters, Compare plugin, Git integration, 105/105 tests. |
+
+See the full [CHANGELOG](CHANGELOG.md) for every change in every release, or browse the [version history on notepatra.org](https://notepatra.org#versions).
 
 ---
 
