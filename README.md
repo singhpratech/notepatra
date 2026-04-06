@@ -220,7 +220,7 @@ That's it. Every AI feature in Notepatra now works.
 **Why this hybrid?**
 - **C++** because Qt and QScintilla are C++ — zero friction for UI
 - **Rust** because file I/O, text processing, and parsing must never crash — Rust's ownership system guarantees memory safety
-- **Result**: the speed of C++, the safety of Rust, in a 5 MB binary
+- **Result**: the speed of C++, the safety of Rust, in a 5 MB native executable (1.8 MB compressed Linux download; 22 / 48 MB on Mac / Windows after Qt is bundled for portability)
 
 ---
 
