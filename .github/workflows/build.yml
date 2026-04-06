@@ -319,6 +319,62 @@ jobs:
             cmake-build.log
           if-no-files-found: ignore
 
+      - name: Post Windows failure log to issue #1
+        if: failure()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+        run: |
+          # When ANYTHING in the Windows job fails, dump as much state as
+          # possible to issue #1 so we can read it via the public API
+          # without needing GitHub auth. This is a debug-only mechanism.
+
+          $sections = @()
+          $sections += "# Windows CI failure on commit $env:GITHUB_SHA"
+          $sections += ""
+          $sections += "Run: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          $sections += ""
+
+          # cmake-build.log
+          if (Test-Path cmake-build.log) {
+            $log = Get-Content cmake-build.log -Raw
+            if ($log.Length -gt 30000) { $log = "...(truncated)...`n" + $log.Substring($log.Length - 30000) }
+            $sections += "## cmake-build.log (last 30 KB)"
+            $sections += '```'
+            $sections += $log
+            $sections += '```'
+          }
+
+          # bundle dir contents
+          if (Test-Path notepatra-win) {
+            $sections += "## notepatra-win\ contents"
+            $sections += '```'
+            $sections += (Get-ChildItem notepatra-win -Recurse | Select-Object FullName, Length | Format-Table -AutoSize | Out-String)
+            $sections += '```'
+          }
+
+          # build dir top-level
+          if (Test-Path build) {
+            $sections += "## build\ top-level files"
+            $sections += '```'
+            $sections += (Get-ChildItem build -Recurse -Filter "*.exe" | Select-Object FullName, Length | Out-String)
+            $sections += (Get-ChildItem build -Recurse -Filter "*.dll" | Select-Object FullName, Length | Out-String)
+            $sections += '```'
+          }
+
+          $body = $sections -join "`n"
+          $body | Out-File -FilePath fail-log.md -Encoding utf8
+
+          $exists = gh issue view 1 --repo $env:GITHUB_REPOSITORY --json number 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh issue edit 1 --repo $env:GITHUB_REPOSITORY --body-file fail-log.md
+            Write-Host "Updated issue #1 with failure log"
+          } else {
+            gh issue create --repo $env:GITHUB_REPOSITORY --title "Windows CI failure log (auto)" --body-file fail-log.md
+            Write-Host "Created issue with failure log"
+          }
+
       - name: Verify exe, embed icon, bundle Qt + QScintilla DLLs
         shell: pwsh
         run: |
