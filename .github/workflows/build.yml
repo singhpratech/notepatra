@@ -168,6 +168,9 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
 
@@ -308,72 +311,6 @@ jobs:
           if ($buildExit -ne 0) { Write-Host "::error::cmake build failed (exit $buildExit)"; exit 1 }
           Write-Host "=== Searching for notepatra.exe ==="
           Get-ChildItem -Path . -Recurse -Filter "notepatra.exe" | ForEach-Object { Write-Host $_.FullName }
-
-      - name: Upload build logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-build-logs
-          path: |
-            cmake-configure.log
-            cmake-build.log
-          if-no-files-found: ignore
-
-      - name: Post Windows failure log to issue #1
-        if: failure()
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
-        run: |
-          # When ANYTHING in the Windows job fails, dump as much state as
-          # possible to issue #1 so we can read it via the public API
-          # without needing GitHub auth. This is a debug-only mechanism.
-
-          $sections = @()
-          $sections += "# Windows CI failure on commit $env:GITHUB_SHA"
-          $sections += ""
-          $sections += "Run: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
-          $sections += ""
-
-          # cmake-build.log
-          if (Test-Path cmake-build.log) {
-            $log = Get-Content cmake-build.log -Raw
-            if ($log.Length -gt 30000) { $log = "...(truncated)...`n" + $log.Substring($log.Length - 30000) }
-            $sections += "## cmake-build.log (last 30 KB)"
-            $sections += '```'
-            $sections += $log
-            $sections += '```'
-          }
-
-          # bundle dir contents
-          if (Test-Path notepatra-win) {
-            $sections += "## notepatra-win\ contents"
-            $sections += '```'
-            $sections += (Get-ChildItem notepatra-win -Recurse | Select-Object FullName, Length | Format-Table -AutoSize | Out-String)
-            $sections += '```'
-          }
-
-          # build dir top-level
-          if (Test-Path build) {
-            $sections += "## build\ top-level files"
-            $sections += '```'
-            $sections += (Get-ChildItem build -Recurse -Filter "*.exe" | Select-Object FullName, Length | Out-String)
-            $sections += (Get-ChildItem build -Recurse -Filter "*.dll" | Select-Object FullName, Length | Out-String)
-            $sections += '```'
-          }
-
-          $body = $sections -join "`n"
-          $body | Out-File -FilePath fail-log.md -Encoding utf8
-
-          $exists = gh issue view 1 --repo $env:GITHUB_REPOSITORY --json number 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            gh issue edit 1 --repo $env:GITHUB_REPOSITORY --body-file fail-log.md
-            Write-Host "Updated issue #1 with failure log"
-          } else {
-            gh issue create --repo $env:GITHUB_REPOSITORY --title "Windows CI failure log (auto)" --body-file fail-log.md
-            Write-Host "Created issue with failure log"
-          }
 
       - name: Verify exe, embed icon, bundle Qt + QScintilla DLLs
         shell: pwsh
@@ -552,6 +489,98 @@ jobs:
         with:
           name: notepatra-windows-x64
           path: notepatra-win/
+
+      # ─── Failure diagnostics — must be LAST so it sees failures from any prior step ───
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-logs
+          path: |
+            cmake-configure.log
+            cmake-build.log
+          if-no-files-found: ignore
+
+      - name: Post Windows failure diagnostics to issue #1
+        if: failure()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+        run: |
+          # When ANY prior step in the Windows job fails, dump as much state
+          # as possible to issue #1 so we can read it via the public API
+          # without needing GitHub auth. This step MUST be at the very end
+          # of the job — if it's earlier, it gets evaluated and skipped
+          # before later steps have a chance to fail.
+
+          $sections = @()
+          $sections += "# Windows CI failure on commit $env:GITHUB_SHA"
+          $sections += ""
+          $sections += "Run: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          $sections += ""
+
+          # cmake-build.log (last 30 KB)
+          if (Test-Path cmake-build.log) {
+            $log = Get-Content cmake-build.log -Raw
+            if ($log.Length -gt 30000) { $log = "...(truncated)...`n" + $log.Substring($log.Length - 30000) }
+            $sections += "## cmake-build.log (last 30 KB)"
+            $sections += '```'
+            $sections += $log
+            $sections += '```'
+          }
+
+          # bundle dir contents
+          if (Test-Path notepatra-win) {
+            $sections += ""
+            $sections += "## notepatra-win\ contents (full recursive)"
+            $sections += '```'
+            $sections += (Get-ChildItem notepatra-win -Recurse | Select-Object FullName, Length | Format-Table -AutoSize | Out-String)
+            $sections += '```'
+          } else {
+            $sections += ""
+            $sections += "## notepatra-win\ DOES NOT EXIST (bundle step never reached)"
+          }
+
+          # build dir exe + dll listing
+          if (Test-Path build) {
+            $sections += ""
+            $sections += "## build\ exe and dll files"
+            $sections += '```'
+            $sections += ((Get-ChildItem build -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue | Select-Object FullName, Length | Out-String))
+            $sections += ((Get-ChildItem build -Recurse -Filter "*.dll" -ErrorAction SilentlyContinue | Select-Object FullName, Length | Out-String))
+            $sections += '```'
+          }
+
+          # QScintilla install discovery (was the dll built?)
+          $qtRoot = "${{ steps.qscintilla.outputs.QT_ROOT }}"
+          if ($qtRoot -and (Test-Path $qtRoot)) {
+            $sections += ""
+            $sections += "## QScintilla artifacts under $qtRoot"
+            $sections += '```'
+            $sections += ((Get-ChildItem -Path $qtRoot -Recurse -Filter "qscintilla2_qt5*" -ErrorAction SilentlyContinue | Select-Object FullName, Length | Out-String))
+            $sections += '```'
+          }
+
+          # The step outputs we captured
+          $sections += ""
+          $sections += "## Step outputs from 'Build QScintilla'"
+          $sections += "- QSC_LIB: ${{ steps.qscintilla.outputs.QSC_LIB }}"
+          $sections += "- QSC_INC: ${{ steps.qscintilla.outputs.QSC_INC }}"
+          $sections += "- QSC_DLL: ${{ steps.qscintilla.outputs.QSC_DLL }}"
+          $sections += "- QT_ROOT: ${{ steps.qscintilla.outputs.QT_ROOT }}"
+
+          $body = $sections -join "`n"
+          $body | Out-File -FilePath fail-log.md -Encoding utf8
+
+          $exists = gh issue view 1 --repo $env:GITHUB_REPOSITORY --json number 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh issue edit 1 --repo $env:GITHUB_REPOSITORY --body-file fail-log.md
+            Write-Host "Updated issue #1 with failure log"
+          } else {
+            gh issue create --repo $env:GITHUB_REPOSITORY --title "Windows CI failure log (auto)" --body-file fail-log.md
+            Write-Host "Created issue #1 with failure log"
+          }
 
   release:
     needs: [build-linux, build-macos-arm, build-windows]
