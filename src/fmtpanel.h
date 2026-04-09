@@ -17,7 +17,11 @@ public:
     void addButton(const QString &label, std::function<QString(const QString &)> fn);
     void setOutput(const QString &text);
     void appendOutput(const QString &text);
-    QString inputText() const { return m_inputText; }
+    // Returns the panel's current effective input — prefers the editable
+    // Scintilla content (so users can paste directly into the panel), falls
+    // back to whatever was passed via setInput() at panel open time.
+    QString inputText() const;
+    void setStatus(const QString &text, bool error = false);
 
 signals:
     void applyToEditor(const QString &text);
@@ -25,6 +29,7 @@ signals:
 private:
     QsciScintilla *m_output;
     QLabel *m_titleLabel;
+    QLabel *m_statusLabel;
     QHBoxLayout *m_btnRow;
     QString m_lastOutput;
     QString m_inputText;

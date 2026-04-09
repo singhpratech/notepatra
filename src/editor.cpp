@@ -122,7 +122,7 @@ Editor::Editor(QWidget *parent) : QsciScintilla(parent) {
 }
 
 void Editor::setupEditor() {
-    QFont font("Consolas", 11);
+    QFont font("Consolas", 10);
     font.setStyleHint(QFont::Monospace);
     setFont(font);
     setMarginsFont(font);
@@ -451,7 +451,7 @@ void Editor::applyLexer(const QString &lang) {
     m_language = lang;
     QsciLexer *lexer = nullptr;
 
-    QFont font("Consolas", 11);
+    QFont font("Consolas", 10);
     font.setStyleHint(QFont::Monospace);
 
     // 45 languages — ALL available QScintilla lexers

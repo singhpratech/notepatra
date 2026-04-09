@@ -14,7 +14,7 @@
 #define MARKER_BLANK   7   // gray placeholder
 
 void CompareWidget::setupEditor(QsciScintilla *ed) {
-    QFont mono("Consolas", 11);
+    QFont mono("Consolas", 10);
     mono.setStyleHint(QFont::Monospace);
     ed->setFont(mono);
     ed->setMarginsFont(mono);

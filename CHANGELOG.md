@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.6] — 2026-04-09
+
+### Fixed
+- 🐛 **JSON Tools / HTML Tools / Bracket Tools panels now show real-time feedback on every button press.** Previously the format buttons silently did nothing if the editor was empty when the panel was opened — `m_inputText` was set ONCE at panel-open time and any subsequent paste into the editable Scintilla output panel was ignored. Now `inputText()` reads the current panel content first, falls back to the seeded input. Every button shows status: `"Running Format on N chars..."` → `"✓ Format done — N chars, M lines"` or a clear error.
+- 🐛 **JSON Tools panel: text typed into the panel was rendering white-on-white** (same root cause as the v0.1.1 Windows lexer bug). Fixed by calling `applyNotepadPlusPalette()` on the panel's lexer + explicit black foreground / white paper fallback.
+- 🐛 **AI Fix (Ollama) in JSON Tools now reports status clearly.** Was silently failing if Ollama wasn't running. Now: re-checks Ollama on click, shows "Ollama not running" or "No model selected" messages, and prints `"✓ AI fix complete — N chars"` on success.
+- 🎨 **Default font feels less aggressive.** Bumped Consolas from 11pt to 10pt across editor, formatter panels, SQL panel, and compare view. Removed bold from operators (`+`, `-`, `=` etc), preprocessor (`#include`, `#define`), class names, function names, and HTML tags — Notepad++'s default theme only bolds keywords + Markdown headers, not everything. Page now feels lighter.
+- 🐛 **Compare picker now lists unsaved tabs with a `● unsaved` marker** so users can compare in-progress work without saving first. Untitled tabs marked `● untitled`.
+
+### Added
+- 🗄 **SQL Formatter panel now has a Dialect dropdown** with ANSI SQL, T-SQL (SQL Server), PL/SQL (Oracle), MySQL, PostgreSQL, SQLite. Each dialect adds its own keyword set on top of ANSI keywords (DECLARE/MERGE/OUTPUT for T-SQL, PLS_INTEGER/SYSDATE for PL/SQL, AUTO_INCREMENT/MEDIUMINT for MySQL, etc.) so dialect-specific keywords paint blue when typed or pasted. Switching dialects re-colourises the visible buffer immediately.
+- 📊 **BIG status banner in JSON / HTML / SQL formatter panels** — colored, bold, 36px tall, replaces the silent old behavior. Every button click updates it with progress + result counts, every error shows a red banner with the reason.
+
+### Verifying this release
+Same as previous — SHA-256, cosign, SLSA. See `SECURITY.md`.
+
+
 ## [0.1.5] — 2026-04-09
 
 ### Fixed

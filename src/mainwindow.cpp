@@ -1099,14 +1099,24 @@ void MainWindow::buildMenus() {
     // Compare with file — opens as a new tab
     // Compare — pick two tabs or a file
     pluginsMenu->addAction("Compare (inbuilt)", this, [this, E]() {
-        // Build list of open editor tabs
+        // Build list of open editor tabs — INCLUDING unsaved ones, marked
+        // with ● so the user can tell at a glance which tabs are dirty.
         QStringList tabNames;
         QVector<int> tabIndices;
         for (int i = 0; i < m_tabs->count(); i++) {
             auto *ed = m_tabs->editorAt(i);
             if (ed) {
-                QString name = ed->filePath().isEmpty() ? m_tabs->tabText(i) : QFileInfo(ed->filePath()).fileName();
-                tabNames << QString("%1: %2").arg(i + 1).arg(name);
+                QString name;
+                QString marker;
+                if (ed->filePath().isEmpty()) {
+                    // Untitled / unsaved tab — use the tab title as shown in the UI
+                    name = m_tabs->tabText(i);
+                    marker = " ● untitled";
+                } else {
+                    name = QFileInfo(ed->filePath()).fileName();
+                    if (ed->isModified()) marker = " ● unsaved";
+                }
+                tabNames << QString("Tab %1: %2%3").arg(i + 1).arg(name).arg(marker);
                 tabIndices << i;
             }
         }
@@ -1208,20 +1218,35 @@ void MainWindow::buildMenus() {
 
         connect(aiBtn, &QPushButton::clicked, p, [p, ollama, ollamaBar]() {
             QString input = p->inputText();
-            if (input.isEmpty()) return;
+            if (input.isEmpty()) {
+                p->setStatus("Empty input — paste JSON into the panel below first", true);
+                return;
+            }
 
+            // Re-check Ollama availability synchronously RIGHT NOW so users
+            // don't get a stale "not running" from the constructor's cached
+            // result before the async tags-fetch finished.
+            ollamaBar->checkStatus();
             if (!ollamaBar->isAvailable()) {
+                p->setStatus("Ollama not running — click setup steps below", true);
                 p->setOutput("Ollama is not running.\n\n"
                              "Setup:\n"
                              "  1. Install:  curl -fsSL https://ollama.com/install.sh | sh\n"
-                             "  2. Pull:     ollama pull qwen3.5:9b\n"
+                             "  2. Pull:     ollama pull qwen2.5:7b\n"
                              "  3. Start:    ollama serve\n"
                              "  4. Click AI Fix again");
                 return;
             }
 
-            ollama->setModel(ollamaBar->selectedModel());
-            p->setOutput("Asking " + ollamaBar->selectedModel() + "...");
+            QString model = ollamaBar->selectedModel();
+            if (model.isEmpty() || model.startsWith("(")) {
+                p->setStatus("No Ollama model selected — pick one from the dropdown above", true);
+                return;
+            }
+
+            ollama->setModel(model);
+            p->setStatus("Asking " + model + " to fix the JSON...", false);
+            p->setOutput("Asking " + model + "...\n");
 
             ollama->generate(
                 "Fix this broken JSON. Return ONLY the valid JSON, nothing else. "
@@ -1245,12 +1270,15 @@ void MainWindow::buildMenus() {
                 if (f > 0 && l > f) cleaned = cleaned.mid(f + 1, l - f - 1).trimmed();
             }
             QString formatted = RustCore::formatJson(cleaned, 4);
-            p->setOutput(formatted.length() > 2 ? formatted : cleaned);
+            QString result = formatted.length() > 2 ? formatted : cleaned;
+            p->setOutput(result);
+            p->setStatus(QString("✓ AI fix complete — %1 chars").arg(result.length()), false);
         });
         connect(ollama, &OllamaClient::error, p, [p, aiBtn, firstToken](const QString &msg) {
             aiBtn->setText("AI Fix (Ollama)");
             *firstToken = true;
-            p->setOutput("Error: " + msg + "\n\nRun: ollama serve");
+            p->setStatus("✗ AI fix failed: " + msg, true);
+            p->setOutput("Error: " + msg + "\n\nIs Ollama running? Try: ollama serve");
         });
 
         if (E()) p->setInput(E()->hasSelectedText() ? E()->selectedText() : E()->text());

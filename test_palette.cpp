@@ -123,8 +123,8 @@ int main(int argc, char *argv[]) {
             {"C++",  2,  "comment",      NP_COMMENT, false, true},
             {"C++",  4,  "number",       NP_NUMBER, false, false},
             {"C++",  6,  "string",       NP_STRING, false, false},
-            {"C++",  9,  "pre-processor", NP_PREPROC, true, false},
-            {"C++",  10, "operator",     NP_OPERATOR, true, false},
+            {"C++",  9,  "pre-processor", NP_PREPROC, false, false},
+            {"C++",  10, "operator",     NP_OPERATOR, false, false},
         });
         // Secondary keywords — purple to distinguish from primary blue
         QColor sec = lex.color(16);
@@ -146,7 +146,7 @@ int main(int argc, char *argv[]) {
             {"JS",  1,  "comment",  NP_COMMENT, false, true},
             {"JS",  4,  "number",   NP_NUMBER, false, false},
             {"JS",  6,  "string",   NP_STRING, false, false},
-            {"JS",  10, "operator", NP_OPERATOR, true, false},
+            {"JS",  10, "operator", NP_OPERATOR, false, false},
         });
     }
 
@@ -161,7 +161,7 @@ int main(int argc, char *argv[]) {
             {"Python", 2,  "number",   NP_NUMBER, false, false},
             {"Python", 3,  "string",   NP_STRING, false, false},
             {"Python", 4,  "string",   NP_STRING, false, false},
-            {"Python", 10, "operator", NP_OPERATOR, true, false},
+            {"Python", 10, "operator", NP_OPERATOR, false, false},
         });
     }
 
@@ -175,7 +175,7 @@ int main(int argc, char *argv[]) {
             {"SQL", 2,  "comment",  NP_COMMENT, false, true},
             {"SQL", 4,  "number",   NP_NUMBER, false, false},
             {"SQL", 6,  "string",   NP_STRING, false, false},
-            {"SQL", 10, "operator", NP_OPERATOR, true, false},
+            {"SQL", 10, "operator", NP_OPERATOR, false, false},
         });
     }
 
@@ -191,7 +191,7 @@ int main(int argc, char *argv[]) {
             {"JSON", 2,  "string",   NP_STRING, false, false},
             {"JSON", 6,  "comment",  NP_COMMENT, false, true},
             {"JSON", 7,  "comment",  NP_COMMENT, false, true},
-            {"JSON", 8,  "operator", NP_OPERATOR, true, false},
+            {"JSON", 8,  "operator", NP_OPERATOR, false, false},
         });
     }
 
@@ -234,8 +234,9 @@ int main(int argc, char *argv[]) {
     if (total_failed == 0) {
         fprintf(stdout, "=== ALL PALETTE CHECKS PASS ===\n");
         fprintf(stdout, "Every lexer paints keywords #0000FF bold, comments #008000 italic,\n");
-        fprintf(stdout, "numbers #FF8000, strings #808080, operators #000000 bold — matching\n");
-        fprintf(stdout, "the Notepad++ default stylers.xml palette.\n");
+        fprintf(stdout, "numbers #FF8000, strings #808080, operators #000000 (not bold),\n");
+        fprintf(stdout, "preprocessor #804000 (not bold) — matches Notepad++ stylers.xml\n");
+        fprintf(stdout, "default theme. Less bold = lighter, less aggressive feel.\n");
         return 0;
     } else {
         fprintf(stderr, "=== %d PALETTE CHECKS FAILED ===\n", total_failed);

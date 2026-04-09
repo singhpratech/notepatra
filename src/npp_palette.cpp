@@ -69,36 +69,38 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont) {
         }
         else if (d.contains("preproc") || d.contains("pre-proc") ||
                  d.contains("processor")) {
+            // Notepad++ paints preprocessor in brown but NOT bold — bold
+            // everywhere makes the page feel heavy/aggressive.
             fg = npPreproc;
-            lexer->setFont(bold, i);
         }
         else if (d.contains("operator")) {
+            // Plain black for operators (Notepad++ does NOT bold operators
+            // by default — keep the page feeling light).
             fg = npOperator;
-            lexer->setFont(bold, i);
         }
         else if (d.contains("decorator") || d.contains("attribute")) {
             fg = npDecorator;
-            lexer->setFont(italic, i);
         }
         else if (d.contains("class") || d.contains("function") ||
                  d.contains("method") || d.contains("global")) {
+            // Dark cyan but not bold — distinguishes class names without
+            // making them visually heavy.
             fg = npClassName;
-            lexer->setFont(bold, i);
         }
         else if (d.contains("error") || d.contains("unclosed")) {
             fg = npError;
         }
         else if (d.contains("tag") || d.contains("element")) {
-            // HTML/XML tag
+            // HTML/XML tag — blue but not bold
             fg = npKeyword;
-            lexer->setFont(bold, i);
         }
         else if (d.contains("entity")) {
             fg = npNumber;
         }
         else if (d.contains("header") || d.contains("header1") ||
                  d.contains("strong") || d.contains("bold")) {
-            // Markdown
+            // Markdown headers — keep bold here because that's the actual
+            // semantics of "header" / "strong"
             fg = npKeyword;
             lexer->setFont(bold, i);
         }
