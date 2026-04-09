@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor with AI-powered formatters. ~5 MB native executable. 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.6",
+      "softwareVersion": "0.1.7",
       "fileSize": "5 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -881,7 +881,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.6 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.7 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>5 MB native binary. C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -919,7 +919,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.6</div>
+        <div class="section-label">Download v0.1.7</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1260,36 +1260,36 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.6 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.7 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-04-09</span>
-                        <span>· Plugin panels overhaul + SQL dialects</span>
+                        <span>· Plugin overhaul + SQL dialects (Windows MSVC fix)</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>Fixed</h5>
+                        <h5>Fixed (over v0.1.6)</h5>
                         <ul>
-                            <li>🐛 JSON / HTML / Bracket Tools: Format buttons silently did nothing if editor was empty when panel opened — now reads pasted content and shows BIG status banner with progress + result counts.</li>
-                            <li>🐛 JSON Tools panel: text typed into the panel was rendering white-on-white. Fixed via Notepad++ palette on the panel's lexer.</li>
-                            <li>🐛 AI Fix (Ollama) reports clearly: progress, completion, errors all shown.</li>
-                            <li>🎨 Default font 11pt → 10pt. Removed bold from operators / preprocessor / classes / functions / HTML tags. Page feels lighter, matches Notepad++ defaults.</li>
-                            <li>🐛 Compare picker now lists unsaved tabs with <code style="color:var(--green);font-size:12px;">● unsaved</code> marker.</li>
+                            <li>🪟 <strong>Windows MSVC compile error.</strong> v0.1.6's <code style="color:var(--green);font-size:12px;">SendScintilla(SCI_SETKEYWORDS, …)</code> was ambiguous on MSVC x64 (<code style="color:var(--green);font-size:12px;">unsigned long</code> is 32-bit, <code style="color:var(--green);font-size:12px;">uintptr_t</code> is 64-bit). Cast wParam to <code style="color:var(--green);font-size:12px;">uintptr_t</code>. v0.1.6 built green on Linux/Mac but failed Windows.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>Added</h5>
+                        <h5>Carryover from v0.1.6</h5>
                         <ul>
-                            <li>🗄 SQL Formatter has a Dialect dropdown — ANSI / T-SQL (SQL Server) / PL/SQL (Oracle) / MySQL / PostgreSQL / SQLite. Dialect-specific keywords paint blue when typed.</li>
-                            <li>📊 BIG status banner (36px, colored) in every plugin panel.</li>
+                            <li>🐛 JSON / HTML / Bracket Tools format buttons now actually work + show BIG colored status banner.</li>
+                            <li>🐛 JSON Tools white-on-white text bug fixed.</li>
+                            <li>🐛 AI Fix (Ollama) reports progress + completion + errors clearly.</li>
+                            <li>🎨 Default font 11pt → 10pt, removed bold from operators/preprocessor/classes — feels lighter, matches Notepad++.</li>
+                            <li>🐛 Compare picker lists unsaved tabs with <code style="color:var(--green);font-size:12px;">● unsaved</code> marker.</li>
+                            <li>🗄 SQL Formatter Dialect dropdown — T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.6">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.7">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.6">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.7">Commits</a>
                 </div>
             </div>
 

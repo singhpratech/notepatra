@@ -227,8 +227,14 @@ void SqlFmtPanel::applySqlDialectKeywords() {
 
     // QsciLexerSQL::setKeywords is protected — go straight to Scintilla
     // via SCI_SETKEYWORDS, which works for any lexer.
+    //
+    // Cast wParam to uintptr_t (not unsigned long) so MSVC unambiguously
+    // picks the SendScintilla(uint, uintptr_t, const char*) overload.
+    // On MSVC x64, unsigned long is 32-bit and uintptr_t is 64-bit, so a
+    // bare 0 + const char* is ambiguous between (unsigned long, void*) and
+    // (uintptr_t, const char*). Casting to uintptr_t makes the latter exact.
     m_output->SendScintilla(QsciScintilla::SCI_SETKEYWORDS,
-                            (unsigned long)0,
+                            (uintptr_t)0,
                             keywords.constData());
     // Re-colourise the visible buffer so the new keywords paint immediately
     int len = m_output->length();

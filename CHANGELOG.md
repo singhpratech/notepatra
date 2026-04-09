@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.7] — 2026-04-09
+
+### Fixed
+- 🪟 **Windows MSVC compile error in `sqlfmtpanel.cpp`.** v0.1.6 introduced the SQL dialect dropdown which uses `SendScintilla(SCI_SETKEYWORDS, …, const char*)`. On MSVC x64 the call was ambiguous between two overloads — `(unsigned int, unsigned long, void*)` and `(unsigned int, uintptr_t, const char*)` — because `unsigned long` is 32-bit but `uintptr_t` is 64-bit on Windows, so neither was a strictly better match. Cast the wParam to `(uintptr_t)0` to make the `(uintptr_t, const char*)` overload an exact match. Linux/GCC accepted the original call because `unsigned long` and `uintptr_t` are the same width on Linux x64. v0.1.6 built green on Linux + macOS but failed Windows CI before publishing a release.
+
+### Carryover from v0.1.6 (which never published)
+All v0.1.6 work ships in this release — see the v0.1.6 entry below for the full list.
+
+### Verifying this release
+Same as previous — SHA-256, cosign, SLSA. See `SECURITY.md`.
+
+
 ## [0.1.6] — 2026-04-09
 
 ### Fixed
