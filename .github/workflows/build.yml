@@ -627,11 +627,67 @@ jobs:
             exit 1
           }
 
-      - name: Upload artifact
+      # ─── Build the Windows installer with NSIS ───
+      # Produces notepatra-setup-<VERSION>.exe which registers in "Installed
+      # apps" via HKCU Uninstall key, generates uninstall.exe, creates Start
+      # Menu + Desktop shortcuts, and optionally adds notepatra to the user
+      # PATH. NSIS ships pre-installed on windows-latest runners.
+      - name: Build Windows installer (NSIS)
+        shell: pwsh
+        run: |
+          # Resolve version: tag → strip leading 'v' → '0.0.0-dev' for non-tag builds
+          $version = if ($env:GITHUB_REF -like "refs/tags/v*") {
+              $env:GITHUB_REF.Substring(11)
+          } else { "0.0.0-dev" }
+          Write-Host "Building installer for version: $version"
+
+          # Locate makensis.exe
+          $makensis = (Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
+          if (-not $makensis) {
+              $nsisDir = "C:\Program Files (x86)\NSIS"
+              if (Test-Path "$nsisDir\makensis.exe") {
+                  $makensis = "$nsisDir\makensis.exe"
+              }
+          }
+          if (-not $makensis) {
+              Write-Host "::warning::NSIS not found on runner — installing via chocolatey"
+              choco install nsis -y --no-progress
+              $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          }
+          Write-Host "Using makensis: $makensis"
+
+          # Run NSIS. SOURCE_DIR must be relative to installers/windows.nsi
+          # and contain the fully-bundled notepatra-win/ directory.
+          & $makensis /V3 "/DVERSION=$version" "/DSOURCE_DIR=..\notepatra-win" installers\windows.nsi
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "::error::NSIS compile failed (exit $LASTEXITCODE)"
+              exit 1
+          }
+
+          # The script writes notepatra-setup-<version>.exe to the installers/ folder
+          $installerExe = "installers\notepatra-setup-$version.exe"
+          if (-not (Test-Path $installerExe)) {
+              Write-Host "::error::Installer EXE missing at $installerExe"
+              exit 1
+          }
+          $installerSize = [math]::Round((Get-Item $installerExe).Length / 1MB, 2)
+          Write-Host "✓ Built $installerExe ($installerSize MB)"
+
+          # Copy to workspace root so upload-artifact can pick it up easily
+          Copy-Item $installerExe "notepatra-setup-$version.exe" -Force
+
+      - name: Upload artifact (portable zip)
         uses: actions/upload-artifact@v4
         with:
           name: notepatra-windows-x64
           path: notepatra-win/
+
+      - name: Upload artifact (installer exe)
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepatra-windows-installer
+          path: notepatra-setup-*.exe
+          if-no-files-found: ignore
 
       # ─── Failure diagnostics — must be LAST so it sees failures from any prior step ───
       - name: Upload build logs on failure
@@ -756,8 +812,18 @@ jobs:
           if [ -d notepatra-windows-x64 ]; then
             cd notepatra-windows-x64 && zip -r ../notepatra-windows-x64.zip . && cd ..
           fi
+          # Rename Windows installer to the canonical name used in release assets
+          TAG="${GITHUB_REF##*/}"
+          VERSION="${TAG#v}"
+          if [ -d notepatra-windows-installer ]; then
+            INSTALLER=$(ls notepatra-windows-installer/notepatra-setup-*.exe 2>/dev/null | head -1)
+            if [ -n "$INSTALLER" ]; then
+              cp "$INSTALLER" "notepatra-setup-${VERSION}.exe"
+              ls -la "notepatra-setup-${VERSION}.exe"
+            fi
+          fi
           ls -la *.tar.gz *.dmg 2>/dev/null
-          ls -la *.zip 2>/dev/null || true
+          ls -la *.zip *.exe 2>/dev/null || true
 
       - name: Checkout source for release notes
         uses: actions/checkout@v4
@@ -769,7 +835,8 @@ jobs:
           # Generate a single SHA256SUMS file in the standard format that
           # `sha256sum -c` understands. Users can verify with:
           #   sha256sum -c SHA256SUMS
-          for f in notepatra-linux-x64.tar.gz notepatra-macos-arm64.dmg notepatra-windows-x64.zip; do
+          for f in notepatra-linux-x64.tar.gz notepatra-macos-arm64.dmg \
+                   notepatra-windows-x64.zip notepatra-setup-*.exe; do
             [ -f "$f" ] && sha256sum "$f" >> SHA256SUMS
           done
           echo "=== SHA256SUMS ==="
@@ -816,7 +883,8 @@ jobs:
           # Actions OIDC token, no long-lived secrets. Each .sig is the
           # detached signature, each .pem is the short-lived cert that
           # ties the signature to this repo + workflow + commit SHA.
-          for f in notepatra-linux-x64.tar.gz notepatra-macos-arm64.dmg notepatra-windows-x64.zip SHA256SUMS; do
+          for f in notepatra-linux-x64.tar.gz notepatra-macos-arm64.dmg \
+                   notepatra-windows-x64.zip notepatra-setup-*.exe SHA256SUMS; do
             [ -f "$f" ] || continue
             cosign sign-blob --yes \
               --output-signature "${f}.sig" \
@@ -832,6 +900,7 @@ jobs:
             notepatra-linux-x64.tar.gz
             notepatra-macos-arm64.dmg
             notepatra-windows-x64.zip
+            notepatra-setup-*.exe
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -840,6 +909,7 @@ jobs:
             notepatra-linux-x64.tar.gz
             notepatra-macos-arm64.dmg
             notepatra-windows-x64.zip
+            notepatra-setup-*.exe
             SHA256SUMS
             notepatra-linux-x64.tar.gz.sig
             notepatra-linux-x64.tar.gz.pem
@@ -847,6 +917,8 @@ jobs:
             notepatra-macos-arm64.dmg.pem
             notepatra-windows-x64.zip.sig
             notepatra-windows-x64.zip.pem
+            notepatra-setup-*.exe.sig
+            notepatra-setup-*.exe.pem
             SHA256SUMS.sig
             SHA256SUMS.pem
           fail_on_unmatched_files: false

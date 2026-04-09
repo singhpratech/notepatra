@@ -8,6 +8,14 @@
 #include "editor.h"
 #include "config.h"
 
+// NOTEPATRA_VERSION is injected at compile time from CMakeLists.txt's
+// project(Notepatra VERSION X.Y.Z ...) so a single bump in CMake propagates
+// to --version, --help, app version, .desktop file, etc. without needing
+// to sed across multiple source files.
+#ifndef NOTEPATRA_VERSION
+#define NOTEPATRA_VERSION "0.0.0-dev"
+#endif
+
 // Global crash handler — saves recovery data before dying
 static void crashHandler(int sig) {
     // Try to save recovery info
@@ -27,13 +35,13 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         QString arg = QString::fromUtf8(argv[i]);
         if (arg == "--version" || arg == "-v") {
-            printf("Notepatra v0.1.0\n");
+            printf("Notepatra v%s\n", NOTEPATRA_VERSION);
             printf("Native C++/Rust code editor\n");
             printf("https://github.com/singhpratech/notepatra\n");
             return 0;
         }
         if (arg == "--help" || arg == "-h") {
-            printf("Notepatra v0.1.0 — Native code editor for Linux\n\n");
+            printf("Notepatra v%s — Native code editor for Linux\n\n", NOTEPATRA_VERSION);
             printf("Usage: notepatra [options] [file1] [file2] ...\n\n");
             printf("Options:\n");
             printf("  -h, --help       Show this help\n");
@@ -60,7 +68,7 @@ int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     app.setApplicationName("Notepatra");
     app.setOrganizationName("Notepatra");
-    app.setApplicationVersion("0.1.0");
+    app.setApplicationVersion(NOTEPATRA_VERSION);
 
     // Parse remaining args
     int gotoLine = -1;

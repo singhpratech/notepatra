@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 1.0 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.4 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -190,6 +190,13 @@ else()
 endif()
 
 add_dependencies(${EXE_NAME} rust_core)
+
+# Inject the version from `project(Notepatra VERSION X.Y.Z)` so main.cpp's
+# --version, --help, and app.setApplicationVersion() always match the build.
+# Single source of truth: CMakeLists.txt → NOTEPATRA_VERSION compile define.
+target_compile_definitions(${EXE_NAME} PRIVATE
+    NOTEPATRA_VERSION="${PROJECT_VERSION}"
+)
 
 target_include_directories(${EXE_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/src

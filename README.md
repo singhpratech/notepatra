@@ -250,13 +250,14 @@ irm https://notepatra.org/install.ps1 | iex
 
 That's it. Auto-detects your OS, downloads the right binary, installs it, adds to PATH, creates shortcuts.
 
-### Or download manually — [Latest release: v0.1.0](https://github.com/singhpratech/notepatra/releases/latest)
+### Or download manually — [Latest release: v0.1.4](https://github.com/singhpratech/notepatra/releases/latest)
 
 | Platform | Download | Size | What's inside |
 |---|---|---|---|
 | 🐧 **Linux x64** | [`.tar.gz`](https://github.com/singhpratech/notepatra/releases/latest) | **1.8 MB** | Bare `notepatra` binary. Qt5 from your distro. |
-| 🍎 **macOS Apple Silicon** (M1–M4) | [`.dmg`](https://github.com/singhpratech/notepatra/releases/latest) | **22 MB** | `Notepatra.app` with Qt frameworks bundled. Drag to Applications. |
-| 🪟 **Windows x64** | [`.zip`](https://github.com/singhpratech/notepatra/releases/latest) | **48 MB** | `notepatra.exe` + Qt DLLs + QScintilla DLL. Unzip and run anywhere. |
+| 🍎 **macOS Apple Silicon** (M1–M4) | [`.dmg`](https://github.com/singhpratech/notepatra/releases/latest) | **24 MB** | `Notepatra.app` with Qt frameworks bundled. Drag to Applications. |
+| 🪟 **Windows x64 (installer)** | [`.exe`](https://github.com/singhpratech/notepatra/releases/latest) | **~40 MB** | NSIS installer. Registers in Settings → Apps → Installed apps. Uninstall via Control Panel works. |
+| 🪟 **Windows x64 (portable)** | [`.zip`](https://github.com/singhpratech/notepatra/releases/latest) | **40 MB** | `notepatra.exe` + Qt DLLs + QScintilla DLL. Unzip and run anywhere. No installer, no registry. |
 
 **Why are the download sizes different?** The bare `notepatra` executable is **5.1 MB on Linux**, **3.0 MB on Windows**, and **2.7 MB on macOS Apple Silicon** (clang and MSVC strip more aggressively than gcc). On Linux, Qt5 is a standard system package (`apt install qtbase5-dev libqscintilla2-qt5-dev`), so the download is just the binary — 1.8 MB compressed. On macOS and Windows, Qt isn't pre-installed, so we bundle the Qt frameworks/DLLs alongside the executable for portability — same approach Krita, Kdenlive, and every cross-platform Qt app uses. Even with Qt bundled, Notepatra is still **6× smaller than VS Code** on Windows and **14× smaller** on Linux.
 
@@ -268,7 +269,7 @@ Every release ships with **SHA-256 checksums**, **Sigstore (cosign) signatures**
 
 ```bash
 # Linux / macOS — checksum
-curl -sL -O https://github.com/singhpratech/notepatra/releases/download/v0.1.0/SHA256SUMS
+curl -sL -O https://github.com/singhpratech/notepatra/releases/latest/download/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
 
 # Anywhere — cosign verify (Sigstore)
@@ -427,7 +428,11 @@ Notepatra follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic 
 
 | Version | Date | Highlights |
 |---|---|---|
-| [**v0.1.0**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.0) | 2026-04-06 | First public release. Linux x64, macOS Apple Silicon, Windows x64. 100+ file types, 44 lexers, AI formatters, Compare plugin, Git integration, 105/105 tests. |
+| [**v0.1.4**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.4) | 2026-04-09 | NSIS Windows installer (registers in "Installed apps", uninstall via Control Panel). Live download counter on website footer. |
+| [**v0.1.3**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.3) | 2026-04-09 | Preprocessor color polish (`#include`/`#define` brown). New `test_palette` and `test_ollama` test suites. |
+| [**v0.1.2**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.2) | 2026-04-09 | Notepad++ default palette across all lexers (Windows keyword highlighting works). Dynamic Ollama model detection (`/api/tags`). Ctrl+B brace swivel. |
+| [**v0.1.1**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.1) | 2026-04-06 | First shipping release on all 3 platforms. Windows lexer fix (Riverbank QScintilla source). Embedded Windows + macOS icons. RFC 9116 security.txt. SLSA + cosign. |
+| [**v0.1.0**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.0) | 2026-04-06 | First public release. Linux x64, macOS Apple Silicon, Windows x64. 100+ file types, 44 lexers. |
 
 See the full [CHANGELOG](CHANGELOG.md) for every change in every release, or browse the [version history on notepatra.org](https://notepatra.org#versions).
 

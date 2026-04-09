@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor with AI-powered formatters. ~5 MB native executable. 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.0",
+      "softwareVersion": "0.1.4",
       "fileSize": "5 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -881,7 +881,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.0 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.4 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>5 MB native binary. C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -919,7 +919,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.3</div>
+        <div class="section-label">Download v0.1.4</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -939,8 +939,9 @@
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🪟</div>
                 <h4>Windows x64</h4>
-                <p>notepatra.exe + Qt DLLs · Run anywhere · ~30 MB packaged</p>
-                <span class="download-btn">Download .zip</span>
+                <p>Installer (.exe) — registers in Apps · uninstall from Settings · ~40 MB</p>
+                <span class="download-btn">Download installer</span>
+                <p style="font-size:11px;color:#8899AA;margin-top:8px;">or grab the portable .zip from the same page</p>
             </a>
         </div>
     </section>
@@ -1220,7 +1221,7 @@
             <div class="feature-card">
                 <div class="feature-icon fi-green">🔐</div>
                 <h3>SHA-256 checksums</h3>
-                <p>Every release ships a <code style="color:var(--green);font-size:12px;">SHA256SUMS</code> file. <code style="color:var(--green);font-size:12px;">install.sh</code> and <code style="color:var(--green);font-size:12px;">install.ps1</code> verify it automatically and refuse to install on mismatch. <a href="/SHA256SUMS.v0.1.0.txt" style="color:var(--green);">v0.1.0 checksums →</a></p>
+                <p>Every release ships a <code style="color:var(--green);font-size:12px;">SHA256SUMS</code> file. <code style="color:var(--green);font-size:12px;">install.sh</code> and <code style="color:var(--green);font-size:12px;">install.ps1</code> verify it automatically and refuse to install on mismatch. <a href="https://github.com/singhpratech/notepatra/releases/latest/download/SHA256SUMS" style="color:var(--green);">Latest checksums →</a></p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon fi-blue">✍️</div>
@@ -1259,7 +1260,33 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.3 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.4 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-09</span>
+                        <span>· Windows installer + download counter</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>Added</h5>
+                        <ul>
+                            <li>🪟 <strong>Proper Windows installer</strong> — <code style="color:var(--green);font-size:12px;">notepatra-setup-0.1.4.exe</code> (NSIS MUI2). Registers in Settings → Apps → Installed apps. Uninstall via Control Panel works. Auto-creates Start Menu + Desktop shortcuts. Optionally adds to PATH.</li>
+                            <li>📊 Live <strong>3-platform download counter</strong> in the website footer — pulls counts from the GitHub Releases API every page load.</li>
+                            <li>📦 The portable <code style="color:var(--green);font-size:12px;">.zip</code> is still available on the release page for users who don't want to install.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.4">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.4">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.3</div>
                     <div class="version-meta">
                         <span>2026-04-09</span>
                         <span>· Palette polish + test suite</span>
@@ -1276,15 +1303,13 @@
                     <div class="version-section">
                         <h5>Added</h5>
                         <ul>
-                            <li>✅ <code style="color:var(--green);font-size:12px;">test_palette</code> — verifies exact RGB + bold/italic for every QsciLexer we ship (C++, JS, Python, SQL, JSON, Bash, Markdown)</li>
+                            <li>✅ <code style="color:var(--green);font-size:12px;">test_palette</code> — verifies exact RGB + bold/italic for every QsciLexer we ship</li>
                             <li>✅ <code style="color:var(--green);font-size:12px;">test_ollama</code> — end-to-end test against a real Ollama daemon</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
                     <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.3">Release page</a>
-                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.3">Commits</a>
                 </div>
             </div>
 
@@ -1464,6 +1489,29 @@
 
     <!-- Footer -->
     <footer>
+        <!-- ─── Download counter (live from GitHub Releases API) ─── -->
+        <div id="download-counter" style="max-width: 720px; margin: 0 auto 32px; padding: 20px 24px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px;">
+            <div style="font-size: 11px; color: #4EC9B0; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; margin-bottom: 14px; text-align: center;">Total downloads</div>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; text-align: center;">
+                <div>
+                    <div style="font-size: 32px; line-height: 1;">🐧</div>
+                    <div style="font-size: 28px; font-weight: 700; color: #fff; margin-top: 6px;" id="dl-linux">—</div>
+                    <div style="font-size: 11px; color: #8899AA; margin-top: 4px;">Linux</div>
+                </div>
+                <div>
+                    <div style="font-size: 32px; line-height: 1;">🍎</div>
+                    <div style="font-size: 28px; font-weight: 700; color: #fff; margin-top: 6px;" id="dl-mac">—</div>
+                    <div style="font-size: 11px; color: #8899AA; margin-top: 4px;">macOS</div>
+                </div>
+                <div>
+                    <div style="font-size: 32px; line-height: 1;">🪟</div>
+                    <div style="font-size: 28px; font-weight: 700; color: #fff; margin-top: 6px;" id="dl-windows">—</div>
+                    <div style="font-size: 11px; color: #8899AA; margin-top: 4px;">Windows</div>
+                </div>
+            </div>
+            <div style="font-size: 10px; color: #556677; text-align: center; margin-top: 14px;" id="dl-total">Loading from GitHub Releases…</div>
+        </div>
+
         <p><strong>Notepatra</strong> — Native C++/Rust code editor for the AI era</p>
         <p>Envisioned by <a href="https://github.com/singhpratech">Prateek Singh</a>. Inspired by Notepad++. Built by Claude.</p>
         <p>Free forever · GPL-3.0 · <a href="https://github.com/singhpratech/notepatra">Source on GitHub</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Changelog</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">Security</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE">License</a></p>
@@ -1516,6 +1564,65 @@
                 }, 1500);
             });
         }
+
+        // ─── Live download counter — sums GitHub Releases asset download counts
+        // per platform across every tag. Only counts the primary user-facing
+        // asset for each platform (zip / tar.gz / dmg / setup exe), not the
+        // .sig / .pem signature siblings, so the count matches "actual humans
+        // who downloaded the binary".
+        (function loadDownloadCounter() {
+            const elLinux   = document.getElementById('dl-linux');
+            const elMac     = document.getElementById('dl-mac');
+            const elWindows = document.getElementById('dl-windows');
+            const elTotal   = document.getElementById('dl-total');
+
+            // Skip on local file:// previews
+            if (location.protocol !== 'http:' && location.protocol !== 'https:') {
+                elTotal.textContent = 'live counts shown when served over HTTPS';
+                return;
+            }
+
+            const isPrimaryAsset = (name) => {
+                if (name.endsWith('.sig') || name.endsWith('.pem')) return false;
+                if (name === 'SHA256SUMS') return false;
+                return /\.tar\.gz$|\.dmg$|\.zip$|\.exe$/.test(name);
+            };
+
+            const platformOf = (name) => {
+                if (/linux/i.test(name)) return 'linux';
+                if (/macos|mac-|darwin|\.dmg$/i.test(name)) return 'mac';
+                if (/windows|win-|\.exe$/i.test(name) || name.endsWith('.zip')) return 'windows';
+                return null;
+            };
+
+            fetch('https://api.github.com/repos/singhpratech/notepatra/releases?per_page=100', {
+                headers: { 'Accept': 'application/vnd.github+json' }
+            })
+            .then(r => {
+                if (!r.ok) throw new Error('GitHub API HTTP ' + r.status);
+                return r.json();
+            })
+            .then(releases => {
+                const counts = { linux: 0, mac: 0, windows: 0 };
+                for (const rel of releases) {
+                    for (const a of (rel.assets || [])) {
+                        if (!isPrimaryAsset(a.name)) continue;
+                        const p = platformOf(a.name);
+                        if (p) counts[p] += a.download_count;
+                    }
+                }
+                const fmt = (n) => n.toLocaleString('en-US');
+                elLinux.textContent   = fmt(counts.linux);
+                elMac.textContent     = fmt(counts.mac);
+                elWindows.textContent = fmt(counts.windows);
+                const total = counts.linux + counts.mac + counts.windows;
+                elTotal.textContent = `${fmt(total)} total · live from GitHub Releases API · last refreshed ${new Date().toLocaleTimeString()}`;
+            })
+            .catch(err => {
+                elTotal.textContent = 'GitHub API rate-limited — try refreshing in a minute';
+                console.warn('download counter failed:', err);
+            });
+        })();
     </script>
 </body>
 </html>
