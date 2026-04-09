@@ -428,11 +428,14 @@ Notepatra follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic 
 
 | Version | Date | Highlights |
 |---|---|---|
-| [**v0.1.4**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.4) | 2026-04-09 | NSIS Windows installer (registers in "Installed apps", uninstall via Control Panel). Live download counter on website footer. |
-| [**v0.1.3**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.3) | 2026-04-09 | Preprocessor color polish (`#include`/`#define` brown). New `test_palette` and `test_ollama` test suites. |
+| [**v0.1.7**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.7) | 2026-04-09 | Plugin panels overhaul: JSON / HTML / Bracket Tools format buttons now actually do something visible (BIG status banner). JSON Tools white-on-white text bug fixed. AI Fix (Ollama) reports progress + completion clearly. Default font 11pt → 10pt, less bold = lighter feel. SQL Formatter dialect dropdown (T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite). Compare picker lists unsaved tabs. Windows MSVC C2666 fix in `SCI_SETKEYWORDS` call. |
+| [**v0.1.5**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.5) | 2026-04-09 | NSIS Windows installer (`notepatra-setup-0.1.5.exe`) — registers in Settings → Apps → Installed apps, generates uninstall.exe, Start Menu shortcuts, optional PATH integration. Live 3-platform download counter on website footer. `notepatra --version` no longer hard-coded to v0.1.0 (now driven by CMake `project()`). `scripts/bump_version.sh` for one-command release bumps. |
+| [**v0.1.3**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.3) | 2026-04-09 | Preprocessor color polish (`#include`/`#define` now brown bold). New `test_palette` and `test_ollama` test suites. |
 | [**v0.1.2**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.2) | 2026-04-09 | Notepad++ default palette across all lexers (Windows keyword highlighting works). Dynamic Ollama model detection (`/api/tags`). Ctrl+B brace swivel. |
 | [**v0.1.1**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.1) | 2026-04-06 | First shipping release on all 3 platforms. Windows lexer fix (Riverbank QScintilla source). Embedded Windows + macOS icons. RFC 9116 security.txt. SLSA + cosign. |
 | [**v0.1.0**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.0) | 2026-04-06 | First public release. Linux x64, macOS Apple Silicon, Windows x64. 100+ file types, 44 lexers. |
+
+<sub>v0.1.4 and v0.1.6 were tagged but never published a GitHub Release — both had CI failures (NSIS macro bug + Windows MSVC C2666). Their content shipped in v0.1.5 and v0.1.7 respectively.</sub>
 
 See the full [CHANGELOG](CHANGELOG.md) for every change in every release, or browse the [version history on notepatra.org](https://notepatra.org#versions).
 

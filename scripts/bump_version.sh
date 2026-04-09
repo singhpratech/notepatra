@@ -60,6 +60,21 @@ sed -i "s|Download v$OLD|Download v$NEW|"                                docs/in
 # ─── README.md ───────────────────────────────────────────────────────
 sed -i "s|Latest release: v$OLD|Latest release: v$NEW|"                  README.md
 
+# Prepend a new row to the version-history table in README so the table
+# never goes stale. The row goes immediately after the table header
+# `|---|---|---|`. Skip if a row for $NEW already exists.
+if ! grep -q "tag/v$NEW" README.md; then
+    awk -v new="$NEW" -v today="$TODAY" '
+        /^\|---\|---\|---\|/ && !inserted {
+            print
+            print "| [**v" new "**](https://github.com/singhpratech/notepatra/releases/tag/v" new ") | " today " | TODO: short description of this release. |"
+            inserted=1
+            next
+        }
+        { print }
+    ' README.md > README.md.tmp && mv README.md.tmp README.md
+fi
+
 # ─── CHANGELOG.md — prepend a new section header (don't touch existing) ─
 if ! grep -q "^## \[$NEW\]" CHANGELOG.md; then
     awk -v new="$NEW" -v today="$TODAY" '
