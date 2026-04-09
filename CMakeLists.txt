@@ -103,6 +103,7 @@ set(SOURCES
     src/main.cpp
     src/mainwindow.cpp
     src/editor.cpp
+    src/npp_palette.cpp
     src/tabmanager.cpp
     src/statusbar.cpp
     src/findreplace.cpp
@@ -128,6 +129,7 @@ set(SOURCES
 set(HEADERS
     src/mainwindow.h
     src/editor.h
+    src/npp_palette.h
     src/tabmanager.h
     src/statusbar.h
     src/findreplace.h
@@ -249,6 +251,49 @@ if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexers.cpp")
         target_compile_definitions(test_lexers PRIVATE QSCINTILLA_DLL)
     endif()
     message(STATUS "Lexer smoke test enabled — target: test_lexers")
+endif()
+
+# ── Palette verification test ──
+# Builds a test that verifies the EXACT Notepad++ default palette colors
+# are applied to every QsciLexer — keywords #0000FF bold, comments #008000
+# italic, numbers #FF8000, strings #808080, operators #000000 bold.
+# This catches the Windows v0.1.1 bug where lexers tokenized correctly but
+# rendered all styles as default black-on-white.
+if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_ollama.cpp")
+    add_executable(test_ollama
+        test_ollama.cpp
+        src/ollama.cpp
+    )
+    target_include_directories(test_ollama PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_ollama PRIVATE
+        Qt5::Core
+        Qt5::Network
+    )
+    message(STATUS "Ollama dynamic-detection test enabled — target: test_ollama")
+endif()
+
+if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_palette.cpp")
+    add_executable(test_palette
+        test_palette.cpp
+        src/npp_palette.cpp
+    )
+    target_include_directories(test_palette PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_palette PRIVATE
+        Qt5::Core
+        Qt5::Gui
+        Qt5::Widgets
+        Qt5::PrintSupport
+        ${QSCINTILLA_LIB}
+    )
+    if(WIN32)
+        target_compile_definitions(test_palette PRIVATE QSCINTILLA_DLL)
+    endif()
+    message(STATUS "Palette verification test enabled — target: test_palette")
 endif()
 
 # ── Install ──

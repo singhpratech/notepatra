@@ -20,6 +20,10 @@ public:
     QString encoding() const { return m_encoding; }
     QString eolModeName() const { return m_eolName; }
 
+    // Public so tests can verify the exact Notepad++ palette is applied
+    // without having to construct a full Editor (which pulls in the Rust core).
+    static void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont);
+
     void gotoLine(int line);
     void updateGitGutter();
     void duplicateLine();
@@ -49,7 +53,6 @@ private:
     void highlightAllOccurrences(const QString &word);
     void applyLexer(const QString &lang);
     void applySyntaxColors(QsciLexer *lexer, const QString &themeName);
-    void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont);
 
     QString m_filePath;
     QString m_language = "Plain Text";
