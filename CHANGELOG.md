@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.5] — 2026-04-09
+
+### Fixed
+- 🪟 **NSIS installer script now compiles and ships.** v0.1.4's `installers/windows.nsi` failed in CI with `Invalid command: "${GetSize}"` because `FileFunc.nsh` was included but `GetSize` was never `!insertmacro`-d, and the `!include` lines were at the bottom of the script (NSIS is single-pass — every macro must be inserted before its first use). Moved all `!include` and `!insertmacro` directives (`MUI2`, `LogicLib`, `FileFunc/GetSize`, `WordFunc/WordReplace/un.WordReplace`) to the top of the file.
+
+### Added (carryover from v0.1.4 — never published a Release)
+- 🪟 **Proper Windows installer** — `notepatra-setup-0.1.5.exe` with HKCU Uninstall registry entry, generated `uninstall.exe`, Start Menu + Desktop shortcuts, optional PATH integration. See v0.1.4 entry below for full details.
+- 🪟 `install.ps1` PowerShell installer also writes the Uninstall registry key + drops `uninstall.ps1`.
+- 📊 Live 3-platform download counter on website footer using 🐧 / 🍎 / 🪟 icons.
+- 🐛 `notepatra --version` no longer hard-coded to v0.1.0 — driven by `NOTEPATRA_VERSION` compile-time define from CMake project version.
+- 🛠 `scripts/bump_version.sh` — single-command release bump (used for the first time on this release).
+
+### Verifying this release
+Same as previous — SHA-256, cosign, SLSA. See `SECURITY.md`.
+
+
 ## [0.1.4] — 2026-04-09
 
 ### Added

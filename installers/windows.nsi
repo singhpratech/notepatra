@@ -46,8 +46,18 @@ InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 
-; ─── MUI2 modern UI ───────────────────────────────────────────────────
+; ─── Standard library includes (must be BEFORE any section) ───────────
+; NSIS is single-pass — every macro and include needs to come before its
+; first use in the script.
 !include "MUI2.nsh"
+!include "LogicLib.nsh"
+!include "FileFunc.nsh"
+!include "WordFunc.nsh"
+; ${GetSize} — used to compute installed size for the "Installed apps" entry
+!insertmacro GetSize
+; WordReplace — used by AddToUserPath / un.RemoveFromUserPath
+!insertmacro WordReplace
+!insertmacro un.WordReplace
 
 !define MUI_ABORTWARNING
 !define MUI_ICON "..\resources\notepatra.ico"
@@ -155,8 +165,6 @@ LangString DESC_SecPath       ${LANG_ENGLISH} "Add Notepatra to the user PATH so
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 ; ─── Helpers: PATH manipulation (user scope, no admin) ────────────────
-!include "LogicLib.nsh"
-!include "FileFunc.nsh"
 
 ; Push "$INSTDIR" then Call AddToUserPath
 Function AddToUserPath
@@ -231,7 +239,3 @@ Function StrContains
     Exch $R1
 FunctionEnd
 
-; NSIS stdlib's WordReplace is in WordFunc.nsh
-!include "WordFunc.nsh"
-!insertmacro WordReplace
-!insertmacro un.WordReplace
