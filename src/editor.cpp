@@ -540,10 +540,14 @@ void Editor::applyLexer(const QString &lang) {
     else if (lang == "Makefile") lexer = new QsciLexerMakefile(this);
 
     if (lexer) {
-        // Only set default font — let lexer handle all colors itself
+        // Set lexer first so its default styles are initialised
         lexer->setDefaultFont(font);
+        lexer->setDefaultPaper(QColor("#FFFFFF"));
+        lexer->setDefaultColor(QColor("#000000"));
         setLexer(lexer);
-        // Set paper AFTER setLexer so it applies to the editor, not the lexer styles
+        // Apply Notepad++ default palette — Windows default QScintilla styles
+        // sometimes render with no visible keyword color, so paint them ourselves.
+        applyNotepadPlusPalette(lexer, font);
         setPaper(QColor("#FFFFFF"));
     } else {
         setLexer(nullptr);
@@ -555,6 +559,122 @@ void Editor::applyLexer(const QString &lang) {
     if (!m_themeName.isEmpty()) applyTheme(m_themeName);
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// Notepad++ default color palette — matches stylers.xml from Notepad++ 8.x
+// Applied per-style using the lexer's own description() to identify styles,
+// so this works across ALL 40+ QScintilla lexers without hard-coding constants.
+// ═══════════════════════════════════════════════════════════════════════
+void Editor::applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont) {
+    if (!lexer) return;
+
+    // Notepad++ "Default" theme colors
+    const QColor npPaper     (0xFF, 0xFF, 0xFF);  // White background
+    const QColor npText      (0x00, 0x00, 0x00);  // Black text
+    const QColor npKeyword   (0x00, 0x00, 0xFF);  // Blue bold
+    const QColor npKeyword2  (0x80, 0x00, 0x80);  // Purple (KEYWORD2 / type)
+    const QColor npComment   (0x00, 0x80, 0x00);  // Green italic
+    const QColor npNumber    (0xFF, 0x80, 0x00);  // Orange
+    const QColor npString    (0x80, 0x80, 0x80);  // Gray
+    const QColor npChar      (0x80, 0x80, 0x80);  // Gray
+    const QColor npOperator  (0x00, 0x00, 0x00);  // Black bold
+    const QColor npPreproc   (0x80, 0x40, 0x00);  // Brown bold
+    const QColor npRegex     (0x80, 0x00, 0x80);  // Purple
+    const QColor npIdentifier(0x00, 0x00, 0x00);  // Black
+    const QColor npClassName (0x00, 0x64, 0x80);  // Dark cyan (class/function)
+    const QColor npDecorator (0xFF, 0x80, 0x00);  // Orange (decorators/attrs)
+    const QColor npError     (0xFF, 0x00, 0x00);  // Red
+
+    QFont regular = baseFont; regular.setBold(false); regular.setItalic(false);
+    QFont bold    = baseFont; bold.setBold(true);    bold.setItalic(false);
+    QFont italic  = baseFont; italic.setBold(false); italic.setItalic(true);
+
+    // Paint all 128 possible style slots
+    for (int i = 0; i < 128; ++i) {
+        QString desc = lexer->description(i);
+        if (desc.isEmpty()) continue;
+        const QString d = desc.toLower();
+
+        lexer->setPaper(npPaper, i);
+        lexer->setFont(regular, i);
+        QColor fg = npText;
+
+        if (d.contains("keyword")) {
+            // Secondary keyword sets — use purple to distinguish from primary blue
+            if (d.contains("set 2") || d.contains("set2") ||
+                d.contains("secondary") || d.contains("user")) {
+                fg = npKeyword2;
+            } else {
+                fg = npKeyword;
+            }
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("comment")) {
+            fg = npComment;
+            lexer->setFont(italic, i);
+        }
+        else if (d.contains("number") || d.contains("numeric")) {
+            fg = npNumber;
+        }
+        else if (d.contains("regex") || d.contains("regular expression")) {
+            fg = npRegex;
+        }
+        else if (d.contains("string") || d.contains("char") ||
+                 d.contains("literal") || d.contains("heredoc") ||
+                 d.contains("backtick") || d.contains("verbatim")) {
+            fg = (d.contains("char") ? npChar : npString);
+        }
+        else if (d.contains("preproc")) {
+            fg = npPreproc;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("operator")) {
+            fg = npOperator;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("decorator") || d.contains("attribute")) {
+            fg = npDecorator;
+            lexer->setFont(italic, i);
+        }
+        else if (d.contains("class") || d.contains("function") ||
+                 d.contains("method") || d.contains("global")) {
+            fg = npClassName;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("error") || d.contains("unclosed")) {
+            fg = npError;
+        }
+        else if (d.contains("tag") || d.contains("element")) {
+            // HTML/XML tag
+            fg = npKeyword;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("entity")) {
+            fg = npNumber;
+        }
+        else if (d.contains("header") || d.contains("header1") ||
+                 d.contains("strong") || d.contains("bold")) {
+            // Markdown
+            fg = npKeyword;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("emphasis") || d.contains("italic")) {
+            fg = npKeyword2;
+            lexer->setFont(italic, i);
+        }
+        else if (d.contains("link") || d.contains("url")) {
+            fg = npClassName;
+        }
+        // else: plain text / identifier — keep npText
+
+        lexer->setColor(fg, i);
+    }
+
+    // Also set the default style (0) explicitly in case lexer skips it
+    lexer->setPaper(npPaper, 0);
+    lexer->setColor(npText, 0);
+    lexer->setFont(regular, 0);
+}
+
 void Editor::applyTheme(const QString &themeName) {
     m_themeName = themeName;
     // Theme colors applied from mainwindow
@@ -562,8 +682,9 @@ void Editor::applyTheme(const QString &themeName) {
 
 void Editor::onCursorMoved(int line, int col) {
     emit cursorPositionUpdated(line + 1, col + 1);
-    // Clear brace highlight when cursor moves away
-    clearBraceHighlight();
+    // Note: do NOT clear brace highlight here. QScintilla repaints the
+    // brace highlight automatically when the caret lands on/next to a brace,
+    // and clearing on every tiny movement made goToMatchingBrace() invisible.
 }
 
 void Editor::onMarginClicked(int margin, int line, Qt::KeyboardModifiers) {
@@ -709,13 +830,16 @@ void Editor::clearBraceHighlight() {
 }
 
 void Editor::goToMatchingBrace() {
+    // Notepad++ behaviour: Ctrl+B moves the caret to the matching brace.
+    // Pressing it again swivels back — because the caret is now ON the
+    // other brace and BRACEMATCH returns the original position.
     int pos = (int)SendScintilla(SCI_GETCURRENTPOS);
 
     auto isBrace = [](int c) {
         return c == '(' || c == ')' || c == '[' || c == ']' || c == '{' || c == '}';
     };
 
-    // Find brace at cursor or one before
+    // Probe order: char AT caret, then char BEFORE caret (caret can sit on either side)
     int bracePos = -1;
     int ch = (int)SendScintilla(SCI_GETCHARAT, (unsigned long)pos, (long)0);
     if (isBrace(ch)) {
@@ -728,28 +852,21 @@ void Editor::goToMatchingBrace() {
     if (bracePos < 0) return;
 
     int matchPos = (int)SendScintilla(SCI_BRACEMATCH, (unsigned long)bracePos, (long)0);
-
     if (matchPos < 0) {
-        // No match — flash bad brace
         SendScintilla(SCI_BRACEBADLIGHT, (unsigned long)bracePos);
         return;
     }
 
-    // Highlight both braces (built-in Scintilla brace highlight — guaranteed to work)
+    // Move caret PAST the matching brace so the next Ctrl+B press finds it
+    // (SCI_GETCHARAT at new caret position returns the brace we just moved to,
+    // because caret lands immediately AFTER it).
+    SendScintilla(SCI_GOTOPOS, (unsigned long)(matchPos + 1));
+    ensureLineVisible((int)SendScintilla(SCI_LINEFROMPOSITION,
+                                         (unsigned long)matchPos, (long)0));
+
+    // Re-apply the visual brace highlight AFTER the goto (cursor-moved slot
+    // clears it; we want it visible on the destination brace).
     SendScintilla(SCI_BRACEHIGHLIGHT, (unsigned long)bracePos, (long)matchPos);
-
-    // Select everything between the braces (this IS the visible thread/connection)
-    int startPos = qMin(bracePos, matchPos);
-    int endPos = qMax(bracePos, matchPos);
-    setSelection(
-        (int)SendScintilla(SCI_LINEFROMPOSITION, (unsigned long)startPos, (long)0),
-        (int)SendScintilla(SCI_GETCOLUMN, (unsigned long)startPos, (long)0),
-        (int)SendScintilla(SCI_LINEFROMPOSITION, (unsigned long)(endPos + 1), (long)0),
-        (int)SendScintilla(SCI_GETCOLUMN, (unsigned long)(endPos + 1), (long)0)
-    );
-
-    // Move cursor to the matching brace
-    ensureLineVisible((int)SendScintilla(SCI_LINEFROMPOSITION, (unsigned long)matchPos, (long)0));
 }
 
 void Editor::updateGitGutter() {

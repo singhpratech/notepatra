@@ -49,6 +49,7 @@ private:
     void highlightAllOccurrences(const QString &word);
     void applyLexer(const QString &lang);
     void applySyntaxColors(QsciLexer *lexer, const QString &themeName);
+    void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont);
 
     QString m_filePath;
     QString m_language = "Plain Text";

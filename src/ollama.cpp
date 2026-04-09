@@ -1,21 +1,65 @@
 #include "ollama.h"
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkRequest>
 #include <QUrl>
+#include <QEventLoop>
+#include <QTimer>
 
 OllamaClient::OllamaClient(QObject *parent) : QObject(parent) {
     m_nam = new QNetworkAccessManager(this);
 }
 
 bool OllamaClient::isAvailable() {
+    // Synchronous probe with hard timeout (reliable on Windows;
+    // waitForReadyRead() alone is unreliable for localhost sockets there).
     QUrl url(m_baseUrl + "/api/tags");
     QNetworkRequest req(url);
     auto *reply = m_nam->get(req);
-    reply->waitForReadyRead(2000);
-    bool ok = reply->error() == QNetworkReply::NoError;
+
+    QEventLoop loop;
+    QTimer timer;
+    timer.setSingleShot(true);
+    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    timer.start(3000);
+    loop.exec();
+
+    bool ok = reply->isFinished() && reply->error() == QNetworkReply::NoError;
     reply->deleteLater();
     return ok;
+}
+
+void OllamaClient::listModels() {
+    QUrl url(m_baseUrl + "/api/tags");
+    QNetworkRequest req(url);
+    auto *reply = m_nam->get(req);
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        if (reply->error() != QNetworkReply::NoError) {
+            QString msg = reply->errorString();
+            if (msg.contains("refused", Qt::CaseInsensitive) ||
+                msg.contains("unreachable", Qt::CaseInsensitive))
+                msg = "Ollama not running. Start it: ollama serve";
+            emit modelsError(msg);
+            reply->deleteLater();
+            return;
+        }
+
+        QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+        QStringList models;
+        if (doc.isObject()) {
+            QJsonArray arr = doc.object().value("models").toArray();
+            for (const QJsonValue &v : arr) {
+                QString name = v.toObject().value("name").toString();
+                if (!name.isEmpty()) models << name;
+            }
+        }
+        models.sort(Qt::CaseInsensitive);
+        emit modelsListed(models);
+        reply->deleteLater();
+    });
 }
 
 void OllamaClient::generate(const QString &prompt, const QString &systemPrompt) {

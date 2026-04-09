@@ -7,6 +7,7 @@
 #include <QMenu>
 #include <QApplication>
 #include <QClipboard>
+#include <QTimer>
 
 AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     auto *layout = new QVBoxLayout(this);
@@ -19,17 +20,26 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     header->setStyleSheet("font-weight: bold; background: #2D2D2D; color: #4EC9B0; padding: 2px 6px;");
     layout->addWidget(header);
 
-    // Model selector
+    // Model selector — dynamically populated from ollama /api/tags
     auto *modelRow = new QHBoxLayout;
     modelRow->setContentsMargins(4, 2, 4, 2);
     modelRow->addWidget(new QLabel("Model:"));
     m_modelCombo = new QComboBox;
     m_modelCombo->setEditable(true);
-    m_modelCombo->addItems({"qwen3.5:9b", "gemma4:e4b", "llama3.2:3b",
-                            "codellama:7b", "deepseek-coder-v2:16b", "mistral:7b",
-                            "starcoder2:7b"});
+    m_modelCombo->addItem("(detecting Ollama…)");
+    m_modelCombo->setEnabled(false);
     modelRow->addWidget(m_modelCombo, 1);
+    m_refreshBtn = new QPushButton("↻");
+    m_refreshBtn->setFixedWidth(28);
+    m_refreshBtn->setToolTip("Refresh model list from Ollama");
+    modelRow->addWidget(m_refreshBtn);
     layout->addLayout(modelRow);
+
+    // Status line
+    m_statusLabel = new QLabel("");
+    m_statusLabel->setStyleSheet("color: #888; padding: 0 6px;");
+    m_statusLabel->setFixedHeight(16);
+    layout->addWidget(m_statusLabel);
 
     // Quick action buttons
     auto *actionsRow1 = new QHBoxLayout;
@@ -111,6 +121,34 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         m_stopBtn->setEnabled(false);
     });
 
+    // Dynamic model detection
+    connect(m_ollama, &OllamaClient::modelsListed, this, [this](const QStringList &models) {
+        QString prev = m_modelCombo->currentText();
+        m_modelCombo->clear();
+        if (models.isEmpty()) {
+            m_modelCombo->addItem("(no models installed)");
+            m_modelCombo->setEnabled(false);
+            setStatus("Ollama running but no models. Run: ollama pull qwen2.5:7b", true);
+        } else {
+            m_modelCombo->addItems(models);
+            m_modelCombo->setEnabled(true);
+            int idx = m_modelCombo->findText(prev);
+            if (idx >= 0) m_modelCombo->setCurrentIndex(idx);
+            setStatus(QString("Ollama: %1 model%2 detected").arg(models.size())
+                      .arg(models.size() == 1 ? "" : "s"), false);
+        }
+    });
+    connect(m_ollama, &OllamaClient::modelsError, this, [this](const QString &reason) {
+        m_modelCombo->clear();
+        m_modelCombo->addItem("(Ollama offline)");
+        m_modelCombo->setEnabled(false);
+        setStatus(reason, true);
+    });
+    connect(m_refreshBtn, &QPushButton::clicked, this, &AIPanel::refreshModels);
+
+    // Kick off initial detection
+    QTimer::singleShot(100, this, &AIPanel::refreshModels);
+
     // Connect buttons
     connect(explainBtn, &QPushButton::clicked, this, [this]() { sendPrompt("explain"); });
     connect(fixBugsBtn, &QPushButton::clicked, this, [this]() { sendPrompt("bugs"); });
@@ -141,8 +179,30 @@ void AIPanel::setContext(const QString &selectedText, const QString &filePath, c
     m_language = language;
 }
 
+void AIPanel::refreshModels() {
+    setStatus("Detecting Ollama models...", false);
+    m_ollama->listModels();
+}
+
+void AIPanel::setStatus(const QString &text, bool isError) {
+    m_statusLabel->setText(text);
+    m_statusLabel->setStyleSheet(isError
+        ? "color: #F48771; padding: 0 6px;"
+        : "color: #4EC9B0; padding: 0 6px;");
+}
+
 void AIPanel::sendPrompt(const QString &action) {
-    m_ollama->setModel(m_modelCombo->currentText());
+    QString model = m_modelCombo->currentText();
+    if (model.startsWith("(") || !m_modelCombo->isEnabled()) {
+        m_output->clear();
+        m_output->append("No Ollama model selected.\n\n"
+                         "1. Install Ollama: https://ollama.com\n"
+                         "2. Start it:      ollama serve\n"
+                         "3. Pull a model:  ollama pull qwen2.5:7b\n"
+                         "4. Click the ↻ refresh button above.");
+        return;
+    }
+    m_ollama->setModel(model);
 
     QString systemPrompt = "You are a code assistant. Be concise. Output only code when asked to modify code. "
                            "The user is working in " + m_language + ".";

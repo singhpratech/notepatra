@@ -18,11 +18,14 @@ public:
     void generate(const QString &prompt, const QString &systemPrompt = "");
     void cancel();
     bool isAvailable();
+    void listModels();   // async — emits modelsListed or modelsError
 
 signals:
     void tokenReceived(const QString &token);
     void finished(const QString &fullResponse);
     void error(const QString &message);
+    void modelsListed(const QStringList &models);
+    void modelsError(const QString &reason);
 
 private slots:
     void onReadyRead();

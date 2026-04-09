@@ -919,7 +919,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.1</div>
+        <div class="section-label">Download v0.1.2</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1259,10 +1259,37 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.0 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.2 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-09</span>
+                        <span>· Windows bug fixes</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>Fixed</h5>
+                        <ul>
+                            <li>🎨 Windows: syntax highlighting now paints keywords, strings, comments, numbers, operators using Notepad++ default palette</li>
+                            <li>🤖 AI Assistant: Ollama model list is now dynamic — reads <code style="color:var(--green);font-size:12px;">/api/tags</code> instead of hard-coded names, with refresh button and status line</li>
+                            <li>🪟 Windows: Ollama availability probe now uses QEventLoop + timer (waitForReadyRead was unreliable for localhost)</li>
+                            <li>⌨ Ctrl+B now actually jumps between matching braces (swivel behavior)</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.2">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.2">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.1</div>
                     <div class="version-meta">
                         <span>2026-04-06</span>
-                        <span>· First public release</span>
+                        <span>· First shipping release</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
@@ -1329,15 +1356,15 @@
                 </div>
 
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.0">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.1">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.0">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.1">Commits</a>
                 </div>
             </div>
 
             <div class="roadmap-card">
-                <h4>v0.1.1 — coming soon</h4>
-                <p>Bug fixes from community feedback · Linux ARM64 builds · macOS Intel revisit · More language lexers</p>
+                <h4>v0.2.0 — next milestone</h4>
+                <p>LSP support · Linux ARM64 builds · More outreach · Community feedback cycle</p>
             </div>
         </div>
     </section>
