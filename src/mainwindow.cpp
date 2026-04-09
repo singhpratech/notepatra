@@ -3,6 +3,154 @@
 #include "preferences.h"
 #include "rustbridge.h"
 
+#include <QCheckBox>
+#include <QRegularExpression>
+
+// ─── Tolerant JSON pretty printer ─────────────────────────────────────
+// Tokenizes ANY JSON-ish input (even broken JSON) and re-emits it with
+// uniform indentation + one logical token group per line. Handles cases
+// where the broken input is missing commas, has unquoted keys, single
+// quotes, etc — the tokenizer recovers and the printer aligns it so a
+// line-by-line diff against the FIXED version shows actual semantic
+// changes (added quotes, fixed values) instead of just whitespace noise.
+//
+// Strategy: tokenize first (string / number / identifier / punctuation),
+// then walk tokens and emit. When we see two consecutive value tokens
+// with no separator, insert a comma+newline anyway so the diff aligns.
+static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
+    // ─── 1. Tokenize ───
+    struct Token {
+        enum Kind { Punct, String, Bare } kind;
+        QString text;
+        QChar punct;  // only valid for Punct
+    };
+    QList<Token> toks;
+
+    int i = 0;
+    while (i < input.length()) {
+        QChar c = input[i];
+        if (c.isSpace()) { ++i; continue; }
+
+        if (c == '"' || c == '\'') {
+            // String literal — read until matching quote, honoring escapes
+            QChar quote = c;
+            int j = i + 1;
+            QString s; s += '"';
+            while (j < input.length()) {
+                QChar cc = input[j];
+                if (cc == '\\' && j + 1 < input.length()) {
+                    s += cc; s += input[j+1];
+                    j += 2; continue;
+                }
+                if (cc == quote) { ++j; break; }
+                s += cc; ++j;
+            }
+            s += '"';
+            toks.append({Token::String, s, QChar()});
+            i = j;
+            continue;
+        }
+
+        if (c == '{' || c == '}' || c == '[' || c == ']' ||
+            c == ',' || c == ':') {
+            toks.append({Token::Punct, QString(c), c});
+            ++i;
+            continue;
+        }
+
+        // Bare token: identifier, number, or keyword (true/false/null/etc)
+        // Read until whitespace or punctuation
+        int j = i;
+        while (j < input.length()) {
+            QChar cc = input[j];
+            if (cc.isSpace()) break;
+            if (cc == '{' || cc == '}' || cc == '[' || cc == ']' ||
+                cc == ',' || cc == ':' || cc == '"' || cc == '\'') break;
+            ++j;
+        }
+        if (j > i) {
+            toks.append({Token::Bare, input.mid(i, j - i), QChar()});
+            i = j;
+        } else {
+            // Couldn't advance — single weird char, skip
+            ++i;
+        }
+    }
+
+    // ─── 2. Emit with indentation ───
+    QString out;
+    int level = 0;
+    auto indent = [&](int n) {
+        out += QString(qMax(0, n) * indentSize, QChar(' '));
+    };
+    auto isValue = [](const Token &t) {
+        return t.kind == Token::String || t.kind == Token::Bare;
+    };
+    auto isCloser = [](const Token &t) {
+        return t.kind == Token::Punct && (t.punct == '}' || t.punct == ']');
+    };
+
+    for (int k = 0; k < toks.size(); ++k) {
+        const Token &t = toks[k];
+        const Token *prev = (k > 0) ? &toks[k-1] : nullptr;
+
+        // Insert a synthetic newline if previous token was a value or closer
+        // and this token is ALSO a value or opener — i.e. missing comma case.
+        bool needSyntheticBreak = false;
+        if (prev) {
+            bool prevWasEnd = isValue(*prev) || isCloser(*prev);
+            bool thisIsStart = isValue(t) ||
+                (t.kind == Token::Punct && (t.punct == '{' || t.punct == '['));
+            if (prevWasEnd && thisIsStart) {
+                needSyntheticBreak = true;
+            }
+        }
+
+        if (needSyntheticBreak) {
+            out += '\n';
+            indent(level);
+        }
+
+        if (t.kind == Token::Punct) {
+            QChar p = t.punct;
+            if (p == '{' || p == '[') {
+                out += p;
+                ++level;
+                out += '\n';
+                indent(level);
+            } else if (p == '}' || p == ']') {
+                --level;
+                while (out.endsWith(' ')) out.chop(1);
+                if (!out.endsWith('\n')) out += '\n';
+                indent(level);
+                out += p;
+            } else if (p == ',') {
+                while (out.endsWith(' ')) out.chop(1);
+                out += ',';
+                out += '\n';
+                indent(level);
+            } else if (p == ':') {
+                out += ": ";
+            }
+        } else if (t.kind == Token::String) {
+            out += t.text;
+        } else { // Bare — wrap in quotes if it looks like an unquoted key
+            // (heuristic: next non-whitespace token is ':')
+            bool isKey = (k + 1 < toks.size() &&
+                          toks[k+1].kind == Token::Punct &&
+                          toks[k+1].punct == ':');
+            if (isKey) {
+                out += '"';
+                out += t.text;
+                out += '"';
+            } else {
+                out += t.text;
+            }
+        }
+    }
+    return out;
+}
+
 #include <QApplication>
 #include <QClipboard>
 #include <QCloseEvent>
@@ -1096,88 +1244,24 @@ void MainWindow::buildMenus() {
         m_tabs->setCurrentIndex(idx);
     });
 
-    // Compare with file — opens as a new tab
-    // Compare — pick two tabs or a file
-    pluginsMenu->addAction("Compare (inbuilt)", this, [this, E]() {
-        // Build list of open editor tabs — INCLUDING unsaved ones, marked
-        // with ● so the user can tell at a glance which tabs are dirty.
-        QStringList tabNames;
-        QVector<int> tabIndices;
-        for (int i = 0; i < m_tabs->count(); i++) {
-            auto *ed = m_tabs->editorAt(i);
-            if (ed) {
-                QString name;
-                QString marker;
-                if (ed->filePath().isEmpty()) {
-                    // Untitled / unsaved tab — use the tab title as shown in the UI
-                    name = m_tabs->tabText(i);
-                    marker = " ● untitled";
-                } else {
-                    name = QFileInfo(ed->filePath()).fileName();
-                    if (ed->isModified()) marker = " ● unsaved";
-                }
-                tabNames << QString("Tab %1: %2%3").arg(i + 1).arg(name).arg(marker);
-                tabIndices << i;
-            }
-        }
-
-        if (tabNames.size() < 1) {
-            QMessageBox::information(this, "Compare", "Open at least 1 file first.");
-            return;
-        }
-
-        // Add "Browse file..." option
-        tabNames << "Browse file from disk...";
-
-        // Pick LEFT
-        bool ok1;
-        QString leftPick = QInputDialog::getItem(this, "Compare — Select LEFT file",
-            "Left side:", tabNames, 0, false, &ok1);
-        if (!ok1) return;
-
-        // Pick RIGHT
-        bool ok2;
-        QString rightPick = QInputDialog::getItem(this, "Compare — Select RIGHT file",
-            "Right side:", tabNames, tabNames.size() > 1 ? 1 : 0, false, &ok2);
-        if (!ok2) return;
-
-        // Resolve left
-        QString leftText, leftName;
-        int leftIdx = tabNames.indexOf(leftPick);
-        if (leftIdx >= 0 && leftIdx < tabIndices.size()) {
-            auto *ed = m_tabs->editorAt(tabIndices[leftIdx]);
-            leftText = ed->text();
-            leftName = ed->filePath().isEmpty() ? m_tabs->tabText(tabIndices[leftIdx]) : QFileInfo(ed->filePath()).fileName();
-        } else {
-            QString path = QFileDialog::getOpenFileName(this, "Select LEFT file", QDir::homePath());
-            if (path.isEmpty()) return;
-            QFile f(path);
-            if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return;
-            leftText = QTextStream(&f).readAll();
-            leftName = QFileInfo(path).fileName();
-        }
-
-        // Resolve right
-        QString rightText, rightName;
-        int rightIdx = tabNames.indexOf(rightPick);
-        if (rightIdx >= 0 && rightIdx < tabIndices.size()) {
-            auto *ed = m_tabs->editorAt(tabIndices[rightIdx]);
-            rightText = ed->text();
-            rightName = ed->filePath().isEmpty() ? m_tabs->tabText(tabIndices[rightIdx]) : QFileInfo(ed->filePath()).fileName();
-        } else {
-            QString path = QFileDialog::getOpenFileName(this, "Select RIGHT file", QDir::homePath());
-            if (path.isEmpty()) return;
-            QFile f(path);
-            if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return;
-            rightText = QTextStream(&f).readAll();
-            rightName = QFileInfo(path).fileName();
-        }
-
-        auto *cmp = new CompareWidget;
-        cmp->compare(leftText, leftName, rightText, rightName);
-        int idx = m_tabs->addTab(cmp, "Compare");
-        m_tabs->setCurrentIndex(idx);
+    // Compare (inbuilt) — built-in side-by-side compare. Same picker, same
+    // CompareWidget. Both this and the ComparePlus entry below call the
+    // shared openComparePicker() helper so the flow is identical.
+    pluginsMenu->addAction("Compare (inbuilt)", this, [this]() {
+        openComparePicker("Compare");
     });
+
+    // ComparePlus — separate menu entry inspired by Pavel Nedev's
+    // ComparePlus plugin for Notepad++ (https://github.com/pnedev/comparePlus).
+    // Uses the SAME side-by-side CompareWidget under the hood — different
+    // tab title so users can have multiple compares open at once and tell
+    // them apart in the tab bar.
+    auto *cpAct = pluginsMenu->addAction("ComparePlus", this, [this]() {
+        openComparePicker("ComparePlus");
+    });
+    cpAct->setToolTip("Side-by-side file/tab compare. UX inspired by Pavel Nedev's "
+                      "ComparePlus plugin for Notepad++ "
+                      "(https://github.com/pnedev/comparePlus).");
 
     // Git Integration (inbuilt) — opens Git panel in a new tab
     pluginsMenu->addAction("Git Integration (inbuilt)", this, [this, E]() {
@@ -1205,30 +1289,64 @@ void MainWindow::buildMenus() {
 
         // Ollama status + model selector + AI Fix button
         auto *ollamaBar = new OllamaStatus(p);
-        // Insert status bar into the panel layout (after buttons, before output)
         auto *panelLayout = p->layout();
         if (panelLayout) panelLayout->addWidget(ollamaBar);
+
+        // "Show thinking" toggle — default OFF because thinking models break
+        // the format pipeline. User can enable it if they want to see the
+        // model's reasoning (the AI Assistant chat panel is a better place).
+        auto *thinkingCheck = new QCheckBox("Show thinking (slower, may break format)");
+        thinkingCheck->setChecked(false);
+        thinkingCheck->setStyleSheet("padding: 4px 8px; font-size: 11px;");
+        if (panelLayout) panelLayout->addWidget(thinkingCheck);
 
         auto *aiBtn = new QPushButton("AI Fix (Ollama)");
         aiBtn->setFixedHeight(26);
         auto *btnLayout = p->findChild<QHBoxLayout *>();
-        if (btnLayout) btnLayout->insertWidget(btnLayout->count() - 2, aiBtn);
+        if (btnLayout) btnLayout->insertWidget(btnLayout->count() - 3, aiBtn);
+
+        // The Show Diff button is built into FormatterPanel itself —
+        // works for ANY action (Format / Minify / Fix+Format / AI Fix).
+        // Just pass the raw before/after to CompareWidget. The Myers diff
+        // (RustCore::computeDiff) aligns line by line and the visual
+        // markers show only the lines that actually differ. No
+        // pre-formatting — that was over-engineering and made things
+        // worse by changing content the user didn't want changed.
+        connect(p, &FormatterPanel::showDiffRequested, this,
+                [this](const QString &before, const QString &after, const QString &title) {
+            auto *cmp = new CompareWidget;
+            cmp->compare(before, "Before", after, "After");
+            int idx = m_tabs->addTab(cmp, title);
+            m_tabs->setCurrentIndex(idx);
+        });
+
+        // Captured snapshot of the AI Fix input — used for status messages
+        // and to call recordFix() so the built-in Show Diff button works
+        // for AI Fix too.
+        struct AiFixState {
+            QString originalInput;
+            QString fixedOutput;
+            bool hasResult = false;
+        };
+        auto *fixState = new AiFixState;
 
         auto *ollama = new OllamaClient(p);
 
-        connect(aiBtn, &QPushButton::clicked, p, [p, ollama, ollamaBar]() {
+        connect(aiBtn, &QPushButton::clicked, p, [p, ollama, ollamaBar, thinkingCheck, fixState]() {
             QString input = p->inputText();
             if (input.isEmpty()) {
                 p->setStatus("Empty input — paste JSON into the panel below first", true);
                 return;
             }
+            // Capture the input BEFORE generate() — this is what the diff
+            // will compare against.
+            fixState->originalInput = input;
+            fixState->hasResult = false;
 
-            // Re-check Ollama availability synchronously RIGHT NOW so users
-            // don't get a stale "not running" from the constructor's cached
-            // result before the async tags-fetch finished.
-            ollamaBar->checkStatus();
-            if (!ollamaBar->isAvailable()) {
-                p->setStatus("Ollama not running — click setup steps below", true);
+            // Use OllamaClient's synchronous isAvailable() (3s timeout via
+            // QEventLoop) instead of OllamaStatus's cached/racing one.
+            if (!ollama->isAvailable()) {
+                p->setStatus("Ollama not running — start it: ollama serve", true);
                 p->setOutput("Ollama is not running.\n\n"
                              "Setup:\n"
                              "  1. Install:  curl -fsSL https://ollama.com/install.sh | sh\n"
@@ -1240,19 +1358,77 @@ void MainWindow::buildMenus() {
 
             QString model = ollamaBar->selectedModel();
             if (model.isEmpty() || model.startsWith("(")) {
-                p->setStatus("No Ollama model selected — pick one from the dropdown above", true);
-                return;
+                // Force a refresh — maybe the dropdown was populated before
+                // Ollama came up. Re-query and use the first model.
+                ollamaBar->checkStatus();
+                model = ollamaBar->selectedModel();
+                if (model.isEmpty() || model.startsWith("(")) {
+                    p->setStatus("No models installed — run: ollama pull qwen2.5:7b", true);
+                    return;
+                }
             }
 
+            bool wantThinking = thinkingCheck->isChecked();
             ollama->setModel(model);
-            p->setStatus("Asking " + model + " to fix the JSON...", false);
+            p->setStatus(QString("Asking %1 to fix the JSON%2...")
+                         .arg(model)
+                         .arg(wantThinking ? " (with reasoning)" : ""), false);
             p->setOutput("Asking " + model + "...\n");
 
-            ollama->generate(
-                "Fix this broken JSON. Return ONLY the valid JSON, nothing else. "
-                "No explanation, no markdown, no code blocks.\n\n" + input,
-                "You are a JSON repair tool. Return ONLY valid JSON. Preserve ALL data. "
-                "Fix: missing braces, brackets, commas, quotes, unquoted keys.");
+            // ─── Strict minimal-change prompt ─────────────────────────
+            // CRITICAL: tell the model to ONLY patch broken parts and
+            // PRESERVE original line order, key order, formatting. Without
+            // this, models reorder keys alphabetically and reformat the
+            // whole document, which makes Show Diff useless because every
+            // line looks different even if only one comma was missing.
+            const QString rules =
+                "RULES (follow ALL of these):\n"
+                "1. PRESERVE the original line structure and key order EXACTLY. "
+                "Do NOT reformat. Do NOT reorder keys. Do NOT change indentation "
+                "unless the original had no indentation.\n"
+                "2. Make MINIMAL changes — only patch the broken parts. If a key "
+                "is in line 5 of the input, it must be in line 5 of the output.\n"
+                "3. PRESERVE ALL DATA. Never delete keys, values, array elements, "
+                "or nested structures.\n"
+                "4. Fix ONLY broken syntax:\n"
+                "   - Add missing braces { } and brackets [ ]\n"
+                "   - Add missing commas between fields and array elements\n"
+                "   - Remove trailing commas (JSON spec forbids them)\n"
+                "   - Wrap unquoted object keys in double quotes\n"
+                "   - Convert single-quoted strings to double-quoted\n"
+                "   - Convert Python True/False/None to true/false/null\n"
+                "   - Strip // and /* */ comments\n"
+                "5. Output ONLY the corrected JSON. No prose, no markdown ``` "
+                "fences, no comments, no <think> blocks, no preamble.\n"
+                "6. If the input is already valid JSON, output it UNCHANGED.\n";
+
+            QString systemPrompt =
+                "You are a minimal-change JSON patcher. Your job is to take broken JSON "
+                "and return the SAME JSON with ONLY the broken parts fixed. Preserve "
+                "everything else exactly — line order, key order, indentation, whitespace.\n\n"
+                + rules;
+
+            // For Gemma and other models that ignore system prompts, repeat
+            // the rules at the start of the user message.
+            QString modelLower = model.toLower();
+            bool isGemmaLike = modelLower.contains("gemma") ||
+                               modelLower.contains("phi") ||
+                               modelLower.contains("tiny");
+
+            QString userPrompt;
+            if (isGemmaLike) {
+                userPrompt = rules + "\n"
+                    "Fix this broken JSON now with MINIMAL changes. Return ONLY the corrected JSON.\n\n"
+                    "BROKEN JSON:\n" + input;
+            } else {
+                userPrompt =
+                    "Fix ONLY the broken parts of this JSON. Make MINIMAL changes. "
+                    "PRESERVE the original line order, key order, and formatting. "
+                    "Do NOT reorder keys. Do NOT reformat. Return ONLY the corrected JSON.\n\n"
+                    "BROKEN JSON:\n" + input;
+            }
+
+            ollama->generate(userPrompt, systemPrompt, wantThinking);
         });
 
         auto *firstToken = new bool(true);
@@ -1261,18 +1437,70 @@ void MainWindow::buildMenus() {
             p->appendOutput(token);
             aiBtn->setText("AI Fixing...");
         });
-        connect(ollama, &OllamaClient::finished, p, [p, aiBtn, firstToken](const QString &response) {
+        connect(ollama, &OllamaClient::finished, p, [p, aiBtn, firstToken, fixState](const QString &response) {
             aiBtn->setText("AI Fix (Ollama)");
             *firstToken = true;
+
             QString cleaned = response.trimmed();
+
+            // 1. Strip <think>...</think> blocks (defensive — even with
+            //    think=false, some models still emit them).
+            QRegularExpression thinkRe("<think>.*?</think>",
+                                       QRegularExpression::DotMatchesEverythingOption);
+            cleaned.remove(thinkRe);
+            cleaned = cleaned.trimmed();
+
+            // 2. Strip markdown ``` code blocks
             if (cleaned.startsWith("```")) {
-                int f = cleaned.indexOf('\n'), l = cleaned.lastIndexOf("```");
+                int f = cleaned.indexOf('\n');
+                int l = cleaned.lastIndexOf("```");
                 if (f > 0 && l > f) cleaned = cleaned.mid(f + 1, l - f - 1).trimmed();
             }
+
+            // 3. Some models prefix with "Here is the fixed JSON:" or similar.
+            //    Find the first { or [ and trim everything before it.
+            int firstBrace = cleaned.indexOf('{');
+            int firstBracket = cleaned.indexOf('[');
+            int firstStruct = -1;
+            if (firstBrace >= 0 && firstBracket >= 0)
+                firstStruct = qMin(firstBrace, firstBracket);
+            else if (firstBrace >= 0)
+                firstStruct = firstBrace;
+            else if (firstBracket >= 0)
+                firstStruct = firstBracket;
+            if (firstStruct > 0) cleaned = cleaned.mid(firstStruct);
+
+            // 4. Try to format the result — if formatJson returns something
+            //    sensible (>2 chars, more than just "{}"), use it. Otherwise
+            //    show the raw cleaned text so the user can at least see what
+            //    the model returned.
             QString formatted = RustCore::formatJson(cleaned, 4);
             QString result = formatted.length() > 2 ? formatted : cleaned;
-            p->setOutput(result);
-            p->setStatus(QString("✓ AI fix complete — %1 chars").arg(result.length()), false);
+
+            if (result.isEmpty()) {
+                p->setOutput("(model returned empty response after stripping)\n\nRaw response:\n" + response);
+                p->setStatus("✗ AI fix returned empty — try a different model or enable Show thinking", true);
+            } else {
+                p->setOutput(result);
+                // Smart description of WHAT actually changed (commas, braces,
+                // brackets, quotes etc.) — same helper Format / Minify use.
+                QString desc = FormatterPanel::describeChanges(fixState->originalInput, result);
+                int origChars = fixState->originalInput.length();
+                int newChars = result.length();
+                int newLines = result.count('\n') + 1;
+                p->setStatus(QString("✓ AI fix complete — %1 chars, %2 lines (%3). Click 'Show Diff' to see changes.")
+                             .arg(newChars).arg(newLines).arg(desc), false);
+                // Log to session history with the change description
+                p->logAction("AI Fix (Ollama)", origChars, newChars, desc);
+
+                // Stash result + enable the FormatterPanel's built-in Show
+                // Diff button via recordFix(). The panel emits
+                // showDiffRequested() which we connected above to open a
+                // CompareWidget tab — same code path as Format/Minify/Fix.
+                fixState->fixedOutput = result;
+                fixState->hasResult = true;
+                p->recordFix(fixState->originalInput, result, "AI Fix (Ollama)");
+            }
         });
         connect(ollama, &OllamaClient::error, p, [p, aiBtn, firstToken](const QString &msg) {
             aiBtn->setText("AI Fix (Ollama)");
@@ -1754,12 +1982,19 @@ void MainWindow::buildMenus() {
     help->addSeparator();
 
     help->addAction("About Notepatra", this, [this]() {
+        // NOTEPATRA_VERSION is injected at compile time from CMakeLists.txt's
+        // project(Notepatra VERSION X.Y.Z) so the About dialog never goes
+        // stale. Set the same way main.cpp drives --version.
+        QString version = QApplication::applicationVersion();
+        if (version.isEmpty()) version = NOTEPATRA_VERSION;
         QMessageBox::about(this, "About Notepatra",
-            "Notepatra v0.1\n\n"
+            QString("Notepatra v%1\n\n").arg(version) +
             "The first editor built for the AI era.\n"
-            "A blazing-fast native code editor for Linux.\n\n"
-            "4.7 MB binary. C++ + Rust. No Electron.\n"
-            "60+ languages. Plugin system. 2.5 GB files.\n\n"
+            "A blazing-fast native code editor for Linux, macOS, and Windows.\n\n"
+            "Native C++ + Rust. No Electron.\n"
+            "100+ languages. Plugin system. 2 GB files.\n"
+            "Local AI via Ollama. Zero telemetry.\n\n"
+            "https://notepatra.org\n"
             "github.com/singhpratech/notepatra\n\n"
             "Envisioned by Prateek Singh.\n"
             "Inspired by Notepad++. Built by Claude.");
@@ -2245,6 +2480,88 @@ void MainWindow::applyThemeToAll(const Theme &t) {
           t.menuHover.name(), t.toolbarBg.name(), t.windowFg.name(),
           t.tabBg.name(), t.tabFg.name(), t.tabActiveBg.name(),
           t.scrollBg.name(), t.scrollHandle.name(), t.scrollHover.name()));
+}
+
+// ─── Compare picker — shared by "Compare (inbuilt)" and "ComparePlus" ──
+//
+// Pops a 2-step QInputDialog (LEFT, then RIGHT). Each step lets the user
+// pick any open editor tab (with ● unsaved markers) or browse for a file
+// on disk. Once both sides are resolved, opens a CompareWidget tab with
+// the chosen pair using `tabLabel` as the tab title — so users can tell
+// multiple compare tabs apart in the tab bar.
+void MainWindow::openComparePicker(const QString &tabLabel) {
+    QStringList tabNames;
+    QVector<int> tabIndices;
+    for (int i = 0; i < m_tabs->count(); i++) {
+        auto *ed = m_tabs->editorAt(i);
+        if (ed) {
+            QString name;
+            QString marker;
+            if (ed->filePath().isEmpty()) {
+                name = m_tabs->tabText(i);
+                marker = " ● untitled";
+            } else {
+                name = QFileInfo(ed->filePath()).fileName();
+                if (ed->isModified()) marker = " ● unsaved";
+            }
+            tabNames << QString("Tab %1: %2%3").arg(i + 1).arg(name).arg(marker);
+            tabIndices << i;
+        }
+    }
+
+    if (tabNames.size() < 1) {
+        QMessageBox::information(this, tabLabel, "Open at least 1 file first.");
+        return;
+    }
+
+    tabNames << "Browse file from disk...";
+
+    bool ok1;
+    QString leftPick = QInputDialog::getItem(this, tabLabel + " — Select LEFT file",
+        "Left side:", tabNames, 0, false, &ok1);
+    if (!ok1) return;
+
+    bool ok2;
+    QString rightPick = QInputDialog::getItem(this, tabLabel + " — Select RIGHT file",
+        "Right side:", tabNames, tabNames.size() > 1 ? 1 : 0, false, &ok2);
+    if (!ok2) return;
+
+    QString leftText, leftName;
+    int leftIdx = tabNames.indexOf(leftPick);
+    if (leftIdx >= 0 && leftIdx < tabIndices.size()) {
+        auto *ed = m_tabs->editorAt(tabIndices[leftIdx]);
+        leftText = ed->text();
+        leftName = ed->filePath().isEmpty() ? m_tabs->tabText(tabIndices[leftIdx])
+                                             : QFileInfo(ed->filePath()).fileName();
+    } else {
+        QString path = QFileDialog::getOpenFileName(this, "Select LEFT file", QDir::homePath());
+        if (path.isEmpty()) return;
+        QFile f(path);
+        if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return;
+        leftText = QTextStream(&f).readAll();
+        leftName = QFileInfo(path).fileName();
+    }
+
+    QString rightText, rightName;
+    int rightIdx = tabNames.indexOf(rightPick);
+    if (rightIdx >= 0 && rightIdx < tabIndices.size()) {
+        auto *ed = m_tabs->editorAt(tabIndices[rightIdx]);
+        rightText = ed->text();
+        rightName = ed->filePath().isEmpty() ? m_tabs->tabText(tabIndices[rightIdx])
+                                              : QFileInfo(ed->filePath()).fileName();
+    } else {
+        QString path = QFileDialog::getOpenFileName(this, "Select RIGHT file", QDir::homePath());
+        if (path.isEmpty()) return;
+        QFile f(path);
+        if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return;
+        rightText = QTextStream(&f).readAll();
+        rightName = QFileInfo(path).fileName();
+    }
+
+    auto *cmp = new CompareWidget;
+    cmp->compare(leftText, leftName, rightText, rightName);
+    int idx = m_tabs->addTab(cmp, tabLabel);
+    m_tabs->setCurrentIndex(idx);
 }
 
 // ── Macro helpers ──────────────────────────────────────────────────────────

@@ -62,7 +62,9 @@ void OllamaClient::listModels() {
     });
 }
 
-void OllamaClient::generate(const QString &prompt, const QString &systemPrompt) {
+void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
+                            bool enableThinking,
+                            const QStringList &imagesBase64) {
     cancel();
     m_fullResponse.clear();
     m_done = false;
@@ -71,8 +73,29 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt) 
     body["model"] = m_model;
     body["prompt"] = prompt;
     body["stream"] = true;
-    if (!systemPrompt.isEmpty())
-        body["system"] = systemPrompt;
+    // For Qwen3 / DeepSeek-R1 / other thinking models, "think": false makes
+    // the model skip its <think>...</think> reasoning and go straight to the
+    // answer. Older / non-thinking models ignore this field harmlessly.
+    body["think"] = enableThinking;
+    if (!systemPrompt.isEmpty()) {
+        // If thinking is disabled, also tell the model in the system prompt
+        // — some models honor /no_think instead of the API field
+        if (!enableThinking)
+            body["system"] = systemPrompt + "\n/no_think";
+        else
+            body["system"] = systemPrompt;
+    } else if (!enableThinking) {
+        body["system"] = "/no_think";
+    }
+
+    // Image attachments for vision-capable models (llava, llama3.2-vision,
+    // qwen2-vl, moondream, granite-vision, etc.). Non-vision models silently
+    // ignore the images field.
+    if (!imagesBase64.isEmpty()) {
+        QJsonArray imgs;
+        for (const QString &b64 : imagesBase64) imgs.append(b64);
+        body["images"] = imgs;
+    }
 
     QJsonObject options;
     options["temperature"] = 0.3;

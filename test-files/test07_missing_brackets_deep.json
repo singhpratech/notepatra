@@ -1,0 +1,20 @@
+{
+    "company": "Notepatra Inc",
+    "departments": [
+        {
+            "name": "Engineering",
+            "teams": [
+                {"name": "Backend", "size": 8, "lead": "alice"
+                {"name": "Frontend", "size": 5, "lead": "bob"
+                {"name": "DevOps", "size": 3, "lead": "carol"
+            ]
+        },
+        {
+            "name": "Sales",
+            "teams": [
+                {"name": "Enterprise", "size": 12, "lead": "dave"
+                {"name": "SMB", "size": 7, "lead": "eve"
+            ]
+        }
+    ]
+}

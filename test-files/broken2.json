@@ -4,14 +4,14 @@
             {"host": "db1.prod.internal", "port": 5432, "pool_size": 20, "ssl": true,
             {"host": "db2.prod.internal", "port": 5432, "pool_size": 15, "ssl": true,
         ],
-        "settings": {
+        "settings": 
             "timeout_ms": 5000,
             "retry_count": 3,
             "cache": {
                 "enabled": true,
                 "ttl_seconds": 300,
                 "max_entries": 10000
-            "logging": {
+            "logging": 
                 "level": "info",
                 "slow_query_ms": 1000
             }

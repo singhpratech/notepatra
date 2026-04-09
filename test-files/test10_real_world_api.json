@@ -1,0 +1,37 @@
+{
+    "request_id": "req_abc123",
+    "status": "success",
+    "timestamp": "2026-04-09T16:30:00Z",
+    "data": {
+        "user": {
+            "id": 42,
+            "username": "alice_dev",
+            "email": "alice@notepatra.org",
+            "profile": {
+                first_name: "Alice",
+                last_name: "Smith",
+                "bio": "Software engineer at Notepatra. Loves Rust + Qt.",
+                "links": {
+                    "github": "https://github.com/alice_dev",
+                    twitter: 'https://twitter.com/alice_dev',
+                    'linkedin': 'https://linkedin.com/in/alice-smith'
+                }
+            },
+            "preferences": {
+                "theme": "dark",
+                "language": "en",
+                "notifications": True,
+                "email_digest": False,
+            }
+            "subscriptions": [
+                {"plan": "pro", "active": True, "renewal": "2026-12-31"}
+                {"plan": "ai_addon", "active": True, "renewal": "2026-06-15",}
+            ]
+        }
+    }
+    "_meta": {
+        "version": "v3",
+        "rate_limit_remaining": 4823,
+        "deprecated": False
+    }
+}

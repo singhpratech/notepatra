@@ -1,0 +1,14 @@
+{
+    // production database settings
+    "db_host": "db.prod.internal",
+    "db_port": 5432,
+    /* connection pool — tune carefully */
+    "pool_size": 50,
+    "pool_timeout_ms": 5000,
+    // feature flags
+    "features": {
+        "new_ui": true,    // rolled out 2026-01
+        "ai_fix": true,    // beta
+        "telemetry": false // never
+    }
+}

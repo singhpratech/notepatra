@@ -11,6 +11,14 @@
  * ComparePlus-style diff — two real Scintilla editors side by side.
  * Added lines = green background, deleted = red, changed = yellow.
  * Navigate between diffs. Synced scrolling. Actual syntax highlighting.
+ *
+ * INSPIRED BY: ComparePlus by Pavel Nedev (https://github.com/pnedev/comparePlus)
+ *
+ * Pavel's ComparePlus is the gold-standard diff plugin for Notepad++. Notepatra's
+ * compare panel borrows the visual conventions (colored line markers, side-by-side
+ * Scintilla editors with synced scrolling, prev/next navigation) but is written
+ * from scratch in Qt + Rust because Notepatra is a different codebase. All credit
+ * for the UX patterns goes to Pavel and the ComparePlus contributors.
  */
 class CompareWidget : public QWidget {
     Q_OBJECT

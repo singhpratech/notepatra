@@ -5,6 +5,64 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.8] — 2026-04-09
+
+### Fixed
+- 🎨 **Compare panel rewritten as a true ComparePlus-style side-by-side diff.** Inspired by Pavel Nedev's [ComparePlus](https://github.com/pnedev/comparePlus) plugin for Notepad++. Specifically:
+  - **Modified rows are paired** at the same visual line — when the diff produces N consecutive deletes followed by M consecutive adds, they're merged into `min(N,M)` paired modified rows (kind=3) instead of being shown as separate delete-then-add blocks.
+  - **Character-level highlighting** within modified rows — common-prefix + common-suffix detection finds the EXACT changed characters. Only those bytes get the colored indicator (red on left, green on right). The rest of the line stays plain.
+  - **Soft `#FFFBE6` pale yellow** background on modified rows so the character-level red/green stands out.
+  - **Soft mint `#D4F4D4`** for added lines, **soft salmon `#F4D4D4`** for deleted, **light blue `#E8F0F8`** placeholder background on the empty side.
+  - **Symbol margin** (18px wide) with per-row icons: pink `~` Circle marker for modified, green `+` Plus marker for added, red `−` Minus marker for deleted.
+  - **Custom per-row line numbers** via `TextMargin` so the LEFT panel shows the original LEFT-source line numbers and the RIGHT panel shows the original RIGHT-source line numbers — they diverge cleanly when there are insertions/deletions. Empty placeholder rows show a green `+` instead of a number.
+  - **No syntax highlighting on context lines** — soft `#606060` mid-gray text everywhere so the diff markers are the only thing that draws the eye.
+  - **Soft `#A0A0A0` line numbers** on `#F8F8F8` margin background.
+  - **Both vertical AND horizontal scrollbars synced** — drag either and both panels move together.
+- 🪟 **`Plugins → ComparePlus`** added as a separate menu entry alongside `Compare (inbuilt)`. Both use the same shared `openComparePicker()` helper and the same `CompareWidget` — different tab labels so users can have multiple compare tabs open at once and tell them apart.
+- 📊 **Show Diff button works for ANY action** in JSON / HTML / Bracket Tools — Format / Minify / Fix+Format / AI Fix all populate the panel's `m_lastFixInput` / `m_lastFixOutput` via `recordFix()` so the diff button enables for every transformation, not just AI Fix.
+- 🤖 **AI Fix (Ollama) in JSON Tools actually works for thinking models like Qwen3 / DeepSeek-R1.** v0.1.7 sent the prompt and waited for tokens, but if the model emitted `<think>...</think>` reasoning before the JSON, the cleanup pipeline ran `RustCore::formatJson` on the whole thing (including the thinking blocks) and the parse failed → user saw nothing. Three-layer fix:
+  1. **`OllamaClient::generate()` now passes `"think": false`** in the `/api/generate` request body. Modern Ollama honors this and skips thinking entirely. Older Ollama / non-thinking models ignore the field harmlessly.
+  2. **System prompt also appends `/no_think`** as a belt-and-braces signal — some models honor this slash-command instead of the API field.
+  3. **Defensive `<think>...</think>` regex strip** in the JSON Tools cleanup pipeline catches any thinking that leaks through.
+  4. **Leading-prose trim** finds the first `{` or `[` and discards anything before it, so models that say "Here is the fixed JSON: {...}" still produce parseable output.
+- 🤖 **AI Fix availability check no longer races.** v0.1.7 used `OllamaStatus::isAvailable()` which returned a stale cached value because the constructor's async `/api/tags` fetch hadn't completed yet. v0.1.8 uses `OllamaClient::isAvailable()` which is synchronous (3-second QEventLoop + QTimer) and returns the actual current state.
+
+### Added
+- 🤖 **"Show Diff" button in JSON Tools** — appears next to the AI Fix button, disabled until an AI Fix completes. Click it to open a side-by-side Compare tab showing the **original (broken) JSON on the left** and the **AI-fixed JSON on the right**. Built on the existing `CompareWidget` so colors + diff navigation work the same as the regular Compare plugin. Answers the user's question "what was changed?".
+- 🤖 **JSON Tools status banner now shows the change summary** after AI Fix: `✓ AI fix complete — 98 chars (was 60, +38), 8 lines (was 2). Click 'Show Diff' to see changes.`
+- 🤖 **"Show thinking" checkbox in JSON Tools and AI Assistant panels.** Default OFF for JSON Tools (thinking breaks the JSON parser); user can toggle ON if they want to see reasoning. Default OFF for AI Assistant too — toggle ON for explanation tasks where reasoning is useful.
+- 💬 **AI Assistant rewritten as a proper chat-bubble UI.**
+  - User prompts → right-aligned blue bubbles with `YOU` header
+  - Assistant responses → left-aligned gray bubbles with the model name as header (`qwen3.5:9b`) and a teal left border
+  - Streaming tokens flow into the active assistant bubble in real time
+  - **Clear chat** button to wipe history
+  - **Show thinking** toggle in the same row
+  - Auto-scroll to bottom on new tokens
+  - Errors render as red error bubbles
+  - The chat persists across multiple sends so users can have a multi-turn conversation
+- 🧪 **`test_aifix.cpp`** — new end-to-end test that hits a real local Ollama daemon, runs the EXACT same cleanup pipeline the JSON Tools button triggers, and verifies the result is valid JSON. Skipped (exit 0) if Ollama isn't running so CI stays green on runners without it.
+- 🛠 **`scripts/bump_version.sh` no longer mangles the keyboard shortcuts table** — the version-history table insertion now requires a `| Version | Date | Highlights |` header match before inserting into the next `|---|---|---|` separator, so it can't accidentally clobber other 3-column tables.
+- 📋 **Session log with smart change descriptions** — every Format / Minify / Fix+Format / AI Fix click logs an entry with the action name, before/after sizes, and a per-character description like `+2 commas, +1 brace, −4 single→double` so users see exactly what each operation changed without opening the diff view.
+- 🗄 **SQL Formatter dialect dropdown** — ANSI / T-SQL (SQL Server) / PL/SQL (Oracle) / MySQL / PostgreSQL / SQLite. Each dialect adds its own keyword set on top of ANSI keywords so dialect-specific keywords paint blue when typed or pasted.
+- 📎 **Attach button in AI Assistant** accepts ANY file: images (base64 → vision models), PDF (`pdftotext`), DOCX/PPTX/XLSX (`unzip` + tag strip), text/code (raw, capped at 100 KB). Vision models like llava, llama3.2-vision, qwen2-vl actually see the image; non-vision models silently ignore the field.
+- ⌨ **Smart strict prompt** — model-agnostic prompt that works with Qwen3, Gemma, Llama, Mistral, Codellama, Phi, DeepSeek-R1. For Gemma/Phi-like models that ignore system prompts, the rules are also folded into the user prompt. Tells the model to PRESERVE original line order, key order, indentation — make MINIMAL changes — no reformatting.
+- 🐛 **`notepatra --version`** no longer hard-coded — driven by `NOTEPATRA_VERSION` compile-time define from `CMakeLists.txt project()`. About dialog also reads it.
+- 🪟 **`Plugins → ComparePlus`** menu entry — separate from `Compare (inbuilt)`, both share the same picker + widget.
+- 🧪 **`test_fmtpanel_diff.cpp`** — direct unit test of `FormatterPanel::recordFix()` proving the Show Diff button enables for any action including AI Fix.
+- 📁 **10 broken JSON test files** in `test-files/test01–10*.json` — verified end-to-end that AI Fix produces valid parseable JSON for all of them.
+
+### Verified locally on Linux GUI before shipping
+1. Built notepatra binary with all changes
+2. Launched under `$DISPLAY=:10.0` with a broken JSON file
+3. Drove the GUI via `xdotool`: opened Plugins menu → JSON Tools → captured Scintilla panel via Xlib `get_image`
+4. Clicked AI Fix button (window-relative coordinates)
+5. Captured 18 seconds of frames during the Ollama response
+6. **Verified**: status banner went `✓ 86 chars formatted on open` → `Asking qwen3.5:9b to fix the JSON...` → `✓ AI fix complete — 98 chars`. Panel content went from broken JSON to fixed JSON with quotes around `age`, comma between `"reading"`/`"hiking"`, multi-line array.
+
+### Verifying this release
+Same as previous — SHA-256, cosign, SLSA. See `SECURITY.md`.
+
+
 ## [0.1.7] — 2026-04-09
 
 ### Fixed

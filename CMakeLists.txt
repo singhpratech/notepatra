@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.7 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.8 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -279,6 +279,44 @@ if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_ollama.cpp")
         Qt5::Network
     )
     message(STATUS "Ollama dynamic-detection test enabled — target: test_ollama")
+endif()
+
+if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_aifix.cpp")
+    add_executable(test_aifix
+        test_aifix.cpp
+        src/ollama.cpp
+    )
+    target_include_directories(test_aifix PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_aifix PRIVATE
+        Qt5::Core
+        Qt5::Network
+    )
+    message(STATUS "AI Fix end-to-end test enabled — target: test_aifix")
+endif()
+
+if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_fmtpanel_diff.cpp")
+    add_executable(test_fmtpanel_diff
+        test_fmtpanel_diff.cpp
+        src/fmtpanel.cpp
+        src/npp_palette.cpp
+    )
+    target_include_directories(test_fmtpanel_diff PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_fmtpanel_diff PRIVATE
+        Qt5::Core
+        Qt5::Gui
+        Qt5::Widgets
+        Qt5::PrintSupport
+        ${QSCINTILLA_LIB}
+    )
+    if(WIN32)
+        target_compile_definitions(test_fmtpanel_diff PRIVATE QSCINTILLA_DLL)
+    endif()
+    message(STATUS "FormatterPanel diff test enabled — target: test_fmtpanel_diff")
 endif()
 
 if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_palette.cpp")

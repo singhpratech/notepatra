@@ -5,6 +5,8 @@
 #include <QFont>
 #include <QApplication>
 #include <QClipboard>
+#include <QDateTime>
+#include <QListWidgetItem>
 
 #include <Qsci/qscilexerjson.h>
 #include <Qsci/qscilexerjavascript.h>
@@ -33,6 +35,23 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
     m_btnRow = new QHBoxLayout(btnWidget);
     m_btnRow->setContentsMargins(4, 4, 4, 4);
 
+    // Show Diff button — opens a side-by-side compare of the LAST action's
+    // input vs output. Disabled until at least one button click produces
+    // non-empty output. Works for ANY action (Format, Minify, Fix+Format,
+    // AI Fix, etc.) — every transformation gets recorded automatically.
+    m_diffBtn = new QPushButton("Show Diff");
+    m_diffBtn->setFixedHeight(26);
+    m_diffBtn->setEnabled(false);
+    m_diffBtn->setToolTip("Open a side-by-side compare of the last action's input vs output");
+    connect(m_diffBtn, &QPushButton::clicked, this, [this]() {
+        if (!hasLastFix()) {
+            setStatus("No transformation recorded yet — click Format / Fix / AI Fix first", true);
+            return;
+        }
+        emit showDiffRequested(m_lastFixInput, m_lastFixOutput,
+                               QString("Diff: %1").arg(m_lastFixActionName));
+    });
+
     auto *copyBtn = new QPushButton("Copy Output");
     copyBtn->setFixedHeight(26);
     connect(copyBtn, &QPushButton::clicked, this, [this]() {
@@ -46,6 +65,7 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
     });
 
     m_btnRow->addStretch();
+    m_btnRow->addWidget(m_diffBtn);
     m_btnRow->addWidget(copyBtn);
     layout->addWidget(btnWidget);
 
@@ -78,6 +98,24 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
     m_output->setPaper(QColor("#FFFFFF"));
 
     layout->addWidget(m_output, 1);
+
+    // Session log — every action taken on this panel during the session is
+    // appended here so users can see "what action was taken and what size
+    // was fixed for the session" at a glance. Compact, capped at 50 entries.
+    auto *logHeader = new QLabel("  Session log");
+    logHeader->setStyleSheet("background: #2D2D2D; color: #888; padding: 2px 6px; "
+                             "font-size: 10px; font-weight: bold;");
+    logHeader->setFixedHeight(18);
+    layout->addWidget(logHeader);
+
+    m_sessionLog = new QListWidget;
+    m_sessionLog->setStyleSheet(
+        "QListWidget { background: #1E1E1E; color: #D4D4D4; border: none; "
+        "font-family: Consolas, Menlo, monospace; font-size: 11px; padding: 2px; }"
+        "QListWidget::item { padding: 2px 8px; border-bottom: 1px solid #2D2D2D; }"
+        "QListWidget::item:hover { background: #2D3D3D; }");
+    m_sessionLog->setFixedHeight(80);  // ~4 visible rows, scrollable
+    layout->addWidget(m_sessionLog);
 
     applyLexer();
 }
@@ -129,15 +167,19 @@ QString FormatterPanel::inputText() const {
 void FormatterPanel::setInput(const QString &text) {
     m_inputText = text;
     if (!text.isEmpty()) {
-        // Seed the editable panel so the user sees their input immediately
+        // Show the user's ORIGINAL text untouched. Do NOT auto-Format on
+        // open — for broken JSON, Rust's format_json falls through to
+        // manual_pretty_print which strips all whitespace and rebuilds
+        // using only `{`, `}`, `,` as delimiters. Broken JSON with missing
+        // commas (the most common kind of broken JSON) gets COLLAPSED into
+        // a single line, which then makes Show Diff useless because both
+        // sides have completely different line structures.
+        //
+        // Just show the original text. The user clicks Format, Fix +
+        // Format, or AI Fix manually when they want.
         m_output->setText(text);
-        if (m_hasFirstAction) {
-            m_lastOutput = m_firstAction(text);
-            m_output->setText(m_lastOutput);
-            setStatus(QString("✓ %1 chars formatted on open").arg(m_lastOutput.length()), false);
-        } else {
-            setStatus(QString("Loaded %1 chars from editor").arg(text.length()), false);
-        }
+        setStatus(QString("Loaded %1 chars, %2 lines — click a button to transform")
+                  .arg(text.length()).arg(text.count('\n') + 1), false);
     }
 }
 
@@ -177,13 +219,84 @@ void FormatterPanel::addButton(const QString &label, std::function<QString(const
             return;
         }
 
+        int beforeLen = input.length();
+        // Record this transformation for the Show Diff button — capture
+        // BEFORE we mutate m_inputText below.
+        recordFix(input, output, label);
         m_lastOutput = output;
         m_output->setText(output);
         // Cache the result so the next button operates on the latest output
         m_inputText = output;
-        setStatus(QString("✓ %1 done — %2 chars, %3 lines")
-                  .arg(label).arg(output.length()).arg(output.count('\n') + 1), false);
+        // Compute a short description of what actually changed
+        QString desc = describeChanges(input, output);
+        setStatus(QString("✓ %1 done — %2 chars, %3 lines (%4). Click Show Diff to see changes.")
+                  .arg(label).arg(output.length()).arg(output.count('\n') + 1).arg(desc), false);
+        // Log to session history with the change description
+        logAction(label, beforeLen, output.length(), desc);
     });
+}
+
+QString FormatterPanel::describeChanges(const QString &before, const QString &after) {
+    // Count specific characters in both strings, report deltas. Quick &
+    // dirty but accurate enough for the session log — the user can click
+    // Show Diff for the exact line-by-line view.
+    auto count = [](const QString &s, QChar c) {
+        int n = 0;
+        for (QChar ch : s) if (ch == c) n++;
+        return n;
+    };
+    int dCommas       = count(after, ',') - count(before, ',');
+    int dOpenBrace    = count(after, '{') - count(before, '{');
+    int dCloseBrace   = count(after, '}') - count(before, '}');
+    int dOpenBracket  = count(after, '[') - count(before, '[');
+    int dCloseBracket = count(after, ']') - count(before, ']');
+    int dDoubleQuotes = count(after, '"') - count(before, '"');
+    int dSingleQuotes = count(after, '\'') - count(before, '\'');
+    int dColons       = count(after, ':') - count(before, ':');
+    int dLines        = (after.count('\n') + 1) - (before.count('\n') + 1);
+
+    QStringList parts;
+    auto add = [&](int delta, const QString &singular, const QString &plural) {
+        if (delta == 0) return;
+        QString sign = delta > 0 ? "+" : "−";
+        int abs = delta > 0 ? delta : -delta;
+        QString noun = (abs == 1) ? singular : plural;
+        parts << QString("%1%2 %3").arg(sign).arg(abs).arg(noun);
+    };
+
+    add(dCommas, "comma", "commas");
+    int dBraces = dOpenBrace + dCloseBrace;
+    add(dBraces, "brace", "braces");
+    int dBrackets = dOpenBracket + dCloseBracket;
+    add(dBrackets, "bracket", "brackets");
+    add(dDoubleQuotes, "quote", "quotes");
+    if (dSingleQuotes < 0) {
+        // Single quotes removed → likely converted to double quotes
+        parts << QString("−%1 single→double").arg(-dSingleQuotes);
+    } else if (dSingleQuotes > 0) {
+        parts << QString("+%1 single quote%2").arg(dSingleQuotes).arg(dSingleQuotes == 1 ? "" : "s");
+    }
+    add(dColons, "colon", "colons");
+
+    if (parts.isEmpty()) {
+        // No char-class delta. Maybe just whitespace or content reordering.
+        if (dLines != 0) {
+            return QString("%1%2 lines").arg(dLines > 0 ? "+" : "−").arg(qAbs(dLines));
+        }
+        return "no structural changes";
+    }
+    return parts.join(", ");
+}
+
+void FormatterPanel::recordFix(const QString &before, const QString &after,
+                                const QString &actionName) {
+    // Skip ONLY if input was completely empty — otherwise enable Show Diff
+    // even when before == after (user might still want to see "no diff").
+    if (before.isEmpty()) return;
+    m_lastFixInput = before;
+    m_lastFixOutput = after;
+    m_lastFixActionName = actionName;
+    if (m_diffBtn) m_diffBtn->setEnabled(true);
 }
 
 void FormatterPanel::setOutput(const QString &text) {
@@ -199,7 +312,38 @@ void FormatterPanel::appendOutput(const QString &text) {
 void FormatterPanel::setStatus(const QString &text, bool isError) {
     if (!m_statusLabel) return;
     m_statusLabel->setText(text);
+    // Preserve the BIG dark banner styling — only swap the color/border
+    // accent for error vs success. Was previously stripping the dark
+    // background, leaving the colored text on a white default background
+    // (invisible). Match the constructor's initial style.
+    QString accent = isError ? "#F48771" : "#4EC9B0";
+    QString bg     = isError ? "#3a1e1e" : "#1e3a3a";
     m_statusLabel->setStyleSheet(
-        QString("padding: 2px 8px; font-size: 11px; color: %1;")
-        .arg(isError ? "#F48771" : "#4EC9B0"));
+        QString("background: %1; color: %2; padding: 8px 12px; "
+                "font-size: 13px; font-weight: 600; border-left: 4px solid %2;")
+        .arg(bg).arg(accent));
+}
+
+void FormatterPanel::logAction(const QString &action, int beforeChars, int afterChars,
+                               const QString &extra) {
+    if (!m_sessionLog) return;
+    int delta = afterChars - beforeChars;
+    QString deltaStr = (delta == 0)
+        ? "  ±0"
+        : (delta > 0 ? QString("+%1").arg(delta) : QString::number(delta));
+    QString timestamp = QDateTime::currentDateTime().toString("HH:mm:ss");
+    QString line = QString("[%1] %2: %3 → %4 chars (%5)")
+        .arg(timestamp).arg(action).arg(beforeChars).arg(afterChars).arg(deltaStr);
+    if (!extra.isEmpty()) line += "  " + extra;
+    auto *item = new QListWidgetItem(line);
+    // Color the entry based on whether it changed anything
+    if (delta > 0) item->setForeground(QColor("#4EC9B0"));      // green = fixed/added
+    else if (delta < 0) item->setForeground(QColor("#FFB000")); // amber = minified/shrunk
+    else item->setForeground(QColor("#888888"));                 // gray = no-op
+    m_sessionLog->addItem(item);
+    m_sessionLog->scrollToBottom();
+    // Cap history at 50 entries
+    while (m_sessionLog->count() > 50) {
+        delete m_sessionLog->takeItem(0);
+    }
 }

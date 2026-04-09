@@ -1,0 +1,31 @@
+{
+    api_version: '3.0',
+    'endpoints': {
+        'users': {
+            method: 'GET',
+            'path': '/api/v3/users',
+            'auth': True,
+            // pagination
+            'pagination': {
+                page: 1,
+                'per_page': 25,
+                'sort_by': 'created_at',
+            },
+            'filters': ['active', 'verified',]
+        }
+        'posts': {
+            method: 'POST',
+            'path': '/api/v3/posts',
+            'rate_limit': None,
+            'body': {
+                'title': 'Required',
+                'content': 'Required',
+                'tags': []
+            }
+        }
+    }
+    'errors': {
+        '404': 'Not Found',
+        '500': 'Server Error'
+    }
+}

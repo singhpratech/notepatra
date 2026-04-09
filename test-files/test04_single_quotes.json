@@ -1,0 +1,6 @@
+{
+    'product': 'Notepatra',
+    'version': '0.1.8',
+    'features': ['editor', 'plugins', 'ai-fix'],
+    'license': 'GPL-3.0'
+}

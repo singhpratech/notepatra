@@ -61,14 +61,18 @@ sed -i "s|Download v$OLD|Download v$NEW|"                                docs/in
 sed -i "s|Latest release: v$OLD|Latest release: v$NEW|"                  README.md
 
 # Prepend a new row to the version-history table in README so the table
-# never goes stale. The row goes immediately after the table header
-# `|---|---|---|`. Skip if a row for $NEW already exists.
+# never goes stale. Match the SPECIFIC version-history table by looking for
+# the `| Version | Date | Highlights |` header row first, THEN insert after
+# the next `|---|---|---|` separator. Without this guard the script would
+# insert into the keyboard shortcuts table instead (also has 3 columns).
 if ! grep -q "tag/v$NEW" README.md; then
     awk -v new="$NEW" -v today="$TODAY" '
-        /^\|---\|---\|---\|/ && !inserted {
+        /^\| Version \| Date \| Highlights \|/ { in_version_table=1 }
+        /^\|---\|---\|---\|/ && in_version_table && !inserted {
             print
             print "| [**v" new "**](https://github.com/singhpratech/notepatra/releases/tag/v" new ") | " today " | TODO: short description of this release. |"
             inserted=1
+            in_version_table=0
             next
         }
         { print }

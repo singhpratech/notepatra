@@ -1,0 +1,11 @@
+{
+    "is_active": True,
+    "is_admin": False,
+    "deleted_at": None,
+    "tags": ["python", "django", "rest"],
+    "metadata": {
+        "verified": True,
+        "two_factor": False,
+        "last_login": None
+    }
+}

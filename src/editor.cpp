@@ -557,6 +557,17 @@ void Editor::applyLexer(const QString &lang) {
         setColor(QColor("#000000"));
     }
 
+    // ─── Re-apply brace match colors AFTER setLexer ─────────────────────
+    // setLexer() resets STYLE_BRACELIGHT (34) and STYLE_BRACEBAD (35) to
+    // Scintilla defaults, wiping out the red highlight colors that were
+    // set in setupEditor(). Re-apply them here so brace matching keeps
+    // working after every file load / language switch.
+    setBraceMatching(QsciScintilla::StrictBraceMatch);
+    setMatchedBraceBackgroundColor(QColor("#FFCCCC"));   // light red background
+    setMatchedBraceForegroundColor(QColor("#CC0000"));   // dark red text
+    setUnmatchedBraceBackgroundColor(QColor("#FF0000")); // bright red = unmatched
+    setUnmatchedBraceForegroundColor(QColor("#FFFFFF")); // white text on red
+
     if (!m_themeName.isEmpty()) applyTheme(m_themeName);
 }
 

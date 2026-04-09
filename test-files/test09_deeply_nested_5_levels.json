@@ -1,0 +1,25 @@
+{
+    "level1": {
+        "level2": {
+            "level3": {
+                "level4": {
+                    "level5": {
+                        "data": [
+                            {"id": 1, "name": "deep_one"
+                            {"id": 2, "name": "deep_two"
+                            {"id": 3, "name": "deep_three"
+                        ],
+                        "metadata": {
+                            "depth": 5,
+                            "type": "nested",
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "siblings": [
+        {"id": 100, "level": 1
+        {"id": 200, "level": 1,}
+    ]
+}

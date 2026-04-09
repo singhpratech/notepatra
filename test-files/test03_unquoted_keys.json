@@ -1,0 +1,12 @@
+{
+    server: {
+        host: "localhost",
+        port: 8080,
+        protocol: "https",
+        timeout: 30
+    },
+    database: {
+        driver: "postgres",
+        connection_string: "postgres://user:pass@db:5432/app"
+    }
+}

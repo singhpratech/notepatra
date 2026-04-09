@@ -75,6 +75,10 @@ private:
 
     void updateRecentMenu();
     void applyThemeToAll(const Theme &theme);
+    // Shared picker used by both "Compare (inbuilt)" and "ComparePlus" menu
+    // entries — pops a 2-step picker for LEFT/RIGHT (any open tab or any
+    // file on disk), then opens a CompareWidget tab with the chosen pair.
+    void openComparePicker(const QString &tabLabel);
 
     int m_newCount = 0;
     QMenu *m_recentMenu = nullptr;

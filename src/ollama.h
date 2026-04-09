@@ -15,7 +15,19 @@ public:
     void setModel(const QString &model) { m_model = model; }
     QString model() const { return m_model; }
 
-    void generate(const QString &prompt, const QString &systemPrompt = "");
+    // think=false disables Qwen3-style thinking blocks (the model will not
+    // emit <think>...</think> reasoning before its answer). Default is false
+    // because thinking blocks break the JSON Tools / Format flow which
+    // expects clean parseable output. Set true for the AI Assistant chat
+    // panel where the user might want to see reasoning.
+    //
+    // images is an optional list of base64-encoded image data (no data URI
+    // prefix, just the raw base64). Pass to vision models like llava,
+    // llama3.2-vision, qwen2-vl, moondream, etc. Models that don't support
+    // images ignore the field.
+    void generate(const QString &prompt, const QString &systemPrompt = "",
+                  bool enableThinking = false,
+                  const QStringList &imagesBase64 = QStringList());
     void cancel();
     bool isAvailable();
     void listModels();   // async — emits modelsListed or modelsError

@@ -149,11 +149,12 @@ void SqlFmtPanel::doFormat() {
 void SqlFmtPanel::setStatus(const QString &text, bool isError) {
     if (!m_statusLabel) return;
     m_statusLabel->setText(text);
-    QString color = isError ? "#F48771" : "#569CD6";
+    QString accent = isError ? "#F48771" : "#569CD6";
+    QString bg     = isError ? "#3a1e1e" : "#1e2d3a";
     m_statusLabel->setStyleSheet(
-        QString("background: #1e3a3a; color: %1; padding: 8px 12px; "
-                "font-size: 13px; font-weight: 600; border-left: 4px solid %1;")
-        .arg(color));
+        QString("background: %1; color: %2; padding: 8px 12px; "
+                "font-size: 13px; font-weight: 600; border-left: 4px solid %2;")
+        .arg(bg).arg(accent));
 }
 
 // ─── Per-dialect SQL keyword sets ──────────────────────────────────────
