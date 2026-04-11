@@ -1,5 +1,6 @@
 #include "findreplace.h"
 #include "editor.h"
+#include "fonts.h"
 #include "mainwindow.h"
 #include "rustbridge.h"
 #include "searchresults.h"
@@ -45,7 +46,7 @@ FindReplaceDialog::FindReplaceDialog(QWidget *parent) : QDialog(parent) {
     m_resultsOutput = new QTextEdit;
     m_resultsOutput->setReadOnly(true);
     m_resultsOutput->setMaximumHeight(150);
-    m_resultsOutput->setFont(QFont("Consolas", 9));
+    m_resultsOutput->setFont(notepatraCodeFont(10));
     m_resultsOutput->setPlaceholderText("Search results will appear here...");
     mainLayout->addWidget(m_resultsOutput);
 }

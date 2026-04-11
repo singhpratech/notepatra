@@ -5,6 +5,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.9] — 2026-04-11
+
+### Added
+- 📚 **Comprehensive documentation site** at `docs/docs.html` — Anthropic-style layout with fixed sidebar, scroll-spy navigation, 40+ anchored sections covering every plugin, every keyboard shortcut, AI pipeline internals, and build-from-source recipes for Linux/macOS/Windows.
+- 🔤 **Centralized font system** — new `src/fonts.h` exposes `notepatraUiFont()` and `notepatraCodeFont()` so every panel, editor, and dialog picks the same soothing base font (JetBrains Mono / Cascadia Code / Menlo / Consolas with platform fallbacks) and size. No more mismatched fonts between the editor and the plugin panels.
+- 🧰 **Lexer utilities module** — new `src/lexerutils.{h,cpp}` consolidates per-language lexer resolution and style application that was previously duplicated across editor.cpp and mainwindow.cpp.
+- 📏 **Editor rulers + crosshair overlay** — optional vertical ruler bands at configurable columns (80/100/120) and a horizontal/vertical crosshair that follows the caret. Toggled via View menu.
+- 🎤 **Voice input in AI Assistant** — new microphone button on the chat panel records audio via `arecord`, transcribes via local whisper.cpp / `whisper` CLI, and pastes the transcript into the input line. Graceful fall-back to a text error bubble if neither tool is installed.
+- 🧪 **`test_compare_widget.cpp`** — new CTest target that exercises the paired-row + character-level diff logic on ~20 scenarios (pure inserts, pure deletes, modifications, mixed blocks, trailing newline edge-cases).
+- 🐧 **Linux ARM64 build target** in CI — v0.1.9 now ships a fourth artifact `notepatra-linux-arm64.tar.gz` alongside Linux x64, macOS ARM64, and Windows x64.
+
+### Changed
+- 🪚 **Massive internal refactor (~3200 lines changed across 25 files).** Non-functional split of god-files into focused units: font helpers out of mainwindow into `fonts.h`, lexer matching out of editor into `lexerutils`, compare widget rewritten as a single `CompareWidget` class with a real `CompareNavBar`, git panel rewritten to stream `git status --porcelain=v2 -z` + `git diff --numstat` instead of parsing human-readable output.
+- 🎨 **Plugin panels share a unified `FormatterPanel` base** — JSON Tools, HTML Tools, Bracket Tools, and SQL Formatter all inherit the same status banner, session log, action button layout, and Show Diff button wiring. Adding a new formatter plugin is now ~50 lines.
+- 📜 **Git panel** — now supports stage/unstage at line granularity (not just file), diff preview per file, inline commit message editor, and a push/pull/fetch toolbar. Replaces the previous read-only git status list.
+- 🤖 **AI Assistant chat** — transcript stored as a proper `QVector<ChatMessage>` with `Role::User / Assistant / Error` so re-rendering is deterministic. Streaming tokens now accumulate into `m_currentAssistantText` instead of appending directly to the HTML, which fixes a rare duplicate-token bug when the model emitted `<think>` blocks mid-stream.
+- 🎨 **Notepad++ palette** — `applyNotepadPlusPalette()` now also re-applies the `STYLE_BRACELIGHT` / `STYLE_BRACEBAD` colors after `setLexer()` so brace-match highlighting survives language switches (previously the lexer reset them to default).
+
+### Fixed
+- Brace highlighting disappeared after switching language — re-applied in `editor.cpp::applyLexer` after `setLexer()`.
+- Horizontal scrollbar in Compare panels no longer feedback-loops when one side is narrower than the other.
+- About dialog version was hardcoded — now reads `QApplication::applicationVersion()` from the `NOTEPATRA_VERSION` compile define.
+- JSON Tools: broken input was being auto-pretty-printed on paste, mangling the very content the user wanted to fix. `FormatterPanel::setInput` no longer auto-formats.
+
+### Verifying this release
+Same as previous — SHA-256 in `SHA256SUMS`, cosign keyless signatures, SLSA build provenance attestations. See `SECURITY.md`.
+
+
 ## [0.1.8] — 2026-04-09
 
 ### Fixed

@@ -7,6 +7,7 @@
 #include "mainwindow.h"
 #include "editor.h"
 #include "config.h"
+#include "fonts.h"
 
 // NOTEPATRA_VERSION is injected at compile time from CMakeLists.txt's
 // project(Notepatra VERSION X.Y.Z ...) so a single bump in CMake propagates
@@ -69,6 +70,7 @@ int main(int argc, char *argv[]) {
     app.setApplicationName("Notepatra");
     app.setOrganizationName("Notepatra");
     app.setApplicationVersion(NOTEPATRA_VERSION);
+    app.setFont(notepatraUiFont());
 
     // Parse remaining args
     int gotoLine = -1;

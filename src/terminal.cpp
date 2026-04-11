@@ -1,4 +1,5 @@
 #include "terminal.h"
+#include "fonts.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -24,8 +25,7 @@ TerminalWidget::TerminalWidget(QWidget *parent) : QWidget(parent) {
 
     m_output = new QTextEdit;
     m_output->setReadOnly(true);
-    QFont mono("Consolas", 10);
-    mono.setStyleHint(QFont::Monospace);
+    QFont mono = notepatraCodeFont();
     m_output->setFont(mono);
     m_output->setStyleSheet("QTextEdit { background: #1E1E1E; color: #D4D4D4; border: none; padding: 4px; }");
     layout->addWidget(m_output, 1);
@@ -33,7 +33,8 @@ TerminalWidget::TerminalWidget(QWidget *parent) : QWidget(parent) {
     auto *inputRow = new QHBoxLayout;
     inputRow->setContentsMargins(4, 2, 4, 2);
     auto *promptLabel = new QLabel("$");
-    promptLabel->setStyleSheet("color: #4EC9B0; font-family: monospace; font-weight: bold;");
+    promptLabel->setStyleSheet(QString("color: #4EC9B0; font-family: %1; font-weight: 600;")
+                               .arg(notepatraCodeCssFamily()));
     inputRow->addWidget(promptLabel);
 
     m_input = new QLineEdit;

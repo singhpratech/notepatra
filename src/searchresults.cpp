@@ -1,4 +1,5 @@
 #include "searchresults.h"
+#include "fonts.h"
 #include <QVBoxLayout>
 #include <QFont>
 #include <QHeaderView>
@@ -20,8 +21,7 @@ SearchResultsPanel::SearchResultsPanel(QWidget *parent) : QWidget(parent) {
     m_tree->setIndentation(16);
     m_tree->setUniformRowHeights(true);
 
-    QFont mono("Consolas", 10);
-    mono.setStyleHint(QFont::Monospace);
+    QFont mono = notepatraCodeFont();
     m_tree->setFont(mono);
 
     m_tree->setStyleSheet(

@@ -11,6 +11,7 @@ class QsciLexer;
 // Works across all 40+ lexers by iterating over lexer->description(i) and
 // matching keyword/comment/number/string/operator substrings, so no per-lexer
 // style constants are hard-coded.
-void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont);
+void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont,
+                             const QString &themeName = QString());
 
 #endif

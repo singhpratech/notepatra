@@ -1,7 +1,9 @@
 #include "mainwindow.h"
 #include "editor.h"
+#include "npp_palette.h"
 #include "preferences.h"
 #include "rustbridge.h"
+#include "fonts.h"
 
 #include <QCheckBox>
 #include <QRegularExpression>
@@ -181,12 +183,431 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include <QShortcut>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QTextBrowser>
 #include <QToolBar>
+#include <QToolButton>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QPainter>
+#include <QPainterPath>
+#include <QLinearGradient>
 #include <QMimeData>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QDesktopServices>
 #include <QUrl>
+#include <Qsci/qsciscintilla.h>
+
+static QAction *findActionByPrefix(QObject *root, const QString &prefix) {
+    for (QAction *action : root->findChildren<QAction *>()) {
+        if (action && action->text().startsWith(prefix)) return action;
+    }
+    return nullptr;
+}
+
+static void drawAiFeatureGlyph(QPainter &painter, const QRectF &rect) {
+    painter.setPen(QPen(Qt::white, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(Qt::NoBrush);
+
+    QRectF bubble(rect.left() + 4.5, rect.top() + 6.0, rect.width() - 10.0, rect.height() - 13.0);
+    QPainterPath bubblePath;
+    bubblePath.addRoundedRect(bubble, 6.0, 6.0);
+    bubblePath.moveTo(bubble.left() + 10.0, bubble.bottom());
+    bubblePath.lineTo(bubble.left() + 13.0, bubble.bottom() + 4.0);
+    bubblePath.lineTo(bubble.left() + 17.0, bubble.bottom() - 0.2);
+    painter.drawPath(bubblePath);
+
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor("#DDF5FF"));
+    for (int i = 0; i < 3; ++i)
+        painter.drawEllipse(QPointF(bubble.left() + 8.5 + i * 5.0, bubble.center().y()), 1.5, 1.5);
+
+    painter.setBrush(QColor("#F6D26B"));
+    QPainterPath spark;
+    spark.moveTo(rect.right() - 8.0, rect.top() + 5.0);
+    spark.lineTo(rect.right() - 6.4, rect.top() + 8.2);
+    spark.lineTo(rect.right() - 3.3, rect.top() + 9.2);
+    spark.lineTo(rect.right() - 6.1, rect.top() + 10.9);
+    spark.lineTo(rect.right() - 6.8, rect.top() + 14.1);
+    spark.lineTo(rect.right() - 8.9, rect.top() + 11.5);
+    spark.lineTo(rect.right() - 12.1, rect.top() + 12.1);
+    spark.lineTo(rect.right() - 10.4, rect.top() + 9.3);
+    spark.lineTo(rect.right() - 11.9, rect.top() + 6.5);
+    spark.lineTo(rect.right() - 8.8, rect.top() + 7.3);
+    spark.closeSubpath();
+    painter.drawPath(spark);
+}
+
+static void drawTerminalFeatureGlyph(QPainter &painter, const QRectF &rect) {
+    painter.setPen(QPen(Qt::white, 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(Qt::NoBrush);
+
+    QRectF screen(rect.left() + 4.0, rect.top() + 5.5, rect.width() - 8.0, rect.height() - 11.0);
+    painter.drawRoundedRect(screen, 4.0, 4.0);
+    painter.drawLine(QPointF(screen.left() + 4.0, screen.top() + 8.0),
+                     QPointF(screen.left() + 8.0, screen.top() + 11.5));
+    painter.drawLine(QPointF(screen.left() + 4.0, screen.top() + 15.0),
+                     QPointF(screen.left() + 8.0, screen.top() + 11.5));
+    painter.drawLine(QPointF(screen.left() + 11.5, screen.top() + 16.0),
+                     QPointF(screen.left() + 18.5, screen.top() + 16.0));
+}
+
+static void drawCompareFeatureGlyph(QPainter &painter, const QRectF &rect) {
+    QRectF leftDoc(rect.left() + 4.5, rect.top() + 5.5, rect.width() / 2.0 - 3.5, rect.height() - 11.0);
+    QRectF rightDoc(rect.center().x() + 0.5, rect.top() + 5.5, rect.width() / 2.0 - 5.0, rect.height() - 11.0);
+
+    painter.setPen(QPen(Qt::white, 1.3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(QColor(255, 255, 255, 28));
+    painter.drawRoundedRect(leftDoc, 3.5, 3.5);
+    painter.drawRoundedRect(rightDoc, 3.5, 3.5);
+
+    painter.setPen(QPen(QColor("#F48771"), 1.6, Qt::SolidLine, Qt::RoundCap));
+    painter.drawLine(QPointF(leftDoc.left() + 3.5, leftDoc.top() + 8.0),
+                     QPointF(leftDoc.right() - 3.5, leftDoc.top() + 8.0));
+    painter.drawLine(QPointF(leftDoc.left() + 3.5, leftDoc.top() + 13.0),
+                     QPointF(leftDoc.right() - 7.0, leftDoc.top() + 13.0));
+
+    painter.setPen(QPen(QColor("#7DDA99"), 1.6, Qt::SolidLine, Qt::RoundCap));
+    painter.drawLine(QPointF(rightDoc.left() + 3.5, rightDoc.top() + 8.0),
+                     QPointF(rightDoc.right() - 6.5, rightDoc.top() + 8.0));
+    painter.drawLine(QPointF(rightDoc.left() + 3.5, rightDoc.top() + 16.0),
+                     QPointF(rightDoc.right() - 3.5, rightDoc.top() + 16.0));
+
+    painter.setPen(QPen(QColor("#F7D774"), 1.6));
+    painter.drawLine(QPointF(rect.center().x(), rect.top() + 6.0),
+                     QPointF(rect.center().x(), rect.bottom() - 6.0));
+}
+
+static void drawJsonFeatureGlyph(QPainter &painter, const QRectF &rect) {
+    painter.setPen(QPen(Qt::white, 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(Qt::NoBrush);
+    painter.drawLine(QPointF(rect.left() + 10.0, rect.top() + 7.0), QPointF(rect.left() + 7.5, rect.top() + 10.0));
+    painter.drawLine(QPointF(rect.left() + 7.5, rect.top() + 10.0), QPointF(rect.left() + 10.0, rect.top() + 13.0));
+    painter.drawLine(QPointF(rect.left() + 10.0, rect.top() + 13.0), QPointF(rect.left() + 7.5, rect.top() + 16.0));
+    painter.drawLine(QPointF(rect.left() + 7.5, rect.top() + 16.0), QPointF(rect.left() + 10.0, rect.top() + 19.0));
+
+    painter.drawLine(QPointF(rect.right() - 10.0, rect.top() + 7.0), QPointF(rect.right() - 7.5, rect.top() + 10.0));
+    painter.drawLine(QPointF(rect.right() - 7.5, rect.top() + 10.0), QPointF(rect.right() - 10.0, rect.top() + 13.0));
+    painter.drawLine(QPointF(rect.right() - 10.0, rect.top() + 13.0), QPointF(rect.right() - 7.5, rect.top() + 16.0));
+    painter.drawLine(QPointF(rect.right() - 7.5, rect.top() + 16.0), QPointF(rect.right() - 10.0, rect.top() + 19.0));
+
+    painter.setPen(QPen(QColor("#D6ECFF"), 1.4, Qt::SolidLine, Qt::RoundCap));
+    painter.drawLine(QPointF(rect.center().x() - 1.5, rect.top() + 8.5),
+                     QPointF(rect.center().x() - 1.5, rect.bottom() - 8.0));
+    painter.drawLine(QPointF(rect.center().x() - 1.5, rect.top() + 8.5),
+                     QPointF(rect.center().x() + 6.0, rect.top() + 8.5));
+    painter.drawLine(QPointF(rect.center().x() - 1.5, rect.center().y()),
+                     QPointF(rect.center().x() + 7.0, rect.center().y()));
+    painter.drawLine(QPointF(rect.center().x() - 1.5, rect.bottom() - 8.0),
+                     QPointF(rect.center().x() + 5.0, rect.bottom() - 8.0));
+
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor("#AEE3FF"));
+    painter.drawEllipse(QPointF(rect.center().x() - 1.5, rect.top() + 8.5), 1.9, 1.9);
+    painter.setBrush(QColor("#7FDBB6"));
+    painter.drawEllipse(QPointF(rect.center().x() + 7.5, rect.top() + 8.5), 1.9, 1.9);
+    painter.setBrush(QColor("#F7D774"));
+    painter.drawEllipse(QPointF(rect.center().x() + 8.5, rect.center().y()), 1.9, 1.9);
+    painter.setBrush(QColor("#F7A08A"));
+    painter.drawEllipse(QPointF(rect.center().x() + 5.5, rect.bottom() - 8.0), 1.9, 1.9);
+}
+
+static void drawHtmlFeatureGlyph(QPainter &painter, const QRectF &rect) {
+    painter.setPen(QPen(Qt::white, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(Qt::NoBrush);
+    painter.drawLine(QPointF(rect.left() + 9.0, rect.center().y()),
+                     QPointF(rect.left() + 13.0, rect.top() + 9.0));
+    painter.drawLine(QPointF(rect.left() + 9.0, rect.center().y()),
+                     QPointF(rect.left() + 13.0, rect.bottom() - 9.0));
+    painter.drawLine(QPointF(rect.right() - 9.0, rect.center().y()),
+                     QPointF(rect.right() - 13.0, rect.top() + 9.0));
+    painter.drawLine(QPointF(rect.right() - 9.0, rect.center().y()),
+                     QPointF(rect.right() - 13.0, rect.bottom() - 9.0));
+    painter.setPen(QPen(QColor("#FFD48A"), 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.drawLine(QPointF(rect.center().x() + 2.0, rect.top() + 8.5),
+                     QPointF(rect.center().x() - 1.0, rect.bottom() - 8.5));
+}
+
+static void drawSqlFeatureGlyph(QPainter &painter, const QRectF &rect) {
+    painter.setPen(QPen(Qt::white, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(QColor(255, 255, 255, 24));
+
+    QRectF body(rect.left() + 7.0, rect.top() + 8.0, rect.width() - 14.0, rect.height() - 14.0);
+    QRectF topOval(body.left(), body.top() - 2.5, body.width(), 7.0);
+    QRectF midOval(body.left(), body.center().y() - 2.0, body.width(), 7.0);
+    QRectF bottomOval(body.left(), body.bottom() - 4.0, body.width(), 7.0);
+
+    painter.drawEllipse(topOval);
+    painter.drawLine(QPointF(body.left(), topOval.center().y()),
+                     QPointF(body.left(), bottomOval.center().y()));
+    painter.drawLine(QPointF(body.right(), topOval.center().y()),
+                     QPointF(body.right(), bottomOval.center().y()));
+    painter.drawArc(midOval, 0, 180 * 16);
+    painter.drawEllipse(bottomOval);
+}
+
+static void drawBracketsFeatureGlyph(QPainter &painter, const QRectF &rect) {
+    painter.setPen(QPen(Qt::white, 1.9, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(Qt::NoBrush);
+
+    painter.drawLine(QPointF(rect.left() + 10.0, rect.top() + 7.5), QPointF(rect.left() + 6.5, rect.top() + 7.5));
+    painter.drawLine(QPointF(rect.left() + 6.5, rect.top() + 7.5), QPointF(rect.left() + 6.5, rect.bottom() - 7.5));
+    painter.drawLine(QPointF(rect.left() + 6.5, rect.bottom() - 7.5), QPointF(rect.left() + 10.0, rect.bottom() - 7.5));
+
+    painter.drawLine(QPointF(rect.right() - 10.0, rect.top() + 7.5), QPointF(rect.right() - 6.5, rect.top() + 7.5));
+    painter.drawLine(QPointF(rect.right() - 6.5, rect.top() + 7.5), QPointF(rect.right() - 6.5, rect.bottom() - 7.5));
+    painter.drawLine(QPointF(rect.right() - 6.5, rect.bottom() - 7.5), QPointF(rect.right() - 10.0, rect.bottom() - 7.5));
+
+    painter.setBrush(QColor("#F6D26B"));
+    painter.setPen(Qt::NoPen);
+    painter.drawRoundedRect(QRectF(rect.center().x() - 4.0, rect.center().y() - 4.0, 8.0, 8.0), 2.0, 2.0);
+}
+
+static void drawRestFeatureGlyph(QPainter &painter, const QRectF &rect) {
+    painter.setPen(QPen(Qt::white, 1.7, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(Qt::NoBrush);
+
+    painter.drawLine(QPointF(rect.left() + 8.0, rect.top() + 10.0),
+                     QPointF(rect.right() - 10.0, rect.top() + 10.0));
+    painter.drawLine(QPointF(rect.right() - 13.5, rect.top() + 7.0),
+                     QPointF(rect.right() - 9.5, rect.top() + 10.0));
+    painter.drawLine(QPointF(rect.right() - 13.5, rect.top() + 13.0),
+                     QPointF(rect.right() - 9.5, rect.top() + 10.0));
+
+    painter.drawLine(QPointF(rect.right() - 8.0, rect.bottom() - 10.0),
+                     QPointF(rect.left() + 10.0, rect.bottom() - 10.0));
+    painter.drawLine(QPointF(rect.left() + 13.5, rect.bottom() - 13.0),
+                     QPointF(rect.left() + 9.5, rect.bottom() - 10.0));
+    painter.drawLine(QPointF(rect.left() + 13.5, rect.bottom() - 7.0),
+                     QPointF(rect.left() + 9.5, rect.bottom() - 10.0));
+
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor("#D4F7FF"));
+    painter.drawEllipse(QPointF(rect.left() + 7.0, rect.top() + 10.0), 2.1, 2.1);
+    painter.drawEllipse(QPointF(rect.right() - 7.0, rect.bottom() - 10.0), 2.1, 2.1);
+}
+
+static void drawGitFeatureGlyph(QPainter &painter, const QRectF &rect) {
+    painter.setPen(QPen(Qt::white, 1.7, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(Qt::NoBrush);
+
+    QPointF top(rect.left() + 10.0, rect.top() + 8.0);
+    QPointF mid(rect.center().x(), rect.center().y());
+    QPointF bottom(rect.left() + 10.0, rect.bottom() - 8.0);
+    QPointF right(rect.right() - 9.0, rect.top() + 11.0);
+
+    painter.drawLine(top, mid);
+    painter.drawLine(mid, bottom);
+    painter.drawLine(mid, right);
+
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor("#D6ECFF"));
+    painter.drawEllipse(top, 2.2, 2.2);
+    painter.drawEllipse(mid, 2.2, 2.2);
+    painter.drawEllipse(bottom, 2.2, 2.2);
+    painter.drawEllipse(right, 2.2, 2.2);
+}
+
+static QIcon makeFeatureIcon(const QColor &base, const QString &iconKind, const QString &glyph = QString()) {
+    QPixmap pixmap(32, 32);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    QRect rect = pixmap.rect().adjusted(1, 1, -1, -1);
+    QLinearGradient gradient(rect.topLeft(), rect.bottomRight());
+    gradient.setColorAt(0.0, base.lighter(125));
+    gradient.setColorAt(1.0, base.darker(110));
+
+    painter.setPen(QPen(base.darker(160), 1));
+    painter.setBrush(gradient);
+    painter.drawRoundedRect(rect, 8, 8);
+
+    if (iconKind == "ai") {
+        drawAiFeatureGlyph(painter, rect);
+    } else if (iconKind == "terminal") {
+        drawTerminalFeatureGlyph(painter, rect);
+    } else if (iconKind == "compare") {
+        drawCompareFeatureGlyph(painter, rect);
+    } else if (iconKind == "json") {
+        drawJsonFeatureGlyph(painter, rect);
+    } else if (iconKind == "html") {
+        drawHtmlFeatureGlyph(painter, rect);
+    } else if (iconKind == "sql") {
+        drawSqlFeatureGlyph(painter, rect);
+    } else if (iconKind == "brackets") {
+        drawBracketsFeatureGlyph(painter, rect);
+    } else if (iconKind == "rest") {
+        drawRestFeatureGlyph(painter, rect);
+    } else if (iconKind == "git") {
+        drawGitFeatureGlyph(painter, rect);
+    } else {
+        QFont font = notepatraCodeFont(glyph.size() > 2 ? 8 : 10, QFont::Bold);
+        painter.setFont(font);
+        painter.setPen(Qt::white);
+        painter.drawText(rect, Qt::AlignCenter, glyph);
+    }
+
+    return QIcon(pixmap);
+}
+
+static void addFeatureShortcut(QToolBar *toolbar, QAction *action,
+                               const QColor &base, const QString &iconKind,
+                               const QString &label, const QString &tooltip = QString()) {
+    if (!toolbar || !action) return;
+
+    auto *button = new QToolButton;
+    button->setObjectName("featureShortcutButton");
+    button->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+    button->setAutoRaise(true);
+    button->setCursor(Qt::PointingHandCursor);
+    button->setIcon(makeFeatureIcon(base, iconKind));
+    button->setIconSize(QSize(32, 32));
+    button->setText(label);
+    button->setToolTip(tooltip.isEmpty() ? action->text() : tooltip);
+    button->setMinimumSize(78, 60);
+
+    QObject::connect(button, &QToolButton::clicked, action, &QAction::trigger);
+    toolbar->addWidget(button);
+}
+
+static QString featureGuideHtml() {
+    return QStringLiteral(R"HTML(
+<html>
+<head>
+<style>
+body { font-family: %1; line-height: 1.45; color: #d4d4d4; background: #1e1e1e; }
+h1 { color: #4ec9b0; margin: 0 0 12px 0; font-size: 24px; }
+h2 { color: #7ec8ff; margin: 18px 0 6px 0; font-size: 18px; }
+h3 { color: #f2c14e; margin: 14px 0 4px 0; font-size: 15px; }
+p, li { font-size: 13px; }
+code, pre { font-family: %2; }
+code { background: #252526; color: #f7d774; padding: 1px 4px; border-radius: 4px; }
+ul { margin-top: 4px; }
+</style>
+</head>
+<body>
+<h1>Notepatra Help Guide</h1>
+<p>Open this guide from the top <b>?</b> menu whenever you need to understand what a built-in tool does or where a feature lives. The icon row exposes the major workflows quickly; the menus expose the rest of the editor.</p>
+
+<h2>Getting Started</h2>
+<ul>
+<li><b>Create and open files:</b> Use <code>Ctrl+N</code>, <code>Ctrl+O</code>, drag and drop, or the File menu.</li>
+<li><b>Save and restore work:</b> Session restore and crash recovery are built in. Modified files are autosaved to recovery storage.</li>
+<li><b>Workspace navigation:</b> Open a folder as a workspace and browse files from the sidebar with <code>Ctrl+Shift+E</code>.</li>
+<li><b>Status bar:</b> The bottom bar shows line, column, language, encoding, EOL mode, line count, length, and word count.</li>
+<li><b>Where features live:</b> use the icon row for the main built-in tools, the <b>Features</b> menu for editing helpers, the <b>Tools</b> menu for utilities, and the <b>Plugins</b> menu for formatter-style panels.</li>
+</ul>
+
+<h2>Core Editing</h2>
+<ul>
+<li><b>Syntax highlighting:</b> Use the Language menu or file extension detection. Notepatra supports a broad lexer set including Python, JavaScript, C/C++, Java, SQL, JSON, HTML, CSS, Bash, YAML, Markdown, Lua, and many more.</li>
+<li><b>Code editing tools:</b> Undo/redo, multi-tab editing, brace matching, bookmarks, line duplication, line moving, comment toggling, whitespace cleanup, EOL conversion, and case conversion are built in.</li>
+<li><b>Search:</b> Find, replace, regex search, find in files, go to line, bookmark navigation, and results panel navigation are integrated.</li>
+<li><b>View controls:</b> Word wrap, fold/unfold, whitespace and EOL markers, indent guides, zoom, and full screen are available from the View menu.</li>
+<li><b>Themes and fonts:</b> switch between Light, Dark, and Monokai from <b>Settings &gt; Theme</b>. The default editor fonts are tuned to be calmer and easier on the eyes across the app.</li>
+</ul>
+
+<h2>Built-In Tool Row</h2>
+<h3>AI Assistant</h3>
+<ul>
+<li>Opens in a tab and works with local Ollama models.</li>
+<li>Use it to explain code, find bugs, refactor, generate tests, add comments, translate, optimize, and draft docs.</li>
+<li>The paperclip button attaches text files, images, PDFs, and Office documents as extra prompt context.</li>
+<li>The microphone button supports speech-to-text when local recording and <code>whisper</code> CLI are available.</li>
+<li>The <code>Reset</code> button clears the visible chat and the assistant session state.</li>
+</ul>
+
+<h3>Terminal</h3>
+<ul>
+<li>Opens a built-in terminal tab, typically rooted to the current file’s directory.</li>
+<li>Useful for build commands, git, package managers, and quick shell work.</li>
+</ul>
+
+<h3>Compare</h3>
+<ul>
+<li>Open side-by-side file or tab comparisons from the Compare entry.</li>
+<li>Navigation buttons move between differences, and <code>Recompare</code> recalculates the diff after changes.</li>
+<li>Modified rows and character-level edits are highlighted separately so you can spot both changed lines and changed characters.</li>
+<li>Use the lock toggle to unlock the panes, make fixes directly in compare mode, then press <code>Recompare</code>.</li>
+<li>The overview bar gives you a quick visual map of where differences live across the file pair.</li>
+</ul>
+
+<h3>JSON / HTML / SQL / Brackets</h3>
+<ul>
+<li><b>JSON Tools:</b> format, minify, fix malformed JSON, compare before/after output, and optionally use local AI fixing.</li>
+<li><b>HTML Tools:</b> format and clean up HTML-oriented content in a dedicated tool panel.</li>
+<li><b>SQL Formatter:</b> uppercase/lowercase SQL formatting and before/after compare support.</li>
+<li><b>Bracket Tools:</b> bracket matching and structural editing helpers for code cleanup.</li>
+</ul>
+
+<h3>REST and Git</h3>
+<ul>
+<li><b>REST Client:</b> run selected HTTP requests from editor content, especially <code>.http</code> style request blocks.</li>
+<li><b>Git Integration:</b> inspect repository status, changed files, and work with repository context without leaving the editor.</li>
+<li><b>Git gutter:</b> modified files show changed-line markers directly in the editor margin.</li>
+</ul>
+
+<h2>Tools, Utilities, and Panels</h2>
+<ul>
+<li><b>Markdown tools:</b> convert selections into lists, tables, headings, links, and code blocks.</li>
+<li><b>Hex viewer:</b> open a saved file in hex view.</li>
+<li><b>Hash tools:</b> MD5, SHA-1, SHA-256, and SHA-512 are available under <b>Tools</b>.</li>
+<li><b>Base64 tools:</b> encode or decode selected text directly from the <b>Tools</b> menu.</li>
+<li><b>Measurement tools:</b> <b>Tools &gt; Measurement</b> lets you turn document rulers and a crosshair pixel measure on or off when you need them.</li>
+<li><b>Encoding tools:</b> UTF-8, BOM, UTF-16, legacy encodings, and EOL conversion are built into the menu bar workflow.</li>
+<li><b>Macros:</b> record and replay editor actions from the <b>Macro</b> menu.</li>
+<li><b>Plugins:</b> the Plugins menu also hosts the built-in formatter panels and any compatible user plugins you install.</li>
+</ul>
+
+<h2>Language and Lexer Behavior</h2>
+<ul>
+<li>Language detection follows file extensions where possible, but you can override it at any time from the <b>Language</b> menu.</li>
+<li>If a file uses an uncommon extension, set the language manually once and work with the correct lexer, folding, and keyword highlighting immediately.</li>
+<li>The same language and theme styling is intended to stay consistent across Linux, Windows, macOS, and Linux ARM builds.</li>
+</ul>
+
+<h2>Useful Shortcuts</h2>
+<ul>
+<li><code>Ctrl+N</code> new file, <code>Ctrl+O</code> open, <code>Ctrl+S</code> save, <code>Ctrl+W</code> close tab</li>
+<li><code>Ctrl+F</code> find, <code>Ctrl+H</code> replace, <code>Ctrl+Shift+F</code> find in files, <code>Ctrl+G</code> go to line</li>
+<li><code>Ctrl+Shift+A</code> AI Assistant, <code>Ctrl+`</code> Terminal, <code>Ctrl+Shift+R</code> REST Client, <code>Ctrl+Shift+E</code> Workspace</li>
+<li><code>F11</code> full screen, <code>Ctrl+=</code> / <code>Ctrl+-</code> zoom, <code>Ctrl+0</code> reset zoom</li>
+</ul>
+
+<h2>Practical Tip</h2>
+<p>If you are unsure where a feature lives, first check the top <b>?</b> menu for this guide and the shortcut list. Then use the icon row for the main workflows and the <b>Features</b>, <b>Tools</b>, and <b>Plugins</b> menus for the deeper editing and utility commands.</p>
+</body>
+</html>
+)HTML").arg(notepatraUiCssFamily(), notepatraCodeCssFamily());
+}
+
+static void showRichHelpDialog(QWidget *parent, const QString &title, const QString &html) {
+    auto *dialog = new QDialog(parent);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle(title);
+    dialog->resize(860, 720);
+
+    auto *layout = new QVBoxLayout(dialog);
+    layout->setContentsMargins(10, 10, 10, 10);
+    layout->setSpacing(8);
+
+    auto *browser = new QTextBrowser(dialog);
+    browser->setOpenExternalLinks(true);
+    browser->setHtml(html);
+    browser->moveCursor(QTextCursor::Start);
+    layout->addWidget(browser, 1);
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::close);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, &QDialog::close);
+    layout->addWidget(buttons);
+
+    dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
+}
 
 MainWindow::MainWindow() {
     setWindowTitle("new 1 - Notepatra");
@@ -390,6 +811,7 @@ Editor *MainWindow::currentEditor() {
 Editor *MainWindow::newFile() {
     m_newCount++;
     auto *editor = new Editor(this);
+    editor->applyTheme(Config::instance().theme);
     int idx = m_tabs->addTab(editor, QString("new %1").arg(m_newCount));
     m_tabs->setCurrentIndex(idx);
 
@@ -427,6 +849,7 @@ void MainWindow::openFile(const QString &path) {
         delete editor;
         return;
     }
+    editor->applyTheme(Config::instance().theme);
 
     int idx = m_tabs->addTab(editor, QFileInfo(path).fileName());
     m_tabs->setTabToolTip(idx, path);
@@ -1154,6 +1577,28 @@ void MainWindow::buildMenus() {
 
     // ═══ TOOLS ═══
     auto *tools = mb->addMenu("&Tools");
+    auto *measureMenu = tools->addMenu("Measurement");
+    auto *rulersAct = measureMenu->addAction("Document Rulers", this, [this](bool checked) {
+        Config::instance().showDocumentRulers = checked;
+        Config::instance().save();
+        for (int i = 0; i < m_tabs->count(); ++i) {
+            if (auto *ed = m_tabs->editorAt(i)) ed->setDocumentRulersVisible(checked);
+        }
+    });
+    rulersAct->setCheckable(true);
+    rulersAct->setChecked(Config::instance().showDocumentRulers);
+
+    auto *crosshairAct = measureMenu->addAction("Crosshair Pixel Measure", this, [this](bool checked) {
+        Config::instance().showCrosshair = checked;
+        Config::instance().save();
+        for (int i = 0; i < m_tabs->count(); ++i) {
+            if (auto *ed = m_tabs->editorAt(i)) ed->setCrosshairVisible(checked);
+        }
+    });
+    crosshairAct->setCheckable(true);
+    crosshairAct->setChecked(Config::instance().showCrosshair);
+
+    tools->addSeparator();
     auto *hashMenu = tools->addMenu("Hash");
     struct HashEntry { const char *name; int algo; };
     for (const auto &h : {HashEntry{"MD5", 0}, HashEntry{"SHA-1", 1}, HashEntry{"SHA-256", 2}, HashEntry{"SHA-512", 3}}) {
@@ -1244,29 +1689,26 @@ void MainWindow::buildMenus() {
         m_tabs->setCurrentIndex(idx);
     });
 
-    // Compare (inbuilt) — built-in side-by-side compare. Same picker, same
-    // CompareWidget. Both this and the ComparePlus entry below call the
-    // shared openComparePicker() helper so the flow is identical.
-    pluginsMenu->addAction("Compare (inbuilt)", this, [this]() {
+    // Compare (inbuilt) — built-in side-by-side compare inspired by Pavel
+    // Nedev's ComparePlus for Notepad++. Credit remains in the tooltip and
+    // source comments, but the user-facing feature name is now simply Compare.
+    auto *compareAct = pluginsMenu->addAction("Compare (inbuilt)", this, [this]() {
         openComparePicker("Compare");
     });
-
-    // ComparePlus — separate menu entry inspired by Pavel Nedev's
-    // ComparePlus plugin for Notepad++ (https://github.com/pnedev/comparePlus).
-    // Uses the SAME side-by-side CompareWidget under the hood — different
-    // tab title so users can have multiple compares open at once and tell
-    // them apart in the tab bar.
-    auto *cpAct = pluginsMenu->addAction("ComparePlus", this, [this]() {
-        openComparePicker("ComparePlus");
-    });
-    cpAct->setToolTip("Side-by-side file/tab compare. UX inspired by Pavel Nedev's "
-                      "ComparePlus plugin for Notepad++ "
-                      "(https://github.com/pnedev/comparePlus).");
+    compareAct->setToolTip("Side-by-side file/tab compare. UX inspired by Pavel Nedev's "
+                           "ComparePlus plugin for Notepad++ "
+                           "(https://github.com/pnedev/comparePlus).");
 
     // Git Integration (inbuilt) — opens Git panel in a new tab
     pluginsMenu->addAction("Git Integration (inbuilt)", this, [this, E]() {
         auto *panel = new GitPanel;
         connect(panel, &GitPanel::fileClicked, this, &MainWindow::openFile);
+        connect(panel, &GitPanel::repositoryOpened, this, [this](const QString &repoRoot) {
+            if (!repoRoot.isEmpty()) {
+                m_explorer->setRoot(repoRoot);
+                m_explorer->setVisible(true);
+            }
+        });
         if (auto *e = E(); e && !e->filePath().isEmpty()) {
             panel->refresh(e->filePath());
             e->updateGitGutter();
@@ -1889,46 +2331,10 @@ void MainWindow::buildMenus() {
     // ═══ ? (HELP) ═══
     auto *help = mb->addMenu("&?");
 
-    help->addAction("Feature List", this, [this]() {
-        QMessageBox::information(this, "Notepatra Features",
-            "EDITOR\n"
-            "  60+ languages with syntax highlighting\n"
-            "  Tabbed editing, code folding, bookmarks\n"
-            "  Auto-complete, brace matching, indent guides\n"
-            "  Double-click word highlight (all occurrences)\n"
-            "  Handles files up to 2.5 GB\n\n"
-            "PANELS\n"
-            "  Built-in Terminal              Ctrl+`\n"
-            "  Markdown Preview               Ctrl+Shift+M\n"
-            "  AI Assistant (Ollama)          Ctrl+Shift+A\n"
-            "  REST Client (.http)            Ctrl+Shift+R\n"
-            "  File Explorer / Workspace     Ctrl+Shift+E\n"
-            "  Function List\n"
-            "  Hex Editor\n\n"
-            "SEARCH\n"
-            "  Find / Replace                 Ctrl+F / Ctrl+H\n"
-            "  Find in Files                  Ctrl+Shift+F\n"
-            "  Find/Replace in All Opened Documents\n"
-            "  Regular expressions, Extended mode\n"
-            "  Mark All occurrences\n"
-            "  Go to Line / Offset            Ctrl+G\n"
-            "  Bookmarks                      Ctrl+F2 / F2\n\n"
-            "BUNDLED PLUGINS\n"
-            "  SQL Formatter (uppercase/lowercase)\n"
-            "  File Compare (side-by-side diff)\n"
-            "  Git Integration (changed lines, branch, GitHub)\n\n"
-            "TOOLS\n"
-            "  Hash: MD5, SHA-1, SHA-256, SHA-512\n"
-            "  Base64 encode/decode\n"
-            "  URL encode/decode\n"
-            "  Case conversion (5 modes)\n"
-            "  Line operations (sort, dedupe, trim, reverse)\n"
-            "  Tab/Space conversion\n"
-            "  EOL conversion (LF/CRLF/CR)\n\n"
-            "PLUGIN SYSTEM\n"
-            "  Drop .so files in ~/.config/notepatra/plugins/\n"
-            "  Simple C API (2 functions to implement)");
+    auto *guideAct = help->addAction("Feature and Tool Guide...", this, [this]() {
+        showRichHelpDialog(this, "Notepatra Help Guide", featureGuideHtml());
     });
+    guideAct->setStatusTip("Open the built-in help guide to Notepatra's features and tools");
 
     help->addAction("Keyboard Shortcuts", this, [this]() {
         QMessageBox::information(this, "Keyboard Shortcuts",
@@ -2002,58 +2408,40 @@ void MainWindow::buildMenus() {
 }
 
 void MainWindow::buildToolbar() {
-    auto *tb = addToolBar("Main");
-    tb->setMovable(false);
-    tb->setFloatable(false);
-    auto E = [this]() -> Editor* { return currentEditor(); };
-    auto FD = [this]() -> FindReplaceDialog* {
-        if (!m_findDialog) m_findDialog = new FindReplaceDialog(this);
-        return m_findDialog;
-    };
+    auto *featureTb = addToolBar("Built-in Tools");
+    featureTb->setObjectName("featureShortcutBar");
+    featureTb->setMovable(false);
+    featureTb->setFloatable(false);
+    featureTb->setIconSize(QSize(32, 32));
+    featureTb->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
 
-    // File operations
-    tb->addAction("New", this, [this]() { newFile(); });
-    tb->addAction("Open", this, [this]() {
-        for (const auto &p : QFileDialog::getOpenFileNames(this, "Open", QDir::homePath())) openFile(p);
-    });
-    tb->addAction("Save", this, [this]() { saveFile(); });
-    tb->addAction("Save All", this, [this]() {
-        for (int i = 0; i < m_tabs->count(); i++) {
-            auto *ed = m_tabs->editorAt(i);
-            if (ed && ed->isModified() && !ed->filePath().isEmpty()) { ed->saveFile(); updateTabTitle(i); }
-        }
-    });
-    tb->addAction("Close", this, [this]() { closeTab(m_tabs->currentIndex()); });
-    tb->addSeparator();
-
-    // Edit operations
-    tb->addAction("Cut", this, [E]() { if (auto *e = E()) e->cut(); });
-    tb->addAction("Copy", this, [E]() { if (auto *e = E()) e->copy(); });
-    tb->addAction("Paste", this, [E]() { if (auto *e = E()) e->paste(); });
-    tb->addSeparator();
-    tb->addAction("Undo", this, [E]() { if (auto *e = E()) e->undo(); });
-    tb->addAction("Redo", this, [E]() { if (auto *e = E()) e->redo(); });
-    tb->addSeparator();
-
-    // Search
-    tb->addAction("Find", this, [FD]() { FD()->showFind(); });
-    tb->addAction("Replace", this, [FD]() { FD()->showReplace(); });
-    tb->addSeparator();
-
-    // View
-    tb->addAction("Zoom In", this, [E]() { if (auto *e = E()) e->zoomIn(); });
-    tb->addAction("Zoom Out", this, [E]() { if (auto *e = E()) e->zoomOut(); });
-    tb->addSeparator();
-    tb->addAction("Word Wrap", this, [E]() { if (auto *e = E()) e->toggleWordWrap(); });
-    tb->addAction("Show All", this, [E]() { if (auto *e = E()) { e->toggleWhitespace(); e->toggleEol(); } });
-    tb->addSeparator();
-
-    // Panels
-    tb->addAction("Func List", this, [this]() {
-        m_funcList->setVisible(!m_funcList->isVisible());
-        if (m_funcList->isVisible()) if (auto *e = currentEditor()) m_funcList->updateSymbols(e->text(), e->language());
-    });
-    tb->addAction("Workspace", this, [this]() { m_explorer->setVisible(!m_explorer->isVisible()); });
+    addFeatureShortcut(featureTb, findActionByPrefix(this, "AI Assistant"),
+                       QColor("#0E639C"), "ai", "AI Assistant",
+                       "Open AI Assistant in a new tab");
+    addFeatureShortcut(featureTb, findActionByPrefix(this, "Terminal"),
+                       QColor("#2D7D46"), "terminal", "Terminal",
+                       "Open the built-in terminal");
+    addFeatureShortcut(featureTb, findActionByPrefix(this, "Compare (inbuilt)"),
+                       QColor("#C27A13"), "compare", "Compare",
+                       "Open Compare");
+    addFeatureShortcut(featureTb, findActionByPrefix(this, "JSON Tools"),
+                       QColor("#1769AA"), "json", "JSON",
+                       "Open JSON Tools");
+    addFeatureShortcut(featureTb, findActionByPrefix(this, "HTML Tools"),
+                       QColor("#C84F2B"), "html", "HTML",
+                       "Open HTML Tools");
+    addFeatureShortcut(featureTb, findActionByPrefix(this, "SQL Formatter"),
+                       QColor("#6A4FBF"), "sql", "SQL",
+                       "Open SQL Formatter");
+    addFeatureShortcut(featureTb, findActionByPrefix(this, "Bracket Tools"),
+                       QColor("#8A5A17"), "brackets", "Brackets",
+                       "Open Bracket Tools");
+    addFeatureShortcut(featureTb, findActionByPrefix(this, "REST Client"),
+                       QColor("#00838F"), "rest", "REST",
+                       "Open REST Client");
+    addFeatureShortcut(featureTb, findActionByPrefix(this, "Git Integration"),
+                       QColor("#B23A48"), "git", "Git",
+                       "Open Git Integration");
 }
 
 void MainWindow::setupShortcuts() {
@@ -2431,22 +2819,25 @@ void MainWindow::applyThemeToAll(const Theme &t) {
     // Editor tabs
     if (m_tabs) for (int i = 0; i < m_tabs->count(); i++) {
         auto *ed = m_tabs->editorAt(i);
-        if (ed) {
-            ed->setPaper(t.editorBg);
-            ed->setColor(t.editorFg);
-            ed->setCaretLineBackgroundColor(t.caretLine);
-            ed->setCaretForegroundColor(t.caret);
-            ed->setSelectionBackgroundColor(t.selection);
-            ed->setMarginsBackgroundColor(t.marginBg);
-            ed->setMarginsForegroundColor(t.marginFg);
-            ed->setFoldMarginColors(t.foldBg, t.foldBg);
-            ed->setMatchedBraceBackgroundColor(t.matchedBraceBg);
-            ed->setMatchedBraceForegroundColor(t.matchedBraceFg);
-            // Re-set lexer paper for all styles
-            if (auto *lex = ed->lexer()) {
-                lex->setDefaultPaper(t.editorBg);
-                lex->setDefaultColor(t.editorFg);
-            }
+        if (ed) ed->applyTheme(t.name);
+    }
+
+    for (QsciScintilla *sci : findChildren<QsciScintilla *>()) {
+        if (!sci) continue;
+        sci->setPaper(t.editorBg);
+        sci->setColor(t.editorFg);
+        sci->setCaretLineBackgroundColor(t.caretLine);
+        sci->setCaretForegroundColor(t.caret);
+        sci->setSelectionBackgroundColor(t.selection);
+        sci->setMarginsBackgroundColor(t.marginBg);
+        sci->setMarginsForegroundColor(t.marginFg);
+        sci->setFoldMarginColors(t.foldBg, t.foldBg);
+        sci->setMatchedBraceBackgroundColor(t.matchedBraceBg);
+        sci->setMatchedBraceForegroundColor(t.matchedBraceFg);
+        if (auto *lex = sci->lexer()) {
+            lex->setDefaultPaper(t.editorBg);
+            lex->setDefaultColor(t.editorFg);
+            applyNotepadPlusPalette(lex, sci->font(), t.name);
         }
     }
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.8 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.9 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -127,6 +127,7 @@ set(SOURCES
     src/main.cpp
     src/mainwindow.cpp
     src/editor.cpp
+    src/lexerutils.cpp
     src/npp_palette.cpp
     src/tabmanager.cpp
     src/statusbar.cpp
@@ -153,6 +154,7 @@ set(SOURCES
 set(HEADERS
     src/mainwindow.h
     src/editor.h
+    src/lexerutils.h
     src/npp_palette.h
     src/tabmanager.h
     src/statusbar.h
@@ -174,6 +176,7 @@ set(HEADERS
     src/sqlfmtpanel.h
     src/fmtpanel.h
     src/searchresults.h
+    src/fonts.h
     src/ollamastatus.h
     src/themes.h
     src/config.h
@@ -352,6 +355,46 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_fmtpanel_diff.cpp"
     notepatra_add_qt_test(test_fmtpanel_diff)
     set_tests_properties(test_fmtpanel_diff PROPERTIES LABELS "regression;ui")
     message(STATUS "Regression test enabled — target: test_fmtpanel_diff")
+endif()
+
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_compare_widget.cpp")
+    add_executable(test_compare_widget
+        test_compare_widget.cpp
+        src/compare.cpp
+        src/lexerutils.cpp
+        src/npp_palette.cpp
+        src/rustbridge.cpp
+    )
+    add_dependencies(test_compare_widget rust_core)
+    target_include_directories(test_compare_widget PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_compare_widget PRIVATE
+        Qt5::Core
+        Qt5::Gui
+        Qt5::Widgets
+        Qt5::PrintSupport
+        ${QSCINTILLA_LIB}
+        ${RUST_LIB}
+    )
+    if(WIN32)
+        target_compile_definitions(test_compare_widget PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_compare_widget PRIVATE
+            ws2_32 userenv bcrypt ntdll
+            advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32
+        )
+    elseif(APPLE)
+        target_link_libraries(test_compare_widget PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_compare_widget PRIVATE pthread dl m)
+    endif()
+    notepatra_add_qt_test(test_compare_widget)
+    set_tests_properties(test_compare_widget PROPERTIES LABELS "regression;compare;ui")
+    message(STATUS "Regression test enabled — target: test_compare_widget")
 endif()
 
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_palette.cpp")

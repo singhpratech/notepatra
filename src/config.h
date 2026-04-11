@@ -16,7 +16,7 @@ public:
     static Config &instance() { static Config c; return c; }
 
     // Editor
-    QString theme = "Light";
+    QString theme = "Dark";
     int tabWidth = 4;
     bool useTabs = false;
     bool autoIndent = true;
@@ -24,11 +24,13 @@ public:
     bool showLineNumbers = true;
     bool showIndentGuides = true;
     int fontSize = 11;
-    QString fontFamily = "Consolas";
+    QString fontFamily;
     int edgeColumn = 120;
     bool showEdge = true;
     bool highlightCurrentLine = true;
     int caretWidth = 2;
+    bool showDocumentRulers = false;
+    bool showCrosshair = false;
 
     // Auto-complete
     bool autoComplete = true;
@@ -61,6 +63,8 @@ public:
         showEdge = o.value("showEdge").toBool(showEdge);
         highlightCurrentLine = o.value("highlightCurrentLine").toBool(highlightCurrentLine);
         caretWidth = o.value("caretWidth").toInt(caretWidth);
+        showDocumentRulers = o.value("showDocumentRulers").toBool(showDocumentRulers);
+        showCrosshair = o.value("showCrosshair").toBool(showCrosshair);
         autoComplete = o.value("autoComplete").toBool(autoComplete);
         autoCompleteThreshold = o.value("autoCompleteThreshold").toInt(autoCompleteThreshold);
         windowX = o.value("windowX").toInt(windowX);
@@ -90,6 +94,8 @@ public:
         o["showEdge"] = showEdge;
         o["highlightCurrentLine"] = highlightCurrentLine;
         o["caretWidth"] = caretWidth;
+        o["showDocumentRulers"] = showDocumentRulers;
+        o["showCrosshair"] = showCrosshair;
         o["autoComplete"] = autoComplete;
         o["autoCompleteThreshold"] = autoCompleteThreshold;
         o["windowX"] = windowX;

@@ -1,4 +1,5 @@
 #include "hexeditor.h"
+#include "fonts.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPushButton>
@@ -21,8 +22,7 @@ HexEditorDialog::HexEditorDialog(const QString &filePath, QWidget *parent)
     // Hex view
     m_hexView = new QTextEdit;
     m_hexView->setReadOnly(true);
-    QFont mono("Consolas", 10);
-    mono.setStyleHint(QFont::Monospace);
+    QFont mono = notepatraCodeFont();
     m_hexView->setFont(mono);
     m_hexView->setStyleSheet("QTextEdit { background: #1E1E1E; color: #D4D4D4; border: none; }");
     m_hexView->setLineWrapMode(QTextEdit::NoWrap);

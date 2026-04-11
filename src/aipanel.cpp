@@ -1,4 +1,5 @@
 #include "aipanel.h"
+#include "fonts.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -12,11 +13,195 @@
 #include <QFileInfo>
 #include <QFile>
 #include <QDir>
+#include <QDesktopServices>
 #include <QMouseEvent>
 #include <QProcess>
 #include <QImage>
 #include <QBuffer>
 #include <QByteArray>
+#include <QDateTime>
+#include <QPainter>
+#include <QPainterPath>
+#include <QRegularExpression>
+#include <QStandardPaths>
+#include <QTextDocument>
+#include <QUrl>
+
+namespace {
+
+QString aiIconButtonStyle(const QColor &accent, bool active = false) {
+    if (active) {
+        return QString(
+            "QPushButton { background: #8B2C2C; border: 1px solid #A03333; border-radius: 18px; }"
+            "QPushButton:hover:enabled { background: #A03333; border: 1px solid #C54A4A; }"
+            "QPushButton:pressed:enabled { background: #6E1E1E; border: 1px solid #C54A4A; }"
+            "QPushButton:disabled { background: #5A2323; border: 1px solid #7C3232; }");
+    }
+
+    return QString(
+        "QPushButton { background: #2D2D2D; border: 1px solid #444; border-radius: 18px; }"
+        "QPushButton:hover:enabled { background: #3D3D3D; border: 1px solid %1; }"
+        "QPushButton:pressed:enabled { background: #252525; border: 1px solid %1; }"
+        "QPushButton:disabled { background: #252525; border: 1px solid #3A3A3A; }")
+        .arg(accent.name());
+}
+
+QIcon makePaperclipIcon(const QColor &stroke) {
+    QPixmap pixmap(24, 24);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(QPen(stroke, 2.1, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(Qt::NoBrush);
+
+    QPainterPath path;
+    path.moveTo(14.5, 4.5);
+    path.cubicTo(18.7, 4.5, 21.0, 7.2, 21.0, 11.0);
+    path.lineTo(21.0, 15.8);
+    path.cubicTo(21.0, 20.0, 17.8, 23.0, 13.6, 23.0);
+    path.cubicTo(9.5, 23.0, 6.3, 20.0, 6.3, 15.8);
+    path.lineTo(6.3, 8.8);
+    path.cubicTo(6.3, 5.8, 8.7, 3.6, 11.7, 3.6);
+    path.cubicTo(14.7, 3.6, 17.1, 5.9, 17.1, 8.8);
+    path.lineTo(17.1, 15.0);
+    path.cubicTo(17.1, 17.0, 15.5, 18.6, 13.5, 18.6);
+    path.cubicTo(11.5, 18.6, 9.9, 17.0, 9.9, 15.0);
+    path.lineTo(9.9, 9.5);
+    painter.drawPath(path);
+
+    return QIcon(pixmap);
+}
+
+QIcon makeMicrophoneIcon(const QColor &stroke) {
+    QPixmap pixmap(24, 24);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(QPen(stroke, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(Qt::NoBrush);
+
+    painter.drawRoundedRect(QRectF(8.0, 3.5, 8.0, 10.5), 4.0, 4.0);
+
+    QPainterPath arm;
+    arm.moveTo(5.8, 11.0);
+    arm.cubicTo(5.8, 15.7, 8.6, 18.6, 12.0, 18.6);
+    arm.cubicTo(15.4, 18.6, 18.2, 15.7, 18.2, 11.0);
+    painter.drawPath(arm);
+
+    painter.drawLine(QPointF(12.0, 18.6), QPointF(12.0, 21.2));
+    painter.drawLine(QPointF(8.5, 21.2), QPointF(15.5, 21.2));
+
+    return QIcon(pixmap);
+}
+
+QIcon makeStopIcon(const QColor &fill) {
+    QPixmap pixmap(24, 24);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(fill);
+    painter.drawRoundedRect(QRectF(6.0, 6.0, 12.0, 12.0), 3.0, 3.0);
+
+    return QIcon(pixmap);
+}
+
+QString plainTextHtml(const QString &text) {
+    return text.toHtmlEscaped().replace("\n", "<br>");
+}
+
+QString markdownBodyHtml(const QString &text) {
+#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+    QTextDocument doc;
+    doc.setMarkdown(text);
+    QString html = doc.toHtml();
+    QRegularExpression bodyRe(
+        "<body[^>]*>(.*)</body>",
+        QRegularExpression::CaseInsensitiveOption | QRegularExpression::DotMatchesEverythingOption);
+    QRegularExpressionMatch match = bodyRe.match(html);
+    if (match.hasMatch())
+        return match.captured(1);
+#endif
+    return plainTextHtml(text);
+}
+
+QString messageTranscriptHtml(const QVector<AIPanel::ChatMessage> &messages) {
+    QString html = QStringLiteral(R"HTML(
+<html>
+<head>
+<style>
+body { font-family: %1; line-height: 1.5; color: #d4d4d4; background: #1e1e1e; margin: 0; padding: 12px; }
+table { width: 100%%; border-collapse: collapse; margin: 10px 0; }
+.bubble { display: inline-block; max-width: 100%%; text-align: left; border-radius: 16px; padding: 12px 14px; }
+.bubble-user { background: #0E639C; color: #ffffff; border: 1px solid #1177BB; }
+.bubble-assistant { background: #252526; color: #d4d4d4; border-left: 3px solid #4EC9B0; border-top: 1px solid #333; border-right: 1px solid #333; border-bottom: 1px solid #333; min-width: 280px; }
+.bubble-error { background: #3A1F22; color: #FFD7D7; border-left: 3px solid #F48771; border-top: 1px solid #7C3232; border-right: 1px solid #7C3232; border-bottom: 1px solid #7C3232; }
+.user-label { font-size: 9px; color: #B0D8E8; font-weight: bold; letter-spacing: 1px; margin-bottom: 6px; }
+.assistant-head { margin-bottom: 8px; }
+.assistant-model { color: #4EC9B0; font-size: 10px; font-weight: bold; }
+.copy-link { color: #7ec8ff; font-size: 10px; font-weight: bold; text-decoration: none; }
+.copy-link:hover { text-decoration: underline; }
+.message-plain { white-space: pre-wrap; }
+.assistant-content { color: #d4d4d4; font-size: 12px; }
+.assistant-content p { margin: 0 0 10px 0; }
+.assistant-content ul, .assistant-content ol { margin: 6px 0 10px 20px; padding-left: 12px; }
+.assistant-content li { margin: 3px 0; }
+.assistant-content h1, .assistant-content h2, .assistant-content h3, .assistant-content h4 { color: #f3f7fa; margin: 12px 0 8px 0; }
+.assistant-content a { color: #7ec8ff; }
+.assistant-content pre { background: #111315; color: #f3f7fa; border: 1px solid #32363a; border-radius: 10px; padding: 12px; overflow-x: auto; white-space: pre-wrap; }
+.assistant-content code { background: #1a1d20; color: #f7d774; border-radius: 4px; padding: 1px 4px; font-family: %2; }
+.assistant-content pre code { background: transparent; padding: 0; color: inherit; }
+</style>
+</head>
+<body>
+)HTML").arg(notepatraUiCssFamily(), notepatraCodeCssFamily());
+
+    for (int i = 0; i < messages.size(); ++i) {
+        const AIPanel::ChatMessage &message = messages.at(i);
+        if (message.role == AIPanel::ChatMessage::User) {
+            html += QString(
+                "<table cellpadding='0' cellspacing='0'><tr><td width='25%%'></td><td width='75%%' align='right'>"
+                "<div class='bubble bubble-user'>"
+                "<div class='user-label'>YOU</div>"
+                "<div class='message-plain'>%1</div>"
+                "</div></td></tr></table>")
+                .arg(plainTextHtml(message.text));
+            continue;
+        }
+
+        if (message.role == AIPanel::ChatMessage::Error) {
+            html += QString(
+                "<table cellpadding='0' cellspacing='0'><tr><td width='75%%' align='left'>"
+                "<div class='bubble bubble-error'>"
+                "<div class='assistant-model'>ERROR</div>"
+                "<div class='message-plain'>%1</div>"
+                "</div></td><td></td></tr></table>")
+                .arg(plainTextHtml(message.text));
+            continue;
+        }
+
+        html += QString(
+            "<table cellpadding='0' cellspacing='0'><tr><td width='75%%' align='left'>"
+            "<div class='bubble bubble-assistant'>"
+            "<table width='100%%' cellpadding='0' cellspacing='0' class='assistant-head'>"
+            "<tr><td><span class='assistant-model'>%1</span></td>"
+            "<td align='right'><a class='copy-link' href='copy://message/%2'>Copy</a></td></tr>"
+            "</table>"
+            "<div class='assistant-content'>%3</div>"
+            "</div></td><td></td></tr></table>")
+            .arg(message.model.toHtmlEscaped(),
+                 QString::number(i),
+                 markdownBodyHtml(message.text));
+    }
+
+    html += QStringLiteral("</body></html>");
+    return html;
+}
+
+}  // namespace
 
 AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // Make the panel comfortably wide so chat bubbles render properly.
@@ -51,10 +236,11 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     m_thinkingCheck->setToolTip("Show the model's reasoning blocks (Qwen3, DeepSeek-R1). "
                                 "Off = faster, cleaner answers. On = see how the model thinks.");
     modelRow->addWidget(m_thinkingCheck);
-    m_clearBtn = new QPushButton("Clear");
-    m_clearBtn->setFixedWidth(50);
+    m_clearBtn = new QPushButton("Reset");
+    m_clearBtn->setObjectName("aiResetSessionButton");
+    m_clearBtn->setFixedWidth(56);
     m_clearBtn->setStyleSheet("font-size: 11px;");
-    m_clearBtn->setToolTip("Clear chat history");
+    m_clearBtn->setToolTip("Reset the AI Assistant session");
     modelRow->addWidget(m_clearBtn);
     layout->addLayout(modelRow);
 
@@ -66,14 +252,15 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // ─── MIDDLE: chat output (TAKES ALL VERTICAL SPACE) ────────────────
     // This is the conversation area. Bubbles flow from top to bottom.
     // Input is at the bottom of the panel like every real chat app.
-    m_output = new QTextEdit;
+    m_output = new QTextBrowser;
     m_output->setReadOnly(true);
     m_output->setAcceptRichText(true);
-    QFont mono("Consolas", 10);
-    mono.setStyleHint(QFont::Monospace);
+    m_output->setOpenLinks(false);
+    m_output->setOpenExternalLinks(false);
+    QFont mono = notepatraCodeFont();
     m_output->setFont(mono);
     m_output->setStyleSheet(
-        "QTextEdit { background: #1E1E1E; color: #D4D4D4; border: none; padding: 12px; }");
+        "QTextBrowser { background: #1E1E1E; color: #D4D4D4; border: none; padding: 12px; }");
     m_output->setPlaceholderText(
         "💬 Conversation will appear here.\n"
         "\n"
@@ -143,14 +330,21 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     customRow->setSpacing(6);
 
     // Attach button — accepts any file (images, PDF, DOCX, PPTX, text, code…)
-    m_attachBtn = new QPushButton("📎");
+    m_attachBtn = new QPushButton;
     m_attachBtn->setFixedSize(36, 36);
-    m_attachBtn->setStyleSheet(
-        "QPushButton { background: #2D2D2D; color: #888; border: 1px solid #444; "
-        "border-radius: 18px; font-size: 16px; }"
-        "QPushButton:hover { background: #3D3D3D; color: #4EC9B0; border: 1px solid #4EC9B0; }");
+    m_attachBtn->setIcon(makePaperclipIcon(QColor("#D6DDD9")));
+    m_attachBtn->setIconSize(QSize(20, 20));
+    m_attachBtn->setText("");
+    m_attachBtn->setStyleSheet(aiIconButtonStyle(QColor("#4EC9B0")));
     m_attachBtn->setToolTip("Attach image, PDF, DOCX, PPTX, code, or any text file as context");
+    m_attachBtn->setAccessibleName("Attach file");
     customRow->addWidget(m_attachBtn);
+
+    m_voiceBtn = new QPushButton;
+    m_voiceBtn->setFixedSize(36, 36);
+    m_voiceBtn->setAccessibleName("Speech to text");
+    updateVoiceButtonVisual(false);
+    customRow->addWidget(m_voiceBtn);
 
     m_customInput = new QLineEdit;
     m_customInput->setPlaceholderText("Type a message and press Enter to send...");
@@ -180,8 +374,11 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     customRow->addWidget(m_stopBtn);
     layout->addLayout(customRow);
 
+    connect(m_output, &QTextBrowser::anchorClicked, this, &AIPanel::handleChatLink);
+
     // Wire attach button
     connect(m_attachBtn, &QPushButton::clicked, this, &AIPanel::attachFile);
+    connect(m_voiceBtn, &QPushButton::clicked, this, &AIPanel::toggleSpeechToText);
 
     // Ollama client
     m_ollama = new OllamaClient(this);
@@ -196,9 +393,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     });
     connect(m_ollama, &OllamaClient::error, this, [this](const QString &msg) {
         endAssistantBubble();
-        m_output->moveCursor(QTextCursor::End);
-        m_output->insertHtml("<div style='color:#F48771;padding:8px;'>"
-                             "<b>✗ Error:</b> " + msg.toHtmlEscaped() + "</div><br>");
+        appendErrorBubble(msg);
         m_stopBtn->setEnabled(false);
     });
     connect(m_clearBtn, &QPushButton::clicked, this, &AIPanel::clearChat);
@@ -271,6 +466,14 @@ void AIPanel::setStatus(const QString &text, bool isError) {
     m_statusLabel->setStyleSheet(isError
         ? "color: #F48771; padding: 0 6px;"
         : "color: #4EC9B0; padding: 0 6px;");
+}
+
+static QString findFirstExecutable(const QStringList &candidates) {
+    for (const QString &candidate : candidates) {
+        const QString path = QStandardPaths::findExecutable(candidate);
+        if (!path.isEmpty()) return path;
+    }
+    return QString();
 }
 
 // Read a file and return its content suitable for embedding in a chat
@@ -382,18 +585,161 @@ bool AIPanel::eventFilter(QObject *obj, QEvent *evt) {
     return QWidget::eventFilter(obj, evt);
 }
 
+void AIPanel::toggleSpeechToText() {
+    if (m_transcribeProcess) {
+        setStatus("Speech-to-text is still transcribing the last recording", true);
+        return;
+    }
+
+    if (m_recordProcess) {
+        setStatus("Stopping microphone capture…", false);
+        m_recordProcess->terminate();
+        return;
+    }
+
+    const QString recorder = findFirstExecutable({"arecord"});
+    if (recorder.isEmpty()) {
+        setStatus("STT unavailable: arecord not installed on this system", true);
+        return;
+    }
+
+    const QString whisper = findFirstExecutable({"whisper"});
+    if (whisper.isEmpty()) {
+        setStatus("STT unavailable: install local whisper CLI first", true);
+        return;
+    }
+
+    const QString tempDir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+    if (tempDir.isEmpty()) {
+        setStatus("STT unavailable: no writable temp directory", true);
+        return;
+    }
+
+    m_recordedAudioPath = tempDir + "/notepatra-stt-" +
+        QDateTime::currentDateTimeUtc().toString("yyyyMMdd-hhmmsszzz") + ".wav";
+
+    auto *process = new QProcess(this);
+    m_recordProcess = process;
+    connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, [this, process](int exitCode, QProcess::ExitStatus) {
+                handleRecordFinished(exitCode, process);
+            });
+
+    process->start(recorder, {"-q", "-f", "S16_LE", "-r", "16000", "-c", "1", m_recordedAudioPath});
+    if (!process->waitForStarted(1500)) {
+        setStatus("STT unavailable: could not start microphone recorder", true);
+        process->deleteLater();
+        m_recordProcess = nullptr;
+        return;
+    }
+
+    updateVoiceButtonVisual(true);
+    setStatus("Recording… click Stop to transcribe with local whisper", false);
+}
+
+void AIPanel::handleRecordFinished(int exitCode, QProcess *process) {
+    Q_UNUSED(exitCode);
+
+    if (process != m_recordProcess) {
+        if (process) process->deleteLater();
+        return;
+    }
+
+    m_recordProcess = nullptr;
+    process->deleteLater();
+
+    updateVoiceButtonVisual(false);
+
+    QFileInfo info(m_recordedAudioPath);
+    if (!info.exists() || info.size() < 512) {
+        setStatus("STT recording failed or was too short", true);
+        return;
+    }
+
+    startTranscription(m_recordedAudioPath);
+}
+
+void AIPanel::startTranscription(const QString &audioPath) {
+    const QString whisper = findFirstExecutable({"whisper"});
+    if (whisper.isEmpty()) {
+        setStatus("STT unavailable: install local whisper CLI first", true);
+        return;
+    }
+
+    const QFileInfo info(audioPath);
+    const QString outDir = info.absolutePath();
+
+    auto *process = new QProcess(this);
+    m_transcribeProcess = process;
+    m_voiceBtn->setEnabled(false);
+    setStatus("Transcribing speech locally…", false);
+
+    connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, [this, process, audioPath](int exitCode, QProcess::ExitStatus) {
+                handleTranscriptionFinished(exitCode, process, audioPath);
+            });
+
+    process->start(whisper, {
+        audioPath,
+        "--model", "base",
+        "--task", "transcribe",
+        "--fp16", "False",
+        "--output_format", "txt",
+        "--output_dir", outDir
+    });
+
+    if (!process->waitForStarted(1500)) {
+        setStatus("STT unavailable: could not start whisper CLI", true);
+        m_voiceBtn->setEnabled(true);
+        process->deleteLater();
+        m_transcribeProcess = nullptr;
+    }
+}
+
+void AIPanel::handleTranscriptionFinished(int exitCode, QProcess *process, const QString &audioPath) {
+    if (process != m_transcribeProcess) {
+        if (process) process->deleteLater();
+        return;
+    }
+
+    m_transcribeProcess = nullptr;
+    m_voiceBtn->setEnabled(true);
+    process->deleteLater();
+
+    const QFileInfo info(audioPath);
+    const QString transcriptPath = info.absolutePath() + "/" + info.completeBaseName() + ".txt";
+    QFile transcriptFile(transcriptPath);
+    if (exitCode != 0 || !transcriptFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        setStatus("STT transcription failed — whisper CLI did not return a transcript", true);
+        return;
+    }
+
+    QString transcript = QString::fromUtf8(transcriptFile.readAll()).trimmed();
+    if (transcript.isEmpty()) {
+        setStatus("STT transcription returned empty text", true);
+        return;
+    }
+
+    if (!m_customInput->text().trimmed().isEmpty())
+        m_customInput->setText(m_customInput->text().trimmed() + " " + transcript);
+    else
+        m_customInput->setText(transcript);
+
+    m_customInput->setFocus();
+    setStatus("✓ Speech transcribed into the AI prompt box", false);
+}
+
 void AIPanel::sendPrompt(const QString &action) {
     QString model = m_modelCombo->currentText();
     if (model.startsWith("(") || !m_modelCombo->isEnabled()) {
         clearChat();
-        m_output->moveCursor(QTextCursor::End);
-        m_output->insertHtml("<div style='color:#F48771;padding:8px;'>"
-                             "<b>No Ollama model selected.</b><br>"
-                             "1. Install Ollama: <a href='https://ollama.com' style='color:#4EC9B0;'>ollama.com</a><br>"
-                             "2. Start it: <code>ollama serve</code><br>"
-                             "3. Pull a model: <code>ollama pull qwen2.5:7b</code><br>"
-                             "4. Click the ↻ refresh button above"
-                             "</div><br>");
+        setStatus("No Ollama model selected", true);
+        appendErrorBubble(
+            "No Ollama model selected.\n"
+            "1. Install Ollama: https://ollama.com\n"
+            "2. Start it: ollama serve\n"
+            "3. Pull a model: ollama pull qwen2.5:7b\n"
+            "4. Click the refresh button above");
         return;
     }
     m_ollama->setModel(model);
@@ -474,30 +820,107 @@ void AIPanel::sendPrompt(const QString &action) {
 // ───── Chat-bubble rendering ──────────────────────────────────────────
 
 void AIPanel::clearChat() {
+    m_ollama->cancel();
+    m_stopBtn->setEnabled(false);
+
+    if (m_recordProcess) {
+        QProcess *recordProcess = m_recordProcess;
+        m_recordProcess = nullptr;
+        disconnect(recordProcess, nullptr, this, nullptr);
+        recordProcess->terminate();
+        if (!recordProcess->waitForFinished(300))
+            recordProcess->kill();
+        recordProcess->deleteLater();
+    }
+
+    if (m_transcribeProcess) {
+        QProcess *transcribeProcess = m_transcribeProcess;
+        m_transcribeProcess = nullptr;
+        disconnect(transcribeProcess, nullptr, this, nullptr);
+        transcribeProcess->terminate();
+        if (!transcribeProcess->waitForFinished(300))
+            transcribeProcess->kill();
+        transcribeProcess->deleteLater();
+    }
+
+    m_voiceBtn->setEnabled(true);
+    updateVoiceButtonVisual(false);
+
     m_output->clear();
     m_currentAssistantText.clear();
     m_inAssistantBubble = false;
+    m_lastResponse.clear();
+    m_customInput->clear();
+    m_pendingFilePath.clear();
+    m_pendingFileKind.clear();
+    m_attachmentChip->setText("");
+    m_attachmentChip->setVisible(false);
+    m_attachmentChip->setFixedHeight(0);
+
+    if (!m_recordedAudioPath.isEmpty()) {
+        QFileInfo audioInfo(m_recordedAudioPath);
+        QFile::remove(m_recordedAudioPath);
+        QFile::remove(audioInfo.absolutePath() + "/" + audioInfo.completeBaseName() + ".txt");
+        m_recordedAudioPath.clear();
+    }
+
+    m_messages.clear();
+    setStatus("AI Assistant session reset", false);
+}
+
+void AIPanel::updateVoiceButtonVisual(bool recording) {
+    if (!m_voiceBtn) return;
+
+    if (recording) {
+        m_voiceBtn->setIcon(makeStopIcon(Qt::white));
+        m_voiceBtn->setIconSize(QSize(18, 18));
+        m_voiceBtn->setToolTip("Stop recording and transcribe the captured speech locally");
+        m_voiceBtn->setStyleSheet(aiIconButtonStyle(QColor("#C54A4A"), true));
+    } else {
+        m_voiceBtn->setIcon(makeMicrophoneIcon(QColor("#F2C14E")));
+        m_voiceBtn->setIconSize(QSize(18, 18));
+        m_voiceBtn->setToolTip("Record speech and transcribe it locally with whisper CLI");
+        m_voiceBtn->setStyleSheet(aiIconButtonStyle(QColor("#F2C14E")));
+    }
+    m_voiceBtn->setText("");
+}
+
+void AIPanel::renderTranscript() {
+    m_output->setHtml(messageTranscriptHtml(m_messages));
+    m_output->moveCursor(QTextCursor::End);
+    m_output->ensureCursorVisible();
+    m_output->verticalScrollBar()->setValue(m_output->verticalScrollBar()->maximum());
+}
+
+void AIPanel::appendErrorBubble(const QString &text) {
+    ChatMessage message;
+    message.role = ChatMessage::Error;
+    message.text = text;
+    m_messages.push_back(message);
+    renderTranscript();
+}
+
+void AIPanel::handleChatLink(const QUrl &url) {
+    if (url.scheme() == "copy") {
+        const QString path = url.path();
+        bool ok = false;
+        const int index = path.section('/', -1).toInt(&ok);
+        if (ok && index >= 0 && index < m_messages.size()) {
+            QApplication::clipboard()->setText(m_messages.at(index).text);
+            setStatus("Assistant reply copied", false);
+        }
+        return;
+    }
+
+    QDesktopServices::openUrl(url);
 }
 
 void AIPanel::appendUserBubble(const QString &text) {
-    // Right-aligned blue bubble for user prompts — like SMS / iMessage / WhatsApp.
-    // Bright blue, generous padding, rounded corners, soft text color.
-    QString safe = text.toHtmlEscaped().replace("\n", "<br>");
-    QString html = QString(
-        "<table width='100%%' cellpadding='0' cellspacing='0' style='margin:10px 0;'>"
-        "<tr><td width='25%%'></td><td width='75%%' align='right'>"
-        "<div style='background:#0E639C;color:#FFFFFF;padding:12px 16px;"
-        "border-radius:18px;display:inline-block;text-align:left;"
-        "max-width:100%%;font-family:Consolas,Menlo,monospace;font-size:12px;"
-        "border:1px solid #1177BB;'>"
-        "<div style='font-size:9px;color:#B0D8E8;font-weight:bold;letter-spacing:1px;margin-bottom:6px;'>YOU</div>"
-        "%1"
-        "</div></td></tr></table>"
-    ).arg(safe);
-    m_output->moveCursor(QTextCursor::End);
-    m_output->insertHtml(html);
-    m_output->moveCursor(QTextCursor::End);
-    m_output->ensureCursorVisible();
+    ChatMessage message;
+    message.role = ChatMessage::User;
+    message.text = text;
+    m_messages.push_back(message);
+    renderTranscript();
 }
 
 void AIPanel::beginAssistantBubble() {
@@ -512,11 +935,11 @@ void AIPanel::beginAssistantBubble() {
         "<tr><td width='65%%' align='left'>"
         "<div style='background:#2D2D2D;color:#D4D4D4;padding:10px 14px;"
         "border-radius:12px;display:inline-block;text-align:left;"
-        "max-width:100%%;font-family:Consolas,Menlo,monospace;font-size:12px;"
+        "max-width:100%%;font-family:%2;font-size:12px;"
         "border-left:3px solid #4EC9B0;'>"
         "<div style='font-size:10px;color:#4EC9B0;font-weight:bold;margin-bottom:4px;'>%1</div>"
         "<span style='white-space:pre-wrap;'>"
-    ).arg(m_ollama->model().toHtmlEscaped());
+    ).arg(m_ollama->model().toHtmlEscaped(), notepatraCodeCssFamily());
 
     m_output->moveCursor(QTextCursor::End);
     m_output->insertHtml(header);
@@ -537,11 +960,14 @@ void AIPanel::streamIntoAssistantBubble(const QString &token) {
 void AIPanel::endAssistantBubble() {
     if (!m_inAssistantBubble) return;
     m_inAssistantBubble = false;
-    // Close the <span><div></td></tr></table> wrappers
-    m_output->moveCursor(QTextCursor::End);
-    m_output->insertHtml("</span></div></td><td></td></tr></table><br>");
-    m_output->moveCursor(QTextCursor::End);
-    m_output->ensureCursorVisible();
+    if (!m_currentAssistantText.isEmpty()) {
+        ChatMessage message;
+        message.role = ChatMessage::Assistant;
+        message.text = m_currentAssistantText;
+        message.model = m_ollama->model();
+        m_messages.push_back(message);
+    }
+    renderTranscript();
 }
 
 // ─── File attachment ──────────────────────────────────────────────────

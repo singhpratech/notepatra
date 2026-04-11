@@ -3,143 +3,465 @@
 // Original ComparePlus repo: https://github.com/pnedev/comparePlus
 // Pavel's plugin is the gold-standard diff for Notepad++. The visual UX
 // in this file (colored line markers for added/deleted/changed, side-by-
-// side Scintilla editors with synced scrolling, prev/next diff navigation)
-// borrows directly from his design. The implementation here is a fresh
-// Qt + Rust port — Notepatra is a different codebase — but Pavel and the
-// ComparePlus contributors deserve full credit for the UX patterns.
+// side editors, overview bar, and synced scrolling) borrows from that
+// design language. The implementation here is a fresh Qt + Rust port.
 
 #include "compare.h"
-#include "rustbridge.h"
+#include "lexerutils.h"
 #include "npp_palette.h"
+#include "rustbridge.h"
+#include "fonts.h"
 
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QSplitter>
+#include <QEvent>
 #include <QFont>
+#include <QHBoxLayout>
+#include <QMouseEvent>
+#include <QPainter>
 #include <QScrollBar>
-#include <QFileInfo>
+#include <QSplitter>
+#include <QVBoxLayout>
+#include <Qsci/qscilexer.h>
+#include <Qsci/qscistyle.h>
 
-#include <Qsci/qscilexerjson.h>
-#include <Qsci/qscilexerjavascript.h>
-#include <Qsci/qscilexercpp.h>
-#include <Qsci/qscilexerhtml.h>
-#include <Qsci/qscilexersql.h>
-#include <Qsci/qscilexerpython.h>
-#include <Qsci/qscilexercss.h>
-#include <Qsci/qscilexerxml.h>
-#include <Qsci/qscilexeryaml.h>
-#include <Qsci/qscilexermarkdown.h>
-#include <Qsci/qscilexerbash.h>
+namespace {
 
-// Pick a QScintilla lexer based on a filename's extension. Used by the
-// compare view to apply syntax highlighting to both halves so the user
-// sees JSON keys, SQL keywords, etc. — not just plain dark text.
-static QsciLexer *lexerForName(const QString &name, QObject *parent) {
-    QFileInfo fi(name);
-    QString ext = fi.suffix().toLower();
-    if (ext == "json" || ext == "jsonl") return new QsciLexerJSON(parent);
-    if (ext == "js" || ext == "jsx" || ext == "ts" || ext == "tsx" || ext == "mjs")
-        return new QsciLexerJavaScript(parent);
-    if (ext == "cpp" || ext == "cc" || ext == "cxx" || ext == "h" || ext == "hpp" ||
-        ext == "c" || ext == "hxx") return new QsciLexerCPP(parent);
-    if (ext == "py" || ext == "pyw") return new QsciLexerPython(parent);
-    if (ext == "html" || ext == "htm" || ext == "xhtml") return new QsciLexerHTML(parent);
-    if (ext == "css" || ext == "scss" || ext == "less") return new QsciLexerCSS(parent);
-    if (ext == "xml" || ext == "svg" || ext == "xsd") return new QsciLexerXML(parent);
-    if (ext == "yaml" || ext == "yml") return new QsciLexerYAML(parent);
-    if (ext == "md" || ext == "markdown") return new QsciLexerMarkdown(parent);
-    if (ext == "sql") return new QsciLexerSQL(parent);
-    if (ext == "sh" || ext == "bash") return new QsciLexerBash(parent);
-    return nullptr;
+enum CompareRowKind {
+    RowEqual = 0,
+    RowAdded = 1,
+    RowDeleted = 2,
+    RowChanged = 3,
+};
+
+struct ComparableLine {
+    QString originalText;
+    QString compareText;
+    int originalLineNumber = 0;
+};
+
+struct CompareDisplayRow {
+    int kind = RowEqual;
+    QString leftText;
+    QString rightText;
+    int leftLineNumber = 0;
+    int rightLineNumber = 0;
+};
+
+static QColor navAddedColor() { return QColor("#49B95D"); }
+static QColor navDeletedColor() { return QColor("#D84B3E"); }
+static QColor navChangedLeftColor() { return QColor("#E5BA63"); }
+static QColor navChangedRightColor() { return QColor("#E5BA63"); }
+
+static void applyCompareLexer(QsciScintilla *editor, const QString &name, const QString &text) {
+    if (!editor) return;
+
+    const QString lang = detectLanguageFromPath(name, text);
+    QFont font = notepatraCodeFont();
+
+    if (QsciLexer *lexer = createLexerForLanguage(lang, editor)) {
+        lexer->setDefaultFont(font);
+        lexer->setDefaultPaper(QColor("#FFFFFF"));
+        lexer->setDefaultColor(QColor("#000000"));
+        editor->setLexer(lexer);
+        applyNotepadPlusPalette(lexer, font);
+        editor->setPaper(QColor("#FFFFFF"));
+        editor->setColor(QColor("#000000"));
+    } else {
+        editor->setLexer(nullptr);
+        editor->setFont(font);
+        editor->setPaper(QColor("#FFFFFF"));
+        editor->setColor(QColor("#000000"));
+    }
+}
+
+static QString stripWhitespace(const QString &text) {
+    QString stripped;
+    stripped.reserve(text.size());
+    for (QChar ch : text) {
+        if (!ch.isSpace()) stripped.append(ch);
+    }
+    return stripped;
+}
+
+static QStringList splitLinesForCompare(const QString &text) {
+    if (text.isEmpty()) return {};
+
+    QStringList lines = text.split('\n', Qt::KeepEmptyParts);
+    if (text.endsWith('\n') && !lines.isEmpty()) lines.removeLast();
+    return lines;
+}
+
+static QVector<ComparableLine> buildComparableLines(const QString &text,
+                                                    bool ignoreWhitespace,
+                                                    bool ignoreCase,
+                                                    bool ignoreEmptyLines) {
+    QVector<ComparableLine> lines;
+    const QStringList sourceLines = splitLinesForCompare(text);
+    lines.reserve(sourceLines.size());
+
+    for (int i = 0; i < sourceLines.size(); ++i) {
+        QString compareText = sourceLines[i];
+        if (ignoreWhitespace) compareText = stripWhitespace(compareText);
+        if (ignoreCase) compareText = compareText.toLower();
+        if (ignoreEmptyLines && compareText.trimmed().isEmpty()) continue;
+
+        lines.append({sourceLines[i], compareText, i + 1});
+    }
+
+    return lines;
+}
+
+static QString joinedComparableText(const QVector<ComparableLine> &lines) {
+    QStringList parts;
+    parts.reserve(lines.size());
+    for (const ComparableLine &line : lines) parts << line.compareText;
+    return parts.join('\n');
+}
+
+static const ComparableLine *lineAt(const QVector<ComparableLine> &lines, int oneBasedIndex) {
+    if (oneBasedIndex <= 0 || oneBasedIndex > lines.size()) return nullptr;
+    return &lines[oneBasedIndex - 1];
+}
+
+static QVector<CompareDisplayRow> buildDisplayRows(const RustCore::DiffInfo &diff,
+                                                   const QVector<ComparableLine> &leftLines,
+                                                   const QVector<ComparableLine> &rightLines) {
+    QVector<CompareDisplayRow> rows;
+    rows.reserve(diff.entries.size());
+
+    int i = 0;
+    while (i < diff.entries.size()) {
+        const auto &entry = diff.entries[i];
+        if (entry.tag == 0) {
+            const ComparableLine *left = lineAt(leftLines, entry.leftLine);
+            const ComparableLine *right = lineAt(rightLines, entry.rightLine);
+            rows.append({
+                RowEqual,
+                left ? left->originalText : QString(),
+                right ? right->originalText : QString(),
+                left ? left->originalLineNumber : 0,
+                right ? right->originalLineNumber : 0,
+            });
+            ++i;
+            continue;
+        }
+
+        QVector<const ComparableLine *> deletes;
+        while (i < diff.entries.size() && diff.entries[i].tag == 2) {
+            deletes.append(lineAt(leftLines, diff.entries[i].leftLine));
+            ++i;
+        }
+
+        QVector<const ComparableLine *> adds;
+        while (i < diff.entries.size() && diff.entries[i].tag == 1) {
+            adds.append(lineAt(rightLines, diff.entries[i].rightLine));
+            ++i;
+        }
+
+        const int pairedCount = qMin(deletes.size(), adds.size());
+        for (int j = 0; j < pairedCount; ++j) {
+            rows.append({
+                RowChanged,
+                deletes[j] ? deletes[j]->originalText : QString(),
+                adds[j] ? adds[j]->originalText : QString(),
+                deletes[j] ? deletes[j]->originalLineNumber : 0,
+                adds[j] ? adds[j]->originalLineNumber : 0,
+            });
+        }
+
+        for (int j = pairedCount; j < deletes.size(); ++j) {
+            rows.append({
+                RowDeleted,
+                deletes[j] ? deletes[j]->originalText : QString(),
+                QString(),
+                deletes[j] ? deletes[j]->originalLineNumber : 0,
+                0,
+            });
+        }
+
+        for (int j = pairedCount; j < adds.size(); ++j) {
+            rows.append({
+                RowAdded,
+                QString(),
+                adds[j] ? adds[j]->originalText : QString(),
+                0,
+                adds[j] ? adds[j]->originalLineNumber : 0,
+            });
+        }
+    }
+
+    return rows;
+}
+
+} // namespace
+
+CompareNavBar::CompareNavBar(QWidget *parent) : QWidget(parent) {
+    setObjectName("compareNavBar");
+    setMinimumWidth(26);
+    setMaximumWidth(26);
+    setMouseTracking(true);
+    setCursor(Qt::PointingHandCursor);
+}
+
+void CompareNavBar::setRows(const QVector<int> &rowKinds) {
+    m_rowKinds = rowKinds;
+    if (m_rowKinds.isEmpty()) {
+        m_firstVisibleRow = 0;
+        m_visibleRows = 0;
+    } else {
+        m_firstVisibleRow = qBound(0, m_firstVisibleRow, m_rowKinds.size() - 1);
+        m_visibleRows = qMax(0, m_visibleRows);
+    }
+    update();
+}
+
+void CompareNavBar::setViewport(int firstVisibleRow, int visibleRows) {
+    if (m_rowKinds.isEmpty()) {
+        m_firstVisibleRow = 0;
+        m_visibleRows = 0;
+    } else {
+        m_firstVisibleRow = qBound(0, firstVisibleRow, m_rowKinds.size() - 1);
+        m_visibleRows = qBound(1, visibleRows, qMax(1, m_rowKinds.size()));
+    }
+    update();
+}
+
+int CompareNavBar::totalRows() const {
+    return m_rowKinds.size();
+}
+
+int CompareNavBar::diffMarkerCount() const {
+    int count = 0;
+    for (int kind : m_rowKinds) {
+        if (kind != RowEqual) ++count;
+    }
+    return count;
+}
+
+int CompareNavBar::firstVisibleRow() const {
+    return m_firstVisibleRow;
+}
+
+int CompareNavBar::visibleRows() const {
+    return m_visibleRows;
+}
+
+void CompareNavBar::paintEvent(QPaintEvent *event) {
+    Q_UNUSED(event);
+
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.fillRect(rect(), QColor("#FAFBFC"));
+
+    QRectF lane = rect().adjusted(8, 6, -8, -6);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor("#E7ECF2"));
+    painter.drawRoundedRect(lane, 6, 6);
+
+    if (m_rowKinds.isEmpty()) return;
+
+    const qreal rowCount = static_cast<qreal>(m_rowKinds.size());
+    for (int i = 0; i < m_rowKinds.size(); ++i) {
+        if (m_rowKinds[i] == RowEqual) continue;
+
+        qreal top = lane.top() + (static_cast<qreal>(i) / rowCount) * lane.height();
+        qreal bottom = lane.top() + (static_cast<qreal>(i + 1) / rowCount) * lane.height();
+        if (bottom - top < 2.0) bottom = top + 2.0;
+
+        QRectF marker(lane.left() + 3, top, lane.width() - 6, bottom - top);
+        if (m_rowKinds[i] == RowChanged) {
+            QRectF leftHalf = marker;
+            leftHalf.setWidth(marker.width() / 2.0);
+
+            QRectF rightHalf = marker;
+            rightHalf.setLeft(leftHalf.right());
+
+            painter.setBrush(navChangedLeftColor());
+            painter.drawRoundedRect(leftHalf, 2, 2);
+            painter.setBrush(navChangedRightColor());
+            painter.drawRoundedRect(rightHalf, 2, 2);
+        } else {
+            painter.setBrush(m_rowKinds[i] == RowAdded ? navAddedColor() : navDeletedColor());
+            painter.drawRoundedRect(marker, 2, 2);
+        }
+    }
+
+    const int clampedVisibleRows = qBound(1, m_visibleRows, m_rowKinds.size());
+    const qreal viewportTop = lane.top() +
+        (static_cast<qreal>(m_firstVisibleRow) / rowCount) * lane.height();
+    const qreal viewportBottom = lane.top() +
+        (static_cast<qreal>(qMin(m_rowKinds.size(), m_firstVisibleRow + clampedVisibleRows)) / rowCount) *
+        lane.height();
+
+    QRectF viewport(lane.left() + 1.5, viewportTop, lane.width() - 3.0,
+                    qMax<qreal>(12.0, viewportBottom - viewportTop));
+    if (viewport.bottom() > lane.bottom()) viewport.moveBottom(lane.bottom());
+
+    painter.setBrush(QColor(33, 150, 243, 38));
+    painter.setPen(QPen(QColor("#1565C0"), 1.2));
+    painter.drawRoundedRect(viewport, 4, 4);
+}
+
+void CompareNavBar::mousePressEvent(QMouseEvent *event) {
+    if (event->button() == Qt::LeftButton) activateRowAt(event->pos().y());
+}
+
+void CompareNavBar::mouseMoveEvent(QMouseEvent *event) {
+    if (event->buttons() & Qt::LeftButton) activateRowAt(event->pos().y());
+}
+
+void CompareNavBar::activateRowAt(int y) {
+    if (m_rowKinds.isEmpty() || height() <= 0) return;
+
+    const int clampedY = qBound(0, y, height() - 1);
+    const int row = qBound(0,
+                           static_cast<int>((static_cast<double>(clampedY) / height()) * m_rowKinds.size()),
+                           m_rowKinds.size() - 1);
+    emit rowActivated(row);
 }
 
 // Marker numbers for diff highlighting
-#define MARKER_ADDED   4   // green line bg
-#define MARKER_DELETED 5   // red line bg
-#define MARKER_CHANGED 6   // pale yellow line bg
-#define MARKER_BLANK   7   // light blue placeholder line bg
+#define MARKER_ADDED         4
+#define MARKER_DELETED       5
+#define MARKER_CHANGED_LEFT  6
+#define MARKER_CHANGED_RIGHT 7
+#define MARKER_BLANK         8
 
-// Symbol margin markers — small icons in the symbol margin (margin 1)
-// that match the per-row state. Like ComparePlus's "~" and "+" indicators.
-#define SYM_MOD     8     // pink ~ for modified
-#define SYM_ADD     9     // green + for added
-#define SYM_DEL     10    // red − for deleted
+// Symbol margin markers — small icons in the symbol margin
+#define SYM_CHANGE_LEFT  9
+#define SYM_CHANGE_RIGHT 10
+#define SYM_ADD          11
+#define SYM_DEL          12
 
 void CompareWidget::setupEditor(QsciScintilla *ed) {
-    QFont mono("Consolas", 11);
-    mono.setStyleHint(QFont::Monospace);
+    QFont mono = notepatraCodeFont();
     ed->setFont(mono);
     ed->setMarginsFont(mono);
     ed->setReadOnly(true);
     ed->setUtf8(true);
-    // Reset zoom in case a previous session inherited a stale negative zoom
     ed->zoomTo(0);
+    ed->setCaretWidth(0);
 
-    // Line numbers — TEXT margin so we can set custom per-line text via
-    // setMarginText() instead of QScintilla's automatic row index. Lets
-    // us show ORIGINAL source-file line numbers and a `+` placeholder
-    // on the side that doesn't have a line for a given paired row.
     ed->setMarginType(0, QsciScintilla::TextMargin);
     ed->setMarginWidth(0, "00000");
-    ed->setMarginsBackgroundColor(QColor("#F8F8F8"));
-    ed->setMarginsForegroundColor(QColor("#A0A0A0"));
+    ed->setMarginBackgroundColor(0, QColor("#F2F2F2"));
+    ed->setMarginsForegroundColor(QColor("#8390A4"));
 
-    // Diff marker symbol margin (margin 1) — wide enough to show small
-    // icons (~, +, −) per row indicating the change kind.
     ed->setMarginType(1, QsciScintilla::SymbolMargin);
-    ed->setMarginWidth(1, 18);
-    // Bitmask of allowed marker types in margin 1
-    ed->setMarginMarkerMask(1, (1 << SYM_MOD) | (1 << SYM_ADD) | (1 << SYM_DEL));
+    ed->setMarginWidth(1, 14);
+    ed->setMarginBackgroundColor(1, QColor("#F2F2F2"));
+    ed->setMarginMarkerMask(
+        1, (1 << SYM_CHANGE_LEFT) | (1 << SYM_CHANGE_RIGHT) | (1 << SYM_ADD) | (1 << SYM_DEL));
 
-    // No folding
+    ed->setMarginType(2, QsciScintilla::SymbolMarginColor);
+    ed->setMarginWidth(2, 4);
+    ed->setMarginSensitivity(2, false);
+    ed->setMarginBackgroundColor(2, QColor("#FF8A00"));
     ed->setFolding(QsciScintilla::NoFoldStyle);
 
-    // Full-line background markers — colors picked to match ComparePlus.
-    //
-    //   ADDED   → soft mint green   (#D4F4D4) — line missing on left
-    //   DELETED → soft salmon       (#F4D4D4) — line missing on right
-    //   CHANGED → very pale cream   (#FFFBE6) — both sides differ. Subtle
-    //             so the char-level red/green indicators on top stand out.
-    //   BLANK   → very light blue   (#E8F0F8) — placeholder showing "the
-    //             other side has content here"
     ed->markerDefine(QsciScintilla::Background, MARKER_ADDED);
-    ed->setMarkerBackgroundColor(QColor("#D4F4D4"), MARKER_ADDED);
+    ed->setMarkerBackgroundColor(QColor("#CFF5C8"), MARKER_ADDED);
 
     ed->markerDefine(QsciScintilla::Background, MARKER_DELETED);
-    ed->setMarkerBackgroundColor(QColor("#F4D4D4"), MARKER_DELETED);
+    ed->setMarkerBackgroundColor(QColor("#F7DDDD"), MARKER_DELETED);
 
-    ed->markerDefine(QsciScintilla::Background, MARKER_CHANGED);
-    ed->setMarkerBackgroundColor(QColor("#FFFBE6"), MARKER_CHANGED);
+    ed->markerDefine(QsciScintilla::Background, MARKER_CHANGED_LEFT);
+    ed->setMarkerBackgroundColor(QColor("#FBF7DD"), MARKER_CHANGED_LEFT);
+
+    ed->markerDefine(QsciScintilla::Background, MARKER_CHANGED_RIGHT);
+    ed->setMarkerBackgroundColor(QColor("#FBF7DD"), MARKER_CHANGED_RIGHT);
 
     ed->markerDefine(QsciScintilla::Background, MARKER_BLANK);
-    ed->setMarkerBackgroundColor(QColor("#E8F0F8"), MARKER_BLANK);
+    ed->setMarkerBackgroundColor(QColor("#FAFAFA"), MARKER_BLANK);
 
-    // Symbol margin markers (margin 1) — small icons next to the line number
-    // showing the change kind. Pink ~ for modified, green + for added, red −
-    // for deleted. Matches ComparePlus's per-row indicator stripe.
-    ed->markerDefine(QsciScintilla::Circle, SYM_MOD);
-    ed->setMarkerForegroundColor(QColor("#D88888"), SYM_MOD);
-    ed->setMarkerBackgroundColor(QColor("#FFE0E0"), SYM_MOD);
+    ed->markerDefine('#', SYM_CHANGE_LEFT);
+    ed->setMarkerForegroundColor(QColor("#C98724"), SYM_CHANGE_LEFT);
+    ed->setMarkerBackgroundColor(QColor("#FBF7DD"), SYM_CHANGE_LEFT);
+
+    ed->markerDefine('#', SYM_CHANGE_RIGHT);
+    ed->setMarkerForegroundColor(QColor("#C98724"), SYM_CHANGE_RIGHT);
+    ed->setMarkerBackgroundColor(QColor("#FBF7DD"), SYM_CHANGE_RIGHT);
 
     ed->markerDefine(QsciScintilla::Plus, SYM_ADD);
-    ed->setMarkerForegroundColor(QColor("#4CAF50"), SYM_ADD);
-    ed->setMarkerBackgroundColor(QColor("#D4F4D4"), SYM_ADD);
+    ed->setMarkerForegroundColor(QColor("#28A745"), SYM_ADD);
+    ed->setMarkerBackgroundColor(QColor("#CFF5C8"), SYM_ADD);
 
     ed->markerDefine(QsciScintilla::Minus, SYM_DEL);
-    ed->setMarkerForegroundColor(QColor("#E53935"), SYM_DEL);
-    ed->setMarkerBackgroundColor(QColor("#F4D4D4"), SYM_DEL);
+    ed->setMarkerForegroundColor(QColor("#D84B3E"), SYM_DEL);
+    ed->setMarkerBackgroundColor(QColor("#F7DDDD"), SYM_DEL);
 
-    // Margin marker colors (small colored bar on left)
-    ed->setMarkerForegroundColor(QColor("#4CAF50"), MARKER_ADDED);
-    ed->setMarkerForegroundColor(QColor("#F44336"), MARKER_DELETED);
-    ed->setMarkerForegroundColor(QColor("#FFC107"), MARKER_CHANGED);
+    ed->setMarkerForegroundColor(QColor("#28A745"), MARKER_ADDED);
+    ed->setMarkerForegroundColor(QColor("#D84B3E"), MARKER_DELETED);
+    ed->setMarkerForegroundColor(QColor("#C98724"), MARKER_CHANGED_LEFT);
+    ed->setMarkerForegroundColor(QColor("#C98724"), MARKER_CHANGED_RIGHT);
 
-    // Soft default text color — dark gray instead of pure black so the
-    // unchanged context lines feel "soothing" and the colored diff
-    // markers stand out more.
     ed->setPaper(QColor("#FFFFFF"));
-    ed->setColor(QColor("#404040"));
+    ed->setColor(QColor("#000000"));
     ed->setCaretLineVisible(false);
+    ed->setStyleSheet("QsciScintilla { border: none; background: white; }");
+}
+
+void CompareWidget::setEditorsEditable(bool editable) {
+    for (QsciScintilla *editor : {m_leftEditor, m_rightEditor}) {
+        editor->setReadOnly(!editable);
+        editor->setCaretWidth(editable ? 2 : 0);
+        editor->setCaretLineVisible(editable);
+    }
+}
+
+void CompareWidget::syncTextsFromEditors() {
+    const QStringList leftLines = splitLinesForCompare(m_leftEditor->text());
+    const QStringList rightLines = splitLinesForCompare(m_rightEditor->text());
+
+    if (leftLines.size() != m_rowKinds.size() || rightLines.size() != m_rowKinds.size()) {
+        m_leftText = m_leftEditor->text();
+        m_rightText = m_rightEditor->text();
+        return;
+    }
+
+    QStringList leftSource;
+    QStringList rightSource;
+    leftSource.reserve(leftLines.size());
+    rightSource.reserve(rightLines.size());
+
+    for (int i = 0; i < m_rowKinds.size(); ++i) {
+        const QString leftLine = leftLines.value(i);
+        const QString rightLine = rightLines.value(i);
+
+        switch (m_rowKinds[i]) {
+        case RowEqual:
+        case RowChanged:
+            leftSource << leftLine;
+            rightSource << rightLine;
+            break;
+        case RowAdded:
+            if (!leftLine.isEmpty()) leftSource << leftLine;
+            rightSource << rightLine;
+            break;
+        case RowDeleted:
+            leftSource << leftLine;
+            if (!rightLine.isEmpty()) rightSource << rightLine;
+            break;
+        }
+    }
+
+    m_leftText = leftSource.join('\n');
+    m_rightText = rightSource.join('\n');
+    if (!leftSource.isEmpty()) m_leftText += '\n';
+    if (!rightSource.isEmpty()) m_rightText += '\n';
+}
+
+void CompareWidget::updateEditToggle() {
+    if (!m_editToggle) return;
+
+    if (m_editable) {
+        m_editToggle->setText("Lock Editing");
+        m_editToggle->setToolTip("Editing is unlocked. Lock to freeze the panes and recompare.");
+        m_editToggle->setStyleSheet("font-weight: 600; color: #8A5A00;");
+    } else {
+        m_editToggle->setText("Unlock Editing");
+        m_editToggle->setToolTip("Locked by default. Unlock to edit the compare panes directly.");
+        m_editToggle->setStyleSheet("font-weight: 600; color: #555;");
+    }
 }
 
 CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
@@ -147,7 +469,6 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    // Toolbar
     auto *toolbar = new QHBoxLayout;
     toolbar->setContentsMargins(6, 4, 6, 4);
 
@@ -157,6 +478,10 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     nextBtn->setFixedSize(70, 26);
     auto *recompBtn = new QPushButton("Recompare");
     recompBtn->setFixedSize(90, 26);
+    m_editToggle = new QPushButton("Unlock Editing");
+    m_editToggle->setObjectName("compareEditToggle");
+    m_editToggle->setCheckable(true);
+    m_editToggle->setFixedHeight(26);
 
     m_ignoreWhitespace = new QCheckBox("Ignore spaces");
     m_ignoreCase = new QCheckBox("Ignore case");
@@ -168,6 +493,7 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     toolbar->addWidget(prevBtn);
     toolbar->addWidget(nextBtn);
     toolbar->addWidget(recompBtn);
+    toolbar->addWidget(m_editToggle);
     toolbar->addSpacing(16);
     toolbar->addWidget(m_ignoreWhitespace);
     toolbar->addWidget(m_ignoreCase);
@@ -176,46 +502,58 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     toolbar->addWidget(m_statsLabel);
     layout->addLayout(toolbar);
 
-    // File headers
     auto *headerRow = new QHBoxLayout;
     headerRow->setContentsMargins(0, 0, 0, 0);
     headerRow->setSpacing(2);
     m_leftHeader = new QLabel("  Left file");
     m_leftHeader->setFixedHeight(20);
-    m_leftHeader->setStyleSheet("font-weight: bold; background: #FFCCCC; color: #990000; padding: 1px 8px;");
+    m_leftHeader->setStyleSheet(
+        "font-weight: 600; background: #F7F7F7; color: #4B4B4B; "
+        "padding: 1px 8px; border-bottom: 1px solid #D9D9D9;");
     m_rightHeader = new QLabel("  Right file");
     m_rightHeader->setFixedHeight(20);
-    m_rightHeader->setStyleSheet("font-weight: bold; background: #CCFFCC; color: #006600; padding: 1px 8px;");
+    m_rightHeader->setStyleSheet(
+        "font-weight: 600; background: #F7F7F7; color: #4B4B4B; "
+        "padding: 1px 8px; border-bottom: 1px solid #D9D9D9;");
     headerRow->addWidget(m_leftHeader, 1);
     headerRow->addWidget(m_rightHeader, 1);
     layout->addLayout(headerRow);
 
-    // Two real Scintilla editors
     auto *splitter = new QSplitter(Qt::Horizontal);
+    splitter->setHandleWidth(10);
+    splitter->setStyleSheet(
+        "QSplitter::handle { background: #F1F1F1; border-left: 1px solid #D8D8D8; "
+        "border-right: 1px solid #D8D8D8; }");
 
     m_leftEditor = new QsciScintilla;
+    m_leftEditor->setObjectName("compareLeftEditor");
     setupEditor(m_leftEditor);
     splitter->addWidget(m_leftEditor);
 
     m_rightEditor = new QsciScintilla;
+    m_rightEditor->setObjectName("compareRightEditor");
     setupEditor(m_rightEditor);
     splitter->addWidget(m_rightEditor);
 
-    layout->addWidget(splitter, 1);
+    m_navBar = new CompareNavBar;
 
-    // Sync scrolling — vertical AND horizontal. Both scrollbars on one
-    // side mirror to the other so the user always sees the same line +
-    // column on both halves of the compare view (like ComparePlus).
-    //
-    // Guard against feedback loops: setValue(val) re-fires valueChanged,
-    // which would call setValue back on the original — Qt's QScrollBar
-    // detects val == current and skips the signal, so this is naturally
-    // safe without an explicit blocker flag.
+    auto *compareRow = new QHBoxLayout;
+    compareRow->setContentsMargins(0, 0, 0, 0);
+    compareRow->setSpacing(0);
+    compareRow->addWidget(splitter, 1);
+    compareRow->addWidget(m_navBar);
+    layout->addLayout(compareRow, 1);
+
+    m_leftEditor->installEventFilter(this);
+    m_rightEditor->installEventFilter(this);
+
     connect(m_leftEditor->verticalScrollBar(), &QScrollBar::valueChanged, this, [this](int val) {
         m_rightEditor->verticalScrollBar()->setValue(val);
+        updateOverviewViewport();
     });
     connect(m_rightEditor->verticalScrollBar(), &QScrollBar::valueChanged, this, [this](int val) {
         m_leftEditor->verticalScrollBar()->setValue(val);
+        updateOverviewViewport();
     });
     connect(m_leftEditor->horizontalScrollBar(), &QScrollBar::valueChanged, this, [this](int val) {
         m_rightEditor->horizontalScrollBar()->setValue(val);
@@ -227,371 +565,355 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     connect(prevBtn, &QPushButton::clicked, this, &CompareWidget::navigatePrev);
     connect(nextBtn, &QPushButton::clicked, this, &CompareWidget::navigateNext);
     connect(recompBtn, &QPushButton::clicked, this, &CompareWidget::recompare);
+    connect(m_editToggle, &QPushButton::toggled, this, [this](bool checked) {
+        m_editable = checked;
+        updateEditToggle();
+        if (m_editable) {
+            setEditorsEditable(true);
+        } else {
+            syncTextsFromEditors();
+            recompare();
+        }
+    });
     connect(m_ignoreWhitespace, &QCheckBox::toggled, this, [this]() { recompare(); });
     connect(m_ignoreCase, &QCheckBox::toggled, this, [this]() { recompare(); });
     connect(m_ignoreEmptyLines, &QCheckBox::toggled, this, [this]() { recompare(); });
+    connect(m_navBar, &CompareNavBar::rowActivated, this, &CompareWidget::jumpToRow);
+
+    updateEditToggle();
+}
+
+int CompareWidget::diffCount() const {
+    return m_diffLines.size();
+}
+
+int CompareWidget::rowCount() const {
+    return m_rowKinds.size();
+}
+
+bool CompareWidget::eventFilter(QObject *watched, QEvent *event) {
+    if ((watched == m_leftEditor || watched == m_rightEditor) &&
+        (event->type() == QEvent::Resize || event->type() == QEvent::Show)) {
+        updateOverviewViewport();
+    }
+
+    return QWidget::eventFilter(watched, event);
 }
 
 void CompareWidget::compare(const QString &leftText, const QString &leftName,
-                             const QString &rightText, const QString &rightName) {
+                            const QString &rightText, const QString &rightName) {
     m_leftText = leftText;
     m_rightText = rightText;
+    m_editable = false;
+    if (m_editToggle) m_editToggle->setChecked(false);
+    updateEditToggle();
     m_leftHeader->setText("  " + leftName);
     m_rightHeader->setText("  " + rightName);
 
-    // NO SYNTAX HIGHLIGHTING in the compare view. Per the user spec:
-    // "all the lines are grayed out, no highlighting nothing". Equal/
-    // context lines should be plain dim gray text so the diff markers
-    // (yellow modified bg, character-level red/green, full green/red
-    // for adds/deletes) are the ONLY thing that draws the eye.
-    m_leftEditor->setLexer(nullptr);
-    m_rightEditor->setLexer(nullptr);
-
-    QFont mono("Consolas", 11);
-    mono.setStyleHint(QFont::Monospace);
+    QFont mono = notepatraCodeFont();
     m_leftEditor->setFont(mono);
     m_rightEditor->setFont(mono);
 
-    // Soft mid-gray text for everything — dim enough that any colored
-    // diff marker on top stands out, dark enough to still be readable.
-    m_leftEditor->setColor(QColor("#606060"));
-    m_rightEditor->setColor(QColor("#606060"));
+    m_leftEditor->setColor(QColor("#000000"));
+    m_rightEditor->setColor(QColor("#000000"));
     m_leftEditor->setPaper(QColor("#FFFFFF"));
     m_rightEditor->setPaper(QColor("#FFFFFF"));
 
-    // Re-apply soft margin colors (lexer reset above doesn't touch them
-    // but make sure the style is consistent)
-    m_leftEditor->setMarginsBackgroundColor(QColor("#F8F8F8"));
-    m_leftEditor->setMarginsForegroundColor(QColor("#A0A0A0"));
-    m_rightEditor->setMarginsBackgroundColor(QColor("#F8F8F8"));
-    m_rightEditor->setMarginsForegroundColor(QColor("#A0A0A0"));
+    m_leftEditor->setMarginsBackgroundColor(QColor("#F2F2F2"));
+    m_leftEditor->setMarginsForegroundColor(QColor("#8390A4"));
+    m_rightEditor->setMarginsBackgroundColor(QColor("#F2F2F2"));
+    m_rightEditor->setMarginsForegroundColor(QColor("#8390A4"));
+
+    applyCompareLexer(m_leftEditor, leftName, leftText);
+    applyCompareLexer(m_rightEditor, rightName, rightText);
 
     recompare();
 }
 
 void CompareWidget::recompare() {
-    QString left = m_leftText;
-    QString right = m_rightText;
+    if (m_editable) syncTextsFromEditors();
 
-    if (m_ignoreCase->isChecked()) { left = left.toLower(); right = right.toLower(); }
+    const bool ignoreWhitespace = m_ignoreWhitespace->isChecked();
+    const bool ignoreCase = m_ignoreCase->isChecked();
+    const bool ignoreEmptyLines = m_ignoreEmptyLines->isChecked();
 
-    auto diff = RustCore::computeDiff(left, right);
+    const QVector<ComparableLine> leftLines =
+        buildComparableLines(m_leftText, ignoreWhitespace, ignoreCase, ignoreEmptyLines);
+    const QVector<ComparableLine> rightLines =
+        buildComparableLines(m_rightText, ignoreWhitespace, ignoreCase, ignoreEmptyLines);
 
-    // ─── Pair consecutive Delete + Add blocks into "modified" rows ──────
-    // Without pairing: 5 deleted lines + 5 added lines = 10 visual rows
-    // (left lines 1-5 deleted with blank right, right lines 6-10 added
-    // with blank left). With pairing: 5 visual rows where line N has the
-    // deleted text on the LEFT and the added text on the RIGHT side by
-    // side. This is what ComparePlus / Notepad++ Compare does.
-    //
-    // Rebuild the diff entries by walking the original list and merging
-    // consecutive runs of (Delete...Delete Add...Add) into a sequence of
-    // paired "modified" rows + remainder.
-    struct Row {
-        int kind;            // 0=equal, 1=add-only, 2=delete-only, 3=modified
-        QString leftText;    // text shown on the left side
-        QString rightText;   // text shown on the right side
-    };
-    QList<Row> rows;
+    const RustCore::DiffInfo diff =
+        RustCore::computeDiff(joinedComparableText(leftLines), joinedComparableText(rightLines));
+    const QVector<CompareDisplayRow> rows = buildDisplayRows(diff, leftLines, rightLines);
 
-    int i = 0;
-    while (i < diff.entries.size()) {
-        const auto &e = diff.entries[i];
-        if (e.tag == 0) {
-            // Equal: same text both sides
-            rows.append({0, e.text, e.text});
-            i++;
-            continue;
-        }
-        // Collect consecutive deletes
-        QStringList dels;
-        while (i < diff.entries.size() && diff.entries[i].tag == 2) {
-            dels << diff.entries[i].text;
-            i++;
-        }
-        // Collect consecutive adds (immediately following the delete block)
-        QStringList adds;
-        while (i < diff.entries.size() && diff.entries[i].tag == 1) {
-            adds << diff.entries[i].text;
-            i++;
-        }
-        // Pair as many delete↔add rows as possible
-        int n = qMin(dels.size(), adds.size());
-        for (int j = 0; j < n; j++) {
-            rows.append({3, dels[j], adds[j]});
-        }
-        // Remaining deletes (no add to pair with) → delete-only rows
-        for (int j = n; j < dels.size(); j++) {
-            rows.append({2, dels[j], QString()});
-        }
-        // Remaining adds (no delete to pair with) → add-only rows
-        for (int j = n; j < adds.size(); j++) {
-            rows.append({1, QString(), adds[j]});
-        }
-    }
-
-    // ─── Render rows into left/right buffers and collect diff line numbers ─
-    QString leftBuf, rightBuf;
+    QString leftBuf;
+    QString rightBuf;
     m_diffLines.clear();
+    m_rowKinds.clear();
     m_currentDiff = -1;
 
     int line = 0;
-    for (const Row &r : rows) {
-        switch (r.kind) {
-        case 0: // equal — no prefix, no marker
-            leftBuf  += "  " + r.leftText  + "\n";
-            rightBuf += "  " + r.rightText + "\n";
+    for (const CompareDisplayRow &row : rows) {
+        switch (row.kind) {
+        case RowEqual:
+            leftBuf += row.leftText + "\n";
+            rightBuf += row.rightText + "\n";
             break;
-        case 1: // add only — blank left, "+ " right
-            leftBuf  += "\n";
-            rightBuf += "+ " + r.rightText + "\n";
+        case RowAdded:
+            leftBuf += "\n";
+            rightBuf += row.rightText + "\n";
             m_diffLines.append(line);
             break;
-        case 2: // delete only — "- " left, blank right
-            leftBuf  += "- " + r.leftText + "\n";
+        case RowDeleted:
+            leftBuf += row.leftText + "\n";
             rightBuf += "\n";
             m_diffLines.append(line);
             break;
-        case 3: // modified — "- " left + "+ " right on the SAME line
-            leftBuf  += "- " + r.leftText  + "\n";
-            rightBuf += "+ " + r.rightText + "\n";
+        case RowChanged:
+            leftBuf += row.leftText + "\n";
+            rightBuf += row.rightText + "\n";
             m_diffLines.append(line);
             break;
         }
-        line++;
+
+        m_rowKinds.append(row.kind);
+        ++line;
     }
 
-    // Push to editors
     m_leftEditor->setReadOnly(false);
     m_leftEditor->setText(leftBuf);
-    m_leftEditor->setReadOnly(true);
+    m_leftEditor->setReadOnly(!m_editable);
 
     m_rightEditor->setReadOnly(false);
     m_rightEditor->setText(rightBuf);
-    m_rightEditor->setReadOnly(true);
+    m_rightEditor->setReadOnly(!m_editable);
 
-    // Setup indicators for word-level highlighting
-    m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETSTYLE, 10, QsciScintilla::INDIC_FULLBOX);
-    m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETFORE, 10, QColor("#D32F2F").rgb() & 0xFFFFFF);
-    m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETALPHA, 10, 80);
-    m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETOUTLINEALPHA, 10, 200);
+    m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETSTYLE, 10, QsciScintilla::INDIC_ROUNDBOX);
+    m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETFORE, 10, QColor("#FFB347").rgb() & 0xFFFFFF);
+    m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETALPHA, 10, 185);
+    m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETOUTLINEALPHA, 10, 255);
 
-    m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETSTYLE, 11, QsciScintilla::INDIC_FULLBOX);
-    m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETFORE, 11, QColor("#2E7D32").rgb() & 0xFFFFFF);
-    m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETALPHA, 11, 80);
-    m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETOUTLINEALPHA, 11, 200);
+    m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETSTYLE, 11, QsciScintilla::INDIC_ROUNDBOX);
+    m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETFORE, 11, QColor("#FFB347").rgb() & 0xFFFFFF);
+    m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETALPHA, 11, 185);
+    m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETOUTLINEALPHA, 11, 255);
 
     m_leftEditor->markerDeleteAll(MARKER_ADDED);
     m_leftEditor->markerDeleteAll(MARKER_DELETED);
-    m_leftEditor->markerDeleteAll(MARKER_CHANGED);
+    m_leftEditor->markerDeleteAll(MARKER_CHANGED_LEFT);
+    m_leftEditor->markerDeleteAll(MARKER_CHANGED_RIGHT);
     m_leftEditor->markerDeleteAll(MARKER_BLANK);
-    m_leftEditor->markerDeleteAll(SYM_MOD);
+    m_leftEditor->markerDeleteAll(SYM_CHANGE_LEFT);
+    m_leftEditor->markerDeleteAll(SYM_CHANGE_RIGHT);
     m_leftEditor->markerDeleteAll(SYM_ADD);
     m_leftEditor->markerDeleteAll(SYM_DEL);
     m_rightEditor->markerDeleteAll(MARKER_ADDED);
     m_rightEditor->markerDeleteAll(MARKER_DELETED);
-    m_rightEditor->markerDeleteAll(MARKER_CHANGED);
+    m_rightEditor->markerDeleteAll(MARKER_CHANGED_LEFT);
+    m_rightEditor->markerDeleteAll(MARKER_CHANGED_RIGHT);
     m_rightEditor->markerDeleteAll(MARKER_BLANK);
-    m_rightEditor->markerDeleteAll(SYM_MOD);
+    m_rightEditor->markerDeleteAll(SYM_CHANGE_LEFT);
+    m_rightEditor->markerDeleteAll(SYM_CHANGE_RIGHT);
     m_rightEditor->markerDeleteAll(SYM_ADD);
     m_rightEditor->markerDeleteAll(SYM_DEL);
 
     m_leftEditor->SendScintilla(QsciScintilla::SCI_SETINDICATORCURRENT, 10);
     m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICATORCLEARRANGE, 0,
-                                 m_leftEditor->text().toUtf8().size());
+                                m_leftEditor->text().toUtf8().size());
     m_rightEditor->SendScintilla(QsciScintilla::SCI_SETINDICATORCURRENT, 11);
     m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICATORCLEARRANGE, 0,
-                                  m_rightEditor->text().toUtf8().size());
+                                 m_rightEditor->text().toUtf8().size());
 
-    // ─── Apply custom per-row line numbers in the text margin ──────────
-    // Each row gets:
-    //   - LEFT margin: original left-source line number, or "+" if the row
-    //     is a placeholder (line exists on right but not left)
-    //   - RIGHT margin: original right-source line number, or "+" if the
-    //     row is a placeholder (line exists on left but not right)
-    // The "+" placeholder text is shown in green to match ComparePlus.
-    int leftSourceLineNum = 1;   // tracks position in the ORIGINAL left text
-    int rightSourceLineNum = 1;  // tracks position in the ORIGINAL right text
+    const QFont marginFont = m_leftEditor->font();
+    const QsciStyle lineNumberStyle(200, "compareLineNumber",
+                                    QColor("#8390A4"), QColor("#F2F2F2"), marginFont);
+    const QsciStyle blankLineNumberStyle(201, "compareBlankLineNumber",
+                                         QColor("#8390A4"), QColor("#F2F2F2"), marginFont);
 
-    // Margin text styles: style 0 = soft gray (numbers), style 1 = green ("+")
-    for (auto *ed : {m_leftEditor, m_rightEditor}) {
-        ed->SendScintilla(QsciScintilla::SCI_STYLESETFORE, 0,
-                          QColor("#A0A0A0").rgb() & 0xFFFFFF);
-        ed->SendScintilla(QsciScintilla::SCI_STYLESETBACK, 0,
-                          QColor("#F8F8F8").rgb() & 0xFFFFFF);
-        ed->SendScintilla(QsciScintilla::SCI_STYLESETFORE, 1,
-                          QColor("#2E7D32").rgb() & 0xFFFFFF);
-        ed->SendScintilla(QsciScintilla::SCI_STYLESETBACK, 1,
-                          QColor("#E8F5E9").rgb() & 0xFFFFFF);
-        ed->SendScintilla(QsciScintilla::SCI_STYLESETBOLD, 1, 1);
-    }
-
-    for (int rIdx = 0; rIdx < rows.size(); ++rIdx) {
-        const Row &r = rows[rIdx];
-        switch (r.kind) {
-        case 0: // equal — both sides advance, both show their numbers
-            m_leftEditor->setMarginText(rIdx,
-                QString::number(leftSourceLineNum), 0);
-            m_rightEditor->setMarginText(rIdx,
-                QString::number(rightSourceLineNum), 0);
-            leftSourceLineNum++;
-            rightSourceLineNum++;
+    for (int rowIndex = 0; rowIndex < rows.size(); ++rowIndex) {
+        const CompareDisplayRow &row = rows[rowIndex];
+        switch (row.kind) {
+        case RowEqual:
+        case RowChanged:
+            m_leftEditor->setMarginText(rowIndex, QString::number(row.leftLineNumber), lineNumberStyle);
+            m_rightEditor->setMarginText(rowIndex, QString::number(row.rightLineNumber), lineNumberStyle);
             break;
-        case 1: // add-only — left has no source line; right advances
-            m_leftEditor->setMarginText(rIdx, "+", 1);
-            m_rightEditor->setMarginText(rIdx,
-                QString::number(rightSourceLineNum), 0);
-            rightSourceLineNum++;
+        case RowAdded:
+            m_leftEditor->setMarginText(rowIndex, QString(), blankLineNumberStyle);
+            m_rightEditor->setMarginText(rowIndex, QString::number(row.rightLineNumber), lineNumberStyle);
             break;
-        case 2: // delete-only — left advances; right has no source line
-            m_leftEditor->setMarginText(rIdx,
-                QString::number(leftSourceLineNum), 0);
-            m_rightEditor->setMarginText(rIdx, "+", 1);
-            leftSourceLineNum++;
-            break;
-        case 3: // modified — both sides have a source line, both advance
-            m_leftEditor->setMarginText(rIdx,
-                QString::number(leftSourceLineNum), 0);
-            m_rightEditor->setMarginText(rIdx,
-                QString::number(rightSourceLineNum), 0);
-            leftSourceLineNum++;
-            rightSourceLineNum++;
+        case RowDeleted:
+            m_leftEditor->setMarginText(rowIndex, QString::number(row.leftLineNumber), lineNumberStyle);
+            m_rightEditor->setMarginText(rowIndex, QString(), blankLineNumberStyle);
             break;
         }
     }
 
-    // Apply line markers + word-level indicators row by row
-    int leftBytePos = 0, rightBytePos = 0;
-    int rowIdx = 0;
-    for (const Row &r : rows) {
-        QString leftLine, rightLine;
-        switch (r.kind) {
-        case 0:
-            leftLine  = "  " + r.leftText  + "\n";
-            rightLine = "  " + r.rightText + "\n";
+    int leftBytePos = 0;
+    int rightBytePos = 0;
+    int rowIndex = 0;
+    for (const CompareDisplayRow &row : rows) {
+        QString leftLine;
+        QString rightLine;
+
+        switch (row.kind) {
+        case RowEqual:
+            leftLine = row.leftText + "\n";
+            rightLine = row.rightText + "\n";
             break;
-        case 1:
-            leftLine  = "\n";
-            rightLine = "+ " + r.rightText + "\n";
-            m_rightEditor->markerAdd(rowIdx, MARKER_ADDED);
-            m_rightEditor->markerAdd(rowIdx, SYM_ADD);
-            m_leftEditor->markerAdd(rowIdx, MARKER_BLANK);
-            m_leftEditor->markerAdd(rowIdx, SYM_ADD);
-            {
-                QByteArray rb = rightLine.toUtf8();
-                int textStart = rightBytePos + 2;
-                int textLen = rb.size() - 3;
+
+        case RowAdded:
+            leftLine = "\n";
+            rightLine = row.rightText + "\n";
+            m_rightEditor->markerAdd(rowIndex, MARKER_ADDED);
+            m_rightEditor->markerAdd(rowIndex, SYM_ADD);
+            m_leftEditor->markerAdd(rowIndex, MARKER_BLANK);
+            if (!row.rightText.isEmpty()) {
+                const QByteArray bytes = rightLine.toUtf8();
+                const int textStart = rightBytePos;
+                const int textLen = bytes.size() - 1;
                 if (textLen > 0) {
                     m_rightEditor->SendScintilla(QsciScintilla::SCI_SETINDICATORCURRENT, 11);
                     m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICATORFILLRANGE, textStart, textLen);
                 }
             }
             break;
-        case 2:
-            leftLine  = "- " + r.leftText + "\n";
+
+        case RowDeleted:
+            leftLine = row.leftText + "\n";
             rightLine = "\n";
-            m_leftEditor->markerAdd(rowIdx, MARKER_DELETED);
-            m_leftEditor->markerAdd(rowIdx, SYM_DEL);
-            m_rightEditor->markerAdd(rowIdx, MARKER_BLANK);
-            m_rightEditor->markerAdd(rowIdx, SYM_DEL);
-            {
-                QByteArray lb = leftLine.toUtf8();
-                int textStart = leftBytePos + 2;
-                int textLen = lb.size() - 3;
+            m_leftEditor->markerAdd(rowIndex, MARKER_DELETED);
+            m_leftEditor->markerAdd(rowIndex, SYM_DEL);
+            m_rightEditor->markerAdd(rowIndex, MARKER_BLANK);
+            if (!row.leftText.isEmpty()) {
+                const QByteArray bytes = leftLine.toUtf8();
+                const int textStart = leftBytePos;
+                const int textLen = bytes.size() - 1;
                 if (textLen > 0) {
                     m_leftEditor->SendScintilla(QsciScintilla::SCI_SETINDICATORCURRENT, 10);
                     m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICATORFILLRANGE, textStart, textLen);
                 }
             }
             break;
-        case 3: // modified — SUBTLE yellow line bg + character-level indicators
-            leftLine  = "  " + r.leftText  + "\n";
-            rightLine = "  " + r.rightText + "\n";
-            m_leftEditor->markerAdd(rowIdx, MARKER_CHANGED);
-            m_leftEditor->markerAdd(rowIdx, SYM_MOD);
-            m_rightEditor->markerAdd(rowIdx, MARKER_CHANGED);
-            m_rightEditor->markerAdd(rowIdx, SYM_MOD);
-            {
-                // ─── Character-level diff via common-prefix + common-suffix ─
-                // The changed portion is a single contiguous region between
-                // the matching prefix and matching suffix. Highlight ONLY
-                // those bytes — not the whole line.
-                QString L = r.leftText;
-                QString R = r.rightText;
-                int prefixLen = 0;
-                int maxPrefix = qMin(L.length(), R.length());
-                while (prefixLen < maxPrefix && L[prefixLen] == R[prefixLen]) prefixLen++;
 
-                int suffixLen = 0;
-                int maxSuffix = qMin(L.length() - prefixLen, R.length() - prefixLen);
-                while (suffixLen < maxSuffix &&
-                       L[L.length() - 1 - suffixLen] == R[R.length() - 1 - suffixLen]) suffixLen++;
+        case RowChanged: {
+            leftLine = row.leftText + "\n";
+            rightLine = row.rightText + "\n";
+            m_leftEditor->markerAdd(rowIndex, MARKER_CHANGED_LEFT);
+            m_leftEditor->markerAdd(rowIndex, SYM_CHANGE_LEFT);
+            m_rightEditor->markerAdd(rowIndex, MARKER_CHANGED_RIGHT);
+            m_rightEditor->markerAdd(rowIndex, SYM_CHANGE_RIGHT);
 
-                // Buffer line layout: "  " + text + "\n" → text starts at +2.
-                auto utf8Bytes = [](const QString &s, int chars) -> int {
-                    return s.left(chars).toUtf8().size();
-                };
+            const QString &leftText = row.leftText;
+            const QString &rightText = row.rightText;
 
-                // LEFT side highlight (red, indicator 10)
-                int lChangedChars = L.length() - prefixLen - suffixLen;
-                if (lChangedChars > 0) {
-                    int lByteStart = leftBytePos + 2 + utf8Bytes(L, prefixLen);
-                    int lByteLen   = utf8Bytes(L, prefixLen + lChangedChars) -
-                                     utf8Bytes(L, prefixLen);
-                    m_leftEditor->SendScintilla(QsciScintilla::SCI_SETINDICATORCURRENT, 10);
-                    m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICATORFILLRANGE,
-                                                lByteStart, lByteLen);
-                }
+            int prefixLen = 0;
+            const int maxPrefix = qMin(leftText.length(), rightText.length());
+            while (prefixLen < maxPrefix && leftText[prefixLen] == rightText[prefixLen]) ++prefixLen;
 
-                // RIGHT side highlight (green, indicator 11)
-                int rChangedChars = R.length() - prefixLen - suffixLen;
-                if (rChangedChars > 0) {
-                    int rByteStart = rightBytePos + 2 + utf8Bytes(R, prefixLen);
-                    int rByteLen   = utf8Bytes(R, prefixLen + rChangedChars) -
-                                     utf8Bytes(R, prefixLen);
-                    m_rightEditor->SendScintilla(QsciScintilla::SCI_SETINDICATORCURRENT, 11);
-                    m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICATORFILLRANGE,
-                                                 rByteStart, rByteLen);
-                }
+            int suffixLen = 0;
+            const int maxSuffix = qMin(leftText.length() - prefixLen,
+                                       rightText.length() - prefixLen);
+            while (suffixLen < maxSuffix &&
+                   leftText[leftText.length() - 1 - suffixLen] ==
+                       rightText[rightText.length() - 1 - suffixLen]) {
+                ++suffixLen;
+            }
+
+            auto utf8Bytes = [](const QString &text, int chars) -> int {
+                return text.left(chars).toUtf8().size();
+            };
+
+            const int leftChangedChars = leftText.length() - prefixLen - suffixLen;
+            if (leftChangedChars > 0) {
+                const int leftByteStart = leftBytePos + utf8Bytes(leftText, prefixLen);
+                const int leftByteLen = utf8Bytes(leftText, prefixLen + leftChangedChars) -
+                                        utf8Bytes(leftText, prefixLen);
+                m_leftEditor->SendScintilla(QsciScintilla::SCI_SETINDICATORCURRENT, 10);
+                m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICATORFILLRANGE,
+                                            leftByteStart, leftByteLen);
+            }
+
+            const int rightChangedChars = rightText.length() - prefixLen - suffixLen;
+            if (rightChangedChars > 0) {
+                const int rightByteStart = rightBytePos + utf8Bytes(rightText, prefixLen);
+                const int rightByteLen = utf8Bytes(rightText, prefixLen + rightChangedChars) -
+                                         utf8Bytes(rightText, prefixLen);
+                m_rightEditor->SendScintilla(QsciScintilla::SCI_SETINDICATORCURRENT, 11);
+                m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICATORFILLRANGE,
+                                             rightByteStart, rightByteLen);
             }
             break;
         }
+        }
+
         leftBytePos += leftLine.toUtf8().size();
         rightBytePos += rightLine.toUtf8().size();
-        rowIdx++;
+        ++rowIndex;
     }
 
+    m_navBar->setRows(m_rowKinds);
+    updateOverviewViewport();
+
     m_statsLabel->setText(QString("+%1 added   -%2 removed   %3 diffs   %4 lines")
-                          .arg(diff.added).arg(diff.removed)
-                          .arg(m_diffLines.size()).arg(rows.size()));
+                              .arg(diff.added)
+                              .arg(diff.removed)
+                              .arg(m_diffLines.size())
+                              .arg(rows.size()));
+    setEditorsEditable(m_editable);
+}
+
+void CompareWidget::jumpToRow(int row) {
+    if (m_rowKinds.isEmpty()) return;
+
+    row = qBound(0, row, m_rowKinds.size() - 1);
+    m_leftEditor->setFirstVisibleLine(row);
+    m_rightEditor->setFirstVisibleLine(row);
+    m_leftEditor->setCursorPosition(row, 0);
+    m_rightEditor->setCursorPosition(row, 0);
+    updateOverviewViewport();
+}
+
+void CompareWidget::updateOverviewViewport() {
+    if (!m_navBar || m_rowKinds.isEmpty()) {
+        if (m_navBar) m_navBar->setViewport(0, 0);
+        return;
+    }
+
+    const int firstVisible = qBound(0, m_leftEditor->firstVisibleLine(), m_rowKinds.size() - 1);
+    const int visibleRows = qMax(1, static_cast<int>(
+        m_leftEditor->SendScintilla(QsciScintillaBase::SCI_LINESONSCREEN)));
+    m_navBar->setViewport(firstVisible, visibleRows);
 }
 
 void CompareWidget::navigateNext() {
     if (m_diffLines.isEmpty()) return;
+
     m_currentDiff = (m_currentDiff + 1) % m_diffLines.size();
-    int line = m_diffLines[m_currentDiff];
-    m_leftEditor->ensureLineVisible(line);
-    m_leftEditor->setCursorPosition(line, 0);
+    jumpToRow(m_diffLines[m_currentDiff]);
     m_statsLabel->setText(m_statsLabel->text().split("|").first().trimmed() +
-                          QString("   |   Diff %1/%2").arg(m_currentDiff + 1).arg(m_diffLines.size()));
+                          QString("   |   Diff %1/%2")
+                              .arg(m_currentDiff + 1)
+                              .arg(m_diffLines.size()));
 }
 
 void CompareWidget::navigatePrev() {
     if (m_diffLines.isEmpty()) return;
+
     m_currentDiff = (m_currentDiff - 1 + m_diffLines.size()) % m_diffLines.size();
-    int line = m_diffLines[m_currentDiff];
-    m_leftEditor->ensureLineVisible(line);
-    m_leftEditor->setCursorPosition(line, 0);
+    jumpToRow(m_diffLines[m_currentDiff]);
     m_statsLabel->setText(m_statsLabel->text().split("|").first().trimmed() +
-                          QString("   |   Diff %1/%2").arg(m_currentDiff + 1).arg(m_diffLines.size()));
+                          QString("   |   Diff %1/%2")
+                              .arg(m_currentDiff + 1)
+                              .arg(m_diffLines.size()));
 }
 
-CompareDialog::CompareDialog(const QString &l, const QString &ln,
-                             const QString &r, const QString &rn, QWidget *p)
-    : QWidget(p) {
+CompareDialog::CompareDialog(const QString &leftText, const QString &leftName,
+                             const QString &rightText, const QString &rightName, QWidget *parent)
+    : QWidget(parent) {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
-    auto *w = new CompareWidget;
-    layout->addWidget(w);
-    w->compare(l, ln, r, rn);
+    auto *widget = new CompareWidget;
+    layout->addWidget(widget);
+    widget->compare(leftText, leftName, rightText, rightName);
 }

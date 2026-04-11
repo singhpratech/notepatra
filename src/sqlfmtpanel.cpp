@@ -1,6 +1,7 @@
 #include "sqlfmtpanel.h"
 #include "rustbridge.h"
 #include "npp_palette.h"
+#include "fonts.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -57,8 +58,7 @@ SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
     layout->addWidget(m_statusLabel);
 
     // Real Scintilla editor with SQL syntax highlighting
-    QFont mono("Consolas", 10);
-    mono.setStyleHint(QFont::Monospace);
+    QFont mono = notepatraCodeFont();
 
     m_output = new QsciScintilla;
     m_output->setFont(mono);

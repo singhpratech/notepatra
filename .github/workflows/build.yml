@@ -51,7 +51,7 @@ jobs:
           cd build
           cmake .. -DBUILD_TESTING=ON
           cmake --build . --parallel "$(nproc)" \
-            --target test_lexers test_palette test_fmtpanel_diff test_ollama test_aifix
+            --target test_lexers test_palette test_fmtpanel_diff test_compare_widget test_ollama test_aifix
 
       - name: Run regression suite
         run: |
@@ -100,7 +100,7 @@ jobs:
           cd build
           cmake .. -DBUILD_TESTING=ON
           cmake --build . --parallel "$(nproc)" \
-            --target test_lexers test_palette test_fmtpanel_diff test_ollama test_aifix
+            --target test_lexers test_palette test_fmtpanel_diff test_compare_widget test_ollama test_aifix
 
       - name: Run regression suite
         run: |
@@ -190,7 +190,7 @@ jobs:
             -DQSCINTILLA_LIB="$QSC_LIB" \
             -DBUILD_TESTING=ON
           cmake --build . --parallel "$(sysctl -n hw.ncpu)" \
-            --target test_lexers test_palette test_fmtpanel_diff test_ollama test_aifix
+            --target test_lexers test_palette test_fmtpanel_diff test_compare_widget test_ollama test_aifix
           QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 
       - name: Create DMG
@@ -657,7 +657,7 @@ jobs:
             "-DQSCINTILLA_LIB=${{ steps.qscintilla.outputs.QSC_LIB }}" `
             -DBUILD_TESTING=ON
           if ($LASTEXITCODE -ne 0) { Write-Host "::error::cmake reconfigure for test failed"; exit 1 }
-          cmake --build . --config Release --target test_lexers test_palette test_fmtpanel_diff test_ollama test_aifix
+          cmake --build . --config Release --target test_lexers test_palette test_fmtpanel_diff test_compare_widget test_ollama test_aifix
           if ($LASTEXITCODE -ne 0) { Write-Host "::error::regression test build failed"; exit 1 }
 
           # Add Qt + bundled QScintilla DLLs to PATH so CTest can load them.

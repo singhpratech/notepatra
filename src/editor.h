@@ -14,6 +14,10 @@ public:
     bool saveFile(const QString &path = QString());
     void setLanguage(const QString &lang);
     void applyTheme(const QString &themeName);
+    void setDocumentRulersVisible(bool visible);
+    void setCrosshairVisible(bool visible);
+    bool documentRulersVisible() const { return m_showDocumentRulers; }
+    bool crosshairVisible() const { return m_showCrosshair; }
 
     QString filePath() const { return m_filePath; }
     QString language() const { return m_language; }
@@ -42,6 +46,8 @@ signals:
 
 protected:
     void mouseDoubleClickEvent(QMouseEvent *event) override;
+    bool eventFilter(QObject *obj, QEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private slots:
     void onCursorMoved(int line, int col);
@@ -53,12 +59,22 @@ private:
     void highlightAllOccurrences(const QString &word);
     void applyLexer(const QString &lang);
     void applySyntaxColors(QsciLexer *lexer, const QString &themeName);
+    void syncMeasurementUi();
+    void updateMeasurementTheme();
+    int horizontalPixelOffset() const;
+    int verticalPixelOffset() const;
 
     QString m_filePath;
     QString m_language = "Plain Text";
     QString m_encoding = "UTF-8";
     QString m_eolName = "Unix (LF)";
     QString m_themeName;
+    bool m_showDocumentRulers = false;
+    bool m_showCrosshair = false;
+    class EditorRulerBand *m_horizontalRuler = nullptr;
+    class EditorRulerBand *m_verticalRuler = nullptr;
+    class EditorCrosshairOverlay *m_crosshairOverlay = nullptr;
+    QWidget *m_rulerCorner = nullptr;
 };
 
 #endif // EDITOR_H

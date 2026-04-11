@@ -1,6 +1,9 @@
 #include "editor.h"
+#include "lexerutils.h"
 #include "rustbridge.h"
 #include "npp_palette.h"
+#include "fonts.h"
+#include "themes.h"
 
 // ALL 45 QScintilla lexers
 #include <Qsci/qscilexerpython.h>
@@ -111,19 +114,227 @@
 #include <QHash>
 #include <QMessageBox>
 #include <QMouseEvent>
+#include <QPainter>
+#include <QResizeEvent>
+#include <QScrollBar>
+#include <QToolTip>
 #include "gitgutter.h"
+
+namespace {
+
+static bool themeIsDark(const QString &themeName) {
+    return themeName.compare("Dark", Qt::CaseInsensitive) == 0 ||
+           themeName.compare("Monokai", Qt::CaseInsensitive) == 0;
+}
+
+struct MeasurementTheme {
+    QColor bg;
+    QColor border;
+    QColor tick;
+    QColor text;
+    QColor accent;
+    QColor overlay;
+    QColor overlayText;
+};
+
+static MeasurementTheme measurementThemeFor(const QString &themeName) {
+    if (themeIsDark(themeName)) {
+        return {
+            QColor("#252526"),
+            QColor("#3C3C3C"),
+            QColor("#6C737C"),
+            QColor("#C8CDD4"),
+            QColor("#D7BA7D"),
+            QColor(215, 186, 125, 48),
+            QColor("#1E1E1E")
+        };
+    }
+
+    return {
+        QColor("#F4F1EA"),
+        QColor("#D7D0C4"),
+        QColor("#9A9389"),
+        QColor("#4B4A46"),
+        QColor("#B7791F"),
+        QColor(183, 121, 31, 40),
+        QColor("#3A2A14")
+    };
+}
+
+} // namespace
+
+class EditorRulerBand : public QWidget {
+public:
+    enum Axis { Horizontal, Vertical };
+
+    EditorRulerBand(Axis axis, QWidget *parent = nullptr)
+        : QWidget(parent), m_axis(axis) {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+    }
+
+    void setThemeName(const QString &themeName) {
+        m_themeName = themeName;
+        update();
+    }
+
+    void setScrollOffset(int offset) {
+        m_scrollOffset = qMax(0, offset);
+        update();
+    }
+
+    void setCrosshairPixel(int pixel) {
+        m_crosshairPixel = pixel;
+        update();
+    }
+
+    void clearCrosshairPixel() {
+        m_crosshairPixel = -1;
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override {
+        QPainter painter(this);
+        const MeasurementTheme theme = measurementThemeFor(m_themeName);
+
+        painter.fillRect(rect(), theme.bg);
+        painter.setPen(theme.border);
+        painter.drawRect(rect().adjusted(0, 0, -1, -1));
+
+        painter.setPen(theme.tick);
+        painter.setFont(notepatraUiFont(8));
+
+        const int size = (m_axis == Horizontal) ? width() : height();
+        for (int pos = 0; pos <= size; pos += 10) {
+            const int logical = m_scrollOffset + pos;
+            const bool major = (logical % 100) == 0;
+            const bool mid = (logical % 50) == 0;
+            const int tick = major ? 11 : (mid ? 8 : 5);
+
+            if (m_axis == Horizontal) {
+                painter.drawLine(pos, height() - 1, pos, height() - tick);
+                if (major && pos + 24 < width()) {
+                    painter.setPen(theme.text);
+                    painter.drawText(pos + 2, 10, QString::number(logical));
+                    painter.setPen(theme.tick);
+                }
+            } else {
+                painter.drawLine(width() - 1, pos, width() - tick, pos);
+                if (major && pos + 10 < height()) {
+                    painter.save();
+                    painter.translate(2, pos + 24);
+                    painter.rotate(-90);
+                    painter.setPen(theme.text);
+                    painter.drawText(0, 0, QString::number(logical));
+                    painter.restore();
+                    painter.setPen(theme.tick);
+                }
+            }
+        }
+
+        if (m_crosshairPixel >= 0) {
+            const int marker = m_crosshairPixel - m_scrollOffset;
+            painter.setPen(QPen(theme.accent, 1));
+            if (m_axis == Horizontal && marker >= 0 && marker < width()) {
+                painter.drawLine(marker, 0, marker, height());
+            } else if (m_axis == Vertical && marker >= 0 && marker < height()) {
+                painter.drawLine(0, marker, width(), marker);
+            }
+        }
+    }
+
+private:
+    Axis m_axis;
+    QString m_themeName;
+    int m_scrollOffset = 0;
+    int m_crosshairPixel = -1;
+};
+
+class EditorCrosshairOverlay : public QWidget {
+public:
+    explicit EditorCrosshairOverlay(QWidget *parent = nullptr)
+        : QWidget(parent) {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+    }
+
+    void setThemeName(const QString &themeName) {
+        m_themeName = themeName;
+        update();
+    }
+
+    void setCrosshair(const QPoint &viewportPos, const QPoint &documentPx) {
+        m_viewportPos = viewportPos;
+        m_documentPx = documentPx;
+        m_visible = true;
+        update();
+    }
+
+    void clearCrosshair() {
+        m_visible = false;
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override {
+        if (!m_visible) return;
+
+        QPainter painter(this);
+        const MeasurementTheme theme = measurementThemeFor(m_themeName);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(QPen(theme.accent, 1));
+        painter.drawLine(m_viewportPos.x(), 0, m_viewportPos.x(), height());
+        painter.drawLine(0, m_viewportPos.y(), width(), m_viewportPos.y());
+
+        const QString label = QString("%1 px, %2 px").arg(m_documentPx.x()).arg(m_documentPx.y());
+        painter.setFont(notepatraUiFont(9, QFont::DemiBold));
+        QFontMetrics metrics(painter.font());
+        QRect bubble(0, 0, metrics.horizontalAdvance(label) + 14, metrics.height() + 8);
+
+        int bubbleX = m_viewportPos.x() + 10;
+        int bubbleY = m_viewportPos.y() + 10;
+        if (bubbleX + bubble.width() > width()) bubbleX = m_viewportPos.x() - bubble.width() - 10;
+        if (bubbleY + bubble.height() > height()) bubbleY = m_viewportPos.y() - bubble.height() - 10;
+        bubble.moveTopLeft(QPoint(qMax(4, bubbleX), qMax(4, bubbleY)));
+
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(theme.overlay);
+        painter.drawRoundedRect(bubble, 6, 6);
+        painter.setPen(theme.overlayText);
+        painter.drawText(bubble.adjusted(7, 0, -7, 0), Qt::AlignVCenter | Qt::AlignLeft, label);
+    }
+
+private:
+    QString m_themeName;
+    QPoint m_viewportPos;
+    QPoint m_documentPx;
+    bool m_visible = false;
+};
 
 Editor::Editor(QWidget *parent) : QsciScintilla(parent) {
     setupEditor();
     setupMargins();
 
+    viewport()->setMouseTracking(true);
+    setMouseTracking(true);
+    viewport()->installEventFilter(this);
+
+    m_horizontalRuler = new EditorRulerBand(EditorRulerBand::Horizontal, this);
+    m_verticalRuler = new EditorRulerBand(EditorRulerBand::Vertical, this);
+    m_crosshairOverlay = new EditorCrosshairOverlay(viewport());
+    m_rulerCorner = new QWidget(this);
+    m_rulerCorner->setObjectName("editorRulerCorner");
+
     connect(this, &QsciScintilla::cursorPositionChanged, this, &Editor::onCursorMoved);
     connect(this, &QsciScintilla::marginClicked, this, &Editor::onMarginClicked);
+    connect(horizontalScrollBar(), &QScrollBar::valueChanged, this, [this]() { syncMeasurementUi(); });
+    connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this]() { syncMeasurementUi(); });
+
+    setDocumentRulersVisible(Config::instance().showDocumentRulers);
+    setCrosshairVisible(Config::instance().showCrosshair);
 }
 
 void Editor::setupEditor() {
-    QFont font("Consolas", 10);
-    font.setStyleHint(QFont::Monospace);
+    QFont font = notepatraCodeFont();
     setFont(font);
     setMarginsFont(font);
     setUtf8(true);
@@ -136,7 +347,7 @@ void Editor::setupEditor() {
     setColor(QColor("#000000"));
     setMarginsBackgroundColor(QColor("#E4E4E4"));
     setMarginsForegroundColor(QColor("#2B91AF"));
-    setEdgeMode(QsciScintilla::EdgeLine);
+    setEdgeMode(QsciScintilla::EdgeNone);
     setEdgeColumn(120);
     setWrapMode(QsciScintilla::WrapNone);
     setWhitespaceVisibility(QsciScintilla::WsInvisible);
@@ -165,6 +376,16 @@ void Editor::setupEditor() {
     setAutoCompletionCaseSensitivity(false);
     setAutoCompletionReplaceWord(true);
     setFolding(QsciScintilla::BoxedTreeFoldStyle, 2);
+}
+
+int Editor::horizontalPixelOffset() const {
+    return (int)SendScintilla(SCI_GETXOFFSET);
+}
+
+int Editor::verticalPixelOffset() const {
+    const int lineHeight = qMax(1, (int)SendScintilla(SCI_TEXTHEIGHT, 0));
+    const int firstVisibleLine = (int)SendScintilla(SCI_GETFIRSTVISIBLELINE);
+    return qMax(0, firstVisibleLine * lineHeight);
 }
 
 void Editor::setupMargins() {
@@ -273,159 +494,13 @@ bool Editor::loadFile(const QString &path) {
     }
 
     // Detect language from extension
-    QFileInfo fi(path);
-    QString ext = fi.suffix().toLower();
-    QString name = fi.fileName();
-
     // Disable lexer for large files
     if (result.fileSize > 50 * 1024 * 1024) {
         applyLexer("Plain Text");
         setAutoCompletionSource(QsciScintilla::AcsNone);
         setBraceMatching(QsciScintilla::NoBraceMatch);
     } else {
-        // Map extensions to languages — 100+ file types, ALL available lexers
-        static const QHash<QString, QString> extMap = {
-            // Python
-            {"py", "Python"}, {"pyw", "Python"}, {"pyx", "Python"}, {"pyi", "Python"},
-            {"pxd", "Python"}, {"ipynb", "JSON"}, {"sage", "Python"}, {"bzl", "Python"},
-            // JavaScript / TypeScript / CoffeeScript
-            {"js", "JavaScript"}, {"mjs", "JavaScript"}, {"cjs", "JavaScript"},
-            {"jsx", "JavaScript"}, {"ts", "JavaScript"}, {"tsx", "JavaScript"},
-            {"coffee", "CoffeeScript"}, {"litcoffee", "CoffeeScript"},
-            // C / C++ / Objective-C
-            {"c", "C"}, {"h", "C"},
-            {"cpp", "C++"}, {"cxx", "C++"}, {"cc", "C++"}, {"hpp", "C++"},
-            {"hxx", "C++"}, {"hh", "C++"}, {"ino", "C++"},
-            {"m", "C++"}, {"mm", "C++"},
-            // C#
-            {"cs", "C#"},
-            // Java / Kotlin / Scala / Groovy
-            {"java", "Java"}, {"kt", "Java"}, {"kts", "Java"},
-            {"scala", "Java"}, {"groovy", "Java"}, {"gradle", "Java"},
-            // D
-            {"d", "D"}, {"di", "D"},
-            // Rust / Go / Swift (use C++ — closest braces syntax)
-            {"rs", "C++"}, {"go", "C++"}, {"swift", "C++"},
-            // Web
-            {"html", "HTML"}, {"htm", "HTML"}, {"xhtml", "HTML"},
-            {"vue", "HTML"}, {"svelte", "HTML"}, {"jsp", "HTML"},
-            {"erb", "HTML"}, {"ejs", "HTML"}, {"hbs", "HTML"},
-            {"twig", "HTML"}, {"jinja", "HTML"}, {"jinja2", "HTML"},
-            {"php", "HTML"}, {"phtml", "HTML"},
-            // CSS
-            {"css", "CSS"}, {"scss", "CSS"}, {"sass", "CSS"}, {"less", "CSS"},
-            // XML / Config
-            {"xml", "XML"}, {"svg", "XML"}, {"xsl", "XML"}, {"xsd", "XML"},
-            {"plist", "XML"}, {"rss", "XML"}, {"atom", "XML"}, {"wsdl", "XML"},
-            {"xaml", "XML"}, {"csproj", "XML"}, {"vcxproj", "XML"}, {"sln", "XML"},
-            // JSON
-            {"json", "JSON"}, {"jsonc", "JSON"}, {"geojson", "JSON"},
-            {"webmanifest", "JSON"}, {"har", "JSON"},
-            // SQL — all variants use same lexer
-            {"sql", "SQL"}, {"ddl", "SQL"}, {"dml", "SQL"},
-            {"pgsql", "SQL"}, {"plsql", "SQL"}, {"tsql", "SQL"},
-            {"mysql", "SQL"}, {"sqlite", "SQL"}, {"hql", "SQL"},
-            {"cql", "SQL"}, {"psql", "SQL"},
-            // Shell
-            {"sh", "Bash"}, {"bash", "Bash"}, {"zsh", "Bash"}, {"fish", "Bash"},
-            {"ksh", "Bash"}, {"csh", "Bash"}, {"tcsh", "Bash"},
-            // Batch / PowerShell
-            {"bat", "Batch"}, {"cmd", "Batch"}, {"ps1", "Batch"}, {"psm1", "Batch"},
-            // Ruby
-            {"rb", "Ruby"}, {"rake", "Ruby"}, {"gemspec", "Ruby"}, {"rbw", "Ruby"},
-            // Perl
-            {"pl", "Perl"}, {"pm", "Perl"}, {"pod", "Perl"}, {"t", "Perl"},
-            // Lua
-            {"lua", "Lua"}, {"luau", "Lua"}, {"wlua", "Lua"},
-            // TCL
-            {"tcl", "TCL"}, {"tk", "TCL"},
-            // Fortran
-            {"f", "Fortran"}, {"f90", "Fortran"}, {"f95", "Fortran"},
-            {"f03", "Fortran"}, {"for", "Fortran"}, {"fpp", "Fortran"},
-            {"f77", "Fortran77"},
-            // MATLAB / Octave
-            {"m", "Octave"}, {"mat", "Matlab"}, {"oct", "Octave"},
-            // Assembly
-            {"asm", "ASM"}, {"s", "ASM"}, {"S", "ASM"},
-            {"nasm", "NASM"}, {"masm", "MASM"},
-            // Verilog / VHDL
-            {"v", "Verilog"}, {"sv", "Verilog"}, {"svh", "Verilog"},
-            {"vhd", "VHDL"}, {"vhdl", "VHDL"},
-            // LaTeX / PostScript
-            {"tex", "TeX"}, {"latex", "TeX"}, {"bib", "TeX"}, {"cls", "TeX"}, {"sty", "TeX"},
-            {"ps", "PostScript"}, {"eps", "PostScript"},
-            // IDL
-            {"idl", "IDL"}, {"pro", "IDL"},
-            // Properties / INI
-            {"ini", "Properties"}, {"cfg", "Properties"}, {"conf", "Properties"},
-            {"properties", "Properties"}, {"env", "Properties"},
-            {"editorconfig", "Properties"}, {"gitconfig", "Properties"},
-            // POV-Ray
-            {"pov", "POV"}, {"inc", "POV"},
-            // Spice
-            {"spice", "Spice"}, {"cir", "Spice"},
-            // Markdown
-            {"md", "Markdown"}, {"markdown", "Markdown"}, {"mkd", "Markdown"},
-            {"rst", "Markdown"},
-            // YAML
-            {"yml", "YAML"}, {"yaml", "YAML"},
-            // TOML (use Properties)
-            {"toml", "Properties"},
-            // Diff / Patch
-            {"diff", "Diff"}, {"patch", "Diff"},
-            // Pascal / Delphi
-            {"pas", "Pascal"}, {"pp", "Pascal"}, {"dpr", "Pascal"}, {"dpk", "Pascal"},
-            // CMake
-            {"cmake", "CMake"},
-            // AVS
-            {"avs", "AVS"}, {"avsi", "AVS"},
-            // R (use Octave — similar)
-            {"r", "Octave"}, {"rmd", "Markdown"},
-            // Hex formats
-            {"hex", "IntelHex"}, {"ihex", "IntelHex"},
-            {"srec", "SRecord"}, {"s19", "SRecord"}, {"s28", "SRecord"},
-            // Log / Text
-            {"log", "Plain Text"}, {"out", "Plain Text"}, {"txt", "Plain Text"},
-            // Data
-            {"csv", "Plain Text"}, {"tsv", "Plain Text"},
-            // Docker / Git
-            {"dockerignore", "Bash"}, {"gitignore", "Bash"},
-        };
-
-        // Map special filenames
-        static const QHash<QString, QString> nameMap = {
-            {"Makefile", "Makefile"}, {"makefile", "Makefile"}, {"GNUmakefile", "Makefile"},
-            {"Dockerfile", "Bash"}, {"Vagrantfile", "Ruby"}, {"Rakefile", "Ruby"},
-            {"Gemfile", "Ruby"}, {"Podfile", "Ruby"},
-            {"CMakeLists.txt", "CMake"}, {"meson.build", "Python"},
-            {".bashrc", "Bash"}, {".bash_profile", "Bash"}, {".zshrc", "Bash"},
-            {".profile", "Bash"}, {".gitignore", "Bash"}, {".dockerignore", "Bash"},
-            {".editorconfig", "Bash"}, {".env", "Bash"},
-            {"Cargo.toml", "YAML"}, {"Cargo.lock", "YAML"},
-            {"package.json", "JSON"}, {"tsconfig.json", "JSON"},
-            {"composer.json", "JSON"}, {".eslintrc", "JSON"},
-            {"requirements.txt", "Plain Text"}, {"go.mod", "Bash"}, {"go.sum", "Plain Text"},
-        };
-
-        QString lang = nameMap.value(name, extMap.value(ext, "Plain Text"));
-
-        // JSON lexer can't handle broken/invalid JSON — shows white text.
-        // Use JavaScript lexer instead which handles {key: value} syntax fine.
-        // NOTE: trimmed() already strips whitespace including \r and \n, so a
-        // valid JSON file like "{\n  \"key\":...}" becomes "{\"key\":...}" after
-        // trim. Just check whether the FIRST non-whitespace char is { or [ and
-        // whether anything quoted appears in the first 200 chars — covers
-        // CRLF, LF, BOM, and indented files alike on every platform.
-        if (lang == "JSON") {
-            QString trimmed = result.text.trimmed();
-            bool startsBrace = trimmed.startsWith('{') || trimmed.startsWith('[');
-            bool hasQuoted   = trimmed.left(200).contains('"');
-            if (!startsBrace || !hasQuoted) {
-                lang = "JavaScript";  // JS lexer handles unquoted keys, single quotes etc
-            }
-        }
-
-        applyLexer(lang);
+        applyLexer(detectLanguageFromPath(path, result.text));
     }
 
     return true;
@@ -451,94 +526,9 @@ void Editor::applyLexer(const QString &lang) {
     m_language = lang;
     QsciLexer *lexer = nullptr;
 
-    QFont font("Consolas", 10);
-    font.setStyleHint(QFont::Monospace);
+    QFont font = notepatraCodeFont();
 
-    // 45 languages — ALL available QScintilla lexers
-    if (lang == "Python") lexer = new QsciLexerPython(this);
-    else if (lang == "JavaScript") lexer = new QsciLexerJavaScript(this);
-#ifdef HAS_LEXER_COFFEESCRIPT
-    else if (lang == "CoffeeScript") lexer = new QsciLexerCoffeeScript(this);
-#endif
-    else if (lang == "C" || lang == "C++") lexer = new QsciLexerCPP(this);
-    else if (lang == "C#") lexer = new QsciLexerCSharp(this);
-#ifdef HAS_LEXER_D
-    else if (lang == "D") lexer = new QsciLexerD(this);
-#endif
-    else if (lang == "Java") lexer = new QsciLexerJava(this);
-    else if (lang == "HTML" || lang == "PHP") lexer = new QsciLexerHTML(this);
-    else if (lang == "CSS") lexer = new QsciLexerCSS(this);
-    else if (lang == "XML") lexer = new QsciLexerXML(this);
-    else if (lang == "JSON") lexer = new QsciLexerJSON(this);
-    else if (lang == "SQL") lexer = new QsciLexerSQL(this);
-    else if (lang == "Bash") lexer = new QsciLexerBash(this);
-    else if (lang == "Batch") lexer = new QsciLexerBatch(this);
-    else if (lang == "Ruby") lexer = new QsciLexerRuby(this);
-    else if (lang == "Perl") lexer = new QsciLexerPerl(this);
-    else if (lang == "Lua") lexer = new QsciLexerLua(this);
-#ifdef HAS_LEXER_TCL
-    else if (lang == "TCL") lexer = new QsciLexerTCL(this);
-#endif
-#ifdef HAS_LEXER_FORTRAN
-    else if (lang == "Fortran") lexer = new QsciLexerFortran(this);
-#endif
-#ifdef HAS_LEXER_FORTRAN
-    else if (lang == "Fortran77") lexer = new QsciLexerFortran77(this);
-#endif
-#ifdef HAS_LEXER_MATLAB
-    else if (lang == "Matlab") lexer = new QsciLexerMatlab(this);
-#endif
-#ifdef HAS_LEXER_MATLAB
-    else if (lang == "Octave") lexer = new QsciLexerOctave(this);
-#endif
-#ifdef HAS_LEXER_IDL
-    else if (lang == "IDL") lexer = new QsciLexerIDL(this);
-#endif
-#ifdef HAS_LEXER_NASM
-    else if (lang == "ASM" || lang == "NASM") lexer = new QsciLexerNASM(this);
-#endif
-#ifdef HAS_LEXER_MASM
-    else if (lang == "MASM") lexer = new QsciLexerMASM(this);
-#endif
-#ifdef HAS_LEXER_VERILOG
-    else if (lang == "Verilog") lexer = new QsciLexerVerilog(this);
-#endif
-#ifdef HAS_LEXER_VHDL
-    else if (lang == "VHDL") lexer = new QsciLexerVHDL(this);
-#endif
-#ifdef HAS_LEXER_TEX
-    else if (lang == "TeX") lexer = new QsciLexerTeX(this);
-#endif
-#ifdef HAS_LEXER_POSTSCRIPT
-    else if (lang == "PostScript") lexer = new QsciLexerPostScript(this);
-#endif
-#ifdef HAS_LEXER_POV
-    else if (lang == "POV") lexer = new QsciLexerPOV(this);
-#endif
-#ifdef HAS_LEXER_SPICE
-    else if (lang == "Spice") lexer = new QsciLexerSpice(this);
-#endif
-#ifdef HAS_LEXER_AVS
-    else if (lang == "AVS") lexer = new QsciLexerAVS(this);
-#endif
-#ifdef HAS_LEXER_PROPERTIES
-    else if (lang == "Properties") lexer = new QsciLexerProperties(this);
-#endif
-#ifdef HAS_LEXER_PO
-    else if (lang == "PO") lexer = new QsciLexerPO(this);
-#endif
-#ifdef HAS_LEXER_INTELHEX
-    else if (lang == "IntelHex") lexer = new QsciLexerIntelHex(this);
-#endif
-#ifdef HAS_LEXER_SREC
-    else if (lang == "SRecord") lexer = new QsciLexerSRec(this);
-#endif
-    else if (lang == "Markdown") lexer = new QsciLexerMarkdown(this);
-    else if (lang == "YAML") lexer = new QsciLexerYAML(this);
-    else if (lang == "Diff") lexer = new QsciLexerDiff(this);
-    else if (lang == "Pascal") lexer = new QsciLexerPascal(this);
-    else if (lang == "CMake") lexer = new QsciLexerCMake(this);
-    else if (lang == "Makefile") lexer = new QsciLexerMakefile(this);
+    lexer = createLexerForLanguage(lang, this);
 
     if (lexer) {
         // Set lexer first so its default styles are initialised
@@ -548,7 +538,8 @@ void Editor::applyLexer(const QString &lang) {
         setLexer(lexer);
         // Apply Notepad++ default palette — Windows default QScintilla styles
         // sometimes render with no visible keyword color, so paint them ourselves.
-        applyNotepadPlusPalette(lexer, font);
+        const QString themeName = m_themeName.isEmpty() ? Config::instance().theme : m_themeName;
+        ::applyNotepadPlusPalette(lexer, font, themeName);
         setPaper(QColor("#FFFFFF"));
     } else {
         setLexer(nullptr);
@@ -575,12 +566,124 @@ void Editor::applyLexer(const QString &lang) {
 // test_palette.cpp can link it directly without pulling in Editor.cpp's
 // rustbridge dependencies.
 void Editor::applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont) {
-    ::applyNotepadPlusPalette(lexer, baseFont);
+    ::applyNotepadPlusPalette(lexer, baseFont, Config::instance().theme);
 }
 
 void Editor::applyTheme(const QString &themeName) {
     m_themeName = themeName;
-    // Theme colors applied from mainwindow
+    const QMap<QString, Theme> themes = allThemes();
+    const Theme theme = themes.contains(themeName) ? themes[themeName] : darkTheme();
+
+    setPaper(theme.editorBg);
+    setColor(theme.editorFg);
+    setCaretLineBackgroundColor(theme.caretLine);
+    setCaretForegroundColor(theme.caret);
+    setSelectionBackgroundColor(theme.selection);
+    setMarginsBackgroundColor(theme.marginBg);
+    setMarginsForegroundColor(theme.marginFg);
+    setFoldMarginColors(theme.foldBg, theme.foldBg);
+    setMatchedBraceBackgroundColor(theme.matchedBraceBg);
+    setMatchedBraceForegroundColor(theme.matchedBraceFg);
+
+    if (auto *lex = lexer()) {
+        lex->setDefaultPaper(theme.editorBg);
+        lex->setDefaultColor(theme.editorFg);
+        ::applyNotepadPlusPalette(lex, font(), themeName);
+    }
+
+    updateMeasurementTheme();
+    syncMeasurementUi();
+}
+
+void Editor::setDocumentRulersVisible(bool visible) {
+    m_showDocumentRulers = visible;
+    syncMeasurementUi();
+}
+
+void Editor::setCrosshairVisible(bool visible) {
+    m_showCrosshair = visible;
+    if (!visible && m_crosshairOverlay) m_crosshairOverlay->clearCrosshair();
+    syncMeasurementUi();
+}
+
+void Editor::updateMeasurementTheme() {
+    const QString themeName = m_themeName.isEmpty() ? Config::instance().theme : m_themeName;
+    const MeasurementTheme theme = measurementThemeFor(themeName);
+
+    if (m_horizontalRuler) m_horizontalRuler->setThemeName(themeName);
+    if (m_verticalRuler) m_verticalRuler->setThemeName(themeName);
+    if (m_crosshairOverlay) m_crosshairOverlay->setThemeName(themeName);
+    if (m_rulerCorner) {
+        m_rulerCorner->setStyleSheet(QString(
+            "background: %1; border-right: 1px solid %2; border-bottom: 1px solid %2;")
+            .arg(theme.bg.name(), theme.border.name()));
+        m_rulerCorner->setToolTip("Pixel rulers");
+    }
+}
+
+void Editor::syncMeasurementUi() {
+    const int rulerTop = m_showDocumentRulers ? 22 : 0;
+    const int rulerLeft = m_showDocumentRulers ? 30 : 0;
+    setViewportMargins(rulerLeft, rulerTop, 0, 0);
+
+    const int vScrollbarWidth = verticalScrollBar()->isVisible() ? verticalScrollBar()->width() : 0;
+    const int hScrollbarHeight = horizontalScrollBar()->isVisible() ? horizontalScrollBar()->height() : 0;
+
+    if (m_horizontalRuler) {
+        m_horizontalRuler->setVisible(m_showDocumentRulers);
+        m_horizontalRuler->setGeometry(rulerLeft, 0,
+                                       qMax(0, width() - rulerLeft - vScrollbarWidth),
+                                       rulerTop);
+        m_horizontalRuler->setScrollOffset(horizontalPixelOffset());
+    }
+
+    if (m_verticalRuler) {
+        m_verticalRuler->setVisible(m_showDocumentRulers);
+        m_verticalRuler->setGeometry(0, rulerTop,
+                                     rulerLeft,
+                                     qMax(0, height() - rulerTop - hScrollbarHeight));
+        m_verticalRuler->setScrollOffset(verticalPixelOffset());
+    }
+
+    if (m_rulerCorner) {
+        m_rulerCorner->setVisible(m_showDocumentRulers);
+        m_rulerCorner->setGeometry(0, 0, rulerLeft, rulerTop);
+    }
+
+    if (m_crosshairOverlay) {
+        m_crosshairOverlay->setVisible(m_showCrosshair);
+        m_crosshairOverlay->setGeometry(QRect(QPoint(0, 0), viewport()->size()));
+    }
+
+    updateMeasurementTheme();
+}
+
+bool Editor::eventFilter(QObject *obj, QEvent *event) {
+    if (obj == viewport()) {
+        if (event->type() == QEvent::MouseMove) {
+            auto *mouseEvent = static_cast<QMouseEvent *>(event);
+            const QPoint viewportPos = mouseEvent->pos();
+            const QPoint documentPx(horizontalPixelOffset() + viewportPos.x(),
+                                    verticalPixelOffset() + viewportPos.y());
+
+            if (m_showDocumentRulers) {
+                if (m_horizontalRuler) m_horizontalRuler->setCrosshairPixel(documentPx.x());
+                if (m_verticalRuler) m_verticalRuler->setCrosshairPixel(documentPx.y());
+            }
+            if (m_showCrosshair && m_crosshairOverlay)
+                m_crosshairOverlay->setCrosshair(viewportPos, documentPx);
+        } else if (event->type() == QEvent::Leave) {
+            if (m_horizontalRuler) m_horizontalRuler->clearCrosshairPixel();
+            if (m_verticalRuler) m_verticalRuler->clearCrosshairPixel();
+            if (m_crosshairOverlay) m_crosshairOverlay->clearCrosshair();
+        }
+    }
+    return QsciScintilla::eventFilter(obj, event);
+}
+
+void Editor::resizeEvent(QResizeEvent *event) {
+    QsciScintilla::resizeEvent(event);
+    syncMeasurementUi();
 }
 
 void Editor::onCursorMoved(int line, int col) {

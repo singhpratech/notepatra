@@ -9,24 +9,26 @@
 // Applied per-style using the lexer's own description() to identify styles,
 // so this works across ALL 40+ QScintilla lexers without hard-coding constants.
 // ═══════════════════════════════════════════════════════════════════════
-void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont) {
+void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QString &themeName) {
     if (!lexer) return;
 
-    // Notepad++ "Default" theme colors
-    const QColor npPaper     (0xFF, 0xFF, 0xFF);  // White background
-    const QColor npText      (0x00, 0x00, 0x00);  // Black text
-    const QColor npKeyword   (0x00, 0x00, 0xFF);  // Blue bold
-    const QColor npKeyword2  (0x80, 0x00, 0x80);  // Purple (KEYWORD2 / type)
-    const QColor npComment   (0x00, 0x80, 0x00);  // Green italic
-    const QColor npNumber    (0xFF, 0x80, 0x00);  // Orange
-    const QColor npString    (0x80, 0x80, 0x80);  // Gray
-    const QColor npChar      (0x80, 0x80, 0x80);  // Gray
-    const QColor npOperator  (0x00, 0x00, 0x00);  // Black bold
-    const QColor npPreproc   (0x80, 0x40, 0x00);  // Brown bold
-    const QColor npRegex     (0x80, 0x00, 0x80);  // Purple
-    const QColor npClassName (0x00, 0x64, 0x80);  // Dark cyan (class/function)
-    const QColor npDecorator (0xFF, 0x80, 0x00);  // Orange (decorators/attrs)
-    const QColor npError     (0xFF, 0x00, 0x00);  // Red
+    const bool dark = themeName.compare("Dark", Qt::CaseInsensitive) == 0;
+    const bool monokai = themeName.compare("Monokai", Qt::CaseInsensitive) == 0;
+
+    const QColor npPaper      = monokai ? QColor("#272822") : (dark ? QColor("#1E1E1E") : QColor("#FFFFFF"));
+    const QColor npText       = monokai ? QColor("#F8F8F2") : (dark ? QColor("#D4D4D4") : QColor("#000000"));
+    const QColor npKeyword    = monokai ? QColor("#F92672") : (dark ? QColor("#569CD6") : QColor("#0000FF"));
+    const QColor npKeyword2   = monokai ? QColor("#AE81FF") : (dark ? QColor("#C586C0") : QColor("#800080"));
+    const QColor npComment    = monokai ? QColor("#75715E") : (dark ? QColor("#6A9955") : QColor("#008000"));
+    const QColor npNumber     = monokai ? QColor("#AE81FF") : (dark ? QColor("#B5CEA8") : QColor("#FF8000"));
+    const QColor npString     = monokai ? QColor("#E6DB74") : (dark ? QColor("#CE9178") : QColor("#808080"));
+    const QColor npChar       = npString;
+    const QColor npOperator   = npText;
+    const QColor npPreproc    = monokai ? QColor("#66D9EF") : (dark ? QColor("#C586C0") : QColor("#804000"));
+    const QColor npRegex      = monokai ? QColor("#FD971F") : (dark ? QColor("#D16969") : QColor("#800080"));
+    const QColor npClassName  = monokai ? QColor("#A6E22E") : (dark ? QColor("#DCDCAA") : QColor("#006480"));
+    const QColor npDecorator  = monokai ? QColor("#FD971F") : (dark ? QColor("#4EC9B0") : QColor("#FF8000"));
+    const QColor npError      = monokai ? QColor("#F44747") : (dark ? QColor("#F44747") : QColor("#FF0000"));
 
     QFont regular = baseFont; regular.setBold(false); regular.setItalic(false);
     QFont bold    = baseFont; bold.setBold(true);    bold.setItalic(false);

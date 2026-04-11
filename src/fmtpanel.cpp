@@ -1,5 +1,6 @@
 #include "fmtpanel.h"
 #include "npp_palette.h"
+#include "fonts.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFont>
@@ -79,8 +80,7 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
     layout->addWidget(m_statusLabel);
 
     // Real Scintilla editor with syntax highlighting
-    QFont mono("Consolas", 10);
-    mono.setStyleHint(QFont::Monospace);
+    QFont mono = notepatraCodeFont();
 
     m_output = new QsciScintilla;
     m_output->setFont(mono);
@@ -110,10 +110,11 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
 
     m_sessionLog = new QListWidget;
     m_sessionLog->setStyleSheet(
-        "QListWidget { background: #1E1E1E; color: #D4D4D4; border: none; "
-        "font-family: Consolas, Menlo, monospace; font-size: 11px; padding: 2px; }"
+        QString("QListWidget { background: #1E1E1E; color: #D4D4D4; border: none; "
+                "font-family: %1; font-size: 11px; padding: 2px; }"
         "QListWidget::item { padding: 2px 8px; border-bottom: 1px solid #2D2D2D; }"
-        "QListWidget::item:hover { background: #2D3D3D; }");
+        "QListWidget::item:hover { background: #2D3D3D; }")
+        .arg(notepatraCodeCssFamily()));
     m_sessionLog->setFixedHeight(80);  // ~4 visible rows, scrollable
     layout->addWidget(m_sessionLog);
 
@@ -122,8 +123,7 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
 
 void FormatterPanel::applyLexer() {
     QsciLexer *lexer = nullptr;
-    QFont mono("Consolas", 10);
-    mono.setStyleHint(QFont::Monospace);
+    QFont mono = notepatraCodeFont();
 
     if (m_language == "JSON") lexer = new QsciLexerJSON(m_output);
     else if (m_language == "JavaScript") lexer = new QsciLexerJavaScript(m_output);

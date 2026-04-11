@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notepatra Documentation — The Code Editor for the AI Era</title>
+<meta name="description" content="Complete Notepatra documentation: installation, features, plugins, AI integration, keyboard shortcuts, compare/diff, configuration, building from source, verifying releases, troubleshooting.">
+<link rel="canonical" href="https://notepatra.org/docs.html">
+<link rel="icon" type="image/png" href="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png">
+
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://api.github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
+
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-alt: #f7f7f5;
+    --bg-code: #f4f4f2;
+    --border: #e5e5e3;
+    --text: #1a1a1a;
+    --text-mute: #5f5f5f;
+    --text-dim: #8a8a88;
+    --link: #cc785c;
+    --link-hover: #a8543a;
+    --accent: #39FF14;
+    --sidebar-w: 280px;
+    --content-max: 820px;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a1a;
+      --bg-alt: #242424;
+      --bg-code: #2a2a2a;
+      --border: #3a3a3a;
+      --text: #f0f0f0;
+      --text-mute: #b5b5b5;
+      --text-dim: #888;
+      --link: #ff9973;
+      --link-hover: #ffb396;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Top bar */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 12px; }
+  .topbar-left img { width: 28px; height: 28px; }
+  .topbar-left a.brand {
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 16px;
+  }
+  .topbar-left .tag {
+    background: var(--bg-alt);
+    color: var(--text-mute);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    border: 1px solid var(--border);
+  }
+  .topbar-right { display: flex; gap: 20px; align-items: center; }
+  .topbar-right a {
+    color: var(--text-mute);
+    text-decoration: none;
+    font-size: 14px;
+  }
+  .topbar-right a:hover { color: var(--text); }
+
+  /* Layout */
+  .layout {
+    display: flex;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* Sidebar */
+  aside.sidebar {
+    width: var(--sidebar-w);
+    flex-shrink: 0;
+    padding: 32px 24px 60px 24px;
+    border-right: 1px solid var(--border);
+    height: calc(100vh - 57px);
+    position: sticky;
+    top: 57px;
+    overflow-y: auto;
+  }
+  aside.sidebar .section-label {
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.8px;
+    color: var(--text-dim);
+    font-weight: 600;
+    margin: 24px 0 8px 0;
+  }
+  aside.sidebar .section-label:first-child { margin-top: 0; }
+  aside.sidebar ul { list-style: none; margin: 0; padding: 0; }
+  aside.sidebar li { margin: 2px 0; }
+  aside.sidebar a {
+    display: block;
+    color: var(--text-mute);
+    text-decoration: none;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 14px;
+    border-left: 2px solid transparent;
+  }
+  aside.sidebar a:hover {
+    color: var(--text);
+    background: var(--bg-alt);
+  }
+  aside.sidebar a.active {
+    color: var(--link);
+    border-left-color: var(--link);
+    background: var(--bg-alt);
+  }
+
+  /* Main content */
+  main.content {
+    flex: 1;
+    padding: 48px 48px 96px 48px;
+    max-width: var(--content-max);
+    margin: 0 auto;
+  }
+  main.content h1 {
+    font-size: 36px;
+    margin: 0 0 8px 0;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  main.content .lead {
+    color: var(--text-mute);
+    font-size: 18px;
+    margin-bottom: 40px;
+    line-height: 1.55;
+  }
+  main.content h2 {
+    font-size: 26px;
+    margin: 56px 0 16px 0;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  main.content h2:first-child { margin-top: 0; }
+  main.content h3 {
+    font-size: 20px;
+    margin: 32px 0 12px 0;
+    font-weight: 600;
+  }
+  main.content h4 {
+    font-size: 16px;
+    margin: 24px 0 8px 0;
+    font-weight: 600;
+  }
+  main.content p { margin: 12px 0; color: var(--text); }
+  main.content a { color: var(--link); text-decoration: none; }
+  main.content a:hover { text-decoration: underline; }
+
+  main.content ul, main.content ol { padding-left: 24px; }
+  main.content li { margin: 6px 0; }
+
+  main.content code {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: var(--bg-code);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  main.content pre {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    overflow-x: auto;
+    line-height: 1.5;
+    font-size: 13px;
+  }
+  main.content pre code {
+    background: transparent;
+    padding: 0;
+    border: 0;
+    font-size: 13px;
+    white-space: pre;
+  }
+
+  main.content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  main.content table th {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 2px solid var(--border);
+    font-weight: 600;
+  }
+  main.content table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  main.content table tr:hover td { background: var(--bg-alt); }
+
+  main.content blockquote {
+    border-left: 3px solid var(--link);
+    margin: 16px 0;
+    padding: 8px 16px;
+    background: var(--bg-alt);
+    color: var(--text-mute);
+    font-style: italic;
+  }
+
+  .callout {
+    padding: 14px 18px;
+    margin: 16px 0;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-alt);
+    font-size: 14px;
+  }
+  .callout.info    { border-left: 4px solid #3b82f6; }
+  .callout.warning { border-left: 4px solid #f59e0b; }
+  .callout.success { border-left: 4px solid #10b981; }
+  .callout.danger  { border-left: 4px solid #ef4444; }
+  .callout strong { color: var(--text); }
+
+  .kbd {
+    display: inline-block;
+    padding: 2px 7px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    box-shadow: 0 1px 0 var(--border);
+    white-space: nowrap;
+  }
+
+  .anchor-target {
+    scroll-margin-top: 80px;
+  }
+
+  /* Mobile */
+  @media (max-width: 900px) {
+    aside.sidebar {
+      display: none;
+    }
+    main.content {
+      padding: 32px 24px 64px 24px;
+      max-width: 100%;
+    }
+  }
+
+  /* Footer */
+  footer.doc-footer {
+    max-width: var(--content-max);
+    margin: 64px auto 0 auto;
+    padding: 32px 48px 48px 48px;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 13px;
+    text-align: center;
+  }
+  footer.doc-footer a { color: var(--text-mute); text-decoration: none; }
+  footer.doc-footer a:hover { color: var(--link); text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
+    <a href="/" class="brand">Notepatra</a>
+    <span class="tag">v0.1.9 docs</span>
+  </div>
+  <nav class="topbar-right">
+    <a href="/">Home</a>
+    <a href="/docs.html">Docs</a>
+    <a href="https://github.com/singhpratech/notepatra/releases/latest">Download</a>
+    <a href="https://github.com/singhpratech/notepatra">GitHub</a>
+  </nav>
+</header>
+
+<div class="layout">
+
+  <aside class="sidebar">
+    <div class="section-label">Getting started</div>
+    <ul>
+      <li><a href="#introduction">Introduction</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#first-launch">First launch</a></li>
+      <li><a href="#ui-overview">UI overview</a></li>
+    </ul>
+
+    <div class="section-label">Editor</div>
+    <ul>
+      <li><a href="#editor-basics">Basics</a></li>
+      <li><a href="#languages-lexers">Languages &amp; lexers</a></li>
+      <li><a href="#themes-palette">Themes &amp; palette</a></li>
+      <li><a href="#rulers-crosshair">Rulers &amp; crosshair</a></li>
+      <li><a href="#find-replace">Find &amp; replace</a></li>
+      <li><a href="#macros">Macros</a></li>
+      <li><a href="#sessions">Sessions &amp; recovery</a></li>
+    </ul>
+
+    <div class="section-label">Plugins</div>
+    <ul>
+      <li><a href="#json-tools">JSON Tools</a></li>
+      <li><a href="#html-tools">HTML Tools</a></li>
+      <li><a href="#bracket-tools">Bracket Tools</a></li>
+      <li><a href="#sql-formatter">SQL Formatter</a></li>
+      <li><a href="#compare">Compare / ComparePlus</a></li>
+      <li><a href="#git-panel">Git integration</a></li>
+      <li><a href="#terminal">Terminal</a></li>
+      <li><a href="#rest-client">REST client</a></li>
+      <li><a href="#hex-editor">Hex editor</a></li>
+      <li><a href="#markdown-preview">Markdown preview</a></li>
+    </ul>
+
+    <div class="section-label">AI (Ollama)</div>
+    <ul>
+      <li><a href="#ai-overview">Overview</a></li>
+      <li><a href="#ai-setup">Ollama setup</a></li>
+      <li><a href="#ai-fix">AI Fix pipeline</a></li>
+      <li><a href="#ai-assistant">AI Assistant chat</a></li>
+      <li><a href="#thinking-models">Thinking models</a></li>
+      <li><a href="#vision-models">Vision models &amp; attachments</a></li>
+    </ul>
+
+    <div class="section-label">Reference</div>
+    <ul>
+      <li><a href="#shortcuts">Keyboard shortcuts</a></li>
+      <li><a href="#cli">Command-line flags</a></li>
+      <li><a href="#file-layout">Config file layout</a></li>
+      <li><a href="#build">Build from source</a></li>
+      <li><a href="#verifying">Verifying releases</a></li>
+      <li><a href="#troubleshooting">Troubleshooting</a></li>
+      <li><a href="#faq">FAQ</a></li>
+    </ul>
+
+    <div class="section-label">Community</div>
+    <ul>
+      <li><a href="#contributing">Contributing</a></li>
+      <li><a href="#security">Security policy</a></li>
+      <li><a href="#license">License</a></li>
+    </ul>
+  </aside>
+
+  <main class="content">
+
+  <h1>Notepatra Documentation</h1>
+  <p class="lead">A native C++/Rust code editor with local AI via Ollama. Fast, portable, free forever under GPL-3.0. This is the complete reference for installing, using, customizing, and extending Notepatra.</p>
+
+  <!-- ══════════════ Getting started ══════════════ -->
+
+  <h2 id="introduction" class="anchor-target">Introduction</h2>
+  <p>Notepatra is a <strong>native</strong> code editor written in C++17 with a Rust core for the heavy-lifting (memory-mapped file I/O, Aho-Corasick search, Myers diff, formatters). It targets <strong>Linux x64 / ARM64, macOS Apple Silicon, and Windows x64</strong>. The bare executable is 2–5 MB depending on platform; downloads are 1.8 MB (Linux) to ~40 MB (Windows installer with Qt DLLs bundled).</p>
+  <p>Unlike Electron-based editors, Notepatra does not ship a browser runtime. It uses Qt5 + QScintilla for the editor engine — the same Scintilla core that powers Notepad++ — so all the behavior you expect from Notepad++ (100+ file types, 44+ language lexers, brace matching, folding, code completion) is built in.</p>
+  <p>Unlike cloud-first editors, Notepatra's AI is <strong>local-first</strong>. It talks to <a href="https://ollama.com">Ollama</a> running on your machine. Nothing leaves your computer. No API keys, no subscription, no telemetry.</p>
+
+  <div class="callout info">
+    <strong>What "0.1.x" means.</strong> Notepatra is early-days software built by a one-person team in the open. It's production-quality native code but not yet feature-complete. The roadmap — and the gap between Notepatra and Notepad++ — is deliberately public. See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
+  </div>
+
+  <h2 id="install" class="anchor-target">Install</h2>
+
+  <h3>Quick install (recommended)</h3>
+
+  <h4>Linux</h4>
+  <pre><code>curl -sL https://notepatra.org/install.sh | bash</code></pre>
+  <p>Downloads the latest release for your architecture (x64 or ARM64), verifies SHA-256, installs to <code>~/.local/bin/notepatra</code>, creates a <code>.desktop</code> entry, and registers the hicolor icon theme. Rerun to upgrade.</p>
+
+  <h4>macOS (Apple Silicon only)</h4>
+  <pre><code>curl -sL https://notepatra.org/install.sh | bash</code></pre>
+  <p>Same script. Downloads <code>.dmg</code>, mounts it, copies <code>Notepatra.app</code> to <code>/Applications</code>, unmounts. Intel Macs are not shipped pre-built — build from source.</p>
+
+  <h4>Windows (PowerShell)</h4>
+  <pre><code>irm https://notepatra.org/install.ps1 | iex</code></pre>
+  <p>Downloads <code>notepatra-setup-0.1.9.exe</code>, runs the NSIS installer which registers in Settings → Apps → Installed apps, creates Start Menu + optional Desktop shortcut, optionally adds to <code>PATH</code>. Uninstall via Control Panel works.</p>
+
+  <h3>Manual download</h3>
+  <p>Every release is at <a href="https://github.com/singhpratech/notepatra/releases/latest">github.com/singhpratech/notepatra/releases/latest</a>.</p>
+  <table>
+    <thead><tr><th>Platform</th><th>Asset</th><th>Size</th></tr></thead>
+    <tbody>
+      <tr><td>🐧 Linux x64</td><td><code>notepatra-linux-x64.tar.gz</code></td><td>~1.8 MB</td></tr>
+      <tr><td>🐧 Linux ARM64</td><td><code>notepatra-linux-arm64.tar.gz</code></td><td>~2 MB</td></tr>
+      <tr><td>🍎 macOS Apple Silicon</td><td><code>notepatra-macos-arm64.dmg</code></td><td>~24 MB</td></tr>
+      <tr><td>🪟 Windows x64 (installer)</td><td><code>notepatra-setup-0.1.9.exe</code></td><td>~40 MB</td></tr>
+      <tr><td>🪟 Windows x64 (portable)</td><td><code>notepatra-windows-x64.zip</code></td><td>~40 MB</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout warning">
+    <strong>Linux: Qt5 required.</strong> The Linux tarball is just the bare binary — Qt5 is expected to be installed system-wide. On Ubuntu/Debian: <code>sudo apt install qtbase5-dev libqscintilla2-qt5-dev</code>. On Fedora: <code>sudo dnf install qt5-qtbase qscintilla-qt5</code>. On Arch: <code>sudo pacman -S qt5-base qscintilla-qt5</code>. Mac/Windows downloads bundle Qt.
+  </div>
+
+  <h2 id="first-launch" class="anchor-target">First launch</h2>
+  <p>Launch Notepatra from your start menu / Launchpad / <code>notepatra</code> command. You'll see an empty editor with the menu bar, toolbar, tab bar, status bar, and (collapsed) side panels.</p>
+  <p>The first time you run Notepatra, it creates <code>~/.config/notepatra/</code> (Linux/macOS) or <code>%LOCALAPPDATA%\Notepatra\</code> (Windows) and writes a default <code>config.json</code>. Themes, fonts, tab width, word wrap, etc. are persisted there.</p>
+
+  <h2 id="ui-overview" class="anchor-target">UI overview</h2>
+  <ul>
+    <li><strong>Menu bar</strong> — File, Edit, Search, View, Features, Encoding, Language, Settings, Tools, Plugins, Macro, Run, Window, Help. Most actions have keyboard shortcuts (<a href="#shortcuts">full list</a>).</li>
+    <li><strong>Toolbar</strong> — quick-access buttons for New, Open, Save, Save All, Close, Cut, Copy, Paste, Undo, Redo, Find, Replace, Zoom In/Out, Word Wrap, Show All Characters, Function List, Workspace.</li>
+    <li><strong>Tab bar</strong> — one tab per open file. Modified tabs show a dot. Close with the <code>×</code> or middle-click.</li>
+    <li><strong>Editor area</strong> — Scintilla-based editor with line numbers, code folding, brace matching, syntax highlighting, caret-line highlight, word-wrap toggle, EOL visibility toggle, rulers, optional crosshair.</li>
+    <li><strong>Status bar</strong> — language, file length, line count, word count, cursor line/col, EOL type (CRLF/LF), encoding, INS/OVR.</li>
+    <li><strong>Side panels</strong> — File Explorer, Function List, Search Results, AI Assistant. Dockable/floatable.</li>
+  </ul>
+
+  <!-- ══════════════ Editor ══════════════ -->
+
+  <h2 id="editor-basics" class="anchor-target">Editor basics</h2>
+  <p>The editor is QScintilla 2.14.1 (official Riverbank source) under the hood. Everything Notepad++ does, Notepatra does — folding, brace matching, auto-indent, bookmarks, multi-cursor (hold Alt), rectangular selection, code completion, snippets.</p>
+
+  <h3>Opening &amp; saving</h3>
+  <ul>
+    <li><strong>New</strong> <span class="kbd">Ctrl+N</span> — empty untitled tab</li>
+    <li><strong>Open</strong> <span class="kbd">Ctrl+O</span> — multi-select file dialog, opens each as a tab</li>
+    <li><strong>Save</strong> <span class="kbd">Ctrl+S</span> — save current tab (prompts for path if untitled)</li>
+    <li><strong>Save All</strong> <span class="kbd">Ctrl+Shift+S</span> — saves every modified tab with a known path</li>
+    <li><strong>Close</strong> <span class="kbd">Ctrl+W</span> — close current tab (prompts to save if modified)</li>
+    <li><strong>Drag &amp; drop</strong> files from the OS file manager into the editor — they open as tabs</li>
+  </ul>
+
+  <h3>File-size limits</h3>
+  <p>Notepatra uses the Rust core's memory-mapped file I/O for large files. Limits:</p>
+  <ul>
+    <li><strong>Up to 50 MB</strong> — full syntax highlighting, auto-completion, all features enabled</li>
+    <li><strong>50 MB – 500 MB</strong> — syntax highlighting and auto-completion disabled for performance, still fully editable</li>
+    <li><strong>500 MB – 2 GB</strong> — minimal features, read-mostly mode</li>
+    <li><strong>&gt; 2 GB</strong> — refused; use a streaming tool like <code>less</code></li>
+  </ul>
+
+  <h2 id="languages-lexers" class="anchor-target">Languages &amp; lexers</h2>
+  <p>Notepatra ships 44+ language lexers. The Language menu has every supported syntax; extensions are auto-detected from the filename.</p>
+  <p>Full list: Python, JavaScript/TypeScript/JSX, CoffeeScript, C/C++, C#, D, Java (+ Kotlin, Scala, Groovy), HTML/PHP, CSS/SCSS/LESS, XML, JSON, SQL (ANSI / T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite), Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Matlab, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile.</p>
+
+  <div class="callout info">
+    <strong>Rust / Go / Swift</strong> use the C++ lexer for now — brace/bracket handling is right but language-specific keywords aren't. A dedicated Rust lexer is planned.
+  </div>
+
+  <h2 id="themes-palette" class="anchor-target">Themes &amp; palette</h2>
+  <p>Three themes ship: <strong>Light</strong> (default), <strong>Dark</strong> (VS Code-inspired), and <strong>Monokai</strong>. Change via <code>Settings → Theme</code>. The theme is persisted in <code>config.json</code>.</p>
+  <p>Every theme applies the Notepad++ default palette semantics (keywords blue bold, comments green italic, numbers orange, strings gray, operators plain) and adapts colors per theme. The palette is driven by <code>lexer-&gt;description(i)</code> — it walks every style slot in every lexer, matches substrings like "keyword", "comment", "string", and paints accordingly. Works across all 44+ lexers without hard-coding.</p>
+
+  <h2 id="rulers-crosshair" class="anchor-target">Rulers &amp; crosshair overlay</h2>
+  <p>Optional visual aids for long files and precise cursor placement:</p>
+  <ul>
+    <li><strong>Document rulers</strong> — thin horizontal + vertical ruler bands showing pixel offsets from the top-left corner. Toggle: <code>View → Document Rulers</code>.</li>
+    <li><strong>Crosshair overlay</strong> — a thin line extending from the caret position to both edges of the editor, making the current line + column unmistakable. Toggle: <code>View → Crosshair</code>.</li>
+  </ul>
+
+  <h2 id="find-replace" class="anchor-target">Find &amp; replace</h2>
+  <p>5-tab dialog: <strong>Find</strong>, <strong>Replace</strong>, <strong>Find in Files</strong>, <strong>Mark</strong>, <strong>Go to</strong>.</p>
+  <ul>
+    <li><strong>Normal / Extended / Regex</strong> modes — extended supports <code>\n</code>, <code>\t</code>, <code>\xNN</code> escapes; regex uses PCRE2.</li>
+    <li><strong>Match case, Whole word, Wrap around, In selection</strong> checkboxes.</li>
+    <li><strong>Find in Files</strong> walks a directory recursively (respects glob patterns), results land in the Search Results panel — double-click to jump to line.</li>
+    <li><strong>Mark</strong> highlights every occurrence of a pattern without moving the caret.</li>
+    <li><strong>Find / Replace All across all open tabs</strong> — one click.</li>
+  </ul>
+
+  <h2 id="macros" class="anchor-target">Macros</h2>
+  <p>Record keyboard + mouse operations and play them back:</p>
+  <ul>
+    <li><span class="kbd">Ctrl+Shift+R</span> — start/stop recording</li>
+    <li><span class="kbd">Ctrl+Shift+P</span> — play last macro</li>
+    <li><code>Macro → Run Multiple Times</code> — play N times</li>
+    <li><code>Macro → Save</code> — persist the macro as JSON to <code>~/.config/notepatra/macros/</code></li>
+    <li><code>Macro → Load</code> — restore a saved macro</li>
+  </ul>
+  <p>Uses QScintilla's built-in <code>QsciMacro</code> serialization.</p>
+
+  <h2 id="sessions" class="anchor-target">Sessions &amp; crash recovery</h2>
+  <p>On close, Notepatra saves <code>~/.config/notepatra/session.json</code>: list of open file paths, cursor positions, window geometry, maximized state, theme, active tab. On next launch, all tabs reopen at the same cursor positions.</p>
+  <p>Every 10 seconds, Notepatra writes unsaved buffers to <code>~/.config/notepatra/recovery/&lt;crash-id&gt;.txt</code>. If the app crashes (caught by <code>SIGSEGV</code>/<code>SIGABRT</code>/<code>SIGFPE</code> handlers), the next launch detects <code>.crash_flag</code> and offers to restore unsaved work.</p>
+
+  <!-- ══════════════ Plugins ══════════════ -->
+
+  <h2 id="json-tools" class="anchor-target">JSON Tools plugin</h2>
+  <p>Open: <code>Plugins → JSON Tools (inbuilt)</code>. Panel opens as a new tab.</p>
+
+  <h3>Buttons</h3>
+  <ul>
+    <li><strong>Format</strong> — parses JSON, pretty-prints with 4-space indent via Rust's <code>serde_json</code>. Falls through to a manual pretty printer for broken JSON.</li>
+    <li><strong>Minify</strong> — strips all whitespace. Attempts to fix first, then minifies; if unparseable, strips whitespace with <code>replace(whitespace, "")</code>.</li>
+    <li><strong>Fix + Format</strong> — runs the deterministic Rust fixer (<code>RustCore::fixJson</code>) which handles: single→double quote conversion, unquoted keys, missing closing braces/brackets (stack-based), trailing comma removal, nested-brace insertion via regex passes. Produces a human-readable report like <code>"Fixed 2 issue(s): Added 3 missing closer(s) at end: ]}}; Removed 1 trailing comma(s)"</code>.</li>
+    <li><strong>AI Fix (Ollama)</strong> — sends the broken JSON to your local Ollama model with a strict minimal-change prompt. See <a href="#ai-fix">AI Fix pipeline</a> for details.</li>
+    <li><strong>Show Diff</strong> — opens a side-by-side Compare tab with the original on the left and the last fix's output on the right. Works for <em>any</em> action: Format, Minify, Fix+Format, AI Fix.</li>
+    <li><strong>Copy Output</strong> — copies the current panel content to the clipboard.</li>
+  </ul>
+
+  <h3>Session log</h3>
+  <p>Below the Scintilla output, a small list widget records every action taken during the session with before/after char counts, a delta, and a smart description:</p>
+  <pre><code>[14:22:31] Format: 60 → 86 chars (+26)           +2 commas, +1 brace
+[14:22:45] AI Fix (Ollama): 60 → 63 chars (+3)   +2 commas  [5 lines]
+[14:23:02] Minify: 98 → 60 chars (-38)</code></pre>
+  <p>Color-coded: teal for "added/fixed", amber for "shrunk/minified", gray for no-op. Capped at 50 entries, scrollable.</p>
+
+  <h2 id="html-tools" class="anchor-target">HTML Tools plugin</h2>
+  <p>Same structure as JSON Tools but with HTML-specific buttons: <strong>Format (2 spaces)</strong>, <strong>Format (4 spaces)</strong>, <strong>Minify</strong>, <strong>Fix + Format</strong>, <strong>AI Fix</strong>, <strong>Show Diff</strong>, <strong>Copy Output</strong>. Fixer handles: self-closing <code>&lt;img&gt;</code>/<code>&lt;br&gt;</code>, mismatched tags, attribute quotes.</p>
+
+  <h2 id="bracket-tools" class="anchor-target">Bracket Tools plugin</h2>
+  <p>Generic bracket/quote balancer. Works on any language. Uses the Rust core's <code>bracket_fix</code> module which walks the input, tracks a bracket stack, and closes any unclosed opens at the end in reverse order.</p>
+
+  <h2 id="sql-formatter" class="anchor-target">SQL Formatter plugin</h2>
+  <p>Open: <code>Plugins → SQL Formatter (inbuilt)</code>.</p>
+  <ul>
+    <li><strong>Dialect dropdown</strong> — ANSI SQL / T-SQL (SQL Server) / PL/SQL (Oracle) / MySQL / PostgreSQL / SQLite. Switching dialect re-colorizes the visible buffer with that dialect's keywords.</li>
+    <li><strong>UPPERCASE keywords</strong> checkbox — toggles keyword casing in the formatted output.</li>
+    <li><strong>Indent</strong> spin box — 1–8 spaces.</li>
+    <li><strong>Format</strong> button — invokes the Rust SQL formatter.</li>
+  </ul>
+  <p>Dialect-specific keyword sets are fed to Scintilla via <code>SCI_SETKEYWORDS</code> (since <code>QsciLexerSQL::setKeywords</code> is protected). T-SQL adds DECLARE/MERGE/OUTPUT/PIVOT/OVER/PARTITION, PL/SQL adds PLS_INTEGER/SYSDATE/NVL/DECODE/CONNECT BY, etc.</p>
+
+  <h2 id="compare" class="anchor-target">Compare &amp; ComparePlus</h2>
+  <p>Two menu entries under Plugins: <code>Compare (inbuilt)</code> and <code>ComparePlus</code>. Both share the same <code>CompareWidget</code> — different tab labels so you can have multiple compare tabs open at once.</p>
+
+  <blockquote>
+    Visual UX inspired by <a href="https://github.com/pnedev/comparePlus">ComparePlus</a> by Pavel Nedev — the gold-standard diff plugin for Notepad++. Notepatra's implementation is a fresh Qt + Rust port in a different codebase, but the visual conventions are credit to Pavel.
+  </blockquote>
+
+  <h3>How it works</h3>
+  <ol>
+    <li>Pick a left and right file (open tab, unsaved tab, or file on disk).</li>
+    <li>Rust's Myers diff (<code>similar</code> crate) produces a list of Equal / Insert / Delete entries.</li>
+    <li>Consecutive Delete + Add blocks are <strong>paired</strong> into "modified" rows at the same visual line.</li>
+    <li>Within paired modified rows, a common-prefix + common-suffix detector finds the exact differing bytes and highlights only those characters — not the whole line.</li>
+  </ol>
+
+  <h3>Visual markers</h3>
+  <table>
+    <thead><tr><th>Row kind</th><th>Background</th><th>Symbol margin</th><th>Character highlight</th></tr></thead>
+    <tbody>
+      <tr><td>Equal / context</td><td>white</td><td>—</td><td>—</td></tr>
+      <tr><td>Modified (paired)</td><td>pale yellow <code>#FFFBE6</code></td><td>pink ~ (Circle)</td><td>red box on left, green box on right — only differing chars</td></tr>
+      <tr><td>Added (right only)</td><td>mint green <code>#D4F4D4</code></td><td>green + (Plus)</td><td>—</td></tr>
+      <tr><td>Deleted (left only)</td><td>salmon <code>#F4D4D4</code></td><td>red − (Minus)</td><td>—</td></tr>
+      <tr><td>Placeholder (empty on one side)</td><td>light blue <code>#E8F0F8</code></td><td>green + in margin</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Line numbers</h3>
+  <p>Each panel uses a <code>TextMargin</code> with custom per-row text. The LEFT panel shows the original LEFT-source line numbers; the RIGHT panel shows the original RIGHT-source line numbers. They diverge cleanly when there are insertions/deletions — the empty placeholder on one side shows a green <code>+</code> instead of a number.</p>
+
+  <h3>Toolbar</h3>
+  <ul>
+    <li><strong>&lt; Prev</strong> / <strong>Next &gt;</strong> — jump to previous/next diff</li>
+    <li><strong>Recompare</strong> — re-run the diff algorithm</li>
+    <li><strong>Ignore spaces</strong>, <strong>Ignore case</strong>, <strong>Ignore empty lines</strong> — toggle and recompute</li>
+  </ul>
+
+  <h3>Scroll sync</h3>
+  <p>Both vertical <em>and</em> horizontal scrollbars are mirrored. Drag either side's scrollbar and both panels move together. Qt's built-in <code>valueChanged</code> signal is naturally cycle-safe because <code>setValue(x)</code> is a no-op when <code>x == current</code>.</p>
+
+  <h2 id="git-panel" class="anchor-target">Git integration</h2>
+  <p>Opens as a dockable panel. Shows:</p>
+  <ul>
+    <li>Current branch name with upstream tracking status</li>
+    <li><strong>Changed files</strong> list — added (green), modified (yellow), deleted (red), untracked</li>
+    <li><strong>Git gutter</strong> in the editor margin — colored line markers for added/modified/deleted lines compared to HEAD</li>
+    <li><strong>Push / Pull / Refresh</strong> buttons</li>
+    <li><strong>Open on GitHub</strong> — opens the current file's blob URL in your browser</li>
+  </ul>
+  <p>Shells out to <code>git</code> via <code>QProcess</code>. Non-invasive — no libgit2 dependency.</p>
+
+  <h2 id="terminal" class="anchor-target">Terminal</h2>
+  <p>Built-in terminal panel (Linux/macOS). Uses <code>QProcess</code> to spawn <code>bash</code>/<code>zsh</code> and feeds stdout/stderr to a monospace widget. Not a full pty (no colors, no curses) — fine for simple commands and scripts, not for <code>vim</code>/<code>htop</code>.</p>
+
+  <h2 id="rest-client" class="anchor-target">REST client</h2>
+  <p>A Postman-lite panel: URL field, method dropdown (GET/POST/PUT/PATCH/DELETE/HEAD), headers editor, request body editor with JSON syntax highlighting, response viewer with pretty-printed JSON output + status code + timing.</p>
+
+  <h2 id="hex-editor" class="anchor-target">Hex editor</h2>
+  <p>Byte-level view of any file. Left column: offset. Middle: hex bytes in 16-byte rows. Right: printable ASCII. Read-only for now.</p>
+
+  <h2 id="markdown-preview" class="anchor-target">Markdown preview</h2>
+  <p>Live side-by-side preview for <code>.md</code>/<code>.markdown</code> files. Uses Qt's <code>QTextDocument::setMarkdown()</code> — CommonMark-compatible. Scrolls in sync with the source.</p>
+
+  <!-- ══════════════ AI ══════════════ -->
+
+  <h2 id="ai-overview" class="anchor-target">AI integration overview</h2>
+  <p>Notepatra's AI is <strong>local-first</strong>. It talks to <a href="https://ollama.com">Ollama</a> running on your machine via its REST API. No API keys, no cloud, no telemetry. If Ollama isn't running, AI features show a friendly "Ollama not running — start it: <code>ollama serve</code>" banner.</p>
+  <p>AI surfaces in Notepatra:</p>
+  <ul>
+    <li><strong>AI Fix buttons</strong> in JSON Tools / HTML Tools / Bracket Tools plugins — sends broken content, gets fixed content back</li>
+    <li><strong>AI Assistant panel</strong> — general-purpose chat with your code, supports multi-turn, attach files, voice input</li>
+    <li><strong>Ollama Status bar</strong> in every AI panel showing a green/red dot, the model dropdown (populated live from <code>/api/tags</code>), and a refresh button</li>
+  </ul>
+
+  <h2 id="ai-setup" class="anchor-target">Ollama setup</h2>
+  <ol>
+    <li><strong>Install Ollama</strong> — <code>curl -fsSL https://ollama.com/install.sh | sh</code> (Linux/macOS) or download from <a href="https://ollama.com">ollama.com</a> (Windows).</li>
+    <li><strong>Start the daemon</strong> — <code>ollama serve</code>. Listens on <code>http://localhost:11434</code> by default.</li>
+    <li><strong>Pull at least one model</strong>. Recommended starter:
+      <ul>
+        <li><code>ollama pull qwen2.5:7b</code> — 4.7 GB, general-purpose, good at code</li>
+        <li><code>ollama pull llama3.2:3b</code> — 2 GB, smaller, faster</li>
+        <li><code>ollama pull codellama:7b</code> — 3.8 GB, code-specialized</li>
+        <li><code>ollama pull qwen2.5-coder:7b</code> — 4.4 GB, code-specialized + recent</li>
+      </ul>
+    </li>
+    <li><strong>Launch Notepatra</strong> → open any AI panel → the model dropdown auto-populates with whatever you pulled.</li>
+  </ol>
+
+  <div class="callout success">
+    <strong>Memory check.</strong> 7B models need ~6 GB RAM, 13B ≥ 10 GB, 34B ≥ 24 GB. If your laptop can't spare that, use <code>qwen2.5:3b</code> or <code>llama3.2:1b</code>.
+  </div>
+
+  <h2 id="ai-fix" class="anchor-target">AI Fix pipeline</h2>
+  <p>The AI Fix button in JSON Tools / HTML Tools / Bracket Tools sends the broken content to Ollama with a strict prompt. Here's exactly what happens:</p>
+
+  <h3>Request</h3>
+  <pre><code>POST http://localhost:11434/api/generate
+Content-Type: application/json
+
+{
+  "model": "qwen3.5:9b",
+  "prompt": "Fix ONLY the broken parts of this JSON. Make MINIMAL
+             changes. PRESERVE the original line order, key order, and
+             formatting. Do NOT reorder keys. Do NOT reformat. Return
+             ONLY the corrected JSON.\n\nBROKEN JSON:\n{...}",
+  "system": "You are a minimal-change JSON patcher. ... /no_think",
+  "stream": true,
+  "think": false,
+  "options": { "temperature": 0.1, "num_predict": 4096 }
+}</code></pre>
+
+  <h3>Response cleanup pipeline</h3>
+  <p>Models don't always follow instructions. The response goes through a defensive cleanup pipeline before being displayed:</p>
+  <ol>
+    <li><strong>Strip <code>&lt;think&gt;...&lt;/think&gt;</code> blocks</strong> — defensive regex strip for models that emit reasoning despite <code>think: false</code>.</li>
+    <li><strong>Strip markdown <code>```</code> fences</strong> — if the response starts with <code>```</code>, find the first newline and the last fence and keep the middle.</li>
+    <li><strong>Trim leading prose</strong> — find the first <code>{</code> or <code>[</code> in the response and discard everything before. Handles "Here is the fixed JSON: {...}".</li>
+    <li><strong>Format with Rust's <code>serde_json</code></strong> — if parseable, pretty-print with 4-space indent. Otherwise show raw cleaned text.</li>
+  </ol>
+
+  <h3>Why the strict prompt matters</h3>
+  <p>Without explicit instructions, models love to <strong>reformat</strong> and <strong>reorder keys alphabetically</strong>. That's useless for a diff — every line looks different even when only one comma was missing. The strict prompt tells the model to preserve the original line order, key order, and indentation, and patch only the broken parts. Show Diff then shows just the actual fixes.</p>
+
+  <h2 id="ai-assistant" class="anchor-target">AI Assistant chat</h2>
+  <p>Open: <code>View → AI Assistant</code> or from the status bar. The panel is a full chat UI:</p>
+  <ul>
+    <li><strong>Model dropdown</strong> at the top, populated from <code>/api/tags</code> with a ↻ refresh button</li>
+    <li><strong>Show thinking</strong> checkbox (default off) — toggle to see reasoning for Qwen3 / DeepSeek-R1</li>
+    <li><strong>Clear chat</strong> button — wipes history</li>
+    <li><strong>Chat area</strong> — right-aligned blue user bubbles, left-aligned gray assistant bubbles with the model name as the header</li>
+    <li><strong>Quick action buttons</strong> — Explain, Find Bugs, Refactor, Write Tests, Add Comments, Generate Docs, Optimize, Translate (Python ↔ JavaScript)</li>
+    <li><strong>Insert at Cursor</strong> / <strong>Replace Selection</strong> / <strong>Copy</strong> — apply the last assistant response to the editor</li>
+    <li><strong>Input bar at the bottom</strong> — 📎 attach button, text field, Send, Stop</li>
+  </ul>
+  <p>Streaming tokens flow into the active assistant bubble in real time. Errors render as red error bubbles. The chat persists across multiple sends so you can have a multi-turn conversation.</p>
+
+  <h2 id="thinking-models" class="anchor-target">Thinking models</h2>
+  <p>Qwen3 / DeepSeek-R1 and other "thinking" models emit <code>&lt;think&gt;...&lt;/think&gt;</code> reasoning blocks before the actual answer. For JSON Tools, this breaks the parser (the thinking block isn't valid JSON). Notepatra's cleanup pipeline strips <code>&lt;think&gt;</code> tags three ways:</p>
+  <ol>
+    <li>Passes <code>think: false</code> in the <code>/api/generate</code> request body (honored by modern Ollama)</li>
+    <li>Appends <code>/no_think</code> to the system prompt (honored by some models as a slash-command)</li>
+    <li>Regex-strips <code>&lt;think&gt;...&lt;/think&gt;</code> from the final response as a defensive backup</li>
+  </ol>
+  <p>For the AI Assistant chat, you can toggle <strong>Show thinking</strong> to see the reasoning if you're curious.</p>
+
+  <h2 id="vision-models" class="anchor-target">Vision models &amp; file attachments</h2>
+  <p>The 📎 attach button accepts any file type. What happens depends on the kind:</p>
+  <table>
+    <thead><tr><th>File kind</th><th>Handled how</th></tr></thead>
+    <tbody>
+      <tr><td>🖼 Images (png/jpg/webp/gif/bmp)</td><td>Loaded as <code>QImage</code>, downscaled to max 1280px, re-encoded as PNG, base64-encoded, passed in the <code>images</code> field of <code>/api/generate</code>. <strong>Vision models</strong> (llava, llama3.2-vision, qwen2-vl, moondream, granite-vision) actually see the image. Non-vision models silently ignore the field.</td></tr>
+      <tr><td>📕 PDF</td><td><code>pdftotext -layout</code> via QProcess (requires <code>poppler-utils</code>), extracted text appended to the prompt as context, capped at 100 KB.</td></tr>
+      <tr><td>📘 DOCX / ODT</td><td><code>unzip -p file.docx word/document.xml</code>, XML tags stripped, appended to prompt.</td></tr>
+      <tr><td>📙 PPTX</td><td><code>unzip -p file.pptx ppt/slides/slide1.xml</code>, XML stripped, appended (first slide only for now).</td></tr>
+      <tr><td>📗 XLSX</td><td><code>unzip -p file.xlsx xl/sharedStrings.xml</code>, appended.</td></tr>
+      <tr><td>📄 Text / code (*.txt / *.md / *.json / *.py / *.cpp / *.js / ...)</td><td>Read raw as UTF-8, capped at 100 KB, appended as context.</td></tr>
+      <tr><td>Anything else</td><td>Attempted as text (UTF-8).</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ══════════════ Reference ══════════════ -->
+
+  <h2 id="shortcuts" class="anchor-target">Keyboard shortcuts</h2>
+
+  <h3>File</h3>
+  <table>
+    <tbody>
+      <tr><td><span class="kbd">Ctrl+N</span></td><td>New</td></tr>
+      <tr><td><span class="kbd">Ctrl+O</span></td><td>Open</td></tr>
+      <tr><td><span class="kbd">Ctrl+S</span></td><td>Save</td></tr>
+      <tr><td><span class="kbd">Ctrl+Shift+S</span></td><td>Save All</td></tr>
+      <tr><td><span class="kbd">Ctrl+W</span></td><td>Close tab</td></tr>
+      <tr><td><span class="kbd">Ctrl+Shift+T</span></td><td>Reopen last closed tab</td></tr>
+      <tr><td><span class="kbd">Ctrl+P</span></td><td>Print</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Edit</h3>
+  <table>
+    <tbody>
+      <tr><td><span class="kbd">Ctrl+Z</span></td><td>Undo</td></tr>
+      <tr><td><span class="kbd">Ctrl+Y</span> / <span class="kbd">Ctrl+Shift+Z</span></td><td>Redo</td></tr>
+      <tr><td><span class="kbd">Ctrl+X</span> / <span class="kbd">Ctrl+C</span> / <span class="kbd">Ctrl+V</span></td><td>Cut / Copy / Paste</td></tr>
+      <tr><td><span class="kbd">Ctrl+A</span></td><td>Select all</td></tr>
+      <tr><td><span class="kbd">Ctrl+D</span></td><td>Duplicate line</td></tr>
+      <tr><td><span class="kbd">Ctrl+Shift+K</span></td><td>Delete line</td></tr>
+      <tr><td><span class="kbd">Ctrl+/</span></td><td>Toggle line comment</td></tr>
+      <tr><td><span class="kbd">Ctrl+Shift+U</span></td><td>UPPERCASE selection</td></tr>
+      <tr><td><span class="kbd">Ctrl+U</span></td><td>lowercase selection</td></tr>
+      <tr><td><span class="kbd">Alt+↑</span> / <span class="kbd">Alt+↓</span></td><td>Move line up / down</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Search</h3>
+  <table>
+    <tbody>
+      <tr><td><span class="kbd">Ctrl+F</span></td><td>Find</td></tr>
+      <tr><td><span class="kbd">Ctrl+H</span></td><td>Replace</td></tr>
+      <tr><td><span class="kbd">F3</span> / <span class="kbd">Shift+F3</span></td><td>Find next / previous</td></tr>
+      <tr><td><span class="kbd">Ctrl+G</span></td><td>Go to line</td></tr>
+      <tr><td><span class="kbd">Ctrl+B</span></td><td>Go to matching brace (swivels between open/close)</td></tr>
+      <tr><td><span class="kbd">Ctrl+F2</span></td><td>Toggle bookmark</td></tr>
+      <tr><td><span class="kbd">F2</span></td><td>Next bookmark</td></tr>
+      <tr><td><span class="kbd">Shift+F2</span></td><td>Previous bookmark</td></tr>
+    </tbody>
+  </table>
+
+  <h3>View / Navigation</h3>
+  <table>
+    <tbody>
+      <tr><td><span class="kbd">Ctrl+=</span> / <span class="kbd">Ctrl+-</span></td><td>Zoom in / out</td></tr>
+      <tr><td><span class="kbd">Ctrl+0</span></td><td>Reset zoom</td></tr>
+      <tr><td><span class="kbd">Ctrl+Tab</span></td><td>Next tab</td></tr>
+      <tr><td><span class="kbd">Ctrl+Shift+Tab</span></td><td>Previous tab</td></tr>
+      <tr><td><span class="kbd">Ctrl+Shift+E</span></td><td>Toggle File Explorer sidebar</td></tr>
+      <tr><td><span class="kbd">F11</span></td><td>Full screen</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Macro</h3>
+  <table>
+    <tbody>
+      <tr><td><span class="kbd">Ctrl+Shift+R</span></td><td>Start / stop macro recording</td></tr>
+      <tr><td><span class="kbd">Ctrl+Shift+P</span></td><td>Play last macro</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="cli" class="anchor-target">Command-line flags</h2>
+  <pre><code>notepatra [options] [file1] [file2] ...
+
+Options:
+  -h, --help       Show help and exit
+  -v, --version    Show version and exit
+  -n, --new        Open a new window, don't restore session
+  --line N         Go to line N in the first file
+  --theme NAME     Use theme: Light, Dark, Monokai
+
+Examples:
+  notepatra                       Open with last session restored
+  notepatra file.py               Open a file
+  notepatra --line 42 file.py     Open at line 42
+  notepatra --theme Dark          Start in dark mode
+  notepatra *.json                Open multiple files</code></pre>
+
+  <h2 id="file-layout" class="anchor-target">Config file layout</h2>
+  <p>All persistent state lives under:</p>
+  <table>
+    <thead><tr><th>OS</th><th>Path</th></tr></thead>
+    <tbody>
+      <tr><td>Linux / macOS</td><td><code>~/.config/notepatra/</code></td></tr>
+      <tr><td>Windows</td><td><code>%LOCALAPPDATA%\Notepatra\</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Files inside that directory</h3>
+  <ul>
+    <li><code>config.json</code> — editor preferences: theme, font, tab width, word wrap, line numbers, etc.</li>
+    <li><code>session.json</code> — open tabs, cursor positions, window geometry</li>
+    <li><code>recovery/</code> — auto-save backups of unsaved buffers (every 10s)</li>
+    <li><code>macros/</code> — saved macro files (JSON)</li>
+    <li><code>plugins/</code> — user-installed external plugins</li>
+    <li><code>context.json</code> — runtime LLM context (editable via the Context page)</li>
+  </ul>
+
+  <h2 id="build" class="anchor-target">Build from source</h2>
+
+  <h3>Dependencies</h3>
+  <ul>
+    <li><strong>Qt5</strong> (5.15.2 or newer) — <code>qtbase5-dev</code>, <code>libqt5widgets5</code>, <code>libqt5core5a</code>, <code>libqt5network5</code>, <code>libqt5printsupport5</code></li>
+    <li><strong>QScintilla 2.14.1+</strong> — <code>libqscintilla2-qt5-dev</code></li>
+    <li><strong>Rust</strong> (1.70+) — via <code>rustup</code></li>
+    <li><strong>CMake</strong> 3.16+</li>
+    <li><strong>C++17 compiler</strong> — gcc 9+, clang 10+, or MSVC 2019+</li>
+  </ul>
+
+  <h3>One-liner (Linux/macOS)</h3>
+  <pre><code>git clone https://github.com/singhpratech/notepatra.git
+cd notepatra
+./build.sh</code></pre>
+  <p>Add <code>--tests</code> to also build and run the regression suite via CTest.</p>
+
+  <h3>Manual CMake</h3>
+  <pre><code>cd notepatra
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+cmake --build . -j$(nproc)
+./notepatra --version</code></pre>
+
+  <h3>Windows (PowerShell, MSVC)</h3>
+  <pre><code># 1. Install Qt5 via aqtinstall or install-qt-action
+# 2. Build QScintilla from Riverbank source via qmake + nmake
+# 3. Then:
+cd notepatra
+mkdir build; cd build
+cmake .. -G "Visual Studio 17 2022" -A x64
+cmake --build . --config Release</code></pre>
+  <p>See <code>.github/workflows/build.yml</code> for the exact CI command sequence.</p>
+
+  <h2 id="verifying" class="anchor-target">Verifying releases</h2>
+  <p>Every release ships with:</p>
+  <ul>
+    <li><strong>SHA-256 checksums</strong> in <code>SHA256SUMS</code></li>
+    <li><strong>Cosign keyless signatures</strong> (Sigstore + Rekor transparency log) — <code>.sig</code> + <code>.pem</code> per asset</li>
+    <li><strong>SLSA build provenance</strong> attestations cryptographically linking each binary to the commit + workflow + runner</li>
+  </ul>
+
+  <h3>SHA-256</h3>
+  <pre><code>curl -sL -O https://github.com/singhpratech/notepatra/releases/latest/download/SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing</code></pre>
+
+  <h3>Cosign verify</h3>
+  <pre><code>cosign verify-blob \
+  --certificate-identity-regexp '^https://github.com/singhpratech/notepatra/' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  --certificate notepatra-linux-x64.tar.gz.pem \
+  --signature  notepatra-linux-x64.tar.gz.sig \
+  notepatra-linux-x64.tar.gz</code></pre>
+
+  <h3>SLSA attestation</h3>
+  <pre><code>gh attestation verify notepatra-linux-x64.tar.gz --owner singhpratech</code></pre>
+
+  <p>Full threat model and disclosure policy in <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+
+  <h2 id="troubleshooting" class="anchor-target">Troubleshooting</h2>
+
+  <h3>Notepatra opens but no text renders / white-on-white</h3>
+  <p>Likely a lexer palette bug. Try <code>Settings → Theme → Light</code> then back to your theme. If it persists, file a bug with your OS + theme + a screenshot.</p>
+
+  <h3>AI Fix doesn't do anything</h3>
+  <ol>
+    <li>Check the Ollama Status bar at the top of the JSON Tools panel — is the dot green?</li>
+    <li>If red: <code>ollama serve</code> in a terminal, check port 11434.</li>
+    <li>If green but no response: make sure you've pulled at least one model: <code>ollama list</code>.</li>
+    <li>Check Notepatra's stderr for the streaming tokens / error.</li>
+  </ol>
+
+  <h3>Windows: "This program can't start because ... was not found"</h3>
+  <p>The NSIS installer bundles Qt DLLs, but the portable <code>.zip</code> depends on the Visual C++ Redistributable. Install the <a href="https://aka.ms/vs/17/release/vc_redist.x64.exe">latest VC++ Redistributable</a> and relaunch.</p>
+
+  <h3>macOS: "Notepatra can't be opened because it is from an unidentified developer"</h3>
+  <p>macOS Gatekeeper. Right-click the <code>.app</code>, choose Open, then Open again in the warning dialog. Or run <code>xattr -cr Notepatra.app</code> to clear the quarantine attribute.</p>
+
+  <h3>Linux ARM64 binary doesn't launch</h3>
+  <p>Make sure the file is executable: <code>chmod +x notepatra</code>. Check Qt5 is installed for your architecture.</p>
+
+  <h2 id="faq" class="anchor-target">FAQ</h2>
+
+  <h4>Is Notepatra a Notepad++ port?</h4>
+  <p>No. Notepad++ is Win32 C++. Notepatra is Qt5 + Rust. Different codebase, different platforms, similar spirit. Notepad++ doesn't run on Linux or macOS, Notepatra does.</p>
+
+  <h4>How big is the binary compared to VS Code?</h4>
+  <p>The bare executable is 2.7–5.1 MB depending on platform. VS Code is 300+ MB. Notepatra is 6× to 14× smaller.</p>
+
+  <h4>Does my code go to the cloud?</h4>
+  <p>No. Notepatra is local-first. The only outbound connections are: (1) Ollama on <code>localhost:11434</code> when you use AI features, (2) <code>git push/pull</code> when you click the Git panel buttons, (3) the REST client when you send a request. Verifiable with <code>strace</code>.</p>
+
+  <h4>Why GPL-3.0?</h4>
+  <p>Because the source is open, modifications should stay open. If you embed Notepatra in a product, the product has to be GPL-compatible. If that's a problem, reach out — alternative licensing can be discussed.</p>
+
+  <h4>Will you add LSP support?</h4>
+  <p>Planned for a future milestone. The goal is to plug into <code>clangd</code>, <code>rust-analyzer</code>, <code>pyright</code>, etc. for proper autocomplete and go-to-definition. The Scintilla autocomplete today is word-based.</p>
+
+  <h4>Where's the Windows ARM64 build?</h4>
+  <p>Not yet — Windows ARM64 is a small but growing market. Tracked on the roadmap.</p>
+
+  <!-- ══════════════ Community ══════════════ -->
+
+  <h2 id="contributing" class="anchor-target">Contributing</h2>
+  <p>See <a href="https://github.com/singhpratech/notepatra/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a> for the full contributor guide. Short version:</p>
+  <ul>
+    <li>File issues via the issue templates (bug report, feature request)</li>
+    <li>PRs should pass CI (build + tests on all 3 platforms) and include a test when fixing a bug</li>
+    <li>Code style: <code>.clang-format</code> (LLVM base, 4-space indent, 100 col)</li>
+    <li>Signed commits preferred</li>
+  </ul>
+
+  <h2 id="security" class="anchor-target">Security policy</h2>
+  <p>See <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">SECURITY.md</a> and <code>/.well-known/security.txt</code>. Reports via GitHub private vulnerability reporting. 90-day disclosure window by default.</p>
+
+  <h2 id="license" class="anchor-target">License</h2>
+  <p>Notepatra is licensed under the <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE">GNU General Public License v3.0</a>. No warranty. See GPL-3.0 §15 and §16 for the disclaimer of warranty and limitation of liability.</p>
+
+  <footer class="doc-footer">
+    Notepatra — <strong>Envisioned by Prateek Singh. Inspired by Notepad++. Built by Claude.</strong><br>
+    © 2026 Prateek Singh · GPL-3.0 · <a href="/">notepatra.org</a> · <a href="https://github.com/singhpratech/notepatra">GitHub</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Changelog</a>
+  </footer>
+
+  </main>
+</div>
+
+<script>
+  // Highlight sidebar link matching the current scroll position
+  (function () {
+    const links = document.querySelectorAll('aside.sidebar a[href^="#"]');
+    const ids = Array.from(links).map(a => a.getAttribute('href').slice(1));
+    function setActive() {
+      let active = ids[0];
+      const scrollPos = window.scrollY + 120;
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el && el.offsetTop <= scrollPos) active = id;
+      }
+      links.forEach(a => {
+        a.classList.toggle('active', a.getAttribute('href') === '#' + active);
+      });
+    }
+    window.addEventListener('scroll', setActive, { passive: true });
+    window.addEventListener('hashchange', setActive);
+    setActive();
+  })();
+</script>
+
+</body>
+</html>

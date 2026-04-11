@@ -1,4 +1,5 @@
 #include "restclient.h"
+#include "fonts.h"
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QFont>
@@ -25,8 +26,7 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
 
     m_output = new QTextEdit;
     m_output->setReadOnly(true);
-    QFont mono("Consolas", 10);
-    mono.setStyleHint(QFont::Monospace);
+    QFont mono = notepatraCodeFont();
     m_output->setFont(mono);
     m_output->setStyleSheet("QTextEdit { background: #1E1E1E; color: #D4D4D4; border: none; padding: 8px; }");
     m_output->setPlaceholderText("Send an HTTP request to see the response here.\n\nUse .http files or select a request block and press Ctrl+Shift+R");
