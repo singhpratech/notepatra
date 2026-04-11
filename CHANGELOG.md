@@ -5,6 +5,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.10] — 2026-04-11
+
+### Fixed
+- 🍎 **macOS installer is no longer broken.** `install.sh` used to blindly save every download as `notepatra.tar.gz` and run `tar xzf` on it, which failed with `tar: Error opening archive: Unrecognized archive format` when the release asset was a `.dmg` — i.e. every macOS install since we moved to DMG. The script now inspects the download URL, writes the correct file extension, mounts DMGs with `hdiutil attach`, and copies `Notepatra.app` out with `ditto`. Verified end-to-end on macOS Tahoe.
+- 🔐 **macOS Tahoe / Sequoia / Sonoma Gatekeeper "Notepatra is damaged" error.** Because we're not (yet) Apple-notarized, the quarantine xattr that `curl` stamps on the DMG causes Gatekeeper to refuse to launch the bundle. The installer now runs `xattr -dr com.apple.quarantine` and `codesign --force --deep --sign -` after copying the app, which re-anchors the bundle and lets it open on first double-click. Verified on Tahoe.
+- 🔗 **`notepatra` CLI shortcut on macOS.** After installing the .app, the installer now symlinks `/Applications/Notepatra.app/Contents/MacOS/notepatra` into `~/.local/bin/notepatra` and ensures `~/.local/bin` is on `$PATH` in `.zshrc` / `.bash_profile`, so `notepatra file.py` just works from any terminal.
+
+### Added
+- 🧹 **`uninstall.sh` and `uninstall.ps1`** served from https://notepatra.org. One-liner clean removal for every supported install path:
+  ```
+  curl -fsSL https://notepatra.org/uninstall.sh | sh         # macOS + Linux
+  irm     https://notepatra.org/uninstall.ps1 | iex          # Windows
+  ```
+  On macOS this removes `/Applications/Notepatra.app`, the `~/.local/bin/notepatra` symlink, and `~/Library/Preferences/com.notepatra.editor.plist` / saved-state / caches. On Linux it removes the binary, the `.desktop` entry, every hicolor icon size, `~/.config/notepatra`, and runs `gtk-update-icon-cache` + `update-desktop-database`. On Windows it calls the NSIS uninstaller if present, then manually wipes `%LOCALAPPDATA%\Notepatra`, Start Menu + Desktop shortcuts, the user PATH entry, the HKCU Uninstall registry key, and `%APPDATA%\Notepatra`. Explicitly leaves Ollama, any pulled models, system Qt5 packages, and files you edited alone.
+- 📄 **Dedicated "Uninstall" section** on https://notepatra.org with three per-platform cards covering *every* install path — install.sh / manual tarball / build-from-source on Linux; install.sh / DMG drag on macOS; NSIS installer / install.ps1 / portable zip on Windows. Every card lists the exact `rm` / registry commands and a "Left alone" list so users know what the uninstaller does and does not touch. Plus a Privacy-guarantee callout: "Notepatra never sends telemetry. Uninstalling removes *only* the binary, shortcuts, and your local config — nothing was ever phoned home, so there's nothing to revoke."
+
+### Changed
+- 🎨 **Website re-themed to match Claude.ai.** The dark "matrix" theme is replaced with Anthropic's warm "Clay" palette — bone `#F5F4EE` page background, `#FAF9F5` card surfaces, Clay orange `#CC785C` accent, near-black warm text `#141413`, Söhne / Inter font stack, hairline `#E8E6DC` borders. All section backgrounds, gradients, code blocks, install tabs, primary/secondary buttons, and hero gradient retuned. Legacy CSS variable names (`--green`, `--blue`, `--darker`, etc.) kept as aliases so ~hundreds of existing element rules didn't need to be rewritten.
+
+### Verifying this release
+Same as previous — SHA-256 in `SHA256SUMS`, cosign keyless signatures, SLSA build provenance. See `SECURITY.md`.
+
+
 ## [0.1.9] — 2026-04-11
 
 ### Added

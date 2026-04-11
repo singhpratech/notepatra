@@ -254,7 +254,7 @@ irm https://notepatra.org/install.ps1 | iex
 
 That's it. Auto-detects your OS, downloads the right binary, installs it, adds to PATH, creates shortcuts.
 
-### Or download manually — [Latest release: v0.1.9](https://github.com/singhpratech/notepatra/releases/latest)
+### Or download manually — [Latest release: v0.1.10](https://github.com/singhpratech/notepatra/releases/latest)
 
 | Platform | Download | Size | What's inside |
 |---|---|---|---|
@@ -447,7 +447,8 @@ Notepatra follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic 
 
 | Version | Date | Highlights |
 |---|---|---|
-| [**v0.1.9**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.9) | 2026-04-11 | TODO: short description of this release. |
+| [**v0.1.10**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.10) | 2026-04-11 | Fix macOS installer (DMG + Tahoe Gatekeeper), add `curl \| sh` uninstaller, Claude.ai-themed website with comprehensive uninstall docs. |
+| [**v0.1.9**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.9) | 2026-04-11 | ~3200-line refactor, unified FormatterPanel base, full Anthropic-style docs site, Linux ARM64 build, voice input in AI Assistant. |
 | [**v0.1.8**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.8) | 2026-04-09 | **AI Fix actually works** for Qwen3 / DeepSeek-R1 / any thinking model — passes `think:false` to `/api/generate` + defensively strips `<think>` tags + trims prose preambles. JSON Tools shows "Show Diff" button after AI Fix to open a side-by-side compare of original vs fixed. AI Assistant rewritten as a **proper chat-bubble UI** (right-aligned blue user bubbles, left-aligned gray assistant bubbles, clear chat button, show-thinking toggle). Tested end-to-end on Linux GUI via xdotool against real local Ollama. |
 | [**v0.1.7**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.7) | 2026-04-09 | Plugin panels overhaul: JSON / HTML / Bracket Tools format buttons now actually do something visible (BIG status banner). JSON Tools white-on-white text bug fixed. AI Fix (Ollama) reports progress + completion clearly. Default font 11pt → 10pt, less bold = lighter feel. SQL Formatter dialect dropdown (T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite). Compare picker lists unsaved tabs. Windows MSVC C2666 fix in `SCI_SETKEYWORDS` call. |
 | [**v0.1.5**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.5) | 2026-04-09 | NSIS Windows installer (`notepatra-setup-0.1.5.exe`) — registers in Settings → Apps → Installed apps, generates uninstall.exe, Start Menu shortcuts, optional PATH integration. Live 3-platform download counter on website footer. `notepatra --version` no longer hard-coded to v0.1.0 (now driven by CMake `project()`). `scripts/bump_version.sh` for one-command release bumps. |

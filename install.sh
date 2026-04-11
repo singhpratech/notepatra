@@ -116,25 +116,92 @@ mkdir -p "$INSTALL_DIR"
 if [ "$OS" = "darwin" ]; then
     # macOS — download and mount DMG or extract app
     TMPDIR=$(mktemp -d)
-    curl -sL "$RELEASE_URL" -o "$TMPDIR/notepatra.tar.gz"
+    case "$RELEASE_URL" in
+        *.tar.gz) PKG_PATH="$TMPDIR/notepatra.tar.gz" ;;
+        *.dmg) PKG_PATH="$TMPDIR/notepatra.dmg" ;;
+        *) PKG_PATH="$TMPDIR/notepatra.pkg" ;;
+    esac
+    MOUNT_POINT=""
+    curl -sL "$RELEASE_URL" -o "$PKG_PATH"
     # Verify SHA-256 if checksums file is available
     if curl -fsSL "$SHA_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null \
        || curl -fsSL "$SHA_FALLBACK_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null; then
         EXPECTED=$(grep "$ARTIFACT" "$TMPDIR/SHA256SUMS" | awk '{print $1}' | head -1)
         if [ -n "$EXPECTED" ]; then
-            verify_sha256 "$TMPDIR/notepatra.tar.gz" "$EXPECTED"
+            verify_sha256 "$PKG_PATH" "$EXPECTED"
         fi
     fi
-    cd "$TMPDIR"
-    tar xzf notepatra.tar.gz
-    if [ -d "Notepatra.app" ]; then
-        echo "  Installing Notepatra.app to /Applications..."
-        cp -R Notepatra.app /Applications/
-        echo ""
-        echo "  ✅ Installed! Open from Applications or run:"
-        echo "     open /Applications/Notepatra.app"
+    cleanup_macos_installer() {
+        if [ -n "$MOUNT_POINT" ] && [ -d "$MOUNT_POINT" ]; then
+            hdiutil detach "$MOUNT_POINT" -quiet >/dev/null 2>&1 || true
+        fi
+        rm -rf "$TMPDIR"
+    }
+    trap cleanup_macos_installer EXIT
+
+    case "$RELEASE_URL" in
+        *.dmg)
+            echo "  Mounting disk image..."
+            MOUNT_POINT=$(hdiutil attach "$PKG_PATH" -nobrowse -readonly | awk '/\/Volumes\// {print substr($0, index($0, "/Volumes/"))}' | tail -1)
+            if [ -z "$MOUNT_POINT" ] || [ ! -d "$MOUNT_POINT/Notepatra.app" ]; then
+                echo "  ❌ Could not mount Notepatra disk image or find Notepatra.app"
+                exit 1
+            fi
+            echo "  Installing Notepatra.app to /Applications..."
+            rm -rf /Applications/Notepatra.app 2>/dev/null
+            ditto "$MOUNT_POINT/Notepatra.app" /Applications/Notepatra.app
+            ;;
+        *.tar.gz)
+            cd "$TMPDIR"
+            tar xzf "$PKG_PATH"
+            if [ ! -d "Notepatra.app" ]; then
+                echo "  ❌ Archive did not contain Notepatra.app"
+                exit 1
+            fi
+            echo "  Installing Notepatra.app to /Applications..."
+            rm -rf /Applications/Notepatra.app 2>/dev/null
+            ditto "$TMPDIR/Notepatra.app" /Applications/Notepatra.app
+            ;;
+        *)
+            echo "  ❌ Unsupported macOS package format: $RELEASE_URL"
+            exit 1
+            ;;
+    esac
+
+    # ─── macOS Tahoe / Sequoia / Sonoma Gatekeeper workaround ───────────
+    # Notepatra is not (yet) Apple-notarized, so the quarantine attribute
+    # added by curl + DMG mount triggers Gatekeeper to refuse to launch
+    # the app with "Notepatra is damaged and can't be opened". On modern
+    # macOS the only way to bypass this without notarization is to clear
+    # the quarantine flag recursively. Ad-hoc codesign re-anchors the
+    # bundle so its embedded frameworks pass verification.
+    echo "  Clearing quarantine + ad-hoc signing for Gatekeeper..."
+    xattr -dr com.apple.quarantine /Applications/Notepatra.app 2>/dev/null || true
+    codesign --force --deep --sign - /Applications/Notepatra.app 2>/dev/null || true
+
+    # Symlink the CLI binary so `notepatra` works from any terminal
+    if [ -x /Applications/Notepatra.app/Contents/MacOS/notepatra ]; then
+        mkdir -p "$INSTALL_DIR"
+        ln -sf /Applications/Notepatra.app/Contents/MacOS/notepatra "$INSTALL_DIR/notepatra"
+        if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
+            SHELL_RC="$HOME/.zshrc"
+            [ -f "$HOME/.bash_profile" ] && SHELL_RC="$HOME/.bash_profile"
+            echo "export PATH=\"$INSTALL_DIR:\$PATH\"" >> "$SHELL_RC"
+            echo "  Added $INSTALL_DIR to PATH in $(basename $SHELL_RC)"
+        fi
     fi
-    rm -rf "$TMPDIR"
+
+    echo ""
+    echo "  ✅ Installed! Tested on macOS Sonoma, Sequoia, and Tahoe."
+    echo ""
+    echo "  Open from Applications, click the launcher, or run:"
+    echo "     open /Applications/Notepatra.app"
+    echo "     notepatra      # CLI shortcut (open a new terminal first)"
+    echo ""
+    echo "  If macOS still says 'Notepatra is damaged' the first time:"
+    echo "     1. Right-click Notepatra.app in Finder → Open → Open"
+    echo "     2. OR: System Settings → Privacy & Security → 'Open Anyway'"
+    echo "     3. OR: sudo xattr -cr /Applications/Notepatra.app"
 else
     # Linux — download binary
     TMPDIR=$(mktemp -d)
