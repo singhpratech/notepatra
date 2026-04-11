@@ -21,7 +21,12 @@ private:
     QTreeWidget *m_tree;
     QString m_repoRoot;
 
-    void runGit(const QStringList &args, std::function<void(const QString &)> callback);
+    bool runGitSync(
+        const QStringList &args,
+        QString *stdoutText = nullptr,
+        QString *stderrText = nullptr,
+        int timeoutMs = 5000
+    );
 };
 
 #endif

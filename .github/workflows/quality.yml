@@ -1,0 +1,31 @@
+name: Rust Quality
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rust-core/**'
+      - '.github/workflows/quality.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'rust-core/**'
+      - '.github/workflows/quality.yml'
+
+jobs:
+  rust-quality:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install rustfmt + clippy
+        run: rustup component add rustfmt clippy
+
+      - name: Check formatting
+        run: cd rust-core && cargo fmt --check
+
+      - name: Run clippy
+        run: cd rust-core && cargo clippy --all-targets --all-features -- -D warnings

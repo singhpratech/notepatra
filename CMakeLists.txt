@@ -4,6 +4,15 @@ project(Notepatra VERSION 0.1.8 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
+option(BUILD_TESTING "Build Notepatra regression tests" OFF)
+option(BUILD_LEXER_TEST "Backward-compatible alias for BUILD_TESTING" OFF)
+
+if(BUILD_TESTING OR BUILD_LEXER_TEST)
+    enable_testing()
+    set(NOTEPATRA_BUILD_TESTS ON)
+else()
+    set(NOTEPATRA_BUILD_TESTS OFF)
+endif()
 
 # Use the dynamic CRT (/MD) on Windows MSVC, matching Qt5 from install-qt-action.
 # Mixing /MT (static CRT) with /MD-built Qt produces CRT-heap mismatches that
@@ -62,9 +71,24 @@ elseif(APPLE)
         find_library(QSCINTILLA_LIB qscintilla2_qt5)
     endif()
 else()
+    set(QSCINTILLA_INCLUDE_HINTS
+        /usr/include
+        /usr/include/qt5
+        /usr/lib/qt5/include
+    )
+    if(CMAKE_LIBRARY_ARCHITECTURE)
+        list(APPEND QSCINTILLA_INCLUDE_HINTS
+            /usr/include/${CMAKE_LIBRARY_ARCHITECTURE}
+            /usr/include/${CMAKE_LIBRARY_ARCHITECTURE}/qt5
+            /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}/qt5/include
+        )
+    endif()
     find_path(QSCINTILLA_INCLUDE Qsci/qsciscintilla.h
-        PATHS /usr/include /usr/include/x86_64-linux-gnu/qt5
-        PATH_SUFFIXES Qsci)
+        PATHS ${QSCINTILLA_INCLUDE_HINTS}
+        PATH_SUFFIXES "" Qsci qt5/Qsci)
+    if(NOT QSCINTILLA_INCLUDE)
+        find_path(QSCINTILLA_INCLUDE Qsci/qsciscintilla.h)
+    endif()
     find_library(QSCINTILLA_LIB qscintilla2_qt5)
 endif()
 
@@ -235,13 +259,16 @@ else()
     target_link_libraries(${EXE_NAME} PRIVATE pthread dl m)
 endif()
 
-# ── Lexer smoke test (optional, opt in via -DBUILD_LEXER_TEST=ON) ──
-# Builds a tiny test that instantiates every QsciLexer used by Notepatra and
-# verifies each one produces non-empty styling. Catches the user-reported bug
-# where .md / .sql / .json files showed no syntax highlighting because the
-# QScintilla build was missing Lexilla bindings (lexers were no-op stubs).
-option(BUILD_LEXER_TEST "Build the QScintilla lexer smoke test" OFF)
-if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexers.cpp")
+# ── Regression tests (opt in via -DBUILD_TESTING=ON) ──
+# BUILD_LEXER_TEST remains as a compatibility alias for old scripts/docs.
+function(notepatra_add_qt_test target_name)
+    add_test(
+        NAME ${target_name}
+        COMMAND ${CMAKE_COMMAND} -E env QT_QPA_PLATFORM=offscreen $<TARGET_FILE:${target_name}>
+    )
+endfunction()
+
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexers.cpp")
     add_executable(test_lexers test_lexers.cpp)
     target_include_directories(test_lexers PRIVATE
         ${CMAKE_SOURCE_DIR}/src
@@ -257,7 +284,9 @@ if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexers.cpp")
     if(WIN32)
         target_compile_definitions(test_lexers PRIVATE QSCINTILLA_DLL)
     endif()
-    message(STATUS "Lexer smoke test enabled — target: test_lexers")
+    notepatra_add_qt_test(test_lexers)
+    set_tests_properties(test_lexers PROPERTIES LABELS "smoke;lexer")
+    message(STATUS "Regression test enabled — target: test_lexers")
 endif()
 
 # ── Palette verification test ──
@@ -266,7 +295,7 @@ endif()
 # italic, numbers #FF8000, strings #808080, operators #000000 bold.
 # This catches the Windows v0.1.1 bug where lexers tokenized correctly but
 # rendered all styles as default black-on-white.
-if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_ollama.cpp")
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ollama.cpp")
     add_executable(test_ollama
         test_ollama.cpp
         src/ollama.cpp
@@ -278,10 +307,12 @@ if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_ollama.cpp")
         Qt5::Core
         Qt5::Network
     )
-    message(STATUS "Ollama dynamic-detection test enabled — target: test_ollama")
+    add_test(NAME test_ollama COMMAND $<TARGET_FILE:test_ollama>)
+    set_tests_properties(test_ollama PROPERTIES LABELS "integration;ollama")
+    message(STATUS "Regression test enabled — target: test_ollama")
 endif()
 
-if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_aifix.cpp")
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_aifix.cpp")
     add_executable(test_aifix
         test_aifix.cpp
         src/ollama.cpp
@@ -293,10 +324,12 @@ if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_aifix.cpp")
         Qt5::Core
         Qt5::Network
     )
-    message(STATUS "AI Fix end-to-end test enabled — target: test_aifix")
+    add_test(NAME test_aifix COMMAND $<TARGET_FILE:test_aifix>)
+    set_tests_properties(test_aifix PROPERTIES LABELS "integration;ollama;aifix")
+    message(STATUS "Regression test enabled — target: test_aifix")
 endif()
 
-if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_fmtpanel_diff.cpp")
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_fmtpanel_diff.cpp")
     add_executable(test_fmtpanel_diff
         test_fmtpanel_diff.cpp
         src/fmtpanel.cpp
@@ -316,10 +349,12 @@ if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_fmtpanel_diff.cpp")
     if(WIN32)
         target_compile_definitions(test_fmtpanel_diff PRIVATE QSCINTILLA_DLL)
     endif()
-    message(STATUS "FormatterPanel diff test enabled — target: test_fmtpanel_diff")
+    notepatra_add_qt_test(test_fmtpanel_diff)
+    set_tests_properties(test_fmtpanel_diff PROPERTIES LABELS "regression;ui")
+    message(STATUS "Regression test enabled — target: test_fmtpanel_diff")
 endif()
 
-if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_palette.cpp")
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_palette.cpp")
     add_executable(test_palette
         test_palette.cpp
         src/npp_palette.cpp
@@ -338,7 +373,9 @@ if(BUILD_LEXER_TEST AND EXISTS "${CMAKE_SOURCE_DIR}/test_palette.cpp")
     if(WIN32)
         target_compile_definitions(test_palette PRIVATE QSCINTILLA_DLL)
     endif()
-    message(STATUS "Palette verification test enabled — target: test_palette")
+    notepatra_add_qt_test(test_palette)
+    set_tests_properties(test_palette PROPERTIES LABELS "regression;palette")
+    message(STATUS "Regression test enabled — target: test_palette")
 endif()
 
 # ── Install ──

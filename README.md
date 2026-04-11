@@ -13,6 +13,7 @@
     <a href="#install">Install</a> ·
     <a href="#plugins">Plugins</a> ·
     <a href="#ai-powered">AI</a> ·
+    <a href="CONTRIBUTING.md">Contributing</a> ·
     <a href="SECURITY.md">Security</a> ·
     <a href="CHANGELOG.md">Changelog</a>
   </p>
@@ -256,11 +257,12 @@ That's it. Auto-detects your OS, downloads the right binary, installs it, adds t
 | Platform | Download | Size | What's inside |
 |---|---|---|---|
 | 🐧 **Linux x64** | [`.tar.gz`](https://github.com/singhpratech/notepatra/releases/latest) | **1.8 MB** | Bare `notepatra` binary. Qt5 from your distro. |
+| 🐧 **Linux ARM64** | [`.tar.gz`](https://github.com/singhpratech/notepatra/releases/latest) | **~2 MB** | Bare `notepatra` binary for `aarch64` / ARM64 Linux. |
 | 🍎 **macOS Apple Silicon** (M1–M4) | [`.dmg`](https://github.com/singhpratech/notepatra/releases/latest) | **24 MB** | `Notepatra.app` with Qt frameworks bundled. Drag to Applications. |
 | 🪟 **Windows x64 (installer)** | [`.exe`](https://github.com/singhpratech/notepatra/releases/latest) | **~40 MB** | NSIS installer. Registers in Settings → Apps → Installed apps. Uninstall via Control Panel works. |
 | 🪟 **Windows x64 (portable)** | [`.zip`](https://github.com/singhpratech/notepatra/releases/latest) | **40 MB** | `notepatra.exe` + Qt DLLs + QScintilla DLL. Unzip and run anywhere. No installer, no registry. |
 
-**Why are the download sizes different?** The bare `notepatra` executable is **5.1 MB on Linux**, **3.0 MB on Windows**, and **2.7 MB on macOS Apple Silicon** (clang and MSVC strip more aggressively than gcc). On Linux, Qt5 is a standard system package (`apt install qtbase5-dev libqscintilla2-qt5-dev`), so the download is just the binary — 1.8 MB compressed. On macOS and Windows, Qt isn't pre-installed, so we bundle the Qt frameworks/DLLs alongside the executable for portability — same approach Krita, Kdenlive, and every cross-platform Qt app uses. Even with Qt bundled, Notepatra is still **6× smaller than VS Code** on Windows and **14× smaller** on Linux.
+**Why are the download sizes different?** The bare `notepatra` executable is about **5 MB on Linux**, **3.0 MB on Windows**, and **2.7 MB on macOS Apple Silicon** (clang and MSVC strip more aggressively than gcc). On Linux, Qt5 is a standard system package (`apt install qtbase5-dev libqscintilla2-qt5-dev`), so the download is just the binary. On macOS and Windows, Qt isn't pre-installed, so we bundle the Qt frameworks/DLLs alongside the executable for portability — same approach Krita, Kdenlive, and every cross-platform Qt app uses. Even with Qt bundled, Notepatra is still **6× smaller than VS Code** on Windows and **14× smaller** on Linux.
 
 > macOS Intel: not shipped pre-built. Apple stopped selling Intel Macs in 2023 and the GitHub Actions `macos-13` runner has been unreliable. Intel Mac users — `git clone` and run `./build.sh`. Builds in ~3 minutes.
 
@@ -274,6 +276,7 @@ curl -sL -O https://github.com/singhpratech/notepatra/releases/latest/download/S
 sha256sum -c SHA256SUMS --ignore-missing
 
 # Anywhere — cosign verify (Sigstore)
+# Replace `linux-x64` with `linux-arm64` if you downloaded the ARM64 build.
 cosign verify-blob \
   --certificate-identity-regexp '^https://github.com/singhpratech/notepatra/' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
@@ -282,6 +285,7 @@ cosign verify-blob \
   notepatra-linux-x64.tar.gz
 
 # Anywhere — SLSA build provenance
+# Replace `linux-x64` with `linux-arm64` if needed.
 gh attestation verify notepatra-linux-x64.tar.gz --owner singhpratech
 ```
 
@@ -418,14 +422,26 @@ cl /LD myplugin.cpp /Fe:myplugin.dll
 
 ## Tests
 
-105/105 automated tests passing across 20 categories:
-Window, Menus, Editor, Rust Core (Text, Search, Hash, JSON, HTML, Brackets, SQL, Diff, File I/O), Find/Replace, Languages, Bookmarks, Zoom, View, Tabs, Edge Cases, Config.
+Focused automated regression tests are wired through CMake + CTest and run in CI. The current suite covers:
+- `test_lexers` — verifies every shipped QScintilla lexer produces real styling
+- `test_palette` — verifies the Notepad++ palette colors and bold/italic styles
+- `test_fmtpanel_diff` — verifies formatter panels keep diff state and emit signals
+- `test_ollama` — verifies live Ollama model detection
+- `test_aifix` — exercises the AI-fix cleanup path against a real Ollama daemon
+
+Run them locally with:
+
+```bash
+./build.sh --tests
+```
+
+`test_ollama` and `test_aifix` skip cleanly when Ollama is offline, so local and CI runs stay deterministic.
 
 ---
 
 ## Releases
 
-Notepatra follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Versioning](https://semver.org/). Every release is tagged, signed, and published to GitHub Releases with binaries for all three platforms.
+Notepatra follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Versioning](https://semver.org/). Every release is tagged, signed, and published to GitHub Releases with binaries for Linux x64, Linux ARM64, macOS Apple Silicon, and Windows x64.
 
 | Version | Date | Highlights |
 |---|---|---|
@@ -479,7 +495,7 @@ Notepatra is licensed under the **[GNU General Public License v3.0](LICENSE)**. 
 
 > **Notepatra is provided "AS IS", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and non-infringement. The entire risk as to the quality and performance of the program is with you. Should the program prove defective, you assume the cost of all necessary servicing, repair, or correction.**
 
-In other words: I built this in good faith, I run the test suite on every commit, every release is checksummed and signed — but I am one person on the internet shipping a free editor. **Verify your downloads**, **back up your work**, and **don't blame me** if something breaks.
+In other words: I built this in good faith, CI runs focused smoke and regression tests on pushes and pull requests, and every release is checksummed and signed — but I am one person on the internet shipping a free editor. **Verify your downloads**, **back up your work**, and **don't blame me** if something breaks.
 
 ### Limitation of liability (GPL §16, plain English)
 

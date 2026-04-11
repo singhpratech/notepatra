@@ -7,6 +7,9 @@
 #include <QDir>
 #include <QTreeWidgetItem>
 #include <QHeaderView>
+#include <QInputDialog>
+#include <QLineEdit>
+#include <QMessageBox>
 
 GitPanel::GitPanel(QWidget *parent) : QWidget(parent) {
     auto *layout = new QVBoxLayout(this);
@@ -58,14 +61,58 @@ GitPanel::GitPanel(QWidget *parent) : QWidget(parent) {
 
     connect(commitBtn, &QPushButton::clicked, this, [this]() {
         if (m_repoRoot.isEmpty()) return;
-        // Quick commit — stage all + commit with message from input dialog
-        QProcess proc;
-        proc.setWorkingDirectory(m_repoRoot);
-        proc.start("git", {"add", "-A"});
-        proc.waitForFinished(5000);
 
-        // TODO: show input dialog for commit message
-        // For now just stage
+        QString statusOut;
+        if (!runGitSync({"status", "--porcelain"}, &statusOut, nullptr, 5000)) {
+            QMessageBox::warning(this, "Git Commit", "Could not read repository status.");
+            return;
+        }
+        if (statusOut.trimmed().isEmpty()) {
+            m_statusLabel->setText("  Nothing to commit");
+            return;
+        }
+
+        bool ok = false;
+        QString message = QInputDialog::getText(
+            this,
+            "Git Commit",
+            "Commit message:",
+            QLineEdit::Normal,
+            "",
+            &ok
+        ).trimmed();
+        if (!ok) return;
+        if (message.isEmpty()) {
+            QMessageBox::warning(this, "Git Commit", "Commit message cannot be empty.");
+            return;
+        }
+
+        QString stageErr;
+        if (!runGitSync({"add", "-A"}, nullptr, &stageErr, 10000)) {
+            QMessageBox::critical(
+                this,
+                "Git Commit",
+                QString("Staging failed:\n%1").arg(stageErr.trimmed())
+            );
+            return;
+        }
+
+        QString commitOut;
+        QString commitErr;
+        if (!runGitSync({"commit", "-m", message}, &commitOut, &commitErr, 15000)) {
+            QString details = commitErr.trimmed();
+            if (details.isEmpty()) details = commitOut.trimmed();
+            if (details.isEmpty()) details = "git commit returned a non-zero exit code.";
+            QMessageBox::critical(
+                this,
+                "Git Commit",
+                QString("Commit failed:\n%1").arg(details)
+            );
+            return;
+        }
+
+        m_statusLabel->setText(QString("  Committed: %1").arg(message));
+        refresh(m_repoRoot);
     });
 
     connect(pushBtn, &QPushButton::clicked, this, [this]() {
@@ -152,4 +199,27 @@ void GitPanel::refresh(const QString &filePath) {
 
     m_statusLabel->setText(QString("  +%1 added  ~%2 modified  -%3 deleted  ?%4 untracked")
                            .arg(added).arg(modified).arg(deleted).arg(untracked));
+}
+
+bool GitPanel::runGitSync(
+    const QStringList &args,
+    QString *stdoutText,
+    QString *stderrText,
+    int timeoutMs
+) {
+    QProcess proc;
+    proc.setWorkingDirectory(m_repoRoot);
+    proc.start("git", args);
+    if (!proc.waitForFinished(timeoutMs)) {
+        proc.kill();
+        proc.waitForFinished();
+        if (stdoutText) *stdoutText = QString::fromUtf8(proc.readAllStandardOutput());
+        if (stderrText) *stderrText = "git command timed out";
+        return false;
+    }
+
+    if (stdoutText) *stdoutText = QString::fromUtf8(proc.readAllStandardOutput());
+    if (stderrText) *stderrText = QString::fromUtf8(proc.readAllStandardError());
+
+    return proc.exitStatus() == QProcess::NormalExit && proc.exitCode() == 0;
 }

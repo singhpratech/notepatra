@@ -43,31 +43,77 @@ jobs:
           cmake .. -DCMAKE_BUILD_TYPE=Release
           make -j$(nproc)
 
-      - name: Build lexer smoke test (CMake target)
+      - name: Build regression tests (CMake targets)
         run: |
-          # Reconfigure with -DBUILD_LEXER_TEST=ON to add the test_lexers
-          # target to the same build tree the main exe was built in.
-          # This reuses all of CMakeLists.txt's Qt5/QScintilla discovery and
-          # works identically on every platform — no hand-rolled compiler
-          # invocations to drift from the real build.
+          # Reconfigure with -DBUILD_TESTING=ON so the existing smoke and
+          # regression binaries are registered through CTest in the same build
+          # tree as the main executable.
           cd build
-          cmake .. -DBUILD_LEXER_TEST=ON
-          make test_lexers -j$(nproc)
-          ls -lh test_lexers
+          cmake .. -DBUILD_TESTING=ON
+          cmake --build . --parallel "$(nproc)" \
+            --target test_lexers test_palette test_fmtpanel_diff test_ollama test_aifix
 
-      - name: Run lexer smoke test
+      - name: Run regression suite
         run: |
           ls -lh build/notepatra
           file build/notepatra
           build/notepatra --version || true
-          # Use offscreen Qt platform plugin so we don't need an X server
-          export QT_QPA_PLATFORM=offscreen
-          ./build/test_lexers
+          cd build
+          QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: notepatra-linux-x64
+          path: build/notepatra
+
+  build-linux-arm:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake \
+            qtbase5-dev libqscintilla2-qt5-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Audit Rust dependencies (cargo-audit)
+        run: |
+          cargo install --locked cargo-audit 2>&1 | tail -5 || true
+          cd rust-core && cargo audit || echo "::warning::cargo-audit reported advisories — review them"
+
+      - name: Build Rust core
+        run: cd rust-core && cargo build --release
+
+      - name: Build C++
+        run: |
+          mkdir -p build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+          make -j$(nproc)
+
+      - name: Build regression tests (CMake targets)
+        run: |
+          cd build
+          cmake .. -DBUILD_TESTING=ON
+          cmake --build . --parallel "$(nproc)" \
+            --target test_lexers test_palette test_fmtpanel_diff test_ollama test_aifix
+
+      - name: Run regression suite
+        run: |
+          ls -lh build/notepatra
+          file build/notepatra
+          build/notepatra --version || true
+          cd build
+          QT_QPA_PLATFORM=offscreen ctest --output-on-failure
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepatra-linux-arm64
           path: build/notepatra
 
   # Note: Intel Mac (macos-13) build was removed — Apple stopped selling Intel Macs in 2023,
@@ -129,10 +175,10 @@ jobs:
             -DQSCINTILLA_LIB="$QSC_LIB"
           make VERBOSE=1 2>&1 | tail -200
 
-      - name: Build and run lexer smoke test (CMake target)
+      - name: Build and run regression suite
         run: |
           # Reuse the same Qt5/QScintilla discovery the main build did by
-          # reconfiguring the existing build tree with -DBUILD_LEXER_TEST=ON.
+          # reconfiguring the existing build tree with -DBUILD_TESTING=ON.
           QT_PATH=$(brew --prefix qt@5)
           QSC_LIB=$(find /opt/homebrew /usr/local -name "libqscintilla2_qt5*dylib" 2>/dev/null | head -1)
           QSC_HDR=$(find /opt/homebrew /usr/local -name "qsciscintilla.h" 2>/dev/null | head -1)
@@ -142,11 +188,10 @@ jobs:
             -DCMAKE_PREFIX_PATH="$QT_PATH" \
             -DQSCINTILLA_INCLUDE="$QSC_INC" \
             -DQSCINTILLA_LIB="$QSC_LIB" \
-            -DBUILD_LEXER_TEST=ON
-          make test_lexers
-          ls -lh test_lexers
-          export QT_QPA_PLATFORM=offscreen
-          ./test_lexers
+            -DBUILD_TESTING=ON
+          cmake --build . --parallel "$(sysctl -n hw.ncpu)" \
+            --target test_lexers test_palette test_fmtpanel_diff test_ollama test_aifix
+          QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 
       - name: Create DMG
         run: |
@@ -598,32 +643,28 @@ jobs:
             exit 1
           }
 
-      - name: Build and run lexer smoke test (CMake target)
+      - name: Build and run regression suite
         shell: pwsh
         run: |
-          # Reconfigure the existing build tree with -DBUILD_LEXER_TEST=ON so
-          # CMake builds test_lexers as a target using the SAME Qt5 + QScintilla
-          # find_package() discovery the main exe used. This catches the
-          # Markdown/SQL/JSON-not-highlighting bug at CI time.
+          # Reconfigure the existing build tree with -DBUILD_TESTING=ON so the
+          # full regression suite is registered through CTest using the SAME
+          # Qt5 + QScintilla discovery the main exe used.
           $qtRoot = "${{ steps.qscintilla.outputs.QT_ROOT }}"
           Set-Location build
           cmake .. -G "Visual Studio 17 2022" -A x64 `
             "-DCMAKE_PREFIX_PATH=$qtRoot" `
             "-DQSCINTILLA_INCLUDE=${{ steps.qscintilla.outputs.QSC_INC }}" `
             "-DQSCINTILLA_LIB=${{ steps.qscintilla.outputs.QSC_LIB }}" `
-            -DBUILD_LEXER_TEST=ON
+            -DBUILD_TESTING=ON
           if ($LASTEXITCODE -ne 0) { Write-Host "::error::cmake reconfigure for test failed"; exit 1 }
-          cmake --build . --config Release --target test_lexers
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::test_lexers build failed"; exit 1 }
+          cmake --build . --config Release --target test_lexers test_palette test_fmtpanel_diff test_ollama test_aifix
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::regression test build failed"; exit 1 }
 
-          # Find and run the test exe. Add Qt + QScintilla DLLs to PATH so it loads.
-          $testExe = Get-ChildItem -Path . -Recurse -Filter "test_lexers.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $testExe) { Write-Host "::error::test_lexers.exe not found after build"; exit 1 }
+          # Add Qt + bundled QScintilla DLLs to PATH so CTest can load them.
           $env:PATH = "$qtRoot\bin;$PWD\..\notepatra-win;$env:PATH"
-          & $testExe.FullName
+          ctest --output-on-failure -C Release
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "::error::Lexer smoke test FAILED — at least one QsciLexer is a stub on Windows"
-            Write-Host "         This is the bug the user reported (Markdown/SQL/JSON not highlighting)."
+            Write-Host "::error::Windows regression suite FAILED"
             exit 1
           }
 
@@ -792,7 +833,7 @@ jobs:
           }
 
   release:
-    needs: [build-linux, build-macos-arm, build-windows]
+    needs: [build-linux, build-linux-arm, build-macos-arm, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -807,7 +848,9 @@ jobs:
         run: |
           ls -la
           chmod +x notepatra-linux-x64/notepatra || true
+          chmod +x notepatra-linux-arm64/notepatra || true
           tar czf notepatra-linux-x64.tar.gz -C notepatra-linux-x64 notepatra
+          tar czf notepatra-linux-arm64.tar.gz -C notepatra-linux-arm64 notepatra
           cp notepatra-macos-arm64/Notepatra.dmg notepatra-macos-arm64.dmg
           if [ -d notepatra-windows-x64 ]; then
             cd notepatra-windows-x64 && zip -r ../notepatra-windows-x64.zip . && cd ..
@@ -835,7 +878,7 @@ jobs:
           # Generate a single SHA256SUMS file in the standard format that
           # `sha256sum -c` understands. Users can verify with:
           #   sha256sum -c SHA256SUMS
-          for f in notepatra-linux-x64.tar.gz notepatra-macos-arm64.dmg \
+          for f in notepatra-linux-x64.tar.gz notepatra-linux-arm64.tar.gz notepatra-macos-arm64.dmg \
                    notepatra-windows-x64.zip notepatra-setup-*.exe; do
             [ -f "$f" ] && sha256sum "$f" >> SHA256SUMS
           done
@@ -883,7 +926,7 @@ jobs:
           # Actions OIDC token, no long-lived secrets. Each .sig is the
           # detached signature, each .pem is the short-lived cert that
           # ties the signature to this repo + workflow + commit SHA.
-          for f in notepatra-linux-x64.tar.gz notepatra-macos-arm64.dmg \
+          for f in notepatra-linux-x64.tar.gz notepatra-linux-arm64.tar.gz notepatra-macos-arm64.dmg \
                    notepatra-windows-x64.zip notepatra-setup-*.exe SHA256SUMS; do
             [ -f "$f" ] || continue
             cosign sign-blob --yes \
@@ -898,6 +941,7 @@ jobs:
         with:
           subject-path: |
             notepatra-linux-x64.tar.gz
+            notepatra-linux-arm64.tar.gz
             notepatra-macos-arm64.dmg
             notepatra-windows-x64.zip
             notepatra-setup-*.exe
@@ -907,12 +951,15 @@ jobs:
         with:
           files: |
             notepatra-linux-x64.tar.gz
+            notepatra-linux-arm64.tar.gz
             notepatra-macos-arm64.dmg
             notepatra-windows-x64.zip
             notepatra-setup-*.exe
             SHA256SUMS
             notepatra-linux-x64.tar.gz.sig
             notepatra-linux-x64.tar.gz.pem
+            notepatra-linux-arm64.tar.gz.sig
+            notepatra-linux-arm64.tar.gz.pem
             notepatra-macos-arm64.dmg.sig
             notepatra-macos-arm64.dmg.pem
             notepatra-windows-x64.zip.sig

@@ -44,6 +44,8 @@ sha256sum -c SHA256SUMS --ignore-missing
 # expected: notepatra-linux-x64.tar.gz: OK
 ```
 
+If you downloaded the ARM64 Linux build, verify `notepatra-linux-arm64.tar.gz` the same way.
+
 **Windows PowerShell:**
 ```powershell
 Invoke-WebRequest https://github.com/singhpratech/notepatra/releases/download/v0.1.0/SHA256SUMS -OutFile SHA256SUMS
@@ -63,6 +65,7 @@ Every release artifact is signed via [Sigstore cosign](https://www.sigstore.dev)
 
 ```sh
 # Install cosign: https://docs.sigstore.dev/cosign/installation/
+# Replace `linux-x64` with `linux-arm64` if that is the artifact you downloaded.
 cosign verify-blob \
   --certificate-identity-regexp '^https://github.com/singhpratech/notepatra/' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
@@ -84,6 +87,7 @@ Every release includes an [SLSA build provenance attestation](https://slsa.dev/)
 
 ```sh
 # Install gh CLI: https://cli.github.com
+# Replace `linux-x64` with `linux-arm64` for the ARM build.
 gh attestation verify notepatra-linux-x64.tar.gz --owner singhpratech
 # expected: Loaded digest sha256:... for file://...
 #           Verification succeeded!

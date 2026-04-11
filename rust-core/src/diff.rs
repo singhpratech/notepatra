@@ -1,8 +1,8 @@
 //! File compare — line-by-line diff using the Myers diff algorithm.
 
+use libc::c_char;
 use similar::{ChangeTag, TextDiff};
 use std::ffi::CString;
-use libc::c_char;
 
 /// A single diff hunk for FFI.
 #[repr(C)]

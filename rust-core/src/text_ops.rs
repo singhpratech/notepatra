@@ -1,19 +1,19 @@
 //! Text operations — sort, dedupe, trim, reverse, case conversion.
 //! All operations are allocation-safe and handle huge inputs via iterators.
 
-use rayon::prelude::*;
+use std::cmp::Reverse;
 
 /// Sort lines. mode: 0=asc, 1=desc, 2=int_asc, 3=int_desc, 4=len_asc, 5=len_desc
 pub fn sort_lines(text: &str, mode: i32) -> String {
     let mut lines: Vec<&str> = text.lines().collect();
 
     match mode {
-        0 => lines.sort_unstable_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase())),
-        1 => lines.sort_unstable_by(|a, b| b.to_lowercase().cmp(&a.to_lowercase())),
+        0 => lines.sort_unstable_by_key(|s| s.to_lowercase()),
+        1 => lines.sort_unstable_by_key(|s| Reverse(s.to_lowercase())),
         2 => lines.sort_unstable_by_key(|s| parse_int(s)),
-        3 => lines.sort_unstable_by(|a, b| parse_int(b).cmp(&parse_int(a))),
+        3 => lines.sort_unstable_by_key(|s| Reverse(parse_int(s))),
         4 => lines.sort_unstable_by_key(|s| s.len()),
-        5 => lines.sort_unstable_by(|a, b| b.len().cmp(&a.len())),
+        5 => lines.sort_unstable_by_key(|s| Reverse(s.len())),
         _ => lines.sort_unstable(),
     }
 
@@ -28,7 +28,7 @@ pub fn remove_duplicates(text: &str, mode: i32) -> String {
         // Consecutive only
         let mut result = Vec::with_capacity(lines.len());
         for line in &lines {
-            if result.last().map_or(true, |last: &&str| *last != *line) {
+            if result.last().is_none_or(|last: &&str| *last != *line) {
                 result.push(*line);
             }
         }

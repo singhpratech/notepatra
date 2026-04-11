@@ -5,3 +5,5 @@ rust-core/target/
 *.a
 .cache/
 test_lexers
+# Local cross-compile output / release artifacts
+artifacts/

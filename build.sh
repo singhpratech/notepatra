@@ -8,6 +8,23 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$PROJECT_DIR/build"
 JOBS="${JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)}"
+RUN_TESTS=0
+
+parse_args() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --tests)
+                RUN_TESTS=1
+                ;;
+            *)
+                echo "ERROR: Unknown option: $1"
+                echo "Usage: ./build.sh [--tests]"
+                exit 1
+                ;;
+        esac
+        shift
+    done
+}
 
 # ── Detect platform ──
 detect_platform() {
@@ -76,6 +93,9 @@ build_cpp() {
     cd "$BUILD_DIR"
 
     local cmake_args=(-DCMAKE_BUILD_TYPE=Release)
+    if [ "$RUN_TESTS" -eq 1 ]; then
+        cmake_args+=("-DBUILD_TESTING=ON")
+    fi
 
     case "$PLATFORM" in
         macos)
@@ -97,6 +117,14 @@ build_cpp() {
     cmake "${cmake_args[@]}" "$PROJECT_DIR"
     cmake --build . --parallel "$JOBS"
 
+    cd "$PROJECT_DIR"
+}
+
+run_tests() {
+    echo ""
+    echo "=== Running regression tests ==="
+    cd "$BUILD_DIR"
+    QT_QPA_PLATFORM=offscreen ctest --output-on-failure
     cd "$PROJECT_DIR"
 }
 
@@ -126,6 +154,8 @@ main() {
     echo "  Notepatra Build Script"
     echo "==============================="
 
+    parse_args "$@"
+
     detect_platform
 
     if [ "$PLATFORM" = "unknown" ]; then
@@ -136,6 +166,9 @@ main() {
     check_deps
     build_rust
     build_cpp
+    if [ "$RUN_TESTS" -eq 1 ]; then
+        run_tests
+    fi
     print_result
 }
 

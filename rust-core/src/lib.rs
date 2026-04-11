@@ -2,19 +2,20 @@
 //!
 //! Memory-safe backend for file I/O, text processing, encoding, search, hashing.
 //! Exposed to C++ via `extern "C"` FFI.
+#![allow(clippy::missing_safety_doc)]
 
-mod file_io;
-mod text_ops;
-mod search;
-mod hash;
-mod encoding;
-mod diff;
-mod sql_fmt;
-mod json_fmt;
-mod html_fmt;
 mod bracket_fix;
+mod diff;
+mod encoding;
+mod file_io;
+mod hash;
+mod html_fmt;
+mod json_fmt;
+mod search;
+mod sql_fmt;
+mod text_ops;
 
-use libc::{c_char, c_int, c_uint, size_t};
+use libc::{c_char, c_int, size_t};
 use std::ffi::{CStr, CString};
 use std::ptr;
 use std::slice;
@@ -73,7 +74,7 @@ pub struct HashResult {
 /// Load a file with memory mapping for large files.
 /// Returns FileLoadResult. Caller must free strings with npc_free_string.
 #[no_mangle]
-pub extern "C" fn npc_load_file(path: *const c_char) -> FileLoadResult {
+pub unsafe extern "C" fn npc_load_file(path: *const c_char) -> FileLoadResult {
     let path = match unsafe { CStr::from_ptr(path) }.to_str() {
         Ok(s) => s,
         Err(_) => return error_result("Invalid path encoding"),
@@ -84,7 +85,7 @@ pub extern "C" fn npc_load_file(path: *const c_char) -> FileLoadResult {
 /// Save text to a file.
 /// Returns 0 on success, -1 on error.
 #[no_mangle]
-pub extern "C" fn npc_save_file(
+pub unsafe extern "C" fn npc_save_file(
     path: *const c_char,
     text: *const c_char,
     text_len: size_t,
@@ -95,10 +96,9 @@ pub extern "C" fn npc_save_file(
         Err(_) => return -1,
     };
     let text_bytes = unsafe { slice::from_raw_parts(text as *const u8, text_len) };
-    let enc = match unsafe { CStr::from_ptr(encoding) }.to_str() {
-        Ok(s) => s,
-        Err(_) => "UTF-8",
-    };
+    let enc = unsafe { CStr::from_ptr(encoding) }
+        .to_str()
+        .unwrap_or("UTF-8");
     file_io::save_file(path, text_bytes, enc)
 }
 
@@ -108,7 +108,7 @@ pub extern "C" fn npc_save_file(
 
 /// Sort lines. mode: 0=asc, 1=desc, 2=int_asc, 3=int_desc, 4=length_asc, 5=length_desc
 #[no_mangle]
-pub extern "C" fn npc_sort_lines(
+pub unsafe extern "C" fn npc_sort_lines(
     text: *const c_char,
     text_len: size_t,
     mode: c_int,
@@ -120,7 +120,7 @@ pub extern "C" fn npc_sort_lines(
 
 /// Remove duplicate lines. mode: 0=all, 1=consecutive
 #[no_mangle]
-pub extern "C" fn npc_remove_duplicates(
+pub unsafe extern "C" fn npc_remove_duplicates(
     text: *const c_char,
     text_len: size_t,
     mode: c_int,
@@ -132,7 +132,7 @@ pub extern "C" fn npc_remove_duplicates(
 
 /// Remove empty lines. mode: 0=empty, 1=blank(whitespace-only)
 #[no_mangle]
-pub extern "C" fn npc_remove_empty_lines(
+pub unsafe extern "C" fn npc_remove_empty_lines(
     text: *const c_char,
     text_len: size_t,
     mode: c_int,
@@ -144,7 +144,7 @@ pub extern "C" fn npc_remove_empty_lines(
 
 /// Trim lines. mode: 0=trailing, 1=leading, 2=both
 #[no_mangle]
-pub extern "C" fn npc_trim_lines(
+pub unsafe extern "C" fn npc_trim_lines(
     text: *const c_char,
     text_len: size_t,
     mode: c_int,
@@ -156,10 +156,7 @@ pub extern "C" fn npc_trim_lines(
 
 /// Reverse line order.
 #[no_mangle]
-pub extern "C" fn npc_reverse_lines(
-    text: *const c_char,
-    text_len: size_t,
-) -> TextResult {
+pub unsafe extern "C" fn npc_reverse_lines(text: *const c_char, text_len: size_t) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
     let result = text_ops::reverse_lines(input);
     text_to_result(result)
@@ -167,23 +164,20 @@ pub extern "C" fn npc_reverse_lines(
 
 /// Join lines with a separator.
 #[no_mangle]
-pub extern "C" fn npc_join_lines(
+pub unsafe extern "C" fn npc_join_lines(
     text: *const c_char,
     text_len: size_t,
     separator: *const c_char,
 ) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
-    let sep = match unsafe { CStr::from_ptr(separator) }.to_str() {
-        Ok(s) => s,
-        Err(_) => " ",
-    };
+    let sep = unsafe { CStr::from_ptr(separator) }.to_str().unwrap_or(" ");
     let result = text_ops::join_lines(input, sep);
     text_to_result(result)
 }
 
 /// Convert case. mode: 0=upper, 1=lower, 2=title, 3=sentence, 4=invert
 #[no_mangle]
-pub extern "C" fn npc_convert_case(
+pub unsafe extern "C" fn npc_convert_case(
     text: *const c_char,
     text_len: size_t,
     mode: c_int,
@@ -195,7 +189,7 @@ pub extern "C" fn npc_convert_case(
 
 /// Convert tabs to spaces or vice versa. mode: 0=tab_to_space, 1=space_to_tab
 #[no_mangle]
-pub extern "C" fn npc_convert_whitespace(
+pub unsafe extern "C" fn npc_convert_whitespace(
     text: *const c_char,
     text_len: size_t,
     tab_width: c_int,
@@ -213,7 +207,7 @@ pub extern "C" fn npc_convert_whitespace(
 /// Find all matches. Returns byte offset positions.
 /// is_regex: 1=regex, 0=literal. case_sensitive: 1=yes, 0=no. whole_word: 1=yes, 0=no.
 #[no_mangle]
-pub extern "C" fn npc_find_all(
+pub unsafe extern "C" fn npc_find_all(
     text: *const c_char,
     text_len: size_t,
     pattern: *const c_char,
@@ -242,7 +236,7 @@ pub extern "C" fn npc_find_all(
 
 /// Count matches.
 #[no_mangle]
-pub extern "C" fn npc_count_matches(
+pub unsafe extern "C" fn npc_count_matches(
     text: *const c_char,
     text_len: size_t,
     pattern: *const c_char,
@@ -259,7 +253,7 @@ pub extern "C" fn npc_count_matches(
 
 /// Replace all matches.
 #[no_mangle]
-pub extern "C" fn npc_replace_all(
+pub unsafe extern "C" fn npc_replace_all(
     text: *const c_char,
     text_len: size_t,
     pattern: *const c_char,
@@ -286,7 +280,7 @@ pub extern "C" fn npc_replace_all(
 
 /// Compute hash. algo: 0=md5, 1=sha1, 2=sha256, 3=sha512
 #[no_mangle]
-pub extern "C" fn npc_hash(
+pub unsafe extern "C" fn npc_hash(
     data: *const c_char,
     data_len: size_t,
     algo: c_int,
@@ -300,10 +294,7 @@ pub extern "C" fn npc_hash(
 
 /// Base64 encode.
 #[no_mangle]
-pub extern "C" fn npc_base64_encode(
-    data: *const c_char,
-    data_len: size_t,
-) -> TextResult {
+pub unsafe extern "C" fn npc_base64_encode(data: *const c_char, data_len: size_t) -> TextResult {
     let bytes = unsafe { slice::from_raw_parts(data as *const u8, data_len) };
     let result = encoding::base64_encode(bytes);
     text_to_result(result)
@@ -311,10 +302,7 @@ pub extern "C" fn npc_base64_encode(
 
 /// Base64 decode.
 #[no_mangle]
-pub extern "C" fn npc_base64_decode(
-    data: *const c_char,
-    data_len: size_t,
-) -> TextResult {
+pub unsafe extern "C" fn npc_base64_decode(data: *const c_char, data_len: size_t) -> TextResult {
     let bytes = unsafe { slice::from_raw_parts(data as *const u8, data_len) };
     let result = encoding::base64_decode(bytes);
     text_to_result(result)
@@ -322,14 +310,14 @@ pub extern "C" fn npc_base64_decode(
 
 /// URL encode.
 #[no_mangle]
-pub extern "C" fn npc_url_encode(text: *const c_char, text_len: size_t) -> TextResult {
+pub unsafe extern "C" fn npc_url_encode(text: *const c_char, text_len: size_t) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
     text_to_result(encoding::url_encode(input))
 }
 
 /// URL decode.
 #[no_mangle]
-pub extern "C" fn npc_url_decode(text: *const c_char, text_len: size_t) -> TextResult {
+pub unsafe extern "C" fn npc_url_decode(text: *const c_char, text_len: size_t) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
     text_to_result(encoding::url_decode(input))
 }
@@ -342,7 +330,7 @@ pub use diff::{DiffLine, DiffResult};
 
 /// Compute line diff between two texts.
 #[no_mangle]
-pub extern "C" fn npc_diff(
+pub unsafe extern "C" fn npc_diff(
     left: *const c_char,
     left_len: size_t,
     right: *const c_char,
@@ -355,7 +343,7 @@ pub extern "C" fn npc_diff(
 
 /// Free a DiffResult.
 #[no_mangle]
-pub extern "C" fn npc_free_diff(result: DiffResult) {
+pub unsafe extern "C" fn npc_free_diff(result: DiffResult) {
     if !result.lines.is_null() && result.count > 0 {
         unsafe {
             let slice = Vec::from_raw_parts(result.lines, result.count, result.count);
@@ -374,7 +362,7 @@ pub extern "C" fn npc_free_diff(result: DiffResult) {
 
 /// Format SQL. indent_width: spaces per indent. uppercase: 1=yes, 0=no.
 #[no_mangle]
-pub extern "C" fn npc_format_sql(
+pub unsafe extern "C" fn npc_format_sql(
     text: *const c_char,
     text_len: size_t,
     indent_width: c_int,
@@ -390,19 +378,23 @@ pub extern "C" fn npc_format_sql(
 // ═══════════════════════════════════════════════════════════
 
 #[no_mangle]
-pub extern "C" fn npc_format_json(text: *const c_char, text_len: size_t, indent: c_int) -> TextResult {
+pub unsafe extern "C" fn npc_format_json(
+    text: *const c_char,
+    text_len: size_t,
+    indent: c_int,
+) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
     text_to_result(json_fmt::format_json(input, indent as usize))
 }
 
 #[no_mangle]
-pub extern "C" fn npc_minify_json(text: *const c_char, text_len: size_t) -> TextResult {
+pub unsafe extern "C" fn npc_minify_json(text: *const c_char, text_len: size_t) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
     text_to_result(json_fmt::minify_json(input))
 }
 
 #[no_mangle]
-pub extern "C" fn npc_fix_json(text: *const c_char, text_len: size_t) -> TextResult {
+pub unsafe extern "C" fn npc_fix_json(text: *const c_char, text_len: size_t) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
     text_to_result(json_fmt::fix_json(input))
 }
@@ -410,7 +402,7 @@ pub extern "C" fn npc_fix_json(text: *const c_char, text_len: size_t) -> TextRes
 /// Fix JSON and return a report of what was fixed.
 /// Returns the report (not the fixed JSON — use npc_fix_json for the fixed text).
 #[no_mangle]
-pub extern "C" fn npc_fix_json_report(text: *const c_char, text_len: size_t) -> TextResult {
+pub unsafe extern "C" fn npc_fix_json_report(text: *const c_char, text_len: size_t) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
     let (_fixed, report) = json_fmt::fix_json_with_report(input);
     text_to_result(report)
@@ -421,7 +413,11 @@ pub extern "C" fn npc_fix_json_report(text: *const c_char, text_len: size_t) -> 
 // ═══════════════════════════════════════════════════════════
 
 #[no_mangle]
-pub extern "C" fn npc_format_html(text: *const c_char, text_len: size_t, indent: c_int) -> TextResult {
+pub unsafe extern "C" fn npc_format_html(
+    text: *const c_char,
+    text_len: size_t,
+    indent: c_int,
+) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
     text_to_result(html_fmt::format_html(input, indent as usize))
 }
@@ -431,13 +427,13 @@ pub extern "C" fn npc_format_html(text: *const c_char, text_len: size_t, indent:
 // ═══════════════════════════════════════════════════════════
 
 #[no_mangle]
-pub extern "C" fn npc_fix_brackets(text: *const c_char, text_len: size_t) -> TextResult {
+pub unsafe extern "C" fn npc_fix_brackets(text: *const c_char, text_len: size_t) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
     text_to_result(bracket_fix::fix_brackets(input))
 }
 
 #[no_mangle]
-pub extern "C" fn npc_check_brackets(text: *const c_char, text_len: size_t) -> TextResult {
+pub unsafe extern "C" fn npc_check_brackets(text: *const c_char, text_len: size_t) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
     text_to_result(bracket_fix::check_brackets(input))
 }
@@ -447,7 +443,7 @@ pub extern "C" fn npc_check_brackets(text: *const c_char, text_len: size_t) -> T
 // ═══════════════════════════════════════════════════════════
 
 #[no_mangle]
-pub extern "C" fn npc_free_string(s: *mut c_char) {
+pub unsafe extern "C" fn npc_free_string(s: *mut c_char) {
     if !s.is_null() {
         unsafe {
             let _ = CString::from_raw(s);
@@ -456,7 +452,7 @@ pub extern "C" fn npc_free_string(s: *mut c_char) {
 }
 
 #[no_mangle]
-pub extern "C" fn npc_free_matches(result: SearchResult) {
+pub unsafe extern "C" fn npc_free_matches(result: SearchResult) {
     if !result.positions.is_null() && result.count > 0 {
         unsafe {
             let _ = Vec::from_raw_parts(result.positions, result.count, result.count);
@@ -465,7 +461,7 @@ pub extern "C" fn npc_free_matches(result: SearchResult) {
 }
 
 #[no_mangle]
-pub extern "C" fn npc_free_text_result(result: TextResult) {
+pub unsafe extern "C" fn npc_free_text_result(result: TextResult) {
     npc_free_string(result.text);
 }
 

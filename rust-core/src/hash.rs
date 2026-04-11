@@ -2,7 +2,7 @@
 
 use md5::Md5;
 use sha1::Sha1;
-use sha2::{Sha256, Sha512, Digest};
+use sha2::{Digest, Sha256, Sha512};
 
 /// Compute hash. algo: 0=md5, 1=sha1, 2=sha256, 3=sha512
 pub fn compute_hash(data: &[u8], algo: i32) -> String {

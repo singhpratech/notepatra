@@ -23,7 +23,7 @@ case "$OS" in
     linux)
         case "$ARCH" in
             x86_64) ARTIFACT="notepatra-linux-x64" ;;
-            aarch64) echo "ARM Linux not yet supported. Build from source."; exit 1 ;;
+            aarch64|arm64) ARTIFACT="notepatra-linux-arm64" ;;
             *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
         esac
         ;;

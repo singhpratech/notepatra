@@ -2,6 +2,7 @@
 //! Handles: missing braces, trailing commas, single quotes, unquoted keys,
 //! deeply nested structures, preserves all data.
 
+use regex::{Captures, Regex};
 use serde::Serialize;
 
 pub fn format_json(input: &str, indent: usize) -> String {
@@ -34,7 +35,10 @@ pub fn fix_json(input: &str) -> String {
 pub fn fix_json_with_report(input: &str) -> (String, String) {
     // If already valid, return as-is
     if serde_json::from_str::<serde_json::Value>(input).is_ok() {
-        return (input.to_string(), "JSON is already valid. No fixes needed.".to_string());
+        return (
+            input.to_string(),
+            "JSON is already valid. No fixes needed.".to_string(),
+        );
     }
 
     let mut report = Vec::new();
@@ -42,42 +46,39 @@ pub fn fix_json_with_report(input: &str) -> (String, String) {
 
     // Process character by character to handle all edge cases
     let chars: Vec<char> = input.chars().collect();
-    let mut result = String::with_capacity(chars.len() * 2);
-    let mut i = 0;
     let len = chars.len();
 
     // Track state
     let mut in_single_string = false;
     let mut in_double_string = false;
     let mut single_quote_count = 0;
-    let mut unquoted_key_count = 0;
 
     // First pass: convert single quotes to double quotes character by character
     let mut pass1 = String::with_capacity(len + 100);
-    i = 0;
+    let mut i = 0;
     while i < len {
         let ch = chars[i];
 
         if in_double_string {
-            if ch == '"' && (i == 0 || chars[i-1] != '\\') {
+            if ch == '"' && (i == 0 || chars[i - 1] != '\\') {
                 in_double_string = false;
             }
             pass1.push(ch);
         } else if in_single_string {
-            if ch == '\'' && (i == 0 || chars[i-1] != '\\') {
+            if ch == '\'' && (i == 0 || chars[i - 1] != '\\') {
                 in_single_string = false;
-                pass1.push('"');  // close with double quote
+                pass1.push('"'); // close with double quote
                 single_quote_count += 1;
             } else if ch == '"' {
                 pass1.push('\\');
-                pass1.push('"');  // escape double quotes inside single-quoted string
+                pass1.push('"'); // escape double quotes inside single-quoted string
             } else {
                 pass1.push(ch);
             }
         } else {
             if ch == '\'' {
                 in_single_string = true;
-                pass1.push('"');  // open with double quote
+                pass1.push('"'); // open with double quote
             } else if ch == '"' {
                 in_double_string = true;
                 pass1.push(ch);
@@ -88,39 +89,51 @@ pub fn fix_json_with_report(input: &str) -> (String, String) {
         i += 1;
     }
     if single_quote_count > 0 {
-        report.push(format!("Converted {} single-quoted string(s) to double quotes", single_quote_count));
+        report.push(format!(
+            "Converted {} single-quoted string(s) to double quotes",
+            single_quote_count
+        ));
         fixes += 1;
     }
 
     // Pass 1.5a: Fix [ followed by key: — means [{ missing
     // Pattern: "[ 'key':" or "[ key:" means "[{key:" — missing { after [
-    let re_arr_obj = regex::Regex::new(r#"\[\s*([a-zA-Z_"'][a-zA-Z0-9_"']*)\s*:"#).unwrap();
+    let re_arr_obj = Regex::new(r#"\[\s*([a-zA-Z_"'][a-zA-Z0-9_"']*)\s*:"#).unwrap();
     let before_arr = pass1.clone();
     let arr_obj_count = re_arr_obj.find_iter(&before_arr).count();
-    pass1 = re_arr_obj.replace_all(&pass1, |caps: &regex::Captures| {
-        format!("[{{{}: ", &caps[1])
-    }).to_string();
+    pass1 = re_arr_obj
+        .replace_all(&pass1, |caps: &Captures| format!("[{{{}: ", &caps[1]))
+        .to_string();
     if pass1 != before_arr {
-        report.push(format!("Inserted {} missing {{ after [ for array objects", arr_obj_count));
+        report.push(format!(
+            "Inserted {} missing {{ after [ for array objects",
+            arr_obj_count
+        ));
         fixes += 1;
     }
 
     // Pass 1.5b: Fix missing { after key: when followed by another key:
     // Pattern: "key: word:" means "key: {word:" — missing opening brace
-    let re_missing_brace = regex::Regex::new(
-        r#"([:,]\s*)([a-zA-Z_]\w*)\s*:\s*([a-zA-Z_]\w*)\s*:"#
-    ).unwrap();
+    let re_missing_brace =
+        Regex::new(r#"([:,]\s*)([a-zA-Z_]\w*)\s*:\s*([a-zA-Z_]\w*)\s*:"#).unwrap();
     let mut missing_brace_count = 0;
     for _ in 0..10 {
         let before = pass1.clone();
-        pass1 = re_missing_brace.replace_all(&pass1, |caps: &regex::Captures| {
-            format!("{}{}: {{{}: ", &caps[1], &caps[2], &caps[3])
-        }).to_string();
-        if pass1 == before { break; }
+        pass1 = re_missing_brace
+            .replace_all(&pass1, |caps: &Captures| {
+                format!("{}{}: {{{}: ", &caps[1], &caps[2], &caps[3])
+            })
+            .to_string();
+        if pass1 == before {
+            break;
+        }
         missing_brace_count += 1;
     }
     if missing_brace_count > 0 {
-        report.push(format!("Inserted {} missing {{ brace(s) for nested objects", missing_brace_count));
+        report.push(format!(
+            "Inserted {} missing {{ brace(s) for nested objects",
+            missing_brace_count
+        ));
         fixes += 1;
     }
 
@@ -129,13 +142,12 @@ pub fn fix_json_with_report(input: &str) -> (String, String) {
     let mut pass2 = pass1;
     let mut total_keys_fixed = 0;
     let mut all_keys: Vec<String> = Vec::new();
+    let re_key = Regex::new(r#"(?m)([\{\[,]\s*|\n\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:"#).unwrap();
 
-    for _ in 0..20 {  // max 20 passes to avoid infinite loop
-        let re_key = regex::Regex::new(
-            r#"(?m)([\{\[,]\s*|\n\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:"#
-        ).unwrap();
+    for _ in 0..20 {
         let before = pass2.clone();
-        let keys_this_pass: Vec<String> = re_key.captures_iter(&before)
+        let keys_this_pass: Vec<String> = re_key
+            .captures_iter(&before)
             .filter(|c| {
                 // Don't re-quote already quoted keys or values like true/false/null
                 let key = &c[2];
@@ -144,44 +156,67 @@ pub fn fix_json_with_report(input: &str) -> (String, String) {
             .map(|c| c[2].to_string())
             .collect();
 
-        if keys_this_pass.is_empty() { break; }
+        if keys_this_pass.is_empty() {
+            break;
+        }
 
-        pass2 = re_key.replace_all(&pass2, |caps: &regex::Captures| {
-            let key = &caps[2];
-            if key == "true" || key == "false" || key == "null" {
-                caps[0].to_string()  // don't touch these
-            } else {
-                format!("{}\"{}\":", &caps[1], key)
-            }
-        }).to_string();
+        pass2 = re_key
+            .replace_all(&pass2, |caps: &Captures| {
+                let key = &caps[2];
+                if key == "true" || key == "false" || key == "null" {
+                    caps[0].to_string()
+                } else {
+                    format!("{}\"{}\":", &caps[1], key)
+                }
+            })
+            .to_string();
 
         total_keys_fixed += keys_this_pass.len();
         all_keys.extend(keys_this_pass);
 
-        if pass2 == before { break; }
+        if pass2 == before {
+            break;
+        }
     }
 
     if total_keys_fixed > 0 {
-        let sample: Vec<String> = all_keys.iter().take(10).map(|k| format!("\"{}\"", k)).collect();
-        report.push(format!("Quoted {} unquoted key(s): {}{}",
-            total_keys_fixed, sample.join(", "),
-            if total_keys_fixed > 10 { " ..." } else { "" }));
+        let sample: Vec<String> = all_keys
+            .iter()
+            .take(10)
+            .map(|k| format!("\"{}\"", k))
+            .collect();
+        report.push(format!(
+            "Quoted {} unquoted key(s): {}{}",
+            total_keys_fixed,
+            sample.join(", "),
+            if total_keys_fixed > 10 { " ..." } else { "" }
+        ));
         fixes += 1;
     }
 
     let mut pass3 = pass2;
 
     // Third pass: fix missing braces/brackets in correct nesting order
-    let mut stack: Vec<char> = Vec::new();  // tracks open brackets in order
+    let mut stack: Vec<char> = Vec::new();
     let mut in_str = false;
     let mut prev = '\0';
     for ch in pass3.chars() {
-        if ch == '"' && prev != '\\' { in_str = !in_str; }
+        if ch == '"' && prev != '\\' {
+            in_str = !in_str;
+        }
         if !in_str {
             match ch {
                 '{' | '[' => stack.push(ch),
-                '}' => { if stack.last() == Some(&'{') { stack.pop(); } }
-                ']' => { if stack.last() == Some(&'[') { stack.pop(); } }
+                '}' => {
+                    if stack.last() == Some(&'{') {
+                        stack.pop();
+                    }
+                }
+                ']' => {
+                    if stack.last() == Some(&'[') {
+                        stack.pop();
+                    }
+                }
                 _ => {}
             }
         }
@@ -197,21 +232,28 @@ pub fn fix_json_with_report(input: &str) -> (String, String) {
                 _ => unreachable!(),
             });
         }
-        report.push(format!("Added {} missing closer(s) at end: {}", closers.len(), closers));
+        report.push(format!(
+            "Added {} missing closer(s) at end: {}",
+            closers.len(),
+            closers
+        ));
         fixes += 1;
         pass3.push_str(&closers);
     }
 
     // Fourth pass: NOW remove trailing commas (after closers are added)
     let mut total_trail = 0;
+    let re_trailing_array = Regex::new(r",\s*\]").unwrap();
+    let re_trailing_object = Regex::new(r",\s*\}").unwrap();
     for _ in 0..10 {
         let before = pass3.clone();
-        let re1 = regex::Regex::new(r",\s*\]").unwrap();
-        let re2 = regex::Regex::new(r",\s*\}").unwrap();
-        total_trail += re1.find_iter(&before).count() + re2.find_iter(&before).count();
-        pass3 = re1.replace_all(&pass3, "]").to_string();
-        pass3 = re2.replace_all(&pass3, "}").to_string();
-        if pass3 == before { break; }
+        total_trail += re_trailing_array.find_iter(&before).count()
+            + re_trailing_object.find_iter(&before).count();
+        pass3 = re_trailing_array.replace_all(&pass3, "]").to_string();
+        pass3 = re_trailing_object.replace_all(&pass3, "}").to_string();
+        if pass3 == before {
+            break;
+        }
     }
     if total_trail > 0 {
         report.push(format!("Removed {} trailing comma(s)", total_trail));
@@ -220,13 +262,22 @@ pub fn fix_json_with_report(input: &str) -> (String, String) {
 
     // Check if result is valid — also try formatting to confirm
     let valid = serde_json::from_str::<serde_json::Value>(&pass3).is_ok()
-        || serde_json::from_str::<serde_json::Value>(&pass3.trim()).is_ok();
+        || serde_json::from_str::<serde_json::Value>(pass3.trim()).is_ok();
 
     let summary = if fixes == 0 {
         "Could not identify specific issues. JSON may have structural problems.".to_string()
     } else {
-        let status = if valid { "JSON is now VALID." } else { "JSON may still have issues — try manual review." };
-        format!("Fixed {} issue(s):\n\n{}\n\n{}", fixes, report.join("\n"), status)
+        let status = if valid {
+            "JSON is now VALID."
+        } else {
+            "JSON may still have issues — try manual review."
+        };
+        format!(
+            "Fixed {} issue(s):\n\n{}\n\n{}",
+            fixes,
+            report.join("\n"),
+            status
+        )
     };
 
     (pass3, summary)

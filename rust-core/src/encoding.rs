@@ -1,6 +1,6 @@
 //! Encoding utilities — base64, URL encode/decode.
 
-use base64::{Engine, engine::general_purpose::STANDARD};
+use base64::{engine::general_purpose::STANDARD, Engine};
 
 pub fn base64_encode(data: &[u8]) -> String {
     STANDARD.encode(data)

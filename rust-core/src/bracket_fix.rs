@@ -66,7 +66,9 @@ pub fn check_brackets(input: &str) -> String {
                     } else {
                         report.push_str(&format!(
                             "Line {}, Col {}: Unexpected '{}' — no matching opener\n",
-                            line_num + 1, col + 1, ch
+                            line_num + 1,
+                            col + 1,
+                            ch
                         ));
                         errors += 1;
                     }
@@ -78,9 +80,7 @@ pub fn check_brackets(input: &str) -> String {
 
     // Report unclosed openers
     for (ch, line, col) in &stack {
-        report.push_str(&format!(
-            "Line {}, Col {}: Unclosed '{}'\n", line, col, ch
-        ));
+        report.push_str(&format!("Line {}, Col {}: Unclosed '{}'\n", line, col, ch));
         errors += 1;
     }
 
@@ -124,8 +124,12 @@ fn fix_paired(input: &str, open: char, close: char) -> String {
             in_string = !in_string;
         }
         if !in_string {
-            if ch == open { count += 1; }
-            if ch == close { count -= 1; }
+            if ch == open {
+                count += 1;
+            }
+            if ch == close {
+                count -= 1;
+            }
         }
         prev = ch;
     }

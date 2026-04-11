@@ -1,0 +1,56 @@
+name: Bug Report
+description: Report a reproducible Notepatra bug.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use GitHub Security Advisories for vulnerabilities. Do not file security bugs publicly.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: v0.1.8
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux
+        - macOS Apple Silicon
+        - macOS Intel (built from source)
+        - Windows x64
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, screenshots, or sample files
+      description: Include screenshots, console output, or a minimal repro file when possible.
+

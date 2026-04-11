@@ -9,8 +9,8 @@ pub fn format_html(input: &str, indent_size: usize) -> String {
 
     // Self-closing / void tags that don't increase indent
     let void_tags = [
-        "br", "hr", "img", "input", "meta", "link", "area", "base",
-        "col", "embed", "param", "source", "track", "wbr",
+        "br", "hr", "img", "input", "meta", "link", "area", "base", "col", "embed", "param",
+        "source", "track", "wbr",
     ];
 
     while i < len {
@@ -57,8 +57,6 @@ pub fn format_html(input: &str, indent_size: usize) -> String {
             }
 
             i = tag_end;
-        } else if chars[i] == '\n' || chars[i] == '\r' {
-            i += 1;
         } else if chars[i].is_whitespace() {
             i += 1;
         } else {

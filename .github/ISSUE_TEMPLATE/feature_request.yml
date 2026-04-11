@@ -1,0 +1,33 @@
+name: Feature Request
+description: Propose a focused improvement to Notepatra.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the user problem, not just the desired UI.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: platforms
+    attributes:
+      label: Relevant platforms
+      multiple: true
+      options:
+        - Linux
+        - macOS
+        - Windows
+

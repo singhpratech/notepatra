@@ -6,12 +6,9 @@ use libc::c_int;
 use memmap2::Mmap;
 use std::ffi::CString;
 use std::fs::{self, File};
-use std::io::Write;
 use std::ptr;
 
-const LARGE_THRESHOLD: u64 = 50 * 1024 * 1024;        // 50 MB — disable syntax highlighting
-const HUGE_THRESHOLD: u64 = 500 * 1024 * 1024;        // 500 MB — minimal features
-const MAX_EDITOR_BUFFER: u64 = 2_000_000_000;          // 2 GB — full file visibility, no truncation
+const MAX_EDITOR_BUFFER: u64 = 2_000_000_000; // 2 GB — full file visibility, no truncation
 const MAX_FILE_SUPPORTED: u64 = 10 * 1024 * 1024 * 1024; // 10 GB
 
 pub fn load_file(path: &str) -> FileLoadResult {
@@ -21,8 +18,9 @@ pub fn load_file(path: &str) -> FileLoadResult {
     };
 
     let file_size = metadata.len();
-    let size_mb = file_size as f64 / (1024.0 * 1024.0);
-    let size_gb = file_size as f64 / (1024.0 * 1024.0 * 1024.0);
+    if file_size > MAX_FILE_SUPPORTED {
+        return error(2, "File is larger than the 10 GB safety limit.");
+    }
 
     // Open and memory-map the file (mmap is lazy — doesn't use RAM until read)
     let file = match File::open(path) {

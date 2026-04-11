@@ -13,7 +13,10 @@ pub fn find_all(
     whole_word: bool,
 ) -> SearchResult {
     if needle.is_empty() {
-        return SearchResult { positions: ptr::null_mut(), count: 0 };
+        return SearchResult {
+            positions: ptr::null_mut(),
+            count: 0,
+        };
     }
 
     let positions: Vec<usize> = if is_regex {
@@ -46,22 +49,23 @@ pub fn find_all(
 
     let count = positions.len();
     if count == 0 {
-        return SearchResult { positions: ptr::null_mut(), count: 0 };
+        return SearchResult {
+            positions: ptr::null_mut(),
+            count: 0,
+        };
     }
 
     let mut boxed = positions.into_boxed_slice();
     let ptr = boxed.as_mut_ptr();
     std::mem::forget(boxed);
 
-    SearchResult { positions: ptr, count }
+    SearchResult {
+        positions: ptr,
+        count,
+    }
 }
 
-pub fn count_matches(
-    haystack: &str,
-    needle: &str,
-    is_regex: bool,
-    case_sensitive: bool,
-) -> usize {
+pub fn count_matches(haystack: &str, needle: &str, is_regex: bool, case_sensitive: bool) -> usize {
     if needle.is_empty() {
         return 0;
     }
