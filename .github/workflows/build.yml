@@ -676,10 +676,11 @@ jobs:
       - name: Build Windows installer (NSIS)
         shell: pwsh
         run: |
-          # Resolve version: tag → strip leading 'v' → '0.0.0-dev' for non-tag builds
+          # Resolve version: tag → strip leading 'v' → '0.0.0' for non-tag builds.
+          # Must be pure numeric X.X.X because NSIS's VIProductVersion needs X.X.X.X.
           $version = if ($env:GITHUB_REF -like "refs/tags/v*") {
               $env:GITHUB_REF.Substring(11)
-          } else { "0.0.0-dev" }
+          } else { "0.0.0" }
           Write-Host "Building installer for version: $version"
 
           # Locate makensis.exe
