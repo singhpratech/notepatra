@@ -80,6 +80,11 @@ private:
     // file on disk), then opens a CompareWidget tab with the chosen pair.
     void openComparePicker(const QString &tabLabel);
 
+    // Update check — hits GitHub Releases API and compares tag_name with
+    // NOTEPATRA_VERSION. `silent=true` skips the "you're up to date" dialog
+    // (used by the optional check-on-startup path so we don't nag users).
+    void checkForUpdates(bool silent);
+
     int m_newCount = 0;
     QMenu *m_recentMenu = nullptr;
     PluginManager m_pluginManager;

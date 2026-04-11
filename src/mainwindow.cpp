@@ -7,6 +7,15 @@
 
 #include <QCheckBox>
 #include <QRegularExpression>
+#include <QNetworkAccessManager>
+#include <QNetworkRequest>
+#include <QNetworkReply>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QDesktopServices>
+#include <QSettings>
+#include <QTimer>
+#include <QUrl>
 
 // ─── Tolerant JSON pretty printer ─────────────────────────────────────
 // Tokenizes ANY JSON-ish input (even broken JSON) and re-emits it with
@@ -782,6 +791,22 @@ MainWindow::MainWindow() {
 
     // Restore previous session (open files from last time)
     restoreSession();
+
+    // Optional check-on-startup — throttled to once per 24h via QSettings
+    // so we don't hammer the GitHub API on every launch. User can disable
+    // entirely by setting updates/checkOnStartup=false.
+    QSettings settings("Notepatra", "Notepatra");
+    bool checkOnStartup = settings.value("updates/checkOnStartup", true).toBool();
+    if (checkOnStartup) {
+        QDateTime last = settings.value("updates/lastCheck").toDateTime();
+        if (!last.isValid() || last.secsTo(QDateTime::currentDateTime()) > 24 * 3600) {
+            QTimer::singleShot(3000, this, [this]() {
+                checkForUpdates(/*silent=*/true);
+                QSettings s("Notepatra", "Notepatra");
+                s.setValue("updates/lastCheck", QDateTime::currentDateTime());
+            });
+        }
+    }
 
     // Auto-save session every 10 seconds + recovery every 30 seconds
     m_autoSaveTimer = new QTimer(this);
@@ -2387,6 +2412,14 @@ void MainWindow::buildMenus() {
 
     help->addSeparator();
 
+    // Check for updates — hits GitHub Releases API. Notify-only, no
+    // auto-install. See checkForUpdates() for the full flow.
+    help->addAction("Check for Updates...", this, [this]() {
+        checkForUpdates(/*silent=*/false);
+    });
+
+    help->addSeparator();
+
     help->addAction("About Notepatra", this, [this]() {
         // NOTEPATRA_VERSION is injected at compile time from CMakeLists.txt's
         // project(Notepatra VERSION X.Y.Z) so the About dialog never goes
@@ -2977,4 +3010,143 @@ void MainWindow::macroEnsureObject() {
     m_macro = new QsciMacro(ed);
     if (!m_savedMacro.isEmpty())
         m_macro->load(m_savedMacro);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Update check (notify-only, Notepad++ style)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// Flow:
+//   1. GET https://api.github.com/repos/singhpratech/notepatra/releases/latest
+//   2. Parse tag_name + html_url from the JSON response
+//   3. Strip leading 'v' from tag_name, compare to NOTEPATRA_VERSION
+//   4. If newer: QMessageBox with "Download" + "Release Notes" + "Later"
+//      Download / Release Notes open the GitHub release page in the browser.
+//   5. If up-to-date and silent=false: small "you're on the latest" dialog
+//      If silent=true: say nothing (used by check-on-startup)
+//
+// Version comparison is a simple 3-tuple numeric compare (major.minor.patch).
+// Anything non-numeric is treated as 0 so tags like "0.1.9-rc1" still work.
+static int compareSemver(const QString &a, const QString &b) {
+    auto parts = [](const QString &s) {
+        QStringList out = s.split('.');
+        QList<int> nums;
+        for (const QString &p : out) {
+            QString clean;
+            for (QChar c : p) { if (c.isDigit()) clean += c; else break; }
+            nums << clean.toInt();
+        }
+        while (nums.size() < 3) nums << 0;
+        return nums;
+    };
+    QList<int> pa = parts(a), pb = parts(b);
+    for (int i = 0; i < 3; ++i) {
+        if (pa[i] != pb[i]) return pa[i] < pb[i] ? -1 : 1;
+    }
+    return 0;
+}
+
+void MainWindow::checkForUpdates(bool silent) {
+    static QNetworkAccessManager *nam = nullptr;
+    if (!nam) nam = new QNetworkAccessManager(this);
+
+    QNetworkRequest req(QUrl("https://api.github.com/repos/singhpratech/notepatra/releases/latest"));
+    req.setRawHeader("Accept", "application/vnd.github+json");
+    req.setRawHeader("User-Agent", "Notepatra-UpdateCheck");
+    req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+
+    QNetworkReply *reply = nam->get(req);
+
+    // Safety timeout — GitHub is usually fast but don't hang forever
+    QTimer *killer = new QTimer(reply);
+    killer->setSingleShot(true);
+    killer->start(8000);
+    connect(killer, &QTimer::timeout, reply, &QNetworkReply::abort);
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply, silent]() {
+        reply->deleteLater();
+
+        if (reply->error() != QNetworkReply::NoError) {
+            if (!silent) {
+                QMessageBox::warning(this, "Check for Updates",
+                    QString("Could not reach GitHub:\n%1\n\n"
+                            "Check your internet connection and try again, or visit\n"
+                            "https://github.com/singhpratech/notepatra/releases")
+                        .arg(reply->errorString()));
+            }
+            return;
+        }
+
+        const QByteArray body = reply->readAll();
+        QJsonParseError parseErr;
+        QJsonDocument doc = QJsonDocument::fromJson(body, &parseErr);
+        if (parseErr.error != QJsonParseError::NoError || !doc.isObject()) {
+            if (!silent) {
+                QMessageBox::warning(this, "Check for Updates",
+                    "GitHub returned an unexpected response. Try again later.");
+            }
+            return;
+        }
+
+        const QJsonObject obj = doc.object();
+        QString tag = obj.value("tag_name").toString();     // e.g. "v0.1.9"
+        QString name = obj.value("name").toString();        // e.g. "v0.1.9"
+        QString htmlUrl = obj.value("html_url").toString(); // release page
+        QString body_md = obj.value("body").toString();     // release notes (markdown)
+
+        if (tag.isEmpty() || htmlUrl.isEmpty()) {
+            if (!silent) {
+                QMessageBox::warning(this, "Check for Updates",
+                    "GitHub returned a response with no release tag.");
+            }
+            return;
+        }
+
+        // Strip leading 'v' so "v0.1.9" → "0.1.9"
+        QString latest = tag;
+        if (latest.startsWith('v') || latest.startsWith('V')) latest = latest.mid(1);
+
+        QString current = QApplication::applicationVersion();
+        if (current.isEmpty()) current = NOTEPATRA_VERSION;
+
+        int cmp = compareSemver(current, latest);
+
+        if (cmp >= 0) {
+            // Already on the latest (or ahead — e.g. dev build)
+            if (!silent) {
+                QMessageBox::information(this, "Check for Updates",
+                    QString("You're on the latest version.\n\nNotepatra v%1").arg(current));
+            }
+            return;
+        }
+
+        // A newer release is available — build a rich dialog with
+        // Download, Release Notes, and Later buttons. "Download" opens
+        // the release page (same as Notepad++) — we deliberately do NOT
+        // auto-install because that needs per-platform signature
+        // verification and is easy to get wrong.
+        QString msg = QString(
+            "<b>A new version of Notepatra is available.</b><br><br>"
+            "Installed: <code>v%1</code><br>"
+            "Latest:&nbsp;&nbsp;&nbsp;&nbsp; <code>%2</code><br><br>"
+            "Click <b>Download</b> to open the release page in your browser.")
+            .arg(current, tag);
+
+        QMessageBox box(this);
+        box.setWindowTitle("Update Available");
+        box.setIcon(QMessageBox::Information);
+        box.setTextFormat(Qt::RichText);
+        box.setText(msg);
+        QPushButton *downloadBtn = box.addButton("Download", QMessageBox::AcceptRole);
+        QPushButton *notesBtn = box.addButton("Release Notes", QMessageBox::ActionRole);
+        QPushButton *laterBtn = box.addButton("Later", QMessageBox::RejectRole);
+        box.setDefaultButton(downloadBtn);
+        Q_UNUSED(laterBtn);
+        box.exec();
+
+        QAbstractButton *clicked = box.clickedButton();
+        if (clicked == downloadBtn || clicked == notesBtn) {
+            QDesktopServices::openUrl(QUrl(htmlUrl));
+        }
+    });
 }
