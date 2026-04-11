@@ -1473,7 +1473,83 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</pre>
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.8 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.10 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-11</span>
+                        <span>· macOS installer fix + uninstaller one-liner + Claude theme</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🍎 macOS installer actually installs now</h5>
+                        <ul>
+                            <li>🐛 <strong>Fixed <code style="color:var(--green);font-size:12px;">tar: Unrecognized archive format</code></strong> — <code style="color:var(--green);font-size:12px;">install.sh</code> used to blindly save every download as <code style="color:var(--green);font-size:12px;">notepatra.tar.gz</code> and run <code style="color:var(--green);font-size:12px;">tar xzf</code> on it, which failed the moment we moved the macOS release asset to DMG. The installer now inspects the URL, writes the correct extension, mounts DMGs with <code style="color:var(--green);font-size:12px;">hdiutil</code>, and copies the <code style="color:var(--green);font-size:12px;">.app</code> out with <code style="color:var(--green);font-size:12px;">ditto</code>.</li>
+                            <li>🔐 <strong>macOS Tahoe / Sequoia / Sonoma Gatekeeper fix</strong> — installer now runs <code style="color:var(--green);font-size:12px;">xattr -dr com.apple.quarantine</code> and <code style="color:var(--green);font-size:12px;">codesign --force --deep --sign -</code> after copying, so the bundle launches on first double-click instead of the "Notepatra is damaged" dialog.</li>
+                            <li>🔗 <strong><code style="color:var(--green);font-size:12px;">notepatra</code> CLI shortcut on Mac</strong> — installer symlinks <code style="color:var(--green);font-size:12px;">/Applications/Notepatra.app/Contents/MacOS/notepatra</code> into <code style="color:var(--green);font-size:12px;">~/.local/bin</code> and adds that to <code style="color:var(--green);font-size:12px;">$PATH</code> in <code style="color:var(--green);font-size:12px;">.zshrc</code>, so <code style="color:var(--green);font-size:12px;">notepatra file.py</code> works from any terminal.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧹 One-line uninstaller for every platform</h5>
+                        <ul>
+                            <li><code style="color:var(--green);font-size:12px;">curl -fsSL https://notepatra.org/uninstall.sh | sh</code> — auto-detects macOS or Linux and removes the binary, symlink, <code style="color:var(--green);font-size:12px;">.desktop</code> entry, hicolor icons (16–256), <code style="color:var(--green);font-size:12px;">~/.config/notepatra</code>, and on Mac the <code style="color:var(--green);font-size:12px;">~/Library/Preferences/com.notepatra.editor.plist</code> + saved-state + caches.</li>
+                            <li><code style="color:var(--green);font-size:12px;">irm https://notepatra.org/uninstall.ps1 | iex</code> — Windows. Calls the NSIS uninstaller if present, then manually wipes <code style="color:var(--green);font-size:12px;">%LOCALAPPDATA%\Notepatra</code>, Start Menu + Desktop shortcuts, user PATH entry, and the HKCU Installed-Apps registry key.</li>
+                            <li><strong>Explicitly leaves alone:</strong> Ollama and pulled models, files you edited, system Qt5 packages, Visual C++ Redistributables.</li>
+                            <li>📄 New <strong>Uninstall section on notepatra.org</strong> with three per-platform cards covering every install path (one-liner, manual DMG drag, portable zip, build-from-source) plus a privacy guarantee callout.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🎨 Website re-themed to match Claude.ai</h5>
+                        <ul>
+                            <li>Dropped the dark "matrix green on black" look for Anthropic's warm "Clay" palette — bone <code style="color:var(--green);font-size:12px;">#F5F4EE</code> background, <code style="color:var(--green);font-size:12px;">#FAF9F5</code> card surface, Clay orange <code style="color:var(--green);font-size:12px;">#CC785C</code> accent, near-black warm <code style="color:var(--green);font-size:12px;">#141413</code> text, Söhne / Inter font stack.</li>
+                            <li>Legacy CSS variable names kept as aliases so ~hundreds of existing element rules didn't need to be rewritten.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.10">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.10">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.9</div>
+                    <div class="version-meta">
+                        <span>2026-04-11</span>
+                        <span>· ~3200-line refactor + unified FormatterPanel base + voice input + Linux ARM64</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>Massive internal refactor</h5>
+                        <ul>
+                            <li>🪚 ~3200 lines changed across 25 files — non-functional split of god-files into focused units.</li>
+                            <li>🎨 All four formatter panels (JSON Tools / HTML Tools / Bracket Tools / SQL Formatter) now inherit a unified <code style="color:var(--green);font-size:12px;">FormatterPanel</code> base — same status banner, session log, action buttons, Show Diff wiring. Adding a new formatter plugin is now ~50 lines.</li>
+                            <li>🔤 New <code style="color:var(--green);font-size:12px;">fonts.h</code> centralizes UI + code font selection so every panel, editor, and dialog picks the same soothing base font.</li>
+                            <li>🧰 New <code style="color:var(--green);font-size:12px;">lexerutils.{h,cpp}</code> consolidates per-language lexer resolution that was duplicated across editor.cpp and mainwindow.cpp.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>New features</h5>
+                        <ul>
+                            <li>📚 Comprehensive documentation site at <code style="color:var(--green);font-size:12px;">docs/docs.html</code> — Anthropic-style layout with fixed sidebar, scroll-spy navigation, 40+ anchored sections.</li>
+                            <li>🎤 Voice input in AI Assistant — microphone button records via <code style="color:var(--green);font-size:12px;">arecord</code>, transcribes via whisper.cpp, pastes transcript into input line.</li>
+                            <li>📏 Editor rulers + crosshair overlay — vertical bands at 80/100/120, caret-following crosshair, toggled via View menu.</li>
+                            <li>🐧 Linux ARM64 build target in CI — ships <code style="color:var(--green);font-size:12px;">notepatra-linux-arm64.tar.gz</code> alongside x64.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.9">Release page</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.8</div>
                     <div class="version-meta">
                         <span>2026-04-09</span>
                         <span>· ComparePlus-style diff + AI Fix actually works + chat UI</span>
