@@ -468,17 +468,23 @@
             margin-bottom: 48px;
         }
 
-        /* Downloads grid */
+        /* Downloads grid — all 4 on one line, compact */
         .download-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 16px;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+        @media (max-width: 900px) {
+            .download-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 520px) {
+            .download-grid { grid-template-columns: 1fr; }
         }
         .download-card {
             background: var(--card-bg);
             border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 28px;
+            border-radius: 12px;
+            padding: 16px 14px;
             text-align: center;
             transition: all 0.3s;
             text-decoration: none;
@@ -489,32 +495,34 @@
         }
         .download-card:hover {
             border-color: var(--green);
-            transform: translateY(-4px);
-            box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.35);
         }
         .download-os {
-            font-size: 48px;
-            margin-bottom: 12px;
+            font-size: 28px;
+            margin-bottom: 6px;
+            line-height: 1;
         }
         .download-card h4 {
             color: white;
-            font-size: 18px;
-            margin-bottom: 4px;
+            font-size: 14px;
+            margin-bottom: 2px;
         }
         .download-card p {
             color: var(--text-dim);
-            font-size: 13px;
-            margin-bottom: 16px;
+            font-size: 11px;
+            line-height: 1.4;
+            margin-bottom: 10px;
             flex-grow: 1;
         }
         .download-btn {
             display: inline-block;
-            padding: 8px 18px;
+            padding: 6px 12px;
             background: rgba(57,255,20,0.1);
             border: 1px solid rgba(57,255,20,0.3);
             color: var(--green);
-            border-radius: 8px;
-            font-size: 13px;
+            border-radius: 6px;
+            font-size: 11px;
             font-weight: 600;
             margin-top: auto;
         }
@@ -928,27 +936,26 @@
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🐧</div>
                 <h4>Linux x64</h4>
-                <p>Single binary · ~5 MB · Ubuntu, Debian, Fedora, Arch</p>
-                <span class="download-btn">Download .tar.gz</span>
+                <p>Single binary · ~5 MB</p>
+                <span class="download-btn">.tar.gz</span>
             </a>
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🐧</div>
                 <h4>Linux ARM64</h4>
-                <p>Single binary · aarch64 / arm64 · Raspberry Pi 5, Ampere, ARM servers</p>
-                <span class="download-btn">Download .tar.gz</span>
+                <p>aarch64 · Raspberry Pi 5</p>
+                <span class="download-btn">.tar.gz</span>
             </a>
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🍎</div>
                 <h4>macOS Apple Silicon</h4>
-                <p>M1 / M2 / M3 / M4 · Notepatra.app · ~10 MB</p>
-                <span class="download-btn">Download .dmg</span>
+                <p>M1 / M2 / M3 / M4 · ~10 MB</p>
+                <span class="download-btn">.dmg</span>
             </a>
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🪟</div>
                 <h4>Windows x64</h4>
-                <p>Installer (.exe) — registers in Apps · uninstall from Settings · ~40 MB</p>
-                <span class="download-btn">Download installer</span>
-                <p style="font-size:11px;color:#8899AA;margin-top:8px;">or grab the portable .zip from the same page</p>
+                <p>Installer + portable .zip</p>
+                <span class="download-btn">setup .exe</span>
             </a>
         </div>
     </section>
