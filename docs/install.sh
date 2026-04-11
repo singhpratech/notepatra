@@ -139,6 +139,34 @@ if [ "$OS" = "darwin" ]; then
     }
     trap cleanup_macos_installer EXIT
 
+    # Pick an install target. Prefer /Applications (what Mac users expect),
+    # fall back to ~/Applications (first-class macOS user-local location) if
+    # /Applications is not writable AND sudo is not available. This lets the
+    # installer succeed on both multi-user machines (admin → sudo prompt) and
+    # locked-down corp laptops (no admin → clean user-local install).
+    APP_DIR="/Applications"
+    SUDO=""
+    if [ ! -w "$APP_DIR" ]; then
+        if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            SUDO="sudo"
+        elif command -v sudo >/dev/null 2>&1; then
+            # Try interactive sudo — curl|sh still has /dev/tty even with
+            # piped stdin, so sudo can prompt for a password there.
+            echo "  /Applications requires admin access — prompting for sudo..."
+            if sudo -v </dev/tty 2>/dev/null; then
+                SUDO="sudo"
+            else
+                echo "  sudo not available — falling back to ~/Applications"
+                APP_DIR="$HOME/Applications"
+                mkdir -p "$APP_DIR"
+            fi
+        else
+            APP_DIR="$HOME/Applications"
+            mkdir -p "$APP_DIR"
+        fi
+    fi
+    APP_PATH="$APP_DIR/Notepatra.app"
+
     case "$RELEASE_URL" in
         *.dmg)
             echo "  Mounting disk image..."
@@ -147,9 +175,9 @@ if [ "$OS" = "darwin" ]; then
                 echo "  ❌ Could not mount Notepatra disk image or find Notepatra.app"
                 exit 1
             fi
-            echo "  Installing Notepatra.app to /Applications..."
-            rm -rf /Applications/Notepatra.app 2>/dev/null
-            ditto "$MOUNT_POINT/Notepatra.app" /Applications/Notepatra.app
+            echo "  Installing Notepatra.app to $APP_DIR..."
+            $SUDO rm -rf "$APP_PATH" 2>/dev/null
+            $SUDO ditto "$MOUNT_POINT/Notepatra.app" "$APP_PATH"
             ;;
         *.tar.gz)
             cd "$TMPDIR"
@@ -158,9 +186,9 @@ if [ "$OS" = "darwin" ]; then
                 echo "  ❌ Archive did not contain Notepatra.app"
                 exit 1
             fi
-            echo "  Installing Notepatra.app to /Applications..."
-            rm -rf /Applications/Notepatra.app 2>/dev/null
-            ditto "$TMPDIR/Notepatra.app" /Applications/Notepatra.app
+            echo "  Installing Notepatra.app to $APP_DIR..."
+            $SUDO rm -rf "$APP_PATH" 2>/dev/null
+            $SUDO ditto "$TMPDIR/Notepatra.app" "$APP_PATH"
             ;;
         *)
             echo "  ❌ Unsupported macOS package format: $RELEASE_URL"
@@ -176,13 +204,13 @@ if [ "$OS" = "darwin" ]; then
     # the quarantine flag recursively. Ad-hoc codesign re-anchors the
     # bundle so its embedded frameworks pass verification.
     echo "  Clearing quarantine + ad-hoc signing for Gatekeeper..."
-    xattr -dr com.apple.quarantine /Applications/Notepatra.app 2>/dev/null || true
-    codesign --force --deep --sign - /Applications/Notepatra.app 2>/dev/null || true
+    $SUDO xattr -dr com.apple.quarantine "$APP_PATH" 2>/dev/null || true
+    $SUDO codesign --force --deep --sign - "$APP_PATH" 2>/dev/null || true
 
     # Symlink the CLI binary so `notepatra` works from any terminal
-    if [ -x /Applications/Notepatra.app/Contents/MacOS/notepatra ]; then
+    if [ -x "$APP_PATH/Contents/MacOS/notepatra" ]; then
         mkdir -p "$INSTALL_DIR"
-        ln -sf /Applications/Notepatra.app/Contents/MacOS/notepatra "$INSTALL_DIR/notepatra"
+        ln -sf "$APP_PATH/Contents/MacOS/notepatra" "$INSTALL_DIR/notepatra"
         if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
             SHELL_RC="$HOME/.zshrc"
             [ -f "$HOME/.bash_profile" ] && SHELL_RC="$HOME/.bash_profile"
@@ -192,16 +220,17 @@ if [ "$OS" = "darwin" ]; then
     fi
 
     echo ""
-    echo "  ✅ Installed! Tested on macOS Sonoma, Sequoia, and Tahoe."
+    echo "  ✅ Installed to $APP_PATH"
+    echo "     Tested on macOS Sonoma, Sequoia, and Tahoe."
     echo ""
-    echo "  Open from Applications, click the launcher, or run:"
-    echo "     open /Applications/Notepatra.app"
+    echo "  Open from Launchpad, click the launcher, or run:"
+    echo "     open \"$APP_PATH\""
     echo "     notepatra      # CLI shortcut (open a new terminal first)"
     echo ""
     echo "  If macOS still says 'Notepatra is damaged' the first time:"
     echo "     1. Right-click Notepatra.app in Finder → Open → Open"
     echo "     2. OR: System Settings → Privacy & Security → 'Open Anyway'"
-    echo "     3. OR: sudo xattr -cr /Applications/Notepatra.app"
+    echo "     3. OR: sudo xattr -cr \"$APP_PATH\""
 else
     # Linux — download binary
     TMPDIR=$(mktemp -d)
