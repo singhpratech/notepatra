@@ -468,23 +468,21 @@
             margin-bottom: 48px;
         }
 
-        /* Downloads grid — all 4 on one line, compact */
+        /* Downloads grid — ALL 4 always on ONE line. No wrapping. */
         .download-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 12px;
+            display: grid !important;
+            grid-template-columns: repeat(4, 1fr) !important;
+            gap: 10px;
+            width: 100%;
         }
-        @media (max-width: 900px) {
-            .download-grid { grid-template-columns: repeat(2, 1fr); }
-        }
-        @media (max-width: 520px) {
-            .download-grid { grid-template-columns: 1fr; }
+        @media (max-width: 420px) {
+            .download-grid { grid-template-columns: 1fr !important; }
         }
         .download-card {
             background: var(--card-bg);
             border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 16px 14px;
+            border-radius: 10px;
+            padding: 12px 10px;
             text-align: center;
             transition: all 0.3s;
             text-decoration: none;
@@ -492,39 +490,42 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            min-width: 0;
         }
         .download-card:hover {
             border-color: var(--green);
-            transform: translateY(-3px);
-            box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.35);
         }
         .download-os {
-            font-size: 28px;
-            margin-bottom: 6px;
+            font-size: 22px;
+            margin-bottom: 4px;
             line-height: 1;
         }
         .download-card h4 {
             color: white;
-            font-size: 14px;
+            font-size: 12px;
             margin-bottom: 2px;
+            white-space: nowrap;
         }
         .download-card p {
             color: var(--text-dim);
-            font-size: 11px;
-            line-height: 1.4;
-            margin-bottom: 10px;
+            font-size: 10px;
+            line-height: 1.3;
+            margin-bottom: 8px;
             flex-grow: 1;
         }
         .download-btn {
             display: inline-block;
-            padding: 6px 12px;
+            padding: 5px 10px;
             background: rgba(57,255,20,0.1);
             border: 1px solid rgba(57,255,20,0.3);
             color: var(--green);
-            border-radius: 6px;
-            font-size: 11px;
+            border-radius: 5px;
+            font-size: 10px;
             font-weight: 600;
             margin-top: auto;
+            white-space: nowrap;
         }
 
         /* Version history */
