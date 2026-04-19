@@ -313,6 +313,7 @@
     <ul>
       <li><a href="#introduction">Introduction</a></li>
       <li><a href="#install">Install</a></li>
+      <li><a href="#uninstall">Uninstall</a></li>
       <li><a href="#first-launch">First launch</a></li>
       <li><a href="#ui-overview">UI overview</a></li>
     </ul>
@@ -419,6 +420,145 @@
   <div class="callout warning">
     <strong>Linux: Qt5 required.</strong> The Linux tarball is just the bare binary — Qt5 is expected to be installed system-wide. On Ubuntu/Debian: <code>sudo apt install qtbase5-dev libqscintilla2-qt5-dev</code>. On Fedora: <code>sudo dnf install qt5-qtbase qscintilla-qt5</code>. On Arch: <code>sudo pacman -S qt5-base qscintilla-qt5</code>. Mac/Windows downloads bundle Qt.
   </div>
+
+  <h2 id="uninstall" class="anchor-target">Uninstall</h2>
+
+  <p>Notepatra installs cleanly and uninstalls cleanly. Pick your platform and the path you used to install. Every command below is copy-paste ready.</p>
+
+  <div class="callout info">
+    <strong>🛡 Privacy guarantee.</strong> Notepatra never sends telemetry. Uninstalling removes <em>only</em> the binary, shortcuts, and your local config — nothing was ever phoned home, so there is nothing to revoke. No accounts, no API keys, no cloud state, no analytics. If you used the AI Assistant it connects to your <strong>local</strong> Ollama daemon; uninstalling Notepatra does not remove Ollama or any pulled models — manage those with the <code>ollama</code> CLI.
+  </div>
+
+  <h3>🍎 macOS (Sonoma · Sequoia · Tahoe)</h3>
+
+  <h4>One-liner</h4>
+  <pre><code>curl -fsSL https://notepatra.org/uninstall.sh | sh</code></pre>
+  <p>Auto-detects macOS and removes the app, CLI symlink, and user data. Uses sudo if <code>/Applications</code> is not writable.</p>
+
+  <h4>Manual (any install path)</h4>
+  <pre><code># Remove the app (sudo only if /Applications is not writable)
+sudo rm -rf /Applications/Notepatra.app
+#   …or if you installed to ~/Applications instead:
+rm -rf ~/Applications/Notepatra.app
+
+# Remove the CLI symlink
+rm -f ~/.local/bin/notepatra
+
+# Remove user config + cache + saved state
+rm -rf ~/.config/notepatra
+rm -rf ~/Library/Preferences/com.notepatra.editor.plist
+rm -rf ~/Library/Saved\ Application\ State/com.notepatra.editor.savedState
+rm -rf ~/Library/Caches/com.notepatra.editor</code></pre>
+
+  <h4>What Notepatra does NOT create</h4>
+  <ul>
+    <li>No system-wide <code>LaunchAgents</code> / <code>LaunchDaemons</code></li>
+    <li>No Homebrew, MacPorts, or other package-manager entries</li>
+    <li>No kernel extensions</li>
+    <li>No background daemons</li>
+  </ul>
+
+  <h3>🐧 Linux (Ubuntu · Debian · Fedora · Arch · any distro)</h3>
+
+  <h4>One-liner</h4>
+  <pre><code>curl -fsSL https://notepatra.org/uninstall.sh | sh</code></pre>
+
+  <h4>Manual (install.sh path)</h4>
+  <pre><code># Remove the binary
+rm -f ~/.local/bin/notepatra
+
+# Remove the desktop entry
+rm -f ~/.local/share/applications/notepatra.desktop
+
+# Remove icons (all sizes)
+for sz in 16 32 48 64 128 256; do
+  rm -f ~/.local/share/icons/hicolor/${sz}x${sz}/apps/notepatra.png
+done
+gtk-update-icon-cache ~/.local/share/icons/hicolor 2>/dev/null
+
+# Remove user config + cache + recovery
+rm -rf ~/.config/notepatra
+
+# Refresh the application menu so the launcher disappears
+update-desktop-database ~/.local/share/applications 2>/dev/null</code></pre>
+
+  <h4>Manual (tarball extracted somewhere else)</h4>
+  <pre><code># Find where you put it
+which notepatra
+# /opt/notepatra/notepatra      ← example
+
+# Remove that directory
+sudo rm -rf /opt/notepatra
+rm -f ~/.local/share/applications/notepatra.desktop
+rm -rf ~/.config/notepatra</code></pre>
+
+  <h4>If you built from source</h4>
+  <pre><code>cd /path/to/notepatra-build
+sudo cmake --build . --target uninstall   # if you ran `make install`
+# Or just delete the source tree:
+cd .. &amp;&amp; rm -rf notepatra</code></pre>
+
+  <h4>What is NOT touched</h4>
+  <ul>
+    <li>System Qt5 and QScintilla packages — shared with other apps, never auto-removed</li>
+    <li>Ollama — separate program, manage via the <code>ollama</code> CLI</li>
+    <li>Files you opened or edited with Notepatra</li>
+  </ul>
+
+  <h3>🪟 Windows 10 · 11</h3>
+
+  <h4>If you installed via the NSIS installer (<code>notepatra-setup-X.Y.Z.exe</code>)</h4>
+  <p>Easiest: use Windows Settings.</p>
+  <ol>
+    <li>Open <strong>Settings</strong> (<kbd>Win</kbd>+<kbd>I</kbd>)</li>
+    <li><strong>Apps → Installed apps</strong></li>
+    <li>Search for <strong>Notepatra</strong></li>
+    <li>Three-dot menu → <strong>Uninstall</strong></li>
+    <li>The NSIS uninstaller runs → Next → Uninstall</li>
+  </ol>
+  <p>Alternative: run the uninstaller directly from <code>%LOCALAPPDATA%\Notepatra\uninstall.exe</code>.</p>
+  <p>The uninstaller automatically removes:</p>
+  <ul>
+    <li><code>%LOCALAPPDATA%\Notepatra\</code> (the entire install directory + Qt DLLs)</li>
+    <li>Start Menu shortcut</li>
+    <li>Desktop shortcut (if you opted in)</li>
+    <li>PATH entry (if you opted in)</li>
+    <li><code>HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Notepatra</code></li>
+  </ul>
+
+  <h4>One-liner (PowerShell)</h4>
+  <pre><code>irm https://notepatra.org/uninstall.ps1 | iex</code></pre>
+
+  <h4>Manual (PowerShell)</h4>
+  <pre><code># Remove install directory (Qt DLLs + .exe + uninstall.ps1)
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Notepatra"
+
+# Remove Start Menu + Desktop shortcuts
+Remove-Item -Force "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Notepatra.lnk"
+Remove-Item -Force "$env:USERPROFILE\Desktop\Notepatra.lnk"
+
+# Remove from user PATH
+$p = [Environment]::GetEnvironmentVariable("PATH", "User") -split ';' |
+     Where-Object { $_ -notlike "*Notepatra*" } | Where-Object { $_ }
+[Environment]::SetEnvironmentVariable("PATH", ($p -join ';'), "User")
+
+# Remove the Installed Apps registry entry
+Remove-Item -Recurse -Force "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Notepatra"
+
+# Remove user config + saved state
+Remove-Item -Recurse -Force "$env:USERPROFILE\.config\notepatra"
+Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
+
+  <h4>Portable zip</h4>
+  <p>If you ran <code>notepatra-windows-x64.zip</code>, no installer was run — just delete the folder you extracted.</p>
+  <pre><code>Remove-Item -Recurse -Force C:\path\to\notepatra-folder</code></pre>
+
+  <h4>What is NOT touched</h4>
+  <ul>
+    <li>Visual C++ Redistributables (used by other apps)</li>
+    <li>Files you opened or edited with Notepatra</li>
+    <li>Ollama installation</li>
+  </ul>
 
   <h2 id="first-launch" class="anchor-target">First launch</h2>
   <p>Launch Notepatra from your start menu / Launchpad / <code>notepatra</code> command. You'll see an empty editor with the menu bar, toolbar, tab bar, status bar, and (collapsed) side panels.</p>

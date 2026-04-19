@@ -5,6 +5,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.11] — 2026-04-11
+
+Hotfix release — v0.1.10 shipped a macOS DMG that crashed on launch.
+
+### Fixed
+- 💥 **Fix macOS crash-at-launch on v0.1.10 DMG.** The bundled `libqscintilla2_qt5.15.dylib` still had absolute Homebrew paths in its `LC_LOAD_DYLIB` entries (e.g. `/opt/homebrew/*/QtPrintSupport.framework/Versions/5/QtPrintSupport` — yes, with a literal `*` in the path, a known QScintilla-on-Homebrew quirk where qmake bakes its rpath glob into the install_name). dyld failed with `Library not loaded: ... Reason: tried: ... (no such file)` the moment Notepatra.app launched on any user's Mac. The `Create DMG` CI step now:
+  1. Runs `macdeployqt` first so the main binary gets an `@executable_path/../Frameworks` rpath.
+  2. Copies QScintilla into `Contents/Frameworks/` **after** macdeployqt.
+  3. Runs `install_name_tool -id @rpath/libqscintilla2_qt5.15.dylib` on the copy.
+  4. Walks `otool -L` output for libqscintilla2 and rewrites every `/opt/homebrew/*` or `/usr/local/*` `LC_LOAD_DYLIB` entry to `@rpath/...` — catches framework-style references and plain dylib deps.
+  5. Force-copies `QtPrintSupport.framework` into the bundle if macdeployqt skipped it (it normally does, since the main notepatra binary does not link QtPrintSupport directly — only libqscintilla2 does, and macdeployqt's dep walker doesn't see into dylibs it doesn't recognize).
+  6. Runs the same install_name rewriting on QtPrintSupport.
+  7. Audits the final bundle with `otool -L | grep /opt/homebrew` and fails loudly if any leftover absolute Homebrew path is still present.
+  8. Re-signs the whole bundle ad-hoc (`codesign --force --deep --sign -`) so all modified load commands have a fresh signature and dyld accepts them.
+
+### Changed
+- 🌐 **Homepage simplified** — the "Uninstall" section has been moved off `notepatra.org/` and lives on the documentation site at `notepatra.org/docs.html#uninstall` only. Keeps the landing page focused on download + features.
+
+### Verifying this release
+Same as previous — SHA-256, cosign, SLSA. See SECURITY.md.
+
+
 ## [0.1.10] — 2026-04-11
 
 ### Fixed
