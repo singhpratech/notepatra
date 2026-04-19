@@ -11,6 +11,7 @@
 #include "npp_palette.h"
 #include "rustbridge.h"
 #include "fonts.h"
+#include "config.h"
 
 #include <QEvent>
 #include <QFont>
@@ -46,30 +47,216 @@ struct CompareDisplayRow {
     int rightLineNumber = 0;
 };
 
-static QColor navAddedColor() { return QColor("#49B95D"); }
-static QColor navDeletedColor() { return QColor("#D84B3E"); }
-static QColor navChangedLeftColor() { return QColor("#E5BA63"); }
-static QColor navChangedRightColor() { return QColor("#E5BA63"); }
+// ═══════════════════════════════════════════════════════════════════════
+// Theme-aware colour palette.
+//
+// Two palettes below: LIGHT is used when Config::theme == "Light" (and is
+// the historical default). DARK is used for "Dark" and "Monokai" themes.
+// Colours picked to be visually distinct from each other AND from typical
+// syntax highlighting — ComparePlus on Notepad++ uses similar saturation
+// so diffs stand out on top of coloured lexer output.
+// ═══════════════════════════════════════════════════════════════════════
+
+struct ComparePalette {
+    // Line-background markers (added/deleted/changed/blank)
+    QColor bgAdded, bgDeleted, bgChangedLeft, bgChangedRight, bgBlank;
+    // Margin symbol bg/fg
+    QColor symAddedFg, symDeletedFg, symChangedFg;
+    // Intra-line indicator colours (BGR→RGB handled at call site)
+    QColor inlineRemovedFg, inlineAddedFg;
+    // Nav bar
+    QColor navBg, navLaneBg, navAdded, navDeleted, navChanged, navViewport, navViewportBorder;
+    // Editor surface
+    QColor editorBg, editorFg, marginBg, marginFg;
+    // Header
+    QColor headerBg, headerFg, headerBorder;
+    // Splitter
+    QColor splitterBg, splitterBorder;
+};
+
+static bool compareIsDark() {
+    const QString &t = Config::instance().theme;
+    return t.compare("Dark", Qt::CaseInsensitive) == 0 ||
+           t.compare("Monokai", Qt::CaseInsensitive) == 0;
+}
+
+static ComparePalette comparePalette() {
+    ComparePalette p;
+    if (compareIsDark()) {
+        // Dark mode — saturated backgrounds dark enough to read white text on
+        p.bgAdded         = QColor("#1E4D2B");   // forest green
+        p.bgDeleted       = QColor("#5A1D1D");   // dark crimson
+        p.bgChangedLeft   = QColor("#4A3A10");   // amber brown (left half)
+        p.bgChangedRight  = QColor("#4A3A10");
+        p.bgBlank         = QColor("#1A1A1A");   // near-black filler
+        p.symAddedFg      = QColor("#5FE07E");
+        p.symDeletedFg    = QColor("#FF7A7A");
+        p.symChangedFg    = QColor("#FFC857");
+        p.inlineRemovedFg = QColor("#FF5F5F");   // bright red char highlight on left
+        p.inlineAddedFg   = QColor("#3CCB5A");   // bright green char highlight on right
+        p.navBg           = QColor("#1E1E1E");
+        p.navLaneBg       = QColor("#2A2A2A");
+        p.navAdded        = QColor("#3CCB5A");
+        p.navDeleted      = QColor("#FF5F5F");
+        p.navChanged      = QColor("#FFC857");
+        p.navViewport     = QColor(100, 170, 255, 58);
+        p.navViewportBorder = QColor("#4FA3FF");
+        p.editorBg        = QColor("#1E1E1E");
+        p.editorFg        = QColor("#D4D4D4");
+        p.marginBg        = QColor("#252526");
+        p.marginFg        = QColor("#858585");
+        p.headerBg        = QColor("#2D2D2D");
+        p.headerFg        = QColor("#D4D4D4");
+        p.headerBorder    = QColor("#3E3E3E");
+        p.splitterBg      = QColor("#2D2D2D");
+        p.splitterBorder  = QColor("#1E1E1E");
+    } else {
+        // Light mode — more saturated than the old pastels so diffs pop
+        // against syntax-highlighted text.
+        p.bgAdded         = QColor("#C8F0C4");   // punchy mint green
+        p.bgDeleted       = QColor("#FBCBCB");   // punchy pink-red
+        p.bgChangedLeft   = QColor("#FFECB0");   // warm amber
+        p.bgChangedRight  = QColor("#FFECB0");
+        p.bgBlank         = QColor("#F5F5F5");
+        p.symAddedFg      = QColor("#18A02E");
+        p.symDeletedFg    = QColor("#C92A2A");
+        p.symChangedFg    = QColor("#B8860B");
+        p.inlineRemovedFg = QColor("#D92020");   // deep red for removed chars on left
+        p.inlineAddedFg   = QColor("#169930");   // deep green for added chars on right
+        p.navBg           = QColor("#FAFBFC");
+        p.navLaneBg       = QColor("#E7ECF2");
+        p.navAdded        = QColor("#18A02E");
+        p.navDeleted      = QColor("#C92A2A");
+        p.navChanged      = QColor("#E5A317");
+        p.navViewport     = QColor(33, 150, 243, 48);
+        p.navViewportBorder = QColor("#1565C0");
+        p.editorBg        = QColor("#FFFFFF");
+        p.editorFg        = QColor("#000000");
+        p.marginBg        = QColor("#F2F2F2");
+        p.marginFg        = QColor("#8390A4");
+        p.headerBg        = QColor("#F7F7F7");
+        p.headerFg        = QColor("#4B4B4B");
+        p.headerBorder    = QColor("#D9D9D9");
+        p.splitterBg      = QColor("#F1F1F1");
+        p.splitterBorder  = QColor("#D8D8D8");
+    }
+    return p;
+}
+
+static QColor navAddedColor()        { return comparePalette().navAdded; }
+static QColor navDeletedColor()      { return comparePalette().navDeleted; }
+static QColor navChangedLeftColor()  { return comparePalette().navChanged; }
+static QColor navChangedRightColor() { return comparePalette().navChanged; }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Word-level LCS intra-line diff.
+//
+// For RowChanged pairs we need to highlight exactly which *tokens* (words
+// or punctuation) changed. The previous implementation only used common
+// prefix + common suffix matching, which over-highlights when a single
+// word changes in the middle ("foo bar baz" vs "foo BUX baz" would be
+// marked "bar" vs "BUX" only — correct for that case, but for something
+// like "alpha beta gamma delta" vs "alpha GAMMA beta delta" the prefix/
+// suffix approach flags nearly everything.)
+//
+// This is standard dynamic-programming LCS on token arrays — O(n·m) time,
+// fine for single lines. Tokens are consecutive runs of word-characters
+// OR single non-word characters, so whitespace / punctuation boundaries
+// are respected.
+// ═══════════════════════════════════════════════════════════════════════
+
+struct InlineToken {
+    int start;        // char offset into the line
+    int length;       // char count
+    QString text;
+};
+
+static QVector<InlineToken> tokenizeLine(const QString &line) {
+    QVector<InlineToken> tokens;
+    const int n = line.size();
+    int i = 0;
+    while (i < n) {
+        int j = i;
+        if (line[i].isLetterOrNumber() || line[i] == '_') {
+            while (j < n && (line[j].isLetterOrNumber() || line[j] == '_')) ++j;
+        } else {
+            // one-char token for punctuation, whitespace, etc
+            j = i + 1;
+        }
+        tokens.append({i, j - i, line.mid(i, j - i)});
+        i = j;
+    }
+    return tokens;
+}
+
+// Returns two bitmasks: leftChanged[i] = true if token i on the left is
+// not part of the LCS (i.e. was removed); rightChanged[i] = true if token
+// i on the right was added.
+static void computeTokenDiff(const QVector<InlineToken> &left,
+                             const QVector<InlineToken> &right,
+                             QVector<bool> &leftChanged,
+                             QVector<bool> &rightChanged) {
+    const int n = left.size();
+    const int m = right.size();
+    leftChanged.fill(false, n);
+    rightChanged.fill(false, m);
+
+    if (n == 0 || m == 0) {
+        for (int i = 0; i < n; ++i) leftChanged[i] = true;
+        for (int j = 0; j < m; ++j) rightChanged[j] = true;
+        return;
+    }
+
+    // dp[i][j] = length of LCS of left[0..i) and right[0..j)
+    QVector<QVector<int>> dp(n + 1, QVector<int>(m + 1, 0));
+    for (int i = 1; i <= n; ++i) {
+        for (int j = 1; j <= m; ++j) {
+            if (left[i-1].text == right[j-1].text)
+                dp[i][j] = dp[i-1][j-1] + 1;
+            else
+                dp[i][j] = qMax(dp[i-1][j], dp[i][j-1]);
+        }
+    }
+
+    // Backtrack: whatever isn't on the LCS path is a change
+    int i = n, j = m;
+    while (i > 0 && j > 0) {
+        if (left[i-1].text == right[j-1].text) {
+            --i; --j;
+        } else if (dp[i-1][j] >= dp[i][j-1]) {
+            leftChanged[i-1] = true;
+            --i;
+        } else {
+            rightChanged[j-1] = true;
+            --j;
+        }
+    }
+    while (i > 0) { leftChanged[--i] = true; }
+    while (j > 0) { rightChanged[--j] = true; }
+}
 
 static void applyCompareLexer(QsciScintilla *editor, const QString &name, const QString &text) {
     if (!editor) return;
 
     const QString lang = detectLanguageFromPath(name, text);
     QFont font = notepatraCodeFont();
+    const ComparePalette pal = comparePalette();
 
     if (QsciLexer *lexer = createLexerForLanguage(lang, editor)) {
         lexer->setDefaultFont(font);
-        lexer->setDefaultPaper(QColor("#FFFFFF"));
-        lexer->setDefaultColor(QColor("#000000"));
+        lexer->setDefaultPaper(pal.editorBg);
+        lexer->setDefaultColor(pal.editorFg);
         editor->setLexer(lexer);
         applyNotepadPlusPalette(lexer, font);
-        editor->setPaper(QColor("#FFFFFF"));
-        editor->setColor(QColor("#000000"));
+        // Applied palette above may have light-mode colours — override default
+        // paper to match our compare theme so background matches the markers.
+        editor->setPaper(pal.editorBg);
+        editor->setColor(pal.editorFg);
     } else {
         editor->setLexer(nullptr);
         editor->setFont(font);
-        editor->setPaper(QColor("#FFFFFF"));
-        editor->setColor(QColor("#000000"));
+        editor->setPaper(pal.editorBg);
+        editor->setColor(pal.editorFg);
     }
 }
 
@@ -248,13 +435,14 @@ int CompareNavBar::visibleRows() const {
 void CompareNavBar::paintEvent(QPaintEvent *event) {
     Q_UNUSED(event);
 
+    const ComparePalette pal = comparePalette();
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-    painter.fillRect(rect(), QColor("#FAFBFC"));
+    painter.fillRect(rect(), pal.navBg);
 
     QRectF lane = rect().adjusted(8, 6, -8, -6);
     painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor("#E7ECF2"));
+    painter.setBrush(pal.navLaneBg);
     painter.drawRoundedRect(lane, 6, 6);
 
     if (m_rowKinds.isEmpty()) return;
@@ -296,8 +484,8 @@ void CompareNavBar::paintEvent(QPaintEvent *event) {
                     qMax<qreal>(12.0, viewportBottom - viewportTop));
     if (viewport.bottom() > lane.bottom()) viewport.moveBottom(lane.bottom());
 
-    painter.setBrush(QColor(33, 150, 243, 38));
-    painter.setPen(QPen(QColor("#1565C0"), 1.2));
+    painter.setBrush(pal.navViewport);
+    painter.setPen(QPen(pal.navViewportBorder, 1.2));
     painter.drawRoundedRect(viewport, 4, 4);
 }
 
@@ -333,6 +521,7 @@ void CompareNavBar::activateRowAt(int y) {
 #define SYM_DEL          12
 
 void CompareWidget::setupEditor(QsciScintilla *ed) {
+    const ComparePalette pal = comparePalette();
     QFont mono = notepatraCodeFont();
     ed->setFont(mono);
     ed->setMarginsFont(mono);
@@ -343,61 +532,62 @@ void CompareWidget::setupEditor(QsciScintilla *ed) {
 
     ed->setMarginType(0, QsciScintilla::TextMargin);
     ed->setMarginWidth(0, "00000");
-    ed->setMarginBackgroundColor(0, QColor("#F2F2F2"));
-    ed->setMarginsForegroundColor(QColor("#8390A4"));
+    ed->setMarginBackgroundColor(0, pal.marginBg);
+    ed->setMarginsForegroundColor(pal.marginFg);
 
     ed->setMarginType(1, QsciScintilla::SymbolMargin);
     ed->setMarginWidth(1, 14);
-    ed->setMarginBackgroundColor(1, QColor("#F2F2F2"));
+    ed->setMarginBackgroundColor(1, pal.marginBg);
     ed->setMarginMarkerMask(
         1, (1 << SYM_CHANGE_LEFT) | (1 << SYM_CHANGE_RIGHT) | (1 << SYM_ADD) | (1 << SYM_DEL));
 
     ed->setMarginType(2, QsciScintilla::SymbolMarginColor);
     ed->setMarginWidth(2, 4);
     ed->setMarginSensitivity(2, false);
-    ed->setMarginBackgroundColor(2, QColor("#FF8A00"));
+    ed->setMarginBackgroundColor(2, pal.marginBg);
     ed->setFolding(QsciScintilla::NoFoldStyle);
 
     ed->markerDefine(QsciScintilla::Background, MARKER_ADDED);
-    ed->setMarkerBackgroundColor(QColor("#CFF5C8"), MARKER_ADDED);
+    ed->setMarkerBackgroundColor(pal.bgAdded, MARKER_ADDED);
 
     ed->markerDefine(QsciScintilla::Background, MARKER_DELETED);
-    ed->setMarkerBackgroundColor(QColor("#F7DDDD"), MARKER_DELETED);
+    ed->setMarkerBackgroundColor(pal.bgDeleted, MARKER_DELETED);
 
     ed->markerDefine(QsciScintilla::Background, MARKER_CHANGED_LEFT);
-    ed->setMarkerBackgroundColor(QColor("#FBF7DD"), MARKER_CHANGED_LEFT);
+    ed->setMarkerBackgroundColor(pal.bgChangedLeft, MARKER_CHANGED_LEFT);
 
     ed->markerDefine(QsciScintilla::Background, MARKER_CHANGED_RIGHT);
-    ed->setMarkerBackgroundColor(QColor("#FBF7DD"), MARKER_CHANGED_RIGHT);
+    ed->setMarkerBackgroundColor(pal.bgChangedRight, MARKER_CHANGED_RIGHT);
 
     ed->markerDefine(QsciScintilla::Background, MARKER_BLANK);
-    ed->setMarkerBackgroundColor(QColor("#FAFAFA"), MARKER_BLANK);
+    ed->setMarkerBackgroundColor(pal.bgBlank, MARKER_BLANK);
 
     ed->markerDefine('#', SYM_CHANGE_LEFT);
-    ed->setMarkerForegroundColor(QColor("#C98724"), SYM_CHANGE_LEFT);
-    ed->setMarkerBackgroundColor(QColor("#FBF7DD"), SYM_CHANGE_LEFT);
+    ed->setMarkerForegroundColor(pal.symChangedFg, SYM_CHANGE_LEFT);
+    ed->setMarkerBackgroundColor(pal.bgChangedLeft, SYM_CHANGE_LEFT);
 
     ed->markerDefine('#', SYM_CHANGE_RIGHT);
-    ed->setMarkerForegroundColor(QColor("#C98724"), SYM_CHANGE_RIGHT);
-    ed->setMarkerBackgroundColor(QColor("#FBF7DD"), SYM_CHANGE_RIGHT);
+    ed->setMarkerForegroundColor(pal.symChangedFg, SYM_CHANGE_RIGHT);
+    ed->setMarkerBackgroundColor(pal.bgChangedRight, SYM_CHANGE_RIGHT);
 
     ed->markerDefine(QsciScintilla::Plus, SYM_ADD);
-    ed->setMarkerForegroundColor(QColor("#28A745"), SYM_ADD);
-    ed->setMarkerBackgroundColor(QColor("#CFF5C8"), SYM_ADD);
+    ed->setMarkerForegroundColor(pal.symAddedFg, SYM_ADD);
+    ed->setMarkerBackgroundColor(pal.bgAdded, SYM_ADD);
 
     ed->markerDefine(QsciScintilla::Minus, SYM_DEL);
-    ed->setMarkerForegroundColor(QColor("#D84B3E"), SYM_DEL);
-    ed->setMarkerBackgroundColor(QColor("#F7DDDD"), SYM_DEL);
+    ed->setMarkerForegroundColor(pal.symDeletedFg, SYM_DEL);
+    ed->setMarkerBackgroundColor(pal.bgDeleted, SYM_DEL);
 
-    ed->setMarkerForegroundColor(QColor("#28A745"), MARKER_ADDED);
-    ed->setMarkerForegroundColor(QColor("#D84B3E"), MARKER_DELETED);
-    ed->setMarkerForegroundColor(QColor("#C98724"), MARKER_CHANGED_LEFT);
-    ed->setMarkerForegroundColor(QColor("#C98724"), MARKER_CHANGED_RIGHT);
+    ed->setMarkerForegroundColor(pal.symAddedFg,   MARKER_ADDED);
+    ed->setMarkerForegroundColor(pal.symDeletedFg, MARKER_DELETED);
+    ed->setMarkerForegroundColor(pal.symChangedFg, MARKER_CHANGED_LEFT);
+    ed->setMarkerForegroundColor(pal.symChangedFg, MARKER_CHANGED_RIGHT);
 
-    ed->setPaper(QColor("#FFFFFF"));
-    ed->setColor(QColor("#000000"));
+    ed->setPaper(pal.editorBg);
+    ed->setColor(pal.editorFg);
     ed->setCaretLineVisible(false);
-    ed->setStyleSheet("QsciScintilla { border: none; background: white; }");
+    ed->setStyleSheet(QString("QsciScintilla { border: none; background: %1; }")
+                          .arg(pal.editorBg.name()));
 }
 
 void CompareWidget::setEditorsEditable(bool editable) {
@@ -519,11 +709,24 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     headerRow->addWidget(m_rightHeader, 1);
     layout->addLayout(headerRow);
 
+    const ComparePalette uiPal = comparePalette();
+    m_leftHeader->setStyleSheet(QString(
+        "font-weight: 600; background: %1; color: %2; "
+        "padding: 1px 8px; border-bottom: 1px solid %3;")
+        .arg(uiPal.headerBg.name(), uiPal.headerFg.name(), uiPal.headerBorder.name()));
+    m_rightHeader->setStyleSheet(QString(
+        "font-weight: 600; background: %1; color: %2; "
+        "padding: 1px 8px; border-bottom: 1px solid %3;")
+        .arg(uiPal.headerBg.name(), uiPal.headerFg.name(), uiPal.headerBorder.name()));
+    m_statsLabel->setStyleSheet(QString("font-weight: bold; color: %1;")
+        .arg(uiPal.headerFg.name()));
+
     auto *splitter = new QSplitter(Qt::Horizontal);
     splitter->setHandleWidth(10);
-    splitter->setStyleSheet(
-        "QSplitter::handle { background: #F1F1F1; border-left: 1px solid #D8D8D8; "
-        "border-right: 1px solid #D8D8D8; }");
+    splitter->setStyleSheet(QString(
+        "QSplitter::handle { background: %1; border-left: 1px solid %2; "
+        "border-right: 1px solid %2; }")
+        .arg(uiPal.splitterBg.name(), uiPal.splitterBorder.name()));
 
     m_leftEditor = new QsciScintilla;
     m_leftEditor->setObjectName("compareLeftEditor");
@@ -602,6 +805,7 @@ bool CompareWidget::eventFilter(QObject *watched, QEvent *event) {
 
 void CompareWidget::compare(const QString &leftText, const QString &leftName,
                             const QString &rightText, const QString &rightName) {
+    const ComparePalette pal = comparePalette();
     m_leftText = leftText;
     m_rightText = rightText;
     m_editable = false;
@@ -614,15 +818,15 @@ void CompareWidget::compare(const QString &leftText, const QString &leftName,
     m_leftEditor->setFont(mono);
     m_rightEditor->setFont(mono);
 
-    m_leftEditor->setColor(QColor("#000000"));
-    m_rightEditor->setColor(QColor("#000000"));
-    m_leftEditor->setPaper(QColor("#FFFFFF"));
-    m_rightEditor->setPaper(QColor("#FFFFFF"));
+    m_leftEditor->setColor(pal.editorFg);
+    m_rightEditor->setColor(pal.editorFg);
+    m_leftEditor->setPaper(pal.editorBg);
+    m_rightEditor->setPaper(pal.editorBg);
 
-    m_leftEditor->setMarginsBackgroundColor(QColor("#F2F2F2"));
-    m_leftEditor->setMarginsForegroundColor(QColor("#8390A4"));
-    m_rightEditor->setMarginsBackgroundColor(QColor("#F2F2F2"));
-    m_rightEditor->setMarginsForegroundColor(QColor("#8390A4"));
+    m_leftEditor->setMarginsBackgroundColor(pal.marginBg);
+    m_leftEditor->setMarginsForegroundColor(pal.marginFg);
+    m_rightEditor->setMarginsBackgroundColor(pal.marginBg);
+    m_rightEditor->setMarginsForegroundColor(pal.marginFg);
 
     applyCompareLexer(m_leftEditor, leftName, leftText);
     applyCompareLexer(m_rightEditor, rightName, rightText);
@@ -688,15 +892,24 @@ void CompareWidget::recompare() {
     m_rightEditor->setText(rightBuf);
     m_rightEditor->setReadOnly(!m_editable);
 
+    // Indicator 10 = red "removed token" highlight on the LEFT pane.
+    // Indicator 11 = green "added token" highlight on the RIGHT pane.
+    // Scintilla wants 0x00BBGGRR, so swap R and B bytes.
+    const ComparePalette indPal = comparePalette();
+    auto bgr = [](const QColor &c) -> long {
+        return (long(c.blue()) << 16) | (long(c.green()) << 8) | long(c.red());
+    };
     m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETSTYLE, 10, QsciScintilla::INDIC_ROUNDBOX);
-    m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETFORE, 10, QColor("#FFB347").rgb() & 0xFFFFFF);
-    m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETALPHA, 10, 185);
+    m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETFORE, 10, bgr(indPal.inlineRemovedFg));
+    m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETALPHA, 10, compareIsDark() ? 140 : 180);
     m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETOUTLINEALPHA, 10, 255);
+    m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETUNDER, 10, 1);
 
     m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETSTYLE, 11, QsciScintilla::INDIC_ROUNDBOX);
-    m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETFORE, 11, QColor("#FFB347").rgb() & 0xFFFFFF);
-    m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETALPHA, 11, 185);
+    m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETFORE, 11, bgr(indPal.inlineAddedFg));
+    m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETALPHA, 11, compareIsDark() ? 140 : 180);
     m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETOUTLINEALPHA, 11, 255);
+    m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETUNDER, 11, 1);
 
     m_leftEditor->markerDeleteAll(MARKER_ADDED);
     m_leftEditor->markerDeleteAll(MARKER_DELETED);
@@ -724,11 +937,12 @@ void CompareWidget::recompare() {
     m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICATORCLEARRANGE, 0,
                                  m_rightEditor->text().toUtf8().size());
 
+    const ComparePalette rowPal = comparePalette();
     const QFont marginFont = m_leftEditor->font();
     const QsciStyle lineNumberStyle(200, "compareLineNumber",
-                                    QColor("#8390A4"), QColor("#F2F2F2"), marginFont);
+                                    rowPal.marginFg, rowPal.marginBg, marginFont);
     const QsciStyle blankLineNumberStyle(201, "compareBlankLineNumber",
-                                         QColor("#8390A4"), QColor("#F2F2F2"), marginFont);
+                                         rowPal.marginFg, rowPal.marginBg, marginFont);
 
     for (int rowIndex = 0; rowIndex < rows.size(); ++rowIndex) {
         const CompareDisplayRow &row = rows[rowIndex];
@@ -804,44 +1018,49 @@ void CompareWidget::recompare() {
             m_rightEditor->markerAdd(rowIndex, MARKER_CHANGED_RIGHT);
             m_rightEditor->markerAdd(rowIndex, SYM_CHANGE_RIGHT);
 
-            const QString &leftText = row.leftText;
+            // Word-level LCS diff: tokenize, compute diff, highlight the
+            // specific tokens that were added/removed. Falls back to full-
+            // line highlight if the lines are empty (nothing to tokenize).
+            const QString &leftText  = row.leftText;
             const QString &rightText = row.rightText;
 
-            int prefixLen = 0;
-            const int maxPrefix = qMin(leftText.length(), rightText.length());
-            while (prefixLen < maxPrefix && leftText[prefixLen] == rightText[prefixLen]) ++prefixLen;
-
-            int suffixLen = 0;
-            const int maxSuffix = qMin(leftText.length() - prefixLen,
-                                       rightText.length() - prefixLen);
-            while (suffixLen < maxSuffix &&
-                   leftText[leftText.length() - 1 - suffixLen] ==
-                       rightText[rightText.length() - 1 - suffixLen]) {
-                ++suffixLen;
-            }
+            const QVector<InlineToken> leftToks  = tokenizeLine(leftText);
+            const QVector<InlineToken> rightToks = tokenizeLine(rightText);
+            QVector<bool> leftChanged, rightChanged;
+            computeTokenDiff(leftToks, rightToks, leftChanged, rightChanged);
 
             auto utf8Bytes = [](const QString &text, int chars) -> int {
                 return text.left(chars).toUtf8().size();
             };
 
-            const int leftChangedChars = leftText.length() - prefixLen - suffixLen;
-            if (leftChangedChars > 0) {
-                const int leftByteStart = leftBytePos + utf8Bytes(leftText, prefixLen);
-                const int leftByteLen = utf8Bytes(leftText, prefixLen + leftChangedChars) -
-                                        utf8Bytes(leftText, prefixLen);
-                m_leftEditor->SendScintilla(QsciScintilla::SCI_SETINDICATORCURRENT, 10);
-                m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICATORFILLRANGE,
-                                            leftByteStart, leftByteLen);
+            // Paint LEFT side — removed tokens in red
+            m_leftEditor->SendScintilla(QsciScintilla::SCI_SETINDICATORCURRENT, 10);
+            for (int t = 0; t < leftToks.size(); ++t) {
+                if (!leftChanged[t]) continue;
+                const InlineToken &tok = leftToks[t];
+                // Skip pure-whitespace tokens so we only highlight the
+                // meaningful changed word, not the leading/trailing space.
+                if (tok.text.trimmed().isEmpty()) continue;
+                const int byteStart = leftBytePos + utf8Bytes(leftText, tok.start);
+                const int byteLen   = utf8Bytes(leftText, tok.start + tok.length) -
+                                      utf8Bytes(leftText, tok.start);
+                if (byteLen > 0)
+                    m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICATORFILLRANGE,
+                                                byteStart, byteLen);
             }
 
-            const int rightChangedChars = rightText.length() - prefixLen - suffixLen;
-            if (rightChangedChars > 0) {
-                const int rightByteStart = rightBytePos + utf8Bytes(rightText, prefixLen);
-                const int rightByteLen = utf8Bytes(rightText, prefixLen + rightChangedChars) -
-                                         utf8Bytes(rightText, prefixLen);
-                m_rightEditor->SendScintilla(QsciScintilla::SCI_SETINDICATORCURRENT, 11);
-                m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICATORFILLRANGE,
-                                             rightByteStart, rightByteLen);
+            // Paint RIGHT side — added tokens in green
+            m_rightEditor->SendScintilla(QsciScintilla::SCI_SETINDICATORCURRENT, 11);
+            for (int t = 0; t < rightToks.size(); ++t) {
+                if (!rightChanged[t]) continue;
+                const InlineToken &tok = rightToks[t];
+                if (tok.text.trimmed().isEmpty()) continue;
+                const int byteStart = rightBytePos + utf8Bytes(rightText, tok.start);
+                const int byteLen   = utf8Bytes(rightText, tok.start + tok.length) -
+                                      utf8Bytes(rightText, tok.start);
+                if (byteLen > 0)
+                    m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICATORFILLRANGE,
+                                                 byteStart, byteLen);
             }
             break;
         }

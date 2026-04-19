@@ -690,6 +690,12 @@ MainWindow::MainWindow() {
 
     connect(m_tabs, &QTabWidget::tabCloseRequested, this, &MainWindow::closeTab);
     connect(m_tabs, &QTabWidget::currentChanged, this, [this](int) {
+        if (m_macroRecording && m_macro) {
+            m_macro->endRecording();
+            m_savedMacro = m_macro->save();
+            m_macroRecording = false;
+            macroUpdateActions();
+        }
         updateTitle();
         updateStatusBar();
     });
@@ -843,8 +849,8 @@ Editor *MainWindow::newFile() {
     connect(editor, &QsciScintilla::modificationChanged, this, [this, editor](bool) {
         updateTabTitle(m_tabs->indexOf(editor));
     });
-    connect(editor, &Editor::cursorPositionUpdated, this, [this](int line, int col) {
-        m_statusBar->updatePosition(line, col);
+    connect(editor, &Editor::cursorPositionUpdated, this, [this](int line, int col, int pos) {
+        m_statusBar->updatePosition(line, col, pos);
     });
     connect(editor, &QsciScintilla::textChanged, this, [this]() {
         if (auto *e = currentEditor()) {
@@ -883,8 +889,8 @@ void MainWindow::openFile(const QString &path) {
     connect(editor, &QsciScintilla::modificationChanged, this, [this, editor](bool) {
         updateTabTitle(m_tabs->indexOf(editor));
     });
-    connect(editor, &Editor::cursorPositionUpdated, this, [this](int line, int col) {
-        m_statusBar->updatePosition(line, col);
+    connect(editor, &Editor::cursorPositionUpdated, this, [this](int line, int col, int pos) {
+        m_statusBar->updatePosition(line, col, pos);
     });
     connect(editor, &QsciScintilla::textChanged, this, [this]() {
         if (auto *e = currentEditor()) {
@@ -993,7 +999,8 @@ void MainWindow::updateStatusBar() {
     if (!e) return;
     int line, col;
     e->getCursorPosition(&line, &col);
-    m_statusBar->updatePosition(line + 1, col + 1);
+    int pos = static_cast<int>(e->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS));
+    m_statusBar->updatePosition(line + 1, col + 1, pos);
     m_statusBar->updateLanguage(e->language());
     m_statusBar->updateEncoding(e->encoding());
     m_statusBar->updateEol(e->eolModeName());
@@ -1052,7 +1059,7 @@ void MainWindow::buildMenus() {
             auto *ed = m_tabs->editorAt(i);
             if (ed && ed->isModified() && !ed->filePath().isEmpty()) { ed->saveFile(); updateTabTitle(i); }
         }
-    }, QKeySequence("Ctrl+Shift+S"));
+    }, QKeySequence("Ctrl+Alt+S"));
     file->addSeparator();
     file->addAction("Rename...", this, [this, E]() {
         auto *e = E(); if (!e || e->filePath().isEmpty()) return;
@@ -1681,6 +1688,7 @@ void MainWindow::buildMenus() {
         QString rightText = QTextStream(&file).readAll();
         QString leftName = e->filePath().isEmpty() ? "Current" : QFileInfo(e->filePath()).fileName();
         auto *dlg = new CompareDialog(e->text(), leftName, rightText, QFileInfo(path).fileName(), this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->show();
     });
     tools->addAction("Compare Two Open Tabs...", this, [this]() {
@@ -1697,6 +1705,7 @@ void MainWindow::buildMenus() {
         QString leftName = left->filePath().isEmpty() ? m_tabs->tabText(cur) : QFileInfo(left->filePath()).fileName();
         QString rightName = right->filePath().isEmpty() ? m_tabs->tabText(other) : QFileInfo(right->filePath()).fileName();
         auto *dlg = new CompareDialog(left->text(), leftName, right->text(), rightName, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
         dlg->show();
     });
 

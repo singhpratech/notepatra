@@ -52,8 +52,8 @@ NppStatusBar::NppStatusBar(QWidget *parent) : QWidget(parent) {
     lay->addWidget(m_ins);
 }
 
-void NppStatusBar::updatePosition(int line, int col) {
-    m_pos->setText(QString("Ln : %1   Col : %2   Pos : %1").arg(line).arg(col));
+void NppStatusBar::updatePosition(int line, int col, int pos) {
+    m_pos->setText(QString("Ln : %1   Col : %2   Pos : %3").arg(line).arg(col).arg(pos));
 }
 
 void NppStatusBar::updateSelection(int chars, int lines) {

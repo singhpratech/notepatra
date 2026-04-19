@@ -197,13 +197,117 @@ jobs:
         run: |
           QT_PATH=/opt/homebrew/opt/qt@5
           export PATH="$QT_PATH/bin:$PATH"
-          # Bundle Qt frameworks into the app
-          macdeployqt build/Notepatra.app 2>/dev/null || true
-          # Copy QScintilla dylib into app bundle
-          mkdir -p build/Notepatra.app/Contents/Frameworks
-          cp "$QT_PATH/lib/libqscintilla2_qt5."*.dylib build/Notepatra.app/Contents/Frameworks/ 2>/dev/null || true
-          # Create DMG
-          hdiutil create -volname "Notepatra" -srcfolder build/Notepatra.app -ov -format UDZO build/Notepatra.dmg
+
+          APP=build/Notepatra.app
+          FW="$APP/Contents/Frameworks"
+          mkdir -p "$FW"
+
+          # ─── Step 1: macdeployqt bundles Qt frameworks for the main binary.
+          # This also adds an LC_RPATH of @executable_path/../Frameworks to
+          # notepatra, which is what lets @rpath/QtCore.framework/... resolve.
+          echo "=== macdeployqt ==="
+          macdeployqt "$APP"
+
+          # ─── Step 2: Copy QScintilla dylib into the bundle. macdeployqt
+          # doesn't know about QScintilla, so we have to drop it in + rewrite
+          # its load commands ourselves.
+          QSC_SRC=$(find "$QT_PATH/lib" -name "libqscintilla2_qt5*.dylib" -type f 2>/dev/null | head -1)
+          if [ -z "$QSC_SRC" ]; then
+            QSC_SRC=$(find /opt/homebrew /usr/local -name "libqscintilla2_qt5*.dylib" -type f 2>/dev/null | head -1)
+          fi
+          if [ -z "$QSC_SRC" ]; then
+            echo "::error::QScintilla dylib not found — bundle would be unusable"
+            exit 1
+          fi
+          echo "QScintilla source: $QSC_SRC"
+          cp "$QSC_SRC" "$FW/libqscintilla2_qt5.15.dylib"
+          chmod u+w "$FW/libqscintilla2_qt5.15.dylib"
+
+          QSC_BUNDLED="$FW/libqscintilla2_qt5.15.dylib"
+
+          # ─── Step 3: Set libqscintilla2's own install_name to @rpath so
+          # the main notepatra binary can find it via the LC_RPATH entry
+          # macdeployqt added in step 1.
+          install_name_tool -id "@rpath/libqscintilla2_qt5.15.dylib" "$QSC_BUNDLED"
+
+          # ─── Step 4: Rewrite every /opt/homebrew or /usr/local reference
+          # inside libqscintilla2 to use @rpath/<framework|dylib>. This
+          # catches QScintilla's known quirk of baking literal '*' globs
+          # into its LC_LOAD_DYLIB entries (e.g.
+          # /opt/homebrew/*/QtPrintSupport.framework/Versions/5/QtPrintSupport)
+          # which would otherwise crash dyld at launch.
+          echo "=== Before rewrite ==="
+          otool -L "$QSC_BUNDLED"
+          otool -L "$QSC_BUNDLED" | tail -n +2 | awk '{print $1}' | while read -r DEP; do
+            case "$DEP" in
+              /opt/homebrew*|/usr/local*)
+                if echo "$DEP" | grep -q "\.framework/"; then
+                  FW_NAME=$(echo "$DEP" | sed -E 's|.*/([^/]+)\.framework/Versions/([^/]+)/.*|\1|')
+                  FW_VER=$(echo "$DEP"  | sed -E 's|.*/([^/]+)\.framework/Versions/([^/]+)/.*|\2|')
+                  NEW="@rpath/${FW_NAME}.framework/Versions/${FW_VER}/${FW_NAME}"
+                else
+                  NEW="@rpath/$(basename "$DEP")"
+                fi
+                echo "  rewrite: $DEP"
+                echo "       -> $NEW"
+                install_name_tool -change "$DEP" "$NEW" "$QSC_BUNDLED"
+                ;;
+            esac
+          done
+          echo "=== After rewrite ==="
+          otool -L "$QSC_BUNDLED"
+
+          # ─── Step 5: Ad-hoc re-sign libqscintilla2 so Gatekeeper accepts
+          # the modified Mach-O load commands. Without this the modified
+          # dylib has an invalid signature and dyld refuses to load it.
+          codesign --force --sign - "$QSC_BUNDLED"
+
+          # ─── Step 6: macdeployqt may not have bundled QtPrintSupport
+          # (the main notepatra binary doesn't directly link it — only
+          # libqscintilla2 does). Force-copy it if missing.
+          if [ ! -d "$FW/QtPrintSupport.framework" ]; then
+            echo "=== Copying QtPrintSupport.framework (macdeployqt skipped it) ==="
+            cp -R "$QT_PATH/lib/QtPrintSupport.framework" "$FW/"
+            # Rewrite the framework's own install_name and its Qt deps
+            QTPS_BIN="$FW/QtPrintSupport.framework/Versions/5/QtPrintSupport"
+            chmod u+w "$QTPS_BIN"
+            install_name_tool -id "@rpath/QtPrintSupport.framework/Versions/5/QtPrintSupport" "$QTPS_BIN"
+            otool -L "$QTPS_BIN" | tail -n +2 | awk '{print $1}' | while read -r DEP; do
+              case "$DEP" in
+                /opt/homebrew*|/usr/local*)
+                  if echo "$DEP" | grep -q "\.framework/"; then
+                    FW_NAME=$(echo "$DEP" | sed -E 's|.*/([^/]+)\.framework/Versions/([^/]+)/.*|\1|')
+                    FW_VER=$(echo "$DEP"  | sed -E 's|.*/([^/]+)\.framework/Versions/([^/]+)/.*|\2|')
+                    NEW="@rpath/${FW_NAME}.framework/Versions/${FW_VER}/${FW_NAME}"
+                  else
+                    NEW="@rpath/$(basename "$DEP")"
+                  fi
+                  install_name_tool -change "$DEP" "$NEW" "$QTPS_BIN"
+                  ;;
+              esac
+            done
+            codesign --force --sign - "$QTPS_BIN"
+          fi
+
+          # ─── Step 7: Final verification — no binary inside the bundle
+          # should reference /opt/homebrew or /usr/local anymore.
+          echo "=== Final bundle link audit ==="
+          LEFTOVER=$(find "$APP" -type f \( -name "*.dylib" -o -name "*.framework" \) -o -perm +111 2>/dev/null | \
+                     xargs -I{} sh -c 'otool -L "{}" 2>/dev/null | grep -E "/opt/homebrew|/usr/local" && echo "  ^ in: {}"' | head -40)
+          if [ -n "$LEFTOVER" ]; then
+            echo "::warning::Some bundled binaries still reference Homebrew paths:"
+            echo "$LEFTOVER"
+          else
+            echo "✓ All bundled binaries use @rpath or system paths — no Homebrew absolutes"
+          fi
+
+          # ─── Step 8: Ad-hoc re-sign the whole bundle so every modified
+          # load command has a fresh signature. Deep + force so embedded
+          # frameworks inherit the new signature too.
+          codesign --force --deep --sign - "$APP"
+
+          # ─── Step 9: Create the DMG
+          hdiutil create -volname "Notepatra" -srcfolder "$APP" -ov -format UDZO build/Notepatra.dmg
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
@@ -718,6 +822,76 @@ jobs:
           # Copy to workspace root so upload-artifact can pick it up easily
           Copy-Item $installerExe "notepatra-setup-$version.exe" -Force
 
+      # ─── Build the Windows MSI with WiX v3 ───
+      # Produces notepatra-<VERSION>.msi — enterprise-grade installer with
+      # proper upgrade codes, file-type associations, PATH integration, and
+      # per-machine install. Preferred over NSIS for corporate/SCCM deploys.
+      - name: Build Windows MSI (WiX)
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF -like "refs/tags/v*") {
+              $env:GITHUB_REF.Substring(11)
+          } else { "0.0.0" }
+          Write-Host "Building MSI for version: $version"
+
+          # WiX v3 is pre-installed on windows-latest runners at this path
+          $wixBin = "${env:WIX}bin"
+          if (-not (Test-Path $wixBin)) {
+              Write-Host "::warning::WiX not in WIX env var — installing via chocolatey"
+              choco install wixtoolset -y --no-progress
+              $wixBin = "C:\Program Files (x86)\WiX Toolset v3.14\bin"
+              if (-not (Test-Path $wixBin)) {
+                  $wixBin = "C:\Program Files (x86)\WiX Toolset v3.11\bin"
+              }
+          }
+          Write-Host "Using WiX at: $wixBin"
+
+          $candle = Join-Path $wixBin "candle.exe"
+          $light  = Join-Path $wixBin "light.exe"
+          $heat   = Join-Path $wixBin "heat.exe"
+
+          # 1. Harvest all files from notepatra-win into a component group
+          & $heat dir notepatra-win `
+              -cg HarvestedComponents `
+              -dr INSTALLFOLDER `
+              -var var.SourceDir `
+              -gg -g1 -sfrag -srd -sreg -scom `
+              -out installers\HarvestedFiles.wxs
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::heat.exe failed"; exit 1 }
+
+          # Remove the main executable from harvested file list — it's in
+          # the hand-written wxs to avoid duplicate file components.
+          (Get-Content installers\HarvestedFiles.wxs) `
+              -replace '<Component[^>]*>[^<]*<File[^>]*notepatra\.exe[^>]*/>[^<]*</Component>','' `
+              | Set-Content installers\HarvestedFiles.wxs
+
+          # Also need to reference HarvestedComponents in the Feature — patch wxs
+          (Get-Content installers\windows.wxs) `
+              -replace '<!-- ComponentGroupRef Id="HarvestedComponents" / — injected at build time -->', `
+                       '<ComponentGroupRef Id="HarvestedComponents" />' `
+              | Set-Content installers\windows.wxs
+
+          # 2. Compile both wxs files with candle
+          & $candle -arch x64 "-dVersion=$version" "-dSourceDir=notepatra-win" `
+              -ext WixUtilExtension `
+              -out installers\ `
+              installers\windows.wxs installers\HarvestedFiles.wxs
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::candle.exe failed"; exit 1 }
+
+          # 3. Link into MSI with light
+          & $light -ext WixUIExtension -ext WixUtilExtension `
+              -cultures:en-us `
+              -out "notepatra-$version.msi" `
+              installers\windows.wixobj installers\HarvestedFiles.wixobj
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::light.exe failed"; exit 1 }
+
+          if (-not (Test-Path "notepatra-$version.msi")) {
+              Write-Host "::error::MSI missing after build"
+              exit 1
+          }
+          $msiSize = [math]::Round((Get-Item "notepatra-$version.msi").Length / 1MB, 2)
+          Write-Host "✓ Built notepatra-$version.msi ($msiSize MB)"
+
       - name: Upload artifact (portable zip)
         uses: actions/upload-artifact@v4
         with:
@@ -729,6 +903,13 @@ jobs:
         with:
           name: notepatra-windows-installer
           path: notepatra-setup-*.exe
+          if-no-files-found: ignore
+
+      - name: Upload artifact (MSI)
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepatra-windows-msi
+          path: notepatra-*.msi
           if-no-files-found: ignore
 
       # ─── Failure diagnostics — must be LAST so it sees failures from any prior step ───
@@ -866,8 +1047,15 @@ jobs:
               ls -la "notepatra-setup-${VERSION}.exe"
             fi
           fi
+          if [ -d notepatra-windows-msi ]; then
+            MSI=$(ls notepatra-windows-msi/notepatra-*.msi 2>/dev/null | head -1)
+            if [ -n "$MSI" ]; then
+              cp "$MSI" "notepatra-${VERSION}.msi"
+              ls -la "notepatra-${VERSION}.msi"
+            fi
+          fi
           ls -la *.tar.gz *.dmg 2>/dev/null
-          ls -la *.zip *.exe 2>/dev/null || true
+          ls -la *.zip *.exe *.msi 2>/dev/null || true
 
       - name: Checkout source for release notes
         uses: actions/checkout@v4
@@ -880,7 +1068,7 @@ jobs:
           # `sha256sum -c` understands. Users can verify with:
           #   sha256sum -c SHA256SUMS
           for f in notepatra-linux-x64.tar.gz notepatra-linux-arm64.tar.gz notepatra-macos-arm64.dmg \
-                   notepatra-windows-x64.zip notepatra-setup-*.exe; do
+                   notepatra-windows-x64.zip notepatra-setup-*.exe notepatra-*.msi; do
             [ -f "$f" ] && sha256sum "$f" >> SHA256SUMS
           done
           echo "=== SHA256SUMS ==="
@@ -928,7 +1116,7 @@ jobs:
           # detached signature, each .pem is the short-lived cert that
           # ties the signature to this repo + workflow + commit SHA.
           for f in notepatra-linux-x64.tar.gz notepatra-linux-arm64.tar.gz notepatra-macos-arm64.dmg \
-                   notepatra-windows-x64.zip notepatra-setup-*.exe SHA256SUMS; do
+                   notepatra-windows-x64.zip notepatra-setup-*.exe notepatra-*.msi SHA256SUMS; do
             [ -f "$f" ] || continue
             cosign sign-blob --yes \
               --output-signature "${f}.sig" \
@@ -946,6 +1134,7 @@ jobs:
             notepatra-macos-arm64.dmg
             notepatra-windows-x64.zip
             notepatra-setup-*.exe
+            notepatra-*.msi
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -956,6 +1145,7 @@ jobs:
             notepatra-macos-arm64.dmg
             notepatra-windows-x64.zip
             notepatra-setup-*.exe
+            notepatra-*.msi
             SHA256SUMS
             notepatra-linux-x64.tar.gz.sig
             notepatra-linux-x64.tar.gz.pem
@@ -967,6 +1157,8 @@ jobs:
             notepatra-windows-x64.zip.pem
             notepatra-setup-*.exe.sig
             notepatra-setup-*.exe.pem
+            notepatra-*.msi.sig
+            notepatra-*.msi.pem
             SHA256SUMS.sig
             SHA256SUMS.pem
           fail_on_unmatched_files: false

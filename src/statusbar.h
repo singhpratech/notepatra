@@ -9,7 +9,7 @@ class NppStatusBar : public QWidget {
 public:
     explicit NppStatusBar(QWidget *parent = nullptr);
 
-    void updatePosition(int line, int col);
+    void updatePosition(int line, int col, int pos);
     void updateSelection(int chars, int lines);
     void updateLines(int count);
     void updateLength(int length);

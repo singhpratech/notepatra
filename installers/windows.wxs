@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Notepatra Windows MSI installer — WiX Toolset v3.
+  Enterprise-grade Windows installer. Produces notepatra-<VERSION>.msi
+  which installs per-machine (Program Files + HKLM registry) or per-user
+  based on MSIINSTALLPERUSER property.
+
+  Build command (CI):
+    candle -arch x64 -dVersion=%VERSION% -dSourceDir=notepatra-win installers\windows.wxs
+    light -ext WixUIExtension -ext WixUtilExtension -cultures:en-us -out notepatra-%VERSION%.msi windows.wixobj
+
+  Output: notepatra-<VERSION>.msi (signed via signtool in CI post-build)
+-->
+
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
+
+  <?define ProductName = "Notepatra" ?>
+  <?define Publisher = "Prateek Singh" ?>
+  <?define UpgradeCode = "8D5E3C42-1F9A-4B7E-9D6C-1A2B3C4D5E6F" ?>
+  <?define HelpUrl = "https://github.com/singhpratech/notepatra" ?>
+  <?define HomeUrl = "https://notepatra.org" ?>
+
+  <Product Id="*"
+           Name="$(var.ProductName)"
+           Language="1033"
+           Version="$(var.Version)"
+           Manufacturer="$(var.Publisher)"
+           UpgradeCode="$(var.UpgradeCode)">
+
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Description="Notepatra — Native C++/Rust code editor"
+             Comments="Notepad++ alternative with local AI formatters. GPL-3.0 licensed."
+             Manufacturer="$(var.Publisher)" />
+
+    <!-- Auto-upgrade: uninstall older versions when installing newer ones -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Notepatra is already installed."
+                  Schedule="afterInstallInitialize" />
+
+    <!-- Embed all files in the MSI rather than an external .cab -->
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <!-- Icon shown in Add/Remove Programs -->
+    <Icon Id="NotepatraIcon.exe" SourceFile="$(var.SourceDir)\notepatra.exe" />
+    <Property Id="ARPPRODUCTICON" Value="NotepatraIcon.exe" />
+    <Property Id="ARPHELPLINK" Value="$(var.HelpUrl)" />
+    <Property Id="ARPURLINFOABOUT" Value="$(var.HomeUrl)" />
+    <Property Id="ARPURLUPDATEINFO" Value="https://github.com/singhpratech/notepatra/releases/latest" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <!-- Launch after install checkbox -->
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch Notepatra" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+    <Property Id="WixShellExecTarget" Value="[#NotepatraExe]" />
+    <CustomAction Id="LaunchApplication"
+                  BinaryKey="WixCA"
+                  DllEntry="WixShellExec"
+                  Impersonate="yes" />
+
+    <!-- Request admin on install (per-machine) -->
+    <Property Id="ALLUSERS" Value="1" />
+    <Property Id="MSIINSTALLPERUSER" Value="0" />
+
+    <!-- Install locations -->
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="$(var.ProductName)">
+          <!-- All app files go here. The actual file list is generated
+               by heat.exe at build time into a separate include file. -->
+          <Component Id="MainExecutable" Guid="A2F3B641-8E7D-4C5A-B1D2-3E4F5A6B7C8D" Win64="yes">
+            <File Id="NotepatraExe"
+                  Source="$(var.SourceDir)\notepatra.exe"
+                  KeyPath="yes">
+              <!-- Register Notepatra as a valid app for "Open with" -->
+              <util:InternetShortcut Id="NotepatraDesktopShortcut"
+                                     Name="Notepatra"
+                                     Target="$(var.HomeUrl)"
+                                     Type="url" />
+            </File>
+
+            <!-- File type associations: register Notepatra to open text files -->
+            <ProgId Id="Notepatra.TextFile" Description="Text document (Notepatra)" Icon="NotepatraIcon.exe">
+              <Extension Id="txt" ContentType="text/plain">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="log">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="md">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="json">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="xml">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="yaml">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="yml">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="ini">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="conf">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="cfg">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="csv">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+            </ProgId>
+
+            <ProgId Id="Notepatra.CodeFile" Description="Code file (Notepatra)" Icon="NotepatraIcon.exe">
+              <Extension Id="py">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="js">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="ts">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="cpp">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="c">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="h">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="hpp">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="rs">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="go">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="java">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="cs">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="sql">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="html">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="css">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="sh">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+              <Extension Id="ps1">
+                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+              </Extension>
+            </ProgId>
+
+            <!-- Add Notepatra to the Windows PATH (system-wide) -->
+            <Environment Id="NotepatraPath"
+                         Name="PATH"
+                         Value="[INSTALLFOLDER]"
+                         Permanent="no"
+                         Part="last"
+                         Action="set"
+                         System="yes" />
+          </Component>
+
+          <!-- All other files (Qt DLLs, platforms, etc) harvested by heat.exe
+               into a generated HarvestedFiles.wxs during CI build. That file
+               defines the component group "HarvestedComponents" referenced
+               in the Feature below. -->
+        </Directory>
+      </Directory>
+
+      <!-- Start Menu shortcut -->
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="$(var.ProductName)" />
+      </Directory>
+
+      <!-- Desktop shortcut -->
+      <Directory Id="DesktopFolder" Name="Desktop" />
+    </Directory>
+
+    <!-- Start Menu shortcut component -->
+    <DirectoryRef Id="ApplicationProgramsFolder">
+      <Component Id="ApplicationShortcut" Guid="C3D4E5F6-7A8B-9C0D-1E2F-3A4B5C6D7E8F">
+        <Shortcut Id="ApplicationStartMenuShortcut"
+                  Name="$(var.ProductName)"
+                  Description="Native C++/Rust code editor with AI formatters"
+                  Target="[INSTALLFOLDER]notepatra.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="NotepatraIcon.exe" />
+        <RemoveFolder Id="CleanUpShortcut" Directory="ApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\$(var.Publisher)\$(var.ProductName)"
+                       Name="startmenu"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- Desktop shortcut component (optional feature) -->
+    <DirectoryRef Id="DesktopFolder">
+      <Component Id="DesktopShortcut" Guid="D4E5F6A7-8B9C-0D1E-2F3A-4B5C6D7E8F9A">
+        <Shortcut Id="DesktopShortcut"
+                  Name="$(var.ProductName)"
+                  Description="Native C++/Rust code editor with AI formatters"
+                  Target="[INSTALLFOLDER]notepatra.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="NotepatraIcon.exe" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\$(var.Publisher)\$(var.ProductName)"
+                       Name="desktop"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- Features: main (required) + desktop shortcut (optional) -->
+    <Feature Id="ProductFeature" Title="Notepatra" Level="1"
+             Description="Notepatra editor core (required)." Absent="disallow">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="ApplicationShortcut" />
+      <!-- ComponentGroupRef Id="HarvestedComponents" / — injected at build time -->
+    </Feature>
+
+    <Feature Id="DesktopShortcutFeature" Title="Desktop Shortcut" Level="1"
+             Description="Create a Notepatra shortcut on the Desktop.">
+      <ComponentRef Id="DesktopShortcut" />
+    </Feature>
+
+    <!-- Use the standard WiX UI with license page -->
+    <UIRef Id="WixUI_FeatureTree" />
+    <UIRef Id="WixUI_ErrorProgressText" />
+    <WixVariable Id="WixUILicenseRtf" Value="installers\license.rtf" />
+
+    <InstallExecuteSequence>
+      <Custom Action="LaunchApplication" After="InstallFinalize">
+        NOT Installed AND WIXUI_EXITDIALOGOPTIONALCHECKBOX=1
+      </Custom>
+    </InstallExecuteSequence>
+  </Product>
+</Wix>

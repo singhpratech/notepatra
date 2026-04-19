@@ -117,12 +117,18 @@ Every plugin opens in its own tab. Real UI, not just a menu click.
 #### Compare / Diff (inbuilt)
 - Pick **any two tabs** or **any tab vs file on disk**
 - Side-by-side **Scintilla editors** with a ComparePlus-style **overview/nav bar**
-- Plain gray text + colored diff markers so only the changes draw attention
-- `+` green for added, `-` red for deleted
-- **Prev/Next diff** navigation
+- `+` green for added, `-` red for deleted, `#` amber for changed
+- **Word-level LCS intra-line diff** — within a changed line, the specific
+  *tokens* that were removed are highlighted in red on the left pane; the
+  tokens that were added are highlighted in green on the right pane. Works
+  on actual word boundaries, not just common-prefix/suffix.
+- **Dark-mode aware** — colours track your Notepatra theme (Light / Dark /
+  Monokai) so diffs stay readable on both black and white backgrounds.
+- **Prev/Next diff** navigation, inline overview-bar jump
 - **Ignore whitespace**, **ignore case**, **ignore empty lines** checkboxes
-- Powered by Rust Myers diff algorithm
-- **Visual UX inspired by [ComparePlus](https://github.com/pnedev/comparePlus) by Pavel Nedev** — colored line markers, side-by-side synced scrolling, and the compare overview rail are all part of that direction. Credit where credit is due.
+- **Unlock for editing** mode — edit either pane and re-diff in place
+- Powered by Rust Myers diff (line-level) + C++ LCS (word-level)
+- **Visual UX inspired by [ComparePlus](https://github.com/pnedev/comparePlus) by Pavel Nedev** — credit where credit is due.
 
 #### Git Integration (inbuilt)
 - **Changed files panel** — shows added, modified, deleted files with colors
@@ -254,13 +260,14 @@ irm https://notepatra.org/install.ps1 | iex
 
 That's it. Auto-detects your OS, downloads the right binary, installs it, adds to PATH, creates shortcuts.
 
-### Or download manually — [Latest release: v0.1.10](https://github.com/singhpratech/notepatra/releases/latest)
+### Or download manually — [Latest release: v0.1.11](https://github.com/singhpratech/notepatra/releases/latest)
 
 | Platform | Download | Size | What's inside |
 |---|---|---|---|
 | 🐧 **Linux x64** | [`.tar.gz`](https://github.com/singhpratech/notepatra/releases/latest) | **1.8 MB** | Bare `notepatra` binary. Qt5 from your distro. |
 | 🐧 **Linux ARM64** | [`.tar.gz`](https://github.com/singhpratech/notepatra/releases/latest) | **~2 MB** | Bare `notepatra` binary for `aarch64` / ARM64 Linux. |
 | 🍎 **macOS Apple Silicon** (M1–M4) | [`.dmg`](https://github.com/singhpratech/notepatra/releases/latest) | **24 MB** | `Notepatra.app` with Qt frameworks bundled. Drag to Applications. |
+| 🪟 **Windows x64 (MSI)** | [`.msi`](https://github.com/singhpratech/notepatra/releases/latest) | **~40 MB** | WiX-built MSI. Per-machine install, upgrade-code handled, file-type associations for `.txt`, `.log`, `.md`, `.json`, `.py`, `.cpp` etc., adds Notepatra to PATH. Best for enterprise / SCCM deploy. |
 | 🪟 **Windows x64 (installer)** | [`.exe`](https://github.com/singhpratech/notepatra/releases/latest) | **~40 MB** | NSIS installer. Registers in Settings → Apps → Installed apps. Uninstall via Control Panel works. |
 | 🪟 **Windows x64 (portable)** | [`.zip`](https://github.com/singhpratech/notepatra/releases/latest) | **40 MB** | `notepatra.exe` + Qt DLLs + QScintilla DLL. Unzip and run anywhere. No installer, no registry. |
 
@@ -447,6 +454,7 @@ Notepatra follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic 
 
 | Version | Date | Highlights |
 |---|---|---|
+| [**v0.1.11**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.11) | 2026-04-11 | **Hotfix for v0.1.10 macOS DMG.** Rewrite libqscintilla2 `/opt/homebrew/*` dyld references to `@rpath`, bundle QtPrintSupport.framework, re-sign — fixes "Library not loaded" crash on launch. |
 | [**v0.1.10**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.10) | 2026-04-11 | Fix macOS installer (DMG + Tahoe Gatekeeper), add `curl \| sh` uninstaller, Claude.ai-themed website with comprehensive uninstall docs. |
 | [**v0.1.9**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.9) | 2026-04-11 | ~3200-line refactor, unified FormatterPanel base, full Anthropic-style docs site, Linux ARM64 build, voice input in AI Assistant. |
 | [**v0.1.8**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.8) | 2026-04-09 | **AI Fix actually works** for Qwen3 / DeepSeek-R1 / any thinking model — passes `think:false` to `/api/generate` + defensively strips `<think>` tags + trims prose preambles. JSON Tools shows "Show Diff" button after AI Fix to open a side-by-side compare of original vs fixed. AI Assistant rewritten as a **proper chat-bubble UI** (right-aligned blue user bubbles, left-aligned gray assistant bubbles, clear chat button, show-thinking toggle). Tested end-to-end on Linux GUI via xdotool against real local Ollama. |

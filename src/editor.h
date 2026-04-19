@@ -42,7 +42,7 @@ public:
     void clearBraceHighlight();
 
 signals:
-    void cursorPositionUpdated(int line, int col);
+    void cursorPositionUpdated(int line, int col, int pos);
 
 protected:
     void mouseDoubleClickEvent(QMouseEvent *event) override;

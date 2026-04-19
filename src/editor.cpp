@@ -4,6 +4,7 @@
 #include "npp_palette.h"
 #include "fonts.h"
 #include "themes.h"
+#include "config.h"
 
 // ALL 45 QScintilla lexers
 #include <Qsci/qscilexerpython.h>
@@ -371,8 +372,9 @@ void Editor::setupEditor() {
     SendScintilla(SCI_SETSCROLLWIDTH, 1);
     SendScintilla(SCI_SETSCROLLWIDTHTRACKING, 1);
 
-    setAutoCompletionSource(QsciScintilla::AcsAll);
-    setAutoCompletionThreshold(3);
+    const auto &cfg = Config::instance();
+    setAutoCompletionSource(cfg.autoComplete ? QsciScintilla::AcsAll : QsciScintilla::AcsNone);
+    setAutoCompletionThreshold(cfg.autoComplete ? qMax(1, cfg.autoCompleteThreshold) : -1);
     setAutoCompletionCaseSensitivity(false);
     setAutoCompletionReplaceWord(true);
     setFolding(QsciScintilla::BoxedTreeFoldStyle, 2);
@@ -687,7 +689,8 @@ void Editor::resizeEvent(QResizeEvent *event) {
 }
 
 void Editor::onCursorMoved(int line, int col) {
-    emit cursorPositionUpdated(line + 1, col + 1);
+    int pos = static_cast<int>(SendScintilla(SCI_GETCURRENTPOS));
+    emit cursorPositionUpdated(line + 1, col + 1, pos);
     // Note: do NOT clear brace highlight here. QScintilla repaints the
     // brace highlight automatically when the caret lands on/next to a brace,
     // and clearing on every tiny movement made goToMatchingBrace() invisible.

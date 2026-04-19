@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor with AI-powered formatters. ~5 MB native executable. 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.10",
+      "softwareVersion": "0.1.11",
       "fileSize": "5 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -918,7 +918,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.10 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.11 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>5 MB native binary. C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -956,7 +956,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.10</div>
+        <div class="section-label">Download v0.1.11</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -982,180 +982,9 @@
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🪟</div>
                 <h4>Windows x64</h4>
-                <p>Installer + portable .zip</p>
-                <span class="download-btn">setup .exe</span>
+                <p>MSI · setup.exe · portable .zip</p>
+                <span class="download-btn">.msi / .exe</span>
             </a>
-        </div>
-    </section>
-
-    <!-- Uninstall -->
-    <section id="uninstall">
-        <div class="section-label">Uninstall</div>
-        <div class="section-title">Removing Notepatra</div>
-        <div class="section-desc">
-            Notepatra installs cleanly and uninstalls cleanly. Pick your platform and the path you used to install. Every command is copy-paste ready.
-        </div>
-
-        <div style="display: grid; grid-template-columns: 1fr; gap: 24px; max-width: 980px;">
-
-            <!-- ─── macOS uninstall ──────────────────────────────────── -->
-            <div style="background: var(--c-surface); border: 1px solid var(--c-border-2); border-radius: 16px; padding: 28px;">
-                <h3 style="font-size: 22px; color: var(--c-text); margin-bottom: 4px;">🍎 macOS (Sonoma · Sequoia · Tahoe)</h3>
-                <p style="color: var(--c-text-muted); font-size: 13px; margin-bottom: 20px;">Two install paths — pick the one that matches how you installed.</p>
-
-                <h4 style="font-size: 14px; color: var(--c-text); margin: 16px 0 8px; font-weight: 600;">If you installed via the <code style="background:var(--c-code);padding:2px 8px;border-radius:6px;font-size:12px;">install.sh</code> one-liner</h4>
-                <pre style="background: var(--c-code); padding: 14px 18px; border-radius: 10px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: var(--c-text); overflow-x: auto;">curl -fsSL https://notepatra.org/uninstall.sh | sh</pre>
-                <p style="font-size: 13px; color: var(--c-text-muted); margin: 8px 0 16px;">…or do it manually:</p>
-                <pre style="background: var(--c-code); padding: 14px 18px; border-radius: 10px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: var(--c-text); overflow-x: auto;"># Remove the app
-sudo rm -rf /Applications/Notepatra.app
-
-# Remove the CLI symlink
-rm -f ~/.local/bin/notepatra
-
-# Remove user config + cache
-rm -rf ~/.config/notepatra
-rm -rf ~/Library/Preferences/com.notepatra.editor.plist
-rm -rf ~/Library/Saved\ Application\ State/com.notepatra.editor.savedState
-rm -rf ~/Library/Caches/com.notepatra.editor</pre>
-
-                <h4 style="font-size: 14px; color: var(--c-text); margin: 20px 0 8px; font-weight: 600;">If you dragged Notepatra.app from the .dmg to /Applications</h4>
-                <pre style="background: var(--c-code); padding: 14px 18px; border-radius: 10px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: var(--c-text); overflow-x: auto;"># Drag /Applications/Notepatra.app to the Trash
-# Or via terminal:
-mv /Applications/Notepatra.app ~/.Trash/
-
-# Then clean up user data (same as above)
-rm -rf ~/.config/notepatra ~/Library/Preferences/com.notepatra.editor.plist</pre>
-
-                <h4 style="font-size: 14px; color: var(--c-text); margin: 20px 0 8px; font-weight: 600;">Files Notepatra <em>does not</em> create</h4>
-                <ul style="font-size: 13px; color: var(--c-text-muted); padding-left: 20px; line-height: 1.7;">
-                    <li>No system-wide LaunchAgents / LaunchDaemons</li>
-                    <li>No global package manager entries (Homebrew, MacPorts)</li>
-                    <li>No kernel extensions</li>
-                    <li>No background daemons</li>
-                </ul>
-            </div>
-
-            <!-- ─── Linux uninstall ──────────────────────────────────── -->
-            <div style="background: var(--c-surface); border: 1px solid var(--c-border-2); border-radius: 16px; padding: 28px;">
-                <h3 style="font-size: 22px; color: var(--c-text); margin-bottom: 4px;">🐧 Linux (Ubuntu · Debian · Fedora · Arch · all distros)</h3>
-                <p style="color: var(--c-text-muted); font-size: 13px; margin-bottom: 20px;">Three install paths — installer script, manual tarball, or build-from-source.</p>
-
-                <h4 style="font-size: 14px; color: var(--c-text); margin: 16px 0 8px; font-weight: 600;">If you installed via <code style="background:var(--c-code);padding:2px 8px;border-radius:6px;font-size:12px;">install.sh</code></h4>
-                <pre style="background: var(--c-code); padding: 14px 18px; border-radius: 10px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: var(--c-text); overflow-x: auto;">curl -fsSL https://notepatra.org/uninstall.sh | sh</pre>
-                <p style="font-size: 13px; color: var(--c-text-muted); margin: 8px 0 16px;">…or manually:</p>
-                <pre style="background: var(--c-code); padding: 14px 18px; border-radius: 10px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: var(--c-text); overflow-x: auto;"># Remove the binary
-rm -f ~/.local/bin/notepatra
-
-# Remove the desktop entry
-rm -f ~/.local/share/applications/notepatra.desktop
-
-# Remove icons (all sizes)
-for sz in 16 32 48 64 128 256; do
-  rm -f ~/.local/share/icons/hicolor/${sz}x${sz}/apps/notepatra.png
-done
-gtk-update-icon-cache ~/.local/share/icons/hicolor 2>/dev/null
-
-# Remove user config + cache + recovery
-rm -rf ~/.config/notepatra
-
-# Refresh the application menu so the launcher disappears
-update-desktop-database ~/.local/share/applications 2>/dev/null</pre>
-
-                <h4 style="font-size: 14px; color: var(--c-text); margin: 20px 0 8px; font-weight: 600;">If you extracted the .tar.gz manually somewhere else</h4>
-                <pre style="background: var(--c-code); padding: 14px 18px; border-radius: 10px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: var(--c-text); overflow-x: auto;"># Find where you put it
-which notepatra
-# /opt/notepatra/notepatra      ← example
-
-# Remove that directory
-sudo rm -rf /opt/notepatra
-
-# Remove the desktop entry + icons (same as above)
-rm -f ~/.local/share/applications/notepatra.desktop
-rm -rf ~/.config/notepatra</pre>
-
-                <h4 style="font-size: 14px; color: var(--c-text); margin: 20px 0 8px; font-weight: 600;">If you built from source</h4>
-                <pre style="background: var(--c-code); padding: 14px 18px; border-radius: 10px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: var(--c-text); overflow-x: auto;">cd /path/to/notepatra-build
-sudo cmake --build . --target uninstall   # if you ran `make install`
-# Or just delete the build dir + clone if you ran in-tree:
-cd .. && rm -rf notepatra</pre>
-
-                <h4 style="font-size: 14px; color: var(--c-text); margin: 20px 0 8px; font-weight: 600;">What's NOT touched</h4>
-                <ul style="font-size: 13px; color: var(--c-text-muted); padding-left: 20px; line-height: 1.7;">
-                    <li>System Qt5 and QScintilla packages — those are shared with other apps, never auto-removed</li>
-                    <li>Ollama — separate program, manage via <code style="background:var(--c-code);padding:1px 6px;border-radius:4px;font-size:12px;">ollama</code> CLI</li>
-                    <li>Files you opened/edited with Notepatra</li>
-                </ul>
-            </div>
-
-            <!-- ─── Windows uninstall ──────────────────────────────────── -->
-            <div style="background: var(--c-surface); border: 1px solid var(--c-border-2); border-radius: 16px; padding: 28px;">
-                <h3 style="font-size: 22px; color: var(--c-text); margin-bottom: 4px;">🪟 Windows 10 · 11</h3>
-                <p style="color: var(--c-text-muted); font-size: 13px; margin-bottom: 20px;">Three install paths — NSIS installer, PowerShell one-liner, or portable .zip.</p>
-
-                <h4 style="font-size: 14px; color: var(--c-text); margin: 16px 0 8px; font-weight: 600;">If you installed via <code style="background:var(--c-code);padding:2px 8px;border-radius:6px;font-size:12px;">notepatra-setup-X.Y.Z.exe</code> (NSIS installer)</h4>
-                <p style="font-size: 13px; color: var(--c-text-muted); margin-bottom: 8px;">Easiest: use Windows Settings.</p>
-                <ol style="font-size: 13px; color: var(--c-text-2); padding-left: 20px; line-height: 1.8;">
-                    <li>Open <strong>Settings</strong> (Win+I)</li>
-                    <li><strong>Apps</strong> → <strong>Installed apps</strong></li>
-                    <li>Search for <strong>Notepatra</strong></li>
-                    <li>Click the three-dot menu → <strong>Uninstall</strong></li>
-                    <li>The NSIS uninstaller runs → click Next → click Uninstall</li>
-                </ol>
-                <p style="font-size: 13px; color: var(--c-text-muted); margin: 12px 0 8px;">Alternative: run the uninstaller directly from <code style="background:var(--c-code);padding:1px 6px;border-radius:4px;font-size:12px;">%LOCALAPPDATA%\Notepatra\uninstall.exe</code></p>
-                <p style="font-size: 13px; color: var(--c-text-muted); margin-bottom: 8px;">The uninstaller automatically removes:</p>
-                <ul style="font-size: 13px; color: var(--c-text-muted); padding-left: 20px; line-height: 1.7;">
-                    <li><code style="background:var(--c-code);padding:1px 6px;border-radius:4px;font-size:12px;">%LOCALAPPDATA%\Notepatra\</code> (the entire install directory + Qt DLLs)</li>
-                    <li>Start Menu shortcut</li>
-                    <li>Desktop shortcut (if you opted in)</li>
-                    <li>PATH entry (if you opted in)</li>
-                    <li><code style="background:var(--c-code);padding:1px 6px;border-radius:4px;font-size:12px;">HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Notepatra</code></li>
-                </ul>
-
-                <h4 style="font-size: 14px; color: var(--c-text); margin: 20px 0 8px; font-weight: 600;">If you installed via the PowerShell one-liner <code style="background:var(--c-code);padding:2px 8px;border-radius:6px;font-size:12px;">irm notepatra.org/install.ps1 | iex</code></h4>
-                <pre style="background: var(--c-code); padding: 14px 18px; border-radius: 10px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: var(--c-text); overflow-x: auto;">irm https://notepatra.org/uninstall.ps1 | iex</pre>
-                <p style="font-size: 13px; color: var(--c-text-muted); margin: 8px 0 16px;">…or manually in PowerShell:</p>
-                <pre style="background: var(--c-code); padding: 14px 18px; border-radius: 10px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: var(--c-text); overflow-x: auto;"># Remove install directory (Qt DLLs + .exe + uninstall.ps1)
-Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Notepatra"
-
-# Remove Start Menu + Desktop shortcuts
-Remove-Item -Force "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Notepatra.lnk"
-Remove-Item -Force "$env:USERPROFILE\Desktop\Notepatra.lnk"
-
-# Remove from user PATH
-$p = [Environment]::GetEnvironmentVariable("PATH", "User") -split ';' |
-     Where-Object { $_ -notlike "*Notepatra*" } | Where-Object { $_ }
-[Environment]::SetEnvironmentVariable("PATH", ($p -join ';'), "User")
-
-# Remove the Installed apps registry entry
-Remove-Item -Recurse -Force "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Notepatra"</pre>
-
-                <h4 style="font-size: 14px; color: var(--c-text); margin: 20px 0 8px; font-weight: 600;">If you ran the portable <code style="background:var(--c-code);padding:2px 8px;border-radius:6px;font-size:12px;">notepatra-windows-x64.zip</code></h4>
-                <p style="font-size: 13px; color: var(--c-text-2);">No installer was run. Just delete the folder you extracted.</p>
-                <pre style="background: var(--c-code); padding: 14px 18px; border-radius: 10px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: var(--c-text); overflow-x: auto;">Remove-Item -Recurse -Force C:\path\to\notepatra-folder</pre>
-
-                <h4 style="font-size: 14px; color: var(--c-text); margin: 20px 0 8px; font-weight: 600;">User data (all install paths)</h4>
-                <p style="font-size: 13px; color: var(--c-text-muted); margin-bottom: 8px;">Notepatra stores per-user config, session, and recovery data in:</p>
-                <pre style="background: var(--c-code); padding: 14px 18px; border-radius: 10px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: var(--c-text); overflow-x: auto;">Remove-Item -Recurse -Force "$env:USERPROFILE\.config\notepatra"
-Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</pre>
-
-                <h4 style="font-size: 14px; color: var(--c-text); margin: 20px 0 8px; font-weight: 600;">What's NOT touched</h4>
-                <ul style="font-size: 13px; color: var(--c-text-muted); padding-left: 20px; line-height: 1.7;">
-                    <li>Visual C++ Redistributables (used by other apps)</li>
-                    <li>Files you opened/edited with Notepatra</li>
-                    <li>Ollama installation</li>
-                </ul>
-            </div>
-
-            <!-- ─── General notes ──────────────────────────────────── -->
-            <div style="background: var(--c-accent-soft); border: 1px solid var(--c-accent); border-radius: 16px; padding: 24px 28px;">
-                <h3 style="font-size: 16px; color: var(--c-accent-hover); margin-bottom: 8px;">🛡 Privacy guarantee</h3>
-                <p style="font-size: 14px; color: var(--c-text-2); line-height: 1.7;">
-                    Notepatra never sends telemetry. Uninstalling removes <strong>only</strong> the binary, shortcuts, and your local config — nothing was ever phoned home, so there's nothing to revoke. No accounts, no API keys, no cloud state, no analytics.
-                </p>
-                <p style="font-size: 14px; color: var(--c-text-2); line-height: 1.7; margin-top: 8px;">
-                    If you used Notepatra's <strong>AI Assistant</strong>, that connects to your <strong>local Ollama</strong> daemon. Uninstalling Notepatra does not remove Ollama or any models you pulled — manage those via the <code style="background:var(--c-code);padding:1px 6px;border-radius:4px;font-size:12px;">ollama</code> CLI.
-                </p>
-            </div>
         </div>
     </section>
 
@@ -1178,8 +1007,8 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</pre>
             </div>
             <div class="feature-card">
                 <div class="feature-icon fi-purple">🔀</div>
-                <h3>File Compare</h3>
-                <p>Side-by-side Scintilla diff. Green for added, red for deleted. Prev/Next navigation. Ignore whitespace, case, empty lines. Pick any two tabs or files.</p>
+                <h3>Compare with word-level diff</h3>
+                <p>Side-by-side Scintilla diff. Green for added, red for deleted, amber for changed — with LCS-based word-level intra-line highlighting so you see the exact tokens that changed. Dark mode aware. Prev/Next navigation. Ignore whitespace, case, empty lines.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon fi-orange">📁</div>
