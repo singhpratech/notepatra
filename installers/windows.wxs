@@ -59,9 +59,11 @@
                   DllEntry="WixShellExec"
                   Impersonate="yes" />
 
-    <!-- Request admin on install (per-machine) -->
-    <Property Id="ALLUSERS" Value="1" />
-    <Property Id="MSIINSTALLPERUSER" Value="0" />
+    <!-- Request admin on install (per-machine). NOTE: ALLUSERS /
+         MSIINSTALLPERUSER are NOT declared here — the InstallScope
+         attribute on <Package> above already sets them, and
+         re-declaring them collides with the same properties that
+         WixUI_FeatureTree defines internally (LGHT0091). -->
 
     <!-- Install locations -->
     <Directory Id="TARGETDIR" Name="SourceDir">

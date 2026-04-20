@@ -1241,6 +1241,27 @@ void MainWindow::buildMenus() {
         if (auto *e = E()) { e->setEolMode(QsciScintilla::EolMac); e->convertEols(e->eolMode()); }
     });
 
+    // ── Insert Date / Time (Notepad++ parity) ──
+    // Notepad++ has these under Edit → Insert. Users reach for them often
+    // in logs/changelogs/readmes. Three formats cover the common cases.
+    edit->addSeparator();
+    auto *insertMenu = edit->addMenu("Insert");
+    insertMenu->addAction("Date &Time (short)  — 2026-04-20 13:45", this, [E]() {
+        if (auto *e = E()) e->insert(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm"));
+    }, QKeySequence("Ctrl+F5"));
+    insertMenu->addAction("&Date (yyyy-MM-dd)", this, [E]() {
+        if (auto *e = E()) e->insert(QDate::currentDate().toString("yyyy-MM-dd"));
+    });
+    insertMenu->addAction("Date (long)  — April 20, 2026", this, [E]() {
+        if (auto *e = E()) e->insert(QDate::currentDate().toString("MMMM d, yyyy"));
+    });
+    insertMenu->addAction("T&ime (HH:mm:ss)", this, [E]() {
+        if (auto *e = E()) e->insert(QTime::currentTime().toString("hh:mm:ss"));
+    });
+    insertMenu->addAction("ISO 8601 timestamp", this, [E]() {
+        if (auto *e = E()) e->insert(QDateTime::currentDateTime().toString(Qt::ISODate));
+    });
+
     // ═══ SEARCH ═══
     auto *search = mb->addMenu("&Search");
     search->addAction("&Find...", this, [FD]() { FD()->showFind(); }, QKeySequence("Ctrl+F"));
@@ -2395,8 +2416,11 @@ void MainWindow::buildMenus() {
         QMessageBox::information(this, "Windows", names.join("\n"));
     });
 
-    // ═══ ? (HELP) ═══
-    auto *help = mb->addMenu("&?");
+    // ═══ HELP ═══
+    // Notepad++ uses "?" as the Help menu label for historical reasons,
+    // but "Help" is what every modern app uses and what users actually
+    // look for. Renamed for discoverability.
+    auto *help = mb->addMenu("&Help");
 
     auto *guideAct = help->addAction("Feature and Tool Guide...", this, [this]() {
         showRichHelpDialog(this, "Notepatra Help Guide", featureGuideHtml());
