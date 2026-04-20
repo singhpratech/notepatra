@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor with AI-powered formatters. ~5 MB native executable. 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.11",
+      "softwareVersion": "0.1.12",
       "fileSize": "5 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -918,7 +918,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.11 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.12 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>5 MB native binary. C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -956,7 +956,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.11</div>
+        <div class="section-label">Download v0.1.12</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1302,7 +1302,67 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.10 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.12 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-20</span>
+                        <span>· macOS Tahoe fix + word-level compare + Windows MSI + CPU-friendly AI</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🍎 macOS Tahoe (26.0) launches on double-click — without paying Apple $99/yr</h5>
+                        <ul>
+                            <li>🔒 Tahoe's stricter Gatekeeper was silently refusing to launch ad-hoc-signed apps. Notepatra now ships a hand-written <code style="color:var(--green);font-size:12px;">Info.plist</code> with <code style="color:var(--green);font-size:12px;">LSMinimumSystemVersion</code>, <code style="color:var(--green);font-size:12px;">NSPrincipalClass=NSApplication</code>, <code style="color:var(--green);font-size:12px;">NSHighResolutionCapable</code>, <code style="color:var(--green);font-size:12px;">LSArchitecturePriority=[arm64, x86_64]</code>, and file-type UTIs for 12 text formats.</li>
+                            <li>🛡️ New <code style="color:var(--green);font-size:12px;">entitlements.plist</code> with <code style="color:var(--green);font-size:12px;">cs.allow-jit</code>, <code style="color:var(--green);font-size:12px;">cs.disable-library-validation</code>, <code style="color:var(--green);font-size:12px;">cs.allow-dyld-environment-variables</code> — CI re-signs every bundled dylib / framework / plugin with <code style="color:var(--green);font-size:12px;">--options runtime</code>, then the main bundle with entitlements, and verifies via <code style="color:var(--green);font-size:12px;">codesign -v</code> before shipping.</li>
+                            <li>🧹 <code style="color:var(--green);font-size:12px;">install.sh</code> strips <strong>all</strong> extended attributes (quarantine + provenance + macl), re-signs locally with the bundled entitlements, detects macOS version via <code style="color:var(--green);font-size:12px;">sw_vers</code>, and shows Tahoe-specific "use <code style="color:var(--green);font-size:12px;">open</code> command" instructions.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🔀 Compare upgraded to word-level diff with dark mode (ComparePlus parity)</h5>
+                        <ul>
+                            <li>Replaced primitive prefix/suffix intra-line matcher with a proper <strong>token-level LCS diff</strong>. For <code style="color:var(--green);font-size:12px;">alpha BETA gamma</code> vs <code style="color:var(--green);font-size:12px;">alpha beta gamma</code>, only <code style="color:var(--green);font-size:12px;">BETA</code>/<code style="color:var(--green);font-size:12px;">beta</code> is highlighted — not the entire rest of the line.</li>
+                            <li>Distinct colours: removed tokens in <strong>red on the left</strong>, added tokens in <strong>green on the right</strong> (was both orange before).</li>
+                            <li>🌓 <strong>Dark-mode aware</strong> — nav bar, markers, indicators, headers, splitter all track your editor theme. Saturated forest-green / dark-crimson / amber-brown palette for Dark/Monokai; punchier pastels for Light.</li>
+                            <li>🆕 <strong>Files-identical popup</strong> — when the two files match, a modal says "The two files are identical. No differences found." with Close / Keep-open buttons. New ✕ Close button in the compare toolbar works in dialog and tab contexts. Matches Notepad++'s ComparePlus behaviour.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🪟 Windows MSI installer (WiX) for enterprise deploy</h5>
+                        <ul>
+                            <li>New <code style="color:var(--green);font-size:12px;">notepatra-0.1.12.msi</code> alongside the existing <code style="color:var(--green);font-size:12px;">setup.exe</code> and portable <code style="color:var(--green);font-size:12px;">.zip</code>. Per-machine install, <code style="color:var(--green);font-size:12px;">MajorUpgrade</code> via stable <code style="color:var(--green);font-size:12px;">UpgradeCode</code>, ARP entries with icon + help URL, file-type associations for 26 extensions, system PATH, Start Menu + optional Desktop shortcut, launch-after-install checkbox.</li>
+                            <li>Portable zip users can now double-click <code style="color:var(--green);font-size:12px;">register-associations.bat</code> to add Notepatra to the "Open with" menu for .txt/.md/.py/.json/etc. — HKCU only, no admin. Undo with <code style="color:var(--green);font-size:12px;">unregister-associations.bat</code>.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🤖 CPU-friendly Ollama defaults for 16 GB laptops</h5>
+                        <ul>
+                            <li><code style="color:var(--green);font-size:12px;">num_ctx</code> lowered from 8k to 4k (saves ~5 GB on 7B models); <code style="color:var(--green);font-size:12px;">num_predict</code> capped at 2048; <code style="color:var(--green);font-size:12px;">keep_alive: 5m</code> so the model stays loaded between prompts — 2nd prompt is instant instead of a 10-15s re-load from disk.</li>
+                            <li>AI Panel auto-picks the smallest installed model on first run, priority: <code style="color:var(--green);font-size:12px;">qwen2.5-coder:3b → qwen2.5:3b → gemma2:2b → gemma3:4b → llama3.2:3b → phi3.5:3.8b → 7B models</code>.</li>
+                            <li>"No models installed" error now lists 5 small-model <code style="color:var(--green);font-size:12px;">ollama pull</code> commands with sizes instead of just recommending a 7B.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🔧 Five UI bug fixes</h5>
+                        <ul>
+                            <li>Status bar <code style="color:var(--green);font-size:12px;">Pos</code> indicator now shows the actual character offset (was showing line number twice due to <code style="color:var(--green);font-size:12px;">%1</code> used for both fields).</li>
+                            <li><code style="color:var(--green);font-size:12px;">Ctrl+Shift+S</code> conflict resolved — Save As keeps it, Save All moved to <code style="color:var(--green);font-size:12px;">Ctrl+Alt+S</code>.</li>
+                            <li>Auto-completion <code style="color:var(--green);font-size:12px;">Config::autoComplete</code> / <code style="color:var(--green);font-size:12px;">autoCompleteThreshold</code> now actually take effect (were hardcoded before).</li>
+                            <li>Macro recording stops cleanly on tab switch.</li>
+                            <li><code style="color:var(--green);font-size:12px;">CompareDialog</code> memory leak fixed (<code style="color:var(--green);font-size:12px;">WA_DeleteOnClose</code>).</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.12">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.12">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.10</div>
                     <div class="version-meta">
                         <span>2026-04-11</span>
                         <span>· macOS installer fix + uninstaller one-liner + Claude theme</span>
