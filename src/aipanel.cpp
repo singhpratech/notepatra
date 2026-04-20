@@ -269,8 +269,8 @@ QString messageTranscriptHtml(const QVector<AIPanel::ChatMessage> &messages,
 ".user-label { font-size: 9px; color: %15; font-weight: bold; letter-spacing: 1px; margin-bottom: 6px; }\n"
 ".assistant-head { margin-bottom: 8px; }\n"
 ".assistant-model { color: %10; font-size: 10px; font-weight: bold; }\n"
-".copy-link { color: %16; font-size: 10px; font-weight: bold; text-decoration: none; }\n"
-".copy-link:hover { text-decoration: underline; }\n"
+".copy-btn { background: %16; color: white; font-size: 10px; font-weight: 600; padding: 2px 10px; border-radius: 10px; text-decoration: none; letter-spacing: 0.5px; }\n"
+".copy-btn:hover { text-decoration: none; }\n"
 ".message-plain { white-space: pre-wrap; }\n"
 ".assistant-content { color: %9; font-size: 12px; }\n"
 ".assistant-content p { margin: 0 0 10px 0; }\n"
@@ -302,7 +302,7 @@ QString messageTranscriptHtml(const QVector<AIPanel::ChatMessage> &messages,
             html += QString(
                 "<table cellpadding='0' cellspacing='0'><tr><td width='25%%'></td><td width='75%%' align='right'>"
                 "<div class='bubble bubble-user'>"
-                "<div class='user-label'>YOU</div>"
+                "<div class='user-label'>You</div>"
                 "<div class='message-plain'>%1</div>"
                 "</div></td></tr></table>")
                 .arg(plainTextHtml(message.text));
@@ -325,7 +325,7 @@ QString messageTranscriptHtml(const QVector<AIPanel::ChatMessage> &messages,
             "<div class='bubble bubble-assistant'>"
             "<table width='100%%' cellpadding='0' cellspacing='0' class='assistant-head'>"
             "<tr><td><span class='assistant-model'>%1</span></td>"
-            "<td align='right'><a class='copy-link' href='copy://message/%2'>Copy</a></td></tr>"
+            "<td align='right'><a class='copy-btn' href='copy://message/%2'>⧉ Copy</a></td></tr>"
             "</table>"
             "<div class='assistant-content'>%3</div>"
             "</div></td><td></td></tr></table>")
