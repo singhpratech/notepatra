@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Notepatra — The Code Editor Built for the AI Era</title>
-    <meta name="description" content="Native C++/Rust code editor with AI-powered formatters. 5 MB binary. 100+ file types. 44 language lexers. JSON/HTML/SQL fixers. Local AI via Ollama. Free forever. Linux, Windows, macOS.">
+    <meta name="description" content="Native C++/Rust code editor with AI-powered formatters. 5 MB binary. 100+ file types. 44 language lexers. JSON/HTML/SQL fixers. Local AI — Ollama, llama.cpp (GGUF), LM Studio, any OpenAI-compatible server. Free forever. Linux, Windows, macOS.">
     <meta name="keywords" content="notepatra, code editor, notepad++, linux, windows, mac, macos, AI, ollama, JSON formatter, HTML fixer, rust, c++, qscintilla, native, lightweight">
     <meta name="author" content="Prateek Singh">
     <link rel="canonical" href="https://notepatra.org/">
@@ -21,7 +21,7 @@
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://notepatra.org/">
     <meta property="og:title" content="Notepatra — The Code Editor Built for the AI Era">
-    <meta property="og:description" content="5 MB native binary. 100+ file types. AI-powered JSON/HTML/SQL fixers via local Ollama. Linux · Windows · macOS. Free forever.">
+    <meta property="og:description" content="5 MB native binary. 100+ file types. AI-powered JSON/HTML/SQL fixers. Local AI — Ollama · llama.cpp · LM Studio · any OpenAI-compatible server. Linux · Windows · macOS. Free forever.">
     <meta property="og:image" content="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-512.png">
 
     <!-- Twitter -->
@@ -50,12 +50,12 @@
       "operatingSystem": ["Linux", "Windows", "macOS"],
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
-      "description": "Native C++/Rust code editor with AI-powered formatters. ~5 MB native executable. 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama. Free forever. Linux, Windows, macOS.",
+      "description": "Native C++/Rust code editor with AI-powered formatters. ~5 MB native executable. 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
       "softwareVersion": "0.1.13",
       "fileSize": "5 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
-      "softwareRequirements": "Qt5, optional Ollama for local AI",
+      "softwareRequirements": "Qt5, optional local AI runner (Ollama, llama.cpp, LM Studio, Jan, vLLM, KoboldCpp, or any OpenAI-compatible server)",
       "screenshot": "https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-512.png",
       "license": "https://www.gnu.org/licenses/gpl-3.0.html",
       "offers": {
@@ -84,7 +84,7 @@
         "Macro recording and playback",
         "Session persistence and crash recovery",
         "Plugin system (.so / .dll / .dylib)",
-        "Local AI via Ollama, no cloud, no telemetry"
+        "Local AI — works with Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, KoboldCpp, text-generation-webui, or any OpenAI-compatible server. No cloud. No telemetry."
       ]
     }
     </script>
@@ -161,7 +161,7 @@
           "name": "Does Notepatra send my code to the cloud?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "No. Notepatra is local-first. The AI features run on your own machine via Ollama (which you install separately). There is no telemetry, no analytics, no API key, no remote server, no phone-home. The only outbound network connections are: localhost Ollama (when you click an AI button), git push/pull (when you click those buttons), and the REST client tab (when you explicitly send a request)."
+            "text": "No. Notepatra is local-first. The AI features run on your own machine via your choice of Ollama, llama.cpp's llama-server (which loads any GGUF file directly), LM Studio, Jan, vLLM, KoboldCpp, text-generation-webui, or any OpenAI-compatible server you point it at. There is no telemetry, no analytics, no mandatory API key, no remote server, no phone-home. The only outbound network connections are: your chosen local AI backend (when you click an AI button), git push/pull (when you click those buttons), and the REST client tab (when you explicitly send a request)."
           }
         },
         {
@@ -1304,7 +1304,7 @@
             <div class="pillar">
                 <div class="pillar-glyph">🛡</div>
                 <h3>Private by design.</h3>
-                <p>AI runs locally via Ollama. No telemetry. No analytics. No API key. No cloud. Your code never leaves your machine unless you click "git push".</p>
+                <p>AI runs locally — Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, or any OpenAI-compatible server. Pick your runner in Preferences → AI. No telemetry, no analytics, no mandatory API key, no cloud. Your code never leaves your machine unless you click "git push".</p>
             </div>
             <div class="pillar">
                 <div class="pillar-glyph">✦</div>
@@ -1419,7 +1419,7 @@
             <div>
                 <div class="section-label">AI Powered</div>
                 <div class="section-title">Local AI. Private. No cloud.</div>
-                <p style="color: var(--text-dim); margin-bottom: 16px;">Every AI feature runs on YOUR machine via Ollama. Nothing leaves your computer. No API key. No subscription. No telemetry.</p>
+                <p style="color: var(--text-dim); margin-bottom: 16px;">Every AI feature runs on YOUR machine. Pick your runner: <strong>Ollama</strong>, <strong>llama.cpp</strong> (loads any GGUF), <strong>LM Studio</strong>, <strong>Jan</strong>, <strong>vLLM</strong>, <strong>KoboldCpp</strong>, <strong>text-generation-webui</strong>, or anything that speaks OpenAI's <code>/v1/chat/completions</code>. Nothing leaves your computer. No mandatory API key. No subscription. No telemetry.</p>
                 <p style="color: var(--text-dim); margin-bottom: 24px;">When the regex fixer can't repair your broken JSON — the AI can. Hybrid approach: speed of regex, intelligence of AI.</p>
                 <div class="ai-actions">
                     <span class="ai-tag">Explain Code</span>
