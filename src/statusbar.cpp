@@ -1,6 +1,7 @@
 #include "statusbar.h"
 #include <QHBoxLayout>
 #include <QFont>
+#include <QMouseEvent>
 
 static QLabel *makeSep() {
     auto *sep = new QLabel;
@@ -29,6 +30,8 @@ NppStatusBar::NppStatusBar(QWidget *parent) : QWidget(parent) {
 
     m_lang = makeLabel(" Normal text", 120, true);
     m_lang->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_lang->setCursor(Qt::PointingHandCursor);
+    m_lang->setToolTip("Click to change language");
     lay->addWidget(m_lang, 1);
     lay->addWidget(makeSep());
 
@@ -41,10 +44,14 @@ NppStatusBar::NppStatusBar(QWidget *parent) : QWidget(parent) {
     lay->addWidget(makeSep());
 
     m_eol = makeLabel("Unix (LF)", 90);
+    m_eol->setCursor(Qt::PointingHandCursor);
+    m_eol->setToolTip("Click to change line endings");
     lay->addWidget(m_eol);
     lay->addWidget(makeSep());
 
     m_enc = makeLabel("UTF-8", 70);
+    m_enc->setCursor(Qt::PointingHandCursor);
+    m_enc->setToolTip("Click to change encoding");
     lay->addWidget(m_enc);
     lay->addWidget(makeSep());
 
@@ -89,6 +96,16 @@ void NppStatusBar::updateLanguage(const QString &lang) { m_lang->setText(" " + l
 void NppStatusBar::updateEncoding(const QString &enc) { m_enc->setText(enc); }
 void NppStatusBar::updateEol(const QString &eol) { m_eol->setText(eol); }
 void NppStatusBar::updateInsertMode(bool ovr) { m_ins->setText(ovr ? "OVR" : "INS"); }
+
+void NppStatusBar::mousePressEvent(QMouseEvent *event) {
+    if (event->button() != Qt::LeftButton) { QWidget::mousePressEvent(event); return; }
+    QWidget *target = childAt(event->pos());
+    const QPoint g = event->globalPos();
+    if (target == m_lang)      { emit languageClicked(g); event->accept(); return; }
+    if (target == m_enc)       { emit encodingClicked(g); event->accept(); return; }
+    if (target == m_eol)       { emit eolClicked(g);      event->accept(); return; }
+    QWidget::mousePressEvent(event);
+}
 
 void NppStatusBar::applyColors(const QString &bg, const QString &fg, const QString &sep) {
     setStyleSheet(QString(

@@ -759,6 +759,42 @@ MainWindow::MainWindow() {
     buildToolbar();
     setupShortcuts();
 
+    // ── Status-bar click-through ──
+    // Click the language / encoding / EOL indicators to open the
+    // matching menu at cursor position — same UX as VS Code, Sublime,
+    // Atom. findActionByPrefix-lookup resolves the existing menu
+    // items so we don't have to duplicate the action logic here.
+    connect(m_statusBar, &NppStatusBar::languageClicked, this, [this](const QPoint &g) {
+        // Find the top-level "Language" menu via the menu bar
+        for (QAction *act : menuBar()->actions()) {
+            if (act->text().contains("Language", Qt::CaseInsensitive) && act->menu()) {
+                act->menu()->popup(g);
+                return;
+            }
+        }
+    });
+    connect(m_statusBar, &NppStatusBar::encodingClicked, this, [this](const QPoint &g) {
+        for (QAction *act : menuBar()->actions()) {
+            if (act->text().contains("Encoding", Qt::CaseInsensitive) && act->menu()) {
+                act->menu()->popup(g);
+                return;
+            }
+        }
+    });
+    connect(m_statusBar, &NppStatusBar::eolClicked, this, [this](const QPoint &g) {
+        // EOL Conversion is a submenu inside Edit; look it up by name
+        for (QAction *act : menuBar()->actions()) {
+            if (act->text().contains("Edit", Qt::CaseInsensitive) && act->menu()) {
+                for (QAction *sub : act->menu()->actions()) {
+                    if (sub->text().contains("EOL", Qt::CaseInsensitive) && sub->menu()) {
+                        sub->menu()->popup(g);
+                        return;
+                    }
+                }
+            }
+        }
+    });
+
     // Apply theme from saved config
     {
         auto themes = allThemes();

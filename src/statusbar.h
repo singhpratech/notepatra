@@ -20,6 +20,18 @@ public:
     void updateInsertMode(bool overwrite);
     void applyColors(const QString &bg, const QString &fg, const QString &sep);
 
+signals:
+    // Fired when the user clicks one of the status-bar indicators —
+    // MainWindow pops the appropriate menu at the click location so
+    // users can change language / encoding / EOL in one click, the
+    // same way VS Code / Sublime / modern editors let them.
+    void languageClicked(const QPoint &globalPos);
+    void encodingClicked(const QPoint &globalPos);
+    void eolClicked(const QPoint &globalPos);
+
+protected:
+    void mousePressEvent(QMouseEvent *event) override;
+
 private:
     QLabel *m_lang, *m_size, *m_pos, *m_eol, *m_enc, *m_ins;
 };
