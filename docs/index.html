@@ -1605,14 +1605,13 @@
                             <li>Replaced primitive prefix/suffix intra-line matcher with a proper <strong>token-level LCS diff</strong>. For <code style="color:var(--green);font-size:12px;">alpha BETA gamma</code> vs <code style="color:var(--green);font-size:12px;">alpha beta gamma</code>, only <code style="color:var(--green);font-size:12px;">BETA</code>/<code style="color:var(--green);font-size:12px;">beta</code> is highlighted — not the entire rest of the line.</li>
                             <li>Distinct colours: removed tokens in <strong>red on the left</strong>, added tokens in <strong>green on the right</strong> (was both orange before).</li>
                             <li>🌓 <strong>Dark-mode aware</strong> — nav bar, markers, indicators, headers, splitter all track your editor theme. Saturated forest-green / dark-crimson / amber-brown palette for Dark/Monokai; punchier pastels for Light.</li>
-                            <li>🆕 <strong>Files-identical popup</strong> — when the two files match, a modal says "The two files are identical. No differences found." with Close / Keep-open buttons. New ✕ Close button in the compare toolbar works in dialog and tab contexts. Matches Notepad++'s ComparePlus behaviour.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🪟 Windows MSI installer (WiX) for enterprise deploy</h5>
+                        <h5>🪟 Windows — NSIS installer + portable zip (MSI authoring landed, shipping in next release)</h5>
                         <ul>
-                            <li>New <code style="color:var(--green);font-size:12px;">notepatra-0.1.12.msi</code> alongside the existing <code style="color:var(--green);font-size:12px;">setup.exe</code> and portable <code style="color:var(--green);font-size:12px;">.zip</code>. Per-machine install, <code style="color:var(--green);font-size:12px;">MajorUpgrade</code> via stable <code style="color:var(--green);font-size:12px;">UpgradeCode</code>, ARP entries with icon + help URL, file-type associations for 26 extensions, system PATH, Start Menu + optional Desktop shortcut, launch-after-install checkbox.</li>
-                            <li>Portable zip users can now double-click <code style="color:var(--green);font-size:12px;">register-associations.bat</code> to add Notepatra to the "Open with" menu for .txt/.md/.py/.json/etc. — HKCU only, no admin. Undo with <code style="color:var(--green);font-size:12px;">unregister-associations.bat</code>.</li>
+                            <li><code style="color:var(--green);font-size:12px;">notepatra-setup-0.1.12.exe</code> and <code style="color:var(--green);font-size:12px;">notepatra-windows-x64.zip</code> remain the Windows distribution artifacts in this release.</li>
+                            <li>A full <strong>WiX v3 MSI authoring</strong> has been added to the repo (<code style="color:var(--green);font-size:12px;">installers/windows.wxs</code>) — per-machine install, <code style="color:var(--green);font-size:12px;">MajorUpgrade</code> via stable <code style="color:var(--green);font-size:12px;">UpgradeCode</code>, file-type associations for 26 extensions, system PATH, shortcuts — and will ship as <code style="color:var(--green);font-size:12px;">.msi</code> in the next release alongside the EXE.</li>
                         </ul>
                     </div>
                     <div class="version-section">
