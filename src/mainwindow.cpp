@@ -728,6 +728,16 @@ MainWindow::MainWindow() {
     connect(m_aiDockPanel, &AIPanel::replaceSelection, this, [this](const QString &text) {
         if (auto *e = currentEditor(); e && e->hasSelectedText()) e->replaceSelectedText(text);
     });
+    // Coding Mode toggle inside ANY AIPanel → flip the 3-column
+    // Cursor-style layout (file tree | editor | AI dock). If the
+    // user turns off Coding Mode again the dock stays but user can
+    // hide it manually via Tools → Dock AI on Right.
+    connect(m_aiDockPanel, &AIPanel::codingModeRequested, this, [this](bool on) {
+        if (on) {
+            if (m_explorer) m_explorer->setVisible(true);
+            if (m_aiDockHost) m_aiDockHost->setVisible(true);
+        }
+    });
     m_aiDockHost->setVisible(false);
     m_splitter->addWidget(m_aiDockHost);
 
@@ -1513,6 +1523,13 @@ void MainWindow::buildMenus() {
         });
         connect(panel, &AIPanel::replaceSelection, this, [this](const QString &text) {
             if (auto *e = currentEditor(); e && e->hasSelectedText()) e->replaceSelectedText(text);
+        });
+        // Coding Mode → 3-column layout (file tree | editor | AI dock)
+        connect(panel, &AIPanel::codingModeRequested, this, [this](bool on) {
+            if (on) {
+                if (m_explorer)  m_explorer->setVisible(true);
+                if (m_aiDockHost) m_aiDockHost->setVisible(true);
+            }
         });
         int idx = m_tabs->addTab(panel, "AI Assistant");
         m_tabs->setCurrentIndex(idx);

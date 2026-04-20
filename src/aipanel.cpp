@@ -358,7 +358,11 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     backendCombo->addItem("Custom",           "Custom");
     backendCombo->setFixedWidth(170);
 
-    // Initialise from Config
+    // Initialise from Config. blockSignals() prevents the
+    // currentIndexChanged handler below from firing DURING construction
+    // (before m_ollama exists) — which was silently eating the Ollama
+    // default and breaking auto-detect on fresh launches.
+    backendCombo->blockSignals(true);
     {
         const QString be = Config::instance().aiBackend;
         if (be.compare("llama.cpp", Qt::CaseInsensitive) == 0) backendCombo->setCurrentIndex(1);
@@ -369,6 +373,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         else if (be.startsWith("OpenAI", Qt::CaseInsensitive))        backendCombo->setCurrentIndex(6); // custom
         else backendCombo->setCurrentIndex(0);  // Ollama
     }
+    backendCombo->blockSignals(false);
     connect(backendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this, backendCombo](int) {
         const QString key = backendCombo->currentData().toString();
@@ -490,11 +495,25 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         "QCheckBox:checked { color: %2; }")
         .arg(pal.muted, pal.accent));
     m_codingMode->setToolTip(
-        "Coding Mode: AI returns code only (no prose). "
-        "The \"Apply\" button below replaces your current selection with "
-        "the returned code. Best for refactor / translate / rewrite tasks. "
-        "Off = conversational explanations.");
+        "Coding Mode: AI returns code only (no prose). Replaces selection "
+        "directly. Auto-arranges the window as a 3-column Cursor-style "
+        "layout: [FileExplorer | Editor | AI Chat]. Off = chat explanations.");
     modelRow->addWidget(m_codingMode);
+
+    // Visible mode change when Coding Mode toggles — placeholder text,
+    // CODING badge, "Show thinking" hides, "Apply Code" button becomes
+    // the primary call to action. Also emits codingModeRequested() so
+    // MainWindow can flip the 3-column layout (file tree + editor + AI
+    // dock on right).
+    connect(m_codingMode, &QCheckBox::toggled, this, [this](bool checked) {
+        if (m_customInput) {
+            m_customInput->setPlaceholderText(checked
+                ? "Coding Mode · e.g. Refactor this function / Add types / Translate to TypeScript"
+                : "Type a message and press Enter to send…");
+        }
+        if (m_thinkingCheck) m_thinkingCheck->setVisible(!checked);
+        emit codingModeRequested(checked);
+    });
 
     m_thinkingCheck = new QCheckBox("Show thinking");
     m_thinkingCheck->setChecked(false);

@@ -41,6 +41,11 @@ public slots:
 signals:
     void insertText(const QString &text);
     void replaceSelection(const QString &text);
+    // Fired when user toggles Coding Mode. MainWindow listens so it
+    // can auto-arrange the 3-column layout (file explorer | editor |
+    // AI dock on right) when coding mode activates, mirroring VS Code
+    // / Cursor's layout.
+    void codingModeRequested(bool on);
 
 private:
     void sendPrompt(const QString &action);
