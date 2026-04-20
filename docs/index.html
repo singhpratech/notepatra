@@ -1352,9 +1352,26 @@
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🪟</div>
                 <h4>Windows x64</h4>
-                <p>MSI · setup.exe · portable .zip</p>
-                <span class="download-btn">.msi / .exe</span>
+                <p>Portable .zip · MSI · setup.exe</p>
+                <span class="download-btn">.zip / .msi / .exe</span>
             </a>
+        </div>
+
+        <!-- Portable-zip spotlight — the format most Windows users grab -->
+        <div style="max-width: 960px; margin: 20px auto 0; padding: 18px 22px;
+                    background: rgba(204,120,92,0.06);
+                    border: 1px solid rgba(204,120,92,0.22);
+                    border-radius: 14px;
+                    color: var(--text-dim);
+                    font-size: 14px; line-height: 1.6;">
+            <strong style="color: var(--c-text); font-size: 15px;">💼 Portable .zip = most-downloaded format.</strong>
+            Extract anywhere — USB stick, locked-down work laptop, cloud sync folder.
+            Zero registry, zero admin. Ships with two one-click helpers:
+            <code style="color:var(--green); font-size: 12px;">register-associations.bat</code>
+            adds Notepatra to Windows "Open with" for 28 file extensions
+            (<code>.txt .md .json .py .cpp .js .rs .go .sql .html .css</code> and more),
+            <code style="color:var(--green); font-size: 12px;">unregister-associations.bat</code> undoes it.
+            HKCU-only — never asks for admin.
         </div>
     </section>
 
@@ -1374,6 +1391,11 @@
                 <div class="feature-icon fi-green">🔍</div>
                 <h3>Advanced Find &amp; Replace</h3>
                 <p>5-tab search dialog. Regex, extended mode (\n, \t, \xNN). Find in all opened documents. Search results panel — double-click to jump to line.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon fi-orange">🔎</div>
+                <h3>Project Search (Ctrl+Shift+G)</h3>
+                <p>Lightning-fast recursive search across file <em>names</em> AND file <em>contents</em>. No size limit — streams results line by line so a 2 GB log searches the same as a 2 KB script. Exact <code>line:col</code> coordinates, double-click a match to jump the caret to the exact character. Works on any text-based language (Python, SQL, TXT, C/C++, JS/TS, Rust, Go, HTML, JSON, YAML, Markdown, configs, logs). Skips binary files automatically with a NUL-byte heuristic.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon fi-purple">🔀</div>

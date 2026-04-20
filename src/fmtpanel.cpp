@@ -1,6 +1,7 @@
 #include "fmtpanel.h"
 #include "npp_palette.h"
 #include "fonts.h"
+#include "config.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFont>
@@ -8,6 +9,76 @@
 #include <QClipboard>
 #include <QDateTime>
 #include <QListWidgetItem>
+
+// ═══════════════════════════════════════════════════════════════════════
+// Theme-aware palette for the formatter panels (JSON / HTML / SQL /
+// Bracket / Compare-diff etc.). Reads Config::theme at construction
+// time so switching themes picks up new panels. Light mode was showing
+// dark-theme hard-coded colours — labels were invisible and the whole
+// panel looked like it belonged to a different app.
+// ═══════════════════════════════════════════════════════════════════════
+namespace {
+struct FmtPalette {
+    QColor titleBg, titleFg;
+    QColor statusBg, statusFg, statusAccent;
+    QColor logHeaderBg, logHeaderFg;
+    QColor logBg, logFg, logItemSep, logItemHover;
+    QColor editorBg, editorFg;
+    QColor caretLineBg;
+    QColor matchBraceBg, matchBraceFg;
+    QColor errorBg, errorFg;
+};
+
+static bool fmtIsDark() {
+    const QString &t = Config::instance().theme;
+    return t.compare("Dark", Qt::CaseInsensitive) == 0 ||
+           t.compare("Monokai", Qt::CaseInsensitive) == 0;
+}
+
+static FmtPalette fmtPalette() {
+    FmtPalette p;
+    if (fmtIsDark()) {
+        p.titleBg      = QColor("#2D2D2D");
+        p.titleFg      = QColor("#4EC9B0");
+        p.statusBg     = QColor("#1E3A3A");
+        p.statusFg     = QColor("#4EC9B0");
+        p.statusAccent = QColor("#4EC9B0");
+        p.logHeaderBg  = QColor("#2D2D2D");
+        p.logHeaderFg  = QColor("#888888");
+        p.logBg        = QColor("#1E1E1E");
+        p.logFg        = QColor("#D4D4D4");
+        p.logItemSep   = QColor("#2D2D2D");
+        p.logItemHover = QColor("#2D3D3D");
+        p.editorBg     = QColor("#1E1E1E");
+        p.editorFg     = QColor("#D4D4D4");
+        p.caretLineBg  = QColor("#2A2D2E");
+        p.matchBraceBg = QColor("#4E4E4E");
+        p.matchBraceFg = QColor("#5FE07E");
+        p.errorBg      = QColor("#5A1D1D");
+        p.errorFg      = QColor("#FF7A7A");
+    } else {
+        p.titleBg      = QColor("#F5F4EE");
+        p.titleFg      = QColor("#141413");
+        p.statusBg     = QColor("#FFF3E8");
+        p.statusFg     = QColor("#8A4318");
+        p.statusAccent = QColor("#CC785C");
+        p.logHeaderBg  = QColor("#F5F4EE");
+        p.logHeaderFg  = QColor("#8E8C88");
+        p.logBg        = QColor("#FFFFFF");
+        p.logFg        = QColor("#141413");
+        p.logItemSep   = QColor("#E8E6E0");
+        p.logItemHover = QColor("#F5F4EE");
+        p.editorBg     = QColor("#FFFFFF");
+        p.editorFg     = QColor("#000000");
+        p.caretLineBg  = QColor("#F7F4ED");
+        p.matchBraceBg = QColor("#FFECB0");
+        p.matchBraceFg = QColor("#B8860B");
+        p.errorBg      = QColor("#FBCBCB");
+        p.errorFg      = QColor("#C92A2A");
+    }
+    return p;
+}
+} // namespace
 
 #include <Qsci/qscilexerjson.h>
 #include <Qsci/qscilexerjavascript.h>
@@ -27,9 +98,13 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
+    const FmtPalette fp = fmtPalette();
+
     m_titleLabel = new QLabel("  " + title);
     m_titleLabel->setFixedHeight(24);
-    m_titleLabel->setStyleSheet("font-weight: bold; background: #2D2D2D; color: #4EC9B0; padding: 2px 6px;");
+    m_titleLabel->setStyleSheet(QString(
+        "font-weight: bold; background: %1; color: %2; padding: 2px 6px;")
+        .arg(fp.titleBg.name(), fp.titleFg.name()));
     layout->addWidget(m_titleLabel);
 
     auto *btnWidget = new QWidget;
@@ -72,9 +147,10 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
 
     // BIG status banner — every button press updates this so users see something happen
     m_statusLabel = new QLabel("💡 Paste content into the panel below, then click a button above");
-    m_statusLabel->setStyleSheet(
-        "background: #1e3a3a; color: #4EC9B0; padding: 8px 12px; "
-        "font-size: 13px; font-weight: 600; border-left: 4px solid #4EC9B0;");
+    m_statusLabel->setStyleSheet(QString(
+        "background: %1; color: %2; padding: 8px 12px; "
+        "font-size: 13px; font-weight: 600; border-left: 4px solid %3;")
+        .arg(fp.statusBg.name(), fp.statusFg.name(), fp.statusAccent.name()));
     m_statusLabel->setFixedHeight(36);
     m_statusLabel->setWordWrap(false);
     layout->addWidget(m_statusLabel);
@@ -91,11 +167,14 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
     m_output->setMarginLineNumbers(0, true);
     m_output->setFolding(QsciScintilla::BoxedTreeFoldStyle, 2);
     m_output->setBraceMatching(QsciScintilla::StrictBraceMatch);
-    m_output->setMatchedBraceBackgroundColor(QColor("#FFCCCC"));
-    m_output->setMatchedBraceForegroundColor(QColor("#CC0000"));
+    m_output->setMatchedBraceBackgroundColor(fp.matchBraceBg);
+    m_output->setMatchedBraceForegroundColor(fp.matchBraceFg);
     m_output->setCaretLineVisible(true);
-    m_output->setCaretLineBackgroundColor(QColor("#E8F5E9"));
-    m_output->setPaper(QColor("#FFFFFF"));
+    m_output->setCaretLineBackgroundColor(fp.caretLineBg);
+    m_output->setPaper(fp.editorBg);
+    m_output->setColor(fp.editorFg);
+    m_output->setMarginsBackgroundColor(fp.titleBg);
+    m_output->setMarginsForegroundColor(fp.logHeaderFg);
 
     layout->addWidget(m_output, 1);
 
@@ -103,19 +182,21 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
     // appended here so users can see "what action was taken and what size
     // was fixed for the session" at a glance. Compact, capped at 50 entries.
     auto *logHeader = new QLabel("  Session log");
-    logHeader->setStyleSheet("background: #2D2D2D; color: #888; padding: 2px 6px; "
-                             "font-size: 10px; font-weight: bold;");
+    logHeader->setStyleSheet(QString("background: %1; color: %2; padding: 2px 6px; "
+                             "font-size: 10px; font-weight: bold;")
+        .arg(fp.logHeaderBg.name(), fp.logHeaderFg.name()));
     logHeader->setFixedHeight(18);
     layout->addWidget(logHeader);
 
     m_sessionLog = new QListWidget;
     m_sessionLog->setStyleSheet(
-        QString("QListWidget { background: #1E1E1E; color: #D4D4D4; border: none; "
-                "font-family: %1; font-size: 11px; padding: 2px; }"
-        "QListWidget::item { padding: 2px 8px; border-bottom: 1px solid #2D2D2D; }"
-        "QListWidget::item:hover { background: #2D3D3D; }")
-        .arg(notepatraCodeCssFamily()));
-    m_sessionLog->setFixedHeight(80);  // ~4 visible rows, scrollable
+        QString("QListWidget { background: %1; color: %2; border: none; "
+                "font-family: %3; font-size: 11px; padding: 2px; }"
+        "QListWidget::item { padding: 2px 8px; border-bottom: 1px solid %4; }"
+        "QListWidget::item:hover { background: %5; }")
+        .arg(fp.logBg.name(), fp.logFg.name(), notepatraCodeCssFamily(),
+             fp.logItemSep.name(), fp.logItemHover.name()));
+    m_sessionLog->setFixedHeight(80);
     layout->addWidget(m_sessionLog);
 
     applyLexer();
