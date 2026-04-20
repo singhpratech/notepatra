@@ -77,7 +77,7 @@
                   KeyPath="yes" />
 
             <!-- File type associations: register Notepatra to open text files -->
-            <ProgId Id="Notepatra.TextFile" Description="Text document (Notepatra)" Icon="NotepatraIcon.exe">
+            <ProgId Id="Notepatra.TextFile" Description="Text document (Notepatra)">
               <Extension Id="txt" ContentType="text/plain">
                 <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
               </Extension>
@@ -113,7 +113,7 @@
               </Extension>
             </ProgId>
 
-            <ProgId Id="Notepatra.CodeFile" Description="Code file (Notepatra)" Icon="NotepatraIcon.exe">
+            <ProgId Id="Notepatra.CodeFile" Description="Code file (Notepatra)">
               <Extension Id="py">
                 <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
               </Extension>
@@ -198,7 +198,7 @@
                   Description="Native C++/Rust code editor with AI formatters"
                   Target="[INSTALLFOLDER]notepatra.exe"
                   WorkingDirectory="INSTALLFOLDER"
-                  Icon="NotepatraIcon.exe" />
+                  />
         <RemoveFolder Id="CleanUpShortcut" Directory="ApplicationProgramsFolder" On="uninstall" />
         <RegistryValue Root="HKCU"
                        Key="Software\$(var.Publisher)\$(var.ProductName)"
@@ -217,7 +217,7 @@
                   Description="Native C++/Rust code editor with AI formatters"
                   Target="[INSTALLFOLDER]notepatra.exe"
                   WorkingDirectory="INSTALLFOLDER"
-                  Icon="NotepatraIcon.exe" />
+                  />
         <RegistryValue Root="HKCU"
                        Key="Software\$(var.Publisher)\$(var.ProductName)"
                        Name="desktop"
