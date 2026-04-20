@@ -5,6 +5,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.12] — 2026-04-20
+
+Major quality-of-life release. Fixes the macOS Tahoe silent-launch failure, adds enterprise-grade Windows MSI installer, upgrades the file compare to word-level diff with dark-mode support, and makes AI features CPU-friendly for 16 GB laptops. Five UI bug fixes included.
+
+### Fixed
+- 🍎 **macOS Tahoe (26.0) silent launch failure.** Ad-hoc-signed apps without hardened runtime + entitlements + proper Info.plist keys would silently refuse to launch on double-click — no error dialog, nothing happens. Shipped without paying Apple's $99/yr Developer ID tax: added `resources/Info.plist.in` with `LSMinimumSystemVersion=11.0`, `NSPrincipalClass=NSApplication`, `NSHighResolutionCapable`, `LSArchitecturePriority=[arm64, x86_64]`, file-type associations for 12 UTIs; added `resources/entitlements.plist` with `cs.allow-jit`, `cs.allow-unsigned-executable-memory`, `cs.disable-library-validation`, `cs.allow-dyld-environment-variables`, `files.user-selected.read-write`, `network.client`; CI now re-signs every bundled dylib / framework / plugin with `--options runtime` first, then signs the main bundle with `--options runtime --entitlements` and verifies via `codesign -v`; `install.sh` now strips ALL xattrs (quarantine + provenance + macl), re-signs with hardened runtime + embedded entitlements, and shows Tahoe-specific right-click-Open instructions based on `sw_vers -productVersion`.
+- 🔧 **Status bar `Pos` indicator was showing the line number instead of the character offset.** Bug was in `statusbar.cpp:56` — `QString("Ln : %1   Col : %2   Pos : %1")` used `%1` twice. Now threads the real character position through `cursorPositionUpdated(line, col, pos)` via `SendScintilla(SCI_GETCURRENTPOS)`.
+- ⌨️ **Duplicate `Ctrl+Shift+S` shortcut.** Both "Save As..." and "Save All" used it — only the first registered. Save All moved to `Ctrl+Alt+S`.
+- ✏️ **Auto-completion settings had no effect.** `Config::autoComplete` and `Config::autoCompleteThreshold` existed but `editor.cpp` hardcoded `setAutoCompletionThreshold(3)`. Now reads Config and passes `AcsNone` threshold -1 when disabled.
+- 🧠 **Macro recording state survived across tab switches.** Recording on tab A would continue firing on tab B because the current-tab-changed signal didn't stop recording. Now ends recording cleanly, saves the macro, and updates menu state.
+- 🪟 **CompareDialog memory leak.** `dlg->show()` with no deletion. Added `Qt::WA_DeleteOnClose`.
+
+### Added
+- 🔀 **Word-level intra-line compare diff.** Previous impl used primitive common-prefix + common-suffix matching — a single middle-token change would flag the entire rest of the line. New impl tokenizes each line by word boundaries (letters/digits/underscore runs, punctuation as single tokens), runs a DP-based LCS on the token arrays, and highlights the specific tokens that differ. Removed tokens highlighted in red on the LEFT pane; added tokens highlighted in green on the RIGHT pane. Matches ComparePlus (Notepad++) convention. Pure-whitespace tokens are skipped so only meaningful words light up.
+- 🌓 **Compare dark-mode support.** Entire compare panel (nav bar, line markers, margins, headers, splitter, symbol margin, intra-line indicators) now reads `Config::theme` and switches between a high-saturation dark palette (`#1E4D2B` forest green / `#5A1D1D` dark crimson / `#4A3A10` amber brown) and a punchier light palette (`#C8F0C4` / `#FBCBCB` / `#FFECB0`). Colours picked to be visually distinct from each other AND from typical syntax highlighting.
+- 🪟 **Windows MSI installer.** `installers/windows.wxs` — WiX v3 authoring with per-machine install, `MajorUpgrade` via stable `UpgradeCode`, ARP entries with icon + help URL, file-type associations for 26 extensions (`.txt`, `.log`, `.md`, `.json`, `.xml`, `.yaml`, `.ini`, `.conf`, `.cfg`, `.csv`, `.py`, `.js`, `.ts`, `.cpp`, `.c`, `.h`, `.hpp`, `.rs`, `.go`, `.java`, `.cs`, `.sql`, `.html`, `.css`, `.sh`, `.ps1`), system PATH entry, Start Menu shortcut, optional Desktop shortcut, launch-after-install checkbox. CI builds it via `heat.exe → candle → light` with `continue-on-error: true` so NSIS + portable zip still ship if WiX has a hiccup. MSI gets SHA256SUMS entry, cosign signature, SLSA provenance, attached to the GitHub release.
+- 🤖 **CPU-friendly Ollama defaults for 16 GB laptops.** `num_ctx` lowered from 8k to 4k (saves ~5 GB on 7B models), `num_predict` capped at 2048, `keep_alive: "5m"` added so the model stays loaded in RAM between prompts (re-loading a 3B model from disk takes 10-15s on CPU). AI panel auto-picks the smallest installed model on first run, priority: `qwen2.5-coder:3b → qwen2.5:3b → gemma2:2b → gemma3:4b → llama3.2:3b → phi3.5:3.8b → 7B models`. "No models installed" error now lists 5 small-model pull commands with sizes instead of just recommending `qwen2.5:7b`.
+
+### Changed
+- 📄 **Uninstall script at repo root.** `uninstall.sh` copied alongside `install.sh` for symmetry — users no longer have to hunt inside `docs/`.
+- 🏷️ **GitHub repo metadata.** Description rewritten to `Native C++/Rust Notepad++ alternative for Linux/Windows/macOS — 5 MB binary, 100+ file types, AI-powered formatters via local Ollama, free forever.`; homepage wired to `https://notepatra.org`; 20 topics added (`notepad`, `notepad-plus-plus`, `text-editor`, `code-editor`, `ai`, `ollama`, `local-ai`, `cpp`, `rust`, `qt5`, `qscintilla`, `cross-platform`, `linux`, `windows`, `macos`, `lightweight`, `developer-tools`, `ide`, `free`, `open-source`).
+- 🗺️ **Sitemap expanded** — added `docs.html`, `#install`, `#compare` URLs; bumped `lastmod` dates.
+- 📖 **README + website** updated to document word-level compare + MSI installer row + Tahoe install instructions.
+
+
 ## [0.1.11] — 2026-04-11
 
 Hotfix release — v0.1.10 shipped a macOS DMG that crashed on launch.
