@@ -72,7 +72,9 @@ private:
     QPushButton *m_voiceBtn;
     QLabel *m_attachmentChip;
     QCheckBox *m_thinkingCheck;
+    QCheckBox *m_codingMode;     // Cursor/Copilot-style "output code, not prose"
     QLabel *m_statusLabel;
+    QPushButton *m_applyCodeBtn; // one-click "replace selection with response code"
     OllamaClient *m_ollama;
     QString m_context;
     QString m_language;

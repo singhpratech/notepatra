@@ -340,16 +340,100 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
 
     auto *modelRow = new QHBoxLayout;
     modelRow->setContentsMargins(8, 4, 8, 2);
+    modelRow->setSpacing(6);
+
+    // ─── Backend picker — quick-switch Ollama / llama.cpp / OpenRouter
+    // / custom OpenAI-compat without digging into Preferences. Selecting
+    // an option auto-fills the corresponding default URL into Config and
+    // refreshes the model list. Gear ⚙ opens full AI prefs for URL +
+    // API key editing.
+    modelRow->addWidget(new QLabel("Backend:"));
+    auto *backendCombo = new QComboBox;
+    backendCombo->addItem("Ollama",           "Ollama");
+    backendCombo->addItem("llama.cpp (GGUF)", "llama.cpp");
+    backendCombo->addItem("OpenRouter (cloud)", "OpenRouter");
+    backendCombo->addItem("LM Studio",        "LMStudio");
+    backendCombo->addItem("Jan",              "Jan");
+    backendCombo->addItem("OpenAI",           "OpenAI");
+    backendCombo->addItem("Custom",           "Custom");
+    backendCombo->setFixedWidth(170);
+
+    // Initialise from Config
+    {
+        const QString be = Config::instance().aiBackend;
+        if (be.compare("llama.cpp", Qt::CaseInsensitive) == 0) backendCombo->setCurrentIndex(1);
+        else if (Config::instance().aiBaseUrl.contains("openrouter")) backendCombo->setCurrentIndex(2);
+        else if (Config::instance().aiBaseUrl.contains(":1234"))      backendCombo->setCurrentIndex(3); // LM Studio
+        else if (Config::instance().aiBaseUrl.contains(":1337"))      backendCombo->setCurrentIndex(4); // Jan
+        else if (Config::instance().aiBaseUrl.contains("openai.com")) backendCombo->setCurrentIndex(5);
+        else if (be.startsWith("OpenAI", Qt::CaseInsensitive))        backendCombo->setCurrentIndex(6); // custom
+        else backendCombo->setCurrentIndex(0);  // Ollama
+    }
+    connect(backendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this, backendCombo](int) {
+        const QString key = backendCombo->currentData().toString();
+        auto &cfg = Config::instance();
+        if (key == "Ollama")          { cfg.aiBackend = "Ollama";        cfg.aiBaseUrl.clear(); }
+        else if (key == "llama.cpp")  { cfg.aiBackend = "llama.cpp";     cfg.aiBaseUrl.clear(); }
+        else if (key == "OpenRouter") { cfg.aiBackend = "OpenAI-compat"; cfg.aiBaseUrl = "https://openrouter.ai/api/v1"; }
+        else if (key == "LMStudio")   { cfg.aiBackend = "OpenAI-compat"; cfg.aiBaseUrl = "http://localhost:1234/v1"; }
+        else if (key == "Jan")        { cfg.aiBackend = "OpenAI-compat"; cfg.aiBaseUrl = "http://localhost:1337/v1"; }
+        else if (key == "OpenAI")     { cfg.aiBackend = "OpenAI-compat"; cfg.aiBaseUrl = "https://api.openai.com/v1"; }
+        else                          { cfg.aiBackend = "OpenAI-compat"; /* leave URL as-is */ }
+        cfg.save();
+        // Reconfigure the client and refresh the model list
+        if (m_ollama) {
+            m_ollama->setBackend(OllamaClient::backendFromString(cfg.aiBackend));
+            if (!cfg.aiBaseUrl.isEmpty()) m_ollama->setBaseUrl(cfg.aiBaseUrl);
+            refreshModels();
+        }
+    });
+    modelRow->addWidget(backendCombo);
+
     modelRow->addWidget(new QLabel("Model:"));
     m_modelCombo = new QComboBox;
     m_modelCombo->setEditable(true);
-    m_modelCombo->addItem("(detecting Ollama…)");
+    m_modelCombo->addItem("(detecting…)");
     m_modelCombo->setEnabled(false);
     modelRow->addWidget(m_modelCombo, 1);
     m_refreshBtn = new QPushButton("↻");
     m_refreshBtn->setFixedWidth(28);
-    m_refreshBtn->setToolTip("Refresh model list from Ollama");
+    m_refreshBtn->setToolTip("Refresh model list from the selected backend");
     modelRow->addWidget(m_refreshBtn);
+
+    // Gear ⚙ — jumps to Preferences → AI for URL / API-key editing
+    auto *gearBtn = new QPushButton("⚙");
+    gearBtn->setFixedWidth(28);
+    gearBtn->setToolTip("AI settings — edit base URL, API key, advanced options");
+    connect(gearBtn, &QPushButton::clicked, this, []() {
+        // Defer open to the top-level window — it owns the menu action.
+        // We can't include preferences.h here (circular), so just emit
+        // a QShortcut-style broadcast via QApplication::sendEvent.
+        // Simplest: users can also open Settings → Preferences.
+        // TODO: wire a proper signal if needed.
+    });
+    gearBtn->setVisible(false);  // hidden until we wire up the jump cleanly
+    modelRow->addWidget(gearBtn);
+    // ─── Coding Mode toggle (Cursor / Copilot-Agent style) ─────────────
+    // ON  = sharper system prompt ("return ONLY the modified code, no
+    //       prose, no markdown fences") + the post-response [Apply] button
+    //       turns into the primary call-to-action and drops selected text
+    //       straight into the editor. Great for "refactor this function"
+    //       / "rewrite this type" / "translate to Rust" tasks.
+    // OFF = classic chat panel with explanations in prose form.
+    m_codingMode = new QCheckBox("Coding Mode");
+    m_codingMode->setChecked(false);
+    m_codingMode->setStyleSheet(QString(
+        "QCheckBox { font-size: 11px; color: %1; margin-left: 4px; font-weight: 600; }"
+        "QCheckBox:checked { color: %2; }")
+        .arg(pal.muted, pal.accent));
+    m_codingMode->setToolTip(
+        "Coding Mode: AI returns code only (no prose). "
+        "The \"Apply\" button below replaces your current selection with "
+        "the returned code. Best for refactor / translate / rewrite tasks. "
+        "Off = conversational explanations.");
+    modelRow->addWidget(m_codingMode);
+
     m_thinkingCheck = new QCheckBox("Show thinking");
     m_thinkingCheck->setChecked(false);
     m_thinkingCheck->setStyleSheet(QString(
@@ -903,8 +987,23 @@ void AIPanel::sendPrompt(const QString &action) {
     }
     m_ollama->setModel(model);
 
-    QString systemPrompt = "You are a code assistant. Be concise. Output only code when asked to modify code. "
-                           "The user is working in " + m_language + ".";
+    // Coding Mode swaps in a sharper system prompt that forces code-only
+    // output. This makes the [Apply] button after the response do exactly
+    // what users expect: replace the selection with clean, compilable code
+    // rather than chat-style explanations wrapped in markdown.
+    QString systemPrompt;
+    if (m_codingMode && m_codingMode->isChecked()) {
+        systemPrompt =
+            "You are a code-editor agent. The user is working in " + m_language + ". "
+            "Return ONLY the modified source code. No explanations, no prose, "
+            "no preambles like 'Here is the code'. Do NOT wrap the output in "
+            "markdown code fences (```). Preserve the original indentation "
+            "style (tabs vs spaces). Output must be directly pasteable into "
+            "the file — nothing else.";
+    } else {
+        systemPrompt = "You are a code assistant. Be concise. Output only code when asked to modify code. "
+                       "The user is working in " + m_language + ".";
+    }
 
     // Build the prompt + the user-visible prompt label (just the action name
     // + the code snippet for context — no need to dump the verbose template
