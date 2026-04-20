@@ -3032,6 +3032,45 @@ void MainWindow::applyThemeToAll(const Theme &t) {
         m_statusBar->applyColors(t.statusBg.name(), t.statusFg.name(),
                                   t.tabBorder.name());
 
+    // Welcome tab doesn't listen for runtime theme changes — its child
+    // widgets have baked-in stylesheets from welcomePalette() at
+    // construction time. Rebuild any open Welcome tab in place so dark
+    // mode actually looks dark on the Welcome screen.
+    if (m_tabs) {
+        for (int i = 0; i < m_tabs->count(); ++i) {
+            if (qobject_cast<WelcomeWidget *>(m_tabs->widget(i))) {
+                const QString label = m_tabs->tabText(i);
+                const bool wasCurrent = (m_tabs->currentIndex() == i);
+                auto *old = m_tabs->widget(i);
+                m_tabs->removeTab(i);
+                delete old;
+                auto *fresh = new WelcomeWidget;
+                // Rewire signals to the same slots we connect in
+                // showWelcomeTab() so the feature cards still work.
+                connect(fresh, &WelcomeWidget::actionNewFile, this, [this]() { newFile(); });
+                connect(fresh, &WelcomeWidget::actionOpenFile, this, [this]() {
+                    QStringList paths = QFileDialog::getOpenFileNames(this, "Open file(s)", QDir::homePath());
+                    for (const QString &p : paths) openFile(p);
+                });
+                connect(fresh, &WelcomeWidget::actionOpenFolder, this, [this]() {
+                    QString dir = QFileDialog::getExistingDirectory(this, "Open folder", QDir::homePath());
+                    if (!dir.isEmpty() && m_explorer) m_explorer->setRoot(dir);
+                });
+                connect(fresh, &WelcomeWidget::actionOpenRecent, this,
+                        [this](const QString &path) { openFile(path); });
+                connect(fresh, &WelcomeWidget::actionOpenMenu, this, &MainWindow::triggerMenuAction);
+                connect(fresh, &WelcomeWidget::actionDismissForever, this, []() {
+                    auto &cfg = Config::instance();
+                    cfg.showWelcomeOnStartup = false;
+                    cfg.save();
+                });
+                m_tabs->insertTab(i, fresh, label);
+                if (wasCurrent) m_tabs->setCurrentIndex(i);
+                break;   // only one Welcome tab at a time
+            }
+        }
+    }
+
     // Window stylesheet
     setStyleSheet(QString(
         "QMainWindow { background-color: %1; }"
