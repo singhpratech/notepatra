@@ -215,53 +215,100 @@ GitPanel::GitPanel(QWidget *parent) : QWidget(parent) {
         "background: #252526; color: #9A9A9A; padding: 2px 8px; font-size: 11px;");
     layout->addWidget(m_statusLabel);
 
-    auto *repoRow = new QHBoxLayout;
-    repoRow->setContentsMargins(6, 6, 6, 3);
-    repoRow->setSpacing(6);
-    m_cloneBtn = new QPushButton("Clone...");
-    m_openRepoBtn = new QPushButton("Open Repo...");
-    m_initBtn = new QPushButton("Init");
-    m_remoteBtn = new QPushButton("Connect Remote...");
-    m_refreshBtn = new QPushButton("Refresh");
-    for (auto *button : {m_cloneBtn, m_openRepoBtn, m_initBtn, m_remoteBtn, m_refreshBtn}) {
-        styleActionButton(button, "#4EC9B0");
-        repoRow->addWidget(button);
-    }
-    repoRow->addStretch(1);
-    layout->addLayout(repoRow);
+    // All Git action buttons exist (for signal wiring + updateActionState)
+    // but live in a HIDDEN widget — the visible toolbar below only
+    // surfaces the four actions VS Code keeps front-and-centre. The
+    // rest are in a "⋯ More" dropdown. Buttons remain click()-able
+    // programmatically from the menu so the existing slots keep working.
+    auto *hiddenButtonsHost = new QWidget;
+    hiddenButtonsHost->setVisible(false);
+    m_cloneBtn = new QPushButton("Clone...",           hiddenButtonsHost);
+    m_openRepoBtn = new QPushButton("Open Repo...",    hiddenButtonsHost);
+    m_initBtn = new QPushButton("Init",                hiddenButtonsHost);
+    m_remoteBtn = new QPushButton("Connect Remote...", hiddenButtonsHost);
+    m_refreshBtn = new QPushButton("Refresh",          hiddenButtonsHost);
+    m_fetchBtn = new QPushButton("Fetch",              hiddenButtonsHost);
+    m_pullBtn = new QPushButton("Pull",                hiddenButtonsHost);
+    m_pushBtn = new QPushButton("Push",                hiddenButtonsHost);
+    m_commitBtn = new QPushButton("Commit...",         hiddenButtonsHost);
+    m_stageBtn = new QPushButton("Stage",              hiddenButtonsHost);
+    m_unstageBtn = new QPushButton("Unstage",          hiddenButtonsHost);
+    m_discardBtn = new QPushButton("Discard",          hiddenButtonsHost);
+    m_checkoutBtn = new QPushButton("Checkout...",     hiddenButtonsHost);
+    m_branchBtn = new QPushButton("New Branch...",     hiddenButtonsHost);
+    m_mergeBtn = new QPushButton("Merge...",           hiddenButtonsHost);
+    m_stashBtn = new QPushButton("Stash",              hiddenButtonsHost);
+    m_popStashBtn = new QPushButton("Pop Stash",       hiddenButtonsHost);
+    layout->addWidget(hiddenButtonsHost);
 
-    auto *syncRow = new QHBoxLayout;
-    syncRow->setContentsMargins(6, 0, 6, 3);
-    syncRow->setSpacing(6);
-    m_fetchBtn = new QPushButton("Fetch");
-    m_pullBtn = new QPushButton("Pull");
-    m_pushBtn = new QPushButton("Push");
-    m_commitBtn = new QPushButton("Commit...");
-    for (auto *button : {m_fetchBtn, m_pullBtn, m_pushBtn, m_commitBtn}) {
-        styleActionButton(button, "#7EC8FF");
-        syncRow->addWidget(button);
-    }
-    syncRow->addStretch(1);
-    layout->addLayout(syncRow);
+    // ─── Visible toolbar row — VS Code SCM header actions ───────────────
+    // Just four items: Refresh, Pull, Push, More. The ⋯ button opens a
+    // popup menu with everything else. Flat, minimal, high-density —
+    // matches the VS Code Source Control view chrome.
+    auto *scmRow = new QHBoxLayout;
+    scmRow->setContentsMargins(10, 2, 10, 6);
+    scmRow->setSpacing(4);
 
-    auto *worktreeRow = new QHBoxLayout;
-    worktreeRow->setContentsMargins(6, 0, 6, 6);
-    worktreeRow->setSpacing(6);
-    m_stageBtn = new QPushButton("Stage");
-    m_unstageBtn = new QPushButton("Unstage");
-    m_discardBtn = new QPushButton("Discard");
-    m_checkoutBtn = new QPushButton("Checkout...");
-    m_branchBtn = new QPushButton("New Branch...");
-    m_mergeBtn = new QPushButton("Merge...");
-    m_stashBtn = new QPushButton("Stash");
-    m_popStashBtn = new QPushButton("Pop Stash");
-    for (auto *button : {m_stageBtn, m_unstageBtn, m_discardBtn, m_checkoutBtn,
-                         m_branchBtn, m_mergeBtn, m_stashBtn, m_popStashBtn}) {
-        styleActionButton(button, "#F2C14E");
-        worktreeRow->addWidget(button);
-    }
-    worktreeRow->addStretch(1);
-    layout->addLayout(worktreeRow);
+    auto scmToolBtn = [](const QString &glyph, const QString &tip) {
+        auto *b = new QPushButton(glyph);
+        b->setFixedSize(26, 26);
+        b->setToolTip(tip);
+        b->setCursor(Qt::PointingHandCursor);
+        b->setStyleSheet(
+            "QPushButton { background: transparent; color: #CCCCCC; "
+            "border: 1px solid transparent; border-radius: 4px; font-size: 13px; }"
+            "QPushButton:hover:enabled { background: #2D2D2D; border-color: #3E3E3E; }"
+            "QPushButton:disabled { color: #555; }");
+        return b;
+    };
+
+    auto *tbRefresh = scmToolBtn("↻", "Refresh (re-read working tree)");
+    auto *tbPull    = scmToolBtn("↓", "Pull from remote");
+    auto *tbPush    = scmToolBtn("↑", "Push to remote");
+    auto *tbMore    = scmToolBtn("⋯", "More actions — clone / open / init / branch / merge / stash / …");
+
+    scmRow->addStretch();
+    scmRow->addWidget(tbRefresh);
+    scmRow->addWidget(tbPull);
+    scmRow->addWidget(tbPush);
+    scmRow->addWidget(tbMore);
+    layout->addLayout(scmRow);
+
+    connect(tbRefresh, &QPushButton::clicked, m_refreshBtn, &QPushButton::click);
+    connect(tbPull,    &QPushButton::clicked, m_pullBtn,    &QPushButton::click);
+    connect(tbPush,    &QPushButton::clicked, m_pushBtn,    &QPushButton::click);
+
+    // Build the "⋯ More" dropdown — every hidden action surfaces here,
+    // grouped by purpose with separators. Menu items click() through to
+    // the hidden QPushButtons so all existing slot logic is untouched.
+    auto *moreMenu = new QMenu(this);
+    auto addMoreItem = [moreMenu](const QString &text, QPushButton *target) {
+        auto *a = moreMenu->addAction(text);
+        QObject::connect(a, &QAction::triggered, target, &QPushButton::click);
+        return a;
+    };
+    addMoreItem("Clone...",           m_cloneBtn);
+    addMoreItem("Open Repo...",       m_openRepoBtn);
+    addMoreItem("Init",               m_initBtn);
+    moreMenu->addSeparator();
+    addMoreItem("Connect Remote...",  m_remoteBtn);
+    addMoreItem("Fetch",              m_fetchBtn);
+    moreMenu->addSeparator();
+    addMoreItem("Stage Selection",    m_stageBtn);
+    addMoreItem("Unstage Selection",  m_unstageBtn);
+    addMoreItem("Discard Selection",  m_discardBtn);
+    moreMenu->addSeparator();
+    addMoreItem("Commit (dialog)...", m_commitBtn);
+    addMoreItem("Checkout Branch...", m_checkoutBtn);
+    addMoreItem("New Branch...",      m_branchBtn);
+    addMoreItem("Merge Branch...",    m_mergeBtn);
+    moreMenu->addSeparator();
+    addMoreItem("Stash",              m_stashBtn);
+    addMoreItem("Pop Stash",          m_popStashBtn);
+
+    connect(tbMore, &QPushButton::clicked, this, [tbMore, moreMenu]() {
+        moreMenu->popup(tbMore->mapToGlobal(QPoint(0, tbMore->height() + 2)));
+    });
 
     m_tree = new QTreeWidget;
     m_tree->setHeaderLabels({"Git Tree", "State", "Details"});
