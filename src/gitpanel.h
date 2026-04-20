@@ -6,6 +6,7 @@
 #include <QLabel>
 #include <QProcess>
 #include <QPushButton>
+#include <QPlainTextEdit>
 
 class GitPanel : public QWidget {
     Q_OBJECT
@@ -32,6 +33,13 @@ private:
     QTreeWidget *m_tree;
     QString m_repoRoot;
     QString m_currentBranch;
+
+    // VS Code-style SOURCE CONTROL header — branch pill + commit message
+    // input + big commit button right at the top. See the comment in
+    // the .cpp constructor for the full intended UX.
+    QLabel *m_sourceControlHeader = nullptr;
+    QPlainTextEdit *m_commitMessage = nullptr;
+    QPushButton *m_commitVsCodeBtn = nullptr;
 
     QPushButton *m_cloneBtn;
     QPushButton *m_openRepoBtn;

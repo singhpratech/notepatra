@@ -14,6 +14,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QShortcut>
 #include <QRegularExpression>
 #include <QStyle>
 #include <QTreeWidgetItem>
@@ -119,11 +120,88 @@ GitPanel::GitPanel(QWidget *parent) : QWidget(parent) {
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    m_branchLabel = new QLabel("  Git Workspace");
-    m_branchLabel->setFixedHeight(26);
+    // ─── VS Code-style SOURCE CONTROL header ──────────────────────────
+    // Matches the iconic top-of-sidebar block: uppercased section label
+    // + branch pill. Users who come from VS Code immediately know where
+    // they are.
+    m_sourceControlHeader = new QLabel("  SOURCE CONTROL");
+    m_sourceControlHeader->setFixedHeight(24);
+    m_sourceControlHeader->setStyleSheet(
+        "background: #252526; color: #CCCCCC; padding: 4px 10px; "
+        "font-size: 11px; font-weight: 600; letter-spacing: 0.08em;");
+    layout->addWidget(m_sourceControlHeader);
+
+    m_branchLabel = new QLabel("  No repository open");
+    m_branchLabel->setFixedHeight(28);
     m_branchLabel->setStyleSheet(
-        "font-weight: bold; background: #1F2D2D; color: #4EC9B0; padding: 2px 8px;");
+        "background: #1E1E1E; color: #4EC9B0; padding: 4px 10px; "
+        "font-size: 12px; font-weight: 600;");
     layout->addWidget(m_branchLabel);
+
+    // ─── Commit-message box — the star of the VS Code SCM UX ──────────
+    // A 3-line plain-text input styled like the editor itself, followed
+    // by a prominent Commit button. Ctrl+Enter commits. This is the
+    // single biggest reason VS Code's Git panel feels ergonomic: the
+    // user flow is Stage → Type Message → Commit all in one place,
+    // without a modal dialog blocking the screen.
+    auto *commitWrap = new QWidget;
+    auto *commitLay = new QVBoxLayout(commitWrap);
+    commitLay->setContentsMargins(10, 8, 10, 10);
+    commitLay->setSpacing(6);
+
+    m_commitMessage = new QPlainTextEdit;
+    m_commitMessage->setPlaceholderText("Message (Ctrl+Enter to commit)");
+    m_commitMessage->setFixedHeight(72);
+    m_commitMessage->setStyleSheet(
+        "QPlainTextEdit { background: #1E1E1E; color: #D4D4D4; "
+        "border: 1px solid #3C3C3C; border-radius: 4px; padding: 6px 8px; "
+        "font-size: 12px; }"
+        "QPlainTextEdit:focus { border-color: #4EC9B0; }");
+    commitLay->addWidget(m_commitMessage);
+
+    m_commitVsCodeBtn = new QPushButton("✓  Commit");
+    m_commitVsCodeBtn->setFixedHeight(30);
+    m_commitVsCodeBtn->setCursor(Qt::PointingHandCursor);
+    m_commitVsCodeBtn->setStyleSheet(
+        "QPushButton { background: #16825D; color: #FFFFFF; border: none; "
+        "border-radius: 4px; font-weight: 600; font-size: 12px; }"
+        "QPushButton:hover { background: #1B9868; }"
+        "QPushButton:disabled { background: #333; color: #666; }");
+    m_commitVsCodeBtn->setEnabled(false);
+    commitLay->addWidget(m_commitVsCodeBtn);
+
+    layout->addWidget(commitWrap);
+
+    // Wire the VS Code commit button to the existing commitChanges logic
+    // but pre-fill the dialog with our message so users never have to
+    // re-type it. (The existing commitChanges() uses QInputDialog — we
+    // short-circuit that here by reading directly from m_commitMessage.)
+    connect(m_commitVsCodeBtn, &QPushButton::clicked, this, [this]() {
+        const QString msg = m_commitMessage->toPlainText().trimmed();
+        if (msg.isEmpty()) return;
+        QString stdoutText, stderrText;
+        bool ok = runGitSync({"commit", "-m", msg}, &stdoutText, &stderrText);
+        if (!ok) {
+            showGitError("Commit failed", stderrText.isEmpty() ? stdoutText : stderrText);
+            return;
+        }
+        m_commitMessage->clear();
+        refreshTree();
+        updateActionState();
+    });
+
+    // Ctrl+Enter inside the commit message triggers commit — matches
+    // VS Code's Git SCM keybinding.
+    {
+        auto *sc = new QShortcut(QKeySequence("Ctrl+Return"), m_commitMessage);
+        sc->setContext(Qt::WidgetShortcut);
+        connect(sc, &QShortcut::activated, m_commitVsCodeBtn, &QPushButton::click);
+    }
+    connect(m_commitMessage, &QPlainTextEdit::textChanged, this, [this]() {
+        const bool hasText = !m_commitMessage->toPlainText().trimmed().isEmpty();
+        const bool hasRepo = !m_repoRoot.isEmpty();
+        m_commitVsCodeBtn->setEnabled(hasText && hasRepo);
+    });
 
     m_remoteLabel = new QLabel("  Open, clone, or initialize a repository to start.");
     m_remoteLabel->setFixedHeight(22);
@@ -493,6 +571,17 @@ void GitPanel::updateActionState() {
     const bool fileSelected = kind == FileItem;
     const bool branchSelected = kind == BranchItem;
     const bool stashSelected = kind == StashItem;
+
+    // VS Code-style commit button: enabled iff we have both a message
+    // and a repo. Re-evaluated here so opening a repo picks up any
+    // already-typed message.
+    if (m_commitVsCodeBtn && m_commitMessage) {
+        const bool hasText = !m_commitMessage->toPlainText().trimmed().isEmpty();
+        m_commitVsCodeBtn->setEnabled(hasRepo && hasText);
+    }
+    if (m_branchLabel && hasRepo && !m_currentBranch.isEmpty()) {
+        m_branchLabel->setText("  ⎇  " + m_currentBranch);
+    }
 
     m_remoteBtn->setEnabled(hasRepo);
     m_refreshBtn->setEnabled(hasRepo);
