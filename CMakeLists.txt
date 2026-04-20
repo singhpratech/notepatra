@@ -149,6 +149,7 @@ set(SOURCES
     src/sqlfmtpanel.cpp
     src/fmtpanel.cpp
     src/searchresults.cpp
+    src/welcome.cpp
 )
 
 set(HEADERS
@@ -176,6 +177,7 @@ set(HEADERS
     src/sqlfmtpanel.h
     src/fmtpanel.h
     src/searchresults.h
+    src/welcome.h
     src/fonts.h
     src/ollamastatus.h
     src/themes.h

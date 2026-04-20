@@ -36,6 +36,11 @@ public:
     bool autoComplete = true;
     int autoCompleteThreshold = 3;
 
+    // Show the Welcome tab on launch when there are no session files to
+    // restore. User can dismiss with "Don't show again" checkbox inside
+    // the tab itself, or via View menu.
+    bool showWelcomeOnStartup = true;
+
     // Session
     QStringList recentFiles;
     int maxRecent = 15;
@@ -67,6 +72,7 @@ public:
         showCrosshair = o.value("showCrosshair").toBool(showCrosshair);
         autoComplete = o.value("autoComplete").toBool(autoComplete);
         autoCompleteThreshold = o.value("autoCompleteThreshold").toInt(autoCompleteThreshold);
+        showWelcomeOnStartup = o.value("showWelcomeOnStartup").toBool(showWelcomeOnStartup);
         windowX = o.value("windowX").toInt(windowX);
         windowY = o.value("windowY").toInt(windowY);
         windowW = o.value("windowW").toInt(windowW);
@@ -98,6 +104,7 @@ public:
         o["showCrosshair"] = showCrosshair;
         o["autoComplete"] = autoComplete;
         o["autoCompleteThreshold"] = autoCompleteThreshold;
+        o["showWelcomeOnStartup"] = showWelcomeOnStartup;
         o["windowX"] = windowX;
         o["windowY"] = windowY;
         o["windowW"] = windowW;

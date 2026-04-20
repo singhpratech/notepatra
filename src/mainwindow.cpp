@@ -770,8 +770,22 @@ MainWindow::MainWindow() {
         }
     }
 
-    // Open first empty tab
-    newFile();
+    // First-launch / no-file-to-restore welcome tab.
+    //
+    // On the first run, or any launch where the user has no session to
+    // restore AND they haven't dismissed the Welcome tab via the
+    // "Don't show again" checkbox, we open a Welcome page before the
+    // blank editor. It's the user's first impression — without it, a
+    // new user sees "new 1" and has no idea Notepatra has AI, Compare,
+    // Git, JSON tools, etc.  With it, every feature is one click away.
+    //
+    // The Welcome tab is a real tab (closable, movable) and never
+    // re-appears if it's still open from a previous session restore.
+    if (Config::instance().showWelcomeOnStartup) {
+        showWelcomeTab();
+    } else {
+        newFile();
+    }
 
     // Restore window geometry from config
     {
@@ -3006,6 +3020,64 @@ void MainWindow::openComparePicker(const QString &tabLabel) {
     // files are identical and the user clicks "Close comparison" in the
     // popup — that path emits closeRequested immediately.
     cmp->compare(leftText, leftName, rightText, rightName);
+}
+
+// ── Welcome tab ────────────────────────────────────────────────────────────
+
+int MainWindow::showWelcomeTab() {
+    // Reuse an existing Welcome tab if one's already open
+    for (int i = 0; i < m_tabs->count(); ++i) {
+        if (qobject_cast<WelcomeWidget *>(m_tabs->widget(i))) {
+            m_tabs->setCurrentIndex(i);
+            return i;
+        }
+    }
+
+    auto *welcome = new WelcomeWidget;
+    int idx = m_tabs->addTab(welcome, "Welcome");
+    m_tabs->setCurrentIndex(idx);
+
+    connect(welcome, &WelcomeWidget::actionNewFile, this, [this]() { newFile(); });
+    connect(welcome, &WelcomeWidget::actionOpenFile, this, [this]() {
+        QStringList paths = QFileDialog::getOpenFileNames(this, "Open file(s)", QDir::homePath());
+        for (const QString &p : paths) openFile(p);
+    });
+    connect(welcome, &WelcomeWidget::actionOpenFolder, this, [this]() {
+        QString dir = QFileDialog::getExistingDirectory(this, "Open folder", QDir::homePath());
+        if (!dir.isEmpty() && m_explorer) {
+            m_explorer->setRoot(dir);
+        }
+    });
+    connect(welcome, &WelcomeWidget::actionOpenRecent, this,
+            [this](const QString &path) { openFile(path); });
+    connect(welcome, &WelcomeWidget::actionOpenMenu, this, &MainWindow::triggerMenuAction);
+    connect(welcome, &WelcomeWidget::actionDismissForever, this, []() {
+        auto &cfg = Config::instance();
+        cfg.showWelcomeOnStartup = false;
+        cfg.save();
+    });
+    return idx;
+}
+
+void MainWindow::triggerMenuAction(const QString &actionId) {
+    // Map Welcome feature-card action IDs to the menu-action prefix used
+    // by findActionByPrefix. Centralised here so the Welcome tab doesn't
+    // need to know the exact menu-label text (which may be translated /
+    // refactored over time).
+    static const QMap<QString, QString> idToPrefix = {
+        {"AIAssistant",   "AI Assistant"},
+        {"Terminal",      "Terminal"},
+        {"Compare",       "Compare (inbuilt)"},
+        {"JSONTools",     "JSON Tools"},
+        {"HTMLTools",     "HTML Tools"},
+        {"SQLFormatter",  "SQL Formatter"},
+        {"BracketTools",  "Bracket Tools"},
+        {"RESTClient",    "REST Client"},
+        {"Git",           "Git Integration"},
+    };
+    QString prefix = idToPrefix.value(actionId);
+    if (prefix.isEmpty()) return;
+    if (QAction *act = findActionByPrefix(this, prefix)) act->trigger();
 }
 
 // ── Macro helpers ──────────────────────────────────────────────────────────

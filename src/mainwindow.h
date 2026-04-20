@@ -19,6 +19,7 @@
 #include "gitpanel.h"
 #include "sqlfmtpanel.h"
 #include "searchresults.h"
+#include "welcome.h"
 #include "themes.h"
 #include "config.h"
 #include <Qsci/qscimacro.h>
@@ -75,6 +76,13 @@ private:
 
     void updateRecentMenu();
     void applyThemeToAll(const Theme &theme);
+    // Show / focus the Welcome tab. Opens a new one if not already open,
+    // otherwise switches to the existing one. Returns the tab index.
+    int showWelcomeTab();
+    // Trigger a menu action by its action-name prefix — used by the
+    // Welcome tab's feature cards so they can click straight into
+    // AI Assistant / Terminal / Compare etc.
+    void triggerMenuAction(const QString &actionId);
     // Shared picker used by both "Compare (inbuilt)" and "ComparePlus" menu
     // entries — pops a 2-step picker for LEFT/RIGHT (any open tab or any
     // file on disk), then opens a CompareWidget tab with the chosen pair.
