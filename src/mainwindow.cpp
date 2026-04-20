@@ -247,6 +247,24 @@ static void drawAiFeatureGlyph(QPainter &painter, const QRectF &rect) {
     painter.drawPath(spark);
 }
 
+static void drawSearchFeatureGlyph(QPainter &painter, const QRectF &rect) {
+    // Magnifying-glass icon for the Project Search toolbar button.
+    // Circle lens in the upper-left, diagonal handle extending to the
+    // bottom-right. White stroke on the feature's accent-coloured tile.
+    painter.setPen(QPen(Qt::white, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(Qt::NoBrush);
+
+    const qreal r = rect.width() * 0.28;
+    const QPointF center(rect.left() + rect.width() * 0.40,
+                         rect.top()  + rect.height() * 0.40);
+    painter.drawEllipse(center, r, r);
+
+    // Handle: 45° line from lens edge to rect corner
+    const QPointF edge(center.x() + r * 0.707, center.y() + r * 0.707);
+    const QPointF tip (rect.right() - 5.0,     rect.bottom() - 5.0);
+    painter.drawLine(edge, tip);
+}
+
 static void drawTerminalFeatureGlyph(QPainter &painter, const QRectF &rect) {
     painter.setPen(QPen(Qt::white, 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     painter.setBrush(Qt::NoBrush);
@@ -435,6 +453,8 @@ static QIcon makeFeatureIcon(const QColor &base, const QString &iconKind, const 
 
     if (iconKind == "ai") {
         drawAiFeatureGlyph(painter, rect);
+    } else if (iconKind == "search") {
+        drawSearchFeatureGlyph(painter, rect);
     } else if (iconKind == "terminal") {
         drawTerminalFeatureGlyph(painter, rect);
     } else if (iconKind == "compare") {
@@ -797,13 +817,11 @@ MainWindow::MainWindow() {
 
     // Apply theme from saved config
     {
-        auto themes = allThemes();
-        QString themeName = Config::instance().theme;
-        if (themes.contains(themeName))
-            applyThemeToAll(themes[themeName]);
-        else {
-            m_statusBar->applyColors("#C8C8C8", "#000000", "#666666");
-        }
+        // Apply the configured theme. "System" is resolved via
+        // resolveTheme() to either Light or Dark based on the OS
+        // preference, falling back to Light when nothing is detected.
+        const QString themeName = Config::instance().theme;
+        applyThemeToAll(resolveTheme(themeName));
     }
 
     // First-launch / no-file-to-restore welcome tab.
@@ -1687,8 +1705,16 @@ void MainWindow::buildMenus() {
     settings->addAction("&Preferences...", this, [this]() { PreferencesDialog dlg(this); dlg.exec(); });
     settings->addSeparator();
 
-    // Theme selector
+    // Theme selector. "System" picks up macOS AppleInterfaceStyle /
+    // Windows AppsUseLightTheme / GNOME color-scheme and renders Light
+    // or Dark accordingly. It's the default for fresh installs.
     auto *themeMenu = settings->addMenu("&Theme");
+    themeMenu->addAction("System (follow OS)", this, [this]() {
+        Config::instance().theme = "System";
+        Config::instance().save();
+        applyThemeToAll(resolveTheme("System"));
+    });
+    themeMenu->addSeparator();
     themeMenu->addAction("Light", this, [this]() {
         Config::instance().theme = "Light";
         Config::instance().save();
@@ -2601,6 +2627,11 @@ void MainWindow::buildToolbar() {
     featureTb->setIconSize(QSize(32, 32));
     featureTb->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
 
+    // Project Search at slot 1 — most-used feature after AI. Clay-orange
+    // accent matches its Welcome-tab card. Shortcut: Ctrl+Shift+G.
+    addFeatureShortcut(featureTb, findActionByPrefix(this, "Project Search"),
+                       QColor("#D47A1E"), "search", "Search",
+                       "Recursively search file names + contents (Ctrl+Shift+G)");
     addFeatureShortcut(featureTb, findActionByPrefix(this, "AI Assistant"),
                        QColor("#0E639C"), "ai", "AI Assistant",
                        "Open AI Assistant in a new tab");

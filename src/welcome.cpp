@@ -358,12 +358,14 @@ void WelcomeWidget::buildFeatureCards(QVBoxLayout *parent) {
         QString icon, title, desc, actionId, accent;
     };
     const QList<Feat> features = {
+        // Project Search promoted to slot 1 — the single most-used
+        // productivity feature. AI Assistant follows, then the rest.
+        {"🔎", "Project Search (Ctrl+Shift+G)",
+         "Lightning-fast recursive search across file names AND contents. Any size, any language. Exact line:col coordinates — double-click a match to jump the caret to the exact character.",
+         "ProjectSearch", "#D47A1E"},
         {"🤖", "AI Assistant",
          "Local AI — Ollama · llama.cpp (GGUF) · LM Studio · any OpenAI-compatible server. Explain · Find Bugs · Refactor · Tests. Zero cloud, zero telemetry.",
          "AIAssistant", "#0E639C"},
-        {"🔍", "Project Search",
-         "Fast recursive search across file names AND file contents. Results stream to a clickable tree — double-click to jump to the line.",
-         "ProjectSearch", "#D47A1E"},
         {"⌨", "Terminal",
          "Built-in shell tab. Run git, npm, make, cargo — without leaving the editor.",
          "Terminal", "#2D7D46"},

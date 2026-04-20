@@ -72,4 +72,74 @@ inline QMap<QString, Theme> allThemes() {
     return m;
 }
 
+// Detect the current OS/desktop colour-scheme preference.
+// Returns "Dark" if the system prefers dark UI, "Light" otherwise.
+// Probes (in order):
+//   • Qt 6.5+ QStyleHints::colorScheme()  (not available on our Qt 5 build,
+//     falls through)
+//   • macOS       → `defaults read -g AppleInterfaceStyle`  (prints
+//                    "Dark\n" on dark, fails on light)
+//   • Windows     → HKCU\Software\Microsoft\Windows\CurrentVersion\
+//                    Themes\Personalize\AppsUseLightTheme  (DWORD: 0=dark)
+//   • GNOME/Linux → `gsettings get org.gnome.desktop.interface color-scheme`
+//                    or prefer-dark theme hint from gtk-theme
+//   • env var     → respect $NOTEPATRA_THEME / $COLOR_SCHEME / $GTK_THEME
+// Falls back to "Light" when nothing is detected — matches the request
+// "default to Light when the system preference can't be read".
+#include <QProcess>
+#include <QByteArray>
+#include <QSettings>
+
+inline QString detectSystemTheme() {
+    // 1. Explicit override via env so power users / CI can pin this
+    QByteArray np = qgetenv("NOTEPATRA_THEME");
+    if (!np.isEmpty()) return QString::fromUtf8(np);
+
+#if defined(Q_OS_MAC)
+    QProcess p;
+    p.start("defaults", {"read", "-g", "AppleInterfaceStyle"});
+    p.waitForFinished(800);
+    QString out = QString::fromUtf8(p.readAllStandardOutput()).trimmed();
+    if (out.compare("Dark", Qt::CaseInsensitive) == 0) return "Dark";
+    return "Light";
+#elif defined(Q_OS_WIN)
+    QSettings s("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\"
+                "CurrentVersion\\Themes\\Personalize",
+                QSettings::NativeFormat);
+    QVariant v = s.value("AppsUseLightTheme");
+    if (v.isValid()) return v.toInt() == 0 ? "Dark" : "Light";
+    return "Light";
+#else
+    // GNOME / Linux — gsettings is present on every mainstream distro
+    QProcess p;
+    p.start("gsettings", {"get", "org.gnome.desktop.interface", "color-scheme"});
+    p.waitForFinished(500);
+    QString out = QString::fromUtf8(p.readAllStandardOutput()).toLower();
+    if (out.contains("dark")) return "Dark";
+    if (out.contains("light")) return "Light";
+    // Fallback: probe gtk-theme name
+    p.start("gsettings", {"get", "org.gnome.desktop.interface", "gtk-theme"});
+    p.waitForFinished(500);
+    out = QString::fromUtf8(p.readAllStandardOutput()).toLower();
+    if (out.contains("dark")) return "Dark";
+    // Env fallbacks
+    QByteArray gtkTheme = qgetenv("GTK_THEME");
+    if (QString::fromUtf8(gtkTheme).toLower().contains("dark")) return "Dark";
+    return "Light";
+#endif
+}
+
+// Resolve a theme name stored in Config::theme to a concrete Theme
+// struct. "System" → detectSystemTheme(); everything else looks up the
+// static map. Callers should use this instead of the raw allThemes()
+// lookup so the "System" sentinel is handled centrally.
+inline Theme resolveTheme(const QString &name) {
+    QString effective = name;
+    if (effective.compare("System", Qt::CaseInsensitive) == 0)
+        effective = detectSystemTheme();
+    auto m = allThemes();
+    if (m.contains(effective)) return m[effective];
+    return lightTheme();   // final fallback
+}
+
 #endif

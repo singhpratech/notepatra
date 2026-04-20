@@ -16,7 +16,11 @@ public:
     static Config &instance() { static Config c; return c; }
 
     // Editor
-    QString theme = "Dark";
+    // "System" = follow OS preference via themes.h detectSystemTheme()
+    // (macOS defaults / Windows registry / GNOME gsettings). Falls back
+    // to Light when the system preference can't be read. Users still
+    // see Light/Dark/Monokai as explicit choices in Settings → Theme.
+    QString theme = "System";
     int tabWidth = 4;
     bool useTabs = false;
     bool autoIndent = true;
