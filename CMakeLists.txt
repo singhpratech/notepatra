@@ -339,6 +339,23 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ollama.cpp")
     message(STATUS "Regression test enabled — target: test_ollama")
 endif()
 
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_llamacpp.cpp")
+    add_executable(test_llamacpp
+        test_llamacpp.cpp
+        src/ollama.cpp
+    )
+    target_include_directories(test_llamacpp PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_llamacpp PRIVATE
+        Qt5::Core
+        Qt5::Network
+    )
+    add_test(NAME test_llamacpp COMMAND $<TARGET_FILE:test_llamacpp>)
+    set_tests_properties(test_llamacpp PROPERTIES LABELS "integration;llamacpp;openai-compat")
+    message(STATUS "Regression test enabled — target: test_llamacpp")
+endif()
+
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_aifix.cpp")
     add_executable(test_aifix
         test_aifix.cpp
