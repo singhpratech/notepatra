@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
 
         check("single file — header present", out.contains("# Workspace context"));
         check("single file — root reported", out.contains("/home/x/src"));
-        check("single file — current marker", out.contains("← current"));
+        check("single file — current marker", out.contains("<- current"));
         check("single file — content embedded", out.contains("print('hello')"));
         check("single file — no 'Other open files'", !out.contains("## Other open files"));
     }
@@ -78,7 +78,7 @@ int main(int argc, char *argv[]) {
               out.contains("/ws/main.py") && out.contains("/ws/utils.py")
               && out.contains("/ws/README.md"));
 
-        int currentMarkers = out.count(QStringLiteral("← current"));
+        int currentMarkers = out.count(QStringLiteral("<- current"));
         check("3 tabs — exactly one current marker",
               currentMarkers == 1,
               QStringLiteral("got %1").arg(currentMarkers));

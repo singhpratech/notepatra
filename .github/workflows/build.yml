@@ -348,7 +348,25 @@ jobs:
           echo "✓ Bundle signed with hardened runtime + entitlements"
 
           # ─── Step 9: Create the DMG
-          hdiutil create -volname "Notepatra" -srcfolder "$APP" -ov -format UDZO build/Notepatra.dmg
+          #
+          # hdiutil create intermittently fails with "Resource busy" on
+          # CI runners when a previous mount hasn't fully settled. Retry
+          # up to 3 times with an increasing pause — the workaround
+          # documented in multiple well-known Qt CI pipelines.
+          rm -f build/Notepatra.dmg
+          for attempt in 1 2 3; do
+            if hdiutil create -volname "Notepatra" -srcfolder "$APP" -ov \
+                              -format UDZO -nospotlight build/Notepatra.dmg; then
+              echo "✓ DMG built on attempt $attempt"
+              break
+            fi
+            echo "hdiutil create failed (attempt $attempt) — detaching any stale volumes and retrying"
+            hdiutil detach "/Volumes/Notepatra" -force 2>/dev/null || true
+            sleep $((attempt * 3))
+            if [ "$attempt" = "3" ]; then
+              echo "::error::hdiutil create failed after 3 attempts"; exit 1
+            fi
+          done
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4

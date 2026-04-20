@@ -80,7 +80,7 @@ QString buildWorkspaceContextBlock(const QString &currentFilePath,
                        .arg(label)
                        .arg(t.language.isEmpty() ? QString()
                                                  : QStringLiteral(" [") + t.language + QStringLiteral("]"))
-                       .arg(t.isCurrent ? QStringLiteral("  ← current") : QString());
+                       .arg(t.isCurrent ? QStringLiteral("  <- current") : QString());
         }
     }
 
