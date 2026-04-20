@@ -1,5 +1,6 @@
 #include "aipanel.h"
 #include "fonts.h"
+#include "config.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -29,21 +30,128 @@
 
 namespace {
 
+// ═══════════════════════════════════════════════════════════════════════
+// Theme-aware palette for the AI Assistant panel — reads Config::theme
+// at construction so Light mode looks Light (Clay palette) and Dark/
+// Monokai get the familiar VS-Code-ish dark greys. Before this, the
+// AI panel was hardcoded dark — looked out-of-place on Light theme.
+// ═══════════════════════════════════════════════════════════════════════
+
+struct AiPalette {
+    // Chrome
+    QString bg, chromeBg, headerFg;
+    QString inputBg, inputBorder, inputText, inputFocus;
+    QString btnBg, btnBorder, btnHover;
+    QString recBtnBg, recBtnBorder, recBtnHover;
+    // Bubbles
+    QString chatBg, chatFg;
+    QString userBg, userFg, userBorder, userLabel;
+    QString assistBg, assistFg, assistBorder, assistAccent;
+    QString errBg, errFg, errBorder;
+    // Code blocks inside answers
+    QString codeBg, codeFg, codeInline, codeInlineFg;
+    // Accent
+    QString accent, muted, linkFg;
+};
+
+static bool aiIsDark() {
+    const QString &t = Config::instance().theme;
+    if (t.compare("System", Qt::CaseInsensitive) == 0) return false; // treat System-unknown as Light
+    return t.compare("Dark", Qt::CaseInsensitive) == 0 ||
+           t.compare("Monokai", Qt::CaseInsensitive) == 0;
+}
+
+static AiPalette aiPalette() {
+    AiPalette p;
+    if (aiIsDark()) {
+        p.bg           = "#1E1E1E";
+        p.chromeBg     = "#2D2D2D";
+        p.headerFg     = "#4EC9B0";
+        p.inputBg      = "#2D2D2D";
+        p.inputBorder  = "#444";
+        p.inputText    = "#E8E8E8";
+        p.inputFocus   = "#4EC9B0";
+        p.btnBg        = "#2D2D2D";
+        p.btnBorder    = "#444";
+        p.btnHover     = "#3D3D3D";
+        p.recBtnBg     = "#8B2C2C";
+        p.recBtnBorder = "#A03333";
+        p.recBtnHover  = "#A03333";
+        p.chatBg       = "#1E1E1E";
+        p.chatFg       = "#D4D4D4";
+        p.userBg       = "#0E639C";
+        p.userFg       = "#FFFFFF";
+        p.userBorder   = "#1177BB";
+        p.userLabel    = "#B0D8E8";
+        p.assistBg     = "#252526";
+        p.assistFg     = "#D4D4D4";
+        p.assistBorder = "#333";
+        p.assistAccent = "#4EC9B0";
+        p.errBg        = "#3A1F22";
+        p.errFg        = "#FFD7D7";
+        p.errBorder    = "#7C3232";
+        p.codeBg       = "#111315";
+        p.codeFg       = "#F3F7FA";
+        p.codeInline   = "#1A1D20";
+        p.codeInlineFg = "#F7D774";
+        p.accent       = "#4EC9B0";
+        p.muted        = "#888";
+        p.linkFg       = "#7EC8FF";
+    } else {
+        // Light / Clay palette matching the rest of Notepatra on Light.
+        p.bg           = "#FAF9F5";
+        p.chromeBg     = "#F5F4EE";
+        p.headerFg     = "#141413";
+        p.inputBg      = "#FFFFFF";
+        p.inputBorder  = "#D4D1C4";
+        p.inputText    = "#141413";
+        p.inputFocus   = "#CC785C";
+        p.btnBg        = "#FFFFFF";
+        p.btnBorder    = "#D4D1C4";
+        p.btnHover     = "#F5F4EE";
+        p.recBtnBg     = "#D84B3E";
+        p.recBtnBorder = "#B8362A";
+        p.recBtnHover  = "#E56A5E";
+        p.chatBg       = "#FAF9F5";
+        p.chatFg       = "#141413";
+        p.userBg       = "#CC785C";
+        p.userFg       = "#FFFFFF";
+        p.userBorder   = "#B86A4E";
+        p.userLabel    = "#FCE4D8";
+        p.assistBg     = "#FFFFFF";
+        p.assistFg     = "#141413";
+        p.assistBorder = "#E5E4DF";
+        p.assistAccent = "#CC785C";
+        p.errBg        = "#FBCBCB";
+        p.errFg        = "#7D1D1D";
+        p.errBorder    = "#E89B9B";
+        p.codeBg       = "#F5F4EE";
+        p.codeFg       = "#141413";
+        p.codeInline   = "#EDEBE2";
+        p.codeInlineFg = "#9A6A20";
+        p.accent       = "#CC785C";
+        p.muted        = "#8E8C88";
+        p.linkFg       = "#0B5BAF";
+    }
+    return p;
+}
+
 QString aiIconButtonStyle(const QColor &accent, bool active = false) {
+    const AiPalette p = aiPalette();
     if (active) {
         return QString(
-            "QPushButton { background: #8B2C2C; border: 1px solid #A03333; border-radius: 18px; }"
-            "QPushButton:hover:enabled { background: #A03333; border: 1px solid #C54A4A; }"
-            "QPushButton:pressed:enabled { background: #6E1E1E; border: 1px solid #C54A4A; }"
-            "QPushButton:disabled { background: #5A2323; border: 1px solid #7C3232; }");
+            "QPushButton { background: %1; border: 1px solid %2; border-radius: 18px; }"
+            "QPushButton:hover:enabled { background: %3; border: 1px solid %2; }"
+            "QPushButton:pressed:enabled { background: %2; border: 1px solid %2; }"
+            "QPushButton:disabled { background: %1; border: 1px solid %2; }")
+            .arg(p.recBtnBg, p.recBtnBorder, p.recBtnHover);
     }
-
     return QString(
-        "QPushButton { background: #2D2D2D; border: 1px solid #444; border-radius: 18px; }"
-        "QPushButton:hover:enabled { background: #3D3D3D; border: 1px solid %1; }"
-        "QPushButton:pressed:enabled { background: #252525; border: 1px solid %1; }"
-        "QPushButton:disabled { background: #252525; border: 1px solid #3A3A3A; }")
-        .arg(accent.name());
+        "QPushButton { background: %1; border: 1px solid %2; border-radius: 18px; }"
+        "QPushButton:hover:enabled { background: %3; border: 1px solid %4; }"
+        "QPushButton:pressed:enabled { background: %1; border: 1px solid %4; }"
+        "QPushButton:disabled { background: %1; border: 1px solid %2; }")
+        .arg(p.btnBg, p.btnBorder, p.btnHover, accent.name());
 }
 
 QIcon makePaperclipIcon(const QColor &stroke) {
@@ -129,35 +237,43 @@ QString markdownBodyHtml(const QString &text) {
 }
 
 QString messageTranscriptHtml(const QVector<AIPanel::ChatMessage> &messages) {
-    QString html = QStringLiteral(R"HTML(
-<html>
-<head>
-<style>
-body { font-family: %1; line-height: 1.5; color: #d4d4d4; background: #1e1e1e; margin: 0; padding: 12px; }
-table { width: 100%%; border-collapse: collapse; margin: 10px 0; }
-.bubble { display: inline-block; max-width: 100%%; text-align: left; border-radius: 16px; padding: 12px 14px; }
-.bubble-user { background: #0E639C; color: #ffffff; border: 1px solid #1177BB; }
-.bubble-assistant { background: #252526; color: #d4d4d4; border-left: 3px solid #4EC9B0; border-top: 1px solid #333; border-right: 1px solid #333; border-bottom: 1px solid #333; min-width: 280px; }
-.bubble-error { background: #3A1F22; color: #FFD7D7; border-left: 3px solid #F48771; border-top: 1px solid #7C3232; border-right: 1px solid #7C3232; border-bottom: 1px solid #7C3232; }
-.user-label { font-size: 9px; color: #B0D8E8; font-weight: bold; letter-spacing: 1px; margin-bottom: 6px; }
-.assistant-head { margin-bottom: 8px; }
-.assistant-model { color: #4EC9B0; font-size: 10px; font-weight: bold; }
-.copy-link { color: #7ec8ff; font-size: 10px; font-weight: bold; text-decoration: none; }
-.copy-link:hover { text-decoration: underline; }
-.message-plain { white-space: pre-wrap; }
-.assistant-content { color: #d4d4d4; font-size: 12px; }
-.assistant-content p { margin: 0 0 10px 0; }
-.assistant-content ul, .assistant-content ol { margin: 6px 0 10px 20px; padding-left: 12px; }
-.assistant-content li { margin: 3px 0; }
-.assistant-content h1, .assistant-content h2, .assistant-content h3, .assistant-content h4 { color: #f3f7fa; margin: 12px 0 8px 0; }
-.assistant-content a { color: #7ec8ff; }
-.assistant-content pre { background: #111315; color: #f3f7fa; border: 1px solid #32363a; border-radius: 10px; padding: 12px; overflow-x: auto; white-space: pre-wrap; }
-.assistant-content code { background: #1a1d20; color: #f7d774; border-radius: 4px; padding: 1px 4px; font-family: %2; }
-.assistant-content pre code { background: transparent; padding: 0; color: inherit; }
-</style>
-</head>
-<body>
-)HTML").arg(notepatraUiCssFamily(), notepatraCodeCssFamily());
+    const AiPalette pal = aiPalette();
+    QString html = QString(
+"<html>\n"
+"<head>\n"
+"<style>\n"
+"body { font-family: %1; line-height: 1.5; color: %3; background: %4; margin: 0; padding: 12px; }\n"
+"table { width: 100%%; border-collapse: collapse; margin: 10px 0; }\n"
+".bubble { display: inline-block; max-width: 100%%; text-align: left; border-radius: 16px; padding: 12px 14px; }\n"
+".bubble-user { background: %5; color: %6; border: 1px solid %7; }\n"
+".bubble-assistant { background: %8; color: %9; border-left: 3px solid %10; border-top: 1px solid %11; border-right: 1px solid %11; border-bottom: 1px solid %11; min-width: 280px; }\n"
+".bubble-error { background: %12; color: %13; border-left: 3px solid %14; border-top: 1px solid %14; border-right: 1px solid %14; border-bottom: 1px solid %14; }\n"
+".user-label { font-size: 9px; color: %15; font-weight: bold; letter-spacing: 1px; margin-bottom: 6px; }\n"
+".assistant-head { margin-bottom: 8px; }\n"
+".assistant-model { color: %10; font-size: 10px; font-weight: bold; }\n"
+".copy-link { color: %16; font-size: 10px; font-weight: bold; text-decoration: none; }\n"
+".copy-link:hover { text-decoration: underline; }\n"
+".message-plain { white-space: pre-wrap; }\n"
+".assistant-content { color: %9; font-size: 12px; }\n"
+".assistant-content p { margin: 0 0 10px 0; }\n"
+".assistant-content ul, .assistant-content ol { margin: 6px 0 10px 20px; padding-left: 12px; }\n"
+".assistant-content li { margin: 3px 0; }\n"
+".assistant-content h1, .assistant-content h2, .assistant-content h3, .assistant-content h4 { color: %9; margin: 12px 0 8px 0; }\n"
+".assistant-content a { color: %16; }\n"
+".assistant-content pre { background: %17; color: %18; border: 1px solid %11; border-radius: 10px; padding: 12px; overflow-x: auto; white-space: pre-wrap; }\n"
+".assistant-content code { background: %19; color: %20; border-radius: 4px; padding: 1px 4px; font-family: %2; }\n"
+".assistant-content pre code { background: transparent; padding: 0; color: inherit; }\n"
+"</style>\n"
+"</head>\n"
+"<body>\n")
+        .arg(notepatraUiCssFamily(), notepatraCodeCssFamily(),
+             pal.chatFg, pal.chatBg,
+             pal.userBg, pal.userFg, pal.userBorder,
+             pal.assistBg, pal.assistFg, pal.assistAccent, pal.assistBorder,
+             pal.errBg, pal.errFg, pal.errBorder,
+             pal.userLabel, pal.linkFg,
+             pal.codeBg, pal.codeFg,
+             pal.codeInline, pal.codeInlineFg);
 
     for (int i = 0; i < messages.size(); ++i) {
         const AIPanel::ChatMessage &message = messages.at(i);
@@ -212,10 +328,14 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(2);
 
+    const AiPalette pal = aiPalette();
+
     // ─── TOP STRIP: Header + model selector + status ────────────────────
     auto *header = new QLabel("  AI Assistant");
     header->setFixedHeight(24);
-    header->setStyleSheet("font-weight: bold; background: #2D2D2D; color: #4EC9B0; padding: 4px 8px;");
+    header->setStyleSheet(QString(
+        "font-weight: bold; background: %1; color: %2; padding: 4px 8px;")
+        .arg(pal.chromeBg, pal.headerFg));
     layout->addWidget(header);
 
     auto *modelRow = new QHBoxLayout;
@@ -232,7 +352,8 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     modelRow->addWidget(m_refreshBtn);
     m_thinkingCheck = new QCheckBox("Show thinking");
     m_thinkingCheck->setChecked(false);
-    m_thinkingCheck->setStyleSheet("font-size: 11px; color: #888; margin-left: 8px;");
+    m_thinkingCheck->setStyleSheet(QString(
+        "font-size: 11px; color: %1; margin-left: 8px;").arg(pal.muted));
     m_thinkingCheck->setToolTip("Show the model's reasoning blocks (Qwen3, DeepSeek-R1). "
                                 "Off = faster, cleaner answers. On = see how the model thinks.");
     modelRow->addWidget(m_thinkingCheck);
@@ -245,7 +366,8 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     layout->addLayout(modelRow);
 
     m_statusLabel = new QLabel("");
-    m_statusLabel->setStyleSheet("color: #888; padding: 0 8px; font-size: 11px;");
+    m_statusLabel->setStyleSheet(QString(
+        "color: %1; padding: 0 8px; font-size: 11px;").arg(pal.muted));
     m_statusLabel->setFixedHeight(14);
     layout->addWidget(m_statusLabel);
 
@@ -259,8 +381,9 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     m_output->setOpenExternalLinks(false);
     QFont mono = notepatraCodeFont();
     m_output->setFont(mono);
-    m_output->setStyleSheet(
-        "QTextBrowser { background: #1E1E1E; color: #D4D4D4; border: none; padding: 12px; }");
+    m_output->setStyleSheet(QString(
+        "QTextBrowser { background: %1; color: %2; border: none; padding: 12px; }")
+        .arg(pal.chatBg, pal.chatFg));
     m_output->setPlaceholderText(
         "💬 Conversation will appear here.\n"
         "\n"
@@ -317,9 +440,10 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
 
     // ─── ATTACHMENT CHIP (shown above input when a file is attached) ────
     m_attachmentChip = new QLabel("");
-    m_attachmentChip->setStyleSheet(
-        "background: #1E3A3A; color: #4EC9B0; border-radius: 10px; "
-        "padding: 4px 10px; margin: 0 8px; font-size: 11px;");
+    m_attachmentChip->setStyleSheet(QString(
+        "background: %1; color: %2; border-radius: 10px; "
+        "padding: 4px 10px; margin: 0 8px; font-size: 11px;")
+        .arg(pal.chromeBg, pal.accent));
     m_attachmentChip->setFixedHeight(0);  // hidden until something attached
     m_attachmentChip->setVisible(false);
     layout->addWidget(m_attachmentChip);
@@ -348,29 +472,34 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
 
     m_customInput = new QLineEdit;
     m_customInput->setPlaceholderText("Type a message and press Enter to send...");
-    m_customInput->setStyleSheet(
-        "QLineEdit { background: #2D2D2D; color: #E8E8E8; border: 1px solid #444; "
+    m_customInput->setStyleSheet(QString(
+        "QLineEdit { background: %1; color: %2; border: 1px solid %3; "
         "border-radius: 18px; padding: 8px 16px; font-size: 13px; }"
-        "QLineEdit:focus { border: 1px solid #4EC9B0; background: #1E2D2D; }");
+        "QLineEdit:focus { border: 1px solid %4; }")
+        .arg(pal.inputBg, pal.inputText, pal.inputBorder, pal.inputFocus));
     m_customInput->setFixedHeight(36);
     customRow->addWidget(m_customInput, 1);
 
     auto *sendBtn = new QPushButton("Send");
     sendBtn->setFixedSize(72, 36);
-    sendBtn->setStyleSheet(
-        "QPushButton { background: #0E639C; color: white; border: none; "
+    sendBtn->setStyleSheet(QString(
+        "QPushButton { background: %1; color: white; border: none; "
         "border-radius: 18px; font-weight: bold; font-size: 13px; }"
-        "QPushButton:hover { background: #1177BB; }"
-        "QPushButton:pressed { background: #0A4F7C; }");
+        "QPushButton:hover { background: %2; }"
+        "QPushButton:pressed { background: %3; }")
+        .arg(pal.userBg, pal.userBorder,
+             aiIsDark() ? "#0A4F7C" : "#A55B40"));
     customRow->addWidget(sendBtn);
 
     m_stopBtn = new QPushButton("Stop");
     m_stopBtn->setFixedSize(56, 36);
     m_stopBtn->setEnabled(false);
-    m_stopBtn->setStyleSheet(
-        "QPushButton { background: #2D2D2D; color: #555; border: 1px solid #444; border-radius: 18px; font-size: 12px; }"
-        "QPushButton:enabled { background: #8B2C2C; color: white; border: 1px solid #A03333; }"
-        "QPushButton:hover:enabled { background: #A03333; }");
+    m_stopBtn->setStyleSheet(QString(
+        "QPushButton { background: %1; color: %2; border: 1px solid %3; border-radius: 18px; font-size: 12px; }"
+        "QPushButton:enabled { background: %4; color: white; border: 1px solid %5; }"
+        "QPushButton:hover:enabled { background: %5; }")
+        .arg(pal.btnBg, pal.muted, pal.btnBorder,
+             pal.recBtnBg, pal.recBtnBorder));
     customRow->addWidget(m_stopBtn);
     layout->addLayout(customRow);
 
