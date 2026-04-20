@@ -1440,19 +1440,35 @@ void MainWindow::buildMenus() {
         if (m_funcList->isVisible()) if (auto *e = currentEditor()) m_funcList->updateSymbols(e->text(), e->language());
     });
 
-    // ═══ FEATURES ═══
-    // "Tools" menu — was "Features" before. Holds the main power features
-    // (AI Assistant, Terminal, Markdown Converter) that users reach for most
-    // often. The old "Tools" menu with Hash + Measurement was renamed to
-    // "Utilities" further down to avoid two menus competing for the same
-    // slot and the same user mental model.
+    // ═══ TOOLS ═══
+    // Primary power-tools menu. Ordered top-down by a marketing-first
+    // hierarchy so the first thing users see is AI:
+    //   1. ══ AI ══                (AI Assistant — the headline feature)
+    //   2. ══ Search ══             (Project Search)
+    //   3. ══ Workflow ══           (Terminal, Compare, Markdown)
+    //   4. ══ Formatters ══         (JSON, HTML, SQL, Bracket)
+    //   5. ══ Integrations ══       (REST Client, Git)
+    // Section headers are rendered via disabled actions with unicode
+    // horizontal lines so the groups visually separate.
     auto *feat = mb->addMenu("&Tools");
 
+    auto sectionHeader = [feat](const QString &title) {
+        auto *s = feat->addAction("── " + title + " ──────");
+        s->setEnabled(false);
+        QFont f = s->font(); f.setWeight(QFont::DemiBold); f.setPointSize(f.pointSize() - 1);
+        s->setFont(f);
+        return s;
+    };
+
+    sectionHeader("AI");
+
     // --- AI Assistant ---
-    auto *aiAct = feat->addAction("AI Assistant — Ollama      Ctrl+Shift+A");
+    // Label no longer says "Ollama" because v0.1.14 supports Ollama,
+    // llama.cpp, and any OpenAI-compatible server — pick in Preferences.
+    auto *aiAct = feat->addAction("AI Assistant      Ctrl+Shift+A");
     aiAct->setCheckable(true);
     aiAct->setShortcut(QKeySequence("Ctrl+Shift+A"));
-    aiAct->setStatusTip("Opens AI Assistant in a new tab. Select code first. Requires: ollama serve");
+    aiAct->setStatusTip("Opens AI Assistant in a new tab. Select code first. Requires a local AI runner (Ollama / llama.cpp / OpenAI-compat) — configure in Settings → Preferences → AI.");
     connect(aiAct, &QAction::triggered, this, [this, E]() {
         auto *panel = new AIPanel;
         if (E()) panel->setContext(
@@ -1469,6 +1485,7 @@ void MainWindow::buildMenus() {
     });
 
     feat->addSeparator();
+    sectionHeader("Search");
 
     // --- Project Search — fast folder-wide file-name + content search ---
     auto *projectSearchAct = feat->addAction("Project Search      Ctrl+Shift+G");
@@ -1498,6 +1515,7 @@ void MainWindow::buildMenus() {
     });
 
     feat->addSeparator();
+    sectionHeader("Workflow");
 
     // --- Terminal ---
     auto *termAct = feat->addAction("Terminal                  Ctrl+`");
@@ -1864,6 +1882,7 @@ void MainWindow::buildMenus() {
     // dedicated Plugins menu that hosts user-installable .so/.dll/.dylib
     // extensions and the "How to write a plugin" documentation entry.
     feat->addSeparator();
+    sectionHeader("Formatters");
     QString pluginDir = QDir::homePath() + "/.config/notepatra/plugins";
     m_pluginManager.loadPlugins(pluginDir);
     QMenu *pluginsMenu = feat;  // "inbuilt plugin" actions append to Tools
@@ -2539,6 +2558,44 @@ void MainWindow::buildMenus() {
         showRichHelpDialog(this, "Notepatra Help Guide", featureGuideHtml());
     });
     guideAct->setStatusTip("Open the built-in help guide to Notepatra's features and tools");
+
+    // AI help entry — explains the three supported backends in one
+    // place so new users don't wonder "do I need Ollama? What's llama.cpp?"
+    help->addAction("How the AI Assistant works…", this, [this]() {
+        QMessageBox msg(this);
+        msg.setWindowTitle("How the AI Assistant works");
+        msg.setTextFormat(Qt::RichText);
+        msg.setText(
+            "<h3>Notepatra AI is local-first</h3>"
+            "<p>Your code <b>never leaves your machine</b>. No mandatory "
+            "API key, no cloud, no telemetry.</p>"
+            "<p>Pick a backend in <b>Settings → Preferences → AI</b>:</p>"
+            "<ul>"
+            "<li><b>Ollama</b> (easiest) — install from <a href='https://ollama.com'>ollama.com</a>, "
+            "run <code>ollama serve</code>, pull a small model: "
+            "<code>ollama pull qwen2.5-coder:3b</code>.</li>"
+            "<li><b>llama.cpp</b> (most control) — grab any <code>.gguf</code> "
+            "from <a href='https://huggingface.co'>huggingface.co</a> and run "
+            "<code>llama-server -m model.gguf --port 8080</code>.</li>"
+            "<li><b>OpenAI-compat</b> — works with LM Studio, Jan, vLLM, "
+            "KoboldCpp, llamafile, text-generation-webui, OpenRouter, "
+            "or OpenAI itself. Paste the base URL (and API key if needed).</li>"
+            "</ul>"
+            "<p>Once a backend is reachable, the AI panel model dropdown "
+            "auto-populates and you can click <b>Explain / Find Bugs / "
+            "Refactor / Write Tests</b> or type a custom prompt.</p>"
+            "<p>For CPU-only / 16 GB laptops, Notepatra auto-picks the "
+            "smallest installed model: qwen2.5-coder:3b → qwen2.5:3b → "
+            "gemma2:2b → gemma3:4b → llama3.2:3b.</p>"
+            "<p>Shortcut: <b>Ctrl+Shift+A</b></p>"
+            "<p>Full docs: <a href='https://notepatra.org/docs.html#ai-overview'>"
+            "notepatra.org/docs.html#ai-overview</a></p>"
+        );
+        msg.setStandardButtons(QMessageBox::Ok);
+        msg.exec();
+    })->setStatusTip("Explains Notepatra's three AI backends: Ollama, llama.cpp, OpenAI-compat.");
+
+    help->addSeparator();
 
     help->addAction("Keyboard Shortcuts", this, [this]() {
         QMessageBox::information(this, "Keyboard Shortcuts",

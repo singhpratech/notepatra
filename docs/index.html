@@ -1375,6 +1375,76 @@
         </div>
     </section>
 
+    <!-- ─────────────────────────────────────────────────────────────
+         See it in action — hero video placeholder. Loads the MP4 if
+         it's on the CDN, otherwise shows a styled CTA that links to
+         the GitHub README's animated GIF. Keeps the page lightweight
+         for users who have autoplay-block on.
+         ───────────────────────────────────────────────────────────── -->
+    <section id="see-it-in-action" style="max-width: 1120px; margin: 0 auto 60px; padding: 0 24px; text-align: center;">
+        <div class="section-label">See it in action</div>
+        <div class="section-title" style="margin-bottom: 12px;">Notepatra in 60 seconds</div>
+        <p class="section-desc">Project Search · AI Assistant · Compare · Git — watch the feature tour.</p>
+        <div style="position: relative; max-width: 960px; margin: 28px auto 0; aspect-ratio: 16 / 9; background: var(--c-surface); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px -20px rgba(20,20,19,0.18);">
+            <!-- When the MP4 is uploaded to GitHub Releases or the CDN, swap
+                 the placeholder <a> for a <video controls> element. -->
+            <a href="https://github.com/singhpratech/notepatra#readme"
+               style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px; text-decoration: none; color: var(--c-text); background: linear-gradient(135deg, rgba(204,120,92,0.05), rgba(204,120,92,0.12));">
+                <div style="width: 84px; height: 84px; background: var(--c-accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 20px 40px rgba(204,120,92,0.35);">
+                    <div style="width: 0; height: 0; border-left: 24px solid #FFFFFF; border-top: 14px solid transparent; border-bottom: 14px solid transparent; margin-left: 6px;"></div>
+                </div>
+                <div style="font-size: 16px; font-weight: 600;">Watch the tour on GitHub →</div>
+                <div style="font-size: 13px; color: var(--text-dim);">Full feature walkthrough with animated GIFs and screenshots</div>
+            </a>
+        </div>
+    </section>
+
+    <!-- AI Section — moved UP above Features because AI is the
+         headline differentiator. Users should see this before the
+         generic feature grid. -->
+    <div class="ai-section" id="ai">
+        <div class="ai-grid">
+            <div>
+                <div class="section-label">AI Powered · Local-first</div>
+                <div class="section-title">Your AI. Your machine. Zero cloud.</div>
+                <p style="color: var(--text-dim); margin-bottom: 16px;">Notepatra's AI runs on YOUR laptop. Pick any local runner — <strong>Ollama</strong>, <strong>llama.cpp</strong> (loads any GGUF), <strong>LM Studio</strong>, <strong>Jan</strong>, <strong>vLLM</strong>, <strong>KoboldCpp</strong>, <strong>text-generation-webui</strong>, or anything that speaks OpenAI's <code>/v1/chat/completions</code>. Nothing leaves your computer. No mandatory API key. No subscription. No telemetry.</p>
+                <p style="color: var(--text-dim); margin-bottom: 24px;">When the regex fixer can't repair your broken JSON — the AI can. Hybrid approach: speed of regex, intelligence of AI.</p>
+                <div class="ai-actions">
+                    <span class="ai-tag">Explain Code</span>
+                    <span class="ai-tag">Find Bugs</span>
+                    <span class="ai-tag">Refactor</span>
+                    <span class="ai-tag">Write Tests</span>
+                    <span class="ai-tag">Fix JSON</span>
+                    <span class="ai-tag">Fix HTML</span>
+                    <span class="ai-tag">Fix Brackets</span>
+                    <span class="ai-tag">Add Comments</span>
+                    <span class="ai-tag">Generate Docs</span>
+                    <span class="ai-tag">Optimize</span>
+                    <span class="ai-tag">Translate Py↔JS</span>
+                </div>
+            </div>
+            <div class="ai-code">
+                <span class="comment">// Broken JSON input</span><br>
+                {users: [{'id': 1, name: 'Alice',}<br>
+                <br>
+                <span class="comment">// Notepatra fixes it instantly:</span><br>
+                <span class="comment">// ✓ single quotes → double quotes</span><br>
+                <span class="comment">// ✓ unquoted keys quoted</span><br>
+                <span class="comment">// ✓ trailing commas removed</span><br>
+                <span class="comment">// ✓ missing braces added</span><br>
+                <br>
+                {<br>
+                &nbsp;&nbsp;<span class="string">"users"</span>: [<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;{<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="string">"id"</span>: <span class="number">1</span>,<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="string">"name"</span>: <span class="string">"Alice"</span><br>
+                &nbsp;&nbsp;&nbsp;&nbsp;}<br>
+                &nbsp;&nbsp;]<br>
+                }<span class="cursor">|</span>
+            </div>
+        </div>
+    </div>
+
     <!-- Features -->
     <section id="features">
         <div class="section-label">Features</div>
@@ -1459,49 +1529,8 @@
         </div>
     </section>
 
-    <!-- AI Section -->
-    <div class="ai-section" id="ai">
-        <div class="ai-grid">
-            <div>
-                <div class="section-label">AI Powered</div>
-                <div class="section-title">Local AI. Private. No cloud.</div>
-                <p style="color: var(--text-dim); margin-bottom: 16px;">Every AI feature runs on YOUR machine. Pick your runner: <strong>Ollama</strong>, <strong>llama.cpp</strong> (loads any GGUF), <strong>LM Studio</strong>, <strong>Jan</strong>, <strong>vLLM</strong>, <strong>KoboldCpp</strong>, <strong>text-generation-webui</strong>, or anything that speaks OpenAI's <code>/v1/chat/completions</code>. Nothing leaves your computer. No mandatory API key. No subscription. No telemetry.</p>
-                <p style="color: var(--text-dim); margin-bottom: 24px;">When the regex fixer can't repair your broken JSON — the AI can. Hybrid approach: speed of regex, intelligence of AI.</p>
-                <div class="ai-actions">
-                    <span class="ai-tag">Explain Code</span>
-                    <span class="ai-tag">Find Bugs</span>
-                    <span class="ai-tag">Refactor</span>
-                    <span class="ai-tag">Write Tests</span>
-                    <span class="ai-tag">Fix JSON</span>
-                    <span class="ai-tag">Fix HTML</span>
-                    <span class="ai-tag">Fix Brackets</span>
-                    <span class="ai-tag">Add Comments</span>
-                    <span class="ai-tag">Generate Docs</span>
-                    <span class="ai-tag">Optimize</span>
-                    <span class="ai-tag">Translate Py↔JS</span>
-                </div>
-            </div>
-            <div class="ai-code">
-                <span class="comment">// Broken JSON input</span><br>
-                {users: [{'id': 1, name: 'Alice',}<br>
-                <br>
-                <span class="comment">// Notepatra fixes it instantly:</span><br>
-                <span class="comment">// ✓ single quotes → double quotes</span><br>
-                <span class="comment">// ✓ unquoted keys quoted</span><br>
-                <span class="comment">// ✓ trailing commas removed</span><br>
-                <span class="comment">// ✓ missing braces added</span><br>
-                <br>
-                {<br>
-                &nbsp;&nbsp;<span class="string">"users"</span>: [<br>
-                &nbsp;&nbsp;&nbsp;&nbsp;{<br>
-                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="string">"id"</span>: <span class="number">1</span>,<br>
-                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="string">"name"</span>: <span class="string">"Alice"</span><br>
-                &nbsp;&nbsp;&nbsp;&nbsp;}<br>
-                &nbsp;&nbsp;]<br>
-                }<span class="cursor">|</span>
-            </div>
-        </div>
-    </div>
+    <!-- AI section moved UP above Features earlier in the page;
+         old duplicate removed from here. -->
 
     <!-- Plugins -->
     <section id="plugins">
