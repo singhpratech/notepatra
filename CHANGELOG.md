@@ -7,6 +7,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.14] — 2026-04-20
+
+The **MSI release** — Windows `notepatra-0.1.14.msi` finally ships after four WiX debug cycles (CNDL0005 → LGHT0091 → LGHT0094 → LGHT0130). Plus a wave of UX polish that stacked up since v0.1.13.
+
+### Added
+- 🪟 **Windows MSI installer** (`notepatra-0.1.14.msi`, ~37 MB). Per-machine install, `MajorUpgrade` via stable `UpgradeCode`, 27 file-type associations via unified `Notepatra.Document` ProgId, system PATH entry, Start Menu shortcut, optional Desktop shortcut, launch-after-install checkbox, Add/Remove Programs entry with icon + help URL + home URL.
+- 🔍 **Project Search** — new top-level tool. `Tools → Project Search` / `Ctrl+Shift+G`. Threaded recursive search across file names AND contents. No size limit (streams line-by-line), any text-based language, exact `line:col` coordinates, double-click jumps caret to the matched character, skips binary files via NUL-byte heuristic, cancellable anytime.
+- 🤖 **Universal local AI** — `Settings → Preferences → AI` now lets users pick any of: Ollama (default), llama.cpp (loads GGUF directly), or OpenAI-compat (LM Studio, Jan, vLLM, KoboldCpp, llamafile, text-generation-webui, OpenRouter, OpenAI itself). New `OllamaClient::Backend` enum dispatches per backend. Bearer-token auth for authed endpoints via `Config::aiApiKey`.
+- 🎉 **Welcome tab** — first-launch UX with hero, quick actions (New / Open / Open Folder), recent files, 3×3 feature grid (each card launches its menu action), 16-shortcut keyboard reference, theme-aware, rebuilds on theme switch.
+- 💾 **VS Code-style Git panel** — SOURCE CONTROL header, branch pill, commit-message `QPlainTextEdit`, big green Commit button, `Ctrl+Enter` commits.
+- 🖱️ **Clickable status bar** — Language / Encoding / EOL indicators pop the matching change-menu at cursor.
+- 📅 **Edit → Insert** — five date/time formats (Ctrl+F5).
+- 🧰 **Portable-zip file associations** — `notepatra-windows-x64.zip` bundles `register-associations.bat` / `unregister-associations.bat`; one double-click adds Notepatra to Windows "Open with" for 28 extensions (HKCU only, no admin).
+
+### Changed
+- 📂 **Menu reorganisation**: `Tools` = every built-in feature · `Plugins` = user-installable extensions only · `Utilities` = small helpers (Hash, Measurement) · `Help` (was `?`).
+- 🎨 **Theme-aware formatter panels** — JSON / HTML / Bracket / SQL tabs now read `Config::theme` at construction. Light Clay palette or Dark grays to match the editor.
+- 🔀 **Compare polish** — files-identical popup + ✕ Close button + line:col pinpoint jumps + word-level LCS diff with dark mode.
+- 🌐 **Website** — new Apple-inspired product showcase + pillars, scroll progress bar, sticky download CTA, scroll-triggered fade-ins, animated stat counters, full llama.cpp + OpenAI-compat documentation, truth-audit of all stats.
+
+### Fixed
+- Status bar `Pos` indicator was showing line number twice (`%1` used for both fields).
+- Duplicate `Ctrl+Shift+S` shortcut — Save All moved to `Ctrl+Alt+S`.
+- Auto-complete `Config::autoComplete` and `Config::autoCompleteThreshold` settings now actually take effect.
+- Macro recording state survived tab switches — now ends cleanly.
+- `CompareDialog` memory leak — added `Qt::WA_DeleteOnClose`.
+- Welcome tab card-clipping — replaced `QPushButton` with `ClickableCard` QFrame subclass.
+- macOS Tahoe silent-launch — Info.plist, entitlements.plist, hardened-runtime re-sign.
+
+### Verifying this release
+Same as previous — SHA-256, cosign, SLSA. See [SECURITY.md](https://github.com/singhpratech/notepatra/blob/main/SECURITY.md).
+
+
 ## [0.1.13] — 2026-04-20
 
 Follow-up to v0.1.12 — ships the features that landed on `main` right after the v0.1.12 tag: Welcome tab, compare Files-identical popup + Close button, WiX MSI build fix, portable-zip file-association helpers, and the Apple-inspired website polish. No behaviour changes to what v0.1.12 already delivered — this release is purely additive.
