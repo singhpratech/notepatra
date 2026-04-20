@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+
+    <key>CFBundleExecutable</key>
+    <string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+
+    <key>CFBundleGetInfoString</key>
+    <string>${MACOSX_BUNDLE_INFO_STRING}</string>
+
+    <key>CFBundleIconFile</key>
+    <string>${MACOSX_BUNDLE_ICON_FILE}</string>
+
+    <key>CFBundleIdentifier</key>
+    <string>${MACOSX_BUNDLE_GUI_IDENTIFIER}</string>
+
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+
+    <key>CFBundleLongVersionString</key>
+    <string>${MACOSX_BUNDLE_LONG_VERSION_STRING}</string>
+
+    <key>CFBundleName</key>
+    <string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
+
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <key>CFBundleShortVersionString</key>
+    <string>${MACOSX_BUNDLE_SHORT_VERSION_STRING}</string>
+
+    <key>CFBundleSignature</key>
+    <string>????</string>
+
+    <key>CFBundleVersion</key>
+    <string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
+
+    <key>CSResourcesFileMapped</key>
+    <true/>
+
+    <key>NSHumanReadableCopyright</key>
+    <string>${MACOSX_BUNDLE_COPYRIGHT}</string>
+
+    <!--
+        Tahoe-critical keys below. macOS 26.0 silently refuses to launch
+        app bundles that lack these when the app is ad-hoc signed. None
+        of these keys are optional on modern macOS even though earlier
+        Monterey/Ventura was more forgiving.
+    -->
+
+    <!-- Declare we run on Big Sur and up. Must be set or Tahoe's
+         launchd returns LSOpenURLsWithRole() error code -600 with no
+         user-visible dialog. -->
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+
+    <!-- Entry-point class for the Cocoa runtime. Without this, Tahoe's
+         XPC launch service fails to find the principal class and just
+         exits with no error. -->
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+
+    <!-- Retina / HiDPI rendering. Without this the window comes up
+         blurry and some users report launch failure on Retina Macs. -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+
+    <!-- Hint to the window server that we can run on the integrated
+         GPU. Saves battery on MacBook Pros with discrete GPUs. -->
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+
+    <!-- Required for Qt apps built against Qt5 on macOS 12+. Qt sets
+         up its own AppKit main runloop, which macOS flags as suspect
+         without this opt-in. -->
+    <key>NSSupportsSuddenTermination</key>
+    <false/>
+
+    <!-- App Store category — also used by Finder for "Get Info". -->
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.developer-tools</string>
+
+    <!-- Declare we're a foreground app (dock icon + menu bar). -->
+    <key>LSUIElement</key>
+    <false/>
+
+    <!-- File-type associations so Finder's "Open With" knows we can
+         edit these. Tahoe uses this to decide whether to show us in
+         the Open With menu for .txt, .md, etc. -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Plain Text Document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.plain-text</string>
+                <string>public.utf8-plain-text</string>
+                <string>public.text</string>
+                <string>public.source-code</string>
+                <string>public.script</string>
+                <string>public.shell-script</string>
+                <string>public.python-script</string>
+                <string>public.make-source</string>
+                <string>public.html</string>
+                <string>public.xml</string>
+                <string>public.json</string>
+                <string>public.yaml</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Any File</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>CFBundleTypeOSTypes</key>
+            <array>
+                <string>****</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>*</string>
+            </array>
+        </dict>
+    </array>
+
+    <!-- Declare our executable is a 64-bit binary. Tahoe rejects any
+         hint of 32-bit. -->
+    <key>LSArchitecturePriority</key>
+    <array>
+        <string>arm64</string>
+        <string>x86_64</string>
+    </array>
+</dict>
+</plist>

@@ -301,10 +301,51 @@ jobs:
             echo "✓ All bundled binaries use @rpath or system paths — no Homebrew absolutes"
           fi
 
-          # ─── Step 8: Ad-hoc re-sign the whole bundle so every modified
-          # load command has a fresh signature. Deep + force so embedded
-          # frameworks inherit the new signature too.
-          codesign --force --deep --sign - "$APP"
+          # ─── Step 8: Ad-hoc re-sign the whole bundle with hardened
+          # runtime + entitlements so macOS Tahoe (26.0) will actually
+          # let it launch. Without these flags, Tahoe silently rejects
+          # ad-hoc-signed bundles at fork/exec time with no user-visible
+          # error, just a failed launch. Order matters:
+          #   1. Sign inner frameworks and dylibs first (deepest wins).
+          #   2. Sign the main bundle with entitlements last.
+          ENTITLEMENTS="$GITHUB_WORKSPACE/resources/entitlements.plist"
+          if [ ! -f "$ENTITLEMENTS" ]; then
+            echo "::error::entitlements.plist missing — Tahoe launch will fail"
+            exit 1
+          fi
+
+          # Sign every dylib / framework binary inside the bundle with
+          # hardened runtime so library validation doesn't reject them.
+          find "$APP/Contents/Frameworks" -type f \( -name "*.dylib" -o -name "*.so" \) 2>/dev/null | \
+            while read -r lib; do
+              codesign --force --sign - --options runtime --timestamp=none "$lib" 2>/dev/null || true
+            done
+          find "$APP/Contents/Frameworks" -type d -name "*.framework" 2>/dev/null | \
+            while read -r fw; do
+              codesign --force --sign - --options runtime --timestamp=none "$fw" 2>/dev/null || true
+            done
+          # Plugin dylibs under Contents/PlugIns
+          find "$APP/Contents/PlugIns" -type f -name "*.dylib" 2>/dev/null | \
+            while read -r plug; do
+              codesign --force --sign - --options runtime --timestamp=none "$plug" 2>/dev/null || true
+            done
+
+          # Sign the main bundle LAST with entitlements + hardened
+          # runtime. This is what makes Tahoe's launch service happy.
+          codesign --force --deep --sign - \
+            --options runtime \
+            --entitlements "$ENTITLEMENTS" \
+            --timestamp=none \
+            "$APP"
+
+          # Verify the signature satisfies Gatekeeper's minimum bar.
+          # spctl --assess will still warn (unsigned/unnotarized), but
+          # `codesign -v` must pass or the app definitely won't launch.
+          codesign -v --verbose=4 "$APP" || {
+            echo "::error::codesign verification failed — Tahoe will reject this bundle"
+            exit 1
+          }
+          echo "✓ Bundle signed with hardened runtime + entitlements"
 
           # ─── Step 9: Create the DMG
           hdiutil create -volname "Notepatra" -srcfolder "$APP" -ov -format UDZO build/Notepatra.dmg

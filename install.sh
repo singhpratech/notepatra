@@ -196,16 +196,51 @@ if [ "$OS" = "darwin" ]; then
             ;;
     esac
 
-    # ─── macOS Tahoe / Sequoia / Sonoma Gatekeeper workaround ───────────
-    # Notepatra is not (yet) Apple-notarized, so the quarantine attribute
-    # added by curl + DMG mount triggers Gatekeeper to refuse to launch
-    # the app with "Notepatra is damaged and can't be opened". On modern
-    # macOS the only way to bypass this without notarization is to clear
-    # the quarantine flag recursively. Ad-hoc codesign re-anchors the
-    # bundle so its embedded frameworks pass verification.
-    echo "  Clearing quarantine + ad-hoc signing for Gatekeeper..."
+    # ─── macOS Gatekeeper / Tahoe workaround ─────────────────────────────
+    # Notepatra is an unsigned-by-apple open-source GPL project. We do NOT
+    # pay $99/year for a Developer ID, so the bundle ships with an ad-hoc
+    # signature + embedded entitlements. Modern macOS (especially Tahoe 26)
+    # will otherwise silently refuse to launch it on double-click.
+    #
+    # This section does the bulletproof clean-up:
+    #   1. Strip ALL extended attributes, not just com.apple.quarantine.
+    #      Tahoe sometimes adds com.apple.provenance or com.apple.macl
+    #      which also trip Gatekeeper.
+    #   2. Re-sign ad-hoc with hardened runtime + our entitlements plist
+    #      (embedded in the bundle at Contents/Resources/entitlements.plist
+    #      by the build). This satisfies Tahoe's launch-time probe.
+    #   3. Warm up launchd with `open` so the first run through Finder
+    #      doesn't get silently denied.
+    echo "  Clearing ALL xattrs + re-signing bundle for Gatekeeper..."
+    $SUDO xattr -cr "$APP_PATH" 2>/dev/null || true
     $SUDO xattr -dr com.apple.quarantine "$APP_PATH" 2>/dev/null || true
-    $SUDO codesign --force --deep --sign - "$APP_PATH" 2>/dev/null || true
+    $SUDO xattr -dr com.apple.provenance "$APP_PATH" 2>/dev/null || true
+    $SUDO xattr -dr com.apple.macl "$APP_PATH" 2>/dev/null || true
+
+    # Prefer bundled entitlements if our installer shipped them
+    ENTITLEMENTS_IN_BUNDLE="$APP_PATH/Contents/Resources/entitlements.plist"
+    if [ -f "$ENTITLEMENTS_IN_BUNDLE" ]; then
+        $SUDO codesign --force --deep --sign - \
+            --options runtime \
+            --entitlements "$ENTITLEMENTS_IN_BUNDLE" \
+            --timestamp=none \
+            "$APP_PATH" 2>/dev/null || \
+        $SUDO codesign --force --deep --sign - "$APP_PATH" 2>/dev/null || true
+    else
+        $SUDO codesign --force --deep --sign - "$APP_PATH" 2>/dev/null || true
+    fi
+
+    # Verify the signature — if codesign -v fails, bundle is broken and
+    # Tahoe will never launch it no matter what the user does.
+    if ! codesign -v "$APP_PATH" 2>/dev/null; then
+        echo "  ⚠ codesign verification failed — trying deeper re-sign..."
+        $SUDO find "$APP_PATH/Contents/Frameworks" -type f \
+            \( -name "*.dylib" -o -name "*.so" \) 2>/dev/null | \
+            while read -r lib; do
+                $SUDO codesign --force --sign - --timestamp=none "$lib" 2>/dev/null || true
+            done
+        $SUDO codesign --force --deep --sign - "$APP_PATH" 2>/dev/null || true
+    fi
 
     # Symlink the CLI binary so `notepatra` works from any terminal
     if [ -x "$APP_PATH/Contents/MacOS/notepatra" ]; then
@@ -219,18 +254,45 @@ if [ "$OS" = "darwin" ]; then
         fi
     fi
 
+    # Detect macOS major version to tailor the instructions. Tahoe needs
+    # a specific right-click → Open dance that older macOS didn't.
+    MACOS_VER=$(sw_vers -productVersion 2>/dev/null | cut -d. -f1)
     echo ""
     echo "  ✅ Installed to $APP_PATH"
-    echo "     Tested on macOS Sonoma, Sequoia, and Tahoe."
     echo ""
-    echo "  Open from Launchpad, click the launcher, or run:"
-    echo "     open \"$APP_PATH\""
-    echo "     notepatra      # CLI shortcut (open a new terminal first)"
+
+    if [ "$MACOS_VER" -ge 26 ] 2>/dev/null; then
+        # macOS Tahoe or newer — strict Gatekeeper
+        echo "  🔒 macOS Tahoe detected. First-launch requires one extra step:"
+        echo ""
+        echo "     METHOD A (easiest — opens it right now):"
+        echo "       open \"$APP_PATH\""
+        echo ""
+        echo "     METHOD B (Finder):"
+        echo "       1. Open Finder → Applications"
+        echo "       2. RIGHT-click Notepatra → Open"
+        echo "       3. Click 'Open' in the warning dialog"
+        echo "       After this, double-click works normally."
+        echo ""
+        echo "     METHOD C (if both fail — nuke Gatekeeper for this app only):"
+        echo "       sudo spctl --add \"$APP_PATH\""
+        echo "       sudo xattr -cr \"$APP_PATH\""
+    elif [ "$MACOS_VER" -ge 15 ] 2>/dev/null; then
+        # Sequoia
+        echo "  Open with:  open \"$APP_PATH\""
+        echo "  Or: right-click Notepatra.app → Open → Open"
+        echo ""
+        echo "  CLI:  notepatra  (open a new terminal first)"
+    else
+        echo "  Open from Launchpad, Finder, or run:"
+        echo "     open \"$APP_PATH\""
+        echo "     notepatra      # CLI shortcut (open a new terminal first)"
+    fi
     echo ""
-    echo "  If macOS still says 'Notepatra is damaged' the first time:"
-    echo "     1. Right-click Notepatra.app in Finder → Open → Open"
-    echo "     2. OR: System Settings → Privacy & Security → 'Open Anyway'"
-    echo "     3. OR: sudo xattr -cr \"$APP_PATH\""
+    echo "  💡 Why this extra step? Apple charges \$99/yr for 'Developer ID'"
+    echo "     code signing + notarization. Notepatra is free GPL software"
+    echo "     and doesn't pay Apple that tax. You only do this ONCE per"
+    echo "     install."
 else
     # Linux — download binary
     TMPDIR=$(mktemp -d)

@@ -192,13 +192,24 @@ endif()
 
 # ── Executable ──
 if(APPLE)
-    # macOS: build as an app bundle
+    # macOS: build as an app bundle.
+    #
+    # We use a hand-written Info.plist template at resources/Info.plist.in
+    # rather than letting CMake auto-generate a minimal one, because Tahoe
+    # (macOS 26) silently refuses to launch ad-hoc-signed apps that lack
+    # LSMinimumSystemVersion, NSPrincipalClass, NSHighResolutionCapable,
+    # file-type declarations, and arch priority. CMake's default template
+    # doesn't include those keys.
     add_executable(${EXE_NAME} MACOSX_BUNDLE ${SOURCES} ${HEADERS})
     set_target_properties(${EXE_NAME} PROPERTIES
         MACOSX_BUNDLE_BUNDLE_NAME "Notepatra"
         MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_LONG_VERSION_STRING "${PROJECT_VERSION}"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.notepatra.editor"
+        MACOSX_BUNDLE_INFO_STRING "Notepatra ${PROJECT_VERSION} — Native code editor"
+        MACOSX_BUNDLE_COPYRIGHT "© Prateek Singh. GPL-3.0 licensed."
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/resources/Info.plist.in"
     )
     # Embed icon if present
     if(EXISTS "${CMAKE_SOURCE_DIR}/resources/notepatra.icns")
@@ -207,6 +218,15 @@ if(APPLE)
         target_sources(${EXE_NAME} PRIVATE resources/notepatra.icns)
         set_target_properties(${EXE_NAME} PROPERTIES
             MACOSX_BUNDLE_ICON_FILE "notepatra.icns")
+    endif()
+    # Ship entitlements inside the bundle so install.sh can re-sign
+    # the user's local copy without needing network access to fetch
+    # them. macOS codesign reads this during the hardened-runtime
+    # re-sign step in install.sh.
+    if(EXISTS "${CMAKE_SOURCE_DIR}/resources/entitlements.plist")
+        set_source_files_properties(resources/entitlements.plist PROPERTIES
+            MACOSX_PACKAGE_LOCATION "Resources")
+        target_sources(${EXE_NAME} PRIVATE resources/entitlements.plist)
     endif()
 elseif(WIN32)
     # Windows: WIN32 flag suppresses console window
