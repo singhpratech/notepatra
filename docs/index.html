@@ -1452,7 +1452,15 @@
         <div class="section-desc">Built on QScintilla — the same engine that powers Notepad++. With a Rust core for memory safety and zero crashes.</div>
 
         <div class="features-grid">
-            <!-- Project Search promoted to position 1 — the star feature.
+            <!-- AI Assistant promoted to slot 1 — the headline feature,
+                 also highlighted with a Clay-orange border halo so it
+                 visually leads the grid. -->
+            <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
+                <div class="feature-icon fi-orange">🤖</div>
+                <h3>AI Assistant (Ctrl+Shift+A) <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
+                <p>Local-first AI. Pick your runner: <strong>Ollama</strong>, <strong>llama.cpp</strong> (any GGUF), <strong>LM Studio</strong>, <strong>Jan</strong>, <strong>vLLM</strong>, or anything that speaks OpenAI's <code>/v1/chat/completions</code>. Explain · Find Bugs · Refactor · Write Tests · Fix JSON · Add Comments · Optimize · Translate. <strong>No cloud, no mandatory API key, no telemetry.</strong> Your code never leaves your machine.</p>
+            </div>
+            <!-- Project Search at slot 2 — the second star feature.
                  Magnifying-glass icon = look ACROSS the project tree.
                  Distinct from Find & Replace (binoculars, below) which
                  operates INSIDE a single document. Different icons so
