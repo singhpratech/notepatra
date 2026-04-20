@@ -7,3 +7,7 @@ rust-core/target/
 test_lexers
 # Local cross-compile output / release artifacts
 artifacts/
+# Claude Code session metadata — per-user, not project state
+.claude/
+# CTest scratch directory
+Testing/
