@@ -126,6 +126,7 @@ private:
     // input bar. Everything else is still there in the default view.
     QWidget *m_quickActionsWrap = nullptr;  // 8 quick-action buttons
     QWidget *m_resultActionsWrap = nullptr; // Insert/Replace/Copy row
+    QLabel  *m_headerLabel = nullptr;       // top "AI Assistant" strip — swaps colour/text in Coding Mode
     OllamaClient *m_ollama;
     QString m_context;          // selected text (if any) or current file text
     QString m_language;

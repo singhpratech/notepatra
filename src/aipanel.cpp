@@ -406,12 +406,12 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     const AiPalette pal = aiPalette();
 
     // ─── TOP STRIP: Header + model selector + status ────────────────────
-    auto *header = new QLabel("  AI Assistant");
-    header->setFixedHeight(24);
-    header->setStyleSheet(QString(
+    m_headerLabel = new QLabel("  AI Assistant");
+    m_headerLabel->setFixedHeight(24);
+    m_headerLabel->setStyleSheet(QString(
         "font-weight: bold; background: %1; color: %2; padding: 4px 8px;")
         .arg(pal.chromeBg, pal.headerFg));
-    layout->addWidget(header);
+    layout->addWidget(m_headerLabel);
 
     auto *modelRow = new QHBoxLayout;
     modelRow->setContentsMargins(8, 4, 8, 2);
@@ -596,6 +596,20 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         if (m_thinkingCheck)      m_thinkingCheck->setVisible(!checked);
         if (m_quickActionsWrap)   m_quickActionsWrap->setVisible(!checked);
         if (m_resultActionsWrap)  m_resultActionsWrap->setVisible(!checked);
+        // Repaint the top strip so the mode switch is unmistakable —
+        // accent-green "AI · Coding Mode" on, back to neutral off.
+        if (m_headerLabel) {
+            const AiPalette p = aiPalette();
+            m_headerLabel->setText(checked
+                ? "  AI Assistant  ·  ⌘ Coding Mode"
+                : "  AI Assistant");
+            m_headerLabel->setStyleSheet(QString(
+                "font-weight: bold; background: %1; color: %2; padding: 4px 8px;"
+                "border-bottom: 2px solid %3;")
+                .arg(p.chromeBg,
+                     checked ? QStringLiteral("#4EC9B0") : p.headerFg,
+                     checked ? QStringLiteral("#4EC9B0") : QStringLiteral("transparent")));
+        }
         // Re-render the transcript with the new Coding-Mode CSS — flips
         // the chat to monospace + darker surface + "CODING MODE" badge.
         // Crucially, m_messages is NOT touched: switching modes preserves
