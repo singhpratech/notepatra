@@ -1382,22 +1382,20 @@
         <div class="section-desc">Built on QScintilla — the same engine that powers Notepad++. With a Rust core for memory safety and zero crashes.</div>
 
         <div class="features-grid">
-            <!-- Project Search promoted to position 1 — the single most
-                 powerful productivity feature Notepatra ships. -->
+            <!-- Project Search promoted to position 1 — the star feature.
+                 Magnifying-glass icon = look ACROSS the project tree.
+                 Distinct from Find & Replace (binoculars, below) which
+                 operates INSIDE a single document. Different icons so
+                 users can't confuse the two. -->
             <div class="feature-card" style="border-color: rgba(204,120,92,0.35); box-shadow: 0 10px 30px rgba(204,120,92,0.10);">
                 <div class="feature-icon fi-orange">🔎</div>
                 <h3>Project Search (Ctrl+Shift+G) <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
-                <p>Lightning-fast recursive search across file <em>names</em> AND file <em>contents</em>. <strong>No size limit</strong> — streams line by line so a 2 GB log searches the same as a 2 KB script. Exact <code>line:col</code> coordinates, double-click a match to jump the caret to the exact character. Any text-based language (Python, SQL, TXT, C/C++, JS/TS, Rust, Go, HTML, JSON, YAML, Markdown, configs, logs). Skips binary files with a NUL-byte heuristic.</p>
+                <p>Lightning-fast recursive search across file <em>names</em> AND file <em>contents</em>, project-wide. <strong>No size limit</strong> — streams line by line so a 2 GB log searches the same as a 2 KB script. Exact <code>line:col</code> coordinates, double-click a match to jump the caret to the exact character. Any text-based language. Skips binary files with a NUL-byte heuristic.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon fi-blue">⚡</div>
                 <h3>Rust-Powered Core</h3>
                 <p>Memory-mapped file I/O. Aho-Corasick search. Myers diff. Zero crashes on 2 GB files. The heavy lifting runs in compiled Rust — no garbage collector, no runtime.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon fi-green">🔍</div>
-                <h3>Advanced Find &amp; Replace</h3>
-                <p>5-tab search dialog. Regex, extended mode (\n, \t, \xNN). Find in all opened documents. Search results panel — double-click to jump to line.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon fi-purple">📅</div>
@@ -1448,6 +1446,15 @@
                 <div class="feature-icon fi-purple">🧩</div>
                 <h3>Plugin System</h3>
                 <p>Drop a .so/.dll/.dylib in the plugins folder. Simple C API — export 2 functions to create a plugin. JSON, HTML, SQL, Bracket tools all built in.</p>
+            </div>
+            <!-- Find &amp; Replace — operates INSIDE a single document. The
+                 binoculars icon differentiates it from Project Search
+                 (magnifying glass, project-wide) at the top of the grid.
+                 Positioned last so users see the bigger tool first. -->
+            <div class="feature-card">
+                <div class="feature-icon fi-green">🔭</div>
+                <h3>Find &amp; Replace</h3>
+                <p>In-document find / replace / extended mode (\n, \t, \xNN) / regex. Ctrl+F to find, Ctrl+H to replace. For searching across multiple files, use <strong>Project Search</strong> (Ctrl+Shift+G) at the top of this grid instead.</p>
             </div>
         </div>
     </section>
