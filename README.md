@@ -73,6 +73,7 @@ Notepatra started on Linux — because that's where the gap was. But great tools
 - **Custom scrollbars** — clean, modern, rounded
 
 ### Search — Find anything, anywhere
+- **Project Search (`Ctrl+Shift+G`)** — recursive search across **file names AND file contents** in any text-based file. Any size, any language (Python, SQL, C/C++, JS/TS, Rust, Go, HTML, JSON, YAML, Markdown, logs, config). Streams line-by-line so a 2 GB log searches the same as a 2 KB script. Each match shows exact `line:col` coordinates — double-click to jump the caret to the character.
 - **5-tab Find/Replace dialog** — Find, Replace, Find in Files, Mark, Go to
 - **3 search modes** — Normal, Extended (`\n`, `\r`, `\t`, `\xNN`), Regular expression
 - **Find All in Current Document** — results appear in bottom panel, double-click any result to jump to that exact line
@@ -139,40 +140,32 @@ Every plugin opens in its own tab. Real UI, not just a menu click.
 
 ### AI Powered — Local, private, no cloud
 
-Every AI feature uses **Ollama** running on YOUR machine. Nothing leaves your computer. No API key needed. No subscription.
+Pick any local AI runner — **Ollama**, **llama.cpp (GGUF)**, **LM Studio**, **Jan**, **vLLM**, **KoboldCpp**, **llamafile**, or anything speaking OpenAI's `/v1/chat/completions`. Cloud runners (OpenRouter, OpenAI) also supported with an inline API-key paste — no digging into settings. Nothing leaves your machine unless you point it to a cloud backend. No telemetry. No subscription.
 
-**Ollama Status Bar** in every AI tool shows:
-- 🟢 Green dot = Ollama running, model ready
-- 🔴 Red dot = not running, shows setup steps
-- **Model selector dropdown** — pick any installed model (qwen3.5:9b, gemma4:e4b, llama3.2, codellama, mistral, starcoder2)
+#### AI Assistant — Cursor-style dock (`Ctrl+Shift+A`)
+The AI chat lives in a **persistent right-side dock**, not an editor tab. One conversation, preserved across tab switches. Tick **Coding Mode** to open the 3-column coding layout (file tree · editor · AI chat) Cursor/VS Code-style.
 
-#### AI Assistant (Ctrl+Shift+A)
-Opens as a tab. Select code, then:
-- **Explain** — what does this code do?
-- **Find Bugs** — spots issues, suggests fixes
-- **Refactor** — cleaner, more readable code
-- **Write Tests** — generates unit tests
-- **Add Comments** — annotates your code
-- **Generate Docs** — adds docstrings/JSDoc
-- **Optimize** — performance improvements
-- **Mic / STT button** — optional local speech-to-text via `arecord` + `whisper` CLI when installed
-- **Translate** — convert between languages
-- **Custom prompt** — ask anything
+**Workspace awareness.** Every prompt carries:
+- the selection (or full file if no selection is active)
+- the full text of the current file
+- excerpts of every other open editor tab
+- a flat listing of all files under the workspace root (`.git`, `node_modules`, `target`, `dist`, etc. filtered out)
 
-Click **"Insert at Cursor"** or **"Replace Selection"** to use the AI output.
+So the model can reason about files you haven't opened yet — "import from utils.py" works even when utils.py isn't in a tab. Budget-capped so small local models (3B, 4K–8K context) don't overflow.
+
+**One-click actions** (hidden by default, click "▸ Quick actions" to reveal):
+Explain · Find Bugs · Refactor · Write Tests · Add Comments · Generate Docs · Optimize · Translate. Or type a custom prompt. Responses stream in, each has a **Copy** link, and the last response can be inserted at the cursor or replace the selection with one click.
+
+**Speech-to-text** — optional mic button, uses local `arecord` + `whisper` CLI when installed. No audio ever leaves the machine.
 
 #### AI Setup
 ```bash
-# 1. Install Ollama
+# Easiest path: Ollama
 curl -fsSL https://ollama.com/install.sh | sh
-
-# 2. Pull a model
-ollama pull qwen3.5:9b
-
-# 3. Start the server
+ollama pull qwen2.5-coder:3b   # 2 GB, best for code on CPU-only / 16 GB RAM
 ollama serve
 ```
-That's it. Every AI feature in Notepatra now works.
+Notepatra auto-detects the running Ollama and picks the most CPU-friendly model installed. For llama.cpp / LM Studio / OpenRouter, pick the backend from the dropdown at the top of the AI panel; base URL and API key are editable inline.
 
 ### More Features
 
@@ -201,6 +194,7 @@ That's it. Every AI feature in Notepatra now works.
 | | `Ctrl+U` | lowercase |
 | **Search** | `Ctrl+F` | Find |
 | | `Ctrl+H` | Replace |
+| | `Ctrl+Shift+G` | Project Search (folder-wide names + contents) |
 | | `F3` / `Shift+F3` | Find Next / Previous |
 | | `Ctrl+G` | Go to line |
 | | `Ctrl+B` | Go to matching brace |
