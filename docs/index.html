@@ -327,14 +327,16 @@
             font-weight: 600;
         }
         .hero h1 {
-            font-size: clamp(40px, 6vw, 72px);
+            font-size: clamp(44px, 6.5vw, 84px);
             font-weight: 800;
-            line-height: 1.1;
+            line-height: 1.05;
+            letter-spacing: -0.03em;
             margin-bottom: 24px;
             background: linear-gradient(135deg, var(--c-text) 0%, var(--c-accent) 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
+        .hero p { letter-spacing: -0.01em; }
         .hero p {
             font-size: 20px;
             color: var(--text-dim);
@@ -445,6 +447,214 @@
             border-color: var(--c-accent);
             color: var(--c-accent);
             transform: translateY(-2px);
+        }
+
+        /* ─────────────────────────────────────────────────────────
+           Product showcase — Apple-style hero mockup. Pure CSS, no
+           external image. Renders a stylized editor window with
+           subtle shadows, reflecting glass-like chrome, and a small
+           code sample so visitors can see what Notepatra looks like
+           without downloading it.
+           ───────────────────────────────────────────────────────── */
+        .showcase {
+            max-width: 1120px;
+            margin: 20px auto 40px;
+            padding: 0 24px;
+        }
+        .showcase-frame {
+            background: var(--c-surface);
+            border-radius: 22px;
+            box-shadow: 0 50px 100px -20px rgba(20,20,19,0.18),
+                        0 30px 60px -30px rgba(20,20,19,0.22),
+                        0 0 0 1px rgba(20,20,19,0.04);
+            overflow: hidden;
+            position: relative;
+            transform: perspective(1800px) rotateX(4deg);
+            transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        .showcase-frame:hover {
+            transform: perspective(1800px) rotateX(0deg);
+        }
+        .showcase-chrome {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 14px 18px;
+            background: linear-gradient(180deg, var(--c-bone) 0%, var(--c-surface) 100%);
+            border-bottom: 1px solid var(--border);
+        }
+        .showcase-dots { display: flex; gap: 8px; }
+        .showcase-dots span {
+            width: 12px; height: 12px; border-radius: 50%;
+            display: block;
+        }
+        .showcase-dots span:nth-child(1) { background: #FF5F57; }
+        .showcase-dots span:nth-child(2) { background: #FEBC2E; }
+        .showcase-dots span:nth-child(3) { background: #28C840; }
+        .showcase-title {
+            font-size: 13px;
+            color: var(--text-dim);
+            font-weight: 500;
+        }
+        .showcase-body {
+            display: grid;
+            grid-template-columns: 220px 1fr 280px;
+            min-height: 420px;
+        }
+        .showcase-sidebar {
+            background: var(--c-bone);
+            border-right: 1px solid var(--border);
+            padding: 14px 0;
+            font-size: 13px;
+        }
+        .showcase-sidebar .tree-item {
+            padding: 5px 16px;
+            color: var(--text-dim);
+            display: flex; align-items: center; gap: 8px;
+        }
+        .showcase-sidebar .tree-item.active {
+            background: rgba(204,120,92,0.10);
+            color: var(--c-accent);
+            font-weight: 600;
+            border-left: 2px solid var(--c-accent);
+            padding-left: 14px;
+        }
+        .showcase-sidebar .tree-item .glyph { font-size: 11px; opacity: 0.6; }
+        .showcase-editor {
+            padding: 20px 24px;
+            font-family: 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
+            font-size: 13.5px;
+            line-height: 1.7;
+            background: var(--c-surface);
+            color: var(--c-text);
+            overflow: hidden;
+            white-space: pre;
+        }
+        .showcase-editor .ln {
+            color: var(--c-text-muted);
+            display: inline-block;
+            width: 28px;
+            text-align: right;
+            margin-right: 18px;
+            user-select: none;
+            opacity: 0.5;
+        }
+        .showcase-editor .kw  { color: #0550AE; font-weight: 600; }
+        .showcase-editor .fn  { color: #6F42C1; }
+        .showcase-editor .str { color: #0A7D3F; }
+        .showcase-editor .com { color: #6E7781; font-style: italic; }
+        .showcase-editor .num { color: #CF5324; }
+        .showcase-ai {
+            background: var(--c-bone);
+            border-left: 1px solid var(--border);
+            padding: 18px 18px 14px;
+            font-size: 12.5px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .showcase-ai-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-dim);
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .showcase-ai-bubble {
+            background: var(--c-surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 10px 12px;
+            line-height: 1.5;
+        }
+        .showcase-ai-bubble.user {
+            background: rgba(204,120,92,0.10);
+            border-color: rgba(204,120,92,0.22);
+            color: var(--c-accent);
+            font-weight: 500;
+        }
+        .showcase-ai-ollama {
+            font-size: 11px;
+            color: var(--text-dim);
+            display: flex; align-items: center; gap: 6px;
+            margin-top: auto;
+        }
+        .showcase-ai-ollama::before {
+            content: "●"; color: #4FAE5A; font-size: 12px;
+        }
+        @media (max-width: 860px) {
+            .showcase-body { grid-template-columns: 1fr; }
+            .showcase-sidebar, .showcase-ai { display: none; }
+            .showcase-frame { transform: none; }
+        }
+
+        /* ─────────────────────────────────────────────────────────
+           "Designed for..." premium pillars row — three-column
+           layout of high-level benefits, Apple-style iconography
+           and generous whitespace. Pairs with the showcase.
+           ───────────────────────────────────────────────────────── */
+        .pillars {
+            max-width: 1120px;
+            margin: 100px auto 40px;
+            padding: 0 24px;
+        }
+        .pillars-header {
+            text-align: center;
+            max-width: 640px;
+            margin: 0 auto 48px;
+        }
+        .pillars-header h2 {
+            font-size: clamp(32px, 4.5vw, 52px);
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            line-height: 1.1;
+            margin-bottom: 16px;
+        }
+        .pillars-header p {
+            font-size: 18px;
+            color: var(--text-dim);
+            line-height: 1.6;
+        }
+        .pillars-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 28px;
+        }
+        .pillar {
+            padding: 32px;
+            background: var(--c-surface);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            transition: transform 0.4s cubic-bezier(0.2,0.8,0.2,1),
+                        box-shadow 0.4s cubic-bezier(0.2,0.8,0.2,1),
+                        border-color 0.3s;
+        }
+        .pillar:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px -20px rgba(20,20,19,0.15);
+            border-color: rgba(204,120,92,0.35);
+        }
+        .pillar-glyph {
+            font-size: 28px;
+            color: var(--c-accent);
+            margin-bottom: 18px;
+            display: inline-block;
+        }
+        .pillar h3 {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            margin-bottom: 10px;
+            line-height: 1.2;
+        }
+        .pillar p {
+            font-size: 15px;
+            color: var(--text-dim);
+            line-height: 1.6;
+        }
+        @media (max-width: 860px) {
+            .pillars-grid { grid-template-columns: 1fr; }
         }
 
         /* Stats bar */
@@ -943,6 +1153,77 @@
             </a>
         </div>
     </div>
+
+    <!-- Product showcase — Apple-style hero mockup. Pure CSS. -->
+    <section class="showcase" aria-label="Product showcase">
+        <div class="showcase-frame">
+            <div class="showcase-chrome">
+                <div class="showcase-dots"><span></span><span></span><span></span></div>
+                <div class="showcase-title">main.py — Notepatra</div>
+            </div>
+            <div class="showcase-body">
+                <aside class="showcase-sidebar" aria-hidden="true">
+                    <div class="tree-item"><span class="glyph">▾</span>📁 project</div>
+                    <div class="tree-item" style="padding-left:32px;"><span class="glyph">▾</span>📁 src</div>
+                    <div class="tree-item active" style="padding-left:48px;">📄 main.py</div>
+                    <div class="tree-item" style="padding-left:48px;color:var(--text-dim);">📄 utils.py</div>
+                    <div class="tree-item" style="padding-left:48px;color:var(--text-dim);">📄 api.py</div>
+                    <div class="tree-item" style="padding-left:32px;"><span class="glyph">▸</span>📁 tests</div>
+                    <div class="tree-item" style="padding-left:16px;color:var(--text-dim);">📄 README.md</div>
+                    <div class="tree-item" style="padding-left:16px;color:var(--text-dim);">📄 pyproject.toml</div>
+                </aside>
+                <div class="showcase-editor"><span class="com"><span class="ln">1</span># Notepatra — written in C++ + Rust, runs everywhere.</span>
+<span class="com"><span class="ln">2</span># Local AI. Zero telemetry. 5 MB binary.</span>
+<span class="ln">3</span>
+<span class="kw"><span class="ln">4</span>import</span> json
+<span class="kw"><span class="ln">5</span>from</span> typing <span class="kw">import</span> Optional
+<span class="ln">6</span>
+<span class="kw"><span class="ln">7</span>def</span> <span class="fn">greet</span>(name: str, mood: Optional[str] = <span class="kw">None</span>) -&gt; str:
+<span class="com"><span class="ln">8</span>    """Return a greeting, with optional mood context."""</span>
+<span class="kw"><span class="ln">9</span>    if</span> mood:
+<span class="ln">10</span>        <span class="kw">return</span> <span class="str">f"Hello, {name}! You seem {mood} today."</span>
+<span class="ln">11</span>    <span class="kw">return</span> <span class="str">f"Hello, {name}!"</span>
+<span class="ln">12</span>
+<span class="kw"><span class="ln">13</span>if</span> __name__ == <span class="str">"__main__"</span>:
+<span class="ln">14</span>    <span class="kw">print</span>(<span class="fn">greet</span>(<span class="str">"World"</span>, <span class="str">"curious"</span>))
+<span class="ln">15</span>    <span class="kw">print</span>(<span class="fn">greet</span>(<span class="str">"Alice"</span>))</div>
+                <aside class="showcase-ai" aria-hidden="true">
+                    <div class="showcase-ai-title">AI Assistant</div>
+                    <div class="showcase-ai-bubble user">Explain this function.</div>
+                    <div class="showcase-ai-bubble">
+                        <code>greet()</code> returns a personalized hello message. If <code>mood</code> is passed, it's woven into the response; otherwise it falls back to a simple greeting. Type hints make the Optional[str] explicit.
+                    </div>
+                    <div class="showcase-ai-bubble user" style="margin-top:6px;">Write a pytest for it.</div>
+                    <div class="showcase-ai-ollama">ollama · qwen2.5-coder:3b · local</div>
+                </aside>
+            </div>
+        </div>
+    </section>
+
+    <!-- "Designed for..." premium pillars. -->
+    <section class="pillars" aria-label="Design pillars">
+        <div class="pillars-header">
+            <h2>Designed for people who write code.</h2>
+            <p>Every detail — typography, keybindings, palette, latency — is tuned for flow. Nothing is by accident.</p>
+        </div>
+        <div class="pillars-grid">
+            <div class="pillar">
+                <div class="pillar-glyph">⚡</div>
+                <h3>Instant at every scale.</h3>
+                <p>Rust memory-mapped I/O opens 2 GB files without breaking a sweat. 44 language lexers, 100+ file types. Native execution — not Electron.</p>
+            </div>
+            <div class="pillar">
+                <div class="pillar-glyph">🛡</div>
+                <h3>Private by design.</h3>
+                <p>AI runs locally via Ollama. No telemetry. No analytics. No API key. No cloud. Your code never leaves your machine unless you click "git push".</p>
+            </div>
+            <div class="pillar">
+                <div class="pillar-glyph">✦</div>
+                <h3>Everything built-in.</h3>
+                <p>AI · Compare with word-level diff · Git · Terminal · JSON/HTML/SQL formatters · REST client · Macros. No plugins to hunt for. Zero configuration to get started.</p>
+            </div>
+        </div>
+    </section>
 
     <!-- Stats -->
     <div class="stats">
