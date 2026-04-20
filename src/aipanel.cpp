@@ -405,14 +405,38 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         if (models.isEmpty()) {
             m_modelCombo->addItem("(no models installed)");
             m_modelCombo->setEnabled(false);
-            setStatus("Ollama running but no models. Run: ollama pull qwen2.5:7b", true);
+            setStatus("Ollama running but no models. Pull a small one: "
+                      "ollama pull qwen2.5-coder:3b", true);
         } else {
             m_modelCombo->addItems(models);
             m_modelCombo->setEnabled(true);
+            // Auto-pick the most CPU-friendly small model on first run.
+            // Priority: qwen2.5-coder:3b > qwen2.5:3b > gemma2:2b > llama3.2:3b
+            // > gemma3:4b > qwen2.5:7b > anything else. This matters on CPU-
+            // only / 16 GB RAM laptops where a 7B+ model will swap to disk.
+            auto pickPreferred = [&models]() -> int {
+                const QStringList priority = {
+                    "qwen2.5-coder:3b", "qwen2.5-coder:1.5b",
+                    "qwen2.5:3b", "qwen2.5:1.5b",
+                    "gemma2:2b", "gemma3:4b", "gemma3:2b",
+                    "llama3.2:3b", "llama3.2:1b",
+                    "phi3.5:3.8b", "phi3:mini",
+                    "qwen2.5-coder:7b", "qwen2.5:7b",
+                    "codellama:7b", "mistral:7b"
+                };
+                for (const QString &p : priority) {
+                    int idx = models.indexOf(p);
+                    if (idx >= 0) return idx;
+                }
+                return 0;
+            };
             int idx = m_modelCombo->findText(prev);
-            if (idx >= 0) m_modelCombo->setCurrentIndex(idx);
-            setStatus(QString("Ollama: %1 model%2 detected").arg(models.size())
-                      .arg(models.size() == 1 ? "" : "s"), false);
+            if (idx < 0) idx = pickPreferred();
+            m_modelCombo->setCurrentIndex(idx);
+            setStatus(QString("Ollama: %1 model%2 detected · using %3")
+                      .arg(models.size())
+                      .arg(models.size() == 1 ? "" : "s")
+                      .arg(m_modelCombo->currentText()), false);
         }
     });
     connect(m_ollama, &OllamaClient::modelsError, this, [this](const QString &reason) {
@@ -735,10 +759,16 @@ void AIPanel::sendPrompt(const QString &action) {
         clearChat();
         setStatus("No Ollama model selected", true);
         appendErrorBubble(
-            "No Ollama model selected.\n"
+            "No Ollama model selected.\n\n"
             "1. Install Ollama: https://ollama.com\n"
             "2. Start it: ollama serve\n"
-            "3. Pull a model: ollama pull qwen2.5:7b\n"
+            "3. Pull a model. On CPU-only / 16 GB RAM laptops, small\n"
+            "   models run fast and don't swap. Pick one:\n\n"
+            "     ollama pull qwen2.5-coder:3b   (~2 GB, best for code)\n"
+            "     ollama pull qwen2.5:3b         (~2 GB, general)\n"
+            "     ollama pull gemma2:2b          (~1.6 GB, smallest)\n"
+            "     ollama pull gemma3:4b          (~3 GB, newer)\n"
+            "     ollama pull llama3.2:3b        (~2 GB, Meta)\n\n"
             "4. Click the refresh button above");
         return;
     }

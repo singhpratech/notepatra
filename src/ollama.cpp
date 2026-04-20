@@ -99,8 +99,21 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
 
     QJsonObject options;
     options["temperature"] = 0.3;
-    options["num_predict"] = 4096;
+    options["num_predict"] = 2048;   // cap output — CPU inference pays per token
+    options["num_ctx"] = 4096;       // smaller context window = faster on CPU
+                                     // + much lower RAM (8k ctx on 7B ≈ 10 GB).
+                                     // GPU users lose nothing; prompt templates
+                                     // almost never exceed 4k in our use cases.
+    options["repeat_penalty"] = 1.1;
+                                     // Intentionally NOT setting num_thread /
+                                     // num_gpu — Ollama auto-detects and picks
+                                     // GPU-offload if available, falls back to
+                                     // all-CPU on laptops without a dGPU.
     body["options"] = options;
+    body["keep_alive"] = "5m";       // keep model in RAM for 5 min of idle so
+                                     // subsequent prompts don't re-load the
+                                     // weights (big win on CPU — re-loading
+                                     // a 3B model from disk takes ~10-15 s).
 
     QUrl url(m_baseUrl + "/api/generate");
     QNetworkRequest req(url);
