@@ -708,6 +708,29 @@ MainWindow::MainWindow() {
     m_tabs = new TabManager;
     m_splitter->addWidget(m_tabs);
 
+    // Right: AI Assistant side-dock (hidden by default). Gives users the
+    // Cursor / VS Code Copilot 3-column layout on demand:
+    //    [ FileExplorer | EditorTabs | AIPanel (right dock) ]
+    // Toggle via Tools → Dock AI Assistant on Right, or Ctrl+Alt+A.
+    // The dock re-uses the same AIPanel widget class as the tab-based
+    // AI Assistant — identical functionality, different surface.
+    m_aiDockHost = new QWidget;
+    m_aiDockHost->setMinimumWidth(320);
+    m_aiDockHost->setMaximumWidth(640);
+    auto *aiDockLayout = new QVBoxLayout(m_aiDockHost);
+    aiDockLayout->setContentsMargins(0, 0, 0, 0);
+    aiDockLayout->setSpacing(0);
+    m_aiDockPanel = new AIPanel;
+    aiDockLayout->addWidget(m_aiDockPanel);
+    connect(m_aiDockPanel, &AIPanel::insertText, this, [this](const QString &text) {
+        if (auto *e = currentEditor()) e->insert(text);
+    });
+    connect(m_aiDockPanel, &AIPanel::replaceSelection, this, [this](const QString &text) {
+        if (auto *e = currentEditor(); e && e->hasSelectedText()) e->replaceSelectedText(text);
+    });
+    m_aiDockHost->setVisible(false);
+    m_splitter->addWidget(m_aiDockHost);
+
     connect(m_tabs, &QTabWidget::tabCloseRequested, this, &MainWindow::closeTab);
     connect(m_tabs, &QTabWidget::currentChanged, this, [this](int) {
         if (m_macroRecording && m_macro) {
@@ -1461,6 +1484,17 @@ void MainWindow::buildMenus() {
     };
 
     sectionHeader("AI");
+
+    // --- Dock AI on the right (Cursor-style 3-column layout) ---
+    auto *aiDockAct = feat->addAction("Dock AI Assistant on Right    Ctrl+Alt+A");
+    aiDockAct->setCheckable(true);
+    aiDockAct->setShortcut(QKeySequence("Ctrl+Alt+A"));
+    aiDockAct->setStatusTip("Toggle the AI Assistant as a right-side panel — "
+                            "3-column layout with file tree on left, editor in middle.");
+    connect(aiDockAct, &QAction::triggered, this, [this, aiDockAct]() {
+        toggleAiDock();
+        if (aiDockAct) aiDockAct->setChecked(m_aiDockHost && m_aiDockHost->isVisible());
+    });
 
     // --- AI Assistant ---
     // Label no longer says "Ollama" because v0.1.14 supports Ollama,
@@ -3273,6 +3307,29 @@ void MainWindow::openComparePicker(const QString &tabLabel) {
     // files are identical and the user clicks "Close comparison" in the
     // popup — that path emits closeRequested immediately.
     cmp->compare(leftText, leftName, rightText, rightName);
+}
+
+// ── Cursor-style AI dock toggle ────────────────────────────────────────────
+// Shows the AIPanel on the right of the editor so the window reads
+// left-to-right as: FileExplorer · EditorTabs · AIPanel. When toggled
+// on, also auto-opens the file-tree sidebar so users get the full
+// 3-column coding layout immediately.
+void MainWindow::toggleAiDock() {
+    if (!m_aiDockHost) return;
+    const bool show = !m_aiDockHost->isVisible();
+    m_aiDockHost->setVisible(show);
+    if (show) {
+        if (m_explorer && !m_explorer->isVisible()) m_explorer->setVisible(true);
+        // Seed the dock AI panel with the current tab's code so the
+        // user can ask about what's on screen immediately.
+        if (m_aiDockPanel) {
+            if (auto *e = currentEditor()) {
+                m_aiDockPanel->setContext(
+                    e->hasSelectedText() ? e->selectedText() : e->text(),
+                    e->filePath(), e->language());
+            }
+        }
+    }
 }
 
 // ── Welcome tab ────────────────────────────────────────────────────────────

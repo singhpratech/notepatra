@@ -103,6 +103,12 @@ private:
     TerminalWidget *m_terminal = nullptr;
     MarkdownPreview *m_mdPreview = nullptr;
     AIPanel *m_aiPanel = nullptr;
+    // Cursor-style right dock — AI Assistant docked on the right so
+    // users get the classic 3-column coding layout (file tree | editor
+    // | AI chat). Toggleable from View menu / toolbar / Coding Mode.
+    QWidget *m_aiDockHost = nullptr;
+    AIPanel *m_aiDockPanel = nullptr;
+    void toggleAiDock();
     RestClient *m_restClient = nullptr;
     GitPanel *m_gitPanel = nullptr;
     SqlFmtPanel *m_sqlFmtPanel = nullptr;
