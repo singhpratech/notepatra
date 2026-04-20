@@ -390,6 +390,68 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     });
     modelRow->addWidget(backendCombo);
 
+    // ─── API-key inline prompt (shown only when a cloud backend is
+    // selected AND Config::aiApiKey is empty). Lets users paste their
+    // OpenRouter / OpenAI key right in the AI panel without digging
+    // into Settings → Preferences → AI. Saves on Enter.
+    auto *apiKeyHost = new QWidget;
+    apiKeyHost->setVisible(false);
+    auto *apiKeyRow = new QHBoxLayout(apiKeyHost);
+    apiKeyRow->setContentsMargins(8, 2, 8, 4);
+    apiKeyRow->setSpacing(6);
+    auto *apiKeyLabel = new QLabel("API key:");
+    apiKeyLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
+    apiKeyRow->addWidget(apiKeyLabel);
+    auto *apiKeyInput = new QLineEdit;
+    apiKeyInput->setEchoMode(QLineEdit::Password);
+    apiKeyInput->setPlaceholderText("Paste your API key (sk-or-v1-... for OpenRouter). Stored locally only.");
+    apiKeyInput->setStyleSheet(QString(
+        "QLineEdit { background: %1; color: %2; border: 1px solid %3; "
+        "border-radius: 4px; padding: 4px 8px; font-size: 12px; }"
+        "QLineEdit:focus { border: 1px solid %4; }")
+        .arg(pal.inputBg, pal.inputText, pal.inputBorder, pal.inputFocus));
+    apiKeyRow->addWidget(apiKeyInput, 1);
+    auto *apiKeySaveBtn = new QPushButton("Save");
+    apiKeySaveBtn->setFixedHeight(26);
+    apiKeySaveBtn->setFixedWidth(60);
+    apiKeySaveBtn->setStyleSheet(QString(
+        "QPushButton { background: %1; color: white; border: none; "
+        "border-radius: 4px; font-size: 11px; font-weight: 600; }"
+        "QPushButton:hover { background: %2; }")
+        .arg(pal.accent, pal.userBorder));
+    apiKeyRow->addWidget(apiKeySaveBtn);
+
+    auto showKeyRow = [apiKeyHost, apiKeyInput, backendCombo]() {
+        const QString key = backendCombo->currentData().toString();
+        const bool needsKey = (key == "OpenRouter" || key == "OpenAI" || key == "Custom");
+        const QString existing = Config::instance().aiApiKey;
+        if (needsKey && existing.isEmpty()) {
+            apiKeyInput->clear();
+            apiKeyInput->setPlaceholderText(key == "OpenRouter"
+                ? "Paste your OpenRouter key (sk-or-v1-...) — get one at openrouter.ai/keys"
+                : key == "OpenAI"
+                    ? "Paste your OpenAI key (sk-...) — get one at platform.openai.com"
+                    : "Paste API key (leave empty if the server doesn't require one)");
+            apiKeyHost->setVisible(true);
+        } else if (needsKey && !existing.isEmpty()) {
+            apiKeyInput->setText(existing);
+            apiKeyHost->setVisible(true);  // keep visible so users can update
+        } else {
+            apiKeyHost->setVisible(false);
+        }
+    };
+    auto saveKey = [apiKeyInput]() {
+        auto &cfg = Config::instance();
+        cfg.aiApiKey = apiKeyInput->text().trimmed();
+        cfg.save();
+    };
+    connect(apiKeySaveBtn, &QPushButton::clicked, this, saveKey);
+    connect(apiKeyInput, &QLineEdit::returnPressed, this, saveKey);
+    connect(backendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [showKeyRow](int) { showKeyRow(); });
+    // Call once on construction to reflect current backend state
+    showKeyRow();
+
     modelRow->addWidget(new QLabel("Model:"));
     m_modelCombo = new QComboBox;
     m_modelCombo->setEditable(true);
@@ -448,6 +510,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     m_clearBtn->setToolTip("Reset the AI Assistant session");
     modelRow->addWidget(m_clearBtn);
     layout->addLayout(modelRow);
+    layout->addWidget(apiKeyHost);
 
     m_statusLabel = new QLabel("");
     m_statusLabel->setStyleSheet(QString(
