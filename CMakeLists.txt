@@ -40,7 +40,7 @@ endif()
 message(STATUS "Building for platform: ${PLATFORM_NAME}")
 
 # ── Qt5 ──
-find_package(Qt5 REQUIRED COMPONENTS Widgets PrintSupport Network)
+find_package(Qt5 REQUIRED COMPONENTS Widgets PrintSupport Network Concurrent)
 
 # ── QScintilla ──
 # Platform-specific search for QScintilla headers and library.
@@ -261,6 +261,7 @@ target_link_libraries(${EXE_NAME} PRIVATE
     Qt5::Widgets
     Qt5::PrintSupport
     Qt5::Network
+    Qt5::Concurrent
     ${QSCINTILLA_LIB}
     ${RUST_LIB}
 )

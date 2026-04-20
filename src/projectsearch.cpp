@@ -4,6 +4,9 @@
 #include "rustbridge.h"
 
 #include <QMetaType>
+#include <QtConcurrent/QtConcurrent>
+#include <QMutex>
+#include <atomic>
 
 static int s_paramsTypeId = qRegisterMetaType<ProjectSearchWorker::Params>("ProjectSearchWorker::Params");
 static int s_matchTypeId  = qRegisterMetaType<ProjectSearchMatch>("ProjectSearchMatch");
@@ -140,11 +143,16 @@ void ProjectSearchWorker::search(const Params &p) {
     const int totalFiles = queue.size();
     emit filesCounted(totalFiles);
 
-    int filesDone = 0;
-    int totalMatches = 0;
+    // Shared counters — threads bump these via atomic ops so the progress
+    // signal stays coherent when several workers finish at the same time.
+    std::atomic<int> filesDoneAtomic{0};
+    std::atomic<int> totalMatchesAtomic{0};
+    // Emitting matchFound from worker threads: connections are made with
+    // AutoConnection, so queued-dispatch to the UI thread happens
+    // automatically. No mutex needed around the emit itself.
 
-    for (const QString &path : queue) {
-        if (m_cancel.load()) break;
+    auto searchOne = [&, this](const QString &path) {
+        if (m_cancel.load()) return;
         emit fileStarted(path);
         QFileInfo fi(path);
 
@@ -161,39 +169,34 @@ void ProjectSearchWorker::search(const Params &p) {
             if (nameHit) emit fileNameMatch(path);
         }
 
+        // Helper: bump filesDone atomically and emit a throttled progress
+        // update. Called on every early-return path so the UI always sees
+        // progress even when files are skipped.
+        auto tick = [&]() {
+            const int fd = ++filesDoneAtomic;
+            if ((fd & 0x1F) == 0 || fd == totalFiles)
+                emit progress(fd, totalFiles, totalMatchesAtomic.load());
+        };
+
         // Skip files above the sanity cap (2 GB default — effectively no cap
         // for source trees; still guards against accidentally iterating
         // massive archive files).
-        if (fi.size() > p.maxFileSizeBytes) {
-            ++filesDone;
-            emit progress(filesDone, totalFiles, totalMatches);
-            continue;
-        }
+        if (fi.size() > p.maxFileSizeBytes) { tick(); return; }
 
         // Skip binary files so we don't waste time (and memory) scanning
-        // images / compiled objects / archives. Users can untick "skip
-        // binary" in the UI if they really want to search inside them.
-        if (p.skipBinary && looksBinary(path)) {
-            ++filesDone;
-            emit progress(filesDone, totalFiles, totalMatches);
-            continue;
-        }
+        // images / compiled objects / archives.
+        if (p.skipBinary && looksBinary(path)) { tick(); return; }
 
         QFile f(path);
-        if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            ++filesDone;
-            emit progress(filesDone, totalFiles, totalMatches);
-            continue;
-        }
+        if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) { tick(); return; }
 
         const int maxMatchesPerFile = 500;
         int fileMatches = 0;
 
         // ── Rust-fast path: plain-text (non-regex, non-word) literal search
-        //    on files that fit in memory. Rust's aho-corasick implementation
-        //    (via rustbridge::findAll) is 5–50× faster than our C++ line
-        //    loop for typical source code. We skip the fast path for huge
-        //    files so a 2 GB log still streams line-by-line.
+        //    on files that fit in memory. aho-corasick via RustCore::findAll
+        //    is 5–50× faster than our line-by-line C++ fallback for typical
+        //    source. Large files fall through to the streaming path below.
         constexpr qint64 kRustFastCap = 8 * 1024 * 1024;  // 8 MB
         if (!useRegex && fi.size() <= kRustFastCap) {
             const QByteArray raw = f.readAll();
@@ -203,10 +206,7 @@ void ProjectSearchWorker::search(const Params &p) {
                 RustCore::findAll(body, p.query, /*isRegex*/ false,
                                   p.caseSensitive, /*wholeWord*/ false);
             if (!posBytes.isEmpty()) {
-                // Build a (byte-offset, line-number) index once per file —
-                // scanning is O(file size) but one pass, and the per-match
-                // lookup is O(log N) via upper_bound.
-                QVector<int> lineStarts;  // byte offset where each line starts
+                QVector<int> lineStarts;
                 lineStarts.reserve(raw.size() / 40 + 8);
                 lineStarts.append(0);
                 for (int i = 0; i < raw.size(); ++i) {
@@ -217,7 +217,7 @@ void ProjectSearchWorker::search(const Params &p) {
                     if (m_cancel.load()) break;
                     auto it = std::upper_bound(lineStarts.begin(), lineStarts.end(),
                                                static_cast<int>(bytePos));
-                    int lineNum = int(it - lineStarts.begin());  // 1-indexed
+                    int lineNum = int(it - lineStarts.begin());
                     int lineStart = lineStarts[lineNum - 1];
                     int lineEnd = (lineNum < lineStarts.size())
                                   ? lineStarts[lineNum] - 1 : raw.size();
@@ -231,23 +231,17 @@ void ProjectSearchWorker::search(const Params &p) {
                     pm.matchStart  = col;
                     pm.matchLength = QString::fromUtf8(raw.mid(bytePos, queryBytes)).size();
                     emit matchFound(pm);
-                    ++totalMatches;
+                    ++totalMatchesAtomic;
                     ++fileMatches;
                     if (fileMatches >= maxMatchesPerFile) break;
                 }
             }
-            ++filesDone;
-            if ((filesDone & 0x1F) == 0 || filesDone == totalFiles)
-                emit progress(filesDone, totalFiles, totalMatches);
-            continue;
+            tick();
+            return;
         }
 
-        // Line-by-line reader — scales to gigabyte files without blowing
-        // RAM (reads one line at a time from disk). One pass per file.
-        // UTF-8 by default; Latin-1 / CP-1252 files still work because
-        // QTextStream falls back to the system codec on decode errors.
-        // Falls through here for: regex searches, and very large files
-        // (over the 8 MB Rust fast-path cap — 2 GB log scenario).
+        // Streaming path — regex searches + very large files. Reads one line
+        // at a time so a 2 GB log doesn't blow RAM.
         QTextStream ts(&f);
         ts.setCodec("UTF-8");
         int lineNum = 0;
@@ -266,7 +260,7 @@ void ProjectSearchWorker::search(const Params &p) {
                     pm.matchStart  = m.capturedStart();
                     pm.matchLength = m.capturedLength();
                     emit matchFound(pm);
-                    ++totalMatches;
+                    ++totalMatchesAtomic;
                     ++fileMatches;
                     if (fileMatches >= maxMatchesPerFile) break;
                 }
@@ -283,7 +277,7 @@ void ProjectSearchWorker::search(const Params &p) {
                     pm.matchStart = idx;
                     pm.matchLength = literal.length();
                     emit matchFound(pm);
-                    ++totalMatches;
+                    ++totalMatchesAtomic;
                     ++fileMatches;
                     if (fileMatches >= maxMatchesPerFile) break;
                     from = idx + literal.length();
@@ -291,14 +285,17 @@ void ProjectSearchWorker::search(const Params &p) {
             }
             if (fileMatches >= maxMatchesPerFile) break;
         }
+        tick();
+    };
 
-        ++filesDone;
-        // Report progress every 25 files so we don't spam the UI
-        if ((filesDone & 0x1F) == 0 || filesDone == totalFiles)
-            emit progress(filesDone, totalFiles, totalMatches);
-    }
+    // Run the per-file searcher in parallel across the Qt thread pool —
+    // blockingMap waits for all workers before returning, which keeps our
+    // finishedSearch emission sequential with the last match. Thread pool
+    // default size = QThread::idealThreadCount() (all CPU cores), so on a
+    // 4-core laptop the walk is ~3–4× faster than the serial version.
+    QtConcurrent::blockingMap(queue, searchOne);
 
-    emit finishedSearch(totalMatches, totalFiles);
+    emit finishedSearch(totalMatchesAtomic.load(), totalFiles);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
