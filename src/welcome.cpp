@@ -3,14 +3,39 @@
 #include "fonts.h"
 
 #include <QCheckBox>
+#include <QEvent>
 #include <QFileInfo>
 #include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QVBoxLayout>
+#include <functional>
+
+// Clickable card container — QPushButton with a nested QVBoxLayout was
+// clipping the description text because QPushButton's internal sizeHint
+// is driven by its text property, not the child layout. Using a QFrame
+// that captures mousePressEvent via a std::function callback avoids the
+// MOC/signals machinery and lets the layout drive sizing honestly.
+namespace {
+class ClickableCard : public QFrame {
+public:
+    explicit ClickableCard(QWidget *parent = nullptr) : QFrame(parent) {
+        setCursor(Qt::PointingHandCursor);
+        setAttribute(Qt::WA_StyledBackground, true);
+    }
+    void setOnClick(std::function<void()> cb) { m_cb = std::move(cb); }
+protected:
+    void mousePressEvent(QMouseEvent *event) override {
+        if (event->button() == Qt::LeftButton && m_cb) m_cb();
+    }
+private:
+    std::function<void()> m_cb;
+};
+}
 
 #ifndef NOTEPATRA_VERSION
 #define NOTEPATRA_VERSION "0.0.0-dev"
@@ -252,18 +277,20 @@ QWidget *WelcomeWidget::makeFeatureCard(const QString &icon, const QString &titl
                                         const QString &accentColor) {
     const auto p = welcomePalette();
 
-    auto *card = new QPushButton;
-    card->setCursor(Qt::PointingHandCursor);
-    card->setMinimumHeight(120);
+    auto *card = new ClickableCard;
+    // Allow the card to grow as needed for description word-wrap; the grid
+    // column width drives the minimum. Larger min-height gives room for
+    // icon + title + 2-3 lines of wrapped description without clipping.
+    card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::MinimumExpanding);
+    card->setMinimumHeight(170);
     card->setStyleSheet(QString(
-        "QPushButton { background: %1; border: 1px solid %2; border-radius: 10px; "
-        "padding: 0; text-align: left; }"
-        "QPushButton:hover { border-color: %3; background: %4; }"
+        "ClickableCard { background: %1; border: 1px solid %2; border-radius: 10px; }"
+        "ClickableCard:hover { border-color: %3; background: %4; }"
     ).arg(p.cardBg, p.cardBorder, accentColor, p.cardHover));
 
     auto *layout = new QVBoxLayout(card);
-    layout->setContentsMargins(16, 14, 16, 14);
-    layout->setSpacing(6);
+    layout->setContentsMargins(18, 16, 18, 16);
+    layout->setSpacing(8);
 
     auto *iconLabel = new QLabel(icon);
     QFont iconFont = notepatraUiFont();
@@ -273,25 +300,26 @@ QWidget *WelcomeWidget::makeFeatureCard(const QString &icon, const QString &titl
 
     auto *titleLabel = new QLabel(title);
     QFont tFont = notepatraUiFont();
-    tFont.setPointSize(13);
+    tFont.setPointSize(14);
     tFont.setWeight(QFont::DemiBold);
     titleLabel->setFont(tFont);
     titleLabel->setStyleSheet(QString("background: transparent; color: %1;").arg(p.textPrimary));
+    titleLabel->setWordWrap(true);
 
     auto *descLabel = new QLabel(description);
     QFont dFont = notepatraUiFont();
     dFont.setPointSize(11);
     descLabel->setFont(dFont);
-    descLabel->setStyleSheet(QString("background: transparent; color: %1;").arg(p.textSecondary));
+    descLabel->setStyleSheet(QString("background: transparent; color: %1; line-height: 1.4;")
+                                 .arg(p.textSecondary));
     descLabel->setWordWrap(true);
+    descLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::MinimumExpanding);
 
     layout->addWidget(iconLabel);
     layout->addWidget(titleLabel);
-    layout->addWidget(descLabel);
-    layout->addStretch();
+    layout->addWidget(descLabel, 1);   // description takes remaining space
 
-    connect(card, &QPushButton::clicked, this,
-            [this, actionId]() { emit actionOpenMenu(actionId); });
+    card->setOnClick([this, actionId]() { emit actionOpenMenu(actionId); });
     return card;
 }
 

@@ -1101,9 +1101,98 @@
             .compare-table { font-size: 12px; }
             .compare-table th, .compare-table td { padding: 10px 8px; }
         }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           Premium polish: scroll-progress bar, scroll-triggered fade-ins,
+           sticky download CTA. All animations respect
+           prefers-reduced-motion so users who opt out of motion see none.
+           ═══════════════════════════════════════════════════════════════════ */
+
+        /* Scroll progress bar — thin Clay-orange line at the very top that
+           fills as the user scrolls. Gives the page a "reading progress"
+           feel similar to premium product-launch sites. */
+        #scroll-progress {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 2px;
+            width: 0;
+            background: var(--c-accent);
+            z-index: 200;
+            transition: width 0.05s linear;
+        }
+
+        /* Reveal-on-scroll. Elements get .reveal, JS flips .reveal-in when
+           they cross the viewport. Subtle upward glide + fade. */
+        .reveal {
+            opacity: 0;
+            transform: translateY(24px);
+            transition: opacity 0.75s cubic-bezier(0.2, 0.8, 0.2, 1),
+                        transform 0.75s cubic-bezier(0.2, 0.8, 0.2, 1);
+            will-change: opacity, transform;
+        }
+        .reveal-in {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .reveal, .reveal-in { opacity: 1; transform: none; transition: none; }
+            #scroll-progress { transition: none; }
+            #sticky-cta { transition: none; }
+        }
+
+        /* Sticky download CTA — dock a compact "Download v0.1.13 ↓" button
+           to the bottom-right once the user scrolls past the hero. Classic
+           Apple "Buy now" floating button. Hidden on very small screens
+           (phone portrait) where the nav bar already has a similar link. */
+        #sticky-cta {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 150;
+            padding: 12px 22px;
+            background: var(--c-accent);
+            color: #FFFFFF;
+            border-radius: 100px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            box-shadow: 0 10px 30px rgba(204,120,92,0.35),
+                        0 4px 10px rgba(204,120,92,0.25);
+            opacity: 0;
+            transform: translateY(80px);
+            pointer-events: none;
+            transition: opacity 0.35s ease-out,
+                        transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+                        box-shadow 0.2s;
+        }
+        #sticky-cta.visible {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+        #sticky-cta:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 40px rgba(204,120,92,0.45),
+                        0 6px 14px rgba(204,120,92,0.3);
+        }
+        @media (max-width: 600px) { #sticky-cta { display: none; } }
+
+        /* Counter targets — let stat numbers render a placeholder ("0") while
+           the count-up animation runs so there's no layout shift when the
+           JS kicks in. */
+        .stat-number [data-count] { display: inline-block; min-width: 1ch; }
     </style>
 </head>
 <body>
+    <!-- Scroll progress bar — fills as the user scrolls down. -->
+    <div id="scroll-progress" aria-hidden="true"></div>
+
+    <!-- Sticky download CTA — appears after the hero scrolls away. -->
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.13">
+        Download v0.1.13 ↓
+    </a>
+
     <div class="bg-glow"></div>
 
     <nav>
@@ -2185,6 +2274,99 @@
                 elTotal.textContent = 'GitHub API rate-limited — try refreshing in a minute';
                 console.warn('download counter failed:', err);
             });
+        })();
+    </script>
+
+    <!-- ═════════════════════════════════════════════════════════════════
+         Premium polish behaviour — scroll progress, fade-in reveals,
+         sticky CTA, animated stat counters.  Pure vanilla JS, no deps.
+         ═════════════════════════════════════════════════════════════════ -->
+    <script>
+        (function () {
+            const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+            // ── Scroll progress bar
+            const bar = document.getElementById('scroll-progress');
+            const cta = document.getElementById('sticky-cta');
+            function onScroll() {
+                const h = document.documentElement;
+                const scrolled = h.scrollTop / Math.max(1, (h.scrollHeight - h.clientHeight));
+                if (bar) bar.style.width = (scrolled * 100).toFixed(2) + '%';
+                // Show sticky CTA after user scrolls past 60% of hero height
+                if (cta) cta.classList.toggle('visible', h.scrollTop > 640);
+            }
+            window.addEventListener('scroll', onScroll, { passive: true });
+            onScroll();
+
+            // ── Scroll-triggered fade-ins
+            // Auto-tag key sections with .reveal so we don't have to edit
+            // every section by hand. Each one fades in + glides up on first
+            // crossing of the viewport.
+            const candidates = document.querySelectorAll(
+                '.feature-card, .pillar, .download-card, .stat, ' +
+                '.version-card, .showcase-frame'
+            );
+            candidates.forEach(el => el.classList.add('reveal'));
+
+            if (reduce || !('IntersectionObserver' in window)) {
+                // Fallback: just show everything immediately
+                candidates.forEach(el => el.classList.add('reveal-in'));
+            } else {
+                const io = new IntersectionObserver((entries) => {
+                    entries.forEach((ent, i) => {
+                        if (ent.isIntersecting) {
+                            // Tiny stagger so cards don't all pop at once
+                            const delay = Math.min(i * 40, 200);
+                            setTimeout(() => ent.target.classList.add('reveal-in'), delay);
+                            io.unobserve(ent.target);
+                        }
+                    });
+                }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+                candidates.forEach(el => io.observe(el));
+            }
+
+            // ── Animated stat counters
+            // Each .stat-number <span> gets its original number captured into
+            // data-target; we replace the span with a <span data-count="0">
+            // that counts up from 0 when it enters the viewport.
+            document.querySelectorAll('.stat-number span').forEach(span => {
+                const original = span.textContent.trim();
+                // Only animate pure integer counts. "5", "100", "44", "2", "0"
+                // all qualify. "M" or "+" outside the span stay static.
+                if (!/^\d+$/.test(original)) return;
+                const target = parseInt(original, 10);
+                span.dataset.target = target;
+                span.dataset.count = '0';
+                span.textContent = '0';
+            });
+
+            if (reduce || !('IntersectionObserver' in window)) {
+                // Fallback: show final numbers
+                document.querySelectorAll('.stat-number span[data-target]').forEach(s => {
+                    s.textContent = s.dataset.target;
+                });
+            } else {
+                const countObs = new IntersectionObserver((entries) => {
+                    entries.forEach(ent => {
+                        if (!ent.isIntersecting) return;
+                        const span = ent.target;
+                        const target = parseInt(span.dataset.target, 10);
+                        const duration = 900;
+                        const start = performance.now();
+                        function step(now) {
+                            const t = Math.min(1, (now - start) / duration);
+                            // Ease out cubic — fast start, gentle stop
+                            const eased = 1 - Math.pow(1 - t, 3);
+                            const val = Math.round(target * eased);
+                            span.textContent = val;
+                            if (t < 1) requestAnimationFrame(step);
+                        }
+                        requestAnimationFrame(step);
+                        countObs.unobserve(span);
+                    });
+                }, { threshold: 0.5 });
+                document.querySelectorAll('.stat-number span[data-target]').forEach(s => countObs.observe(s));
+            }
         })();
     </script>
 </body>

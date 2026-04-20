@@ -1366,7 +1366,12 @@ void MainWindow::buildMenus() {
     });
 
     // ═══ FEATURES ═══
-    auto *feat = mb->addMenu("F&eatures");
+    // "Tools" menu — was "Features" before. Holds the main power features
+    // (AI Assistant, Terminal, Markdown Converter) that users reach for most
+    // often. The old "Tools" menu with Hash + Measurement was renamed to
+    // "Utilities" further down to avoid two menus competing for the same
+    // slot and the same user mental model.
+    auto *feat = mb->addMenu("&Tools");
 
     // --- AI Assistant ---
     auto *aiAct = feat->addAction("AI Assistant — Ollama      Ctrl+Shift+A");
@@ -1622,7 +1627,12 @@ void MainWindow::buildMenus() {
         tabMenu->addAction(QString("Tab Width: %1").arg(s), this, [E, s]() { if (auto *e = E()) e->setTabWidth(s); });
 
     // ═══ TOOLS ═══
-    auto *tools = mb->addMenu("&Tools");
+    // "Utilities" menu — Hash, Measurement, etc. Renamed from "Tools" to
+    // "Utilities" so the primary AI/Terminal/Markdown tools live under
+    // "Tools" above and this menu clearly hosts the smaller specialised
+    // helpers. Users looking for "Tools" no longer have to guess which of
+    // two nearly-identically-named menus to open.
+    auto *tools = mb->addMenu("Util&ities");
     auto *measureMenu = tools->addMenu("Measurement");
     auto *rulersAct = measureMenu->addAction("Document Rulers", this, [this](bool checked) {
         Config::instance().showDocumentRulers = checked;
@@ -1724,7 +1734,12 @@ void MainWindow::buildMenus() {
     });
 
     // ═══ PLUGINS ═══
-    // Each plugin = checkbox. Check = opens its panel. Inbuilt = grayed checkbox (always available).
+    // The Plugins menu holds formatters (JSON / HTML / SQL / Bracket), the
+    // Compare widget, the Git panel, the REST client — everything that is
+    // shipped inbuilt AND ANY user plugins loaded from
+    // ~/.config/notepatra/plugins. Naming clarified via "(inbuilt)" suffix
+    // on the built-in entries so users can tell them apart from third-party
+    // ones. Terminal and AI Assistant live in the "Tools" menu above.
     auto *pluginsMenu = mb->addMenu("Pl&ugins");
     QString pluginDir = QDir::homePath() + "/.config/notepatra/plugins";
     m_pluginManager.loadPlugins(pluginDir);
