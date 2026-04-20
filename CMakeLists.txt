@@ -143,6 +143,7 @@ set(SOURCES
     src/hexeditor.cpp
     src/gitgutter.cpp
     src/ollama.cpp
+    src/ai_context.cpp
     src/aipanel.cpp
     src/restclient.cpp
     src/gitpanel.cpp
@@ -322,6 +323,20 @@ endif()
 # italic, numbers #FF8000, strings #808080, operators #000000 bold.
 # This catches the Windows v0.1.1 bug where lexers tokenized correctly but
 # rendered all styles as default black-on-white.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_context.cpp")
+    add_executable(test_ai_context
+        test_ai_context.cpp
+        src/ai_context.cpp
+    )
+    target_include_directories(test_ai_context PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_ai_context PRIVATE Qt5::Core)
+    add_test(NAME test_ai_context COMMAND $<TARGET_FILE:test_ai_context>)
+    set_tests_properties(test_ai_context PROPERTIES LABELS "unit;ai")
+    message(STATUS "Regression test enabled — target: test_ai_context")
+endif()
+
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ollama.cpp")
     add_executable(test_ollama
         test_ollama.cpp

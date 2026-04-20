@@ -109,6 +109,10 @@ private:
     QWidget *m_aiDockHost = nullptr;
     AIPanel *m_aiDockPanel = nullptr;
     void toggleAiDock();
+    // Push current workspace state (all open editor tabs, current file,
+    // selection, workspace root) into an AIPanel so the model can reason
+    // about cross-file questions like Cursor / Copilot.
+    void populateAiContext(AIPanel *panel);
     RestClient *m_restClient = nullptr;
     GitPanel *m_gitPanel = nullptr;
     SqlFmtPanel *m_sqlFmtPanel = nullptr;

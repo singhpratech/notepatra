@@ -1,4 +1,5 @@
 #include "aipanel.h"
+#include "ai_context.h"
 #include "fonts.h"
 #include "config.h"
 #include <QVBoxLayout>
@@ -236,13 +237,30 @@ QString markdownBodyHtml(const QString &text) {
     return plainTextHtml(text);
 }
 
-QString messageTranscriptHtml(const QVector<AIPanel::ChatMessage> &messages) {
+QString messageTranscriptHtml(const QVector<AIPanel::ChatMessage> &messages,
+                              bool codingMode = false) {
     const AiPalette pal = aiPalette();
+    // Coding Mode = monospace body + visible "CODING MODE" badge. We
+    // intentionally DON'T change the background — it must stay aligned
+    // with the app theme (Light = warm paper, Dark = near-black). A
+    // hand-picked bg always looked out-of-place in one theme or the other.
+    const QString bodyFamily = codingMode
+        ? notepatraCodeCssFamily()
+        : notepatraUiCssFamily();
+    const QString modeBadge = codingMode
+        ? QStringLiteral(
+            "<div style='background:rgba(78,201,176,0.12);color:#4EC9B0;"
+            "font-size:10px;font-weight:bold;letter-spacing:1.5px;"
+            "padding:4px 10px;border-radius:12px;display:inline-block;"
+            "margin-bottom:10px;font-family:%1;'>⌘ CODING MODE · code-only replies</div>")
+              .arg(notepatraCodeCssFamily())
+        : QString();
     QString html = QString(
 "<html>\n"
 "<head>\n"
 "<style>\n"
-"body { font-family: %1; line-height: 1.5; color: %3; background: %4; margin: 0; padding: 12px; }\n"
+"body { font-family: %21; line-height: 1.5; color: %3; background: %4; margin: 0; padding: 12px; }\n"
+".assistant-content { font-family: %21; }\n"
 "table { width: 100%%; border-collapse: collapse; margin: 10px 0; }\n"
 ".bubble { display: inline-block; max-width: 100%%; text-align: left; border-radius: 16px; padding: 12px 14px; }\n"
 ".bubble-user { background: %5; color: %6; border: 1px solid %7; }\n"
@@ -273,7 +291,10 @@ QString messageTranscriptHtml(const QVector<AIPanel::ChatMessage> &messages) {
              pal.errBg, pal.errFg, pal.errBorder,
              pal.userLabel, pal.linkFg,
              pal.codeBg, pal.codeFg,
-             pal.codeInline, pal.codeInlineFg);
+             pal.codeInline, pal.codeInlineFg,
+             bodyFamily);
+
+    html += modeBadge;
 
     for (int i = 0; i < messages.size(); ++i) {
         const AIPanel::ChatMessage &message = messages.at(i);
@@ -347,7 +368,9 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // an option auto-fills the corresponding default URL into Config and
     // refreshes the model list. Gear ⚙ opens full AI prefs for URL +
     // API key editing.
-    modelRow->addWidget(new QLabel("Backend:"));
+    // Header labels ("Backend:", "Model:") were removed for a Cursor-style
+    // cleaner look — the dropdowns self-describe and the tooltips carry any
+    // extra hint. The combos speak for themselves on screen.
     auto *backendCombo = new QComboBox;
     backendCombo->addItem("Ollama",           "Ollama");
     backendCombo->addItem("llama.cpp (GGUF)", "llama.cpp");
@@ -457,7 +480,6 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // Call once on construction to reflect current backend state
     showKeyRow();
 
-    modelRow->addWidget(new QLabel("Model:"));
     m_modelCombo = new QComboBox;
     m_modelCombo->setEditable(true);
     m_modelCombo->addItem("(detecting…)");
@@ -488,7 +510,8 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     //       straight into the editor. Great for "refactor this function"
     //       / "rewrite this type" / "translate to Rust" tasks.
     // OFF = classic chat panel with explanations in prose form.
-    m_codingMode = new QCheckBox("Coding Mode");
+    // Short label keeps the header from overflowing on narrow docks.
+    m_codingMode = new QCheckBox("Coding");
     m_codingMode->setChecked(false);
     m_codingMode->setStyleSheet(QString(
         "QCheckBox { font-size: 11px; color: %1; margin-left: 4px; font-weight: 600; }"
@@ -511,11 +534,23 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
                 ? "Coding Mode · e.g. Refactor this function / Add types / Translate to TypeScript"
                 : "Type a message and press Enter to send…");
         }
-        if (m_thinkingCheck) m_thinkingCheck->setVisible(!checked);
+        // Collapse the panel to a Cursor/Copilot-style minimal chat when
+        // Coding Mode is on: just the model header, chat transcript, and
+        // input bar. Everything else (8-button quick-action grid, the
+        // Insert/Replace/Copy row, the "Show thinking" toggle) hides so
+        // the panel stops feeling crowded for the common coding flow.
+        if (m_thinkingCheck)      m_thinkingCheck->setVisible(!checked);
+        if (m_quickActionsWrap)   m_quickActionsWrap->setVisible(!checked);
+        if (m_resultActionsWrap)  m_resultActionsWrap->setVisible(!checked);
+        // Re-render the transcript with the new Coding-Mode CSS — flips
+        // the chat to monospace + darker surface + "CODING MODE" badge.
+        // Crucially, m_messages is NOT touched: switching modes preserves
+        // the conversation so users don't lose context mid-thought.
+        renderTranscript();
         emit codingModeRequested(checked);
     });
 
-    m_thinkingCheck = new QCheckBox("Show thinking");
+    m_thinkingCheck = new QCheckBox("Think");
     m_thinkingCheck->setChecked(false);
     m_thinkingCheck->setStyleSheet(QString(
         "font-size: 11px; color: %1; margin-left: 8px;").arg(pal.muted));
@@ -551,16 +586,40 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         "QTextBrowser { background: %1; color: %2; border: none; padding: 12px; }")
         .arg(pal.chatBg, pal.chatFg));
     m_output->setPlaceholderText(
-        "💬 Conversation will appear here.\n"
+        "Type a message below and press Enter.\n"
         "\n"
-        "Quick actions are at the bottom — pick one for selected code,\n"
-        "or type a custom prompt and press Enter.\n"
-        "\n"
-        "Requires Ollama running locally: ollama serve");
+        "Tip: tick Coding for a minimal chat layout.\n"
+        "Click ▸ Quick actions below to reveal the one-click prompts.");
     layout->addWidget(m_output, 1);  // stretch=1 → takes all spare space
 
     // ─── BOTTOM STRIP: quick actions + input + send (like a real chat) ──
-    // Quick action buttons row 1 (left = main actions on selected code)
+    // A thin chevron row always shows; clicking it reveals / hides the
+    // 8-button quick-actions grid + the Insert/Replace/Copy row. Default
+    // is hidden so the panel looks like a clean chat out of the box —
+    // power users click to pin them open.
+    auto *actionsToggleRow = new QHBoxLayout;
+    actionsToggleRow->setContentsMargins(8, 2, 8, 0);
+    actionsToggleRow->setSpacing(0);
+    auto *actionsToggle = new QPushButton("▸ Quick actions");
+    actionsToggle->setCheckable(true);
+    actionsToggle->setCursor(Qt::PointingHandCursor);
+    actionsToggle->setStyleSheet(QString(
+        "QPushButton { background: transparent; color: %1; border: none; "
+        "padding: 2px 4px; font-size: 11px; text-align: left; }"
+        "QPushButton:hover { color: %2; }"
+        "QPushButton:checked { color: %2; }").arg(pal.muted, pal.accent));
+    actionsToggle->setToolTip("Show/hide the 8 one-click prompt buttons (Explain · Find Bugs · Refactor · …) "
+                              "and the Insert / Replace / Copy apply row.");
+    actionsToggleRow->addWidget(actionsToggle);
+    actionsToggleRow->addStretch();
+    layout->addLayout(actionsToggleRow);
+
+    m_quickActionsWrap = new QWidget;
+    m_quickActionsWrap->setVisible(false);  // default hidden — chevron reveals
+    auto *quickWrapV = new QVBoxLayout(m_quickActionsWrap);
+    quickWrapV->setContentsMargins(0, 0, 0, 0);
+    quickWrapV->setSpacing(0);
+
     auto *actionsRow1 = new QHBoxLayout;
     actionsRow1->setContentsMargins(8, 4, 8, 0);
     actionsRow1->setSpacing(4);
@@ -573,7 +632,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         b->setStyleSheet("font-size: 11px; padding: 0 8px;");
         actionsRow1->addWidget(b);
     }
-    layout->addLayout(actionsRow1);
+    quickWrapV->addLayout(actionsRow1);
 
     auto *actionsRow2 = new QHBoxLayout;
     actionsRow2->setContentsMargins(8, 0, 8, 4);
@@ -587,10 +646,14 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         b->setStyleSheet("font-size: 11px; padding: 0 8px;");
         actionsRow2->addWidget(b);
     }
-    layout->addLayout(actionsRow2);
+    quickWrapV->addLayout(actionsRow2);
+    layout->addWidget(m_quickActionsWrap);
 
-    // Insert/Replace/Copy mini row — operates on the LAST assistant response
-    auto *resultRow = new QHBoxLayout;
+    // Insert/Replace/Copy mini row — also hidden by default, revealed
+    // along with the quick-action grid by the same chevron toggle above.
+    m_resultActionsWrap = new QWidget;
+    m_resultActionsWrap->setVisible(false);
+    auto *resultRow = new QHBoxLayout(m_resultActionsWrap);
     resultRow->setContentsMargins(8, 0, 8, 2);
     resultRow->setSpacing(4);
     auto *insertBtn = new QPushButton("Insert at Cursor");
@@ -602,7 +665,20 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         resultRow->addWidget(b);
     }
     resultRow->addStretch();
-    layout->addLayout(resultRow);
+    layout->addWidget(m_resultActionsWrap);
+
+    // Wire the chevron: ▸ → ▾ + reveal both wraps; reverse on uncheck.
+    // Coding Mode's own handler still force-hides them; this toggle is
+    // the user-controlled reveal when Coding Mode is off.
+    connect(actionsToggle, &QPushButton::toggled, this, [this, actionsToggle](bool open) {
+        actionsToggle->setText(open ? "▾ Quick actions" : "▸ Quick actions");
+        // Never unhide these when Coding Mode is on — Coding's whole point
+        // is the minimal chat view. The chevron becomes a no-op visual
+        // cue in that case.
+        const bool coding = m_codingMode && m_codingMode->isChecked();
+        if (m_quickActionsWrap)  m_quickActionsWrap->setVisible(open && !coding);
+        if (m_resultActionsWrap) m_resultActionsWrap->setVisible(open && !coding);
+    });
 
     // ─── ATTACHMENT CHIP (shown above input when a file is attached) ────
     m_attachmentChip = new QLabel("");
@@ -771,8 +847,36 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
 }
 
 void AIPanel::setContext(const QString &selectedText, const QString &filePath, const QString &language) {
+    // Legacy 3-arg path — keep working for callers that haven't moved to
+    // setWorkspaceContext yet. We treat the passed selected text as both
+    // the selection context AND the "current file text" so older call
+    // sites still produce the same prompt as before.
     m_context = selectedText;
     m_language = language;
+    m_currentFilePath = filePath;
+    m_currentFileText = selectedText;
+    m_openTabs.clear();
+    m_workspaceRoot.clear();
+}
+
+void AIPanel::setWorkspaceContext(const QString &selectedText,
+                                  const QString &currentFilePath,
+                                  const QString &language,
+                                  const QString &currentFileText,
+                                  const QVector<OpenTabInfo> &openTabs,
+                                  const QString &workspaceRoot,
+                                  const QStringList &workspaceFilePaths) {
+    // m_context is what the quick-action templates wrap in triple backticks
+    // (Explain / Refactor / …). Prefer the live selection; otherwise fall
+    // back to the whole current file so those actions still have something
+    // to chew on.
+    m_context = selectedText.isEmpty() ? currentFileText : selectedText;
+    m_language = language;
+    m_currentFilePath = currentFilePath;
+    m_currentFileText = currentFileText;
+    m_openTabs = openTabs;
+    m_workspaceRoot = workspaceRoot;
+    m_workspaceFilePaths = workspaceFilePaths;
 }
 
 void AIPanel::refreshModels() {
@@ -1048,7 +1152,34 @@ void AIPanel::handleTranscriptionFinished(int exitCode, QProcess *process, const
     setStatus("✓ Speech transcribed into the AI prompt box", false);
 }
 
+// Thin forwarder — the real implementation now lives in ai_context.cpp so
+// it's testable without pulling in QtWidgets. Keeps the AIPanel::-scoped
+// API stable for any existing caller that might reach in.
+QString AIPanel::buildWorkspaceContextBlock(const QString &currentFilePath,
+                                            const QString &currentFileText,
+                                            const QVector<AIPanel::OpenTabInfo> &openTabs,
+                                            const QString &workspaceRoot) {
+    QVector<AiContext::OpenTabInfo> tabs;
+    tabs.reserve(openTabs.size());
+    for (const auto &t : openTabs) {
+        AiContext::OpenTabInfo n;
+        n.filePath = t.filePath;
+        n.displayName = t.displayName;
+        n.language = t.language;
+        n.text = t.text;
+        n.isCurrent = t.isCurrent;
+        tabs.append(n);
+    }
+    return AiContext::buildWorkspaceContextBlock(
+        currentFilePath, currentFileText, tabs, workspaceRoot);
+}
+
 void AIPanel::sendPrompt(const QString &action) {
+    // Pull the freshest workspace state right before we send. The provider
+    // lets MainWindow push the current editor text + open-tab list without
+    // us having to subscribe to every edit signal.
+    if (m_contextProvider) m_contextProvider(this);
+
     QString model = m_modelCombo->currentText();
     if (model.startsWith("(") || !m_modelCombo->isEnabled()) {
         clearChat();
@@ -1151,6 +1282,46 @@ void AIPanel::sendPrompt(const QString &action) {
         m_attachmentChip->setFixedHeight(0);
     }
 
+    // Prepend the workspace-awareness block so the model sees the current
+    // file + open tabs + workspace root before the actual question. We only
+    // add it when there's meaningful context — plain chat without any file
+    // open still produces a clean, header-free prompt.
+    // Convert our OpenTabInfo to the namespace-level one, then assemble
+    // the workspace block — now with a full "@codebase" file-tree listing
+    // when the workspace root is known, so the model can reference files
+    // the user hasn't opened yet.
+    QVector<AiContext::OpenTabInfo> acTabs;
+    acTabs.reserve(m_openTabs.size());
+    for (const auto &t : m_openTabs) {
+        AiContext::OpenTabInfo n;
+        n.filePath = t.filePath;
+        n.displayName = t.displayName;
+        n.language = t.language;
+        n.text = t.text;
+        n.isCurrent = t.isCurrent;
+        acTabs.append(n);
+    }
+    QString workspaceBlock = AiContext::buildWorkspaceContextBlockWithTree(
+        m_currentFilePath, m_currentFileText, acTabs,
+        m_workspaceRoot, m_workspaceFilePaths);
+    if (!workspaceBlock.isEmpty()) {
+        prompt = workspaceBlock + "\n---\n\n" + prompt;
+    }
+
+    // Opt-in debug sink for end-to-end verification of the context pipeline.
+    // Enable with NOTEPATRA_AI_DEBUG=1 to dump the exact prompt going to the
+    // model. Never left on by default — writes nothing when the env is unset.
+    if (qEnvironmentVariableIntValue("NOTEPATRA_AI_DEBUG") == 1) {
+        QFile f("/tmp/notepatra-ai-prompt.log");
+        if (f.open(QIODevice::WriteOnly | QIODevice::Append)) {
+            f.write(("=== " + QDateTime::currentDateTime().toString(Qt::ISODate)
+                     + " ===\n").toUtf8());
+            f.write("[SYSTEM]\n"); f.write(systemPrompt.toUtf8()); f.write("\n");
+            f.write("[USER]\n");   f.write(prompt.toUtf8());       f.write("\n\n");
+            f.close();
+        }
+    }
+
     appendUserBubble(userBubbleText);
     beginAssistantBubble();
     m_stopBtn->setEnabled(true);
@@ -1226,7 +1397,8 @@ void AIPanel::updateVoiceButtonVisual(bool recording) {
 }
 
 void AIPanel::renderTranscript() {
-    m_output->setHtml(messageTranscriptHtml(m_messages));
+    const bool coding = m_codingMode && m_codingMode->isChecked();
+    m_output->setHtml(messageTranscriptHtml(m_messages, coding));
     m_output->moveCursor(QTextCursor::End);
     m_output->ensureCursorVisible();
     m_output->verticalScrollBar()->setValue(m_output->verticalScrollBar()->maximum());

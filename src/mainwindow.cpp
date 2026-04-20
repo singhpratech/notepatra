@@ -4,6 +4,8 @@
 #include "preferences.h"
 #include "rustbridge.h"
 #include "fonts.h"
+#include <QDir>
+#include <QDirIterator>
 
 #include <QCheckBox>
 #include <QRegularExpression>
@@ -722,21 +724,21 @@ MainWindow::MainWindow() {
     aiDockLayout->setSpacing(0);
     m_aiDockPanel = new AIPanel;
     aiDockLayout->addWidget(m_aiDockPanel);
+    // Pull-based workspace awareness — the panel calls back into us right
+    // before each Send so the model sees the freshest selection + tab list.
+    m_aiDockPanel->setContextProvider([this](AIPanel *p) { populateAiContext(p); });
     connect(m_aiDockPanel, &AIPanel::insertText, this, [this](const QString &text) {
         if (auto *e = currentEditor()) e->insert(text);
     });
     connect(m_aiDockPanel, &AIPanel::replaceSelection, this, [this](const QString &text) {
         if (auto *e = currentEditor(); e && e->hasSelectedText()) e->replaceSelectedText(text);
     });
-    // Coding Mode toggle inside ANY AIPanel → flip the 3-column
-    // Cursor-style layout (file tree | editor | AI dock). If the
-    // user turns off Coding Mode again the dock stays but user can
-    // hide it manually via Tools → Dock AI on Right.
+    // Coding Mode opens the file explorer (left). The AI chat this
+    // checkbox lives in IS the coding chat — there's no separate tab
+    // to open, the dock is already visible (that's where the toggle
+    // is). Uncheck hides the explorer so the user gets a clean editor.
     connect(m_aiDockPanel, &AIPanel::codingModeRequested, this, [this](bool on) {
-        if (on) {
-            if (m_explorer) m_explorer->setVisible(true);
-            if (m_aiDockHost) m_aiDockHost->setVisible(true);
-        }
+        if (m_explorer) m_explorer->setVisible(on);
     });
     m_aiDockHost->setVisible(false);
     m_splitter->addWidget(m_aiDockHost);
@@ -1507,32 +1509,19 @@ void MainWindow::buildMenus() {
     });
 
     // --- AI Assistant ---
-    // Label no longer says "Ollama" because v0.1.14 supports Ollama,
-    // llama.cpp, and any OpenAI-compatible server — pick in Preferences.
+    // AI Assistant — toggles the persistent right-side dock instead of
+    // spawning a new editor tab. One chat, always in the same place, so
+    // switching between files doesn't reset the conversation. Matches
+    // the Cursor / VS Code layout the user asked for.
     auto *aiAct = feat->addAction("AI Assistant      Ctrl+Shift+A");
     aiAct->setCheckable(true);
     aiAct->setShortcut(QKeySequence("Ctrl+Shift+A"));
-    aiAct->setStatusTip("Opens AI Assistant in a new tab. Select code first. Requires a local AI runner (Ollama / llama.cpp / OpenAI-compat) — configure in Settings → Preferences → AI.");
-    connect(aiAct, &QAction::triggered, this, [this, E]() {
-        auto *panel = new AIPanel;
-        if (E()) panel->setContext(
-            E()->hasSelectedText() ? E()->selectedText() : E()->text(),
-            E()->filePath(), E()->language());
-        connect(panel, &AIPanel::insertText, this, [this](const QString &text) {
-            if (auto *e = currentEditor()) e->insert(text);
-        });
-        connect(panel, &AIPanel::replaceSelection, this, [this](const QString &text) {
-            if (auto *e = currentEditor(); e && e->hasSelectedText()) e->replaceSelectedText(text);
-        });
-        // Coding Mode → 3-column layout (file tree | editor | AI dock)
-        connect(panel, &AIPanel::codingModeRequested, this, [this](bool on) {
-            if (on) {
-                if (m_explorer)  m_explorer->setVisible(true);
-                if (m_aiDockHost) m_aiDockHost->setVisible(true);
-            }
-        });
-        int idx = m_tabs->addTab(panel, "AI Assistant");
-        m_tabs->setCurrentIndex(idx);
+    aiAct->setStatusTip("Toggle the AI Assistant dock (right side). Persistent chat that sees all your open files + workspace. Configure backends in Settings → Preferences → AI.");
+    connect(aiAct, &QAction::triggered, this, [this, aiAct]() {
+        // toggleAiDock also seeds fresh workspace context into the dock,
+        // so the user can send immediately after opening.
+        toggleAiDock();
+        aiAct->setChecked(m_aiDockHost && m_aiDockHost->isVisible());
     });
 
     feat->addSeparator();
@@ -3327,6 +3316,87 @@ void MainWindow::openComparePicker(const QString &tabLabel) {
 }
 
 // ── Cursor-style AI dock toggle ────────────────────────────────────────────
+// Push the current workspace state (selection + current file + every open
+// editor tab + workspace root + full file-tree listing) into an AIPanel.
+// AIPanel installs this as a ContextProvider so it gets called right before
+// each Send — that keeps the model's awareness in sync with tab switches
+// and edits without us having to wire up a torrent of signals.
+void MainWindow::populateAiContext(AIPanel *panel) {
+    if (!panel) return;
+
+    QVector<AIPanel::OpenTabInfo> openTabs;
+    Editor *cur = currentEditor();
+    for (int i = 0; i < m_tabs->count(); ++i) {
+        auto *ed = qobject_cast<Editor *>(m_tabs->widget(i));
+        if (!ed) continue;   // skip Welcome / AI / REST / Compare / … panels
+        AIPanel::OpenTabInfo info;
+        info.filePath    = ed->filePath();
+        info.displayName = m_tabs->tabText(i).remove('&');  // strip mnemonic
+        info.language    = ed->language();
+        info.text        = ed->text();
+        info.isCurrent   = (ed == cur);
+        openTabs.append(info);
+    }
+
+    QString selected, curPath, curLang, curText, workspace;
+    if (cur) {
+        selected = cur->hasSelectedText() ? cur->selectedText() : QString();
+        curPath  = cur->filePath();
+        curLang  = cur->language();
+        curText  = cur->text();
+    }
+
+    // Workspace root priority:
+    //   1. Explorer root (if user did "Open Folder as Workspace")
+    //   2. Directory of the current file
+    // This way the AI reasons about the project the user actually opened,
+    // not just the folder containing whichever file happens to be active.
+    if (m_explorer && !m_explorer->rootPath().isEmpty())
+        workspace = m_explorer->rootPath();
+    else if (!curPath.isEmpty())
+        workspace = QFileInfo(curPath).absolutePath();
+
+    // Walk the workspace root (shallow-but-recursive) to hand the AI a
+    // codebase file listing. Lets the model reference files the user
+    // hasn't opened — "import from utils.py" even when utils.py isn't
+    // in a tab. We cap entries so giant repos don't walk forever.
+    QStringList workspaceFilePaths;
+    if (!workspace.isEmpty()) {
+        constexpr int kWalkCap = 800;
+        const QDir rootDir(workspace);
+        QDirIterator it(workspace,
+                        QDir::Files | QDir::NoDotAndDotDot,
+                        QDirIterator::Subdirectories);
+        while (it.hasNext() && workspaceFilePaths.size() < kWalkCap) {
+            const QString abs = it.next();
+            // Filter out VCS / build / node_modules noise — those directories
+            // contain thousands of files that dilute the listing and eat
+            // the tree budget for no user benefit.
+            const QString rel = rootDir.relativeFilePath(abs);
+            if (rel.startsWith(QStringLiteral(".git/")) ||
+                rel.contains(QStringLiteral("/.git/")) ||
+                rel.startsWith(QStringLiteral("node_modules/")) ||
+                rel.contains(QStringLiteral("/node_modules/")) ||
+                rel.startsWith(QStringLiteral("build/")) ||
+                rel.contains(QStringLiteral("/build/")) ||
+                rel.startsWith(QStringLiteral("target/")) ||
+                rel.contains(QStringLiteral("/target/")) ||
+                rel.startsWith(QStringLiteral("dist/")) ||
+                rel.contains(QStringLiteral("/dist/")) ||
+                rel.startsWith(QStringLiteral(".venv/")) ||
+                rel.contains(QStringLiteral("/.venv/")) ||
+                rel.startsWith(QStringLiteral("__pycache__/")) ||
+                rel.contains(QStringLiteral("/__pycache__/")))
+                continue;
+            workspaceFilePaths.append(rel);
+        }
+        workspaceFilePaths.sort();
+    }
+
+    panel->setWorkspaceContext(selected, curPath, curLang, curText,
+                               openTabs, workspace, workspaceFilePaths);
+}
+
 // Shows the AIPanel on the right of the editor so the window reads
 // left-to-right as: FileExplorer · EditorTabs · AIPanel. When toggled
 // on, also auto-opens the file-tree sidebar so users get the full
@@ -3337,15 +3407,9 @@ void MainWindow::toggleAiDock() {
     m_aiDockHost->setVisible(show);
     if (show) {
         if (m_explorer && !m_explorer->isVisible()) m_explorer->setVisible(true);
-        // Seed the dock AI panel with the current tab's code so the
-        // user can ask about what's on screen immediately.
-        if (m_aiDockPanel) {
-            if (auto *e = currentEditor()) {
-                m_aiDockPanel->setContext(
-                    e->hasSelectedText() ? e->selectedText() : e->text(),
-                    e->filePath(), e->language());
-            }
-        }
+        // Seed the dock panel immediately so the user can fire a prompt
+        // without waiting for the first tab switch.
+        populateAiContext(m_aiDockPanel);
     }
 }
 

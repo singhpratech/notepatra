@@ -9,6 +9,7 @@
 #include <QLabel>
 #include <QCheckBox>
 #include <QVector>
+#include <functional>
 #include "ollama.h"
 
 class QProcess;
@@ -18,7 +19,47 @@ class AIPanel : public QWidget {
     Q_OBJECT
 public:
     explicit AIPanel(QWidget *parent = nullptr);
+
+    // One entry per Editor tab currently open in the main window. Passed in
+    // via setWorkspaceContext() so the AI can reference other files the user
+    // has open (Cursor / Copilot-style cross-file awareness).
+    struct OpenTabInfo {
+        QString filePath;       // absolute path (or "" for unsaved new files)
+        QString displayName;    // tab title / basename — used when filePath is empty
+        QString language;
+        QString text;           // full editor buffer; truncated later by the token budgeter
+        bool isCurrent = false;
+    };
+
+    // Backward-compat overload — callers that only know about a single file.
     void setContext(const QString &selectedText, const QString &filePath, const QString &language);
+
+    // Full workspace-aware context. Preferred over the 3-arg overload.
+    // `openTabs` should include the current tab (with isCurrent=true) plus
+    // every other Editor tab; non-editor panels (Welcome, AI, REST …) should
+    // be skipped by the caller.
+    void setWorkspaceContext(const QString &selectedText,
+                             const QString &currentFilePath,
+                             const QString &language,
+                             const QString &currentFileText,
+                             const QVector<OpenTabInfo> &openTabs,
+                             const QString &workspaceRoot,
+                             const QStringList &workspaceFilePaths = {});
+
+    // Install a pull-based provider. When the user clicks Send, AIPanel calls
+    // `refresh(this)` first so the host MainWindow can push the newest editor
+    // text + tab list. This avoids staleness without a stream of signals.
+    using ContextProvider = std::function<void(AIPanel *)>;
+    void setContextProvider(ContextProvider provider) { m_contextProvider = std::move(provider); }
+
+    // Exposed for unit tests — pure function that assembles the
+    // "workspace awareness" block the AI sees before the user's prompt.
+    // Budget-capped so small local models don't overflow their context.
+    static QString buildWorkspaceContextBlock(
+        const QString &currentFilePath,
+        const QString &currentFileText,
+        const QVector<OpenTabInfo> &openTabs,
+        const QString &workspaceRoot);
 
     struct ChatMessage {
         enum Role {
@@ -80,9 +121,21 @@ private:
     QCheckBox *m_codingMode;     // Cursor/Copilot-style "output code, not prose"
     QLabel *m_statusLabel;
     QPushButton *m_applyCodeBtn; // one-click "replace selection with response code"
+    // Clutter that hides when Coding Mode is on — we want the dock to feel
+    // like Cursor/Copilot when the user opts in: just model picker, chat,
+    // input bar. Everything else is still there in the default view.
+    QWidget *m_quickActionsWrap = nullptr;  // 8 quick-action buttons
+    QWidget *m_resultActionsWrap = nullptr; // Insert/Replace/Copy row
     OllamaClient *m_ollama;
-    QString m_context;
+    QString m_context;          // selected text (if any) or current file text
     QString m_language;
+    // Workspace awareness — populated by setWorkspaceContext() / provider.
+    QString m_currentFilePath;
+    QString m_currentFileText;  // full buffer of the current tab (not just selection)
+    QVector<OpenTabInfo> m_openTabs;
+    QString m_workspaceRoot;
+    QStringList m_workspaceFilePaths;  // relative paths of every file under the workspace
+    ContextProvider m_contextProvider;
     QString m_lastResponse;
     QString m_currentAssistantText;  // accumulating during stream
     bool m_inAssistantBubble = false;

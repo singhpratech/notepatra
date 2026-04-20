@@ -3,13 +3,17 @@
 #include "fonts.h"
 
 #include <QCheckBox>
+#include <QCoreApplication>
+#include <QDir>
 #include <QEvent>
 #include <QFileInfo>
 #include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QPixmap>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QVBoxLayout>
@@ -161,6 +165,36 @@ WelcomeWidget::WelcomeWidget(QWidget *parent) : QWidget(parent) {
     outer->addWidget(scroll);
 }
 
+static QPixmap loadWelcomeLogo(int size) {
+    // 1. Qt's standard icon theme lookup — works once install.sh has dropped
+    //    icons into ~/.local/share/icons/hicolor (Linux) or on systems with
+    //    a configured theme. Returns the highest-res variant available.
+    QIcon themed = QIcon::fromTheme(QStringLiteral("notepatra"));
+    if (!themed.isNull()) {
+        QPixmap pm = themed.pixmap(size, size);
+        if (!pm.isNull()) return pm;
+    }
+    // 2. Try a handful of on-disk locations — handy for dev runs out of a
+    //    build tree and for packaged bundles (AppImage/.app/Program Files).
+    const QString exeDir = QCoreApplication::applicationDirPath();
+    const QStringList candidates = {
+        exeDir + "/../share/icons/hicolor/512x512/apps/notepatra.png",
+        exeDir + "/../share/icons/hicolor/256x256/apps/notepatra.png",
+        exeDir + "/../share/pixmaps/notepatra.png",
+        exeDir + "/resources/notepatra.png",
+        exeDir + "/../resources/notepatra.png",
+        QDir::homePath() + "/.local/share/icons/hicolor/512x512/apps/notepatra.png",
+        QDir::homePath() + "/.local/share/icons/hicolor/256x256/apps/notepatra.png",
+        // dev fallback when running ./build/notepatra from source checkout
+        exeDir + "/../resources/notepatra-512.png",
+    };
+    for (const QString &path : candidates) {
+        QPixmap pm(path);
+        if (!pm.isNull()) return pm;
+    }
+    return QPixmap();
+}
+
 void WelcomeWidget::buildHeroSection(QVBoxLayout *parent) {
     const auto p = welcomePalette();
 
@@ -168,6 +202,18 @@ void WelcomeWidget::buildHeroSection(QVBoxLayout *parent) {
     auto *heroLayout = new QVBoxLayout(hero);
     heroLayout->setContentsMargins(0, 20, 0, 0);
     heroLayout->setSpacing(8);
+
+    // Logo above the "Welcome to Notepatra" headline — makes the hero feel
+    // like a proper brand moment instead of a wall of text. Silent fallback
+    // if the icon can't be located so headless tests don't explode.
+    QPixmap logoPm = loadWelcomeLogo(96);
+    if (!logoPm.isNull()) {
+        auto *logo = new QLabel;
+        logo->setPixmap(logoPm.scaled(88, 88, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        logo->setStyleSheet("background: transparent;");
+        heroLayout->addWidget(logo);
+        heroLayout->addSpacing(6);
+    }
 
     auto *title = new QLabel("Welcome to Notepatra");
     QFont titleFont = notepatraUiFont();

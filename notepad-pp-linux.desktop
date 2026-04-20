@@ -1,10 +1,12 @@
 [Desktop Entry]
-Name=Notepad++ Linux (Native)
-Comment=Native C++/Rust clone of Notepad++
-Exec=/home/papapratlinux/Documents/notepad-linux-native/build/notepad-pp-linux %F
-Icon=accessories-text-editor
+Name=Notepatra
+GenericName=Code Editor
+Comment=Native, AI-first code editor for Linux, macOS, and Windows — inspired by Notepad++, rebuilt for the AI era.
+Exec=notepatra %F
+Icon=notepatra
 Terminal=false
 Type=Application
-Categories=Development;TextEditor;
+Categories=Development;TextEditor;IDE;
 MimeType=text/plain;text/x-python;text/x-csrc;text/x-c++src;text/html;text/css;text/javascript;application/json;application/xml;
-StartupWMClass=notepad-pp-linux
+StartupWMClass=notepatra
+Keywords=editor;code;notepad;notepatra;ai;ollama;

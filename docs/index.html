@@ -1353,26 +1353,22 @@
     </section>
 
     <!-- ─────────────────────────────────────────────────────────────
-         See it in action — hero video placeholder. Loads the MP4 if
-         it's on the CDN, otherwise shows a styled CTA that links to
-         the GitHub README's animated GIF. Keeps the page lightweight
-         for users who have autoplay-block on.
+         See it in action — real animated GIF captured from a running
+         Notepatra instance. Frames cycle: editor → Project Search →
+         Project Search with results → AI Assistant (Ollama detected).
          ───────────────────────────────────────────────────────────── -->
     <section id="see-it-in-action" style="max-width: 1120px; margin: 0 auto 60px; padding: 0 24px; text-align: center;">
         <div class="section-label">See it in action</div>
         <div class="section-title" style="margin-bottom: 12px;">Notepatra in 60 seconds</div>
-        <p class="section-desc">Project Search · AI Assistant · Compare · Git — watch the feature tour.</p>
-        <div style="position: relative; max-width: 960px; margin: 28px auto 0; aspect-ratio: 16 / 9; background: var(--c-surface); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px -20px rgba(20,20,19,0.18);">
-            <!-- When the MP4 is uploaded to GitHub Releases or the CDN, swap
-                 the placeholder <a> for a <video controls> element. -->
-            <a href="https://github.com/singhpratech/notepatra#readme"
-               style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 16px; text-decoration: none; color: var(--c-text); background: linear-gradient(135deg, rgba(204,120,92,0.05), rgba(204,120,92,0.12));">
-                <div style="width: 84px; height: 84px; background: var(--c-accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 20px 40px rgba(204,120,92,0.35);">
-                    <div style="width: 0; height: 0; border-left: 24px solid #FFFFFF; border-top: 14px solid transparent; border-bottom: 14px solid transparent; margin-left: 6px;"></div>
-                </div>
-                <div style="font-size: 16px; font-weight: 600;">Watch the tour on GitHub →</div>
-                <div style="font-size: 13px; color: var(--text-dim);">Full feature walkthrough with animated GIFs and screenshots</div>
-            </a>
+        <p class="section-desc">Editor · Project Search · AI Assistant — captured from a running Notepatra on Linux.</p>
+        <div style="position: relative; max-width: 960px; margin: 28px auto 0; background: var(--c-surface); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px -20px rgba(20,20,19,0.18);">
+            <img src="screenshots/tour.gif"
+                 alt="Notepatra tour — editor with syntax highlighting, Project Search with live results, AI Assistant with Ollama auto-detected"
+                 loading="lazy"
+                 style="display: block; width: 100%; height: auto;">
+        </div>
+        <div style="margin-top: 14px; font-size: 12px; color: var(--text-dim);">
+            Real capture — not a mockup. <a href="https://github.com/singhpratech/notepatra#readme" style="color: var(--c-accent); text-decoration: none;">More on GitHub →</a>
         </div>
     </section>
 
