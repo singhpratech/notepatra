@@ -41,6 +41,20 @@ public:
     // the tab itself, or via View menu.
     bool showWelcomeOnStartup = true;
 
+    // AI backend selection. One of "Ollama" (default), "llama.cpp",
+    // "OpenAI-compat" (LM Studio / Jan / vLLM / anything speaking the
+    // OpenAI /v1/chat/completions API). See OllamaClient::Backend for
+    // the full list.
+    QString aiBackend = "Ollama";
+    // Base URL for the selected backend. Empty = use the default for
+    // the backend (11434 for Ollama, 8080 for llama.cpp). Users paste
+    // custom URLs here when self-hosting.
+    QString aiBaseUrl;
+    // Optional Bearer token — passed as Authorization header for
+    // OpenAI-compat backends. Ignored for Ollama. Ignored for
+    // llama-server too (it doesn't check auth by default).
+    QString aiApiKey;
+
     // Session
     QStringList recentFiles;
     int maxRecent = 15;
@@ -73,6 +87,9 @@ public:
         autoComplete = o.value("autoComplete").toBool(autoComplete);
         autoCompleteThreshold = o.value("autoCompleteThreshold").toInt(autoCompleteThreshold);
         showWelcomeOnStartup = o.value("showWelcomeOnStartup").toBool(showWelcomeOnStartup);
+        aiBackend = o.value("aiBackend").toString(aiBackend);
+        aiBaseUrl = o.value("aiBaseUrl").toString(aiBaseUrl);
+        aiApiKey  = o.value("aiApiKey").toString(aiApiKey);
         windowX = o.value("windowX").toInt(windowX);
         windowY = o.value("windowY").toInt(windowY);
         windowW = o.value("windowW").toInt(windowW);
@@ -105,6 +122,9 @@ public:
         o["autoComplete"] = autoComplete;
         o["autoCompleteThreshold"] = autoCompleteThreshold;
         o["showWelcomeOnStartup"] = showWelcomeOnStartup;
+        o["aiBackend"] = aiBackend;
+        o["aiBaseUrl"] = aiBaseUrl;
+        o["aiApiKey"]  = aiApiKey;
         o["windowX"] = windowX;
         o["windowY"] = windowY;
         o["windowW"] = windowW;

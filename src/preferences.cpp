@@ -1,4 +1,5 @@
 #include "preferences.h"
+#include "config.h"
 
 #include <QTabWidget>
 #include <QVBoxLayout>
@@ -9,6 +10,7 @@
 #include <QComboBox>
 #include <QRadioButton>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 
 PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent) {
@@ -104,10 +106,103 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent) {
     ndLay->addStretch();
     tabs->addTab(newDoc, "New Document");
 
+    // AI Backend tab — pick where the AI features send requests.
+    // Defaults to Ollama so existing installations keep working. Users
+    // who prefer llama.cpp's llama-server, or any OpenAI-compatible
+    // local backend (LM Studio, Jan, vLLM, text-generation-webui,
+    // KoboldCpp, llamafile, OpenRouter, etc.) can switch here.
+    auto *aiTab = new QWidget;
+    auto *aiLay = new QVBoxLayout(aiTab);
+
+    auto *backendGroup = new QGroupBox("AI Backend");
+    auto *backendLay = new QVBoxLayout(backendGroup);
+
+    auto *rbOllama = new QRadioButton("Ollama — ollama serve (default, auto-detect)");
+    auto *rbLlama  = new QRadioButton("llama.cpp — llama-server --port 8080 (loads GGUF directly)");
+    auto *rbOpen   = new QRadioButton("OpenAI-compat — LM Studio / Jan / vLLM / KoboldCpp / custom");
+    const QString be = Config::instance().aiBackend;
+    if (be.compare("llama.cpp", Qt::CaseInsensitive) == 0)          rbLlama->setChecked(true);
+    else if (be.startsWith("OpenAI", Qt::CaseInsensitive) ||
+             be.compare("custom", Qt::CaseInsensitive) == 0)         rbOpen->setChecked(true);
+    else                                                              rbOllama->setChecked(true);
+    backendLay->addWidget(rbOllama);
+    backendLay->addWidget(rbLlama);
+    backendLay->addWidget(rbOpen);
+    aiLay->addWidget(backendGroup);
+
+    auto *urlRow = new QHBoxLayout;
+    urlRow->addWidget(new QLabel("Base URL:"));
+    auto *urlEdit = new QLineEdit(Config::instance().aiBaseUrl);
+    urlEdit->setPlaceholderText("Leave empty to use the default for the chosen backend");
+    urlRow->addWidget(urlEdit, 1);
+    aiLay->addLayout(urlRow);
+
+    auto *keyRow = new QHBoxLayout;
+    keyRow->addWidget(new QLabel("API Key:"));
+    auto *keyEdit = new QLineEdit(Config::instance().aiApiKey);
+    keyEdit->setEchoMode(QLineEdit::Password);
+    keyEdit->setPlaceholderText("Optional — only needed for OpenAI / OpenRouter / authed endpoints");
+    keyRow->addWidget(keyEdit, 1);
+    aiLay->addLayout(keyRow);
+
+    // Live quick-help that changes with the chosen backend
+    auto *help = new QLabel;
+    help->setWordWrap(true);
+    help->setStyleSheet("color: #888; font-size: 11px; padding-top: 8px;");
+    auto updateHelp = [rbOllama, rbLlama, rbOpen, urlEdit, help]() {
+        if (rbOllama->isChecked()) {
+            urlEdit->setPlaceholderText("default: http://localhost:11434");
+            help->setText(
+                "<b>Ollama:</b> install from <a href='https://ollama.com'>ollama.com</a>, "
+                "run <code>ollama serve</code>, pull a small model: "
+                "<code>ollama pull qwen2.5-coder:3b</code>. No auth needed.");
+        } else if (rbLlama->isChecked()) {
+            urlEdit->setPlaceholderText("default: http://localhost:8080");
+            help->setText(
+                "<b>llama.cpp:</b> grab any <code>.gguf</code> from "
+                "<a href='https://huggingface.co'>huggingface.co</a> and run "
+                "<code>llama-server -m model.gguf --port 8080</code>. "
+                "No daemon, no config format — pure GGUF.");
+        } else {
+            urlEdit->setPlaceholderText("e.g. http://localhost:1234 (LM Studio), http://localhost:5000 (text-generation-webui)");
+            help->setText(
+                "<b>OpenAI-compat:</b> works with LM Studio, Jan, vLLM, "
+                "KoboldCpp, llamafile, OpenRouter, and OpenAI itself. "
+                "Paste the endpoint URL above and (if the server requires it) "
+                "your API key.");
+        }
+    };
+    updateHelp();
+    QObject::connect(rbOllama, &QRadioButton::toggled, this, updateHelp);
+    QObject::connect(rbLlama,  &QRadioButton::toggled, this, updateHelp);
+    QObject::connect(rbOpen,   &QRadioButton::toggled, this, updateHelp);
+    help->setOpenExternalLinks(true);
+    aiLay->addWidget(help);
+    aiLay->addStretch();
+
+    // Persist on save. Fires when Close is clicked (see bottom of ctor).
+    auto saveAiSettings = [rbOllama, rbLlama, urlEdit, keyEdit]() {
+        auto &cfg = Config::instance();
+        cfg.aiBackend = rbOllama->isChecked() ? "Ollama"
+                      : rbLlama->isChecked()  ? "llama.cpp"
+                      :                          "OpenAI-compat";
+        cfg.aiBaseUrl = urlEdit->text().trimmed();
+        cfg.aiApiKey  = keyEdit->text();
+        cfg.save();
+    };
+    // Store on the dialog so the Close button's lambda can call it
+    setProperty("notepatra.saveAiSettings", QVariant::fromValue<void*>(nullptr));
+    m_saveAiSettings = saveAiSettings;
+
+    tabs->addTab(aiTab, "AI");
+
     auto *btnRow = new QHBoxLayout;
     btnRow->addStretch();
     auto *closeBtn = new QPushButton("Close");
-    connect(closeBtn, &QPushButton::clicked, this, &QDialog::close);
+    connect(closeBtn, &QPushButton::clicked, this, [this]() {
+        if (m_saveAiSettings) m_saveAiSettings();
+        close();
+    });
     btnRow->addWidget(closeBtn);
     layout->addLayout(btnRow);
 }
