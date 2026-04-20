@@ -13,6 +13,7 @@
 #include <QPushButton>
 #include <QApplication>
 #include <QClipboard>
+#include <QStandardPaths>
 
 namespace {
 
@@ -244,10 +245,18 @@ TerminalWidget::TerminalWidget(QWidget *parent) : QWidget(parent) {
     connect(m_process, &QProcess::readyRead, this, &TerminalWidget::onReadyRead);
     connect(m_process, static_cast<void(QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished),
             this, [this](int code, QProcess::ExitStatus) {
+        // Drain any bytes still buffered after finished() fires. Use
+        // insertHtml + explicit <br> so we don't get the extra blank line
+        // append() bakes in between writes.
         QByteArray remaining = m_process->readAll();
-        if (!remaining.isEmpty())
-            m_output->append(QString::fromUtf8(remaining).toHtmlEscaped().replace("\n", "<br>"));
-        m_output->append(QString("<span style='color:#808080;'>[exit %1]</span>").arg(code));
+        auto cur = m_output->textCursor();
+        cur.movePosition(QTextCursor::End);
+        m_output->setTextCursor(cur);
+        if (!remaining.isEmpty()) {
+            m_output->insertHtml(ansiToHtml(QString::fromUtf8(remaining)));
+        }
+        m_output->insertHtml(QString("<br><span style='color:#808080;'>[exit %1]</span><br>").arg(code));
+        m_output->verticalScrollBar()->setValue(m_output->verticalScrollBar()->maximum());
         m_input->setEnabled(true);
         m_input->setFocus();
     });
@@ -280,27 +289,106 @@ void TerminalWidget::setWorkingDirectory(const QString &dir) {
     updatePrompt();
 }
 
+// Interactive CLIs that expect a real TTY (readline, alternate screen,
+// raw keystrokes). Our QProcess-pipe terminal can't provide that without
+// a PTY layer, so we offer to relaunch them in the user's real terminal.
+static bool isInteractiveCommand(const QString &cmd) {
+    const QString first = cmd.trimmed().section(' ', 0, 0);
+    static const QStringList needsTty = {
+        "claude", "codex", "aider", "gh",
+        "vim", "nvim", "vi", "nano", "emacs", "micro",
+        "top", "htop", "btop", "iotop", "atop",
+        "less", "more", "man", "info",
+        "ssh", "telnet", "mosh",
+        "tmux", "screen", "byobu",
+        "python", "python3", "ipython", "node", "irb", "pry",
+        "psql", "mysql", "sqlite3",
+        "gdb", "lldb",
+    };
+    return needsTty.contains(first);
+}
+
+// Launch command in the user's real terminal emulator. Tries a sensible
+// list (x-terminal-emulator, gnome-terminal, konsole, xfce4-terminal,
+// xterm) and falls back to an error toast if nothing is found.
+static bool launchExternalTerminal(const QString &cmd, const QString &cwd) {
+    const QStringList emulators = {
+        "x-terminal-emulator", "gnome-terminal", "konsole",
+        "xfce4-terminal", "mate-terminal", "tilix",
+        "alacritty", "kitty", "wezterm", "foot", "xterm"
+    };
+    const QString keepOpen = cmd + "; echo; echo '[press Enter to close]'; read";
+    for (const QString &term : emulators) {
+        if (QStandardPaths::findExecutable(term).isEmpty()) continue;
+        QStringList args;
+        if (term == "gnome-terminal") {
+            args << "--working-directory=" + cwd << "--" << "bash" << "-lc" << keepOpen;
+        } else {
+            // xterm / konsole / xfce4-terminal / alacritty / kitty / wezterm /
+            // foot / tilix / mate-terminal all accept `-e CMD…` — pipe through
+            // bash -lc so the keep-open read prompt works uniformly.
+            args << "-e" << "bash" << "-lc" << keepOpen;
+        }
+        QProcess::startDetached(term, args, cwd);
+        return true;
+    }
+    return false;
+}
+
 void TerminalWidget::runCommand(const QString &cmd) {
-    m_output->append(QString("<br><span style='color:#4EC9B0;'>%1 $</span> <span style='color:#DCDCAA;'>%2</span>")
-                     .arg(QDir(m_cwd).dirName(), cmd.toHtmlEscaped()));
+    // Use insertHtml + explicit <br> instead of append() — append() forces
+    // a blank line between writes which breaks visual alignment when the
+    // previous line didn't end with a newline (e.g. a streaming process).
+    auto appendLine = [this](const QString &html) {
+        auto cur = m_output->textCursor();
+        cur.movePosition(QTextCursor::End);
+        m_output->setTextCursor(cur);
+        m_output->insertHtml(html + "<br>");
+        m_output->verticalScrollBar()->setValue(m_output->verticalScrollBar()->maximum());
+    };
+
+    appendLine(QString("<br><span style='color:#4EC9B0;'>%1 $</span> <span style='color:#DCDCAA;'>%2</span>")
+                   .arg(QDir(m_cwd).dirName().toHtmlEscaped(), cmd.toHtmlEscaped()));
 
     if (cmd.trimmed() == "clear" || cmd.trimmed() == "cls") {
         m_output->clear();
         return;
     }
 
-    if (cmd.trimmed().startsWith("cd ")) {
-        QString dir = cmd.trimmed().mid(3).trimmed();
-        if (dir == "~") dir = QDir::homePath();
+    if (cmd.trimmed().startsWith("cd ") || cmd.trimmed() == "cd") {
+        QString dir = cmd.trimmed().mid(2).trimmed();
+        if (dir.isEmpty() || dir == "~") dir = QDir::homePath();
         else if (dir.startsWith("~/")) dir = QDir::homePath() + dir.mid(1);
         else if (!dir.startsWith("/")) dir = m_cwd + "/" + dir;
         QDir d(dir);
         if (d.exists()) {
             m_cwd = d.canonicalPath();
             updatePrompt();
-            m_output->append(QString("<span style='color:#808080;'>%1</span>").arg(m_cwd));
+            appendLine(QString("<span style='color:#808080;'>%1</span>").arg(m_cwd.toHtmlEscaped()));
         } else {
-            m_output->append(QString("<span style='color:#F44747;'>cd: %1: No such directory</span>").arg(dir));
+            appendLine(QString("<span style='color:#F44747;'>cd: %1: No such directory</span>").arg(dir.toHtmlEscaped()));
+        }
+        return;
+    }
+
+    // Interactive CLIs (claude, codex, vim, top, ssh…) require a real
+    // TTY. Our QProcess terminal doesn't have one, so detect the common
+    // ones and offer a one-tap handoff to the system terminal emulator.
+    if (isInteractiveCommand(cmd)) {
+        appendLine(QString(
+            "<span style='color:#F2C14E;'>⚠ <b>%1</b> needs a real terminal (TTY).</span>")
+            .arg(cmd.section(' ', 0, 0).toHtmlEscaped()));
+        appendLine("<span style='color:#808080;'>The built-in terminal runs commands through a pipe, "
+                   "which works great for ls / grep / git / npm / cargo / make etc. but not for "
+                   "interactive CLIs.</span>");
+        if (launchExternalTerminal(cmd, m_cwd)) {
+            appendLine(QString(
+                "<span style='color:#4EC9B0;'>→ launched \"%1\" in your system terminal</span>")
+                .arg(cmd.toHtmlEscaped()));
+        } else {
+            appendLine("<span style='color:#F44747;'>Couldn't find a terminal emulator on PATH "
+                       "(tried gnome-terminal, konsole, xterm, alacritty, kitty, …). "
+                       "Install one, or run the command from your regular terminal.</span>");
         }
         return;
     }
