@@ -1797,9 +1797,21 @@ void MainWindow::buildMenus() {
     // ~/.config/notepatra/plugins. Naming clarified via "(inbuilt)" suffix
     // on the built-in entries so users can tell them apart from third-party
     // ones. Terminal and AI Assistant live in the "Tools" menu above.
-    auto *pluginsMenu = mb->addMenu("Pl&ugins");
+    // ═══ BUILT-IN TOOLS — appended to the Tools menu ═══
+    // The "Plu&gins (inbuilt)" items (SQL Formatter, Compare, Git, JSON,
+    // HTML, Bracket Tools, REST Client) used to live under a separate
+    // "Plugins" top-level menu, which confused users ("are these plugins
+    // I need to install? Or built-in?"). They're now appended directly
+    // to the Tools menu so the mental model is:
+    //    Tools   = everything that ships with Notepatra
+    //    Plugins = third-party extensions YOU add
+    // See the user-plugin block at the end of this function for the
+    // dedicated Plugins menu that hosts user-installable .so/.dll/.dylib
+    // extensions and the "How to write a plugin" documentation entry.
+    feat->addSeparator();
     QString pluginDir = QDir::homePath() + "/.config/notepatra/plugins";
     m_pluginManager.loadPlugins(pluginDir);
+    QMenu *pluginsMenu = feat;  // "inbuilt plugin" actions append to Tools
 
     // SQL Formatter (inbuilt) — opens in a new tab
     pluginsMenu->addAction("SQL Formatter (inbuilt)", this, [this, E]() {
@@ -2256,12 +2268,22 @@ void MainWindow::buildMenus() {
         m_tabs->setCurrentIndex(idx);
     });
 
-    pluginsMenu->addSeparator();
+    // ═══ PLUGINS — user-installable extensions only ═══
+    // Now a dedicated top-level menu containing ONLY user plugins loaded
+    // from ~/.config/notepatra/plugins plus the helpers for installing /
+    // writing them. The built-in plugin equivalents live under Tools
+    // above (see the comment near pluginsMenu = feat).
+    auto *userPluginsMenu = mb->addMenu("Pl&ugins");
+
+    if (m_pluginManager.plugins().isEmpty()) {
+        auto *emptyAct = userPluginsMenu->addAction("(no user plugins installed)");
+        emptyAct->setEnabled(false);
+    }
 
     // User plugins — just click to run
     for (int i = 0; i < m_pluginManager.plugins().size(); i++) {
         const auto &p = m_pluginManager.plugins()[i];
-        pluginsMenu->addAction(QString("Run: %1 v%2").arg(p.name, p.version), this, [this, E, i]() {
+        userPluginsMenu->addAction(QString("Run: %1 v%2").arg(p.name, p.version), this, [this, E, i]() {
             if (auto *e = E()) {
                 QString input = e->hasSelectedText() ? e->selectedText() : e->text();
                 QString output = m_pluginManager.runPlugin(i, input);
@@ -2271,13 +2293,13 @@ void MainWindow::buildMenus() {
         });
     }
 
-    pluginsMenu->addSeparator();
+    userPluginsMenu->addSeparator();
 
-    pluginsMenu->addAction("Open Plugins Folder", this, [pluginDir]() {
+    userPluginsMenu->addAction("Open Plugins Folder", this, [pluginDir]() {
         QDir().mkpath(pluginDir);
         QDesktopServices::openUrl(QUrl::fromLocalFile(pluginDir));
     });
-    pluginsMenu->addAction("How to Write a Plugin...", this, [this, pluginDir]() {
+    userPluginsMenu->addAction("How to Write a Plugin...", this, [this, pluginDir]() {
         QString compileHint;
 #ifdef Q_OS_WIN
         compileHint = "Compile:  cl /LD myplugin.cpp /Fe:myplugin.dll";

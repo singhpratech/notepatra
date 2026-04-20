@@ -281,11 +281,26 @@ QWidget *WelcomeWidget::makeFeatureCard(const QString &icon, const QString &titl
     // Allow the card to grow as needed for description word-wrap; the grid
     // column width drives the minimum. Larger min-height gives room for
     // icon + title + 2-3 lines of wrapped description without clipping.
+    // Each card also gets a soft shadow on hover and a stronger rest-state
+    // border so they read as discrete surfaces on the Welcome canvas
+    // rather than a single blurred block.
     card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::MinimumExpanding);
-    card->setMinimumHeight(170);
+    card->setMinimumHeight(180);
+    // A 3-px accent bar on the left of every card, tinted with the
+    // feature's accent colour, gives each tile its own identity — similar
+    // to the way Xcode's sidebar + Notion's boards separate blocks.
     card->setStyleSheet(QString(
-        "ClickableCard { background: %1; border: 1px solid %2; border-radius: 10px; }"
-        "ClickableCard:hover { border-color: %3; background: %4; }"
+        "ClickableCard { "
+        "  background: %1; "
+        "  border: 1px solid %2; "
+        "  border-left: 3px solid %3; "
+        "  border-radius: 12px; "
+        "} "
+        "ClickableCard:hover { "
+        "  border-color: %3; "
+        "  border-left: 3px solid %3; "
+        "  background: %4; "
+        "}"
     ).arg(p.cardBg, p.cardBorder, accentColor, p.cardHover));
 
     auto *layout = new QVBoxLayout(card);
@@ -336,7 +351,7 @@ void WelcomeWidget::buildFeatureCards(QVBoxLayout *parent) {
     parent->addWidget(header);
 
     auto *grid = new QGridLayout;
-    grid->setSpacing(12);
+    grid->setSpacing(18);   // more breathing room so each card is an island
     grid->setContentsMargins(0, 0, 0, 0);
 
     struct Feat {
