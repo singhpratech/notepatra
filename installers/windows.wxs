@@ -76,92 +76,43 @@
                   Source="$(var.SourceDir)\notepatra.exe"
                   KeyPath="yes" />
 
-            <!-- File type associations: register Notepatra to open text files -->
-            <ProgId Id="Notepatra.TextFile" Description="Text document (Notepatra)">
+            <!-- File-type associations. One ProgId for everything; a
+                 single shared <Verb> under the first Extension, with
+                 Id="NotepatraOpen" so its registry hash is unique. The
+                 rest of the extensions inherit the ProgId by Advertise
+                 so they all open with Notepatra without re-declaring
+                 Verbs (which caused LGHT0130 Registry-key collisions). -->
+            <ProgId Id="Notepatra.Document" Description="Notepatra Document">
               <Extension Id="txt" ContentType="text/plain">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
+                <Verb Id="NotepatraOpen" Command="Open with Notepatra"
+                      TargetFile="NotepatraExe" Argument='"%1"' />
               </Extension>
-              <Extension Id="log">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="md">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="json">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="xml">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="yaml">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="yml">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="ini">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="conf">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="cfg">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="csv">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-            </ProgId>
-
-            <ProgId Id="Notepatra.CodeFile" Description="Code file (Notepatra)">
-              <Extension Id="py">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="js">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="ts">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="cpp">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="c">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="h">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="hpp">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="rs">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="go">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="java">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="cs">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="sql">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="html">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="css">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="sh">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
-              <Extension Id="ps1">
-                <Verb Id="open" Command="Open with Notepatra" TargetFile="NotepatraExe" Argument='"%1"' />
-              </Extension>
+              <Extension Id="log"  />
+              <Extension Id="md"   />
+              <Extension Id="json" />
+              <Extension Id="xml"  />
+              <Extension Id="yaml" />
+              <Extension Id="yml"  />
+              <Extension Id="ini"  />
+              <Extension Id="conf" />
+              <Extension Id="cfg"  />
+              <Extension Id="csv"  />
+              <Extension Id="py"   />
+              <Extension Id="js"   />
+              <Extension Id="ts"   />
+              <Extension Id="cpp"  />
+              <Extension Id="c"    />
+              <Extension Id="h"    />
+              <Extension Id="hpp"  />
+              <Extension Id="rs"   />
+              <Extension Id="go"   />
+              <Extension Id="java" />
+              <Extension Id="cs"   />
+              <Extension Id="sql"  />
+              <Extension Id="html" />
+              <Extension Id="css"  />
+              <Extension Id="sh"   />
+              <Extension Id="ps1"  />
             </ProgId>
 
             <!-- Add Notepatra to the Windows PATH (system-wide) -->
