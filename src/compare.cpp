@@ -16,6 +16,7 @@
 #include <QEvent>
 #include <QFont>
 #include <QHBoxLayout>
+#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScrollBar>
@@ -672,6 +673,10 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     m_editToggle->setObjectName("compareEditToggle");
     m_editToggle->setCheckable(true);
     m_editToggle->setFixedHeight(26);
+    auto *closeBtn = new QPushButton("✕ Close");
+    closeBtn->setFixedSize(70, 26);
+    closeBtn->setToolTip("Close the compare view");
+    closeBtn->setStyleSheet("QPushButton { font-weight: 600; }");
 
     m_ignoreWhitespace = new QCheckBox("Ignore spaces");
     m_ignoreCase = new QCheckBox("Ignore case");
@@ -690,6 +695,8 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     toolbar->addWidget(m_ignoreEmptyLines);
     toolbar->addStretch();
     toolbar->addWidget(m_statsLabel);
+    toolbar->addSpacing(12);
+    toolbar->addWidget(closeBtn);
     layout->addLayout(toolbar);
 
     auto *headerRow = new QHBoxLayout;
@@ -782,6 +789,7 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     connect(m_ignoreCase, &QCheckBox::toggled, this, [this]() { recompare(); });
     connect(m_ignoreEmptyLines, &QCheckBox::toggled, this, [this]() { recompare(); });
     connect(m_navBar, &CompareNavBar::rowActivated, this, &CompareWidget::jumpToRow);
+    connect(closeBtn, &QPushButton::clicked, this, &CompareWidget::closeRequested);
 
     updateEditToggle();
 }
@@ -809,6 +817,9 @@ void CompareWidget::compare(const QString &leftText, const QString &leftName,
     m_leftText = leftText;
     m_rightText = rightText;
     m_editable = false;
+    m_firstCompareDone = false;  // set true after recompare() so the no-diff
+                                 // popup only fires on the initial compare,
+                                 // not every time the user toggles ignore-ws
     if (m_editToggle) m_editToggle->setChecked(false);
     updateEditToggle();
     m_leftHeader->setText("  " + leftName);
@@ -1074,12 +1085,48 @@ void CompareWidget::recompare() {
     m_navBar->setRows(m_rowKinds);
     updateOverviewViewport();
 
-    m_statsLabel->setText(QString("+%1 added   -%2 removed   %3 diffs   %4 lines")
+    const bool identical = m_diffLines.isEmpty() && diff.added == 0 && diff.removed == 0;
+    const ComparePalette statsPal = comparePalette();
+    if (identical) {
+        m_statsLabel->setText(QString("✓ Files are identical — %1 lines").arg(rows.size()));
+        m_statsLabel->setStyleSheet(QString("font-weight: bold; color: %1;")
+            .arg(compareIsDark() ? "#5FE07E" : "#18A02E"));
+    } else {
+        m_statsLabel->setText(QString("+%1 added   -%2 removed   %3 diffs   %4 lines")
                               .arg(diff.added)
                               .arg(diff.removed)
                               .arg(m_diffLines.size())
                               .arg(rows.size()));
+        m_statsLabel->setStyleSheet(QString("font-weight: bold; color: %1;")
+            .arg(statsPal.headerFg.name()));
+    }
     setEditorsEditable(m_editable);
+
+    // Pop a once-per-compare info dialog when files match exactly — mirrors
+    // ComparePlus's behaviour. Only fires on the first compare() call so
+    // toggling "ignore whitespace" doesn't repeatedly re-popup.
+    if (identical && !m_firstCompareDone) {
+        m_firstCompareDone = true;
+        QMessageBox box(QMessageBox::Information,
+                        "Notepatra — Compare",
+                        "The two files are identical.\n\nNo differences found.",
+                        QMessageBox::NoButton,
+                        this);
+        QPushButton *closeBtn = box.addButton("Close comparison", QMessageBox::AcceptRole);
+        QPushButton *keepBtn  = box.addButton("Keep open", QMessageBox::RejectRole);
+        box.setDefaultButton(closeBtn);
+        box.exec();
+        if (box.clickedButton() == closeBtn) {
+            // Defer the emit to the next event-loop tick — emitting during
+            // recompare() (which may be on the constructor's compare() call
+            // path) can delete `this` before the stack unwinds.
+            QMetaObject::invokeMethod(this, [this]() { emit closeRequested(); },
+                                      Qt::QueuedConnection);
+        }
+        Q_UNUSED(keepBtn);
+    } else {
+        m_firstCompareDone = true;
+    }
 }
 
 void CompareWidget::jumpToRow(int row) {
@@ -1130,9 +1177,16 @@ void CompareWidget::navigatePrev() {
 CompareDialog::CompareDialog(const QString &leftText, const QString &leftName,
                              const QString &rightText, const QString &rightName, QWidget *parent)
     : QWidget(parent) {
+    setWindowFlags(Qt::Window);
+    setWindowTitle(QString("Compare — %1 ↔ %2").arg(leftName, rightName));
+    resize(1200, 700);
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     auto *widget = new CompareWidget;
     layout->addWidget(widget);
+    // Close the dialog window when the widget asks to — this fires both
+    // from the toolbar ✕ Close button and from the "Files are identical"
+    // popup's "Close comparison" button.
+    connect(widget, &CompareWidget::closeRequested, this, &QWidget::close);
     widget->compare(leftText, leftName, rightText, rightName);
 }

@@ -65,6 +65,12 @@ public:
     int diffCount() const;
     int rowCount() const;
 
+signals:
+    // Emitted when the user clicks the "Close" button in the compare
+    // toolbar. The host (CompareDialog or the tab-based opener in
+    // MainWindow) is responsible for actually closing the window/tab.
+    void closeRequested();
+
 private:
     bool eventFilter(QObject *watched, QEvent *event) override;
     void navigateNext();
@@ -88,6 +94,7 @@ private:
     QVector<int> m_diffLines;
     int m_currentDiff = -1;
     bool m_editable = false;
+    bool m_firstCompareDone = false;
 };
 
 // Backward compat

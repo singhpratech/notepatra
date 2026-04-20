@@ -1794,6 +1794,10 @@ void MainWindow::buildMenus() {
             cmp->compare(before, "Before", after, "After");
             int idx = m_tabs->addTab(cmp, title);
             m_tabs->setCurrentIndex(idx);
+            connect(cmp, &CompareWidget::closeRequested, this, [this, cmp]() {
+                int i = m_tabs->indexOf(cmp);
+                if (i >= 0) closeTab(i);
+            });
         });
 
         // Captured snapshot of the AI Fix input — used for status messages
@@ -2992,9 +2996,16 @@ void MainWindow::openComparePicker(const QString &tabLabel) {
     }
 
     auto *cmp = new CompareWidget;
-    cmp->compare(leftText, leftName, rightText, rightName);
     int idx = m_tabs->addTab(cmp, tabLabel);
     m_tabs->setCurrentIndex(idx);
+    connect(cmp, &CompareWidget::closeRequested, this, [this, cmp]() {
+        int i = m_tabs->indexOf(cmp);
+        if (i >= 0) closeTab(i);
+    });
+    // compare() must run AFTER the closeRequested connection in case the
+    // files are identical and the user clicks "Close comparison" in the
+    // popup — that path emits closeRequested immediately.
+    cmp->compare(leftText, leftName, rightText, rightName);
 }
 
 // ── Macro helpers ──────────────────────────────────────────────────────────
