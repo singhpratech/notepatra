@@ -164,12 +164,23 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent) {
                 "<code>llama-server -m model.gguf --port 8080</code>. "
                 "No daemon, no config format — pure GGUF.");
         } else {
-            urlEdit->setPlaceholderText("e.g. http://localhost:1234 (LM Studio), http://localhost:5000 (text-generation-webui)");
+            urlEdit->setPlaceholderText("e.g. http://localhost:1234 (LM Studio), https://openrouter.ai/api/v1 (OpenRouter)");
             help->setText(
-                "<b>OpenAI-compat:</b> works with LM Studio, Jan, vLLM, "
-                "KoboldCpp, llamafile, OpenRouter, and OpenAI itself. "
-                "Paste the endpoint URL above and (if the server requires it) "
-                "your API key.");
+                "<b>OpenAI-compat:</b> works with any server that speaks the "
+                "OpenAI <code>/v1/chat/completions</code> API.<br><br>"
+                "<b>Local (no account, no key):</b><br>"
+                "• LM Studio — <code>http://localhost:1234</code><br>"
+                "• Jan — <code>http://localhost:1337</code><br>"
+                "• vLLM — <code>http://localhost:8000</code><br>"
+                "• KoboldCpp — <code>http://localhost:5001</code><br>"
+                "• llamafile — <code>http://localhost:8080</code><br>"
+                "• text-generation-webui — <code>http://localhost:5000</code><br><br>"
+                "<b>Cloud (API key required — paste in the field below):</b><br>"
+                "• <a href='https://openrouter.ai'>OpenRouter</a> — "
+                "<code>https://openrouter.ai/api/v1</code>, access to 100+ models "
+                "(Claude · GPT · Gemini · Llama · Mistral · DeepSeek · Qwen).<br>"
+                "• <a href='https://openai.com'>OpenAI</a> — "
+                "<code>https://api.openai.com/v1</code>");
         }
     };
     updateHelp();
