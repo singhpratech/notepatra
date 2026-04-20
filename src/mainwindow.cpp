@@ -3406,9 +3406,10 @@ void MainWindow::toggleAiDock() {
     const bool show = !m_aiDockHost->isVisible();
     m_aiDockHost->setVisible(show);
     if (show) {
-        if (m_explorer && !m_explorer->isVisible()) m_explorer->setVisible(true);
-        // Seed the dock panel immediately so the user can fire a prompt
-        // without waiting for the first tab switch.
+        // DON'T auto-open the file explorer here — opening the AI chat is
+        // a lightweight "start a conversation" action. The explorer only
+        // appears when the user explicitly ticks Coding Mode (which flips
+        // the 3-column layout). Matches user's "nothing in between" ask.
         populateAiContext(m_aiDockPanel);
     }
 }

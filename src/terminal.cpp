@@ -257,6 +257,13 @@ TerminalWidget::TerminalWidget(QWidget *parent) : QWidget(parent) {
         }
         m_output->insertHtml(QString("<br><span style='color:#808080;'>[exit %1]</span><br>").arg(code));
         m_output->verticalScrollBar()->setValue(m_output->verticalScrollBar()->maximum());
+        // Exit interactive mode if it was in effect — restore the normal
+        // working-directory prompt and re-enable the input box.
+        if (m_interactive) {
+            m_interactive = false;
+            m_interactiveCmdName.clear();
+            updatePrompt();
+        }
         m_input->setEnabled(true);
         m_input->setFocus();
     });
@@ -289,23 +296,33 @@ void TerminalWidget::setWorkingDirectory(const QString &dir) {
     updatePrompt();
 }
 
-// Interactive CLIs that expect a real TTY (readline, alternate screen,
-// raw keystrokes). Our QProcess-pipe terminal can't provide that without
-// a PTY layer, so we offer to relaunch them in the user's real terminal.
-static bool isInteractiveCommand(const QString &cmd) {
+// Line-based interactive CLIs: prompt-in / text-out, no alternate screen,
+// no raw-mode keystrokes required. Wrapping with script(1) gives them a
+// real PTY and they work perfectly inline.
+static bool isLineInteractive(const QString &cmd) {
     const QString first = cmd.trimmed().section(' ', 0, 0);
-    static const QStringList needsTty = {
+    static const QStringList linePrompt = {
         "claude", "codex", "aider", "gh",
-        "vim", "nvim", "vi", "nano", "emacs", "micro",
-        "top", "htop", "btop", "iotop", "atop",
-        "less", "more", "man", "info",
         "ssh", "telnet", "mosh",
-        "tmux", "screen", "byobu",
         "python", "python3", "ipython", "node", "irb", "pry",
         "psql", "mysql", "sqlite3",
         "gdb", "lldb",
     };
-    return needsTty.contains(first);
+    return linePrompt.contains(first);
+}
+
+// Curses / fullscreen apps — need alternate-screen + cursor-positioning.
+// Our line-based output view can't host them cleanly, so those still get
+// the external-terminal handoff.
+static bool isFullscreenTty(const QString &cmd) {
+    const QString first = cmd.trimmed().section(' ', 0, 0);
+    static const QStringList fullscreen = {
+        "vim", "nvim", "vi", "nano", "emacs", "micro",
+        "top", "htop", "btop", "iotop", "atop",
+        "less", "more", "man", "info",
+        "tmux", "screen", "byobu",
+    };
+    return fullscreen.contains(first);
 }
 
 // Launch command in the user's real terminal emulator. Tries a sensible
@@ -371,24 +388,54 @@ void TerminalWidget::runCommand(const QString &cmd) {
         return;
     }
 
-    // Interactive CLIs (claude, codex, vim, top, ssh…) require a real
-    // TTY. Our QProcess terminal doesn't have one, so detect the common
-    // ones and offer a one-tap handoff to the system terminal emulator.
-    if (isInteractiveCommand(cmd)) {
+    // Line-based interactive CLIs (claude, codex, python REPL, ssh, psql,
+    // gdb…) get a PTY via script(1) and keep running inside *our* terminal.
+    // The QLineEdit input box switches to stdin mode for the child —
+    // pressing Enter sends the line straight to the running process,
+    // instead of starting a new `shell -c` invocation.
+    if (isLineInteractive(cmd)) {
+        const QString scriptBin = QStandardPaths::findExecutable("script");
+        if (scriptBin.isEmpty()) {
+            appendLine(QString("<span style='color:#F44747;'>`script` not found — "
+                               "install util-linux to run interactive CLIs inline.</span>"));
+            return;
+        }
+        m_process->setWorkingDirectory(m_cwd);
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        env.insert("CLICOLOR",      "1");
+        env.insert("CLICOLOR_FORCE","1");
+        env.insert("FORCE_COLOR",   "1");
+        env.insert("TERM",          "xterm-256color");
+        m_process->setProcessEnvironment(env);
+        m_process->setProcessChannelMode(QProcess::MergedChannels);
+        // -q suppresses script's banner, -c runs the command, /dev/null
+        // discards the typescript file we don't need.
+        m_process->start(scriptBin, {"-q", "-c", cmd, "/dev/null"});
+        m_interactive = true;
+        m_interactiveCmdName = cmd.section(' ', 0, 0);
+        // Keep input enabled so stdin can be fed — change the prompt to
+        // signal interactive mode and avoid misleading the user.
+        m_input->setEnabled(true);
+        m_input->setFocus();
+        if (m_promptLabel) {
+            m_promptLabel->setText(QString("%1 ▷ ").arg(m_interactiveCmdName));
+        }
+        appendLine(QString("<span style='color:#4EC9B0;'>▶ %1 running — "
+                          "type below to send input, Ctrl+C in the editor to stop</span>")
+                       .arg(cmd.toHtmlEscaped()));
+        return;
+    }
+
+    // Fullscreen TTY apps (vim, top, less…) genuinely need alternate-screen
+    // + cursor-positioning; our line-based output can't host them. Keep the
+    // external-terminal handoff for these.
+    if (isFullscreenTty(cmd)) {
         appendLine(QString(
-            "<span style='color:#F2C14E;'>⚠ <b>%1</b> needs a real terminal (TTY).</span>")
+            "<span style='color:#F2C14E;'>⚠ <b>%1</b> is a fullscreen TTY app — "
+            "opening in your system terminal.</span>")
             .arg(cmd.section(' ', 0, 0).toHtmlEscaped()));
-        appendLine("<span style='color:#808080;'>The built-in terminal runs commands through a pipe, "
-                   "which works great for ls / grep / git / npm / cargo / make etc. but not for "
-                   "interactive CLIs.</span>");
-        if (launchExternalTerminal(cmd, m_cwd)) {
-            appendLine(QString(
-                "<span style='color:#4EC9B0;'>→ launched \"%1\" in your system terminal</span>")
-                .arg(cmd.toHtmlEscaped()));
-        } else {
-            appendLine("<span style='color:#F44747;'>Couldn't find a terminal emulator on PATH "
-                       "(tried gnome-terminal, konsole, xterm, alacritty, kitty, …). "
-                       "Install one, or run the command from your regular terminal.</span>");
+        if (!launchExternalTerminal(cmd, m_cwd)) {
+            appendLine("<span style='color:#F44747;'>No terminal emulator found on PATH.</span>");
         }
         return;
     }
@@ -443,8 +490,25 @@ void TerminalWidget::onReadyRead() {
 }
 
 void TerminalWidget::onCommandEntered() {
-    QString cmd = m_input->text().trimmed();
+    const QString raw = m_input->text();
     m_input->clear();
-    if (cmd.isEmpty()) return;
-    runCommand(cmd);
+
+    // When a line-based interactive CLI is running (claude / python / ssh …)
+    // the input line writes to stdin instead of launching a new command.
+    // Empty input is still forwarded — that's how you send a bare newline
+    // at a REPL prompt.
+    if (m_interactive && m_process->state() == QProcess::Running) {
+        // Echo what the user typed so the transcript shows their input
+        // even though script's cooked mode won't echo it back to us.
+        auto cur = m_output->textCursor();
+        cur.movePosition(QTextCursor::End);
+        m_output->setTextCursor(cur);
+        m_output->insertHtml(QString("<span style='color:#DCDCAA;'>%1</span><br>")
+                                 .arg(raw.toHtmlEscaped()));
+        m_process->write((raw + "\n").toUtf8());
+        return;
+    }
+
+    if (raw.trimmed().isEmpty()) return;
+    runCommand(raw.trimmed());
 }

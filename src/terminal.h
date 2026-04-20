@@ -26,6 +26,10 @@ private:
     QProcess *m_process;
     QString m_cwd;
     QString m_prompt;
+    // Interactive (line-based) CLI running via a PTY wrapper — input box
+    // feeds stdin instead of starting a new shell -c invocation on Enter.
+    bool m_interactive = false;
+    QString m_interactiveCmdName;
     void updatePrompt();
 };
 
