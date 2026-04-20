@@ -1320,7 +1320,7 @@
         <div class="stat"><div class="stat-number"><span>100</span>+</div><div class="stat-label">File Types</div></div>
         <div class="stat"><div class="stat-number"><span>44</span></div><div class="stat-label">Language Lexers</div></div>
         <div class="stat"><div class="stat-number"><span>2</span> GB</div><div class="stat-label">Max File Size</div></div>
-        <div class="stat"><div class="stat-number"><span>5</span></div><div class="stat-label">Regression Tests</div></div>
+        <div class="stat"><div class="stat-number"><span>6</span></div><div class="stat-label">Regression Tests</div></div>
         <div class="stat"><div class="stat-number"><span>0</span></div><div class="stat-label">Electron</div></div>
     </div>
 
@@ -1396,6 +1396,21 @@
                 <div class="feature-icon fi-orange">🔎</div>
                 <h3>Project Search (Ctrl+Shift+G)</h3>
                 <p>Lightning-fast recursive search across file <em>names</em> AND file <em>contents</em>. No size limit — streams results line by line so a 2 GB log searches the same as a 2 KB script. Exact <code>line:col</code> coordinates, double-click a match to jump the caret to the exact character. Works on any text-based language (Python, SQL, TXT, C/C++, JS/TS, Rust, Go, HTML, JSON, YAML, Markdown, configs, logs). Skips binary files automatically with a NUL-byte heuristic.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon fi-purple">📅</div>
+                <h3>Insert Date / Time</h3>
+                <p>Edit → Insert, or <code>Ctrl+F5</code>. Five formats: <code>2026-04-20 13:45</code>, <code>2026-04-20</code>, <code>April 20, 2026</code>, <code>13:45:09</code>, ISO-8601. Saves keystrokes in logs, changelogs, meeting notes.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon fi-blue">🖱</div>
+                <h3>Clickable status bar</h3>
+                <p>Click <em>Language</em>, <em>Encoding</em>, or <em>EOL</em> indicators in the status bar to pop the matching change-menu right where you clicked. Same UX as VS Code, Sublime, Atom.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon fi-teal">📂</div>
+                <h3>Clean menu organization</h3>
+                <p>Three clear menus — <strong>Tools</strong> (everything built-in: AI, Terminal, Compare, JSON/HTML/SQL, Git, REST, Bracket), <strong>Plugins</strong> (third-party extensions YOU add), <strong>Utilities</strong> (Hash, Measurement). No more guessing where a feature lives.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon fi-purple">🔀</div>
@@ -1689,7 +1704,7 @@
     <section id="versions">
         <div class="section-label">Version History</div>
         <div class="section-title">Releases</div>
-        <div class="section-desc">Every release of Notepatra, from the very first one. Just like Notepad++ — transparent, append-only, no surprises.</div>
+        <div class="section-desc">Every release of Notepatra, from the very first one. Just like Notepad++ — transparent, append-only, no surprises. <em>Note:</em> v0.1.4 / v0.1.6 / v0.1.11 tags exist in git but were never published as GitHub Releases — their content was rolled forward into v0.1.5, v0.1.7, and v0.1.12 respectively to reduce release churn.</div>
 
         <div class="version-list">
             <div class="version-card latest">
