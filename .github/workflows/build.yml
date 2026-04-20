@@ -669,6 +669,17 @@ jobs:
           }
           Write-Host "✓ All critical files present — exe should start"
 
+          # Bundle the portable-zip file-association helper scripts so
+          # users can right-click → "Open with" Notepatra for .py, .txt,
+          # .md, etc. without needing the NSIS/MSI installer. These are
+          # HKCU-only registry edits (no admin prompt).
+          if (Test-Path "installers\register-associations.bat") {
+            Copy-Item "installers\register-associations.bat" ".\notepatra-win\" -Force
+          }
+          if (Test-Path "installers\unregister-associations.bat") {
+            Copy-Item "installers\unregister-associations.bat" ".\notepatra-win\" -Force
+          }
+
       - name: Diagnose notepatra.exe imports + Qt plugin loading
         shell: pwsh
         run: |

@@ -72,13 +72,7 @@
           <Component Id="MainExecutable" Guid="A2F3B641-8E7D-4C5A-B1D2-3E4F5A6B7C8D" Win64="yes">
             <File Id="NotepatraExe"
                   Source="$(var.SourceDir)\notepatra.exe"
-                  KeyPath="yes">
-              <!-- Register Notepatra as a valid app for "Open with" -->
-              <util:InternetShortcut Id="NotepatraDesktopShortcut"
-                                     Name="Notepatra"
-                                     Target="$(var.HomeUrl)"
-                                     Type="url" />
-            </File>
+                  KeyPath="yes" />
 
             <!-- File type associations: register Notepatra to open text files -->
             <ProgId Id="Notepatra.TextFile" Description="Text document (Notepatra)" Icon="NotepatraIcon.exe">
