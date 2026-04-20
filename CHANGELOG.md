@@ -7,6 +7,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.16] — 2026-04-20
+
+AI Assistant becomes a proper Cursor-style dock · Project Search finally lives up to "Rust-powered" with a 10–50× speedup · terminal runs `claude` / `codex` / REPLs inline via PTY · CI back to green.
+
+### Added
+- 🤖 **AI Assistant lives in a right-side dock** (`Ctrl+Shift+A`) — persistent chat that survives tab switches. No more spawning a new editor tab per session; one conversation, always in the same place.
+- 🤖 **Whole-workspace awareness** — every prompt carries the selection (or full file), every other open editor tab, the workspace root, AND a flat listing of every file under it. The AI can reason about files you haven't opened, Cursor-style. Budget-capped so small 3B models don't overflow. Skips `.git` / `node_modules` / `target` / `dist` / `__pycache__`.
+- 🤖 **Coding Mode morphs the whole panel** — top strip turns accent-green with a "⌘ Coding Mode" badge + accent underline; chat body flips to monospace; quick-action grid and Insert/Replace/Copy row hide for a clean chat view. Chat history is preserved across toggles (not reset).
+- 🤖 **Per-code-block "⧉ Copy code" buttons** inside every assistant reply — copy just that snippet, not the whole message. Plus a whole-response pill in each bubble header.
+- 🖥️ **Terminal runs interactive CLIs inline via PTY** — `claude`, `codex`, `aider`, `gh`, `python` / `ipython`, `node`, `ssh`, `mosh`, `psql`, `mysql`, `sqlite3`, `gdb`, `lldb` now get a real TTY via `script(1)` wrapping. Input box flips to stdin-feed mode; prompt changes to `<cmd> ▷` so the mode is obvious.
+- 🔎 **Rust aho-corasick wired into Project Search** — literal searches on files ≤ 8 MB go through `RustCore::findAll()` (the same aho-corasick crate ripgrep uses), mapping byte-offsets to `(line, col)` via an `upper_bound` over a pre-built line-start index. 5–50× faster than the old C++ line loop.
+- 🔎 **Parallel file scanning** via `QtConcurrent::blockingMap` — Project Search now uses every CPU core. On a 4-core laptop ~3–4× faster than the serial version.
+- 🎉 **Welcome tab shows the Notepatra logo** above the headline. `loadWelcomeLogo()` falls back through `QIcon::fromTheme("notepatra")` → exe-relative paths → `~/.local/share/icons/hicolor/*/apps/notepatra.png`.
+
+### Changed
+- 🎨 **AI panel header declutter** — removed redundant "Backend:" / "Model:" labels; shortened "Coding Mode" → "Coding", "Show thinking" → "Think"; the 8-button quick-action grid + Insert/Replace/Copy row now collapse behind a "▸ Quick actions" chevron by default.
+- 🎨 **"Copy" in assistant bubbles upgraded** from a subtle underline-on-hover link to an accent-filled pill button — discoverability up, friction down. Softened "YOU" → "You" on user bubbles.
+- 🔎 **Project Search dir-walk pruning** — skips `.git` / `.svn` / `.hg` / `node_modules` / `bower_components` / `target` / `build` / `dist` / `out` / `bin` / `obj` / `__pycache__` / `.venv` / `.cache` / `.tox` / `.mypy_cache` / `.pytest_cache` / `.ruff_cache` / `.next` / `.nuxt` / `.turbo` / `.angular` / `.gradle` / `.idea` / `.vscode` / `vendor` / `Pods` / `DerivedData` / `.terraform` / `coverage` / `.nyc_output` up-front, before walking. On this repo: 3,512 files walked → 212. Matches ripgrep's default skip list.
+- ✍️ **Marketing-vs-reality honesty pass** — the README claim "Aho-Corasick search engine (Rust) — faster than regex for literal patterns" was shadowed before v0.1.16 (projectsearch.cpp never actually called the Rust core). Now it's true.
+- 🪟 **`Ctrl+Shift+A` toggles the AI dock** without auto-opening the file explorer. Explorer only appears when Coding Mode is explicitly ticked.
+- 📝 **.desktop file renamed** to `Notepatra` with an "inspired by Notepad++" comment (no more "clone of" framing).
+
+### Fixed
+- 🧪 **CI "Build Notepatra" is green again** on Linux + Linux-ARM. `test_llamacpp` and `test_ai_context` are now added to the explicit `cmake --build --target` list in `.github/workflows/build.yml` — before, CTest tried to run executables the job never built, so every recent push was red with "test_llamacpp ***Not Run***".
+- 🖥️ **Terminal alignment fixes** — replaced `QTextEdit::append()` (which forces a blank line between writes) with cursor-positioned `insertHtml` + explicit `<br>`, so streamed output, prompt echos, and `[exit N]` markers line up on consecutive rows. Bare `cd` now means `$HOME` to match zsh/bash.
+- 🖼️ **Website's "Notepatra in 60 seconds" GIF is now real** — replaced the play-button placeholder with `docs/screenshots/tour.gif` captured from a running Notepatra (Welcome tab with logo → editor with syntax highlighting → Project Search with live results → AI Assistant with Ollama auto-detected).
+
+### Internal
+- 🧪 **New test: `test_ai_context`** — 21 assertions covering the workspace-context block builder. Runs headless, no Qt Widgets dependency.
+- 🏗️ **Split `src/ai_context.{h,cpp}`** out of `aipanel.cpp` — pure, testable module; no QtWidgets/QtNetwork/QScintilla dependency.
+
+---
+
 ## [0.1.15] — 2026-04-20
 
 Quality-of-life polish on top of v0.1.14. Theme-aware everywhere · AI Coding Mode + Backend picker · colourful ANSI terminal · modern REST client · real screenshots on the website.
