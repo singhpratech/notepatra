@@ -222,7 +222,8 @@ QString plainTextHtml(const QString &text) {
     return text.toHtmlEscaped().replace("\n", "<br>");
 }
 
-QString markdownBodyHtml(const QString &text) {
+QString markdownBodyHtml(const QString &text, int messageIndex = -1) {
+    QString body;
 #if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
     QTextDocument doc;
     doc.setMarkdown(text);
@@ -230,11 +231,64 @@ QString markdownBodyHtml(const QString &text) {
     QRegularExpression bodyRe(
         "<body[^>]*>(.*)</body>",
         QRegularExpression::CaseInsensitiveOption | QRegularExpression::DotMatchesEverythingOption);
-    QRegularExpressionMatch match = bodyRe.match(html);
-    if (match.hasMatch())
-        return match.captured(1);
+    QRegularExpressionMatch m = bodyRe.match(html);
+    body = m.hasMatch() ? m.captured(1) : plainTextHtml(text);
+#else
+    body = plainTextHtml(text);
 #endif
-    return plainTextHtml(text);
+    if (messageIndex < 0) return body;
+
+    // Inject a ChatGPT-style "⧉ Copy" button at the top of every <pre>
+    // block so the user can grab a specific snippet without selecting it
+    // by hand. The URL scheme encodes the (message, block) pair; the
+    // click handler re-parses the source markdown to find the exact
+    // fenced block so the copied text is the raw source, not the
+    // syntax-highlighted HTML.
+    QRegularExpression preRe("<pre[^>]*>",
+                             QRegularExpression::CaseInsensitiveOption);
+    QRegularExpressionMatchIterator it = preRe.globalMatch(body);
+    QString out;
+    out.reserve(body.size() + 256);
+    int cursor = 0, blockIdx = 0;
+    while (it.hasNext()) {
+        const auto match = it.next();
+        out += body.mid(cursor, match.capturedStart() - cursor);
+        out += match.captured(0);
+        out += QString(
+            "<div style='float:right;'>"
+            "<a href='copy-code://message/%1/block/%2' "
+            "style='color:#4EC9B0;font-size:10px;font-weight:600;"
+            "text-decoration:none;padding:2px 8px;border-radius:8px;"
+            "background:rgba(78,201,176,0.15);'>⧉ Copy code</a></div>")
+            .arg(messageIndex).arg(blockIdx);
+        cursor = match.capturedEnd();
+        ++blockIdx;
+    }
+    out += body.mid(cursor);
+    return out;
+}
+
+// Extract the Nth ``` fenced block (0-indexed) from a raw markdown
+// message. Returns empty string if the block doesn't exist. Used by
+// handleChatLink to copy the exact source of a clicked code block.
+static QString extractFencedBlock(const QString &markdown, int index) {
+    int pos = 0, found = 0;
+    while (pos < markdown.size()) {
+        const int open = markdown.indexOf("```", pos);
+        if (open < 0) return {};
+        // skip the optional language tag + newline
+        int bodyStart = markdown.indexOf('\n', open + 3);
+        if (bodyStart < 0) return {};
+        ++bodyStart;
+        const int close = markdown.indexOf("```", bodyStart);
+        if (close < 0) return {};
+        if (found == index) {
+            return markdown.mid(bodyStart, close - bodyStart);
+        }
+        ++found;
+        pos = close + 3;
+    }
+    return {};
 }
 
 QString messageTranscriptHtml(const QVector<AIPanel::ChatMessage> &messages,
@@ -331,7 +385,7 @@ QString messageTranscriptHtml(const QVector<AIPanel::ChatMessage> &messages,
             "</div></td><td></td></tr></table>")
             .arg(message.model.toHtmlEscaped(),
                  QString::number(i),
-                 markdownBodyHtml(message.text));
+                 markdownBodyHtml(message.text, i));
     }
 
     html += QStringLiteral("</body></html>");
@@ -1413,6 +1467,7 @@ void AIPanel::appendErrorBubble(const QString &text) {
 }
 
 void AIPanel::handleChatLink(const QUrl &url) {
+    // copy://message/N  — copy the entire Nth message verbatim.
     if (url.scheme() == "copy") {
         const QString path = url.path();
         bool ok = false;
@@ -1421,6 +1476,29 @@ void AIPanel::handleChatLink(const QUrl &url) {
             QApplication::clipboard()->setText(m_messages.at(index).text);
             setStatus("Assistant reply copied", false);
         }
+        return;
+    }
+
+    // copy-code://message/N/block/B  — copy just the raw source of the Bth
+    // fenced code block in the Nth message. Gives users the ChatGPT /
+    // Cursor-style per-snippet copy they expect.
+    if (url.scheme() == "copy-code") {
+        const QString path = url.path();  // /N/block/B  (leading / from URL)
+        const QStringList parts = path.split('/', Qt::SkipEmptyParts);
+        if (parts.size() >= 3 && parts[1] == "block") {
+            bool okMsg = false, okBlk = false;
+            const int msgIdx = parts[0].toInt(&okMsg);
+            const int blkIdx = parts[2].toInt(&okBlk);
+            if (okMsg && okBlk && msgIdx >= 0 && msgIdx < m_messages.size()) {
+                const QString block = extractFencedBlock(m_messages.at(msgIdx).text, blkIdx);
+                if (!block.isEmpty()) {
+                    QApplication::clipboard()->setText(block);
+                    setStatus("Code block copied", false);
+                    return;
+                }
+            }
+        }
+        setStatus("Could not copy that code block", true);
         return;
     }
 
