@@ -1141,7 +1141,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.14 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.15 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1190,7 +1190,7 @@
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
     <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.13">
-        Download v0.1.14 ↓
+        Download v0.1.15 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1217,7 +1217,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.14 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.15 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>5 MB native binary. C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1243,56 +1243,26 @@
         </div>
     </div>
 
-    <!-- Product showcase — CSS-only illustration representing what a
-         Notepatra session looks like. NOT a real screenshot; clearly
-         labelled as "Illustration" so visitors don't mistake it for
-         pixel-accurate UI. For the real thing, download and launch. -->
-    <section class="showcase" aria-label="Product showcase illustration">
-        <div style="text-align: center; margin-bottom: 14px;">
-            <span style="display: inline-block; padding: 3px 10px; background: rgba(204,120,92,0.10); border: 1px solid rgba(204,120,92,0.25); border-radius: 100px; font-size: 11px; color: var(--c-accent); letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600;">Illustration</span>
-            <span style="font-size: 12px; color: var(--text-dim); margin-left: 10px;">Representative layout — file tree, editor, AI panel. Not a live screenshot. <a href="#download" style="color: var(--c-accent);">Install to try.</a></span>
-        </div>
-        <div class="showcase-frame">
-            <div class="showcase-chrome">
-                <div class="showcase-dots"><span></span><span></span><span></span></div>
-                <div class="showcase-title">Notepatra — illustration</div>
-            </div>
-            <div class="showcase-body">
-                <aside class="showcase-sidebar" aria-hidden="true">
-                    <div class="tree-item"><span class="glyph">▾</span>📁 project</div>
-                    <div class="tree-item" style="padding-left:32px;"><span class="glyph">▾</span>📁 src</div>
-                    <div class="tree-item active" style="padding-left:48px;">📄 main.py</div>
-                    <div class="tree-item" style="padding-left:48px;color:var(--text-dim);">📄 utils.py</div>
-                    <div class="tree-item" style="padding-left:48px;color:var(--text-dim);">📄 api.py</div>
-                    <div class="tree-item" style="padding-left:32px;"><span class="glyph">▸</span>📁 tests</div>
-                    <div class="tree-item" style="padding-left:16px;color:var(--text-dim);">📄 README.md</div>
-                    <div class="tree-item" style="padding-left:16px;color:var(--text-dim);">📄 pyproject.toml</div>
-                </aside>
-                <div class="showcase-editor"><span class="com"><span class="ln">1</span># Notepatra — written in C++ + Rust, runs everywhere.</span>
-<span class="com"><span class="ln">2</span># Local AI. Zero telemetry. 5 MB binary.</span>
-<span class="ln">3</span>
-<span class="kw"><span class="ln">4</span>import</span> json
-<span class="kw"><span class="ln">5</span>from</span> typing <span class="kw">import</span> Optional
-<span class="ln">6</span>
-<span class="kw"><span class="ln">7</span>def</span> <span class="fn">greet</span>(name: str, mood: Optional[str] = <span class="kw">None</span>) -&gt; str:
-<span class="com"><span class="ln">8</span>    """Return a greeting, with optional mood context."""</span>
-<span class="kw"><span class="ln">9</span>    if</span> mood:
-<span class="ln">10</span>        <span class="kw">return</span> <span class="str">f"Hello, {name}! You seem {mood} today."</span>
-<span class="ln">11</span>    <span class="kw">return</span> <span class="str">f"Hello, {name}!"</span>
-<span class="ln">12</span>
-<span class="kw"><span class="ln">13</span>if</span> __name__ == <span class="str">"__main__"</span>:
-<span class="ln">14</span>    <span class="kw">print</span>(<span class="fn">greet</span>(<span class="str">"World"</span>, <span class="str">"curious"</span>))
-<span class="ln">15</span>    <span class="kw">print</span>(<span class="fn">greet</span>(<span class="str">"Alice"</span>))</div>
-                <aside class="showcase-ai" aria-hidden="true">
-                    <div class="showcase-ai-title">AI Assistant</div>
-                    <div class="showcase-ai-bubble user">Explain this function.</div>
-                    <div class="showcase-ai-bubble">
-                        <code>greet()</code> returns a personalized hello message. If <code>mood</code> is passed, it's woven into the response; otherwise it falls back to a simple greeting. Type hints make the Optional[str] explicit.
-                    </div>
-                    <div class="showcase-ai-bubble user" style="margin-top:6px;">Write a pytest for it.</div>
-                    <div class="showcase-ai-ollama">ollama · qwen2.5-coder:3b · local</div>
-                </aside>
-            </div>
+    <!-- Product showcase — REAL screenshots captured via xdotool +
+         gnome-screenshot from the actual Notepatra binary. Two stills
+         side-by-side: the Welcome tab (left) and the AI Assistant tab
+         (right). Drops the old CSS illustration. -->
+    <section class="showcase" aria-label="Product screenshots">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1200px; margin: 0 auto; padding: 0 24px;">
+            <figure style="margin: 0;">
+                <img src="screenshots/editor-dark.png" alt="Notepatra Welcome tab — Dark theme" loading="lazy"
+                     style="width: 100%; border-radius: 14px; box-shadow: 0 30px 60px -20px rgba(20,20,19,0.25), 0 0 0 1px rgba(20,20,19,0.05); display: block;">
+                <figcaption style="text-align: center; margin-top: 12px; color: var(--text-dim); font-size: 13px;">
+                    <strong style="color: var(--c-text);">Welcome tab</strong> — 10-icon toolbar, feature cards, recent files
+                </figcaption>
+            </figure>
+            <figure style="margin: 0;">
+                <img src="screenshots/ai-assistant.png" alt="Notepatra AI Assistant — local AI chat" loading="lazy"
+                     style="width: 100%; border-radius: 14px; box-shadow: 0 30px 60px -20px rgba(20,20,19,0.25), 0 0 0 1px rgba(20,20,19,0.05); display: block;">
+                <figcaption style="text-align: center; margin-top: 12px; color: var(--text-dim); font-size: 13px;">
+                    <strong style="color: var(--c-text);">AI Assistant</strong> — Ollama · llama.cpp · OpenRouter · 8 quick actions
+                </figcaption>
+            </figure>
         </div>
     </section>
 
@@ -1333,7 +1303,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.14</div>
+        <div class="section-label">Download v0.1.15</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1780,7 +1750,7 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.14 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.15 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-04-20</span>
                         <span>· MSI ships + Project Search + universal AI + VS Code Git UX + theme-aware panels</span>
@@ -1832,9 +1802,9 @@
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.14">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.15">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.14">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.15">Commits</a>
                 </div>
             </div>
 

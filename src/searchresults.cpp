@@ -1,17 +1,45 @@
 #include "searchresults.h"
 #include "fonts.h"
+#include "config.h"
 #include <QVBoxLayout>
 #include <QFont>
 #include <QHeaderView>
+
+namespace {
+struct SRPalette {
+    QString hdrBg, hdrFg, hdrBorder;
+    QString treeBg, treeFg, selBg, selFg;
+    QString fileTone, lineTone;
+};
+static bool srIsDark() {
+    const QString &t = Config::instance().theme;
+    return t.compare("Dark", Qt::CaseInsensitive) == 0 ||
+           t.compare("Monokai", Qt::CaseInsensitive) == 0;
+}
+static SRPalette srPalette() {
+    if (srIsDark()) {
+        return {"#252526", "#D4D4D4", "#1E1E1E",
+                "#1E1E1E", "#D4D4D4", "#094771", "#FFFFFF",
+                "#4EC9B0", "#B8B5B1"};
+    }
+    return {"#F5F4EE", "#141413", "#E5E4DF",
+            "#FFFFFF", "#141413", "#CC785C", "#FFFFFF",
+            "#CC785C", "#54524E"};
+}
+} // namespace
 
 SearchResultsPanel::SearchResultsPanel(QWidget *parent) : QWidget(parent) {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
+    const SRPalette p = srPalette();
 
     m_header = new QLabel("  Search Results");
     m_header->setFixedHeight(22);
-    m_header->setStyleSheet("font-weight: bold; background: #E8E8E8; color: #333; padding: 2px 6px; border-bottom: 1px solid #CCC;");
+    m_header->setStyleSheet(QString(
+        "font-weight: bold; background: %1; color: %2; "
+        "padding: 2px 6px; border-bottom: 1px solid %3;")
+        .arg(p.hdrBg, p.hdrFg, p.hdrBorder));
     layout->addWidget(m_header);
 
     m_tree = new QTreeWidget;
@@ -24,21 +52,18 @@ SearchResultsPanel::SearchResultsPanel(QWidget *parent) : QWidget(parent) {
     QFont mono = notepatraCodeFont();
     m_tree->setFont(mono);
 
-    m_tree->setStyleSheet(
-        "QTreeWidget { background: #FFFFFF; border: none; }"
+    m_tree->setStyleSheet(QString(
+        "QTreeWidget { background: %1; color: %2; border: none; }"
         "QTreeWidget::item { padding: 2px 0; }"
-        "QTreeWidget::item:selected { background: #CCE8FF; color: #000; }"
-    );
+        "QTreeWidget::item:selected { background: %3; color: %4; }")
+        .arg(p.treeBg, p.treeFg, p.selBg, p.selFg));
 
     layout->addWidget(m_tree, 1);
 
     connect(m_tree, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *item, int) {
-        // Get line number from item data
         int line = item->data(0, Qt::UserRole).toInt();
         QString file = item->data(0, Qt::UserRole + 1).toString();
-        if (line > 0) {
-            emit resultDoubleClicked(file, line);
-        }
+        if (line > 0) emit resultDoubleClicked(file, line);
     });
 }
 
@@ -63,19 +88,17 @@ void SearchResultsPanel::addFileSection(const QString &filePath, int hitCount) {
     QFont bold = m_currentFileItem->font(0);
     bold.setBold(true);
     m_currentFileItem->setFont(0, bold);
-    m_currentFileItem->setForeground(0, QColor("#0066CC"));
+    m_currentFileItem->setForeground(0, QColor(srPalette().fileTone));
 }
 
 void SearchResultsPanel::addResultLine(int lineNumber, const QString &lineContent, const QString &matchText) {
+    Q_UNUSED(matchText);
     QTreeWidgetItem *parent = m_currentFileItem ? m_currentFileItem : nullptr;
     auto *item = parent ? new QTreeWidgetItem(parent) : new QTreeWidgetItem(m_tree);
 
-    // Format: "  Line 42:   the actual line content with match highlighted"
     QString display = QString("  Line %1:\t%2").arg(lineNumber, 5).arg(lineContent.trimmed().left(200));
     item->setText(0, display);
     item->setData(0, Qt::UserRole, lineNumber);
     item->setData(0, Qt::UserRole + 1, m_currentFile);
-
-    // Color the line number part
-    item->setForeground(0, QColor("#333333"));
+    item->setForeground(0, QColor(srPalette().lineTone));
 }

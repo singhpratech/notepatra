@@ -7,6 +7,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.15] — 2026-04-20
+
+Quality-of-life polish on top of v0.1.14. Theme-aware everywhere · AI Coding Mode + Backend picker · colourful ANSI terminal · modern REST client · real screenshots on the website.
+
+### Added
+- 🤖 **AI Coding Mode toggle** — ON = system prompt becomes "return ONLY modified code, no prose, no fences, preserve indentation"; Replace Selection drops clean code straight into the editor (Cursor-style).
+- 🤖 **AI Backend picker** in the top bar — seven one-click presets: Ollama · llama.cpp (GGUF) · OpenRouter (cloud) · LM Studio · Jan · OpenAI · Custom. Selecting auto-fills the URL and refreshes the model list. OpenRouter now two clicks instead of buried in Settings.
+- 🖥️ **Terminal ANSI SGR parser** — renders ls / grep / git / cargo / npm output in colour instead of raw `\033[32m` gibberish. Injects `CLICOLOR=1`, `FORCE_COLOR=1`, `TERM=xterm-256color`. Honours `$SHELL` env var and shows which shell is running in the banner.
+- 🖥️ **zsh-style terminal prompt** — Clay-orange directory name + teal ❯ in a rounded pill, path collapsed to `~` or `.../dir1/dir2` for deep paths.
+- 🌐 **Modern REST Client** — Postman/Thunder-Client layout: method dropdown + URL input + Send + Headers/Body tabs + colour-coded status badge (2xx green / 3xx blue / 4xx amber / 5xx red) showing `200 OK · 43 ms · 1.2 KB`.
+- 💾 **Git SOURCE CONTROL chrome** — branch pill, commit message box, Ctrl+Enter commits, 17 old buttons collapsed behind ↻↓↑⋯ toolbar with `⋯ More` dropdown.
+- 🖱️ **System theme default** for fresh installs — detects macOS `AppleInterfaceStyle`, Windows `AppsUseLightTheme`, GNOME `color-scheme`. Settings → Theme adds "System (follow OS)".
+- 🆘 **Help → "How the AI Assistant works…"** entry with setup guide for all three backends.
+- 📂 **Tools menu section headers** — ── AI ── · ── Search ── · ── Workflow ── · ── Formatters ──.
+- 🖼️ **Real screenshots on notepatra.org** — captured via xdotool + gnome-screenshot; replaced the CSS illustration.
+- 🧪 **test_llamacpp** regression test — self-contained mock OpenAI server verifies the llama.cpp / OpenAI-compat wire format (7/7 tests pass).
+
+### Changed
+- 🎨 **Every panel is now theme-aware**: AI Assistant · Search Results · Markdown Preview · Hex Editor · Formatter panels · Compare · Welcome (rebuilds on theme switch). Light theme uses Clay palette; Dark uses VS-Code-like greys.
+- 🌐 **Website AI promoted** — AI is the first nav tab, AI section moved above Features, AI Assistant is the anchor card in the Features grid.
+
+### Fixed
+- AI Assistant hardcoded dark colours — now picks up Light/Dark from Config::theme.
+- Search Results tree hardcoded light colours — was unreadable in Dark mode.
+- Markdown Preview mixed dark/light colours — now consistent in both themes.
+- Hex Editor info label hardcoded light — matches panel theme.
+
+
 ## [0.1.14] — 2026-04-20
 
 The **MSI release** — Windows `notepatra-0.1.14.msi` finally ships after four WiX debug cycles (CNDL0005 → LGHT0091 → LGHT0094 → LGHT0130). Plus a wave of UX polish that stacked up since v0.1.13.

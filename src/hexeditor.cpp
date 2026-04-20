@@ -1,5 +1,6 @@
 #include "hexeditor.h"
 #include "fonts.h"
+#include "config.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPushButton>
@@ -7,24 +8,42 @@
 #include <QFileInfo>
 #include <QFont>
 
+namespace {
+static bool hexIsDark() {
+    const QString &t = Config::instance().theme;
+    return t.compare("Dark", Qt::CaseInsensitive) == 0 ||
+           t.compare("Monokai", Qt::CaseInsensitive) == 0;
+}
+}
+
 HexEditorDialog::HexEditorDialog(const QString &filePath, QWidget *parent)
     : QDialog(parent) {
     setWindowTitle("Hex Editor — " + QFileInfo(filePath).fileName());
     resize(850, 600);
 
     auto *layout = new QVBoxLayout(this);
+    const bool dark = hexIsDark();
 
     // Info
     m_infoLabel = new QLabel;
-    m_infoLabel->setStyleSheet("font-weight: bold; padding: 4px; background: #F0F0F0;");
+    m_infoLabel->setStyleSheet(QString(
+        "font-weight: bold; padding: 4px; background: %1; color: %2;")
+        .arg(dark ? "#252526" : "#F0F0F0",
+             dark ? "#D4D4D4" : "#141413"));
     layout->addWidget(m_infoLabel);
 
-    // Hex view
+    // Hex view — always monospace on a dark-ish canvas regardless of
+    // theme, because the byte-color palette (printable / NUL / newline /
+    // non-printable) is tuned for dark readability. On Light theme we
+    // switch to a lighter ivory canvas and flip the NUL grey.
     m_hexView = new QTextEdit;
     m_hexView->setReadOnly(true);
     QFont mono = notepatraCodeFont();
     m_hexView->setFont(mono);
-    m_hexView->setStyleSheet("QTextEdit { background: #1E1E1E; color: #D4D4D4; border: none; }");
+    m_hexView->setStyleSheet(QString(
+        "QTextEdit { background: %1; color: %2; border: none; }")
+        .arg(dark ? "#1E1E1E" : "#FAF9F5",
+             dark ? "#D4D4D4" : "#141413"));
     m_hexView->setLineWrapMode(QTextEdit::NoWrap);
     layout->addWidget(m_hexView, 1);
 
