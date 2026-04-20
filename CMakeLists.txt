@@ -150,6 +150,7 @@ set(SOURCES
     src/fmtpanel.cpp
     src/searchresults.cpp
     src/welcome.cpp
+    src/projectsearch.cpp
 )
 
 set(HEADERS
@@ -178,6 +179,7 @@ set(HEADERS
     src/fmtpanel.h
     src/searchresults.h
     src/welcome.h
+    src/projectsearch.h
     src/fonts.h
     src/ollamastatus.h
     src/themes.h

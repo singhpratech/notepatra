@@ -20,6 +20,7 @@
 #include "sqlfmtpanel.h"
 #include "searchresults.h"
 #include "welcome.h"
+#include "projectsearch.h"
 #include "themes.h"
 #include "config.h"
 #include <Qsci/qscimacro.h>

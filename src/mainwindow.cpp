@@ -1452,6 +1452,26 @@ void MainWindow::buildMenus() {
 
     feat->addSeparator();
 
+    // --- Project Search — fast folder-wide file-name + content search ---
+    auto *projectSearchAct = feat->addAction("Project Search      Ctrl+Shift+G");
+    projectSearchAct->setShortcut(QKeySequence("Ctrl+Shift+G"));
+    projectSearchAct->setStatusTip("Recursively search file names AND file contents across a folder tree, streamed to a clickable tree.");
+    connect(projectSearchAct, &QAction::triggered, this, [this, E]() {
+        auto *ps = new ProjectSearch;
+        if (auto *e = E(); e && !e->filePath().isEmpty())
+            ps->setFolder(QFileInfo(e->filePath()).path());
+        connect(ps, &ProjectSearch::openFileAtLine, this,
+                [this](const QString &path, int line) {
+            openFile(path);
+            if (auto *ed = currentEditor()) ed->gotoLine(line);
+        });
+        int idx = m_tabs->addTab(ps, "Project Search");
+        m_tabs->setCurrentIndex(idx);
+        ps->focusQuery();
+    });
+
+    feat->addSeparator();
+
     // --- Terminal ---
     auto *termAct = feat->addAction("Terminal                  Ctrl+`");
     termAct->setCheckable(true);
@@ -3163,6 +3183,7 @@ void MainWindow::triggerMenuAction(const QString &actionId) {
     // refactored over time).
     static const QMap<QString, QString> idToPrefix = {
         {"AIAssistant",   "AI Assistant"},
+        {"ProjectSearch", "Project Search"},
         {"Terminal",      "Terminal"},
         {"Compare",       "Compare (inbuilt)"},
         {"JSONTools",     "JSON Tools"},

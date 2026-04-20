@@ -359,8 +359,11 @@ void WelcomeWidget::buildFeatureCards(QVBoxLayout *parent) {
     };
     const QList<Feat> features = {
         {"🤖", "AI Assistant",
-         "Local AI via Ollama. Explain · Find Bugs · Refactor · Write Tests. Zero cloud, zero telemetry, zero API key.",
+         "Local AI — Ollama · llama.cpp (GGUF) · LM Studio · any OpenAI-compatible server. Explain · Find Bugs · Refactor · Tests. Zero cloud, zero telemetry.",
          "AIAssistant", "#0E639C"},
+        {"🔍", "Project Search",
+         "Fast recursive search across file names AND file contents. Results stream to a clickable tree — double-click to jump to the line.",
+         "ProjectSearch", "#D47A1E"},
         {"⌨", "Terminal",
          "Built-in shell tab. Run git, npm, make, cargo — without leaving the editor.",
          "Terminal", "#2D7D46"},
