@@ -1135,14 +1135,16 @@ jobs:
         id: notes
         run: |
           TAG="${GITHUB_REF##*/}"
-          NOTES_FILE="src/release_notes/${TAG}.md"
+          # Release notes live at the project root under release_notes/<tag>.md
+          # (there is no src/release_notes/ directory — every previous release
+          # silently fell through to the stub because of a stale path here).
+          NOTES_FILE="release_notes/${TAG}.md"
           if [ -f "$NOTES_FILE" ]; then
             echo "found release notes: $NOTES_FILE"
             echo "notes_file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::No release notes file at $NOTES_FILE — will fall back to auto-generated"
-            # Create a minimal stub so action-gh-release has a body
-            mkdir -p src/release_notes
+            mkdir -p release_notes
             cat > "$NOTES_FILE" <<EOF
           # Notepatra ${TAG}
 
