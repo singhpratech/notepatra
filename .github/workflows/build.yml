@@ -826,7 +826,12 @@ jobs:
       # Produces notepatra-<VERSION>.msi — enterprise-grade installer with
       # proper upgrade codes, file-type associations, PATH integration, and
       # per-machine install. Preferred over NSIS for corporate/SCCM deploys.
+      #
+      # continue-on-error: MSI is a nice-to-have; the NSIS installer is the
+      # primary distribution channel. If WiX has a hiccup we still ship the
+      # .exe + portable .zip rather than block the whole Windows build.
       - name: Build Windows MSI (WiX)
+        continue-on-error: true
         shell: pwsh
         run: |
           $version = if ($env:GITHUB_REF -like "refs/tags/v*") {
