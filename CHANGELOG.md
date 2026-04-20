@@ -3,7 +3,24 @@
 All notable changes to Notepatra will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Versioning](https://semver.org/).
 
+> **Gaps in the version number timeline:** v0.1.4 and v0.1.6 were tagged but never published a GitHub Release (CI failures — NSIS macro bug and Windows MSVC C2666 respectively); their content shipped in v0.1.5 and v0.1.7. v0.1.11 was prepared with a macOS dylib install_name hotfix but was rolled forward into v0.1.12 to reduce release churn — the v0.1.11 changes (install_name rewriting, QtPrintSupport force-copy, otool Homebrew-path audit, ad-hoc re-sign) ship as part of v0.1.12.
+
 ---
+
+## [0.1.13] — 2026-04-20
+
+Follow-up to v0.1.12 — ships the features that landed on `main` right after the v0.1.12 tag: Welcome tab, compare Files-identical popup + Close button, WiX MSI build fix, portable-zip file-association helpers, and the Apple-inspired website polish. No behaviour changes to what v0.1.12 already delivered — this release is purely additive.
+
+### Added
+- 🎉 **Welcome tab on first launch.** New users no longer see a blank "new 1" editor with no idea what Notepatra does. The Welcome tab shows: hero + tagline + version, three quick actions (New / Open file / Open folder), clickable recent files list, a 3×3 feature grid (AI · Terminal · Compare · JSON · HTML · SQL · Bracket · REST · Git) where clicking any card launches the feature directly, a 16-shortcut keyboard reference, a tip about Ollama setup, and a "Don't show again" checkbox that persists to `Config::showWelcomeOnStartup`. Theme-aware.
+- 🔀 **Compare: "Files are identical" popup + ✕ Close button.** When the two files have zero differences the stats label now shows "✓ Files are identical — N lines" in green, and a modal dialog pops up once ("The two files are identical. No differences found.") with "Close comparison" / "Keep open" buttons. A new ✕ Close button on the compare toolbar works in both contexts (dialog window or tab) via a new `CompareWidget::closeRequested()` signal. Matches Notepad++'s ComparePlus behaviour.
+- 🪟 **Windows MSI installer actually builds.** The WiX `CNDL0005` schema error at `installers/windows.wxs:77` (invalid `util:InternetShortcut` nested inside `<File>`) is fixed. The MSI step was silent-passing via `continue-on-error: true` in v0.1.12 so no `.msi` artifact shipped; v0.1.13 ships `notepatra-0.1.13.msi` alongside the NSIS `.exe` and portable `.zip`.
+- 🧰 **`register-associations.bat` / `unregister-associations.bat`** bundled inside `notepatra-windows-x64.zip`. Portable-zip users can double-click these to register Notepatra in Windows "Open with" for 28 file extensions (HKCU only, no admin). Same UX Notepad++ gives portable users.
+
+### Changed
+- 🎨 **Website polish (Apple-inspired).** `notepatra.org` gets a CSS-only product showcase below the hero (macOS-style traffic-light chrome, file tree, syntax-highlighted code, AI Assistant panel with Ollama status indicator, subtle 3D tilt) and a new "Designed for people who write code" pillars row (⚡ Instant · 🛡 Private · ✦ Everything built-in). Hero typography refined with tighter letter-spacing (-0.03em) and larger max font-size. Palette unchanged — still Clay.
+- 📚 **docs.html consistency sweep.** Removed every remaining `v0.1.9` reference from the documentation site (`notepatra-setup-0.1.9.exe` → `notepatra-setup-0.1.13.exe`, topbar "v0.1.9 docs" → "v0.1.13 docs").
+
 
 ## [0.1.12] — 2026-04-20
 

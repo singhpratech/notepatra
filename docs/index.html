@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor with AI-powered formatters. ~5 MB native executable. 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.12",
+      "softwareVersion": "0.1.13",
       "fileSize": "5 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -1128,7 +1128,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.12 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.13 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>5 MB native binary. C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1237,7 +1237,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.12</div>
+        <div class="section-label">Download v0.1.13</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1583,10 +1583,57 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.12 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.13 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-04-20</span>
-                        <span>· macOS Tahoe fix + word-level compare + Windows MSI + CPU-friendly AI</span>
+                        <span>· Welcome tab + Compare popup + MSI ships + portable-zip associations</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🎉 Welcome tab — zero-to-productive in 30 seconds</h5>
+                        <ul>
+                            <li>First-time users no longer see a blank <code style="color:var(--green);font-size:12px;">new 1</code> tab with no idea what Notepatra can do. On first launch (or any launch with no session to restore) Notepatra opens a <strong>Welcome tab</strong> with: hero + tagline + version, three quick actions (New / Open file / Open folder), a clickable <strong>Recent files</strong> list, a <strong>3×3 feature grid</strong> (AI · Terminal · Compare · JSON · HTML · SQL · Bracket · REST · Git — each card is a one-click launcher for the underlying menu action), a <strong>16-shortcut keyboard reference</strong>, a tip about Ollama setup, and a "Don't show this tab on startup" checkbox that persists to config.</li>
+                            <li>Theme-aware — tracks your Light / Dark / Monokai editor theme so it never clashes.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🔀 Compare: "Files are identical" popup + ✕ Close button</h5>
+                        <ul>
+                            <li>When the two files have zero differences the stats label shows "✓ Files are identical — N lines" in <strong>green</strong>, and a modal pops up once — <em>"The two files are identical. No differences found."</em> — with "Close comparison" / "Keep open" buttons. Matches Notepad++'s ComparePlus behaviour.</li>
+                            <li>New <strong>✕ Close</strong> button in the compare toolbar works in every context: the dialog window for Tools → Compare with File / Compare Two Open Tabs, and the compare tab for AI Fix / formatter Show Diff panels.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🪟 Windows MSI installer actually ships</h5>
+                        <ul>
+                            <li>v0.1.12 shipped the WiX authoring but the MSI build silent-failed on a <code style="color:var(--green);font-size:12px;">CNDL0005</code> schema error (<code style="color:var(--green);font-size:12px;">util:InternetShortcut</code> was nested inside <code style="color:var(--green);font-size:12px;">&lt;File&gt;</code>, which isn't valid WiX). v0.1.13 fixes the schema and ships <code style="color:var(--green);font-size:12px;">notepatra-0.1.13.msi</code> alongside the NSIS <code style="color:var(--green);font-size:12px;">.exe</code> and portable <code style="color:var(--green);font-size:12px;">.zip</code>. Per-machine install, <code style="color:var(--green);font-size:12px;">MajorUpgrade</code>, file-type associations for 26 extensions, system PATH, Start Menu + optional Desktop shortcut.</li>
+                            <li><strong>Portable-zip file associations</strong> — users of <code style="color:var(--green);font-size:12px;">notepatra-windows-x64.zip</code> can now double-click <code style="color:var(--green);font-size:12px;">register-associations.bat</code> (shipped inside the zip) to add Notepatra to Windows "Open with" menu for 28 file extensions. HKCU only, no admin. Undo with <code style="color:var(--green);font-size:12px;">unregister-associations.bat</code>.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🎨 Website polish — Apple-inspired, Clay palette preserved</h5>
+                        <ul>
+                            <li>New <strong>product showcase</strong> below the hero — pure CSS "app window" with macOS traffic-light chrome, file tree, syntax-highlighted code, AI Assistant panel with Ollama status indicator, subtle 3D tilt.</li>
+                            <li>New <strong>"Designed for people who write code"</strong> pillars row — ⚡ Instant at every scale · 🛡 Private by design · ✦ Everything built-in.</li>
+                            <li>Hero typography refined — tighter letter-spacing, larger max size, same Clay orange palette.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.13">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.13">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.12</div>
+                    <div class="version-meta">
+                        <span>2026-04-20</span>
+                        <span>· macOS Tahoe fix + word-level compare + CPU-friendly AI</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
