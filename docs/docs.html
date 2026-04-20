@@ -343,10 +343,12 @@
       <li><a href="#markdown-preview">Markdown preview</a></li>
     </ul>
 
-    <div class="section-label">AI (Ollama)</div>
+    <div class="section-label">AI (Local)</div>
     <ul>
       <li><a href="#ai-overview">Overview</a></li>
       <li><a href="#ai-setup">Ollama setup</a></li>
+      <li><a href="#ai-llamacpp">llama.cpp setup (GGUF)</a></li>
+      <li><a href="#ai-openai-compat">OpenAI-compat (LM Studio, Jan, vLLM)</a></li>
       <li><a href="#ai-fix">AI Fix pipeline</a></li>
       <li><a href="#ai-assistant">AI Assistant chat</a></li>
       <li><a href="#thinking-models">Thinking models</a></li>
@@ -375,14 +377,14 @@
   <main class="content">
 
   <h1>Notepatra Documentation</h1>
-  <p class="lead">A native C++/Rust code editor with local AI via Ollama. Fast, portable, free forever under GPL-3.0. This is the complete reference for installing, using, customizing, and extending Notepatra.</p>
+  <p class="lead">A native C++/Rust code editor with local AI — Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, or any OpenAI-compatible server. Fast, portable, free forever under GPL-3.0. This is the complete reference for installing, using, customizing, and extending Notepatra.</p>
 
   <!-- ══════════════ Getting started ══════════════ -->
 
   <h2 id="introduction" class="anchor-target">Introduction</h2>
   <p>Notepatra is a <strong>native</strong> code editor written in C++17 with a Rust core for the heavy-lifting (memory-mapped file I/O, Aho-Corasick search, Myers diff, formatters). It targets <strong>Linux x64 / ARM64, macOS Apple Silicon, and Windows x64</strong>. The bare executable is 2–5 MB depending on platform; downloads are 1.8 MB (Linux) to ~40 MB (Windows installer with Qt DLLs bundled).</p>
   <p>Unlike Electron-based editors, Notepatra does not ship a browser runtime. It uses Qt5 + QScintilla for the editor engine — the same Scintilla core that powers Notepad++ — so all the behavior you expect from Notepad++ (100+ file types, 44+ language lexers, brace matching, folding, code completion) is built in.</p>
-  <p>Unlike cloud-first editors, Notepatra's AI is <strong>local-first</strong>. It talks to <a href="https://ollama.com">Ollama</a> running on your machine. Nothing leaves your computer. No API keys, no subscription, no telemetry.</p>
+  <p>Unlike cloud-first editors, Notepatra's AI is <strong>local-first</strong>. It talks to <strong>your choice</strong> of local AI runner — <a href="https://ollama.com">Ollama</a>, <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>'s llama-server (loads any GGUF directly), <a href="https://lmstudio.ai">LM Studio</a>, <a href="https://jan.ai">Jan</a>, <a href="https://docs.vllm.ai">vLLM</a>, KoboldCpp, text-generation-webui, or anything that speaks the OpenAI <code>/v1/chat/completions</code> API. Pick your backend in <em>Settings → Preferences → AI</em>. Nothing leaves your computer. No mandatory API keys, no subscription, no telemetry.</p>
 
   <div class="callout info">
     <strong>What "0.1.x" means.</strong> Notepatra is early-days software built by a one-person team in the open. It's production-quality native code but not yet feature-complete. The roadmap — and the gap between Notepatra and Notepad++ — is deliberately public. See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
@@ -747,7 +749,16 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
   <!-- ══════════════ AI ══════════════ -->
 
   <h2 id="ai-overview" class="anchor-target">AI integration overview</h2>
-  <p>Notepatra's AI is <strong>local-first</strong>. It talks to <a href="https://ollama.com">Ollama</a> running on your machine via its REST API. No API keys, no cloud, no telemetry. If Ollama isn't running, AI features show a friendly "Ollama not running — start it: <code>ollama serve</code>" banner.</p>
+  <p>Notepatra's AI is <strong>local-first</strong>. Pick any of <strong>three backends</strong> in <em>Settings → Preferences → AI</em> — all run on your machine, none phone home, none require a mandatory API key:</p>
+  <table>
+    <thead><tr><th>Backend</th><th>Protocol</th><th>Default URL</th><th>What it gives you</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Ollama</strong> (default)</td><td>Native <code>/api/generate</code></td><td><code>http://localhost:11434</code></td><td>Easiest to install. One-line install, auto-detects models with <code>/api/tags</code>.</td></tr>
+      <tr><td><strong>llama.cpp</strong></td><td>OpenAI <code>/v1/chat/completions</code></td><td><code>http://localhost:8080</code></td><td>Loads any GGUF file directly — no daemon, no config format. Maximum control + minimum overhead.</td></tr>
+      <tr><td><strong>OpenAI-compat</strong></td><td>OpenAI <code>/v1/chat/completions</code></td><td>user-configurable</td><td>Works with LM Studio, Jan, vLLM, KoboldCpp, llamafile, text-generation-webui, OpenRouter, or OpenAI itself.</td></tr>
+    </tbody>
+  </table>
+  <p>If the selected backend isn't reachable, AI panels show a friendly backend-specific banner (e.g. "Ollama not running — start it: <code>ollama serve</code>" or "llama-server not running on <code>http://localhost:8080</code> — start it: <code>llama-server -m model.gguf --port 8080</code>").</p>
   <p>AI surfaces in Notepatra:</p>
   <ul>
     <li><strong>AI Fix buttons</strong> in JSON Tools / HTML Tools / Bracket Tools plugins — sends broken content, gets fixed content back</li>
@@ -771,8 +782,32 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
   </ol>
 
   <div class="callout success">
-    <strong>Memory check.</strong> 7B models need ~6 GB RAM, 13B ≥ 10 GB, 34B ≥ 24 GB. If your laptop can't spare that, use <code>qwen2.5:3b</code> or <code>llama3.2:1b</code>.
+    <strong>Memory check.</strong> 7B models need ~6 GB RAM, 13B ≥ 10 GB, 34B ≥ 24 GB. For CPU-only / 16 GB laptops, Notepatra auto-picks the smallest installed model in this priority order: <code>qwen2.5-coder:3b → qwen2.5:3b → gemma2:2b → gemma3:4b → llama3.2:3b</code>.
   </div>
+
+  <h2 id="ai-llamacpp" class="anchor-target">llama.cpp setup (GGUF)</h2>
+  <p><a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a> runs any <code>.gguf</code> file directly — no daemon, no config format. Best if you have specific GGUF models from Hugging Face and want maximum control.</p>
+  <ol>
+    <li><strong>Install llama.cpp</strong> — <code>brew install llama.cpp</code> (macOS) or build from <a href="https://github.com/ggml-org/llama.cpp">the repo</a> (Linux / Windows).</li>
+    <li><strong>Download a GGUF model</strong> from <a href="https://huggingface.co">huggingface.co</a>. Try <code>Qwen2.5-Coder-3B-Instruct-Q4_K_M.gguf</code> (~2 GB, excellent for code).</li>
+    <li><strong>Run the server</strong> — <code>llama-server -m path/to/model.gguf --port 8080</code>. Exposes OpenAI-compatible endpoints at <code>http://localhost:8080/v1/</code>.</li>
+    <li><strong>In Notepatra</strong> → Settings → Preferences → AI → pick "llama.cpp" → Save. Done.</li>
+  </ol>
+
+  <h2 id="ai-openai-compat" class="anchor-target">OpenAI-compat (LM Studio, Jan, vLLM, KoboldCpp, llamafile, OpenRouter)</h2>
+  <p>Any local server speaking the OpenAI <code>/v1/chat/completions</code> API works. Paste its URL in Settings → Preferences → AI → OpenAI-compat → Base URL. If the server requires an API key (e.g. OpenRouter, OpenAI itself), paste it in the API Key field — it's sent as a <code>Authorization: Bearer</code> header. Ollama and llama-server ignore it.</p>
+  <table>
+    <thead><tr><th>Server</th><th>Typical URL</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><a href="https://lmstudio.ai">LM Studio</a></td><td><code>http://localhost:1234</code></td><td>GUI for GGUF — download models with one click.</td></tr>
+      <tr><td><a href="https://jan.ai">Jan</a></td><td><code>http://localhost:1337</code></td><td>Cross-platform, open source, great UX.</td></tr>
+      <tr><td><a href="https://docs.vllm.ai">vLLM</a></td><td><code>http://localhost:8000</code></td><td>Fastest for batch inference on GPUs.</td></tr>
+      <tr><td><a href="https://github.com/LostRuins/koboldcpp">KoboldCpp</a></td><td><code>http://localhost:5001</code></td><td>GGUF loader with roleplay features.</td></tr>
+      <tr><td><a href="https://github.com/Mozilla-Ocho/llamafile">llamafile</a></td><td><code>http://localhost:8080</code></td><td>Single-file self-contained GGUF executable.</td></tr>
+      <tr><td><a href="https://github.com/oobabooga/text-generation-webui">text-generation-webui</a></td><td><code>http://localhost:5000</code></td><td>Power-user web UI for local models.</td></tr>
+      <tr><td><a href="https://openrouter.ai">OpenRouter</a></td><td><code>https://openrouter.ai/api</code></td><td>Cloud proxy — requires API key.</td></tr>
+    </tbody>
+  </table>
 
   <h2 id="ai-fix" class="anchor-target">AI Fix pipeline</h2>
   <p>The AI Fix button in JSON Tools / HTML Tools / Bracket Tools sends the broken content to Ollama with a strict prompt. Here's exactly what happens:</p>
