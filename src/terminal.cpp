@@ -9,6 +9,7 @@
 #include <QScrollBar>
 #include <QKeyEvent>
 #include <QProcessEnvironment>
+#include <QTextCursor>
 #include <QPushButton>
 #include <QApplication>
 #include <QClipboard>
@@ -68,6 +69,102 @@ static ShellInfo detectShell() {
 #endif
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// ANSI escape-sequence → HTML converter.
+//
+// Real shells emit ANSI colour codes like "\033[32mhello\033[0m" for
+// coloured output (ls, grep, git, cargo, npm, ...). The old terminal
+// fed everything through QString::toHtmlEscaped() which turned those
+// escape bytes into visible garbage. This parser walks the byte stream,
+// captures "\033[...m" SGR sequences, and emits matching <span> tags
+// with colours pulled from a VT100-style palette. Everything else is
+// HTML-escaped and <br>-separated as before.
+//
+// Supports the 99% of SGR codes real CLIs actually use:
+//   0   reset         1   bold              4   underline
+//   30-37 FG          40-47 BG              39  default FG  49 default BG
+//   90-97 bright FG   100-107 bright BG
+// Bracketed 256-colour and truecolour (38;5;N, 38;2;R;G;B) are
+// recognised and converted to the nearest palette entry.
+// ═══════════════════════════════════════════════════════════════════════
+
+struct AnsiPalette {
+    QString c[16];  // 0-7 = normal, 8-15 = bright
+};
+static const AnsiPalette kAnsi = {{
+    // Classic VS Code dark palette — readable on #1E1E1E background
+    "#1E1E1E", "#F14C4C", "#76D275", "#F2C14E",
+    "#569CD6", "#C678DD", "#4EC9B0", "#D4D4D4",
+    "#6C6C6C", "#FF8B8B", "#B5E2A9", "#FFE0A3",
+    "#9CDCFE", "#E4B0F5", "#A8EAD9", "#FFFFFF",
+}};
+
+static QString ansiColourToHex(int code, bool background) {
+    Q_UNUSED(background);
+    if (code >= 30 && code <= 37) return kAnsi.c[code - 30];
+    if (code >= 90 && code <= 97) return kAnsi.c[code - 90 + 8];
+    if (code >= 40 && code <= 47) return kAnsi.c[code - 40];
+    if (code >= 100 && code <= 107) return kAnsi.c[code - 100 + 8];
+    return QString();
+}
+
+static QString ansiToHtml(const QString &raw) {
+    QString out;
+    out.reserve(raw.size() + 32);
+    bool spanOpen = false;
+    int i = 0;
+    const int n = raw.size();
+    while (i < n) {
+        QChar c = raw[i];
+        if (c == QChar(0x1B) && i + 1 < n && raw[i+1] == '[') {
+            // Read up to the final byte (a letter)
+            int j = i + 2;
+            while (j < n && !(raw[j].isLetter())) ++j;
+            if (j >= n) break;
+            const QChar finalByte = raw[j];
+            const QString params = raw.mid(i + 2, j - i - 2);
+            i = j + 1;
+            if (finalByte != 'm') continue;  // only handle SGR
+
+            if (spanOpen) { out += "</span>"; spanOpen = false; }
+
+            QString style;
+            for (const QString &p : params.split(';')) {
+                bool ok = false;
+                int code = p.toInt(&ok);
+                if (!ok) continue;
+                if (code == 0) { style.clear(); break; }
+                else if (code == 1) style += "font-weight:bold;";
+                else if (code == 4) style += "text-decoration:underline;";
+                else if ((code >= 30 && code <= 37) || (code >= 90 && code <= 97)) {
+                    style += "color:" + ansiColourToHex(code, false) + ";";
+                } else if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107)) {
+                    style += "background:" + ansiColourToHex(code, true) + ";";
+                }
+            }
+            if (!style.isEmpty()) {
+                out += "<span style='" + style + "'>";
+                spanOpen = true;
+            }
+        } else if (c == '\n') {
+            out += "<br>";
+            ++i;
+        } else if (c == '\r') {
+            ++i;  // swallow CR
+        } else {
+            // Escape a single char for HTML
+            if (c == '<') out += "&lt;";
+            else if (c == '>') out += "&gt;";
+            else if (c == '&') out += "&amp;";
+            else if (c == ' ') out += "&nbsp;";  // preserve ls alignment
+            else out += c;
+            ++i;
+        }
+    }
+    if (spanOpen) out += "</span>";
+    return out;
+}
+
 } // namespace
 
 TerminalWidget::TerminalWidget(QWidget *parent) : QWidget(parent) {
@@ -78,29 +175,58 @@ TerminalWidget::TerminalWidget(QWidget *parent) : QWidget(parent) {
     layout->setSpacing(0);
 
     auto *header = new QLabel("  Terminal");
-    header->setFixedHeight(22);
-    header->setStyleSheet("font-weight: bold; background: #2D2D2D; color: #CCC; padding: 2px 6px;");
+    header->setFixedHeight(24);
+    header->setStyleSheet(
+        "font-weight: 600; background: #252526; color: #4EC9B0; "
+        "padding: 3px 10px; border-bottom: 1px solid #1E1E1E; "
+        "font-size: 11px; letter-spacing: 0.05em;");
     layout->addWidget(header);
 
     m_output = new QTextEdit;
     m_output->setReadOnly(true);
     QFont mono = notepatraCodeFont();
     m_output->setFont(mono);
-    m_output->setStyleSheet("QTextEdit { background: #1E1E1E; color: #D4D4D4; border: none; padding: 4px; }");
+    // VS-Code-ish "Integrated Terminal" background with a little bottom
+    // padding so the last line doesn't hug the prompt. Use
+    // QTextEdit::setLineWrapMode so long output lines wrap rather than
+    // overflow horizontally.
+    m_output->setStyleSheet(
+        "QTextEdit { background: #1E1E1E; color: #D4D4D4; border: none; "
+        "padding: 8px 12px; selection-background-color: #264F78; "
+        "selection-color: #FFFFFF; }"
+        "QScrollBar:vertical { background: #1E1E1E; width: 10px; }"
+        "QScrollBar::handle:vertical { background: #3E3E3E; "
+        "border-radius: 5px; min-height: 40px; margin: 2px; }"
+        "QScrollBar::handle:vertical:hover { background: #555; }"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }");
     layout->addWidget(m_output, 1);
 
+    // Colourful zsh-ish prompt: ❯ in teal, directory name in yellow,
+    // inside a rounded pill that spans the full terminal width.
     auto *inputRow = new QHBoxLayout;
-    inputRow->setContentsMargins(4, 2, 4, 2);
-    auto *promptLabel = new QLabel("$");
-    promptLabel->setStyleSheet(QString("color: #4EC9B0; font-family: %1; font-weight: 600;")
-                               .arg(notepatraCodeCssFamily()));
-    inputRow->addWidget(promptLabel);
+    inputRow->setContentsMargins(8, 6, 8, 8);
+    inputRow->setSpacing(0);
+
+    m_promptLabel = new QLabel();
+    m_promptLabel->setFont(mono);
+    m_promptLabel->setStyleSheet(
+        "background: #252526; color: #DCDCAA; "
+        "padding: 6px 10px 6px 12px; border-top-left-radius: 6px; "
+        "border-bottom-left-radius: 6px; border: 1px solid #3E3E3E; "
+        "border-right: none;");
+    inputRow->addWidget(m_promptLabel);
 
     m_input = new QLineEdit;
     m_input->setFont(mono);
-    m_input->setStyleSheet("QLineEdit { background: #2D2D2D; color: #D4D4D4; border: 1px solid #555; padding: 4px; }");
-    m_input->setPlaceholderText("Type command and press Enter...");
+    m_input->setStyleSheet(
+        "QLineEdit { background: #252526; color: #D4D4D4; "
+        "border: 1px solid #3E3E3E; border-left: none; "
+        "border-top-right-radius: 6px; border-bottom-right-radius: 6px; "
+        "padding: 6px 10px; selection-background-color: #264F78; }"
+        "QLineEdit:focus { border-color: #4EC9B0; }");
+    m_input->setPlaceholderText("Type a command and press Enter…");
     inputRow->addWidget(m_input, 1);
+    updatePrompt();
     auto *copyBtn = new QPushButton("Copy Output");
     copyBtn->setFixedHeight(26);
     copyBtn->setFixedWidth(90);
@@ -151,6 +277,7 @@ TerminalWidget::~TerminalWidget() {
 
 void TerminalWidget::setWorkingDirectory(const QString &dir) {
     m_cwd = dir;
+    updatePrompt();
 }
 
 void TerminalWidget::runCommand(const QString &cmd) {
@@ -170,6 +297,7 @@ void TerminalWidget::runCommand(const QString &cmd) {
         QDir d(dir);
         if (d.exists()) {
             m_cwd = d.canonicalPath();
+            updatePrompt();
             m_output->append(QString("<span style='color:#808080;'>%1</span>").arg(m_cwd));
         } else {
             m_output->append(QString("<span style='color:#F44747;'>cd: %1: No such directory</span>").arg(dir));
@@ -179,18 +307,50 @@ void TerminalWidget::runCommand(const QString &cmd) {
 
     // Run async through whatever shell detectShell() picked (honours
     // $SHELL, falls back to platform default, uses PowerShell on
-    // Windows if available).
+    // Windows if available). Inject CLICOLOR / FORCE_COLOR so common
+    // tools (ls, grep, git, cargo, npm) emit colour codes even when
+    // they detect the pipe — the ANSI parser will render them.
     m_input->setEnabled(false);
     m_process->setWorkingDirectory(m_cwd);
     const ShellInfo si = detectShell();
+
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert("CLICOLOR",      "1");
+    env.insert("CLICOLOR_FORCE","1");  // BSD ls
+    env.insert("FORCE_COLOR",   "1");  // npm, cargo
+    env.insert("TERM",          "xterm-256color");
+    m_process->setProcessEnvironment(env);
+
     m_process->start(si.path, {si.flag, cmd});
+}
+
+void TerminalWidget::updatePrompt() {
+    if (!m_promptLabel) return;
+    // ZSH-style abbreviated path: $HOME → ~, show just the last 2
+    // segments if nested deep (e.g. ~/proj/repo/src/utils → …/src/utils).
+    QString path = m_cwd;
+    const QString home = QDir::homePath();
+    if (path == home) path = "~";
+    else if (path.startsWith(home + "/")) path = "~" + path.mid(home.length());
+    const QStringList parts = path.split('/', Qt::SkipEmptyParts);
+    QString tail = parts.size() > 2 ? ".../" + parts.mid(parts.size() - 2).join('/')
+                                     : path;
+    if (tail.isEmpty()) tail = "/";
+    m_promptLabel->setText(QString("%1 ❯ ").arg(tail));
 }
 
 void TerminalWidget::onReadyRead() {
     QByteArray data = m_process->readAll();
     if (data.isEmpty()) return;
-    QString text = QString::fromUtf8(data);
-    m_output->append(text.toHtmlEscaped().replace("\n", "<br>"));
+    // Parse ANSI escape sequences so ls / grep / git / cargo output
+    // renders in colour rather than showing "\033[32m" gibberish.
+    const QString html = ansiToHtml(QString::fromUtf8(data));
+    // Use insertHtml + preserve existing cursor so rapid writes don't
+    // each start on a new line (append() forces a newline between calls).
+    auto cur = m_output->textCursor();
+    cur.movePosition(QTextCursor::End);
+    m_output->setTextCursor(cur);
+    m_output->insertHtml(html);
     m_output->verticalScrollBar()->setValue(m_output->verticalScrollBar()->maximum());
 }
 

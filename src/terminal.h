@@ -5,6 +5,7 @@
 #include <QProcess>
 #include <QTextEdit>
 #include <QLineEdit>
+#include <QLabel>
 
 class TerminalWidget : public QWidget {
     Q_OBJECT
@@ -21,6 +22,7 @@ private slots:
 private:
     QTextEdit *m_output;
     QLineEdit *m_input;
+    QLabel *m_promptLabel = nullptr;
     QProcess *m_process;
     QString m_cwd;
     QString m_prompt;
