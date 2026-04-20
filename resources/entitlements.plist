@@ -1,64 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!--
-    Entitlements for the Notepatra macOS bundle.
-
-    Without an entitlements file, modern macOS (Sonoma / Sequoia /
-    Tahoe) will silently refuse to launch an ad-hoc-signed app the
-    moment the kernel sees it needs JIT pages, writable executable
-    memory, or unprotected system library access — all of which Qt,
-    QScintilla, and our Rust FFI need in normal operation.
-
-    By shipping these entitlements + enabling hardened runtime at sign
-    time, the bundle passes the kernel's launch-time sandbox probe
-    even without Apple-notarized signing.
-
-    We do NOT need a paid Apple Developer account for this — ad-hoc
-    (`codesign --sign -`) can embed entitlements just fine. The only
-    thing the $99/year buys is Notarization (a server-side Apple trust
-    stamp). With entitlements but no notarization, the user still has
-    to right-click → Open once; but the silent "nothing happens on
-    double-click" failure mode disappears.
--->
 <plist version="1.0">
 <dict>
-    <!-- Qt uses JIT compilation in QML / Scintilla indicator styles.
-         Without this, hardened runtime blocks the JIT page mprotect
-         and the app crashes before main(). -->
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
-
-    <!-- Some of the Qt plugins (especially the image formats) have
-         writable+executable memory during load. -->
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
-
-    <!-- macdeployqt bundles Qt frameworks that were originally signed
-         by someone else (Homebrew, Riverbank, or upstream). Without
-         this entitlement, hardened runtime's "library validation"
-         refuses to load any dylib whose Team ID doesn't match ours,
-         and since we have no Team ID at all, every single framework
-         load fails. -->
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
-
-    <!-- Required for Qt's debug logging and some plugin probes to
-         read DYLD_* environment variables on startup. -->
     <key>com.apple.security.cs.allow-dyld-environment-variables</key>
     <true/>
-
-    <!-- We are a text editor — we need to read/write user-selected
-         files anywhere in the home directory. With sandboxing off
-         (we don't enable app-sandbox) these aren't strictly required
-         but declaring them helps future-compat if Tahoe adds new
-         default-deny rules. -->
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
-
-    <!-- Ollama integration: we need outbound HTTP to localhost:11434
-         and to the GitHub Releases API for the update checker. -->
     <key>com.apple.security.network.client</key>
     <true/>
-
 </dict>
 </plist>
