@@ -5,11 +5,70 @@
 #include <QLabel>
 #include <QFont>
 #include <QDir>
+#include <QFileInfo>
 #include <QScrollBar>
 #include <QKeyEvent>
+#include <QProcessEnvironment>
 #include <QPushButton>
 #include <QApplication>
 #include <QClipboard>
+
+namespace {
+
+// Pick the user's actual shell rather than a hardcoded /bin/bash.
+//
+// Resolution order:
+//   1. $SHELL env var (respects user's preference — /bin/zsh for modern
+//      macOS users, /usr/bin/fish for fish lovers, /bin/bash for Linux
+//      defaults, etc.)
+//   2. Platform default (zsh on macOS since Catalina 2019, pwsh→cmd on
+//      Windows, bash on Linux)
+//   3. Final fallback: sh
+//
+// Returns a {exePath, invocationFlag} pair where invocationFlag is what
+// we pass before the command string (-c for POSIX shells, /c for cmd.exe,
+// -Command for PowerShell).
+struct ShellInfo {
+    QString path;     // full path to the shell binary
+    QString flag;     // -c  /  /c  /  -Command
+    QString display;  // "bash" / "zsh" / "fish" / "pwsh" / "cmd"
+};
+
+static ShellInfo detectShell() {
+    const QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+
+#ifdef Q_OS_WIN
+    // Prefer modern PowerShell (pwsh) if installed, else Windows
+    // PowerShell, else cmd.exe. $COMSPEC is the Windows equivalent of
+    // $SHELL and points to cmd.exe by default.
+    if (QFileInfo::exists("C:/Program Files/PowerShell/7/pwsh.exe"))
+        return {"C:/Program Files/PowerShell/7/pwsh.exe", "-Command", "pwsh"};
+    if (QFileInfo::exists("C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"))
+        return {"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+                "-Command", "powershell"};
+    const QString cs = env.value("COMSPEC", "C:/Windows/System32/cmd.exe");
+    return {cs, "/c", QFileInfo(cs).baseName().toLower()};
+#else
+    // Honour $SHELL if the user has a login shell configured. This is
+    // the single source of truth users expect — if they've set fish in
+    // chsh, the terminal tab should run fish.
+    const QString shellEnv = env.value("SHELL");
+    if (!shellEnv.isEmpty() && QFileInfo::exists(shellEnv)) {
+        return {shellEnv, "-c", QFileInfo(shellEnv).baseName()};
+    }
+
+#ifdef Q_OS_MAC
+    // macOS default since Catalina (2019).
+    if (QFileInfo::exists("/bin/zsh")) return {"/bin/zsh", "-c", "zsh"};
+#endif
+    if (QFileInfo::exists("/bin/bash")) return {"/bin/bash", "-c", "bash"};
+    if (QFileInfo::exists("/usr/bin/fish")) return {"/usr/bin/fish", "-c", "fish"};
+    // POSIX floor
+    return {"/bin/sh", "-c", "sh"};
+#endif
+}
+
+} // namespace
 
 TerminalWidget::TerminalWidget(QWidget *parent) : QWidget(parent) {
     m_cwd = QDir::homePath();
@@ -69,8 +128,17 @@ TerminalWidget::TerminalWidget(QWidget *parent) : QWidget(parent) {
 
     connect(m_input, &QLineEdit::returnPressed, this, &TerminalWidget::onCommandEntered);
 
+    // Banner — tells the user exactly which shell is being used. If
+    // they're on macOS the message says "zsh", on Linux with
+    // SHELL=fish it says "fish", on Windows with PowerShell available
+    // it says "pwsh". No more guessing.
+    const ShellInfo si = detectShell();
+    header->setText(QString("  Terminal — %1").arg(si.display));
     m_output->append("<span style='color:#4EC9B0;'>Notepatra Terminal</span>");
-    m_output->append("<span style='color:#808080;'>Type commands below. cd, clear work. Commands run in bash.</span>\n");
+    m_output->append(QString("<span style='color:#808080;'>Shell: <b>%1</b> &nbsp; · &nbsp; %2</span>")
+                         .arg(si.display.toHtmlEscaped(), si.path.toHtmlEscaped()));
+    m_output->append("<span style='color:#808080;'>Type commands below. cd, clear, and any " +
+                     si.display.toHtmlEscaped() + " syntax work.</span>\n");
     m_input->setFocus();
 }
 
@@ -109,16 +177,13 @@ void TerminalWidget::runCommand(const QString &cmd) {
         return;
     }
 
-    // Run async
+    // Run async through whatever shell detectShell() picked (honours
+    // $SHELL, falls back to platform default, uses PowerShell on
+    // Windows if available).
     m_input->setEnabled(false);
     m_process->setWorkingDirectory(m_cwd);
-#ifdef Q_OS_WIN
-    m_process->start("cmd.exe", {"/c", cmd});
-#elif defined(Q_OS_MAC)
-    m_process->start("/bin/zsh", {"-c", cmd});
-#else
-    m_process->start("/bin/bash", {"-c", cmd});
-#endif
+    const ShellInfo si = detectShell();
+    m_process->start(si.path, {si.flag, cmd});
 }
 
 void TerminalWidget::onReadyRead() {
