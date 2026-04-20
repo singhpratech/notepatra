@@ -55,7 +55,8 @@ public:
         bool    caseSensitive;
         bool    wholeWord;
         bool    regex;
-        qint64  maxFileSizeBytes = 16 * 1024 * 1024;  // 16 MB per file cap
+        bool    skipBinary = true;   // skip files that look binary (fast check)
+        qint64  maxFileSizeBytes = 2LL * 1024 * 1024 * 1024;  // 2 GB — effectively no cap
     };
 
 public slots:
@@ -89,6 +90,9 @@ public:
 
 signals:
     void openFileAtLine(const QString &filePath, int lineNumber);
+    // Emitted when the user double-clicks a result — column is 1-based
+    // and lets the host scroll the editor to the exact match character.
+    void openFileAtLineCol(const QString &filePath, int lineNumber, int column);
 
 private:
     void buildUi();
@@ -103,7 +107,7 @@ private:
     QLineEdit  *m_folderInput;
     QPushButton *m_browseBtn;
     QLineEdit  *m_globInput;
-    QCheckBox  *m_caseChk, *m_wordChk, *m_regexChk, *m_namesChk;
+    QCheckBox  *m_caseChk, *m_wordChk, *m_regexChk, *m_namesChk, *m_binaryChk;
     QPushButton *m_searchBtn, *m_cancelBtn;
     QLabel     *m_statusLabel;
     QProgressBar *m_progressBar;

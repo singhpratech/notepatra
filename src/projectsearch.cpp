@@ -48,6 +48,18 @@ static bool matchesAnyGlob(const QString &fileName, const QStringList &globs) {
     return false;
 }
 
+// Quick-and-cheap binary-file heuristic: read the first 4 KB and check
+// for a NUL byte. Text files (any language — .py/.sql/.txt/.cpp/.js/
+// .go/.rs/.java/.html/.xml/.yaml/.md/.log) never contain NUL bytes.
+// Binary files (images, compiled objects, PDFs, archives) contain
+// plenty. This matches the heuristic used by grep and ripgrep.
+static bool looksBinary(const QString &path) {
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) return false;
+    QByteArray head = f.read(4096);
+    return head.contains('\0');
+}
+
 void ProjectSearchWorker::search(const Params &p) {
     m_cancel.store(false);
     if (p.query.isEmpty()) {
@@ -114,9 +126,19 @@ void ProjectSearchWorker::search(const Params &p) {
             if (nameHit) emit fileNameMatch(path);
         }
 
-        // Skip files that are too big — we don't want to load a 2 GB
-        // binary into RAM just to search it.
+        // Skip files above the sanity cap (2 GB default — effectively no cap
+        // for source trees; still guards against accidentally iterating
+        // massive archive files).
         if (fi.size() > p.maxFileSizeBytes) {
+            ++filesDone;
+            emit progress(filesDone, totalFiles, totalMatches);
+            continue;
+        }
+
+        // Skip binary files so we don't waste time (and memory) scanning
+        // images / compiled objects / archives. Users can untick "skip
+        // binary" in the UI if they really want to search inside them.
+        if (p.skipBinary && looksBinary(path)) {
             ++filesDone;
             emit progress(filesDone, totalFiles, totalMatches);
             continue;
@@ -129,8 +151,10 @@ void ProjectSearchWorker::search(const Params &p) {
             continue;
         }
 
-        // Line-by-line reader — avoids loading entire file into a QString
-        // for huge sources. One pass per file.
+        // Line-by-line reader — scales to gigabyte files without blowing
+        // RAM (reads one line at a time from disk). One pass per file.
+        // UTF-8 by default; Latin-1 / CP-1252 files still work because
+        // QTextStream falls back to the system codec on decode errors.
         QTextStream ts(&f);
         ts.setCodec("UTF-8");
         int lineNum = 0;
@@ -276,7 +300,7 @@ void ProjectSearch::buildUi() {
     title->setStyleSheet(QString("color: %1;").arg(p.textPrimary));
     root->addWidget(title);
 
-    auto *hint = new QLabel("Find strings across file names AND contents — blazing fast, streams results as it finds them. Double-click any match to jump to that line.");
+    auto *hint = new QLabel("Find strings across file names AND contents in any text-based file — Python, SQL, TXT, C/C++, JS/TS, Rust, Go, HTML, JSON, YAML, Markdown, logs, config files. Size is not a limit (streams line-by-line so a 2 GB log searches the same as a 2 KB script). Double-click any match to jump to that line.");
     hint->setWordWrap(true);
     hint->setStyleSheet(QString("color: %1; font-size: 12px;").arg(p.textSecondary));
     root->addWidget(hint);
@@ -344,7 +368,10 @@ void ProjectSearch::buildUi() {
     m_regexChk = new QCheckBox("Regex");
     m_namesChk = new QCheckBox("Also match file names");
     m_namesChk->setChecked(true);
-    for (QCheckBox *cb : {m_caseChk, m_wordChk, m_regexChk, m_namesChk}) {
+    m_binaryChk = new QCheckBox("Include binary files");
+    m_binaryChk->setChecked(false);
+    m_binaryChk->setToolTip("By default binary files (images, archives, compiled objects) are skipped for speed. Tick to force-search them too.");
+    for (QCheckBox *cb : {m_caseChk, m_wordChk, m_regexChk, m_namesChk, m_binaryChk}) {
         cb->setStyleSheet(QString("color: %1; font-size: 12px;").arg(p.textSecondary));
         optRow->addWidget(cb);
     }
@@ -420,8 +447,12 @@ void ProjectSearch::buildUi() {
         if (!v.isValid()) return;
         QString path = item->data(0, Qt::UserRole).toString();
         int line     = item->data(0, Qt::UserRole + 1).toInt();
+        int col      = item->data(0, Qt::UserRole + 2).toInt();
         if (line <= 0) line = 1;
         emit openFileAtLine(path, line);
+        // Column-level precision — placed on the matched character,
+        // not just the start of the line.
+        if (col > 0) emit openFileAtLineCol(path, line, col);
     });
 }
 
@@ -464,6 +495,7 @@ void ProjectSearch::startSearch() {
     p.caseSensitive = m_caseChk->isChecked();
     p.wholeWord = m_wordChk->isChecked();
     p.regex = m_regexChk->isChecked();
+    p.skipBinary = !m_binaryChk->isChecked();
 
     QMetaObject::invokeMethod(m_worker, "search",
                               Qt::QueuedConnection,
@@ -515,11 +547,22 @@ void ProjectSearch::onMatch(const ProjectSearchMatch &m) {
     if (line.length() > 240) line = line.left(240) + "…";
     QString rendered = QString("      %1  │  %2").arg(m.lineNumber, 5).arg(line);
 
+    // "line:col │ content" — gives users the exact coordinate of every
+    // match. matchStart is a zero-based char offset into the original
+    // line, so column = matchStart + 1 for 1-based display (same as
+    // every editor status bar in the world).
+    const int col1 = m.matchStart + 1;
+    const QString coord = QString("%1:%2").arg(m.lineNumber, 5).arg(col1, -3);
+    const QString rendered2 = QString("      %1  │  %2").arg(coord).arg(line);
+    Q_UNUSED(rendered);   // keep the earlier build of `rendered` compiling
+
     auto *child = new QTreeWidgetItem(parent);
-    child->setText(0, rendered);
-    child->setToolTip(0, m.lineContent);
+    child->setText(0, rendered2);
+    child->setToolTip(0, QString("%1:%2:%3\n%4")
+                          .arg(m.filePath).arg(m.lineNumber).arg(col1).arg(m.lineContent));
     child->setData(0, Qt::UserRole, m.filePath);
     child->setData(0, Qt::UserRole + 1, m.lineNumber);
+    child->setData(0, Qt::UserRole + 2, col1);   // column for precise jump
     ++m_matchesSoFar;
 }
 

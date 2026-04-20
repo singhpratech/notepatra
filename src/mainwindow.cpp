@@ -1465,6 +1465,15 @@ void MainWindow::buildMenus() {
             openFile(path);
             if (auto *ed = currentEditor()) ed->gotoLine(line);
         });
+        connect(ps, &ProjectSearch::openFileAtLineCol, this,
+                [this](const QString &path, int line, int col) {
+            openFile(path);
+            if (auto *ed = currentEditor()) {
+                // setCursorPosition is 0-based; gotoLine is 1-based
+                ed->setCursorPosition(line - 1, col - 1);
+                ed->ensureLineVisible(line - 1);
+            }
+        });
         int idx = m_tabs->addTab(ps, "Project Search");
         m_tabs->setCurrentIndex(idx);
         ps->focusQuery();
