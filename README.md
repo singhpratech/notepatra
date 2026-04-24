@@ -512,10 +512,6 @@ Notepatra stands on the shoulders of giants. This section names them — the peo
 - **[Sigstore + Cosign](https://www.sigstore.dev/)** and **[SLSA](https://slsa.dev/)** — keyless signing + build provenance so every release is cryptographically verifiable without a private key we could lose.
 - **[Claude](https://claude.ai/) (Anthropic)** — Notepatra's implementation was co-written with Claude, in Claude Code. What would have been a multi-year solo project shipped in months.
 
-### Standing assumption
-
-Nothing in Notepatra is original in the "no one has done this before" sense. Every feature exists because someone else proved it was useful first. Notepatra's contribution is the **specific combination**: native performance, cross-platform, local-first AI, zero telemetry, ~4 MB bare binary — all in one app, in 2026.
-
 To everyone listed above, and to everyone maintaining the ~200 transitive dependencies in `rust-core/Cargo.lock` and the Qt/QScintilla chain: thank you.
 
 ---
