@@ -20,6 +20,8 @@
 #include <QKeyEvent>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QFrame>
+#include <QScrollArea>
 #include <QProcess>
 #include <QImage>
 #include <QBuffer>
@@ -421,6 +423,21 @@ QString messageTranscriptHtml(const QVector<AIPanel::ChatMessage> &messages,
 
 }  // namespace
 
+// Forward declarations for the bubble-factory helpers — their definitions
+// live further down near renderTranscript(). Declared here so earlier
+// methods (clearChat, etc.) can call them.
+static void aiClearChat(QVBoxLayout *layout);
+static void aiAddUserBubble(QVBoxLayout *target, const QString &text,
+                            const AiPalette &pal);
+static QFrame *aiAddAssistantCard(QVBoxLayout *target,
+                                  const AIPanel::ChatMessage &msg,
+                                  int messageIndex,
+                                  const AiPalette &pal,
+                                  std::function<void(int)> copyCb,
+                                  QTextBrowser **outBody = nullptr);
+static void aiAddErrorCard(QVBoxLayout *target, const QString &text,
+                           const AiPalette &pal);
+
 AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // Make the panel comfortably wide so chat bubbles render properly.
     // Like a real chat app — narrow chat looks cramped.
@@ -672,25 +689,32 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     m_statusLabel->setFixedHeight(14);
     layout->addWidget(m_statusLabel);
 
-    // ─── MIDDLE: chat output (TAKES ALL VERTICAL SPACE) ────────────────
-    // This is the conversation area. Bubbles flow from top to bottom.
-    // Input is at the bottom of the panel like every real chat app.
-    m_output = new QTextBrowser;
-    m_output->setReadOnly(true);
-    m_output->setAcceptRichText(true);
-    m_output->setOpenLinks(false);
-    m_output->setOpenExternalLinks(false);
-    QFont mono = notepatraCodeFont();
-    m_output->setFont(mono);
-    m_output->setStyleSheet(QString(
-        "QTextBrowser { background: %1; color: %2; border: none; padding: 12px; }")
-        .arg(pal.chatBg, pal.chatFg));
-    m_output->setPlaceholderText(
-        "Type a message below and press Enter.\n"
-        "\n"
-        "Tip: tick Coding for a minimal chat layout.\n"
-        "Click ▸ Quick actions below to reveal the one-click prompts.");
-    layout->addWidget(m_output, 1);  // stretch=1 → takes all spare space
+    // ─── MIDDLE: chat area — REAL Qt widgets, not HTML ─────────────────
+    // Each turn is its own QFrame (see addUserBubble / addAssistantCard /
+    // addErrorCard below). Widget-level stylesheets render reliably; HTML
+    // + CSS through QTextBrowser kept silently dropping backgrounds on
+    // nested divs, which is why responses read as "all dark" before.
+    m_chatArea = new QScrollArea;
+    m_chatArea->setWidgetResizable(true);
+    m_chatArea->setFrameShape(QFrame::NoFrame);
+    m_chatArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_chatArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_chatArea->setStyleSheet(QString(
+        "QScrollArea { background: %1; border: none; } "
+        "QScrollBar:vertical { background: %1; width: 10px; margin: 0; } "
+        "QScrollBar::handle:vertical { background: %2; border-radius: 4px; min-height: 24px; } "
+        "QScrollBar::handle:vertical:hover { background: %3; } "
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }")
+        .arg(pal.chatBg, pal.assistBorder, pal.accent));
+
+    m_chatContent = new QWidget;
+    m_chatContent->setStyleSheet(QString("background: %1;").arg(pal.chatBg));
+    m_chatLayout = new QVBoxLayout(m_chatContent);
+    m_chatLayout->setContentsMargins(12, 12, 12, 12);
+    m_chatLayout->setSpacing(0);
+    m_chatLayout->addStretch(1);   // bubbles get inserted BEFORE this stretch
+    m_chatArea->setWidget(m_chatContent);
+    layout->addWidget(m_chatArea, 1);
 
     // ─── BOTTOM STRIP: quick actions + input + send (like a real chat) ──
     // A thin chevron row always shows; clicking it reveals / hides the
@@ -863,7 +887,9 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     customRow->addWidget(m_stopBtn);
     layout->addLayout(customRow);
 
-    connect(m_output, &QTextBrowser::anchorClicked, this, &AIPanel::handleChatLink);
+    // Per-message anchorClicked connects are installed in aiAddAssistantCard
+    // now (each assistant card has its own QTextBrowser body). The global
+    // connect to m_output is obsolete — m_output is no longer used.
 
     // Wire attach button
     connect(m_attachBtn, &QPushButton::clicked, this, &AIPanel::attachFile);
@@ -1497,9 +1523,11 @@ void AIPanel::clearChat() {
     m_voiceBtn->setEnabled(true);
     updateVoiceButtonVisual(false);
 
-    m_output->clear();
+    if (m_chatLayout) aiClearChat(m_chatLayout);
     m_currentAssistantText.clear();
     m_inAssistantBubble = false;
+    m_streamingCard = nullptr;
+    m_streamingBody = nullptr;
     m_lastResponse.clear();
     m_customInput->clear();
     m_pendingFilePath.clear();
@@ -1536,12 +1564,219 @@ void AIPanel::updateVoiceButtonVisual(bool recording) {
     m_voiceBtn->setText("");
 }
 
+// ───────────────────────────────────────────────────────────────────────
+// Widget-based chat rendering — bulletproof bubbles
+// ───────────────────────────────────────────────────────────────────────
+//
+// Each message is a standalone QFrame styled via widget QSS (which Qt
+// renders fully and reliably), not HTML-CSS in a QTextBrowser (which
+// silently drops nested backgrounds). The rendering cost is comparable
+// for our message volumes; the visual certainty is the whole point.
+
+static void aiClearChat(QVBoxLayout *layout) {
+    if (!layout) return;
+    // Remove all items except the trailing stretch (last item).
+    while (layout->count() > 1) {
+        QLayoutItem *it = layout->takeAt(0);
+        if (QWidget *w = it->widget()) w->deleteLater();
+        delete it;
+    }
+}
+
+// User bubble — right-aligned, accent fill, rounded pill. Uses an outer
+// QHBoxLayout with stretch-on-left to push the bubble to the right edge.
+static void aiAddUserBubble(QVBoxLayout *target, const QString &text,
+                            const AiPalette &pal) {
+    auto *row = new QWidget;
+    row->setStyleSheet("background: transparent;");
+    auto *rowLay = new QHBoxLayout(row);
+    rowLay->setContentsMargins(0, 0, 0, 10);
+    rowLay->addStretch(1);
+
+    auto *pill = new QFrame;
+    pill->setObjectName("userPill");
+    pill->setStyleSheet(QString(
+        "#userPill { background: %1; border-radius: 14px; }")
+        .arg(pal.userBg));
+    auto *pillLay = new QVBoxLayout(pill);
+    pillLay->setContentsMargins(14, 10, 14, 10);
+    pillLay->setSpacing(0);
+    auto *msg = new QLabel(text);
+    msg->setWordWrap(true);
+    msg->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    msg->setStyleSheet(QString(
+        "color: %1; font-size: 13px; font-weight: 500; background: transparent;")
+        .arg(pal.userFg));
+    msg->setMaximumWidth(480);
+    pillLay->addWidget(msg);
+
+    rowLay->addWidget(pill, 0, Qt::AlignRight);
+
+    target->insertWidget(target->count() - 1, row);
+}
+
+// Assistant card — distinct background, accent left stripe, model label,
+// copy button, QTextBrowser body with markdown rendering.
+static QFrame *aiAddAssistantCard(QVBoxLayout *target,
+                                  const AIPanel::ChatMessage &msg,
+                                  int messageIndex,
+                                  const AiPalette &pal,
+                                  std::function<void(int)> copyCb,
+                                  QTextBrowser **outBody) {
+    auto *card = new QFrame;
+    card->setObjectName("assistantCard");
+    card->setStyleSheet(QString(
+        "#assistantCard { "
+        "  background: %1; "
+        "  border: 1px solid %2; "
+        "  border-left: 4px solid %3; "
+        "  border-radius: 8px; "
+        "} "
+        "QLabel { background: transparent; }")
+        .arg(pal.assistBg, pal.assistBorder, pal.assistAccent));
+
+    auto *outer = new QVBoxLayout(card);
+    outer->setContentsMargins(14, 12, 14, 12);
+    outer->setSpacing(8);
+
+    auto *headerRow = new QHBoxLayout;
+    headerRow->setContentsMargins(0, 0, 0, 0);
+    auto *modelLbl = new QLabel(msg.model.isEmpty() ? QStringLiteral("AI") : msg.model.toUpper());
+    modelLbl->setStyleSheet(QString(
+        "color: %1; font-size: 10px; font-weight: 700; letter-spacing: 1.2px;")
+        .arg(pal.assistAccent));
+    headerRow->addWidget(modelLbl);
+    headerRow->addStretch(1);
+    auto *copyBtn = new QPushButton("⧉ copy");
+    copyBtn->setCursor(Qt::PointingHandCursor);
+    copyBtn->setFlat(true);
+    copyBtn->setStyleSheet(QString(
+        "QPushButton { "
+        "  color: %1; font-size: 10px; font-weight: 600; "
+        "  padding: 3px 10px; border: 1px solid %2; border-radius: 10px; "
+        "  background: transparent; "
+        "} "
+        "QPushButton:hover { background: %1; color: white; border: 1px solid %1; }")
+        .arg(pal.accent, pal.assistBorder));
+    QObject::connect(copyBtn, &QPushButton::clicked, card, [copyCb, messageIndex]() {
+        copyCb(messageIndex);
+    });
+    headerRow->addWidget(copyBtn);
+    outer->addLayout(headerRow);
+
+    auto *divider = new QFrame;
+    divider->setFrameShape(QFrame::HLine);
+    divider->setStyleSheet(QString(
+        "background: %1; border: none; max-height: 1px;")
+        .arg(pal.assistBorder));
+    outer->addWidget(divider);
+
+    auto *body = new QTextBrowser;
+    body->setReadOnly(true);
+    body->setOpenLinks(false);
+    body->setFrameShape(QFrame::NoFrame);
+    body->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    body->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    body->setStyleSheet(QString(
+        "QTextBrowser { background: transparent; color: %1; border: none; padding: 0; }")
+        .arg(pal.assistFg));
+    // Render the message — markdown for assistant text.
+    const QString bodyHtml = markdownBodyHtml(msg.text, messageIndex);
+    body->setHtml(bodyHtml);
+    // Size the body to fit its content so the card grows with the text
+    // and the outer QScrollArea handles overflow.
+    QObject::connect(body->document(), &QTextDocument::contentsChanged, card,
+        [body]() {
+            body->document()->setTextWidth(body->viewport()->width());
+            const int h = int(body->document()->size().height()) + 8;
+            body->setFixedHeight(qMax(30, h));
+        });
+    body->document()->setTextWidth(400);
+    body->setFixedHeight(qMax(30, int(body->document()->size().height()) + 8));
+    outer->addWidget(body);
+
+    // Bottom margin between cards
+    auto *row = new QWidget;
+    row->setStyleSheet("background: transparent;");
+    auto *rowLay = new QVBoxLayout(row);
+    rowLay->setContentsMargins(0, 0, 0, 12);
+    rowLay->setSpacing(0);
+    rowLay->addWidget(card);
+
+    target->insertWidget(target->count() - 1, row);
+    if (outBody) *outBody = body;
+    return card;
+}
+
+static void aiAddErrorCard(QVBoxLayout *target, const QString &text,
+                           const AiPalette &pal) {
+    auto *card = new QFrame;
+    card->setObjectName("errorCard");
+    card->setStyleSheet(QString(
+        "#errorCard { "
+        "  background: %1; color: %2; "
+        "  border: 1px solid %3; border-left: 4px solid %3; "
+        "  border-radius: 8px; "
+        "} "
+        "QLabel { background: transparent; color: %2; }")
+        .arg(pal.errBg, pal.errFg, pal.errBorder));
+    auto *lay = new QVBoxLayout(card);
+    lay->setContentsMargins(14, 12, 14, 12);
+    lay->setSpacing(4);
+    auto *lbl = new QLabel("ERROR");
+    lbl->setStyleSheet(QString(
+        "color: %1; font-size: 10px; font-weight: 700; letter-spacing: 1.2px;")
+        .arg(pal.errBorder));
+    lay->addWidget(lbl);
+    auto *body = new QLabel(text);
+    body->setWordWrap(true);
+    body->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    lay->addWidget(body);
+
+    auto *row = new QWidget;
+    row->setStyleSheet("background: transparent;");
+    auto *rowLay = new QVBoxLayout(row);
+    rowLay->setContentsMargins(0, 0, 0, 12);
+    rowLay->setSpacing(0);
+    rowLay->addWidget(card);
+    target->insertWidget(target->count() - 1, row);
+}
+
 void AIPanel::renderTranscript() {
-    const bool coding = m_codingMode && m_codingMode->isChecked();
-    m_output->setHtml(messageTranscriptHtml(m_messages, coding));
-    m_output->moveCursor(QTextCursor::End);
-    m_output->ensureCursorVisible();
-    m_output->verticalScrollBar()->setValue(m_output->verticalScrollBar()->maximum());
+    if (!m_chatLayout) return;
+    aiClearChat(m_chatLayout);
+    m_streamingCard = nullptr;
+    m_streamingBody = nullptr;
+
+    const AiPalette pal = aiPalette();
+    auto copyCb = [this](int index) {
+        if (index >= 0 && index < m_messages.size()) {
+            QApplication::clipboard()->setText(m_messages.at(index).text);
+            setStatus("✓ Response copied to clipboard", false);
+        }
+    };
+    for (int i = 0; i < m_messages.size(); ++i) {
+        const ChatMessage &m = m_messages.at(i);
+        if (m.role == ChatMessage::User) {
+            aiAddUserBubble(m_chatLayout, m.text, pal);
+        } else if (m.role == ChatMessage::Error) {
+            aiAddErrorCard(m_chatLayout, m.text, pal);
+        } else {
+            QTextBrowser *body = nullptr;
+            aiAddAssistantCard(m_chatLayout, m, i, pal, copyCb, &body);
+            if (body) {
+                connect(body, &QTextBrowser::anchorClicked,
+                        this, &AIPanel::handleChatLink);
+            }
+        }
+    }
+    // Scroll to bottom after layout settles
+    QTimer::singleShot(0, m_chatArea, [this]() {
+        if (m_chatArea) {
+            m_chatArea->verticalScrollBar()->setValue(
+                m_chatArea->verticalScrollBar()->maximum());
+        }
+    });
 }
 
 void AIPanel::appendErrorBubble(const QString &text) {
@@ -1600,49 +1835,75 @@ void AIPanel::appendUserBubble(const QString &text) {
 }
 
 void AIPanel::beginAssistantBubble() {
-    // Left-aligned gray bubble for assistant responses. Streamed tokens get
-    // appended via streamIntoAssistantBubble(). The bubble closes in
-    // endAssistantBubble().
+    // Live assistant card. During streaming we show plain text in the
+    // body for speed (no incremental markdown reparsing). On end we
+    // replace with the full markdown-rendered card.
     m_currentAssistantText.clear();
     m_inAssistantBubble = true;
+    if (!m_chatLayout) return;
+    const AiPalette pal = aiPalette();
 
-    QString header = QString(
-        "<table width='100%' cellpadding='0' cellspacing='0' style='margin:8px 0;'>"
-        "<tr><td width='65%%' align='left'>"
-        "<div style='background:#2D2D2D;color:#D4D4D4;padding:10px 14px;"
-        "border-radius:12px;display:inline-block;text-align:left;"
-        "max-width:100%%;font-family:%2;font-size:12px;"
-        "border-left:3px solid #4EC9B0;'>"
-        "<div style='font-size:10px;color:#4EC9B0;font-weight:bold;margin-bottom:4px;'>%1</div>"
-        "<span style='white-space:pre-wrap;'>"
-    ).arg(m_ollama->model().toHtmlEscaped(), notepatraCodeCssFamily());
+    ChatMessage placeholder;
+    placeholder.role = ChatMessage::Assistant;
+    placeholder.model = m_ollama ? m_ollama->model() : QStringLiteral("AI");
+    placeholder.text.clear();
 
-    m_output->moveCursor(QTextCursor::End);
-    m_output->insertHtml(header);
-    m_output->moveCursor(QTextCursor::End);
+    auto copyCb = [this](int) {
+        if (!m_currentAssistantText.isEmpty()) {
+            QApplication::clipboard()->setText(m_currentAssistantText);
+        }
+    };
+    // Render the card with an empty body; we'll stream into it.
+    m_streamingCard = aiAddAssistantCard(m_chatLayout, placeholder,
+                                         m_messages.size(), pal,
+                                         copyCb, &m_streamingBody);
+    if (m_streamingBody) {
+        m_streamingBody->setPlainText("");
+        connect(m_streamingBody, &QTextBrowser::anchorClicked,
+                this, &AIPanel::handleChatLink, Qt::UniqueConnection);
+    }
+    if (m_chatArea) {
+        QTimer::singleShot(0, m_chatArea, [this]() {
+            m_chatArea->verticalScrollBar()->setValue(
+                m_chatArea->verticalScrollBar()->maximum());
+        });
+    }
 }
 
 void AIPanel::streamIntoAssistantBubble(const QString &token) {
     if (!m_inAssistantBubble) beginAssistantBubble();
     m_currentAssistantText += token;
-    m_output->moveCursor(QTextCursor::End);
-    // insertPlainText preserves whitespace and avoids HTML escaping
-    // headaches mid-stream. The bubble's parent <span> already has
-    // white-space:pre-wrap so newlines render correctly.
-    m_output->insertPlainText(token);
-    m_output->verticalScrollBar()->setValue(m_output->verticalScrollBar()->maximum());
+    if (m_streamingBody) {
+        // Append plain text — fast, preserves whitespace, no HTML escape
+        // headaches mid-stream. Markdown rendering happens on end.
+        QTextCursor c = m_streamingBody->textCursor();
+        c.movePosition(QTextCursor::End);
+        c.insertText(token);
+        m_streamingBody->setTextCursor(c);
+        // Nudge height + scroll so new tokens stay visible.
+        m_streamingBody->document()->setTextWidth(m_streamingBody->viewport()->width());
+        const int h = int(m_streamingBody->document()->size().height()) + 8;
+        m_streamingBody->setFixedHeight(qMax(30, h));
+    }
+    if (m_chatArea) {
+        m_chatArea->verticalScrollBar()->setValue(
+            m_chatArea->verticalScrollBar()->maximum());
+    }
 }
 
 void AIPanel::endAssistantBubble() {
     if (!m_inAssistantBubble) return;
     m_inAssistantBubble = false;
+    m_streamingCard = nullptr;
+    m_streamingBody = nullptr;
     if (!m_currentAssistantText.isEmpty()) {
         ChatMessage message;
         message.role = ChatMessage::Assistant;
         message.text = m_currentAssistantText;
-        message.model = m_ollama->model();
+        message.model = m_ollama ? m_ollama->model() : QStringLiteral("AI");
         m_messages.push_back(message);
     }
+    // Full re-render with markdown now that we have the complete text.
     renderTranscript();
 }
 

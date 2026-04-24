@@ -47,8 +47,24 @@ for %%E in (%EXTS%) do (
     reg add "HKCU\Software\Classes\%%E\OpenWithProgids" /v "Notepatra.Document" /d "" /f >nul
 )
 
+:: ─── Right-click shell context menu — Notepad++ / VS Code style ────
+:: "Edit with Notepatra" on every file, "Open folder in Notepatra"
+:: on folders + empty-space right-click inside them. HKCU, no admin.
+reg add "HKCU\Software\Classes\*\shell\Edit with Notepatra" /ve /d "Edit with Notepatra" /f >nul
+reg add "HKCU\Software\Classes\*\shell\Edit with Notepatra" /v "Icon" /d "\"%EXE%\"" /f >nul
+reg add "HKCU\Software\Classes\*\shell\Edit with Notepatra\command" /ve /d "\"%EXE%\" \"%%1\"" /f >nul
+
+reg add "HKCU\Software\Classes\Directory\shell\Open in Notepatra" /ve /d "Open folder in Notepatra" /f >nul
+reg add "HKCU\Software\Classes\Directory\shell\Open in Notepatra" /v "Icon" /d "\"%EXE%\"" /f >nul
+reg add "HKCU\Software\Classes\Directory\shell\Open in Notepatra\command" /ve /d "\"%EXE%\" \"%%1\"" /f >nul
+
+reg add "HKCU\Software\Classes\Directory\Background\shell\Open in Notepatra" /ve /d "Open folder in Notepatra" /f >nul
+reg add "HKCU\Software\Classes\Directory\Background\shell\Open in Notepatra" /v "Icon" /d "\"%EXE%\"" /f >nul
+reg add "HKCU\Software\Classes\Directory\Background\shell\Open in Notepatra\command" /ve /d "\"%EXE%\" \"%%V\"" /f >nul
+
 echo   Done. Notepatra now appears in right-click "Open with" for the
-echo   file types listed above.
+echo   file types listed above, AND as "Edit with Notepatra" on every
+echo   file + "Open folder in Notepatra" on folders.
 echo.
 echo   To set Notepatra as DEFAULT for a specific type:
 echo     1. Right-click a file of that type

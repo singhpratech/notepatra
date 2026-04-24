@@ -16,7 +16,12 @@ for %%E in (%EXTS%) do (
     reg delete "HKCU\Software\Classes\%%E\OpenWithProgids" /v "Notepatra.Document" /f >nul 2>&1
 )
 
-echo   Done. Windows file-type associations have been cleaned.
+:: Remove the shell context-menu entries (Edit with Notepatra / Open in Notepatra)
+reg delete "HKCU\Software\Classes\*\shell\Edit with Notepatra" /f >nul 2>&1
+reg delete "HKCU\Software\Classes\Directory\shell\Open in Notepatra" /f >nul 2>&1
+reg delete "HKCU\Software\Classes\Directory\Background\shell\Open in Notepatra" /f >nul 2>&1
+
+echo   Done. Windows file-type associations + shell context menu entries cleaned.
 echo   (Files you edited and the unzipped notepatra.exe folder are untouched.)
 echo.
 pause

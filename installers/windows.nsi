@@ -132,6 +132,24 @@ Section "Add to PATH" SecPath
     Call AddToUserPath
 SectionEnd
 
+Section "Right-click 'Edit with Notepatra'" SecShellMenu
+    ; ─── Windows Explorer shell integration — Notepad++ / VS Code style.
+    ; Adds an "Edit with Notepatra" entry to the right-click menu on every
+    ; file, and "Open folder in Notepatra" when right-clicking a folder or
+    ; empty space inside one. HKCU scope — per-user, no admin needed.
+    WriteRegStr HKCU "Software\Classes\*\shell\Edit with Notepatra" "" "Edit with Notepatra"
+    WriteRegStr HKCU "Software\Classes\*\shell\Edit with Notepatra" "Icon" '"$INSTDIR\${APP_EXE}"'
+    WriteRegStr HKCU "Software\Classes\*\shell\Edit with Notepatra\command" "" '"$INSTDIR\${APP_EXE}" "%1"'
+
+    WriteRegStr HKCU "Software\Classes\Directory\shell\Open in Notepatra" "" "Open folder in Notepatra"
+    WriteRegStr HKCU "Software\Classes\Directory\shell\Open in Notepatra" "Icon" '"$INSTDIR\${APP_EXE}"'
+    WriteRegStr HKCU "Software\Classes\Directory\shell\Open in Notepatra\command" "" '"$INSTDIR\${APP_EXE}" "%1"'
+
+    WriteRegStr HKCU "Software\Classes\Directory\Background\shell\Open in Notepatra" "" "Open folder in Notepatra"
+    WriteRegStr HKCU "Software\Classes\Directory\Background\shell\Open in Notepatra" "Icon" '"$INSTDIR\${APP_EXE}"'
+    WriteRegStr HKCU "Software\Classes\Directory\Background\shell\Open in Notepatra\command" "" '"$INSTDIR\${APP_EXE}" "%V"'
+SectionEnd
+
 ; ─── Uninstall section ────────────────────────────────────────────────
 Section "Uninstall"
     ; Remove from PATH
@@ -143,6 +161,11 @@ Section "Uninstall"
     Delete "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk"
     Delete "$SMPROGRAMS\${APP_NAME}\Uninstall.lnk"
     RMDir  "$SMPROGRAMS\${APP_NAME}"
+
+    ; Remove shell context-menu entries
+    DeleteRegKey HKCU "Software\Classes\*\shell\Edit with Notepatra"
+    DeleteRegKey HKCU "Software\Classes\Directory\shell\Open in Notepatra"
+    DeleteRegKey HKCU "Software\Classes\Directory\Background\shell\Open in Notepatra"
 
     ; Remove files — everything under $INSTDIR
     RMDir /r "$INSTDIR"
@@ -156,12 +179,14 @@ LangString DESC_SecMain       ${LANG_ENGLISH} "Install Notepatra and Qt runtime 
 LangString DESC_SecStartMenu  ${LANG_ENGLISH} "Create Start Menu shortcuts under Notepatra."
 LangString DESC_SecDesktop    ${LANG_ENGLISH} "Create a Notepatra shortcut on the Desktop."
 LangString DESC_SecPath       ${LANG_ENGLISH} "Add Notepatra to the user PATH so 'notepatra' works from any terminal."
+LangString DESC_SecShellMenu  ${LANG_ENGLISH} "Add 'Edit with Notepatra' to the right-click menu on files, and 'Open folder in Notepatra' on folders. Like Notepad++ / VS Code."
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
     !insertmacro MUI_DESCRIPTION_TEXT ${SecMain}      $(DESC_SecMain)
     !insertmacro MUI_DESCRIPTION_TEXT ${SecStartMenu} $(DESC_SecStartMenu)
     !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop}   $(DESC_SecDesktop)
     !insertmacro MUI_DESCRIPTION_TEXT ${SecPath}      $(DESC_SecPath)
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecShellMenu} $(DESC_SecShellMenu)
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 ; ─── Helpers: PATH manipulation (user scope, no admin) ────────────────

@@ -109,7 +109,19 @@ private:
     void handleRecordFinished(int exitCode, QProcess *process);
     void handleTranscriptionFinished(int exitCode, QProcess *process, const QString &audioPath);
 
-    QTextBrowser *m_output;
+    // Chat rendering uses REAL Qt widgets — not an HTML string rendered by
+    // QTextBrowser. Each message is its own QFrame with a guaranteed
+    // stylesheet (Qt widget QSS, not the CSS subset used by rich-text docs,
+    // which silently drops a lot of properties). That's what finally lets
+    // bubbles read as bubbles with reliable backgrounds and borders.
+    class QScrollArea *m_chatArea       = nullptr;
+    class QWidget     *m_chatContent    = nullptr;
+    class QVBoxLayout *m_chatLayout     = nullptr;
+    class QFrame      *m_streamingCard  = nullptr;   // active during a stream
+    QTextBrowser      *m_streamingBody  = nullptr;   // inner body of ^
+    // Legacy placeholder — retained so any stray references still compile.
+    // All rendering now goes through m_chatLayout.
+    QTextBrowser *m_output = nullptr;
     QPlainTextEdit *m_customInput;   // multi-line, Cursor-style. Enter sends, Shift+Enter newlines.
     QComboBox *m_modelCombo;
     QPushButton *m_stopBtn;

@@ -115,6 +115,35 @@
               <Extension Id="ps1"  />
             </ProgId>
 
+            <!-- ─── Right-click shell integration (Notepad++ / VS Code style) ───
+                 "Edit with Notepatra" on ANY file (HKCR\*), plus "Open folder
+                 in Notepatra" when right-clicking a folder or the empty
+                 space inside one. Icons come from the main .exe. These
+                 cover the cases our ProgId-only associations miss:
+                 ─ unknown extensions not listed in the ProgId block above
+                 ─ folders (the ProgId block only binds to file types)
+                 ─ background right-click inside a folder ("Open here in Notepatra") -->
+            <RegistryValue Root="HKCR" Key="*\shell\Edit with Notepatra"
+                           Value="Edit with Notepatra" Type="string" />
+            <RegistryValue Root="HKCR" Key="*\shell\Edit with Notepatra"
+                           Name="Icon" Value='"[#NotepatraExe]"' Type="string" />
+            <RegistryValue Root="HKCR" Key="*\shell\Edit with Notepatra\command"
+                           Value='"[#NotepatraExe]" "%1"' Type="string" />
+
+            <RegistryValue Root="HKCR" Key="Directory\shell\Open in Notepatra"
+                           Value="Open folder in Notepatra" Type="string" />
+            <RegistryValue Root="HKCR" Key="Directory\shell\Open in Notepatra"
+                           Name="Icon" Value='"[#NotepatraExe]"' Type="string" />
+            <RegistryValue Root="HKCR" Key="Directory\shell\Open in Notepatra\command"
+                           Value='"[#NotepatraExe]" "%1"' Type="string" />
+
+            <RegistryValue Root="HKCR" Key="Directory\Background\shell\Open in Notepatra"
+                           Value="Open folder in Notepatra" Type="string" />
+            <RegistryValue Root="HKCR" Key="Directory\Background\shell\Open in Notepatra"
+                           Name="Icon" Value='"[#NotepatraExe]"' Type="string" />
+            <RegistryValue Root="HKCR" Key="Directory\Background\shell\Open in Notepatra\command"
+                           Value='"[#NotepatraExe]" "%V"' Type="string" />
+
             <!-- Add Notepatra to the Windows PATH (system-wide) -->
             <Environment Id="NotepatraPath"
                          Name="PATH"
