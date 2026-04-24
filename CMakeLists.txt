@@ -385,6 +385,21 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_projectsearch.cpp"
         Qt5::Concurrent
         ${RUST_LIB}
     )
+    if(WIN32)
+        # Rust staticlib needs these system libs on MSVC — same set the
+        # main notepatra target links against. Without ntdll the stdlib's
+        # sync I/O references go unresolved (LNK2019 NtWriteFile etc.).
+        target_link_libraries(test_projectsearch PRIVATE
+            ws2_32 userenv bcrypt ntdll
+            advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32
+        )
+    elseif(APPLE)
+        target_link_libraries(test_projectsearch PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_projectsearch PRIVATE pthread dl m)
+    endif()
     add_dependencies(test_projectsearch rust_core)
     add_test(NAME test_projectsearch COMMAND $<TARGET_FILE:test_projectsearch>)
     set_tests_properties(test_projectsearch PROPERTIES
@@ -412,6 +427,18 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_projectsearch_ui.c
         Qt5::Concurrent
         ${RUST_LIB}
     )
+    if(WIN32)
+        target_link_libraries(test_projectsearch_ui PRIVATE
+            ws2_32 userenv bcrypt ntdll
+            advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32
+        )
+    elseif(APPLE)
+        target_link_libraries(test_projectsearch_ui PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_projectsearch_ui PRIVATE pthread dl m)
+    endif()
     add_dependencies(test_projectsearch_ui rust_core)
     add_test(NAME test_projectsearch_ui COMMAND $<TARGET_FILE:test_projectsearch_ui>)
     set_tests_properties(test_projectsearch_ui PROPERTIES

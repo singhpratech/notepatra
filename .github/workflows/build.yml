@@ -190,7 +190,7 @@ jobs:
             -DQSCINTILLA_LIB="$QSC_LIB" \
             -DBUILD_TESTING=ON
           cmake --build . --parallel "$(sysctl -n hw.ncpu)" \
-            --target test_lexers test_palette test_fmtpanel_diff test_compare_widget test_ollama test_llamacpp test_aifix test_ai_context
+            --target test_lexers test_palette test_fmtpanel_diff test_compare_widget test_ollama test_llamacpp test_aifix test_ai_context test_projectsearch test_projectsearch_ui test_updater
           QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 
       - name: Create DMG
