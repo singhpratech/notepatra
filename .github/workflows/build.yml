@@ -434,10 +434,26 @@ jobs:
           # with "TLS initialization failed" at runtime, which hits our
           # update checker (Help → Check for Updates) and the safe
           # updater's SHA256SUMS fetch. Bundle them with the app.
-          python -m pip install --quiet aqtinstall==3.1.15
-          python -m aqt install-tool --outputdir "${{ runner.temp }}/OpenSSL" windows desktop tools_openssl_x64
-          Write-Host "=== OpenSSL tool tree:"
-          Get-ChildItem -Path "${{ runner.temp }}/OpenSSL" -Recurse -Filter "*.dll" | Select-Object FullName
+          #
+          # Chocolatey's openssl.light package installs Shining Light
+          # Productions' well-known Win64 OpenSSL 1.1 build — the same
+          # source PostgreSQL, Git-for-Windows, and many Qt apps use.
+          # aqtinstall's tools_openssl_x64 was removed from Qt's repo
+          # in 2024 so we can't rely on it anymore.
+          choco install openssl.light --version=1.1.1.2100 -y --no-progress
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::warning::choco openssl.light failed (code $LASTEXITCODE) — falling back to direct download"
+            New-Item -ItemType Directory -Path "${{ runner.temp }}/OpenSSL/bin" -Force | Out-Null
+            $url = "https://curl.se/windows/dl-8.10.1_4/openssl-3.3.2_4-win64-mingw.zip"
+            # curl-for-windows ships OpenSSL 3 DLLs — last resort only; Qt 5.15.2
+            # won't work with OpenSSL 3 without recompile, so the choco path MUST
+            # succeed in normal operation. Keep this just to surface a better error.
+            Write-Host "::error::OpenSSL install failed and there is no viable fallback for Qt5.15.2. HTTPS will not work in the shipped Windows build."
+            exit 1
+          }
+          Write-Host "=== OpenSSL install candidate locations:"
+          Get-ChildItem -Path "C:\Program Files\OpenSSL-Win64\bin" -Filter "*.dll" -ErrorAction SilentlyContinue | Select-Object FullName
+          Get-ChildItem -Path "C:\Program Files\OpenSSL\bin" -Filter "*.dll" -ErrorAction SilentlyContinue | Select-Object FullName
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -683,16 +699,35 @@ jobs:
           # Without these, every https:// request from the app silently
           # fails with "TLS initialization failed" — Check for Updates
           # and the safe updater are both dead until these are present.
-          # Sourced from the aqtinstall tools_openssl_x64 install above.
+          # Sourced from the Chocolatey openssl.light install above
+          # (which drops them in C:\Program Files\OpenSSL-Win64\bin).
           $opensslDlls = @("libcrypto-1_1-x64.dll", "libssl-1_1-x64.dll")
-          $sslRoot = "${{ runner.temp }}/OpenSSL"
+          $sslSearchDirs = @(
+            "C:\Program Files\OpenSSL-Win64\bin",
+            "C:\Program Files\OpenSSL\bin",
+            "C:\tools\OpenSSL-Win64\bin",
+            "${{ runner.temp }}/OpenSSL"
+          )
           foreach ($dll in $opensslDlls) {
-            $src = Get-ChildItem -Path $sslRoot -Recurse -Filter $dll -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($src) {
-              Copy-Item $src.FullName "$outDir\" -Force
-              Write-Host "  ✓ $dll (from $($src.FullName))"
+            $found = $null
+            foreach ($d in $sslSearchDirs) {
+              if (Test-Path "$d\$dll") { $found = "$d\$dll"; break }
+            }
+            # Fallback recursive search if none of the canonical paths hit
+            if (-not $found) {
+              foreach ($d in $sslSearchDirs) {
+                if (Test-Path $d) {
+                  $hit = Get-ChildItem -Path $d -Recurse -Filter $dll -ErrorAction SilentlyContinue | Select-Object -First 1
+                  if ($hit) { $found = $hit.FullName; break }
+                }
+              }
+            }
+            if ($found) {
+              Copy-Item $found "$outDir\" -Force
+              Write-Host "  ✓ $dll (from $found)"
             } else {
-              Write-Host "  ✗ MISSING: $dll — HTTPS will fail at runtime"
+              Write-Host "::error::$dll NOT FOUND — HTTPS will fail at runtime"
+              exit 1
             }
           }
 
