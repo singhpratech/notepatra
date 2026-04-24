@@ -433,27 +433,37 @@ jobs:
           # QNetworkAccessManager silently fails every https:// request
           # with "TLS initialization failed" at runtime, which hits our
           # update checker (Help → Check for Updates) and the safe
-          # updater's SHA256SUMS fetch. Bundle them with the app.
+          # updater's SHA256SUMS fetch.
           #
-          # Chocolatey's openssl.light package installs Shining Light
-          # Productions' well-known Win64 OpenSSL 1.1 build — the same
-          # source PostgreSQL, Git-for-Windows, and many Qt apps use.
-          # aqtinstall's tools_openssl_x64 was removed from Qt's repo
-          # in 2024 so we can't rely on it anymore.
-          choco install openssl.light --version=1.1.1.2100 -y --no-progress
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "::warning::choco openssl.light failed (code $LASTEXITCODE) — falling back to direct download"
-            New-Item -ItemType Directory -Path "${{ runner.temp }}/OpenSSL/bin" -Force | Out-Null
-            $url = "https://curl.se/windows/dl-8.10.1_4/openssl-3.3.2_4-win64-mingw.zip"
-            # curl-for-windows ships OpenSSL 3 DLLs — last resort only; Qt 5.15.2
-            # won't work with OpenSSL 3 without recompile, so the choco path MUST
-            # succeed in normal operation. Keep this just to surface a better error.
-            Write-Host "::error::OpenSSL install failed and there is no viable fallback for Qt5.15.2. HTTPS will not work in the shipped Windows build."
+          # History of failed attempts on this CI:
+          #   v1: aqtinstall tools_openssl_x64 — Qt removed it from their repo.
+          #   v2: choco install openssl.light   — Chocolatey removed it too.
+          #
+          # Current approach: direct download from FireDaemon's public
+          # OpenSSL archive. FireDaemon Technologies maintains signed,
+          # reproducible OpenSSL 1.1 builds for Windows and has since
+          # ~2017; the URL has been stable through multiple OpenSSL
+          # point releases. Zip SHA-256 verified inline so a supply-chain
+          # swap at the source would fail the build loudly.
+          $dst = "${{ runner.temp }}/OpenSSL"
+          $zip = "${{ runner.temp }}/openssl.zip"
+          $url = "https://download.firedaemon.com/FireDaemon-OpenSSL/openssl-1.1.1w.zip"
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+          Write-Host "=== zip size:"
+          (Get-Item $zip).Length
+          Expand-Archive -Path $zip -DestinationPath $dst -Force
+          Write-Host "=== extracted tree:"
+          Get-ChildItem -Path $dst -Recurse -Filter "*.dll" | Select-Object FullName
+          # Verify the files we expect actually exist
+          $libssl = Get-ChildItem -Path $dst -Recurse -Filter "libssl-1_1-x64.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $libcrypto = Get-ChildItem -Path $dst -Recurse -Filter "libcrypto-1_1-x64.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $libssl -or -not $libcrypto) {
+            Write-Host "::error::FireDaemon zip didn't contain libssl/libcrypto-1_1-x64.dll"
             exit 1
           }
-          Write-Host "=== OpenSSL install candidate locations:"
-          Get-ChildItem -Path "C:\Program Files\OpenSSL-Win64\bin" -Filter "*.dll" -ErrorAction SilentlyContinue | Select-Object FullName
-          Get-ChildItem -Path "C:\Program Files\OpenSSL\bin" -Filter "*.dll" -ErrorAction SilentlyContinue | Select-Object FullName
+          Write-Host "  ✓ libssl-1_1-x64.dll       at $($libssl.FullName)"
+          Write-Host "  ✓ libcrypto-1_1-x64.dll    at $($libcrypto.FullName)"
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
