@@ -7,6 +7,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.19] — 2026-04-24
+
+Follow-up to v0.1.18 focused on a user-reported Windows-specific Project Search hang + a clean Notepatra wordmark across every OS-level label.
+
+### Added
+- 🔎 **Project Search per-file 30-second watchdog** — any single file that takes more than 30 s to open/read/scan is bailed on and the worker moves to the next file. Prevents one pathological file from wedging the whole scan at N % forever. Watchdog is checked inside the per-line streaming loop so large logs exit promptly.
+- 🔎 **Live "⏳ stalled on: <path>" diagnostic** — if the scan progress (`done`, `total`) stays unchanged for 20 UI ticks (~2 s), the status label appends the path of any file a worker thread is currently holding. Actionable diagnostic instead of a frozen bar.
+- 🔎 **Windows OneDrive / cloud-placeholder skip** — worker calls `GetFileAttributesW()` and skips files with `FILE_ATTRIBUTE_RECALL_ON_OPEN` / `RECALL_ON_DATA_ACCESS` / `OFFLINE`. Cloud-only placeholders never trigger a background WAN download when Search tries to open them. #1 root cause of the "Search froze at 12 %" report.
+
+### Changed
+- 🎨 **Comment colour on Light theme**: `#008000` → `#0E8D0E`. More prominent green against Clay paper.
+- 🎨 **Comment colour on Dark theme**: `#6A9955` → `#A9B665`. Gruvbox-style olive — warm and distinct against `#1E1E1E` instead of blending with the accent teal. Monokai unchanged.
+- 📏 **Progress ticker fires every 4 files** (was every 8) — smoother progress bar motion.
+- 🏷️ **"Notepatra" wordmark cleanup** — OS-level labels now read just `Notepatra`, no dashes, no em-dashes, no taglines. Affects: Windows MSI `Description`, NSIS `BrandingText`, `license.rtf` title, docs footer, About dialog, Welcome hero, README.
+
+### Fixed
+- 🪟 **Windows Project Search hang around 10-20 %** — two independent causes addressed (OneDrive placeholders triggering WAN downloads, single files holding workers forever). See above.
+- 🪟 **Windows unicode mojibake** — em-dashes in installer labels were being read as CP1252 by older Windows views, rendering "Notepatra — Native..." as "Notepatra(her) native...". Replaced em-dashes with ASCII hyphens in every `.wxs` / `.nsi` / `.rtf` string users actually see.
+
+---
+
 ## [0.1.18] — 2026-04-24
 
 SQL formatter becomes a real Claude-style AST pretty-printer (11 dialects) · Git panel rewrite turns the "status viewer" into a usable workflow tool · runtime theme switching stops producing dark-on-dark melt in every panel.

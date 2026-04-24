@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3–5 MB stripped across platforms; full downloads are ~2 MB (Linux tarball), ~22 MB (macOS DMG with bundled Qt), ~40 MB (Windows installer with bundled Qt DLLs). 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.18",
+      "softwareVersion": "0.1.19",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -153,7 +153,7 @@
           "name": "How big is Notepatra compared to VS Code?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.18: ~2 MB Linux tarball, ~22 MB macOS DMG (with bundled Qt), ~40 MB Windows MSI/zip (with bundled Qt + QScintilla DLLs). VS Code is 300+ MB regardless. Notepatra is 6× to 14× smaller than VS Code on every platform."
+            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.19: ~2 MB Linux tarball, ~22 MB macOS DMG (with bundled Qt), ~40 MB Windows MSI/zip (with bundled Qt + QScintilla DLLs). VS Code is 300+ MB regardless. Notepatra is 6× to 14× smaller than VS Code on every platform."
           }
         },
         {
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.18 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.19 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.18">
-        Download v0.1.18 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.19">
+        Download v0.1.19 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.18 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.19 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1388,7 +1388,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.18</div>
+        <div class="section-label">Download v0.1.19</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1836,7 +1836,49 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.18 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.19 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-24</span>
+                        <span>· Project Search Windows hang fix · clean Notepatra wordmark · SQL comment colour calibration</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🔎 Project Search — Windows hang fixed</h5>
+                        <ul>
+                            <li><strong>OneDrive / cloud placeholder skip.</strong> On Windows, the worker now calls <code style="color:var(--green);font-size:12px;">GetFileAttributesW()</code> and skips files with <code style="color:var(--green);font-size:12px;">FILE_ATTRIBUTE_RECALL_ON_OPEN</code> / <code style="color:var(--green);font-size:12px;">_RECALL_ON_DATA_ACCESS</code> / <code style="color:var(--green);font-size:12px;">_OFFLINE</code>. Cloud-only placeholders no longer trigger a giant background WAN download when Search tries to open them — this was the #1 cause of the "Search froze at 12 %" bug on Windows.</li>
+                            <li><strong>Per-file 30-second watchdog.</strong> Every file gets a <code style="color:var(--green);font-size:12px;">QElapsedTimer</code>; if the read loop burns more than 30 seconds on a single file (AV stalling, UNC drop, 2 GB single-line log…), the worker bails on that file and moves on. One rogue file can't hold the scan hostage anymore.</li>
+                            <li><strong>Live "⏳ stalled on: &lt;path&gt;" diagnostic.</strong> If the scan appears frozen for 2 seconds, the status label appends the exact path of any file a worker thread is holding. You can see <em>which file</em> wedged the scan and exclude it via the file-types glob.</li>
+                            <li><strong>Progress ticker fires every 4 files</strong> (was every 8) — smoother bar motion and earlier detection of a stall.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🏷️ Clean "Notepatra" wordmark</h5>
+                        <ul>
+                            <li>No more dashes, em-dashes, or taglines in OS-level labels. <strong>Windows MSI Description</strong>, <strong>NSIS BrandingText</strong>, <strong>license.rtf title</strong>, <strong>docs footer</strong>, <strong>Welcome hero</strong>, <strong>About dialog</strong>, <strong>README</strong> — all just read <code style="color:var(--green);font-size:12px;">Notepatra</code>.</li>
+                            <li>Fixes the Windows "Notepatra(her) native..." mojibake where older Windows views parsed UTF-8 em-dash bytes as CP1252.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🎨 SQL / C-family comment colour calibration</h5>
+                        <ul>
+                            <li><strong>Light theme</strong> comment colour: <code style="color:var(--green);font-size:12px;">#008000</code> → <code style="color:var(--green);font-size:12px;">#0E8D0E</code>. More prominent green against Clay paper.</li>
+                            <li><strong>Dark theme</strong> comment colour: <code style="color:var(--green);font-size:12px;">#6A9955</code> → <code style="color:var(--green);font-size:12px;">#A9B665</code>. Gruvbox-style olive — warm and distinct against <code style="color:var(--green);font-size:12px;">#1E1E1E</code> instead of blending with the accent teal. Monokai unchanged.</li>
+                            <li>Applies to every QScintilla lexer that tags a style as "comment" (SQL, C++, Python, JS, Bash, JSON-with-comments…).</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.19">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.19">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.18</div>
                     <div class="version-meta">
                         <span>2026-04-24</span>
                         <span>· SQL Claude-style pretty-printer · Git workflow rewrite · runtime theme propagation across every panel</span>
@@ -2482,7 +2524,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is it compared to VS Code?</h3>
-                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.18): <strong>2 MB</strong> Linux tar.gz · <strong>22 MB</strong> macOS DMG · <strong>40 MB</strong> Windows MSI/zip. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
+                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.19): <strong>2 MB</strong> Linux tar.gz · <strong>22 MB</strong> macOS DMG · <strong>40 MB</strong> Windows MSI/zip. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
