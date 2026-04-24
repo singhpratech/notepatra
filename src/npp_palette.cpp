@@ -19,7 +19,12 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QStr
     const QColor npText       = monokai ? QColor("#F8F8F2") : (dark ? QColor("#D4D4D4") : QColor("#000000"));
     const QColor npKeyword    = monokai ? QColor("#F92672") : (dark ? QColor("#569CD6") : QColor("#0000FF"));
     const QColor npKeyword2   = monokai ? QColor("#AE81FF") : (dark ? QColor("#C586C0") : QColor("#800080"));
-    const QColor npComment    = monokai ? QColor("#75715E") : (dark ? QColor("#6A9955") : QColor("#008000"));
+    // Comment colour — calibrated for both themes after user feedback:
+    //   Light: more prominent, saturated green that stands out on warm paper
+    //          (the stock #008000 was readable but felt muted on Clay).
+    //   Dark:  olive green — warm and distinct against #1E1E1E, avoids the
+    //          flat teal-green (#6A9955) that used to blend with accent hues.
+    const QColor npComment    = monokai ? QColor("#75715E") : (dark ? QColor("#A9B665") : QColor("#0E8D0E"));
     const QColor npNumber     = monokai ? QColor("#AE81FF") : (dark ? QColor("#B5CEA8") : QColor("#FF8000"));
     const QColor npString     = monokai ? QColor("#E6DB74") : (dark ? QColor("#CE9178") : QColor("#808080"));
     const QColor npChar       = npString;
