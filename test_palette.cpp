@@ -34,7 +34,9 @@
 
 // Notepad++ default palette — must match editor.cpp values
 static const QColor NP_KEYWORD  (0x00, 0x00, 0xFF);
-static const QColor NP_COMMENT  (0x00, 0x80, 0x00);
+// Light-mode comment — calibrated slightly darker-saturated for Clay paper
+// (was 0x008000 pure HTML green, which washed out on warm backgrounds).
+static const QColor NP_COMMENT  (0x0E, 0x8D, 0x0E);
 static const QColor NP_NUMBER   (0xFF, 0x80, 0x00);
 static const QColor NP_STRING   (0x80, 0x80, 0x80);
 static const QColor NP_OPERATOR (0x00, 0x00, 0x00);
@@ -233,7 +235,7 @@ int main(int argc, char *argv[]) {
     fprintf(stdout, "\n");
     if (total_failed == 0) {
         fprintf(stdout, "=== ALL PALETTE CHECKS PASS ===\n");
-        fprintf(stdout, "Every lexer paints keywords #0000FF bold, comments #008000 italic,\n");
+        fprintf(stdout, "Every lexer paints keywords #0000FF bold, comments #0E8D0E italic,\n");
         fprintf(stdout, "numbers #FF8000, strings #808080, operators #000000 (not bold),\n");
         fprintf(stdout, "preprocessor #804000 (not bold) — matches Notepad++ stylers.xml\n");
         fprintf(stdout, "default theme. Less bold = lighter, less aggressive feel.\n");
