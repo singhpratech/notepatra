@@ -14,6 +14,13 @@ class FormatterPanel : public QWidget {
 public:
     explicit FormatterPanel(const QString &title, const QString &language = "JSON", QWidget *parent = nullptr);
 
+public slots:
+    // Re-read the current theme and repaint every styled widget (title,
+    // status banner, session log, Scintilla paper/caret/match-brace, and
+    // the lexer colours). Connected from MainWindow::themeChanged().
+    void onThemeChanged();
+
+public:
     void setInput(const QString &text);
     void addButton(const QString &label, std::function<QString(const QString &)> fn);
     void setOutput(const QString &text);
@@ -64,7 +71,13 @@ private:
     std::function<QString(const QString &)> m_firstAction;
     bool m_hasFirstAction = false;
 
+    // Retained chrome widgets for applyPalette() — we re-style the title,
+    // log header, and button row when the theme flips.
+    QLabel *m_logHeader = nullptr;
+    bool m_lastStatusWasError = false;
+
     void applyLexer();
+    void applyPalette();
 };
 
 #endif

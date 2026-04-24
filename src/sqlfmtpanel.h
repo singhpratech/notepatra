@@ -19,17 +19,28 @@ public:
     explicit SqlFmtPanel(QWidget *parent = nullptr);
     void setInput(const QString &sql);
 
+public slots:
+    void onThemeChanged();
+
 signals:
     void applyFormatted(const QString &text);
 
 private:
+    void applyPalette();
+
     QsciScintilla *m_output;
     QCheckBox *m_uppercase;
     QSpinBox *m_indent;
     QComboBox *m_dialectCombo;
     QLabel *m_statusLabel;
+    QLabel *m_header = nullptr;
+    QLabel *m_dialectLabel = nullptr;
+    QLabel *m_indentLabel = nullptr;
+    QPushButton *m_fmtBtn = nullptr;
+    QPushButton *m_copyBtn = nullptr;
     QPushButton *m_aiBtn = nullptr;
     QString m_inputText;
+    bool m_isStatusError = false;
 
     // Ollama plumbing for the AI Fix button. Mirrors the pattern the
     // JSON / HTML / Bracket panels use — OllamaClient for the request,

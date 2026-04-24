@@ -1959,6 +1959,9 @@ void MainWindow::buildMenus() {
     // SQL Formatter (inbuilt) — opens in a new tab
     pluginsMenu->addAction("SQL Formatter (inbuilt)", this, [this, E]() {
         auto *panel = new SqlFmtPanel;
+        // Theme propagation — SQL Formatter chrome + lexer colours track the
+        // current theme on runtime flip.
+        connect(this, &MainWindow::themeChanged, panel, &SqlFmtPanel::onThemeChanged);
         if (E()) panel->setInput(E()->hasSelectedText() ? E()->selectedText() : E()->text());
         int idx = m_tabs->addTab(panel, "SQL Formatter");
         m_tabs->setCurrentIndex(idx);
@@ -2018,6 +2021,7 @@ void MainWindow::buildMenus() {
     // JSON Tools (inbuilt) — opens as tab
     pluginsMenu->addAction("JSON Tools (inbuilt)", this, [this, E]() {
         auto *p = new FormatterPanel("JSON Tools", "JSON");
+        connect(this, &MainWindow::themeChanged, p, &FormatterPanel::onThemeChanged);
         p->addButton("Format", [](const QString &s) { return RustCore::formatJson(s, 4); });
         p->addButton("Minify", [](const QString &s) { return RustCore::minifyJson(s); });
         p->addButton("Fix + Format", [](const QString &s) {
@@ -2263,6 +2267,7 @@ void MainWindow::buildMenus() {
     // HTML Tools (inbuilt) — format, minify, fix, AI fix
     pluginsMenu->addAction("HTML Tools (inbuilt)", this, [this, E]() {
         auto *p = new FormatterPanel("HTML Tools", "HTML");
+        connect(this, &MainWindow::themeChanged, p, &FormatterPanel::onThemeChanged);
         p->addButton("Format (2 spaces)", [](const QString &s) { return RustCore::formatHtml(s, 2); });
         p->addButton("Format (4 spaces)", [](const QString &s) { return RustCore::formatHtml(s, 4); });
         p->addButton("Minify", [](const QString &s) {
@@ -2379,6 +2384,7 @@ void MainWindow::buildMenus() {
     // Bracket Tools (inbuilt) — check, fix, AI fix
     pluginsMenu->addAction("Bracket Tools (inbuilt)", this, [this, E]() {
         auto *p = new FormatterPanel("Bracket Tools", "JavaScript");
+        connect(this, &MainWindow::themeChanged, p, &FormatterPanel::onThemeChanged);
         p->addButton("Check", [](const QString &s) { return RustCore::checkBrackets(s); });
         p->addButton("Auto-Fix", [](const QString &s) { return RustCore::fixBrackets(s); });
 

@@ -644,14 +644,21 @@ void CompareWidget::syncTextsFromEditors() {
 void CompareWidget::updateEditToggle() {
     if (!m_editToggle) return;
 
+    // Pull theme-aware colours so the toggle isn't invisible on dark themes.
+    // `symChangedFg` is the warm amber marker in both modes → good "unlocked"
+    // emphasis. `headerFg` is the muted toolbar-text colour → good "locked"
+    // idle state.
+    const ComparePalette pal = comparePalette();
     if (m_editable) {
         m_editToggle->setText("Lock Editing");
         m_editToggle->setToolTip("Editing is unlocked. Lock to freeze the panes and recompare.");
-        m_editToggle->setStyleSheet("font-weight: 600; color: #8A5A00;");
+        m_editToggle->setStyleSheet(QString("font-weight: 600; color: %1;")
+                                    .arg(pal.symChangedFg.name()));
     } else {
         m_editToggle->setText("Unlock Editing");
         m_editToggle->setToolTip("Locked by default. Unlock to edit the compare panes directly.");
-        m_editToggle->setStyleSheet("font-weight: 600; color: #555;");
+        m_editToggle->setStyleSheet(QString("font-weight: 600; color: %1;")
+                                    .arg(pal.headerFg.name()));
     }
 }
 
@@ -683,7 +690,13 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     m_ignoreEmptyLines = new QCheckBox("Ignore empty lines");
 
     m_statsLabel = new QLabel;
-    m_statsLabel->setStyleSheet("font-weight: bold; color: #333;");
+    // Theme-aware — onThemeChanged() re-applies this same format string when
+    // the user switches theme. Was hardcoded #333, which vanished in dark.
+    {
+        const ComparePalette pal = comparePalette();
+        m_statsLabel->setStyleSheet(QString("font-weight: bold; color: %1;")
+                                    .arg(pal.headerFg.name()));
+    }
 
     toolbar->addWidget(prevBtn);
     toolbar->addWidget(nextBtn);
@@ -1199,6 +1212,10 @@ void CompareWidget::onThemeChanged() {
         m_statsLabel->setStyleSheet(QString("font-weight: bold; color: %1;")
             .arg(pal.headerFg.name()));
     }
+    // Re-colour the edit-toggle button — it stashes theme colour in its
+    // stylesheet per editable state, so re-run updateEditToggle() which
+    // reads a fresh comparePalette().
+    updateEditToggle();
     if (m_splitter) {
         m_splitter->setStyleSheet(QString(
             "QSplitter::handle { background: %1; border-left: 1px solid %2; "

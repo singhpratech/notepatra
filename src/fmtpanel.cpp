@@ -181,12 +181,12 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
     // Session log — every action taken on this panel during the session is
     // appended here so users can see "what action was taken and what size
     // was fixed for the session" at a glance. Compact, capped at 50 entries.
-    auto *logHeader = new QLabel("  Session log");
-    logHeader->setStyleSheet(QString("background: %1; color: %2; padding: 2px 6px; "
+    m_logHeader = new QLabel("  Session log");
+    m_logHeader->setStyleSheet(QString("background: %1; color: %2; padding: 2px 6px; "
                              "font-size: 10px; font-weight: bold;")
         .arg(fp.logHeaderBg.name(), fp.logHeaderFg.name()));
-    logHeader->setFixedHeight(18);
-    layout->addWidget(logHeader);
+    m_logHeader->setFixedHeight(18);
+    layout->addWidget(m_logHeader);
 
     m_sessionLog = new QListWidget;
     m_sessionLog->setStyleSheet(
@@ -217,23 +217,69 @@ void FormatterPanel::applyLexer() {
     else if (m_language == "XML") lexer = new QsciLexerXML(m_output);
     else if (m_language == "YAML") lexer = new QsciLexerYAML(m_output);
 
+    const FmtPalette fp = fmtPalette();
+    const QString themeName = Config::instance().theme;
     if (lexer) {
         lexer->setDefaultFont(mono);
-        lexer->setDefaultPaper(QColor("#FFFFFF"));
-        lexer->setDefaultColor(QColor("#000000"));
+        lexer->setDefaultPaper(fp.editorBg);
+        lexer->setDefaultColor(fp.editorFg);
         m_output->setLexer(lexer);
-        // Apply Notepad++ default palette so user-typed text is visible (was
-        // rendering white-on-white because the lexer's default per-style
-        // colors weren't initialized — same root cause as the Windows v0.1.1
-        // editor bug fixed in v0.1.2).
-        applyNotepadPlusPalette(lexer, mono);
+        // Pass the current theme name so the Notepad++ palette paints
+        // dark-mode colours when the app is in Dark/Monokai. Without this,
+        // applyNotepadPlusPalette defaults to LIGHT-MODE colours (white
+        // paper + black text) regardless of the panel chrome — users on
+        // Dark theme would see a blinding white editor inside a dark panel.
+        applyNotepadPlusPalette(lexer, mono, themeName);
     }
     // Belt-and-braces: explicitly set the editor's own paper + foreground
     // so even text typed BEFORE the lexer kicks in (whitespace, plain text)
-    // is visible.
-    m_output->setPaper(QColor("#FFFFFF"));
-    m_output->setColor(QColor("#000000"));
-    m_output->setCaretForegroundColor(QColor("#000000"));
+    // is visible, and so the colours track the current theme.
+    m_output->setPaper(fp.editorBg);
+    m_output->setColor(fp.editorFg);
+    m_output->setCaretForegroundColor(fp.editorFg);
+}
+
+// ─── Theme-aware repaint of every styled child ────────────────────────
+void FormatterPanel::applyPalette() {
+    const FmtPalette fp = fmtPalette();
+
+    if (m_titleLabel) {
+        m_titleLabel->setStyleSheet(QString(
+            "font-weight: bold; background: %1; color: %2; padding: 2px 6px;"
+        ).arg(fp.titleBg.name(), fp.titleFg.name()));
+    }
+    if (m_logHeader) {
+        m_logHeader->setStyleSheet(QString(
+            "background: %1; color: %2; padding: 2px 6px; "
+            "font-size: 10px; font-weight: bold;"
+        ).arg(fp.logHeaderBg.name(), fp.logHeaderFg.name()));
+    }
+    if (m_sessionLog) {
+        m_sessionLog->setStyleSheet(QString(
+            "QListWidget { background: %1; color: %2; border: none; "
+            "font-family: %3; font-size: 11px; padding: 2px; }"
+            "QListWidget::item { padding: 2px 8px; border-bottom: 1px solid %4; }"
+            "QListWidget::item:hover { background: %5; }"
+        ).arg(fp.logBg.name(), fp.logFg.name(), notepatraCodeCssFamily(),
+              fp.logItemSep.name(), fp.logItemHover.name()));
+    }
+    if (m_output) {
+        m_output->setMatchedBraceBackgroundColor(fp.matchBraceBg);
+        m_output->setMatchedBraceForegroundColor(fp.matchBraceFg);
+        m_output->setCaretLineBackgroundColor(fp.caretLineBg);
+        m_output->setMarginsBackgroundColor(fp.titleBg);
+        m_output->setMarginsForegroundColor(fp.logHeaderFg);
+        applyLexer();
+        if (int len = m_output->length()) m_output->recolor(0, len);
+    }
+    // Re-apply the status banner so its colours track the theme — preserving
+    // whether the last message was an error.
+    setStatus(m_statusLabel ? m_statusLabel->text() : QString(),
+              m_lastStatusWasError);
+}
+
+void FormatterPanel::onThemeChanged() {
+    applyPalette();
 }
 
 QString FormatterPanel::inputText() const {
@@ -393,16 +439,16 @@ void FormatterPanel::appendOutput(const QString &text) {
 void FormatterPanel::setStatus(const QString &text, bool isError) {
     if (!m_statusLabel) return;
     m_statusLabel->setText(text);
-    // Preserve the BIG dark banner styling — only swap the color/border
-    // accent for error vs success. Was previously stripping the dark
-    // background, leaving the colored text on a white default background
-    // (invisible). Match the constructor's initial style.
-    QString accent = isError ? "#F48771" : "#4EC9B0";
-    QString bg     = isError ? "#3a1e1e" : "#1e3a3a";
+    m_lastStatusWasError = isError;
+    // Use the shared fmtPalette so the banner colours track the current
+    // theme instead of freezing at dark-mode literals.
+    const FmtPalette fp = fmtPalette();
+    QColor bg     = isError ? fp.errorBg : fp.statusBg;
+    QColor accent = isError ? fp.errorFg : fp.statusAccent;
     m_statusLabel->setStyleSheet(
         QString("background: %1; color: %2; padding: 8px 12px; "
                 "font-size: 13px; font-weight: 600; border-left: 4px solid %2;")
-        .arg(bg).arg(accent));
+        .arg(bg.name(), accent.name()));
 }
 
 void FormatterPanel::logAction(const QString &action, int beforeChars, int afterChars,
@@ -417,10 +463,12 @@ void FormatterPanel::logAction(const QString &action, int beforeChars, int after
         .arg(timestamp).arg(action).arg(beforeChars).arg(afterChars).arg(deltaStr);
     if (!extra.isEmpty()) line += "  " + extra;
     auto *item = new QListWidgetItem(line);
-    // Color the entry based on whether it changed anything
-    if (delta > 0) item->setForeground(QColor("#4EC9B0"));      // green = fixed/added
-    else if (delta < 0) item->setForeground(QColor("#FFB000")); // amber = minified/shrunk
-    else item->setForeground(QColor("#888888"));                 // gray = no-op
+    // Color the entry based on whether it changed anything, using the
+    // theme-aware fmtPalette instead of dark-mode-only hex literals.
+    const FmtPalette fp = fmtPalette();
+    if (delta > 0)      item->setForeground(fp.statusAccent);    // theme-accent = fixed/added
+    else if (delta < 0) item->setForeground(fp.matchBraceFg);    // warm = minified/shrunk
+    else                item->setForeground(fp.logHeaderFg);     // muted = no-op
     m_sessionLog->addItem(item);
     m_sessionLog->scrollToBottom();
     // Cap history at 50 entries

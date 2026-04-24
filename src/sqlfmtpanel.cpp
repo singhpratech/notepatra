@@ -3,6 +3,7 @@
 #include "npp_palette.h"
 #include "fonts.h"
 #include "theme_detect.h"
+#include "config.h"
 #include "ollama.h"
 #include "ollamastatus.h"
 #include <QVBoxLayout>
@@ -17,22 +18,19 @@
 #include <Qsci/qscilexersql.h>
 
 SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
-    const NpPalette pal = npPalette();
-
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    auto *header = new QLabel("  SQL Formatter");
-    header->setFixedHeight(24);
-    header->setStyleSheet(QString("font-weight: bold; background: %1; color: %2; padding: 2px 6px;")
-                          .arg(pal.chromeBg, pal.accent));
-    layout->addWidget(header);
+    m_header = new QLabel("  SQL Formatter");
+    m_header->setFixedHeight(24);
+    layout->addWidget(m_header);
 
     auto *optRow = new QHBoxLayout;
     optRow->setContentsMargins(4, 4, 4, 4);
 
-    optRow->addWidget(new QLabel("Dialect:"));
+    m_dialectLabel = new QLabel("Dialect:");
+    optRow->addWidget(m_dialectLabel);
     m_dialectCombo = new QComboBox;
     m_dialectCombo->addItems({"ANSI SQL", "T-SQL (SQL Server)", "PL/SQL (Oracle)",
                               "MySQL", "PostgreSQL", "SQLite"});
@@ -41,20 +39,19 @@ SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
     m_uppercase = new QCheckBox("UPPERCASE keywords");
     m_uppercase->setChecked(true);
     optRow->addWidget(m_uppercase);
-    optRow->addWidget(new QLabel("Indent:"));
+    m_indentLabel = new QLabel("Indent:");
+    optRow->addWidget(m_indentLabel);
     m_indent = new QSpinBox;
     m_indent->setRange(1, 8);
     m_indent->setValue(4);
     optRow->addWidget(m_indent);
 
-    auto *fmtBtn = new QPushButton("Format");
-    fmtBtn->setFixedHeight(26);
-    optRow->addWidget(fmtBtn);
+    m_fmtBtn = new QPushButton("Format");
+    m_fmtBtn->setFixedHeight(26);
+    optRow->addWidget(m_fmtBtn);
 
     // AI Fix (Ollama) — patches syntax errors with a local LLM, then
     // re-runs the Claude-style formatter so the output stays beautiful.
-    // Mirrors the pattern used by the JSON / HTML / Bracket panels
-    // (mainwindow.cpp:2001-2213) but tailored to SQL.
     m_aiBtn = new QPushButton("AI Fix (Ollama)");
     m_aiBtn->setFixedHeight(26);
     m_aiBtn->setToolTip("Ask a local LLM to fix SQL syntax errors (preserves intent).");
@@ -62,12 +59,11 @@ SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
 
     optRow->addStretch();
 
-    auto *copyBtn = new QPushButton("Copy Output");
-    copyBtn->setFixedHeight(26);
-    optRow->addWidget(copyBtn);
+    m_copyBtn = new QPushButton("Copy Output");
+    m_copyBtn->setFixedHeight(26);
+    optRow->addWidget(m_copyBtn);
     layout->addLayout(optRow);
 
-    // Ollama status bar — dot + model dropdown, same widget as the other panels.
     m_ollamaBar = new OllamaStatus(this);
     layout->addWidget(m_ollamaBar);
 
@@ -76,16 +72,10 @@ SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
     connect(m_ollama, &OllamaClient::finished,      this, &SqlFmtPanel::onAiFinished);
     connect(m_ollama, &OllamaClient::error,         this, &SqlFmtPanel::onAiError);
 
-    // BIG status banner — same style as FormatterPanel for consistency
     m_statusLabel = new QLabel("💡 Paste SQL into the panel below, choose dialect, click Format");
-    m_statusLabel->setStyleSheet(
-        QString("background: %1; color: %2; padding: 8px 12px; "
-                "font-size: 13px; font-weight: 600; border-left: 4px solid %2;")
-        .arg(pal.chromeBg, pal.accent));
     m_statusLabel->setFixedHeight(36);
     layout->addWidget(m_statusLabel);
 
-    // Real Scintilla editor with SQL syntax highlighting
     QFont mono = notepatraCodeFont();
 
     m_output = new QsciScintilla;
@@ -97,33 +87,25 @@ SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
     m_output->setMarginLineNumbers(0, true);
     m_output->setFolding(QsciScintilla::BoxedTreeFoldStyle, 2);
     m_output->setCaretLineVisible(true);
-    m_output->setCaretLineBackgroundColor(QColor(pal.chromeBg));
 
     auto *lexer = new QsciLexerSQL(m_output);
     lexer->setDefaultFont(mono);
-    lexer->setDefaultPaper(QColor(pal.cardBg));
-    lexer->setDefaultColor(QColor(pal.text));
     m_output->setLexer(lexer);
-    // Apply Notepad++ palette so user-typed text isn't invisible
-    applyNotepadPlusPalette(lexer, mono);
-    // Belt-and-braces fallback colors
-    m_output->setPaper(QColor(pal.cardBg));
-    m_output->setColor(QColor(pal.text));
-    m_output->setCaretForegroundColor(QColor(pal.text));
 
-    // Apply dialect keywords now and on dialect change
     applySqlDialectKeywords();
-
     layout->addWidget(m_output, 1);
 
-    connect(fmtBtn, &QPushButton::clicked, this, &SqlFmtPanel::doFormat);
+    // Paint everything from a fresh palette — also re-paints on onThemeChanged.
+    applyPalette();
+
+    connect(m_fmtBtn, &QPushButton::clicked, this, &SqlFmtPanel::doFormat);
     connect(m_aiBtn, &QPushButton::clicked, this, &SqlFmtPanel::doAiFix);
     connect(m_dialectCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int) {
         applySqlDialectKeywords();
         setStatus(QString("Dialect: %1 — keyword set updated").arg(m_dialectCombo->currentText()), false);
     });
-    connect(copyBtn, &QPushButton::clicked, this, [this]() {
+    connect(m_copyBtn, &QPushButton::clicked, this, [this]() {
         QString text = m_output->text();
         if (text.isEmpty()) {
             setStatus("Nothing to copy — panel is empty", true);
@@ -132,6 +114,75 @@ SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
         QApplication::clipboard()->setText(text);
         setStatus(QString("✓ Copied %1 chars to clipboard").arg(text.length()), false);
     });
+}
+
+// ─── Theme ───────────────────────────────────────────────────────────
+// Re-read npPalette() and re-apply every stylesheet + re-paint the Scintilla
+// lexer with the correct theme name. Called from the constructor and whenever
+// MainWindow::themeChanged() fires.
+void SqlFmtPanel::applyPalette() {
+    const NpPalette pal = npPalette();
+    const QString themeName = Config::instance().theme;
+
+    // Whole-panel base styling — cascades to labels, comboboxes, spinboxes,
+    // buttons that don't have explicit inline styles.
+    setStyleSheet(QString(
+        "QWidget { background: %1; color: %2; }"
+        "QLabel { background: transparent; color: %2; }"
+        "QComboBox, QSpinBox { background: %3; color: %4; border: 1px solid %5;"
+        "                     border-radius: 4px; padding: 2px 6px; min-height: 22px; }"
+        "QComboBox:focus, QSpinBox:focus { border: 1px solid %6; }"
+        "QComboBox QAbstractItemView { background: %3; color: %4; selection-background-color: %7; selection-color: %8; }"
+        "QCheckBox { color: %2; spacing: 6px; }"
+        "QCheckBox::indicator { width: 14px; height: 14px; border: 1px solid %5; background: %3; border-radius: 3px; }"
+        "QCheckBox::indicator:checked { background: %6; border-color: %6; }"
+        "QPushButton { background: %9; color: %10; border: 1px solid %11; border-radius: 4px; padding: 3px 10px; }"
+        "QPushButton:hover { background: %12; }"
+        "QPushButton:disabled { color: %13; }"
+    ).arg(pal.bg, pal.text,
+          pal.inputBg, pal.inputFg, pal.inputBorder, pal.inputFocus,
+          pal.selectionBg, pal.selectionFg,
+          pal.btnBg, pal.btnFg, pal.btnBorder, pal.btnHover, pal.textMuted));
+
+    if (m_header) {
+        m_header->setStyleSheet(QString(
+            "font-weight: bold; background: %1; color: %2; padding: 2px 6px;"
+        ).arg(pal.chromeBg, pal.accent));
+    }
+
+    // Re-paint the status label so its border + text track the current theme.
+    if (m_statusLabel) {
+        QString accent = m_isStatusError ? pal.errorFg : pal.accent;
+        m_statusLabel->setStyleSheet(QString(
+            "background: %1; color: %2; padding: 8px 12px; "
+            "font-size: 13px; font-weight: 600; border-left: 4px solid %2;"
+        ).arg(pal.chromeBg, accent));
+    }
+
+    // Scintilla editor — paper + text + caret + caret-line bg.
+    if (m_output) {
+        m_output->setCaretLineBackgroundColor(QColor(pal.chromeBg));
+        m_output->setCaretForegroundColor(QColor(pal.text));
+        m_output->setPaper(QColor(pal.cardBg));
+        m_output->setColor(QColor(pal.text));
+
+        if (auto *lexer = qobject_cast<QsciLexerSQL *>(m_output->lexer())) {
+            lexer->setDefaultPaper(QColor(pal.cardBg));
+            lexer->setDefaultColor(QColor(pal.text));
+            // Pass the current theme name so the lexer paints dark-mode
+            // colours when the app is in Dark/Monokai. Without this,
+            // applyNotepadPlusPalette defaults to LIGHT-MODE colours
+            // (white paper + black text) regardless of the panel chrome.
+            applyNotepadPlusPalette(lexer, notepatraCodeFont(), themeName);
+            // Reinstate dialect keywords — recolor covers the visible buffer.
+            applySqlDialectKeywords();
+            if (int len = m_output->length()) m_output->recolor(0, len);
+        }
+    }
+}
+
+void SqlFmtPanel::onThemeChanged() {
+    applyPalette();
 }
 
 void SqlFmtPanel::setInput(const QString &sql) {
