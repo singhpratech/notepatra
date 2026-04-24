@@ -892,10 +892,31 @@ void ProjectSearch::onMatches(const QVector<ProjectSearchMatch> &matches) {
     if (m_resizeTree) m_resizeTree();
 }
 
+// Human-readable elapsed for the live status line.
+//   < 1 s    → "N ms"           (fine-grained for fast scans)
+//   < 60 s   → "N.NN s"         (short searches, 2 decimals for sub-10s)
+//   < 60 min → "M min SS s"     (medium searches)
+//   >= 60 m  → "H h MM min SS s" (huge monorepo scans)
+// Format rolls up naturally as the timer ticks past each boundary.
 static QString psearchFormatElapsed(qint64 ms) {
     if (ms < 1000) return QString("%1 ms").arg(ms);
-    double s = ms / 1000.0;
-    return QString("%1 s").arg(s, 0, 'f', s < 10 ? 2 : 1);
+    if (ms < 60'000) {
+        double s = ms / 1000.0;
+        return QString("%1 s").arg(s, 0, 'f', s < 10 ? 2 : 1);
+    }
+    const qint64 totalSec = ms / 1000;
+    if (totalSec < 3600) {
+        const qint64 minutes = totalSec / 60;
+        const qint64 seconds = totalSec % 60;
+        return QString("%1 min %2 s").arg(minutes).arg(seconds, 2, 10, QChar('0'));
+    }
+    const qint64 hours   = totalSec / 3600;
+    const qint64 minutes = (totalSec % 3600) / 60;
+    const qint64 seconds = totalSec % 60;
+    return QString("%1 h %2 min %3 s")
+               .arg(hours)
+               .arg(minutes, 2, 10, QChar('0'))
+               .arg(seconds, 2, 10, QChar('0'));
 }
 
 // Group-separated integer for big line counts — "28340" → "28,340"
