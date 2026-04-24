@@ -728,9 +728,9 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     m_statsLabel->setStyleSheet(QString("font-weight: bold; color: %1;")
         .arg(uiPal.headerFg.name()));
 
-    auto *splitter = new QSplitter(Qt::Horizontal);
-    splitter->setHandleWidth(10);
-    splitter->setStyleSheet(QString(
+    m_splitter = new QSplitter(Qt::Horizontal);
+    m_splitter->setHandleWidth(10);
+    m_splitter->setStyleSheet(QString(
         "QSplitter::handle { background: %1; border-left: 1px solid %2; "
         "border-right: 1px solid %2; }")
         .arg(uiPal.splitterBg.name(), uiPal.splitterBorder.name()));
@@ -738,19 +738,19 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     m_leftEditor = new QsciScintilla;
     m_leftEditor->setObjectName("compareLeftEditor");
     setupEditor(m_leftEditor);
-    splitter->addWidget(m_leftEditor);
+    m_splitter->addWidget(m_leftEditor);
 
     m_rightEditor = new QsciScintilla;
     m_rightEditor->setObjectName("compareRightEditor");
     setupEditor(m_rightEditor);
-    splitter->addWidget(m_rightEditor);
+    m_splitter->addWidget(m_rightEditor);
 
     m_navBar = new CompareNavBar;
 
     auto *compareRow = new QHBoxLayout;
     compareRow->setContentsMargins(0, 0, 0, 0);
     compareRow->setSpacing(0);
-    compareRow->addWidget(splitter, 1);
+    compareRow->addWidget(m_splitter, 1);
     compareRow->addWidget(m_navBar);
     layout->addLayout(compareRow, 1);
 
@@ -1172,6 +1172,51 @@ void CompareWidget::navigatePrev() {
                           QString("   |   Diff %1/%2")
                               .arg(m_currentDiff + 1)
                               .arg(m_diffLines.size()));
+}
+
+void CompareWidget::onThemeChanged() {
+    // Pull the new theme palette and re-apply every palette-dependent
+    // stylesheet: header strips, stats label, splitter handle, plus both
+    // Scintilla editors (paper/foreground + margin markers). MainWindow's
+    // Scintilla loop also re-themes our editors via setPaper/setColor,
+    // but duplicate work is harmless and this way the chrome + markers
+    // stay in sync even if that loop evolves separately.
+    const ComparePalette pal = comparePalette();
+
+    if (m_leftHeader) {
+        m_leftHeader->setStyleSheet(QString(
+            "font-weight: 600; background: %1; color: %2; "
+            "padding: 1px 8px; border-bottom: 1px solid %3;")
+            .arg(pal.headerBg.name(), pal.headerFg.name(), pal.headerBorder.name()));
+    }
+    if (m_rightHeader) {
+        m_rightHeader->setStyleSheet(QString(
+            "font-weight: 600; background: %1; color: %2; "
+            "padding: 1px 8px; border-bottom: 1px solid %3;")
+            .arg(pal.headerBg.name(), pal.headerFg.name(), pal.headerBorder.name()));
+    }
+    if (m_statsLabel) {
+        m_statsLabel->setStyleSheet(QString("font-weight: bold; color: %1;")
+            .arg(pal.headerFg.name()));
+    }
+    if (m_splitter) {
+        m_splitter->setStyleSheet(QString(
+            "QSplitter::handle { background: %1; border-left: 1px solid %2; "
+            "border-right: 1px solid %2; }")
+            .arg(pal.splitterBg.name(), pal.splitterBorder.name()));
+    }
+
+    // Re-apply marker palette + paper/fg on both editors so added /
+    // deleted / changed backgrounds flip to the new theme's tints.
+    if (m_leftEditor)  setupEditor(m_leftEditor);
+    if (m_rightEditor) setupEditor(m_rightEditor);
+
+    // If a comparison has already been drawn, recompare() reapplies the
+    // per-line marker backgrounds so every coloured row repaints under
+    // the new palette.
+    if (m_firstCompareDone) recompare();
+
+    update();
 }
 
 CompareDialog::CompareDialog(const QString &leftText, const QString &leftName,

@@ -63,18 +63,18 @@ int main(int argc, char **argv) {
 
     {
         const QString body =
-            "a1b2c3d4e5f6789012345678901234567890123456789012345678901234abcd  Notepatra-0.1.17-linux-x86_64.AppImage\n"
-            "deadbeefcafebabe00112233445566778899aabbccddeeff00112233445566aa  Notepatra-0.1.17.dmg\n"
-            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef  Notepatra-0.1.17.msi\n";
+            "a1b2c3d4e5f6789012345678901234567890123456789012345678901234abcd  Notepatra-0.1.18-linux-x86_64.AppImage\n"
+            "deadbeefcafebabe00112233445566778899aabbccddeeff00112233445566aa  Notepatra-0.1.18.dmg\n"
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef  Notepatra-0.1.18.msi\n";
 
         check("exact filename match (AppImage)",
-              Updater::parseSha256For(body, "Notepatra-0.1.17-linux-x86_64.AppImage")
+              Updater::parseSha256For(body, "Notepatra-0.1.18-linux-x86_64.AppImage")
                   == "a1b2c3d4e5f6789012345678901234567890123456789012345678901234abcd");
         check("exact filename match (DMG)",
-              Updater::parseSha256For(body, "Notepatra-0.1.17.dmg")
+              Updater::parseSha256For(body, "Notepatra-0.1.18.dmg")
                   == "deadbeefcafebabe00112233445566778899aabbccddeeff00112233445566aa");
         check("exact filename match (MSI)",
-              Updater::parseSha256For(body, "Notepatra-0.1.17.msi")
+              Updater::parseSha256For(body, "Notepatra-0.1.18.msi")
                   == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
 
         check("unknown filename returns empty",
@@ -83,7 +83,7 @@ int main(int argc, char **argv) {
         // SECURITY CHECK: must not pick up a hash for a *different* file
         // just because the query name is a substring.
         check("no false-positive substring match",
-              Updater::parseSha256For(body, "0.1.17.dmg").isEmpty());
+              Updater::parseSha256For(body, "0.1.18.dmg").isEmpty());
     }
 
     {
@@ -91,28 +91,28 @@ int main(int argc, char **argv) {
         const QString body =
             "# comment line — should be ignored\r\n"
             "\r\n"
-            "feedface00000000feedface00000000feedface00000000feedface00000000 *release/Notepatra-0.1.17.msi\r\n";
+            "feedface00000000feedface00000000feedface00000000feedface00000000 *release/Notepatra-0.1.18.msi\r\n";
         check("CRLF + comment + '*' marker + relative path",
-              Updater::parseSha256For(body, "Notepatra-0.1.17.msi")
+              Updater::parseSha256For(body, "Notepatra-0.1.18.msi")
                   == "feedface00000000feedface00000000feedface00000000feedface00000000");
     }
 
     {
         // Must accept both bare basename AND relative path ending in basename
         const QString body =
-            "cafed00dcafed00dcafed00dcafed00dcafed00dcafed00dcafed00dcafed00d  dist/linux/Notepatra-0.1.17-linux-x86_64.AppImage\n";
+            "cafed00dcafed00dcafed00dcafed00dcafed00dcafed00dcafed00dcafed00d  dist/linux/Notepatra-0.1.18-linux-x86_64.AppImage\n";
         check("path-prefixed name — matched by basename",
-              Updater::parseSha256For(body, "Notepatra-0.1.17-linux-x86_64.AppImage")
+              Updater::parseSha256For(body, "Notepatra-0.1.18-linux-x86_64.AppImage")
                   == "cafed00dcafed00dcafed00dcafed00dcafed00dcafed00dcafed00dcafed00d");
     }
 
     {
         // SAFETY: short or malformed hash rows must be rejected, not returned.
         const QString body =
-            "shorty  Notepatra-0.1.17.dmg\n"
-            "way-too-long-to-be-a-sha-256-hexdigest-right-here  Notepatra-0.1.17.dmg\n";
+            "shorty  Notepatra-0.1.18.dmg\n"
+            "way-too-long-to-be-a-sha-256-hexdigest-right-here  Notepatra-0.1.18.dmg\n";
         check("reject row with non-64-char hash field",
-              Updater::parseSha256For(body, "Notepatra-0.1.17.dmg").isEmpty());
+              Updater::parseSha256For(body, "Notepatra-0.1.18.dmg").isEmpty());
     }
 
     {
@@ -142,22 +142,22 @@ int main(int argc, char **argv) {
         // A "real" release with all platforms present — on this machine,
         // the picker MUST pick the one matching our OS+arch.
         QJsonArray assets = mkAssets({
-            {"Notepatra-0.1.17-linux-x86_64.AppImage",
-             "https://example.test/Notepatra-0.1.17-linux-x86_64.AppImage"},
-            {"Notepatra-0.1.17-linux-aarch64.AppImage",
-             "https://example.test/Notepatra-0.1.17-linux-aarch64.AppImage"},
-            {"Notepatra-0.1.17.dmg",
-             "https://example.test/Notepatra-0.1.17.dmg"},
-            {"Notepatra-0.1.17.msi",
-             "https://example.test/Notepatra-0.1.17.msi"},
-            {"Notepatra-Setup-0.1.17.exe",
-             "https://example.test/Notepatra-Setup-0.1.17.exe"},
-            {"Notepatra-0.1.17-windows-x64.zip",
-             "https://example.test/Notepatra-0.1.17-windows-x64.zip"},
+            {"Notepatra-0.1.18-linux-x86_64.AppImage",
+             "https://example.test/Notepatra-0.1.18-linux-x86_64.AppImage"},
+            {"Notepatra-0.1.18-linux-aarch64.AppImage",
+             "https://example.test/Notepatra-0.1.18-linux-aarch64.AppImage"},
+            {"Notepatra-0.1.18.dmg",
+             "https://example.test/Notepatra-0.1.18.dmg"},
+            {"Notepatra-0.1.18.msi",
+             "https://example.test/Notepatra-0.1.18.msi"},
+            {"Notepatra-Setup-0.1.18.exe",
+             "https://example.test/Notepatra-Setup-0.1.18.exe"},
+            {"Notepatra-0.1.18-windows-x64.zip",
+             "https://example.test/Notepatra-0.1.18-windows-x64.zip"},
             {"SHA256SUMS",
              "https://example.test/SHA256SUMS"},
-            {"Notepatra-0.1.17-linux-x86_64.AppImage.sig",
-             "https://example.test/Notepatra-0.1.17-linux-x86_64.AppImage.sig"},
+            {"Notepatra-0.1.18-linux-x86_64.AppImage.sig",
+             "https://example.test/Notepatra-0.1.18-linux-x86_64.AppImage.sig"},
         });
 
         auto picked = Updater::pickAssetForPlatform(assets);
@@ -165,19 +165,19 @@ int main(int argc, char **argv) {
 
         if (isLinux && !isArm64) {
             check("linux/x86_64 → AppImage x86_64",
-                  picked.name == "Notepatra-0.1.17-linux-x86_64.AppImage",
+                  picked.name == "Notepatra-0.1.18-linux-x86_64.AppImage",
                   QStringLiteral("got %1").arg(picked.name));
         } else if (isLinux && isArm64) {
             check("linux/aarch64 → AppImage aarch64",
-                  picked.name == "Notepatra-0.1.17-linux-aarch64.AppImage",
+                  picked.name == "Notepatra-0.1.18-linux-aarch64.AppImage",
                   QStringLiteral("got %1").arg(picked.name));
         } else if (isMac) {
             check("macOS → DMG",
-                  picked.name == "Notepatra-0.1.17.dmg",
+                  picked.name == "Notepatra-0.1.18.dmg",
                   QStringLiteral("got %1").arg(picked.name));
         } else if (isWin) {
             check("windows → MSI (preferred over exe/zip)",
-                  picked.name == "Notepatra-0.1.17.msi",
+                  picked.name == "Notepatra-0.1.18.msi",
                   QStringLiteral("got %1").arg(picked.name));
         }
 
@@ -192,7 +192,7 @@ int main(int argc, char **argv) {
         // Release missing this platform's artifact — picker must return
         // found=false so the caller can fall back gracefully.
         QJsonArray onlyMacOS = mkAssets({
-            {"Notepatra-0.1.17.dmg", "https://example.test/Notepatra-0.1.17.dmg"},
+            {"Notepatra-0.1.18.dmg", "https://example.test/Notepatra-0.1.18.dmg"},
             {"SHA256SUMS",           "https://example.test/SHA256SUMS"},
         });
         auto p = Updater::pickAssetForPlatform(onlyMacOS);
@@ -208,9 +208,9 @@ int main(int argc, char **argv) {
         // beat portable zip, so degraded releases still install. This is
         // the priority ladder used in scoreAsset().
         QJsonArray assets = mkAssets({
-            {"Notepatra-Setup-0.1.17.exe",  "u1"},
-            {"Notepatra-0.1.17-windows-x64.zip", "u2"},
-            {"Notepatra-0.1.17.msi",        "u3"},
+            {"Notepatra-Setup-0.1.18.exe",  "u1"},
+            {"Notepatra-0.1.18-windows-x64.zip", "u2"},
+            {"Notepatra-0.1.18.msi",        "u3"},
         });
         auto p = Updater::pickAssetForPlatform(assets);
         if (isWin) {

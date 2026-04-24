@@ -361,15 +361,28 @@ pub unsafe extern "C" fn npc_free_diff(result: DiffResult) {
 // ═══════════════════════════════════════════════════════════
 
 /// Format SQL. indent_width: spaces per indent. uppercase: 1=yes, 0=no.
+/// dialect: "ansi" | "postgres" | "mysql" | "mssql" | "sqlite" | "plsql"
+/// (NULL or empty = "ansi").
 #[no_mangle]
 pub unsafe extern "C" fn npc_format_sql(
     text: *const c_char,
     text_len: size_t,
     indent_width: c_int,
     uppercase: c_int,
+    dialect: *const c_char,
 ) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
-    let result = sql_fmt::format_sql(input, indent_width as usize, uppercase != 0);
+    let dialect_str = if dialect.is_null() {
+        "ansi"
+    } else {
+        unsafe { CStr::from_ptr(dialect) }.to_str().unwrap_or("ansi")
+    };
+    let result = sql_fmt::format_sql_dialect(
+        input,
+        indent_width as usize,
+        uppercase != 0,
+        dialect_str,
+    );
     text_to_result(result)
 }
 

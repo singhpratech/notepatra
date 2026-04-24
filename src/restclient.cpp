@@ -41,11 +41,6 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 RestClient::RestClient(QWidget *parent) : QWidget(parent) {
-    // Grab the theme palette ONCE — interpolated into every stylesheet
-    // below. Keeps this constructor cheap (one Config lookup, no repeat
-    // npPalette() calls inside each setStyleSheet).
-    const NpPalette pal = npPalette();
-
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
@@ -54,19 +49,13 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
     QFont mono = notepatraCodeFont();
 
     // ─── Header strip ──────────────────────────────────────────────
-    auto *header = new QLabel("  🌐  REST Client");
-    header->setFixedHeight(26);
-    header->setStyleSheet(QString(
-        "font-weight: 600; background: %1; color: %2; "
-        "padding: 4px 12px; border-bottom: 1px solid %3; "
-        "font-size: 12px; letter-spacing: 0.04em;")
-        .arg(pal.chromeBg, pal.accent, pal.bg));
-    root->addWidget(header);
+    m_header = new QLabel("  🌐  REST Client");
+    m_header->setFixedHeight(26);
+    root->addWidget(m_header);
 
     // ─── Request bar: method dropdown + URL + Send ─────────────────
-    auto *reqBarHost = new QWidget;
-    reqBarHost->setStyleSheet(QString("background: %1;").arg(pal.bg));
-    auto *reqBar = new QHBoxLayout(reqBarHost);
+    m_reqBarHost = new QWidget;
+    auto *reqBar = new QHBoxLayout(m_reqBarHost);
     reqBar->setContentsMargins(12, 10, 12, 8);
     reqBar->setSpacing(8);
 
@@ -75,61 +64,24 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
     m_methodCombo->setCurrentText("GET");
     m_methodCombo->setFixedHeight(34);
     m_methodCombo->setFixedWidth(110);
-    m_methodCombo->setStyleSheet(QString(
-        "QComboBox { background: %1; color: %2; "
-        "border: 1px solid %3; border-radius: 6px; "
-        "padding: 4px 10px; font-weight: 700; font-size: 13px; }"
-        "QComboBox:hover { border-color: %4; }"
-        "QComboBox::drop-down { border: none; width: 20px; }"
-        "QComboBox QAbstractItemView { background: %1; color: %5; "
-        "selection-background-color: %6; border: 1px solid %3; }")
-        .arg(pal.inputBg, pal.accent, pal.inputBorder,
-             pal.inputFocus, pal.inputFg, pal.selectionBg));
     reqBar->addWidget(m_methodCombo);
 
     m_urlInput = new QLineEdit;
     m_urlInput->setPlaceholderText("https://api.example.com/users  (paste URL and hit Send)");
     m_urlInput->setFixedHeight(34);
     m_urlInput->setFont(mono);
-    m_urlInput->setStyleSheet(QString(
-        "QLineEdit { background: %1; color: %2; "
-        "border: 1px solid %3; border-radius: 6px; "
-        "padding: 6px 12px; font-size: 13px; "
-        "selection-background-color: %4; selection-color: %5; }"
-        "QLineEdit:focus { border-color: %6; }")
-        .arg(pal.inputBg, pal.inputFg, pal.inputBorder,
-             pal.selectionBg, pal.selectionFg, pal.inputFocus));
     reqBar->addWidget(m_urlInput, 1);
 
     m_sendBtn = new QPushButton("Send");
     m_sendBtn->setFixedHeight(34);
     m_sendBtn->setFixedWidth(96);
     m_sendBtn->setCursor(Qt::PointingHandCursor);
-    // Primary action — uses accent as background for strong call-to-action.
-    m_sendBtn->setStyleSheet(QString(
-        "QPushButton { background: %1; color: %2; "
-        "border: none; border-radius: 6px; "
-        "font-size: 13px; font-weight: 600; }"
-        "QPushButton:hover { background: %3; }"
-        "QPushButton:pressed { background: %1; }"
-        "QPushButton:disabled { background: %4; color: %5; }")
-        .arg(pal.accent, pal.selectionFg, pal.inputFocus,
-             pal.btnBorder, pal.textMuted));
     reqBar->addWidget(m_sendBtn);
-    root->addWidget(reqBarHost);
+    root->addWidget(m_reqBarHost);
 
     // ─── Headers / Body tabs ───────────────────────────────────────
     m_reqTabs = new QTabWidget;
     m_reqTabs->setFixedHeight(170);
-    m_reqTabs->setStyleSheet(QString(
-        "QTabWidget::pane { background: %1; border: none; border-top: 1px solid %2; }"
-        "QTabBar { background: %1; }"
-        "QTabBar::tab { background: transparent; color: %3; "
-        "padding: 6px 16px; border: none; font-size: 12px; margin-right: 2px; }"
-        "QTabBar::tab:selected { color: %4; border-bottom: 2px solid %5; }"
-        "QTabBar::tab:hover:!selected { color: %6; }")
-        .arg(pal.bg, pal.cardBg, pal.textMuted,
-             pal.accent, pal.accent, pal.text));
 
     m_headersInput = new QPlainTextEdit;
     m_headersInput->setFont(mono);
@@ -137,11 +89,6 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
         "Accept: application/json\n"
         "Authorization: Bearer <token>\n"
         "Content-Type: application/json");
-    m_headersInput->setStyleSheet(QString(
-        "QPlainTextEdit { background: %1; color: %2; border: none; "
-        "padding: 10px; font-size: 12px; "
-        "selection-background-color: %3; selection-color: %4; }")
-        .arg(pal.bg, pal.text, pal.selectionBg, pal.selectionFg));
     m_reqTabs->addTab(m_headersInput, "Headers");
 
     m_bodyInput = new QPlainTextEdit;
@@ -152,7 +99,6 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
         "  \"role\": \"admin\"\n"
         "}\n\n"
         "For POST/PUT/PATCH requests. Leave empty for GET/DELETE.");
-    m_bodyInput->setStyleSheet(m_headersInput->styleSheet());
     m_reqTabs->addTab(m_bodyInput, "Body");
 
     root->addWidget(m_reqTabs);
@@ -160,28 +106,12 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
     // ─── Response status badge + body ──────────────────────────────
     m_statusBadge = new QLabel;
     m_statusBadge->setFixedHeight(28);
-    m_statusBadge->setStyleSheet(QString(
-        "background: %1; color: %2; padding: 5px 12px; "
-        "border-top: 1px solid %3; border-bottom: 1px solid %3; "
-        "font-size: 11px; font-weight: 600; letter-spacing: 0.05em;")
-        .arg(pal.chromeBg, pal.textMuted, pal.bg));
     m_statusBadge->setText("  Response will appear here.");
     root->addWidget(m_statusBadge);
 
     m_output = new QTextEdit;
     m_output->setReadOnly(true);
     m_output->setFont(mono);
-    m_output->setStyleSheet(QString(
-        "QTextEdit { background: %1; color: %2; "
-        "border: none; padding: 12px; "
-        "selection-background-color: %3; selection-color: %4; }"
-        "QScrollBar:vertical { background: %1; width: 10px; }"
-        "QScrollBar::handle:vertical { background: %5; "
-        "border-radius: 5px; min-height: 40px; margin: 2px; }"
-        "QScrollBar::handle:vertical:hover { background: %6; }"
-        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }")
-        .arg(pal.bg, pal.text, pal.selectionBg, pal.selectionFg,
-             pal.border, pal.textMuted));
     m_output->setPlaceholderText(
         "Set a method + URL above, optionally fill Headers and Body tabs, "
         "then press Send. Pretty-printed JSON and full response headers "
@@ -189,31 +119,144 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
     root->addWidget(m_output, 1);
 
     // ─── Bottom action row ─────────────────────────────────────────
-    auto *btnRowHost = new QWidget;
-    btnRowHost->setStyleSheet(QString("background: %1; border-top: 1px solid %2;")
-        .arg(pal.chromeBg, pal.bg));
-    auto *btnRow = new QHBoxLayout(btnRowHost);
+    m_btnRowHost = new QWidget;
+    auto *btnRow = new QHBoxLayout(m_btnRowHost);
     btnRow->setContentsMargins(8, 4, 8, 4);
     btnRow->addStretch();
-    auto *copyBtn = new QPushButton("Copy Response");
-    copyBtn->setFixedHeight(26);
-    copyBtn->setStyleSheet(QString(
-        "QPushButton { background: transparent; color: %1; "
-        "border: 1px solid %2; border-radius: 4px; padding: 4px 14px; "
-        "font-size: 11px; }"
-        "QPushButton:hover { background: %3; border-color: %4; color: %4; }")
-        .arg(pal.btnFg, pal.btnBorder, pal.btnHover, pal.accent));
-    connect(copyBtn, &QPushButton::clicked, this, [this]() {
+    m_copyBtn = new QPushButton("Copy Response");
+    m_copyBtn->setFixedHeight(26);
+    connect(m_copyBtn, &QPushButton::clicked, this, [this]() {
         QApplication::clipboard()->setText(m_output->toPlainText());
     });
-    btnRow->addWidget(copyBtn);
-    root->addWidget(btnRowHost);
+    btnRow->addWidget(m_copyBtn);
+    root->addWidget(m_btnRowHost);
+
+    applyPalette();
 
     // Enter in URL / click Send → fire request
     connect(m_sendBtn, &QPushButton::clicked, this, &RestClient::sendFromUi);
     connect(m_urlInput, &QLineEdit::returnPressed, this, &RestClient::sendFromUi);
 
     m_nam = new QNetworkAccessManager(this);
+}
+
+void RestClient::applyPalette() {
+    // Grab the palette ONCE — interpolated into every stylesheet below and
+    // cached into m_pal* so sendFromUi()/parseAndSend() can recolour the
+    // status badge without another Config lookup per request.
+    const NpPalette pal = npPalette();
+    m_palBg        = pal.bg;
+    m_palChromeBg  = pal.chromeBg;
+    m_palText      = pal.text;
+    m_palTextMuted = pal.textMuted;
+    m_palAccent    = pal.accent;
+    m_palBorder    = pal.border;
+    m_palSuccessFg = pal.successFg;
+    m_palWarningFg = pal.warningFg;
+    m_palErrorFg   = pal.errorFg;
+
+    if (m_header) {
+        m_header->setStyleSheet(QString(
+            "font-weight: 600; background: %1; color: %2; "
+            "padding: 4px 12px; border-bottom: 1px solid %3; "
+            "font-size: 12px; letter-spacing: 0.04em;")
+            .arg(pal.chromeBg, pal.accent, pal.bg));
+    }
+    if (m_reqBarHost) {
+        m_reqBarHost->setStyleSheet(QString("background: %1;").arg(pal.bg));
+    }
+    if (m_methodCombo) {
+        m_methodCombo->setStyleSheet(QString(
+            "QComboBox { background: %1; color: %2; "
+            "border: 1px solid %3; border-radius: 6px; "
+            "padding: 4px 10px; font-weight: 700; font-size: 13px; }"
+            "QComboBox:hover { border-color: %4; }"
+            "QComboBox::drop-down { border: none; width: 20px; }"
+            "QComboBox QAbstractItemView { background: %1; color: %5; "
+            "selection-background-color: %6; border: 1px solid %3; }")
+            .arg(pal.inputBg, pal.accent, pal.inputBorder,
+                 pal.inputFocus, pal.inputFg, pal.selectionBg));
+    }
+    if (m_urlInput) {
+        m_urlInput->setStyleSheet(QString(
+            "QLineEdit { background: %1; color: %2; "
+            "border: 1px solid %3; border-radius: 6px; "
+            "padding: 6px 12px; font-size: 13px; "
+            "selection-background-color: %4; selection-color: %5; }"
+            "QLineEdit:focus { border-color: %6; }")
+            .arg(pal.inputBg, pal.inputFg, pal.inputBorder,
+                 pal.selectionBg, pal.selectionFg, pal.inputFocus));
+    }
+    if (m_sendBtn) {
+        // Primary action — uses accent as background for strong call-to-action.
+        m_sendBtn->setStyleSheet(QString(
+            "QPushButton { background: %1; color: %2; "
+            "border: none; border-radius: 6px; "
+            "font-size: 13px; font-weight: 600; }"
+            "QPushButton:hover { background: %3; }"
+            "QPushButton:pressed { background: %1; }"
+            "QPushButton:disabled { background: %4; color: %5; }")
+            .arg(pal.accent, pal.selectionFg, pal.inputFocus,
+                 pal.btnBorder, pal.textMuted));
+    }
+    if (m_reqTabs) {
+        m_reqTabs->setStyleSheet(QString(
+            "QTabWidget::pane { background: %1; border: none; border-top: 1px solid %2; }"
+            "QTabBar { background: %1; }"
+            "QTabBar::tab { background: transparent; color: %3; "
+            "padding: 6px 16px; border: none; font-size: 12px; margin-right: 2px; }"
+            "QTabBar::tab:selected { color: %4; border-bottom: 2px solid %5; }"
+            "QTabBar::tab:hover:!selected { color: %6; }")
+            .arg(pal.bg, pal.cardBg, pal.textMuted,
+                 pal.accent, pal.accent, pal.text));
+    }
+    if (m_headersInput) {
+        m_headersInput->setStyleSheet(QString(
+            "QPlainTextEdit { background: %1; color: %2; border: none; "
+            "padding: 10px; font-size: 12px; "
+            "selection-background-color: %3; selection-color: %4; }")
+            .arg(pal.bg, pal.text, pal.selectionBg, pal.selectionFg));
+    }
+    if (m_bodyInput && m_headersInput) {
+        m_bodyInput->setStyleSheet(m_headersInput->styleSheet());
+    }
+    if (m_statusBadge) {
+        m_statusBadge->setStyleSheet(QString(
+            "background: %1; color: %2; padding: 5px 12px; "
+            "border-top: 1px solid %3; border-bottom: 1px solid %3; "
+            "font-size: 11px; font-weight: 600; letter-spacing: 0.05em;")
+            .arg(pal.chromeBg, pal.textMuted, pal.bg));
+    }
+    if (m_output) {
+        m_output->setStyleSheet(QString(
+            "QTextEdit { background: %1; color: %2; "
+            "border: none; padding: 12px; "
+            "selection-background-color: %3; selection-color: %4; }"
+            "QScrollBar:vertical { background: %1; width: 10px; }"
+            "QScrollBar::handle:vertical { background: %5; "
+            "border-radius: 5px; min-height: 40px; margin: 2px; }"
+            "QScrollBar::handle:vertical:hover { background: %6; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }")
+            .arg(pal.bg, pal.text, pal.selectionBg, pal.selectionFg,
+                 pal.border, pal.textMuted));
+    }
+    if (m_btnRowHost) {
+        m_btnRowHost->setStyleSheet(QString("background: %1; border-top: 1px solid %2;")
+            .arg(pal.chromeBg, pal.bg));
+    }
+    if (m_copyBtn) {
+        m_copyBtn->setStyleSheet(QString(
+            "QPushButton { background: transparent; color: %1; "
+            "border: 1px solid %2; border-radius: 4px; padding: 4px 14px; "
+            "font-size: 11px; }"
+            "QPushButton:hover { background: %3; border-color: %4; color: %4; }")
+            .arg(pal.btnFg, pal.btnBorder, pal.btnHover, pal.accent));
+    }
+}
+
+void RestClient::onThemeChanged() {
+    applyPalette();
+    update();
 }
 
 void RestClient::sendFromUi() {

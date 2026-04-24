@@ -106,7 +106,10 @@ void npc_free_diff(DiffResult result);
 
 /* ═══════════ SQL Formatter ═══════════ */
 
-TextResult npc_format_sql(const char *text, size_t len, int indent_width, int uppercase);
+/* dialect: "ansi" | "postgres" | "mysql" | "mssql" | "sqlite" | "plsql"
+ *          (NULL or empty = "ansi"). */
+TextResult npc_format_sql(const char *text, size_t len, int indent_width,
+                          int uppercase, const char *dialect);
 
 /* ═══════════ JSON Formatter + Fixer ═══════════ */
 

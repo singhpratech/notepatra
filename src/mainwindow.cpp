@@ -726,6 +726,9 @@ MainWindow::MainWindow() {
     aiDockLayout->setSpacing(0);
     m_aiDockPanel = new AIPanel;
     aiDockLayout->addWidget(m_aiDockPanel);
+    // Theme propagation — the panel re-renders its chat transcript and
+    // chrome when the user flips Config::theme at runtime.
+    connect(this, &MainWindow::themeChanged, m_aiDockPanel, &AIPanel::onThemeChanged);
     // Pull-based workspace awareness — the panel calls back into us right
     // before each Send so the model sees the freshest selection + tab list.
     m_aiDockPanel->setContextProvider([this](AIPanel *p) { populateAiContext(p); });
@@ -1535,6 +1538,9 @@ void MainWindow::buildMenus() {
     projectSearchAct->setStatusTip("Recursively search file names AND file contents across a folder tree, streamed to a clickable tree.");
     connect(projectSearchAct, &QAction::triggered, this, [this, E]() {
         auto *ps = new ProjectSearch;
+        // Theme propagation — panel re-applies psearchPalette() styles
+        // when the user flips themes.
+        connect(this, &MainWindow::themeChanged, ps, &ProjectSearch::onThemeChanged);
         // Folder cascade: current file's folder → file-explorer workspace root
         // → $HOME as the last resort. Walking $HOME is ~always wrong (the
         // walker sees millions of files), so we prefer a narrower default
@@ -1575,6 +1581,8 @@ void MainWindow::buildMenus() {
     termAct->setStatusTip("Opens a terminal in a new tab.");
     connect(termAct, &QAction::triggered, this, [this, E]() {
         auto *term = new TerminalWidget;
+        // Theme propagation — re-colour chrome when user flips themes.
+        connect(this, &MainWindow::themeChanged, term, &TerminalWidget::onThemeChanged);
         if (auto *e = E(); e && !e->filePath().isEmpty())
             term->setWorkingDirectory(QFileInfo(e->filePath()).path());
         int idx = m_tabs->addTab(term, "Terminal");
@@ -1651,6 +1659,8 @@ void MainWindow::buildMenus() {
     restAct->setStatusTip("Opens REST client in a new tab. Select HTTP request first.");
     connect(restAct, &QAction::triggered, this, [this, E]() {
         auto *rest = new RestClient;
+        // Theme propagation — palette-driven stylesheets re-render.
+        connect(this, &MainWindow::themeChanged, rest, &RestClient::onThemeChanged);
         if (E() && E()->hasSelectedText()) rest->executeRequest(E()->selectedText());
         int idx = m_tabs->addTab(rest, "REST Client");
         m_tabs->setCurrentIndex(idx);
@@ -1661,6 +1671,8 @@ void MainWindow::buildMenus() {
         auto *e = E();
         if (e && !e->filePath().isEmpty()) {
             auto *dlg = new HexEditorDialog(e->filePath(), this);
+            // Theme propagation — info-strip + canvas restyle on flip.
+            connect(this, &MainWindow::themeChanged, dlg, &HexEditorDialog::onThemeChanged);
             dlg->show();
         } else {
             QMessageBox::information(this, "Hex Editor", "Save the file first to view in hex mode.");
@@ -1965,12 +1977,35 @@ void MainWindow::buildMenus() {
     // Git Integration (inbuilt) — opens Git panel in a new tab
     pluginsMenu->addAction("Git Integration (inbuilt)", this, [this, E]() {
         auto *panel = new GitPanel;
+        // Theme propagation — SCM chrome + changes tree rows restyle on flip.
+        connect(this, &MainWindow::themeChanged, panel, &GitPanel::onThemeChanged);
         connect(panel, &GitPanel::fileClicked, this, &MainWindow::openFile);
         connect(panel, &GitPanel::repositoryOpened, this, [this](const QString &repoRoot) {
             if (!repoRoot.isEmpty()) {
                 m_explorer->setRoot(repoRoot);
                 m_explorer->setVisible(true);
             }
+        });
+        // New signals from the v2 GitPanel rewrite — `openFileInTab` opens a
+        // plain-file tab, `openDiffInTab` opens a CompareWidget tab showing
+        // HEAD-vs-working-copy (same pattern as the FormatterPanel diff path
+        // a few dozen lines below).
+        connect(panel, &GitPanel::openFileInTab, this, &MainWindow::openFile);
+        connect(panel, &GitPanel::openDiffInTab, this,
+                [this](const QString &title, const QString &leftText, const QString &rightText) {
+            auto *cmp = new CompareWidget;
+            // Theme propagation — diff markers re-render on theme flip.
+            connect(this, &MainWindow::themeChanged, cmp, &CompareWidget::onThemeChanged);
+            int idx = m_tabs->addTab(cmp, title);
+            m_tabs->setCurrentIndex(idx);
+            connect(cmp, &CompareWidget::closeRequested, this, [this, cmp]() {
+                int i = m_tabs->indexOf(cmp);
+                if (i >= 0) closeTab(i);
+            });
+            // compare() must run AFTER closeRequested is connected — if the
+            // two sides are identical the widget emits closeRequested right
+            // away from inside compare().
+            cmp->compare(leftText, "HEAD", rightText, "Working copy");
         });
         if (auto *e = E(); e && !e->filePath().isEmpty()) {
             panel->refresh(e->filePath());
@@ -2020,6 +2055,8 @@ void MainWindow::buildMenus() {
         connect(p, &FormatterPanel::showDiffRequested, this,
                 [this](const QString &before, const QString &after, const QString &title) {
             auto *cmp = new CompareWidget;
+            // Theme propagation — diff markers re-render on theme flip.
+            connect(this, &MainWindow::themeChanged, cmp, &CompareWidget::onThemeChanged);
             cmp->compare(before, "Before", after, "After");
             int idx = m_tabs->addTab(cmp, title);
             m_tabs->setCurrentIndex(idx);
@@ -3267,6 +3304,12 @@ void MainWindow::applyThemeToAll(const Theme &t) {
           t.menuHover.name(), t.toolbarBg.name(), t.windowFg.name(),
           t.tabBg.name(), t.tabFg.name(), t.tabActiveBg.name(),
           t.scrollBg.name(), t.scrollHandle.name(), t.scrollHover.name()));
+
+    // Notify every connected panel (AIPanel, ProjectSearch, TerminalWidget,
+    // RestClient, HexEditor, GitPanel, CompareWidget, …) that the palette
+    // changed. Each panel's onThemeChanged() slot re-applies its palette-
+    // dependent stylesheets so the user doesn't have to restart.
+    emit themeChanged();
 }
 
 // ─── Compare picker — shared by "Compare (inbuilt)" and "ComparePlus" ──
@@ -3346,6 +3389,8 @@ void MainWindow::openComparePicker(const QString &tabLabel) {
     }
 
     auto *cmp = new CompareWidget;
+    // Theme propagation — diff markers re-render on theme flip.
+    connect(this, &MainWindow::themeChanged, cmp, &CompareWidget::onThemeChanged);
     int idx = m_tabs->addTab(cmp, tabLabel);
     m_tabs->setCurrentIndex(idx);
     connect(cmp, &CompareWidget::closeRequested, this, [this, cmp]() {

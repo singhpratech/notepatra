@@ -89,6 +89,8 @@ private:
     std::atomic<bool> m_cancel{false};
 };
 
+class QScrollArea;
+
 class ProjectSearch : public QWidget {
     Q_OBJECT
 public:
@@ -108,6 +110,13 @@ public:
     int     currentProgressValue() const;
     void    triggerSearchForTesting() { startSearch(); }
 
+public slots:
+    // Re-apply every psearchPalette()-dependent stylesheet in the widget
+    // tree (panel bg, title, inputs, checkboxes, search/cancel buttons,
+    // progress bar, status label, results tree, scroll-area scrollbars)
+    // when MainWindow emits themeChanged().
+    void onThemeChanged();
+
 signals:
     void openFileAtLine(const QString &filePath, int lineNumber);
     // Emitted when the user double-clicks a result — column is 1-based
@@ -116,6 +125,7 @@ signals:
 
 private:
     void buildUi();
+    void applyPalette();
     void startSearch();
     void cancelSearch();
     void onMatches(const QVector<ProjectSearchMatch> &matches);
@@ -124,6 +134,16 @@ private:
                     qint64 elapsedMs, qint64 linesScanned);
     void onFinished(int totalMatches, int totalFiles,
                     qint64 elapsedMs, qint64 linesScanned);
+
+    // Theme-aware chrome retained for applyPalette() — these widgets have
+    // stylesheets that interpolate from psearchPalette() and need to
+    // re-render when the user flips Config::theme at runtime.
+    QScrollArea *m_scrollArea = nullptr;
+    QWidget    *m_content = nullptr;
+    QLabel     *m_title = nullptr;
+    QLabel     *m_hint = nullptr;
+    QLabel     *m_folderLabel = nullptr;
+    QLabel     *m_globLabel = nullptr;
 
     QLineEdit  *m_queryInput;
     QLineEdit  *m_folderInput;

@@ -6,7 +6,12 @@
 #include <QSpinBox>
 #include <QLabel>
 #include <QComboBox>
+#include <QPushButton>
+#include <QElapsedTimer>
 #include <Qsci/qsciscintilla.h>
+
+class OllamaClient;
+class OllamaStatus;
 
 class SqlFmtPanel : public QWidget {
     Q_OBJECT
@@ -23,10 +28,29 @@ private:
     QSpinBox *m_indent;
     QComboBox *m_dialectCombo;
     QLabel *m_statusLabel;
+    QPushButton *m_aiBtn = nullptr;
     QString m_inputText;
+
+    // Ollama plumbing for the AI Fix button. Mirrors the pattern the
+    // JSON / HTML / Bracket panels use — OllamaClient for the request,
+    // OllamaStatus for the "is ollama up?" dot + model dropdown.
+    OllamaClient *m_ollama = nullptr;
+    OllamaStatus *m_ollamaBar = nullptr;
+    QString m_aiOriginalInput;
+    QString m_aiStreamBuffer;
+    QElapsedTimer m_aiTimer;
+
     void doFormat();
+    void doAiFix();
+    void onAiToken(const QString &token);
+    void onAiFinished(const QString &full);
+    void onAiError(const QString &msg);
     void setStatus(const QString &text, bool error = false);
     void applySqlDialectKeywords();
+
+    // Strip markdown fences / <think> blocks / leading prose preamble
+    // from an LLM response. Mirrors mainwindow.cpp:2113-2131 (JSON AI Fix).
+    static QString cleanAiSqlResponse(const QString &raw);
 };
 
 #endif

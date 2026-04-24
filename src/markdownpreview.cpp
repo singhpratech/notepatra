@@ -20,27 +20,44 @@ MarkdownPreview::MarkdownPreview(QWidget *parent) : QWidget(parent) {
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    const bool dark = mdIsDark();
-    auto *header = new QLabel("  Markdown Preview");
-    header->setFixedHeight(22);
-    header->setStyleSheet(QString(
-        "font-weight: bold; background: %1; color: %2; "
-        "padding: 2px 6px; border-bottom: 1px solid %3;")
-        .arg(dark ? "#252526" : "#F0F0F0",
-             dark ? "#D4D4D4" : "#141413",
-             dark ? "#1E1E1E" : "#CCC"));
-    layout->addWidget(header);
+    m_header = new QLabel("  Markdown Preview");
+    m_header->setFixedHeight(22);
+    layout->addWidget(m_header);
 
     m_browser = new QTextBrowser;
     m_browser->setOpenExternalLinks(true);
-    m_browser->setStyleSheet(QString(
-        "QTextBrowser { background: %1; color: %2; padding: 12px; border: none; }")
-        .arg(dark ? "#1E1E1E" : "white",
-             dark ? "#D4D4D4" : "#141413"));
     layout->addWidget(m_browser);
+
+    applyPalette();
+}
+
+void MarkdownPreview::applyPalette() {
+    const bool dark = mdIsDark();
+    if (m_header) {
+        m_header->setStyleSheet(QString(
+            "font-weight: bold; background: %1; color: %2; "
+            "padding: 2px 6px; border-bottom: 1px solid %3;")
+            .arg(dark ? "#252526" : "#F0F0F0",
+                 dark ? "#D4D4D4" : "#141413",
+                 dark ? "#1E1E1E" : "#CCC"));
+    }
+    if (m_browser) {
+        m_browser->setStyleSheet(QString(
+            "QTextBrowser { background: %1; color: %2; padding: 12px; border: none; }")
+            .arg(dark ? "#1E1E1E" : "white",
+                 dark ? "#D4D4D4" : "#141413"));
+    }
+}
+
+void MarkdownPreview::onThemeChanged() {
+    applyPalette();
+    if (m_browser && !m_lastMarkdown.isEmpty())
+        m_browser->setHtml(markdownToHtml(m_lastMarkdown));
+    update();
 }
 
 void MarkdownPreview::updatePreview(const QString &markdown) {
+    m_lastMarkdown = markdown;
     m_browser->setHtml(markdownToHtml(markdown));
 }
 

@@ -66,7 +66,10 @@ struct DiffInfo {
 DiffInfo computeDiff(const QString &left, const QString &right);
 
 // SQL Formatter
-QString formatSql(const QString &text, int indentWidth = 4, bool uppercase = true);
+// dialect: "ansi" | "postgres" | "mysql" | "mssql" | "sqlite" | "plsql"
+// (empty == ansi). Also accepts combo-box labels like "T-SQL (SQL Server)".
+QString formatSql(const QString &text, int indentWidth = 4, bool uppercase = true,
+                  const QString &dialect = QStringLiteral("ansi"));
 
 // JSON
 QString formatJson(const QString &text, int indent = 4);

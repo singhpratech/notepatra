@@ -37,6 +37,14 @@ public:
     SearchResultsPanel *searchResults() { return m_searchResults; }
     QSplitter *vertSplitter() { return m_vertSplitter; }
 
+signals:
+    // Emitted after applyThemeToAll() has updated Config::theme +
+    // the Scintilla editors + statusbar + Welcome + main-window stylesheet.
+    // Theme-aware panels (AIPanel, ProjectSearch, RestClient, GitPanel,
+    // Compare, MarkdownPreview, HexEditor, Terminal) listen for this so
+    // they can re-render against the new palette without an app restart.
+    void themeChanged();
+
 protected:
     void closeEvent(QCloseEvent *event) override;
     void dragEnterEvent(QDragEnterEvent *event) override;

@@ -22,14 +22,9 @@ HexEditorDialog::HexEditorDialog(const QString &filePath, QWidget *parent)
     resize(850, 600);
 
     auto *layout = new QVBoxLayout(this);
-    const bool dark = hexIsDark();
 
     // Info
     m_infoLabel = new QLabel;
-    m_infoLabel->setStyleSheet(QString(
-        "font-weight: bold; padding: 4px; background: %1; color: %2;")
-        .arg(dark ? "#252526" : "#F0F0F0",
-             dark ? "#D4D4D4" : "#141413"));
     layout->addWidget(m_infoLabel);
 
     // Hex view — always monospace on a dark-ish canvas regardless of
@@ -40,12 +35,10 @@ HexEditorDialog::HexEditorDialog(const QString &filePath, QWidget *parent)
     m_hexView->setReadOnly(true);
     QFont mono = notepatraCodeFont();
     m_hexView->setFont(mono);
-    m_hexView->setStyleSheet(QString(
-        "QTextEdit { background: %1; color: %2; border: none; }")
-        .arg(dark ? "#1E1E1E" : "#FAF9F5",
-             dark ? "#D4D4D4" : "#141413"));
     m_hexView->setLineWrapMode(QTextEdit::NoWrap);
     layout->addWidget(m_hexView, 1);
+
+    applyPalette();
 
     // Close button
     auto *btnRow = new QHBoxLayout;
@@ -118,4 +111,25 @@ HexEditorDialog::HexEditorDialog(const QString &filePath, QWidget *parent)
     }
 
     m_hexView->setHtml("<pre>" + hexDump + "</pre>");
+}
+
+void HexEditorDialog::applyPalette() {
+    const bool dark = hexIsDark();
+    if (m_infoLabel) {
+        m_infoLabel->setStyleSheet(QString(
+            "font-weight: bold; padding: 4px; background: %1; color: %2;")
+            .arg(dark ? "#252526" : "#F0F0F0",
+                 dark ? "#D4D4D4" : "#141413"));
+    }
+    if (m_hexView) {
+        m_hexView->setStyleSheet(QString(
+            "QTextEdit { background: %1; color: %2; border: none; }")
+            .arg(dark ? "#1E1E1E" : "#FAF9F5",
+                 dark ? "#D4D4D4" : "#141413"));
+    }
+}
+
+void HexEditorDialog::onThemeChanged() {
+    applyPalette();
+    update();
 }

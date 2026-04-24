@@ -79,6 +79,11 @@ protected:
 
 public slots:
     void refreshModels();
+    // Re-apply the theme-aware stylesheets on the persistent chrome
+    // (header band, input, buttons, chat scroll area) and re-render the
+    // chat transcript so every bubble inline style is rebuilt against
+    // the new aiPalette(). Wired to MainWindow::themeChanged().
+    void onThemeChanged();
 
 signals:
     void insertText(const QString &text);

@@ -11,6 +11,7 @@
 class QEvent;
 class QMouseEvent;
 class QPaintEvent;
+class QSplitter;
 
 class CompareNavBar : public QWidget {
     Q_OBJECT
@@ -65,6 +66,14 @@ public:
     int diffCount() const;
     int rowCount() const;
 
+public slots:
+    // Re-apply the header / stats / splitter stylesheets and re-run
+    // setupEditor() on both Scintilla panes so markers, paper, and
+    // foreground colours flip to the new theme. If a compare has
+    // already been rendered we recompare() so per-line marker
+    // backgrounds repaint against the new palette.
+    void onThemeChanged();
+
 signals:
     // Emitted when the user clicks the "Close" button in the compare
     // toolbar. The host (CompareDialog or the tab-based opener in
@@ -86,6 +95,7 @@ private:
     QsciScintilla *m_leftEditor, *m_rightEditor;
     CompareNavBar *m_navBar;
     QPushButton *m_editToggle = nullptr;
+    QSplitter *m_splitter = nullptr;
     QLabel *m_leftHeader, *m_rightHeader, *m_statsLabel;
     QCheckBox *m_ignoreWhitespace, *m_ignoreCase, *m_ignoreEmptyLines;
 

@@ -3,6 +3,8 @@
 #include "npp_palette.h"
 #include "fonts.h"
 #include "theme_detect.h"
+#include "ollama.h"
+#include "ollamastatus.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -10,6 +12,8 @@
 #include <QFont>
 #include <QApplication>
 #include <QClipboard>
+#include <QRegularExpression>
+#include <cstdlib>
 #include <Qsci/qscilexersql.h>
 
 SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
@@ -46,12 +50,31 @@ SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
     auto *fmtBtn = new QPushButton("Format");
     fmtBtn->setFixedHeight(26);
     optRow->addWidget(fmtBtn);
+
+    // AI Fix (Ollama) — patches syntax errors with a local LLM, then
+    // re-runs the Claude-style formatter so the output stays beautiful.
+    // Mirrors the pattern used by the JSON / HTML / Bracket panels
+    // (mainwindow.cpp:2001-2213) but tailored to SQL.
+    m_aiBtn = new QPushButton("AI Fix (Ollama)");
+    m_aiBtn->setFixedHeight(26);
+    m_aiBtn->setToolTip("Ask a local LLM to fix SQL syntax errors (preserves intent).");
+    optRow->addWidget(m_aiBtn);
+
     optRow->addStretch();
 
     auto *copyBtn = new QPushButton("Copy Output");
     copyBtn->setFixedHeight(26);
     optRow->addWidget(copyBtn);
     layout->addLayout(optRow);
+
+    // Ollama status bar — dot + model dropdown, same widget as the other panels.
+    m_ollamaBar = new OllamaStatus(this);
+    layout->addWidget(m_ollamaBar);
+
+    m_ollama = new OllamaClient(this);
+    connect(m_ollama, &OllamaClient::tokenReceived, this, &SqlFmtPanel::onAiToken);
+    connect(m_ollama, &OllamaClient::finished,      this, &SqlFmtPanel::onAiFinished);
+    connect(m_ollama, &OllamaClient::error,         this, &SqlFmtPanel::onAiError);
 
     // BIG status banner — same style as FormatterPanel for consistency
     m_statusLabel = new QLabel("💡 Paste SQL into the panel below, choose dialect, click Format");
@@ -94,6 +117,7 @@ SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
     layout->addWidget(m_output, 1);
 
     connect(fmtBtn, &QPushButton::clicked, this, &SqlFmtPanel::doFormat);
+    connect(m_aiBtn, &QPushButton::clicked, this, &SqlFmtPanel::doAiFix);
     connect(m_dialectCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int) {
         applySqlDialectKeywords();
@@ -132,7 +156,9 @@ void SqlFmtPanel::doFormat() {
 
     QString formatted;
     try {
-        formatted = RustCore::formatSql(input, m_indent->value(), m_uppercase->isChecked());
+        formatted = RustCore::formatSql(input, m_indent->value(),
+                                        m_uppercase->isChecked(),
+                                        m_dialectCombo->currentText());
     } catch (const std::exception &e) {
         setStatus(QString("✗ Format failed: %1").arg(e.what()), true);
         return;
@@ -246,4 +272,150 @@ void SqlFmtPanel::applySqlDialectKeywords() {
     // Re-colourise the visible buffer so the new keywords paint immediately
     int len = m_output->length();
     if (len > 0) m_output->recolor(0, len);
+}
+
+// ─── AI Fix (Ollama) ─────────────────────────────────────────────────
+// Send the current SQL to a local LLM with a strict "fix syntax only"
+// system prompt, stream the response back, strip any markdown / <think>
+// scaffolding the model emits, then re-run the Claude-style formatter so
+// the output stays beautiful regardless of what the model returned.
+void SqlFmtPanel::doAiFix() {
+    QString input = m_output->text();
+    if (input.isEmpty()) input = m_inputText;
+    if (input.trimmed().isEmpty()) {
+        setStatus("Empty input — paste SQL into the panel below first", true);
+        return;
+    }
+
+    if (!m_ollama->isAvailable()) {
+        setStatus("Ollama not running — start it: ollama serve", true);
+        m_output->setText(
+            "-- Ollama is not running.\n"
+            "-- Setup:\n"
+            "--   1. Install:  curl -fsSL https://ollama.com/install.sh | sh\n"
+            "--   2. Pull:     ollama pull qwen2.5-coder:7b\n"
+            "--   3. Start:    ollama serve\n"
+            "--   4. Click AI Fix again\n");
+        return;
+    }
+
+    QString model = m_ollamaBar->selectedModel();
+    if (model.isEmpty() || model.startsWith("(")) {
+        m_ollamaBar->checkStatus();
+        model = m_ollamaBar->selectedModel();
+        if (model.isEmpty() || model.startsWith("(")) {
+            setStatus("No models installed — run: ollama pull qwen2.5-coder:7b", true);
+            return;
+        }
+    }
+
+    const QString dialect = m_dialectCombo->currentText();
+    m_aiOriginalInput = input;
+    m_aiStreamBuffer.clear();
+    m_aiTimer.restart();
+    m_ollama->setModel(model);
+
+    QString systemPrompt = QString(
+        "You are a minimal-change SQL syntax patcher for %1. "
+        "Fix syntax errors only. Do NOT rewrite, reorder, or change semantics. "
+        "Output ONLY valid %1 SQL — no prose, no markdown fences."
+    ).arg(dialect);
+
+    QString userPrompt = QString(
+        "Dialect: %1\n"
+        "Fix ONLY syntax errors in the following SQL. "
+        "Preserve column order, table names, aliases, and query intent exactly. "
+        "Return ONLY the corrected SQL statement(s) — no explanation, no fences.\n\n"
+        "SQL:\n%2"
+    ).arg(dialect, input);
+
+    setStatus(QString("Calling Ollama (%1)…").arg(model), false);
+    m_aiBtn->setEnabled(false);
+    m_aiBtn->setText("AI Fixing…");
+
+    m_ollama->generate(userPrompt, systemPrompt, /*enableThinking=*/false);
+}
+
+void SqlFmtPanel::onAiToken(const QString &token) {
+    // Accumulate locally — don't paint partial tokens into the editor, they
+    // usually contain scratch text the model retracts (e.g. opening of a
+    // ``` fence). We render the cleaned result in onAiFinished().
+    m_aiStreamBuffer += token;
+    m_aiBtn->setText(QString("AI Fixing… (%1 chars)").arg(m_aiStreamBuffer.length()));
+}
+
+void SqlFmtPanel::onAiFinished(const QString &full) {
+    m_aiBtn->setEnabled(true);
+    m_aiBtn->setText("AI Fix (Ollama)");
+
+    QString cleaned = cleanAiSqlResponse(full);
+    if (cleaned.isEmpty()) {
+        setStatus("AI fix returned empty output — try a different model", true);
+        return;
+    }
+
+    // Re-run the Claude-style formatter so the AI output stays beautiful.
+    QString formatted;
+    try {
+        formatted = RustCore::formatSql(cleaned, m_indent->value(),
+                                        m_uppercase->isChecked(),
+                                        m_dialectCombo->currentText());
+    } catch (...) {
+        formatted = cleaned;
+    }
+    if (formatted.isEmpty()) formatted = cleaned;
+
+    int origLen = m_aiOriginalInput.length();
+    int newLen  = formatted.length();
+    int delta   = newLen - origLen;
+    double secs = m_aiTimer.elapsed() / 1000.0;
+
+    m_output->setText(formatted);
+    m_inputText = formatted;
+
+    setStatus(QString("Fixed in %1 s with %2 char%3 changed")
+              .arg(secs, 0, 'f', 1)
+              .arg(delta >= 0 ? QString("+%1").arg(delta) : QString::number(delta))
+              .arg(std::abs(delta) == 1 ? "" : "s"),
+              false);
+}
+
+void SqlFmtPanel::onAiError(const QString &msg) {
+    m_aiBtn->setEnabled(true);
+    m_aiBtn->setText("AI Fix (Ollama)");
+    setStatus(QString("AI fix failed: %1").arg(msg), true);
+}
+
+// Cleanup logic mirrors mainwindow.cpp:2113-2131 (JSON AI Fix):
+//   1. strip <think>…</think> blocks,
+//   2. strip markdown ``` fences,
+//   3. trim leading prose by finding the first SQL-ish token and dropping
+//      everything before it.
+QString SqlFmtPanel::cleanAiSqlResponse(const QString &raw) {
+    QString cleaned = raw.trimmed();
+
+    QRegularExpression thinkRe("<think>.*?</think>",
+                               QRegularExpression::DotMatchesEverythingOption);
+    cleaned.remove(thinkRe);
+    cleaned = cleaned.trimmed();
+
+    if (cleaned.startsWith("```")) {
+        int f = cleaned.indexOf('\n');
+        int l = cleaned.lastIndexOf("```");
+        if (f > 0 && l > f) cleaned = cleaned.mid(f + 1, l - f - 1).trimmed();
+    }
+
+    static const QStringList openers = {
+        "SELECT", "WITH", "INSERT", "UPDATE", "DELETE",
+        "CREATE", "ALTER", "DROP", "TRUNCATE", "MERGE",
+        "EXPLAIN", "SHOW", "--", "/*"
+    };
+    int bestIdx = -1;
+    for (const QString &kw : openers) {
+        int i = cleaned.indexOf(kw, 0, Qt::CaseInsensitive);
+        if (i >= 0 && (bestIdx < 0 || i < bestIdx)) bestIdx = i;
+    }
+    if (bestIdx > 0) cleaned = cleaned.mid(bestIdx);
+
+    return cleaned.trimmed();
 }

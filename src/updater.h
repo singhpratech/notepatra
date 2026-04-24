@@ -40,7 +40,7 @@ class QWidget;
 namespace Updater {
 
 struct PickedAsset {
-    QString name;          // e.g. "Notepatra-0.1.17-linux-x86_64.AppImage"
+    QString name;          // e.g. "Notepatra-0.1.18-linux-x86_64.AppImage"
     QString downloadUrl;   // direct browser_download_url
     qint64  sizeBytes = 0;
     bool    found = false;

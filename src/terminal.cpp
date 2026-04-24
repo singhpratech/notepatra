@@ -178,38 +178,18 @@ TerminalWidget::TerminalWidget(QWidget *parent) : QWidget(parent) {
     // is calibrated for a dark background (bright yellows / greens that
     // turn unreadable on a pale canvas), and every mainstream IDE keeps
     // its integrated terminal dark. We theme the frame, not the screen.
-    const NpPalette pal = npPalette();
-
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    auto *header = new QLabel("  Terminal");
-    header->setFixedHeight(24);
-    header->setStyleSheet(QString(
-        "font-weight: 600; background: %1; color: %2; "
-        "padding: 3px 10px; border-bottom: 1px solid %3; "
-        "font-size: 11px; letter-spacing: 0.05em;")
-        .arg(pal.chromeBg, pal.accent, pal.border));
-    layout->addWidget(header);
+    m_header = new QLabel("  Terminal");
+    m_header->setFixedHeight(24);
+    layout->addWidget(m_header);
 
     m_output = new QTextEdit;
     m_output->setReadOnly(true);
     QFont mono = notepatraCodeFont();
     m_output->setFont(mono);
-    // VS-Code-ish "Integrated Terminal" — intentionally dark in both
-    // themes so ANSI colour output stays legible. `kAnsi` above encodes
-    // VT100 colours tuned for #1E1E1E; flipping this to a Light surface
-    // would turn yellows to eye-bleach and light greys to invisible.
-    m_output->setStyleSheet(
-        "QTextEdit { background: #1E1E1E; color: #D4D4D4; border: none; "
-        "padding: 8px 12px; selection-background-color: #264F78; "
-        "selection-color: #FFFFFF; }"
-        "QScrollBar:vertical { background: #1E1E1E; width: 10px; }"
-        "QScrollBar::handle:vertical { background: #3E3E3E; "
-        "border-radius: 5px; min-height: 40px; margin: 2px; }"
-        "QScrollBar::handle:vertical:hover { background: #555; }"
-        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }");
     layout->addWidget(m_output, 1);
 
     // Colourful zsh-ish prompt: ❯ in accent, directory name in warm tone,
@@ -221,41 +201,22 @@ TerminalWidget::TerminalWidget(QWidget *parent) : QWidget(parent) {
 
     m_promptLabel = new QLabel();
     m_promptLabel->setFont(mono);
-    m_promptLabel->setStyleSheet(QString(
-        "background: %1; color: %2; "
-        "padding: 6px 10px 6px 12px; border-top-left-radius: 6px; "
-        "border-bottom-left-radius: 6px; border: 1px solid %3; "
-        "border-right: none;")
-        .arg(pal.inputBg, pal.accent, pal.inputBorder));
     inputRow->addWidget(m_promptLabel);
 
     m_input = new QLineEdit;
     m_input->setFont(mono);
-    m_input->setStyleSheet(QString(
-        "QLineEdit { background: %1; color: %2; "
-        "border: 1px solid %3; border-left: none; "
-        "border-top-right-radius: 6px; border-bottom-right-radius: 6px; "
-        "padding: 6px 10px; selection-background-color: %4; "
-        "selection-color: %5; }"
-        "QLineEdit:focus { border-color: %6; }")
-        .arg(pal.inputBg, pal.inputFg, pal.inputBorder,
-             pal.selectionBg, pal.selectionFg, pal.inputFocus));
     m_input->setPlaceholderText("Type a command and press Enter…");
     inputRow->addWidget(m_input, 1);
     updatePrompt();
-    auto *copyBtn = new QPushButton("Copy Output");
-    copyBtn->setFixedHeight(26);
-    copyBtn->setFixedWidth(90);
-    copyBtn->setStyleSheet(QString(
-        "QPushButton { background: %1; color: %2; "
-        "border: 1px solid %3; border-radius: 4px; "
-        "padding: 3px 8px; margin-left: 6px; }"
-        "QPushButton:hover { background: %4; }")
-        .arg(pal.btnBg, pal.btnFg, pal.btnBorder, pal.btnHover));
-    inputRow->addWidget(copyBtn);
+    m_copyBtn = new QPushButton("Copy Output");
+    m_copyBtn->setFixedHeight(26);
+    m_copyBtn->setFixedWidth(90);
+    inputRow->addWidget(m_copyBtn);
     layout->addLayout(inputRow);
 
-    connect(copyBtn, &QPushButton::clicked, this, [this]() {
+    applyPalette();
+
+    connect(m_copyBtn, &QPushButton::clicked, this, [this]() {
         QApplication::clipboard()->setText(m_output->toPlainText());
     });
 
@@ -296,7 +257,7 @@ TerminalWidget::TerminalWidget(QWidget *parent) : QWidget(parent) {
     // SHELL=fish it says "fish", on Windows with PowerShell available
     // it says "pwsh". No more guessing.
     const ShellInfo si = detectShell();
-    header->setText(QString("  Terminal — %1").arg(si.display));
+    m_header->setText(QString("  Terminal — %1").arg(si.display));
     m_output->append("<span style='color:#4EC9B0;'>Notepatra Terminal</span>");
     m_output->append(QString("<span style='color:#808080;'>Shell: <b>%1</b> &nbsp; · &nbsp; %2</span>")
                          .arg(si.display.toHtmlEscaped(), si.path.toHtmlEscaped()));
@@ -532,4 +493,67 @@ void TerminalWidget::onCommandEntered() {
 
     if (raw.trimmed().isEmpty()) return;
     runCommand(raw.trimmed());
+}
+
+void TerminalWidget::applyPalette() {
+    const NpPalette pal = npPalette();
+
+    if (m_header) {
+        m_header->setStyleSheet(QString(
+            "font-weight: 600; background: %1; color: %2; "
+            "padding: 3px 10px; border-bottom: 1px solid %3; "
+            "font-size: 11px; letter-spacing: 0.05em;")
+            .arg(pal.chromeBg, pal.accent, pal.border));
+    }
+
+    // VS-Code-ish "Integrated Terminal" — intentionally dark in both
+    // themes so ANSI colour output stays legible. `kAnsi` encodes
+    // VT100 colours tuned for #1E1E1E; flipping this to a Light surface
+    // would turn yellows to eye-bleach and light greys to invisible.
+    if (m_output) {
+        m_output->setStyleSheet(
+            "QTextEdit { background: #1E1E1E; color: #D4D4D4; border: none; "
+            "padding: 8px 12px; selection-background-color: #264F78; "
+            "selection-color: #FFFFFF; }"
+            "QScrollBar:vertical { background: #1E1E1E; width: 10px; }"
+            "QScrollBar::handle:vertical { background: #3E3E3E; "
+            "border-radius: 5px; min-height: 40px; margin: 2px; }"
+            "QScrollBar::handle:vertical:hover { background: #555; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }");
+    }
+
+    if (m_promptLabel) {
+        m_promptLabel->setStyleSheet(QString(
+            "background: %1; color: %2; "
+            "padding: 6px 10px 6px 12px; border-top-left-radius: 6px; "
+            "border-bottom-left-radius: 6px; border: 1px solid %3; "
+            "border-right: none;")
+            .arg(pal.inputBg, pal.accent, pal.inputBorder));
+    }
+
+    if (m_input) {
+        m_input->setStyleSheet(QString(
+            "QLineEdit { background: %1; color: %2; "
+            "border: 1px solid %3; border-left: none; "
+            "border-top-right-radius: 6px; border-bottom-right-radius: 6px; "
+            "padding: 6px 10px; selection-background-color: %4; "
+            "selection-color: %5; }"
+            "QLineEdit:focus { border-color: %6; }")
+            .arg(pal.inputBg, pal.inputFg, pal.inputBorder,
+                 pal.selectionBg, pal.selectionFg, pal.inputFocus));
+    }
+
+    if (m_copyBtn) {
+        m_copyBtn->setStyleSheet(QString(
+            "QPushButton { background: %1; color: %2; "
+            "border: 1px solid %3; border-radius: 4px; "
+            "padding: 3px 8px; margin-left: 6px; }"
+            "QPushButton:hover { background: %4; }")
+            .arg(pal.btnBg, pal.btnFg, pal.btnBorder, pal.btnHover));
+    }
+}
+
+void TerminalWidget::onThemeChanged() {
+    applyPalette();
+    update();
 }

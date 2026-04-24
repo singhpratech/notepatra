@@ -7,6 +7,70 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.18] — 2026-04-24
+
+SQL formatter becomes a real Claude-style AST pretty-printer (11 dialects) · Git panel rewrite turns the "status viewer" into a usable workflow tool · runtime theme switching stops producing dark-on-dark melt in every panel.
+
+### Added
+- 🧱 **SQL Claude-style AST pretty-printer** — `format_sql` replaced with an AST walker built on the `sqlparser` crate (v0.52). 11 dialects (ANSI, PostgreSQL, MySQL, SQLite, MS SQL, Snowflake, BigQuery, Redshift, ClickHouse, DuckDB, Hive). Claude-style indentation: `SELECT` columns on their own lines, `JOIN` clauses indented one level, `CASE WHEN` laddered, CTEs broken at commas. UPPERCASE/lowercase preserved through the walk, not a regex pass. Graceful fallback to whitespace normalization on parse error.
+- 🤖 **AI Fix button on the SQL panel** — dialect-aware syntax repair. Sends the query + selected dialect to your LLM (Ollama / OpenAI-compatible / llama.cpp) with a constrained prompt: "fix syntax for dialect X, don't rewrite logic, return only the corrected SQL." Streams back inline. Useful for PostgreSQL pasted into MySQL tabs, or syntax errors where the parser message alone is unhelpful.
+- 🌳 **Git panel — staged/unstaged tree with inline +/− buttons** per row. Click a file for the diff. Async `QProcess` backend reads `git status --porcelain=v2 --branch` for correct rename/copy/submodule detection.
+- 🌳 **Git branch chip with ahead/behind counter** — header shows `main ↑3 ↓1` when diverged; click to see the full branch list.
+- 🌳 **Git commit box with Ctrl+Enter** — live line-count indicator, blocks commit with a clear message when nothing is staged.
+- 🌳 **Git sync row** — one-click Pull / Push / Fetch with live ahead/behind refresh.
+- 🌳 **Git collapsible history + stash menu** — click-to-expand recent commits under the sync row; stash / pop / list / drop with message preserved.
+- 🎨 **Runtime theme propagation — `MainWindow::themeChanged()` signal + `onThemeChanged()` slot on every panel** — AI Assistant, Project Search, Terminal, REST Client, Git Panel, Compare (diff), Markdown Preview, Hex Editor. Every panel's stylesheet blocks moved into an `applyPalette()` helper that re-reads `npPalette()` each time. Switch theme → every panel repaints immediately, no restart.
+- 🧪 **`test_sqlfmt.cpp`** — 33 assertions across 11 dialects. 28 pass hard, 5 flagged aspirational (parser edge cases `sqlparser` itself doesn't round-trip).
+
+### Changed
+- 🧱 **`npc_format_sql` FFI is now 5-arg** — added a `dialect` parameter (default `"ansi"` preserves prior behavior). Callers that used the 4-arg form need to pass a dialect string or accept the ANSI default.
+
+### Fixed
+- 🎨 **Dark-on-dark melt in REST status badge, Git branch chip, Project Search scroll area** when switching themes at runtime — the cached palette fields weren't being refreshed, so the new palette's text ran against the old background. `onThemeChanged()` slots now re-cache the fields before re-styling.
+- 🌳 **GitPanel rename/copy/submodule detection** — the old status parser used `git status --porcelain` (v1) which loses rename-target info. Switched to porcelain v2.
+
+### Internal
+- 🧪 **`ctest -j` is now 12/12 pass in 1.3 s** — added `test_sqlfmt` as the 12th test.
+- 🦀 **Rust `sqlparser` crate added to `rust-core/Cargo.toml`** (v0.52). `rust_core` static lib linked by every test target that touches SQL formatting (`test_sqlfmt`, and transitively `test_ai_fix`).
+
+---
+
+## [0.1.17] — 2026-04-24
+
+Quality-and-correctness pass on the two most-used features: **Project Search** (latent bug preventing it from running at all) and **updates** (previously dumped you at the GitHub release page — now it's Notepad++-style one-click download with SHA-256 verification and native-installer handoff).
+
+### Added
+- 🔄 **Safe in-app updater** — `src/updater.{h,cpp}`, ~360 lines. `pickAssetForPlatform()` picks the right artifact per OS/arch (Linux AppImage, macOS DMG, Windows MSI with NSIS/portable-zip fallbacks). Stream-downloads to `~/Downloads/<name>.part`, fetches `SHA256SUMS`, verifies, POSIX-atomic-renames `.part` → final name, hands off to the OS installer (`msiexec /i` on Windows, Finder drag on macOS, opens Downloads on Linux). **Running binary is NEVER modified by Notepatra itself** — only the OS installer you click through may replace it. 18-case regression test covers the asset picker + SHA256SUMS parser (including malformed hashes, `.sig` exclusion, no-false-positive substring matches).
+- 🔎 **Project Search honest 0→100% progress bar** — linear from `scanned / total`, no bouncing. Full live status line: `Searching — 48 / 212 files (22%) · 28,340 lines · 3 matches · 180 ms elapsed`.
+- 🔎 **Project Search live-ticking elapsed time** — 10 Hz UI timer refreshes elapsed-ms between worker events so it visibly scrolls instead of jumping per-file.
+- 🔎 **Project Search rolling elapsed format** — ms → s → min → h automatically.
+- 🔎 **Project Search page-level scroll** — whole tab lives in a `QScrollArea`, match tree grows to fit content, page scrollbar takes over. One scroll, not two. Matches VS Code / Cursor / Sublime.
+- 🔎 **Project Search right-click context menu** on a match: Copy location (path:line:col), Copy full path, Copy match line text. Parent rows show full absolute paths.
+- 🔎 **Project Search instant Cancel** — immediate "Cancelling…" feedback, worker bails at next `m_cancel.load()` checkpoint, post-cancel events ignored via phase guard so a tail event can't resume the UI.
+- 🧩 **Help menu direct GitHub links** — Notepatra on GitHub, Latest Release, Report an Issue.
+- 🎨 **Website vertical-timeline release cards** — every release before the latest one is a one-line row; click-to-expand. Keyboard accessible (Enter/Space).
+- 🧪 **`test_updater.cpp`** (18 cases) + **`test_projectsearch_ui.cpp`** (5 headless UI assertions).
+
+### Changed
+- 💬 **AI Assistant chat bubbles rewritten as real Qt widgets** — previously rendered as HTML inside a `QTextBrowser`, which collapsed into the dark background on dark themes. Now `QFrame`-based bubbles with palette-driven backgrounds. Multi-line `QPlainTextEdit` input with Enter/Shift+Enter. Close (×) button on the dock that hides but preserves the session.
+- 🪟 **Windows MSI / NSIS / portable-zip register the "Edit with Notepatra" right-click shell menu** — HKCU-only, no admin. Bundled `register-associations.bat` / `unregister-associations.bat` for portable-zip users.
+- ✍️ **Dropped the "Notepad++ alternative" framing** site-wide — Notepatra is an original product in its own right.
+- 📏 **Honest download sizes** — ~4 MB bare binary (not the previous blanket "5 MB"). Per-platform: ~2 MB Linux tar.gz · ~22 MB macOS DMG · ~40 MB Windows MSI/zip.
+- 🎨 **Holistic theme pass** — REST Client, Terminal chrome, Find/Replace, SQL panel all wired to the central `npPalette()`.
+
+### Fixed
+- 🔎 **Project Search worker was never called** — `QMetaObject::invokeMethod(m_worker, "search", Q_ARG(ProjectSearchWorker::Params, p))` was silently failing because the type-name string `"ProjectSearchWorker::Params"` didn't match the slot's unqualified `"Params"`. Qt logged the mismatch to stderr; the search simply never ran. Switched to the lambda overload. Every search from the UI now actually runs.
+- 🔎 **Ctrl+Shift+F (Find in Files) wired correctly** — menu said "Find in Files…" but called `showFind()` (tab 0) instead of `showFindInFiles()` (tab 2). One-char copy-paste bug, silent for a month.
+- 🍎 **macOS TLS failure in the updater** — `macdeployqt` doesn't copy `libssl.3.dylib` / `libcrypto.3.dylib`, so `QNetworkAccessManager` couldn't reach `https://github.com`. CI now Homebrew-installs `openssl@3`, copies the dylibs into the bundle, runs `install_name_tool` to rewrite `@rpath/libssl.3.dylib` → `@executable_path/../Frameworks/libssl.3.dylib` + updates the `QtNetwork.framework` install names.
+- 🪟 **Windows TLS failure in the updater** — OpenSSL DLLs weren't bundled by `windeployqt`. CI now downloads `openssl-1.1.x-Win64` from FireDaemon (after aqtinstall `tools_openssl_x64` was removed from Qt's repo and Chocolatey `openssl.light` was also removed) and copies `libssl-1_1-x64.dll` / `libcrypto-1_1-x64.dll` alongside `notepatra.exe`.
+- 🧹 **Daily `docs/stats.json` workflow deleted** — was red for weeks with `E2BIG` (`$RELEASES_JSON` crossing `ARG_MAX` when passed via argv). The site's download counter reads the GitHub API at page-load; nothing consumed `stats.json` anyway.
+- 🧾 **About dialog** — removed Don Ho mention per user request; trimmed to website + source links only (removed Releases / Issues links — those belong in Help menu).
+
+### Internal
+- 🧪 **`ctest -j`** up to 11/11 pass (`test_projectsearch` 27 + `test_updater` 18 + `test_projectsearch_ui` 5 added).
+
+---
+
 ## [0.1.16] — 2026-04-20
 
 AI Assistant becomes a proper Cursor-style dock · Project Search finally lives up to "Rust-powered" with a 10–50× speedup · terminal runs `claude` / `codex` / REPLs inline via PTY · CI back to green.

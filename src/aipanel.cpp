@@ -1993,3 +1993,51 @@ void AIPanel::attachFile() {
 
     setStatus(QString("✓ Attached: %1 (%2)").arg(name).arg(kind), false);
 }
+
+void AIPanel::onThemeChanged() {
+    // The bubble HTML (user / assistant / error cards) embeds per-theme
+    // colours inline; renderTranscript() rebuilds every bubble by
+    // calling aiPalette() fresh, which is the cheapest way to swap
+    // themes on a live chat. Do that first so the chat view flips,
+    // then restyle the persistent chrome widgets (header label + chat
+    // area + inputs that live for the lifetime of the widget).
+    const AiPalette pal = aiPalette();
+
+    if (m_headerLabel) {
+        m_headerLabel->setStyleSheet(QString(
+            "font-weight: 600; background: %1; color: %2; "
+            "padding: 6px 10px; letter-spacing: 1px; font-size: 11px;")
+            .arg(pal.chromeBg, pal.headerFg));
+    }
+
+    if (m_chatArea) {
+        // Match the original ctor stylesheet for the chat scroll area so
+        // the background + scroll-bar handles pick up the new theme.
+        m_chatArea->setStyleSheet(QString(
+            "QScrollArea { background: %1; border: none; } "
+            "QScrollBar:vertical { background: %1; width: 10px; } "
+            "QScrollBar::handle:vertical { background: %2; border-radius: 5px; "
+            "min-height: 30px; margin: 2px; } "
+            "QScrollBar::handle:vertical:hover { background: %3; } "
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }")
+            .arg(pal.chatBg, pal.inputBorder, pal.muted));
+    }
+    if (m_chatContent) {
+        m_chatContent->setStyleSheet(QString("background: %1;").arg(pal.chatBg));
+    }
+    if (m_customInput) {
+        m_customInput->setStyleSheet(QString(
+            "QPlainTextEdit { background: %1; color: %2; border: 1px solid %3; "
+            "border-radius: 6px; padding: 8px 10px; font-size: 13px; "
+            "selection-background-color: %4; selection-color: #FFFFFF; } "
+            "QPlainTextEdit:focus { border-color: %5; }")
+            .arg(pal.inputBg, pal.inputText, pal.inputBorder,
+                 pal.accent, pal.inputFocus));
+    }
+
+    // Re-render the chat — this is the heavy lifter. aiPalette() is
+    // consulted once at the top of renderTranscript() and all bubble /
+    // error / assistant cards are rebuilt with the new colours.
+    renderTranscript();
+    update();
+}

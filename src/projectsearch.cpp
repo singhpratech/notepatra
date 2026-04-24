@@ -479,48 +479,34 @@ void ProjectSearch::buildUi() {
     outer->setContentsMargins(0, 0, 0, 0);
     outer->setSpacing(0);
 
-    auto *scrollArea = new QScrollArea(this);
-    scrollArea->setWidgetResizable(true);
-    scrollArea->setFrameShape(QFrame::NoFrame);
-    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    scrollArea->setStyleSheet(QString(
-        "QScrollArea { background: %1; border: none; } "
-        "QScrollBar:vertical { background: %1; width: 12px; margin: 0; } "
-        "QScrollBar::handle:vertical { background: %2; border-radius: 5px; min-height: 30px; } "
-        "QScrollBar::handle:vertical:hover { background: %3; } "
-        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; } "
-        "QScrollBar:horizontal { background: %1; height: 12px; margin: 0; } "
-        "QScrollBar::handle:horizontal { background: %2; border-radius: 5px; min-width: 30px; } "
-        "QScrollBar::handle:horizontal:hover { background: %3; } "
-        "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }"
-    ).arg(p.bg, p.inputBorder, p.accent));
+    m_scrollArea = new QScrollArea(this);
+    m_scrollArea->setWidgetResizable(true);
+    m_scrollArea->setFrameShape(QFrame::NoFrame);
+    m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
-    auto *content = new QWidget;
-    content->setStyleSheet(QString("background: %1;").arg(p.bg));
-    auto *root = new QVBoxLayout(content);
+    m_content = new QWidget;
+    auto *root = new QVBoxLayout(m_content);
     root->setContentsMargins(20, 18, 20, 18);
     root->setSpacing(14);
 
-    scrollArea->setWidget(content);
-    outer->addWidget(scrollArea);
+    m_scrollArea->setWidget(m_content);
+    outer->addWidget(m_scrollArea);
 
     // ── Title + hint ─────────────────────────────────────────────────
-    auto *title = new QLabel("🔍 Project Search");
+    m_title = new QLabel("🔍 Project Search");
     QFont tf = notepatraUiFont();
     tf.setPointSize(18);
     tf.setWeight(QFont::DemiBold);
-    title->setFont(tf);
-    title->setStyleSheet(QString("color: %1;").arg(p.textPrimary));
-    root->addWidget(title);
+    m_title->setFont(tf);
+    root->addWidget(m_title);
 
     // Compact hint — the old three-line paragraph was eating vertical
     // space from the results view. One short line is plenty; full doc
     // lives in Help → Feature and Tool Guide.
-    auto *hint = new QLabel("Stream search across file names + contents. Double-click a match to jump to that line.");
-    hint->setWordWrap(true);
-    hint->setStyleSheet(QString("color: %1; font-size: 11px;").arg(p.textSecondary));
-    root->addWidget(hint);
+    m_hint = new QLabel("Stream search across file names + contents. Double-click a match to jump to that line.");
+    m_hint->setWordWrap(true);
+    root->addWidget(m_hint);
 
     // ── Query input (big, prominent) ─────────────────────────────────
     m_queryInput = new QLineEdit;
@@ -536,9 +522,8 @@ void ProjectSearch::buildUi() {
     // ── Folder row ───────────────────────────────────────────────────
     auto *folderRow = new QHBoxLayout;
     folderRow->setSpacing(8);
-    auto *folderLabel = new QLabel("Folder:");
-    folderLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(p.textSecondary));
-    folderRow->addWidget(folderLabel);
+    m_folderLabel = new QLabel("Folder:");
+    folderRow->addWidget(m_folderLabel);
 
     m_folderInput = new QLineEdit(QDir::homePath());
     m_folderInput->setStyleSheet(QString(
@@ -567,9 +552,8 @@ void ProjectSearch::buildUi() {
     auto *optRow = new QHBoxLayout;
     optRow->setSpacing(16);
 
-    auto *globLabel = new QLabel("Files:");
-    globLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(p.textSecondary));
-    optRow->addWidget(globLabel);
+    m_globLabel = new QLabel("Files:");
+    optRow->addWidget(m_globLabel);
 
     m_globInput = new QLineEdit;
     m_globInput->setPlaceholderText("*.py, *.js, *.cpp  (empty = all files)");
@@ -736,6 +720,118 @@ void ProjectSearch::buildUi() {
             cb->setText(item->text(0).trimmed());
         }
     });
+
+    // All visible stylesheets (bg, inputs, buttons, tree, scrollbars) are
+    // centralised in applyPalette() so the runtime theme-change slot
+    // (onThemeChanged) can re-render without rebuilding the UI tree.
+    applyPalette();
+}
+
+void ProjectSearch::applyPalette() {
+    const auto p = psearchPalette();
+
+    setStyleSheet(QString("ProjectSearch { background: %1; }").arg(p.bg));
+
+    if (m_scrollArea) {
+        m_scrollArea->setStyleSheet(QString(
+            "QScrollArea { background: %1; border: none; } "
+            "QScrollBar:vertical { background: %1; width: 12px; margin: 0; } "
+            "QScrollBar::handle:vertical { background: %2; border-radius: 5px; min-height: 30px; } "
+            "QScrollBar::handle:vertical:hover { background: %3; } "
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; } "
+            "QScrollBar:horizontal { background: %1; height: 12px; margin: 0; } "
+            "QScrollBar::handle:horizontal { background: %2; border-radius: 5px; min-width: 30px; } "
+            "QScrollBar::handle:horizontal:hover { background: %3; } "
+            "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }"
+        ).arg(p.bg, p.inputBorder, p.accent));
+    }
+    if (m_content) {
+        m_content->setStyleSheet(QString("background: %1;").arg(p.bg));
+    }
+    if (m_title) {
+        m_title->setStyleSheet(QString("color: %1;").arg(p.textPrimary));
+    }
+    if (m_hint) {
+        m_hint->setStyleSheet(QString("color: %1; font-size: 11px;").arg(p.textSecondary));
+    }
+    if (m_queryInput) {
+        m_queryInput->setStyleSheet(QString(
+            "QLineEdit { background: %1; color: %2; border: 2px solid %3; "
+            "border-radius: 10px; padding: 12px 16px; }"
+            "QLineEdit:focus { border-color: %4; }"
+        ).arg(p.inputBg, p.textPrimary, p.inputBorder, p.accent));
+    }
+    if (m_folderLabel) {
+        m_folderLabel->setStyleSheet(QString(
+            "color: %1; font-size: 12px;").arg(p.textSecondary));
+    }
+    if (m_folderInput) {
+        m_folderInput->setStyleSheet(QString(
+            "QLineEdit { background: %1; color: %2; border: 1px solid %3; "
+            "border-radius: 6px; padding: 6px 10px; }"
+        ).arg(p.inputBg, p.textPrimary, p.inputBorder));
+    }
+    if (m_browseBtn) {
+        m_browseBtn->setStyleSheet(QString(
+            "QPushButton { background: transparent; color: %1; "
+            "border: 1px solid %2; border-radius: 6px; padding: 6px 14px; }"
+            "QPushButton:hover { border-color: %3; color: %3; }"
+        ).arg(p.textPrimary, p.inputBorder, p.accent));
+    }
+    if (m_globLabel) {
+        m_globLabel->setStyleSheet(QString(
+            "color: %1; font-size: 12px;").arg(p.textSecondary));
+    }
+    if (m_globInput) {
+        m_globInput->setStyleSheet(QString(
+            "QLineEdit { background: %1; color: %2; border: 1px solid %3; "
+            "border-radius: 6px; padding: 6px 10px; }"
+        ).arg(p.inputBg, p.textPrimary, p.inputBorder));
+    }
+    for (QCheckBox *cb : {m_caseChk, m_wordChk, m_regexChk, m_namesChk, m_binaryChk}) {
+        if (!cb) continue;
+        cb->setStyleSheet(QString(
+            "color: %1; font-size: 12px;").arg(p.textSecondary));
+    }
+    if (m_searchBtn) {
+        m_searchBtn->setStyleSheet(QString(
+            "QPushButton { background: %1; color: #FFFFFF; border: none; "
+            "border-radius: 8px; padding: 10px 28px; font-weight: 600; }"
+            "QPushButton:hover { background: #B86A4E; }"
+            "QPushButton:disabled { background: #B8B5B1; color: #6C6C6C; }"
+        ).arg(p.accent));
+    }
+    if (m_cancelBtn) {
+        m_cancelBtn->setStyleSheet(QString(
+            "QPushButton { background: transparent; color: %1; "
+            "border: 1px solid %2; border-radius: 8px; padding: 10px 24px; }"
+            "QPushButton:hover { border-color: %3; color: %3; }"
+            "QPushButton:disabled { color: #AAA; border-color: #CCC; }"
+        ).arg(p.textPrimary, p.inputBorder, p.accent));
+    }
+    if (m_progressBar) {
+        m_progressBar->setStyleSheet(QString(
+            "QProgressBar { background: %1; border: none; border-radius: 3px; }"
+            "QProgressBar::chunk { background: %2; border-radius: 3px; }"
+        ).arg(p.inputBorder, p.accent));
+    }
+    if (m_statusLabel) {
+        m_statusLabel->setStyleSheet(QString(
+            "color: %1; font-size: 12px;").arg(p.textMuted));
+    }
+    if (m_results) {
+        m_results->setStyleSheet(QString(
+            "QTreeWidget { background: %1; color: %2; border: 1px solid %3; "
+            "border-radius: 10px; padding: 6px; } "
+            "QTreeWidget::item { padding: 4px 6px; border: none; } "
+            "QTreeWidget::item:selected { background: %4; color: #FFFFFF; }"
+        ).arg(p.cardBg, p.textPrimary, p.inputBorder, p.accent));
+    }
+}
+
+void ProjectSearch::onThemeChanged() {
+    applyPalette();
+    update();
 }
 
 QString ProjectSearch::currentStatusText() const {

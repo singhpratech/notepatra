@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.17 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.18 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -586,6 +586,51 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_palette.cpp")
     notepatra_add_qt_test(test_palette)
     set_tests_properties(test_palette PROPERTIES LABELS "regression;palette")
     message(STATUS "Regression test enabled — target: test_palette")
+endif()
+
+# ─── SQL formatter regression test ──────────────────────────────────────
+# Drives the spec for the upcoming Claude-style pretty-printer + AI Fix.
+# Handles either the 3-arg (legacy) or 4-arg (dialect-aware) formatSql
+# signature — selected at configure time by grep'ing rustbridge.h.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_sqlfmt.cpp")
+    add_executable(test_sqlfmt
+        test_sqlfmt.cpp
+        src/rustbridge.cpp
+    )
+    add_dependencies(test_sqlfmt rust_core)
+    target_include_directories(test_sqlfmt PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+    )
+    target_link_libraries(test_sqlfmt PRIVATE
+        Qt5::Core
+        ${RUST_LIB}
+    )
+    # Detect whether rustbridge.h exposes the 4-arg formatSql (with dialect)
+    # by grep'ing the header. Lets the test compile against either shape.
+    file(READ "${CMAKE_SOURCE_DIR}/src/rustbridge.h" _rb_hdr)
+    if(_rb_hdr MATCHES "formatSql[^;]*dialect")
+        target_compile_definitions(test_sqlfmt PRIVATE SQLFMT_HAS_DIALECT=1)
+        message(STATUS "test_sqlfmt: SQLFMT_HAS_DIALECT enabled")
+    endif()
+    if(WIN32)
+        target_link_libraries(test_sqlfmt PRIVATE
+            ws2_32 userenv bcrypt ntdll
+            advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32
+        )
+    elseif(APPLE)
+        target_link_libraries(test_sqlfmt PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_sqlfmt PRIVATE pthread dl m)
+    endif()
+    add_test(NAME test_sqlfmt COMMAND $<TARGET_FILE:test_sqlfmt>)
+    set_tests_properties(test_sqlfmt PROPERTIES
+        LABELS "regression;sqlfmt"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+    message(STATUS "Regression test enabled — target: test_sqlfmt")
 endif()
 
 # ── Install ──

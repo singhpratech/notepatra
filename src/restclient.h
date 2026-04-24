@@ -17,7 +17,22 @@ public:
     explicit RestClient(QWidget *parent = nullptr);
     void executeRequest(const QString &httpText);
 
+public slots:
+    // Re-apply every palette-dependent stylesheet in the panel when
+    // MainWindow emits themeChanged(). Also refreshes the cached
+    // m_pal* fields so a later sendFromUi() recolours the status badge
+    // against the new theme.
+    void onThemeChanged();
+
 private:
+    void applyPalette();
+    // Retained chrome widgets so applyPalette() can restyle after
+    // construction without re-walking the layout tree.
+    QLabel      *m_header = nullptr;
+    QWidget     *m_reqBarHost = nullptr;
+    QWidget     *m_btnRowHost = nullptr;
+    QPushButton *m_copyBtn = nullptr;
+
     // Top request bar
     QComboBox      *m_methodCombo;
     QLineEdit      *m_urlInput;
@@ -34,7 +49,7 @@ private:
 
     QNetworkAccessManager *m_nam;
 
-    // Cached theme colors (captured once in constructor from npPalette())
+    // Cached theme colors (captured in applyPalette() from npPalette())
     // so sendFromUi() can color-code HTTP status badges without calling
     // npPalette() again. 2xx → successFg, 3xx → accent, 4xx → warningFg,
     // 5xx → errorFg.

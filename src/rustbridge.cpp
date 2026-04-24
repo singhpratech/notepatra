@@ -182,9 +182,31 @@ DiffInfo computeDiff(const QString &left, const QString &right) {
 
 // ── SQL Formatter ──
 
-QString formatSql(const QString &text, int indentWidth, bool uppercase) {
+// Map dialect combo-box labels (or short names) to the tags the Rust side
+// understands. Centralising this keeps every caller from duplicating the
+// same switch statement and means the SQL panel can forward its combo text
+// verbatim.
+static QByteArray normaliseDialect(const QString &raw) {
+    QString s = raw.trimmed().toLower();
+    if (s.isEmpty() || s.contains("ansi"))        return "ansi";
+    if (s.contains("postgres"))                   return "postgres";
+    if (s.contains("mysql"))                      return "mysql";
+    if (s.contains("t-sql") || s.contains("tsql") ||
+        s.contains("sql server") || s.contains("mssql"))
+                                                  return "mssql";
+    if (s.contains("sqlite"))                     return "sqlite";
+    if (s.contains("pl/sql") || s.contains("plsql") || s.contains("oracle"))
+                                                  return "plsql";
+    return "ansi";
+}
+
+QString formatSql(const QString &text, int indentWidth, bool uppercase,
+                  const QString &dialect) {
     QByteArray b = text.toUtf8();
-    return textFromResult(npc_format_sql(b.constData(), b.size(), indentWidth, uppercase ? 1 : 0));
+    QByteArray d = normaliseDialect(dialect);
+    return textFromResult(npc_format_sql(b.constData(), b.size(),
+                                         indentWidth, uppercase ? 1 : 0,
+                                         d.constData()));
 }
 
 // ── JSON ──

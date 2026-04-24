@@ -22,6 +22,7 @@ rayon = "1.10"
 libc = "0.2"
 similar = "2.6"
 sqlformat = "0.3"
+sqlparser = { version = "0.52", default-features = false, features = ["std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
