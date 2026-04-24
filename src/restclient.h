@@ -34,6 +34,20 @@ private:
 
     QNetworkAccessManager *m_nam;
 
+    // Cached theme colors (captured once in constructor from npPalette())
+    // so sendFromUi() can color-code HTTP status badges without calling
+    // npPalette() again. 2xx → successFg, 3xx → accent, 4xx → warningFg,
+    // 5xx → errorFg.
+    QString m_palBg;
+    QString m_palChromeBg;
+    QString m_palText;
+    QString m_palTextMuted;
+    QString m_palAccent;
+    QString m_palBorder;
+    QString m_palSuccessFg;
+    QString m_palWarningFg;
+    QString m_palErrorFg;
+
     void sendFromUi();
     void parseAndSend(const QString &block);
 };

@@ -1,5 +1,6 @@
 #include "restclient.h"
 #include "fonts.h"
+#include "theme_detect.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -30,9 +31,21 @@
 //   │ 200 OK · 43 ms · 1.2 KB                                       │
 //   │ pretty-printed JSON or raw body                                │
 //   └─────────────────────────────────────────────────────────────────┘
+//
+// All colors come from npPalette() so the panel honors Light/Dark theme
+// without hardcoding dark-mode swatches (which used to leave light-mode
+// users staring at a black block with invisible text). The constructor
+// grabs the palette ONCE and feeds it into every stylesheet. The
+// request slots (sendFromUi / parseAndSend) look it up once per user
+// action when re-styling the status badge — still cheap.
 // ═══════════════════════════════════════════════════════════════════════
 
 RestClient::RestClient(QWidget *parent) : QWidget(parent) {
+    // Grab the theme palette ONCE — interpolated into every stylesheet
+    // below. Keeps this constructor cheap (one Config lookup, no repeat
+    // npPalette() calls inside each setStyleSheet).
+    const NpPalette pal = npPalette();
+
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
@@ -43,15 +56,16 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
     // ─── Header strip ──────────────────────────────────────────────
     auto *header = new QLabel("  🌐  REST Client");
     header->setFixedHeight(26);
-    header->setStyleSheet(
-        "font-weight: 600; background: #252526; color: #9CDCFE; "
-        "padding: 4px 12px; border-bottom: 1px solid #1E1E1E; "
-        "font-size: 12px; letter-spacing: 0.04em;");
+    header->setStyleSheet(QString(
+        "font-weight: 600; background: %1; color: %2; "
+        "padding: 4px 12px; border-bottom: 1px solid %3; "
+        "font-size: 12px; letter-spacing: 0.04em;")
+        .arg(pal.chromeBg, pal.accent, pal.bg));
     root->addWidget(header);
 
     // ─── Request bar: method dropdown + URL + Send ─────────────────
     auto *reqBarHost = new QWidget;
-    reqBarHost->setStyleSheet("background: #1E1E1E;");
+    reqBarHost->setStyleSheet(QString("background: %1;").arg(pal.bg));
     auto *reqBar = new QHBoxLayout(reqBarHost);
     reqBar->setContentsMargins(12, 10, 12, 8);
     reqBar->setSpacing(8);
@@ -61,52 +75,61 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
     m_methodCombo->setCurrentText("GET");
     m_methodCombo->setFixedHeight(34);
     m_methodCombo->setFixedWidth(110);
-    m_methodCombo->setStyleSheet(
-        "QComboBox { background: #252526; color: #4EC9B0; "
-        "border: 1px solid #3E3E3E; border-radius: 6px; "
+    m_methodCombo->setStyleSheet(QString(
+        "QComboBox { background: %1; color: %2; "
+        "border: 1px solid %3; border-radius: 6px; "
         "padding: 4px 10px; font-weight: 700; font-size: 13px; }"
-        "QComboBox:hover { border-color: #4EC9B0; }"
+        "QComboBox:hover { border-color: %4; }"
         "QComboBox::drop-down { border: none; width: 20px; }"
-        "QComboBox QAbstractItemView { background: #252526; color: #D4D4D4; "
-        "selection-background-color: #094771; border: 1px solid #3E3E3E; }");
+        "QComboBox QAbstractItemView { background: %1; color: %5; "
+        "selection-background-color: %6; border: 1px solid %3; }")
+        .arg(pal.inputBg, pal.accent, pal.inputBorder,
+             pal.inputFocus, pal.inputFg, pal.selectionBg));
     reqBar->addWidget(m_methodCombo);
 
     m_urlInput = new QLineEdit;
     m_urlInput->setPlaceholderText("https://api.example.com/users  (paste URL and hit Send)");
     m_urlInput->setFixedHeight(34);
     m_urlInput->setFont(mono);
-    m_urlInput->setStyleSheet(
-        "QLineEdit { background: #252526; color: #D4D4D4; "
-        "border: 1px solid #3E3E3E; border-radius: 6px; "
+    m_urlInput->setStyleSheet(QString(
+        "QLineEdit { background: %1; color: %2; "
+        "border: 1px solid %3; border-radius: 6px; "
         "padding: 6px 12px; font-size: 13px; "
-        "selection-background-color: #264F78; }"
-        "QLineEdit:focus { border-color: #4EC9B0; }");
+        "selection-background-color: %4; selection-color: %5; }"
+        "QLineEdit:focus { border-color: %6; }")
+        .arg(pal.inputBg, pal.inputFg, pal.inputBorder,
+             pal.selectionBg, pal.selectionFg, pal.inputFocus));
     reqBar->addWidget(m_urlInput, 1);
 
     m_sendBtn = new QPushButton("Send");
     m_sendBtn->setFixedHeight(34);
     m_sendBtn->setFixedWidth(96);
     m_sendBtn->setCursor(Qt::PointingHandCursor);
-    m_sendBtn->setStyleSheet(
-        "QPushButton { background: #0E639C; color: #FFFFFF; "
+    // Primary action — uses accent as background for strong call-to-action.
+    m_sendBtn->setStyleSheet(QString(
+        "QPushButton { background: %1; color: %2; "
         "border: none; border-radius: 6px; "
         "font-size: 13px; font-weight: 600; }"
-        "QPushButton:hover { background: #1177BB; }"
-        "QPushButton:pressed { background: #0B5182; }"
-        "QPushButton:disabled { background: #3E3E3E; color: #888; }");
+        "QPushButton:hover { background: %3; }"
+        "QPushButton:pressed { background: %1; }"
+        "QPushButton:disabled { background: %4; color: %5; }")
+        .arg(pal.accent, pal.selectionFg, pal.inputFocus,
+             pal.btnBorder, pal.textMuted));
     reqBar->addWidget(m_sendBtn);
     root->addWidget(reqBarHost);
 
     // ─── Headers / Body tabs ───────────────────────────────────────
     m_reqTabs = new QTabWidget;
     m_reqTabs->setFixedHeight(170);
-    m_reqTabs->setStyleSheet(
-        "QTabWidget::pane { background: #1E1E1E; border: none; border-top: 1px solid #2D2D2D; }"
-        "QTabBar { background: #1E1E1E; }"
-        "QTabBar::tab { background: transparent; color: #888; "
+    m_reqTabs->setStyleSheet(QString(
+        "QTabWidget::pane { background: %1; border: none; border-top: 1px solid %2; }"
+        "QTabBar { background: %1; }"
+        "QTabBar::tab { background: transparent; color: %3; "
         "padding: 6px 16px; border: none; font-size: 12px; margin-right: 2px; }"
-        "QTabBar::tab:selected { color: #9CDCFE; border-bottom: 2px solid #0E639C; }"
-        "QTabBar::tab:hover:!selected { color: #CCCCCC; }");
+        "QTabBar::tab:selected { color: %4; border-bottom: 2px solid %5; }"
+        "QTabBar::tab:hover:!selected { color: %6; }")
+        .arg(pal.bg, pal.cardBg, pal.textMuted,
+             pal.accent, pal.accent, pal.text));
 
     m_headersInput = new QPlainTextEdit;
     m_headersInput->setFont(mono);
@@ -114,10 +137,11 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
         "Accept: application/json\n"
         "Authorization: Bearer <token>\n"
         "Content-Type: application/json");
-    m_headersInput->setStyleSheet(
-        "QPlainTextEdit { background: #1E1E1E; color: #D4D4D4; border: none; "
+    m_headersInput->setStyleSheet(QString(
+        "QPlainTextEdit { background: %1; color: %2; border: none; "
         "padding: 10px; font-size: 12px; "
-        "selection-background-color: #264F78; }");
+        "selection-background-color: %3; selection-color: %4; }")
+        .arg(pal.bg, pal.text, pal.selectionBg, pal.selectionFg));
     m_reqTabs->addTab(m_headersInput, "Headers");
 
     m_bodyInput = new QPlainTextEdit;
@@ -136,25 +160,28 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
     // ─── Response status badge + body ──────────────────────────────
     m_statusBadge = new QLabel;
     m_statusBadge->setFixedHeight(28);
-    m_statusBadge->setStyleSheet(
-        "background: #252526; color: #808080; padding: 5px 12px; "
-        "border-top: 1px solid #1E1E1E; border-bottom: 1px solid #1E1E1E; "
-        "font-size: 11px; font-weight: 600; letter-spacing: 0.05em;");
+    m_statusBadge->setStyleSheet(QString(
+        "background: %1; color: %2; padding: 5px 12px; "
+        "border-top: 1px solid %3; border-bottom: 1px solid %3; "
+        "font-size: 11px; font-weight: 600; letter-spacing: 0.05em;")
+        .arg(pal.chromeBg, pal.textMuted, pal.bg));
     m_statusBadge->setText("  Response will appear here.");
     root->addWidget(m_statusBadge);
 
     m_output = new QTextEdit;
     m_output->setReadOnly(true);
     m_output->setFont(mono);
-    m_output->setStyleSheet(
-        "QTextEdit { background: #1E1E1E; color: #D4D4D4; "
+    m_output->setStyleSheet(QString(
+        "QTextEdit { background: %1; color: %2; "
         "border: none; padding: 12px; "
-        "selection-background-color: #264F78; }"
-        "QScrollBar:vertical { background: #1E1E1E; width: 10px; }"
-        "QScrollBar::handle:vertical { background: #3E3E3E; "
+        "selection-background-color: %3; selection-color: %4; }"
+        "QScrollBar:vertical { background: %1; width: 10px; }"
+        "QScrollBar::handle:vertical { background: %5; "
         "border-radius: 5px; min-height: 40px; margin: 2px; }"
-        "QScrollBar::handle:vertical:hover { background: #555; }"
-        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }");
+        "QScrollBar::handle:vertical:hover { background: %6; }"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }")
+        .arg(pal.bg, pal.text, pal.selectionBg, pal.selectionFg,
+             pal.border, pal.textMuted));
     m_output->setPlaceholderText(
         "Set a method + URL above, optionally fill Headers and Body tabs, "
         "then press Send. Pretty-printed JSON and full response headers "
@@ -163,17 +190,19 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
 
     // ─── Bottom action row ─────────────────────────────────────────
     auto *btnRowHost = new QWidget;
-    btnRowHost->setStyleSheet("background: #252526; border-top: 1px solid #1E1E1E;");
+    btnRowHost->setStyleSheet(QString("background: %1; border-top: 1px solid %2;")
+        .arg(pal.chromeBg, pal.bg));
     auto *btnRow = new QHBoxLayout(btnRowHost);
     btnRow->setContentsMargins(8, 4, 8, 4);
     btnRow->addStretch();
     auto *copyBtn = new QPushButton("Copy Response");
     copyBtn->setFixedHeight(26);
-    copyBtn->setStyleSheet(
-        "QPushButton { background: transparent; color: #CCCCCC; "
-        "border: 1px solid #3E3E3E; border-radius: 4px; padding: 4px 14px; "
+    copyBtn->setStyleSheet(QString(
+        "QPushButton { background: transparent; color: %1; "
+        "border: 1px solid %2; border-radius: 4px; padding: 4px 14px; "
         "font-size: 11px; }"
-        "QPushButton:hover { background: #2D2D2D; border-color: #4EC9B0; color: #4EC9B0; }");
+        "QPushButton:hover { background: %3; border-color: %4; color: %4; }")
+        .arg(pal.btnFg, pal.btnBorder, pal.btnHover, pal.accent));
     connect(copyBtn, &QPushButton::clicked, this, [this]() {
         QApplication::clipboard()->setText(m_output->toPlainText());
     });
@@ -188,11 +217,17 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
 }
 
 void RestClient::sendFromUi() {
+    // One palette lookup per click — cheap, avoids repeating per stylesheet.
+    const NpPalette pal = npPalette();
+
     QString method = m_methodCombo->currentText();
     QString url    = m_urlInput->text().trimmed();
     if (url.isEmpty()) {
-        m_statusBadge->setStyleSheet(m_statusBadge->styleSheet() +
-            "color: #F44747;");
+        m_statusBadge->setStyleSheet(QString(
+            "background: %1; color: %2; padding: 5px 12px; "
+            "border-top: 1px solid %3; border-bottom: 1px solid %3; "
+            "font-size: 11px; font-weight: 600;")
+            .arg(pal.chromeBg, pal.errorFg, pal.bg));
         m_statusBadge->setText("  ⚠ Enter a URL first.");
         m_urlInput->setFocus();
         return;
@@ -245,6 +280,10 @@ void RestClient::executeRequest(const QString &httpText) {
 }
 
 void RestClient::parseAndSend(const QString &block) {
+    // One palette lookup per request — all the "Sending…" / response
+    // styles below reuse it instead of calling npPalette() repeatedly.
+    const NpPalette pal = npPalette();
+
     QStringList lines = block.split('\n');
     if (lines.isEmpty()) return;
 
@@ -284,17 +323,20 @@ void RestClient::parseAndSend(const QString &block) {
         req.setRawHeader(it.key().toUtf8(), it.value().toUtf8());
 
     m_output->clear();
-    m_output->append(QString("<span style='color:#569CD6; font-weight:600;'>%1</span> "
-                             "<span style='color:#4EC9B0;'>%2</span>")
-                         .arg(method, url));
-    m_output->append("<span style='color:#808080;'>Sending…</span>");
+    // Inline HTML colors for the response stream — use accent for the
+    // verb and text for the URL so both themes stay readable.
+    m_output->append(QString("<span style='color:%1; font-weight:600;'>%2</span> "
+                             "<span style='color:%3;'>%4</span>")
+                         .arg(pal.accent, method, pal.text, url));
+    m_output->append(QString("<span style='color:%1;'>Sending…</span>").arg(pal.textMuted));
 
     m_sendBtn->setEnabled(false);
     m_statusBadge->setText("  ⏳ Sending…");
-    m_statusBadge->setStyleSheet(
-        "background: #252526; color: #DCDCAA; padding: 5px 12px; "
-        "border-top: 1px solid #1E1E1E; border-bottom: 1px solid #1E1E1E; "
-        "font-size: 11px; font-weight: 600;");
+    m_statusBadge->setStyleSheet(QString(
+        "background: %1; color: %2; padding: 5px 12px; "
+        "border-top: 1px solid %3; border-bottom: 1px solid %3; "
+        "font-size: 11px; font-weight: 600;")
+        .arg(pal.chromeBg, pal.warningFg, pal.bg));
 
     QElapsedTimer timer;
     timer.start();
@@ -318,37 +360,46 @@ void RestClient::parseAndSend(const QString &block) {
         return;
     }
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply, timer]() {
+    // Capture the palette by value into the finished lambda so the
+    // response-time restyle doesn't need another npPalette() call.
+    connect(reply, &QNetworkReply::finished, this, [this, reply, timer, pal]() {
         qint64 elapsed = timer.elapsed();
         int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         QString reason = reply->attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString();
         QByteArray responseBody = reply->readAll();
         qint64 bytes = responseBody.size();
 
-        QString statusColor = (status >= 200 && status < 300) ? "#4EC9B0"
-                            : (status >= 300 && status < 400) ? "#9CDCFE"
-                            : (status >= 400 && status < 500) ? "#DCDCAA"
-                            : (status >= 500)                 ? "#F44747"
-                            :                                   "#808080";
+        // Semantic status colors — 2xx success, 3xx info, 4xx warning,
+        // 5xx error. Pulls from the palette cached in the request slot
+        // so Light/Dark themes each get theme-appropriate shades.
+        QString statusColor = (status >= 200 && status < 300) ? pal.successFg
+                            : (status >= 300 && status < 400) ? pal.accent
+                            : (status >= 400 && status < 500) ? pal.warningFg
+                            : (status >= 500)                 ? pal.errorFg
+                            :                                   pal.textMuted;
 
         m_statusBadge->setStyleSheet(QString(
-            "background: #252526; color: %1; padding: 5px 12px; "
-            "border-top: 1px solid #1E1E1E; border-bottom: 1px solid #1E1E1E; "
-            "font-size: 11px; font-weight: 600;").arg(statusColor));
+            "background: %1; color: %2; padding: 5px 12px; "
+            "border-top: 1px solid %3; border-bottom: 1px solid %3; "
+            "font-size: 11px; font-weight: 600;")
+            .arg(pal.chromeBg, statusColor, pal.bg));
         const QString sizeDisp = bytes < 1024 ? QString("%1 B").arg(bytes)
                                : bytes < 1024 * 1024 ? QString("%1 KB").arg(bytes / 1024.0, 0, 'f', 1)
                                :                       QString("%1 MB").arg(bytes / 1024.0 / 1024.0, 0, 'f', 2);
         m_statusBadge->setText(QString("  %1 %2  ·  %3 ms  ·  %4")
                                    .arg(status).arg(reason).arg(elapsed).arg(sizeDisp));
 
-        m_output->append(QString("\n<span style='color:#808080;'>── Response Headers ──</span>"));
+        m_output->append(QString("\n<span style='color:%1;'>── Response Headers ──</span>")
+                            .arg(pal.textMuted));
         for (const auto &pair : reply->rawHeaderPairs()) {
-            m_output->append(QString("<span style='color:#9CDCFE;'>%1</span>: %2")
-                             .arg(QString::fromUtf8(pair.first).toHtmlEscaped(),
+            m_output->append(QString("<span style='color:%1;'>%2</span>: %3")
+                             .arg(pal.accent,
+                                  QString::fromUtf8(pair.first).toHtmlEscaped(),
                                   QString::fromUtf8(pair.second).toHtmlEscaped()));
         }
 
-        m_output->append(QString("\n<span style='color:#808080;'>── Response Body ──</span>\n"));
+        m_output->append(QString("\n<span style='color:%1;'>── Response Body ──</span>\n")
+                            .arg(pal.textMuted));
         QJsonDocument doc = QJsonDocument::fromJson(responseBody);
         if (!doc.isNull()) {
             m_output->append(doc.toJson(QJsonDocument::Indented));

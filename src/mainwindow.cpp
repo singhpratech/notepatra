@@ -1778,27 +1778,33 @@ void MainWindow::buildMenus() {
     // Windows AppsUseLightTheme / GNOME color-scheme and renders Light
     // or Dark accordingly. It's the default for fresh installs.
     auto *themeMenu = settings->addMenu("&Theme");
-    themeMenu->addAction("System (follow OS)", this, [this]() {
-        Config::instance().theme = "System";
-        Config::instance().save();
+    // Exclusive action group so exactly ONE theme shows a checkmark at
+    // any time — the user can see at a glance which theme is active,
+    // matching standard Qt / GNOME / macOS menu conventions.
+    auto *themeGroup = new QActionGroup(this);
+    themeGroup->setExclusive(true);
+
+    auto addTheme = [&](const QString &label, const QString &configKey,
+                        const std::function<void()> &apply) {
+        auto *act = themeMenu->addAction(label);
+        act->setCheckable(true);
+        themeGroup->addAction(act);
+        if (Config::instance().theme.compare(configKey, Qt::CaseInsensitive) == 0)
+            act->setChecked(true);
+        connect(act, &QAction::triggered, this, [configKey, apply]() {
+            Config::instance().theme = configKey;
+            Config::instance().save();
+            apply();
+        });
+    };
+
+    addTheme("System (follow OS)", "System", [this]() {
         applyThemeToAll(resolveTheme("System"));
     });
     themeMenu->addSeparator();
-    themeMenu->addAction("Light", this, [this]() {
-        Config::instance().theme = "Light";
-        Config::instance().save();
-        applyThemeToAll(lightTheme());
-    });
-    themeMenu->addAction("Dark", this, [this]() {
-        Config::instance().theme = "Dark";
-        Config::instance().save();
-        applyThemeToAll(darkTheme());
-    });
-    themeMenu->addAction("Monokai", this, [this]() {
-        Config::instance().theme = "Monokai";
-        Config::instance().save();
-        applyThemeToAll(monokaiTheme());
-    });
+    addTheme("Light",   "Light",   [this]() { applyThemeToAll(lightTheme()); });
+    addTheme("Dark",    "Dark",    [this]() { applyThemeToAll(darkTheme()); });
+    addTheme("Monokai", "Monokai", [this]() { applyThemeToAll(monokaiTheme()); });
     settings->addSeparator();
     auto *tabMenu = settings->addMenu("Tab Settings");
     tabMenu->addAction("Use Spaces", this, [E]() { if (auto *e = E()) e->setIndentationsUseTabs(false); });

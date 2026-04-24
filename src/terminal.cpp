@@ -1,5 +1,6 @@
 #include "terminal.h"
 #include "fonts.h"
+#include "theme_detect.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -171,26 +172,35 @@ static QString ansiToHtml(const QString &raw) {
 TerminalWidget::TerminalWidget(QWidget *parent) : QWidget(parent) {
     m_cwd = QDir::homePath();
 
+    // Theme-aware chrome (header strip + prompt pill + input box + buttons)
+    // so the panel integrates with Light theme. The QTextEdit *output* view
+    // itself stays dark regardless of theme — the ANSI palette in `kAnsi`
+    // is calibrated for a dark background (bright yellows / greens that
+    // turn unreadable on a pale canvas), and every mainstream IDE keeps
+    // its integrated terminal dark. We theme the frame, not the screen.
+    const NpPalette pal = npPalette();
+
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
     auto *header = new QLabel("  Terminal");
     header->setFixedHeight(24);
-    header->setStyleSheet(
-        "font-weight: 600; background: #252526; color: #4EC9B0; "
-        "padding: 3px 10px; border-bottom: 1px solid #1E1E1E; "
-        "font-size: 11px; letter-spacing: 0.05em;");
+    header->setStyleSheet(QString(
+        "font-weight: 600; background: %1; color: %2; "
+        "padding: 3px 10px; border-bottom: 1px solid %3; "
+        "font-size: 11px; letter-spacing: 0.05em;")
+        .arg(pal.chromeBg, pal.accent, pal.border));
     layout->addWidget(header);
 
     m_output = new QTextEdit;
     m_output->setReadOnly(true);
     QFont mono = notepatraCodeFont();
     m_output->setFont(mono);
-    // VS-Code-ish "Integrated Terminal" background with a little bottom
-    // padding so the last line doesn't hug the prompt. Use
-    // QTextEdit::setLineWrapMode so long output lines wrap rather than
-    // overflow horizontally.
+    // VS-Code-ish "Integrated Terminal" — intentionally dark in both
+    // themes so ANSI colour output stays legible. `kAnsi` above encodes
+    // VT100 colours tuned for #1E1E1E; flipping this to a Light surface
+    // would turn yellows to eye-bleach and light greys to invisible.
     m_output->setStyleSheet(
         "QTextEdit { background: #1E1E1E; color: #D4D4D4; border: none; "
         "padding: 8px 12px; selection-background-color: #264F78; "
@@ -202,35 +212,46 @@ TerminalWidget::TerminalWidget(QWidget *parent) : QWidget(parent) {
         "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }");
     layout->addWidget(m_output, 1);
 
-    // Colourful zsh-ish prompt: ❯ in teal, directory name in yellow,
-    // inside a rounded pill that spans the full terminal width.
+    // Colourful zsh-ish prompt: ❯ in accent, directory name in warm tone,
+    // inside a rounded pill that spans the full terminal width. Chrome
+    // colours come from the shared palette so Light theme gets a pale pill.
     auto *inputRow = new QHBoxLayout;
     inputRow->setContentsMargins(8, 6, 8, 8);
     inputRow->setSpacing(0);
 
     m_promptLabel = new QLabel();
     m_promptLabel->setFont(mono);
-    m_promptLabel->setStyleSheet(
-        "background: #252526; color: #DCDCAA; "
+    m_promptLabel->setStyleSheet(QString(
+        "background: %1; color: %2; "
         "padding: 6px 10px 6px 12px; border-top-left-radius: 6px; "
-        "border-bottom-left-radius: 6px; border: 1px solid #3E3E3E; "
-        "border-right: none;");
+        "border-bottom-left-radius: 6px; border: 1px solid %3; "
+        "border-right: none;")
+        .arg(pal.inputBg, pal.accent, pal.inputBorder));
     inputRow->addWidget(m_promptLabel);
 
     m_input = new QLineEdit;
     m_input->setFont(mono);
-    m_input->setStyleSheet(
-        "QLineEdit { background: #252526; color: #D4D4D4; "
-        "border: 1px solid #3E3E3E; border-left: none; "
+    m_input->setStyleSheet(QString(
+        "QLineEdit { background: %1; color: %2; "
+        "border: 1px solid %3; border-left: none; "
         "border-top-right-radius: 6px; border-bottom-right-radius: 6px; "
-        "padding: 6px 10px; selection-background-color: #264F78; }"
-        "QLineEdit:focus { border-color: #4EC9B0; }");
+        "padding: 6px 10px; selection-background-color: %4; "
+        "selection-color: %5; }"
+        "QLineEdit:focus { border-color: %6; }")
+        .arg(pal.inputBg, pal.inputFg, pal.inputBorder,
+             pal.selectionBg, pal.selectionFg, pal.inputFocus));
     m_input->setPlaceholderText("Type a command and press Enter…");
     inputRow->addWidget(m_input, 1);
     updatePrompt();
     auto *copyBtn = new QPushButton("Copy Output");
     copyBtn->setFixedHeight(26);
     copyBtn->setFixedWidth(90);
+    copyBtn->setStyleSheet(QString(
+        "QPushButton { background: %1; color: %2; "
+        "border: 1px solid %3; border-radius: 4px; "
+        "padding: 3px 8px; margin-left: 6px; }"
+        "QPushButton:hover { background: %4; }")
+        .arg(pal.btnBg, pal.btnFg, pal.btnBorder, pal.btnHover));
     inputRow->addWidget(copyBtn);
     layout->addLayout(inputRow);
 

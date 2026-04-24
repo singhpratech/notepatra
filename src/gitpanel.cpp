@@ -1,4 +1,5 @@
 #include "gitpanel.h"
+#include "theme_detect.h"
 
 #include <QApplication>
 #include <QColor>
@@ -37,14 +38,17 @@ struct StatusEntry {
 };
 
 void styleActionButton(QPushButton *button, const QString &accent) {
+    const NpPalette pal = npPalette();
     button->setFixedHeight(25);
     button->setStyleSheet(QString(
-        "QPushButton { background: #2B2B2B; color: #DCDCDC; border: 1px solid #3A3A3A; "
+        "QPushButton { background: %1; color: %2; border: 1px solid %3; "
         "border-radius: 6px; padding: 0 10px; }"
-        "QPushButton:hover:enabled { background: #323232; border: 1px solid %1; }"
-        "QPushButton:pressed:enabled { background: #242424; }"
-        "QPushButton:disabled { color: #666; border: 1px solid #303030; background: #242424; }")
-        .arg(accent));
+        "QPushButton:hover:enabled { background: %4; border: 1px solid %5; }"
+        "QPushButton:pressed:enabled { background: %6; }"
+        "QPushButton:disabled { color: %7; border: 1px solid %3; background: %6; }")
+        .arg(pal.btnBg, pal.btnFg, pal.btnBorder,
+             pal.btnHover, accent,
+             pal.bg, pal.textMuted));
 }
 
 QTreeWidgetItem *makeSectionItem(QTreeWidget *tree, const QString &name, const QString &detail, const QColor &accent) {
@@ -66,6 +70,7 @@ QTreeWidgetItem *makeSectionItem(QTreeWidget *tree, const QString &name, const Q
 }
 
 QTreeWidgetItem *makeChildSection(QTreeWidgetItem *parent, const QString &name, int count, const QColor &accent) {
+    const NpPalette pal = npPalette();
     auto *item = new QTreeWidgetItem(parent);
     item->setText(0, name);
     item->setText(1, count == 0 ? "clean" : QString::number(count));
@@ -75,13 +80,14 @@ QTreeWidgetItem *makeChildSection(QTreeWidgetItem *parent, const QString &name, 
     font.setBold(true);
     item->setFont(0, font);
     item->setForeground(0, accent);
-    item->setForeground(1, count == 0 ? QColor("#6C6C6C") : accent.lighter(120));
+    item->setForeground(1, count == 0 ? QColor(pal.textMuted) : accent.lighter(120));
     item->setExpanded(true);
     item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
     return item;
 }
 
 void addFileEntry(QTreeWidgetItem *parent, const StatusEntry &entry) {
+    const NpPalette pal = npPalette();
     auto *item = new QTreeWidgetItem(parent);
     item->setText(0, entry.displayPath);
     item->setText(1, entry.state);
@@ -90,19 +96,23 @@ void addFileEntry(QTreeWidgetItem *parent, const StatusEntry &entry) {
     item->setData(0, PathRole, entry.actualPath);
     item->setForeground(0, entry.color);
     item->setForeground(1, entry.color);
-    item->setForeground(2, QColor("#A5A5A5"));
+    item->setForeground(2, QColor(pal.textMuted));
 }
 
 QColor colorForGitCode(QChar code, bool staged) {
+    const NpPalette pal = npPalette();
     switch (code.toLatin1()) {
-    case 'A': return QColor("#76D275");
-    case 'M': return staged ? QColor("#F2C14E") : QColor("#FFD98A");
-    case 'D': return QColor("#F48771");
-    case 'R': return QColor("#7EC8FF");
-    case 'C': return QColor("#7EC8FF");
-    case 'U': return QColor("#FF8FB1");
-    case 'T': return QColor("#C792EA");
-    default: return QColor("#B0BEC5");
+    case 'A': return QColor(pal.successFg);
+    // Unstaged modifications visually distinct from staged ones: lighten
+    // the warning tone so users can tell at a glance which column they
+    // belong to, without losing theme awareness.
+    case 'M': return staged ? QColor(pal.warningFg) : QColor(pal.warningFg).lighter(115);
+    case 'D': return QColor(pal.errorFg);
+    case 'R': return QColor(pal.accent);
+    case 'C': return QColor(pal.accent);
+    case 'U': return QColor(pal.errorFg);  // conflicts are always red
+    case 'T': return QColor(pal.accent);
+    default: return QColor(pal.textMuted);
     }
 }
 
@@ -116,6 +126,11 @@ QString normalizedPathFromStatus(const QString &pathInfo) {
 }  // namespace
 
 GitPanel::GitPanel(QWidget *parent) : QWidget(parent) {
+    // Pull the theme-aware palette once at init — every setStyleSheet
+    // call below interpolates from this snapshot so Light theme stops
+    // bleeding dark VS-Code colors into a warm-paper canvas.
+    const NpPalette pal = npPalette();
+
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
@@ -126,16 +141,18 @@ GitPanel::GitPanel(QWidget *parent) : QWidget(parent) {
     // they are.
     m_sourceControlHeader = new QLabel("  SOURCE CONTROL");
     m_sourceControlHeader->setFixedHeight(24);
-    m_sourceControlHeader->setStyleSheet(
-        "background: #252526; color: #CCCCCC; padding: 4px 10px; "
-        "font-size: 11px; font-weight: 600; letter-spacing: 0.08em;");
+    m_sourceControlHeader->setStyleSheet(QString(
+        "background: %1; color: %2; padding: 4px 10px; "
+        "font-size: 11px; font-weight: 600; letter-spacing: 0.08em;")
+        .arg(pal.chromeBg, pal.text));
     layout->addWidget(m_sourceControlHeader);
 
     m_branchLabel = new QLabel("  No repository open");
     m_branchLabel->setFixedHeight(28);
-    m_branchLabel->setStyleSheet(
-        "background: #1E1E1E; color: #4EC9B0; padding: 4px 10px; "
-        "font-size: 12px; font-weight: 600;");
+    m_branchLabel->setStyleSheet(QString(
+        "background: %1; color: %2; padding: 4px 10px; "
+        "font-size: 12px; font-weight: 600;")
+        .arg(pal.bg, pal.accent));
     layout->addWidget(m_branchLabel);
 
     // ─── Commit-message box — the star of the VS Code SCM UX ──────────
@@ -152,21 +169,27 @@ GitPanel::GitPanel(QWidget *parent) : QWidget(parent) {
     m_commitMessage = new QPlainTextEdit;
     m_commitMessage->setPlaceholderText("Message (Ctrl+Enter to commit)");
     m_commitMessage->setFixedHeight(72);
-    m_commitMessage->setStyleSheet(
-        "QPlainTextEdit { background: #1E1E1E; color: #D4D4D4; "
-        "border: 1px solid #3C3C3C; border-radius: 4px; padding: 6px 8px; "
+    m_commitMessage->setStyleSheet(QString(
+        "QPlainTextEdit { background: %1; color: %2; "
+        "border: 1px solid %3; border-radius: 4px; padding: 6px 8px; "
         "font-size: 12px; }"
-        "QPlainTextEdit:focus { border-color: #4EC9B0; }");
+        "QPlainTextEdit:focus { border-color: %4; }")
+        .arg(pal.inputBg, pal.inputFg, pal.inputBorder, pal.inputFocus));
     commitLay->addWidget(m_commitMessage);
 
     m_commitVsCodeBtn = new QPushButton("✓  Commit");
     m_commitVsCodeBtn->setFixedHeight(30);
     m_commitVsCodeBtn->setCursor(Qt::PointingHandCursor);
-    m_commitVsCodeBtn->setStyleSheet(
-        "QPushButton { background: #16825D; color: #FFFFFF; border: none; "
+    // Commit button uses successFg as its seated background — visually
+    // announces the positive action on both themes (dark-green on Dark,
+    // forest-green on Light) without hardcoding a specific hex.
+    m_commitVsCodeBtn->setStyleSheet(QString(
+        "QPushButton { background: %1; color: #FFFFFF; border: none; "
         "border-radius: 4px; font-weight: 600; font-size: 12px; }"
-        "QPushButton:hover { background: #1B9868; }"
-        "QPushButton:disabled { background: #333; color: #666; }");
+        "QPushButton:hover { background: %2; }"
+        "QPushButton:disabled { background: %3; color: %4; }")
+        .arg(pal.successFg, QColor(pal.successFg).lighter(115).name(),
+             pal.btnBg, pal.textMuted));
     m_commitVsCodeBtn->setEnabled(false);
     commitLay->addWidget(m_commitVsCodeBtn);
 
@@ -205,14 +228,16 @@ GitPanel::GitPanel(QWidget *parent) : QWidget(parent) {
 
     m_remoteLabel = new QLabel("  Open, clone, or initialize a repository to start.");
     m_remoteLabel->setFixedHeight(22);
-    m_remoteLabel->setStyleSheet(
-        "background: #202326; color: #7EC8FF; padding: 2px 8px; font-size: 11px;");
+    m_remoteLabel->setStyleSheet(QString(
+        "background: %1; color: %2; padding: 2px 8px; font-size: 11px;")
+        .arg(pal.chromeBg, pal.accent));
     layout->addWidget(m_remoteLabel);
 
     m_statusLabel = new QLabel("  Working tree is idle");
     m_statusLabel->setFixedHeight(22);
-    m_statusLabel->setStyleSheet(
-        "background: #252526; color: #9A9A9A; padding: 2px 8px; font-size: 11px;");
+    m_statusLabel->setStyleSheet(QString(
+        "background: %1; color: %2; padding: 2px 8px; font-size: 11px;")
+        .arg(pal.chromeBg, pal.textMuted));
     layout->addWidget(m_statusLabel);
 
     // All Git action buttons exist (for signal wiring + updateActionState)
@@ -249,16 +274,17 @@ GitPanel::GitPanel(QWidget *parent) : QWidget(parent) {
     scmRow->setContentsMargins(10, 2, 10, 6);
     scmRow->setSpacing(4);
 
-    auto scmToolBtn = [](const QString &glyph, const QString &tip) {
+    auto scmToolBtn = [&pal](const QString &glyph, const QString &tip) {
         auto *b = new QPushButton(glyph);
         b->setFixedSize(26, 26);
         b->setToolTip(tip);
         b->setCursor(Qt::PointingHandCursor);
-        b->setStyleSheet(
-            "QPushButton { background: transparent; color: #CCCCCC; "
+        b->setStyleSheet(QString(
+            "QPushButton { background: transparent; color: %1; "
             "border: 1px solid transparent; border-radius: 4px; font-size: 13px; }"
-            "QPushButton:hover:enabled { background: #2D2D2D; border-color: #3E3E3E; }"
-            "QPushButton:disabled { color: #555; }");
+            "QPushButton:hover:enabled { background: %2; border-color: %3; }"
+            "QPushButton:disabled { color: %4; }")
+            .arg(pal.text, pal.btnHover, pal.btnBorder, pal.textMuted));
         return b;
     };
 
@@ -320,12 +346,15 @@ GitPanel::GitPanel(QWidget *parent) : QWidget(parent) {
     m_tree->header()->resizeSection(0, 260);
     m_tree->header()->resizeSection(1, 120);
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
-    m_tree->setStyleSheet(
-        "QTreeWidget { background: #17191C; color: #D8D8D8; border: none; "
-        "alternate-background-color: #1C1F22; outline: 0; }"
+    m_tree->setStyleSheet(QString(
+        "QTreeWidget { background: %1; color: %2; border: none; "
+        "alternate-background-color: %3; outline: 0; }"
         "QTreeWidget::item { padding: 3px 4px; }"
-        "QTreeWidget::item:selected { background: #203246; color: #F3F7FA; }"
-        "QHeaderView::section { background: #202326; color: #AFC3D6; border: none; padding: 5px; }");
+        "QTreeWidget::item:selected { background: %4; color: %5; }"
+        "QHeaderView::section { background: %6; color: %7; border: none; padding: 5px; }")
+        .arg(pal.bg, pal.text, pal.chromeBg,
+             pal.selectionBg, pal.selectionFg,
+             pal.chromeBg, pal.textMuted));
     layout->addWidget(m_tree, 1);
 
     connect(m_cloneBtn, &QPushButton::clicked, this, &GitPanel::cloneRepository);
@@ -440,6 +469,11 @@ void GitPanel::setRepoRoot(const QString &repoRoot, bool announce) {
 }
 
 void GitPanel::refreshTree() {
+    // Palette snapshot used for every section accent + inline text color
+    // below. Keeps the refresh cycle self-consistent even if the theme
+    // is swapped mid-session (panel is rebuilt on theme change).
+    const NpPalette pal = npPalette();
+
     m_tree->clear();
 
     if (!ensureRepo())
@@ -478,12 +512,12 @@ void GitPanel::refreshTree() {
         const QChar y = xy.at(1);
 
         if (xy == "??") {
-            untrackedEntries.push_back({pathInfo, actualPath, "Untracked", "new file", QColor("#76D275")});
+            untrackedEntries.push_back({pathInfo, actualPath, "Untracked", "new file", QColor(pal.successFg)});
             continue;
         }
 
         if (x == 'U' || y == 'U' || xy == "AA" || xy == "DD") {
-            conflictEntries.push_back({pathInfo, actualPath, "Conflict", QString("state %1").arg(xy), QColor("#FF8FB1")});
+            conflictEntries.push_back({pathInfo, actualPath, "Conflict", QString("state %1").arg(xy), QColor(pal.errorFg)});
             continue;
         }
 
@@ -543,11 +577,11 @@ void GitPanel::refreshTree() {
                            .arg(stashLines.size()));
 
     auto *workingRoot = makeSectionItem(m_tree, "Working Tree",
-                                        QDir::toNativeSeparators(m_repoRoot), QColor("#7EC8FF"));
-    auto *stagedRoot = makeChildSection(workingRoot, "Staged", stagedEntries.size(), QColor("#76D275"));
-    auto *unstagedRoot = makeChildSection(workingRoot, "Unstaged", unstagedEntries.size(), QColor("#F2C14E"));
-    auto *untrackedRoot = makeChildSection(workingRoot, "Untracked", untrackedEntries.size(), QColor("#4EC9B0"));
-    auto *conflictRoot = makeChildSection(workingRoot, "Conflicts", conflictEntries.size(), QColor("#FF8FB1"));
+                                        QDir::toNativeSeparators(m_repoRoot), QColor(pal.accent));
+    auto *stagedRoot = makeChildSection(workingRoot, "Staged", stagedEntries.size(), QColor(pal.successFg));
+    auto *unstagedRoot = makeChildSection(workingRoot, "Unstaged", unstagedEntries.size(), QColor(pal.warningFg));
+    auto *untrackedRoot = makeChildSection(workingRoot, "Untracked", untrackedEntries.size(), QColor(pal.accent));
+    auto *conflictRoot = makeChildSection(workingRoot, "Conflicts", conflictEntries.size(), QColor(pal.errorFg));
 
     for (const StatusEntry &entry : stagedEntries) addFileEntry(stagedRoot, entry);
     for (const StatusEntry &entry : unstagedEntries) addFileEntry(unstagedRoot, entry);
@@ -555,7 +589,7 @@ void GitPanel::refreshTree() {
     for (const StatusEntry &entry : conflictEntries) addFileEntry(conflictRoot, entry);
 
     auto *branchRoot = makeSectionItem(m_tree, "Branches",
-                                       QString("%1 local").arg(branchLines.size()), QColor("#F2C14E"));
+                                       QString("%1 local").arg(branchLines.size()), QColor(pal.warningFg));
     for (const QString &line : branchLines) {
         const bool current = line.startsWith('*');
         const QString trimmed = line.mid(current ? 1 : 0).trimmed();
@@ -570,7 +604,7 @@ void GitPanel::refreshTree() {
         item->setText(2, details);
         item->setData(0, KindRole, BranchItem);
         item->setData(0, MetaRole, branchName);
-        item->setForeground(0, current ? QColor("#7EC8FF") : QColor("#D6D6D6"));
+        item->setForeground(0, current ? QColor(pal.accent) : QColor(pal.text));
         if (current) {
             QFont font = item->font(0);
             font.setBold(true);
@@ -580,7 +614,7 @@ void GitPanel::refreshTree() {
     }
 
     auto *remoteRoot = makeSectionItem(m_tree, "Remotes",
-                                       QString("%1 configured").arg(remoteFetchUrls.size()), QColor("#4EC9B0"));
+                                       QString("%1 configured").arg(remoteFetchUrls.size()), QColor(pal.accent));
     for (auto it = remoteFetchUrls.constBegin(); it != remoteFetchUrls.constEnd(); ++it) {
         auto *item = new QTreeWidgetItem(remoteRoot);
         item->setText(0, it.key());
@@ -588,12 +622,12 @@ void GitPanel::refreshTree() {
         item->setText(2, QString("%1 | %2").arg(it.value(), remotePushUrls.value(it.key(), it.value())));
         item->setData(0, KindRole, RemoteItem);
         item->setData(0, MetaRole, it.key());
-        item->setForeground(0, QColor("#AEE3FF"));
-        item->setForeground(1, QColor("#7FDBB6"));
+        item->setForeground(0, QColor(pal.accent));
+        item->setForeground(1, QColor(pal.successFg));
     }
 
     auto *stashRoot = makeSectionItem(m_tree, "Stashes",
-                                      QString("%1 entries").arg(stashLines.size()), QColor("#C792EA"));
+                                      QString("%1 entries").arg(stashLines.size()), QColor(pal.accent));
     for (const QString &line : stashLines) {
         const QString stashName = line.section(':', 0, 0).trimmed();
         const QString detail = line.section(':', 2).trimmed();
@@ -603,8 +637,8 @@ void GitPanel::refreshTree() {
         item->setText(2, detail);
         item->setData(0, KindRole, StashItem);
         item->setData(0, MetaRole, stashName);
-        item->setForeground(0, QColor("#D5B6FF"));
-        item->setForeground(1, QColor("#C792EA"));
+        item->setForeground(0, QColor(pal.text));
+        item->setForeground(1, QColor(pal.accent));
     }
 
     m_tree->expandAll();

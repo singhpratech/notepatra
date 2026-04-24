@@ -455,13 +455,44 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // name lives on the welcome screen + the dock's content speaks for
     // itself. Height bumped so the underline for Coding Mode doesn't
     // clip the ascenders.
+    // ── Header row: label on the left, close-dock (✕) on the right ──
+    // Close hides the dock but PRESERVES the chat session (m_messages is
+    // not cleared). Reset (in the model row below) still clears the
+    // session. This mirrors how every real chat app works — closing
+    // the window != starting over.
+    auto *headerRow = new QWidget;
+    headerRow->setFixedHeight(28);
+    headerRow->setStyleSheet(QString("background: %1;").arg(pal.chromeBg));
+    auto *headerLay = new QHBoxLayout(headerRow);
+    headerLay->setContentsMargins(0, 0, 0, 0);
+    headerLay->setSpacing(0);
     m_headerLabel = new QLabel("  AI");
-    m_headerLabel->setFixedHeight(28);
     m_headerLabel->setStyleSheet(QString(
         "font-weight: 600; background: %1; color: %2; "
         "padding: 6px 10px; letter-spacing: 1px; font-size: 11px;")
         .arg(pal.chromeBg, pal.headerFg));
-    layout->addWidget(m_headerLabel);
+    headerLay->addWidget(m_headerLabel, 1);
+
+    auto *closeBtn = new QPushButton(QStringLiteral("×"));
+    closeBtn->setFixedSize(28, 28);
+    closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setFlat(true);
+    closeBtn->setToolTip("Close the AI dock (session stays — press Reset to clear chat)");
+    closeBtn->setStyleSheet(QString(
+        "QPushButton { background: %1; color: %2; border: none; "
+        "  font-size: 18px; font-weight: 500; padding: 0 8px; } "
+        "QPushButton:hover { background: %3; color: %4; }")
+        .arg(pal.chromeBg, pal.muted, pal.recBtnBg, QStringLiteral("#FFFFFF")));
+    connect(closeBtn, &QPushButton::clicked, this, [this]() {
+        // Hide by walking up to the enclosing dock host (m_aiDockHost
+        // in MainWindow is our grandparent via QVBoxLayout → QWidget).
+        QWidget *host = parentWidget();
+        if (host) host->setVisible(false);
+        // Do NOT clear m_messages — the chat is preserved for when the
+        // user reopens via Ctrl+Shift+A or the menu.
+    });
+    headerLay->addWidget(closeBtn, 0, Qt::AlignRight);
+    layout->addWidget(headerRow);
 
     auto *modelRow = new QHBoxLayout;
     modelRow->setContentsMargins(8, 4, 8, 2);
