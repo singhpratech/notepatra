@@ -33,6 +33,8 @@ static int s_matchVecId   = qRegisterMetaType<QVector<ProjectSearchMatch>>("QVec
 #include <QProgressBar>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QTextStream>
 #include <QTimer>
 #include <QTreeWidget>
@@ -466,9 +468,42 @@ void ProjectSearch::buildUi() {
     const auto p = psearchPalette();
     setStyleSheet(QString("ProjectSearch { background: %1; }").arg(p.bg));
 
-    auto *root = new QVBoxLayout(this);
+    // ── Page-level scroll area ──────────────────────────────────────
+    // The WHOLE Project Search tab scrolls vertically when results
+    // grow beyond the visible area. The match tree reports its own
+    // ideal height (one row per item, expanded) so it spills to the
+    // bottom of the page and the page-scrollbar takes over. This is
+    // the behaviour modern code editors (VS Code, Cursor, Sublime)
+    // use for their search views — one scroll, not two.
+    auto *outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
+
+    auto *scrollArea = new QScrollArea(this);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    scrollArea->setStyleSheet(QString(
+        "QScrollArea { background: %1; border: none; } "
+        "QScrollBar:vertical { background: %1; width: 12px; margin: 0; } "
+        "QScrollBar::handle:vertical { background: %2; border-radius: 5px; min-height: 30px; } "
+        "QScrollBar::handle:vertical:hover { background: %3; } "
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; } "
+        "QScrollBar:horizontal { background: %1; height: 12px; margin: 0; } "
+        "QScrollBar::handle:horizontal { background: %2; border-radius: 5px; min-width: 30px; } "
+        "QScrollBar::handle:horizontal:hover { background: %3; } "
+        "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }"
+    ).arg(p.bg, p.inputBorder, p.accent));
+
+    auto *content = new QWidget;
+    content->setStyleSheet(QString("background: %1;").arg(p.bg));
+    auto *root = new QVBoxLayout(content);
     root->setContentsMargins(20, 18, 20, 18);
     root->setSpacing(14);
+
+    scrollArea->setWidget(content);
+    outer->addWidget(scrollArea);
 
     // ── Title + hint ─────────────────────────────────────────────────
     auto *title = new QLabel("🔍 Project Search");
@@ -613,32 +648,43 @@ void ProjectSearch::buildUi() {
     m_results->setFont(notepatraCodeFont());
     m_results->setUniformRowHeights(true);
     m_results->setAlternatingRowColors(false);
-    // Expand to fill available vertical space, scroll when content
-    // exceeds that space. PerPixel scrolling is smoother than the
-    // default PerItem — matters when there are thousands of matches.
-    m_results->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    m_results->setMinimumHeight(320);
-    m_results->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
-    m_results->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
-    m_results->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    m_results->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    // Styled scrollbar so it doesn't clash with the Clay palette.
+    // NO internal scrollbars — the tree grows with its content and the
+    // outer page scroll handles overflow. This is the "one scroll, not
+    // two" UX the user asked for.
+    m_results->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_results->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_results->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     m_results->setStyleSheet(QString(
         "QTreeWidget { background: %1; color: %2; border: 1px solid %3; "
         "border-radius: 10px; padding: 6px; } "
         "QTreeWidget::item { padding: 4px 6px; border: none; } "
-        "QTreeWidget::item:selected { background: %4; color: #FFFFFF; } "
-        "QScrollBar:vertical { background: %1; width: 12px; margin: 0; } "
-        "QScrollBar::handle:vertical { background: %3; border-radius: 5px; min-height: 30px; } "
-        "QScrollBar::handle:vertical:hover { background: %4; } "
-        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; } "
-        "QScrollBar:horizontal { background: %1; height: 12px; margin: 0; } "
-        "QScrollBar::handle:horizontal { background: %3; border-radius: 5px; min-width: 30px; } "
-        "QScrollBar::handle:horizontal:hover { background: %4; } "
-        "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }"
+        "QTreeWidget::item:selected { background: %4; color: #FFFFFF; }"
     ).arg(p.cardBg, p.textPrimary, p.inputBorder, p.accent));
     m_results->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
-    root->addWidget(m_results, /*stretch*/ 10);   // bigger stretch = bigger share of free space
+    root->addWidget(m_results);   // no stretch — size-to-content
+
+    // Whenever rows are added/removed/expanded/collapsed, recompute the
+    // tree's preferred height so it grows to fit every visible row and
+    // the outer QScrollArea takes over from there. Without this Qt
+    // gives the tree its default ~200 px and everything below clips.
+    auto resizeTree = [this]() {
+        const int rowH = qMax(20, m_results->sizeHintForRow(0));
+        int visible = 0;
+        for (int i = 0; i < m_results->topLevelItemCount(); ++i) {
+            visible++;   // parent row
+            QTreeWidgetItem *top = m_results->topLevelItem(i);
+            if (top->isExpanded()) visible += top->childCount();
+        }
+        if (visible < 1) visible = 1;
+        // Add padding for the border/margins we applied via stylesheet.
+        const int h = rowH * visible + 16;
+        m_results->setFixedHeight(h);
+    };
+    m_resizeTree = resizeTree;
+    connect(m_results, &QTreeWidget::itemExpanded,  this, [this]() { m_resizeTree(); });
+    connect(m_results, &QTreeWidget::itemCollapsed, this, [this]() { m_resizeTree(); });
+    // Initial compact height so the widget has a reasonable starting look
+    m_results->setFixedHeight(240);
 
     connect(m_results, &QTreeWidget::itemDoubleClicked, this,
             [this](QTreeWidgetItem *item, int) {
@@ -723,6 +769,7 @@ void ProjectSearch::startSearch() {
 
     m_results->clear();
     m_fileItems.clear();
+    if (m_resizeTree) m_resizeTree();
     m_matchesSoFar = 0;
     m_filesWithMatches = 0;
     m_searchBtn->setEnabled(false);
@@ -819,6 +866,7 @@ void ProjectSearch::onFileNameMatch(const QString &filePath) {
     child->setData(0, Qt::UserRole + 1, 1);
     child->setForeground(0, QBrush(QColor(p.textSecondary)));
     ++m_filesWithMatches;
+    if (m_resizeTree) m_resizeTree();
 }
 
 void ProjectSearch::onMatches(const QVector<ProjectSearchMatch> &matches) {
@@ -841,6 +889,7 @@ void ProjectSearch::onMatches(const QVector<ProjectSearchMatch> &matches) {
         child->setData(0, Qt::UserRole + 2, col1);
         ++m_matchesSoFar;
     }
+    if (m_resizeTree) m_resizeTree();
 }
 
 static QString psearchFormatElapsed(qint64 ms) {

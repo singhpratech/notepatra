@@ -10,6 +10,7 @@
 #include <QHash>
 #include <QElapsedTimer>
 #include <atomic>
+#include <functional>
 
 class QTimer;
 
@@ -140,6 +141,11 @@ private:
     QHash<QString, QTreeWidgetItem*> m_fileItems;  // file path → tree parent
     int m_matchesSoFar = 0;
     int m_filesWithMatches = 0;
+
+    // Called every time the match tree gains/loses rows — resizes
+    // the tree to fit all visible rows so the outer page scroll
+    // (one-scroll UX) can take over.
+    std::function<void()> m_resizeTree;
 
     // ── Live status refresher ────────────────────────────────────────
     // Worker ticks every 8 files; between ticks, the elapsed-ms display
