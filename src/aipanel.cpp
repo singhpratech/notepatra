@@ -87,9 +87,13 @@ static AiPalette aiPalette() {
         p.userFg       = "#FFFFFF";
         p.userBorder   = "#1177BB";
         p.userLabel    = "#B0D8E8";
-        p.assistBg     = "#252526";
-        p.assistFg     = "#D4D4D4";
-        p.assistBorder = "#333";
+        // Assistant card background is DELIBERATELY lifted ~15 %% above the
+        // chat canvas (#1E1E1E) so the response visibly reads as a card,
+        // not a transparent panel blending with the page. Text on top
+        // stays at #E8E8E8 for high contrast (≈ 13:1).
+        p.assistBg     = "#2E2E31";
+        p.assistFg     = "#E8E8E8";
+        p.assistBorder = "#3F3F42";
         p.assistAccent = "#4EC9B0";
         p.errBg        = "#3A1F22";
         p.errFg        = "#FFD7D7";
@@ -365,45 +369,50 @@ QString messageTranscriptHtml(const QVector<AIPanel::ChatMessage> &messages,
     for (int i = 0; i < messages.size(); ++i) {
         const AIPanel::ChatMessage &message = messages.at(i);
         if (message.role == AIPanel::ChatMessage::User) {
-            // User turn — right-aligned accent pill, no "YOU" label (the
-            // right-alignment and colour already say "it's you"). Max
-            // width ~88 % of the column so long paragraphs wrap nicely.
+            // User turn — right-aligned card with accent fill. Background
+            // applied on the <td> via bgcolor for Qt rich-text reliability
+            // (same reason as the assistant card below — nested-div bg in
+            // Qt's CSS subset can drop).
             html += QString(
-                "<table class='msg' cellpadding='0' cellspacing='0'>"
+                "<table class='msg' cellpadding='0' cellspacing='0' style='margin-bottom:14px;'>"
                 "<tr><td align='right'>"
-                "<span class='bubble-user'><span class='message-plain'>%1</span></span>"
+                "<table cellpadding='0' cellspacing='0'><tr>"
+                "<td bgcolor='%2' style='padding:10px 16px; color:%3; font-size:13px; font-weight:500;'>"
+                "<div class='message-plain'>%1</div>"
+                "</td></tr></table>"
                 "</td></tr></table>")
-                .arg(plainTextHtml(message.text));
+                .arg(plainTextHtml(message.text), pal.userBg, pal.userFg);
             continue;
         }
 
         if (message.role == AIPanel::ChatMessage::Error) {
             html += QString(
-                "<table class='msg' cellpadding='0' cellspacing='0'>"
-                "<tr><td>"
-                "<div class='error-wrap'>"
-                "<div class='error-label'>ERROR</div>"
+                "<table class='msg' cellpadding='0' cellspacing='0' style='margin-bottom:14px;'>"
+                "<tr><td bgcolor='%2' style='padding:12px 14px; border-left:4px solid %3; color:%4;'>"
+                "<div style='color:%3; font-size:10px; font-weight:bold; letter-spacing:1px; margin-bottom:4px;'>ERROR</div>"
                 "<div class='message-plain'>%1</div>"
-                "</div></td></tr></table>")
-                .arg(plainTextHtml(message.text));
+                "</td></tr></table>")
+                .arg(plainTextHtml(message.text), pal.errBg, pal.errBorder, pal.errFg);
             continue;
         }
 
-        // Assistant turn — flat text with a thin left-stripe. Model
-        // label + subtle Copy link above the body, no border box.
+        // Assistant turn — card background applied DIRECTLY on the <td>.
+        // Qt's QTextBrowser rich-text engine renders <td> backgrounds
+        // reliably; nested-div backgrounds can silently drop in Qt's CSS
+        // subset, which is why the response read as "all black" before.
         html += QString(
-            "<table class='msg' cellpadding='0' cellspacing='0'>"
-            "<tr><td>"
-            "<div class='assistant-wrap'>"
-            "<table width='100%%' cellpadding='0' cellspacing='0' class='assistant-head'>"
-            "<tr><td><span class='assistant-model'>%1</span></td>"
-            "<td align='right'><a class='copy-btn' href='copy://message/%2'>⧉ copy</a></td></tr>"
+            "<table class='msg' cellpadding='0' cellspacing='0' style='margin-bottom:14px;'>"
+            "<tr><td bgcolor='%4' style='padding:16px 18px; border-left:4px solid %5; border-top:1px solid %6; border-right:1px solid %6; border-bottom:1px solid %6; color:%7;'>"
+            "<table width='100%%' cellpadding='0' cellspacing='0'>"
+            "<tr><td><span style='color:%5; font-size:10px; font-weight:700; letter-spacing:1px; text-transform:uppercase;'>%1</span></td>"
+            "<td align='right'><a href='copy://message/%2' style='color:%8; font-size:10px; text-decoration:none; font-weight:600;'>⧉ copy</a></td></tr>"
             "</table>"
-            "<div class='assistant-content'>%3</div>"
-            "</div></td></tr></table>")
+            "<div class='assistant-content' style='margin-top:10px; padding-top:8px; border-top:1px solid %6; color:%7;'>%3</div>"
+            "</td></tr></table>")
             .arg(message.model.toHtmlEscaped(),
                  QString::number(i),
-                 markdownBodyHtml(message.text, i));
+                 markdownBodyHtml(message.text, i),
+                 pal.assistBg, pal.assistAccent, pal.assistBorder, pal.assistFg, pal.linkFg);
     }
 
     html += QStringLiteral("</body></html>");
