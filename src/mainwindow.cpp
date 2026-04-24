@@ -2787,7 +2787,7 @@ void MainWindow::buildMenus() {
         box.setTextFormat(Qt::RichText);
         box.setTextInteractionFlags(Qt::TextBrowserInteraction);
         box.setText(QString(
-            "<h2 style='margin:0 0 6px 0;'>Notepatra<sup style='font-size:14px;vertical-align:super;'>&trade;</sup> v%1</h2>"
+            "<h2 style='margin:0 0 6px 0;'>Notepatra v%1</h2>"
             "<p style='color:#888; margin:0 0 14px 0;'>The first editor built for the AI era.</p>"
             "<p>A blazing-fast native code editor for Linux, macOS, and Windows.<br>"
             "Native C++ + Rust. No Electron.<br>"

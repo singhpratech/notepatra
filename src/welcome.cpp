@@ -215,12 +215,7 @@ void WelcomeWidget::buildHeroSection(QVBoxLayout *parent) {
         heroLayout->addSpacing(6);
     }
 
-    // Notepatra™ — trademark superscript baked into the hero headline.
-    // Uses rich text so the ™ renders smaller + raised, matching the
-    // "PowerPoint" / "Photoshop" branding convention.
-    auto *title = new QLabel(
-        "Welcome to Notepatra<sup style='font-size:14px;'>™</sup>");
-    title->setTextFormat(Qt::RichText);
+    auto *title = new QLabel("Welcome to Notepatra");
     QFont titleFont = notepatraUiFont();
     titleFont.setPointSize(32);
     titleFont.setWeight(QFont::DemiBold);

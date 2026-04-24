@@ -20,6 +20,9 @@ static int s_matchVecId   = qRegisterMetaType<QVector<ProjectSearchMatch>>("QVec
 #include <QClipboard>
 #include <QDir>
 #include <QDirIterator>
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -230,6 +233,35 @@ void ProjectSearchWorker::search(const Params &p) {
         // massive archive files).
         if (fi.size() > p.maxFileSizeBytes) { tick(); return; }
 
+#ifdef Q_OS_WIN
+        // Skip OneDrive / cloud-storage placeholder files that would trigger
+        // a giant network download the moment we try to open them. These
+        // are the #1 cause of the "Project Search froze at 12 %" bug on
+        // Windows — the walker enumerates thousands of *.py / *.md files
+        // that are actually 0-byte stubs, each open() pulls GBs over WAN.
+        //   FILE_ATTRIBUTE_RECALL_ON_OPEN         = 0x00040000
+        //   FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS  = 0x00400000
+        //   FILE_ATTRIBUTE_OFFLINE                = 0x00001000
+        {
+            DWORD attr = GetFileAttributesW(
+                reinterpret_cast<const wchar_t*>(path.utf16()));
+            if (attr != INVALID_FILE_ATTRIBUTES &&
+                (attr & (0x00040000 | 0x00400000 | 0x00001000)) != 0) {
+                tick();
+                return;
+            }
+        }
+#endif
+
+        // Per-file elapsed watchdog — if any single file takes longer than
+        // 30 seconds to open + read + scan (antivirus holding it, network
+        // drive timing out, a 2 GB log with no newlines, whatever) we bail
+        // on it and move on. Prevents one pathological file from wedging
+        // the whole scan at N % forever.
+        QElapsedTimer perFileTimer;
+        perFileTimer.start();
+        constexpr qint64 kPerFileCapMs = 30000;
+
         // Skip binary files so we don't waste time (and memory) scanning
         // images / compiled objects / archives.
         if (p.skipBinary && looksBinary(path)) { tick(); return; }
@@ -322,6 +354,10 @@ void ProjectSearchWorker::search(const Params &p) {
         int lineNum = 0;
         while (!ts.atEnd()) {
             if (m_cancel.load()) break;
+            // Per-file watchdog — bail on a file that's eating too much
+            // wall-clock so the scan keeps progressing. Checked every line
+            // so a 2 GB log with occasional newlines can exit promptly.
+            if (perFileTimer.elapsed() > kPerFileCapMs) break;
             QString line = ts.readLine();
             ++lineNum;
             if (useRegex) {
