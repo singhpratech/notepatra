@@ -58,7 +58,7 @@ Notepatra started on Linux — because that's where the gap was. But great tools
 ## Features
 
 ### Editor — Battle-tested basics done right
-- **100+ file types** with full syntax highlighting across **44 language lexers** — Python, Rust, Go, C/C++, Java, JavaScript, TypeScript, SQL, HTML, CSS, JSON, YAML, Markdown, Bash, Fortran, VHDL, Verilog, MATLAB, LaTeX, and many more
+- **178 file extensions** mapped to the best available QScintilla lexer — Python, C/C++, Java, JavaScript, TypeScript, SQL, HTML, CSS, JSON, YAML, Markdown, Bash, Fortran, VHDL, Verilog, MATLAB, LaTeX, and more. Rust / Go / Swift / Kotlin currently fall back to the C-family lexer (close enough for brace/string/comment highlighting — not a Rust-native analyser)
 - **Tabbed editing** — drag, reorder, middle-click close, double-click empty area for new tab
 - **Tab right-click menu** — Close, Close Others, Close Left/Right, Save, Rename, Copy Full Path, Copy Filename, Copy Directory, Open Folder, Open Terminal, Read-Only toggle, **Color Tag** (7 colors + custom)
 - **3 themes** — Light, Dark, Monokai (Settings > Theme)
@@ -68,7 +68,7 @@ Notepatra started on Linux — because that's where the gap was. But great tools
 - **2 GB file support** — memory-mapped I/O via Rust, opens massive files without truncation
 - **Double-click word highlight** — double-click any word, all occurrences light up in orange
 - **Ctrl+B brace matching** — jump between matching `{}` `[]` `()`, highlights both braces + selects everything between
-- **Macro recording** — Start Recording (Ctrl+Shift+R), Stop, Playback (Ctrl+Shift+P), Run Multiple Times, Save/Load macros
+- **Macro recording** — Start Recording (Ctrl+Shift+M), Stop, Playback (Ctrl+Shift+P), Run Multiple Times, Save/Load macros
 - **Code folding**, **bookmarks**, **auto-complete**, **indent guides**, **line numbers**
 - **Custom scrollbars** — clean, modern, rounded
 
@@ -132,10 +132,11 @@ Every plugin opens in its own tab. Real UI, not just a menu click.
 - **Visual UX inspired by [ComparePlus](https://github.com/pnedev/comparePlus) by Pavel Nedev** — credit where credit is due.
 
 #### Git Integration (inbuilt)
-- **Changed files panel** — shows added, modified, deleted files with colors
-- **Branch name** display
-- **Push / Pull / Refresh** buttons
-- **Open on GitHub** — opens your repo in browser
+- **Staged / Unstaged trees** — porcelain v2 parser, inline `+` / `−` buttons per row to stage/unstage
+- **Branch chip with ahead/behind** — shows `main ↑3 ↓1` when diverged
+- **Commit box (Ctrl+Enter)** — line-count indicator, blocks commit when nothing's staged
+- **Sync row** — one-click Pull / Push / Fetch with live ahead/behind refresh
+- **Collapsible history + stash menu** — recent commits expandable; stash / pop / list / drop
 - **Git gutter** — green/yellow/red markers in editor margin for changed lines
 
 ### AI Powered — Local, private, no cloud
@@ -234,7 +235,7 @@ Notepatra auto-detects the running Ollama and picks the most CPU-friendly model 
 **Why this hybrid?**
 - **C++** because Qt and QScintilla are C++ — zero friction for UI
 - **Rust** because file I/O, text processing, and parsing must never crash — Rust's ownership system guarantees memory safety
-- **Result**: the speed of C++, the safety of Rust. The bare executable is **5.1 MB on Linux**, **3.0 MB on Windows**, **2.7 MB on macOS Apple Silicon** — the difference comes from compiler optimization (MSVC and clang strip more aggressively in release mode than gcc does). Downloads are 1.8 / 48 / 22 MB (Linux / Windows / Mac) once Qt is bundled for portability on the platforms that don't ship it system-wide.
+- **Result**: the speed of C++, the safety of Rust. The bare stripped executable is **2.7 MB on macOS Apple Silicon**, **3.0 MB on Windows x64**, and **5.1 MB on Linux x64** — MSVC and clang strip more aggressively in release mode than gcc does. Downloads are 1.8 MB (Linux tar.gz), 48 MB (Windows MSI/zip with bundled Qt + QScintilla DLLs), and 22 MB (macOS DMG with bundled Qt frameworks) once the per-platform dependencies are packaged for portability.
 
 ---
 

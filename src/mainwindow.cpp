@@ -2510,7 +2510,10 @@ void MainWindow::buildMenus() {
         m_macro->startRecording();
         macroUpdateActions();
         statusBar()->showMessage("Macro recording started...", 3000);
-    }, QKeySequence("Ctrl+Shift+R"));
+    }, QKeySequence("Ctrl+Shift+M"));
+    // Note: Ctrl+Shift+R is taken by REST Client (above). Macro recording
+    // uses Ctrl+Shift+M (M for Macro) to avoid the ambiguous-shortcut
+    // conflict that made REST unreachable on Windows.
 
     m_macroStopAct = macro->addAction("S&top Recording", this, [this]() {
         if (!m_macro || !m_macroRecording) return;
@@ -2735,10 +2738,10 @@ void MainWindow::buildMenus() {
             "  Alt+Shift+0     Unfold All\n\n"
             "PANELS\n"
             "  Ctrl+`          Terminal\n"
-            "  Ctrl+Shift+M    Markdown Preview\n"
             "  Ctrl+Shift+A    AI Assistant\n"
             "  Ctrl+Shift+R    REST Client\n"
-            "  Ctrl+Shift+E    File Explorer\n\n"
+            "  Ctrl+Shift+E    File Explorer\n"
+            "  Ctrl+Shift+M    Record Macro (Macro menu)\n\n"
             "TABS\n"
             "  Ctrl+Tab        Next Tab\n"
             "  Ctrl+Shift+Tab  Previous Tab\n"
