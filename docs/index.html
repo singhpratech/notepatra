@@ -1552,6 +1552,11 @@
                 <p>Memory-mapped file I/O. Aho-Corasick search. Myers diff. Zero crashes on 2 GB files. The heavy lifting runs in compiled Rust — no garbage collector, no runtime.</p>
             </div>
             <div class="feature-card">
+                <div class="feature-icon fi-green">🔄</div>
+                <h3>Safe auto-update <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
+                <p>Notepad++-style update flow: click <strong>Download</strong> in the in-app "update available" dialog and the right artifact for your OS + architecture is fetched, <strong>SHA-256 verified against the release's <code>SHA256SUMS</code></strong>, and handed to the native installer (MSI on Windows, DMG in Finder on macOS, file manager on Linux). <strong>Your current install is never touched by the updater</strong> — the OS installer does the swap under its own transactional rollback. Checksum mismatch, cancelled download, network drop, disk full — any failure leaves the running app exactly as it was.</p>
+            </div>
+            <div class="feature-card">
                 <div class="feature-icon fi-purple">📅</div>
                 <h3>Insert Date / Time</h3>
                 <p>Edit → Insert, or <code>Ctrl+F5</code>. Five formats: <code>2026-04-20 13:45</code>, <code>2026-04-20</code>, <code>April 20, 2026</code>, <code>13:45:09</code>, ISO-8601. Saves keystrokes in logs, changelogs, meeting notes.</p>

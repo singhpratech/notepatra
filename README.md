@@ -294,6 +294,32 @@ gh attestation verify notepatra-linux-x64.tar.gz --owner singhpratech
 
 Full instructions, threat model, and disclosure policy in [SECURITY.md](SECURITY.md).
 
+### Stay up to date — safe in-app updater
+
+Notepatra checks `github.com/singhpratech/notepatra/releases/latest` on launch (silent on no-match) and pops a Notepad++-style "A new version is available" dialog when something newer exists. Click **Download** and the updater will:
+
+1. **Pick the right artifact for your OS + architecture** — Linux x64 / ARM64 AppImage, macOS DMG, Windows MSI (with NSIS `.exe` and portable `.zip` as fallbacks).
+2. **Stream-download it** to `~/Downloads/*.part` with a cancellable progress dialog.
+3. **Fetch the release's `SHA256SUMS`** and verify the download's hash. **If the hash does not match, the `.part` file is deleted and you are shown an error — nothing on your system is modified.**
+4. **Atomic-rename `.part` → final name** once verified.
+5. **Hand off to the OS installer** — `msiexec /i` on Windows, `open <dmg>` on macOS (Finder drag to Applications), `xdg-open` on the Downloads folder on Linux so you drop the new AppImage in yourself.
+
+**Safety contract — the updater will never leave you with a broken install:**
+
+| Failure | What happens |
+|---|---|
+| No internet | Error dialog, zero disk writes |
+| Download cancelled | `.part` deleted, nothing else touched |
+| Power / crash mid-download | `.part` orphan in `~/Downloads`, current binary untouched |
+| SHA-256 mismatch | `.part` deleted, critical dialog shown, current binary untouched |
+| No `SHA256SUMS` in release | Refuses to auto-install, opens release page for manual verify |
+| No matching platform asset | Refuses to auto-install, opens release page |
+| OS installer cancelled or fails | Installer's own rollback — current binary untouched |
+
+The Notepatra process **never rewrites or replaces the running binary.** Only the OS installer you explicitly clicked through may do that, and those installers all have their own transactional rollback (MSI `MajorUpgrade`, DMG copy-on-drag, user-driven file-manager swap on Linux).
+
+**Check manually:** `Help → Check for Updates` or `?` menu. The check is also visible on first launch (silent if up to date).
+
 ### Build from source
 
 <details>
