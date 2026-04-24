@@ -4,6 +4,7 @@
 #include "mainwindow.h"
 #include "rustbridge.h"
 #include "searchresults.h"
+#include "theme_detect.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -108,7 +109,8 @@ void FindReplaceDialog::buildFindTab(QWidget *tab) {
     layout->addWidget(m_inSelection, 3, 0, 1, 2);
 
     m_resultLabel = new QLabel("");
-    m_resultLabel->setStyleSheet("color: #0066CC; font-weight: bold;");
+    const NpPalette pal = npPalette();
+    m_resultLabel->setStyleSheet(QString("color: %1; font-weight: bold;").arg(pal.accent));
     layout->addWidget(m_resultLabel, 3, 2, 1, 2);
 
     // Buttons

@@ -2,6 +2,7 @@
 #include "rustbridge.h"
 #include "npp_palette.h"
 #include "fonts.h"
+#include "theme_detect.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -12,13 +13,16 @@
 #include <Qsci/qscilexersql.h>
 
 SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
+    const NpPalette pal = npPalette();
+
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
     auto *header = new QLabel("  SQL Formatter");
     header->setFixedHeight(24);
-    header->setStyleSheet("font-weight: bold; background: #2D2D2D; color: #569CD6; padding: 2px 6px;");
+    header->setStyleSheet(QString("font-weight: bold; background: %1; color: %2; padding: 2px 6px;")
+                          .arg(pal.chromeBg, pal.accent));
     layout->addWidget(header);
 
     auto *optRow = new QHBoxLayout;
@@ -52,8 +56,9 @@ SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
     // BIG status banner — same style as FormatterPanel for consistency
     m_statusLabel = new QLabel("💡 Paste SQL into the panel below, choose dialect, click Format");
     m_statusLabel->setStyleSheet(
-        "background: #1e3a3a; color: #569CD6; padding: 8px 12px; "
-        "font-size: 13px; font-weight: 600; border-left: 4px solid #569CD6;");
+        QString("background: %1; color: %2; padding: 8px 12px; "
+                "font-size: 13px; font-weight: 600; border-left: 4px solid %2;")
+        .arg(pal.chromeBg, pal.accent));
     m_statusLabel->setFixedHeight(36);
     layout->addWidget(m_statusLabel);
 
@@ -69,19 +74,19 @@ SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
     m_output->setMarginLineNumbers(0, true);
     m_output->setFolding(QsciScintilla::BoxedTreeFoldStyle, 2);
     m_output->setCaretLineVisible(true);
-    m_output->setCaretLineBackgroundColor(QColor("#E8F5E9"));
+    m_output->setCaretLineBackgroundColor(QColor(pal.chromeBg));
 
     auto *lexer = new QsciLexerSQL(m_output);
     lexer->setDefaultFont(mono);
-    lexer->setDefaultPaper(QColor("#FFFFFF"));
-    lexer->setDefaultColor(QColor("#000000"));
+    lexer->setDefaultPaper(QColor(pal.cardBg));
+    lexer->setDefaultColor(QColor(pal.text));
     m_output->setLexer(lexer);
     // Apply Notepad++ palette so user-typed text isn't invisible
     applyNotepadPlusPalette(lexer, mono);
     // Belt-and-braces fallback colors
-    m_output->setPaper(QColor("#FFFFFF"));
-    m_output->setColor(QColor("#000000"));
-    m_output->setCaretForegroundColor(QColor("#000000"));
+    m_output->setPaper(QColor(pal.cardBg));
+    m_output->setColor(QColor(pal.text));
+    m_output->setCaretForegroundColor(QColor(pal.text));
 
     // Apply dialect keywords now and on dialect change
     applySqlDialectKeywords();
@@ -149,12 +154,13 @@ void SqlFmtPanel::doFormat() {
 void SqlFmtPanel::setStatus(const QString &text, bool isError) {
     if (!m_statusLabel) return;
     m_statusLabel->setText(text);
-    QString accent = isError ? "#F48771" : "#569CD6";
-    QString bg     = isError ? "#3a1e1e" : "#1e2d3a";
+    const NpPalette pal = npPalette();
+    QString accent = isError ? pal.errorFg : pal.accent;
+    QString bg     = pal.chromeBg;
     m_statusLabel->setStyleSheet(
         QString("background: %1; color: %2; padding: 8px 12px; "
                 "font-size: 13px; font-weight: 600; border-left: 4px solid %2;")
-        .arg(bg).arg(accent));
+        .arg(bg, accent));
 }
 
 // ─── Per-dialect SQL keyword sets ──────────────────────────────────────
