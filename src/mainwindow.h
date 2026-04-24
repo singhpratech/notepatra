@@ -37,6 +37,13 @@ public:
     SearchResultsPanel *searchResults() { return m_searchResults; }
     QSplitter *vertSplitter() { return m_vertSplitter; }
 
+    // Called by the single-instance bridge in main.cpp when a second
+    // `notepatra path/to/file` invocation forwards its args into the
+    // already-running process. Opens each file as a tab, jumps to
+    // `gotoLine` in the first file if > 0, then raises + activates
+    // the window so the user's double-click feels instant.
+    void handleRemoteOpen(const QStringList &paths, int gotoLine);
+
 signals:
     // Emitted after applyThemeToAll() has updated Config::theme +
     // the Scintilla editors + statusbar + Welcome + main-window stylesheet.

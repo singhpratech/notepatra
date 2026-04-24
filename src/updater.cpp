@@ -471,10 +471,13 @@ bool installReleaseInteractive(QWidget *parent,
     if (platform == "windows") {
         msg = QObject::tr(
             "<b>Download verified.</b><br><br>"
-            "The Notepatra %1 installer will launch now. Windows will "
-            "ask for permission — accept it to complete the install.<br><br>"
-            "Your current installation stays in place until the installer "
-            "finishes its own swap.")
+            "Notepatra %1 is ready to install.<br><br>"
+            "<b>This running copy of Notepatra will close now</b> so the "
+            "installer can replace it — otherwise Windows will refuse with "
+            "&ldquo;app already running.&rdquo; Make sure you've saved any "
+            "open files before continuing.<br><br>"
+            "The installer launches immediately after; Windows will ask for "
+            "permission — accept it to complete the install.")
               .arg(tagName);
     } else if (platform == "macos") {
         msg = QObject::tr(
@@ -500,8 +503,10 @@ bool installReleaseInteractive(QWidget *parent,
     confirm.setIcon(QMessageBox::Information);
     confirm.setTextFormat(Qt::RichText);
     confirm.setText(msg);
-    QPushButton *go = confirm.addButton(QObject::tr("Continue"),
-                                        QMessageBox::AcceptRole);
+    const QString goLabel = (platform == "windows")
+        ? QObject::tr("Close Notepatra && Install")
+        : QObject::tr("Continue");
+    QPushButton *go = confirm.addButton(goLabel, QMessageBox::AcceptRole);
     confirm.addButton(QObject::tr("Keep file, do it later"),
                       QMessageBox::RejectRole);
     confirm.setDefaultButton(go);
@@ -513,7 +518,22 @@ bool installReleaseInteractive(QWidget *parent,
         return false;
     }
 
-    return handoffToInstaller(parent, finalPath, platform);
+    const bool handedOff = handoffToInstaller(parent, finalPath, platform);
+
+    // On Windows the MSI / NSIS installer cannot overwrite a file that's
+    // still mapped by the running Notepatra.exe — it errors with "app
+    // already running" and the user has to kill the app manually. Quit
+    // now that the installer is spawned so it has a clean shot at the
+    // binary. macOS drags Notepatra.app into /Applications (no handle on
+    // the running bundle), and Linux just shows the folder, so no quit
+    // is needed there.
+    if (handedOff && platform == "windows") {
+        // Give the detached installer a beat to latch on to its own
+        // process before we pull our event loop out from under it.
+        QTimer::singleShot(500, qApp, &QCoreApplication::quit);
+    }
+
+    return handedOff;
 }
 
 } // namespace Updater

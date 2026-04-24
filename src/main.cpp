@@ -1,6 +1,12 @@
 #include <QApplication>
 #include <QFileInfo>
 #include <QMessageBox>
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QCryptographicHash>
 #include <cstdio>
 #include <csignal>
 #include <exception>
@@ -29,6 +35,17 @@ static void crashHandler(int sig) {
     // Re-raise to get default behavior (core dump etc)
     signal(sig, SIG_DFL);
     raise(sig);
+}
+
+// Per-user local-IPC name. Hashing the home path keeps the socket distinct
+// across user accounts on the same box (and across WSL / native Windows
+// sessions, where %USERNAME% can collide). Keep it short — Windows caps
+// named-pipe names at 256 chars but older Qt on Linux uses
+// /tmp/<name> and some filesystems are fussy.
+static QString singleInstanceServerName() {
+    const QByteArray salt = QDir::homePath().toUtf8();
+    const QByteArray h = QCryptographicHash::hash(salt, QCryptographicHash::Sha1).toHex();
+    return QStringLiteral("notepatra-") + QString::fromLatin1(h.left(16));
 }
 
 int main(int argc, char *argv[]) {
@@ -92,6 +109,32 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // ─── Single-instance bridge ───
+    // If another Notepatra is already running for this user and the caller
+    // didn't pass --new, forward our args into it and exit. This is the
+    // fix for "Windows double-click spawns a fresh clone per file" — the
+    // shell verb invokes notepatra.exe with the file path, we hand it to
+    // the running instance, and the user sees a new tab instead of a new
+    // window.
+    const QString serverName = singleInstanceServerName();
+    if (!newWindow) {
+        QLocalSocket probe;
+        probe.connectToServer(serverName);
+        if (probe.waitForConnected(300)) {
+            QJsonObject payload;
+            QJsonArray arr;
+            for (const QString &p : filesToOpen) arr.append(p);
+            payload.insert("files", arr);
+            payload.insert("gotoLine", gotoLine);
+            const QByteArray body = QJsonDocument(payload).toJson(QJsonDocument::Compact);
+            probe.write(body);
+            probe.flush();
+            probe.waitForBytesWritten(500);
+            probe.disconnectFromServer();
+            return 0;
+        }
+    }
+
     // Apply theme override before window creation
     if (!themeOverride.isEmpty()) {
         Config::instance().theme = themeOverride;
@@ -107,6 +150,42 @@ int main(int argc, char *argv[]) {
     if (gotoLine > 0) {
         if (auto *e = window.currentEditor())
             e->gotoLine(gotoLine);
+    }
+
+    // Start the local server that future invocations will connect to.
+    // removeServer() clears a stale socket file from a previous crash —
+    // without it, listen() fails with AddressInUseError on Linux.
+    QLocalServer *server = nullptr;
+    if (!newWindow) {
+        QLocalServer::removeServer(serverName);
+        server = new QLocalServer(&window);
+        // SocketOption::UserAccessOption keeps the socket readable only by
+        // the current user on platforms that honour it.
+        server->setSocketOptions(QLocalServer::UserAccessOption);
+        if (server->listen(serverName)) {
+            QObject::connect(server, &QLocalServer::newConnection, &window, [server, &window]() {
+                while (QLocalSocket *client = server->nextPendingConnection()) {
+                    QObject::connect(client, &QLocalSocket::disconnected,
+                                     client, &QLocalSocket::deleteLater);
+                    // Wait briefly for the peer to send its JSON — the
+                    // caller in the if(waitForConnected) branch above is
+                    // synchronous so this is usually available on first
+                    // read.
+                    client->waitForReadyRead(500);
+                    const QByteArray body = client->readAll();
+                    const QJsonDocument doc = QJsonDocument::fromJson(body);
+                    if (doc.isObject()) {
+                        const QJsonObject o = doc.object();
+                        QStringList paths;
+                        for (const QJsonValue &v : o.value("files").toArray())
+                            paths.append(v.toString());
+                        const int line = o.value("gotoLine").toInt(-1);
+                        window.handleRemoteOpen(paths, line);
+                    }
+                    client->disconnectFromServer();
+                }
+            });
+        }
     }
 
     window.show();

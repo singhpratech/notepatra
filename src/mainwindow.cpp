@@ -1024,6 +1024,19 @@ void MainWindow::openFile(const QString &path) {
     updateRecentMenu();
 }
 
+void MainWindow::handleRemoteOpen(const QStringList &paths, int gotoLine) {
+    for (const QString &p : paths) openFile(p);
+    if (gotoLine > 0) {
+        if (auto *e = currentEditor()) e->gotoLine(gotoLine);
+    }
+    // Un-minimize if needed, then bring to front. On Windows this is the
+    // only reliable way to steal focus from the shell that just launched us.
+    if (isMinimized()) showNormal();
+    else show();
+    raise();
+    activateWindow();
+}
+
 void MainWindow::saveFile() {
     auto *e = currentEditor();
     if (!e) return;
