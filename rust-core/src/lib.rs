@@ -375,14 +375,12 @@ pub unsafe extern "C" fn npc_format_sql(
     let dialect_str = if dialect.is_null() {
         "ansi"
     } else {
-        unsafe { CStr::from_ptr(dialect) }.to_str().unwrap_or("ansi")
+        unsafe { CStr::from_ptr(dialect) }
+            .to_str()
+            .unwrap_or("ansi")
     };
-    let result = sql_fmt::format_sql_dialect(
-        input,
-        indent_width as usize,
-        uppercase != 0,
-        dialect_str,
-    );
+    let result =
+        sql_fmt::format_sql_dialect(input, indent_width as usize, uppercase != 0, dialect_str);
     text_to_result(result)
 }
 
