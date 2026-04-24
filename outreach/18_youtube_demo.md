@@ -112,7 +112,7 @@ Notepatra is licensed under GPL-3.0. Free forever. No telemetry. No cloud. No pa
   notepatra, code editor, notepad++, notepad++ alternative, linux code editor, mac code editor, windows code editor, c++, rust, qt5, qscintilla, ai code editor, local ai, ollama, cross platform editor, lightweight code editor, native code editor, gpl code editor, free code editor, open source editor, notepad, text editor, programming, syntax highlighting, plugin system, git integration
   ```
 
-- **Thumbnail**: Use the Notepatra icon as the background, big readable text overlay: "5 MB" + "Notepad++ for Linux/Mac/Win". Make it readable at 16:9 mobile thumbnail size. No clickbait faces.
+- **Thumbnail**: Use the Notepatra icon as the background, big readable text overlay: "~4 MB" + "AI-first code editor · Linux · macOS · Windows". Make it readable at 16:9 mobile thumbnail size. No clickbait faces.
 
 - **Category**: Science & Technology
 - **Language**: English
