@@ -338,6 +338,35 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_context.cpp")
     message(STATUS "Regression test enabled — target: test_ai_context")
 endif()
 
+# ─── Project Search deep regression test ────────────────────────────────
+# Exercises ProjectSearchWorker against a hermetic on-disk fixture:
+# coordinate correctness, heavy-dir pruning, binary skip, unicode columns,
+# whole-word regex, cancellation, and elapsed-ms reporting. Runs headless
+# via QT_QPA_PLATFORM=offscreen (set inside the test binary).
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_projectsearch.cpp")
+    add_executable(test_projectsearch
+        test_projectsearch.cpp
+        src/projectsearch.cpp
+        src/rustbridge.cpp
+    )
+    target_include_directories(test_projectsearch PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+    )
+    target_link_libraries(test_projectsearch PRIVATE
+        Qt5::Widgets        # projectsearch.cpp defines ProjectSearch (QWidget)
+        Qt5::Concurrent
+        ${RUST_LIB}
+    )
+    add_dependencies(test_projectsearch rust_core)
+    add_test(NAME test_projectsearch COMMAND $<TARGET_FILE:test_projectsearch>)
+    set_tests_properties(test_projectsearch PROPERTIES
+        LABELS "unit;search"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+    message(STATUS "Regression test enabled — target: test_projectsearch")
+endif()
+
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ollama.cpp")
     add_executable(test_ollama
         test_ollama.cpp

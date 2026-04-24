@@ -1354,7 +1354,7 @@ void MainWindow::buildMenus() {
     // ═══ SEARCH ═══
     auto *search = mb->addMenu("&Search");
     search->addAction("&Find...", this, [FD]() { FD()->showFind(); }, QKeySequence("Ctrl+F"));
-    search->addAction("Find in Files...", this, [FD]() { FD()->showFind(); }, QKeySequence("Ctrl+Shift+F"));
+    search->addAction("Find in Files...", this, [FD]() { FD()->showFindInFiles(); }, QKeySequence("Ctrl+Shift+F"));
     search->addAction("Find &Next", this, [this, FD]() {
         if (m_findDialog && !m_findDialog->findInput()->currentText().isEmpty()) m_findDialog->findNext();
         else FD()->showFind();
@@ -1533,8 +1533,17 @@ void MainWindow::buildMenus() {
     projectSearchAct->setStatusTip("Recursively search file names AND file contents across a folder tree, streamed to a clickable tree.");
     connect(projectSearchAct, &QAction::triggered, this, [this, E]() {
         auto *ps = new ProjectSearch;
+        // Folder cascade: current file's folder → file-explorer workspace root
+        // → $HOME as the last resort. Walking $HOME is ~always wrong (the
+        // walker sees millions of files), so we prefer a narrower default
+        // whenever one is available.
+        QString defaultFolder;
         if (auto *e = E(); e && !e->filePath().isEmpty())
-            ps->setFolder(QFileInfo(e->filePath()).path());
+            defaultFolder = QFileInfo(e->filePath()).path();
+        else if (m_explorer && !m_explorer->rootPath().isEmpty())
+            defaultFolder = m_explorer->rootPath();
+        if (!defaultFolder.isEmpty())
+            ps->setFolder(defaultFolder);
         connect(ps, &ProjectSearch::openFileAtLine, this,
                 [this](const QString &path, int line) {
             openFile(path);

@@ -765,10 +765,26 @@
             white-space: nowrap;
         }
 
-        /* Version history */
+        /* Version history — vertical timeline.
+           Latest card is fully expanded; every other card collapses to a
+           single clickable row (tag · date · one-line summary · chevron)
+           with the body revealed on click. A vertical rail with a colored
+           dot per release runs down the left edge. */
         .version-list {
             display: grid;
             gap: 20px;
+            position: relative;
+            padding-left: 40px;
+        }
+        .version-list::before {
+            content: "";
+            position: absolute;
+            left: 14px;
+            top: 18px;
+            bottom: 18px;
+            width: 2px;
+            background: var(--border);
+            border-radius: 1px;
         }
         .version-card {
             background: var(--card-bg);
@@ -777,9 +793,78 @@
             padding: 32px;
             position: relative;
         }
+        .version-card::before {
+            content: "";
+            position: absolute;
+            left: -33px;
+            top: 34px;
+            width: 14px;
+            height: 14px;
+            background: var(--card-bg);
+            border: 3px solid var(--border);
+            border-radius: 50%;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .version-card.latest::before {
+            background: var(--green);
+            border-color: var(--green);
+            box-shadow: 0 0 0 4px rgba(204,120,92,0.2);
+        }
         .version-card.latest {
             border-color: var(--green);
             box-shadow: 0 0 0 1px rgba(204,120,92,0.2), 0 12px 40px rgba(0,0,0,0.3);
+        }
+
+        /* Collapsed cards — only header visible, body hidden until click. */
+        .version-card:not(.latest) {
+            padding: 20px 28px;
+        }
+        .version-card:not(.latest) .version-header {
+            cursor: pointer;
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+            user-select: none;
+        }
+        .version-card:not(.latest) .version-header::after {
+            content: "▸";
+            color: var(--green);
+            font-size: 16px;
+            margin-left: auto;
+            transition: transform 0.2s;
+            display: inline-block;
+            opacity: 0.7;
+        }
+        .version-card:not(.latest):hover {
+            border-color: var(--green);
+        }
+        .version-card:not(.latest):hover::before {
+            border-color: var(--green);
+        }
+        .version-card:not(.latest) .version-changes,
+        .version-card:not(.latest) .version-actions {
+            display: none;
+        }
+        .version-card:not(.latest).expanded {
+            padding: 32px;
+        }
+        .version-card:not(.latest).expanded .version-header {
+            margin-bottom: 18px;
+            padding-bottom: 18px;
+            border-bottom: 1px solid var(--border);
+        }
+        .version-card:not(.latest).expanded .version-header::after {
+            transform: rotate(90deg);
+        }
+        .version-card:not(.latest).expanded .version-changes,
+        .version-card:not(.latest).expanded .version-actions {
+            display: block;
+        }
+        .version-card:not(.latest).expanded .version-changes {
+            display: grid;
+        }
+        .version-card:not(.latest).expanded .version-actions {
+            display: flex;
         }
         .version-header {
             display: flex;
@@ -2461,6 +2546,19 @@
                 console.warn('download counter failed:', err);
             });
         })();
+
+        // ─── Version timeline: collapse all non-latest release cards.
+        //   Clicking the header row toggles `.expanded` — CSS handles the
+        //   reveal + chevron rotation. No library, no framework, ~8 lines.
+        document.querySelectorAll('.version-card:not(.latest) .version-header').forEach(h => {
+            h.setAttribute('role', 'button');
+            h.setAttribute('tabindex', '0');
+            const toggle = () => h.parentElement.classList.toggle('expanded');
+            h.addEventListener('click', toggle);
+            h.addEventListener('keydown', e => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+            });
+        });
     </script>
 
     <!-- ═════════════════════════════════════════════════════════════════

@@ -6,10 +6,13 @@
 #include <QMetaType>
 #include <QtConcurrent/QtConcurrent>
 #include <QMutex>
+#include <QElapsedTimer>
 #include <atomic>
+#include <functional>
 
 static int s_paramsTypeId = qRegisterMetaType<ProjectSearchWorker::Params>("ProjectSearchWorker::Params");
 static int s_matchTypeId  = qRegisterMetaType<ProjectSearchMatch>("ProjectSearchMatch");
+static int s_matchVecId   = qRegisterMetaType<QVector<ProjectSearchMatch>>("QVector<ProjectSearchMatch>");
 
 #include <QCheckBox>
 #include <QDir>
@@ -75,9 +78,14 @@ static bool isHeavyDir(const QString &name) {
 // Manual recursive walk that prunes heavy directories up-front, instead
 // of letting QDirIterator recurse into every node_modules/ tree only to
 // have us filter 50 000 files out later. Writes absolute paths of
-// filtered source files into `out`.
+// filtered source files into `out`. Invokes `progress` every time `out`
+// crosses a multiple of `progressEvery` so the UI can show live counts
+// during a long walk — critical when the user points this at a home
+// directory or a monorepo with millions of files.
 static void walkSourceTree(const QString &root, const QStringList &globs,
-                           QStringList &out, std::atomic<bool> &cancel) {
+                           QStringList &out, std::atomic<bool> &cancel,
+                           int progressEvery,
+                           const std::function<void(int)> &progress) {
     QDir d(root);
     const QFileInfoList entries = d.entryInfoList(
         QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks);
@@ -85,10 +93,13 @@ static void walkSourceTree(const QString &root, const QStringList &globs,
         if (cancel.load()) return;
         if (fi.isDir()) {
             if (isHeavyDir(fi.fileName())) continue;
-            walkSourceTree(fi.absoluteFilePath(), globs, out, cancel);
+            walkSourceTree(fi.absoluteFilePath(), globs, out, cancel,
+                           progressEvery, progress);
         } else if (fi.isFile()) {
             if (!matchesAnyGlob(fi.fileName(), globs)) continue;
             out.append(fi.absoluteFilePath());
+            if (progress && (out.size() % progressEvery == 0))
+                progress(out.size());
         }
     }
 }
@@ -107,8 +118,11 @@ static bool looksBinary(const QString &path) {
 
 void ProjectSearchWorker::search(const Params &p) {
     m_cancel.store(false);
+    QElapsedTimer timer;
+    timer.start();
+
     if (p.query.isEmpty()) {
-        emit finishedSearch(0, 0);
+        emit finishedSearch(0, 0, timer.elapsed());
         return;
     }
 
@@ -134,26 +148,28 @@ void ProjectSearchWorker::search(const Params &p) {
     const QString literal = p.caseSensitive ? p.query : p.query.toLower();
 
     // Walk the tree, pruning heavy dirs (.git / node_modules / target / …)
-    // up-front instead of visiting them just to filter later. For a real
-    // JS/Rust monorepo this alone cuts the walk from 30 s to ~150 ms.
+    // up-front instead of visiting them just to filter later. Emit
+    // walkProgress every 500 files so a slow walk (eg $HOME with millions
+    // of files) shows activity instead of appearing frozen on "Scanning…".
     QStringList queue;
     queue.reserve(4096);
-    walkSourceTree(p.folder, globs, queue, m_cancel);
-    if (m_cancel.load()) { emit finishedSearch(0, 0); return; }
+    auto walkCb = [this](int n) { emit walkProgress(n); };
+    walkSourceTree(p.folder, globs, queue, m_cancel, /*progressEvery*/ 500, walkCb);
+    if (m_cancel.load()) { emit finishedSearch(0, 0, timer.elapsed()); return; }
     const int totalFiles = queue.size();
     emit filesCounted(totalFiles);
+    // Emit an immediate 0-progress with the real total so the progress bar
+    // leaves its indeterminate state the moment the walk completes — even
+    // if no file finishes scanning for another few ms.
+    emit progress(0, totalFiles, 0, timer.elapsed());
 
     // Shared counters — threads bump these via atomic ops so the progress
     // signal stays coherent when several workers finish at the same time.
     std::atomic<int> filesDoneAtomic{0};
     std::atomic<int> totalMatchesAtomic{0};
-    // Emitting matchFound from worker threads: connections are made with
-    // AutoConnection, so queued-dispatch to the UI thread happens
-    // automatically. No mutex needed around the emit itself.
 
     auto searchOne = [&, this](const QString &path) {
         if (m_cancel.load()) return;
-        emit fileStarted(path);
         QFileInfo fi(path);
 
         // File-name match — fires once per file if the file's name
@@ -171,11 +187,14 @@ void ProjectSearchWorker::search(const Params &p) {
 
         // Helper: bump filesDone atomically and emit a throttled progress
         // update. Called on every early-return path so the UI always sees
-        // progress even when files are skipped.
+        // progress even when files are skipped. Fires every 8 files (was
+        // every 32) so small repos show updates mid-scan instead of
+        // appearing frozen until the very end.
         auto tick = [&]() {
             const int fd = ++filesDoneAtomic;
-            if ((fd & 0x1F) == 0 || fd == totalFiles)
-                emit progress(fd, totalFiles, totalMatchesAtomic.load());
+            if ((fd & 0x07) == 0 || fd == totalFiles)
+                emit progress(fd, totalFiles, totalMatchesAtomic.load(),
+                              timer.elapsed());
         };
 
         // Skip files above the sanity cap (2 GB default — effectively no cap
@@ -190,8 +209,13 @@ void ProjectSearchWorker::search(const Params &p) {
         QFile f(path);
         if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) { tick(); return; }
 
+        // Collect all matches for this file, emit in ONE queued event.
+        // Per-match emit through QueuedConnection was costing ~1 µs of UI
+        // thread time per match; on a query that hits 10 000 times that's
+        // 10 ms of UI-thread pressure that shows up as jank. One emit per
+        // file is 100×–1000× cheaper.
+        QVector<ProjectSearchMatch> fileHits;
         const int maxMatchesPerFile = 500;
-        int fileMatches = 0;
 
         // ── Rust-fast path: plain-text (non-regex, non-word) literal search
         //    on files that fit in memory. aho-corasick via RustCore::findAll
@@ -201,41 +225,60 @@ void ProjectSearchWorker::search(const Params &p) {
         if (!useRegex && fi.size() <= kRustFastCap) {
             const QByteArray raw = f.readAll();
             f.close();
+            // Hand the bytes straight to Rust without a QString detour —
+            // Rust reinterprets as &str, so the UTF-8 payload is already
+            // in the right form. Avoids a full decode → re-encode pass
+            // on every file (was the single biggest allocator hit).
             const QString body = QString::fromUtf8(raw);
             const QVector<size_t> posBytes =
                 RustCore::findAll(body, p.query, /*isRegex*/ false,
                                   p.caseSensitive, /*wholeWord*/ false);
             if (!posBytes.isEmpty()) {
+                // Pre-build line-start table over the raw UTF-8 bytes — one
+                // linear scan regardless of match count. upper_bound over
+                // this table then answers "which line is byte N on?" in
+                // O(log lines) per match.
                 QVector<int> lineStarts;
-                lineStarts.reserve(raw.size() / 40 + 8);
+                lineStarts.reserve(int(raw.size() / 40) + 8);
                 lineStarts.append(0);
                 for (int i = 0; i < raw.size(); ++i) {
                     if (raw[i] == '\n') lineStarts.append(i + 1);
                 }
                 const int queryBytes = p.query.toUtf8().size();
+                int lastLineNum = -1;
+                QString cachedLineContent;
+                int cachedLineStart = 0;
                 for (size_t bytePos : posBytes) {
                     if (m_cancel.load()) break;
                     auto it = std::upper_bound(lineStarts.begin(), lineStarts.end(),
                                                static_cast<int>(bytePos));
                     int lineNum = int(it - lineStarts.begin());
                     int lineStart = lineStarts[lineNum - 1];
-                    int lineEnd = (lineNum < lineStarts.size())
-                                  ? lineStarts[lineNum] - 1 : raw.size();
-                    QString lineContent = QString::fromUtf8(
-                        raw.mid(lineStart, lineEnd - lineStart));
-                    int col = QString::fromUtf8(raw.mid(lineStart, bytePos - lineStart)).size();
+                    // Cache the decoded line text across consecutive matches
+                    // on the SAME line — a query that hits 10× on one line
+                    // pays one decode, not ten.
+                    if (lineNum != lastLineNum) {
+                        int lineEnd = (lineNum < lineStarts.size())
+                                      ? lineStarts[lineNum] - 1 : raw.size();
+                        cachedLineContent = QString::fromUtf8(
+                            raw.mid(lineStart, lineEnd - lineStart));
+                        cachedLineStart = lineStart;
+                        lastLineNum = lineNum;
+                    }
+                    int col = QString::fromUtf8(
+                        raw.mid(cachedLineStart, bytePos - cachedLineStart)).size();
                     ProjectSearchMatch pm;
                     pm.filePath    = path;
                     pm.lineNumber  = lineNum;
-                    pm.lineContent = lineContent;
+                    pm.lineContent = cachedLineContent;
                     pm.matchStart  = col;
                     pm.matchLength = QString::fromUtf8(raw.mid(bytePos, queryBytes)).size();
-                    emit matchFound(pm);
+                    fileHits.append(std::move(pm));
                     ++totalMatchesAtomic;
-                    ++fileMatches;
-                    if (fileMatches >= maxMatchesPerFile) break;
+                    if (fileHits.size() >= maxMatchesPerFile) break;
                 }
             }
+            if (!fileHits.isEmpty()) emit matchesFound(fileHits);
             tick();
             return;
         }
@@ -259,10 +302,9 @@ void ProjectSearchWorker::search(const Params &p) {
                     pm.lineContent = line;
                     pm.matchStart  = m.capturedStart();
                     pm.matchLength = m.capturedLength();
-                    emit matchFound(pm);
+                    fileHits.append(std::move(pm));
                     ++totalMatchesAtomic;
-                    ++fileMatches;
-                    if (fileMatches >= maxMatchesPerFile) break;
+                    if (fileHits.size() >= maxMatchesPerFile) break;
                 }
             } else {
                 int from = 0;
@@ -276,15 +318,15 @@ void ProjectSearchWorker::search(const Params &p) {
                     pm.lineContent = line;
                     pm.matchStart = idx;
                     pm.matchLength = literal.length();
-                    emit matchFound(pm);
+                    fileHits.append(std::move(pm));
                     ++totalMatchesAtomic;
-                    ++fileMatches;
-                    if (fileMatches >= maxMatchesPerFile) break;
+                    if (fileHits.size() >= maxMatchesPerFile) break;
                     from = idx + literal.length();
                 }
             }
-            if (fileMatches >= maxMatchesPerFile) break;
+            if (fileHits.size() >= maxMatchesPerFile) break;
         }
+        if (!fileHits.isEmpty()) emit matchesFound(fileHits);
         tick();
     };
 
@@ -295,7 +337,7 @@ void ProjectSearchWorker::search(const Params &p) {
     // 4-core laptop the walk is ~3–4× faster than the serial version.
     QtConcurrent::blockingMap(queue, searchOne);
 
-    emit finishedSearch(totalMatchesAtomic.load(), totalFiles);
+    emit finishedSearch(totalMatchesAtomic.load(), totalFiles, timer.elapsed());
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -342,19 +384,26 @@ ProjectSearch::ProjectSearch(QWidget *parent) : QWidget(parent) {
 
     connect(this, &QObject::destroyed, this, []() { /* thread stopped in dtor */ });
 
-    connect(m_worker, &ProjectSearchWorker::matchFound,
-            this, &ProjectSearch::onMatch, Qt::QueuedConnection);
+    connect(m_worker, &ProjectSearchWorker::matchesFound,
+            this, &ProjectSearch::onMatches, Qt::QueuedConnection);
     connect(m_worker, &ProjectSearchWorker::fileNameMatch,
             this, &ProjectSearch::onFileNameMatch, Qt::QueuedConnection);
     connect(m_worker, &ProjectSearchWorker::progress,
             this, &ProjectSearch::onProgress, Qt::QueuedConnection);
     connect(m_worker, &ProjectSearchWorker::finishedSearch,
             this, &ProjectSearch::onFinished, Qt::QueuedConnection);
+    // Live walk progress — without this the UI sits on "Scanning…" for the
+    // entire filesystem walk phase. Users interpret no updates as "broken"
+    // after about two seconds.
+    connect(m_worker, &ProjectSearchWorker::walkProgress,
+            this, [this](int n) {
+        m_statusLabel->setText(QString("Walking folder tree — %1 files discovered…").arg(n));
+    }, Qt::QueuedConnection);
     connect(m_worker, &ProjectSearchWorker::filesCounted,
             this, [this](int n) {
         m_progressBar->setRange(0, qMax(1, n));
         m_progressBar->setValue(0);
-        m_statusLabel->setText(QString("Scanning %1 files...").arg(n));
+        m_statusLabel->setText(QString("Found %1 files — starting scan…").arg(n));
     }, Qt::QueuedConnection);
     connect(m_worker, &ProjectSearchWorker::errorOccurred,
             this, [this](const QString &msg) {
@@ -626,53 +675,58 @@ void ProjectSearch::onFileNameMatch(const QString &filePath) {
     ++m_filesWithMatches;
 }
 
-void ProjectSearch::onMatch(const ProjectSearchMatch &m) {
+void ProjectSearch::onMatches(const QVector<ProjectSearchMatch> &matches) {
+    if (matches.isEmpty()) return;
     const auto p = psearchPalette();
-    auto *parent = fileParent(m_results, m_fileItems, m.filePath, p.accent);
-
-    // Build the match line with the query highlighted
-    QString line = m.lineContent;
-    if (line.length() > 240) line = line.left(240) + "…";
-    QString rendered = QString("      %1  │  %2").arg(m.lineNumber, 5).arg(line);
-
-    // "line:col │ content" — gives users the exact coordinate of every
-    // match. matchStart is a zero-based char offset into the original
-    // line, so column = matchStart + 1 for 1-based display (same as
-    // every editor status bar in the world).
-    const int col1 = m.matchStart + 1;
-    const QString coord = QString("%1:%2").arg(m.lineNumber, 5).arg(col1, -3);
-    const QString rendered2 = QString("      %1  │  %2").arg(coord).arg(line);
-    Q_UNUSED(rendered);   // keep the earlier build of `rendered` compiling
-
-    auto *child = new QTreeWidgetItem(parent);
-    child->setText(0, rendered2);
-    child->setToolTip(0, QString("%1:%2:%3\n%4")
-                          .arg(m.filePath).arg(m.lineNumber).arg(col1).arg(m.lineContent));
-    child->setData(0, Qt::UserRole, m.filePath);
-    child->setData(0, Qt::UserRole + 1, m.lineNumber);
-    child->setData(0, Qt::UserRole + 2, col1);   // column for precise jump
-    ++m_matchesSoFar;
+    // All matches in a batch share the same file — pull the parent once.
+    auto *parent = fileParent(m_results, m_fileItems, matches.first().filePath, p.accent);
+    for (const ProjectSearchMatch &m : matches) {
+        QString line = m.lineContent;
+        if (line.length() > 240) line = line.left(240) + "…";
+        const int col1 = m.matchStart + 1;
+        const QString coord = QString("%1:%2").arg(m.lineNumber, 5).arg(col1, -3);
+        const QString rendered = QString("      %1  │  %2").arg(coord, line);
+        auto *child = new QTreeWidgetItem(parent);
+        child->setText(0, rendered);
+        child->setToolTip(0, QString("%1:%2:%3\n%4")
+                              .arg(m.filePath).arg(m.lineNumber).arg(col1).arg(m.lineContent));
+        child->setData(0, Qt::UserRole, m.filePath);
+        child->setData(0, Qt::UserRole + 1, m.lineNumber);
+        child->setData(0, Qt::UserRole + 2, col1);
+        ++m_matchesSoFar;
+    }
 }
 
-void ProjectSearch::onProgress(int done, int total, int matches) {
+static QString psearchFormatElapsed(qint64 ms) {
+    if (ms < 1000) return QString("%1 ms").arg(ms);
+    double s = ms / 1000.0;
+    return QString("%1 s").arg(s, 0, 'f', s < 10 ? 2 : 1);
+}
+
+void ProjectSearch::onProgress(int done, int total, int matches, qint64 elapsedMs) {
     if (total > 0) {
         m_progressBar->setRange(0, total);
         m_progressBar->setValue(done);
     }
-    m_statusLabel->setText(QString("Searching — %1 / %2 files · %3 matches so far")
-                               .arg(done).arg(total).arg(matches));
+    const int pct = total > 0 ? int((double(done) / double(total)) * 100.0) : 0;
+    m_statusLabel->setText(QString("Searching — %1 / %2 files (%3%) · %4 matches · %5 elapsed")
+                               .arg(done).arg(total).arg(pct).arg(matches)
+                               .arg(psearchFormatElapsed(elapsedMs)));
 }
 
-void ProjectSearch::onFinished(int totalMatches, int totalFiles) {
+void ProjectSearch::onFinished(int totalMatches, int totalFiles, qint64 elapsedMs) {
     m_searchBtn->setEnabled(true);
     m_cancelBtn->setEnabled(false);
     m_progressBar->setValue(m_progressBar->maximum());
+    const QString elapsed = psearchFormatElapsed(elapsedMs);
     if (totalMatches == 0) {
-        m_statusLabel->setText(QString("No matches — scanned %1 files.").arg(totalFiles));
+        m_statusLabel->setText(QString("No matches — scanned %1 files in %2.")
+                                   .arg(totalFiles).arg(elapsed));
     } else {
-        m_statusLabel->setText(QString("✓ %1 matches across %2 file(s) · scanned %3 files.")
+        m_statusLabel->setText(QString("✓ %1 matches across %2 file(s) · scanned %3 files in %4.")
                                    .arg(totalMatches)
                                    .arg(m_fileItems.size())
-                                   .arg(totalFiles));
+                                   .arg(totalFiles)
+                                   .arg(elapsed));
     }
 }

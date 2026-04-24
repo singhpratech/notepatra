@@ -64,12 +64,19 @@ public slots:
     void cancel();
 
 signals:
+    // Fired periodically during the filesystem walk phase so the UI shows
+    // activity before file-searching even starts. Without this the UI
+    // freezes on "Scanning..." for the entire walk of large trees.
+    void walkProgress(int filesDiscoveredSoFar);
     void filesCounted(int totalFiles);
     void fileStarted(const QString &filePath);
-    void matchFound(const ProjectSearchMatch &m);
+    // Batched per-file match delivery. One queued event per file (not per
+    // match) — huge win when a file has thousands of matches, because every
+    // queued emit costs ~a microsecond of UI-thread event processing.
+    void matchesFound(const QVector<ProjectSearchMatch> &matches);
     void fileNameMatch(const QString &filePath);
-    void progress(int filesDone, int filesTotal, int matches);
-    void finishedSearch(int totalMatches, int totalFiles);
+    void progress(int filesDone, int filesTotal, int matches, qint64 elapsedMs);
+    void finishedSearch(int totalMatches, int totalFiles, qint64 elapsedMs);
     void errorOccurred(const QString &msg);
 
 private:
@@ -98,10 +105,10 @@ private:
     void buildUi();
     void startSearch();
     void cancelSearch();
-    void onMatch(const ProjectSearchMatch &m);
+    void onMatches(const QVector<ProjectSearchMatch> &matches);
     void onFileNameMatch(const QString &filePath);
-    void onProgress(int done, int total, int matches);
-    void onFinished(int totalMatches, int totalFiles);
+    void onProgress(int done, int total, int matches, qint64 elapsedMs);
+    void onFinished(int totalMatches, int totalFiles, qint64 elapsedMs);
 
     QLineEdit  *m_queryInput;
     QLineEdit  *m_folderInput;
