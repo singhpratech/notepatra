@@ -2748,8 +2748,7 @@ void MainWindow::buildMenus() {
             "🐛 Issues: <a href='https://github.com/singhpratech/notepatra/issues'>issues</a>"
             "</p>"
             "<p style='color:#888; font-size:11px; margin-top:14px;'>"
-            "Envisioned by <a href='https://github.com/singhpratech'>Prateek Singh</a>. Built with Claude.<br>"
-            "Respect to Don Ho (Notepad++) for showing that a code editor can be small, fast, and free."
+            "Envisioned by <a href='https://github.com/singhpratech'>Prateek Singh</a>. Built with Claude."
             "</p>")
             .arg(version));
         box.exec();
