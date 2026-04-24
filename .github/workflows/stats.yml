@@ -35,12 +35,17 @@ jobs:
           ISSUES=$(echo "$REPO_JSON"  | python3 -c "import json,sys;print(json.load(sys.stdin)['open_issues_count'])")
           SIZE=$(echo "$REPO_JSON"    | python3 -c "import json,sys;print(json.load(sys.stdin)['size'])")
 
-          # Fetch every release and sum download counts per asset
-          RELEASES_JSON=$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=100")
+          # Fetch every release and sum download counts per asset.
+          # Stream to a tempfile — passing the JSON blob via argv hits
+          # ARG_MAX (E2BIG, "Argument list too long", exit 126) once enough
+          # releases with enough assets accumulate.
+          RELEASES_FILE=$(mktemp)
+          curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=100" > "$RELEASES_FILE"
 
-          python3 - <<'PY' "$RELEASES_JSON" "$STARS" "$FORKS" "$WATCH" "$ISSUES" "$SIZE" > docs/stats.json
+          python3 - <<'PY' "$RELEASES_FILE" "$STARS" "$FORKS" "$WATCH" "$ISSUES" "$SIZE" > docs/stats.json
           import json, sys, datetime
-          releases = json.loads(sys.argv[1])
+          with open(sys.argv[1]) as f:
+              releases = json.load(f)
           stars, forks, watch, issues, size = (int(x) for x in sys.argv[2:7])
 
           per_release = []
