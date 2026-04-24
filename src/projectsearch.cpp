@@ -122,7 +122,7 @@ void ProjectSearchWorker::search(const Params &p) {
     timer.start();
 
     if (p.query.isEmpty()) {
-        emit finishedSearch(0, 0, timer.elapsed());
+        emit finishedSearch(0, 0, timer.elapsed(), 0);
         return;
     }
 
@@ -154,19 +154,23 @@ void ProjectSearchWorker::search(const Params &p) {
     QStringList queue;
     queue.reserve(4096);
     auto walkCb = [this](int n) { emit walkProgress(n); };
-    walkSourceTree(p.folder, globs, queue, m_cancel, /*progressEvery*/ 500, walkCb);
-    if (m_cancel.load()) { emit finishedSearch(0, 0, timer.elapsed()); return; }
+    // Fire walkProgress every 50 files so small folder trees still see
+    // live updates (the previous 500 was too coarse — a 200-file tree
+    // got zero walk updates, UI looked frozen).
+    walkSourceTree(p.folder, globs, queue, m_cancel, /*progressEvery*/ 50, walkCb);
+    if (m_cancel.load()) { emit finishedSearch(0, 0, timer.elapsed(), 0); return; }
     const int totalFiles = queue.size();
     emit filesCounted(totalFiles);
     // Emit an immediate 0-progress with the real total so the progress bar
     // leaves its indeterminate state the moment the walk completes — even
     // if no file finishes scanning for another few ms.
-    emit progress(0, totalFiles, 0, timer.elapsed());
+    emit progress(0, totalFiles, 0, timer.elapsed(), 0);
 
     // Shared counters — threads bump these via atomic ops so the progress
     // signal stays coherent when several workers finish at the same time.
     std::atomic<int> filesDoneAtomic{0};
     std::atomic<int> totalMatchesAtomic{0};
+    std::atomic<qint64> totalLinesAtomic{0};
 
     auto searchOne = [&, this](const QString &path) {
         if (m_cancel.load()) return;
@@ -194,7 +198,7 @@ void ProjectSearchWorker::search(const Params &p) {
             const int fd = ++filesDoneAtomic;
             if ((fd & 0x07) == 0 || fd == totalFiles)
                 emit progress(fd, totalFiles, totalMatchesAtomic.load(),
-                              timer.elapsed());
+                              timer.elapsed(), totalLinesAtomic.load());
         };
 
         // Skip files above the sanity cap (2 GB default — effectively no cap
@@ -225,25 +229,29 @@ void ProjectSearchWorker::search(const Params &p) {
         if (!useRegex && fi.size() <= kRustFastCap) {
             const QByteArray raw = f.readAll();
             f.close();
-            // Hand the bytes straight to Rust without a QString detour —
-            // Rust reinterprets as &str, so the UTF-8 payload is already
-            // in the right form. Avoids a full decode → re-encode pass
-            // on every file (was the single biggest allocator hit).
+
+            // Pre-build line-start table over the raw UTF-8 bytes. Done
+            // UNCONDITIONALLY so files with zero matches still contribute
+            // to the lines-scanned counter — the user wants to see
+            // "N lines scanned" reflect actual scan volume, not hit volume.
+            // upper_bound over this table then answers "which line is
+            // byte N on?" in O(log lines) per match when we do find hits.
+            QVector<int> lineStarts;
+            lineStarts.reserve(int(raw.size() / 40) + 8);
+            lineStarts.append(0);
+            for (int i = 0; i < raw.size(); ++i) {
+                if (raw[i] == '\n') lineStarts.append(i + 1);
+            }
+            // lineStarts.size() == total line count (the initial 0 entry
+            // covers line 1; every '\n' pushes the start of the next).
+            totalLinesAtomic += qint64(lineStarts.size());
+
+            // Hand the bytes to Rust aho-corasick for literal search.
             const QString body = QString::fromUtf8(raw);
             const QVector<size_t> posBytes =
                 RustCore::findAll(body, p.query, /*isRegex*/ false,
                                   p.caseSensitive, /*wholeWord*/ false);
             if (!posBytes.isEmpty()) {
-                // Pre-build line-start table over the raw UTF-8 bytes — one
-                // linear scan regardless of match count. upper_bound over
-                // this table then answers "which line is byte N on?" in
-                // O(log lines) per match.
-                QVector<int> lineStarts;
-                lineStarts.reserve(int(raw.size() / 40) + 8);
-                lineStarts.append(0);
-                for (int i = 0; i < raw.size(); ++i) {
-                    if (raw[i] == '\n') lineStarts.append(i + 1);
-                }
                 const int queryBytes = p.query.toUtf8().size();
                 int lastLineNum = -1;
                 QString cachedLineContent;
@@ -326,6 +334,9 @@ void ProjectSearchWorker::search(const Params &p) {
             }
             if (fileHits.size() >= maxMatchesPerFile) break;
         }
+        // In the streaming path, lineNum is the total lines we read
+        // (regardless of match count). Feed into the running total.
+        totalLinesAtomic += qint64(lineNum);
         if (!fileHits.isEmpty()) emit matchesFound(fileHits);
         tick();
     };
@@ -337,7 +348,8 @@ void ProjectSearchWorker::search(const Params &p) {
     // 4-core laptop the walk is ~3–4× faster than the serial version.
     QtConcurrent::blockingMap(queue, searchOne);
 
-    emit finishedSearch(totalMatchesAtomic.load(), totalFiles, timer.elapsed());
+    emit finishedSearch(totalMatchesAtomic.load(), totalFiles,
+                        timer.elapsed(), totalLinesAtomic.load());
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -384,6 +396,13 @@ ProjectSearch::ProjectSearch(QWidget *parent) : QWidget(parent) {
 
     connect(this, &QObject::destroyed, this, []() { /* thread stopped in dtor */ });
 
+    // 10 Hz UI-side refresher so the elapsed-ms display ticks visibly
+    // between worker progress events. Stopped in onFinished() — once the
+    // bar reaches 100 %, the final status line is authoritative.
+    m_liveTimer = new QTimer(this);
+    m_liveTimer->setInterval(100);
+    connect(m_liveTimer, &QTimer::timeout, this, &ProjectSearch::refreshLiveStatus);
+
     connect(m_worker, &ProjectSearchWorker::matchesFound,
             this, &ProjectSearch::onMatches, Qt::QueuedConnection);
     connect(m_worker, &ProjectSearchWorker::fileNameMatch,
@@ -392,18 +411,28 @@ ProjectSearch::ProjectSearch(QWidget *parent) : QWidget(parent) {
             this, &ProjectSearch::onProgress, Qt::QueuedConnection);
     connect(m_worker, &ProjectSearchWorker::finishedSearch,
             this, &ProjectSearch::onFinished, Qt::QueuedConnection);
-    // Live walk progress — without this the UI sits on "Scanning…" for the
-    // entire filesystem walk phase. Users interpret no updates as "broken"
-    // after about two seconds.
+    // Live walk progress — walk phase maps to 0 % … 25 % of the bar so the
+    // user sees it crawling up even before we know the total file count.
+    // ~100 files discovered per 1 %, capped at 25 %.
     connect(m_worker, &ProjectSearchWorker::walkProgress,
             this, [this](int n) {
-        m_statusLabel->setText(QString("Walking folder tree — %1 files discovered…").arg(n));
+        if (m_phase == Phase::Idle) return;   // cancel already fired; ignore
+        m_phase = Phase::Walking;
+        m_lastWalkDiscovered = n;
+        m_progressBar->setRange(0, 100);
+        m_progressBar->setValue(0);
+        refreshLiveStatus();
     }, Qt::QueuedConnection);
     connect(m_worker, &ProjectSearchWorker::filesCounted,
             this, [this](int n) {
-        m_progressBar->setRange(0, qMax(1, n));
+        if (m_phase == Phase::Idle) return;
+        // Walk complete — NOW we know the total. Bar starts at 0 % and
+        // fills honestly as files are scanned.
+        m_phase = Phase::Scanning;
+        m_lastFilesTotal = n;
+        m_progressBar->setRange(0, 100);
         m_progressBar->setValue(0);
-        m_statusLabel->setText(QString("Found %1 files — starting scan…").arg(n));
+        refreshLiveStatus();
     }, Qt::QueuedConnection);
     connect(m_worker, &ProjectSearchWorker::errorOccurred,
             this, [this](const QString &msg) {
@@ -621,8 +650,29 @@ void ProjectSearch::startSearch() {
     m_filesWithMatches = 0;
     m_searchBtn->setEnabled(false);
     m_cancelBtn->setEnabled(true);
-    m_statusLabel->setText("Scanning…");
-    m_progressBar->setRange(0, 0);   // indeterminate until filesCounted
+
+    // Reset live counters + start wall-clock + 10 Hz UI refresher.
+    m_phase = Phase::Walking;
+    m_lastFilesDone = m_lastFilesTotal = m_lastMatches = 0;
+    m_lastLines = 0;
+    m_lastWalkDiscovered = 0;
+    m_wallTimer.start();
+    if (m_liveTimer) m_liveTimer->start();
+
+    m_statusLabel->setText("Walking folder tree — 0 files discovered (0%)…");
+    // Determinate bar that grows 0 → 100% across the entire search.
+    // The user explicitly does NOT want the bouncing "indeterminate"
+    // animation during the walk — they want to see percentage filling.
+    //
+    // We map the two phases onto [0, 100]:
+    //   • walk (unknown total ahead of time) → 0 % to 25 %, ticked by
+    //     walkProgress. Each ~100 files discovered adds 1 %, capped.
+    //   • scan (known total after filesCounted) → 25 % to 100 %, mapped
+    //     from filesDone / filesTotal.
+    // Result: bar rises smoothly left-to-right for the whole operation;
+    // never bounces, never sits at zero for long.
+    m_progressBar->setRange(0, 100);
+    m_progressBar->setValue(0);
 
     ProjectSearchWorker::Params p;
     p.folder = m_folderInput->text();
@@ -640,8 +690,20 @@ void ProjectSearch::startSearch() {
 }
 
 void ProjectSearch::cancelSearch() {
+    // 1. Flag the worker (atomic bool). Every loop in walkSourceTree and
+    //    searchOne re-reads this flag and bails out the moment it's true.
     if (m_worker) m_worker->cancel();
-    m_statusLabel->setText("Cancelling…");
+    // 2. Freeze the UI counters — no more live ticks while we wait for the
+    //    worker to unwind. finishedSearch will fire shortly and give us the
+    //    final numbers.
+    m_phase = Phase::Idle;
+    if (m_liveTimer && m_liveTimer->isActive()) m_liveTimer->stop();
+    // 3. Immediate user feedback — no wait.
+    m_statusLabel->setText("Cancelling… (stopping worker threads)");
+    m_cancelBtn->setEnabled(false);
+    // Search button stays disabled until finishedSearch confirms the
+    // worker has fully stopped — prevents kicking off a second search on
+    // top of one that's still unwinding.
 }
 
 // Add or fetch the per-file parent row
@@ -703,30 +765,79 @@ static QString psearchFormatElapsed(qint64 ms) {
     return QString("%1 s").arg(s, 0, 'f', s < 10 ? 2 : 1);
 }
 
-void ProjectSearch::onProgress(int done, int total, int matches, qint64 elapsedMs) {
-    if (total > 0) {
-        m_progressBar->setRange(0, total);
-        m_progressBar->setValue(done);
-    }
-    const int pct = total > 0 ? int((double(done) / double(total)) * 100.0) : 0;
-    m_statusLabel->setText(QString("Searching — %1 / %2 files (%3%) · %4 matches · %5 elapsed")
-                               .arg(done).arg(total).arg(pct).arg(matches)
-                               .arg(psearchFormatElapsed(elapsedMs)));
+// Group-separated integer for big line counts — "28340" → "28,340"
+static QString psearchFormatCount(qint64 n) {
+    QLocale l(QLocale::C);
+    l.setNumberOptions(QLocale::DefaultNumberOptions);
+    return QLocale(QLocale::English).toString(n);
 }
 
-void ProjectSearch::onFinished(int totalMatches, int totalFiles, qint64 elapsedMs) {
+void ProjectSearch::onProgress(int done, int total, int matches,
+                               qint64 elapsedMs, qint64 linesScanned) {
+    if (m_phase == Phase::Idle) return;   // cancelled; ignore tail events
+    // Cache latest counters for the UI-side 10 Hz refresher.
+    m_phase = Phase::Scanning;
+    m_lastFilesDone = done;
+    m_lastFilesTotal = total;
+    m_lastMatches = matches;
+    m_lastLines = linesScanned;
+    Q_UNUSED(elapsedMs);
+    // Honest 0→100 % — exactly scanned / total, no fake walk share.
+    const int pct = total > 0 ? int((double(done) / double(total)) * 100.0) : 0;
+    m_progressBar->setRange(0, 100);
+    m_progressBar->setValue(pct);
+    refreshLiveStatus();
+}
+
+void ProjectSearch::onFinished(int totalMatches, int totalFiles,
+                               qint64 elapsedMs, qint64 linesScanned) {
     m_searchBtn->setEnabled(true);
     m_cancelBtn->setEnabled(false);
-    m_progressBar->setValue(m_progressBar->maximum());
+    // Stop the 10 Hz live refresher — bar has hit 100 %, time to freeze
+    // the elapsed display at the authoritative worker-reported value.
+    m_phase = Phase::Idle;
+    if (m_liveTimer && m_liveTimer->isActive()) m_liveTimer->stop();
+    m_progressBar->setRange(0, 100);
+    m_progressBar->setValue(100);
     const QString elapsed = psearchFormatElapsed(elapsedMs);
+    const QString lines   = psearchFormatCount(linesScanned);
     if (totalMatches == 0) {
-        m_statusLabel->setText(QString("No matches — scanned %1 files in %2.")
-                                   .arg(totalFiles).arg(elapsed));
+        m_statusLabel->setText(QString("No matches — scanned %1 files, %2 lines in %3.")
+                                   .arg(totalFiles).arg(lines).arg(elapsed));
     } else {
-        m_statusLabel->setText(QString("✓ %1 matches across %2 file(s) · scanned %3 files in %4.")
-                                   .arg(totalMatches)
-                                   .arg(m_fileItems.size())
-                                   .arg(totalFiles)
-                                   .arg(elapsed));
+        m_statusLabel->setText(
+            QString("✓ %1 matches across %2 file(s) · scanned %3 files, %4 lines in %5.")
+                .arg(totalMatches)
+                .arg(m_fileItems.size())
+                .arg(totalFiles)
+                .arg(lines)
+                .arg(elapsed));
     }
+}
+
+// Called by the 10 Hz QTimer between worker updates AND immediately
+// whenever walkProgress / filesCounted / onProgress updates our cached
+// counters. Shows LIVE elapsed time — it visibly ticks up while the
+// scan runs, then freezes when onFinished stops the timer.
+void ProjectSearch::refreshLiveStatus() {
+    if (!m_wallTimer.isValid()) return;
+    const qint64 elapsedMs = m_wallTimer.elapsed();
+    const QString elapsed  = psearchFormatElapsed(elapsedMs);
+    const QString lines    = psearchFormatCount(m_lastLines);
+
+    if (m_phase == Phase::Walking) {
+        // No percentage during walk — we don't know the total yet.
+        // The number of files discovered ticks up instead.
+        m_statusLabel->setText(
+            QString("Walking folder tree — %1 files discovered · %2 elapsed")
+                .arg(m_lastWalkDiscovered).arg(elapsed));
+    } else if (m_phase == Phase::Scanning) {
+        const int pct = m_lastFilesTotal > 0
+            ? int((double(m_lastFilesDone) / double(m_lastFilesTotal)) * 100.0) : 0;
+        m_statusLabel->setText(
+            QString("Searching — %1 / %2 files (%3%) · %4 lines · %5 matches · %6 elapsed")
+                .arg(m_lastFilesDone).arg(m_lastFilesTotal).arg(pct)
+                .arg(lines).arg(m_lastMatches).arg(elapsed));
+    }
+    // Idle = onFinished already wrote the final line — leave it alone.
 }

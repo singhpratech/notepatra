@@ -8,7 +8,10 @@
 #include <QThread>
 #include <QMutex>
 #include <QHash>
+#include <QElapsedTimer>
 #include <atomic>
+
+class QTimer;
 
 class QLineEdit;
 class QPushButton;
@@ -75,8 +78,10 @@ signals:
     // queued emit costs ~a microsecond of UI-thread event processing.
     void matchesFound(const QVector<ProjectSearchMatch> &matches);
     void fileNameMatch(const QString &filePath);
-    void progress(int filesDone, int filesTotal, int matches, qint64 elapsedMs);
-    void finishedSearch(int totalMatches, int totalFiles, qint64 elapsedMs);
+    void progress(int filesDone, int filesTotal, int matches,
+                  qint64 elapsedMs, qint64 linesScanned);
+    void finishedSearch(int totalMatches, int totalFiles,
+                        qint64 elapsedMs, qint64 linesScanned);
     void errorOccurred(const QString &msg);
 
 private:
@@ -107,8 +112,10 @@ private:
     void cancelSearch();
     void onMatches(const QVector<ProjectSearchMatch> &matches);
     void onFileNameMatch(const QString &filePath);
-    void onProgress(int done, int total, int matches, qint64 elapsedMs);
-    void onFinished(int totalMatches, int totalFiles, qint64 elapsedMs);
+    void onProgress(int done, int total, int matches,
+                    qint64 elapsedMs, qint64 linesScanned);
+    void onFinished(int totalMatches, int totalFiles,
+                    qint64 elapsedMs, qint64 linesScanned);
 
     QLineEdit  *m_queryInput;
     QLineEdit  *m_folderInput;
@@ -126,6 +133,23 @@ private:
     QHash<QString, QTreeWidgetItem*> m_fileItems;  // file path → tree parent
     int m_matchesSoFar = 0;
     int m_filesWithMatches = 0;
+
+    // ── Live status refresher ────────────────────────────────────────
+    // Worker ticks every 8 files; between ticks, the elapsed-ms display
+    // would otherwise freeze. A 10 Hz QTimer in the UI reads the wall
+    // clock + last-known counters and repaints the status line so
+    // elapsed visibly scrolls up, even when no new match just arrived.
+    // Timer stops when finishedSearch fires (search hit 100 %).
+    QTimer        *m_liveTimer = nullptr;
+    QElapsedTimer  m_wallTimer;
+    enum class Phase { Idle, Walking, Scanning };
+    Phase m_phase = Phase::Idle;
+    int    m_lastFilesDone = 0;
+    int    m_lastFilesTotal = 0;
+    int    m_lastMatches = 0;
+    qint64 m_lastLines = 0;
+    int    m_lastWalkDiscovered = 0;
+    void refreshLiveStatus();
 };
 
 #endif // PROJECTSEARCH_H

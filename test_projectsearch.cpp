@@ -205,7 +205,7 @@ int main(int argc, char **argv) {
         QObject::connect(&worker, &ProjectSearchWorker::walkProgress, &c,
             [&c](int) { ++c.walkUpdates; });
         QObject::connect(&worker, &ProjectSearchWorker::progress, &c,
-            [&c](int d, int t, int m, qint64 el) {
+            [&c](int d, int t, int m, qint64 el, qint64 /*lines*/) {
                 c.lastFilesDone = d; c.lastFilesTotal = t;
                 c.lastMatchesSoFar = m; c.lastElapsedProgress = el;
             });
@@ -218,7 +218,7 @@ int main(int argc, char **argv) {
         // matchesFound events (posted from thread-pool threads) are still
         // in the queue — they never drain.
         QObject::connect(&worker, &ProjectSearchWorker::finishedSearch, &c,
-            [&](int tm, int tf, qint64 el) {
+            [&](int tm, int tf, qint64 el, qint64 /*lines*/) {
                 c.finalMatches = tm; c.finalFiles = tf; c.finalElapsed = el;
                 loop.quit();
             }, Qt::QueuedConnection);
@@ -373,7 +373,7 @@ int main(int argc, char **argv) {
         // matchesFound events (posted from thread-pool threads) are still
         // in the queue — they never drain.
         QObject::connect(&worker, &ProjectSearchWorker::finishedSearch, &c,
-            [&](int tm, int tf, qint64 el) {
+            [&](int tm, int tf, qint64 el, qint64 /*lines*/) {
                 c.finalMatches = tm; c.finalFiles = tf; c.finalElapsed = el;
                 loop.quit();
             }, Qt::QueuedConnection);
@@ -415,7 +415,7 @@ int main(int argc, char **argv) {
             [&c](const QVector<ProjectSearchMatch> &m) { c.flat.append(m); });
         QEventLoop loop;
         QObject::connect(&worker, &ProjectSearchWorker::finishedSearch, &c,
-            [&](int tm, int tf, qint64) {
+            [&](int tm, int tf, qint64, qint64) {
                 c.finalMatches = tm; c.finalFiles = tf; loop.quit();
             }, Qt::QueuedConnection);
 
@@ -476,7 +476,7 @@ int main(int argc, char **argv) {
         QEventLoop loop;
         int finalMatches = -1;
         QObject::connect(&worker, &ProjectSearchWorker::finishedSearch, &worker,
-            [&](int tm, int, qint64) { finalMatches = tm; loop.quit(); },
+            [&](int tm, int, qint64, qint64) { finalMatches = tm; loop.quit(); },
             Qt::QueuedConnection);
         ProjectSearchWorker::Params p;
         p.folder = stress; p.query = "hello";

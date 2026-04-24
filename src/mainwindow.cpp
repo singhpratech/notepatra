@@ -2706,6 +2706,21 @@ void MainWindow::buildMenus() {
 
     help->addSeparator();
 
+    // Quick links — one-click open in the user's browser. The repo URL
+    // is the canonical source of truth; release page + issue tracker
+    // are what users usually want access to from inside the app.
+    help->addAction("Notepatra on GitHub", this, []() {
+        QDesktopServices::openUrl(QUrl("https://github.com/singhpratech/notepatra"));
+    });
+    help->addAction("Latest Release...", this, []() {
+        QDesktopServices::openUrl(QUrl("https://github.com/singhpratech/notepatra/releases/latest"));
+    });
+    help->addAction("Report an Issue...", this, []() {
+        QDesktopServices::openUrl(QUrl("https://github.com/singhpratech/notepatra/issues/new"));
+    });
+
+    help->addSeparator();
+
     help->addAction("About Notepatra", this, [this]() {
         // NOTEPATRA_VERSION is injected at compile time from CMakeLists.txt's
         // project(Notepatra VERSION X.Y.Z) so the About dialog never goes
