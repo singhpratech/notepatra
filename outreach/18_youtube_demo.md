@@ -70,7 +70,7 @@ People bail at the 30-second mark on technical demo videos. Get to "this is what
 
 ## YouTube upload settings
 
-- **Title**: `Notepatra — a 5 MB native Notepad++ alternative for Linux, Mac, Windows`
+- **Title**: `Notepatra — a native AI-era code editor (~4 MB binary) for Linux, Mac, Windows`
 - **Description** (the YouTube SEO killer):
 
 ```

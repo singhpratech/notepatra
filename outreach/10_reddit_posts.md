@@ -56,7 +56,7 @@ Happy to answer any Linux-specific packaging questions. Currently working on Lin
 
 **Title:**
 ```
-I built a 5 MB native Notepad++ alternative for Linux/Mac/Windows in C++ and Rust
+I built a native AI-era code editor (~4 MB binary) for Linux/Mac/Windows in C++ and Rust
 ```
 
 **Body:**
@@ -100,7 +100,7 @@ Happy to talk about any of the design decisions — C++/Rust boundary, why Qt5 n
 
 **Title:**
 ```
-A native code editor in C++17 + Qt5 + Rust core (Notepad++ alternative for Linux/Mac/Windows)
+A native code editor in C++17 + Qt5 + Rust core ((native AI-era code editor for Linux, macOS, Windows))
 ```
 
 **Body:**
@@ -235,7 +235,7 @@ https://notepatra.org
 
 **Title:**
 ```
-Notepatra — a 3 MB native Apple Silicon code editor (Notepad++ alternative for Mac)
+Notepatra — a 3 MB native Apple Silicon code editor (native AI-era code editor for macOS)
 ```
 
 **Body:**
@@ -311,7 +311,7 @@ gh attestation verify notepatra-linux-x64.tar.gz --owner singhpratech
 - RFC 9116 /.well-known/security.txt
 - Threat model documented honestly (including what's NOT done — no Authenticode, no Apple notarization)
 
-The editor itself: Notepad++ alternative for Linux/Mac/Windows, ~5 MB native binary, local AI via Ollama, 100+ file types, plugin system. Built because every developer deserves a fast, free, smart text editor that doesn't eat 500 MB of RAM.
+The editor itself: (native AI-era code editor for Linux, macOS, Windows), ~5 MB native binary, local AI via Ollama, 100+ file types, plugin system. Built because every developer deserves a fast, free, smart text editor that doesn't eat 500 MB of RAM.
 
 https://notepatra.org
 https://github.com/singhpratech/notepatra

@@ -34,7 +34,7 @@ Section: **Editors and Notepad** (or **Tools** if Editors doesn't exist anymore)
 
 ### PR template
 
-**Title:** `Add Notepatra (Notepad++ alternative built in C++/Rust with local AI)`
+**Title:** `Add Notepatra (native AI-era code editor built in C++/Rust with local AI)`
 
 **Body:**
 ```markdown
@@ -76,7 +76,7 @@ Section: **Applications written in Rust → Text editors** (or **Embedded Rust**
 ```markdown
 Adding Notepatra under the "Applications written in Rust" section.
 
-**What it is:** A native cross-platform code editor (Notepad++ alternative for Linux/Mac/Windows) where the C++ layer is intentionally minimal (Qt UI glue) and **Rust is the core** for all untrusted-input handling. The reasoning: every CVE class in text editors comes from C/C++ parsing untrusted bytes — search, diff, JSON, HTML, file I/O. Move that to Rust and you eliminate the buffer-overflow class of bugs by construction.
+**What it is:** A native cross-platform code editor ((native AI-era code editor for Linux, macOS, Windows)) where the C++ layer is intentionally minimal (Qt UI glue) and **Rust is the core** for all untrusted-input handling. The reasoning: every CVE class in text editors comes from C/C++ parsing untrusted bytes — search, diff, JSON, HTML, file I/O. Move that to Rust and you eliminate the buffer-overflow class of bugs by construction.
 
 **Rust crates used in the core:**
 - `memmap2` — memory-mapped file I/O for 2 GB file support

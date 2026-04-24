@@ -35,7 +35,7 @@ https://github.com/singhpratech/notepatra
 ## Tweet 4 — for the Linux crowd
 
 ```
-Linux developers: I built you a real Notepad++ alternative.
+Linux developers: I built you a native AI-era code editor.
 
 Not Electron. Not a web app. A 5 MB native binary that opens instantly, runs your apt's Qt5, has 100+ file types, AI via local Ollama.
 

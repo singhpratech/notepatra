@@ -32,7 +32,7 @@
              Compressed="yes"
              InstallScope="perMachine"
              Description="Notepatra — Native C++/Rust code editor"
-             Comments="Notepad++ alternative with local AI formatters. GPL-3.0 licensed."
+             Comments="Native C++/Rust code editor for the AI era. Local AI formatters (Ollama/llama.cpp). GPL-3.0 licensed."
              Manufacturer="$(var.Publisher)" />
 
     <!-- Auto-upgrade: uninstall older versions when installing newer ones -->

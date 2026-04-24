@@ -33,7 +33,7 @@ The first code editor built for the AI era — 5 MB native
 ```
 
 (Alternative tagline if the above feels too clickbaity:
-`Notepad++ alternative for Linux, Mac, Windows — with local AI`)
+`Native AI-era code editor for Linux, macOS, Windows — with local AI`)
 
 ### Description
 

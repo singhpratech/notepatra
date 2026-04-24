@@ -3,7 +3,7 @@
   <h1 align="center"><a href="https://notepatra.org" style="text-decoration:none;color:inherit;">Notepatra</a></h1>
   <p align="center"><em>The first code editor built for the AI era.</em></p>
   <p align="center">
-    <strong>C++ + Rust</strong> · <strong>3–5 MB native executable</strong> · <strong>Zero Electron</strong> · <strong>100+ file types</strong> · <strong>Local AI formatters</strong>
+    <strong>C++ + Rust</strong> · <strong>~4 MB bare native executable</strong> · <strong>Zero Electron</strong> · <strong>100+ file types</strong> · <strong>Local AI formatters</strong>
   </p>
   <p align="center">
     <a href="https://notepatra.org">Website</a> ·
@@ -47,7 +47,7 @@ Not a port. Not a wrapper. Not "Notepad++ but on Linux." Something new — **for
 
 I took what made Notepad++ legendary — the speed, the simplicity, the "it just works" feeling — and asked: **what would Notepad++ look like if it was built today, in 2026, when AI is part of every developer's workflow?**
 
-The answer: a tiny native executable (3 MB on Mac/Windows, 5 MB on Linux) with a Rust-powered core, Scintilla editing engine, and local AI integration. An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your local AI to figure it out. No cloud. No telemetry. No subscription. Just you and your code.
+The answer: a tiny native executable — roughly 4 MB bare (stripped) on every platform — with a Rust-powered core, Scintilla editing engine, and local AI integration. Downloads: ~2 MB on Linux (tarball, Qt from the system), ~22 MB on macOS (DMG with bundled Qt), ~40 MB on Windows (MSI/zip with bundled Qt DLLs). An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your local AI to figure it out. No cloud. No telemetry. No subscription. Just you and your code.
 
 Notepatra started on Linux — because that's where the gap was. But great tools shouldn't have borders. **Notepatra runs on Linux, Windows, and macOS.** Same codebase. Same features. No one gets left behind.
 
@@ -265,7 +265,7 @@ That's it. Auto-detects your OS, downloads the right binary, installs it, adds t
 | 🪟 **Windows x64 (installer)** | [`.exe`](https://github.com/singhpratech/notepatra/releases/latest) | **~40 MB** | NSIS installer. Registers in Settings → Apps → Installed apps. Uninstall via Control Panel works. |
 | 🪟 **Windows x64 (portable)** | [`.zip`](https://github.com/singhpratech/notepatra/releases/latest) | **40 MB** | `notepatra.exe` + Qt DLLs + QScintilla DLL. Unzip and run anywhere. No installer, no registry. Optional: double-click `register-associations.bat` inside the zip to add Notepatra to the "Open with" menu for `.txt`/`.md`/`.py`/`.json`/etc. — HKCU only, no admin needed. Undo with `unregister-associations.bat`. |
 
-**Why are the download sizes different?** The bare `notepatra` executable is about **5 MB on Linux**, **3.0 MB on Windows**, and **2.7 MB on macOS Apple Silicon** (clang and MSVC strip more aggressively than gcc). On Linux, Qt5 is a standard system package (`apt install qtbase5-dev libqscintilla2-qt5-dev`), so the download is just the binary. On macOS and Windows, Qt isn't pre-installed, so we bundle the Qt frameworks/DLLs alongside the executable for portability — same approach Krita, Kdenlive, and every cross-platform Qt app uses. Even with Qt bundled, Notepatra is still **6× smaller than VS Code** on Windows and **14× smaller** on Linux.
+**Why are the download sizes different?** Measured from v0.1.17 release assets — bare `notepatra` executable is **~4 MB stripped** on each platform (a little smaller on Windows/macOS than on Linux because clang + MSVC strip more aggressively than gcc). On Linux, Qt5 is a standard system package (`apt install qtbase5-dev libqscintilla2-qt5-dev`), so the download is just the binary (~2 MB compressed). On macOS and Windows, Qt isn't pre-installed, so we bundle the Qt frameworks / DLLs alongside the executable for portability — same approach Krita, Kdenlive, and every cross-platform Qt app uses. Even with Qt bundled, Notepatra is still **6× smaller than VS Code** on Windows and **14× smaller** on Linux.
 
 > macOS Intel: not shipped pre-built. Apple stopped selling Intel Macs in 2023 and the GitHub Actions `macos-13` runner has been unreliable. Intel Mac users — `git clone` and run `./build.sh`. Builds in ~3 minutes.
 

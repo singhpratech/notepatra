@@ -5,7 +5,7 @@ This is the **evergreen content** that compounds for years. It ranks in Google f
 **Title options** (pick one — the title is 60% of the SEO ranking):
 
 1. `I built a 5 MB native code editor in C++ and Rust because Electron is too heavy` (the angle most people will click)
-2. `Building Notepatra: a Notepad++ alternative for Linux, Mac, and Windows in 2026`
+2. `Building Notepatra: a native AI-era code editor for Linux, macOS, and Windows in 2026`
 3. `Why I built a code editor where Rust handles all the dangerous parsing` (the technical angle)
 4. `12 CI iterations, 3 failed hypotheses, and one missing #define: my Windows build saga`
 

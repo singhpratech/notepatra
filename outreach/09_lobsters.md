@@ -9,7 +9,7 @@ https://lobste.rs/stories/new
 ## Title
 
 ```
-Notepatra – a 5 MB native Notepad++ alternative for Linux/Mac/Windows in C++ and Rust
+Notepatra – a native AI-era code editor (~4 MB binary) for Linux/Mac/Windows in C++ and Rust
 ```
 
 ## URL

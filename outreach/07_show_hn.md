@@ -7,7 +7,7 @@ https://news.ycombinator.com/submit
 ## Title (use this exact wording — Show HN posts have a strict format)
 
 ```
-Show HN: Notepatra – A 5 MB native Notepad++ alternative for Linux, Mac and Windows
+Show HN: Notepatra – A native AI-era code editor (~4 MB) for Linux, Mac and Windows
 ```
 
 (80 char max. This one is 78 chars. The "5 MB" hook is the strongest specific number you have. Don't say "AI-powered" in the title — HN is allergic to "AI" buzzwords; let people discover the AI angle by reading.)

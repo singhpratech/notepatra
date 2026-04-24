@@ -11,6 +11,7 @@
 #include <QCheckBox>
 #include <QRegularExpression>
 #include <QNetworkAccessManager>
+#include <QSslSocket>
 #include <QNetworkRequest>
 #include <QNetworkReply>
 #include <QJsonDocument>
@@ -2724,20 +2725,34 @@ void MainWindow::buildMenus() {
     help->addAction("About Notepatra", this, [this]() {
         // NOTEPATRA_VERSION is injected at compile time from CMakeLists.txt's
         // project(Notepatra VERSION X.Y.Z) so the About dialog never goes
-        // stale. Set the same way main.cpp drives --version.
+        // stale. Rich-text format so the website + GitHub links are
+        // actually clickable — not just visible strings.
         QString version = QApplication::applicationVersion();
         if (version.isEmpty()) version = NOTEPATRA_VERSION;
-        QMessageBox::about(this, "About Notepatra",
-            QString("Notepatra v%1\n\n").arg(version) +
-            "The first editor built for the AI era.\n"
-            "A blazing-fast native code editor for Linux, macOS, and Windows.\n\n"
-            "Native C++ + Rust. No Electron.\n"
-            "100+ languages. Plugin system. 2 GB files.\n"
-            "Local AI via Ollama. Zero telemetry.\n\n"
-            "https://notepatra.org\n"
-            "github.com/singhpratech/notepatra\n\n"
-            "Envisioned by Prateek Singh.\n"
-            "Inspired by Notepad++. Built by Claude.");
+        QMessageBox box(this);
+        box.setWindowTitle("About Notepatra");
+        box.setIconPixmap(windowIcon().pixmap(64, 64));
+        box.setTextFormat(Qt::RichText);
+        box.setTextInteractionFlags(Qt::TextBrowserInteraction);
+        box.setText(QString(
+            "<h2 style='margin:0 0 6px 0;'>Notepatra v%1</h2>"
+            "<p style='color:#888; margin:0 0 14px 0;'>The first editor built for the AI era.</p>"
+            "<p>A blazing-fast native code editor for Linux, macOS, and Windows.<br>"
+            "Native C++ + Rust. No Electron.<br>"
+            "100+ languages. Plugin system. 2 GB files.<br>"
+            "Local AI via Ollama / llama.cpp / OpenAI-compatible. Zero telemetry.</p>"
+            "<p>"
+            "🌐 Website: <a href='https://notepatra.org'>notepatra.org</a><br>"
+            "💻 Source: <a href='https://github.com/singhpratech/notepatra'>github.com/singhpratech/notepatra</a><br>"
+            "📦 Releases: <a href='https://github.com/singhpratech/notepatra/releases'>releases page</a><br>"
+            "🐛 Issues: <a href='https://github.com/singhpratech/notepatra/issues'>issues</a>"
+            "</p>"
+            "<p style='color:#888; font-size:11px; margin-top:14px;'>"
+            "Envisioned by <a href='https://github.com/singhpratech'>Prateek Singh</a>. Built with Claude.<br>"
+            "Respect to Don Ho (Notepad++) for showing that a code editor can be small, fast, and free."
+            "</p>")
+            .arg(version));
+        box.exec();
     });
 }
 
@@ -3557,6 +3572,33 @@ static int compareSemver(const QString &a, const QString &b) {
 }
 
 void MainWindow::checkForUpdates(bool silent) {
+    // ─── Early guard: SSL must be available. ─────────────────────────
+    // Windows and macOS bundles without the OpenSSL DLLs / dylibs will
+    // otherwise fail every https:// call with a cryptic "TLS
+    // initialization failed". Instead, offer a one-click bailout that
+    // opens the Releases page in the user's browser — they still get
+    // to update, just not in-app.
+    if (!QSslSocket::supportsSsl()) {
+        if (silent) return;
+        QMessageBox box(this);
+        box.setWindowTitle("Check for Updates");
+        box.setIcon(QMessageBox::Warning);
+        box.setTextFormat(Qt::RichText);
+        box.setText(
+            "<b>Secure connection unavailable on this system.</b><br><br>"
+            "Notepatra can't reach GitHub over HTTPS because the OpenSSL "
+            "runtime isn't present. Open the release page in your browser "
+            "to download the latest version manually.");
+        QPushButton *open = box.addButton("Open Releases Page", QMessageBox::AcceptRole);
+        box.addButton("Close", QMessageBox::RejectRole);
+        box.exec();
+        if (box.clickedButton() == open) {
+            QDesktopServices::openUrl(QUrl(
+                "https://github.com/singhpratech/notepatra/releases/latest"));
+        }
+        return;
+    }
+
     static QNetworkAccessManager *nam = nullptr;
     if (!nam) nam = new QNetworkAccessManager(this);
 
@@ -3578,11 +3620,33 @@ void MainWindow::checkForUpdates(bool silent) {
 
         if (reply->error() != QNetworkReply::NoError) {
             if (!silent) {
-                QMessageBox::warning(this, "Check for Updates",
-                    QString("Could not reach GitHub:\n%1\n\n"
-                            "Check your internet connection and try again, or visit\n"
-                            "https://github.com/singhpratech/notepatra/releases")
-                        .arg(reply->errorString()));
+                // Check if this looks like a TLS/SSL failure — give users
+                // a helpful "open in browser" button instead of a raw
+                // Qt error string they can't act on.
+                const QString err = reply->errorString();
+                const bool tlsish = err.contains("SSL", Qt::CaseInsensitive) ||
+                                     err.contains("TLS", Qt::CaseInsensitive) ||
+                                     err.contains("secure", Qt::CaseInsensitive) ||
+                                     err.contains("certificate", Qt::CaseInsensitive);
+                QMessageBox box(this);
+                box.setWindowTitle("Check for Updates");
+                box.setIcon(QMessageBox::Warning);
+                box.setTextFormat(Qt::RichText);
+                box.setText(QString(
+                    "<b>Could not reach GitHub.</b><br><br>"
+                    "Reason: <code>%1</code><br><br>"
+                    "%2")
+                    .arg(err.toHtmlEscaped(),
+                         tlsish
+                             ? "This looks like a TLS/SSL problem — the OpenSSL runtime may be missing. Open the Releases page in your browser to download manually."
+                             : "Check your internet connection and try again."));
+                QPushButton *open = box.addButton("Open Releases Page", QMessageBox::AcceptRole);
+                box.addButton("Close", QMessageBox::RejectRole);
+                box.exec();
+                if (box.clickedButton() == open) {
+                    QDesktopServices::openUrl(QUrl(
+                        "https://github.com/singhpratech/notepatra/releases/latest"));
+                }
             }
             return;
         }

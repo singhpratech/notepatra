@@ -208,6 +208,40 @@ jobs:
           echo "=== macdeployqt ==="
           macdeployqt "$APP"
 
+          # ─── Step 1b: Bundle OpenSSL 3 dylibs — REQUIRED for QNetworkAccessManager HTTPS.
+          # Homebrew's qt@5 is built --openssl-linked against openssl@3, and
+          # macdeployqt does NOT copy OpenSSL. Without these dylibs, every
+          # https:// request from the app silently fails with "TLS
+          # initialization failed" on an end-user Mac — including the Help →
+          # Check for Updates flow and the safe updater's SHA256SUMS fetch.
+          OPENSSL_PREFIX=$(brew --prefix openssl@3 2>/dev/null || echo /opt/homebrew/opt/openssl@3)
+          echo "=== OpenSSL source: $OPENSSL_PREFIX ==="
+          for lib in libssl.3.dylib libcrypto.3.dylib; do
+            SRC="$OPENSSL_PREFIX/lib/$lib"
+            if [ ! -f "$SRC" ]; then
+              echo "::error::$SRC missing — HTTPS will fail at runtime on user Macs"
+              exit 1
+            fi
+            cp "$SRC" "$FW/$lib"
+            chmod u+w "$FW/$lib"
+            install_name_tool -id "@rpath/$lib" "$FW/$lib"
+            echo "  ✓ bundled $lib"
+          done
+          # libssl links libcrypto via Homebrew absolute path — rewrite to @rpath.
+          install_name_tool -change "$OPENSSL_PREFIX/lib/libcrypto.3.dylib" \
+            "@rpath/libcrypto.3.dylib" "$FW/libssl.3.dylib" 2>/dev/null || true
+          # Qt5Network.framework binary also references libssl/libcrypto via
+          # Homebrew paths — rewrite those to @rpath so the bundle is portable.
+          QTNET_BIN="$APP/Contents/Frameworks/QtNetwork.framework/Versions/5/QtNetwork"
+          if [ -f "$QTNET_BIN" ]; then
+            chmod u+w "$QTNET_BIN"
+            install_name_tool -change "$OPENSSL_PREFIX/lib/libssl.3.dylib" \
+              "@rpath/libssl.3.dylib" "$QTNET_BIN" 2>/dev/null || true
+            install_name_tool -change "$OPENSSL_PREFIX/lib/libcrypto.3.dylib" \
+              "@rpath/libcrypto.3.dylib" "$QTNET_BIN" 2>/dev/null || true
+            echo "  ✓ rewrote QtNetwork OpenSSL refs → @rpath"
+          fi
+
           # ─── Step 2: Copy QScintilla dylib into the bundle. macdeployqt
           # doesn't know about QScintilla, so we have to drop it in + rewrite
           # its load commands ourselves.
@@ -390,6 +424,20 @@ jobs:
           target: 'desktop'
           arch: 'win64_msvc2019_64'
           dir: '${{ runner.temp }}/Qt'
+
+      - name: Install OpenSSL 1.1 runtime DLLs (for QNetworkAccessManager HTTPS)
+        shell: pwsh
+        run: |
+          # Qt5 Network on Windows uses OpenSSL 1.1 for HTTPS. The prebuilt
+          # Qt 5.15.2 from aqtinstall does NOT include these DLLs — so
+          # QNetworkAccessManager silently fails every https:// request
+          # with "TLS initialization failed" at runtime, which hits our
+          # update checker (Help → Check for Updates) and the safe
+          # updater's SHA256SUMS fetch. Bundle them with the app.
+          python -m pip install --quiet aqtinstall==3.1.15
+          python -m aqt install-tool --outputdir "${{ runner.temp }}/OpenSSL" windows desktop tools_openssl_x64
+          Write-Host "=== OpenSSL tool tree:"
+          Get-ChildItem -Path "${{ runner.temp }}/OpenSSL" -Recurse -Filter "*.dll" | Select-Object FullName
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -628,6 +676,23 @@ jobs:
               Write-Host "  ✓ $dll"
             } else {
               Write-Host "  ✗ MISSING: $src"
+            }
+          }
+
+          # ── OpenSSL 1.1 DLLs — REQUIRED for QNetworkAccessManager HTTPS ──
+          # Without these, every https:// request from the app silently
+          # fails with "TLS initialization failed" — Check for Updates
+          # and the safe updater are both dead until these are present.
+          # Sourced from the aqtinstall tools_openssl_x64 install above.
+          $opensslDlls = @("libcrypto-1_1-x64.dll", "libssl-1_1-x64.dll")
+          $sslRoot = "${{ runner.temp }}/OpenSSL"
+          foreach ($dll in $opensslDlls) {
+            $src = Get-ChildItem -Path $sslRoot -Recurse -Filter $dll -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($src) {
+              Copy-Item $src.FullName "$outDir\" -Force
+              Write-Host "  ✓ $dll (from $($src.FullName))"
+            } else {
+              Write-Host "  ✗ MISSING: $dll — HTTPS will fail at runtime"
             }
           }
 
