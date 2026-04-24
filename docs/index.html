@@ -153,7 +153,7 @@
           "name": "How big is Notepatra compared to VS Code?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The Notepatra executable is ~5 MB on Linux, ~3 MB on Windows, and ~3 MB on macOS Apple Silicon. The Linux download is 1.8 MB, the macOS .dmg is 22 MB, and the Windows .zip is 48 MB (sizes differ because Mac and Windows bundle Qt for portability). VS Code is over 300 MB. Notepatra is 6× to 14× smaller than VS Code on every platform."
+            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.17: ~2 MB Linux tarball, ~22 MB macOS DMG (with bundled Qt), ~40 MB Windows MSI/zip (with bundled Qt + QScintilla DLLs). VS Code is 300+ MB regardless. Notepatra is 6× to 14× smaller than VS Code on every platform."
           }
         },
         {
@@ -1378,11 +1378,11 @@
 
     <!-- Stats -->
     <div class="stats">
-        <div class="stat"><div class="stat-number"><span>5</span> MB</div><div class="stat-label">Binary Size</div></div>
+        <div class="stat"><div class="stat-number">~<span>4</span> MB</div><div class="stat-label">Bare Binary</div></div>
         <div class="stat"><div class="stat-number"><span>100</span>+</div><div class="stat-label">File Types</div></div>
         <div class="stat"><div class="stat-number"><span>44</span></div><div class="stat-label">Language Lexers</div></div>
         <div class="stat"><div class="stat-number"><span>2</span> GB</div><div class="stat-label">Max File Size</div></div>
-        <div class="stat"><div class="stat-number"><span>6</span></div><div class="stat-label">Regression Tests</div></div>
+        <div class="stat"><div class="stat-number"><span>11</span></div><div class="stat-label">Regression Suites</div></div>
         <div class="stat"><div class="stat-number"><span>0</span></div><div class="stat-label">Electron</div></div>
     </div>
 
