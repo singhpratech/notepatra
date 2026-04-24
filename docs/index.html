@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor with AI-powered formatters. ~5 MB native executable. 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.14",
+      "softwareVersion": "0.1.16",
       "fileSize": "5 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -1141,7 +1141,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.15 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.16 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1189,8 +1189,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.13">
-        Download v0.1.15 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.16">
+        Download v0.1.16 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1217,7 +1217,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.15 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.16 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>5 MB native binary. C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1303,7 +1303,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.15</div>
+        <div class="section-label">Download v0.1.16</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1746,7 +1746,59 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.15 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.16 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-20</span>
+                        <span>· Cursor-style AI dock + lightning-fast Rust search + interactive terminal CLIs</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🤖 AI Assistant — Cursor-style dock with full workspace awareness</h5>
+                        <ul>
+                            <li><strong>Persistent right-side dock.</strong> <code style="color:var(--green);font-size:12px;">Ctrl+Shift+A</code> toggles the dock instead of spawning a new editor tab. One chat, always in the same place — conversation survives tab switches.</li>
+                            <li><strong>Whole-workspace context.</strong> Every prompt carries the selection, full current file, excerpts of every other open editor tab, the workspace root, and a flat listing of every file under it (with <code style="color:var(--green);font-size:12px;">.git</code> / <code style="color:var(--green);font-size:12px;">node_modules</code> / <code style="color:var(--green);font-size:12px;">target</code> filtered). The AI can reference files you haven't opened yet.</li>
+                            <li><strong>Coding Mode is now unmistakable.</strong> Top strip turns accent-green with a "⌘ Coding Mode" badge and underline; chat body flips to monospace; quick-action grid hides for a clean chat. Chat history is preserved when toggling modes — no resets.</li>
+                            <li><strong>Per-code-block "⧉ Copy code" buttons</strong> inside every response (ChatGPT / Cursor style). Whole-response pill stays in the bubble header.</li>
+                            <li><strong>Cleaner panel chrome.</strong> Removed redundant "Backend:" / "Model:" labels; "Coding Mode" → "Coding", "Show thinking" → "Think". The 8-button quick-action grid + Insert/Replace/Copy row collapse behind a <code style="color:var(--green);font-size:12px;">▸ Quick actions</code> chevron.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🔎 Project Search — 10–50× faster, actually Rust-powered now</h5>
+                        <ul>
+                            <li><strong>Dir walk pruning.</strong> Skips <code style="color:var(--green);font-size:12px;">.git</code>, <code style="color:var(--green);font-size:12px;">node_modules</code>, <code style="color:var(--green);font-size:12px;">target</code>, <code style="color:var(--green);font-size:12px;">build</code>, <code style="color:var(--green);font-size:12px;">dist</code>, <code style="color:var(--green);font-size:12px;">__pycache__</code>, <code style="color:var(--green);font-size:12px;">.venv</code>, <code style="color:var(--green);font-size:12px;">.next</code>, <code style="color:var(--green);font-size:12px;">vendor</code>, <code style="color:var(--green);font-size:12px;">DerivedData</code>, and 15 other heavy dirs up-front. On this repo: <strong>3,512 files walked → 212</strong>. Matches ripgrep's default skip list.</li>
+                            <li><strong>Rust aho-corasick is finally wired in.</strong> Literal searches on files ≤ 8 MB go through <code style="color:var(--green);font-size:12px;">RustCore::findAll()</code> — the same aho-corasick crate ripgrep uses — mapping byte-offsets to <code style="color:var(--green);font-size:12px;">(line, col)</code> via <code style="color:var(--green);font-size:12px;">upper_bound</code> over a pre-built line-start index. Regex searches and files &gt; 8 MB still stream line-by-line so 2 GB logs stay RAM-safe.</li>
+                            <li><strong>Parallel file scanning</strong> via <code style="color:var(--green);font-size:12px;">QtConcurrent::blockingMap</code>. Uses every CPU core; roughly 3–4× faster than the serial version on a 4-core laptop.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🖥️ Terminal — interactive CLIs work in-line</h5>
+                        <ul>
+                            <li><code style="color:var(--green);font-size:12px;">claude</code>, <code style="color:var(--green);font-size:12px;">codex</code>, <code style="color:var(--green);font-size:12px;">aider</code>, <code style="color:var(--green);font-size:12px;">gh</code>, <code style="color:var(--green);font-size:12px;">python</code> / <code style="color:var(--green);font-size:12px;">ipython</code>, <code style="color:var(--green);font-size:12px;">node</code>, <code style="color:var(--green);font-size:12px;">ssh</code>, <code style="color:var(--green);font-size:12px;">mosh</code>, <code style="color:var(--green);font-size:12px;">psql</code>, <code style="color:var(--green);font-size:12px;">mysql</code>, <code style="color:var(--green);font-size:12px;">sqlite3</code>, <code style="color:var(--green);font-size:12px;">gdb</code>, <code style="color:var(--green);font-size:12px;">lldb</code> now get a real TTY via <code style="color:var(--green);font-size:12px;">script(1)</code> wrapping and run <strong>inside</strong> the Notepatra terminal. Input box flips to stdin-feed mode; prompt changes to <code style="color:var(--green);font-size:12px;">&lt;cmd&gt; ▷</code>.</li>
+                            <li>Fullscreen TTY apps (<code style="color:var(--green);font-size:12px;">vim</code>, <code style="color:var(--green);font-size:12px;">nvim</code>, <code style="color:var(--green);font-size:12px;">htop</code>, <code style="color:var(--green);font-size:12px;">less</code>, <code style="color:var(--green);font-size:12px;">tmux</code>) still hand off to the system terminal emulator — a line-based output view genuinely can't host alternate-screen mode.</li>
+                            <li>Alignment fixes for streamed output: replaced <code style="color:var(--green);font-size:12px;">QTextEdit::append()</code> with cursor-positioned <code style="color:var(--green);font-size:12px;">insertHtml + &lt;br&gt;</code>. Bare <code style="color:var(--green);font-size:12px;">cd</code> now means <code style="color:var(--green);font-size:12px;">$HOME</code>.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧪 CI back to green · 🎨 Welcome logo · 🖼 Real tour GIF</h5>
+                        <ul>
+                            <li><code style="color:var(--green);font-size:12px;">test_llamacpp</code> and <code style="color:var(--green);font-size:12px;">test_ai_context</code> were registered with CTest but missing from the explicit <code style="color:var(--green);font-size:12px;">cmake --build --target</code> list — every push landed red. Fixed. Linux + Linux-ARM regression suites pass again. New <code style="color:var(--green);font-size:12px;">test_ai_context</code> unit test — 21 assertions on the workspace-context block builder, runs headless.</li>
+                            <li>Notepatra logo now shows above the "Welcome to Notepatra" headline. <code style="color:var(--green);font-size:12px;">loadWelcomeLogo()</code> tries <code style="color:var(--green);font-size:12px;">QIcon::fromTheme("notepatra")</code> first, then falls back to exe-relative and <code style="color:var(--green);font-size:12px;">~/.local/share/icons/hicolor</code> paths.</li>
+                            <li><code style="color:var(--green);font-size:12px;">docs/screenshots/tour.gif</code> — the "Notepatra in 60 seconds" hero — is now a real captured animation (Welcome → editor → Project Search with live results → AI Assistant with Ollama auto-detected) replacing the placeholder play button.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.16">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.16">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.15</div>
                     <div class="version-meta">
                         <span>2026-04-20</span>
                         <span>· MSI ships + Project Search + universal AI + VS Code Git UX + theme-aware panels</span>
