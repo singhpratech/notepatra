@@ -479,9 +479,12 @@ void ProjectSearch::buildUi() {
     title->setStyleSheet(QString("color: %1;").arg(p.textPrimary));
     root->addWidget(title);
 
-    auto *hint = new QLabel("Find strings across file names AND contents in any text-based file — Python, SQL, TXT, C/C++, JS/TS, Rust, Go, HTML, JSON, YAML, Markdown, logs, config files. Size is not a limit (streams line-by-line so a 2 GB log searches the same as a 2 KB script). Double-click any match to jump to that line.");
+    // Compact hint — the old three-line paragraph was eating vertical
+    // space from the results view. One short line is plenty; full doc
+    // lives in Help → Feature and Tool Guide.
+    auto *hint = new QLabel("Stream search across file names + contents. Double-click a match to jump to that line.");
     hint->setWordWrap(true);
-    hint->setStyleSheet(QString("color: %1; font-size: 12px;").arg(p.textSecondary));
+    hint->setStyleSheet(QString("color: %1; font-size: 11px;").arg(p.textSecondary));
     root->addWidget(hint);
 
     // ── Query input (big, prominent) ─────────────────────────────────
@@ -610,14 +613,32 @@ void ProjectSearch::buildUi() {
     m_results->setFont(notepatraCodeFont());
     m_results->setUniformRowHeights(true);
     m_results->setAlternatingRowColors(false);
+    // Expand to fill available vertical space, scroll when content
+    // exceeds that space. PerPixel scrolling is smoother than the
+    // default PerItem — matters when there are thousands of matches.
+    m_results->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_results->setMinimumHeight(320);
+    m_results->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    m_results->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+    m_results->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_results->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    // Styled scrollbar so it doesn't clash with the Clay palette.
     m_results->setStyleSheet(QString(
         "QTreeWidget { background: %1; color: %2; border: 1px solid %3; "
         "border-radius: 10px; padding: 6px; } "
         "QTreeWidget::item { padding: 4px 6px; border: none; } "
-        "QTreeWidget::item:selected { background: %4; color: #FFFFFF; }"
+        "QTreeWidget::item:selected { background: %4; color: #FFFFFF; } "
+        "QScrollBar:vertical { background: %1; width: 12px; margin: 0; } "
+        "QScrollBar::handle:vertical { background: %3; border-radius: 5px; min-height: 30px; } "
+        "QScrollBar::handle:vertical:hover { background: %4; } "
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; } "
+        "QScrollBar:horizontal { background: %1; height: 12px; margin: 0; } "
+        "QScrollBar::handle:horizontal { background: %3; border-radius: 5px; min-width: 30px; } "
+        "QScrollBar::handle:horizontal:hover { background: %4; } "
+        "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }"
     ).arg(p.cardBg, p.textPrimary, p.inputBorder, p.accent));
     m_results->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
-    root->addWidget(m_results, 1);
+    root->addWidget(m_results, /*stretch*/ 10);   // bigger stretch = bigger share of free space
 
     connect(m_results, &QTreeWidget::itemDoubleClicked, this,
             [this](QTreeWidgetItem *item, int) {
