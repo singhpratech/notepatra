@@ -4,6 +4,7 @@
 #include "preferences.h"
 #include "rustbridge.h"
 #include "fonts.h"
+#include "updater.h"
 #include <QDir>
 #include <QDirIterator>
 
@@ -3587,6 +3588,7 @@ void MainWindow::checkForUpdates(bool silent) {
         QString name = obj.value("name").toString();        // e.g. "v0.1.9"
         QString htmlUrl = obj.value("html_url").toString(); // release page
         QString body_md = obj.value("body").toString();     // release notes (markdown)
+        QJsonArray assets = obj.value("assets").toArray();  // for Updater
 
         if (tag.isEmpty() || htmlUrl.isEmpty()) {
             if (!silent) {
@@ -3639,8 +3641,15 @@ void MainWindow::checkForUpdates(bool silent) {
         box.exec();
 
         QAbstractButton *clicked = box.clickedButton();
-        if (clicked == downloadBtn || clicked == notesBtn) {
+        if (clicked == notesBtn) {
+            // Release Notes — always just opens the release page.
             QDesktopServices::openUrl(QUrl(htmlUrl));
+        } else if (clicked == downloadBtn) {
+            // Safe, verified download + handoff to the OS installer.
+            // Updater::installReleaseInteractive NEVER modifies the running
+            // binary — if anything fails, the current install is intact.
+            // See src/updater.h for the full safety contract.
+            Updater::installReleaseInteractive(this, assets, tag, htmlUrl);
         }
     });
 }

@@ -152,6 +152,7 @@ set(SOURCES
     src/searchresults.cpp
     src/welcome.cpp
     src/projectsearch.cpp
+    src/updater.cpp
 )
 
 set(HEADERS
@@ -181,6 +182,7 @@ set(HEADERS
     src/searchresults.h
     src/welcome.h
     src/projectsearch.h
+    src/updater.h
     src/fonts.h
     src/ollamastatus.h
     src/themes.h
@@ -343,6 +345,31 @@ endif()
 # coordinate correctness, heavy-dir pruning, binary skip, unicode columns,
 # whole-word regex, cancellation, and elapsed-ms reporting. Runs headless
 # via QT_QPA_PLATFORM=offscreen (set inside the test binary).
+# ─── Updater pure-logic deep test ───────────────────────────────────────
+# Covers the two safety-critical PURE functions: asset picker and
+# SHA256SUMS parser. Anything impure (network, file I/O, widgets) is
+# exercised manually + integration-tested by running the binary — the
+# pure pieces are where a silent wrong-install bug would actually hide.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_updater.cpp")
+    add_executable(test_updater
+        test_updater.cpp
+        src/updater.cpp
+    )
+    target_include_directories(test_updater PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_updater PRIVATE
+        Qt5::Widgets       # Updater uses QMessageBox/QProgressDialog
+        Qt5::Network
+    )
+    add_test(NAME test_updater COMMAND $<TARGET_FILE:test_updater>)
+    set_tests_properties(test_updater PROPERTIES
+        LABELS "unit;updater"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+    message(STATUS "Regression test enabled — target: test_updater")
+endif()
+
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_projectsearch.cpp")
     add_executable(test_projectsearch
         test_projectsearch.cpp
