@@ -491,33 +491,25 @@ See the full [CHANGELOG](CHANGELOG.md) for every change in every release, or bro
 
 ---
 
-## Credits & Inspirations
+## Acknowledgments
 
-Notepatra stands on the shoulders of giants. This section names them — the people and projects whose work made Notepatra possible.
+Notepatra is an original product. This section names the open-source libraries and runtimes it depends on — the people maintaining them deserve credit.
 
-### People & projects who shaped the idea
+- **[Qt](https://www.qt.io/)** — the cross-platform C++ GUI framework.
+- **[Scintilla](https://www.scintilla.org/) / [QScintilla](https://riverbankcomputing.com/software/qscintilla/)** (Neil Hodgson, Riverbank Computing) — the text-editing control.
+- **[Rust](https://www.rust-lang.org/) + [Cargo](https://doc.rust-lang.org/cargo/)** — the language and toolchain for the Rust core (search, diff, formatters, hashing, encoding).
+- **[aho-corasick](https://crates.io/crates/aho-corasick)** (BurntSushi) — the literal-search engine behind Project Search.
+- **[regex](https://crates.io/crates/regex)**, **[sqlformat](https://crates.io/crates/sqlformat)**, **[sqlparser](https://crates.io/crates/sqlparser)** — regex and SQL dialect handling.
+- **[Ollama](https://ollama.com/), [llama.cpp](https://github.com/ggerganov/llama.cpp), [LM Studio](https://lmstudio.ai/), [Jan](https://jan.ai/), [vLLM](https://github.com/vllm-project/vllm), [OpenRouter](https://openrouter.ai/)** — local / OpenAI-compatible inference backends Notepatra can talk to.
+- **[Sigstore](https://www.sigstore.dev/) / [Cosign](https://www.sigstore.dev/) / [SLSA](https://slsa.dev/)** — keyless signing and build provenance for every release.
+- **[Claude](https://claude.ai/)** (Anthropic) — co-authored the implementation inside Claude Code.
 
-- **[Don Ho](https://github.com/donho) — [Notepad++](https://notepad-plus-plus.org/).** Don Ho proved — over 20+ years of single-maintainer open source — that a code editor can be tiny, fast, free, and beloved by millions. Notepad++ is the single biggest influence on what a "good editor feel" means. Notepatra doesn't try to replace it; it carries that spirit to every platform.
-- **[Neil Hodgson](https://www.scintilla.org/) — [Scintilla](https://www.scintilla.org/) and [QScintilla](https://riverbankcomputing.com/software/qscintilla/).** The editing engine under every serious code editor for 25+ years, including Notepad++, Notepatra, SciTE, Code::Blocks, and dozens more. Neil and the Riverbank team who maintain the Qt bindings deserve every user's gratitude.
-- **[Anders Hejlsberg & the VS Code team](https://code.visualstudio.com/).** VS Code didn't invent the modern coding UX, but it normalized a command palette, intellisense, and integrated source control for a generation of developers. A lot of Notepatra's muscle-memory choices (Ctrl+Shift+P, Ctrl+Shift+G, sidebar layout) come straight from VS Code.
-- **[The Cursor team](https://cursor.com).** Cursor set the bar for what an AI-first editor should feel like — the right-side chat dock, code-block "apply" actions, streaming markdown responses. Notepatra's AI Assistant was redesigned around their pattern and is the better for it.
-
-### Tech we build on
-
-- **[Qt](https://www.qt.io/)** — cross-platform C++ UI framework. The only reason Notepatra's codebase is ~30 k lines and not 300 k.
-- **[Rust](https://www.rust-lang.org/) + Cargo** — the entire core (search, diff, JSON/HTML formatters, hash, encoding conversion) is Rust. Memory safety by construction, compiled down to a handful of MB.
-- **[aho-corasick](https://crates.io/crates/aho-corasick)** by BurntSushi — the same literal search algorithm ripgrep uses. What makes Project Search scan 800 k lines in 9 ms.
-- **[sqlformat](https://crates.io/crates/sqlformat) + [sqlparser](https://crates.io/crates/sqlparser)** — SQL dialect-aware formatting and parsing.
-- **[Ollama](https://ollama.com/), [llama.cpp](https://github.com/ggerganov/llama.cpp), [LM Studio](https://lmstudio.ai/), [Jan](https://jan.ai/), [vLLM](https://github.com/vllm-project/vllm)** — the local AI runtimes that make "your code never leaves your machine" real. Notepatra speaks all of their HTTP APIs.
-- **[Sigstore + Cosign](https://www.sigstore.dev/)** and **[SLSA](https://slsa.dev/)** — keyless signing + build provenance so every release is cryptographically verifiable without a private key we could lose.
-- **[Claude](https://claude.ai/) (Anthropic)** — Notepatra's implementation was co-written with Claude, in Claude Code. What would have been a multi-year solo project shipped in months.
-
-To everyone listed above, and to everyone maintaining the ~200 transitive dependencies in `rust-core/Cargo.lock` and the Qt/QScintilla chain: thank you.
+Thanks also to the ~200 transitive crates in `rust-core/Cargo.lock` and the broader Qt / QScintilla ecosystem maintainers.
 
 ---
 
 <p align="center">
-  <strong>Envisioned by Prateek Singh. Inspired by Notepad++. Built by Claude.</strong>
+  <strong>Envisioned by Prateek Singh. Built with Claude.</strong>
 </p>
 <p align="center">
   <em>"I didn't build Notepatra because the world needed another text editor.<br>I built it because every developer — on Linux, Windows, or Mac — deserves one that's fast, free, and smart."</em>
