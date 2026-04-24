@@ -30,7 +30,7 @@
 ; ─── Installer metadata shown in Windows Explorer right-click → Properties ───
 Name "${APP_NAME} ${VERSION}"
 Caption "${APP_NAME} ${VERSION} Setup"
-BrandingText "Notepatra - native code editor for Linux, macOS, Windows"
+BrandingText "Notepatra Native code editor for the AI era"
 OutFile "notepatra-setup-${VERSION}.exe"
 VIProductVersion "${VERSION}.0"
 VIAddVersionKey "ProductName"     "${APP_NAME}"

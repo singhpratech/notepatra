@@ -182,6 +182,12 @@ private:
     int    m_lastMatches = 0;
     qint64 m_lastLines = 0;
     int    m_lastWalkDiscovered = 0;
+    // Last path any worker thread started scanning — used by refreshLiveStatus
+    // to append "· current: <path>" when the scan appears to have wedged
+    // (same tick count for 2 s). Gives the user actionable diagnostic info
+    // instead of a frozen progress bar.
+    QString m_lastFileInFlight;
+    int    m_stalledTicks = 0;  // counts UI ticks where (done,total) didn't change
     void refreshLiveStatus();
 };
 

@@ -31,7 +31,7 @@
     <Package InstallerVersion="500"
              Compressed="yes"
              InstallScope="perMachine"
-             Description="Notepatra - Native C++/Rust code editor"
+             Description="Notepatra Native code editor for the AI era"
              Comments="Native C++/Rust code editor for the AI era. Local AI formatters (Ollama/llama.cpp). GPL-3.0 licensed."
              Manufacturer="$(var.Publisher)" />
 

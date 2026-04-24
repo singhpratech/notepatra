@@ -191,6 +191,13 @@ void ProjectSearchWorker::search(const Params &p) {
         if (m_cancel.load()) return;
         QFileInfo fi(path);
 
+        // Emit the current path BEFORE any read — so when the scan
+        // appears frozen (Windows OneDrive placeholder materializing,
+        // network drive stall, AV lock, 2 GB log with no newlines…),
+        // the user can see EXACTLY which file is stuck instead of
+        // staring at a stalled progress bar.
+        emit fileStarted(path);
+
         // File-name match — fires once per file if the file's name
         // itself contains the query.
         if (p.searchNames) {
@@ -211,7 +218,9 @@ void ProjectSearchWorker::search(const Params &p) {
         // appearing frozen until the very end.
         auto tick = [&]() {
             const int fd = ++filesDoneAtomic;
-            if ((fd & 0x07) == 0 || fd == totalFiles)
+            // Tick every 4 files (was every 8). Faster progress-bar motion
+            // on small trees + earlier detection if the scan has wedged.
+            if ((fd & 0x03) == 0 || fd == totalFiles)
                 emit progress(fd, totalFiles, totalMatchesAtomic.load(),
                               timer.elapsed(), totalLinesAtomic.load());
         };
@@ -448,6 +457,16 @@ ProjectSearch::ProjectSearch(QWidget *parent) : QWidget(parent) {
         m_progressBar->setRange(0, 100);
         m_progressBar->setValue(0);
         refreshLiveStatus();
+    }, Qt::QueuedConnection);
+    // Diagnostic signal — the worker emits the path of every file BEFORE it
+    // reads it. If the scan freezes (Windows OneDrive/network drive/AV lock,
+    // huge file with no newlines, whatever), the status label shows exactly
+    // which file the stuck worker is holding. Throttled by m_liveTimer's
+    // 10 Hz tick so we don't flood the UI with hundreds of paths per second
+    // across parallel threads — we just capture the latest.
+    connect(m_worker, &ProjectSearchWorker::fileStarted,
+            this, [this](const QString &path) {
+        m_lastFileInFlight = path;
     }, Qt::QueuedConnection);
     connect(m_worker, &ProjectSearchWorker::errorOccurred,
             this, [this](const QString &msg) {
@@ -1084,10 +1103,27 @@ void ProjectSearch::refreshLiveStatus() {
     } else if (m_phase == Phase::Scanning) {
         const int pct = m_lastFilesTotal > 0
             ? int((double(m_lastFilesDone) / double(m_lastFilesTotal)) * 100.0) : 0;
-        m_statusLabel->setText(
-            QString("Searching — %1 / %2 files (%3%) · %4 lines · %5 matches · %6 elapsed")
+        QString base = QString("Searching — %1 / %2 files (%3%) · %4 lines · %5 matches · %6 elapsed")
                 .arg(m_lastFilesDone).arg(m_lastFilesTotal).arg(pct)
-                .arg(lines).arg(m_lastMatches).arg(elapsed));
+                .arg(lines).arg(m_lastMatches).arg(elapsed);
+        // Stall detection — the live timer ticks at 10 Hz. If the
+        // (done, total) pair hasn't advanced for 20 consecutive ticks
+        // (~2 seconds), append the last in-flight path so the user
+        // can see which file has the scan wedged. Common on Windows:
+        //   · OneDrive placeholder pulls a GB over the net
+        //   · network drive (Z:\) that lost its connection
+        //   · Defender / AV holds an exclusive lock
+        //   · 2 GB log with no newlines (QTextStream reads it whole)
+        static int s_lastDone = -1;
+        if (m_lastFilesDone == s_lastDone) m_stalledTicks++;
+        else { m_stalledTicks = 0; s_lastDone = m_lastFilesDone; }
+        if (m_stalledTicks >= 20 && !m_lastFileInFlight.isEmpty()) {
+            QString shortPath = m_lastFileInFlight;
+            if (shortPath.length() > 80)
+                shortPath = "…" + shortPath.right(79);
+            base += QString("\n⏳ stalled on: %1").arg(shortPath);
+        }
+        m_statusLabel->setText(base);
     }
     // Idle = onFinished already wrote the final line — leave it alone.
 }
