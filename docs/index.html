@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor with AI-powered formatters. ~5 MB native executable. 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.16",
+      "softwareVersion": "0.1.17",
       "fileSize": "5 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.16 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.17 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.16">
-        Download v0.1.16 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.17">
+        Download v0.1.17 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.16 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.17 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>5 MB native binary. C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1388,7 +1388,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.16</div>
+        <div class="section-label">Download v0.1.17</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1836,7 +1836,60 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.16 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.17 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-24</span>
+                        <span>· Safe in-app updater + Project Search rewrite (honest progress, live counters, page-scroll, fix never-fired worker)</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🔄 Safe in-app updater — Notepad++-style</h5>
+                        <ul>
+                            <li><strong>"Update Available" → Download → done.</strong> Picks the right artifact for your OS + arch, stream-downloads with a progress dialog, fetches <code style="color:var(--green);font-size:12px;">SHA256SUMS</code> and verifies, atomic-renames, hands off to the native installer (<code style="color:var(--green);font-size:12px;">msiexec /i</code> on Windows, Finder drag-to-Applications on macOS, opens the Downloads folder on Linux).</li>
+                            <li><strong>Running Notepatra is NEVER touched by the updater.</strong> Only the OS installer you click through may replace it, and MSI/Finder/file-manager all have their own rollback. Checksum mismatch, cancel, network drop, disk full — any failure deletes the <code style="color:var(--green);font-size:12px;">.part</code> file and leaves your current install 100 % intact.</li>
+                            <li>18-case deep test (<code style="color:var(--green);font-size:12px;">test_updater.cpp</code>) on the two pure safety-critical functions — asset picker and SHA256SUMS parser.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🔎 Project Search — fixed, honest, streaming, page-scrollable</h5>
+                        <ul>
+                            <li><strong>Critical bug fix.</strong> <code style="color:var(--green);font-size:12px;">QMetaObject::invokeMethod(m_worker, "search", Q_ARG(ProjectSearchWorker::Params, p))</code> was silently failing — the type-name string didn't match the slot's unqualified <code style="color:var(--green);font-size:12px;">"Params"</code>. The worker was <strong>never called</strong>. Switched to the lambda overload. Every search from the UI now actually runs.</li>
+                            <li><strong>Honest 0 → 100 % progress bar</strong> — no bouncing, no fake walk share. Fills linearly from <code style="color:var(--green);font-size:12px;">scanned / total</code>.</li>
+                            <li><strong>Full live status line</strong>: <code style="color:var(--green);font-size:12px;">Searching — 48 / 212 files (22%) · 28,340 lines · 3 matches · 180 ms elapsed</code>. A 10 Hz UI timer refreshes elapsed-ms between worker events so it visibly scrolls.</li>
+                            <li><strong>Page-level scroll</strong> — the whole tab lives in a <code style="color:var(--green);font-size:12px;">QScrollArea</code>, the match tree grows to fit content, the page scrollbar takes over. One scroll, not two. Matches VS Code / Cursor / Sublime.</li>
+                            <li><strong>Right-click context menu</strong> on a match: Copy location (path:line:col), Copy full path, Copy match line text. Parent rows show full absolute paths, copyable.</li>
+                            <li><strong>Instant Cancel</strong> — immediate "Cancelling…" feedback, worker bails at next <code style="color:var(--green);font-size:12px;">m_cancel.load()</code>, post-cancel events ignored via phase guard.</li>
+                            <li><strong>Ctrl+Shift+F (Find in Files) wired correctly</strong> — menu said "Find in Files…" but action called <code style="color:var(--green);font-size:12px;">showFind()</code> (tab 0) instead of <code style="color:var(--green);font-size:12px;">showFindInFiles()</code> (tab 2). One-char bug, a month silent.</li>
+                            <li>27-case worker deep test + new 5-case headless UI test proving status-line transitions end to end.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧩 Help menu + 🎨 Website timeline</h5>
+                        <ul>
+                            <li>Help menu now has direct links: <strong>Notepatra on GitHub</strong>, <strong>Latest Release</strong>, <strong>Report an Issue</strong> — each opens the correct GitHub page in your browser.</li>
+                            <li>Website Version History collapses every non-latest release into a single clickable row, with a vertical timeline rail + colored dot per release. Keyboard accessible (Enter / Space).</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧹 CI + tests</h5>
+                        <ul>
+                            <li>Removed the dead daily <code style="color:var(--green);font-size:12px;">docs/stats.json</code> pipeline — it was red for weeks (E2BIG / branch-protection). The website's download counter reads directly from the GitHub API at page-load; nothing consumed <code style="color:var(--green);font-size:12px;">stats.json</code> anyway.</li>
+                            <li>Full <code style="color:var(--green);font-size:12px;">ctest -j</code>: 11/11 pass including <code style="color:var(--green);font-size:12px;">test_projectsearch</code> (27), <code style="color:var(--green);font-size:12px;">test_updater</code> (18), <code style="color:var(--green);font-size:12px;">test_projectsearch_ui</code> (5).</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.17">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.17">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.16</div>
                     <div class="version-meta">
                         <span>2026-04-20</span>
                         <span>· Cursor-style AI dock + lightning-fast Rust search + interactive terminal CLIs</span>
