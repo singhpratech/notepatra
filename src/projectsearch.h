@@ -100,6 +100,13 @@ public:
     void setQuery(const QString &query);
     void focusQuery();
 
+    // Test hooks — let headless tests inspect the live UI state without
+    // needing a visible window. Also lets an external demo driver kick
+    // off a search programmatically (bypasses xdotool focus races).
+    QString currentStatusText() const;
+    int     currentProgressValue() const;
+    void    triggerSearchForTesting() { startSearch(); }
+
 signals:
     void openFileAtLine(const QString &filePath, int lineNumber);
     // Emitted when the user double-clicks a result — column is 1-based

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.16 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.17 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -392,6 +392,33 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_projectsearch.cpp"
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     )
     message(STATUS "Regression test enabled — target: test_projectsearch")
+endif()
+
+# Headless UI smoke test — proves the ProjectSearch widget's status
+# label cycles through the walk → scan → finish text states and that
+# the progress bar fills 0→100 without bouncing. Bypasses xdotool.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_projectsearch_ui.cpp")
+    add_executable(test_projectsearch_ui
+        test_projectsearch_ui.cpp
+        src/projectsearch.cpp
+        src/rustbridge.cpp
+    )
+    target_include_directories(test_projectsearch_ui PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+    )
+    target_link_libraries(test_projectsearch_ui PRIVATE
+        Qt5::Widgets
+        Qt5::Concurrent
+        ${RUST_LIB}
+    )
+    add_dependencies(test_projectsearch_ui rust_core)
+    add_test(NAME test_projectsearch_ui COMMAND $<TARGET_FILE:test_projectsearch_ui>)
+    set_tests_properties(test_projectsearch_ui PROPERTIES
+        LABELS "ui;search"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+    message(STATUS "Regression test enabled — target: test_projectsearch_ui")
 endif()
 
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ollama.cpp")

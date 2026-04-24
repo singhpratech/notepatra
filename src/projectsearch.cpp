@@ -8,13 +8,16 @@
 #include <QMutex>
 #include <QElapsedTimer>
 #include <atomic>
+#include <cstdio>
 #include <functional>
 
 static int s_paramsTypeId = qRegisterMetaType<ProjectSearchWorker::Params>("ProjectSearchWorker::Params");
 static int s_matchTypeId  = qRegisterMetaType<ProjectSearchMatch>("ProjectSearchMatch");
 static int s_matchVecId   = qRegisterMetaType<QVector<ProjectSearchMatch>>("QVector<ProjectSearchMatch>");
 
+#include <QApplication>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -25,10 +28,13 @@ static int s_matchVecId   = qRegisterMetaType<QVector<ProjectSearchMatch>>("QVec
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
+#include <QMenu>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QTextStream>
+#include <QTimer>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
@@ -95,11 +101,18 @@ static void walkSourceTree(const QString &root, const QStringList &globs,
             if (isHeavyDir(fi.fileName())) continue;
             walkSourceTree(fi.absoluteFilePath(), globs, out, cancel,
                            progressEvery, progress);
+            // Emit once per visited subdirectory too — gives the user a
+            // live count even when individual directories are small.
+            if (progress) progress(out.size());
         } else if (fi.isFile()) {
             if (!matchesAnyGlob(fi.fileName(), globs)) continue;
             out.append(fi.absoluteFilePath());
-            if (progress && (out.size() % progressEvery == 0))
-                progress(out.size());
+            // Fire on every file during the early ramp so the counter
+            // visibly ticks from 0 upward, then drop to progressEvery
+            // so we don't flood the UI thread for huge trees.
+            const int n = out.size();
+            if (progress && (n <= 20 || n % progressEvery == 0))
+                progress(n);
         }
     }
 }
@@ -620,6 +633,49 @@ void ProjectSearch::buildUi() {
         // not just the start of the line.
         if (col > 0) emit openFileAtLineCol(path, line, col);
     });
+
+    // Right-click context menu — "Copy location" and "Copy match line".
+    // Standard ripgrep-style `path:line:col` string goes on the clipboard
+    // so the user can paste it into a terminal, IDE jump, grep output
+    // etc. The match's line text is also copyable on its own.
+    m_results->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_results, &QWidget::customContextMenuRequested, this,
+            [this](const QPoint &pos) {
+        QTreeWidgetItem *item = m_results->itemAt(pos);
+        if (!item) return;
+        QString path = item->data(0, Qt::UserRole).toString();
+        if (path.isEmpty()) return;
+        int line = item->data(0, Qt::UserRole + 1).toInt();
+        int col  = item->data(0, Qt::UserRole + 2).toInt();
+
+        QMenu menu(m_results);
+        auto *actLoc = menu.addAction("Copy location (path:line:col)");
+        auto *actPath = menu.addAction("Copy full path");
+        QAction *actLine = nullptr;
+        if (col > 0) {
+            // Only child items (actual matches) have a real line:col.
+            actLine = menu.addAction("Copy match line text");
+        }
+        QAction *picked = menu.exec(m_results->viewport()->mapToGlobal(pos));
+        if (!picked) return;
+        QClipboard *cb = QApplication::clipboard();
+        if (picked == actLoc) {
+            cb->setText(col > 0
+                ? QString("%1:%2:%3").arg(path).arg(line).arg(col)
+                : path);
+        } else if (picked == actPath) {
+            cb->setText(path);
+        } else if (picked == actLine) {
+            cb->setText(item->text(0).trimmed());
+        }
+    });
+}
+
+QString ProjectSearch::currentStatusText() const {
+    return m_statusLabel ? m_statusLabel->text() : QString();
+}
+int ProjectSearch::currentProgressValue() const {
+    return m_progressBar ? m_progressBar->value() : 0;
 }
 
 void ProjectSearch::setFolder(const QString &folder) {
@@ -684,9 +740,14 @@ void ProjectSearch::startSearch() {
     p.regex = m_regexChk->isChecked();
     p.skipBinary = !m_binaryChk->isChecked();
 
-    QMetaObject::invokeMethod(m_worker, "search",
-                              Qt::QueuedConnection,
-                              Q_ARG(ProjectSearchWorker::Params, p));
+    // Queue the search onto the worker thread via a lambda — bypasses
+    // Qt's string-based method lookup which can't match ProjectSearchWorker::
+    // Params vs the slot's unqualified Params argument (this was silently
+    // failing, leaving the worker never called and the UI sitting forever
+    // at "0 files discovered").
+    ProjectSearchWorker *w = m_worker;
+    QMetaObject::invokeMethod(m_worker, [w, p]() { w->search(p); },
+                              Qt::QueuedConnection);
 }
 
 void ProjectSearch::cancelSearch() {
@@ -706,14 +767,16 @@ void ProjectSearch::cancelSearch() {
     // top of one that's still unwinding.
 }
 
-// Add or fetch the per-file parent row
+// Add or fetch the per-file parent row. Shows the FULL absolute path on
+// the parent so the user can read and copy it — not just the file name.
 static QTreeWidgetItem *fileParent(QTreeWidget *tree, QHash<QString, QTreeWidgetItem*> &index,
                                    const QString &path, const QString &accent) {
     auto it = index.find(path);
     if (it != index.end()) return it.value();
     auto *root = new QTreeWidgetItem(tree);
-    QFileInfo fi(path);
-    root->setText(0, QString("  %1").arg(fi.fileName()));
+    // Display the full absolute path — single-click row, Ctrl+C copies
+    // the path directly (tree widget's clipboard-text role).
+    root->setText(0, QString("  %1").arg(path));
     root->setToolTip(0, path);
     root->setData(0, Qt::UserRole, path);     // for double-click-to-open
     root->setData(0, Qt::UserRole + 1, 1);    // line 1
