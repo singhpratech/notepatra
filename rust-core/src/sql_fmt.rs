@@ -101,10 +101,17 @@ struct Writer {
 
 impl Writer {
     fn new(indent_width: usize, uppercase: bool) -> Self {
-        Self { buf: String::new(), indent_width, uppercase, level: 0 }
+        Self {
+            buf: String::new(),
+            indent_width,
+            uppercase,
+            level: 0,
+        }
     }
 
-    fn finish(self) -> String { self.buf }
+    fn finish(self) -> String {
+        self.buf
+    }
 
     fn indent(&self) -> String {
         " ".repeat(self.level * self.indent_width)
@@ -115,7 +122,11 @@ impl Writer {
     }
 
     fn kw(&self, s: &str) -> String {
-        if self.uppercase { s.to_uppercase() } else { s.to_lowercase() }
+        if self.uppercase {
+            s.to_uppercase()
+        } else {
+            s.to_lowercase()
+        }
     }
 
     fn push_line(&mut self, s: &str) {
@@ -126,7 +137,9 @@ impl Writer {
         self.buf.push_str(s);
     }
 
-    fn push(&mut self, s: &str) { self.buf.push_str(s); }
+    fn push(&mut self, s: &str) {
+        self.buf.push_str(s);
+    }
 
     // ── Statement dispatch ──
 
@@ -162,7 +175,11 @@ impl Writer {
         }
         if let Some(offset) = &q.offset {
             self.push("\n");
-            self.push_line(&format!("{} {}", self.kw("OFFSET"), fmt_expr(&offset.value)));
+            self.push_line(&format!(
+                "{} {}",
+                self.kw("OFFSET"),
+                fmt_expr(&offset.value)
+            ));
         }
     }
 
@@ -207,7 +224,12 @@ impl Writer {
                 self.push("\n");
                 self.push_line(")");
             }
-            SetExpr::SetOperation { op, set_quantifier, left, right } => {
+            SetExpr::SetOperation {
+                op,
+                set_quantifier,
+                left,
+                right,
+            } => {
                 self.write_set_expr(left);
                 self.push("\n");
                 let op_str = format!("{}", op);
@@ -235,7 +257,11 @@ impl Writer {
             self.kw("SELECT")
         };
 
-        let projection: Vec<String> = sel.projection.iter().map(|p| self.fmt_select_item(p)).collect();
+        let projection: Vec<String> = sel
+            .projection
+            .iter()
+            .map(|p| self.fmt_select_item(p))
+            .collect();
 
         if projection.len() == 1 && !projection[0].contains('\n') && projection[0].len() < 80 {
             self.push_line(&format!("{} {}", select_kw, projection[0]));
@@ -245,7 +271,9 @@ impl Writer {
                 self.push("\n");
                 self.push(&self.sub_indent(1));
                 self.push(col);
-                if i + 1 < projection.len() { self.push(","); }
+                if i + 1 < projection.len() {
+                    self.push(",");
+                }
             }
         }
 
@@ -283,8 +311,9 @@ impl Writer {
     fn fmt_select_item(&self, item: &SelectItem) -> String {
         match item {
             SelectItem::UnnamedExpr(e) => fmt_expr(e),
-            SelectItem::ExprWithAlias { expr, alias } =>
-                format!("{} {} {}", fmt_expr(expr), self.kw("AS"), alias.value),
+            SelectItem::ExprWithAlias { expr, alias } => {
+                format!("{} {} {}", fmt_expr(expr), self.kw("AS"), alias.value)
+            }
             SelectItem::QualifiedWildcard(obj, _) => format!("{}.*", fmt_object_name(obj)),
             SelectItem::Wildcard(_) => "*".to_string(),
         }
@@ -304,11 +333,19 @@ impl Writer {
                 let base = fmt_object_name(name);
                 let s = if let Some(a) = alias {
                     format!("{} {}", base, a.name.value)
-                } else { base };
+                } else {
+                    base
+                };
                 self.push(&s);
             }
-            TableFactor::Derived { lateral, subquery, alias } => {
-                if *lateral { self.push(&self.kw("LATERAL ")); }
+            TableFactor::Derived {
+                lateral,
+                subquery,
+                alias,
+            } => {
+                if *lateral {
+                    self.push(&self.kw("LATERAL "));
+                }
                 self.push("(\n");
                 self.level += 1;
                 self.write_query(subquery);
@@ -316,7 +353,9 @@ impl Writer {
                 self.push("\n");
                 self.push(&self.indent());
                 self.push(")");
-                if let Some(a) = alias { self.push(&format!(" {}", a.name.value)); }
+                if let Some(a) = alias {
+                    self.push(&format!(" {}", a.name.value));
+                }
             }
             other => {
                 let s = format!("{}", other);
@@ -340,7 +379,11 @@ impl Writer {
             self.push(&format!(
                 "{} ({})",
                 self.kw("USING"),
-                using.iter().map(|i| i.value.clone()).collect::<Vec<_>>().join(", ")
+                using
+                    .iter()
+                    .map(|i| i.value.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ));
         }
     }
@@ -362,7 +405,9 @@ impl Writer {
 
     fn write_order_by(&mut self, order: &[OrderByExpr]) {
         for (i, ob) in order.iter().enumerate() {
-            if i > 0 { self.push(",\n"); }
+            if i > 0 {
+                self.push(",\n");
+            }
             self.push(&self.sub_indent(1));
             let dir = match ob.asc {
                 Some(true) => format!(" {}", self.kw("ASC")),
@@ -383,10 +428,15 @@ impl Writer {
 // Free helpers
 // ═══════════════════════════════════════════════════════════
 
-fn fmt_expr(e: &Expr) -> String { format!("{}", e) }
+fn fmt_expr(e: &Expr) -> String {
+    format!("{}", e)
+}
 
 fn fmt_object_name(n: &ObjectName) -> String {
-    n.0.iter().map(|p| p.value.clone()).collect::<Vec<_>>().join(".")
+    n.0.iter()
+        .map(|p| p.value.clone())
+        .collect::<Vec<_>>()
+        .join(".")
 }
 
 fn group_by_items(gb: &GroupByExpr) -> Vec<String> {
@@ -397,7 +447,13 @@ fn group_by_items(gb: &GroupByExpr) -> Vec<String> {
 }
 
 fn join_keyword(op: &JoinOperator, uppercase: bool) -> (String, String) {
-    let kw = |s: &str| if uppercase { s.to_string() } else { s.to_lowercase() };
+    let kw = |s: &str| {
+        if uppercase {
+            s.to_string()
+        } else {
+            s.to_lowercase()
+        }
+    };
     let word = match op {
         JoinOperator::Inner(_) => "INNER JOIN",
         JoinOperator::LeftOuter(_) => "LEFT JOIN",
@@ -472,7 +528,11 @@ fn collect_bool<'a>(e: &'a Expr, last_op: &str, out: &mut Vec<(String, &'a Expr)
             _ => {}
         }
     }
-    let op = if first { String::new() } else { last_op.to_string() };
+    let op = if first {
+        String::new()
+    } else {
+        last_op.to_string()
+    };
     out.push((op, e));
 }
 
@@ -538,7 +598,16 @@ mod tests {
                    ORDER BY order_count DESC \
                    LIMIT 100";
         let out = format_sql_dialect(sql, 4, true, "ansi");
-        for kw in ["SELECT", "FROM", "LEFT JOIN", "WHERE", "GROUP BY", "HAVING", "ORDER BY", "LIMIT"] {
+        for kw in [
+            "SELECT",
+            "FROM",
+            "LEFT JOIN",
+            "WHERE",
+            "GROUP BY",
+            "HAVING",
+            "ORDER BY",
+            "LIMIT",
+        ] {
             assert!(out.contains(kw), "missing keyword {} in:\n{}", kw, out);
         }
         assert!(out.contains("    u.id,"));
