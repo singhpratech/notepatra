@@ -17,6 +17,9 @@
 #include <QDir>
 #include <QDesktopServices>
 #include <QMouseEvent>
+#include <QKeyEvent>
+#include <QTextCursor>
+#include <QTextDocument>
 #include <QProcess>
 #include <QImage>
 #include <QBuffer>
@@ -406,10 +409,16 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     const AiPalette pal = aiPalette();
 
     // ─── TOP STRIP: Header + model selector + status ────────────────────
-    m_headerLabel = new QLabel("  AI Assistant");
-    m_headerLabel->setFixedHeight(24);
+    // Single-letter brand mark in a compact header — "AI Assistant" was
+    // routinely truncated in the 320 px-wide right dock. Full product
+    // name lives on the welcome screen + the dock's content speaks for
+    // itself. Height bumped so the underline for Coding Mode doesn't
+    // clip the ascenders.
+    m_headerLabel = new QLabel("  AI");
+    m_headerLabel->setFixedHeight(28);
     m_headerLabel->setStyleSheet(QString(
-        "font-weight: bold; background: %1; color: %2; padding: 4px 8px;")
+        "font-weight: 600; background: %1; color: %2; "
+        "padding: 6px 10px; letter-spacing: 1px; font-size: 11px;")
         .arg(pal.chromeBg, pal.headerFg));
     layout->addWidget(m_headerLabel);
 
@@ -600,11 +609,10 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         // accent-green "AI · Coding Mode" on, back to neutral off.
         if (m_headerLabel) {
             const AiPalette p = aiPalette();
-            m_headerLabel->setText(checked
-                ? "  AI Assistant  ·  ⌘ Coding Mode"
-                : "  AI Assistant");
+            m_headerLabel->setText(checked ? "  AI  ·  ⌘ CODING" : "  AI");
             m_headerLabel->setStyleSheet(QString(
-                "font-weight: bold; background: %1; color: %2; padding: 4px 8px;"
+                "font-weight: 600; background: %1; color: %2; "
+                "padding: 6px 10px; letter-spacing: 1px; font-size: 11px;"
                 "border-bottom: 2px solid %3;")
                 .arg(p.chromeBg,
                      checked ? QStringLiteral("#4EC9B0") : p.headerFg,
@@ -780,14 +788,32 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     updateVoiceButtonVisual(false);
     customRow->addWidget(m_voiceBtn);
 
-    m_customInput = new QLineEdit;
-    m_customInput->setPlaceholderText("Type a message and press Enter to send...");
+    // Multi-line, Cursor-style input — grows with content up to 6 lines,
+    // scrolls after that. Enter sends, Shift+Enter inserts a newline
+    // (standard chat-app semantics; handled in eventFilter below).
+    m_customInput = new QPlainTextEdit;
+    m_customInput->setPlaceholderText("Ask anything about your code, or paste a snippet…");
     m_customInput->setStyleSheet(QString(
-        "QLineEdit { background: %1; color: %2; border: 1px solid %3; "
-        "border-radius: 18px; padding: 8px 16px; font-size: 13px; }"
-        "QLineEdit:focus { border: 1px solid %4; }")
+        "QPlainTextEdit { background: %1; color: %2; border: 1px solid %3; "
+        "border-radius: 12px; padding: 8px 14px; font-size: 13px; }"
+        "QPlainTextEdit:focus { border: 1px solid %4; }")
         .arg(pal.inputBg, pal.inputText, pal.inputBorder, pal.inputFocus));
-    m_customInput->setFixedHeight(36);
+    m_customInput->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_customInput->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_customInput->setTabChangesFocus(true);
+    m_customInput->setMinimumHeight(40);
+    m_customInput->setMaximumHeight(140);
+    // Auto-grow: resize to fit content up to maximumHeight.
+    auto resizeInput = [this]() {
+        const int lines = qMax(1, m_customInput->document()->blockCount());
+        const int lineH = m_customInput->fontMetrics().lineSpacing();
+        const int h = qBound(40, lineH * lines + 18, 140);
+        m_customInput->setFixedHeight(h);
+    };
+    connect(m_customInput->document(), &QTextDocument::contentsChanged, this, resizeInput);
+    // Enter = send, Shift+Enter = newline. Registered via the existing
+    // eventFilter() hook below.
+    m_customInput->installEventFilter(this);
     customRow->addWidget(m_customInput, 1);
 
     auto *sendBtn = new QPushButton("Send");
@@ -899,9 +925,11 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     connect(optimizeBtn, &QPushButton::clicked, this, [this]() { sendPrompt("optimize"); });
     connect(translateBtn, &QPushButton::clicked, this, [this]() { sendPrompt("translate"); });
     connect(sendBtn, &QPushButton::clicked, this, [this]() {
-        if (!m_customInput->text().isEmpty()) sendPrompt("custom");
+        if (!m_customInput->toPlainText().trimmed().isEmpty()) sendPrompt("custom");
     });
-    connect(m_customInput, &QLineEdit::returnPressed, sendBtn, &QPushButton::click);
+    // Enter-to-send wiring lives in eventFilter() — the event filter
+    // intercepts Return (no modifier) on the QPlainTextEdit and fires
+    // this click. Shift+Return falls through and inserts a newline.
     connect(m_stopBtn, &QPushButton::clicked, m_ollama, &OllamaClient::cancel);
     connect(insertBtn, &QPushButton::clicked, this, [this]() {
         if (!m_lastResponse.isEmpty()) emit insertText(m_lastResponse);
@@ -1073,6 +1101,21 @@ bool AIPanel::eventFilter(QObject *obj, QEvent *evt) {
         setStatus("Attachment removed", false);
         return true;
     }
+    // Cursor / Copilot / ChatGPT semantics for the multi-line input:
+    //   Enter          → send
+    //   Shift+Enter    → insert a newline (default QPlainTextEdit behaviour)
+    //   Ctrl+Enter     → send (alias, for people used to Slack / Linear)
+    if (obj == m_customInput && evt->type() == QEvent::KeyPress) {
+        auto *ke = static_cast<QKeyEvent*>(evt);
+        const int key = ke->key();
+        const Qt::KeyboardModifiers mods = ke->modifiers();
+        const bool isEnter = (key == Qt::Key_Return || key == Qt::Key_Enter);
+        if (isEnter && !(mods & Qt::ShiftModifier)) {
+            if (!m_customInput->toPlainText().trimmed().isEmpty())
+                sendPrompt("custom");
+            return true;   // swallow the keypress; don't insert a newline
+        }
+    }
     return QWidget::eventFilter(obj, evt);
 }
 
@@ -1211,12 +1254,17 @@ void AIPanel::handleTranscriptionFinished(int exitCode, QProcess *process, const
         return;
     }
 
-    if (!m_customInput->text().trimmed().isEmpty())
-        m_customInput->setText(m_customInput->text().trimmed() + " " + transcript);
+    const QString cur = m_customInput->toPlainText().trimmed();
+    if (!cur.isEmpty())
+        m_customInput->setPlainText(cur + " " + transcript);
     else
-        m_customInput->setText(transcript);
+        m_customInput->setPlainText(transcript);
 
     m_customInput->setFocus();
+    // Caret to end so the user keeps typing after the inserted transcript.
+    QTextCursor c = m_customInput->textCursor();
+    c.movePosition(QTextCursor::End);
+    m_customInput->setTextCursor(c);
     setStatus("✓ Speech transcribed into the AI prompt box", false);
 }
 
@@ -1316,9 +1364,9 @@ void AIPanel::sendPrompt(const QString &action) {
         prompt = "Translate this code to Python (if not already Python) or to JavaScript (if already Python). Output only the translated code:\n\n```\n" + m_context + "\n```";
         userBubbleText = "Translate Python ↔ JavaScript:\n\n" + m_context;
     } else if (action == "custom") {
-        prompt = m_customInput->text() + "\n\n```\n" + m_context + "\n```";
-        userBubbleText = m_customInput->text() +
-            (m_context.isEmpty() ? "" : "\n\n" + m_context);
+        const QString userText = m_customInput->toPlainText();
+        prompt = userText + "\n\n```\n" + m_context + "\n```";
+        userBubbleText = userText + (m_context.isEmpty() ? "" : "\n\n" + m_context);
         m_customInput->clear();
     }
 

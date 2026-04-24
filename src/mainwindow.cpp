@@ -2755,7 +2755,7 @@ void MainWindow::buildToolbar() {
                        QColor("#D47A1E"), "search", "Search",
                        "Recursively search file names + contents (Ctrl+Shift+G)");
     addFeatureShortcut(featureTb, findActionByPrefix(this, "AI Assistant"),
-                       QColor("#0E639C"), "ai", "AI Assistant",
+                       QColor("#0E639C"), "ai", "AI",
                        "Open AI Assistant in a new tab");
     addFeatureShortcut(featureTb, findActionByPrefix(this, "Terminal"),
                        QColor("#2D7D46"), "terminal", "Terminal",

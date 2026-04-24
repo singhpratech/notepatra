@@ -4,6 +4,7 @@
 #include <QWidget>
 #include <QTextBrowser>
 #include <QLineEdit>
+#include <QPlainTextEdit>
 #include <QComboBox>
 #include <QPushButton>
 #include <QLabel>
@@ -109,7 +110,7 @@ private:
     void handleTranscriptionFinished(int exitCode, QProcess *process, const QString &audioPath);
 
     QTextBrowser *m_output;
-    QLineEdit *m_customInput;
+    QPlainTextEdit *m_customInput;   // multi-line, Cursor-style. Enter sends, Shift+Enter newlines.
     QComboBox *m_modelCombo;
     QPushButton *m_stopBtn;
     QPushButton *m_refreshBtn;
