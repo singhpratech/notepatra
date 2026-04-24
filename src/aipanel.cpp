@@ -316,28 +316,34 @@ QString messageTranscriptHtml(const QVector<AIPanel::ChatMessage> &messages,
 "<html>\n"
 "<head>\n"
 "<style>\n"
-"body { font-family: %21; line-height: 1.5; color: %3; background: %4; margin: 0; padding: 12px; }\n"
+"body { font-family: %21; line-height: 1.55; color: %3; background: %4; margin: 0; padding: 14px 16px; }\n"
 ".assistant-content { font-family: %21; }\n"
-"table { width: 100%%; border-collapse: collapse; margin: 10px 0; }\n"
-".bubble { display: inline-block; max-width: 100%%; text-align: left; border-radius: 16px; padding: 12px 14px; }\n"
-".bubble-user { background: %5; color: %6; border: 1px solid %7; }\n"
-".bubble-assistant { background: %8; color: %9; border-left: 3px solid %10; border-top: 1px solid %11; border-right: 1px solid %11; border-bottom: 1px solid %11; min-width: 280px; }\n"
-".bubble-error { background: %12; color: %13; border-left: 3px solid %14; border-top: 1px solid %14; border-right: 1px solid %14; border-bottom: 1px solid %14; }\n"
-".user-label { font-size: 9px; color: %15; font-weight: bold; letter-spacing: 1px; margin-bottom: 6px; }\n"
-".assistant-head { margin-bottom: 8px; }\n"
-".assistant-model { color: %10; font-size: 10px; font-weight: bold; }\n"
-".copy-btn { background: %16; color: white; font-size: 10px; font-weight: 600; padding: 2px 10px; border-radius: 10px; text-decoration: none; letter-spacing: 0.5px; }\n"
-".copy-btn:hover { text-decoration: none; }\n"
+"/* Each message is its own tight table. No vertical margins that\n"
+"   compound; we space with empty rows instead. */\n"
+"table.msg { width: 100%%; border-collapse: collapse; margin: 0 0 14px 0; }\n"
+"/* USER bubble — right-aligned pill, accent fill, white text. Tight to content. */\n"
+".bubble-user { display: inline-block; max-width: 88%%; text-align: left; border-radius: 16px 16px 4px 16px; padding: 8px 14px; background: %5; color: %6; font-size: 13px; }\n"
+"/* ASSISTANT — no hard bubble. Flat text with a thin left border stripe\n"
+"   + 12 px left padding. Feels like Cursor / Claude: the AI speaks, it\n"
+"   doesn't box itself in. */\n"
+".assistant-wrap { border-left: 2px solid %10; padding-left: 14px; padding-top: 2px; padding-bottom: 2px; }\n"
+".assistant-head { margin: 0 0 6px 0; }\n"
+".assistant-model { color: %10; font-size: 10px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; }\n"
+".copy-btn { color: %16; font-size: 10px; font-weight: 500; padding: 2px 8px; border-radius: 8px; text-decoration: none; letter-spacing: 0.3px; background: transparent; }\n"
+".copy-btn:hover { color: %16; text-decoration: underline; }\n"
+"/* ERROR — red left stripe, same flat treatment as assistant */\n"
+".error-wrap { border-left: 2px solid %14; padding-left: 14px; color: %13; background: %12; border-radius: 6px; padding-top: 6px; padding-bottom: 6px; }\n"
+".error-label { color: %14; font-size: 10px; font-weight: bold; letter-spacing: 1px; margin-bottom: 4px; }\n"
 ".message-plain { white-space: pre-wrap; }\n"
-".assistant-content { color: %9; font-size: 12px; }\n"
+".assistant-content { color: %9; font-size: 13px; }\n"
 ".assistant-content p { margin: 0 0 10px 0; }\n"
-".assistant-content ul, .assistant-content ol { margin: 6px 0 10px 20px; padding-left: 12px; }\n"
+".assistant-content ul, .assistant-content ol { margin: 6px 0 10px 22px; padding-left: 4px; }\n"
 ".assistant-content li { margin: 3px 0; }\n"
-".assistant-content h1, .assistant-content h2, .assistant-content h3, .assistant-content h4 { color: %9; margin: 12px 0 8px 0; }\n"
+".assistant-content h1, .assistant-content h2, .assistant-content h3, .assistant-content h4 { color: %9; margin: 14px 0 8px 0; font-weight: 600; }\n"
 ".assistant-content a { color: %16; }\n"
-".assistant-content pre { background: %17; color: %18; border: 1px solid %11; border-radius: 10px; padding: 12px; overflow-x: auto; white-space: pre-wrap; }\n"
-".assistant-content code { background: %19; color: %20; border-radius: 4px; padding: 1px 4px; font-family: %2; }\n"
-".assistant-content pre code { background: transparent; padding: 0; color: inherit; }\n"
+".assistant-content pre { background: %17; color: %18; border: 1px solid %11; border-radius: 8px; padding: 12px; overflow-x: auto; white-space: pre-wrap; font-size: 12px; margin: 8px 0; }\n"
+".assistant-content code { background: %19; color: %20; border-radius: 4px; padding: 1px 5px; font-family: %2; font-size: 12px; }\n"
+".assistant-content pre code { background: transparent; padding: 0; color: inherit; font-size: 12px; }\n"
 "</style>\n"
 "</head>\n"
 "<body>\n")
@@ -356,36 +362,42 @@ QString messageTranscriptHtml(const QVector<AIPanel::ChatMessage> &messages,
     for (int i = 0; i < messages.size(); ++i) {
         const AIPanel::ChatMessage &message = messages.at(i);
         if (message.role == AIPanel::ChatMessage::User) {
+            // User turn — right-aligned accent pill, no "YOU" label (the
+            // right-alignment and colour already say "it's you"). Max
+            // width ~88 % of the column so long paragraphs wrap nicely.
             html += QString(
-                "<table cellpadding='0' cellspacing='0'><tr><td width='25%%'></td><td width='75%%' align='right'>"
-                "<div class='bubble bubble-user'>"
-                "<div class='user-label'>You</div>"
-                "<div class='message-plain'>%1</div>"
-                "</div></td></tr></table>")
+                "<table class='msg' cellpadding='0' cellspacing='0'>"
+                "<tr><td align='right'>"
+                "<span class='bubble-user'><span class='message-plain'>%1</span></span>"
+                "</td></tr></table>")
                 .arg(plainTextHtml(message.text));
             continue;
         }
 
         if (message.role == AIPanel::ChatMessage::Error) {
             html += QString(
-                "<table cellpadding='0' cellspacing='0'><tr><td width='75%%' align='left'>"
-                "<div class='bubble bubble-error'>"
-                "<div class='assistant-model'>ERROR</div>"
+                "<table class='msg' cellpadding='0' cellspacing='0'>"
+                "<tr><td>"
+                "<div class='error-wrap'>"
+                "<div class='error-label'>ERROR</div>"
                 "<div class='message-plain'>%1</div>"
-                "</div></td><td></td></tr></table>")
+                "</div></td></tr></table>")
                 .arg(plainTextHtml(message.text));
             continue;
         }
 
+        // Assistant turn — flat text with a thin left-stripe. Model
+        // label + subtle Copy link above the body, no border box.
         html += QString(
-            "<table cellpadding='0' cellspacing='0'><tr><td width='75%%' align='left'>"
-            "<div class='bubble bubble-assistant'>"
+            "<table class='msg' cellpadding='0' cellspacing='0'>"
+            "<tr><td>"
+            "<div class='assistant-wrap'>"
             "<table width='100%%' cellpadding='0' cellspacing='0' class='assistant-head'>"
             "<tr><td><span class='assistant-model'>%1</span></td>"
-            "<td align='right'><a class='copy-btn' href='copy://message/%2'>⧉ Copy</a></td></tr>"
+            "<td align='right'><a class='copy-btn' href='copy://message/%2'>⧉ copy</a></td></tr>"
             "</table>"
             "<div class='assistant-content'>%3</div>"
-            "</div></td><td></td></tr></table>")
+            "</div></td></tr></table>")
             .arg(message.model.toHtmlEscaped(),
                  QString::number(i),
                  markdownBodyHtml(message.text, i));
