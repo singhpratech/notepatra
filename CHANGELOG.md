@@ -7,6 +7,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.20] — 2026-04-24
+
+Follow-up to v0.1.19 focused on two user-reported Windows UX papercuts: double-click opened a new clone per file instead of reusing the running window, and the in-app updater's "Download & install" step stalled on "app already running" because it didn't close Notepatra before handing off to msiexec.
+
+### Added
+- 🪟 **Single-instance file-open bridge** — `main.cpp` now probes a per-user `QLocalServer` (`notepatra-<sha1(home)>`) before creating `QApplication`. If a primary is already running, the second invocation forwards its file args + `--line` as JSON and exits in ~220 ms. The primary's `newConnection` handler calls `MainWindow::handleRemoteOpen`, which opens each file as a tab, jumps to line, and `raise()`/`activateWindow()`s the window so the user's double-click feels instant. `-n` / `--new` bypasses both probe and listen for users who genuinely want a second independent window.
+
+### Changed
+- 🪟 **Updater Windows install path now closes Notepatra before handoff** — the "Ready to Install" dialog on Windows explicitly says the running copy will close so the installer can replace it, reminds the user to save open files, and the confirm button is relabelled `Close Notepatra & Install`. After `QProcess::startDetached` launches msiexec / setup.exe, `QTimer::singleShot(500, qApp, quit)` quits the app so Windows doesn't refuse the overwrite with "app already running." macOS (DMG drag) and Linux (folder open) paths are untouched — neither holds a handle on the running binary, so no quit is needed.
+
+### Fixed
+- 🪟 **"Double-clicking a file spawns a new app window" on Windows** — Explorer / right-click → Open with Notepatra now routes through the single-instance bridge and opens as a new tab in the already-running window.
+- 🪟 **"App already running" stall when installing updates from inside Notepatra** — updater now closes the running copy before spawning the installer, so msiexec / NSIS gets a clean shot at `notepatra.exe`.
+
+---
+
 ## [0.1.19] — 2026-04-24
 
 Follow-up to v0.1.18 focused on a user-reported Windows-specific Project Search hang + a clean Notepatra wordmark across every OS-level label.
