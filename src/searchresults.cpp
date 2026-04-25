@@ -35,10 +35,10 @@ SearchResultsPanel::SearchResultsPanel(QWidget *parent) : QWidget(parent) {
     const SRPalette p = srPalette();
 
     m_header = new QLabel("  Search Results");
-    m_header->setFixedHeight(22);
+    m_header->setMinimumHeight(28);
     m_header->setStyleSheet(QString(
         "font-weight: bold; background: %1; color: %2; "
-        "padding: 2px 6px; border-bottom: 1px solid %3;")
+        "padding: 4px 6px; border-bottom: 1px solid %3;")
         .arg(p.hdrBg, p.hdrFg, p.hdrBorder));
     layout->addWidget(m_header);
 

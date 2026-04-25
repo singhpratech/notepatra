@@ -17,6 +17,7 @@
 #include <QFont>
 #include <QHBoxLayout>
 #include <QMessageBox>
+#include <QStyle>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScrollBar>
@@ -685,13 +686,15 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     m_editToggle->setObjectName("compareEditToggle");
     m_editToggle->setCheckable(true);
     m_editToggle->setFixedHeight(26);
-    auto *closeBtn = new QPushButton("✕ Close");
-    // Width 70 was too tight on Windows where the system font + button
-    // chrome padding ate into the text; bumped to 84 so the glyph + label
-    // never clip on any DPI / font fallback.
-    closeBtn->setFixedSize(84, 26);
+    // Close — use the OS-native close icon via QStyle so the glyph never
+    // mojibakes on Windows fonts (the previous '✕' Unicode could render
+    // as tofu). Plain ASCII "Close" label paired with a standard icon.
+    auto *closeBtn = new QPushButton("Close");
+    closeBtn->setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
+    closeBtn->setIconSize(QSize(12, 12));
+    closeBtn->setFixedSize(96, 26);
     closeBtn->setToolTip("Close the compare view");
-    closeBtn->setStyleSheet("QPushButton { font-weight: 600; padding: 0 6px; }");
+    closeBtn->setStyleSheet("QPushButton { font-weight: 600; padding: 0 8px; }");
 
     m_ignoreWhitespace = new QCheckBox("Ignore spaces");
     m_ignoreCase = new QCheckBox("Ignore case");
@@ -724,15 +727,15 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     headerRow->setContentsMargins(0, 0, 0, 0);
     headerRow->setSpacing(2);
     m_leftHeader = new QLabel("  Left file");
-    m_leftHeader->setFixedHeight(20);
+    m_leftHeader->setMinimumHeight(26);
     m_leftHeader->setStyleSheet(
         "font-weight: 600; background: #F7F7F7; color: #4B4B4B; "
-        "padding: 1px 8px; border-bottom: 1px solid #D9D9D9;");
+        "padding: 4px 8px; border-bottom: 1px solid #D9D9D9;");
     m_rightHeader = new QLabel("  Right file");
-    m_rightHeader->setFixedHeight(20);
+    m_rightHeader->setMinimumHeight(26);
     m_rightHeader->setStyleSheet(
         "font-weight: 600; background: #F7F7F7; color: #4B4B4B; "
-        "padding: 1px 8px; border-bottom: 1px solid #D9D9D9;");
+        "padding: 4px 8px; border-bottom: 1px solid #D9D9D9;");
     headerRow->addWidget(m_leftHeader, 1);
     headerRow->addWidget(m_rightHeader, 1);
     layout->addLayout(headerRow);

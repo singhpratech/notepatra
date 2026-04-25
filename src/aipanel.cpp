@@ -9,6 +9,7 @@
 #include <QScrollBar>
 #include <QMenu>
 #include <QApplication>
+#include <QStyle>
 #include <QClipboard>
 #include <QTimer>
 #include <QFileDialog>
@@ -473,21 +474,23 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         .arg(pal.chromeBg, pal.headerFg));
     headerLay->addWidget(m_headerLabel, 1);
 
-    // Close glyph: U+2715 ("✕") — a proper X that always renders, unlike
-    // U+00D7 ("×") which falls back to a thin/clipped multiplication sign
-    // on Windows fonts. Button widened (36×28) and padding zeroed so the
-    // glyph centres without getting clipped at any DPI / font fallback.
-    auto *closeBtn = new QPushButton(QStringLiteral("✕"));
+    // Close button — use the OS-native close glyph via QStyle so we never
+    // depend on a Unicode codepoint that might mojibake on Windows fonts.
+    // The previous '✕' (U+2715) was rendering as a tofu box on some
+    // Windows installations. QStyle::SP_TitleCloseButton always returns
+    // the platform's own close X icon (the same one Qt uses on its own
+    // window decorations), so it's guaranteed to render.
+    auto *closeBtn = new QPushButton;
+    closeBtn->setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
+    closeBtn->setIconSize(QSize(14, 14));
     closeBtn->setFixedSize(36, 28);
     closeBtn->setCursor(Qt::PointingHandCursor);
     closeBtn->setFlat(true);
     closeBtn->setToolTip("Close the AI dock (session stays — press Reset to clear chat)");
     closeBtn->setStyleSheet(QString(
-        "QPushButton { background: %1; color: %2; border: none; "
-        "  font-size: 16px; font-weight: 600; padding: 0; "
-        "  text-align: center; } "
-        "QPushButton:hover { background: %3; color: %4; }")
-        .arg(pal.chromeBg, pal.muted, pal.recBtnBg, QStringLiteral("#FFFFFF")));
+        "QPushButton { background: %1; border: none; padding: 0; } "
+        "QPushButton:hover { background: %2; }")
+        .arg(pal.chromeBg, pal.recBtnBg));
     connect(closeBtn, &QPushButton::clicked, this, [this]() {
         // Hide by walking up to the enclosing dock host (m_aiDockHost
         // in MainWindow is our grandparent via QVBoxLayout → QWidget).

@@ -10,10 +10,8 @@ FunctionList::FunctionList(QWidget *parent) : QWidget(parent) {
     layout->setSpacing(0);
 
     auto *header = new QLabel("  Function List");
-    header->setFixedHeight(24);
-    QFont f = header->font();
-    f.setBold(true);
-    header->setFont(f);
+    header->setMinimumHeight(28);
+    header->setStyleSheet("QLabel { font-weight: 600; padding: 4px 6px; }");
     layout->addWidget(header);
 
     m_tree = new QTreeWidget;

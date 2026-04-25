@@ -21,7 +21,8 @@ MarkdownPreview::MarkdownPreview(QWidget *parent) : QWidget(parent) {
     layout->setSpacing(0);
 
     m_header = new QLabel("  Markdown Preview");
-    m_header->setFixedHeight(22);
+    m_header->setMinimumHeight(28);
+    m_header->setStyleSheet("QLabel { font-weight: 600; padding: 4px 6px; }");
     layout->addWidget(m_header);
 
     m_browser = new QTextBrowser;

@@ -101,9 +101,11 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
     const FmtPalette fp = fmtPalette();
 
     m_titleLabel = new QLabel("  " + title);
-    m_titleLabel->setFixedHeight(24);
+    // 24 px was tight on Windows where bold-font ascenders+descenders
+    // clipped against the row below. minimumHeight lets it grow.
+    m_titleLabel->setMinimumHeight(28);
     m_titleLabel->setStyleSheet(QString(
-        "font-weight: bold; background: %1; color: %2; padding: 2px 6px;")
+        "font-weight: bold; background: %1; color: %2; padding: 4px 6px;")
         .arg(fp.titleBg.name(), fp.titleFg.name()));
     layout->addWidget(m_titleLabel);
 

@@ -95,9 +95,11 @@ GitPanel::GitPanel(QWidget *parent) : QWidget(parent) {
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    // ── 1. SOURCE CONTROL header band (24 px) ───────────────────────────────
+    // ── 1. SOURCE CONTROL header band ───────────────────────────────────────
+    // 24 px clipped on Windows where bold-font descenders pushed the text
+    // into the next row. minimumHeight(28) lets the label grow naturally.
     m_sourceControlHeader = new QLabel("  SOURCE CONTROL");
-    m_sourceControlHeader->setFixedHeight(24);
+    m_sourceControlHeader->setMinimumHeight(28);
     root->addWidget(m_sourceControlHeader);
 
     // ── git-missing banner (initially hidden) ───────────────────────────────

@@ -23,7 +23,9 @@ SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
     layout->setSpacing(0);
 
     m_header = new QLabel("  SQL Formatter");
-    m_header->setFixedHeight(24);
+    // 24 px was tight on Windows where bold-font ascenders+descenders
+    // (~18 px) + padding clipped against the next row. 28 gives room.
+    m_header->setMinimumHeight(28);
     layout->addWidget(m_header);
 
     auto *optRow = new QHBoxLayout;
@@ -148,8 +150,10 @@ void SqlFmtPanel::applyPalette() {
           pal.btnBg, pal.btnFg, pal.btnBorder, pal.btnHover, pal.textMuted));
 
     if (m_header) {
+        // padding 4px top/bottom (was 2px) so Windows bold-font descenders
+        // don't clip against the row below.
         m_header->setStyleSheet(QString(
-            "font-weight: bold; background: %1; color: %2; padding: 2px 6px;"
+            "font-weight: bold; background: %1; color: %2; padding: 4px 6px;"
         ).arg(pal.chromeBg, pal.accent));
     }
 
