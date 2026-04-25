@@ -129,7 +129,11 @@ SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
 // MainWindow::themeChanged() fires.
 void SqlFmtPanel::applyPalette() {
     const NpPalette pal = npPalette();
-    const QString themeName = Config::instance().theme;
+    // Use the *resolved* theme name (Light/Dark/Monokai), not the raw
+    // Config::theme — otherwise "System" falls through every "is dark"
+    // check in applyNotepadPlusPalette and the editor paints with a
+    // white paper on top of dark chrome.
+    const QString themeName = npResolvedThemeName();
 
     // Whole-panel base styling — cascades to labels, comboboxes, spinboxes,
     // buttons that don't have explicit inline styles.

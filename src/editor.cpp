@@ -532,22 +532,37 @@ void Editor::applyLexer(const QString &lang) {
 
     lexer = createLexerForLanguage(lang, this);
 
+    // Resolve theme so dark/monokai users get dark paper instead of the
+    // hardcoded white that used to land here (the editor body painted
+    // white on dark chrome — looked broken).
+    const QString rawTheme = m_themeName.isEmpty() ? Config::instance().theme : m_themeName;
+    QString themeName = rawTheme;
+    if (themeName.compare("System", Qt::CaseInsensitive) == 0)
+        themeName = detectSystemTheme();
+    const bool darkTheme = themeName.compare("Dark", Qt::CaseInsensitive) == 0 ||
+                           themeName.compare("Monokai", Qt::CaseInsensitive) == 0;
+    const QColor editorPaper = (themeName.compare("Monokai", Qt::CaseInsensitive) == 0)
+                                   ? QColor("#272822")
+                                   : (darkTheme ? QColor("#1E1E1E") : QColor("#FFFFFF"));
+    const QColor editorFg    = (themeName.compare("Monokai", Qt::CaseInsensitive) == 0)
+                                   ? QColor("#F8F8F2")
+                                   : (darkTheme ? QColor("#D4D4D4") : QColor("#000000"));
+
     if (lexer) {
         // Set lexer first so its default styles are initialised
         lexer->setDefaultFont(font);
-        lexer->setDefaultPaper(QColor("#FFFFFF"));
-        lexer->setDefaultColor(QColor("#000000"));
+        lexer->setDefaultPaper(editorPaper);
+        lexer->setDefaultColor(editorFg);
         setLexer(lexer);
         // Apply Notepad++ default palette — Windows default QScintilla styles
         // sometimes render with no visible keyword color, so paint them ourselves.
-        const QString themeName = m_themeName.isEmpty() ? Config::instance().theme : m_themeName;
         ::applyNotepadPlusPalette(lexer, font, themeName);
-        setPaper(QColor("#FFFFFF"));
+        setPaper(editorPaper);
     } else {
         setLexer(nullptr);
         setFont(font);
-        setPaper(QColor("#FFFFFF"));
-        setColor(QColor("#000000"));
+        setPaper(editorPaper);
+        setColor(editorFg);
     }
 
     // ─── Re-apply brace match colors AFTER setLexer ─────────────────────
@@ -568,7 +583,10 @@ void Editor::applyLexer(const QString &lang) {
 // test_palette.cpp can link it directly without pulling in Editor.cpp's
 // rustbridge dependencies.
 void Editor::applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont) {
-    ::applyNotepadPlusPalette(lexer, baseFont, Config::instance().theme);
+    QString themeName = Config::instance().theme;
+    if (themeName.compare("System", Qt::CaseInsensitive) == 0)
+        themeName = detectSystemTheme();
+    ::applyNotepadPlusPalette(lexer, baseFont, themeName);
 }
 
 void Editor::applyTheme(const QString &themeName) {

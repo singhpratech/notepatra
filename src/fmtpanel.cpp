@@ -1,5 +1,6 @@
 #include "fmtpanel.h"
 #include "npp_palette.h"
+#include "theme_detect.h"   // npIsDarkTheme / npResolvedThemeName
 #include "fonts.h"
 #include "config.h"
 #include <QVBoxLayout>
@@ -30,9 +31,10 @@ struct FmtPalette {
 };
 
 static bool fmtIsDark() {
-    const QString &t = Config::instance().theme;
-    return t.compare("Dark", Qt::CaseInsensitive) == 0 ||
-           t.compare("Monokai", Qt::CaseInsensitive) == 0;
+    // Resolve "System" → "Dark"/"Light" via the OS detector. Without this
+    // a user with Config::theme = "System" on a dark OS still got the
+    // light palette (white paper on dark chrome).
+    return npIsDarkTheme();
 }
 
 static FmtPalette fmtPalette() {
@@ -224,7 +226,9 @@ void FormatterPanel::applyLexer() {
     else if (m_language == "YAML") lexer = new QsciLexerYAML(m_output);
 
     const FmtPalette fp = fmtPalette();
-    const QString themeName = Config::instance().theme;
+    // Resolved name (Light/Dark/Monokai) so "System" doesn't fall through
+    // applyNotepadPlusPalette's "is dark" check.
+    const QString themeName = npResolvedThemeName();
     if (lexer) {
         lexer->setDefaultFont(mono);
         lexer->setDefaultPaper(fp.editorBg);

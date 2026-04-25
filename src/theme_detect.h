@@ -17,12 +17,29 @@
 // ────────────────────────────────────────────────────────────────────
 
 #include "config.h"
+#include "themes.h"   // detectSystemTheme() — needed to resolve "System"
 #include <QString>
 
+// Resolve Config::theme to a concrete name ("Light" / "Dark" / "Monokai").
+// "System" → detectSystemTheme() (OS preference). Everything else passes
+// through. Returns the *resolved* name so callers don't have to know
+// about the System sentinel.
+//
+// Why this exists: Config::theme stores the user's *preference* literally
+// — "System" stays "System" forever (we don't rewrite it on startup so
+// that the next launch can re-detect). Anything that needs to *act on*
+// the theme (panel chrome, lexer paint) must resolve that preference
+// first. Without resolution, "System" failed every "is this Dark?"
+// check and panels rendered light-on-dark on dark-OS users.
+inline QString npResolvedThemeName() {
+    QString t = Config::instance().theme;
+    if (t.compare("System", Qt::CaseInsensitive) == 0)
+        t = detectSystemTheme();
+    return t;
+}
+
 inline bool npIsDarkTheme() {
-    const QString &t = Config::instance().theme;
-    // "System" is resolved at startup into Light/Dark; by the time any
-    // panel constructs, theme is already one of the concrete values.
+    const QString t = npResolvedThemeName();
     return t.compare("Dark", Qt::CaseInsensitive) == 0 ||
            t.compare("Monokai", Qt::CaseInsensitive) == 0;
 }
