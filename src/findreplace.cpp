@@ -69,6 +69,10 @@ void FindReplaceDialog::buildFindTab(QWidget *tab) {
 
     // Options row 1
     auto *opts1 = new QHBoxLayout;
+    // Explicit spacing — Windows fusion/vista style collapses default
+    // QHBoxLayout gaps to 0, so the checkboxes used to butt against each
+    // other ("Match caseMatch whole word"). Linux gtk style was fine.
+    opts1->setSpacing(12);
     m_matchCase = new QCheckBox("Match &case");
     m_wholeWord = new QCheckBox("Match &whole word only");
     m_wrapAround = new QCheckBox("Wra&p around");
@@ -168,6 +172,7 @@ void FindReplaceDialog::buildReplaceTab(QWidget *tab) {
 
     // Options
     auto *opts = new QHBoxLayout;
+    opts->setSpacing(12);
     m_rMatchCase = new QCheckBox("Match &case");
     m_rWholeWord = new QCheckBox("Match &whole word only");
     m_rWrapAround = new QCheckBox("Wra&p around");
@@ -180,6 +185,7 @@ void FindReplaceDialog::buildReplaceTab(QWidget *tab) {
     // Search mode
     auto *modeGroup = new QGroupBox("Search Mode");
     auto *modeLay = new QHBoxLayout(modeGroup);
+    modeLay->setSpacing(12);
     m_rModeNormal = new QRadioButton("Normal");
     m_rModeNormal->setChecked(true);
     m_rModeExtended = new QRadioButton("Extended");
@@ -259,6 +265,7 @@ void FindReplaceDialog::buildFindInFilesTab(QWidget *tab) {
 
     // Options
     auto *opts = new QHBoxLayout;
+    opts->setSpacing(12);
     m_fifMatchCase = new QCheckBox("Match case");
     m_fifWholeWord = new QCheckBox("Whole word");
     m_fifRegex = new QCheckBox("Regex");
@@ -306,6 +313,7 @@ void FindReplaceDialog::buildMarkTab(QWidget *tab) {
     layout->addWidget(m_markFindInput, 0, 1, 1, 2);
 
     auto *opts = new QHBoxLayout;
+    opts->setSpacing(12);
     m_markCase = new QCheckBox("Match case");
     m_markWholeWord = new QCheckBox("Whole word");
     m_markRegex = new QCheckBox("Regex");

@@ -109,7 +109,8 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
 
     auto *btnWidget = new QWidget;
     m_btnRow = new QHBoxLayout(btnWidget);
-    m_btnRow->setContentsMargins(4, 4, 4, 4);
+    m_btnRow->setContentsMargins(8, 6, 8, 6);
+    m_btnRow->setSpacing(8);
 
     // Show Diff button — opens a side-by-side compare of the LAST action's
     // input vs output. Disabled until at least one button click produces

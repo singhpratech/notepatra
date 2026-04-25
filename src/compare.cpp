@@ -668,7 +668,12 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     layout->setSpacing(0);
 
     auto *toolbar = new QHBoxLayout;
-    toolbar->setContentsMargins(6, 4, 6, 4);
+    toolbar->setContentsMargins(8, 6, 8, 6);
+    // Explicit spacing — Windows fusion/vista styles default to 0 here
+    // while Linux gtk gives ~6 px, so checkboxes "Ignore spaces" /
+    // "Ignore case" / "Ignore empty lines" used to butt up against each
+    // other on Windows.
+    toolbar->setSpacing(8);
 
     auto *prevBtn = new QPushButton("< Prev");
     prevBtn->setFixedSize(70, 26);
@@ -681,9 +686,12 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     m_editToggle->setCheckable(true);
     m_editToggle->setFixedHeight(26);
     auto *closeBtn = new QPushButton("✕ Close");
-    closeBtn->setFixedSize(70, 26);
+    // Width 70 was too tight on Windows where the system font + button
+    // chrome padding ate into the text; bumped to 84 so the glyph + label
+    // never clip on any DPI / font fallback.
+    closeBtn->setFixedSize(84, 26);
     closeBtn->setToolTip("Close the compare view");
-    closeBtn->setStyleSheet("QPushButton { font-weight: 600; }");
+    closeBtn->setStyleSheet("QPushButton { font-weight: 600; padding: 0 6px; }");
 
     m_ignoreWhitespace = new QCheckBox("Ignore spaces");
     m_ignoreCase = new QCheckBox("Ignore case");

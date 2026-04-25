@@ -27,7 +27,10 @@ SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
     layout->addWidget(m_header);
 
     auto *optRow = new QHBoxLayout;
-    optRow->setContentsMargins(4, 4, 4, 4);
+    optRow->setContentsMargins(8, 6, 8, 6);
+    // Explicit spacing — without it some Qt styles collapse inter-widget
+    // gaps to 0 and the checkbox label runs into the "Indent:" label.
+    optRow->setSpacing(10);
 
     m_dialectLabel = new QLabel("Dialect:");
     optRow->addWidget(m_dialectLabel);
