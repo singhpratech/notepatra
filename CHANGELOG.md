@@ -7,6 +7,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.23] — 2026-04-25
+
+Critical dark-theme fix on top of v0.1.22. Users with `Config::theme = "System"` on a dark OS got dark app chrome but a white editor body inside Editor / SQL Formatter / JSON / HTML / Bracket / Markdown panels — visible in the user's screenshot as a glaring white block under the dark "SQL Formatter" header.
+
+### Fixed
+- 🌙 **Editor body no longer paints white on dark theme when `theme = "System"`.** `Config::theme` stays as the literal user preference forever (we don't rewrite "System" → "Dark"/"Light" at startup so the next launch can re-detect the OS preference). Chrome stylesheets went through `applyThemeToAll(resolveTheme(name))` which DID resolve "System" — but `npIsDarkTheme()`, `applyNotepadPlusPalette()`, and `Editor::applyLexer()` compared `Config::theme` directly against `"Dark"`. `"System" == "Dark"` is false → every "is this dark?" check fell through to LIGHT-mode colours. Result: dark chrome, white editor.
+- 🌙 **`theme_detect.h::npResolvedThemeName()` introduced** — returns "Light" / "Dark" / "Monokai" by resolving "System" via `detectSystemTheme()`. `npIsDarkTheme()` now uses it. Every panel that reads `Config::theme` for lexer paint now resolves first.
+- 🌙 **`Editor::applyLexer()` no longer hardcodes `setPaper(QColor("#FFFFFF"))`** — paper now tracks the resolved theme so Editor instances paint dark on dark.
+
+### Notes
+- Linux user perspective: nothing changes if you're on an explicit "Light"/"Dark"/"Monokai" theme; the bug only affected "System".
+- Windows / macOS user perspective: same — only "System" theme on a dark OS was affected.
+
+---
+
 ## [0.1.22] — 2026-04-25
 
 UI polish release for Windows. v0.1.21 introduced explicit `setSpacing()` to fix layout collisions, but the user's Windows screenshots showed several remaining truncation bugs that needed sizing fixes too. This release bundles those.

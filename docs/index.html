@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3–5 MB stripped across platforms; full downloads are ~2 MB (Linux tarball), ~22 MB (macOS DMG with bundled Qt), ~40 MB (Windows installer with bundled Qt DLLs). 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.22",
+      "softwareVersion": "0.1.23",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -153,7 +153,7 @@
           "name": "How big is Notepatra compared to VS Code?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.22: ~2 MB Linux tarball, ~22 MB macOS DMG (with bundled Qt), ~40 MB Windows MSI/zip (with bundled Qt + QScintilla DLLs). VS Code is 300+ MB regardless. Notepatra is 6× to 14× smaller than VS Code on every platform."
+            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.23: ~2 MB Linux tarball, ~22 MB macOS DMG (with bundled Qt), ~40 MB Windows MSI/zip (with bundled Qt + QScintilla DLLs). VS Code is 300+ MB regardless. Notepatra is 6× to 14× smaller than VS Code on every platform."
           }
         },
         {
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.22 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.23 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.22">
-        Download v0.1.22 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.23">
+        Download v0.1.23 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.22 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.23 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1388,7 +1388,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.22</div>
+        <div class="section-label">Download v0.1.23</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1836,7 +1836,34 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.22 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.23 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-25</span>
+                        <span>· Critical dark-theme fix — Editor body painted white on "System" + dark OS</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🌙 Critical dark-theme fix — editor body no longer paints white on "System" + dark OS</h5>
+                        <ul>
+                            <li>Users with <code style="color:var(--green);font-size:12px;">Config::theme = "System"</code> on a dark OS got dark app chrome but a glaring <strong>white editor body</strong> inside Editor / SQL Formatter / JSON / HTML / Bracket / Markdown panels.</li>
+                            <li><strong>Root cause.</strong> <code style="color:var(--green);font-size:12px;">Config::theme</code> stays as the literal user preference forever — "System" is <em>not</em> rewritten to "Light"/"Dark" at startup so the next launch can re-detect the OS preference. Chrome stylesheets went through <code style="color:var(--green);font-size:12px;">applyThemeToAll(resolveTheme(name))</code> which DID resolve "System" → chrome painted dark. But <code style="color:var(--green);font-size:12px;">npIsDarkTheme()</code>, <code style="color:var(--green);font-size:12px;">applyNotepadPlusPalette()</code>, and <code style="color:var(--green);font-size:12px;">Editor::applyLexer()</code> compared <code style="color:var(--green);font-size:12px;">Config::theme</code> directly against <code style="color:var(--green);font-size:12px;">"Dark"</code>. <code style="color:var(--green);font-size:12px;">"System" == "Dark"</code> is false → every "is this dark?" check fell through to LIGHT-mode colours. Result: dark chrome, white editor.</li>
+                            <li><strong>Fix.</strong> New <code style="color:var(--green);font-size:12px;">npResolvedThemeName()</code> in <code style="color:var(--green);font-size:12px;">theme_detect.h</code> returns "Light" / "Dark" / "Monokai" by resolving "System" via <code style="color:var(--green);font-size:12px;">detectSystemTheme()</code>. <code style="color:var(--green);font-size:12px;">npIsDarkTheme()</code> now uses it. Every panel that reads <code style="color:var(--green);font-size:12px;">Config::theme</code> for lexer paint resolves first. <code style="color:var(--green);font-size:12px;">Editor::applyLexer()</code>'s hardcoded <code style="color:var(--green);font-size:12px;">setPaper(QColor("#FFFFFF"))</code> is gone — paper now tracks the resolved theme.</li>
+                            <li>Linux / macOS / Windows users on explicit "Light" / "Dark" / "Monokai" themes are unaffected; only "System" theme on a dark OS was buggy.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.23">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.23">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.22</div>
                     <div class="version-meta">
                         <span>2026-04-25</span>
                         <span>· Windows truncation pass — close icon mojibake, button widths, header heights, status wrap</span>
@@ -1858,9 +1885,9 @@
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.22">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.23">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.22">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.23">Commits</a>
                 </div>
             </div>
 
@@ -1878,7 +1905,7 @@
                         <h5>🪟 Windows UI polish — collisions and clipped close ✕</h5>
                         <ul>
                             <li>Explicit <code style="color:var(--green);font-size:12px;">setSpacing()</code> added across SQL Formatter, Find/Replace, Compare toolbar, JSON / HTML / Bracket formatters so option-row widgets stop colliding on Windows.</li>
-                            <li>AI dock close button widened, padding zeroed (full mojibake fix later in v0.1.22).</li>
+                            <li>AI dock close button widened, padding zeroed (full mojibake fix later in v0.1.23).</li>
                         </ul>
                     </div>
                 </div>
@@ -2613,7 +2640,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is it compared to VS Code?</h3>
-                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.22): <strong>2 MB</strong> Linux tar.gz · <strong>22 MB</strong> macOS DMG · <strong>40 MB</strong> Windows MSI/zip. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
+                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.23): <strong>2 MB</strong> Linux tar.gz · <strong>22 MB</strong> macOS DMG · <strong>40 MB</strong> Windows MSI/zip. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
