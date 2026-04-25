@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3–5 MB stripped across platforms; full downloads are ~2 MB (Linux tarball), ~22 MB (macOS DMG with bundled Qt), ~40 MB (Windows installer with bundled Qt DLLs). 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.21",
+      "softwareVersion": "0.1.22",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -153,7 +153,7 @@
           "name": "How big is Notepatra compared to VS Code?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.21: ~2 MB Linux tarball, ~22 MB macOS DMG (with bundled Qt), ~40 MB Windows MSI/zip (with bundled Qt + QScintilla DLLs). VS Code is 300+ MB regardless. Notepatra is 6× to 14× smaller than VS Code on every platform."
+            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.22: ~2 MB Linux tarball, ~22 MB macOS DMG (with bundled Qt), ~40 MB Windows MSI/zip (with bundled Qt + QScintilla DLLs). VS Code is 300+ MB regardless. Notepatra is 6× to 14× smaller than VS Code on every platform."
           }
         },
         {
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.21 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.22 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.21">
-        Download v0.1.21 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.22">
+        Download v0.1.22 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.21 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.22 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1388,7 +1388,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.21</div>
+        <div class="section-label">Download v0.1.22</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1836,21 +1836,49 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.21 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.22 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-04-25</span>
-                        <span>· Windows UI polish — option-row spacing collisions and clipped close ✕ glyphs</span>
+                        <span>· Windows truncation pass — close icon mojibake, button widths, header heights, status wrap</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>🪟 Windows UI polish — collisions and clipped glyphs fixed</h5>
+                        <h5>🪟 Windows truncation pass — five concrete crops fixed from user screenshots</h5>
                         <ul>
-                            <li><strong>Tool-panel option rows no longer collide on Windows.</strong> <code style="color:var(--green);font-size:12px;">QHBoxLayout</code> default spacing is ~6 px on Linux's Fusion / GTK style but <strong>0 px</strong> on Windows Vista / Windows 11 styles, so any row that didn't call <code style="color:var(--green);font-size:12px;">setSpacing()</code> rendered fine on Linux but ran widgets together on Windows (the visible bug was <code style="color:var(--green);font-size:12px;">"UPPERCASE keywordsIndent:"</code> in the SQL panel). Explicit 8-12 px spacing added on every collision-prone row across SQL Formatter, Find/Replace, Compare toolbar, and JSON / HTML / Bracket formatters.</li>
-                            <li><strong>AI dock close ✕ no longer clips on Windows.</strong> The button used <code style="color:var(--green);font-size:12px;">U+00D7</code> ('×' multiplication sign) at 18 px on a 28×28 button with <code style="color:var(--green);font-size:12px;">0 8px</code> padding — only 12 px of horizontal room for the glyph, and on Windows fonts the right edge was visibly cropped. Switched to <code style="color:var(--green);font-size:12px;">U+2715</code> ('✕' real X), widened the button to 36×28, zeroed padding.</li>
-                            <li><strong>Compare ✕ Close button widened 70 → 84 px.</strong> The fixed width was tight on Windows where button-chrome padding ate into the <code style="color:var(--green);font-size:12px;">"✕ Close"</code> label.</li>
-                            <li>No Linux or macOS user sees a difference — those styles already had sane default spacing. Windows is what changes.</li>
+                            <li><strong>AI dock close button no longer renders as <code style="color:var(--green);font-size:12px;">âœ•</code> mojibake on Windows.</strong> The previous Unicode glyph (<code style="color:var(--green);font-size:12px;">U+2715</code>) wasn't in every Windows font's coverage and fell back to UTF-8-bytes-as-CP1252 garbage. Switched to <code style="color:var(--green);font-size:12px;">QStyle::SP_TitleBarCloseButton</code> — the OS draws its own X icon, guaranteed to render. Same fix for the Compare ✕ Close button.</li>
+                            <li><strong>Tool-panel top-line headers no longer clip on Windows.</strong> Every header (<code style="color:var(--green);font-size:12px;">SQL Formatter</code>, <code style="color:var(--green);font-size:12px;">Terminal</code>, <code style="color:var(--green);font-size:12px;">Function List</code>, <code style="color:var(--green);font-size:12px;">SOURCE CONTROL</code>, JSON / HTML / Bracket title, <code style="color:var(--green);font-size:12px;">Markdown Preview</code>, <code style="color:var(--green);font-size:12px;">Search Results</code>, Compare's left/right file headers) was <code style="color:var(--green);font-size:12px;">setFixedHeight(20-24)</code>; Windows' larger font metrics + bold ascenders/descenders left the text overlapping with the row below. Switched to <code style="color:var(--green);font-size:12px;">setMinimumHeight(26-28)</code> with 4 px padding so labels grow as needed.</li>
+                            <li><strong>Find/Replace buttons no longer truncate on Windows</strong> ("Find All in Current Document" → "Find All in Current"; "Find All in All Opened Documents" → "nd All in All Opene"). <code style="color:var(--green);font-size:12px;">setFixedWidth(170/200)</code> was tight; switched to <code style="color:var(--green);font-size:12px;">setMinimumWidth(210/230)</code> and bumped the dialog floor 580 → 660 px.</li>
+                            <li><strong>JSON / HTML / Bracket / SQL Formatter "Copy Output" no longer clips at the right edge</strong> (was rendering "Copv Outout"). Right <code style="color:var(--green);font-size:12px;">contentsMargin</code> on the button row bumped 8 → 16 px.</li>
+                            <li><strong>AI panel error messages no longer truncate at the right edge.</strong> Long URLs in errors like <code style="color:var(--green);font-size:12px;">"Error transferring https://api.openai.com/..."</code> used to wrap off-screen; <code style="color:var(--green);font-size:12px;">m_statusLabel</code> was <code style="color:var(--green);font-size:12px;">setFixedHeight(14)</code> with no word wrap. Switched to <code style="color:var(--green);font-size:12px;">setWordWrap(true)</code> + <code style="color:var(--green);font-size:12px;">setMinimumHeight(18)</code> + <code style="color:var(--green);font-size:12px;">MinimumExpanding</code> vertical sizePolicy.</li>
+                            <li><strong>SQL Formatter Model dropdown no longer shows "ot connected" instead of "(not connected)".</strong> Combo <code style="color:var(--green);font-size:12px;">setMinimumWidth(150)</code> was tight; bumped to 200 + <code style="color:var(--green);font-size:12px;">setSizeAdjustPolicy(AdjustToContents)</code> so it also grows for long model names.</li>
+                            <li>No Linux or macOS user sees a difference — those styles' fonts and metrics already fit. Windows is what changes.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.22">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.22">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.21</div>
+                    <div class="version-meta">
+                        <span>2026-04-25</span>
+                        <span>· Windows UI polish — option-row spacing collisions</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🪟 Windows UI polish — collisions and clipped close ✕</h5>
+                        <ul>
+                            <li>Explicit <code style="color:var(--green);font-size:12px;">setSpacing()</code> added across SQL Formatter, Find/Replace, Compare toolbar, JSON / HTML / Bracket formatters so option-row widgets stop colliding on Windows.</li>
+                            <li>AI dock close button widened, padding zeroed (full mojibake fix later in v0.1.22).</li>
                         </ul>
                     </div>
                 </div>
@@ -2585,7 +2613,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is it compared to VS Code?</h3>
-                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.21): <strong>2 MB</strong> Linux tar.gz · <strong>22 MB</strong> macOS DMG · <strong>40 MB</strong> Windows MSI/zip. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
+                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.22): <strong>2 MB</strong> Linux tar.gz · <strong>22 MB</strong> macOS DMG · <strong>40 MB</strong> Windows MSI/zip. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>

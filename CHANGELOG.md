@@ -7,6 +7,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.22] — 2026-04-25
+
+UI polish release for Windows. v0.1.21 introduced explicit `setSpacing()` to fix layout collisions, but the user's Windows screenshots showed several remaining truncation bugs that needed sizing fixes too. This release bundles those.
+
+### Fixed
+- 🪟 **AI dock close button no longer renders as `âœ•` mojibake on Windows.** The previous Unicode glyph (`U+2715`) wasn't in every default Windows font's coverage, so it fell back to UTF-8-bytes-as-CP1252 garbage. Switched to `QStyle::SP_TitleBarCloseButton` — the OS draws its own X icon (the same one Qt uses on its window decorations), guaranteed to render. Same fix for the Compare ✕ Close button: standard icon + plain ASCII "Close" text.
+- 🪟 **Tool-panel top-line headers no longer clip on Windows.** Every tool-panel header (`SQL Formatter`, `Terminal`, `Function List`, `SOURCE CONTROL`, JSON / HTML / Bracket title, `Markdown Preview`, `Search Results`, Compare's left/right file headers) was `setFixedHeight(20-24)` which on Windows' larger font metrics + bold ascenders/descenders left the text overlapping with the row below. Switched all of them to `setMinimumHeight(26-28)` with 4 px top/bottom padding so the label can grow as Windows fonts demand. Linux Fusion / GTK keeps using its shorter computed height.
+- 🪟 **Find/Replace buttons no longer truncate on Windows** ("Find All in Current Document" → "Find All in Current"; "Find All in All Opened Documents" → "nd All in All Opene"). `setFixedWidth(170/200)` was tight with Windows fonts; switched to `setMinimumWidth(210/230)` and bumped the dialog floor 580→660 px so buttons grow as needed.
+- 🪟 **JSON / HTML / Bracket / SQL Formatter "Copy Output" no longer clips at the right edge** (was rendering "Copv Outout"). Right `contentsMargin` on the button row bumped 8→16 px so the rightmost button stays clear of the panel boundary.
+- 🪟 **AI panel error messages no longer truncate at the right edge.** Long URLs in errors like `Error transferring https://api.openai.com/v1/v1/models · server replied:` used to wrap off the right edge; `m_statusLabel` was `setFixedHeight(14)` with no word wrap. Switched to `setWordWrap(true)` + `setMinimumHeight(18)` + `MinimumExpanding` vertical size policy so multi-line errors render in full.
+- 🪟 **SQL Formatter Model dropdown no longer shows "ot connected" instead of "(not connected)".** `QComboBox` `setMinimumWidth(150)` was tight; bumped to 200 + `setSizeAdjustPolicy(AdjustToContents)` so the combo also grows for long model names like `llama3.1:70b-instruct-q4_K_M`.
+
+### Notes
+- Linux user perspective: nothing changes; layouts / fonts / heights are unaffected by these tweaks.
+- macOS user perspective: nothing changes; macOS native font metrics already fit.
+- Windows user perspective: every panel's headers, button rows, and the AI / SQL status displays now read in full instead of cropping at the right edge.
+
+---
+
 ## [0.1.21] — 2026-04-25
 
 UI polish release. Bundles two Windows-specific layout fixes that landed on `main` after v0.1.20: option-row label/checkbox collisions on every tool panel, and the AI / Compare close ✕ buttons getting clipped on Windows fonts. No Linux or macOS user sees a difference; the Windows behaviour is what changes.
