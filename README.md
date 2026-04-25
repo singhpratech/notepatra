@@ -60,7 +60,7 @@ Notepatra started on Linux — because that's where the gap was. But great tools
 ### Editor — Battle-tested basics done right
 - **178 file extensions** mapped to the best available QScintilla lexer — Python, C/C++, Java, JavaScript, TypeScript, SQL, HTML, CSS, JSON, YAML, Markdown, Bash, Fortran, VHDL, Verilog, MATLAB, LaTeX, and more. Rust / Go / Swift / Kotlin currently fall back to the C-family lexer (close enough for brace/string/comment highlighting — not a Rust-native analyser)
 - **Tabbed editing** — drag, reorder, middle-click close, double-click empty area for new tab
-- **Tab right-click menu** — Close, Close Others, Close Left/Right, Save, Rename, Copy Full Path, Copy Filename, Copy Directory, Open Folder, Open Terminal, Read-Only toggle, **Color Tag** (7 colors + custom)
+- **Tab right-click menu** — Close, Close All BUT This, Close All to the Left/Right, Close All, Save, Save As, Rename, Copy Full Path, Copy Filename, Copy Directory Path, Open Containing Folder, Open Terminal Here, Read-Only toggle, **Color Tag** (7 named colors + custom + Remove)
 - **3 themes** — Light, Dark, Monokai (Settings > Theme)
 - **Session persistence** — close Notepatra, reopen tomorrow, same files, same cursor positions, same window size
 - **Crash recovery** — if Notepatra crashes (it shouldn't, but life happens), your unsaved work is recovered on next launch
@@ -141,7 +141,7 @@ Every plugin opens in its own tab. Real UI, not just a menu click.
 
 ### AI Powered — Local, private, no cloud
 
-Pick any local AI runner — **Ollama**, **llama.cpp (GGUF)**, **LM Studio**, **Jan**, **vLLM**, **KoboldCpp**, **llamafile**, or anything speaking OpenAI's `/v1/chat/completions`. Cloud runners (OpenRouter, OpenAI) also supported with an inline API-key paste — no digging into settings. Nothing leaves your machine unless you point it to a cloud backend. No telemetry. No subscription.
+Backend dropdown ships **7 entries** — **Ollama**, **llama.cpp (GGUF)**, **OpenRouter** (cloud), **LM Studio**, **Jan**, **OpenAI**, and **Custom** (any OpenAI-compatible endpoint, so vLLM / KoboldCpp / llamafile / TGI all work via the Custom entry with the URL pasted in). API key edits inline — no digging into settings. Nothing leaves your machine unless you point it to a cloud backend. No telemetry. No subscription.
 
 #### AI Assistant — Cursor-style dock (`Ctrl+Shift+A`)
 The AI chat lives in a **persistent right-side dock**, not an editor tab. One conversation, preserved across tab switches. Tick **Coding Mode** to open the 3-column coding layout (file tree · editor · AI chat) Cursor/VS Code-style.
@@ -203,7 +203,7 @@ Notepatra auto-detects the running Ollama and picks the most CPU-friendly model 
 | **View** | `F11` | Full screen |
 | | `Ctrl+=` / `Ctrl+-` | Zoom in / out |
 | | `Alt+0` | Fold all |
-| **Macro** | `Ctrl+Shift+R` | Start recording |
+| **Macro** | `Ctrl+Shift+M` | Start recording |
 | | `Ctrl+Shift+T` | Stop recording |
 | | `Ctrl+Shift+P` | Playback |
 | **Features** | `Ctrl+`` | Terminal |
@@ -235,7 +235,7 @@ Notepatra auto-detects the running Ollama and picks the most CPU-friendly model 
 **Why this hybrid?**
 - **C++** because Qt and QScintilla are C++ — zero friction for UI
 - **Rust** because file I/O, text processing, and parsing must never crash — Rust's ownership system guarantees memory safety
-- **Result**: the speed of C++, the safety of Rust. The bare stripped executable is **2.7 MB on macOS Apple Silicon**, **3.0 MB on Windows x64**, and **5.1 MB on Linux x64** — MSVC and clang strip more aggressively in release mode than gcc does. Downloads are 1.8 MB (Linux tar.gz), 48 MB (Windows MSI/zip with bundled Qt + QScintilla DLLs), and 22 MB (macOS DMG with bundled Qt frameworks) once the per-platform dependencies are packaged for portability.
+- **Result**: the speed of C++, the safety of Rust. The bare stripped executable is roughly **2.7 MB on macOS Apple Silicon**, **3.0 MB on Windows x64**, and **5 MB on Linux x64** — MSVC and clang strip more aggressively in release mode than gcc does. v0.1.23 download sizes: **2.8 MB** Linux x64 tar.gz · **2.6 MB** Linux ARM64 tar.gz · **25.5 MB** macOS DMG (with bundled Qt) · **43.5 MB** Windows MSI · **36.3 MB** Windows NSIS · **41.7 MB** Windows portable zip.
 
 ---
 
@@ -259,12 +259,12 @@ That's it. Auto-detects your OS, downloads the right binary, installs it, adds t
 
 | Platform | Download | Size | What's inside |
 |---|---|---|---|
-| 🐧 **Linux x64** | [`.tar.gz`](https://github.com/singhpratech/notepatra/releases/latest) | **1.8 MB** | Bare `notepatra` binary. Qt5 from your distro. |
-| 🐧 **Linux ARM64** | [`.tar.gz`](https://github.com/singhpratech/notepatra/releases/latest) | **~2 MB** | Bare `notepatra` binary for `aarch64` / ARM64 Linux. |
-| 🍎 **macOS Apple Silicon** (M1–M4) | [`.dmg`](https://github.com/singhpratech/notepatra/releases/latest) | **24 MB** | `Notepatra.app` with Qt frameworks bundled. Drag to Applications. |
-| 🪟 **Windows x64 (MSI)** | [`.msi`](https://github.com/singhpratech/notepatra/releases/latest) | **~40 MB** | WiX-built MSI. Per-machine install, upgrade-code handled, file-type associations for `.txt`, `.log`, `.md`, `.json`, `.py`, `.cpp` etc., adds Notepatra to PATH. Best for enterprise / SCCM deploy. |
-| 🪟 **Windows x64 (installer)** | [`.exe`](https://github.com/singhpratech/notepatra/releases/latest) | **~40 MB** | NSIS installer. Registers in Settings → Apps → Installed apps. Uninstall via Control Panel works. |
-| 🪟 **Windows x64 (portable)** | [`.zip`](https://github.com/singhpratech/notepatra/releases/latest) | **40 MB** | `notepatra.exe` + Qt DLLs + QScintilla DLL. Unzip and run anywhere. No installer, no registry. Optional: double-click `register-associations.bat` inside the zip to add Notepatra to the "Open with" menu for `.txt`/`.md`/`.py`/`.json`/etc. — HKCU only, no admin needed. Undo with `unregister-associations.bat`. |
+| 🐧 **Linux x64** | [`.tar.gz`](https://github.com/singhpratech/notepatra/releases/latest) | **2.8 MB** | Bare `notepatra` binary. Qt5 from your distro. |
+| 🐧 **Linux ARM64** | [`.tar.gz`](https://github.com/singhpratech/notepatra/releases/latest) | **2.6 MB** | Bare `notepatra` binary for `aarch64` / ARM64 Linux. |
+| 🍎 **macOS Apple Silicon** (M1–M4) | [`.dmg`](https://github.com/singhpratech/notepatra/releases/latest) | **25.5 MB** | `Notepatra.app` with Qt frameworks bundled. Drag to Applications. |
+| 🪟 **Windows x64 (MSI)** | [`.msi`](https://github.com/singhpratech/notepatra/releases/latest) | **43.5 MB** | WiX-built MSI. Per-machine install, upgrade-code handled, file-type associations for `.txt`, `.log`, `.md`, `.json`, `.py`, `.cpp` etc., adds Notepatra to PATH. Best for enterprise / SCCM deploy. |
+| 🪟 **Windows x64 (installer)** | [`.exe`](https://github.com/singhpratech/notepatra/releases/latest) | **36.3 MB** | NSIS installer. Registers in Settings → Apps → Installed apps. Uninstall via Control Panel works. |
+| 🪟 **Windows x64 (portable)** | [`.zip`](https://github.com/singhpratech/notepatra/releases/latest) | **41.7 MB** | `notepatra.exe` + Qt DLLs + QScintilla DLL. Unzip and run anywhere. No installer, no registry. Optional: double-click `register-associations.bat` inside the zip to add Notepatra to the "Open with" menu for `.txt`/`.md`/`.py`/`.json`/etc. — HKCU only, no admin needed. Undo with `unregister-associations.bat`. |
 
 **Why are the download sizes different?** Measured from v0.1.23 release assets — bare `notepatra` executable is **~4 MB stripped** on each platform (a little smaller on Windows/macOS than on Linux because clang + MSVC strip more aggressively than gcc). On Linux, Qt5 is a standard system package (`apt install qtbase5-dev libqscintilla2-qt5-dev`), so the download is just the binary (~2 MB compressed). On macOS and Windows, Qt isn't pre-installed, so we bundle the Qt frameworks / DLLs alongside the executable for portability — same approach Krita, Kdenlive, and every cross-platform Qt app uses. Even with Qt bundled, Notepatra is still **6× smaller than VS Code** on Windows and **14× smaller** on Linux.
 
@@ -299,11 +299,11 @@ Full instructions, threat model, and disclosure policy in [SECURITY.md](SECURITY
 
 Notepatra checks `github.com/singhpratech/notepatra/releases/latest` on launch (silent on no-match) and pops a Notepad++-style "A new version is available" dialog when something newer exists. Click **Download** and the updater will:
 
-1. **Pick the right artifact for your OS + architecture** — Linux x64 / ARM64 AppImage, macOS DMG, Windows MSI (with NSIS `.exe` and portable `.zip` as fallbacks).
+1. **Pick the right artifact for your OS + architecture** — Linux x64 / ARM64 tar.gz, macOS DMG, Windows MSI (with NSIS `.exe` and portable `.zip` as fallbacks).
 2. **Stream-download it** to `~/Downloads/*.part` with a cancellable progress dialog.
 3. **Fetch the release's `SHA256SUMS`** and verify the download's hash. **If the hash does not match, the `.part` file is deleted and you are shown an error — nothing on your system is modified.**
 4. **Atomic-rename `.part` → final name** once verified.
-5. **Hand off to the OS installer** — `msiexec /i` on Windows, `open <dmg>` on macOS (Finder drag to Applications), `xdg-open` on the Downloads folder on Linux so you drop the new AppImage in yourself.
+5. **Hand off to the OS installer** — `msiexec /i` on Windows, `open <dmg>` on macOS (Finder drag to Applications), `xdg-open` on the Downloads folder on Linux so you replace the binary yourself.
 
 **Safety contract — the updater will never leave you with a broken install:**
 
@@ -444,20 +444,28 @@ cl /LD myplugin.cpp /Fe:myplugin.dll
 | **Vim / Neovim** | ~3 MB | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Sublime Text** | ~30 MB | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | $99 |
 | **Kate / Gedit** | ~30 MB | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✓ |
-| **Notepatra** | **1.8 / 22 / 48 MB** | ✓ C++/Rust | ✓ Ollama | ✓ regex + AI | ✓ Rust mmap | ✓ | ✓ | ✓ | ✓ GPL-3 |
+| **Notepatra** | **2.8 / 25.5 / 43.5 MB** | ✓ C++/Rust | ✓ Ollama | ✓ regex + AI | ✓ Rust mmap | ✓ | ✓ | ✓ | ✓ GPL-3 |
 
-> *Notepatra download sizes are Linux / macOS / Windows. Linux is just the binary (Qt is system-installed). Mac and Windows include bundled Qt. The bare `notepatra` executable inside is 5.1 MB on Linux, 3.0 MB on Windows, 2.7 MB on macOS — different compilers, different optimization.*
+> *Notepatra download sizes are Linux x64 tar.gz / macOS DMG / Windows MSI from v0.1.23. Linux is just the binary (Qt is system-installed). macOS and Windows include bundled Qt. The bare `notepatra` executable inside is roughly 5 MB on Linux, 3 MB on Windows, 2.7 MB on macOS — different compilers, different optimization.*
 
 ---
 
 ## Tests
 
-Focused automated regression tests are wired through CMake + CTest and run in CI. The current suite covers:
+Focused automated regression tests are wired through CMake + CTest and run in CI. The current suite is **12 tests**:
+
 - `test_lexers` — verifies every shipped QScintilla lexer produces real styling
 - `test_palette` — verifies the Notepad++ palette colors and bold/italic styles
 - `test_fmtpanel_diff` — verifies formatter panels keep diff state and emit signals
-- `test_ollama` — verifies live Ollama model detection
-- `test_aifix` — exercises the AI-fix cleanup path against a real Ollama daemon
+- `test_compare_widget` — verifies the inbuilt Compare panel diff/edit/close paths
+- `test_sqlfmt` — 33 assertions across 11 SQL dialects through the AST pretty-printer
+- `test_updater` — verifies `pickAssetForPlatform`, SHA256 parsing, and asset scoring (18 assertions)
+- `test_projectsearch` — verifies the Rust-backed project search streaming path
+- `test_projectsearch_ui` — verifies the Project Search UI bindings
+- `test_ollama` — verifies live Ollama model detection (skips cleanly when offline)
+- `test_aifix` — exercises the AI-fix cleanup path against a real Ollama daemon (skips cleanly when offline)
+- `test_llamacpp` — exercises the llama.cpp backend path
+- `test_ai_context` — verifies the AI workspace-context summarizer
 
 Run them locally with:
 
@@ -465,7 +473,7 @@ Run them locally with:
 ./build.sh --tests
 ```
 
-`test_ollama` and `test_aifix` skip cleanly when Ollama is offline, so local and CI runs stay deterministic.
+The Ollama / llama.cpp / AI-fix tests skip cleanly when no inference backend is running, so local and CI runs stay deterministic.
 
 ---
 
@@ -478,7 +486,7 @@ Notepatra follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic 
 | [**v0.1.23**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.23) | 2026-04-25 | **Critical dark-theme fix.** Editor body painted white on `theme = "System"` + dark OS — `Config::theme` stays as the literal preference, but lexer paint compared against `"Dark"` directly so "System" fell through to LIGHT. New `npResolvedThemeName()` helper resolves "System" → OS preference; every lexer-paint site now uses it. Hardcoded `setPaper("#FFFFFF")` in `Editor::applyLexer()` removed. |
 | [**v0.1.22**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.22) | 2026-04-25 | **Windows truncation pass.** AI close button mojibake (`âœ•`) → `QStyle::SP_TitleBarCloseButton` (OS-native X icon). All tool-panel headers `fixedHeight(20-24)` → `minimumHeight(26-28)` so Windows fonts have room. Find/Replace buttons widened. JSON / HTML / Bracket / SQL Formatter "Copy Output" right margin 8→16. AI panel error label `setWordWrap(true)`. SQL Model dropdown 150→200 + `AdjustToContents`. |
 | [**v0.1.21**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.21) | 2026-04-25 | **Windows UI polish.** Explicit `setSpacing(8-12)` on every option row across SQL Formatter, Find/Replace, Compare toolbar, JSON/HTML/Bracket panels — Windows Vista/11 styles default to 0 px (Linux Fusion gives ~6 px) so widgets butted together. AI close button widened, padding zeroed. |
-| [**v0.1.20**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.20) | 2026-04-24 | **Windows single-instance + updater closes app before install.** Double-click a file with Notepatra open now opens a tab via `QLocalServer` IPC instead of spawning a clone. In-app updater closes Notepatra before handing off to msiexec so it can replace `.exe` cleanly. |
+| [**v0.1.20**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.20) | 2026-04-25 | **Windows single-instance + updater closes app before install.** Double-click a file with Notepatra open now opens a tab via `QLocalServer` IPC instead of spawning a clone. In-app updater closes Notepatra before handing off to msiexec so it can replace `.exe` cleanly. |
 | [**v0.1.19**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.19) | 2026-04-24 | **Project Search Windows hang fix + clean Notepatra wordmark.** OneDrive/cloud-placeholder skip via `GetFileAttributesW()`, per-file 30-second watchdog, live "⏳ stalled on: <path>" diagnostic. Em-dashes / dashes removed from MSI / NSIS / license labels. SQL/C-family comment colour calibrated. |
 | [**v0.1.18**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.18) | 2026-04-24 | **SQL Claude-style AST pretty-printer + Git panel rewrite + holistic theme propagation.** `format_sql` now an AST walker on `sqlparser` v0.52 with 11 dialects. Git panel becomes a real workflow tool (staged/unstaged trees, branch chip, commit box, sync row, history+stash menu). Every panel gets `onThemeChanged()` slot — runtime theme switch no longer leaves dark-on-dark melt. |
 | [**v0.1.17**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.17) | 2026-04-21 | **Safe in-app updater.** Picks the right asset for your OS, streams to `.part` with cancellable progress, downloads + verifies SHA256SUMS, atomic rename, hand-off to OS installer. Never touches the running binary. |
