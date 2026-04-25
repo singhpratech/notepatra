@@ -28,7 +28,9 @@ static QString comboText(QComboBox *cb) {
 
 FindReplaceDialog::FindReplaceDialog(QWidget *parent) : QDialog(parent) {
     setWindowTitle("Find / Replace");
-    setMinimumWidth(580);
+    // 580 was enough on Linux/GTK; Windows wider buttons + bold font need
+    // more room or the right column ate into the input fields.
+    setMinimumWidth(660);
     setMinimumHeight(400);
     setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
 
@@ -126,8 +128,13 @@ void FindReplaceDialog::buildFindTab(QWidget *tab) {
     auto *findAllOpenBtn = new QPushButton("Find All in All &Opened");
     auto *closeBtn = new QPushButton("Close");
 
+    // setMinimumWidth (not setFixedWidth) — Windows' default font renders
+    // "Find All in All Opened" wider than 170 px so the text was cropping
+    // to "nd All in All Opene". Letting the button grow past the floor
+    // fixes the truncation without affecting Linux/macOS where 170 px was
+    // already enough.
     for (auto *b : {findNextBtn, findPrevBtn, countBtn, findAllCurBtn, findAllOpenBtn, closeBtn})
-        b->setFixedWidth(170);
+        b->setMinimumWidth(210);
 
     btnLay->addWidget(findNextBtn);
     btnLay->addWidget(findPrevBtn);
@@ -206,8 +213,10 @@ void FindReplaceDialog::buildReplaceTab(QWidget *tab) {
     auto *replAllOpenBtn = new QPushButton("Replace All in All &Opened");
     auto *closeBtn = new QPushButton("Close");
 
+    // setMinimumWidth — see comment on the Find tab. Same Windows-font
+    // truncation risk for "Replace All in All Opened".
     for (auto *b : {findBtn, replBtn, replAllBtn, replAllOpenBtn, closeBtn})
-        b->setFixedWidth(200);
+        b->setMinimumWidth(230);
 
     btnLay->addWidget(findBtn);
     btnLay->addWidget(replBtn);

@@ -29,7 +29,9 @@ SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
     layout->addWidget(m_header);
 
     auto *optRow = new QHBoxLayout;
-    optRow->setContentsMargins(8, 6, 8, 6);
+    // Right margin bumped 8→16 — the rightmost button (Copy Output) was
+    // clipping against the panel edge on Windows.
+    optRow->setContentsMargins(8, 6, 16, 6);
     // Explicit spacing — without it some Qt styles collapse inter-widget
     // gaps to 0 and the checkbox label runs into the "Indent:" label.
     optRow->setSpacing(10);

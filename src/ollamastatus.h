@@ -34,7 +34,12 @@ public:
         layout->addWidget(new QLabel("Model:"));
         m_modelCombo = new QComboBox;
         m_modelCombo->setEditable(true);
-        m_modelCombo->setMinimumWidth(150);
+        // 150 was tight on Windows where "(not connected)" rendered as
+        // "ot connected" because dropdown chrome ate into the visible
+        // text area. 200 + AdjustToContents lets it size up for longer
+        // model names like "llama3.1:70b-instruct-q4_K_M" too.
+        m_modelCombo->setMinimumWidth(200);
+        m_modelCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
         layout->addWidget(m_modelCombo);
 
         layout->addStretch();

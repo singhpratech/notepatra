@@ -111,7 +111,10 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
 
     auto *btnWidget = new QWidget;
     m_btnRow = new QHBoxLayout(btnWidget);
-    m_btnRow->setContentsMargins(8, 6, 8, 6);
+    // Right margin bumped 8→16 so the rightmost button (Copy Output)
+    // doesn't kiss the panel edge — Windows was clipping the last
+    // glyph against the scroll-region boundary.
+    m_btnRow->setContentsMargins(8, 6, 16, 6);
     m_btnRow->setSpacing(8);
 
     // Show Diff button — opens a side-by-side compare of the LAST action's

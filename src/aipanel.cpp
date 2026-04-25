@@ -724,8 +724,14 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
 
     m_statusLabel = new QLabel("");
     m_statusLabel->setStyleSheet(QString(
-        "color: %1; padding: 0 8px; font-size: 11px;").arg(pal.muted));
-    m_statusLabel->setFixedHeight(14);
+        "color: %1; padding: 2px 8px; font-size: 11px;").arg(pal.muted));
+    // wordWrap so long error messages like "Error transferring
+    // https://api.openai.com/..." wrap instead of clipping at the right
+    // panel edge. minimumHeight gives the label room for the typical
+    // 1-line case, but it can grow to 2-3 lines for long URLs.
+    m_statusLabel->setWordWrap(true);
+    m_statusLabel->setMinimumHeight(18);
+    m_statusLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::MinimumExpanding);
     layout->addWidget(m_statusLabel);
 
     // ─── MIDDLE: chat area — REAL Qt widgets, not HTML ─────────────────
