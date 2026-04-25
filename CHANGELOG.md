@@ -7,6 +7,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.21] — 2026-04-25
+
+UI polish release. Bundles two Windows-specific layout fixes that landed on `main` after v0.1.20: option-row label/checkbox collisions on every tool panel, and the AI / Compare close ✕ buttons getting clipped on Windows fonts. No Linux or macOS user sees a difference; the Windows behaviour is what changes.
+
+### Fixed
+- 🪟 **Tool-panel option rows no longer collide on Windows.** `QHBoxLayout` default spacing is ~6 px on Linux's Fusion / GTK styles but **0 px** on Windows Vista / Windows 11 styles, so any row that didn't call `setSpacing()` rendered fine on Linux and ran widgets together on Windows (the visible bug looked like `"UPPERCASE keywordsIndent:"`). Explicit `setSpacing(8 / 10 / 12)` added on every collision-prone row:
+  - SQL Formatter — Dialect / UPPERCASE checkbox / Indent / Format / AI Fix / Copy Output row.
+  - JSON / HTML / Bracket formatters (FormatPanel) — Show Diff / Copy Output button row.
+  - Compare toolbar — Prev / Next / Recompare / Unlock Editing / Ignore-spaces / Ignore-case / Ignore-empty-lines / Stats / Close.
+  - Find/Replace dialog — Find tab options, Replace tab options, Find-In-Files options, Search-Mode group, Mark tab options.
+- 🪟 **AI dock close ✕ no longer clips on Windows.** The button used `U+00D7` (×, multiplication sign) at 18 px on a 28×28 button with `0 8px` padding — only 12 px of horizontal room for the glyph, and on Windows fonts the right edge of the × was visibly cropped against the hover background. Switched to `U+2715` (✕, a real X), widened the button to 36×28, zeroed padding, dropped the font to 16 px / weight 600.
+- 🪟 **Compare ✕ Close button widened 70 → 84 px.** The fixed width was tight on Windows where button-chrome padding ate into the `"✕ Close"` label.
+
+### Notes
+- Linux user perspective: nothing changes; layouts already had ~6 px implicit spacing from Fusion/GTK style.
+- macOS user perspective: nothing changes; macOS native style also gives sane defaults.
+- Windows user perspective: every option row in the affected panels now reads with consistent gaps between widgets, and ✕ glyphs fully render.
+
+---
+
 ## [0.1.20] — 2026-04-24
 
 Follow-up to v0.1.19 focused on two user-reported Windows UX papercuts: double-click opened a new clone per file instead of reusing the running window, and the in-app updater's "Download & install" step stalled on "app already running" because it didn't close Notepatra before handing off to msiexec.
