@@ -473,14 +473,19 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         .arg(pal.chromeBg, pal.headerFg));
     headerLay->addWidget(m_headerLabel, 1);
 
-    auto *closeBtn = new QPushButton(QStringLiteral("×"));
-    closeBtn->setFixedSize(28, 28);
+    // Close glyph: U+2715 ("✕") — a proper X that always renders, unlike
+    // U+00D7 ("×") which falls back to a thin/clipped multiplication sign
+    // on Windows fonts. Button widened (36×28) and padding zeroed so the
+    // glyph centres without getting clipped at any DPI / font fallback.
+    auto *closeBtn = new QPushButton(QStringLiteral("✕"));
+    closeBtn->setFixedSize(36, 28);
     closeBtn->setCursor(Qt::PointingHandCursor);
     closeBtn->setFlat(true);
     closeBtn->setToolTip("Close the AI dock (session stays — press Reset to clear chat)");
     closeBtn->setStyleSheet(QString(
         "QPushButton { background: %1; color: %2; border: none; "
-        "  font-size: 18px; font-weight: 500; padding: 0 8px; } "
+        "  font-size: 16px; font-weight: 600; padding: 0; "
+        "  text-align: center; } "
         "QPushButton:hover { background: %3; color: %4; }")
         .arg(pal.chromeBg, pal.muted, pal.recBtnBg, QStringLiteral("#FFFFFF")));
     connect(closeBtn, &QPushButton::clicked, this, [this]() {
