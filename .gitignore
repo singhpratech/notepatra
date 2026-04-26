@@ -11,3 +11,8 @@ artifacts/
 .claude/
 # CTest scratch directory
 Testing/
+
+# Internal launch / outreach prep notes — Show HN draft, Reddit posts,
+# Product Hunt copy, etc. Kept locally, not pushed to public repo so
+# the launch copy isn't readable before launch.
+outreach/
