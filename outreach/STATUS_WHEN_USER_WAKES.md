@@ -140,7 +140,7 @@ All in the `outreach/` directory. Ordered by priority:
 
 ```sh
 # Local repo state
-git -C /home/papapratlinux/Documents/notepad-linux-native log --oneline -5
+git -C ~/notepad-linux-native log --oneline -5
 
 # Latest CI status
 curl -sL "https://api.github.com/repos/singhpratech/notepatra/actions/runs?per_page=4" | \
@@ -155,9 +155,9 @@ curl -sL https://api.github.com/repos/singhpratech/notepatra/issues/1 | \
   python3 -c "import json,sys; d=json.load(sys.stdin); print(d['body'][:5000])"
 
 # Tag v0.1.1 (only when Windows is green)
-git -C /home/papapratlinux/Documents/notepad-linux-native tag -a v0.1.1 \
+git -C ~/notepad-linux-native tag -a v0.1.1 \
   -m "v0.1.1 — lexer + icon fixes; release notes in release_notes/v0.1.1.md"
-git -C /home/papapratlinux/Documents/notepad-linux-native push origin v0.1.1
+git -C ~/notepad-linux-native push origin v0.1.1
 ```
 
 ---
