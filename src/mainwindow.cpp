@@ -2683,8 +2683,12 @@ void MainWindow::buildMenus() {
         msg.setTextFormat(Qt::RichText);
         msg.setText(
             "<h3>Notepatra AI is local-first</h3>"
-            "<p>Your code <b>never leaves your machine</b>. No mandatory "
-            "API key, no cloud, no telemetry.</p>"
+            "<p>By default, your code <b>never leaves your machine</b>. No mandatory "
+            "API key, no telemetry. The default backend is local (Ollama / llama.cpp).</p>"
+            "<p style='color:#888; font-size:11px;'>You can <em>opt in</em> to cloud "
+            "LLMs (OpenAI, OpenRouter, Anthropic-via-proxy, Gemini-via-OpenRouter, etc.) "
+            "via the OpenAI-compatible backend — those requests leave your machine "
+            "if you choose them.</p>"
             "<p>Pick a backend in <b>Settings → Preferences → AI</b>:</p>"
             "<ul>"
             "<li><b>Ollama</b> (easiest) — install from <a href='https://ollama.com'>ollama.com</a>, "

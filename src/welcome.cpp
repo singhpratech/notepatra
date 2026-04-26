@@ -224,12 +224,27 @@ void WelcomeWidget::buildHeroSection(QVBoxLayout *parent) {
 
     auto *tagline = new QLabel(
         "A native C++/Rust code editor with local AI. "
-        "Built for the AI era — free forever, no telemetry, no cloud.");
+        "Built for the AI era — free forever, no telemetry, no cloud by default*.");
     QFont taglineFont = notepatraUiFont();
     taglineFont.setPointSize(14);
     tagline->setFont(taglineFont);
     tagline->setStyleSheet(QString("color: %1;").arg(p.textSecondary));
     tagline->setWordWrap(true);
+
+    // v0.1.36 — honest footnote on the "no cloud" claim. Notepatra ships
+    // OpenAI-compatible backend support (OpenRouter / OpenAI direct /
+    // Anthropic-via-proxy / Gemini-via-OpenRouter / etc.) for users who
+    // explicitly opt in. The default backend is Ollama (local), so out
+    // of the box nothing leaves the machine — but the asterisk + this
+    // line keep the marketing claim aligned with reality.
+    auto *taglineNote = new QLabel(
+        "* You can opt into cloud LLMs (OpenAI / OpenRouter / etc.) via "
+        "Settings → AI; those requests leave your machine if you do.");
+    QFont noteFont = notepatraUiFont();
+    noteFont.setPointSize(10);
+    taglineNote->setFont(noteFont);
+    taglineNote->setStyleSheet(QString("color: %1;").arg(p.textMuted));
+    taglineNote->setWordWrap(true);
 
     auto *version = new QLabel(QString("v%1  ·  Linux · macOS · Windows  ·  GPL-3.0")
                                    .arg(NOTEPATRA_VERSION));
@@ -240,6 +255,7 @@ void WelcomeWidget::buildHeroSection(QVBoxLayout *parent) {
 
     heroLayout->addWidget(title);
     heroLayout->addWidget(tagline);
+    heroLayout->addWidget(taglineNote);
     heroLayout->addSpacing(4);
     heroLayout->addWidget(version);
     parent->addWidget(hero);

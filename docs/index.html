@@ -1367,7 +1367,7 @@
             <div class="pillar">
                 <div class="pillar-glyph">🛡</div>
                 <h3>Private by design.</h3>
-                <p>AI runs locally — Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, or any OpenAI-compatible server. Pick your runner in Preferences → AI. No telemetry, no analytics, no mandatory API key, no cloud. Your code never leaves your machine unless you click "git push".</p>
+                <p>Local-first AI. Default backends are Ollama / llama.cpp on your own machine. No telemetry, no analytics, no mandatory API key. Cloud LLMs (OpenAI / OpenRouter / Anthropic-via-proxy / Gemini-via-OpenRouter) are <em>opt-in</em> via the OpenAI-compatible backend — pick your runner in Preferences → AI. Your code stays on your machine unless you opt into a cloud backend or click "git push".</p>
             </div>
             <div class="pillar">
                 <div class="pillar-glyph">✦</div>
@@ -1539,7 +1539,7 @@
             <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
                 <div class="feature-icon fi-orange">🤖</div>
                 <h3>AI Assistant (Ctrl+Shift+A) <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
-                <p>Local-first AI. Pick your runner: <strong>Ollama</strong>, <strong>llama.cpp</strong> (any GGUF), <strong>LM Studio</strong>, <strong>Jan</strong>, <strong>vLLM</strong>, or anything that speaks OpenAI's <code>/v1/chat/completions</code>. Explain · Find Bugs · Refactor · Write Tests · Fix JSON · Add Comments · Optimize · Translate. <strong>No cloud, no mandatory API key, no telemetry.</strong> Your code never leaves your machine.</p>
+                <p>Local-first AI. Pick your runner: <strong>Ollama</strong>, <strong>llama.cpp</strong> (any GGUF), <strong>LM Studio</strong>, <strong>Jan</strong>, <strong>vLLM</strong>, or anything that speaks OpenAI's <code>/v1/chat/completions</code>. Explain · Find Bugs · Refactor · Write Tests · Fix JSON · Add Comments · Optimize · Translate. <strong>No mandatory API key, no telemetry.</strong> Default is local — your code stays on your machine. Cloud LLMs (OpenAI, OpenRouter, etc.) are <em>opt-in</em> if you point Notepatra at one.</p>
             </div>
             <!-- Project Search at slot 2 — the second star feature.
                  Magnifying-glass icon = look ACROSS the project tree.
