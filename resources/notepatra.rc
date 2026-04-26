@@ -21,7 +21,7 @@ BEGIN
         BLOCK "040904b0"  // U.S. English, Unicode
         BEGIN
             VALUE "CompanyName",      "Prateek Singh"
-            VALUE "FileDescription",  "Notepatra - native code editor for the AI era"
+            VALUE "FileDescription",  "Notepatra native code editor for the AI era"
             VALUE "FileVersion",      "0.1.0.0"
             VALUE "InternalName",     "notepatra"
             VALUE "LegalCopyright",   "Copyright 2026 Prateek Singh. GPL-3.0."
