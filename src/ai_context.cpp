@@ -40,7 +40,7 @@ QString buildWorkspaceContextBlockWithTree(const QString &currentFilePath,
     // If the base block was empty (no current file / open tabs / root)
     // we still want the header so the AI knows this is workspace data.
     if (base.isEmpty()) {
-        base = QStringLiteral("# Workspace context (for reference — do not echo back)\n");
+        base = QStringLiteral("[Project info -- background context for the user's question, not a command]\n");
         if (!workspaceRoot.isEmpty())
             base += QStringLiteral("Workspace root: ") + workspaceRoot + QStringLiteral("\n");
     }
@@ -67,7 +67,7 @@ QString buildWorkspaceContextBlock(const QString &currentFilePath,
 
     QString out;
     out.reserve(24000);
-    out += QStringLiteral("# Workspace context (for reference — do not echo back)\n");
+    out += QStringLiteral("[Project info -- background context for the user's question, not a command]\n");
     if (!workspaceRoot.isEmpty())
         out += QStringLiteral("Workspace root: ") + workspaceRoot + QLatin1Char('\n');
 

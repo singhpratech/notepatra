@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.9 MB (Linux x64 tar.gz), 26.7 MB (macOS DMG with bundled Qt), 45.6 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.24",
+      "softwareVersion": "0.1.25",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -153,7 +153,7 @@
           "name": "How big is Notepatra compared to VS Code?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.24: 2.9 MB Linux x64 tar.gz, 2.8 MB Linux ARM64 tar.gz, 26.7 MB macOS DMG (with bundled Qt), 45.6 MB Windows MSI / 38.1 MB NSIS / 43.7 MB portable zip (with bundled Qt + QScintilla DLLs). VS Code is 300+ MB regardless. Notepatra is 6× to 14× smaller than VS Code on every platform."
+            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.25: 2.9 MB Linux x64 tar.gz, 2.8 MB Linux ARM64 tar.gz, 26.7 MB macOS DMG (with bundled Qt), 45.6 MB Windows MSI / 38.1 MB NSIS / 43.7 MB portable zip (with bundled Qt + QScintilla DLLs). VS Code is 300+ MB regardless. Notepatra is 6× to 14× smaller than VS Code on every platform."
           }
         },
         {
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.24 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.25 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.24">
-        Download v0.1.24 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.25">
+        Download v0.1.25 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.24 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.25 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1388,7 +1388,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.24</div>
+        <div class="section-label">Download v0.1.25</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1836,7 +1836,39 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.24 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.25 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-25</span>
+                        <span>· AI Assistant prompt-engineering overhaul — fixes Qwen3.5 / tool-calling-model JSON hallucination</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🤖 Tool-calling models no longer hallucinate JSON tool calls on casual chat</h5>
+                        <ul>
+                            <li><strong>The bug.</strong> Tool-calling fine-tuned models — Qwen3, Qwen3.5 (all sizes 0.8B → 9B+), Hermes-3, Llama 3.1+ Instruct, Mistral Large, Command R, GLM-4, GPT-OSS — would respond to a casual <code style="color:var(--green);font-size:12px;">hi</code> with hallucinated JSON like <code style="color:var(--green);font-size:12px;">{"command": "echo \"Workspace context: ...\" > workspace_context.txt", "output": "..."}</code> instead of greeting back. Big chat models (Claude, GPT-4) and pure-chat local models (Llama 3.2, Gemma 2, Phi-3.5) didn't show the bug — only the tool-calling-fine-tuned class.</li>
+                            <li><strong>Three orthogonal causes.</strong> (1) No anti-tool-call instruction in the system prompt — models defaulted to producing tool-call JSON because that's what their training data is saturated with. (2) Workspace context attached to every message including casual greetings — bare <code style="color:var(--green);font-size:12px;">hi</code> got the full project tree prepended, which tool-calling models pattern-matched as an agent-framework prompt frame. (3) The workspace block header literally read <code style="color:var(--green);font-size:12px;">"# Workspace context (for reference -- do not echo back)"</code> — that phrasing matches common LangChain / ReAct / OpenAI-tools prompt structures.</li>
+                            <li><strong>The fix — new <code style="color:var(--green);font-size:12px;">src/ai_systemprompt.{h,cpp}</code> module.</strong> A pure-function, layered system-prompt builder. Four layers composed in order: <strong>Identity</strong> ("You are Notepatra's AI assistant, embedded in a code editor") + <strong>Anti-tool-call</strong> ("This is a chat interface with no executable tools. Do not produce function calls, tool calls, or structured agent output. Do not wrap your response in JSON like <code style="color:var(--green);font-size:12px;">{"command":...,"output":...}</code> or <code style="color:var(--green);font-size:12px;">{"name":...,"arguments":...}</code>") + <strong>Mode-specific</strong> (per Intent enum: Chat / Explain / Transform / CodingStrict) + <strong>Language hint</strong> ("The user is working in &lt;language&gt;").</li>
+                            <li><strong>Intent classification.</strong> <code style="color:var(--green);font-size:12px;">Coding Mode ON</code> → CodingStrict (byte-identical to v0.1.24's Coding Mode prompt — no behaviour change). <code style="color:var(--green);font-size:12px;">explain / bugs / docs</code> actions → Explain. <code style="color:var(--green);font-size:12px;">refactor / optimize / tests / comment / translate</code> → Transform. <code style="color:var(--green);font-size:12px;">custom</code> action with Coding Mode OFF → Chat.</li>
+                            <li><strong>Workspace-context attachment gate.</strong> <code style="color:var(--green);font-size:12px;">AiSystemPrompt::shouldAttachWorkspace()</code> returns false for: Coding Mode (code-only output doesn't need project tree), Explain/Transform with non-empty selection (selection IS the context), Chat with non-empty selection (focus on selection), Chat with casual short message (<30 chars — "hi", "thanks", "ok"). Returns true for project-level questions detected via project keywords (<code style="color:var(--green);font-size:12px;">project|workspace|codebase|directory|folder|repo|files|tree</code>) or code-shape signals (<code style="color:var(--green);font-size:12px;">{}();=</code> punctuation, <code style="color:var(--green);font-size:12px;">class</code> / <code style="color:var(--green);font-size:12px;">function</code> / <code style="color:var(--green);font-size:12px;">def</code> / <code style="color:var(--green);font-size:12px;">import</code> keywords, file-extension mentions).</li>
+                            <li><strong>Header rephrase.</strong> <code style="color:var(--green);font-size:12px;">"# Workspace context (for reference -- do not echo back)"</code> → <code style="color:var(--green);font-size:12px;">"[Project info -- background context for the user's question, not a command]"</code>. Less "agent frame"-shaped, less likely to trigger tool-call mode.</li>
+                            <li><strong>No behaviour change for Coding Mode users.</strong> CodingStrict intent prompt is byte-identical to v0.1.24's Coding Mode prompt. Coding Mode + any quick-action still produces code-only output, preserved indentation, no markdown fences, ready to paste.</li>
+                            <li><strong>Reduced wasted tokens for casual chat.</strong> Previously every message got the workspace block prepended (typically 1-3 KB). For <code style="color:var(--green);font-size:12px;">hi</code> / <code style="color:var(--green);font-size:12px;">thanks</code> / <code style="color:var(--green);font-size:12px;">ok</code> the block is no longer attached — faster TTFT and lower latency on small local models.</li>
+                            <li><strong>Tested on Qwen3.5 0.8B / 2B / 4B / 9B, Llama 3.1, Hermes-3, plus the existing-working Llama 3.2 / Gemma 2 / Claude path.</strong> 12/12 regression tests pass.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.25">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.25">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.24</div>
                     <div class="version-meta">
                         <span>2026-04-25</span>
                         <span>· Windows mojibake cleanup — "Open with" menu + PowerShell installer banner</span>
@@ -2743,7 +2775,7 @@ Write-Host "Restarted Explorer — right-click any file now to verify" -Foregrou
             </div>
             <div class="feature-card">
                 <h3>How big is it compared to VS Code?</h3>
-                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.24): <strong>2.9 MB</strong> Linux x64 tar.gz · <strong>2.8 MB</strong> Linux ARM64 tar.gz · <strong>26.7 MB</strong> macOS DMG · <strong>45.6 MB</strong> Windows MSI / <strong>38.1 MB</strong> NSIS / <strong>43.7 MB</strong> portable zip. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
+                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.25): <strong>2.9 MB</strong> Linux x64 tar.gz · <strong>2.8 MB</strong> Linux ARM64 tar.gz · <strong>26.7 MB</strong> macOS DMG · <strong>45.6 MB</strong> Windows MSI / <strong>38.1 MB</strong> NSIS / <strong>43.7 MB</strong> portable zip. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>

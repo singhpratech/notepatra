@@ -47,7 +47,7 @@ int main(int argc, char *argv[]) {
         QString out = AiContext::buildWorkspaceContextBlock(
             cur.filePath, cur.text, tabs, "/home/x/src");
 
-        check("single file — header present", out.contains("# Workspace context"));
+        check("single file — header present", out.contains("[Project info"));
         check("single file — root reported", out.contains("/home/x/src"));
         check("single file — current marker", out.contains("<- current"));
         check("single file — content embedded", out.contains("print('hello')"));

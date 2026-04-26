@@ -1,5 +1,6 @@
 #include "aipanel.h"
 #include "ai_context.h"
+#include "ai_systemprompt.h"
 #include "fonts.h"
 #include "config.h"
 #include <QVBoxLayout>
@@ -1411,29 +1412,26 @@ void AIPanel::sendPrompt(const QString &action) {
     }
     m_ollama->setModel(model);
 
-    // Coding Mode swaps in a sharper system prompt that forces code-only
-    // output. This makes the [Apply] button after the response do exactly
-    // what users expect: replace the selection with clean, compilable code
-    // rather than chat-style explanations wrapped in markdown.
-    QString systemPrompt;
-    if (m_codingMode && m_codingMode->isChecked()) {
-        systemPrompt =
-            "You are a code-editor agent. The user is working in " + m_language + ". "
-            "Return ONLY the modified source code. No explanations, no prose, "
-            "no preambles like 'Here is the code'. Do NOT wrap the output in "
-            "markdown code fences (```). Preserve the original indentation "
-            "style (tabs vs spaces). Output must be directly pasteable into "
-            "the file — nothing else.";
-    } else {
-        systemPrompt = "You are a code assistant. Be concise. Output only code when asked to modify code. "
-                       "The user is working in " + m_language + ".";
-    }
+    // Build the system prompt via the layered builder in ai_systemprompt.cpp.
+    // The builder composes: identity + anti-tool-call + mode-specific +
+    // language hint. Coding Mode -> CodingStrict intent which preserves the
+    // legacy code-only prompt verbatim. The anti-tool-call layer is what
+    // suppresses the {"command":...,"output":...} drift that tool-calling
+    // models (Qwen3, Qwen3.5, Hermes-3, Llama 3.1+) produce by default
+    // when they see anything that looks like an agent frame.
+    const bool codingMode = (m_codingMode && m_codingMode->isChecked());
+    const AiSystemPrompt::Intent intent =
+        AiSystemPrompt::classifyIntent(action, codingMode);
+    const QString systemPrompt = AiSystemPrompt::build(intent, m_language);
 
     // Build the prompt + the user-visible prompt label (just the action name
     // + the code snippet for context — no need to dump the verbose template
-    // text into the user bubble)
+    // text into the user bubble). customUserText captures just the raw text
+    // the user typed for the "custom" action; the workspace-gate heuristic
+    // reads it without the appended code context.
     QString prompt;
     QString userBubbleText;
+    QString customUserText;
     if (action == "explain") {
         prompt = "Explain this code clearly and concisely:\n\n```\n" + m_context + "\n```";
         userBubbleText = "Explain this code:\n\n" + m_context;
@@ -1460,6 +1458,7 @@ void AIPanel::sendPrompt(const QString &action) {
         userBubbleText = "Translate Python ↔ JavaScript:\n\n" + m_context;
     } else if (action == "custom") {
         const QString userText = m_customInput->toPlainText();
+        customUserText = userText;
         prompt = userText + "\n\n```\n" + m_context + "\n```";
         userBubbleText = userText + (m_context.isEmpty() ? "" : "\n\n" + m_context);
         m_customInput->clear();
@@ -1493,30 +1492,35 @@ void AIPanel::sendPrompt(const QString &action) {
         m_attachmentChip->setFixedHeight(0);
     }
 
-    // Prepend the workspace-awareness block so the model sees the current
-    // file + open tabs + workspace root before the actual question. We only
-    // add it when there's meaningful context — plain chat without any file
-    // open still produces a clean, header-free prompt.
-    // Convert our OpenTabInfo to the namespace-level one, then assemble
-    // the workspace block — now with a full "@codebase" file-tree listing
-    // when the workspace root is known, so the model can reference files
-    // the user hasn't opened yet.
-    QVector<AiContext::OpenTabInfo> acTabs;
-    acTabs.reserve(m_openTabs.size());
-    for (const auto &t : m_openTabs) {
-        AiContext::OpenTabInfo n;
-        n.filePath = t.filePath;
-        n.displayName = t.displayName;
-        n.language = t.language;
-        n.text = t.text;
-        n.isCurrent = t.isCurrent;
-        acTabs.append(n);
-    }
-    QString workspaceBlock = AiContext::buildWorkspaceContextBlockWithTree(
-        m_currentFilePath, m_currentFileText, acTabs,
-        m_workspaceRoot, m_workspaceFilePaths);
-    if (!workspaceBlock.isEmpty()) {
-        prompt = workspaceBlock + "\n---\n\n" + prompt;
+    // Prepend the workspace-awareness block IF this scenario actually
+    // benefits from it. The gating function says no for:
+    //   * Coding Mode (code-only output, workspace just bloats prompt)
+    //   * Explain / Transform with a non-empty selection (selection IS context)
+    //   * Chat with a casual greeting ("hi", "thanks") -- the load-bearing
+    //     fix for the qwen3.5:0.8b / 2b "{"command":...}" hallucination
+    //
+    // It still attaches workspace context for project-level questions
+    // like "show me my files" and code-shaped chat ("how do I import X?").
+    const bool attachWorkspace =
+        AiSystemPrompt::shouldAttachWorkspace(intent, m_context, customUserText);
+    if (attachWorkspace) {
+        QVector<AiContext::OpenTabInfo> acTabs;
+        acTabs.reserve(m_openTabs.size());
+        for (const auto &t : m_openTabs) {
+            AiContext::OpenTabInfo n;
+            n.filePath = t.filePath;
+            n.displayName = t.displayName;
+            n.language = t.language;
+            n.text = t.text;
+            n.isCurrent = t.isCurrent;
+            acTabs.append(n);
+        }
+        QString workspaceBlock = AiContext::buildWorkspaceContextBlockWithTree(
+            m_currentFilePath, m_currentFileText, acTabs,
+            m_workspaceRoot, m_workspaceFilePaths);
+        if (!workspaceBlock.isEmpty()) {
+            prompt = workspaceBlock + "\n---\n\n" + prompt;
+        }
     }
 
     // Opt-in debug sink for end-to-end verification of the context pipeline.

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.24 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.25 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -144,6 +144,7 @@ set(SOURCES
     src/gitgutter.cpp
     src/ollama.cpp
     src/ai_context.cpp
+    src/ai_systemprompt.cpp
     src/aipanel.cpp
     src/restclient.cpp
     src/gitpanel.cpp

@@ -7,6 +7,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.25] — 2026-04-25
+
+AI Assistant prompt-engineering overhaul. Fixes a long-standing failure where tool-calling fine-tuned models — Qwen3 / Qwen3.5 (all sizes) / Hermes-3 / Llama 3.1+ Instruct / Mistral Large / Command R / GLM-4 / GPT-OSS — would respond to casual chat input like `hi` with hallucinated JSON tool calls (`{"command": "echo ...", "output": "..."}`) instead of greeting back. Root cause was a combination of (a) no anti-tool-call instruction in the system prompt, (b) workspace context being attached to every request including casual greetings, and (c) the workspace block header literally beginning with `# Workspace context` which tool-calling models pattern-matched as an agent-framework prompt and decided to respond in tool-call format.
+
+### Added
+- 🤖 **`src/ai_systemprompt.{h,cpp}` — layered system-prompt builder.** Replaces the old binary "chat prompt vs Coding Mode prompt" with a 4-layer composition: identity + anti-tool-call + mode-specific + language hint. Pure functions, unit-testable, no QtWidgets dependency.
+- 🤖 **`AiSystemPrompt::Intent` enum** — `Chat`, `Explain`, `Transform`, `CodingStrict`. Coding Mode now maps to `CodingStrict` with a byte-identical prompt body to v0.1.24's Coding Mode prompt — existing Coding Mode users see no behaviour change. Quick-action buttons (`explain` / `bugs` / `docs`) map to `Explain`; (`refactor` / `optimize` / `tests` / `comment` / `translate`) map to `Transform`; `custom` action with Coding Mode OFF maps to `Chat`.
+- 🤖 **Anti-tool-call layer** in every system prompt: explicitly tells the model "this is a chat interface with no executable tools", names the forbidden output shapes (`{"command":...,"output":...}` and `{"name":...,"arguments":...}`), and instructs the model to describe what it would do in plain language instead of producing tool calls. Adds ~30 tokens per request — harmless for non-tool-calling models (Llama 3.2, Gemma 2, Phi-3.5, Claude, GPT-4) which ignore the redundant instruction.
+- 🤖 **`AiSystemPrompt::shouldAttachWorkspace()` heuristic gate** for the workspace-context block. Returns `false` for: Coding Mode (code-only output doesn't need project tree), Explain/Transform with a non-empty selection (selection IS the context), Chat with a non-empty selection (focus on selection), Chat with a casual short message ("hi", "thanks", "ok"). Returns `true` for project-level questions detected via project keywords (`project|workspace|codebase|directory|folder|repo|files|tree`) or code-shape signals (`{}();=` punctuation, code keywords like `class`/`function`/`def`/`import`, file-extension mentions). Default conservative: when in doubt, skip — the anti-tool-call layer catches any drift.
+
+### Fixed
+- 🤖 **Casual chat ("hi") with `qwen3.5:0.8b` / `qwen3.5:2b` / Qwen3 / Hermes / Llama 3.1+ no longer produces `{"command":...,"output":...}` JSON tool calls.** The previous prompt sent the workspace context block on every message, including bare greetings. Tool-calling models pattern-matched the agent-frame-shaped header and emitted JSON because that's what their training data taught them to do. With the new builder + workspace gate + anti-tool-call layer, a casual `hi` now gets a plain-language `Hello! How can I help with your code?` response across every model family tested (Qwen3.5 0.8B/2B/4B/9B, Llama 3.1, Hermes-3, plus the existing-working Llama 3.2 / Gemma 2 / Claude path).
+- 🤖 **Workspace context header rephrased** from `# Workspace context (for reference — do not echo back)` to `[Project info -- background context for the user's question, not a command]`. Less "agent frame"-shaped, less likely to trigger tool-call mode in models that pattern-match on common agent-framework prompt structures (LangChain, ReAct, OpenAI tools, Anthropic tools).
+- 🤖 **Reduced wasted prompt tokens for casual chat.** Previously every message got the workspace block prepended (often 1-3 KB of file-tree + open-tab content). For `hi` / `thanks` / `ok` and similar short conversational replies, the block is no longer attached — typical reduction is 1-3 KB per message which translates to faster TTFT (time-to-first-token) and lower latency on small local models.
+
+### Notes
+- **No behaviour change for Coding Mode users.** `CodingStrict` intent prompt is byte-identical to the previous Coding Mode prompt. Coding Mode + any quick-action still produces code-only output with preserved indentation, no markdown fences, ready to paste. Anti-tool-call layer is added as cheap insurance but doesn't affect code output (code != tool calls).
+- **No behaviour change for `Explain` / `Transform` quick-actions on selected code.** The selection is still treated as the focal context; the workspace block is now correctly skipped (it was redundant noise before — the model only needed to look at the selection).
+- **Project-level chat ("show me my files", "what's in this codebase?") still gets workspace context.** The heuristic detects project keywords and flips `shouldAttachWorkspace()` to true.
+- **No change to thinking-mode handling.** The `Think` checkbox still defaults OFF, `/no_think` is still appended to the system prompt for thinking-capable models (Qwen3, Qwen3.5, DeepSeek-R1, GLM-4-Plus). That code path (`src/ollama.cpp::generate()`) is untouched.
+- **No change to vision/multimodal handling.** Image attachments via `imagesBase64` still work identically; the anti-tool-call layer applies to text output regardless of input modality.
+- **No version-info or installer changes.** Same Windows / Linux / macOS binaries as v0.1.24 except for the AI panel behaviour. The Windows mojibake fixes from v0.1.24 are bundled here too (FileDescription, NSIS LegalCopyright, install.ps1 UTF-8 console).
+
+---
+
 ## [0.1.24] — 2026-04-25
 
 Windows-only mojibake cleanup. Two distinct UTF-8-vs-codepage bugs that surfaced on a fresh Windows 11 install: the file-association description showing `Notepatra â€" native code editor` in Explorer's "Open with" menu, and the `irm | iex` PowerShell installer banner rendering box-drawing chars as `â`/`âˆ` garbage.
