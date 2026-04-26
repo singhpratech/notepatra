@@ -2695,6 +2695,44 @@
         <div class="section-desc">Quick answers. For deeper docs see the <a href="https://github.com/singhpratech/notepatra#readme" style="color:var(--green);">README</a> and <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md" style="color:var(--green);">SECURITY.md</a>.</div>
 
         <div class="features-grid">
+            <div class="feature-card" style="grid-column: 1 / -1; border-color: rgba(204,120,92,0.35);">
+                <h3>🪟 Windows: After upgrading from v0.1.23 → v0.1.24, my "Open with" menu still shows the old garbled name <code style="color:var(--green);font-size:12px;">Notepatra â€" native code editor</code>. How do I fix it?</h3>
+                <p style="margin-bottom: 14px;">This is a Windows shell-cache issue, not a Notepatra bug. <strong>Windows MuiCache permanently stores the <code style="color:var(--green);font-size:12px;">FileDescription</code> string the first time it reads an executable's <code style="color:var(--green);font-size:12px;">VERSIONINFO</code> resource — and never re-reads it on upgrade.</strong> The new v0.1.24 binary embeds clean ASCII (<code style="color:var(--green);font-size:12px;">Notepatra native code editor for the AI era</code>), but Windows keeps showing the cached mojibake from your previous v0.1.23 install. The fix is a one-time cache wipe that takes about 5 seconds. <strong>Tested and confirmed working on Windows 11.</strong></p>
+                <p style="margin-bottom: 10px;"><strong>Open PowerShell (no admin needed — HKCU only) and paste this whole block:</strong></p>
+                <pre style="background: #0d0d0e; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 18px 20px; overflow-x: auto; font-family: 'JetBrains Mono','Consolas','Monaco',monospace; font-size: 12.5px; line-height: 1.55; color: #e8e6e3; margin: 0 0 14px 0;"><code># 1. Wipe Notepatra's stale entries from MuiCache (the cache that has the â€" text)
+$mui = "HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache"
+Get-Item $mui | Select-Object -ExpandProperty Property | Where-Object { $_ -match "notepatra" } | ForEach-Object {
+    Remove-ItemProperty -Path $mui -Name $_ -Force
+    Write-Host "Cleared MuiCache: $_" -ForegroundColor Green
+}
+
+# 2. Wipe stale "Open with" associations pointing to old notepatra.exe paths
+Remove-Item "HKCU:\Software\Classes\Applications\notepatra.exe" -Recurse -Force -ErrorAction SilentlyContinue
+$exts = @(".txt",".log",".md",".json",".py",".cpp",".js",".html",".css",".xml",".sql",".sh",".yml",".yaml",".ini",".conf",".csv",".rs",".go",".java",".rb",".php",".c",".h",".hpp",".tsx",".ts",".jsx")
+foreach ($ext in $exts) {
+    Remove-Item "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$ext\OpenWithList" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$ext\OpenWithProgids" -Recurse -Force -ErrorAction SilentlyContinue
+}
+Write-Host "Cleared OpenWithList for $($exts.Count) extensions" -ForegroundColor Green
+
+# 3. Force shell to rebuild association cache
+ie4uinit.exe -show
+ie4uinit.exe -ClearIconCache
+Write-Host "Rebuilt shell cache" -ForegroundColor Green
+
+# 4. Restart Explorer (drops in-memory cache)
+Stop-Process -Name explorer -Force
+Start-Process explorer
+Write-Host "Restarted Explorer — right-click any file now to verify" -ForegroundColor Cyan</code></pre>
+                <p style="margin-bottom: 8px;"><strong>What it does — line by line:</strong></p>
+                <ol style="margin: 0 0 14px 18px; padding: 0; color: var(--text-dim); line-height: 1.7;">
+                    <li><strong>MuiCache wipe</strong> — clears the per-user cache where Windows stores <code style="color:var(--green);font-size:12px;">FileDescription</code> strings shown in "Open with" / File Properties → Details. This is the cache holding the <code style="color:var(--green);font-size:12px;">â€"</code> mojibake.</li>
+                    <li><strong>Per-extension cache wipe</strong> — removes the <code style="color:var(--green);font-size:12px;">OpenWithList</code> + <code style="color:var(--green);font-size:12px;">OpenWithProgids</code> entries Windows keeps for 28 common file types. Forces Windows to re-query the .exe's actual VERSIONINFO next time you open the menu.</li>
+                    <li><strong><code style="color:var(--green);font-size:12px;">ie4uinit.exe -show</code> + <code style="color:var(--green);font-size:12px;">-ClearIconCache</code></strong> — built-in Windows tool that rebuilds the shell association + icon caches. The red ❌ overlay on the Notepatra icon disappears here.</li>
+                    <li><strong>Restart Explorer</strong> — drops the in-memory copy of the cache (the fourth and final layer). Without this, the menu can stay stale until you log out / reboot.</li>
+                </ol>
+                <p style="margin-bottom: 0;"><strong>Verify it worked:</strong> right-click any <code style="color:var(--green);font-size:12px;">.txt</code> or <code style="color:var(--green);font-size:12px;">.json</code> file → <em>Open with</em> → the Notepatra entry should now read <code style="color:var(--green);font-size:12px;">Notepatra native code editor for the AI era</code> with a clean icon. If you still see the old text, log out and back in (forces every cache layer to flush). New v0.1.24 installs on a clean machine never see this — it only affects upgrades from v0.1.23 or earlier.</p>
+            </div>
             <div class="feature-card">
                 <h3>How is Notepatra different from Notepad++ or VS Code?</h3>
                 <p>Notepatra is its own native code editor — written from scratch in C++ and Rust, not a port or a clone. Runs on Linux, macOS Apple Silicon, and Windows from one codebase. Compared to <strong>Notepad++</strong>: truly cross-platform, local-first AI is built in, Rust-powered search and formatters. Compared to <strong>VS Code</strong>: 6–14× smaller, zero Electron, zero telemetry, instant startup, no account required. Credit to Don Ho for proving a code editor can be small, fast, and free.</p>

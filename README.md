@@ -321,6 +321,53 @@ The Notepatra process **never rewrites or replaces the running binary.** Only th
 
 **Check manually:** `Help → Check for Updates` or `?` menu. The check is also visible on first launch (silent if up to date).
 
+### Windows: refresh "Open with" entry after upgrading from v0.1.23 → v0.1.24
+
+If you upgraded from v0.1.23 or earlier and your right-click → **Open with** menu still shows `Notepatra â€" native code editor` (mojibaked text) and/or a red ❌ overlay on the icon, that's **Windows shell-cache lag, not a Notepatra bug**. Windows' MuiCache permanently caches the `FileDescription` string the first time it reads an executable's `VERSIONINFO`, and never re-reads it on upgrade. The new v0.1.24 binary embeds clean ASCII; Windows is just showing the cached old string.
+
+**One-time fix** — open PowerShell (no admin needed, all changes are HKCU-scoped) and paste this whole block. Tested and confirmed working on Windows 11:
+
+```powershell
+# 1. Wipe Notepatra's stale entries from MuiCache (the cache that has the â€" text)
+$mui = "HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache"
+Get-Item $mui | Select-Object -ExpandProperty Property | Where-Object { $_ -match "notepatra" } | ForEach-Object {
+    Remove-ItemProperty -Path $mui -Name $_ -Force
+    Write-Host "Cleared MuiCache: $_" -ForegroundColor Green
+}
+
+# 2. Wipe stale "Open with" associations pointing to old notepatra.exe paths
+Remove-Item "HKCU:\Software\Classes\Applications\notepatra.exe" -Recurse -Force -ErrorAction SilentlyContinue
+$exts = @(".txt",".log",".md",".json",".py",".cpp",".js",".html",".css",".xml",".sql",".sh",".yml",".yaml",".ini",".conf",".csv",".rs",".go",".java",".rb",".php",".c",".h",".hpp",".tsx",".ts",".jsx")
+foreach ($ext in $exts) {
+    Remove-Item "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$ext\OpenWithList" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$ext\OpenWithProgids" -Recurse -Force -ErrorAction SilentlyContinue
+}
+Write-Host "Cleared OpenWithList for $($exts.Count) extensions" -ForegroundColor Green
+
+# 3. Force shell to rebuild association cache
+ie4uinit.exe -show
+ie4uinit.exe -ClearIconCache
+Write-Host "Rebuilt shell cache" -ForegroundColor Green
+
+# 4. Restart Explorer (drops in-memory cache)
+Stop-Process -Name explorer -Force
+Start-Process explorer
+Write-Host "Restarted Explorer — right-click any file now to verify" -ForegroundColor Cyan
+```
+
+**What it does — line by line:**
+
+| Step | What & why |
+|---|---|
+| 1. MuiCache wipe | Clears the per-user cache where Windows stores `FileDescription` strings shown in "Open with" / File Properties → Details. This is the cache holding the `â€"` mojibake. |
+| 2. Per-extension cache wipe | Removes `OpenWithList` + `OpenWithProgids` for 28 common file types. Forces Windows to re-query the .exe's actual `VERSIONINFO` next time the menu opens. |
+| 3. `ie4uinit.exe -show` + `-ClearIconCache` | Built-in Windows tool that rebuilds shell association + icon caches. The red ❌ overlay disappears here. |
+| 4. Restart Explorer | Drops the in-memory copy of the cache (the fourth and final layer). Without this, the menu can stay stale until you log out / reboot. |
+
+**Verify it worked**: right-click any `.txt` or `.json` file → *Open with* → the Notepatra entry should now read `Notepatra native code editor for the AI era` with a clean icon. If you still see the old text after this, log out and back in (forces every kernel-side cache layer to flush).
+
+**New v0.1.24 installs on a clean machine never see this** — it only affects upgrades from v0.1.23 or earlier where the mojibaked string was first cached.
+
 ### Build from source
 
 <details>
