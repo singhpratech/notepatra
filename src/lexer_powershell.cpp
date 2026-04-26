@@ -8,83 +8,140 @@ const char *LexerPowerShell::language() const { return "PowerShell"; }
 // loads SCLEX_POWERSHELL (88), Scintilla's native PowerShell lexer.
 const char *LexerPowerShell::lexer() const { return "powershell"; }
 
+// Comprehensive keyword sets for SCLEX_POWERSHELL.
+// Sources verified against:
+//   - Microsoft "about_Reserved_Words" / "about_Language_Keywords"
+//   - PowerShell Language Specification chapter 02 (lang-spec)
+//   - Microsoft "Approved Verbs for Windows PowerShell Commands" doc
+//   - VS Code PowerShell extension default token mapping
 const char *LexerPowerShell::keywords(int set) const {
-    // Scintilla's PowerShell lexer accepts 5 keyword sets:
-    //   set 1: language statement keywords        -> SCE_POWERSHELL_KEYWORD (8)
-    //   set 2: comparison / logical operators     -> styles overridden 6/8
-    //   set 3: cmdlet verbs                       -> SCE_POWERSHELL_CMDLET (9)
-    //   set 4: cmdlet aliases (ls, dir, gci ...)  -> SCE_POWERSHELL_ALIAS (10)
-    //   set 5: user-defined words 1               -> SCE_POWERSHELL_USER1 (12)
     if (set == 1) {
+        // Set 0 in Scintilla parlance — statement / control-flow / declaration
+        // keywords (about_Reserved_Words). The QScintilla `keywords(set)` API
+        // is 1-based; this maps to Scintilla SCI_SETKEYWORDS index 0.
         return
-            // Statement / control-flow keywords
-            "begin break catch class continue data define do "
+            "begin break catch class configuration continue data define do "
             "dynamicparam else elseif end enum exit filter finally for "
-            "foreach from function hidden if in inlinescript param "
-            "parallel process return sequence static switch throw trap "
-            "try until using var while workflow "
-            // Type-related keywords
-            "configuration interface namespace public private protected "
-            // Boolean / null literals
-            "true false null";
+            "foreach from function hidden if in inlinescript local param "
+            "parallel private process return sequence static switch throw "
+            "trap try until using var while workflow";
     }
     if (set == 2) {
-        // PowerShell comparison and logical operators -- always prefixed
-        // with a dash in actual code (-eq, -ne, etc.) but the lexer's
-        // operator-recogniser strips the dash and matches the bare word.
+        // Comparison + logical operators in their bare-word form. PowerShell
+        // writes them with a leading dash (-eq, -ne, ...) but Scintilla's
+        // PowerShell lexer strips the dash before keyword lookup, so we list
+        // the bare words. Includes case-sensitive (c-prefix) and
+        // case-insensitive (i-prefix) variants. Also bitwise / shift /
+        // type-test / split-join.
         return
-            // Comparison
             "eq ne ge gt lt le like notlike match notmatch contains "
-            "notcontains in notin replace ireplace creplace ieq cne "
-            "ceq ile cle ige cge ilt clt igt cgt "
-            // Logical
-            "and or not band bor bxor bnot xor "
-            // Type tests
+            "notcontains in notin replace ireplace creplace "
+            "ceq cne cge cgt clt cle clike cnotlike cmatch cnotmatch "
+            "ccontains cnotcontains cin cnotin "
+            "ieq ine ige igt ilt ile ilike inotlike imatch inotmatch "
+            "icontains inotcontains iin inotin "
             "is isnot as "
-            // Other
-            "split join f";
+            "and or xor not band bor bxor bnot shl shr "
+            "split isplit csplit join f";
     }
     if (set == 3) {
-        // The 50 most common cmdlet verbs from the official PowerShell
-        // verb list. Cmdlets are formatted Verb-Noun, so this matches
-        // the prefix of every standard cmdlet.
+        // Cmdlet verbs — the official Microsoft "Approved Verbs" list,
+        // grouped by category (Common / Communications / Data / Diagnostic /
+        // Lifecycle / Security / Other). Cmdlets are formatted Verb-Noun, so
+        // these match the Verb prefix and let Scintilla colour the whole
+        // Verb-Noun pair as SCE_POWERSHELL_CMDLET (style 9).
         return
-            "Add Approve Assert Backup Block Build Checkpoint Clear "
-            "Close Compare Complete Compress Confirm Connect Convert "
-            "ConvertFrom ConvertTo Copy Debug Deny Disable Disconnect "
-            "Dismount Edit Enable Enter Exit Expand Export Find "
-            "Format Get Grant Group Hide Import Initialize Install "
-            "Invoke Join Limit Lock Measure Merge Mount Move New Open "
-            "Optimize Out Ping Pop Publish Push Read Receive Redo "
-            "Register Remove Rename Repair Request Reset Resize "
-            "Resolve Restart Restore Resume Revoke Save Search Select "
-            "Send Set Show Skip Split Start Step Stop Submit Suspend "
-            "Switch Sync Test Trace Unblock Undo Uninstall Unlock "
-            "Unprotect Unpublish Unregister Update Use Wait Watch Write";
+            // Common
+            "Add Clear Close Copy Enter Exit Find Format Get Hide Join "
+            "Lock Move New Open Optimize Pop Push Redo Remove Rename Reset "
+            "Resize Search Select Set Show Skip Split Step Switch Undo "
+            "Unlock Watch "
+            // Communications
+            "Connect Disconnect Read Receive Send Write "
+            // Data
+            "Backup Checkpoint Compare Compress Convert ConvertFrom "
+            "ConvertTo Dismount Edit Expand Export Group Import Initialize "
+            "Limit Merge Mount Out Publish Restore Save Sync Unpublish "
+            "Update "
+            // Diagnostic
+            "Debug Measure Ping Repair Resolve Test Trace "
+            // Lifecycle
+            "Approve Assert Build Complete Confirm Deny Deploy Disable "
+            "Enable Install Invoke Register Request Restart Resume Start "
+            "Stop Submit Suspend Uninstall Unregister Wait "
+            // Security
+            "Block Grant Protect Revoke Unblock Unprotect "
+            // Other / common
+            "Use";
     }
     if (set == 4) {
-        // Standard cmdlet aliases users type all day.
+        // Cmdlet aliases — the daily-driver short forms PowerShell users
+        // type all day. From `Get-Alias` output on a default Windows
+        // PowerShell 5.1 / PowerShell 7 install.
         return
-            // Filesystem
-            "ls dir gci cd cp copy mv move rm del erase rd rmdir "
-            "cat type gc more pwd gl pushd popd "
-            // Process / object pipeline
-            "ps gps gsv kill spps echo write "
-            "where ? foreach % select sort group measure "
-            // Common
-            "cls clear man help "
-            "iex icm ipmo ipsn ipal "
-            "Get-Help Get-Command Get-Member "
+            "ac asnp cat cd chdir clc clear clhy cli clp cls clv cnsn "
+            "compare copy cpi cpp curl cvpa dbp del diff dir dnsn ebp echo "
+            "epal epcsv epsn erase etsn exsn fc fhx fl foreach ft fw gal "
+            "gbp gc gci gcm gcs gdr ghy gi gjb gl gm gmo gp gps gpv group "
+            "gsn gsnp gsv gu gv gwmi h history icm iex ihy ii ipal ipcsv "
+            "ipmo ipsn irm ise iwmi iwr kill lp ls man md measure mi mount "
+            "move mp mv nal ndr ni nmo npssc nsn nv ogv oh popd ps pushd "
+            "pwd r rbp rcjb rcsn rd rdr ren ri rjb rm rmdir rmo rni rnp rp "
+            "rsn rsnp rujb rv rvpa rwmi sajb sal saps sasv sbp sc select "
+            "set shcm si sl sleep sls sort sp spjb spps spsv start sujb sv "
+            "swmi tee trcm type wget where wjb write";
+    }
+    if (set == 5) {
+        // User-defined / "common cmdlet full names" — the most-used cmdlets
+        // by their Verb-Noun name (those that aren't already caught by the
+        // verb match in set 3). These get SCE_POWERSHELL_USER1 (style 12).
+        // Also doubles as "type-name" hints for `[Type]` literals — we
+        // include common .NET types so [string], [int], [datetime] etc.
+        // pick up the user1 colour when bracketed.
+        return
+            // Object pipeline cmdlets
             "Where-Object ForEach-Object Select-Object Sort-Object "
-            "Group-Object Measure-Object Out-Host Out-Null Write-Host "
-            "Write-Output Write-Error Write-Warning Write-Verbose";
+            "Group-Object Measure-Object Compare-Object Tee-Object "
+            "New-Object Get-Member "
+            // Process / service / item cmdlets
+            "Get-Process Get-Service Get-ChildItem Get-Content Get-Item "
+            "Get-ItemProperty Get-Location Get-History Get-Command "
+            "Get-Help Get-Variable Get-Date Get-Random Get-Host Get-Module "
+            "Set-Location Set-Item Set-ItemProperty Set-Variable "
+            "Set-Content Set-StrictMode Set-ExecutionPolicy "
+            "New-Item New-Variable New-Module New-Alias "
+            "Remove-Item Remove-Variable Remove-Module "
+            "Copy-Item Move-Item Rename-Item "
+            "Test-Path Resolve-Path Split-Path Join-Path Convert-Path "
+            // Invocation / web
+            "Invoke-Expression Invoke-Command Invoke-WebRequest "
+            "Invoke-RestMethod "
+            // Output
+            "Out-Host Out-Null Out-File Out-String Out-GridView "
+            "Write-Host Write-Output Write-Error Write-Warning "
+            "Write-Verbose Write-Debug Write-Information Write-Progress "
+            "Read-Host "
+            // Module / data
+            "Import-Module Export-ModuleMember Import-Csv Export-Csv "
+            "ConvertTo-Json ConvertFrom-Json ConvertTo-Xml Select-String "
+            "Start-Process Stop-Process Start-Sleep Start-Job Stop-Job "
+            "Get-Job Receive-Job Wait-Job "
+            "Format-Table Format-List Format-Wide Format-Custom "
+            // Common .NET type names used in [type] literals
+            "string int int32 int64 long short byte double float decimal "
+            "char bool object void array hashtable pscustomobject "
+            "scriptblock datetime timespan guid regex xml "
+            "system.io.file system.io.directory system.io.path "
+            "system.text.encoding system.management.automation";
     }
     return nullptr;
 }
 
 QString LexerPowerShell::description(int style) const {
-    // Style numbers from Scintilla/scintilla/include/SciLexer.h, the
-    // SCE_POWERSHELL_* enum.
+    // Style numbers from Scintilla/include/SciLexer.h, the SCE_POWERSHELL_*
+    // enum. Names chosen to match the keyword-matching logic in
+    // src/npp_palette.cpp (which looks for "variable", "cmdlet", "alias",
+    // "here-string", "comment doc keyword" substrings to apply colour).
     switch (style) {
         case  0: return "Default";
         case  1: return "Comment";
@@ -110,7 +167,9 @@ QString LexerPowerShell::description(int style) const {
 
 QColor LexerPowerShell::defaultColor(int style) const {
     // Sensible "fallback" palette in case no Notepatra theme has been
-    // applied yet. Real styling comes from npp_palette.cpp.
+    // applied yet. Real styling comes from npp_palette.cpp which detects
+    // language() == "PowerShell" and applies the VS Code PS extension
+    // colours (variable blue, cmdlet amber, alias purple, etc.).
     switch (style) {
         case  1: case 13: case 16: return QColor("#008000"); // green comments
         case 17: return QColor("#FF0000"); // red doc-keyword error
@@ -121,8 +180,9 @@ QColor LexerPowerShell::defaultColor(int style) const {
         case  6: return QColor("#000000"); // black operators
         case  8: return QColor("#0000FF"); // blue keywords
         case  9: return QColor("#795E26"); // amber cmdlets
-        case 10: return QColor("#0070C1"); // medium blue aliases
-        case 11: return QColor("#795E26"); // amber functions (same as cmdlets)
+        case 10: return QColor("#AF00DB"); // purple aliases
+        case 11: return QColor("#795E26"); // amber functions
+        case 12: return QColor("#267F99"); // teal user1 (cmdlets full name)
         default: return QsciLexer::defaultColor(style);
     }
 }

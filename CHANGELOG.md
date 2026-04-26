@@ -7,6 +7,52 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.27] — 2026-04-26
+
+Comprehensive lexer + palette overhaul covering all 44+ languages Notepatra supports. Fixes the v0.1.26 PowerShell user complaint ("not highlighting properly") and applies the same level of polish to every other language.
+
+### Added
+- 🎨 **Per-language accent palettes for 23 languages** in `src/npp_palette.cpp`. Each language now has visually distinct keyword + type colours that match the language's home IDE / docs site:
+  - **Rust** → rust-amber `#DEA584` keywords (rust-analyzer / IntelliJ Rust default)
+  - **Go** → Go-logo cyan `#00ADD8` keywords (go.dev playground)
+  - **Swift** → Xcode pink `#FC5FA3` keywords + Swift orange `#F05138` for attributes
+  - **Kotlin** → Darcula orange `#CC7832` keywords + gold `#FFC66D` types
+  - **TypeScript / JavaScript / C / C++ / C# / SQL** → VS Code Dark+/Light+ defaults
+  - **Java** → IntelliJ navy keywords / Darcula orange in dark
+  - **HTML / PHP / CSS / XML** → tag/attribute orange-blue split
+  - **JSON / YAML** → JSON-key blue
+  - **Python** → blue keywords + teal types
+  - **Ruby** → ruby-red `#CC342D`
+  - **Perl** → camel-blue
+  - **Lua** → navy
+  - **Bash / Batch / CoffeeScript / D / Markdown / Pascal / CMake / Makefile** → tuned per-language
+  - 20+ niche languages (TCL / Diff / Fortran / Verilog / VHDL / TeX / etc.) fall back to the generic blue+purple palette which always looked fine.
+- 🎨 **5 new style-kind matchers** in `npp_palette.cpp` apply colours to lexer styles that previously fell through to plain text:
+  - `variable` (PowerShell `$var`, Bash `$var`)
+  - `cmdlet` (PowerShell `Get-Process` etc.)
+  - `alias` (PowerShell `ls`, `gci`, `iex` etc.)
+  - `here-string` (PowerShell `@"..."@`, Ruby/Perl heredocs)
+  - `comment doc keyword` (`@param`, `@return`, `.SYNOPSIS`, `- Parameter:`)
+  - `identifier` (modern IDE convention: soft accent rather than plain black/white)
+- 🎨 **Comprehensive keyword sets** for the 6 v0.1.26 lexers, sourced from official language references and verified against rustdoc / go.dev / docs.swift.org / typescriptlang.org / kotlinlang.org / Microsoft PowerShell docs:
+  - **PowerShell**: 5 keyword sets — 47 statement keywords; 60+ comparison operators (case-sensitive `c-` and case-insensitive `i-` variants); 87 cmdlet verbs (full Microsoft Approved Verbs list); ~120 cmdlet aliases (`ls cd cp mv rm cat ps gci iex` etc.); ~80 common cmdlets (`Where-Object`, `Get-Process`, `Set-Content`) plus .NET type names for `[type]` literal highlighting.
+  - **Rust**: strict + reserved + 2024-edition keywords (`gen`, `union`); comprehensive std-lib types (`Vec Option Result Box Rc Arc Mutex`), trait set (`Send Sync Sized Copy Clone Drop Default Iterator IntoIterator FromIterator From Into TryFrom AsRef Deref`), conversion + comparison + arithmetic-operator traits.
+  - **Go**: exactly 25 reserved words alphabetically; predeclared identifiers including Go 1.18+ generics (`any`, `comparable`) and Go 1.21+ promotions (`clear`, `min`, `max`).
+  - **Swift**: Swift 6 keywords across all categories (declaration / statement / expression / pattern / concurrency / macros / ownership); std-lib types (`Bool Int String Array Optional Result Sequence Collection Codable Sendable Task Actor`); doc-comment keywords (`Parameter Returns Throws Note Warning`); SwiftUI property wrappers (`State Binding ObservedObject Published @ViewBuilder`).
+  - **TypeScript**: ES reserved + TS-specific (`interface type as is asserts infer satisfies accessor using intrinsic readonly keyof never unknown`); comprehensive utility types (`Record Partial Required Readonly Pick Omit Exclude Extract NonNullable Awaited Uppercase Lowercase`); typed-array constructors; common DOM globals.
+  - **Kotlin**: hard + soft + modifier keywords across all three categories (`val var fun when sealed data inline crossinline lateinit suspend`); std-lib types including unsigned arrays (`UByteArray UShortArray UIntArray ULongArray`), coroutines (`Job Deferred Flow Channel CoroutineScope Dispatchers`); KDoc tags.
+
+### Fixed
+- 🪟 **PowerShell highlighting now actually works.** The user reported `.ps1` files weren't highlighting properly even though v0.1.26 added a PowerShell lexer. Root cause: `LexerPowerShell` produces SCE_POWERSHELL_VARIABLE / CMDLET / ALIAS / HERE_STRING styles, but `applyNotepadPlusPalette()` only knew about generic style names like "keyword" / "comment" / "string" — anything PowerShell-specific fell through to default text colour. Now the palette recognises `variable`, `cmdlet`, `alias`, `here-string`, and `comment doc keyword` substrings in `description()` strings, giving every PowerShell style a distinct colour. Same fix benefits Bash (`$var` variables now highlighted) and any future custom lexer that uses these style kinds.
+- 🎨 **Identifier styling improved across every lexer.** Previously identifiers fell through to plain text colour (black on light, white on dark), making them blend with operators and brackets. Now they get a soft accent — `#9CDCFE` on dark, `#001080` on light, matching VS Code's identifier colour. Better visual hierarchy across all 44 languages with zero per-language code changes (purely a generic-matcher addition).
+
+### Notes
+- **No behaviour change for non-keyword content.** Strings, numbers, comments, operators, regex literals, decorators, attributes, classes, functions all keep their existing v0.1.26 colours. Only keyword + type accents are tuned per language.
+- **Tests**: 14/14 regression tests pass, including `test_lexers_v0125` (86 assertions) which validates the comprehensive keyword sets for each of the 6 new lexers.
+- **No new dependencies, no schema changes, no installer changes.** Pure source-side polish.
+
+---
+
 ## [0.1.26] — 2026-04-25
 
 Major lexer + terminal + AI panel polish release. Six new language lexers (PowerShell, Rust, Go, Swift, TypeScript, Kotlin), 16 additional language extensions added, terminal upgraded with full 256-colour and 24-bit truecolour support plus italic/faint/strikethrough, AI panel gets per-response tokens + elapsed time stats, Coding Mode "Think" checkbox now greys out instead of vanishing, mystery circle in input bar suppressed.

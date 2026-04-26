@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.8 MB (Linux x64 tar.gz), 25.5 MB (macOS DMG with bundled Qt), 43.5 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.26",
+      "softwareVersion": "0.1.27",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -153,7 +153,7 @@
           "name": "How big is Notepatra compared to VS Code?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.26: 2.8 MB Linux x64 tar.gz, 2.6 MB Linux ARM64 tar.gz, 25.5 MB macOS DMG (with bundled Qt), 43.5 MB Windows MSI / 36.3 MB NSIS / 41.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload -- that's normal for any Qt app installer. Linux installs stay tiny (~5 MB on disk) because Qt5 comes from your distro repo. VS Code is 300+ MB downloaded AND 350+ MB installed. Notepatra is 6× to 14× smaller than VS Code on every platform."
+            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.27: 2.8 MB Linux x64 tar.gz, 2.6 MB Linux ARM64 tar.gz, 25.5 MB macOS DMG (with bundled Qt), 43.5 MB Windows MSI / 36.3 MB NSIS / 41.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload -- that's normal for any Qt app installer. Linux installs stay tiny (~5 MB on disk) because Qt5 comes from your distro repo. VS Code is 300+ MB downloaded AND 350+ MB installed. Notepatra is 6× to 14× smaller than VS Code on every platform."
           }
         },
         {
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.26 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.27 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.26">
-        Download v0.1.26 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.27">
+        Download v0.1.27 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.26 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.27 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1388,7 +1388,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.26</div>
+        <div class="section-label">Download v0.1.27</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1836,7 +1836,63 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.26 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.27 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-26</span>
+                        <span>· Comprehensive lexer + palette overhaul covering all 44+ languages</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🎨 Per-language accent palettes for 23 languages</h5>
+                        <ul>
+                            <li>Each language now has visually distinct keyword + type colours that match its home IDE / docs site, so opening a <code style="color:var(--green);font-size:12px;">.rs</code> file feels different from opening a <code style="color:var(--green);font-size:12px;">.go</code> file even when both inherit from <code style="color:var(--green);font-size:12px;">QsciLexerCPP</code>.</li>
+                            <li><strong>Rust</strong> → rust-amber <code style="color:var(--green);font-size:12px;">#DEA584</code> keywords (rust-analyzer / IntelliJ Rust default), teal types.</li>
+                            <li><strong>Go</strong> → Go-logo cyan <code style="color:var(--green);font-size:12px;">#00ADD8</code> keywords (go.dev playground), light cyan types.</li>
+                            <li><strong>Swift</strong> → Xcode pink <code style="color:var(--green);font-size:12px;">#FC5FA3</code> keywords + Swift orange <code style="color:var(--green);font-size:12px;">#F05138</code> for attributes / property wrappers.</li>
+                            <li><strong>Kotlin</strong> → Darcula orange <code style="color:var(--green);font-size:12px;">#CC7832</code> keywords + gold <code style="color:var(--green);font-size:12px;">#FFC66D</code> types (matches IntelliJ).</li>
+                            <li><strong>Java</strong> → IntelliJ Light navy keywords / Darcula orange in dark mode.</li>
+                            <li><strong>TypeScript / JavaScript / C / C++ / C# / SQL</strong> → VS Code Dark+ / Light+ defaults.</li>
+                            <li><strong>HTML / PHP / CSS / XML</strong> → tag-orange / attribute-blue split.</li>
+                            <li><strong>JSON / YAML</strong> → JSON-key blue.</li>
+                            <li><strong>Python</strong> → blue keywords + teal built-in types (PyCharm-style).</li>
+                            <li><strong>Ruby</strong> → ruby-red <code style="color:var(--green);font-size:12px;">#CC342D</code> (matches ruby-lang.org branding).</li>
+                            <li><strong>Perl</strong> → camel-blue. <strong>Lua</strong> → navy. <strong>Bash</strong> → blue + magenta builtins.</li>
+                            <li><strong>Markdown / Pascal / CMake / Makefile / CoffeeScript / D / Batch</strong> → tuned per-language.</li>
+                            <li>20+ niche languages (TCL, Diff, Fortran, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SREC, Octave, Matlab, IDL, MASM, NASM, ASM) fall back to the generic blue + purple palette which already looked fine.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🪟 Fixes the v0.1.26 PowerShell complaint — variables / cmdlets / aliases now properly highlighted</h5>
+                        <ul>
+                            <li><strong>Root cause.</strong> v0.1.26's <code style="color:var(--green);font-size:12px;">LexerPowerShell</code> was tokenising correctly — <code style="color:var(--green);font-size:12px;">$variable</code>, <code style="color:var(--green);font-size:12px;">Get-Process</code>, here-strings (<code style="color:var(--green);font-size:12px;">@"..."@</code>), comparison operators all had distinct style numbers (5, 9, 14, etc.). But the palette function in <code style="color:var(--green);font-size:12px;">npp_palette.cpp</code> only knew about generic style names (keyword / comment / string / number / etc.) — anything PowerShell-specific (Variable / Cmdlet / Alias / Here-string) fell through to default text colour, making PowerShell scripts look monochrome.</li>
+                            <li><strong>Fix.</strong> Five new style-kind matchers added to <code style="color:var(--green);font-size:12px;">applyNotepadPlusPalette()</code>: <code style="color:var(--green);font-size:12px;">variable</code>, <code style="color:var(--green);font-size:12px;">cmdlet</code>, <code style="color:var(--green);font-size:12px;">alias</code>, <code style="color:var(--green);font-size:12px;">here-string</code>, <code style="color:var(--green);font-size:12px;">comment doc keyword</code>. Plus an <code style="color:var(--green);font-size:12px;">identifier</code> matcher that gives plain identifiers a soft accent (matches modern IDE convention — VS Code, IntelliJ, Xcode all do this rather than monochrome black/white).</li>
+                            <li>Side benefit: Bash <code style="color:var(--green);font-size:12px;">$var</code> variables now also highlighted distinctly across every shell-derived lexer.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>📚 Comprehensive keyword sets re-verified against official language docs</h5>
+                        <ul>
+                            <li><strong>PowerShell</strong>: 5 keyword sets totalling ~470 entries — 47 statement keywords, 60+ comparison operators (case-sensitive <code style="color:var(--green);font-size:12px;">c-</code> + case-insensitive <code style="color:var(--green);font-size:12px;">i-</code> variants), 87 cmdlet verbs (full Microsoft Approved Verbs list), 120 cmdlet aliases (<code style="color:var(--green);font-size:12px;">ls cd cp mv rm cat ps gci iex</code> etc.), 80+ common Verb-Noun cmdlets + .NET type names so <code style="color:var(--green);font-size:12px;">[string]</code> / <code style="color:var(--green);font-size:12px;">[int]</code> literals highlight correctly.</li>
+                            <li><strong>Rust</strong> — strict + reserved + 2024-edition keywords (<code style="color:var(--green);font-size:12px;">gen</code>, <code style="color:var(--green);font-size:12px;">union</code>) + 65 std-lib types & traits (<code style="color:var(--green);font-size:12px;">Vec Option Result Box Rc Arc Send Sync Sized Iterator IntoIterator From Into TryFrom AsRef Deref</code>). Source: <code style="color:var(--green);font-size:12px;">doc.rust-lang.org/reference/keywords.html</code>.</li>
+                            <li><strong>Go</strong> — exactly 25 reserved words + 35 predeclared identifiers including Go 1.18+ generics (<code style="color:var(--green);font-size:12px;">any</code>, <code style="color:var(--green);font-size:12px;">comparable</code>) and Go 1.21+ promotions (<code style="color:var(--green);font-size:12px;">clear</code>, <code style="color:var(--green);font-size:12px;">min</code>, <code style="color:var(--green);font-size:12px;">max</code>). Source: <code style="color:var(--green);font-size:12px;">go.dev/ref/spec</code>.</li>
+                            <li><strong>Swift</strong> — Swift 6 keywords across all categories (declaration / statement / expression / pattern / concurrency <code style="color:var(--green);font-size:12px;">actor async distributed isolated</code> / macros / ownership <code style="color:var(--green);font-size:12px;">borrowing consuming</code>), 80+ std-lib types, doc-comment keywords (<code style="color:var(--green);font-size:12px;">- Parameter:</code>, <code style="color:var(--green);font-size:12px;">- Returns:</code>), SwiftUI property wrappers (<code style="color:var(--green);font-size:12px;">@State @Binding @Published @ViewBuilder</code>). Source: <code style="color:var(--green);font-size:12px;">docs.swift.org/swift-book lexicalstructure</code>.</li>
+                            <li><strong>TypeScript</strong> — ES reserved + TS-specific (<code style="color:var(--green);font-size:12px;">interface type as is asserts infer satisfies accessor using intrinsic readonly keyof never unknown</code>) + 70+ utility types (<code style="color:var(--green);font-size:12px;">Record Partial Required Pick Omit Exclude Extract NonNullable Awaited</code>) + typed-array constructors. Source: <code style="color:var(--green);font-size:12px;">github.com/microsoft/TypeScript scanner.ts</code>.</li>
+                            <li><strong>Kotlin</strong> — hard + soft + modifier keywords + std-lib types incl. unsigned arrays (<code style="color:var(--green);font-size:12px;">UByteArray UIntArray ULongArray</code>) + coroutine types (<code style="color:var(--green);font-size:12px;">Job Deferred Flow Channel CoroutineScope Dispatchers</code>) + KDoc tags. Source: <code style="color:var(--green);font-size:12px;">kotlinlang.org/docs/keyword-reference.html</code>.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.27">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.27">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.26</div>
                     <div class="version-meta">
                         <span>2026-04-25</span>
                         <span>· Six new lexers (PowerShell, Rust, Go, Swift, TypeScript, Kotlin) + terminal 256-colour/truecolour + AI tokens & timing</span>
@@ -2836,7 +2892,7 @@ Write-Host "Restarted Explorer — right-click any file now to verify" -Foregrou
             </div>
             <div class="feature-card">
                 <h3>How big is it compared to VS Code?</h3>
-                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.26): <strong>2.8 MB</strong> Linux x64 tar.gz · <strong>2.6 MB</strong> Linux ARM64 tar.gz · <strong>25.5 MB</strong> macOS DMG · <strong>43.5 MB</strong> Windows MSI / <strong>36.3 MB</strong> NSIS / <strong>41.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
+                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.27): <strong>2.8 MB</strong> Linux x64 tar.gz · <strong>2.6 MB</strong> Linux ARM64 tar.gz · <strong>25.5 MB</strong> macOS DMG · <strong>43.5 MB</strong> Windows MSI / <strong>36.3 MB</strong> NSIS / <strong>41.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
