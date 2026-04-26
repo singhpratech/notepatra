@@ -186,6 +186,12 @@ private:
     QLabel  *m_headerLabel = nullptr;       // top "AI Assistant" strip — swaps colour/text in Coding Mode
     OllamaClient *m_ollama;
     QString m_context;          // selected text (if any) or current file text
+    // v0.1.38 — true if m_context is a real user selection (highlighted text);
+    // false if m_context is the fallback "whole current file" content.
+    // Used by sendPrompt's "custom" action to decide whether to inline the
+    // context into the prompt. Without this flag, every casual chat ("hi")
+    // got the entire open file appended — too aggressive a default.
+    bool    m_contextIsSelection = false;
     QString m_language;
     // Workspace awareness — populated by setWorkspaceContext() / provider.
     QString m_currentFilePath;

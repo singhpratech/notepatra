@@ -1141,6 +1141,7 @@ void AIPanel::setContext(const QString &selectedText, const QString &filePath, c
     // the selection context AND the "current file text" so older call
     // sites still produce the same prompt as before.
     m_context = selectedText;
+    m_contextIsSelection = !selectedText.isEmpty();
     m_language = language;
     m_currentFilePath = filePath;
     m_currentFileText = selectedText;
@@ -1159,7 +1160,16 @@ void AIPanel::setWorkspaceContext(const QString &selectedText,
     // (Explain / Refactor / …). Prefer the live selection; otherwise fall
     // back to the whole current file so those actions still have something
     // to chew on.
-    m_context = selectedText.isEmpty() ? currentFileText : selectedText;
+    //
+    // v0.1.38: track whether m_context is a real selection or a whole-file
+    // fallback. The "custom" chat action uses m_contextIsSelection to
+    // decide whether to inline m_context into the prompt — pre-v0.1.38 it
+    // ALWAYS appended m_context, which meant a casual "hi" got the entire
+    // current file dumped after it. Quick-action templates (Explain etc.)
+    // still always inline m_context because they need code context to make
+    // sense.
+    m_contextIsSelection = !selectedText.isEmpty();
+    m_context = m_contextIsSelection ? selectedText : currentFileText;
     m_language = language;
     m_currentFilePath = currentFilePath;
     m_currentFileText = currentFileText;
@@ -1562,8 +1572,21 @@ void AIPanel::sendPrompt(const QString &action) {
     } else if (action == "custom") {
         const QString userText = m_customInput->toPlainText();
         customUserText = userText;
-        prompt = userText + "\n\n```\n" + m_context + "\n```";
-        userBubbleText = userText + (m_context.isEmpty() ? "" : "\n\n" + m_context);
+        // v0.1.38 — only inline m_context if it's a REAL user selection.
+        // Pre-v0.1.38 every casual chat appended the entire open file
+        // (because m_context falls back to the full file when there's no
+        // selection). Now: selection → inline as fenced code; no selection
+        // → just the user's text. Workspace-level questions about the
+        // file still benefit from the workspace-context block via the
+        // shouldAttachWorkspace gate; or use Coding Mode's read_file tool
+        // for explicit file access.
+        if (m_contextIsSelection && !m_context.isEmpty()) {
+            prompt = userText + "\n\n```\n" + m_context + "\n```";
+            userBubbleText = userText + "\n\n" + m_context;
+        } else {
+            prompt = userText;
+            userBubbleText = userText;
+        }
         m_customInput->clear();
     }
 
@@ -1956,6 +1979,18 @@ static void aiAddErrorCard(QVBoxLayout *target, const QString &text,
 
 void AIPanel::renderTranscript() {
     if (!m_chatLayout) return;
+    // v0.1.38 crash fix: stop the live streaming-stats timer + nullify the
+    // QLabel pointer BEFORE we delete the streaming card. aiClearChat
+    // deleteLater()s every widget in m_chatLayout including m_streamingCard
+    // and its child m_streamingStats. Without this stop+nullify, the
+    // 250ms timer kept firing on the dangling QLabel pointer (the
+    // existing `if (!m_streamingStats) return` check doesn't catch a
+    // dangling-but-non-null pointer) → use-after-free crash on
+    // setText(). Reproduces by clicking Coding Mode mid-stream.
+    if (m_streamingStatsTimer) m_streamingStatsTimer->stop();
+    m_streamingStats = nullptr;
+    m_streamingTokenCount = 0;
+    m_streamingStartMs = 0;
     aiClearChat(m_chatLayout);
     m_streamingCard = nullptr;
     m_streamingBody = nullptr;

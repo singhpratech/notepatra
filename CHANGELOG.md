@@ -7,6 +7,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.38] — 2026-04-26
+
+Two AI Assistant bugs reported by user — both root-caused and fixed.
+
+### Fixed
+- 🐛 **Coding Mode toggle crashed the app mid-stream.** Clicking the Coding Mode checkbox while a model was actively streaming a response caused a use-after-free crash. Root cause: the toggle handler calls `renderTranscript()` which calls `aiClearChat()` — that `deleteLater()`s every widget in `m_chatLayout` including `m_streamingCard` and its child `m_streamingStats` QLabel. But the 250 ms streaming-stats timer kept ticking on the dangling `m_streamingStats` pointer; the existing `if (!m_streamingStats) return` guard didn't catch a dangling-but-non-null pointer; the next `setText()` hit freed memory → crash. **Fix**: `renderTranscript()` now stops the timer + nullifies `m_streamingStats` (and resets `m_streamingTokenCount` / `m_streamingStartMs`) BEFORE calling `aiClearChat()`. Same protection in `endAssistantBubble`.
+- 🐛 **Custom chat appended the entire open file to every prompt.** When the user typed a casual message in the AI chat box (Coding Mode OFF, no selection) — even something as small as "hi" — the AI got the **whole current file's contents** appended to the prompt. Root cause: `setWorkspaceContext()` set `m_context = selectedText.isEmpty() ? currentFileText : selectedText`, so when there was no selection `m_context` fell back to the whole file. The "custom" action's code at `aipanel.cpp:1565` then unconditionally appended `m_context` to the prompt. **Fix**: new `m_contextIsSelection` flag tracks whether `m_context` is a real user selection or a whole-file fallback. The "custom" action now only inlines `m_context` when `m_contextIsSelection == true`. Quick-action templates (Explain / Refactor / Write Tests / etc.) still inline because they need code to act on. Project-level questions about the file still benefit from the workspace-context block via `shouldAttachWorkspace`, or from Coding Mode's `read_file` tool for explicit file access.
+
+### Notes
+- 16 / 16 regression tests pass.
+- Both fixes are minimal and surgical — 1 file changed for crash fix (`aipanel.cpp`), 2 files for the file-leak fix (`aipanel.h` + `aipanel.cpp`).
+
+---
+
 ## [0.1.37] — 2026-04-26
 
 Comprehensive lexer palette coverage. Every supported language's every QScintilla style now gets a recognisable colour on every theme. **1650 styles × 3 themes = 0 gaps.**
