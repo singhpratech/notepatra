@@ -7,6 +7,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.30] — 2026-04-26
+
+Live streaming token-rate stats on the AI assistant bubble during generation. v0.1.26 added per-response stats (`1234 tok · 123.4 tok/s · 2.3 s`) but only after the response completed. v0.1.30 makes those stats stream live during generation so users see throughput as it happens — no more "is it still working?" mystery during long responses.
+
+### Added
+- 🤖 **Live streaming stats label on the assistant card.** Shows `⏱ 145 tok · 23.4 tok/s · 6.3 s` updating every 250 ms while the model is producing output. Sits between the card header and the streaming body. Three display modes:
+  - First few hundred ms (no tokens yet): `⏱ generating… 0.3 s`
+  - First token through 200 ms: `⏱ N tok · X s` (tok/s suppressed to avoid divide-by-tiny-number noise)
+  - 200 ms onwards: `⏱ N tok · Y tok/s · Z s` (full triple)
+- 🤖 **Static post-completion stats preserved.** When generation finishes, the live label disappears and the bubble re-renders with the canonical `eval_count` / `prompt_eval_count` / wall-clock from Ollama's done frame baked into the bubble header (the v0.1.26 mechanism). So the chat history retains the final stats.
+- 🤖 **Stop-button cleanup.** Hitting Stop during streaming now ends the assistant bubble cleanly (`OllamaClient::cancel()` disconnects + aborts the reply silently with no finished/error signal, which previously left the streaming card frozen mid-state with the timer still ticking).
+
+### Refactored
+- 🤖 **`AIPanel::beginAssistantBubble()`** creates the streaming-stats `QLabel` inside the assistant card's vertical layout, starts a 250 ms `QTimer` that recomputes the stats string from `m_streamingTokenCount` + `QDateTime::currentMSecsSinceEpoch() - m_streamingStartMs`.
+- 🤖 **`AIPanel::streamIntoAssistantBubble()`** increments `m_streamingTokenCount` on every received token. Ollama emits one streamed chunk per token (roughly), so this is a close estimate that gets overwritten by the canonical count from `responseStats` after the stream completes.
+- 🤖 **`AIPanel::endAssistantBubble()`** stops the timer and `deleteLater()`s the live-stats label.
+
+### Notes
+- The 4 Hz refresh rate (250 ms) was chosen so the display feels live but doesn't burn CPU on long responses. Each tick is just a string format + `QLabel::setText()` — sub-millisecond.
+- 14 / 14 regression tests pass.
+- No new dependencies, no schema changes, no installer changes.
+
+---
+
 ## [0.1.29] — 2026-04-26
 
 CI hotfix: `test_palette` was hardcoded against v0.1.26's palette and failed on every platform after v0.1.27 introduced per-language accent colours. Updated test assertions to match v0.1.27's intent.

@@ -1098,6 +1098,16 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // intercepts Return (no modifier) on the QPlainTextEdit and fires
     // this click. Shift+Return falls through and inserts a newline.
     connect(m_stopBtn, &QPushButton::clicked, m_ollama, &OllamaClient::cancel);
+    // OllamaClient::cancel() disconnects + aborts the reply silently — no
+    // finished/error signal fires after that. So the streaming card would
+    // stay active with the live-stats timer still ticking. Hook the stop
+    // button to also end the bubble cleanly + stop the timer.
+    connect(m_stopBtn, &QPushButton::clicked, this, [this]() {
+        if (m_inAssistantBubble) {
+            m_stopBtn->setEnabled(false);
+            endAssistantBubble();
+        }
+    });
     connect(insertBtn, &QPushButton::clicked, this, [this]() {
         if (!m_lastResponse.isEmpty()) emit insertText(m_lastResponse);
     });
@@ -1982,6 +1992,54 @@ void AIPanel::beginAssistantBubble() {
         connect(m_streamingBody, &QTextBrowser::anchorClicked,
                 this, &AIPanel::handleChatLink, Qt::UniqueConnection);
     }
+
+    // ─── Live streaming-stats label ──────────────────────────────────────
+    // Sits between the card frame and the body, showing token count +
+    // tokens/sec + elapsed wall-clock time, refreshed every 250 ms during
+    // generation. Disappears when the stream ends (responseStats then bakes
+    // the FINAL counts into the bubble header via renderTranscript).
+    if (m_streamingCard) {
+        m_streamingStats = new QLabel(m_streamingCard);
+        m_streamingStats->setStyleSheet(QString(
+            "color: %1; font-size: 10px; font-weight: 500; "
+            "letter-spacing: 0.3px; padding: 2px 18px; opacity: 0.8;")
+            .arg(pal.linkFg));
+        m_streamingStats->setText(QStringLiteral("⏱ generating…"));
+        if (auto *cardLayout = qobject_cast<QVBoxLayout*>(m_streamingCard->layout())) {
+            // Insert as the second item — right after the card header so
+            // the stats sit between header and body.
+            cardLayout->insertWidget(1, m_streamingStats);
+        }
+    }
+    m_streamingTokenCount = 0;
+    m_streamingStartMs = QDateTime::currentMSecsSinceEpoch();
+    if (!m_streamingStatsTimer) {
+        m_streamingStatsTimer = new QTimer(this);
+        m_streamingStatsTimer->setInterval(250); // 4 Hz refresh — feels
+                                                  // live but doesn't burn CPU
+        connect(m_streamingStatsTimer, &QTimer::timeout, this, [this]() {
+            if (!m_streamingStats) return;
+            const qint64 elapsedMs = QDateTime::currentMSecsSinceEpoch()
+                                     - m_streamingStartMs;
+            const double secs = elapsedMs / 1000.0;
+            QString text;
+            if (m_streamingTokenCount > 0 && elapsedMs > 200) {
+                const double tps = m_streamingTokenCount * 1000.0 / elapsedMs;
+                text = QString("⏱ %1 tok · %2 tok/s · %3 s")
+                           .arg(m_streamingTokenCount)
+                           .arg(QString::number(tps, 'f', 1))
+                           .arg(QString::number(secs, 'f', 1));
+            } else if (m_streamingTokenCount > 0) {
+                text = QString("⏱ %1 tok · %2 s")
+                           .arg(m_streamingTokenCount)
+                           .arg(QString::number(secs, 'f', 1));
+            } else {
+                text = QString("⏱ generating… %1 s").arg(QString::number(secs, 'f', 1));
+            }
+            m_streamingStats->setText(text);
+        });
+    }
+    m_streamingStatsTimer->start();
     if (m_chatArea) {
         QTimer::singleShot(0, m_chatArea, [this]() {
             m_chatArea->verticalScrollBar()->setValue(
@@ -1992,6 +2050,12 @@ void AIPanel::beginAssistantBubble() {
 
 void AIPanel::streamIntoAssistantBubble(const QString &token) {
     if (!m_inAssistantBubble) beginAssistantBubble();
+
+    // Count this token for the live streaming-stats display. Ollama emits
+    // one streamed chunk per token (ish) so this is roughly the eval-token
+    // count by the time the stream ends. The final canonical count comes
+    // from responseStats() and overwrites this estimate.
+    ++m_streamingTokenCount;
     m_currentAssistantText += token;
     if (m_streamingBody) {
         // Append plain text — fast, preserves whitespace, no HTML escape
@@ -2014,6 +2078,18 @@ void AIPanel::streamIntoAssistantBubble(const QString &token) {
 void AIPanel::endAssistantBubble() {
     if (!m_inAssistantBubble) return;
     m_inAssistantBubble = false;
+
+    // Stop the live streaming-stats timer + drop the label. The static
+    // post-completion stats then bake into the bubble header via
+    // renderTranscript() once responseStats fires with the canonical
+    // Ollama / OpenAI-compat token counts.
+    if (m_streamingStatsTimer) m_streamingStatsTimer->stop();
+    if (m_streamingStats) {
+        m_streamingStats->deleteLater();
+        m_streamingStats = nullptr;
+    }
+    m_streamingTokenCount = 0;
+
     m_streamingCard = nullptr;
     m_streamingBody = nullptr;
     if (!m_currentAssistantText.isEmpty()) {

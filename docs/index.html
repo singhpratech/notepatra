@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.8 MB (Linux x64 tar.gz), 25.5 MB (macOS DMG with bundled Qt), 43.5 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.29",
+      "softwareVersion": "0.1.30",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -153,7 +153,7 @@
           "name": "How big is Notepatra compared to VS Code?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.29: 2.8 MB Linux x64 tar.gz, 2.6 MB Linux ARM64 tar.gz, 25.5 MB macOS DMG (with bundled Qt), 43.5 MB Windows MSI / 36.3 MB NSIS / 41.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload -- that's normal for any Qt app installer. Linux installs stay tiny (~5 MB on disk) because Qt5 comes from your distro repo. VS Code is 300+ MB downloaded AND 350+ MB installed. Notepatra is 6× to 14× smaller than VS Code on every platform."
+            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.30: 2.8 MB Linux x64 tar.gz, 2.6 MB Linux ARM64 tar.gz, 25.5 MB macOS DMG (with bundled Qt), 43.5 MB Windows MSI / 36.3 MB NSIS / 41.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload -- that's normal for any Qt app installer. Linux installs stay tiny (~5 MB on disk) because Qt5 comes from your distro repo. VS Code is 300+ MB downloaded AND 350+ MB installed. Notepatra is 6× to 14× smaller than VS Code on every platform."
           }
         },
         {
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.29 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.30 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.29">
-        Download v0.1.29 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.30">
+        Download v0.1.30 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.29 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.30 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1388,7 +1388,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.29</div>
+        <div class="section-label">Download v0.1.30</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1836,7 +1836,58 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.29 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.30 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-26</span>
+                        <span>· Live streaming token-rate on AI bubble during generation</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🤖 Live streaming stats while the model generates</h5>
+                        <ul>
+                            <li>v0.1.26 added per-response stats (<code style="color:var(--green);font-size:12px;">1234 tok · 123.4 tok/s · 2.3 s</code>) but only after the response completed. v0.1.30 makes those stats stream <strong>live</strong> during generation — no more "is it still working?" mystery during long responses.</li>
+                            <li><strong>What you see during generation</strong>: a small label between the card header and the streaming body, refreshing every 250 ms with current token count + rate + elapsed time. Three display modes:
+                                <ul>
+                                    <li>First few hundred ms (no tokens yet): <code style="color:var(--green);font-size:12px;">⏱ generating… 0.3 s</code></li>
+                                    <li>Tokens received but &lt; 200 ms: <code style="color:var(--green);font-size:12px;">⏱ 12 tok · 0.18 s</code> (tok/s suppressed to avoid divide-by-tiny-number noise)</li>
+                                    <li>200 ms onwards: <code style="color:var(--green);font-size:12px;">⏱ 145 tok · 23.4 tok/s · 6.3 s</code> (full triple)</li>
+                                </ul>
+                            </li>
+                            <li><strong>Static post-completion stats preserved</strong>: when the stream ends, the live label disappears and the bubble re-renders with the canonical <code style="color:var(--green);font-size:12px;">eval_count</code> / <code style="color:var(--green);font-size:12px;">prompt_eval_count</code> / wall-clock from Ollama's done frame baked into the bubble header (the v0.1.26 mechanism). Chat history retains the final stats permanently.</li>
+                            <li>Best of both: live feedback during generation, plus a permanent record after.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🛑 Stop button now ends streaming cleanly</h5>
+                        <ul>
+                            <li>Pre-existing minor bug fixed: hitting <strong>Stop</strong> during generation didn't fully end the streaming card. <code style="color:var(--green);font-size:12px;">OllamaClient::cancel()</code> disconnects + aborts the network reply silently — no <code style="color:var(--green);font-size:12px;">finished</code> or <code style="color:var(--green);font-size:12px;">error</code> signal fires after that. The streaming card was being left mid-state with the timer still ticking.</li>
+                            <li>v0.1.30 hooks the stop button to also call <code style="color:var(--green);font-size:12px;">endAssistantBubble()</code> cleanly, which now also stops the live-stats timer.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>⚙️ Implementation</h5>
+                        <ul>
+                            <li>4 new private members in <code style="color:var(--green);font-size:12px;">AIPanel</code>: <code style="color:var(--green);font-size:12px;">m_streamingStats</code> (QLabel), <code style="color:var(--green);font-size:12px;">m_streamingStatsTimer</code> (QTimer @ 250 ms / 4 Hz), <code style="color:var(--green);font-size:12px;">m_streamingTokenCount</code> (int), <code style="color:var(--green);font-size:12px;">m_streamingStartMs</code> (qint64).</li>
+                            <li><code style="color:var(--green);font-size:12px;">beginAssistantBubble()</code> creates the label inside the card's vertical layout, starts the 250 ms timer that recomputes the stats string from <code style="color:var(--green);font-size:12px;">m_streamingTokenCount</code> + <code style="color:var(--green);font-size:12px;">QDateTime::currentMSecsSinceEpoch() - m_streamingStartMs</code>.</li>
+                            <li><code style="color:var(--green);font-size:12px;">streamIntoAssistantBubble()</code> increments the counter on every received token. Ollama emits one streamed chunk per token (roughly), so this estimate gets overwritten by the canonical count from <code style="color:var(--green);font-size:12px;">responseStats</code> after the stream completes.</li>
+                            <li><code style="color:var(--green);font-size:12px;">endAssistantBubble()</code> stops the timer and <code style="color:var(--green);font-size:12px;">deleteLater()</code>s the label.</li>
+                            <li>Each tick is a string format + <code style="color:var(--green);font-size:12px;">QLabel::setText()</code> — sub-millisecond cost, doesn't burn CPU on long responses.</li>
+                            <li>Works with every model + every backend (Ollama / llama.cpp / OpenAI-compatible). 14/14 regression tests pass.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.30">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.30">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.29</div>
                     <div class="version-meta">
                         <span>2026-04-26</span>
                         <span>· CI hotfix bundling v0.1.27 lexer overhaul + v0.1.28 dark-theme fixes</span>
@@ -2978,7 +3029,7 @@ Write-Host "Restarted Explorer — right-click any file now to verify" -Foregrou
             </div>
             <div class="feature-card">
                 <h3>How big is it compared to VS Code?</h3>
-                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.29): <strong>2.8 MB</strong> Linux x64 tar.gz · <strong>2.6 MB</strong> Linux ARM64 tar.gz · <strong>25.5 MB</strong> macOS DMG · <strong>43.5 MB</strong> Windows MSI / <strong>36.3 MB</strong> NSIS / <strong>41.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
+                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.30): <strong>2.8 MB</strong> Linux x64 tar.gz · <strong>2.6 MB</strong> Linux ARM64 tar.gz · <strong>25.5 MB</strong> macOS DMG · <strong>43.5 MB</strong> Windows MSI / <strong>36.3 MB</strong> NSIS / <strong>41.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>

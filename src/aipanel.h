@@ -129,6 +129,16 @@ private:
     class QVBoxLayout *m_chatLayout     = nullptr;
     class QFrame      *m_streamingCard  = nullptr;   // active during a stream
     QTextBrowser      *m_streamingBody  = nullptr;   // inner body of ^
+
+    // Live streaming-stats display — shows "GENERATING: 145 tok · 23
+    // tok/s · 6.3 s" updating every 250 ms while the model is producing
+    // output. Hidden between streams. Final per-response stats still
+    // bake into the bubble header via responseStats / renderTranscript
+    // so the chat history retains them after streaming ends.
+    class QLabel      *m_streamingStats        = nullptr;
+    class QTimer      *m_streamingStatsTimer   = nullptr;
+    int                m_streamingTokenCount   = 0;
+    qint64             m_streamingStartMs      = 0;
     // Legacy placeholder — retained so any stray references still compile.
     // All rendering now goes through m_chatLayout.
     QTextBrowser *m_output = nullptr;
