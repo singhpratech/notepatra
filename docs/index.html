@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.8 MB (Linux x64 tar.gz), 25.5 MB (macOS DMG with bundled Qt), 43.5 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.28",
+      "softwareVersion": "0.1.29",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -153,7 +153,7 @@
           "name": "How big is Notepatra compared to VS Code?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.28: 2.8 MB Linux x64 tar.gz, 2.6 MB Linux ARM64 tar.gz, 25.5 MB macOS DMG (with bundled Qt), 43.5 MB Windows MSI / 36.3 MB NSIS / 41.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload -- that's normal for any Qt app installer. Linux installs stay tiny (~5 MB on disk) because Qt5 comes from your distro repo. VS Code is 300+ MB downloaded AND 350+ MB installed. Notepatra is 6× to 14× smaller than VS Code on every platform."
+            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.29: 2.8 MB Linux x64 tar.gz, 2.6 MB Linux ARM64 tar.gz, 25.5 MB macOS DMG (with bundled Qt), 43.5 MB Windows MSI / 36.3 MB NSIS / 41.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload -- that's normal for any Qt app installer. Linux installs stay tiny (~5 MB on disk) because Qt5 comes from your distro repo. VS Code is 300+ MB downloaded AND 350+ MB installed. Notepatra is 6× to 14× smaller than VS Code on every platform."
           }
         },
         {
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.28 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.29 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.28">
-        Download v0.1.28 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.29">
+        Download v0.1.29 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.28 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.29 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1388,7 +1388,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.28</div>
+        <div class="section-label">Download v0.1.29</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1836,7 +1836,50 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.28 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.29 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-26</span>
+                        <span>· CI hotfix bundling v0.1.27 lexer overhaul + v0.1.28 dark-theme fixes</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🚢 Unblocks the v0.1.27 + v0.1.28 release pipeline</h5>
+                        <ul>
+                            <li>v0.1.27 and v0.1.28 both compiled cleanly on every platform but failed the regression suite at <code style="color:var(--green);font-size:12px;">test_palette</code>, which prevented the release-publish job from running. The two test assertions were hardcoded against v0.1.26's palette colours and didn't accept v0.1.27's intentional per-language tuning.</li>
+                            <li><strong>Test failure 1.</strong> C++ secondary keywords (style 16, <code style="color:var(--green);font-size:12px;">SCE_C_WORD2</code>) was asserting <code style="color:var(--green);font-size:12px;">#800080</code> purple. v0.1.27 changed it to <code style="color:var(--green);font-size:12px;">#267F99</code> teal to match VS Code default for type names.</li>
+                            <li><strong>Test failure 2.</strong> JSON keyword (style 11, <code style="color:var(--green);font-size:12px;">true</code> / <code style="color:var(--green);font-size:12px;">false</code> / <code style="color:var(--green);font-size:12px;">null</code>) was asserting generic <code style="color:var(--green);font-size:12px;">#0000FF</code> blue. v0.1.27 changed it to <code style="color:var(--green);font-size:12px;">#0451A5</code> JSON-key blue (VS Code default JSON theme).</li>
+                            <li><strong>Fix.</strong> Updated <code style="color:var(--green);font-size:12px;">test_palette.cpp</code> assertions to match v0.1.27's actual palette intent. No source-code changes — pure test correction.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>📦 v0.1.29 bundles ALL of v0.1.27 + v0.1.28 + this CI fix</h5>
+                        <ul>
+                            <li>Comprehensive lexer overhaul (PowerShell / Rust / Go / Swift / TypeScript / Kotlin) with keyword sets sourced from official docs (Microsoft Approved Verbs, doc.rust-lang.org, go.dev/ref/spec, docs.swift.org, microsoft/TypeScript scanner.ts, kotlinlang.org).</li>
+                            <li>23 per-language palette accents — Rust amber, Go cyan, Swift Xcode pink, Kotlin Darcula orange, Java IntelliJ navy, Ruby red, Perl camel-blue, Lua navy, Python blue+teal, Bash blue+magenta, HTML tag-orange, CSS violet, JSON key-blue, etc.</li>
+                            <li>5 new style-kind matchers (variable / cmdlet / alias / here-string / identifier) — fixes the v0.1.26 PowerShell complaint where <code style="color:var(--green);font-size:12px;">$variables</code>, cmdlets, aliases all rendered as plain text.</li>
+                            <li>Dark-theme readability fixes for Lua / Perl / D / Ruby — keyword colours that were navy/dark-red are now <code style="color:var(--green);font-size:12px;">#4FC1FF</code> Lua-bright-blue / <code style="color:var(--green);font-size:12px;">#569CD6</code> VS Code blue / <code style="color:var(--green);font-size:12px;">#FF6E6E</code> coral / <code style="color:var(--green);font-size:12px;">#FF7B72</code> salmon on dark theme.</li>
+                            <li>Users on v0.1.20+ jump straight from v0.1.26 → v0.1.29 via the in-app updater (skipping v0.1.27 and v0.1.28 which never published binaries).</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧪 14 / 14 regression tests pass</h5>
+                        <ul>
+                            <li><code style="color:var(--green);font-size:12px;">test_terminal_ansi</code>, <code style="color:var(--green);font-size:12px;">test_lexers_v0125</code> (86 keyword-set assertions), <code style="color:var(--green);font-size:12px;">test_lexers</code>, <code style="color:var(--green);font-size:12px;">test_ai_context</code>, <code style="color:var(--green);font-size:12px;">test_updater</code>, <code style="color:var(--green);font-size:12px;">test_projectsearch</code>, <code style="color:var(--green);font-size:12px;">test_projectsearch_ui</code>, <code style="color:var(--green);font-size:12px;">test_ollama</code>, <code style="color:var(--green);font-size:12px;">test_llamacpp</code>, <code style="color:var(--green);font-size:12px;">test_aifix</code>, <code style="color:var(--green);font-size:12px;">test_fmtpanel_diff</code>, <code style="color:var(--green);font-size:12px;">test_compare_widget</code>, <code style="color:var(--green);font-size:12px;">test_palette</code>, <code style="color:var(--green);font-size:12px;">test_sqlfmt</code> — all green.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.29">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.29">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.28</div>
                     <div class="version-meta">
                         <span>2026-04-26</span>
                         <span>· Dark-theme palette readability hotfix — Lua / Perl / D / Ruby</span>
@@ -2935,7 +2978,7 @@ Write-Host "Restarted Explorer — right-click any file now to verify" -Foregrou
             </div>
             <div class="feature-card">
                 <h3>How big is it compared to VS Code?</h3>
-                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.28): <strong>2.8 MB</strong> Linux x64 tar.gz · <strong>2.6 MB</strong> Linux ARM64 tar.gz · <strong>25.5 MB</strong> macOS DMG · <strong>43.5 MB</strong> Windows MSI / <strong>36.3 MB</strong> NSIS / <strong>41.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
+                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.29): <strong>2.8 MB</strong> Linux x64 tar.gz · <strong>2.6 MB</strong> Linux ARM64 tar.gz · <strong>25.5 MB</strong> macOS DMG · <strong>43.5 MB</strong> Windows MSI / <strong>36.3 MB</strong> NSIS / <strong>41.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
