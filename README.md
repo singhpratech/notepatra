@@ -235,7 +235,7 @@ Notepatra auto-detects the running Ollama and picks the most CPU-friendly model 
 **Why this hybrid?**
 - **C++** because Qt and QScintilla are C++ — zero friction for UI
 - **Rust** because file I/O, text processing, and parsing must never crash — Rust's ownership system guarantees memory safety
-- **Result**: the speed of C++, the safety of Rust. The bare stripped executable is roughly **2.7 MB on macOS Apple Silicon**, **3.0 MB on Windows x64**, and **5 MB on Linux x64** — MSVC and clang strip more aggressively in release mode than gcc does. v0.1.24 download sizes: **2.8 MB** Linux x64 tar.gz · **2.6 MB** Linux ARM64 tar.gz · **25.5 MB** macOS DMG (with bundled Qt) · **43.5 MB** Windows MSI · **36.3 MB** Windows NSIS · **41.7 MB** Windows portable zip.
+- **Result**: the speed of C++, the safety of Rust. The bare stripped executable is roughly **2.7 MB on macOS Apple Silicon**, **3.0 MB on Windows x64**, and **5 MB on Linux x64** — MSVC and clang strip more aggressively in release mode than gcc does. v0.1.24 download sizes: **2.9 MB** Linux x64 tar.gz · **2.8 MB** Linux ARM64 tar.gz · **26.7 MB** macOS DMG (with bundled Qt) · **45.6 MB** Windows MSI · **38.1 MB** Windows NSIS · **43.7 MB** Windows portable zip.
 
 ---
 
@@ -259,12 +259,12 @@ That's it. Auto-detects your OS, downloads the right binary, installs it, adds t
 
 | Platform | Download | Size | What's inside |
 |---|---|---|---|
-| 🐧 **Linux x64** | [`.tar.gz`](https://github.com/singhpratech/notepatra/releases/latest) | **2.8 MB** | Bare `notepatra` binary. Qt5 from your distro. |
-| 🐧 **Linux ARM64** | [`.tar.gz`](https://github.com/singhpratech/notepatra/releases/latest) | **2.6 MB** | Bare `notepatra` binary for `aarch64` / ARM64 Linux. |
-| 🍎 **macOS Apple Silicon** (M1–M4) | [`.dmg`](https://github.com/singhpratech/notepatra/releases/latest) | **25.5 MB** | `Notepatra.app` with Qt frameworks bundled. Drag to Applications. |
-| 🪟 **Windows x64 (MSI)** | [`.msi`](https://github.com/singhpratech/notepatra/releases/latest) | **43.5 MB** | WiX-built MSI. Per-machine install, upgrade-code handled, file-type associations for `.txt`, `.log`, `.md`, `.json`, `.py`, `.cpp` etc., adds Notepatra to PATH. Best for enterprise / SCCM deploy. |
-| 🪟 **Windows x64 (installer)** | [`.exe`](https://github.com/singhpratech/notepatra/releases/latest) | **36.3 MB** | NSIS installer. Registers in Settings → Apps → Installed apps. Uninstall via Control Panel works. |
-| 🪟 **Windows x64 (portable)** | [`.zip`](https://github.com/singhpratech/notepatra/releases/latest) | **41.7 MB** | `notepatra.exe` + Qt DLLs + QScintilla DLL. Unzip and run anywhere. No installer, no registry. Optional: double-click `register-associations.bat` inside the zip to add Notepatra to the "Open with" menu for `.txt`/`.md`/`.py`/`.json`/etc. — HKCU only, no admin needed. Undo with `unregister-associations.bat`. |
+| 🐧 **Linux x64** | [`.tar.gz`](https://github.com/singhpratech/notepatra/releases/latest) | **2.9 MB** | Bare `notepatra` binary. Qt5 from your distro. |
+| 🐧 **Linux ARM64** | [`.tar.gz`](https://github.com/singhpratech/notepatra/releases/latest) | **2.8 MB** | Bare `notepatra` binary for `aarch64` / ARM64 Linux. |
+| 🍎 **macOS Apple Silicon** (M1–M4) | [`.dmg`](https://github.com/singhpratech/notepatra/releases/latest) | **26.7 MB** | `Notepatra.app` with Qt frameworks bundled. Drag to Applications. |
+| 🪟 **Windows x64 (MSI)** | [`.msi`](https://github.com/singhpratech/notepatra/releases/latest) | **45.6 MB** | WiX-built MSI. Per-machine install, upgrade-code handled, file-type associations for `.txt`, `.log`, `.md`, `.json`, `.py`, `.cpp` etc., adds Notepatra to PATH. Best for enterprise / SCCM deploy. |
+| 🪟 **Windows x64 (installer)** | [`.exe`](https://github.com/singhpratech/notepatra/releases/latest) | **38.1 MB** | NSIS installer. Registers in Settings → Apps → Installed apps. Uninstall via Control Panel works. |
+| 🪟 **Windows x64 (portable)** | [`.zip`](https://github.com/singhpratech/notepatra/releases/latest) | **43.7 MB** | `notepatra.exe` + Qt DLLs + QScintilla DLL. Unzip and run anywhere. No installer, no registry. Optional: double-click `register-associations.bat` inside the zip to add Notepatra to the "Open with" menu for `.txt`/`.md`/`.py`/`.json`/etc. — HKCU only, no admin needed. Undo with `unregister-associations.bat`. |
 
 **Why are the download sizes different?** Measured from v0.1.24 release assets — bare `notepatra` executable is **~4 MB stripped** on each platform (a little smaller on Windows/macOS than on Linux because clang + MSVC strip more aggressively than gcc). On Linux, Qt5 is a standard system package (`apt install qtbase5-dev libqscintilla2-qt5-dev`), so the download is just the binary (~2 MB compressed). On macOS and Windows, Qt isn't pre-installed, so we bundle the Qt frameworks / DLLs alongside the executable for portability — same approach Krita, Kdenlive, and every cross-platform Qt app uses. Even with Qt bundled, Notepatra is still **6× smaller than VS Code** on Windows and **14× smaller** on Linux.
 
@@ -444,7 +444,7 @@ cl /LD myplugin.cpp /Fe:myplugin.dll
 | **Vim / Neovim** | ~3 MB | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Sublime Text** | ~30 MB | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | $99 |
 | **Kate / Gedit** | ~30 MB | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✓ |
-| **Notepatra** | **2.8 / 25.5 / 43.5 MB** | ✓ C++/Rust | ✓ Ollama | ✓ regex + AI | ✓ Rust mmap | ✓ | ✓ | ✓ | ✓ GPL-3 |
+| **Notepatra** | **2.9 / 26.7 / 45.6 MB** | ✓ C++/Rust | ✓ Ollama | ✓ regex + AI | ✓ Rust mmap | ✓ | ✓ | ✓ | ✓ GPL-3 |
 
 > *Notepatra download sizes are Linux x64 tar.gz / macOS DMG / Windows MSI from v0.1.24. Linux is just the binary (Qt is system-installed). macOS and Windows include bundled Qt. The bare `notepatra` executable inside is roughly 5 MB on Linux, 3 MB on Windows, 2.7 MB on macOS — different compilers, different optimization.*
 
