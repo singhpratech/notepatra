@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.8 MB (Linux x64 tar.gz), 25.5 MB (macOS DMG with bundled Qt), 43.5 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.27",
+      "softwareVersion": "0.1.28",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -153,7 +153,7 @@
           "name": "How big is Notepatra compared to VS Code?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.27: 2.8 MB Linux x64 tar.gz, 2.6 MB Linux ARM64 tar.gz, 25.5 MB macOS DMG (with bundled Qt), 43.5 MB Windows MSI / 36.3 MB NSIS / 41.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload -- that's normal for any Qt app installer. Linux installs stay tiny (~5 MB on disk) because Qt5 comes from your distro repo. VS Code is 300+ MB downloaded AND 350+ MB installed. Notepatra is 6× to 14× smaller than VS Code on every platform."
+            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.28: 2.8 MB Linux x64 tar.gz, 2.6 MB Linux ARM64 tar.gz, 25.5 MB macOS DMG (with bundled Qt), 43.5 MB Windows MSI / 36.3 MB NSIS / 41.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload -- that's normal for any Qt app installer. Linux installs stay tiny (~5 MB on disk) because Qt5 comes from your distro repo. VS Code is 300+ MB downloaded AND 350+ MB installed. Notepatra is 6× to 14× smaller than VS Code on every platform."
           }
         },
         {
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.27 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.28 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.27">
-        Download v0.1.27 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.28">
+        Download v0.1.28 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.27 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.28 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1388,7 +1388,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.27</div>
+        <div class="section-label">Download v0.1.28</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1836,7 +1836,50 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.27 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.28 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-26</span>
+                        <span>· Dark-theme palette readability hotfix — Lua / Perl / D / Ruby</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🌙 Four languages had keyword colours that disappeared on dark theme</h5>
+                        <ul>
+                            <li><strong>Lua</strong>: was <code style="color:var(--green);font-size:12px;">#000080</code> navy on both themes — invisible on <code style="color:var(--green);font-size:12px;">#1E1E1E</code> dark backgrounds. Now <code style="color:var(--green);font-size:12px;">#4FC1FF</code> (Lua-bright-blue, the colour lua.org actually uses on its dark code samples) on dark, light navy preserved on light.</li>
+                            <li><strong>Perl</strong>: was <code style="color:var(--green);font-size:12px;">#39457E</code> camel-blue on both — too dark for dark theme. Now VS Code <code style="color:var(--green);font-size:12px;">#569CD6</code> blue on dark; perl.org camel-blue preserved on light.</li>
+                            <li><strong>D</strong>: was <code style="color:var(--green);font-size:12px;">#B03A2E</code> brick-red on both — readable on light but eye-strain on dark. Now <code style="color:var(--green);font-size:12px;">#FF6E6E</code> coral on dark; dlang.org brick-red preserved on light.</li>
+                            <li><strong>Ruby</strong>: was <code style="color:var(--green);font-size:12px;">#CC342D</code> brand-red on both — works on light, harsh on dark. Now <code style="color:var(--green);font-size:12px;">#FF7B72</code> salmon on dark (matches VS Code's Ruby grammar default); ruby-lang.org brand-red preserved on light.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>✅ All 23 per-language palette branches audited for dark + light compatibility</h5>
+                        <ul>
+                            <li>Every keyword + type colour now has explicit values for monokai / dark / light themes (or shares a colour deliberately like Go's <code style="color:var(--green);font-size:12px;">#00ADD8</code> Go-cyan which works on both backgrounds).</li>
+                            <li>The 21 niche languages without per-language tuning (TCL / Diff / Fortran / Verilog / VHDL / TeX / PostScript / POV / Spice / AVS / Properties / PO / IntelHex / SREC / Octave / Matlab / IDL / MASM / NASM / ASM) fall back to the generic blue+purple palette which was already 3-way themed correctly.</li>
+                            <li><strong>100% of languages now have proper dark + light theme compatibility.</strong></li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>📦 Smallest release in Notepatra's history</h5>
+                        <ul>
+                            <li>~10 colour values updated in <code style="color:var(--green);font-size:12px;">src/npp_palette.cpp</code>. No code changes outside that file.</li>
+                            <li>Same lexer dispatch, same keyword sets, same v0.1.27 comprehensive language coverage. Only the colour pickers for 4 languages on dark theme changed.</li>
+                            <li>14/14 regression tests pass. No new dependencies, no schema changes, no installer changes.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.28">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.28">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.27</div>
                     <div class="version-meta">
                         <span>2026-04-26</span>
                         <span>· Comprehensive lexer + palette overhaul covering all 44+ languages</span>
@@ -2892,7 +2935,7 @@ Write-Host "Restarted Explorer — right-click any file now to verify" -Foregrou
             </div>
             <div class="feature-card">
                 <h3>How big is it compared to VS Code?</h3>
-                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.27): <strong>2.8 MB</strong> Linux x64 tar.gz · <strong>2.6 MB</strong> Linux ARM64 tar.gz · <strong>25.5 MB</strong> macOS DMG · <strong>43.5 MB</strong> Windows MSI / <strong>36.3 MB</strong> NSIS / <strong>41.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
+                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.28): <strong>2.8 MB</strong> Linux x64 tar.gz · <strong>2.6 MB</strong> Linux ARM64 tar.gz · <strong>25.5 MB</strong> macOS DMG · <strong>43.5 MB</strong> Windows MSI / <strong>36.3 MB</strong> NSIS / <strong>41.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>

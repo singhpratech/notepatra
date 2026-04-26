@@ -7,6 +7,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.28] — 2026-04-26
+
+Hotfix for v0.1.27's dark-theme palette readability bugs. Four languages were assigned dark-only colour values that became unreadable on `#1E1E1E` background (e.g. Lua navy `#000080` is invisible on dark grey). Fixed with proper 3-way `monokai / dark / light` differentiation.
+
+### Fixed
+- 🌙 **Lua keywords readable on dark theme.** Was using `#000080` navy on both dark and light. Light theme keeps the classic navy (matches lua.org); dark theme now uses `#4FC1FF` (the bright Lua-blue lua.org actually uses on its dark code blocks). Light navy stays unchanged.
+- 🌙 **Perl keywords readable on dark theme.** Was using `#39457E` camel-blue on both. Light theme keeps the perl.org brand colour; dark theme uses VS Code's `#569CD6` keyword blue with `#9CDCFE` for secondary keywords.
+- 🌙 **D keywords readable on dark theme.** Was using `#B03A2E` brick-red on both. Light theme keeps the dlang.org brand red; dark theme uses `#FF6E6E` coral plus `#4EC9B0` teal for std-lib types.
+- 🌙 **Ruby keywords softer on dark theme.** Was using `#CC342D` ruby-brand red on both, which works on light but burns the eyes on dark. Light theme keeps the brand red; dark theme uses `#FF7B72` (VS Code's ruby grammar default — softer salmon).
+- 🌙 **All 23 per-language palette branches audited** for proper dark/light/monokai compatibility. Every keyword + type colour now has explicit values for all three themes (or shares a colour deliberately, like Go's `#00ADD8` cyan which works on both backgrounds).
+
+### Notes
+- Languages NOT in the per-language switch (TCL / Diff / Fortran / Verilog / VHDL / TeX / PostScript / POV / Spice / AVS / Properties / PO / IntelHex / SREC / Octave / Matlab / IDL / MASM / NASM / ASM) fall back to the generic blue+purple palette which was already 3-way themed correctly.
+- No code changes outside `src/npp_palette.cpp` — same 14 lexers, same keyword sets, same lexer dispatch. Only colour values updated.
+
+---
+
 ## [0.1.27] — 2026-04-26
 
 Comprehensive lexer + palette overhaul covering all 44+ languages Notepatra supports. Fixes the v0.1.26 PowerShell user complaint ("not highlighting properly") and applies the same level of polish to every other language.

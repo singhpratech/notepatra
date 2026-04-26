@@ -128,8 +128,10 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QStr
         npKeyword2  = monokai ? QColor("#A6E22E") : (dark ? QColor("#4EC9B0") : QColor("#267F99"));
     }
     else if (lang == QLatin1String("D")) {
-        // dlang.org + dub uses red accents.
-        npKeyword   = monokai ? QColor("#F92672") : (dark ? QColor("#B03A2E") : QColor("#B03A2E"));
+        // dlang.org + dub. Light theme keeps red-brick accent; dark theme
+        // uses brighter coral so it's actually readable on #1E1E1E.
+        npKeyword   = monokai ? QColor("#F92672") : (dark ? QColor("#FF6E6E") : QColor("#B03A2E"));
+        npKeyword2  = monokai ? QColor("#A6E22E") : (dark ? QColor("#4EC9B0") : QColor("#267F99"));
     }
     else if (lang == QLatin1String("Java")) {
         // IntelliJ Light (navy keywords) + Darcula (orange).
@@ -178,17 +180,25 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QStr
         npKeyword   = monokai ? QColor("#A6E22E") : (dark ? QColor("#569CD6") : QColor("#0000FF"));
     }
     else if (lang == QLatin1String("Ruby")) {
-        // Ruby red — matches ruby-lang.org branding.
-        npKeyword   = monokai ? QColor("#F92672") : (dark ? QColor("#CC342D") : QColor("#CC342D"));
+        // Ruby red — matches ruby-lang.org branding. Light theme keeps the
+        // brand red; dark theme uses a softer salmon (#FF7B72 from VS Code's
+        // ruby grammar) so it doesn't burn the eyes against #1E1E1E.
+        npKeyword   = monokai ? QColor("#F92672") : (dark ? QColor("#FF7B72") : QColor("#CC342D"));
         npKeyword2  = monokai ? QColor("#A6E22E") : (dark ? QColor("#4EC9B0") : QColor("#267F99"));
     }
     else if (lang == QLatin1String("Perl")) {
-        // perl.org camel-blue.
-        npKeyword   = monokai ? QColor("#F92672") : (dark ? QColor("#39457E") : QColor("#39457E"));
+        // perl.org camel-blue on light. On dark, navy #39457E was unreadable
+        // against #1E1E1E so we lift to a brighter VS Code-style #569CD6
+        // and use a soft cyan for secondary keywords.
+        npKeyword   = monokai ? QColor("#F92672") : (dark ? QColor("#569CD6") : QColor("#39457E"));
+        npKeyword2  = monokai ? QColor("#A6E22E") : (dark ? QColor("#9CDCFE") : QColor("#0451A5"));
     }
     else if (lang == QLatin1String("Lua")) {
-        // lua.org navy — keep classic.
-        npKeyword   = monokai ? QColor("#F92672") : (dark ? QColor("#000080") : QColor("#000080"));
+        // lua.org classic navy on light. Dark theme can't use #000080 (navy
+        // disappears on #1E1E1E) so we use Lua's secondary blue #4FC1FF,
+        // which is the colour lua.org uses for code on its dark sections.
+        npKeyword   = monokai ? QColor("#F92672") : (dark ? QColor("#4FC1FF") : QColor("#000080"));
+        npKeyword2  = monokai ? QColor("#A6E22E") : (dark ? QColor("#4EC9B0") : QColor("#267F99"));
     }
     else if (lang == QLatin1String("Markdown")) {
         // Markdown — emphasised headers (npKeyword bold), italic emphasis,
