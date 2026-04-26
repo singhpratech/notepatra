@@ -183,6 +183,12 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
     m_output->setColor(fp.editorFg);
     m_output->setMarginsBackgroundColor(fp.titleBg);
     m_output->setMarginsForegroundColor(fp.logHeaderFg);
+    // v0.1.34 fix: setFolding() above creates a fold margin at index 2,
+    // but without setFoldMarginColors() Scintilla paints it default white.
+    // On Dark theme that's a stark white strip between the line numbers
+    // and the editor body — reported by user via SQL Formatter screenshot.
+    // Paint it the same colour as the editor body so it's invisible.
+    m_output->setFoldMarginColors(fp.editorBg, fp.editorBg);
 
     layout->addWidget(m_output, 1);
 
@@ -279,6 +285,7 @@ void FormatterPanel::applyPalette() {
         m_output->setCaretLineBackgroundColor(fp.caretLineBg);
         m_output->setMarginsBackgroundColor(fp.titleBg);
         m_output->setMarginsForegroundColor(fp.logHeaderFg);
+        m_output->setFoldMarginColors(fp.editorBg, fp.editorBg);
         applyLexer();
         if (int len = m_output->length()) m_output->recolor(0, len);
     }

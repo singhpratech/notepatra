@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.33 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.34 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -647,6 +647,12 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_palette.cpp")
     if(WIN32)
         target_compile_definitions(test_palette PRIVATE QSCINTILLA_DLL)
     endif()
+    # Pass the source dir as a string macro so the structural fold-margin
+    # check (v0.1.34) can read sqlfmtpanel.cpp / fmtpanel.cpp / compare.cpp /
+    # editor.cpp at test time and verify each pairs setFolding() with
+    # setFoldMarginColors().
+    target_compile_definitions(test_palette PRIVATE
+        SOURCE_DIR_FOR_TEST="${CMAKE_SOURCE_DIR}")
     notepatra_add_qt_test(test_palette)
     set_tests_properties(test_palette PROPERTIES LABELS "regression;palette")
     message(STATUS "Regression test enabled — target: test_palette")

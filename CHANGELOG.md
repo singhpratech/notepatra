@@ -7,6 +7,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.34] — 2026-04-26
+
+White-fold-margin Dark-theme bug across the formatter panels — fixed. New structural test prevents regression.
+
+### Fixed
+- 🎨 **White fold-margin strip on Dark theme** — the SQL Formatter, JSON Tools, HTML Tools, and Bracket Tools panels all called `setFolding(BoxedTreeFoldStyle, 2)` to enable code folding but never `setFoldMarginColors()`. QScintilla's default fold-margin colour is white, so on Dark theme users saw a stark white vertical strip between the line numbers and the editor body. Reported via Windows screenshot of the SQL Formatter panel. Fixed in `src/sqlfmtpanel.cpp` (added `setMarginsBackgroundColor`, `setMarginsForegroundColor`, AND `setFoldMarginColors`) and `src/fmtpanel.cpp` (added `setFoldMarginColors` in both the constructor and the `onThemeChanged` reapply path).
+
+### Added
+- ✅ **Structural fold-margin pairing test** in `test_palette.cpp`. Reads `src/sqlfmtpanel.cpp`, `src/fmtpanel.cpp`, `src/compare.cpp`, `src/editor.cpp` at test time and verifies that any file calling `setFolding(...)` with a real fold style (not `NoFoldStyle`) ALSO calls `setFoldMarginColors(...)`. Catches the v0.1.34 regression class — anyone adding a new editor panel with code folding will fail CI if they forget to theme the fold margin.
+
+### Notes
+- 14 / 14 regression tests pass. test_palette: 60 / 60 colour + structural checks (was 56; +4 fold-margin pairing checks).
+- Why the structural check instead of a runtime check: Scintilla doesn't expose `SCI_GETFOLDMARGINCOLOUR` (only the SET command exists), so we can't round-trip the colour. Reading the source files at test time catches the bug class equally well and runs faster.
+- No new dependencies, no schema changes, no installer changes.
+
+---
+
 ## [0.1.33] — 2026-04-26
 
 Linux emoji rendering fix + comprehensive per-language brand-palette test coverage. Two additional palette bugs uncovered by the new assertions and fixed in the same release.

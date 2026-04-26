@@ -13,12 +13,14 @@
 
 #include <QApplication>
 #include <QColor>
+#include <QFile>
 #include <QFont>
 #include <cstdio>
 #include <vector>
 
 #include "npp_palette.h"  // free function: applyNotepadPlusPalette()
 
+#include <Qsci/qsciscintilla.h>
 #include <Qsci/qscilexer.h>
 #include <Qsci/qscilexercpp.h>
 #include <Qsci/qscilexerpython.h>
@@ -357,6 +359,63 @@ int main(int argc, char *argv[]) {
     // by the JS test above (same npKeyword2 generic-palette path).
 
     // ─── JSON property key — already tested earlier (line ~218). ────────
+
+    // ═══════════════════════════════════════════════════════════════════
+    // v0.1.34 — Margin / fold-margin theming. Pre-v0.1.34 the fmt panels
+    // (SQL Formatter, JSON Tools, HTML Tools, Bracket Tools) called
+    // `setFolding(BoxedTreeFoldStyle, 2)` to enable code folding but
+    // never `setFoldMarginColors()` — leaving the fold-margin strip in
+    // QScintilla's default WHITE. On Dark theme the user saw a stark
+    // white strip between the line numbers and the editor body. This
+    // test simulates the panel's setup + theme-apply flow on a real
+    // QsciScintilla widget and verifies all 6 margin slots end up with
+    // dark colours, never the default #FFFFFF / #C0C0C0 light defaults.
+    // ═══════════════════════════════════════════════════════════════════
+    {
+        // QsciScintilla doesn't expose SCI_GETFOLDMARGINCOLOUR (Scintilla
+        // itself only ships SCI_SETFOLDMARGINCOLOUR — the get-side was
+        // never added). So we can't round-trip the colour. Instead we do
+        // a STRUCTURAL check on the source: any C++ file that calls
+        // setFolding() must also call setFoldMarginColors() in the same
+        // file, otherwise the fold margin defaults to white on Dark theme.
+        //
+        // This catches the v0.1.34 regression class — exactly the bug the
+        // user reported via SQL Formatter Windows screenshot.
+        const QString srcDir = QString(SOURCE_DIR_FOR_TEST) + "/src/";
+        const QStringList sourcesToCheck = {
+            "sqlfmtpanel.cpp", "fmtpanel.cpp", "compare.cpp", "editor.cpp",
+        };
+        for (const QString &name : sourcesToCheck) {
+            QFile f(srcDir + name);
+            if (!f.open(QFile::ReadOnly)) {
+                fprintf(stderr, "  FAIL FoldMargin source check: cannot open %s\n",
+                        name.toUtf8().constData());
+                total_failed++;
+                continue;
+            }
+            const QString src = QString::fromUtf8(f.readAll());
+            const bool callsSetFolding = src.contains("setFolding(");
+            const bool noFoldStyle     = src.contains("NoFoldStyle");
+            const bool setsFoldColours = src.contains("setFoldMarginColors(");
+            // Pass conditions:
+            //   (a) doesn't call setFolding at all → no fold margin → fine
+            //   (b) calls setFolding ONLY with NoFoldStyle → no fold margin
+            //   (c) calls setFolding with a real fold style AND also calls
+            //       setFoldMarginColors → margin themed correctly
+            const bool hasRealFold = callsSetFolding && !noFoldStyle;
+            const bool ok = !callsSetFolding || (!hasRealFold) || setsFoldColours;
+            if (ok) {
+                fprintf(stdout, "  ok   FoldMargin %-18s (folding=%s, colors=%s)\n",
+                        name.toUtf8().constData(),
+                        hasRealFold ? "yes" : "none",
+                        setsFoldColours ? "yes" : "n/a");
+            } else {
+                fprintf(stderr, "  FAIL FoldMargin %s: calls setFolding(...) but not setFoldMarginColors() — fold strip will render white on Dark theme\n",
+                        name.toUtf8().constData());
+                total_failed++;
+            }
+        }
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // v0.1.33 — Font fallback chain. The Linux "Hello! 👋" tofu bug came

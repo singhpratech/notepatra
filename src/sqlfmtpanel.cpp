@@ -172,12 +172,23 @@ void SqlFmtPanel::applyPalette() {
         ).arg(pal.chromeBg, accent));
     }
 
-    // Scintilla editor — paper + text + caret + caret-line bg.
+    // Scintilla editor — paper + text + caret + caret-line bg + ALL margins.
+    // v0.1.34 fix: pre-v0.1.34 we missed setMarginsBackgroundColor /
+    // ForegroundColor / setFoldMarginColors entirely on this widget. The
+    // line-number column AND the fold margin (created by setFolding(...) in
+    // setupOutput) both stayed at QScintilla's default WHITE. On Dark
+    // theme the user saw a glaring white strip between the line numbers
+    // and the SQL content (reported via Windows screenshot, /home/.../
+    // issuesinwindows/white sidepale for sl formatter.png). Now we paint
+    // every margin to match the rest of the theme.
     if (m_output) {
         m_output->setCaretLineBackgroundColor(QColor(pal.chromeBg));
         m_output->setCaretForegroundColor(QColor(pal.text));
         m_output->setPaper(QColor(pal.cardBg));
         m_output->setColor(QColor(pal.text));
+        m_output->setMarginsBackgroundColor(QColor(pal.bg));
+        m_output->setMarginsForegroundColor(QColor(pal.textMuted));
+        m_output->setFoldMarginColors(QColor(pal.bg), QColor(pal.bg));
 
         if (auto *lexer = qobject_cast<QsciLexerSQL *>(m_output->lexer())) {
             lexer->setDefaultPaper(QColor(pal.cardBg));

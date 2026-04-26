@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.8 MB (Linux x64 tar.gz), 25.5 MB (macOS DMG with bundled Qt), 43.5 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 48 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.33",
+      "softwareVersion": "0.1.34",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.33 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.34 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.33">
-        Download v0.1.33 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.34">
+        Download v0.1.34 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.33 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.34 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1389,7 +1389,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.33</div>
+        <div class="section-label">Download v0.1.34</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1841,7 +1841,41 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.33 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.34 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-26</span>
+                        <span>· White-fold-margin Dark-theme fix + structural pairing test</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🎨 White fold-margin strip on Dark theme — fixed</h5>
+                        <ul>
+                            <li>User reported via Windows screenshot: a stark white vertical strip between line numbers and SQL content on Dark theme in the SQL Formatter panel.</li>
+                            <li>Root cause: <code style="color:var(--green);font-size:12px;">setFolding(BoxedTreeFoldStyle, 2)</code> creates a fold-marker margin but does NOT theme it. <code style="color:var(--green);font-size:12px;">setFoldMarginColors()</code> is a separate call that all four formatter panels (SQL / JSON / HTML / Bracket Tools) were missing. QScintilla's default fold-margin colour is white.</li>
+                            <li>Fix: added <code style="color:var(--green);font-size:12px;">setFoldMarginColors()</code> in <code style="color:var(--green);font-size:12px;">src/sqlfmtpanel.cpp</code> (which was also missing <code style="color:var(--green);font-size:12px;">setMarginsBackgroundColor</code>/<code style="color:var(--green);font-size:12px;">setMarginsForegroundColor</code>) and <code style="color:var(--green);font-size:12px;">src/fmtpanel.cpp</code> (in both the constructor and the <code style="color:var(--green);font-size:12px;">onThemeChanged</code> reapply path).</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>✅ Structural fold-margin pairing test prevents regression</h5>
+                        <ul>
+                            <li>Scintilla doesn't expose <code style="color:var(--green);font-size:12px;">SCI_GETFOLDMARGINCOLOUR</code>, so we can't round-trip at runtime. New <code style="color:var(--green);font-size:12px;">test_palette.cpp</code> assertion reads the relevant <code style="color:var(--green);font-size:12px;">.cpp</code> files at test time and verifies any file calling <code style="color:var(--green);font-size:12px;">setFolding(...)</code> with a real fold style ALSO calls <code style="color:var(--green);font-size:12px;">setFoldMarginColors(...)</code>.</li>
+                            <li>If anyone adds a 5th editor panel and forgets to theme its fold margin, CI fails before users see the regression.</li>
+                            <li>test_palette: 60 / 60 checks (was 56; +4 fold-margin pairing).</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.34">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.34">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.33</div>
                     <div class="version-meta">
                         <span>2026-04-26</span>
                         <span>· Linux emoji fix + comprehensive palette test coverage</span>
