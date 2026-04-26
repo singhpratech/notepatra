@@ -161,7 +161,13 @@ int main(int argc, char *argv[]) {
               !result.value("content").toString().contains("line 9\n"));
     }
 
-    // Read outside workspace → error
+    // Read outside workspace → error.
+    // On Linux: /etc/passwd exists; canonicalize succeeds; workspace
+    //   anchor check fails → "outside_workspace" (or "denied" via
+    //   the hardcoded /etc/passwd entry in the deny-list).
+    // On Windows: /etc/passwd doesn't exist; canonicalFilePath()
+    //   returns empty → "not_found" before workspace check.
+    // Both are correct refusals — test accepts all three.
     {
         AiTools::ToolCall call;
         call.id = "t-deny";
@@ -171,8 +177,10 @@ int main(int argc, char *argv[]) {
         call.args = args;
         AiTools::ToolResult r = AiTools::execute(call, ws);
         check("read_file('/etc/passwd'): isError=true", r.isError);
-        check("  errorKind == outside_workspace OR denied",
-              r.errorKind == "outside_workspace" || r.errorKind == "denied");
+        check("  errorKind is a refusal (outside_workspace / denied / not_found)",
+              r.errorKind == "outside_workspace"
+              || r.errorKind == "denied"
+              || r.errorKind == "not_found");
     }
 
     // Binary file → error_kind: binary
