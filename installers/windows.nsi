@@ -38,7 +38,7 @@ VIAddVersionKey "ProductVersion"  "${VERSION}"
 VIAddVersionKey "FileDescription" "${APP_NAME} Installer"
 VIAddVersionKey "FileVersion"     "${VERSION}"
 VIAddVersionKey "CompanyName"     "${APP_PUBLISHER}"
-VIAddVersionKey "LegalCopyright"  "© ${APP_PUBLISHER}. GPL-3.0 licensed."
+VIAddVersionKey "LegalCopyright"  "Copyright ${APP_PUBLISHER}. GPL-3.0 licensed."
 
 ; Install per-user by default — no UAC prompt
 InstallDir "$LOCALAPPDATA\${APP_NAME}"

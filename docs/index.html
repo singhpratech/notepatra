@@ -50,7 +50,7 @@
       "operatingSystem": ["Linux", "Windows", "macOS"],
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
-      "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3–5 MB stripped across platforms; full downloads are ~2 MB (Linux tarball), ~22 MB (macOS DMG with bundled Qt), ~40 MB (Windows installer with bundled Qt DLLs). 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
+      "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.8 MB (Linux x64 tar.gz), 25.5 MB (macOS DMG with bundled Qt), 43.5 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
       "softwareVersion": "0.1.24",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
@@ -153,7 +153,7 @@
           "name": "How big is Notepatra compared to VS Code?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.24: ~2 MB Linux tarball, ~22 MB macOS DMG (with bundled Qt), ~40 MB Windows MSI/zip (with bundled Qt + QScintilla DLLs). VS Code is 300+ MB regardless. Notepatra is 6× to 14× smaller than VS Code on every platform."
+            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.24: 2.8 MB Linux x64 tar.gz, 2.6 MB Linux ARM64 tar.gz, 25.5 MB macOS DMG (with bundled Qt), 43.5 MB Windows MSI / 36.3 MB NSIS / 41.7 MB portable zip (with bundled Qt + QScintilla DLLs). VS Code is 300+ MB regardless. Notepatra is 6× to 14× smaller than VS Code on every platform."
           }
         },
         {
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.23 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.24 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1396,25 +1396,25 @@
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🐧</div>
                 <h4>Linux x64</h4>
-                <p>Binary · ~2 MB .tar.gz</p>
+                <p>Binary · 2.8 MB .tar.gz</p>
                 <span class="download-btn">.tar.gz</span>
             </a>
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🐧</div>
                 <h4>Linux ARM64</h4>
-                <p>aarch64 · Raspberry Pi 5</p>
+                <p>aarch64 · Raspberry Pi 5 · 2.6 MB .tar.gz</p>
                 <span class="download-btn">.tar.gz</span>
             </a>
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🍎</div>
                 <h4>macOS Apple Silicon</h4>
-                <p>M1 / M2 / M3 / M4 · ~10 MB</p>
+                <p>M1 / M2 / M3 / M4 · 25.5 MB .dmg</p>
                 <span class="download-btn">.dmg</span>
             </a>
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🪟</div>
                 <h4>Windows x64</h4>
-                <p>Portable .zip · MSI · setup.exe</p>
+                <p>41.7 MB zip · 43.5 MB MSI · 36.3 MB setup.exe</p>
                 <span class="download-btn">.zip / .msi / .exe</span>
             </a>
         </div>
@@ -1938,7 +1938,7 @@
                         <h5>🪟 Windows UI polish — collisions and clipped close ✕</h5>
                         <ul>
                             <li>Explicit <code style="color:var(--green);font-size:12px;">setSpacing()</code> added across SQL Formatter, Find/Replace, Compare toolbar, JSON / HTML / Bracket formatters so option-row widgets stop colliding on Windows.</li>
-                            <li>AI dock close button widened, padding zeroed (full mojibake fix later in v0.1.23).</li>
+                            <li>AI dock close button widened, padding zeroed (full mojibake fix later in v0.1.22).</li>
                         </ul>
                     </div>
                 </div>
@@ -2705,7 +2705,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is it compared to VS Code?</h3>
-                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.23): <strong>2 MB</strong> Linux tar.gz · <strong>22 MB</strong> macOS DMG · <strong>40 MB</strong> Windows MSI/zip. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
+                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.24): <strong>2.8 MB</strong> Linux x64 tar.gz · <strong>2.6 MB</strong> Linux ARM64 tar.gz · <strong>25.5 MB</strong> macOS DMG · <strong>43.5 MB</strong> Windows MSI / <strong>36.3 MB</strong> NSIS / <strong>41.7 MB</strong> portable zip. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
