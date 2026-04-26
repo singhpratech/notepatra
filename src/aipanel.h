@@ -72,6 +72,11 @@ public:
         Role role = User;
         QString text;
         QString model;
+        // Per-response stats (Assistant role only). -1 means "not reported".
+        // Rendered in the bubble header as "1234 tokens · 2.3s".
+        int promptTokens = -1;
+        int evalTokens = -1;
+        qint64 elapsedMs = -1;
     };
 
 protected:

@@ -7,6 +7,7 @@
 #include <QUrl>
 #include <QEventLoop>
 #include <QTimer>
+#include <QDateTime>
 
 // ═══════════════════════════════════════════════════════════════════════
 // Local-AI client.
@@ -146,6 +147,9 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
     m_fullResponse.clear();
     m_sseBuffer.clear();
     m_done = false;
+    m_promptTokens = -1;
+    m_evalTokens = -1;
+    m_startMs = QDateTime::currentMSecsSinceEpoch();
 
     if (m_backend == Ollama) {
         // ─── Ollama native /api/generate ───────────────────────────────
@@ -290,7 +294,15 @@ void OllamaClient::onReadyReadOllama() {
         }
         if (obj["done"].toBool() && !m_done) {
             m_done = true;
+            // Ollama's done frame includes optional stats fields. Capture
+            // them so the UI can render "1234 tokens · 2.3s" per response.
+            if (obj.contains("eval_count"))
+                m_evalTokens = obj["eval_count"].toInt();
+            if (obj.contains("prompt_eval_count"))
+                m_promptTokens = obj["prompt_eval_count"].toInt();
+            const qint64 elapsed = QDateTime::currentMSecsSinceEpoch() - m_startMs;
             emit finished(m_fullResponse);
+            emit responseStats(m_promptTokens, m_evalTokens, elapsed);
         }
     }
 }
@@ -317,7 +329,9 @@ void OllamaClient::onReadyReadOpenAI() {
             if (payload == "[DONE]") {
                 if (!m_done) {
                     m_done = true;
+                    const qint64 elapsed = QDateTime::currentMSecsSinceEpoch() - m_startMs;
                     emit finished(m_fullResponse);
+                    emit responseStats(m_promptTokens, m_evalTokens, elapsed);
                 }
                 continue;
             }
@@ -331,6 +345,14 @@ void OllamaClient::onReadyReadOpenAI() {
                 if (!msg.isEmpty()) emit error(msg);
                 return;
             }
+            // OpenAI-compat servers emit a usage object on the final
+            // chunk (or sometimes a separate non-choice frame). Capture
+            // it before we look at choices.
+            if (obj.contains("usage")) {
+                QJsonObject u = obj.value("usage").toObject();
+                if (u.contains("prompt_tokens"))      m_promptTokens = u.value("prompt_tokens").toInt();
+                if (u.contains("completion_tokens"))  m_evalTokens   = u.value("completion_tokens").toInt();
+            }
             // choices[0].delta.content — the streaming chunk token
             QJsonArray choices = obj.value("choices").toArray();
             if (choices.isEmpty()) continue;
@@ -343,7 +365,9 @@ void OllamaClient::onReadyReadOpenAI() {
             }
             if (choice.value("finish_reason").toString().length() > 0 && !m_done) {
                 m_done = true;
+                const qint64 elapsed = QDateTime::currentMSecsSinceEpoch() - m_startMs;
                 emit finished(m_fullResponse);
+                emit responseStats(m_promptTokens, m_evalTokens, elapsed);
             }
         }
     }

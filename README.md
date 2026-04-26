@@ -235,7 +235,7 @@ Notepatra auto-detects the running Ollama and picks the most CPU-friendly model 
 **Why this hybrid?**
 - **C++** because Qt and QScintilla are C++ — zero friction for UI
 - **Rust** because file I/O, text processing, and parsing must never crash — Rust's ownership system guarantees memory safety
-- **Result**: the speed of C++, the safety of Rust. The bare stripped executable is roughly **2.7 MB on macOS Apple Silicon**, **3.0 MB on Windows x64**, and **5 MB on Linux x64** — MSVC and clang strip more aggressively in release mode than gcc does. v0.1.25 download sizes: **2.8 MB** Linux x64 tar.gz · **2.6 MB** Linux ARM64 tar.gz · **25.5 MB** macOS DMG (with bundled Qt) · **43.5 MB** Windows MSI · **36.3 MB** Windows NSIS · **41.7 MB** Windows portable zip. _Installed footprint on Windows is ~75-85 MB after the MSI extracts bundled Qt + QScintilla DLLs — normal for any Qt-based installer._
+- **Result**: the speed of C++, the safety of Rust. The bare stripped executable is roughly **2.7 MB on macOS Apple Silicon**, **3.0 MB on Windows x64**, and **5 MB on Linux x64** — MSVC and clang strip more aggressively in release mode than gcc does. v0.1.26 download sizes: **2.8 MB** Linux x64 tar.gz · **2.6 MB** Linux ARM64 tar.gz · **25.5 MB** macOS DMG (with bundled Qt) · **43.5 MB** Windows MSI · **36.3 MB** Windows NSIS · **41.7 MB** Windows portable zip. _Installed footprint on Windows is ~75-85 MB after the MSI extracts bundled Qt + QScintilla DLLs — normal for any Qt-based installer._
 
 ---
 
@@ -255,7 +255,7 @@ irm https://notepatra.org/install.ps1 | iex
 
 That's it. Auto-detects your OS, downloads the right binary, installs it, adds to PATH, creates shortcuts.
 
-### Or download manually — [Latest release: v0.1.25](https://github.com/singhpratech/notepatra/releases/latest)
+### Or download manually — [Latest release: v0.1.26](https://github.com/singhpratech/notepatra/releases/latest)
 
 | Platform | Download | Size | What's inside |
 |---|---|---|---|
@@ -268,7 +268,7 @@ That's it. Auto-detects your OS, downloads the right binary, installs it, adds t
 
 > ⚠ **Download size vs. installed size are different.** The numbers above are **download sizes** — the `.msi` / `.dmg` / `.tar.gz` files you grab from GitHub Releases. After install, the on-disk footprint is larger because the installer extracts the bundled Qt DLLs, QScintilla DLL, and Rust core library out of the compressed payload. **Typical installed size on Windows: ~75-85 MB.** Linux installs are still tiny (~5 MB on disk) because Qt5 comes from your distro repo, not the tarball. macOS Notepatra.app on disk is ~50-60 MB after `xattr` removal.
 
-**Why are the download sizes different?** Measured from v0.1.25 release assets — bare `notepatra` executable is **~4 MB stripped** on each platform (a little smaller on Windows/macOS than on Linux because clang + MSVC strip more aggressively than gcc). On Linux, Qt5 is a standard system package (`apt install qtbase5-dev libqscintilla2-qt5-dev`), so the download is just the binary (~2 MB compressed). On macOS and Windows, Qt isn't pre-installed, so we bundle the Qt frameworks / DLLs alongside the executable for portability — same approach Krita, Kdenlive, and every cross-platform Qt app uses. Even with Qt bundled, Notepatra is still **6× smaller than VS Code** on Windows and **14× smaller** on Linux.
+**Why are the download sizes different?** Measured from v0.1.26 release assets — bare `notepatra` executable is **~4 MB stripped** on each platform (a little smaller on Windows/macOS than on Linux because clang + MSVC strip more aggressively than gcc). On Linux, Qt5 is a standard system package (`apt install qtbase5-dev libqscintilla2-qt5-dev`), so the download is just the binary (~2 MB compressed). On macOS and Windows, Qt isn't pre-installed, so we bundle the Qt frameworks / DLLs alongside the executable for portability — same approach Krita, Kdenlive, and every cross-platform Qt app uses. Even with Qt bundled, Notepatra is still **6× smaller than VS Code** on Windows and **14× smaller** on Linux.
 
 > macOS Intel: not shipped pre-built. Apple stopped selling Intel Macs in 2023 and the GitHub Actions `macos-13` runner has been unreliable. Intel Mac users — `git clone` and run `./build.sh`. Builds in ~3 minutes.
 
@@ -495,7 +495,7 @@ cl /LD myplugin.cpp /Fe:myplugin.dll
 | **Kate / Gedit** | ~30 MB | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✓ |
 | **Notepatra** | **2.8 / 25.5 / 43.5 MB** | ✓ C++/Rust | ✓ Ollama | ✓ regex + AI | ✓ Rust mmap | ✓ | ✓ | ✓ | ✓ GPL-3 |
 
-> *Notepatra download sizes are Linux x64 tar.gz / macOS DMG / Windows MSI from v0.1.25. Linux is just the binary (Qt is system-installed). macOS and Windows include bundled Qt. The bare `notepatra` executable inside is roughly 5 MB on Linux, 3 MB on Windows, 2.7 MB on macOS — different compilers, different optimization.*
+> *Notepatra download sizes are Linux x64 tar.gz / macOS DMG / Windows MSI from v0.1.26. Linux is just the binary (Qt is system-installed). macOS and Windows include bundled Qt. The bare `notepatra` executable inside is roughly 5 MB on Linux, 3 MB on Windows, 2.7 MB on macOS — different compilers, different optimization.*
 
 ---
 
@@ -532,6 +532,7 @@ Notepatra follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic 
 
 | Version | Date | Highlights |
 |---|---|---|
+| [**v0.1.26**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.26) | 2026-04-25 | **Six new lexers + terminal 256-colour/truecolour + AI tokens & timing.** Six custom lexer subclasses (PowerShell wrapping `SCLEX_POWERSHELL`, Rust/Go/Swift on `QsciLexerCPP`, TypeScript on `QsciLexerJavaScript`, Kotlin on `QsciLexerJava`) — `.ps1` / `.rs` / `.go` / `.swift` / `.ts` / `.kt` files now get proper syntax highlighting (were wrongly rendered as Batch / C++ / JS / Java before). 16 additional language extensions added (Dart, Zig, Nim, Elixir, Erlang, Crystal, Haskell, OCaml, F#, Clojure, Julia, Elm, Scala, Groovy, etc.). Terminal `ansiToHtml()` rewritten with full SGR support: 256-colour palette (`38;5;N`), truecolour (`38;2;R;G;B`), italic (`3`), faint (`2`), strikethrough (`9`), cancel codes (22/23/24/29) — `bat` / `eza` / `fzf` / `delta` / `gh` now render correctly. AI bubbles show per-response stats: `1234 tok · 123.4 tok/s · 2.3 s`. Windows: Think checkbox stays visible (greyed) when Coding Mode on, mystery circle in input bar suppressed. 113 new test assertions across `test_lexers_v0125` + `test_terminal_ansi`. |
 | [**v0.1.25**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.25) | 2026-04-25 | **AI Assistant prompt-engineering overhaul.** Tool-calling models (Qwen3 / Qwen3.5 / Hermes-3 / Llama 3.1+ / Mistral Large / Command R / GLM-4 / GPT-OSS) used to respond to casual chat input like `hi` with hallucinated `{"command":...,"output":...}` JSON instead of greeting back. New `src/ai_systemprompt.{h,cpp}` layered builder: identity + anti-tool-call + mode-specific (Chat / Explain / Transform / CodingStrict) + language hint. Workspace-context block now gated by intent + heuristic — skipped for casual chat / selection-focused work / Coding Mode, attached for project-level questions. Header rephrased from `# Workspace context` to `[Project info]` (less agent-frame-shaped). Coding Mode users see byte-identical behaviour. |
 | [**v0.1.24**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.24) | 2026-04-25 | **Windows mojibake cleanup.** `resources/notepatra.rc` em-dash + `©` rewritten to ASCII so `rc.exe` (which defaults to cp1252 without a BOM) doesn't ship `Notepatra â€" native code editor` into the "Open with" menu. `docs/install.ps1` now sets `[Console]::OutputEncoding = UTF8` at the top + falls back to ASCII box-banner so `irm \| iex` doesn't render as `â`/`âˆ` garbage on PowerShell 5.1. |
 | [**v0.1.23**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.23) | 2026-04-25 | **Critical dark-theme fix.** Editor body painted white on `theme = "System"` + dark OS — `Config::theme` stays as the literal preference, but lexer paint compared against `"Dark"` directly so "System" fell through to LIGHT. New `npResolvedThemeName()` helper resolves "System" → OS preference; every lexer-paint site now uses it. Hardcoded `setPaper("#FFFFFF")` in `Editor::applyLexer()` removed. |

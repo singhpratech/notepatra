@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.8 MB (Linux x64 tar.gz), 25.5 MB (macOS DMG with bundled Qt), 43.5 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.25",
+      "softwareVersion": "0.1.26",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -153,7 +153,7 @@
           "name": "How big is Notepatra compared to VS Code?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.25: 2.8 MB Linux x64 tar.gz, 2.6 MB Linux ARM64 tar.gz, 25.5 MB macOS DMG (with bundled Qt), 43.5 MB Windows MSI / 36.3 MB NSIS / 41.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload -- that's normal for any Qt app installer. Linux installs stay tiny (~5 MB on disk) because Qt5 comes from your distro repo. VS Code is 300+ MB downloaded AND 350+ MB installed. Notepatra is 6× to 14× smaller than VS Code on every platform."
+            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.26: 2.8 MB Linux x64 tar.gz, 2.6 MB Linux ARM64 tar.gz, 25.5 MB macOS DMG (with bundled Qt), 43.5 MB Windows MSI / 36.3 MB NSIS / 41.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload -- that's normal for any Qt app installer. Linux installs stay tiny (~5 MB on disk) because Qt5 comes from your distro repo. VS Code is 300+ MB downloaded AND 350+ MB installed. Notepatra is 6× to 14× smaller than VS Code on every platform."
           }
         },
         {
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.25 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.26 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.25">
-        Download v0.1.25 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.26">
+        Download v0.1.26 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.25 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.26 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1388,7 +1388,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.25</div>
+        <div class="section-label">Download v0.1.26</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1836,7 +1836,68 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.25 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.26 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-25</span>
+                        <span>· Six new lexers (PowerShell, Rust, Go, Swift, TypeScript, Kotlin) + terminal 256-colour/truecolour + AI tokens & timing</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🎨 Six new lexer subclasses for languages QScintilla doesn't ship lexers for</h5>
+                        <ul>
+                            <li><strong>PowerShell</strong> (<code style="color:var(--green);font-size:12px;">.ps1 .psm1 .psd1</code>) — was being highlighted as <strong>Batch (cmd.exe)</strong> which is catastrophically wrong: <code style="color:var(--green);font-size:12px;">REM</code> was treated as a comment, <code style="color:var(--green);font-size:12px;">$variables</code> weren't recognised, here-strings rendered as garbage. Now uses Scintilla's native <code style="color:var(--green);font-size:12px;">SCLEX_POWERSHELL</code> via a custom <code style="color:var(--green);font-size:12px;">QsciLexer</code> subclass with 5 keyword sets (statements, comparison operators, cmdlet verbs, aliases, user words).</li>
+                            <li><strong>Rust</strong> (<code style="color:var(--green);font-size:12px;">.rs</code>) — was C++. Now highlights <code style="color:var(--green);font-size:12px;">fn</code>, <code style="color:var(--green);font-size:12px;">let</code>, <code style="color:var(--green);font-size:12px;">mut</code>, <code style="color:var(--green);font-size:12px;">impl</code>, <code style="color:var(--green);font-size:12px;">pub</code>, <code style="color:var(--green);font-size:12px;">crate</code>, <code style="color:var(--green);font-size:12px;">match</code>, <code style="color:var(--green);font-size:12px;">async</code>, <code style="color:var(--green);font-size:12px;">await</code>, <code style="color:var(--green);font-size:12px;">dyn</code> + std-lib types (<code style="color:var(--green);font-size:12px;">Vec Option Result Box Rc Arc Mutex Send Sync</code>).</li>
+                            <li><strong>Go</strong> (<code style="color:var(--green);font-size:12px;">.go</code>) — was C++. Now highlights all 25 Go keywords (<code style="color:var(--green);font-size:12px;">func package import defer go chan interface</code>) + predeclared identifiers (<code style="color:var(--green);font-size:12px;">true false nil iota make new len cap append</code>).</li>
+                            <li><strong>Swift</strong> (<code style="color:var(--green);font-size:12px;">.swift</code>) — was C++. Now highlights Swift 6 keywords including concurrency (<code style="color:var(--green);font-size:12px;">actor async distributed isolated</code>) and standard-library types.</li>
+                            <li><strong>TypeScript</strong> (<code style="color:var(--green);font-size:12px;">.ts .tsx .mts .cts</code>) — was JavaScript. Now adds TS-only keywords (<code style="color:var(--green);font-size:12px;">interface type as is readonly keyof never unknown infer satisfies</code>) + utility types (<code style="color:var(--green);font-size:12px;">Partial Required Pick Omit Record Awaited</code>).</li>
+                            <li><strong>Kotlin</strong> (<code style="color:var(--green);font-size:12px;">.kt .kts .ktm</code>) — was Java. Now highlights Kotlin keywords (<code style="color:var(--green);font-size:12px;">fun val var data sealed when suspend inline crossinline</code>).</li>
+                            <li><strong>16 additional language extensions</strong> routed to closest-fit lexers: <code style="color:var(--green);font-size:12px;">.dart .zig .nim .ex .erl .cr .hs .ml .fs .clj .elm .jl</code> + Scala / Groovy / Awk / Crystal / OCaml / F# / Clojure variants.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>📺 Terminal — full 256-colour palette + 24-bit truecolour + italic/faint/strikethrough</h5>
+                        <ul>
+                            <li><strong>The bug.</strong> Pre-v0.1.26 terminal claimed 256-colour and truecolour support in its source comments but the parser only handled 16-colour 30-37/40-47 + bold + underline. Modern CLIs (<code style="color:var(--green);font-size:12px;">bat</code>, <code style="color:var(--green);font-size:12px;">eza</code>, <code style="color:var(--green);font-size:12px;">fzf</code>, <code style="color:var(--green);font-size:12px;">delta</code>, <code style="color:var(--green);font-size:12px;">gh</code>, recent <code style="color:var(--green);font-size:12px;">cargo</code>/<code style="color:var(--green);font-size:12px;">npm</code>) emit <code style="color:var(--green);font-size:12px;">38;5;N</code> and <code style="color:var(--green);font-size:12px;">38;2;R;G;B</code> sequences — these leaked through as literal digits in the output, so <code style="color:var(--green);font-size:12px;">bat foo.py</code> looked like a wall of <code style="color:var(--green);font-size:12px;">5;208m</code> fragments instead of syntax-highlighted code.</li>
+                            <li><strong>The fix.</strong> Rewrote <code style="color:var(--green);font-size:12px;">ansiToHtml()</code> with a proper SGR parser that tracks <code style="color:var(--green);font-size:12px;">SgrState</code> (fg, bg, bold, faint, italic, underline, strike) across segments. Now handles: <strong>256-colour palette</strong> (<code style="color:var(--green);font-size:12px;">38;5;N</code> / <code style="color:var(--green);font-size:12px;">48;5;N</code>) generating the xterm 256-colour cube + grayscale ramp; <strong>24-bit truecolour</strong> (<code style="color:var(--green);font-size:12px;">38;2;R;G;B</code> / <code style="color:var(--green);font-size:12px;">48;2;R;G;B</code>) with channel clamping; <strong>italic</strong> (3), <strong>faint</strong> (2 → opacity 0.6), <strong>strikethrough</strong> (9); <strong>cancel-attribute codes</strong> (22 cancel bold/faint, 23 not-italic, 24 not-underline, 29 not-strike, 39 default FG, 49 default BG).</li>
+                            <li><strong>Tools that work properly now.</strong> <code style="color:var(--green);font-size:12px;">bat</code> (syntax-highlighted file printer), <code style="color:var(--green);font-size:12px;">eza</code> (modern <code style="color:var(--green);font-size:12px;">ls</code>), <code style="color:var(--green);font-size:12px;">fzf</code> (fuzzy finder), <code style="color:var(--green);font-size:12px;">delta</code> (git diff pretty-printer), <code style="color:var(--green);font-size:12px;">gh</code> (GitHub CLI), <code style="color:var(--green);font-size:12px;">rich</code> (Python TUI), <code style="color:var(--green);font-size:12px;">man</code> with italic emphasis, <code style="color:var(--green);font-size:12px;">git diff</code> with mid-line attribute toggles.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🤖 AI Assistant — per-response tokens + elapsed time on every bubble</h5>
+                        <ul>
+                            <li>Every assistant bubble's header now shows: <code style="color:var(--green);font-size:12px;">QWEN3.5:2B   1234 tok · 123.4 tok/s · 2.3 s   ⧉ copy</code></li>
+                            <li>Captured from Ollama's <code style="color:var(--green);font-size:12px;">eval_count</code> + <code style="color:var(--green);font-size:12px;">prompt_eval_count</code> + wall-clock timing, and from OpenAI-compatible <code style="color:var(--green);font-size:12px;">usage.completion_tokens</code> + <code style="color:var(--green);font-size:12px;">usage.prompt_tokens</code> + wall-clock. New <code style="color:var(--green);font-size:12px;">OllamaClient::responseStats(int promptTokens, int evalTokens, qint64 elapsedMs)</code> signal carries the data; <code style="color:var(--green);font-size:12px;">ChatMessage</code> struct gains corresponding fields.</li>
+                            <li>Tokens-per-second only shown for runs > 200 ms (avoids divide-by-tiny-number noise). Wall-clock elapsed always populated.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🪟 Windows fixes</h5>
+                        <ul>
+                            <li><strong><code style="color:var(--green);font-size:12px;">Think</code> checkbox stays visible (greyed) when Coding Mode is on</strong> — was previously hidden via <code style="color:var(--green);font-size:12px;">setVisible(false)</code> which was confusing UX (users reported "where did the Think checkbox go?"). Now stays visible but disabled with explanatory tooltip.</li>
+                            <li><strong>Mystery circle in AI input bar suppressed</strong> — Qt's default scroll-area corner widget was being painted as a tiny grey dot in the bottom-right of the input box on Windows native style. Killed via <code style="color:var(--green);font-size:12px;">setCornerWidget(nullptr)</code> + zero-height styling on scrollbar add/sub-line buttons.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧪 113 new test assertions across two new test suites</h5>
+                        <ul>
+                            <li><code style="color:var(--green);font-size:12px;">test_lexers_v0125</code> (86 assertions) — verifies each new lexer reports correct <code style="color:var(--green);font-size:12px;">language()</code> name, has non-empty keyword sets, extension map routes correctly, <code style="color:var(--green);font-size:12px;">createLexerForLanguage()</code> returns the right subclass.</li>
+                            <li><code style="color:var(--green);font-size:12px;">test_terminal_ansi</code> (27 assertions) — verifies <code style="color:var(--green);font-size:12px;">ansiToHtml()</code> handles all SGR codes including 256-colour, truecolour, italic, faint, strikethrough, cancel codes, real-world bat-style output, HTML escaping.</li>
+                            <li><strong>14/14 regression tests pass</strong> (12 existing + 2 new).</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.26">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.26">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.25</div>
                     <div class="version-meta">
                         <span>2026-04-25</span>
                         <span>· AI Assistant prompt-engineering overhaul — fixes Qwen3.5 / tool-calling-model JSON hallucination</span>
@@ -2775,7 +2836,7 @@ Write-Host "Restarted Explorer — right-click any file now to verify" -Foregrou
             </div>
             <div class="feature-card">
                 <h3>How big is it compared to VS Code?</h3>
-                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.25): <strong>2.8 MB</strong> Linux x64 tar.gz · <strong>2.6 MB</strong> Linux ARM64 tar.gz · <strong>25.5 MB</strong> macOS DMG · <strong>43.5 MB</strong> Windows MSI / <strong>36.3 MB</strong> NSIS / <strong>41.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
+                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.26): <strong>2.8 MB</strong> Linux x64 tar.gz · <strong>2.6 MB</strong> Linux ARM64 tar.gz · <strong>25.5 MB</strong> macOS DMG · <strong>43.5 MB</strong> Windows MSI / <strong>36.3 MB</strong> NSIS / <strong>41.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra stays <strong>6× to 14× smaller</strong> in every configuration.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>

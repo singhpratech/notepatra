@@ -404,19 +404,48 @@ QString messageTranscriptHtml(const QVector<AIPanel::ChatMessage> &messages,
         // Qt's QTextBrowser rich-text engine renders <td> backgrounds
         // reliably; nested-div backgrounds can silently drop in Qt's CSS
         // subset, which is why the response read as "all black" before.
+        //
+        // The header row carries: model name (left), token+timing stats
+        // (middle, only if the backend reported them), Copy link (right).
+        QString statsHtml;
+        if (message.elapsedMs >= 0) {
+            const double secs = message.elapsedMs / 1000.0;
+            QString tokensPart;
+            if (message.evalTokens > 0) {
+                // Tokens-per-second is the metric users care about
+                // (decoder throughput on their hardware). Only show it
+                // for runs > 200 ms so we don't divide by tiny numbers.
+                if (message.elapsedMs > 200) {
+                    const double tps = message.evalTokens * 1000.0 / message.elapsedMs;
+                    tokensPart = QString("%1 tok · %2 tok/s · ")
+                                     .arg(message.evalTokens)
+                                     .arg(QString::number(tps, 'f', 1));
+                } else {
+                    tokensPart = QString("%1 tok · ").arg(message.evalTokens);
+                }
+            }
+            statsHtml = QString(
+                "<span style='color:%1; font-size:10px; font-weight:500; "
+                "letter-spacing:0.3px; opacity:0.75;'>%2%3 s</span>")
+                .arg(pal.linkFg, tokensPart, QString::number(secs, 'f', 1));
+        }
         html += QString(
             "<table class='msg' cellpadding='0' cellspacing='0' style='margin-bottom:14px;'>"
             "<tr><td bgcolor='%4' style='padding:16px 18px; border-left:4px solid %5; border-top:1px solid %6; border-right:1px solid %6; border-bottom:1px solid %6; color:%7;'>"
             "<table width='100%%' cellpadding='0' cellspacing='0'>"
-            "<tr><td><span style='color:%5; font-size:10px; font-weight:700; letter-spacing:1px; text-transform:uppercase;'>%1</span></td>"
-            "<td align='right'><a href='copy://message/%2' style='color:%8; font-size:10px; text-decoration:none; font-weight:600;'>⧉ copy</a></td></tr>"
+            "<tr>"
+            "<td><span style='color:%5; font-size:10px; font-weight:700; letter-spacing:1px; text-transform:uppercase;'>%1</span></td>"
+            "<td align='center' style='padding:0 8px;'>%9</td>"
+            "<td align='right'><a href='copy://message/%2' style='color:%8; font-size:10px; text-decoration:none; font-weight:600;'>⧉ copy</a></td>"
+            "</tr>"
             "</table>"
             "<div class='assistant-content' style='margin-top:10px; padding-top:8px; border-top:1px solid %6; color:%7;'>%3</div>"
             "</td></tr></table>")
             .arg(message.model.toHtmlEscaped(),
                  QString::number(i),
                  markdownBodyHtml(message.text, i),
-                 pal.assistBg, pal.assistAccent, pal.assistBorder, pal.assistFg, pal.linkFg);
+                 pal.assistBg, pal.assistAccent, pal.assistBorder, pal.assistFg, pal.linkFg,
+                 statsHtml);
     }
 
     html += QStringLiteral("</body></html>");
@@ -680,10 +709,25 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         }
         // Collapse the panel to a Cursor/Copilot-style minimal chat when
         // Coding Mode is on: just the model header, chat transcript, and
-        // input bar. Everything else (8-button quick-action grid, the
-        // Insert/Replace/Copy row, the "Show thinking" toggle) hides so
-        // the panel stops feeling crowded for the common coding flow.
-        if (m_thinkingCheck)      m_thinkingCheck->setVisible(!checked);
+        // input bar. The 8-button quick-action grid and Insert/Replace/
+        // Copy row hide so the panel stops feeling crowded.
+        //
+        // The "Think" checkbox stays VISIBLE but disabled+greyed when
+        // Coding Mode is on (rather than hidden, which was confusing UX
+        // -- users reported it disappeared and they didn't know why).
+        // Coding Mode forces code-only output; thinking blocks would
+        // interfere with the [Apply] button's clean code paste, so the
+        // checkbox is greyed out to communicate "not available right now"
+        // instead of vanishing.
+        if (m_thinkingCheck) {
+            m_thinkingCheck->setEnabled(!checked);
+            m_thinkingCheck->setToolTip(checked
+                ? "Disabled while Coding Mode is on — Coding Mode forces code-only output, "
+                  "so reasoning blocks would interfere with the [Apply] button paste. "
+                  "Turn Coding Mode off to use thinking mode."
+                : "Show the model's reasoning blocks (Qwen3, DeepSeek-R1). "
+                  "Off = faster, cleaner answers. On = see how the model thinks.");
+        }
         if (m_quickActionsWrap)   m_quickActionsWrap->setVisible(!checked);
         if (m_resultActionsWrap)  m_resultActionsWrap->setVisible(!checked);
         // Repaint the top strip so the mode switch is unmistakable —
@@ -897,6 +941,18 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     m_customInput->setTabChangesFocus(true);
     m_customInput->setMinimumHeight(40);
     m_customInput->setMaximumHeight(140);
+    // Suppress Qt's default scroll-area corner widget. Without this, the
+    // Windows native style paints a small grey dot in the bottom-right
+    // intersection where a horizontal scrollbar would sit (even though
+    // we've set HorizontalScrollBarPolicy to AlwaysOff). Users reported
+    // "what's that circle in the input box?" -- this kills it.
+    m_customInput->setCornerWidget(nullptr);
+    // Also disable the size-grip behaviour some Windows themes inherit
+    // from the widget being inside a frame / dock.
+    if (auto *vb = m_customInput->verticalScrollBar()) {
+        vb->setStyleSheet("QScrollBar::add-line:vertical, "
+                          "QScrollBar::sub-line:vertical { height: 0; }");
+    }
     // Auto-grow: resize to fit content up to maximumHeight.
     auto resizeInput = [this]() {
         const int lines = qMax(1, m_customInput->document()->blockCount());
@@ -951,6 +1007,21 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         m_lastResponse = response;
         m_stopBtn->setEnabled(false);
         endAssistantBubble();
+    });
+    // Per-response stats: tokens + elapsed time. Wired to attach onto the
+    // last Assistant message (the one we just finalised in endAssistantBubble)
+    // and trigger a re-render so the bubble shows "1234 tokens · 2.3s".
+    connect(m_ollama, &OllamaClient::responseStats, this,
+            [this](int promptTokens, int evalTokens, qint64 elapsedMs) {
+        for (int i = m_messages.size() - 1; i >= 0; --i) {
+            if (m_messages[i].role == ChatMessage::Assistant) {
+                m_messages[i].promptTokens = promptTokens;
+                m_messages[i].evalTokens   = evalTokens;
+                m_messages[i].elapsedMs    = elapsedMs;
+                break;
+            }
+        }
+        renderTranscript();
     });
     connect(m_ollama, &OllamaClient::error, this, [this](const QString &msg) {
         endAssistantBubble();

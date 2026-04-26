@@ -7,6 +7,51 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.26] — 2026-04-25
+
+Major lexer + terminal + AI panel polish release. Six new language lexers (PowerShell, Rust, Go, Swift, TypeScript, Kotlin), 16 additional language extensions added, terminal upgraded with full 256-colour and 24-bit truecolour support plus italic/faint/strikethrough, AI panel gets per-response tokens + elapsed time stats, Coding Mode "Think" checkbox now greys out instead of vanishing, mystery circle in input bar suppressed.
+
+### Added
+- 🎨 **Six new lexer subclasses** for languages QScintilla doesn't ship lexers for. Each fills a real-world UX gap where Notepatra was previously routing files to the wrong lexer:
+  - `LexerPowerShell` (subclass `QsciLexer`, wraps Scintilla `SCLEX_POWERSHELL` lexer id 88) — `.ps1` / `.psm1` / `.psd1` files now get proper PowerShell syntax highlighting (variables `$var`, here-strings `@"..."@`, cmdlets `Get-Process`, comparison operators `-eq -ne -lt -gt`). **Was previously highlighted as Batch (cmd.exe) which is catastrophically wrong** — `REM` was treated as a comment in PowerShell files, `$variables` weren't recognised at all.
+  - `LexerRust` (subclass `QsciLexerCPP`) — `.rs` files. Rust keywords `fn`, `let`, `mut`, `impl`, `pub`, `crate`, `match`, `async`, `await`, `dyn`, `unsafe`, `where` and standard-library types (`Vec`, `Option`, `Result`, `Box`, `Rc`, `Arc`, `Mutex`, `Send`, `Sync`, etc.) are now highlighted. Was previously rendered as plain identifiers under the C++ lexer.
+  - `LexerGo` (subclass `QsciLexerCPP`) — `.go` files. Go's 25 keywords (`func`, `package`, `import`, `defer`, `go`, `chan`, `interface`, `select`, `fallthrough`, etc.) plus predeclared identifiers (`true`, `false`, `nil`, `iota`, `make`, `new`, `len`, `cap`, `append`, `copy`, `panic`, `recover`).
+  - `LexerSwift` (subclass `QsciLexerCPP`) — `.swift` files. Swift 6 keywords including concurrency (`actor`, `async`, `distributed`, `isolated`), declarations (`func`, `var`, `let`, `class`, `struct`, `protocol`, `extension`), pattern matching (`guard`, `where`), and standard-library types (`Bool`, `Int`, `String`, `Optional`, `Array`, `Dictionary`, `Result`).
+  - `LexerTypeScript` (subclass `QsciLexerJavaScript`) — `.ts` / `.tsx` / `.mts` / `.cts` files. TypeScript-only keywords (`interface`, `type`, `as`, `is`, `readonly`, `keyof`, `never`, `unknown`, `infer`, `satisfies`) plus utility types (`Partial`, `Required`, `Pick`, `Omit`, `Record`, `Awaited`).
+  - `LexerKotlin` (subclass `QsciLexerJava`) — `.kt` / `.kts` / `.ktm` files. Kotlin hard + soft + modifier keywords (`fun`, `val`, `var`, `data`, `sealed`, `when`, `suspend`, `inline`, `crossinline`, `companion`, `lateinit`, `tailrec`).
+- 🎨 **16 new language extensions** routed to closest-fit existing lexer with custom keyword overrides where impactful:
+  - Web / mobile: `.dart` (JavaScript)
+  - Systems / native: `.zig`, `.zon`, `.vlang`, `.odin` (C++)
+  - JVM: `.scala`, `.sc`, `.groovy`, `.gradle` (Java) — `.kt` / `.kts` now go to LexerKotlin
+  - Functional: `.hs`, `.lhs` (Bash), `.ml`, `.mli` (Bash), `.fs`, `.fsx`, `.fsi` (C#), `.clj`, `.cljs`, `.cljc`, `.edn` (Lua), `.elm` (Bash)
+  - Scripting: `.nim`, `.nims` (Python), `.jl` (Python), `.awk` (Bash), `.cr` (Ruby)
+  - Erlang ecosystem: `.ex`, `.exs` (Ruby), `.erl`, `.hrl` (Perl)
+- 🎨 **`.r` files now route to Bash lexer** (was Octave). R uses `#` comments which Bash handles correctly. A dedicated R lexer with `<-`, `%>%`, and language-specific keywords is planned for v0.1.27+.
+- 📺 **Terminal: 256-colour palette support** (`38;5;N` for FG, `48;5;N` for BG). Generates the xterm 256-colour cube (16-231) + grayscale ramp (232-255). Tools that use this: `bat`, `eza`, `fzf`, `delta`, `gh`, `rich`, modern `cargo`/`npm`. Previously these tools printed `38;5;N` fragments as literal text in Notepatra's terminal — now they render as proper colours.
+- 📺 **Terminal: 24-bit truecolour support** (`38;2;R;G;B` for FG, `48;2;R;G;B` for BG). Channel values clamped to `[0, 255]`. Modern CLIs increasingly emit truecolour by default.
+- 📺 **Terminal: italic (`3`)**, **faint (`2`, rendered as `opacity: 0.6`)**, **strikethrough (`9`)** SGR codes now render correctly.
+- 📺 **Terminal: cancel-attribute codes** (`22` cancel bold/faint, `23` not-italic, `24` not-underline, `29` not-strike, `39` default FG, `49` default BG). Tools that toggle attributes mid-line (e.g. `man`, `git diff`) now render correctly without "stuck" styling.
+- 🤖 **AI Assistant: per-response tokens + elapsed time** displayed in every assistant bubble header. Format: `1234 tok · 123.4 tok/s · 2.3 s`. Captured from Ollama's `eval_count` / `prompt_eval_count` / `total_duration` fields and OpenAI-compatible `usage.completion_tokens` / `usage.prompt_tokens`. Wall-clock elapsed time is measured via `QDateTime::currentMSecsSinceEpoch()` between `generate()` and `finished()`, so it works on every backend regardless of whether stats are reported. Tokens-per-second is only shown for runs > 200 ms (avoids divide-by-tiny-number noise).
+- 🧪 **Two new regression test suites** with 113 total assertions:
+  - `test_lexers_v0125.cpp` (86 assertions) — verifies each new lexer reports the correct `language()` name, `lexer()` Scintilla name (PowerShell only), and non-empty keyword sets containing language-specific keywords. Verifies extension map routes `.ps1`, `.rs`, `.go`, `.swift`, `.kt`, `.ts`, etc. to the right language. Verifies `createLexerForLanguage()` returns the correct subclass.
+  - `test_terminal_ansi.cpp` (27 assertions) — verifies `ansiToHtml()` handles 16-colour FG/BG, bright FG/BG, bold, italic, faint, strikethrough, underline, cancel codes (22/23/24/29), 256-colour palette (cube origin, grayscale endpoints, mid-cube), truecolour with channel clamping, real-world `bat`-style 38;5;N keyword highlighting, reset between sequences, unknown CSI sequences (J, H) not breaking the parser, HTML escaping preserved for `<`, `>`, `&`.
+
+### Fixed
+- 🪟 **Windows: `Think` checkbox no longer disappears when Coding Mode is enabled.** Previously `setVisible(!checked)` was called on the thinking checkbox when Coding Mode toggled on, which made it vanish — confusing UX. Now the checkbox stays visible but `setEnabled(!checked)` greys it out, and the tooltip explains why ("Disabled while Coding Mode is on — Coding Mode forces code-only output, so reasoning blocks would interfere with the [Apply] button paste"). Coding Mode behaviour itself is byte-identical to v0.1.25.
+- 🪟 **Windows: mystery circle in AI input bar suppressed.** `m_customInput->setCornerWidget(nullptr)` removes Qt's default scroll-area corner widget which the Windows native style was painting as a small grey dot at the bottom-right of the input box. Plus zero-height styling on the vertical scrollbar's add/sub-line buttons to silence any size-grip remnant.
+- 📏 **Documentation: README and website now show actual v0.1.25 release asset sizes** instead of over-promoted estimates. 6 size strings corrected across README + 6 across website. Added a clear "Download size vs installed size" callout: download is the `.msi` / `.dmg` / `.tar.gz` file, installed footprint on Windows is ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload (normal for any Qt-based installer). Previously: Linux x64 was advertised at 2.9 MB, actually 2.8; macOS DMG at 26.7 MB, actually 25.5; Windows MSI at 45.6 MB, actually 43.5; etc.
+
+### Refactored
+- 🤖 **`OllamaClient::generate()` now records start time via `QDateTime::currentMSecsSinceEpoch()`** and emits a new `responseStats(int promptTokens, int evalTokens, qint64 elapsedMs)` signal alongside `finished(QString)`. Token counts default to `-1` if the backend doesn't report them; elapsed time is always populated.
+- 🤖 **`AIPanel::ChatMessage` struct** gains `promptTokens`, `evalTokens`, `elapsedMs` fields. `renderTranscript()` reads them and renders the stats line in the assistant bubble header when populated.
+
+### Notes
+- **No behaviour change for Coding Mode users.** `CodingStrict` intent prompt remains byte-identical to v0.1.25. Coding Mode + any quick-action still produces code-only output, preserved indentation, no markdown fences, ready to paste.
+- **No behaviour change for non-tool-calling models** (Llama 3.2, Gemma 2, Phi-3.5, Claude, GPT-4) which were already chatting normally in v0.1.25.
+- **Anti-tool-call system prompt layer** from v0.1.25 retained. Combined with the v0.1.26 lexer fixes, AI-generated code now opens with proper highlighting via the [Apply] flow regardless of language.
+
+---
+
 ## [0.1.25] — 2026-04-25
 
 AI Assistant prompt-engineering overhaul. Fixes a long-standing failure where tool-calling fine-tuned models — Qwen3 / Qwen3.5 (all sizes) / Hermes-3 / Llama 3.1+ Instruct / Mistral Large / Command R / GLM-4 / GPT-OSS — would respond to casual chat input like `hi` with hallucinated JSON tool calls (`{"command": "echo ...", "output": "..."}`) instead of greeting back. Root cause was a combination of (a) no anti-tool-call instruction in the system prompt, (b) workspace context being attached to every request including casual greetings, and (c) the workspace block header literally beginning with `# Workspace context` which tool-calling models pattern-matched as an agent-framework prompt and decided to respond in tool-call format.

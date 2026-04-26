@@ -55,6 +55,16 @@ signals:
     void modelsListed(const QStringList &models);
     void modelsError(const QString &reason);
 
+    // Emitted right after finished() when the backend reports stats. Both
+    // Ollama and OpenAI-compatible endpoints provide these in their final
+    // chunk:
+    //   - Ollama:        eval_count + prompt_eval_count + total_duration (ns)
+    //   - OpenAI-compat: usage.prompt_tokens + usage.completion_tokens
+    //                    (no timing -- we measure wall-clock via QElapsedTimer)
+    // promptTokens or evalTokens may be -1 if the backend didn't report them.
+    // elapsedMs is wall-clock from generate() to finished(), always populated.
+    void responseStats(int promptTokens, int evalTokens, qint64 elapsedMs);
+
 private slots:
     void onReadyRead();
     void onFinished();
@@ -76,6 +86,12 @@ private:
     QString m_fullResponse;
     QByteArray m_sseBuffer;  // for OpenAI SSE — frames span packets
     bool m_done = false;
+
+    // Wall-clock timer + token counts captured from the streaming
+    // response. -1 means "not reported by this backend / not yet known".
+    qint64 m_startMs = 0;
+    int m_promptTokens = -1;
+    int m_evalTokens = -1;
 };
 
 #endif
