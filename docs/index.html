@@ -1438,10 +1438,28 @@
         </div>
     </section>
 
-    <!-- The "See it in action" GIF section was removed in v0.1.31 because
-         the captured GIF leaked filesystem paths (Project Search showed
-         /home/<user>/... in the Folder field). A clean re-capture is in
-         the queue; until then the showcase stills above stand in. -->
+    <!-- ─────────────────────────────────────────────────────────────
+         See it in action — animated GIF rebuilt in v0.1.31 from the two
+         PII-clean frames of the original tour (Welcome screen → editor
+         with C++ syntax highlighting). The longer Project Search / AI
+         frames from the v0.1.30 tour leaked filesystem paths and were
+         dropped; a fresh full tour from a neutral cwd will replace this
+         once captured.
+         ───────────────────────────────────────────────────────────── -->
+    <section id="see-it-in-action" style="max-width: 1120px; margin: 0 auto 60px; padding: 0 24px; text-align: center;">
+        <div class="section-label">See it in action</div>
+        <div class="section-title" style="margin-bottom: 12px;">Welcome to editor — instant.</div>
+        <p class="section-desc">Welcome screen → C++ source with Notepad++ canonical syntax highlighting. Captured from a running Notepatra on Linux.</p>
+        <div style="position: relative; max-width: 960px; margin: 28px auto 0; background: var(--c-surface); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px -20px rgba(20,20,19,0.18);">
+            <img src="screenshots/tour-clean.gif"
+                 alt="Notepatra tour — Welcome screen with toolbar, then editor.cpp source with syntax highlighting"
+                 loading="lazy"
+                 style="display: block; width: 100%; height: auto;">
+        </div>
+        <div style="margin-top: 14px; font-size: 12px; color: var(--text-dim);">
+            Real capture — not a mockup. <a href="https://github.com/singhpratech/notepatra#readme" style="color: var(--c-accent); text-decoration: none;">More on GitHub →</a>
+        </div>
+    </section>
 
 
     <!-- AI Section — moved UP above Features because AI is the
