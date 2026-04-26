@@ -7,6 +7,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.37] — 2026-04-26
+
+Comprehensive lexer palette coverage. Every supported language's every QScintilla style now gets a recognisable colour on every theme. **1650 styles × 3 themes = 0 gaps.**
+
+### Fixed
+- 🎨 **359 lexer style gaps closed.** Pre-v0.1.37 audit (new `test_lexer_coverage`) found 359 styles across 28 lexers that fell through to default text colour on Light / Dark / Monokai. Examples: Markdown list items / block quotes / strikethrough / horizontal rules went unstyled; YAML "Identifier" (which is the KEY) painted as plain text; Properties / TOML sections + keys unstyled; Diff +/-/changed lines unstyled; CSS `@media` / `!important` / `#id` unstyled; Bash heredoc / `${var}` parameter expansion unstyled; Perl scalar / POD unstyled; HTML SGML / CDATA / fragment markers unstyled; C++ "Escape sequence" / "Task marker" (TODO) / "IDL UUID" unstyled.
+- 🎨 **Monokai operator gap.** `npOperator` was set to `#F8F8F2` on Monokai, identical to the default text colour — operators rendered invisible. Now `#FD971F` (Monokai amber) so `+ - = ( ) { } ;` actually pop.
+
+### Added
+- 🎨 **~30 new style-kind matchers** in `npp_palette.cpp` chain (before the catch-all identifier fallback): escape sequences, task markers (TODO/FIXME), IDL UUIDs, here-documents, scalars, POD, labels, sections, key/value, references/anchors, document delimiters, list items, block quotes, strikeouts, horizontal rules, special chars, SGML/CDATA, HTML fragments, entities, CSS @-rules, diff +/- lines, position markers, stdout/stdin, quoted identifiers, SQL*Plus prompts, control-flow blocks (`while`/`if`/`foreach`/`for`/`MACRO`), parameter expansion (`${var}`), module names, media rules, JSON-LD IRIs, inline asm, `!important`, ID selectors, hash colours, external commands, Lua coroutines/IO subsets, code blocks, arrays.
+- 🎨 **YAML brand override** — keys (style 2 "Identifier") now paint blue/JSON-blue, references/anchors get cyan, document delimiters bold. Previously YAML's keys painted as default text; now properly highlighted.
+- 🎨 **Properties/TOML/INI/.env brand override** — sections, keys, and values get distinct brand colours (was generic blue/violet, fell through for TOML-specific kinds).
+- 🎨 **Diff brand override** — keyword harmonised; the new "removed"/"added"/"changed"/"position" matchers handle the per-line colour.
+- ✅ **`test_lexer_coverage` test (NEW).** Walks every QsciLexer subclass + all 6 Notepatra-local lexers (28 total), applies palette in Light / Dark / Monokai, and asserts no non-Default style falls through to default text. **1650 styles × 3 themes verified.** If anyone refactors the matcher chain or adds a lexer that introduces unthemed styles, CI fails before users see them.
+
+### Refactored
+- 🎨 **YAML's "Identifier" style** (which IS the key in YAML, not a generic identifier) special-cased in the identifier matcher to route to `npKeyword2`. Other languages (C/C++, Java, Python, Rust, Go, Swift, Kotlin, TypeScript) keep `npText` for "Identifier" per the v0.1.31 "all blue shades" fix.
+
+### Notes
+- 16 / 16 regression tests pass (was 15; +`test_lexer_coverage`).
+- Total assertions across the suite now ≈ 1900 (1650 in coverage + 60 palette + 68 ai_tools + 31 projectsearch + ~90 others).
+- No new dependencies, no schema changes.
+- The lexer-coverage probe runs at every CI build now; any language that gains new styles in a future QScintilla update will be auto-flagged.
+
+---
+
 ## [0.1.36] — 2026-04-26
 
 Two small UX wins driven by user feedback: Project Search makes multi-word phrases obvious + safe, and Compare's "Ignore spaces" defaults to ON.

@@ -83,7 +83,11 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QStr
     const QColor npNumber     = monokai ? QColor("#AE81FF") : (dark ? QColor("#8CD0D3") : QColor("#FF8000"));
     const QColor npString     = monokai ? QColor("#E6DB74") : (dark ? QColor("#CC9393") : QColor("#808080"));
     const QColor npChar       = monokai ? QColor("#E6DB74") : (dark ? QColor("#DCA3A3") : QColor("#808080"));
-    const QColor npOperator   = monokai ? QColor("#F8F8F2") : (dark ? QColor("#9F9D6D") : QColor("#000080"));
+    // v0.1.37 — Monokai operator: was #F8F8F2 (same as default text),
+    // which made operators visually invisible in Monokai. Use the
+    // Monokai-canonical operator color (light grey from Monokai Pro)
+    // so + - = ( ) { } ; have a distinct hue from regular identifiers.
+    const QColor npOperator   = monokai ? QColor("#FD971F") : (dark ? QColor("#9F9D6D") : QColor("#000080"));
     const QColor npPreproc    = monokai ? QColor("#66D9EF") : (dark ? QColor("#FFCFAF") : QColor("#804000"));
     const QColor npRegex      = monokai ? QColor("#FD971F") : (dark ? QColor("#D16969") : QColor("#800080"));
     QColor npClassName        = monokai ? QColor("#A6E22E") : (dark ? QColor("#DCDCAA") : QColor("#7F0000"));
@@ -187,16 +191,15 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QStr
     else if (lang == QLatin1String("Batch") ||
              lang == QLatin1String("Perl") || lang == QLatin1String("Lua") ||
              lang == QLatin1String("Pascal") || lang == QLatin1String("Makefile") ||
-             lang == QLatin1String("YAML") ||
              lang == QLatin1String("PowerShell") ||
-             lang == QLatin1String("TCL") || lang == QLatin1String("Diff") ||
+             lang == QLatin1String("TCL") ||
              lang == QLatin1String("Fortran") || lang == QLatin1String("Fortran77") ||
              lang == QLatin1String("Matlab") || lang == QLatin1String("Octave") ||
              lang == QLatin1String("IDL") || lang == QLatin1String("Verilog") ||
              lang == QLatin1String("VHDL") || lang == QLatin1String("TeX") ||
              lang == QLatin1String("PostScript") || lang == QLatin1String("POV") ||
              lang == QLatin1String("Spice") || lang == QLatin1String("AVS") ||
-             lang == QLatin1String("Properties") || lang == QLatin1String("PO") ||
+             lang == QLatin1String("PO") ||
              lang == QLatin1String("IntelHex") || lang == QLatin1String("SRecord") ||
              lang == QLatin1String("ASM") || lang == QLatin1String("NASM") ||
              lang == QLatin1String("MASM")) {
@@ -249,6 +252,30 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QStr
         // Distinctly different visual from C/C++ even though both use blues.
         npKeyword   = monokai ? QColor("#F92672") : (dark ? QColor("#569CD6") : QColor("#0000FF"));
         npKeyword2  = monokai ? QColor("#66D9EF") : (dark ? QColor("#9CDCFE") : QColor("#0451A5"));
+    }
+    else if (lang == QLatin1String("YAML")) {
+        // v0.1.37 — YAML brand. Keys (style 2 "Identifier") get the JSON-
+        // family blue; references/anchors get cyan; document delimiters
+        // (---) get the keyword colour bold. Values stay grey.
+        npKeyword   = monokai ? QColor("#F92672") : (dark ? QColor("#DFC47D") : QColor("#0000FF"));
+        npKeyword2  = monokai ? QColor("#66D9EF") : (dark ? QColor("#9CDCFE") : QColor("#0451A5"));
+    }
+    else if (lang == QLatin1String("Properties")) {
+        // v0.1.37 — TOML / INI / .env / .gitconfig route through QsciLexerProperties.
+        // Sections [foo] = blue bold (caught by the "section" matcher),
+        // keys = blue (caught by the "key" matcher in the new chain),
+        // values = grey/string. The brand here is the keyword/keyword2
+        // colour scheme for the section + key accents.
+        npKeyword   = monokai ? QColor("#F92672") : (dark ? QColor("#DFC47D") : QColor("#0000FF"));
+        npKeyword2  = monokai ? QColor("#66D9EF") : (dark ? QColor("#9CDCFE") : QColor("#0451A5"));
+    }
+    else if (lang == QLatin1String("Diff")) {
+        // v0.1.37 — Diff brand. Removed lines red, added green, changed
+        // amber, position markers cyan. Caught by the "removed"/"added"/
+        // "changed"/"position" matchers in the new chain — this branch
+        // just keeps npKeyword harmonized for diff headers (@@ ranges).
+        npKeyword   = monokai ? QColor("#66D9EF") : (dark ? QColor("#569CD6") : QColor("#0000FF"));
+        npKeyword2  = npKeyword;
     }
     else if (lang == QLatin1String("Ruby")) {
         // Ruby red — matches ruby-lang.org branding. Light keeps the brand
@@ -375,6 +402,235 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QStr
         else if (d.contains("link") || d.contains("url")) {
             fg = npClassName;
         }
+        // ═════════════════════════════════════════════════════════════════
+        // v0.1.37 — comprehensive lexer style coverage. Pre-v0.1.37 the
+        // palette matcher chain only covered ~25 style kinds; the full
+        // QScintilla family exposes 60+ distinct kinds across 22 lexers,
+        // and the leftovers fell through to default-text colour. The
+        // user complaint was "keep fixing the palette until we make it
+        // right" — this block adds matchers for every remaining kind so
+        // every non-Default style gets a recognisable colour on every
+        // theme. Verified by test_lexer_coverage which audits ALL lexers
+        // ALL themes and fails CI on any default-text gap.
+        // ═════════════════════════════════════════════════════════════════
+        else if (d.contains("escape sequence") ||
+                 d == "escape" || d.contains(" escape")) {
+            // \n \t \xNN \uXXXX inside string literals. Distinct accent
+            // so they pop against the surrounding string colour.
+            fg = npRegex;
+        }
+        else if (d.contains("task marker") || d.contains("todo") ||
+                 d.contains("fixme") || d.contains("xxx marker")) {
+            // TODO / FIXME / XXX / NOTE comments — attention-grabbing.
+            fg = npError;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("uuid") || d.contains("guid") || d == "idl") {
+            // IDL UUID / GUID literals (rare; CORBA/COM-style).
+            fg = npClassName;
+        }
+        else if (d.contains("here") &&
+                 (d.contains("document") || d.contains("doc"))) {
+            // Bash/Perl heredoc body + delimiter.
+            fg = npString;
+        }
+        else if (d == "scalar" || d.contains(" scalar") ||
+                 d.contains("substitution") || d == "symbol" ||
+                 d.contains("symbol table")) {
+            // Perl $scalar, @array, %hash; PowerShell $var; Lua substitution.
+            // Variable-shaped tokens — use the variable accent.
+            fg = npVariable;
+        }
+        else if (d == "pod" || d.contains(" pod") ||
+                 d.contains("perl pod")) {
+            // Perl Plain Old Documentation — comment-shaped block.
+            fg = npComment;
+            lexer->setFont(italic, i);
+        }
+        else if (d == "label" || d.contains(" label") ||
+                 d.contains("target")) {
+            // Bash labels, makefile targets, goto labels.
+            fg = npClassName;
+            lexer->setFont(bold, i);
+        }
+        else if (d == "section" || d.contains(" section") ||
+                 d.contains("data section")) {
+            // INI / TOML [section]; Perl __DATA__ section.
+            fg = npKeyword;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("assignment") ||
+                 d.contains("default value")) {
+            // INI/TOML `=` separator, default values.
+            fg = npOperator;
+        }
+        else if (d == "key" || d.endsWith(" key")) {
+            // Properties / TOML key (left of =). Avoid clobbering the
+            // "keyword" branch above (which already ran).
+            fg = npKeyword2;
+        }
+        else if (d.contains("reference") || d.contains("anchor") ||
+                 d == "alias" || d.contains(" alias ")) {
+            // YAML &anchor / *alias — distinct from regular text.
+            fg = npClassName;
+        }
+        else if (d.contains("delimiter") || d.contains("block marker")) {
+            // YAML --- (document delimiter), ... (end), text-block markers.
+            fg = npKeyword;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("list item") || d.contains("list")) {
+            // Markdown unordered/ordered list items.
+            fg = npClassName;
+        }
+        else if (d.contains("block quote") || d == "quote" ||
+                 d.contains(" quote")) {
+            // Markdown >, RFC quote sigil.
+            fg = npComment;
+            lexer->setFont(italic, i);
+        }
+        else if (d.contains("strike") || d.contains("strikeout") ||
+                 d.contains("strike out")) {
+            // Markdown ~~strikethrough~~. Greyed.
+            fg = npComment;
+        }
+        else if (d.contains("horizontal rule") || d == "rule" ||
+                 d.contains("hr ")) {
+            // Markdown --- / ***  / ___.
+            fg = npOperator;
+            lexer->setFont(bold, i);
+        }
+        else if (d == "pre-char" || d == "special" ||
+                 d.contains("special char")) {
+            // Markdown special chars before headers etc.
+            fg = npNumber;
+        }
+        else if (d.contains("sgml") || d.contains("cdata")) {
+            // SGML / CDATA blocks in HTML/XML — distinct from regular text.
+            fg = npRegex;
+        }
+        else if (d.contains("fragment") || d.contains("script tag")) {
+            // HTML script/PHP/ASP/XML fragment markers.
+            fg = npKeyword;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("entity")) {
+            // HTML &amp; entities.
+            fg = npNumber;
+        }
+        else if (d.contains("@-rule") || d.contains("at-rule") ||
+                 d.contains("at rule")) {
+            // CSS @media, @import, @keyframes, etc.
+            fg = npKeyword;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("removed") && (d.contains("line") ||
+                                            d.contains("patch"))) {
+            // Diff -line / removed patch.
+            fg = npError;
+        }
+        else if (d.contains("added") && (d.contains("line") ||
+                                          d.contains("patch"))) {
+            // Diff +line / added patch.
+            fg = npComment;  // "green" = added, like git
+        }
+        else if (d.contains("changed") || d.contains("modified")) {
+            // Diff modified rows.
+            fg = npNumber;
+        }
+        else if (d.contains("position")) {
+            // Diff @@ position markers.
+            fg = npClassName;
+        }
+        else if (d.contains("stdout") || d.contains("stdin") ||
+                 d.contains("stderr")) {
+            // Make / Bash output streams — muted.
+            fg = npComment;
+        }
+        else if (d.contains("value") || d.contains("default value")) {
+            // INI value (right of =), HTML attribute values.
+            fg = npString;
+        }
+        else if (d.contains("text block marker")) {
+            // YAML | / > block scalar markers.
+            fg = npNumber;
+        }
+        else if (d.contains("quoted identifier") ||
+                 d.contains("qualified identifier")) {
+            // SQL "Quoted Identifier", Pascal qualified identifiers.
+            fg = npKeyword2;
+        }
+        else if (d.contains("plus prompt") || d.contains("sql*plus")) {
+            // SQL*Plus prompts (SQL>) and commands.
+            fg = npNumber;
+        }
+        else if (d.contains("while block") || d.contains("if block") ||
+                 d.contains("foreach block") || d.contains("for block") ||
+                 d.contains("macro block")) {
+            // PowerShell / shell / Pascal control-flow blocks.
+            fg = npKeyword;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("parameter expansion")) {
+            // Bash ${var}, ${1}, etc. — variable-shaped.
+            fg = npVariable;
+        }
+        else if (d.contains("module name") || d.contains("module")) {
+            // Ruby modules, Lua module references.
+            fg = npClassName;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("media rule") || d.contains("media")) {
+            // CSS @media queries.
+            fg = npKeyword;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("compact iri") || d == "iri" ||
+                 d.contains(" iri")) {
+            // JSON-LD IRIs (URLs identifying linked-data resources).
+            fg = npClassName;
+        }
+        else if (d.contains("inline asm") ||
+                 d.contains("inline assembly")) {
+            // C/C++ asm() blocks — string-like.
+            fg = npString;
+        }
+        else if (d == "important" || d.contains(" important") ||
+                 d.contains("!important")) {
+            // CSS !important — attention-grabbing.
+            fg = npError;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("id selector")) {
+            // CSS #id selectors.
+            fg = npClassName;
+            lexer->setFont(bold, i);
+        }
+        else if (d == "hash" || d.contains(" hash") ||
+                 d.contains("hex color")) {
+            // CSS color hash #FF0000.
+            fg = npNumber;
+        }
+        else if (d.contains("external command") ||
+                 d.contains("internal command") || d == "command") {
+            // Bash external / TCL commands — variable/cmdlet-like.
+            fg = npVariable;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("coroutines") || d.contains("i/o") ||
+                 d.contains("system facilities")) {
+            // Lua stdlib subsets (5.x ships these as named keyword groups).
+            fg = npKeyword2;
+        }
+        else if (d == "code block" || d.contains("code block")) {
+            // Markdown ``` ``` fenced blocks.
+            fg = npString;
+        }
+        else if (d == "array" || d.contains(" array")) {
+            // Perl @array, PHP $array.
+            fg = npVariable;
+        }
+
         else if (d.contains("highlighted") ||
                  d.contains("user defined") || d.contains("user-defined")) {
             // QsciLexerPython style 14 = "Highlighted identifier" — built-ins
@@ -408,10 +664,19 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QStr
             // #9CDCFE dark) was the root cause of the v0.1.30 user complaint
             // that "keywords + actual syntax are all just shades of blue" —
             // identifier text and keyword text both rendered blue. Letting
-            // identifiers stay default-coloured (black on light, sand-grey
-            // on dark) makes them read as "names", clearly distinct from
-            // the bold-blue keywords. Notepad++ canonical behaviour.
-            fg = npText;
+            // identifiers stay default-coloured makes them read as "names",
+            // clearly distinct from the bold-blue keywords.
+            //
+            // v0.1.37 special-case: QsciLexerYAML's style 2 description is
+            // literally "Identifier" but in YAML the "Identifier" IS the
+            // key (the part before the colon — `name:` part). Keys SHOULD
+            // be highlighted, not painted as default text, so route YAML's
+            // Identifier to the per-language brand keyword2.
+            if (lang == QLatin1String("YAML")) {
+                fg = npKeyword2;
+            } else {
+                fg = npText;
+            }
         }
         // else: plain text — keep npText
 

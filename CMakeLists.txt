@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.36 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.37 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -386,6 +386,38 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_context.cpp")
     add_test(NAME test_ai_context COMMAND $<TARGET_FILE:test_ai_context>)
     set_tests_properties(test_ai_context PROPERTIES LABELS "unit;ai")
     message(STATUS "Regression test enabled — target: test_ai_context")
+endif()
+
+# v0.1.37 — comprehensive lexer-coverage check. Walks every QsciLexer
+# subclass + every Notepatra-local lexer, applies palette in Light /
+# Dark / Monokai, and asserts no non-Default style falls through to
+# default text colour. Prevents the "X language has unstyled keywords"
+# class of bug.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexer_coverage.cpp")
+    add_executable(test_lexer_coverage
+        test_lexer_coverage.cpp
+        src/npp_palette.cpp
+        src/lexer_powershell.cpp
+        src/lexer_rust.cpp
+        src/lexer_go.cpp
+        src/lexer_swift.cpp
+        src/lexer_kotlin.cpp
+        src/lexer_typescript.cpp
+    )
+    target_include_directories(test_lexer_coverage PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_lexer_coverage PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::PrintSupport
+        ${QSCINTILLA_LIB}
+    )
+    if(WIN32)
+        target_compile_definitions(test_lexer_coverage PRIVATE QSCINTILLA_DLL)
+    endif()
+    notepatra_add_qt_test(test_lexer_coverage)
+    set_tests_properties(test_lexer_coverage PROPERTIES LABELS "regression;palette")
+    message(STATUS "Regression test enabled — target: test_lexer_coverage")
 endif()
 
 # v0.1.35 — AI tool-call path-safety + execution tests
