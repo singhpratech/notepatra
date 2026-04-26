@@ -142,7 +142,8 @@ void OllamaClient::listModels() {
 // ─── generate ──────────────────────────────────────────────────────────
 void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
                             bool enableThinking,
-                            const QStringList &imagesBase64) {
+                            const QStringList &imagesBase64,
+                            const QJsonArray &tools) {
     cancel();
     m_fullResponse.clear();
     m_sseBuffer.clear();
@@ -150,9 +151,65 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
     m_promptTokens = -1;
     m_evalTokens = -1;
     m_startMs = QDateTime::currentMSecsSinceEpoch();
+    m_pendingToolCalls.clear();
+    m_messages = QJsonArray();
+    m_lastSystemPrompt = systemPrompt;
+    m_lastTools = tools;
+    m_toolCallSeq = 0;
+
+    const bool hasTools = !tools.isEmpty();
 
     if (m_backend == Ollama) {
-        // ─── Ollama native /api/generate ───────────────────────────────
+        // ─── Ollama: /api/generate (legacy, no tools) or /api/chat (tools) ──
+        if (hasTools) {
+            // Tool-calling requires /api/chat (the messages-array endpoint).
+            // Build a minimal 2-message conversation: system + user. Future
+            // tool-result rounds get appended via continueWithToolResults().
+            if (!systemPrompt.isEmpty()) {
+                QJsonObject sys;
+                sys["role"] = "system";
+                sys["content"] = enableThinking ? systemPrompt
+                                                : systemPrompt + "\n/no_think";
+                m_messages.append(sys);
+            }
+            QJsonObject user;
+            user["role"] = "user";
+            user["content"] = prompt;
+            if (!imagesBase64.isEmpty()) {
+                QJsonArray imgs;
+                for (const QString &b64 : imagesBase64) imgs.append(b64);
+                user["images"] = imgs;
+            }
+            m_messages.append(user);
+
+            QJsonObject body;
+            body["model"] = m_model;
+            body["messages"] = m_messages;
+            body["stream"] = true;
+            body["tools"] = tools;
+            body["think"] = enableThinking;
+
+            QJsonObject options;
+            // v0.1.35 — pin temperature low for tool-bearing requests.
+            // Per Ollama / multi-editor research: high temperature
+            // produces malformed JSON in tool arguments even on
+            // tool-trained models. 0.1 is the documented sweet spot.
+            options["temperature"]    = 0.1;
+            options["num_predict"]    = 2048;
+            options["num_ctx"]        = 8192;  // bigger ctx for tool round-trips
+            options["repeat_penalty"] = 1.05;
+            body["options"] = options;
+            body["keep_alive"] = "5m";
+
+            QUrl url(m_baseUrl + "/api/chat");
+            QNetworkRequest req(url);
+            req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+            m_reply = m_nam->post(req, QJsonDocument(body).toJson());
+
+            connect(m_reply, &QNetworkReply::readyRead, this, &OllamaClient::onReadyReadOllama);
+            connect(m_reply, &QNetworkReply::finished,  this, &OllamaClient::onFinishedOllama);
+        } else {
+        // ─── Ollama native /api/generate (legacy completions endpoint) ─
         QJsonObject body;
         body["model"] = m_model;
         body["prompt"] = prompt;
@@ -187,6 +244,7 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
 
         connect(m_reply, &QNetworkReply::readyRead, this, &OllamaClient::onReadyReadOllama);
         connect(m_reply, &QNetworkReply::finished,  this, &OllamaClient::onFinishedOllama);
+        }  // end !hasTools (Ollama branch)
     } else {
         // ─── OpenAI-compatible /v1/chat/completions ────────────────────
         // Works for llama.cpp's llama-server, LM Studio, Jan, vLLM, etc.
@@ -230,12 +288,19 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
         }
         messages.append(user);
 
+        // Persist messages for the agent loop's continueWithToolResults.
+        m_messages = messages;
+
         QJsonObject body;
         body["model"] = m_model;
         body["messages"] = messages;
         body["stream"] = true;
-        body["temperature"] = 0.3;
+        body["temperature"] = hasTools ? 0.1 : 0.3;
         body["max_tokens"]  = 2048;
+        if (hasTools) {
+            body["tools"] = tools;
+            body["tool_choice"] = "auto";
+        }
 
         QUrl url(m_baseUrl + "/v1/chat/completions");
         QNetworkRequest req(url);
@@ -258,6 +323,113 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
     });
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// continueWithToolResults — agent-loop continuation
+//
+// AIPanel calls this after executing the tool calls from a previous
+// stream. We append the assistant's tool-call message + each tool
+// result to m_messages, then re-POST to the chat endpoint with the
+// FULL conversation history so the model can pick up where it left
+// off. Tools array is forwarded so the model can call further tools.
+// ═══════════════════════════════════════════════════════════════════════
+void OllamaClient::continueWithToolResults(const QJsonArray &toolResults,
+                                           const QString &systemPrompt,
+                                           const QJsonArray &tools) {
+    cancel();
+    m_fullResponse.clear();
+    m_sseBuffer.clear();
+    m_done = false;
+    m_promptTokens = -1;
+    m_evalTokens = -1;
+    m_startMs = QDateTime::currentMSecsSinceEpoch();
+    m_pendingToolCalls.clear();
+
+    if (!systemPrompt.isEmpty()) m_lastSystemPrompt = systemPrompt;
+    if (!tools.isEmpty())        m_lastTools = tools;
+
+    // Reconstruct the assistant's tool-call turn (we synthesized IDs and
+    // emitted the calls earlier; now bake them into the conversation
+    // history so the model sees its own tool-calling output).
+    QJsonObject assistantTurn;
+    assistantTurn["role"] = "assistant";
+    assistantTurn["content"] = m_fullResponse;  // any text emitted alongside
+    QJsonArray reconCalls;
+    for (const QJsonValue &rv : toolResults) {
+        QJsonObject r = rv.toObject();
+        QJsonObject c;
+        c["id"] = r.value("id").toString();
+        QJsonObject fn;
+        fn["name"] = r.value("name").toString();
+        // We don't have the original args here — best-effort empty obj.
+        // The real model output already had them; this is just a
+        // history-shaped reconstruction so the model has the right
+        // turn structure on the next round.
+        fn["arguments"] = r.value("args").toObject();
+        c["type"] = "function";
+        c["function"] = fn;
+        reconCalls.append(c);
+    }
+    if (!reconCalls.isEmpty()) assistantTurn["tool_calls"] = reconCalls;
+    m_messages.append(assistantTurn);
+
+    // Append each tool result as role:tool. Wire shape differs per
+    // backend: Ollama uses `tool_name`, OpenAI-compat uses `tool_call_id`.
+    for (const QJsonValue &rv : toolResults) {
+        QJsonObject r = rv.toObject();
+        QJsonObject msg;
+        msg["role"] = "tool";
+        msg["content"] = r.value("content").toString();
+        if (m_backend == Ollama) {
+            msg["tool_name"] = r.value("name").toString();
+        } else {
+            msg["tool_call_id"] = r.value("id").toString();
+            msg["name"] = r.value("name").toString();
+        }
+        m_messages.append(msg);
+    }
+
+    // Re-send with full history.
+    if (m_backend == Ollama) {
+        QJsonObject body;
+        body["model"] = m_model;
+        body["messages"] = m_messages;
+        body["stream"] = true;
+        body["tools"] = m_lastTools;
+        QJsonObject options;
+        options["temperature"] = 0.1;
+        options["num_predict"] = 2048;
+        options["num_ctx"]     = 8192;
+        body["options"] = options;
+        body["keep_alive"] = "5m";
+
+        QUrl url(m_baseUrl + "/api/chat");
+        QNetworkRequest req(url);
+        req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+        m_reply = m_nam->post(req, QJsonDocument(body).toJson());
+        connect(m_reply, &QNetworkReply::readyRead, this, &OllamaClient::onReadyReadOllama);
+        connect(m_reply, &QNetworkReply::finished,  this, &OllamaClient::onFinishedOllama);
+    } else {
+        QJsonObject body;
+        body["model"] = m_model;
+        body["messages"] = m_messages;
+        body["stream"] = true;
+        body["temperature"] = 0.1;
+        body["max_tokens"]  = 2048;
+        body["tools"] = m_lastTools;
+        body["tool_choice"] = "auto";
+
+        QUrl url(m_baseUrl + "/v1/chat/completions");
+        QNetworkRequest req(url);
+        req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+        const QString apiKey = Config::instance().aiApiKey;
+        if (!apiKey.isEmpty())
+            req.setRawHeader("Authorization", ("Bearer " + apiKey).toUtf8());
+        m_reply = m_nam->post(req, QJsonDocument(body).toJson());
+        connect(m_reply, &QNetworkReply::readyRead, this, &OllamaClient::onReadyReadOpenAI);
+        connect(m_reply, &QNetworkReply::finished,  this, &OllamaClient::onFinishedOpenAI);
+    }
+}
+
 void OllamaClient::cancel() {
     if (m_reply) {
         disconnect(m_reply, nullptr, this, nullptr);
@@ -275,6 +447,15 @@ void OllamaClient::onReadyRead() {
 }
 
 // ─── Ollama wire format: one JSON object per newline ───────────────────
+//
+// Two response shapes share this parser:
+//   - /api/generate frames have `response` as the streamed token string
+//     and `done:true` on the final frame with eval_count + prompt_eval_count.
+//   - /api/chat (used when tools are enabled) frames have `message.content`
+//     for streamed text tokens and `message.tool_calls` for tool calls.
+//     Tool calls arrive ATOMICALLY — entire array in one chunk per the
+//     v0.1.35 wire-format research; no partial accumulator needed for
+//     Ollama (unlike OpenAI streaming).
 void OllamaClient::onReadyReadOllama() {
     if (!m_reply) return;
     QByteArray data = m_reply->readAll();
@@ -287,7 +468,40 @@ void OllamaClient::onReadyReadOllama() {
             emit error(obj["error"].toString());
             return;
         }
+
+        // /api/generate path — `response` field
         QString token = obj["response"].toString();
+        // /api/chat path — `message.content` + `message.tool_calls`
+        if (obj.contains("message")) {
+            QJsonObject msg = obj.value("message").toObject();
+            QString content = msg.value("content").toString();
+            if (!content.isEmpty()) {
+                token = content;
+            }
+            if (msg.contains("tool_calls")) {
+                QJsonArray calls = msg.value("tool_calls").toArray();
+                for (const QJsonValue &cv : calls) {
+                    QJsonObject c = cv.toObject();
+                    QJsonObject fn = c.value("function").toObject();
+                    QString name = fn.value("name").toString();
+                    // Ollama's `arguments` is already a parsed JSON object
+                    // (NOT a stringified JSON like OpenAI canonical). Be
+                    // defensive: accept both shapes.
+                    QJsonObject args;
+                    QJsonValue av = fn.value("arguments");
+                    if (av.isObject()) {
+                        args = av.toObject();
+                    } else if (av.isString()) {
+                        args = QJsonDocument::fromJson(av.toString().toUtf8()).object();
+                    }
+                    // Synthesize a client-side ID since Ollama doesn't
+                    // supply one. AIPanel will round-trip it back on
+                    // continueWithToolResults().
+                    QString id = QString("call_n%1").arg(++m_toolCallSeq);
+                    emit toolCallReceived(id, name, args);
+                }
+            }
+        }
         if (!token.isEmpty()) {
             m_fullResponse += token;
             emit tokenReceived(token);
@@ -363,7 +577,77 @@ void OllamaClient::onReadyReadOpenAI() {
                 m_fullResponse += tok;
                 emit tokenReceived(tok);
             }
-            if (choice.value("finish_reason").toString().length() > 0 && !m_done) {
+
+            // ─── OpenAI-compat tool_calls streaming ─────────────────────
+            //
+            // Per the wire-format research: the first delta for each
+            // tool_call carries id + type + function.name; subsequent
+            // deltas carry only function.arguments fragments keyed by
+            // `index`. Accumulate fragments per-index until we see
+            // finish_reason: "tool_calls", then parse + emit.
+            //
+            // OpenRouter / OpenAI / Anthropic-proxy / vLLM / llama.cpp
+            // (with --jinja) all use this canonical pattern.
+            if (delta.contains("tool_calls")) {
+                QJsonArray calls = delta.value("tool_calls").toArray();
+                for (const QJsonValue &cv : calls) {
+                    QJsonObject c = cv.toObject();
+                    int idx = c.value("index").toInt(0);
+                    PendingToolCall &p = m_pendingToolCalls[idx];
+                    if (c.contains("id") && !c.value("id").toString().isEmpty()) {
+                        p.id = c.value("id").toString();
+                    }
+                    QJsonObject fn = c.value("function").toObject();
+                    if (fn.contains("name") && !fn.value("name").toString().isEmpty()) {
+                        p.name = fn.value("name").toString();
+                    }
+                    if (fn.contains("arguments")) {
+                        QJsonValue av = fn.value("arguments");
+                        if (av.isString()) {
+                            p.argsBuffer += av.toString();
+                        } else if (av.isObject()) {
+                            // llama.cpp Autoparser sends args as object
+                            // — concatenate already-stringified form.
+                            p.argsBuffer = QString::fromUtf8(
+                                QJsonDocument(av.toObject()).toJson(QJsonDocument::Compact));
+                        }
+                    }
+                }
+            }
+
+            const QString finishReason = choice.value("finish_reason").toString();
+            // When finish_reason == "tool_calls", the assistant is done
+            // emitting calls for this turn — flush all accumulated calls
+            // and emit toolCallReceived for each. The agent loop will
+            // execute them and call continueWithToolResults to keep
+            // going. Don't fire `finished` yet — the conversation isn't
+            // over until the model returns plain content with stop reason.
+            if (finishReason == "tool_calls" && !m_pendingToolCalls.isEmpty()) {
+                QList<int> indices = m_pendingToolCalls.keys();
+                std::sort(indices.begin(), indices.end());
+                for (int idx : indices) {
+                    const PendingToolCall &p = m_pendingToolCalls.value(idx);
+                    QString id = p.id.isEmpty()
+                        ? QString("call_o%1").arg(++m_toolCallSeq)
+                        : p.id;
+                    QJsonObject args = QJsonDocument::fromJson(
+                        p.argsBuffer.toUtf8()).object();
+                    emit toolCallReceived(id, p.name, args);
+                }
+                m_pendingToolCalls.clear();
+                // The connection stays open — the next /v1/chat/completions
+                // response (kicked off by AIPanel via continueWithToolResults)
+                // is a separate request.
+                if (!m_done) {
+                    m_done = true;
+                    const qint64 elapsed = QDateTime::currentMSecsSinceEpoch() - m_startMs;
+                    emit finished(m_fullResponse);
+                    emit responseStats(m_promptTokens, m_evalTokens, elapsed);
+                }
+                continue;
+            }
+
+            if (!finishReason.isEmpty() && !m_done) {
                 m_done = true;
                 const qint64 elapsed = QDateTime::currentMSecsSinceEpoch() - m_startMs;
                 emit finished(m_fullResponse);

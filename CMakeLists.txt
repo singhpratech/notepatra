@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.34 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.35 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -145,6 +145,7 @@ set(SOURCES
     src/ollama.cpp
     src/ai_context.cpp
     src/ai_systemprompt.cpp
+    src/ai_tools.cpp
     src/lexer_go.cpp
     src/lexer_kotlin.cpp
     src/lexer_powershell.cpp
@@ -385,6 +386,21 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_context.cpp")
     add_test(NAME test_ai_context COMMAND $<TARGET_FILE:test_ai_context>)
     set_tests_properties(test_ai_context PROPERTIES LABELS "unit;ai")
     message(STATUS "Regression test enabled — target: test_ai_context")
+endif()
+
+# v0.1.35 — AI tool-call path-safety + execution tests
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_tools.cpp")
+    add_executable(test_ai_tools
+        test_ai_tools.cpp
+        src/ai_tools.cpp
+    )
+    target_include_directories(test_ai_tools PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_ai_tools PRIVATE Qt5::Core)
+    add_test(NAME test_ai_tools COMMAND $<TARGET_FILE:test_ai_tools>)
+    set_tests_properties(test_ai_tools PROPERTIES LABELS "unit;ai;tools")
+    message(STATUS "Regression test enabled — target: test_ai_tools")
 endif()
 
 # ─── Project Search deep regression test ────────────────────────────────

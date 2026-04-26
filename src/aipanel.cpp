@@ -1,6 +1,7 @@
 #include "aipanel.h"
 #include "ai_context.h"
 #include "ai_systemprompt.h"
+#include "ai_tools.h"
 #include "fonts.h"
 #include "config.h"
 #include <QVBoxLayout>
@@ -1005,9 +1006,24 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     });
     connect(m_ollama, &OllamaClient::finished, this, [this](const QString &response) {
         m_lastResponse = response;
+        // v0.1.35 — agent loop: if any tool calls landed during this
+        // stream, flush them back to the model BEFORE finalising the
+        // bubble. flushPendingToolResults handles the round-trip and
+        // re-opens the assistant bubble for the next response chunk.
+        if (m_toolsActiveThisTurn && !m_pendingToolResults.isEmpty()) {
+            flushPendingToolResults();
+            return;
+        }
+        m_toolsActiveThisTurn = false;
+        m_toolCallsThisTurn = 0;
+        m_toolCallsTotal = 0;
         m_stopBtn->setEnabled(false);
         endAssistantBubble();
     });
+    // v0.1.35 — Tool-call from the model. Execute against the workspace,
+    // queue the result for the agent loop, and render an inline 🔧 card.
+    connect(m_ollama, &OllamaClient::toolCallReceived, this,
+            &AIPanel::handleToolCall);
     // Per-response stats: tokens + elapsed time. Wired to attach onto the
     // last Assistant message (the one we just finalised in endAssistantBubble)
     // and trigger a re-render so the bubble shows "1234 tokens · 2.3s".
@@ -1503,7 +1519,13 @@ void AIPanel::sendPrompt(const QString &action) {
     const bool codingMode = (m_codingMode && m_codingMode->isChecked());
     const AiSystemPrompt::Intent intent =
         AiSystemPrompt::classifyIntent(action, codingMode);
-    const QString systemPrompt = AiSystemPrompt::build(intent, m_language);
+    // Predict whether tools will fire so the system prompt swaps in the
+    // tool-mode preamble (instead of the anti-tool-call layer that
+    // would otherwise contradict the tools we're about to attach).
+    const bool willUseTools = codingMode && !m_workspaceRoot.isEmpty()
+        && ((m_ollama->backend() != OllamaClient::Ollama)
+            || AiTools::modelLikelySupportsTools(m_ollama->model()));
+    const QString systemPrompt = AiSystemPrompt::build(intent, m_language, willUseTools);
 
     // Build the prompt + the user-visible prompt label (just the action name
     // + the code snippet for context — no need to dump the verbose template
@@ -1621,7 +1643,37 @@ void AIPanel::sendPrompt(const QString &action) {
     appendUserBubble(userBubbleText);
     beginAssistantBubble();
     m_stopBtn->setEnabled(true);
-    m_ollama->generate(prompt, systemPrompt, m_thinkingCheck->isChecked(), imagesBase64);
+
+    // v0.1.35 — agent-loop activation. Tools fire when:
+    //   1. Coding Mode is on (the user has explicitly opted into agent
+    //      behaviour — read_file in non-coding chat would be jarring), AND
+    //   2. EITHER the active model is in the Ollama tool-allowlist
+    //      (qwen3, llama3.1+, hermes3, mistral-nemo, granite3, gpt-oss,
+    //      etc.) OR the backend is OpenAI-compat (in which case we
+    //      always send tools — OpenRouter / OpenAI / Anthropic / vLLM /
+    //      LM Studio handle support detection server-side and ignore
+    //      the field for non-tool models).
+    //   3. The user actually has a workspace root open (no point
+    //      offering file tools without a workspace).
+    QJsonArray toolsForRequest;
+    m_pendingToolResults = QJsonArray();
+    m_toolCallsThisTurn = 0;
+    m_toolCallsTotal = 0;
+    m_toolsActiveThisTurn = false;
+    if (codingMode && !m_workspaceRoot.isEmpty()) {
+        const bool likelyOk =
+            (m_ollama->backend() != OllamaClient::Ollama)
+            || AiTools::modelLikelySupportsTools(m_ollama->model());
+        if (likelyOk) {
+            toolsForRequest = AiTools::availableTools();
+            m_toolsActiveThisTurn = true;
+            m_lastSystemPromptForTools = systemPrompt;
+            m_lastToolsArray = toolsForRequest;
+        }
+    }
+
+    m_ollama->generate(prompt, systemPrompt, m_thinkingCheck->isChecked(),
+                       imagesBase64, toolsForRequest);
 }
 
 // ───── Chat-bubble rendering ──────────────────────────────────────────
@@ -2142,6 +2194,160 @@ void AIPanel::endAssistantBubble() {
     }
     // Full re-render with markdown now that we have the complete text.
     renderTranscript();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// v0.1.35 — Agent-loop tool-call handling
+//
+// When Coding Mode is on AND the active model is in the tool-allowlist,
+// sendPrompt attaches `tools: [read_file, list_dir]` to the request.
+// The model can call them; OllamaClient parses the tool_calls frames
+// out of the response stream and emits toolCallReceived. We execute
+// the call against m_workspaceRoot via AiTools::execute, queue the
+// result, and render a 🔧 card inline. When the stream finishes (with
+// finish_reason=tool_calls), we call continueWithToolResults to feed
+// the results back and continue the conversation.
+// ═══════════════════════════════════════════════════════════════════════
+
+namespace {
+// Render a transient inline tool-call card. Goes into m_chatLayout
+// just before the streaming card so the user sees "🔧 read_file …"
+// while the model decides what to do next. Style is muted compared to
+// real chat bubbles — the tool call is process metadata, not content.
+QFrame *aiAddToolCallCard(QVBoxLayout *target,
+                          const QString &toolName,
+                          const QString &argsSummary,
+                          const QString &resultSummary,
+                          bool isError,
+                          const AiPalette &pal) {
+    auto *card = new QFrame;
+    card->setObjectName("toolCallCard");
+    const QString accent = isError ? pal.errBorder : pal.accent;
+    card->setStyleSheet(QString(
+        "#toolCallCard { "
+        "  background: %1; "
+        "  border: 1px solid %2; "
+        "  border-left: 3px solid %3; "
+        "  border-radius: 6px; "
+        "} "
+        "QLabel { background: transparent; color: %4; font-size: 11px; }")
+        .arg(pal.assistBg, pal.assistBorder, accent, pal.muted));
+    auto *outer = new QHBoxLayout(card);
+    outer->setContentsMargins(10, 6, 10, 6);
+    outer->setSpacing(8);
+    auto *icon = new QLabel(isError ? "✗" : "🔧");
+    icon->setStyleSheet(QString("color: %1; font-weight: 600;").arg(accent));
+    outer->addWidget(icon);
+    auto *body = new QLabel(QString("<b>%1</b> %2 %3 <span style='color:%4;'>%5</span>")
+        .arg(toolName.toHtmlEscaped(),
+             argsSummary.toHtmlEscaped(),
+             resultSummary.isEmpty() ? "" : "→",
+             pal.muted,
+             resultSummary.toHtmlEscaped()));
+    body->setTextFormat(Qt::RichText);
+    body->setWordWrap(true);
+    body->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    outer->addWidget(body, 1);
+
+    auto *row = new QWidget;
+    row->setStyleSheet("background: transparent;");
+    auto *rowLay = new QVBoxLayout(row);
+    rowLay->setContentsMargins(0, 0, 0, 6);
+    rowLay->setSpacing(0);
+    rowLay->addWidget(card);
+    target->insertWidget(target->count() - 1, row);
+    return card;
+}
+} // anon
+
+void AIPanel::handleToolCall(const QString &id, const QString &name,
+                             const QJsonObject &args) {
+    // Hard cap: 25 tool calls per user turn — match Cursor / Aider's
+    // budget. Soft cap (10 consecutive) is handled implicitly by
+    // emitting a system-reminder string into the next round.
+    constexpr int kHardCap = 25;
+    if (m_toolCallsTotal >= kHardCap) {
+        AiTools::ToolResult r;
+        r.id = id;
+        r.name = name;
+        r.isError = true;
+        r.errorKind = "io_error";
+        r.content = QString("{\"ok\":false,\"error_kind\":\"io_error\",\"message\":"
+                            "\"Tool-call budget exhausted (%1 calls this turn). "
+                            "Stop and summarise what you've found.\"}").arg(kHardCap);
+        QJsonObject payload;
+        payload["id"] = r.id;
+        payload["name"] = r.name;
+        payload["args"] = args;
+        payload["content"] = r.content;
+        m_pendingToolResults.append(payload);
+        const AiPalette pal = aiPalette();
+        aiAddToolCallCard(m_chatLayout, name, "(budget exhausted)", "skipped", true, pal);
+        return;
+    }
+    ++m_toolCallsThisTurn;
+    ++m_toolCallsTotal;
+
+    // Build a short user-facing summary of the args. Keeps the card
+    // readable without dumping full JSON.
+    QString argsSummary;
+    if (args.contains("path")) {
+        argsSummary = "(" + args.value("path").toString() + ")";
+    } else {
+        argsSummary = "(...)";
+    }
+
+    // Execute. AiTools::execute never throws — failures come back as
+    // structured ToolResult with isError=true.
+    AiTools::ToolCall call;
+    call.id = id;
+    call.name = name;
+    call.args = args;
+    AiTools::ToolResult result = AiTools::execute(call, m_workspaceRoot);
+
+    // Build a one-line result summary for the card UI.
+    QString resultSummary;
+    if (result.isError) {
+        resultSummary = "✗ " + result.errorKind;
+    } else if (name == "read_file") {
+        // Pull lines/truncated from the JSON content for a tight summary.
+        QJsonDocument jd = QJsonDocument::fromJson(result.content.toUtf8());
+        QJsonObject body = jd.object().value("result").toObject();
+        const int n = body.value("lines_emitted").toInt();
+        const bool tr = body.value("truncated").toBool();
+        resultSummary = QString("%1 lines%2").arg(n).arg(tr ? " (truncated)" : "");
+    } else if (name == "list_dir") {
+        QJsonDocument jd = QJsonDocument::fromJson(result.content.toUtf8());
+        QJsonObject body = jd.object().value("result").toObject();
+        const int n = body.value("entries").toArray().size();
+        resultSummary = QString("%1 entries").arg(n);
+    }
+
+    const AiPalette pal = aiPalette();
+    aiAddToolCallCard(m_chatLayout, name, argsSummary, resultSummary,
+                      result.isError, pal);
+
+    // Queue for flush when the stream finishes.
+    QJsonObject payload;
+    payload["id"] = id;
+    payload["name"] = name;
+    payload["args"] = args;
+    payload["content"] = result.content;
+    m_pendingToolResults.append(payload);
+}
+
+void AIPanel::flushPendingToolResults() {
+    if (m_pendingToolResults.isEmpty()) return;
+
+    const QJsonArray batch = m_pendingToolResults;
+    m_pendingToolResults = QJsonArray();
+
+    // Continue the conversation: feed the tool results back, the model
+    // will keep streaming text or call more tools.
+    m_ollama->continueWithToolResults(batch, m_lastSystemPromptForTools,
+                                      m_lastToolsArray);
+    // The streaming-bubble flow continues into the same body — token
+    // streaming will resume in the existing card.
 }
 
 // ─── File attachment ──────────────────────────────────────────────────

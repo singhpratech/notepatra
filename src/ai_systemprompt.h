@@ -40,7 +40,15 @@ Intent classifyIntent(const QString &action, bool codingMode);
 //   3. Mode-specific  -- per Intent (Chat=friendly, Explain=clear, Transform=
 //                        code+brief, CodingStrict=preserved verbatim)
 //   4. Language hint  -- "user is working in <lang>" (when known)
-QString build(Intent intent, const QString &language);
+// `toolsActive` (v0.1.35): if true, the request will carry a `tools`
+// array (Coding Mode + tool-capable model). In that case the
+// anti-tool-call layer is SUPPRESSED — telling the model "no tools
+// exist" while attaching tool definitions produces contradictory
+// guidance and makes the model emit tool calls in plain text instead
+// of the structured tool_calls field. When tools are present, we
+// instead append a brief tool-mode preamble explaining the available
+// tools so the model uses them confidently.
+QString build(Intent intent, const QString &language, bool toolsActive = false);
 
 // Decide whether the workspace-context block should be prepended to the
 // user prompt. Returns false for cases where workspace info is noise:

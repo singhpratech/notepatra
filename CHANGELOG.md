@@ -7,6 +7,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.35] — 2026-04-26
+
+Coding Mode is now AGENTIC — the AI can read files and list directories on its own. Works with **every backend**: Ollama (local), llama.cpp (local), and any OpenAI-compatible service (OpenRouter, OpenAI, Anthropic via proxy, vLLM, LM Studio).
+
+### Added
+- 🤖 **Agentic Coding Mode.** When Coding Mode is on AND a tool-capable model is selected, the chat request now carries a `tools: [read_file, list_dir]` array. The model can call `read_file("src/main.rs")` to read a workspace file or `list_dir("src")` to list a directory. Notepatra runs an agent loop: parse `tool_calls` frames out of the streaming response, execute each call against the workspace, render an inline `🔧 read_file (path) → 247 lines` card, feed the result back to the model, repeat until the model returns plain content. Multi-turn round-tripping supported.
+- 🤖 **`src/ai_tools.{h,cpp}`** — new module with two tools and a layered path-safety model. `read_file` returns `cat -n` line-numbered content with offset/limit pagination (default 1500 lines, 2000-char-per-line truncation, NUL-byte binary detection). `list_dir` returns one level of entries with type+size, depth=1, hidden files included, .git/node_modules/build/target/dist/.venv/__pycache__/.cache/.gradle/DerivedData/.idea/.vs filtered out. Cap 500 entries.
+- 🛡 **Three-layer path-safety** (defense in depth, per multi-editor security research):
+  1. **Workspace anchor** — every tool path is canonicalized via `QFileInfo::canonicalFilePath()` (resolves symlinks). The result must equal the workspace root OR start with `canonical(workspaceRoot) + "/"`. Reject otherwise with `error_kind: outside_workspace`.
+  2. **Hardcoded deny-list** — even paths INSIDE the workspace are refused if they match secret patterns: `~/.ssh/`, `~/.gnupg/`, `~/.aws/`, `~/.netrc`, `~/.npmrc`, `~/.pypirc`, `~/.docker/config.json`, `/etc/passwd`, `/etc/shadow`, `*.pem`, `*.key`, `*.pfx`, `*.p12`, `id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`, `authorized_keys`, `known_hosts`. Catches the symlink-to-secret case where the workspace contains a symlink pointing at `~/.ssh/id_rsa`.
+  3. **Structured errors** — every tool returns `{"ok":false,"error_kind":"...","message":"..."}` so the model can recover (try a different path, give up gracefully, summarise) rather than crash the conversation.
+- 🌐 **All-backends support** — works with Ollama (`/api/chat` with `tools` field), llama.cpp `llama-server` (with `--jinja`), LM Studio, vLLM, OpenRouter, OpenAI API, Anthropic via OpenRouter, Google Gemini via OpenRouter, etc. Each backend has its own wire-format quirks; the parser handles them all:
+  - Ollama: atomic NDJSON tool_calls frames, `arguments` is a JSON object (not string), no `id` field — synthesized client-side.
+  - OpenAI-compat: SSE delta accumulation, `arguments` arrives as fragments per `index` until `finish_reason: tool_calls`, has unique `id`s.
+- 🤖 **Model allowlist** for tool-capable models — Ollama: qwen3, qwen2.5, llama3.1+, mistral-nemo, command-r+, hermes3, granite3, gpt-oss, deepseek-v3/r1, kimi-k2, glm-4, mixtral, devstral, lfm2, ministral, nemotron. Cloud: gpt-4/4o/turbo/3.5/o1/o3, claude-3+, gemini-1.5/2, mistral-large/medium/small, openai/*, anthropic/*, google/gemini, openrouter/*, x-ai/grok, deepseek/*. For OpenAI-compat backends tools are sent unconditionally — the server ignores them for non-tool models.
+- 🛡 **Tool-call budget** — 25 hard cap per user turn (matches Cursor/Aider). When exhausted the model gets a structured error telling it to summarise and stop, preventing runaway loops.
+- 🌡 **Temperature pinned to 0.1** for tool-bearing requests. Per Ollama/multi-editor research: high temperature produces malformed JSON in `arguments` even on tool-trained models. 0.1 is the documented sweet spot.
+- 📐 **Conditional anti-tool-call layer** in `ai_systemprompt.cpp`. The pre-existing layer ("you have no tools, do not produce JSON tool calls") is now suppressed when tools are actually attached — telling the model "no tools exist" while sending tool definitions produces contradictory guidance. Replaced with a brief tool-mode preamble telling the model the tools are available and to use the structured `tool_calls` field.
+
+### Refactored
+- 🔧 **`OllamaClient::generate()`** gains a `const QJsonArray &tools = QJsonArray()` parameter. When tools is non-empty, the Ollama path switches to `/api/chat` (the messages-array endpoint that supports tools) instead of `/api/generate`. The OpenAI-compat path adds `body["tools"]` and `body["tool_choice"] = "auto"`.
+- 🔧 **`OllamaClient` new method `continueWithToolResults()`** — agent-loop continuation. Appends the assistant's tool-call turn + each tool result to `m_messages` and re-POSTs to keep the conversation flowing.
+- 🔧 **`OllamaClient` new signal `toolCallReceived(id, name, args)`** — emitted when tool_calls land in either backend's stream. AIPanel's agent loop listens for it.
+- 🔧 **`AIPanel`** gains `handleToolCall()` + `flushPendingToolResults()` agent-loop slots, plus `m_pendingToolResults` / `m_toolCallsTotal` / `m_toolsActiveThisTurn` / `m_lastSystemPromptForTools` / `m_lastToolsArray` state. Renders inline 🔧 tool-call cards via the new `aiAddToolCallCard()` helper.
+
+### Notes
+- **15 / 15 regression tests pass.** New `test_ai_tools` covers 68 path-safety + tool-execution assertions: hardcoded deny-list pattern matching, workspace anchor enforcement, traversal blocking, read_file pagination, binary detection, list_dir junk-dir filtering, JSON-Schema tool registry shape, model allowlist coverage.
+- **Coding Mode now means agentic mode.** Pre-v0.1.35 it just forced code-only output; now it ALSO unlocks file reading. Outside Coding Mode the chat panel behaves exactly as before — anti-tool-call layer stays on, no tools are sent.
+- **No new dependencies.** Pure Qt5 + the existing rust_core. Tools `read_file`/`list_dir` are implemented in C++ using QFile/QDir/QFileInfo.
+- v0.1.36+ deferred: `search` tool (ripgrep dependency), `write_file`/`apply_diff` (write-side tools require an approval UX that's its own feature).
+
+---
+
 ## [0.1.34] — 2026-04-26
 
 White-fold-margin Dark-theme bug across the formatter panels — fixed. New structural test prevents regression.

@@ -1,9 +1,12 @@
 #ifndef OLLAMA_H
 #define OLLAMA_H
 
-#include <QObject>
+#include <QHash>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
+#include <QObject>
 #include <QString>
 
 class OllamaClient : public QObject {
@@ -43,7 +46,17 @@ public:
     // images ignore the field.
     void generate(const QString &prompt, const QString &systemPrompt = "",
                   bool enableThinking = false,
-                  const QStringList &imagesBase64 = QStringList());
+                  const QStringList &imagesBase64 = QStringList(),
+                  const QJsonArray &tools = QJsonArray());
+    // Continue an in-progress agent conversation by sending one or more
+    // tool-result messages back to the model and starting a fresh stream.
+    // toolResults is a JSON array of { id, name, content } objects (one
+    // per executed tool call). systemPrompt + history are reused from the
+    // last generate() call so the model retains the conversation. Used
+    // by AIPanel's agent loop after handleToolCall executes a tool.
+    void continueWithToolResults(const QJsonArray &toolResults,
+                                 const QString &systemPrompt = "",
+                                 const QJsonArray &tools = QJsonArray());
     void cancel();
     bool isAvailable();
     void listModels();   // async — emits modelsListed or modelsError
@@ -54,6 +67,15 @@ signals:
     void error(const QString &message);
     void modelsListed(const QStringList &models);
     void modelsError(const QString &reason);
+
+    // v0.1.35 — Emitted when the backend's stream contains a tool_calls
+    // frame (Ollama atomic NDJSON / OpenAI accumulated SSE). `id` is
+    // synthesized client-side for Ollama (which doesn't supply one) and
+    // backend-supplied for OpenAI-compat. AIPanel listens for this,
+    // executes the tool against the workspace, and replies via
+    // continueWithToolResults().
+    void toolCallReceived(const QString &id, const QString &name,
+                          const QJsonObject &args);
 
     // Emitted right after finished() when the backend reports stats. Both
     // Ollama and OpenAI-compatible endpoints provide these in their final
@@ -86,6 +108,26 @@ private:
     QString m_fullResponse;
     QByteArray m_sseBuffer;  // for OpenAI SSE — frames span packets
     bool m_done = false;
+
+    // v0.1.35 — Conversation history for the agent loop. Each entry is
+    // a chat message ({role, content, tool_calls?, tool_call_id?}). The
+    // history is appended to on every generate() / continueWithToolResults
+    // and resent so multi-turn tool conversations work. Cleared at the
+    // start of a fresh generate() call (no tool round-trip in flight).
+    QJsonArray m_messages;
+    QString m_lastSystemPrompt;
+    QJsonArray m_lastTools;
+    int m_toolCallSeq = 0;  // incrementing counter for synthetic Ollama tool_call IDs
+
+    // Per-call accumulator for OpenAI-compat streamed tool_call argument
+    // fragments. Keyed by the `index` field of each tool_call delta —
+    // each fragment appends to the entry until finish_reason: tool_calls.
+    struct PendingToolCall {
+        QString id;
+        QString name;
+        QString argsBuffer;
+    };
+    QHash<int, PendingToolCall> m_pendingToolCalls;
 
     // Wall-clock timer + token counts captured from the streaming
     // response. -1 means "not reported by this backend / not yet known".

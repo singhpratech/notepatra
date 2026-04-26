@@ -114,6 +114,19 @@ private:
     void streamIntoAssistantBubble(const QString &token);
     void endAssistantBubble();
     void clearChat();
+
+    // v0.1.35 — Coding-Mode agentic tool-call support. Receives a tool
+    // call from OllamaClient::toolCallReceived, executes it against the
+    // workspace via AiTools::execute, renders a "🔧 read_file ..." card
+    // for the user, and queues the result for continueWithToolResults.
+    // Multiple tool calls in one model turn are batched until the
+    // stream's `finished` signal arrives, then dispatched together.
+    void handleToolCall(const QString &id, const QString &name,
+                        const QJsonObject &args);
+    // Called when finished() fires to flush queued tool results back
+    // to the model and continue the agent loop, OR to settle the
+    // conversation if no tool calls were made this turn.
+    void flushPendingToolResults();
     void toggleSpeechToText();
     void startTranscription(const QString &audioPath);
     void handleRecordFinished(int exitCode, QProcess *process);
@@ -139,6 +152,17 @@ private:
     class QTimer      *m_streamingStatsTimer   = nullptr;
     int                m_streamingTokenCount   = 0;
     qint64             m_streamingStartMs      = 0;
+
+    // v0.1.35 — Agent-loop state. Per-turn budget of tool calls executed,
+    // plus a queue of completed tool results waiting to be flushed back
+    // to the model when the stream's `finished` arrives. Cleared at the
+    // start of every fresh user prompt.
+    QJsonArray m_pendingToolResults;       // results queued for continuation
+    int        m_toolCallsThisTurn  = 0;   // for the consecutive-call budget
+    int        m_toolCallsTotal     = 0;   // hard cap across the whole turn
+    QString    m_lastSystemPromptForTools; // remember system prompt for continuations
+    QJsonArray m_lastToolsArray;           // remember tools array for continuations
+    bool       m_toolsActiveThisTurn = false;
     // Legacy placeholder — retained so any stray references still compile.
     // All rendering now goes through m_chatLayout.
     QTextBrowser *m_output = nullptr;

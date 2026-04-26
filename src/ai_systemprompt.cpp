@@ -104,13 +104,35 @@ static QString languageHint(const QString &language) {
            QStringLiteral(".");
 }
 
-QString build(Intent intent, const QString &language) {
+// v0.1.35 — when tools are attached to the request, the anti-tool-call
+// layer is replaced with this brief preamble that tells the model the
+// tools ARE available and structured. Keeps the model focused on using
+// `tool_calls` (the structured field) instead of typing JSON in plain
+// text content.
+static QString toolModeLayer() {
+    return QStringLiteral(
+        "You have file-reading tools available: `read_file(path, offset?, limit?)` "
+        "to read a workspace file with line numbers, and `list_dir(path)` to list "
+        "directory entries. Use them via the tool_calls structured field — never "
+        "by typing JSON in your text response. Paths are workspace-relative; "
+        "secret/credential paths (.ssh, .pem, .key, /etc/passwd, etc.) are "
+        "refused. Read files before answering questions about specific code, and "
+        "list directories when you don't know what's in the workspace."
+    );
+}
+
+QString build(Intent intent, const QString &language, bool toolsActive) {
     QString out;
-    out.reserve(800);
+    out.reserve(900);
 
     out += identityLayer();
     out += QLatin1Char(' ');
-    out += antiToolCallLayer();
+    if (toolsActive) {
+        // Replace anti-tool-call with tool-mode preamble.
+        out += toolModeLayer();
+    } else {
+        out += antiToolCallLayer();
+    }
 
     const QString mode = modeLayer(intent);
     if (!mode.isEmpty()) { out += QLatin1Char(' '); out += mode; }

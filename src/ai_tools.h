@@ -1,0 +1,120 @@
+#ifndef NOTEPATRA_AI_TOOLS_H
+#define NOTEPATRA_AI_TOOLS_H
+
+// ═══════════════════════════════════════════════════════════════════════
+// Agentic file-reading tools for Coding Mode.
+//
+// v0.1.35 introduces tool-calling for Ollama backend models that support
+// it (qwen3, llama3.1+, hermes3, mistral-nemo, granite3, etc.). When
+// Coding Mode is on AND the active model is in the tool-allowlist, the
+// chat request includes a `tools` array describing read_file and
+// list_dir. The model can call them; OllamaClient parses the
+// `tool_calls` frames out of the NDJSON stream and re-emits as Qt
+// signals; AIPanel runs an agent loop that executes each call against
+// the workspace and feeds the result back into the conversation.
+//
+// SECURITY MODEL (defense in depth):
+//   1. Workspace anchor — every tool path is resolved relative to
+//      AIPanel::m_workspaceRoot. Absolute paths are accepted only if
+//      they canonicalize to a path inside the workspace root.
+//   2. Canonicalize-and-check — symlinks are followed; the canonical
+//      result must start with canonical(workspaceRoot) + "/" (or BE
+//      the workspace root itself for list_dir).
+//   3. Hardcoded deny-list — even paths inside the workspace are
+//      rejected if they match secret patterns (~/.ssh/*, *.pem,
+//      *.key, id_rsa*, /etc/{passwd,shadow}, ~/.gnupg/*, ~/.aws/*,
+//      ~/.netrc). Catches symlinks-to-secrets that survive (1) + (2).
+//   4. Size + count limits — read_file caps at 1500 lines / 2000
+//      chars-per-line; list_dir caps at 500 entries. Bigger reads
+//      return truncated content + truncated:true so the model can
+//      paginate via offset/limit.
+//
+// Wire format (per the multi-editor research): JSON-Schema function
+// definitions, OpenAI-style; arguments come back as a parsed
+// QJsonObject (Ollama wire format — note that's an OBJECT, not the
+// stringified JSON OpenAI canonical uses; defensive parsing handles
+// both shapes).
+// ═══════════════════════════════════════════════════════════════════════
+
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QString>
+
+namespace AiTools {
+
+// ── Tool call descriptors ────────────────────────────────────────────
+
+// One tool invocation requested by the model. `id` is synthesized
+// client-side when the backend (Ollama) doesn't supply one — the agent
+// loop uses it to correlate result messages.
+struct ToolCall {
+    QString id;        // synthetic if Ollama; backend-supplied if OpenAI/llama.cpp
+    QString name;      // "read_file" or "list_dir"
+    QJsonObject args;  // already-parsed arguments object
+};
+
+// Result of executing a tool call. Even errors are returned as
+// structured results (never thrown) so the agent loop can give the
+// model a recoverable error rather than crashing the conversation.
+struct ToolResult {
+    QString id;        // matches ToolCall.id
+    QString name;      // matches ToolCall.name
+    QString content;   // text body for the role:tool message
+    bool isError = false;
+    QString errorKind; // "not_found" | "denied" | "too_large" |
+                       // "outside_workspace" | "binary" | "io_error"
+};
+
+// ── Tool registry ─────────────────────────────────────────────────────
+
+// Returns the JSON-Schema tool definitions to send in chat requests.
+// Shape per Ollama / OpenAI tools spec:
+//   [{ "type": "function",
+//      "function": {
+//        "name": "...",
+//        "description": "...",
+//        "parameters": { "type": "object", "properties": {...}, "required": [...] }
+//      }}, ...]
+QJsonArray availableTools();
+
+// Returns true if the model name is in the allowlist of tool-trained
+// Ollama models (qwen3*, llama3.1+, hermes3, mistral-nemo, etc.).
+// Used by AIPanel to decide whether to attach the tools array. Match
+// is case-insensitive substring against well-known tool-trained
+// families. False is the safe default.
+bool modelLikelySupportsTools(const QString &modelName);
+
+// ── Execution ─────────────────────────────────────────────────────────
+
+// Execute a tool call. Always returns a ToolResult — never throws.
+// `workspaceRoot` is the canonical absolute path the user has open
+// in Notepatra (Explorer root or current-file directory). All paths
+// in `call.args` are resolved relative to it; absolute paths must
+// canonicalize to a location inside it.
+ToolResult execute(const ToolCall &call, const QString &workspaceRoot);
+
+// ── Path safety helpers (exposed for unit testing) ────────────────────
+
+// Returns true if `absPath` matches a hardcoded secret/credential
+// pattern (~/.ssh/, ~/.gnupg/, ~/.aws/, ~/.netrc, *.pem, *.key,
+// id_rsa*, /etc/passwd, /etc/shadow). Matched on the lowercased
+// absolute path with platform-aware separators. Defense in depth —
+// even paths that survived the workspace-anchor check via symlink
+// shenanigans are caught here.
+bool isHardDenied(const QString &absPath);
+
+// Resolves `pathArg` relative to `workspaceRoot` and verifies the
+// resulting canonical path is inside the workspace. Sets `outCanonical`
+// to the canonical path on success. Returns false if:
+//   - pathArg empty
+//   - resolved path doesn't exist
+//   - canonical path falls outside workspaceRoot (after symlink resolve)
+//   - canonical path matches the hardcoded deny-list
+bool resolveSafePath(const QString &pathArg,
+                     const QString &workspaceRoot,
+                     QString *outCanonical,
+                     QString *outErrorKind = nullptr);
+
+} // namespace AiTools
+
+#endif // NOTEPATRA_AI_TOOLS_H
