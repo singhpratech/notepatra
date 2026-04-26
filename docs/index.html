@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.8 MB (Linux x64 tar.gz), 25.5 MB (macOS DMG with bundled Qt), 43.5 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 48 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.35",
+      "softwareVersion": "0.1.36",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.35 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.36 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.35">
-        Download v0.1.35 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.36">
+        Download v0.1.36 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.35 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.36 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1389,7 +1389,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.35</div>
+        <div class="section-label">Download v0.1.36</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1841,7 +1841,39 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.35 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.36 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-26</span>
+                        <span>· Multi-word phrase search + Compare ignore-spaces by default</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🔍 Project Search: multi-word phrases like "import os"</h5>
+                        <ul>
+                            <li>Multi-word literals already worked — substring path uses <code style="color:var(--green);font-size:12px;">QString::indexOf</code>, rust fast path uses aho-corasick. The fix is discoverability: placeholder text now reads <em>"Search any text — words, phrases like \"import os\", or regex patterns…"</em>.</li>
+                            <li>Query auto-trim — <code style="color:var(--green);font-size:12px;">" import os "</code> with accidental whitespace now matches the same lines as the bare phrase. Internal whitespace preserved.</li>
+                            <li>Two new test cases lock the multi-word behaviour in: phrase narrowing, exclusion of non-matching word orders (<code style="color:var(--green);font-size:12px;">from os import path</code> doesn't match <code style="color:var(--green);font-size:12px;">"import os"</code>), trim invariant. test_projectsearch: 26 → 31 assertions.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🔀 Compare: "Ignore spaces" defaults to ON</h5>
+                        <ul>
+                            <li>The most common compare-tab use case is <em>"did this code change?"</em> where re-indentation shouldn't show up as diffs. One-line default flip makes that the out-of-the-box behaviour. Users who want byte-exact compares (YAML / Python indentation) just untick the checkbox.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.36">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.36">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.35</div>
                     <div class="version-meta">
                         <span>2026-04-26</span>
                         <span>· Coding Mode is now agentic — AI reads files + lists dirs</span>

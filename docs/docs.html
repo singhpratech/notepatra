@@ -325,6 +325,7 @@
       <li><a href="#themes-palette">Themes &amp; palette</a></li>
       <li><a href="#rulers-crosshair">Rulers &amp; crosshair</a></li>
       <li><a href="#find-replace">Find &amp; replace</a></li>
+      <li><a href="#project-search">Project Search</a></li>
       <li><a href="#macros">Macros</a></li>
       <li><a href="#sessions">Sessions &amp; recovery</a></li>
     </ul>
@@ -630,6 +631,37 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
     <li><strong>Find / Replace All across all open tabs</strong> — one click.</li>
   </ul>
 
+  <h2 id="project-search" class="anchor-target">Project Search (<span class="kbd">Ctrl+Shift+G</span>)</h2>
+  <p>A separate, full-tab search dedicated to scanning an entire folder tree. Designed for the "where is this used across the whole project?" workflow — different from the inline Find &amp; Replace dialog (which targets the current document or open tabs). Streams results live as files are scanned; safe on multi-GB log files.</p>
+
+  <h3>What it searches</h3>
+  <ul>
+    <li><strong>File contents</strong> — every line of every text file under the selected folder. Skips binary files automatically (NUL-byte heuristic in the first 4 KB).</li>
+    <li><strong>File names</strong> — when <strong>Also match file names</strong> is ticked, files whose basename matches the query show up at the top of the results, separately from content matches.</li>
+    <li><strong>Heavy directory pruning</strong> — <code>.git</code>, <code>node_modules</code>, <code>build</code>, <code>target</code>, <code>dist</code>, <code>.venv</code>, <code>venv</code>, <code>__pycache__</code>, <code>.cache</code>, <code>.gradle</code>, <code>DerivedData</code>, <code>.idea</code>, <code>.vs</code> are skipped at the directory level so a 10k-file <code>node_modules</code> doesn't drown your results.</li>
+    <li><strong>OneDrive / cloud-placeholder skip on Windows</strong> — files marked offline by cloud-storage providers are skipped (would otherwise hang the search waiting for a download).</li>
+  </ul>
+
+  <h3>Query modes</h3>
+  <ul>
+    <li><strong>Plain text (default)</strong> — substring match. Multi-word phrases work directly: search <code>import os</code> (with the space) and you get every file that contains that exact phrase. No quoting needed. Internal whitespace is preserved; leading/trailing whitespace is auto-trimmed (so <code>" import os "</code> matches the same lines as <code>"import os"</code>).</li>
+    <li><strong>Match case</strong> — toggle case-sensitive matching.</li>
+    <li><strong>Whole word</strong> — wraps the query in <code>\b...\b</code> word boundaries. For multi-word phrases the boundaries land at the start/end of the phrase, so <code>import os</code> with whole-word ON matches <code>import os</code> but not <code>myimport os.path</code>.</li>
+    <li><strong>Regex</strong> — Rust regex syntax (no PCRE backreferences). Powers patterns like <code>\bfn\s+\w+</code> for "all Rust function definitions."</li>
+    <li><strong>Also match file names</strong> — adds filename hits to the result list.</li>
+    <li><strong>Include binary files</strong> — off by default. Tick to also scan binaries (rare; useful for hex strings).</li>
+  </ul>
+
+  <h3>Engine</h3>
+  <p>Plain-text searches under ~50 MB per file route through a Rust <strong>Aho-Corasick</strong> fast path (multiple patterns at once, sub-millisecond on small files). Larger files and regex queries use a streaming line-by-line scanner. Each match reports <code>line:column</code> (column is 1-based and counted in <strong>characters</strong>, not bytes — UTF-8 multi-byte sequences count as one).</p>
+
+  <h3>Results</h3>
+  <p>Results stream into a tree-grouped panel: one node per file with hits, expandable to per-line snippets. Double-click any hit to jump the editor to the exact line and column. Live counters show <em>files scanned</em>, <em>matches so far</em>, and <em>elapsed time</em>. <strong>Cancel</strong> the search any time — the worker thread bails on the next file boundary.</p>
+
+  <div class="callout info">
+    <strong>Tip:</strong> for a quick "is this string anywhere in my project?" use the default plain-text mode with the phrase typed as-is. Regex is only worth the syntax overhead when you actually need backtracking, alternation, or character classes.
+  </div>
+
   <h2 id="macros" class="anchor-target">Macros</h2>
   <p>Record keyboard + mouse operations and play them back:</p>
   <ul>
@@ -717,7 +749,8 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
   <ul>
     <li><strong>&lt; Prev</strong> / <strong>Next &gt;</strong> — jump to previous/next diff</li>
     <li><strong>Recompare</strong> — re-run the diff algorithm</li>
-    <li><strong>Ignore spaces</strong>, <strong>Ignore case</strong>, <strong>Ignore empty lines</strong> — toggle and recompute</li>
+    <li><strong>Ignore spaces</strong> — <em>defaults to ON</em> as of v0.1.36. Whitespace-only differences (re-indentation, alignment, trailing spaces) are collapsed so they don't show up as diffs. Untick for byte-exact mode (useful for YAML / Python where indentation IS the meaning).</li>
+    <li><strong>Ignore case</strong>, <strong>Ignore empty lines</strong> — toggle and recompute</li>
   </ul>
 
   <h3>Scroll sync</h3>

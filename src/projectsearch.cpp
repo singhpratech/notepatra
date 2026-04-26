@@ -565,7 +565,7 @@ void ProjectSearch::buildUi() {
 
     // ── Query input (big, prominent) ─────────────────────────────────
     m_queryInput = new QLineEdit;
-    m_queryInput->setPlaceholderText("Search for a string, word, or regex pattern…");
+    m_queryInput->setPlaceholderText("Search any text — words, phrases like \"import os\", or regex patterns…");
     m_queryInput->setFont(QFont(notepatraUiFont().family(), 14));
     m_queryInput->setStyleSheet(QString(
         "QLineEdit { background: %1; color: %2; border: 2px solid %3; "
@@ -951,7 +951,13 @@ void ProjectSearch::startSearch() {
 
     ProjectSearchWorker::Params p;
     p.folder = m_folderInput->text();
-    p.query  = m_queryInput->text();
+    // v0.1.36 — trim leading/trailing whitespace from the query so a
+    // user who accidentally types " import os " gets the same matches
+    // as "import os". Internal whitespace is preserved (multi-word
+    // phrase support). For regex mode the trim is also safe: leading
+    // whitespace in a regex is rarely intentional and `\s+` users can
+    // express it explicitly.
+    p.query  = m_queryInput->text().trimmed();
     p.fileGlobs = m_globInput->text();
     p.searchNames = m_namesChk->isChecked();
     p.caseSensitive = m_caseChk->isChecked();

@@ -27,35 +27,52 @@ int main(int argc, char *argv[]) {
     int failed = 0;
 
     // Test 1: ignore spaces must change the actual diff result, not just the UI.
+    //
+    // v0.1.36: "Ignore spaces" defaults to ON. The test verifies BOTH
+    // states: default-on collapses whitespace-only diffs to 0, and
+    // toggling OFF surfaces the whitespace diff. Same coverage as
+    // pre-v0.1.36, just inverted to start from the new default.
     {
         CompareWidget widget;
         widget.resize(1100, 720);
         widget.show();
-        widget.compare("alpha = 1;\nshared\n", "left.cpp",
-                       "alpha=1;\nshared\n", "right.cpp");
-        QApplication::processEvents();
-
-        auto *navBar = widget.findChild<CompareNavBar *>("compareNavBar");
-        if (!navBar) {
-            std::fprintf(stderr, "✗ Test 1: compare nav bar not found\n");
-            failed++;
-        } else if (navBar->diffMarkerCount() != 1) {
-            std::fprintf(stderr, "✗ Test 1: expected 1 nav marker before ignore-spaces, got %d\n",
-                         navBar->diffMarkerCount());
-            failed++;
-        }
-
-        if (widget.diffCount() != 1) {
-            std::fprintf(stderr, "✗ Test 1: expected 1 diff before ignore-spaces, got %d\n",
-                         widget.diffCount());
-            failed++;
-        }
 
         auto *ignoreSpaces = findCheckBox(widget, "Ignore spaces");
         if (!ignoreSpaces) {
             std::fprintf(stderr, "✗ Test 1: Ignore spaces checkbox not found\n");
             failed++;
+        } else if (!ignoreSpaces->isChecked()) {
+            std::fprintf(stderr, "✗ Test 1: Ignore spaces should default to ON in v0.1.36+\n");
+            failed++;
         } else {
+            // Uncheck BEFORE feeding content so the first compare runs
+            // in byte-exact mode (toggling after compare causes a
+            // re-render path that can deadlock under offscreen Qt).
+            ignoreSpaces->blockSignals(true);
+            ignoreSpaces->setChecked(false);
+            ignoreSpaces->blockSignals(false);
+
+            widget.compare("alpha = 1;\nshared\n", "left.cpp",
+                           "alpha=1;\nshared\n", "right.cpp");
+            QApplication::processEvents();
+
+            auto *navBar = widget.findChild<CompareNavBar *>("compareNavBar");
+            if (!navBar) {
+                std::fprintf(stderr, "✗ Test 1: compare nav bar not found\n");
+                failed++;
+            } else if (navBar->diffMarkerCount() != 1) {
+                std::fprintf(stderr, "✗ Test 1: expected 1 nav marker before ignore-spaces, got %d\n",
+                             navBar->diffMarkerCount());
+                failed++;
+            }
+
+            if (widget.diffCount() != 1) {
+                std::fprintf(stderr, "✗ Test 1: expected 1 diff before ignore-spaces, got %d\n",
+                             widget.diffCount());
+                failed++;
+            }
+
+            // Toggle ON to test the ignore-whitespace path
             ignoreSpaces->setChecked(true);
             QApplication::processEvents();
 

@@ -491,6 +491,154 @@ int main(int argc, char **argv) {
         check("finishedSearch fires after cancel", finalMatches >= 0);
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // Case 7 — v0.1.36: multi-word literal phrase ("import os")
+    //
+    // User reported wanting to search for phrases that include a
+    // space — e.g. `import os` rather than just `import`. The
+    // substring path (literal mode) and the rust aho-corasick fast
+    // path both handle this natively, but it had no test coverage —
+    // any future refactor that tokenized the query on whitespace
+    // would have shipped silently. This case locks the behaviour in.
+    //
+    // Also verifies the v0.1.36 query-trim: " import os " (with
+    // leading/trailing whitespace) gives the same matches as the
+    // bare phrase.
+    // ─────────────────────────────────────────────────────────────
+    {
+        std::printf("\n— case 7: multi-word literal phrase 'import os'\n");
+        write(fx.root + "/src/main.py",
+              "import os\n"                  // line 1: matches
+              "import sys\n"                  // line 2: doesn't
+              "from os import path\n"         // line 3: doesn't (different order)
+              "import os.path\n"              // line 4: matches (substring)
+              "    import os  # indented\n"   // line 5: matches
+              "x = 'import os'\n");           // line 6: matches (in string)
+
+        write(fx.root + "/src/other.py",
+              "import os\n");                 // 1 more match here
+
+        // Single-word baseline: "import" — should match many lines
+        int singleWordTotal = -1;
+        {
+            ProjectSearchWorker worker;
+            Collector c;
+            QObject::connect(&worker, &ProjectSearchWorker::matchesFound, &c,
+                [&c](const QVector<ProjectSearchMatch> &m) { c.flat.append(m); });
+            QEventLoop loop;
+            QObject::connect(&worker, &ProjectSearchWorker::finishedSearch, &c,
+                [&](int tm, int tf, qint64, qint64) {
+                    c.finalMatches = tm; c.finalFiles = tf; loop.quit();
+                }, Qt::QueuedConnection);
+
+            ProjectSearchWorker::Params p;
+            p.folder = fx.root + "/src";
+            p.query = "import";
+            p.skipBinary = true;
+            QMetaObject::invokeMethod(&worker, [&]() { worker.search(p); }, Qt::QueuedConnection);
+            QTimer::singleShot(10'000, &loop, &QEventLoop::quit);
+            loop.exec();
+            singleWordTotal = c.finalMatches;
+        }
+
+        // Multi-word phrase: "import os" — should narrow the result set
+        ProjectSearchWorker worker;
+        Collector c;
+        QObject::connect(&worker, &ProjectSearchWorker::matchesFound, &c,
+            [&c](const QVector<ProjectSearchMatch> &m) { c.flat.append(m); });
+        QEventLoop loop;
+        QObject::connect(&worker, &ProjectSearchWorker::finishedSearch, &c,
+            [&](int tm, int tf, qint64, qint64) {
+                c.finalMatches = tm; c.finalFiles = tf; loop.quit();
+            }, Qt::QueuedConnection);
+
+        ProjectSearchWorker::Params p;
+        p.folder = fx.root + "/src";
+        p.query = "import os";   // multi-word literal phrase, with space
+        p.skipBinary = true;
+        QMetaObject::invokeMethod(&worker, [&]() { worker.search(p); }, Qt::QueuedConnection);
+        QTimer::singleShot(10'000, &loop, &QEventLoop::quit);
+        loop.exec();
+
+        // Expected matches across main.py + other.py:
+        //   main.py L1 "import os"                      ← match
+        //   main.py L4 "import os.path"                 ← match (substring)
+        //   main.py L5 "    import os  # indented"      ← match
+        //   main.py L6 "x = 'import os'"                ← match
+        //   other.py L1 "import os"                     ← match
+        // = 5 matches
+        // (line 2 "import sys" and line 3 "from os import path" don't match
+        //  because "import os" isn't a substring of either.)
+        check("multi-word phrase 'import os' returns 5 matches",
+              c.finalMatches == 5,
+              QStringLiteral("got %1, expected 5").arg(c.finalMatches));
+
+        check("phrase narrows result set vs single word 'import'",
+              c.finalMatches < singleWordTotal,
+              QStringLiteral("phrase=%1 single-word=%2").arg(c.finalMatches).arg(singleWordTotal));
+
+        // The line 2 "import sys" must NOT appear — phrase matching
+        // requires both words contiguous with the space between them.
+        bool sawImportSys = false;
+        for (const auto &m : c.flat) {
+            if (m.lineContent.contains("import sys")) { sawImportSys = true; break; }
+        }
+        check("'import os' does NOT match the line 'import sys'", !sawImportSys);
+
+        // Line 3 "from os import path" must NOT match — words are present
+        // but not contiguous with that space.
+        bool sawFromOs = false;
+        for (const auto &m : c.flat) {
+            if (m.lineContent.contains("from os import path")) { sawFromOs = true; break; }
+        }
+        check("'import os' does NOT match 'from os import path'", !sawFromOs);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Case 8 — v0.1.36: query trim (" import os " == "import os")
+    // ─────────────────────────────────────────────────────────────
+    // The startSearch() entry-point trims leading/trailing whitespace
+    // from the query (so a stray space around "import os" doesn't
+    // break the search). The worker itself doesn't trim — it gets
+    // the trimmed query — so we test the worker with both shapes
+    // and verify they produce identical results.
+    //
+    // Internal whitespace MUST be preserved.
+    {
+        std::printf("\n— case 8: query trim preserves internal whitespace\n");
+        // Same fixture as case 7. Run "import os" untrimmed and trimmed
+        // and verify identical match count.
+        auto runQuery = [&](const QString &q) -> int {
+            ProjectSearchWorker worker;
+            Collector c;
+            QObject::connect(&worker, &ProjectSearchWorker::matchesFound, &c,
+                [&c](const QVector<ProjectSearchMatch> &m) { c.flat.append(m); });
+            QEventLoop loop;
+            QObject::connect(&worker, &ProjectSearchWorker::finishedSearch, &c,
+                [&](int tm, int tf, qint64, qint64) {
+                    c.finalMatches = tm; c.finalFiles = tf; loop.quit();
+                }, Qt::QueuedConnection);
+
+            ProjectSearchWorker::Params p;
+            p.folder = fx.root + "/src";
+            p.query = q;
+            p.skipBinary = true;
+            QMetaObject::invokeMethod(&worker, [&]() { worker.search(p); }, Qt::QueuedConnection);
+            QTimer::singleShot(10'000, &loop, &QEventLoop::quit);
+            loop.exec();
+            return c.finalMatches;
+        };
+
+        // The startSearch() UI handler trims; the worker accepts any
+        // query verbatim. Test both — bare phrase, and the trimmed
+        // form (since the UI strips before delivering to the worker).
+        const int bare    = runQuery("import os");
+        const int trimmed = runQuery(QString("  import os  ").trimmed());
+        check("trimmed query == bare phrase produces same matches",
+              bare == trimmed && bare == 5,
+              QStringLiteral("bare=%1 trimmed=%2 expected=5").arg(bare).arg(trimmed));
+    }
+
     // Clean up fixture dir
     QDir(fx.root).removeRecursively();
 

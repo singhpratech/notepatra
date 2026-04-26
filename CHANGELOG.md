@@ -7,6 +7,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.36] — 2026-04-26
+
+Two small UX wins driven by user feedback: Project Search makes multi-word phrases obvious + safe, and Compare's "Ignore spaces" defaults to ON.
+
+### Changed
+- 🔍 **Project Search placeholder text** updated to make multi-word phrase support discoverable. Was *"Search for a string, word, or regex pattern…"* (sounds single-token). Now *"Search any text — words, phrases like \"import os\", or regex patterns…"*. Multi-word literals like `import os` (with space) already worked via `QString::indexOf` substring matching + the rust aho-corasick fast path; the change is purely about discoverability.
+- 🔍 **Project Search query trim** — leading/trailing whitespace stripped at `startSearch()` so `" import os "` matches the same lines as `"import os"`. Internal whitespace preserved (multi-word phrase support intact). Trims for regex mode too — leading whitespace in regexes is rarely intentional and explicit `\s+` users are unaffected.
+- 🔀 **Compare: "Ignore spaces" defaults to ON.** The most common compare-tab use case is *"did this code change?"* where reformatting / re-indentation shouldn't show up as diffs. Users who want byte-exact compares (whitespace-as-meaning, e.g. YAML / Python indentation diffs) just untick the checkbox.
+
+### Added
+- ✅ **Two new test cases in `test_projectsearch.cpp`** locking in the multi-word behaviour:
+  - **Case 7** verifies `"import os"` returns exactly 5 matches (across two fixture files), excludes `"import sys"` and `"from os import path"` (where the words are present but not contiguous), and narrows the result set vs the single-word `"import"` baseline. Future refactors that accidentally tokenize the query on whitespace will fail CI.
+  - **Case 8** verifies the trim path: `" import os "` (with surrounding whitespace) produces identical matches to the bare phrase. test_projectsearch went from 26 → 31 assertions.
+- ✅ **`test_compare_widget`'s Test 1 updated** for the new default. First confirms `Ignore spaces` defaults to ON, then unchecks it (in byte-exact mode whitespace IS a diff), then re-checks to verify the diff disappears. Same coverage as before, inverted setup order.
+
+### Notes
+- 15 / 15 regression tests pass. All assertions updated to match the new defaults.
+- No backend or wire-format changes; pure UI/UX improvement on top of v0.1.35.
+- No new dependencies, no schema changes, no installer changes.
+
+---
+
 ## [0.1.35] — 2026-04-26
 
 Coding Mode is now AGENTIC — the AI can read files and list directories on its own. Works with **every backend**: Ollama (local), llama.cpp (local), and any OpenAI-compatible service (OpenRouter, OpenAI, Anthropic via proxy, vLLM, LM Studio).

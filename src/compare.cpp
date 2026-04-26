@@ -697,6 +697,11 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     closeBtn->setStyleSheet("QPushButton { font-weight: 600; padding: 0 8px; }");
 
     m_ignoreWhitespace = new QCheckBox("Ignore spaces");
+    // v0.1.36 — default ON. The most common compare-tab use case is
+    // "did this code change?" where reformatting / re-indentation
+    // shouldn't show up as diffs. Users who want byte-exact compares
+    // (whitespace-as-meaning, e.g. YAML / Python) can untick.
+    m_ignoreWhitespace->setChecked(true);
     m_ignoreCase = new QCheckBox("Ignore case");
     m_ignoreEmptyLines = new QCheckBox("Ignore empty lines");
 
