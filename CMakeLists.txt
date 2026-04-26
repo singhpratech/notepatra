@@ -578,6 +578,17 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_compare_widget.cpp
         src/lexerutils.cpp
         src/npp_palette.cpp
         src/rustbridge.cpp
+        # v0.1.26: lexerutils.cpp now references these custom lexer
+        # subclasses for PowerShell / Rust / Go / Swift / TS / Kotlin.
+        # Without compiling them in, the linker can't find their vtables
+        # or constructors. Same fix applies to every test target that
+        # links lexerutils.cpp.
+        src/lexer_go.cpp
+        src/lexer_kotlin.cpp
+        src/lexer_powershell.cpp
+        src/lexer_rust.cpp
+        src/lexer_swift.cpp
+        src/lexer_typescript.cpp
     )
     add_dependencies(test_compare_widget rust_core)
     target_include_directories(test_compare_widget PRIVATE
