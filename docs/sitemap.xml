@@ -1,4 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Notepatra sitemap.
+
+    Rules:
+      1. ONLY URLs on the verified property (https://notepatra.org/) belong here.
+         External URLs (e.g. github.com/...) are flagged "URL not allowed for a
+         Sitemap at this location" by Google and cause submission errors.
+         GitHub maintains its own sitemap for its own pages.
+      2. NO #fragment URLs. Google treats notepatra.org/#download as the same
+         page as notepatra.org/ — listing them in the sitemap creates duplicate
+         signals and gets dropped silently. Internal page navigation via
+         <nav> + anchor links + JSON-LD ItemList is what helps section ranking,
+         not sitemap entries.
+      3. Two real pages: index.html (the marketing homepage) and docs.html
+         (deeper docs / install / API). 404.html is intentionally excluded.
+-->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://notepatra.org/</loc>
@@ -10,85 +26,6 @@
     <loc>https://notepatra.org/docs.html</loc>
     <lastmod>2026-04-26</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.95</priority>
-  </url>
-  <url>
-    <loc>https://notepatra.org/#download</loc>
-    <lastmod>2026-04-26</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.95</priority>
-  </url>
-  <url>
-    <loc>https://notepatra.org/#install</loc>
-    <lastmod>2026-04-26</lastmod>
-    <changefreq>weekly</changefreq>
     <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://notepatra.org/#features</loc>
-    <lastmod>2026-04-26</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://notepatra.org/#ai</loc>
-    <lastmod>2026-04-26</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://notepatra.org/#plugins</loc>
-    <lastmod>2026-04-26</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.85</priority>
-  </url>
-  <url>
-    <loc>https://notepatra.org/#security</loc>
-    <lastmod>2026-04-26</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.85</priority>
-  </url>
-  <url>
-    <loc>https://notepatra.org/#faq</loc>
-    <lastmod>2026-04-26</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://notepatra.org/#versions</loc>
-    <lastmod>2026-04-26</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://notepatra.org/#compare</loc>
-    <lastmod>2026-04-26</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.85</priority>
-  </url>
-  <url>
-    <loc>https://github.com/singhpratech/notepatra</loc>
-    <changefreq>daily</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://github.com/singhpratech/notepatra/releases/latest</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
-    <loc>https://github.com/singhpratech/notepatra/blob/main/SECURITY.md</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
-    <loc>https://github.com/singhpratech/notepatra/blob/main/README.md</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
   </url>
 </urlset>
