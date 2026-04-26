@@ -7,6 +7,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.29] — 2026-04-26
+
+CI hotfix: `test_palette` was hardcoded against v0.1.26's palette and failed on every platform after v0.1.27 introduced per-language accent colours. Updated test assertions to match v0.1.27's intent.
+
+### Fixed
+- 🧪 **`test_palette` now passes against the v0.1.27 per-language palette.** Two assertions were checking for hardcoded colour values that v0.1.27's per-language tuning intentionally changed:
+  - **C++ secondary keywords (style 16, `SCE_C_WORD2`)**: was asserting `#800080` purple, but v0.1.27's C++ branch sets it to `#267F99` teal (matches VS Code default for type names). Updated assertion to expect teal.
+  - **JSON keyword (style 11, `true`/`false`/`null`)**: was asserting generic `#0000FF`, but v0.1.27's JSON branch sets it to `#0451A5` JSON-key blue (matches VS Code default JSON theme). Added a new `NP_JSON_KEYWORD` constant and updated assertion.
+- 🚢 **Unblocks v0.1.27 + v0.1.28 release pipeline.** Both releases compiled cleanly on every platform but failed the regression suite at the test_palette step → release-publish job was skipped → no GitHub release published. v0.1.29 contains both the v0.1.27 lexer overhaul and the v0.1.28 dark-theme palette fix bundled with this CI fix, so the in-app updater will pull this directly (skipping v0.1.27 and v0.1.28 which never published).
+
+### Notes
+- **No code changes** — same per-language palettes from v0.1.27 / v0.1.28, same lexer dispatch, same comprehensive keyword sets. Only the test assertions were updated to match the new palette intent.
+- **Dark theme palette fixes from v0.1.28 are bundled** (Lua / Perl / D / Ruby readability).
+- **All 6 v0.1.26 lexer comprehensive keyword sets** from v0.1.27 are bundled.
+- 14 / 14 regression tests pass.
+
+---
+
 ## [0.1.28] — 2026-04-26
 
 Hotfix for v0.1.27's dark-theme palette readability bugs. Four languages were assigned dark-only colour values that became unreadable on `#1E1E1E` background (e.g. Lua navy `#000080` is invisible on dark grey). Fixed with proper 3-way `monokai / dark / light` differentiation.

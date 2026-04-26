@@ -128,12 +128,16 @@ int main(int argc, char *argv[]) {
             {"C++",  9,  "pre-processor", NP_PREPROC, false, false},
             {"C++",  10, "operator",     NP_OPERATOR, false, false},
         });
-        // Secondary keywords — purple to distinguish from primary blue
+        // Secondary keywords (style 16 = SCE_C_WORD2). v0.1.27 introduced
+        // per-language accents — for C/C++ the secondary set is now
+        // #267F99 teal (was #800080 purple) to match VS Code defaults
+        // for type names. Same value flows through to Java's secondary
+        // when not Kotlin-overridden, JS / TS via the same branch, etc.
         QColor sec = lex.color(16);
-        if (sec == QColor(0x80, 0x00, 0x80)) {
-            fprintf(stdout, "  ok   C++        style 16 secondary keywords      = #800080 [purple]\n");
+        if (sec == QColor(0x26, 0x7F, 0x99)) {
+            fprintf(stdout, "  ok   C++        style 16 secondary keywords      = #267F99 [teal]\n");
         } else {
-            fprintf(stderr, "  FAIL C++        style 16 secondary keywords: got #%02X%02X%02X, expected #800080\n",
+            fprintf(stderr, "  FAIL C++        style 16 secondary keywords: got #%02X%02X%02X, expected #267F99\n",
                     sec.red(), sec.green(), sec.blue());
             total_failed++;
         }
@@ -184,11 +188,18 @@ int main(int argc, char *argv[]) {
     // ─── JSON (QsciLexerJSON) — actual style map per QScintilla 2.14 ─────
     //   1 = Number, 2 = String, 4 = Property (key), 6 = Line comment,
     //   7 = Block comment, 8 = Operator, 11 = JSON keyword (true/false/null)
+    //
+    // v0.1.27: JSON keyword (true/false/null) now uses the JSON-specific
+    // palette colour #0451A5 (a darker, more readable JSON-key blue used
+    // in VS Code's default JSON theme) instead of the generic #0000FF
+    // primary keyword. This makes JSON files visually distinct from
+    // generic-keyword languages.
+    static const QColor NP_JSON_KEYWORD(0x04, 0x51, 0xA5);
     {
         QsciLexerJSON lex;
         applyNotepadPlusPalette(&lex, base);
         total_failed += run_checks("JSON", &lex, {
-            {"JSON", 11, "keyword",  NP_KEYWORD, true, false},
+            {"JSON", 11, "keyword",  NP_JSON_KEYWORD, true, false},
             {"JSON", 1,  "number",   NP_NUMBER, false, false},
             {"JSON", 2,  "string",   NP_STRING, false, false},
             {"JSON", 6,  "comment",  NP_COMMENT, false, true},
