@@ -32,6 +32,29 @@
 #include <Qsci/qscilexermarkdown.h>
 #include <Qsci/qscilexerjava.h>
 
+// Notepatra-local lexers needed for v0.1.33+ brand-palette assertions
+// (PowerShell variable / cmdlet / alias colours, etc.)
+#include "lexer_powershell.h"
+#include "fonts.h"           // notepatraUiCssFamily / notepatraCodeCssFamily
+
+// Helper: assert that lex->color(style) == expectedHex. Returns 0 on
+// success, 1 on failure. Used by the per-language brand-palette tests
+// added in v0.1.33 — saves typing out the same 5-line if/else block 30+
+// times. The label is what shows in the test output.
+static int check_color(const char *lang, QsciLexer *lex, int style,
+                       const char *kind, QColor expected, const char *hexLabel) {
+    QColor got = lex->color(style);
+    if (got == expected) {
+        fprintf(stdout, "  ok   %-10s style %-2d %-24s = %s\n",
+                lang, style, kind, hexLabel);
+        return 0;
+    }
+    fprintf(stderr, "  FAIL %-10s style %-2d %s: got #%02X%02X%02X, expected %s\n",
+            lang, style, kind,
+            got.red(), got.green(), got.blue(), hexLabel);
+    return 1;
+}
+
 // Notepad++ default palette — verified against notepad-plus-plus master
 // PowerEditor/src/stylers.model.xml (light) and DarkModeDefault.xml (dark).
 // v0.1.31 aligned all values with the N++ canonical 9-hue scheme: the
@@ -259,13 +282,132 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // v0.1.33 — Per-language BRAND palette assertions. v0.1.32 added
+    // per-language overrides so SQL/Python/JSON/JS/PowerShell don't all
+    // look like generic blue+violet, but the assertions hadn't caught up.
+    // These tests fail if anyone refactors the brand palettes back to
+    // generic without updating user-visible colour expectations.
+    // ═══════════════════════════════════════════════════════════════════
+
+    // ─── PowerShell — ISE canonical signature (most distinctive) ───────
+    // Style indices from src/lexer_powershell.cpp::description():
+    //   5 = Variable ($var)              — must paint OrangeRed #FF4500
+    //   9 = Cmdlet (Get-Item, New-Object) — must paint pure blue #0000FF
+    //  10 = Alias (ls, gci)              — must paint lighter cyan #0080FF
+    {
+        LexerPowerShell lex;
+        applyNotepadPlusPalette(&lex, base);
+        total_failed += check_color("PowerShell", &lex, 5,  "$variable",
+                                    QColor(0xFF, 0x45, 0x00), "#FF4500 [ISE OrangeRed]");
+        total_failed += check_color("PowerShell", &lex, 9,  "Verb-Noun cmdlet",
+                                    QColor(0x00, 0x00, 0xFF), "#0000FF [ISE blue]");
+        total_failed += check_color("PowerShell", &lex, 10, "alias (ls/gci)",
+                                    QColor(0x00, 0x80, 0xFF), "#0080FF [lighter cyan]");
+    }
+
+    // ─── Python — VS Code Dark+ canonical (blue kw + teal types + amber names) ──
+    // QsciLexerPython style indices:
+    //   8  = Class name        — npClassName amber #795E26 light
+    //   9  = Function method   — npClassName amber
+    //   14 = Highlighted ident (set 2) — npKeyword2 teal #267F99
+    {
+        QsciLexerPython lex;
+        applyNotepadPlusPalette(&lex, base);
+        total_failed += check_color("Python", &lex, 8,  "class name",
+                                    QColor(0x79, 0x5E, 0x26), "#795E26 [VS Code amber]");
+        total_failed += check_color("Python", &lex, 9,  "function name",
+                                    QColor(0x79, 0x5E, 0x26), "#795E26 [VS Code amber]");
+        total_failed += check_color("Python", &lex, 14, "built-in / set-2",
+                                    QColor(0x26, 0x7F, 0x99), "#267F99 [VS Code teal]");
+    }
+
+    // ─── SQL — SSMS signature (blue kw + MAGENTA user-defined keyword) ─
+    // QsciLexerSQL exposes "User defined 1" at style 19 (NOT 16 — there's
+    // no SCE_SQL_WORD2 with description in QScintilla 2.x; primary
+    // secondary slot is style 19/20, populate-able via setKeywords(1,...)).
+    // Magenta gives SQL files the SSMS-instantly-recognisable feel — once
+    // the user populates set 1 with system functions (COUNT/SUM) and types
+    // (INT/VARCHAR), those tokens paint magenta.
+    {
+        QsciLexerSQL lex;
+        applyNotepadPlusPalette(&lex, base);
+        total_failed += check_color("SQL", &lex, 19, "user-defined kw 1",
+                                    QColor(0xFF, 0x00, 0xFF), "#FF00FF [SSMS magenta]");
+    }
+
+    // ─── JavaScript / TypeScript — VS Code Dark+ teal types ────────────
+    {
+        QsciLexerJavaScript lex;
+        applyNotepadPlusPalette(&lex, base);
+        total_failed += check_color("JS",  &lex, 16, "secondary kw / type",
+                                    QColor(0x26, 0x7F, 0x99), "#267F99 [VS Code teal]");
+    }
+
+    // ─── Bash — violet keyword2 (built-ins) distinct from primary blue ──
+    // QsciLexerBash doesn't have a populated keyword-set-2 by default
+    // (no built-in commands list), but we still want the COLOUR set on
+    // the lexer for any future expansion. Style 14 (or similar) maps to
+    // SCE_SH_PARAM in some Scintilla versions; the lexer's description()
+    // chain will tag the right style. Best we can do without lexing:
+    // verify npKeyword2 is set on the Bash lexer at all.
+    //
+    // Skipping for now — Bash brand verification needs a populated set 2
+    // which is a future feature. The matcher logic itself is verified
+    // by the JS test above (same npKeyword2 generic-palette path).
+
+    // ─── JSON property key — already tested earlier (line ~218). ────────
+
+    // ═══════════════════════════════════════════════════════════════════
+    // v0.1.33 — Font fallback chain. The Linux "Hello! 👋" tofu bug came
+    // from a CSS family chain that didn't list ANY emoji font, so Qt's
+    // HarfBuzz shaper had nothing to fall back to for SMP-plane emoji
+    // codepoints. The fix in src/fonts.h appended an emoji fallback
+    // chain (Apple Color Emoji → Segoe UI Emoji → Noto Color Emoji →
+    // Twemoji → Symbola). Test asserts those fonts are listed.
+    // ═══════════════════════════════════════════════════════════════════
+    {
+        const QString uiCss   = notepatraUiCssFamily();
+        const QString codeCss = notepatraCodeCssFamily();
+        struct EmojiCheck {
+            const char *family;
+            const char *why;
+        };
+        const std::vector<EmojiCheck> emojiFonts = {
+            {"Apple Color Emoji",  "macOS"},
+            {"Segoe UI Emoji",     "Windows 10+"},
+            {"Noto Color Emoji",   "Linux / Android"},
+        };
+        for (const auto &ef : emojiFonts) {
+            if (uiCss.contains(ef.family, Qt::CaseInsensitive)) {
+                fprintf(stdout, "  ok   FontUI     CSS chain has '%s' (%s)\n",
+                        ef.family, ef.why);
+            } else {
+                fprintf(stderr, "  FAIL FontUI     CSS chain missing '%s' — Linux/Win/macOS emoji fallback\n",
+                        ef.family);
+                total_failed++;
+            }
+            if (codeCss.contains(ef.family, Qt::CaseInsensitive)) {
+                fprintf(stdout, "  ok   FontCode   CSS chain has '%s' (%s)\n",
+                        ef.family, ef.why);
+            } else {
+                fprintf(stderr, "  FAIL FontCode   CSS chain missing '%s' — Linux/Win/macOS emoji fallback\n",
+                        ef.family);
+                total_failed++;
+            }
+        }
+    }
+
     fprintf(stdout, "\n");
     if (total_failed == 0) {
         fprintf(stdout, "=== ALL PALETTE CHECKS PASS ===\n");
-        fprintf(stdout, "Every lexer paints keywords #0000FF bold, comments #008000 italic,\n");
+        fprintf(stdout, "Generic palette: keywords #0000FF bold, comments #008000 italic,\n");
         fprintf(stdout, "numbers #FF8000, strings #808080, operators #000080 BOLD,\n");
-        fprintf(stdout, "preprocessor #804000, secondary keywords #8000FF — matches the\n");
-        fprintf(stdout, "Notepad++ stylers.model.xml canonical 9-hue palette.\n");
+        fprintf(stdout, "preprocessor #804000, secondary keywords #8000FF.\n");
+        fprintf(stdout, "Brand: PowerShell variable #FF4500 / cmdlet #0000FF / alias #0080FF;\n");
+        fprintf(stdout, "Python class+function #795E26, set-2 #267F99 teal; SQL set-2 #FF00FF\n");
+        fprintf(stdout, "magenta; JSON key #0451A5; JS/TS set-2 #267F99 teal; C++ set-2 #267F99.\n");
+        fprintf(stdout, "Font UI + Code CSS chains include emoji fallbacks (macOS / Win / Linux).\n");
         return 0;
     } else {
         fprintf(stderr, "=== %d PALETTE CHECKS FAILED ===\n", total_failed);

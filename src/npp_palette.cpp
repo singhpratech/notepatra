@@ -375,6 +375,26 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QStr
         else if (d.contains("link") || d.contains("url")) {
             fg = npClassName;
         }
+        else if (d.contains("highlighted") ||
+                 d.contains("user defined") || d.contains("user-defined")) {
+            // QsciLexerPython style 14 = "Highlighted identifier" — built-ins
+            // / keyword-set-2 entries. Without this branch the descriptor's
+            // "identifier" substring hit the identifier matcher below and
+            // painted built-ins as default text, defeating per-language brand
+            // overrides for Python (`print`/`len`/`range` should be teal,
+            // not plain text).
+            //
+            // QsciLexerSQL styles 19/20 = "User defined 1/2" — SQL's
+            // secondary keyword slots (where SSMS-style INT/VARCHAR/COUNT
+            // would live). Without this branch they fell through to default
+            // text since "user defined 1" doesn't contain "keyword".
+            //
+            // Use npKeyword2 so per-language brand controls the colour
+            // (Python: teal, SQL: SSMS magenta, generic: violet). Must
+            // come BEFORE the generic "identifier" matcher.
+            fg = npKeyword2;
+            lexer->setFont(bold, i);
+        }
         else if (d.contains("property")) {
             // JSON property keys (`"name":`), CSS property names (`color:`),
             // YAML keys, TOML keys etc. Use npKeyword2 so the per-language

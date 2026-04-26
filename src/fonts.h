@@ -73,15 +73,29 @@ inline QFont notepatraCodeFont(int pointSize = -1, int weight = QFont::Normal) {
     return font;
 }
 
+// Emoji fallback chain — listed AFTER the text fonts so Qt's HarfBuzz
+// text shaper only consults them for codepoints the primary font lacks
+// (e.g. SMP-plane emoji like 👋 U+1F44B). Order: macOS → Windows →
+// Linux/Android color → Linux monochrome (Symbola) → Twemoji 3rd-party.
+//
+// v0.1.33 added this after a user reported Linux AI Assistant responses
+// showing tofu □ for emoji while Windows rendered them fine — Windows'
+// "Segoe UI" family natively chains to "Segoe UI Emoji"; Linux text fonts
+// (Noto Sans, DejaVu, Inter, etc.) don't ship emoji glyphs so the chain
+// must be explicit.
+#define NOTEPATRA_EMOJI_FALLBACK \
+    "\"Apple Color Emoji\", \"Segoe UI Emoji\", \"Noto Color Emoji\", " \
+    "\"Twemoji Mozilla\", \"Twitter Color Emoji\", \"Symbola\""
+
 inline QString notepatraUiCssFamily() {
     return "\"Inter\", \"Segoe UI\", \"SF Pro Text\", \"Noto Sans\", \"Cantarell\", "
-           "\"Ubuntu\", \"DejaVu Sans\", sans-serif";
+           "\"Ubuntu\", \"DejaVu Sans\", " NOTEPATRA_EMOJI_FALLBACK ", sans-serif";
 }
 
 inline QString notepatraCodeCssFamily() {
     return "\"JetBrains Mono\", \"Cascadia Code\", \"IBM Plex Mono\", \"SF Mono\", "
            "\"Menlo\", \"DejaVu Sans Mono\", \"Liberation Mono\", \"Noto Sans Mono\", "
-           "\"Cousine\", \"Consolas\", monospace";
+           "\"Cousine\", \"Consolas\", " NOTEPATRA_EMOJI_FALLBACK ", monospace";
 }
 
 #endif

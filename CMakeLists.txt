@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.32 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.33 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -626,6 +626,12 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_palette.cpp")
     add_executable(test_palette
         test_palette.cpp
         src/npp_palette.cpp
+        src/lexer_powershell.cpp
+        src/lexer_rust.cpp
+        src/lexer_go.cpp
+        src/lexer_swift.cpp
+        src/lexer_kotlin.cpp
+        src/lexer_typescript.cpp
     )
     target_include_directories(test_palette PRIVATE
         ${CMAKE_SOURCE_DIR}/src

@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.8 MB (Linux x64 tar.gz), 25.5 MB (macOS DMG with bundled Qt), 43.5 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 48 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.32",
+      "softwareVersion": "0.1.33",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.32 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.33 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.32">
-        Download v0.1.32 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.33">
+        Download v0.1.33 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.32 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.33 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1389,7 +1389,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.32</div>
+        <div class="section-label">Download v0.1.33</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1841,7 +1841,48 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.32 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.33 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-26</span>
+                        <span>· Linux emoji fix + comprehensive palette test coverage</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🐧 Linux: AI Assistant emoji rendered as <code style="color:var(--green);font-size:12px;">□</code> tofu — fixed</h5>
+                        <ul>
+                            <li>User reported <code style="color:var(--green);font-size:12px;">Hello! 👋</code> from a model coming back as <code style="color:var(--green);font-size:12px;">Hello! □</code> on Linux. Windows worked. Root cause: Linux text fonts (Inter, Noto Sans, DejaVu, Cantarell) don't ship emoji glyphs, and Notepatra's CSS family chain in <code style="color:var(--green);font-size:12px;">src/fonts.h</code> didn't list any emoji font as fallback — Qt's HarfBuzz shaper had nothing to fall back to for SMP-plane codepoints.</li>
+                            <li>Fix: appended <code style="color:var(--green);font-size:12px;">Apple Color Emoji</code> → <code style="color:var(--green);font-size:12px;">Segoe UI Emoji</code> → <code style="color:var(--green);font-size:12px;">Noto Color Emoji</code> → <code style="color:var(--green);font-size:12px;">Twemoji Mozilla</code> → <code style="color:var(--green);font-size:12px;">Twitter Color Emoji</code> → <code style="color:var(--green);font-size:12px;">Symbola</code> to both <code style="color:var(--green);font-size:12px;">notepatraUiCssFamily()</code> and <code style="color:var(--green);font-size:12px;">notepatraCodeCssFamily()</code>. Order: text fonts FIRST, emoji fonts AFTER, so the shaper only falls back for emoji codepoints.</li>
+                            <li>Windows already worked because Segoe UI auto-pairs with Segoe UI Emoji at the OS level.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>✅ Test coverage doubled (38 → 56 colour checks)</h5>
+                        <ul>
+                            <li>New <code style="color:var(--green);font-size:12px;">test_palette.cpp</code> assertions cover every per-language brand palette added in v0.1.32: PowerShell ISE signature (<code style="color:var(--green);font-size:12px;">$variable</code> <code style="color:var(--green);font-size:12px;">#FF4500</code>, cmdlet <code style="color:var(--green);font-size:12px;">#0000FF</code>, alias <code style="color:var(--green);font-size:12px;">#0080FF</code>); Python brand (class/function amber <code style="color:var(--green);font-size:12px;">#795E26</code>, built-ins teal <code style="color:var(--green);font-size:12px;">#267F99</code>); SQL SSMS magenta <code style="color:var(--green);font-size:12px;">#FF00FF</code>; JS teal types <code style="color:var(--green);font-size:12px;">#267F99</code>; 6 emoji-fallback chain assertions (UI + code × Apple/Segoe/Noto Emoji).</li>
+                            <li>Regressions in palette or font config now die at CI before reaching user screenshots.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🐛 Two more palette bugs caught by new tests</h5>
+                        <ul>
+                            <li><strong>Python built-ins</strong> (<code style="color:var(--green);font-size:12px;">print</code>, <code style="color:var(--green);font-size:12px;">len</code>, <code style="color:var(--green);font-size:12px;">range</code>) painted as default text instead of v0.1.32's claimed teal. <code style="color:var(--green);font-size:12px;">QsciLexerPython</code> style 14 description "Highlighted identifier" hit the catch-all identifier matcher BEFORE any keyword matcher — so the per-language Python brand never reached style 14.</li>
+                            <li><strong>SQL user-defined keyword slots</strong> (style 19/20 — where SSMS-style <code style="color:var(--green);font-size:12px;">INT</code>/<code style="color:var(--green);font-size:12px;">VARCHAR</code>/<code style="color:var(--green);font-size:12px;">COUNT</code> would live) painted as default text instead of magenta. Description "User defined 1" doesn't contain "keyword" so the keyword sub-branch missed it.</li>
+                            <li>Both fixed by adding a single <code style="color:var(--green);font-size:12px;">d.contains("highlighted") || d.contains("user defined")</code> branch BEFORE the generic identifier matcher in <code style="color:var(--green);font-size:12px;">npp_palette.cpp</code>.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.33">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.33">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.32</div>
                     <div class="version-meta">
                         <span>2026-04-26</span>
                         <span>· PowerShell highlighting hotfix + per-language brand palettes</span>

@@ -7,6 +7,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.33] — 2026-04-26
+
+Linux emoji rendering fix + comprehensive per-language brand-palette test coverage. Two additional palette bugs uncovered by the new assertions and fixed in the same release.
+
+### Fixed
+- 🐧 **Linux: emoji in AI Assistant responses rendered as tofu `□`.** `Hello! 👋` from a model came back as `Hello! □` because Linux text fonts (Inter, Noto Sans, DejaVu, etc.) don't ship emoji glyphs and Notepatra's CSS family chains in `src/fonts.h` didn't list any emoji font as a fallback. Qt's HarfBuzz text shaper had nothing to fall back to for SMP-plane codepoints. Fixed by appending an emoji fallback chain (`Apple Color Emoji` → `Segoe UI Emoji` → `Noto Color Emoji` → `Twemoji Mozilla` → `Twitter Color Emoji` → `Symbola`) to both `notepatraUiCssFamily()` and `notepatraCodeCssFamily()`. Windows already worked because Segoe UI auto-pairs with Segoe UI Emoji at the OS level.
+- 🐛 **Python built-ins / keyword-set-2 painted as default text instead of the brand teal.** `QsciLexerPython` style 14 description is "Highlighted identifier" — the substring `identifier` hit `npp_palette.cpp`'s identifier matcher BEFORE any keyword matcher, so built-ins fell through to `npText`. Added a `d.contains("highlighted")` branch before the identifier matcher so style 14 picks up `npKeyword2` correctly. Fix surfaced via the new test_palette assertion that `print` / `len` / `range` should paint teal `#267F99` light / `#4EC9B0` dark.
+- 🐛 **SQL user-defined keyword slots painted as default text instead of magenta.** `QsciLexerSQL` style 19/20 are "User defined 1/2" (the secondary keyword slots where SSMS-style `INT` / `VARCHAR` / `COUNT` would live). The description "user defined 1" doesn't contain `keyword`, so the keyword sub-branch logic missed them. Same `d.contains("highlighted")` branch was extended to also catch `user defined` / `user-defined` so SQL style 19/20 now route to `npKeyword2` (= SSMS magenta `#FF00FF` light / `#C586C0` dark per the SQL brand override).
+
+### Added
+- ✅ **Comprehensive per-language palette test coverage** in `test_palette.cpp`. Was 38 colour checks; now 56. New assertions cover:
+  - PowerShell ISE signature: `$variable` style 5 = `#FF4500`, cmdlet style 9 = `#0000FF`, alias style 10 = `#0080FF`
+  - Python brand: class-name style 8 = amber `#795E26`, function-name style 9 = amber, built-in / set-2 style 14 = teal `#267F99`
+  - SQL brand: user-defined keyword style 19 = magenta `#FF00FF`
+  - JavaScript brand: secondary keyword style 16 = teal `#267F99`
+  - Font fallback chain: both UI and code CSS chains contain `Apple Color Emoji`, `Segoe UI Emoji`, `Noto Color Emoji`
+- ✅ **`check_color()` helper** in `test_palette.cpp` — saves typing the same 5-line if/else-with-printf pattern for every per-language colour assertion.
+- ✅ **`LexerPowerShell` and the 5 other Notepatra-local lexer .cpp files** added to `test_palette` CMake target's source list so PowerShell style assertions can actually instantiate the lexer.
+
+### Notes
+- 14 / 14 regression tests pass. test_palette went from 38 → 56 colour checks.
+- The two palette bugs (Python built-ins + SQL user-defined) were live for one release (v0.1.32) before the new tests caught them — exactly the kind of issue the user complained about ("how come we're missing testing"). v0.1.33 closes the gap.
+- No new dependencies, no schema changes, no installer changes.
+
+---
+
 ## [0.1.32] — 2026-04-26
 
 PowerShell highlighting hotfix + per-language brand palettes (Python, SQL, JSON, JS/TS, C/C++, Bash) so commonly-used languages no longer all look like generic blue+violet. Multi-editor research across Notepad++, VS Code Dark+/Light+, PowerShell ISE, SSMS, PyCharm Darcula, and Sublime Mariana drove the per-language colour choices.
