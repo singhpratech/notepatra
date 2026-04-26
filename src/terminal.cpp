@@ -82,40 +82,116 @@ static ShellInfo detectShell() {
 // with colours pulled from a VT100-style palette. Everything else is
 // HTML-escaped and <br>-separated as before.
 //
-// Supports the 99% of SGR codes real CLIs actually use:
-//   0   reset         1   bold              4   underline
-//   30-37 FG          40-47 BG              39  default FG  49 default BG
-//   90-97 bright FG   100-107 bright BG
-// Bracketed 256-colour and truecolour (38;5;N, 38;2;R;G;B) are
-// recognised and converted to the nearest palette entry.
+// Supports every common SGR code real CLIs use:
+//   0  reset
+//   1  bold        2  faint           3  italic
+//   4  underline   9  strikethrough
+//   22 normal-intensity (cancel bold/faint)
+//   23 not-italic  24 not-underline   29 not-strikethrough
+//   30-37 FG       40-47 BG           39 default FG     49 default BG
+//   90-97 bright FG                   100-107 bright BG
+//   38;5;N  / 48;5;N           — 256-colour palette
+//   38;2;R;G;B / 48;2;R;G;B   — 24-bit truecolour
+//
+// Why the explicit support for 256-colour + truecolour: modern CLIs
+// (`bat`, `eza`, `fzf`, `delta`, `gh`, recent `cargo`/`npm`) emit these
+// by default. Without explicit handling, the 38;5;N segments leaked
+// through as literal numbers in the output -- so `bat foo.py` looked
+// like a wall of digit-prefixed text instead of syntax-highlighted code.
 // ═══════════════════════════════════════════════════════════════════════
 
 struct AnsiPalette {
     QString c[16];  // 0-7 = normal, 8-15 = bright
 };
 static const AnsiPalette kAnsi = {{
-    // Classic VS Code dark palette — readable on #1E1E1E background
+    // Classic VS Code dark palette — readable on #1E1E1E background.
+    // Notepatra's terminal frame stays dark regardless of editor theme,
+    // so this palette is theme-independent.
     "#1E1E1E", "#F14C4C", "#76D275", "#F2C14E",
     "#569CD6", "#C678DD", "#4EC9B0", "#D4D4D4",
     "#6C6C6C", "#FF8B8B", "#B5E2A9", "#FFE0A3",
     "#9CDCFE", "#E4B0F5", "#A8EAD9", "#FFFFFF",
 }};
 
-static QString ansiColourToHex(int code, bool background) {
-    Q_UNUSED(background);
-    if (code >= 30 && code <= 37) return kAnsi.c[code - 30];
-    if (code >= 90 && code <= 97) return kAnsi.c[code - 90 + 8];
-    if (code >= 40 && code <= 47) return kAnsi.c[code - 40];
+// xterm 256-colour palette generator. Codes 0-15 mirror our 16-colour
+// palette; 16-231 form a 6×6×6 RGB cube; 232-255 are a 24-step grayscale.
+static QString ansi256ToHex(int idx) {
+    if (idx < 0 || idx > 255) return QString();
+    if (idx < 16) return kAnsi.c[idx];
+    if (idx >= 232) {
+        // 24-step grayscale from #080808 to #EEEEEE
+        const int v = 8 + (idx - 232) * 10;
+        return QString::asprintf("#%02x%02x%02x", v, v, v);
+    }
+    // 6×6×6 RGB cube. Each channel is one of: 0, 95, 135, 175, 215, 255.
+    const int n = idx - 16;
+    static const int kCube[6] = {0, 95, 135, 175, 215, 255};
+    const int r = kCube[(n / 36) % 6];
+    const int g = kCube[(n / 6)  % 6];
+    const int b = kCube[n        % 6];
+    return QString::asprintf("#%02x%02x%02x", r, g, b);
+}
+
+static QString ansiColourToHex(int code) {
+    if (code >= 30 && code <= 37)   return kAnsi.c[code - 30];
+    if (code >= 90 && code <= 97)   return kAnsi.c[code - 90 + 8];
+    if (code >= 40 && code <= 47)   return kAnsi.c[code - 40];
     if (code >= 100 && code <= 107) return kAnsi.c[code - 100 + 8];
     return QString();
 }
 
+// Style-attribute fragments. We track them separately so 22/23/24/29
+// (cancel-bold, cancel-italic, etc.) can clear the relevant attribute
+// without nuking the whole style state.
+struct SgrState {
+    QString fg;        // "color:#xxxxxx;" or empty
+    QString bg;        // "background:#xxxxxx;" or empty
+    bool bold = false;
+    bool faint = false;
+    bool italic = false;
+    bool underline = false;
+    bool strike = false;
+
+    void reset() {
+        fg.clear(); bg.clear();
+        bold = faint = italic = underline = strike = false;
+    }
+
+    QString toCss() const {
+        QString s;
+        if (!fg.isEmpty()) s += fg;
+        if (!bg.isEmpty()) s += bg;
+        if (bold)      s += "font-weight:bold;";
+        if (faint)     s += "opacity:0.6;";
+        if (italic)    s += "font-style:italic;";
+        if (underline) s += "text-decoration:underline;";
+        if (strike) {
+            // text-decoration is shorthand: combine with underline if both set
+            if (underline) s.replace("text-decoration:underline;",
+                                     "text-decoration:underline line-through;");
+            else s += "text-decoration:line-through;";
+        }
+        return s;
+    }
+};
+
 static QString ansiToHtml(const QString &raw) {
     QString out;
     out.reserve(raw.size() + 32);
+    SgrState st;
     bool spanOpen = false;
     int i = 0;
     const int n = raw.size();
+
+    auto reopenSpan = [&]() {
+        if (spanOpen) { out += "</span>"; spanOpen = false; }
+        const QString css = st.toCss();
+        if (!css.isEmpty()) {
+            out += "<span style='" + css + "'>";
+            spanOpen = true;
+        }
+    };
+
     while (i < n) {
         QChar c = raw[i];
         if (c == QChar(0x1B) && i + 1 < n && raw[i+1] == '[') {
@@ -128,26 +204,72 @@ static QString ansiToHtml(const QString &raw) {
             i = j + 1;
             if (finalByte != 'm') continue;  // only handle SGR
 
-            if (spanOpen) { out += "</span>"; spanOpen = false; }
-
-            QString style;
-            for (const QString &p : params.split(';')) {
+            // Walk the segments index-by-index so we can look ahead for
+            // 38;5;N, 38;2;R;G;B, 48;5;N, 48;2;R;G;B sequences.
+            const QStringList parts = params.isEmpty() ? QStringList{"0"} : params.split(';');
+            int p = 0;
+            while (p < parts.size()) {
                 bool ok = false;
-                int code = p.toInt(&ok);
-                if (!ok) continue;
-                if (code == 0) { style.clear(); break; }
-                else if (code == 1) style += "font-weight:bold;";
-                else if (code == 4) style += "text-decoration:underline;";
-                else if ((code >= 30 && code <= 37) || (code >= 90 && code <= 97)) {
-                    style += "color:" + ansiColourToHex(code, false) + ";";
-                } else if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107)) {
-                    style += "background:" + ansiColourToHex(code, true) + ";";
+                const int code = parts[p].toInt(&ok);
+                if (!ok) { ++p; continue; }
+
+                // 38 / 48 are extended-colour introducers and consume
+                // either 2 ([5;N]) or 4 ([2;R;G;B]) extra params.
+                if (code == 38 || code == 48) {
+                    const bool isFg = (code == 38);
+                    if (p + 1 < parts.size()) {
+                        const int kind = parts[p + 1].toInt();
+                        if (kind == 5 && p + 2 < parts.size()) {
+                            const int idx = parts[p + 2].toInt();
+                            const QString hex = ansi256ToHex(idx);
+                            if (!hex.isEmpty()) {
+                                if (isFg) st.fg = "color:" + hex + ";";
+                                else      st.bg = "background:" + hex + ";";
+                            }
+                            p += 3;
+                            continue;
+                        }
+                        if (kind == 2 && p + 4 < parts.size()) {
+                            const int r = parts[p + 2].toInt();
+                            const int g = parts[p + 3].toInt();
+                            const int b = parts[p + 4].toInt();
+                            const QString hex = QString::asprintf("#%02x%02x%02x",
+                                qBound(0, r, 255), qBound(0, g, 255), qBound(0, b, 255));
+                            if (isFg) st.fg = "color:" + hex + ";";
+                            else      st.bg = "background:" + hex + ";";
+                            p += 5;
+                            continue;
+                        }
+                    }
+                    ++p;
+                    continue;
                 }
+
+                switch (code) {
+                    case 0:  st.reset();             break;
+                    case 1:  st.bold = true;         break;
+                    case 2:  st.faint = true;        break;
+                    case 3:  st.italic = true;       break;
+                    case 4:  st.underline = true;    break;
+                    case 9:  st.strike = true;       break;
+                    case 22: st.bold = false; st.faint = false; break;
+                    case 23: st.italic = false;      break;
+                    case 24: st.underline = false;   break;
+                    case 29: st.strike = false;      break;
+                    case 39: st.fg.clear();          break;
+                    case 49: st.bg.clear();          break;
+                    default:
+                        if ((code >= 30 && code <= 37) || (code >= 90 && code <= 97)) {
+                            st.fg = "color:" + ansiColourToHex(code) + ";";
+                        } else if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107)) {
+                            st.bg = "background:" + ansiColourToHex(code) + ";";
+                        }
+                        break;
+                }
+                ++p;
             }
-            if (!style.isEmpty()) {
-                out += "<span style='" + style + "'>";
-                spanOpen = true;
-            }
+
+            reopenSpan();
         } else if (c == '\n') {
             out += "<br>";
             ++i;

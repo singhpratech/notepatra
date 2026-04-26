@@ -145,6 +145,12 @@ set(SOURCES
     src/ollama.cpp
     src/ai_context.cpp
     src/ai_systemprompt.cpp
+    src/lexer_go.cpp
+    src/lexer_kotlin.cpp
+    src/lexer_powershell.cpp
+    src/lexer_rust.cpp
+    src/lexer_swift.cpp
+    src/lexer_typescript.cpp
     src/aipanel.cpp
     src/restclient.cpp
     src/gitpanel.cpp
@@ -160,6 +166,12 @@ set(HEADERS
     src/mainwindow.h
     src/editor.h
     src/lexerutils.h
+    src/lexer_go.h
+    src/lexer_kotlin.h
+    src/lexer_powershell.h
+    src/lexer_rust.h
+    src/lexer_swift.h
+    src/lexer_typescript.h
     src/npp_palette.h
     src/tabmanager.h
     src/statusbar.h
@@ -299,6 +311,40 @@ function(notepatra_add_qt_test target_name)
         COMMAND ${CMAKE_COMMAND} -E env QT_QPA_PLATFORM=offscreen $<TARGET_FILE:${target_name}>
     )
 endfunction()
+
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_terminal_ansi.cpp")
+    add_executable(test_terminal_ansi test_terminal_ansi.cpp)
+    target_link_libraries(test_terminal_ansi PRIVATE Qt5::Core)
+    notepatra_add_qt_test(test_terminal_ansi)
+    set_tests_properties(test_terminal_ansi PROPERTIES LABELS "smoke;terminal;v0125")
+    message(STATUS "Regression test enabled — target: test_terminal_ansi")
+endif()
+
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexers_v0125.cpp")
+    add_executable(test_lexers_v0125
+        test_lexers_v0125.cpp
+        src/lexerutils.cpp
+        src/lexer_go.cpp
+        src/lexer_kotlin.cpp
+        src/lexer_powershell.cpp
+        src/lexer_rust.cpp
+        src/lexer_swift.cpp
+        src/lexer_typescript.cpp
+    )
+    target_include_directories(test_lexers_v0125 PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_lexers_v0125 PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::PrintSupport ${QSCINTILLA_LIB}
+    )
+    if(WIN32)
+        target_compile_definitions(test_lexers_v0125 PRIVATE QSCINTILLA_DLL)
+    endif()
+    notepatra_add_qt_test(test_lexers_v0125)
+    set_tests_properties(test_lexers_v0125 PROPERTIES LABELS "smoke;lexer;v0125")
+    message(STATUS "Regression test enabled — target: test_lexers_v0125")
+endif()
 
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexers.cpp")
     add_executable(test_lexers test_lexers.cpp)

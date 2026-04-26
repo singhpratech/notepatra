@@ -25,6 +25,15 @@
 #include <Qsci/qscilexerxml.h>
 #include <Qsci/qscilexeryaml.h>
 
+// Notepatra-local lexer subclasses that fill the gaps QScintilla doesn't
+// ship lexers for (PowerShell, Rust, Go, Swift, TypeScript, Kotlin).
+#include "lexer_go.h"
+#include "lexer_kotlin.h"
+#include "lexer_powershell.h"
+#include "lexer_rust.h"
+#include "lexer_swift.h"
+#include "lexer_typescript.h"
+
 #if __has_include(<Qsci/qscilexeravs.h>)
 #include <Qsci/qscilexeravs.h>
 #define HAS_LEXER_AVS
@@ -113,17 +122,21 @@ QString detectLanguageFromPath(const QString &path, const QString &text) {
         {"py", "Python"}, {"pyw", "Python"}, {"pyx", "Python"}, {"pyi", "Python"},
         {"pxd", "Python"}, {"ipynb", "JSON"}, {"sage", "Python"}, {"bzl", "Python"},
         {"js", "JavaScript"}, {"mjs", "JavaScript"}, {"cjs", "JavaScript"},
-        {"jsx", "JavaScript"}, {"ts", "JavaScript"}, {"tsx", "JavaScript"},
+        {"jsx", "JavaScript"},
+        {"ts", "TypeScript"}, {"tsx", "TypeScript"}, {"mts", "TypeScript"}, {"cts", "TypeScript"},
         {"coffee", "CoffeeScript"}, {"litcoffee", "CoffeeScript"},
         {"c", "C"}, {"h", "C"},
         {"cpp", "C++"}, {"cxx", "C++"}, {"cc", "C++"}, {"hpp", "C++"},
         {"hxx", "C++"}, {"hh", "C++"}, {"ino", "C++"},
         {"m", "Octave"}, {"mm", "C++"},
         {"cs", "C#"},
-        {"java", "Java"}, {"kt", "Java"}, {"kts", "Java"},
-        {"scala", "Java"}, {"groovy", "Java"}, {"gradle", "Java"},
+        {"java", "Java"},
+        {"scala", "Java"}, {"sc", "Java"}, {"groovy", "Java"}, {"gradle", "Java"},
         {"d", "D"}, {"di", "D"},
-        {"rs", "C++"}, {"go", "C++"}, {"swift", "C++"},
+        {"rs", "Rust"},
+        {"go", "Go"},
+        {"swift", "Swift"},
+        {"kt", "Kotlin"}, {"kts", "Kotlin"}, {"ktm", "Kotlin"},
         {"html", "HTML"}, {"htm", "HTML"}, {"xhtml", "HTML"},
         {"vue", "HTML"}, {"svelte", "HTML"}, {"jsp", "HTML"},
         {"erb", "HTML"}, {"ejs", "HTML"}, {"hbs", "HTML"},
@@ -141,7 +154,9 @@ QString detectLanguageFromPath(const QString &path, const QString &text) {
         {"cql", "SQL"}, {"psql", "SQL"},
         {"sh", "Bash"}, {"bash", "Bash"}, {"zsh", "Bash"}, {"fish", "Bash"},
         {"ksh", "Bash"}, {"csh", "Bash"}, {"tcsh", "Bash"},
-        {"bat", "Batch"}, {"cmd", "Batch"}, {"ps1", "Batch"}, {"psm1", "Batch"},
+        {"bat", "Batch"}, {"cmd", "Batch"},
+        {"ps1", "PowerShell"}, {"psm1", "PowerShell"}, {"psd1", "PowerShell"},
+        {"ps1xml", "XML"},
         {"rb", "Ruby"}, {"rake", "Ruby"}, {"gemspec", "Ruby"}, {"rbw", "Ruby"},
         {"pl", "Perl"}, {"pm", "Perl"}, {"pod", "Perl"}, {"t", "Perl"},
         {"lua", "Lua"}, {"luau", "Lua"}, {"wlua", "Lua"},
@@ -170,12 +185,37 @@ QString detectLanguageFromPath(const QString &path, const QString &text) {
         {"pas", "Pascal"}, {"pp", "Pascal"}, {"dpr", "Pascal"}, {"dpk", "Pascal"},
         {"cmake", "CMake"},
         {"avs", "AVS"}, {"avsi", "AVS"},
-        {"r", "Octave"}, {"rmd", "Markdown"},
+        {"r", "Bash"}, {"rmd", "Markdown"}, // R: Bash lexer handles # comments + identifiers passably until we ship a custom R lexer
         {"hex", "IntelHex"}, {"ihex", "IntelHex"},
         {"srec", "SRecord"}, {"s19", "SRecord"}, {"s28", "SRecord"},
         {"log", "Plain Text"}, {"out", "Plain Text"}, {"txt", "Plain Text"},
         {"csv", "Plain Text"}, {"tsv", "Plain Text"},
         {"dockerignore", "Bash"}, {"gitignore", "Bash"},
+        // Modern languages without dedicated QScintilla lexers — routed
+        // to the closest existing lexer for syntax that mostly works.
+        // Custom keyword overrides are TODO for v0.1.27+; for now this
+        // is a 70-90% solution per language.
+        {"dart", "JavaScript"},      // C-family syntax, similar braces/strings
+        {"zig", "C++"},              // C-family
+        {"zon", "C++"},              // Zig Object Notation -- tiny config files
+        {"nim", "Python"},           // Indent-based + Python-like syntax
+        {"nims", "Python"},          // NimScript
+        {"ex", "Ruby"}, {"exs", "Ruby"},   // Elixir -- uses do/end like Ruby
+        {"erl", "Perl"},             // Erlang -- closer to Perl than anything else
+        {"hrl", "Perl"},             // Erlang headers
+        {"cr", "Ruby"},              // Crystal -- explicit Ruby-inspired
+        {"hs", "Bash"},              // Haskell -- # not used but Bash lexer is least-bad
+        {"lhs", "Bash"},             // Literate Haskell
+        {"ml", "Bash"}, {"mli", "Bash"},   // OCaml -- (* *) comments don't fit any lexer
+        {"fs", "C#"}, {"fsx", "C#"}, {"fsi", "C#"},   // F# -- closer to C# than anything
+        {"clj", "Lua"}, {"cljs", "Lua"}, {"cljc", "Lua"}, {"edn", "Lua"},   // Clojure -- ; comments
+        {"elm", "Bash"},             // Elm -- # comments don't apply but braces help
+        {"jl", "Python"},            // Julia -- syntactically Python-flavoured
+        {"v", "Verilog"},            // V (lang) -- conflicts with Verilog (.v); Verilog wins
+        {"vlang", "C++"},            // V language unique extension
+        {"odin", "C++"},             // Odin -- C-family
+        {"sb", "Bash"}, {"sbn", "Bash"},   // SmallBASIC / scratch
+        {"awk", "Bash"},             // AWK -- # comments + similar feel
     };
 
     static const QHash<QString, QString> nameMap = {
@@ -285,5 +325,23 @@ QsciLexer *createLexerForLanguage(const QString &lang, QObject *parent) {
     if (lang == "Pascal") return new QsciLexerPascal(parent);
     if (lang == "CMake") return new QsciLexerCMake(parent);
     if (lang == "Makefile") return new QsciLexerMakefile(parent);
+
+    // Notepatra-local lexer subclasses for languages QScintilla doesn't
+    // ship lexers for. Each fills a real-world UX gap:
+    //   - PowerShell: was being highlighted as Batch (cmd.exe). Wrong.
+    //   - Rust / Go / Swift: were being highlighted as C++. Keywords
+    //     like `fn`, `let`, `func`, `package`, `protocol` rendered
+    //     as plain identifiers.
+    //   - Kotlin: was being highlighted as Java. `fun`, `val`, `var`,
+    //     `data class`, `when`, `sealed` rendered as identifiers.
+    //   - TypeScript: was being highlighted as JavaScript. `interface`,
+    //     `type`, `as`, `is`, `readonly`, `keyof` rendered as identifiers.
+    if (lang == "PowerShell") return new LexerPowerShell(parent);
+    if (lang == "Rust")       return new LexerRust(parent);
+    if (lang == "Go")         return new LexerGo(parent);
+    if (lang == "Swift")      return new LexerSwift(parent);
+    if (lang == "Kotlin")     return new LexerKotlin(parent);
+    if (lang == "TypeScript") return new LexerTypeScript(parent);
+
     return nullptr;
 }
