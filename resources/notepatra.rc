@@ -6,7 +6,7 @@
 // icon resource wins). Path is relative to this .rc file's location.
 IDI_ICON1 ICON "notepatra.ico"
 
-// Version info — shows up in File Properties > Details on Windows.
+// Version info -- shows up in File Properties > Details on Windows.
 1 VERSIONINFO
 FILEVERSION     0,1,0,0
 PRODUCTVERSION  0,1,0,0
@@ -21,10 +21,10 @@ BEGIN
         BLOCK "040904b0"  // U.S. English, Unicode
         BEGIN
             VALUE "CompanyName",      "Prateek Singh"
-            VALUE "FileDescription",  "Notepatra — native code editor for the AI era"
+            VALUE "FileDescription",  "Notepatra - native code editor for the AI era"
             VALUE "FileVersion",      "0.1.0.0"
             VALUE "InternalName",     "notepatra"
-            VALUE "LegalCopyright",   "© 2026 Prateek Singh. GPL-3.0."
+            VALUE "LegalCopyright",   "Copyright 2026 Prateek Singh. GPL-3.0."
             VALUE "OriginalFilename", "notepatra.exe"
             VALUE "ProductName",      "Notepatra"
             VALUE "ProductVersion",   "0.1.0"

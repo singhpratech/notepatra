@@ -7,6 +7,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.24] — 2026-04-25
+
+Windows-only mojibake cleanup. Two distinct UTF-8-vs-codepage bugs that surfaced on a fresh Windows 11 install: the file-association description showing `Notepatra â€" native code editor` in Explorer's "Open with" menu, and the `irm | iex` PowerShell installer banner rendering box-drawing chars as `â`/`âˆ` garbage.
+
+### Fixed
+- 🪟 **"Open with" menu no longer shows `Notepatra â€" native code editor`.** Root cause: `resources/notepatra.rc` was saved as UTF-8 (no BOM) and contained two non-ASCII characters in the resource strings — an em-dash `—` (UTF-8 `0xE2 0x80 0x94`) in `FileDescription` and a copyright sign `©` (UTF-8 `0xC2 0xA9`) in `LegalCopyright`. The Microsoft Resource Compiler (`rc.exe`) defaults to the system codepage (cp1252) when reading source files without a BOM, so each multi-byte UTF-8 sequence got reinterpreted as multiple cp1252 chars (`â€"` for the em-dash, `Â©` for the copyright). Those mojibake bytes then got transcoded to UTF-16 and embedded in the `VERSIONINFO` block — which Windows Explorer reads as Unicode and displays verbatim. Fixed by switching both strings to ASCII-only: `Notepatra - native code editor for the AI era` and `Copyright 2026 Prateek Singh. GPL-3.0.`. ASCII bytes survive any codepage interpretation untouched.
+- 🪟 **`irm https://notepatra.org/install.ps1 | iex` banner no longer renders as `â` garbage.** Two-part fix in `docs/install.ps1`:
+  1. Set `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8` and `$OutputEncoding = [System.Text.Encoding]::UTF8` near the top of the script (wrapped in `try {} catch {}` so it degrades gracefully on legacy PowerShell hosts). Without this, Windows PowerShell 5.1 — which is what `irm | iex` actually runs in on a default Win11 box — falls back to the legacy OEM codepage for `Write-Host` output, mangling every multi-byte UTF-8 sequence in the script's strings (the box banner, the em-dashes in warning messages, the final `✅` success line).
+  2. Belt-and-suspenders: replaced the Unicode box-drawing banner (`╔═╗║╚═╝`) with ASCII (`+===+|+`). Even if the encoding setup fails on some exotic PowerShell host, the banner stays readable.
+
+### Notes
+- Linux / macOS users are unaffected. The `.rc` file is only compiled on Windows targets, and `install.sh` runs in UTF-8 terminals by default on those platforms.
+- This is a small release: no C++ source changes, no behaviour changes, no schema changes. Just two text-encoding fixes that close out the Windows polish thread that started in v0.1.20.
+
+---
+
 ## [0.1.23] — 2026-04-25
 
 Critical dark-theme fix on top of v0.1.22. Users with `Config::theme = "System"` on a dark OS got dark app chrome but a white editor body inside Editor / SQL Formatter / JSON / HTML / Bracket / Markdown panels — visible in the user's screenshot as a glaring white block under the dark "SQL Formatter" header.

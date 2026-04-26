@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3–5 MB stripped across platforms; full downloads are ~2 MB (Linux tarball), ~22 MB (macOS DMG with bundled Qt), ~40 MB (Windows installer with bundled Qt DLLs). 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.23",
+      "softwareVersion": "0.1.24",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -153,7 +153,7 @@
           "name": "How big is Notepatra compared to VS Code?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.23: ~2 MB Linux tarball, ~22 MB macOS DMG (with bundled Qt), ~40 MB Windows MSI/zip (with bundled Qt + QScintilla DLLs). VS Code is 300+ MB regardless. Notepatra is 6× to 14× smaller than VS Code on every platform."
+            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.24: ~2 MB Linux tarball, ~22 MB macOS DMG (with bundled Qt), ~40 MB Windows MSI/zip (with bundled Qt + QScintilla DLLs). VS Code is 300+ MB regardless. Notepatra is 6× to 14× smaller than VS Code on every platform."
           }
         },
         {
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.23">
-        Download v0.1.23 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.24">
+        Download v0.1.24 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.23 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.24 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1388,7 +1388,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.23</div>
+        <div class="section-label">Download v0.1.24</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1836,7 +1836,40 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.23 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.24 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-25</span>
+                        <span>· Windows mojibake cleanup — "Open with" menu + PowerShell installer banner</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🪟 Windows "Open with" menu — no more <code style="color:var(--green);font-size:12px;">Notepatra â€" native code editor</code></h5>
+                        <ul>
+                            <li><strong>Root cause.</strong> <code style="color:var(--green);font-size:12px;">resources/notepatra.rc</code> was saved as UTF-8 without a BOM and contained two non-ASCII characters in resource strings — an em-dash <code style="color:var(--green);font-size:12px;">—</code> (UTF-8 <code style="color:var(--green);font-size:12px;">0xE2 0x80 0x94</code>) in <code style="color:var(--green);font-size:12px;">FileDescription</code> and a copyright sign <code style="color:var(--green);font-size:12px;">©</code> (UTF-8 <code style="color:var(--green);font-size:12px;">0xC2 0xA9</code>) in <code style="color:var(--green);font-size:12px;">LegalCopyright</code>. The Microsoft Resource Compiler (<code style="color:var(--green);font-size:12px;">rc.exe</code>) defaults to the system codepage (cp1252) without a BOM, so each multi-byte UTF-8 sequence got reinterpreted byte-by-byte as cp1252 chars (<code style="color:var(--green);font-size:12px;">â€"</code> for the em-dash, <code style="color:var(--green);font-size:12px;">Â©</code> for the copyright). Those wrong chars got transcoded to UTF-16 and embedded in the <code style="color:var(--green);font-size:12px;">VERSIONINFO</code> block — which Explorer then reads back as Unicode and displays verbatim.</li>
+                            <li><strong>Fix.</strong> ASCII-only resource strings: <code style="color:var(--green);font-size:12px;">Notepatra - native code editor for the AI era</code> and <code style="color:var(--green);font-size:12px;">Copyright 2026 Prateek Singh. GPL-3.0.</code> ASCII bytes survive any codepage interpretation untouched, so this works regardless of which resource compiler ships with the user's MSVC / MinGW toolchain.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🪟 <code style="color:var(--green);font-size:12px;">irm https://notepatra.org/install.ps1 | iex</code> — no more <code style="color:var(--green);font-size:12px;">â</code>/<code style="color:var(--green);font-size:12px;">âˆ</code> banner garbage</h5>
+                        <ul>
+                            <li><strong>Root cause.</strong> Windows PowerShell 5.1 (which is what <code style="color:var(--green);font-size:12px;">irm | iex</code> runs in on a default Win11 box) initialises <code style="color:var(--green);font-size:12px;">[Console]::OutputEncoding</code> to the legacy OEM codepage. <code style="color:var(--green);font-size:12px;">Write-Host</code> on a Unicode string containing box-drawing chars (<code style="color:var(--green);font-size:12px;">╔═╗║</code>), em-dashes, or <code style="color:var(--green);font-size:12px;">✅</code> mangles every multi-byte UTF-8 sequence into stand-alone garbage glyphs.</li>
+                            <li><strong>Fix.</strong> Two-part: (1) <code style="color:var(--green);font-size:12px;">[Console]::OutputEncoding = [System.Text.Encoding]::UTF8</code> at the top of <code style="color:var(--green);font-size:12px;">install.ps1</code> wrapped in <code style="color:var(--green);font-size:12px;">try {} catch {}</code> so it degrades gracefully on legacy hosts; (2) replaced the Unicode box-drawing banner with ASCII (<code style="color:var(--green);font-size:12px;">+===+|+</code>) so the title stays readable even if the encoding setup fails.</li>
+                            <li>Linux / macOS users are unaffected — the <code style="color:var(--green);font-size:12px;">.rc</code> file is only compiled on Windows, and <code style="color:var(--green);font-size:12px;">install.sh</code> runs in UTF-8 terminals by default on those platforms.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.24">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.24">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.23</div>
                     <div class="version-meta">
                         <span>2026-04-25</span>
                         <span>· Critical dark-theme fix — Editor body painted white on "System" + dark OS</span>

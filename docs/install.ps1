@@ -4,11 +4,20 @@
 
 $ErrorActionPreference = "Stop"
 
+# Ensure the console renders our UTF-8 box-drawing chars, em-dashes, and the
+# final "installed" check correctly. Without this, the Windows console falls
+# back to the legacy OEM codepage (cp437/cp1252) and every multi-byte UTF-8
+# sequence shows up as garbage like "â•" / "â€"" / "âœ…".
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $OutputEncoding = [System.Text.Encoding]::UTF8
+} catch {}
+
 Write-Host ""
-Write-Host "  ╔══════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "  ║         Notepatra Installer          ║" -ForegroundColor Cyan
-Write-Host "  ║   The code editor for the AI era     ║" -ForegroundColor Cyan
-Write-Host "  ╚══════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host "  +======================================+" -ForegroundColor Cyan
+Write-Host "  |         Notepatra Installer          |" -ForegroundColor Cyan
+Write-Host "  |   The code editor for the AI era     |" -ForegroundColor Cyan
+Write-Host "  +======================================+" -ForegroundColor Cyan
 Write-Host ""
 
 $repo = "singhpratech/notepatra"
