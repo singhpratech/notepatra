@@ -7,6 +7,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.31] — 2026-04-26
+
+Notepad++ canonical palette overhaul + persistent post-stream stats + privacy hotfix for website screenshots. Three user-reported issues addressed in one ship.
+
+### Changed
+- 🎨 **Palette overhaul to Notepad++ canonical 9-hue scheme.** v0.1.30 user complaint was *"keywords + actual syntax are all just shades of blue"*. Root cause: identifiers were painted blue (`#001080` light / `#9CDCFE` dark) so identifiers, keywords, and types blurred together. Operators stayed at default text colour with no distinguishing weight or hue. v0.1.31 fixes the three bugs at once:
+  1. **Identifiers paint as default text colour** (black on light, sand-grey on dark) — they read as "names", not as keywords. Single change kills the "all blue" effect on every C-family language.
+  2. **Operators paint navy bold** (`#000080` light) / **olive bold** (`#9F9D6D` dark) — distinct hue *and* distinct font weight, so `+ - = ( ) { } ;` don't blend with identifier text.
+  3. **Secondary keywords (types) paint vivid violet `#8000FF`** (light) / **sage `#CEDF99`** (dark) — N++ canonical hues, clearly NOT blue.
+- 🎨 **Light theme now uses N++ stylers.model.xml canonical hues:** keywords `#0000FF` bold, types `#8000FF` violet, comments `#008000` italic, numbers `#FF8000` orange, strings `#808080` grey, operators `#000080` navy bold, preprocessor `#804000` brown, classes `#7F0000` maroon, identifiers default text. Hex codes verified directly against `notepad-plus-plus/notepad-plus-plus` master `PowerEditor/src/stylers.model.xml`.
+- 🎨 **Dark theme now uses Zenburn-derived hues from N++ DarkModeDefault.xml:** keywords `#DFC47D` warm sand bold, types `#CEDF99` sage, comments `#7F9F7F` sage-green italic, numbers `#8CD0D3` cyan, strings `#CC9393` rose, operators `#9F9D6D` olive bold, preprocessor `#FFCFAF` peach, classes `#DCDCAA` sandy-yellow, decorators `#93E0E3` light-cyan italic, identifiers `#DCDCCC` default text. Each token kind sits on a distinct hue arc — no more "all blue shades" effect.
+- 🎨 **PowerShell-specific style hues retuned to N++ canonical:** variables default text (was identifier-blue), cmdlets violet `#8000FF` light / peach `#FFCFAF` dark (was olive light / sandy-yellow dark), aliases cyan `#0080FF` light / sage `#CEDF99` dark.
+- 🎨 **Per-language brand overrides pruned** — removed redundant entries that just re-stated the generic blue/teal pattern (TypeScript, JavaScript, Python, C/C++, C#, SQL, Bash, Batch, Perl, Lua, Pascal, Makefile, YAML, CoffeeScript). The new generic palette covers them with clearer differentiation than the old per-language teal-types overrides did. Kept for brand identity: Rust (rust-amber), Go (Go-cyan), Swift (Xcode-pink), Kotlin (Darcula-orange), Java (IntelliJ navy), D (red brick), HTML/PHP, CSS, XML, JSON, Markdown, CMake, Ruby.
+
+### Added
+- 🤖 **Streaming stats persist after the response completes.** v0.1.30 added the live `⏱ N tok · X tok/s · Y s` label during generation but it disappeared the moment the stream ended. v0.1.31 keeps it on the bubble: `endAssistantBubble` now seeds the final streaming counts (`finalTokens`, `finalElapsedMs`) onto the `ChatMessage` so `aiAddAssistantCard` can render the same `⏱ N tok · X tok/s · Y s` line on every assistant card forever — through chat history, theme switches, transcript re-renders. When `responseStats` arrives moments later with canonical Ollama-reported `eval_count` / `prompt_eval_count`, those numbers overwrite the seeded estimates and the card re-renders with the canonical values.
+- 🤖 **`aiAddAssistantCard` renders the stats line below the model header.** Same format as the live label: `⏱ N tok · X tok/s · Y s` (full triple) / `⏱ N tok · Y s` (no tok/s if elapsed < 200 ms) / `⏱ Y s` (only elapsed if no tokens reported). Hidden when no stats reported (placeholder cards during stream start, before the first token).
+
+### Fixed
+- 📦 **Privacy: website screenshots leaked filesystem paths.** User flagged that `docs/screenshots/tour.gif` (the "Notepatra in 60 seconds" hero) showed `/home/<user>/Documents/notepad-linux-native` in the Project Search Folder field across 13 of 15 frames, plus internal launch-prep filenames from the `outreach/` directory we untracked weeks ago. Two static screenshots (`editor-dark.png`, `ai-assistant.png`) had the same leak; `editor-dark.png` additionally exposed paths to a separate personal project's `.env.local` file in the Recent Files panel. v0.1.31 hotfix: removes all three leaky files from the repo, replaces them with two clean re-captures (`welcome-clean.png` shows the Welcome tab without recent files visible, `editor-code.png` shows pure C++ source with no path chrome), removes the "See it in action" GIF section entirely until a clean re-capture is ready, and updates `.gitignore` to keep stray screenshot capture dirs out of the public repo.
+- 📚 **About dialog claim "100+ languages" → "100+ file types · 48 language lexers".** Audited actual count: 48 distinct lexer classes (21 always-on QScintilla + 21 optional QScintilla + 6 Notepatra-local), routing 51 language identifiers across 100+ file extensions. README and website bumped from "44" → "48" everywhere except historical changelog entries.
+
+### Refactored
+- 🎨 **`src/npp_palette.cpp`**: rewrote the generic palette block with documented N++-source citations; pruned 10 redundant per-language overrides; added bold-weight to operator branch; identifier branch now returns `npText` instead of an accent blue.
+- 🎨 **`test_palette.cpp`**: updated `NP_COMMENT` (`#0E8D0E` → `#008000`), `NP_OPERATOR` (`#000000` → `#000080` + bold expectation), C++ secondary-keyword assertion (`#267F99` teal → `#8000FF` violet), and final summary message.
+- 🤖 **`src/aipanel.cpp`**: `endAssistantBubble` captures `finalTokens` + `finalElapsedMs` before tearing down the live label; seeds them onto the new `ChatMessage` if the streaming counters reported anything. `aiAddAssistantCard` renders a stats label below the divider when the message has any reported stats.
+- 📚 **`src/mainwindow.cpp`**: About dialog tagline updated to reflect actual count.
+- 📚 **`docs/docs.html`**: themes-palette section rewritten with the canonical hex codes per token kind, citing N++ master stylers.
+
+### Notes
+- 14 / 14 regression tests pass (test_palette + 13 others).
+- All assertions updated to match the new canonical colors.
+- Bold + italic provide a second differentiation axis on top of hue — useful for users with reduced colour perception.
+- No new dependencies, no schema changes, no installer changes.
+
+---
+
 ## [0.1.30] — 2026-04-26
 
 Live streaming token-rate stats on the AI assistant bubble during generation. v0.1.26 added per-response stats (`1234 tok · 123.4 tok/s · 2.3 s`) but only after the response completed. v0.1.30 makes those stats stream live during generation so users see throughput as it happens — no more "is it still working?" mystery during long responses.

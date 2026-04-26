@@ -32,14 +32,17 @@
 #include <Qsci/qscilexermarkdown.h>
 #include <Qsci/qscilexerjava.h>
 
-// Notepad++ default palette — must match editor.cpp values
+// Notepad++ default palette — verified against notepad-plus-plus master
+// PowerEditor/src/stylers.model.xml (light) and DarkModeDefault.xml (dark).
+// v0.1.31 aligned all values with the N++ canonical 9-hue scheme: the
+// previous Clay-tuned green and plain-black operator were the cause of
+// the "all blue shades" complaint (identifiers + operators blended into
+// keyword blue without distinct hues + bold).
 static const QColor NP_KEYWORD  (0x00, 0x00, 0xFF);
-// Light-mode comment — calibrated slightly darker-saturated for Clay paper
-// (was 0x008000 pure HTML green, which washed out on warm backgrounds).
-static const QColor NP_COMMENT  (0x0E, 0x8D, 0x0E);
+static const QColor NP_COMMENT  (0x00, 0x80, 0x00);
 static const QColor NP_NUMBER   (0xFF, 0x80, 0x00);
 static const QColor NP_STRING   (0x80, 0x80, 0x80);
-static const QColor NP_OPERATOR (0x00, 0x00, 0x00);
+static const QColor NP_OPERATOR (0x00, 0x00, 0x80);  // navy bold, was plain black
 static const QColor NP_PAPER    (0xFF, 0xFF, 0xFF);
 static const QColor NP_PREPROC  (0x80, 0x40, 0x00);
 
@@ -128,16 +131,16 @@ int main(int argc, char *argv[]) {
             {"C++",  9,  "pre-processor", NP_PREPROC, false, false},
             {"C++",  10, "operator",     NP_OPERATOR, false, false},
         });
-        // Secondary keywords (style 16 = SCE_C_WORD2). v0.1.27 introduced
-        // per-language accents — for C/C++ the secondary set is now
-        // #267F99 teal (was #800080 purple) to match VS Code defaults
-        // for type names. Same value flows through to Java's secondary
-        // when not Kotlin-overridden, JS / TS via the same branch, etc.
+        // Secondary keywords (style 16 = SCE_C_WORD2). v0.1.31 returns
+        // C/C++ secondary keywords to N++ canonical violet #8000FF (was
+        // #267F99 teal in v0.1.27-v0.1.30). The N++ canonical violet sits
+        // on a different hue arc from primary blue keywords, killing the
+        // "all blue shades" effect.
         QColor sec = lex.color(16);
-        if (sec == QColor(0x26, 0x7F, 0x99)) {
-            fprintf(stdout, "  ok   C++        style 16 secondary keywords      = #267F99 [teal]\n");
+        if (sec == QColor(0x80, 0x00, 0xFF)) {
+            fprintf(stdout, "  ok   C++        style 16 secondary keywords      = #8000FF [violet]\n");
         } else {
-            fprintf(stderr, "  FAIL C++        style 16 secondary keywords: got #%02X%02X%02X, expected #267F99\n",
+            fprintf(stderr, "  FAIL C++        style 16 secondary keywords: got #%02X%02X%02X, expected #8000FF\n",
                     sec.red(), sec.green(), sec.blue());
             total_failed++;
         }
@@ -152,7 +155,7 @@ int main(int argc, char *argv[]) {
             {"JS",  1,  "comment",  NP_COMMENT, false, true},
             {"JS",  4,  "number",   NP_NUMBER, false, false},
             {"JS",  6,  "string",   NP_STRING, false, false},
-            {"JS",  10, "operator", NP_OPERATOR, false, false},
+            {"JS",  10, "operator", NP_OPERATOR, true, false},
         });
     }
 
@@ -167,7 +170,7 @@ int main(int argc, char *argv[]) {
             {"Python", 2,  "number",   NP_NUMBER, false, false},
             {"Python", 3,  "string",   NP_STRING, false, false},
             {"Python", 4,  "string",   NP_STRING, false, false},
-            {"Python", 10, "operator", NP_OPERATOR, false, false},
+            {"Python", 10, "operator", NP_OPERATOR, true, false},
         });
     }
 
@@ -181,7 +184,7 @@ int main(int argc, char *argv[]) {
             {"SQL", 2,  "comment",  NP_COMMENT, false, true},
             {"SQL", 4,  "number",   NP_NUMBER, false, false},
             {"SQL", 6,  "string",   NP_STRING, false, false},
-            {"SQL", 10, "operator", NP_OPERATOR, false, false},
+            {"SQL", 10, "operator", NP_OPERATOR, true, false},
         });
     }
 
@@ -204,7 +207,7 @@ int main(int argc, char *argv[]) {
             {"JSON", 2,  "string",   NP_STRING, false, false},
             {"JSON", 6,  "comment",  NP_COMMENT, false, true},
             {"JSON", 7,  "comment",  NP_COMMENT, false, true},
-            {"JSON", 8,  "operator", NP_OPERATOR, false, false},
+            {"JSON", 8,  "operator", NP_OPERATOR, true, false},
         });
     }
 
@@ -246,10 +249,10 @@ int main(int argc, char *argv[]) {
     fprintf(stdout, "\n");
     if (total_failed == 0) {
         fprintf(stdout, "=== ALL PALETTE CHECKS PASS ===\n");
-        fprintf(stdout, "Every lexer paints keywords #0000FF bold, comments #0E8D0E italic,\n");
-        fprintf(stdout, "numbers #FF8000, strings #808080, operators #000000 (not bold),\n");
-        fprintf(stdout, "preprocessor #804000 (not bold) — matches Notepad++ stylers.xml\n");
-        fprintf(stdout, "default theme. Less bold = lighter, less aggressive feel.\n");
+        fprintf(stdout, "Every lexer paints keywords #0000FF bold, comments #008000 italic,\n");
+        fprintf(stdout, "numbers #FF8000, strings #808080, operators #000080 BOLD,\n");
+        fprintf(stdout, "preprocessor #804000, secondary keywords #8000FF — matches the\n");
+        fprintf(stdout, "Notepad++ stylers.model.xml canonical 9-hue palette.\n");
         return 0;
     } else {
         fprintf(stderr, "=== %d PALETTE CHECKS FAILED ===\n", total_failed);

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Notepatra — The Code Editor Built for the AI Era</title>
-    <meta name="description" content="Native C++/Rust code editor built for the AI era. ~4 MB bare native executable. 100+ file types. 44 language lexers. JSON/HTML/SQL fixers. Local AI — Ollama, llama.cpp (GGUF), LM Studio, any OpenAI-compatible server. Free forever. Linux, Windows, macOS.">
+    <meta name="description" content="Native C++/Rust code editor built for the AI era. ~4 MB bare native executable. 100+ file types. 48 language lexers. JSON/HTML/SQL fixers. Local AI — Ollama, llama.cpp (GGUF), LM Studio, any OpenAI-compatible server. Free forever. Linux, Windows, macOS.">
     <meta name="keywords" content="notepatra, code editor, notepad++, linux, windows, mac, macos, AI, ollama, JSON formatter, HTML fixer, rust, c++, qscintilla, native, lightweight">
     <meta name="author" content="Prateek Singh">
     <link rel="canonical" href="https://notepatra.org/">
@@ -50,8 +50,8 @@
       "operatingSystem": ["Linux", "Windows", "macOS"],
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
-      "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.8 MB (Linux x64 tar.gz), 25.5 MB (macOS DMG with bundled Qt), 43.5 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 44 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.30",
+      "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.8 MB (Linux x64 tar.gz), 25.5 MB (macOS DMG with bundled Qt), 43.5 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 48 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
+      "softwareVersion": "0.1.31",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -76,7 +76,7 @@
         "logo": "https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-512.png"
       },
       "featureList": [
-        "100+ file types with 44 language lexers",
+        "100+ file types with 48 language lexers",
         "AI-powered JSON/HTML/SQL/Bracket fixers",
         "Memory-mapped 2 GB file support",
         "Side-by-side file comparison with Myers diff",
@@ -129,7 +129,7 @@
           "name": "What is Notepatra?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra is a native C++/Rust code editor built from scratch for the AI era. It runs on Linux, macOS Apple Silicon, and Windows, has a ~4 MB bare native executable (stripped), supports 100+ file types with 44 language lexers, and includes AI-powered formatters that fix broken JSON, HTML, and brackets via local Ollama, llama.cpp, LM Studio, or any OpenAI-compatible server — no cloud."
+            "text": "Notepatra is a native C++/Rust code editor built from scratch for the AI era. It runs on Linux, macOS Apple Silicon, and Windows, has a ~4 MB bare native executable (stripped), supports 100+ file types with 48 language lexers, and includes AI-powered formatters that fix broken JSON, HTML, and brackets via local Ollama, llama.cpp, LM Studio, or any OpenAI-compatible server — no cloud."
           }
         },
         {
@@ -169,7 +169,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 100+ file types with 44 language lexers including Python, JavaScript, TypeScript, C, C++, C#, Java, Rust, Go, HTML, CSS, SQL, JSON, YAML, Markdown, Bash, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, and many more."
+            "text": "Notepatra supports 100+ file types with 48 language lexers including Python, JavaScript, TypeScript, C, C++, C#, Java, Rust, Go, HTML, CSS, SQL, JSON, YAML, Markdown, Bash, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, and many more."
           }
         },
         {
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.30 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.31 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.30">
-        Download v0.1.30 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.31">
+        Download v0.1.31 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.30 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.31 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1328,24 +1328,25 @@
         </div>
     </div>
 
-    <!-- Product showcase — REAL screenshots captured via xdotool +
-         gnome-screenshot from the actual Notepatra binary. Two stills
-         side-by-side: the Welcome tab (left) and the AI Assistant tab
-         (right). Drops the old CSS illustration. -->
+    <!-- Product showcase — REAL screenshots captured from the actual
+         Notepatra binary. v0.1.31: replaced privacy-leaking captures
+         (which had visible filesystem paths and recent-files panel
+         exposure) with clean re-captures that show only Notepatra's
+         UI chrome and code content. -->
     <section class="showcase" aria-label="Product screenshots">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1200px; margin: 0 auto; padding: 0 24px;">
             <figure style="margin: 0;">
-                <img src="screenshots/editor-dark.png" alt="Notepatra Welcome tab — Dark theme" loading="lazy"
+                <img src="screenshots/welcome-clean.png" alt="Notepatra Welcome tab — Dark theme" loading="lazy"
                      style="width: 100%; border-radius: 14px; box-shadow: 0 30px 60px -20px rgba(20,20,19,0.25), 0 0 0 1px rgba(20,20,19,0.05); display: block;">
                 <figcaption style="text-align: center; margin-top: 12px; color: var(--text-dim); font-size: 13px;">
-                    <strong style="color: var(--c-text);">Welcome tab</strong> — 10-icon toolbar, feature cards, recent files
+                    <strong style="color: var(--c-text);">Welcome tab</strong> — 10-icon toolbar, hero card, recent-files placeholder
                 </figcaption>
             </figure>
             <figure style="margin: 0;">
-                <img src="screenshots/ai-assistant.png" alt="Notepatra AI Assistant — local AI chat" loading="lazy"
+                <img src="screenshots/editor-code.png" alt="Notepatra editor — C++ source with Notepad++ canonical syntax highlighting" loading="lazy"
                      style="width: 100%; border-radius: 14px; box-shadow: 0 30px 60px -20px rgba(20,20,19,0.25), 0 0 0 1px rgba(20,20,19,0.05); display: block;">
                 <figcaption style="text-align: center; margin-top: 12px; color: var(--text-dim); font-size: 13px;">
-                    <strong style="color: var(--c-text);">AI Assistant</strong> — Ollama · llama.cpp · OpenRouter · 8 quick actions
+                    <strong style="color: var(--c-text);">Editor</strong> — C++ source, Notepad++ canonical 9-hue palette
                 </figcaption>
             </figure>
         </div>
@@ -1361,7 +1362,7 @@
             <div class="pillar">
                 <div class="pillar-glyph">⚡</div>
                 <h3>Instant at every scale.</h3>
-                <p>Rust memory-mapped I/O opens 2 GB files without breaking a sweat. 44 language lexers, 100+ file types. Native execution — not Electron.</p>
+                <p>Rust memory-mapped I/O opens 2 GB files without breaking a sweat. 48 language lexers, 100+ file types. Native execution — not Electron.</p>
             </div>
             <div class="pillar">
                 <div class="pillar-glyph">🛡</div>
@@ -1388,7 +1389,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.30</div>
+        <div class="section-label">Download v0.1.31</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1437,25 +1438,11 @@
         </div>
     </section>
 
-    <!-- ─────────────────────────────────────────────────────────────
-         See it in action — real animated GIF captured from a running
-         Notepatra instance. Frames cycle: editor → Project Search →
-         Project Search with results → AI Assistant (Ollama detected).
-         ───────────────────────────────────────────────────────────── -->
-    <section id="see-it-in-action" style="max-width: 1120px; margin: 0 auto 60px; padding: 0 24px; text-align: center;">
-        <div class="section-label">See it in action</div>
-        <div class="section-title" style="margin-bottom: 12px;">Notepatra in 60 seconds</div>
-        <p class="section-desc">Editor · Project Search · AI Assistant — captured from a running Notepatra on Linux.</p>
-        <div style="position: relative; max-width: 960px; margin: 28px auto 0; background: var(--c-surface); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px -20px rgba(20,20,19,0.18);">
-            <img src="screenshots/tour.gif"
-                 alt="Notepatra tour — editor with syntax highlighting, Project Search with live results, AI Assistant with Ollama auto-detected"
-                 loading="lazy"
-                 style="display: block; width: 100%; height: auto;">
-        </div>
-        <div style="margin-top: 14px; font-size: 12px; color: var(--text-dim);">
-            Real capture — not a mockup. <a href="https://github.com/singhpratech/notepatra#readme" style="color: var(--c-accent); text-decoration: none;">More on GitHub →</a>
-        </div>
-    </section>
+    <!-- The "See it in action" GIF section was removed in v0.1.31 because
+         the captured GIF leaked filesystem paths (Project Search showed
+         /home/<user>/... in the Folder field). A clean re-capture is in
+         the queue; until then the showcase stills above stand in. -->
+
 
     <!-- AI Section — moved UP above Features because AI is the
          headline differentiator. Users should see this before the
@@ -1594,7 +1581,7 @@
             <div class="feature-card">
                 <div class="feature-icon fi-blue">📑</div>
                 <h3>100+ File Types</h3>
-                <p>44 language lexers — Python, Rust, Go, C/C++, Java, JS/TS, SQL, HTML, CSS, JSON, YAML, Markdown, Bash, Fortran, Verilog, MATLAB, LaTeX and more.</p>
+                <p>48 language lexers — Python, Rust, Go, C/C++, Java, JS/TS, SQL, HTML, CSS, JSON, YAML, Markdown, Bash, Fortran, Verilog, MATLAB, LaTeX and more.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon fi-green">🎨</div>
@@ -1836,7 +1823,63 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.30 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.31 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-26</span>
+                        <span>· Notepad++ canonical palette + persistent stream stats + privacy hotfix</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🎨 Notepad++ canonical 9-hue palette overhaul</h5>
+                        <ul>
+                            <li>v0.1.30 user complaint was <em>"keywords + actual syntax are all just shades of blue"</em>. Root cause: identifiers painted blue (<code style="color:var(--green);font-size:12px;">#001080</code> light / <code style="color:var(--green);font-size:12px;">#9CDCFE</code> dark), so identifiers + keywords + types blurred together. Operators stayed at default text colour with no bold weight.</li>
+                            <li><strong>Three changes</strong> restore clear visual hierarchy:
+                                <ul>
+                                    <li><strong>Identifiers paint as default text</strong> (black on light, sand-grey on dark) — read as "names", not as keywords. Single change kills "all blue" effect on every C-family language.</li>
+                                    <li><strong>Operators paint bold</strong> in distinctive hues — <code style="color:var(--green);font-size:12px;">#000080</code> navy on light / <code style="color:var(--green);font-size:12px;">#9F9D6D</code> olive on dark. Distinct hue + distinct font weight.</li>
+                                    <li><strong>Secondary keywords (types) paint vivid violet</strong> <code style="color:var(--green);font-size:12px;">#8000FF</code> light / sage <code style="color:var(--green);font-size:12px;">#CEDF99</code> dark — Notepad++ canonical, clearly NOT blue.</li>
+                                </ul>
+                            </li>
+                            <li><strong>Light theme</strong> uses N++ <code style="color:var(--green);font-size:12px;">stylers.model.xml</code> canonical hues: keywords <code style="color:var(--green);font-size:12px;">#0000FF</code> bold · types <code style="color:var(--green);font-size:12px;">#8000FF</code> · comments <code style="color:var(--green);font-size:12px;">#008000</code> italic · numbers <code style="color:var(--green);font-size:12px;">#FF8000</code> · strings <code style="color:var(--green);font-size:12px;">#808080</code> · operators <code style="color:var(--green);font-size:12px;">#000080</code> bold · preprocessor <code style="color:var(--green);font-size:12px;">#804000</code> · classes <code style="color:var(--green);font-size:12px;">#7F0000</code> · identifiers default text.</li>
+                            <li><strong>Dark theme</strong> uses Zenburn-derived hues from N++ <code style="color:var(--green);font-size:12px;">DarkModeDefault.xml</code>: keywords <code style="color:var(--green);font-size:12px;">#DFC47D</code> warm sand bold · types <code style="color:var(--green);font-size:12px;">#CEDF99</code> sage · comments <code style="color:var(--green);font-size:12px;">#7F9F7F</code> sage-green italic · numbers <code style="color:var(--green);font-size:12px;">#8CD0D3</code> cyan · strings <code style="color:var(--green);font-size:12px;">#CC9393</code> rose · operators <code style="color:var(--green);font-size:12px;">#9F9D6D</code> olive bold · preprocessor <code style="color:var(--green);font-size:12px;">#FFCFAF</code> peach · classes <code style="color:var(--green);font-size:12px;">#DCDCAA</code> sandy-yellow.</li>
+                            <li>Each token kind on a distinct hue arc — no more "all blue shades". Bold + italic provide a second differentiation axis on top of hue.</li>
+                            <li>Pruned 14 redundant per-language overrides that just re-stated the old blue/teal pattern. Kept brand-specific accents: Rust (rust-amber), Go (Go-cyan), Swift (Xcode-pink), Kotlin (Darcula-orange), Java (IntelliJ navy), D, HTML/PHP, CSS, XML, JSON, Markdown, CMake, Ruby.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🤖 Stream stats persist after the response</h5>
+                        <ul>
+                            <li>v0.1.30's live <code style="color:var(--green);font-size:12px;">⏱ N tok · X tok/s · Y s</code> label disappeared the moment the stream ended. v0.1.31 keeps it on the bubble forever.</li>
+                            <li><code style="color:var(--green);font-size:12px;">endAssistantBubble</code> seeds the final streaming counts onto the new <code style="color:var(--green);font-size:12px;">ChatMessage</code>; <code style="color:var(--green);font-size:12px;">aiAddAssistantCard</code> renders the same line on every assistant card. <code style="color:var(--green);font-size:12px;">responseStats</code> arrives moments later with canonical Ollama numbers and overwrites the seed — the visual is identical, the numbers exact.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>📦 Privacy hotfix: website screenshots</h5>
+                        <ul>
+                            <li>User flagged that <code style="color:var(--green);font-size:12px;">docs/screenshots/tour.gif</code> showed <code style="color:var(--green);font-size:12px;">/home/&lt;user&gt;/...</code> filesystem paths in the Project Search Folder field across 13 of 15 frames, plus internal launch-prep filenames from the (untracked) <code style="color:var(--green);font-size:12px;">outreach/</code> directory.</li>
+                            <li>Two static screenshots (<code style="color:var(--green);font-size:12px;">editor-dark.png</code>, <code style="color:var(--green);font-size:12px;">ai-assistant.png</code>) had the same leak; <code style="color:var(--green);font-size:12px;">editor-dark.png</code> additionally exposed paths to a separate personal project's <code style="color:var(--green);font-size:12px;">.env.local</code> in the Recent Files panel.</li>
+                            <li>v0.1.31 removes all three leaky files, replaces with two clean re-captures (<code style="color:var(--green);font-size:12px;">welcome-clean.png</code>, <code style="color:var(--green);font-size:12px;">editor-code.png</code>), removes the "See it in action" GIF section until a clean re-capture is ready.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>📚 About dialog corrected</h5>
+                        <ul>
+                            <li>"100+ languages" → "100+ file types · 48 language lexers" — actual count audited. README + website bumped 44 → 48 throughout.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.31">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.31">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.30</div>
                     <div class="version-meta">
                         <span>2026-04-26</span>
                         <span>· Live streaming token-rate on AI bubble during generation</span>
@@ -2913,7 +2956,7 @@
                     <div class="version-section">
                         <h5>Editor</h5>
                         <ul>
-                            <li>100+ file types, 44 language lexers</li>
+                            <li>100+ file types, 48 language lexers</li>
                             <li>Tabbed editing with color tags</li>
                             <li>3 themes: Light, Dark, Monokai</li>
                             <li>Session persistence + crash recovery</li>
@@ -3037,7 +3080,7 @@ Write-Host "Restarted Explorer — right-click any file now to verify" -Foregrou
             </div>
             <div class="feature-card">
                 <h3>What languages does it highlight?</h3>
-                <p>100+ file types via 44 language lexers — Python, JavaScript, TypeScript, C, C++, C#, Java, Rust, Go, HTML, CSS, SQL (T-SQL/PL/SQL/MySQL/PostgreSQL/SQLite), JSON, YAML, Markdown, Bash, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, Pascal, CMake, Makefile, and more.</p>
+                <p>100+ file types via 48 language lexers — Python, JavaScript, TypeScript, C, C++, C#, Java, Rust, Go, HTML, CSS, SQL (T-SQL/PL/SQL/MySQL/PostgreSQL/SQLite), JSON, YAML, Markdown, Bash, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, Pascal, CMake, Makefile, and more.</p>
             </div>
             <div class="feature-card">
                 <h3>How do I verify a download is genuine?</h3>

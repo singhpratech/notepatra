@@ -1801,6 +1801,36 @@ static QFrame *aiAddAssistantCard(QVBoxLayout *target,
         .arg(pal.assistBorder));
     outer->addWidget(divider);
 
+    // Per-response stats line — same "⏱ N tok · X tok/s · Y s" format
+    // used by the live streaming label so the bubble keeps the same
+    // visual after the stream ends (instead of the stats vanishing).
+    // Hidden when no stats reported yet (placeholder card during stream
+    // start, before the first token).
+    if (msg.elapsedMs >= 0 || msg.evalTokens > 0) {
+        const qint64 ms = msg.elapsedMs >= 0 ? msg.elapsedMs : 0;
+        const double secs = ms / 1000.0;
+        QString text;
+        if (msg.evalTokens > 0 && ms > 200) {
+            const double tps = msg.evalTokens * 1000.0 / ms;
+            text = QString("⏱ %1 tok · %2 tok/s · %3 s")
+                       .arg(msg.evalTokens)
+                       .arg(QString::number(tps, 'f', 1))
+                       .arg(QString::number(secs, 'f', 1));
+        } else if (msg.evalTokens > 0) {
+            text = QString("⏱ %1 tok · %2 s")
+                       .arg(msg.evalTokens)
+                       .arg(QString::number(secs, 'f', 1));
+        } else {
+            text = QString("⏱ %1 s").arg(QString::number(secs, 'f', 1));
+        }
+        auto *statsLbl = new QLabel(text);
+        statsLbl->setStyleSheet(QString(
+            "color: %1; font-size: 10px; font-weight: 500; "
+            "letter-spacing: 0.3px; padding: 0; opacity: 0.8;")
+            .arg(pal.linkFg));
+        outer->addWidget(statsLbl);
+    }
+
     auto *body = new QTextBrowser;
     body->setReadOnly(true);
     body->setOpenLinks(false);
@@ -2079,16 +2109,22 @@ void AIPanel::endAssistantBubble() {
     if (!m_inAssistantBubble) return;
     m_inAssistantBubble = false;
 
-    // Stop the live streaming-stats timer + drop the label. The static
-    // post-completion stats then bake into the bubble header via
-    // renderTranscript() once responseStats fires with the canonical
-    // Ollama / OpenAI-compat token counts.
+    // Stop the live streaming-stats timer + drop the label. The final
+    // counts get persisted onto the ChatMessage below so the post-
+    // completion bubble keeps showing "⏱ N tok · X tok/s · Y s" via
+    // aiAddAssistantCard. responseStats may later overwrite with the
+    // canonical Ollama / OpenAI-compat token counts.
+    const int    finalTokens   = m_streamingTokenCount;
+    const qint64 finalElapsedMs = m_streamingStartMs > 0
+        ? (QDateTime::currentMSecsSinceEpoch() - m_streamingStartMs)
+        : -1;
     if (m_streamingStatsTimer) m_streamingStatsTimer->stop();
     if (m_streamingStats) {
         m_streamingStats->deleteLater();
         m_streamingStats = nullptr;
     }
     m_streamingTokenCount = 0;
+    m_streamingStartMs = 0;
 
     m_streamingCard = nullptr;
     m_streamingBody = nullptr;
@@ -2097,6 +2133,11 @@ void AIPanel::endAssistantBubble() {
         message.role = ChatMessage::Assistant;
         message.text = m_currentAssistantText;
         message.model = m_ollama ? m_ollama->model() : QStringLiteral("AI");
+        // Seed stats from the live streaming counters so the bubble keeps
+        // showing the same "⏱ N tok · X tok/s · Y s" line after the stream
+        // ends. responseStats will replace these with canonical counts.
+        if (finalTokens > 0)       message.evalTokens = finalTokens;
+        if (finalElapsedMs >= 0)   message.elapsedMs  = finalElapsedMs;
         m_messages.push_back(message);
     }
     // Full re-render with markdown now that we have the complete text.

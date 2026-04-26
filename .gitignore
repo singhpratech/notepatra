@@ -16,3 +16,15 @@ Testing/
 # Product Hunt copy, etc. Kept locally, not pushed to public repo so
 # the launch copy isn't readable before launch.
 outreach/
+
+# Local-only screenshot/screencast capture dirs and loose images at
+# repo root. v0.1.31 added these after the tour.gif privacy incident
+# (filesystem paths captured in screenshots got pushed to the public
+# website). Anything visual that lands in the public repo must go
+# through docs/screenshots/ with an explicit PII-scrub review first.
+issuesinwindows/
+icon-previews/
+img*.png
+images.zip
+images/
+*.gif.local

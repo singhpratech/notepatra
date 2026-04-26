@@ -383,7 +383,7 @@
 
   <h2 id="introduction" class="anchor-target">Introduction</h2>
   <p>Notepatra is a <strong>native</strong> code editor written in C++17 with a Rust core for the heavy-lifting (memory-mapped file I/O, Aho-Corasick search, Myers diff, formatters). It targets <strong>Linux x64 / ARM64, macOS Apple Silicon, and Windows x64</strong>. The bare executable is 2–5 MB depending on platform; downloads are 1.8 MB (Linux) to ~40 MB (Windows installer with Qt DLLs bundled).</p>
-  <p>Unlike Electron-based editors, Notepatra does not ship a browser runtime. It uses Qt5 + QScintilla for the editor engine — the same Scintilla core that powers Notepad++ — so all the behavior you expect from Notepad++ (100+ file types, 44+ language lexers, brace matching, folding, code completion) is built in.</p>
+  <p>Unlike Electron-based editors, Notepatra does not ship a browser runtime. It uses Qt5 + QScintilla for the editor engine — the same Scintilla core that powers Notepad++ — so all the behavior you expect from Notepad++ (100+ file types, 48+ language lexers, brace matching, folding, code completion) is built in.</p>
   <p>Unlike cloud-first editors, Notepatra's AI is <strong>local-first</strong>. It talks to <strong>your choice</strong> of local AI runner — <a href="https://ollama.com">Ollama</a>, <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>'s llama-server (loads any GGUF directly), <a href="https://lmstudio.ai">LM Studio</a>, <a href="https://jan.ai">Jan</a>, <a href="https://docs.vllm.ai">vLLM</a>, KoboldCpp, text-generation-webui, or anything that speaks the OpenAI <code>/v1/chat/completions</code> API. Pick your backend in <em>Settings → Preferences → AI</em>. Nothing leaves your computer. No mandatory API keys, no subscription, no telemetry.</p>
 
   <div class="callout info">
@@ -602,7 +602,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
   </ul>
 
   <h2 id="languages-lexers" class="anchor-target">Languages &amp; lexers</h2>
-  <p>Notepatra ships 44+ language lexers. The Language menu has every supported syntax; extensions are auto-detected from the filename.</p>
+  <p>Notepatra ships 48+ language lexers. The Language menu has every supported syntax; extensions are auto-detected from the filename.</p>
   <p>Full list: Python, JavaScript/TypeScript/JSX, CoffeeScript, C/C++, C#, D, Java (+ Kotlin, Scala, Groovy), HTML/PHP, CSS/SCSS/LESS, XML, JSON, SQL (ANSI / T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite), Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Matlab, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile.</p>
 
   <div class="callout info">
@@ -611,7 +611,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
 
   <h2 id="themes-palette" class="anchor-target">Themes &amp; palette</h2>
   <p>Three themes ship: <strong>Light</strong> (default), <strong>Dark</strong> (VS Code-inspired), and <strong>Monokai</strong>. Change via <code>Settings → Theme</code>. The theme is persisted in <code>config.json</code>.</p>
-  <p>Every theme applies the Notepad++ default palette semantics (keywords blue bold, comments green italic, numbers orange, strings gray, operators plain) and adapts colors per theme. The palette is driven by <code>lexer-&gt;description(i)</code> — it walks every style slot in every lexer, matches substrings like "keyword", "comment", "string", and paints accordingly. Works across all 44+ lexers without hard-coding.</p>
+  <p>Every theme applies the Notepad++ canonical 9-hue palette: keywords blue bold (<code>#0000FF</code>), types violet (<code>#8000FF</code>), comments green italic (<code>#008000</code>), numbers orange (<code>#FF8000</code>), strings grey (<code>#808080</code>), operators navy bold (<code>#000080</code>), preprocessor brown (<code>#804000</code>), classes maroon (<code>#7F0000</code>), identifiers plain (default text). Dark theme uses Zenburn-derived hues from N++ <code>DarkModeDefault.xml</code> (warm sand keywords, sage types, rose strings, olive operators, peach preprocessor) so each token kind is on a distinct hue arc — no more "all blue shades" effect. The palette is driven by <code>lexer-&gt;description(i)</code> — it walks every style slot in every lexer, matches substrings like "keyword", "comment", "string", and paints accordingly. Works across all 48+ lexers without hard-coding. Hex codes verified against notepad-plus-plus master <code>stylers.model.xml</code>.</p>
 
   <h2 id="rulers-crosshair" class="anchor-target">Rulers &amp; crosshair overlay</h2>
   <p>Optional visual aids for long files and precise cursor placement:</p>
