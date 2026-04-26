@@ -122,20 +122,35 @@ int main(int argc, char *argv[]) {
         LexerPowerShell lex;
         check_eq("PowerShell language()", lex.language(), QStringLiteral("PowerShell"));
         check_eq("PowerShell scintilla lexer name", QString::fromUtf8(lex.lexer()), QStringLiteral("powershell"));
+        // v0.1.32 — keyword set ordering corrected to match Scintilla's
+        // SCLEX_POWERSHELL contract: QScintilla 1-based set N maps to
+        // Scintilla idx N-1. Old (broken) ordering put cmdlet verbs in the
+        // Aliases slot and full Verb-Noun names in User1 — `New-Object` and
+        // friends rendered as default text on Windows. New layout:
+        //   set 1 → idx 0 PowerShell Keywords  (function, if, foreach, …)
+        //   set 2 → idx 1 Cmdlets              (full Verb-Noun + verbs)
+        //   set 3 → idx 2 Aliases              (ls, cd, gci, …)
+        //   set 5 → idx 4 User1                (.NET type names)
         const QString kw1 = QString::fromUtf8(lex.keywords(1));
         check("PS set1 has 'function'",  kw1.contains("function"));
         check("PS set1 has 'foreach'",   kw1.contains("foreach"));
         check("PS set1 has 'param'",     kw1.contains("param"));
         const QString kw2 = QString::fromUtf8(lex.keywords(2));
-        check("PS set2 has 'eq' (comparison)",  kw2.contains(QRegExp("\\beq\\b")));
-        check("PS set2 has 'ne' (comparison)",  kw2.contains(QRegExp("\\bne\\b")));
+        check("PS set2 has 'New-Object' (full cmdlet)",   kw2.contains("New-Object"));
+        check("PS set2 has 'Get-Item' (full cmdlet)",     kw2.contains("Get-Item"));
+        check("PS set2 has 'Where-Object' (full cmdlet)", kw2.contains("Where-Object"));
+        check("PS set2 has 'Get' (cmdlet verb)",          kw2.contains(QRegExp("\\bGet\\b")));
+        check("PS set2 has 'Set' (cmdlet verb)",          kw2.contains(QRegExp("\\bSet\\b")));
+        check("PS set2 has 'New' (cmdlet verb)",          kw2.contains(QRegExp("\\bNew\\b")));
         const QString kw3 = QString::fromUtf8(lex.keywords(3));
-        check("PS set3 has 'Get' (cmdlet verb)",   kw3.contains("Get"));
-        check("PS set3 has 'Set' (cmdlet verb)",   kw3.contains("Set"));
-        check("PS set3 has 'New' (cmdlet verb)",   kw3.contains("New"));
-        const QString kw4 = QString::fromUtf8(lex.keywords(4));
-        check("PS set4 has 'ls' (alias)", kw4.contains(QRegExp("\\bls\\b")));
-        check("PS set4 has 'cd' (alias)", kw4.contains(QRegExp("\\bcd\\b")));
+        check("PS set3 has 'ls' (alias)", kw3.contains(QRegExp("\\bls\\b")));
+        check("PS set3 has 'cd' (alias)", kw3.contains(QRegExp("\\bcd\\b")));
+        check("PS set3 has 'gci' (alias)", kw3.contains(QRegExp("\\bgci\\b")));
+        check("PS set4 returns nullptr (Functions slot intentionally empty)",
+              lex.keywords(4) == nullptr);
+        const QString kw5 = QString::fromUtf8(lex.keywords(5));
+        check("PS set5 has 'string' (.NET type)", kw5.contains(QRegExp("\\bstring\\b")));
+        check("PS set5 has 'datetime' (.NET type)", kw5.contains("datetime"));
         check("PS description for keyword style",
               lex.description(8).toLower().contains("keyword"));
         check("PS description for cmdlet style",

@@ -15,10 +15,23 @@ const char *LexerPowerShell::lexer() const { return "powershell"; }
 //   - Microsoft "Approved Verbs for Windows PowerShell Commands" doc
 //   - VS Code PowerShell extension default token mapping
 const char *LexerPowerShell::keywords(int set) const {
+    // Scintilla's SCLEX_POWERSHELL exposes 6 keyword wordlists, indexed 0..5:
+    //   idx 0 = PowerShell Keywords (begin/break/while/...)
+    //   idx 1 = Cmdlets (full Verb-Noun names like New-Object)
+    //   idx 2 = Aliases (ls, gci, ...)
+    //   idx 3 = Functions (user-defined function names — usually empty)
+    //   idx 4 = User1 (custom — we use for .NET type names in [type] literals)
+    //   idx 5 = DocComment keywords
+    //
+    // QScintilla's `keywords(int set)` API is 1-BASED. Scintilla idx N gets
+    // the string returned by `keywords(N+1)`. Pre-v0.1.32 this file mis-
+    // mapped the sets — operators landed in idx 1 (Cmdlets), the verb list
+    // landed in idx 2 (Aliases), full Verb-Noun names landed in idx 4
+    // (User1) instead of idx 1 (Cmdlets). Result: `New-Object` etc. were
+    // styled as User1 (style 12), which the palette didn't theme, so they
+    // rendered as default text — exactly the bug the user reported on Windows.
     if (set == 1) {
-        // Set 0 in Scintilla parlance — statement / control-flow / declaration
-        // keywords (about_Reserved_Words). The QScintilla `keywords(set)` API
-        // is 1-based; this maps to Scintilla SCI_SETKEYWORDS index 0.
+        // Scintilla idx 0 = PowerShell Keywords
         return
             "begin break catch class configuration continue data define do "
             "dynamicparam else elseif end enum exit filter finally for "
@@ -27,57 +40,58 @@ const char *LexerPowerShell::keywords(int set) const {
             "trap try until using var while workflow";
     }
     if (set == 2) {
-        // Comparison + logical operators in their bare-word form. PowerShell
-        // writes them with a leading dash (-eq, -ne, ...) but Scintilla's
-        // PowerShell lexer strips the dash before keyword lookup, so we list
-        // the bare words. Includes case-sensitive (c-prefix) and
-        // case-insensitive (i-prefix) variants. Also bitwise / shift /
-        // type-test / split-join.
+        // Scintilla idx 1 = Cmdlets — full Verb-Noun names AND the bare verb
+        // prefixes from the Microsoft Approved Verbs list. Listing both means
+        // Scintilla colours `New-Object`, `Get-Item`, etc. as
+        // SCE_POWERSHELL_CMDLET (style 9). The palette renders style 9 as
+        // pure blue (`#0000FF`) on light, matching Microsoft's PowerShell ISE
+        // convention exactly.
         return
-            "eq ne ge gt lt le like notlike match notmatch contains "
-            "notcontains in notin replace ireplace creplace "
-            "ceq cne cge cgt clt cle clike cnotlike cmatch cnotmatch "
-            "ccontains cnotcontains cin cnotin "
-            "ieq ine ige igt ilt ile ilike inotlike imatch inotmatch "
-            "icontains inotcontains iin inotin "
-            "is isnot as "
-            "and or xor not band bor bxor bnot shl shr "
-            "split isplit csplit join f";
-    }
-    if (set == 3) {
-        // Cmdlet verbs — the official Microsoft "Approved Verbs" list,
-        // grouped by category (Common / Communications / Data / Diagnostic /
-        // Lifecycle / Security / Other). Cmdlets are formatted Verb-Noun, so
-        // these match the Verb prefix and let Scintilla colour the whole
-        // Verb-Noun pair as SCE_POWERSHELL_CMDLET (style 9).
-        return
-            // Common
+            // Most-used full Verb-Noun cmdlet names — Object/Process/Service
+            "Where-Object ForEach-Object Select-Object Sort-Object "
+            "Group-Object Measure-Object Compare-Object Tee-Object "
+            "New-Object Get-Member "
+            "Get-Process Get-Service Get-ChildItem Get-Content Get-Item "
+            "Get-ItemProperty Get-Location Get-History Get-Command Get-Help "
+            "Get-Variable Get-Date Get-Random Get-Host Get-Module "
+            "Set-Location Set-Item Set-ItemProperty Set-Variable "
+            "Set-Content Set-StrictMode Set-ExecutionPolicy "
+            "New-Item New-Variable New-Module New-Alias "
+            "Remove-Item Remove-Variable Remove-Module "
+            "Copy-Item Move-Item Rename-Item "
+            "Test-Path Resolve-Path Split-Path Join-Path Convert-Path "
+            "Invoke-Expression Invoke-Command Invoke-WebRequest Invoke-RestMethod "
+            "Out-Host Out-Null Out-File Out-String Out-GridView "
+            "Write-Host Write-Output Write-Error Write-Warning "
+            "Write-Verbose Write-Debug Write-Information Write-Progress "
+            "Read-Host "
+            "Import-Module Export-ModuleMember Import-Csv Export-Csv "
+            "ConvertTo-Json ConvertFrom-Json ConvertTo-Xml Select-String "
+            "Start-Process Stop-Process Start-Sleep Start-Job Stop-Job "
+            "Get-Job Receive-Job Wait-Job "
+            "Format-Table Format-List Format-Wide Format-Custom "
+            // Microsoft Approved Verbs (Common / Communications / Data /
+            // Diagnostic / Lifecycle / Security / Other). The verb-prefix
+            // catches any Verb-Anything cmdlet not listed by full name above.
             "Add Clear Close Copy Enter Exit Find Format Get Hide Join "
             "Lock Move New Open Optimize Pop Push Redo Remove Rename Reset "
             "Resize Search Select Set Show Skip Split Step Switch Undo "
             "Unlock Watch "
-            // Communications
             "Connect Disconnect Read Receive Send Write "
-            // Data
             "Backup Checkpoint Compare Compress Convert ConvertFrom "
             "ConvertTo Dismount Edit Expand Export Group Import Initialize "
             "Limit Merge Mount Out Publish Restore Save Sync Unpublish "
             "Update "
-            // Diagnostic
             "Debug Measure Ping Repair Resolve Test Trace "
-            // Lifecycle
             "Approve Assert Build Complete Confirm Deny Deploy Disable "
             "Enable Install Invoke Register Request Restart Resume Start "
             "Stop Submit Suspend Uninstall Unregister Wait "
-            // Security
             "Block Grant Protect Revoke Unblock Unprotect "
-            // Other / common
             "Use";
     }
-    if (set == 4) {
-        // Cmdlet aliases — the daily-driver short forms PowerShell users
-        // type all day. From `Get-Alias` output on a default Windows
-        // PowerShell 5.1 / PowerShell 7 install.
+    if (set == 3) {
+        // Scintilla idx 2 = Aliases — daily-driver short forms from
+        // `Get-Alias` on a default Windows PowerShell 5.1 / 7 install.
         return
             "ac asnp cat cd chdir clc clear clhy cli clp cls clv cnsn "
             "compare copy cpi cpp curl cvpa dbp del diff dir dnsn ebp echo "
@@ -92,42 +106,10 @@ const char *LexerPowerShell::keywords(int set) const {
             "swmi tee trcm type wget where wjb write";
     }
     if (set == 5) {
-        // User-defined / "common cmdlet full names" — the most-used cmdlets
-        // by their Verb-Noun name (those that aren't already caught by the
-        // verb match in set 3). These get SCE_POWERSHELL_USER1 (style 12).
-        // Also doubles as "type-name" hints for `[Type]` literals — we
-        // include common .NET types so [string], [int], [datetime] etc.
-        // pick up the user1 colour when bracketed.
+        // Scintilla idx 4 = User1 — common .NET type names so `[string]`,
+        // `[int]`, `[datetime]`, `[hashtable]` etc. pick up a distinct
+        // colour when bracketed. Doubles as a hint for type-test contexts.
         return
-            // Object pipeline cmdlets
-            "Where-Object ForEach-Object Select-Object Sort-Object "
-            "Group-Object Measure-Object Compare-Object Tee-Object "
-            "New-Object Get-Member "
-            // Process / service / item cmdlets
-            "Get-Process Get-Service Get-ChildItem Get-Content Get-Item "
-            "Get-ItemProperty Get-Location Get-History Get-Command "
-            "Get-Help Get-Variable Get-Date Get-Random Get-Host Get-Module "
-            "Set-Location Set-Item Set-ItemProperty Set-Variable "
-            "Set-Content Set-StrictMode Set-ExecutionPolicy "
-            "New-Item New-Variable New-Module New-Alias "
-            "Remove-Item Remove-Variable Remove-Module "
-            "Copy-Item Move-Item Rename-Item "
-            "Test-Path Resolve-Path Split-Path Join-Path Convert-Path "
-            // Invocation / web
-            "Invoke-Expression Invoke-Command Invoke-WebRequest "
-            "Invoke-RestMethod "
-            // Output
-            "Out-Host Out-Null Out-File Out-String Out-GridView "
-            "Write-Host Write-Output Write-Error Write-Warning "
-            "Write-Verbose Write-Debug Write-Information Write-Progress "
-            "Read-Host "
-            // Module / data
-            "Import-Module Export-ModuleMember Import-Csv Export-Csv "
-            "ConvertTo-Json ConvertFrom-Json ConvertTo-Xml Select-String "
-            "Start-Process Stop-Process Start-Sleep Start-Job Stop-Job "
-            "Get-Job Receive-Job Wait-Job "
-            "Format-Table Format-List Format-Wide Format-Custom "
-            // Common .NET type names used in [type] literals
             "string int int32 int64 long short byte double float decimal "
             "char bool object void array hashtable pscustomobject "
             "scriptblock datetime timespan guid regex xml "

@@ -7,6 +7,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.32] — 2026-04-26
+
+PowerShell highlighting hotfix + per-language brand palettes (Python, SQL, JSON, JS/TS, C/C++, Bash) so commonly-used languages no longer all look like generic blue+violet. Multi-editor research across Notepad++, VS Code Dark+/Light+, PowerShell ISE, SSMS, PyCharm Darcula, and Sublime Mariana drove the per-language colour choices.
+
+### Fixed
+- 🐛 **PowerShell `New-Object`, `Get-Item`, etc. were rendering as default text.** Root cause: `LexerPowerShell::keywords(int set)` had its sets misordered against Scintilla's `SCI_SETKEYWORDS` slots. QScintilla's 1-based set N maps to Scintilla idx N-1; the old code put PowerShell comparison operators at idx 1 (Cmdlets slot), the Approved-Verbs list at idx 2 (Aliases slot), and the full Verb-Noun cmdlet names like `New-Object` at idx 4 (User1 slot). The User1 description "User-defined word 1" wasn't caught by any palette matcher, so cmdlets fell through to default text colour. Now: set 1 → Keywords (control flow), set 2 → Cmdlets (full Verb-Noun + verbs), set 3 → Aliases, set 5 → User1 (.NET type names for `[type]` literals). `New-Object`, `Get-ChildItem`, and friends now paint as cmdlets correctly.
+
+### Changed
+- 🎨 **PowerShell ISE canonical palette.** `$variable` paints OrangeRed `#FF4500` (the single most-recognisable PS colour, identical in Microsoft's ISE and the official "PowerShell ISE" theme bundled with the VS Code PowerShell extension). Cmdlets (`Get-Item`, `New-Object`) paint pure blue `#0000FF` light / `#9CDCFE` dark — also Microsoft's ISE convention. Aliases paint a distinct lighter cyan `#0080FF` light / `#9CDCFE` dark.
+- 🎨 **Python brand palette.** Keywords stay blue (consensus across N++ and VS Code; PyCharm's orange is the outlier). Secondary keywords (built-ins, types) shift to teal `#267F99` light / `#4EC9B0` dark — VS Code Dark+ canonical for Python types. Class/function names paint amber `#795E26` light / `#DCDCAA` dark.
+- 🎨 **SQL brand palette — SSMS signature.** Keywords blue (`SELECT`, `FROM`, `WHERE`), keyword2 paints **MAGENTA** `#FF00FF` light / `#C586C0` dark — system functions (`COUNT`, `SUM`) and data types (`INT`, `VARCHAR`, `DATETIME`) get the magenta accent that SSMS users expect. Per Microsoft's SSMS colour-coding documentation.
+- 🎨 **JSON brand palette — VS Code Light+/Dark+ canonical.** Property keys (style 4) now paint `#0451A5` darker JSON-blue light / `#9CDCFE` light-blue dark — the de-facto JSON expectation. Booleans (true/false/null) paint `#0000FF` light / `#569CD6` dark (VS Code constant.language). Strings remain grey/rose, numbers orange/cyan — five clearly distinct token kinds per JSON file.
+- 🎨 **JavaScript / TypeScript / CoffeeScript brand palette — VS Code Dark+ canonical.** Keywords blue, types teal `#4EC9B0` dark / `#267F99` light, function/class names amber `#DCDCAA` dark / `#795E26` light. The de-facto industry default.
+- 🎨 **C / C++ / C# secondary keywords retuned to VS Code teal.** Light `#267F99`, dark `#4EC9B0`. v0.1.31 had used the N++ canonical violet for secondary keywords, but C-family is so dominantly used in VS Code that users expect VS Code's teal types.
+- 🎨 **Bash secondary keywords stay violet.** Built-ins like `echo`, `cd`, `read` get the generic violet so they read as a distinct class from primary control-flow keywords.
+
+### Added
+- 🎨 **`d.contains("property")` matcher in npp_palette.cpp.** JSON property keys (`"name":`), CSS property names (`color:`), YAML keys, TOML keys all now paint as `npKeyword2` so the per-language brand colour controls the property hue. Without this matcher, JSON property keys fell through to default text.
+
+### Refactored
+- 🎨 **`src/lexer_powershell.cpp`**: `keywords(int set)` rewritten with explicit 1-based-to-Scintilla-idx-N-1 documentation. Operators (`-eq`, `-ne`) removed from the keyword sets entirely — Scintilla's PowerShell lexer detects `-word` patterns natively as operators, no keyword set needed.
+- 🎨 **`src/npp_palette.cpp`**: PowerShell-specific `npVariable` / `npCmdlet` / `npAlias` updated to ISE canonical hex codes; per-language brand branches added for Python, SQL, JS/TS/CoffeeScript, C/C++/C#, Bash; JSON brand updated to VS Code Light+/Dark+; `property` matcher added before `identifier` matcher.
+- 🎨 **`test_lexers_v0125.cpp`**: PowerShell keyword-set assertions rewritten to verify the correct ordering. Added: `New-Object` / `Get-Item` / `Where-Object` in set 2; `gci` in set 3; `string` / `datetime` in set 5; set 4 returns nullptr (Functions slot intentionally empty).
+- 🎨 **`test_palette.cpp`**: C++ secondary keyword expectation updated to VS Code teal `#267F99` (was `#8000FF` violet); JSON keyword expectation updated to `NP_KEYWORD` (`#0000FF`, was `#0451A5`); new assertion for JSON property key `#0451A5`.
+
+### Notes
+- 14 / 14 regression tests pass. PowerShell fix verified on the actual Windows screenshot the user shared.
+- Multi-editor research summary: see release_notes/v0.1.32.md for the full Notepad++ vs VS Code Dark+ vs VS Code Light+ vs PowerShell ISE vs SSMS vs PyCharm Darcula vs Sublime Mariana hex tables across 11 languages that drove these decisions.
+- No new dependencies, no schema changes, no installer changes.
+
+---
+
 ## [0.1.31] — 2026-04-26
 
 Notepad++ canonical palette overhaul + persistent post-stream stats + privacy hotfix for website screenshots. Three user-reported issues addressed in one ship.

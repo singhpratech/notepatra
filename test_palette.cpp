@@ -131,16 +131,18 @@ int main(int argc, char *argv[]) {
             {"C++",  9,  "pre-processor", NP_PREPROC, false, false},
             {"C++",  10, "operator",     NP_OPERATOR, false, false},
         });
-        // Secondary keywords (style 16 = SCE_C_WORD2). v0.1.31 returns
-        // C/C++ secondary keywords to N++ canonical violet #8000FF (was
-        // #267F99 teal in v0.1.27-v0.1.30). The N++ canonical violet sits
-        // on a different hue arc from primary blue keywords, killing the
-        // "all blue shades" effect.
+        // Secondary keywords (style 16 = SCE_C_WORD2). v0.1.32 brings C/C++
+        // back into VS Code Dark+ alignment for type names — secondary
+        // keywords use teal `#267F99` light / `#4EC9B0` dark, the de-facto
+        // VS Code standard for C/C++ type words. (v0.1.31 had used the N++
+        // canonical violet #8000FF, but C/C++ is so dominantly used in VS
+        // Code that users expect VS Code's teal types here. Other languages
+        // that fall back to the generic palette still see violet types.)
         QColor sec = lex.color(16);
-        if (sec == QColor(0x80, 0x00, 0xFF)) {
-            fprintf(stdout, "  ok   C++        style 16 secondary keywords      = #8000FF [violet]\n");
+        if (sec == QColor(0x26, 0x7F, 0x99)) {
+            fprintf(stdout, "  ok   C++        style 16 secondary keywords      = #267F99 [VS Code teal]\n");
         } else {
-            fprintf(stderr, "  FAIL C++        style 16 secondary keywords: got #%02X%02X%02X, expected #8000FF\n",
+            fprintf(stderr, "  FAIL C++        style 16 secondary keywords: got #%02X%02X%02X, expected #267F99\n",
                     sec.red(), sec.green(), sec.blue());
             total_failed++;
         }
@@ -192,23 +194,34 @@ int main(int argc, char *argv[]) {
     //   1 = Number, 2 = String, 4 = Property (key), 6 = Line comment,
     //   7 = Block comment, 8 = Operator, 11 = JSON keyword (true/false/null)
     //
-    // v0.1.27: JSON keyword (true/false/null) now uses the JSON-specific
-    // palette colour #0451A5 (a darker, more readable JSON-key blue used
-    // in VS Code's default JSON theme) instead of the generic #0000FF
-    // primary keyword. This makes JSON files visually distinct from
-    // generic-keyword languages.
-    static const QColor NP_JSON_KEYWORD(0x04, 0x51, 0xA5);
+    // v0.1.32: JSON now follows VS Code Light+ canonical:
+    //   - keyword (true/false/null) at style 11 = pure blue #0000FF
+    //     (matches VS Code Light+ constant.language)
+    //   - property key at style 4 = #0451A5 darker JSON-blue
+    //     (matches VS Code Light+ meta.structure.dictionary.key)
+    // The two-blue split makes JSON visually distinct: keys read as
+    // dark JSON-blue, true/false/null as bright keyword-blue, strings
+    // remain grey, numbers orange — five clearly distinct token kinds.
     {
         QsciLexerJSON lex;
         applyNotepadPlusPalette(&lex, base);
         total_failed += run_checks("JSON", &lex, {
-            {"JSON", 11, "keyword",  NP_JSON_KEYWORD, true, false},
+            {"JSON", 11, "keyword",  NP_KEYWORD, true, false},
             {"JSON", 1,  "number",   NP_NUMBER, false, false},
             {"JSON", 2,  "string",   NP_STRING, false, false},
             {"JSON", 6,  "comment",  NP_COMMENT, false, true},
             {"JSON", 7,  "comment",  NP_COMMENT, false, true},
             {"JSON", 8,  "operator", NP_OPERATOR, true, false},
         });
+        // Property key (style 4) — the JSON-distinctive accent.
+        QColor jsonKey = lex.color(4);
+        if (jsonKey == QColor(0x04, 0x51, 0xA5)) {
+            fprintf(stdout, "  ok   JSON       style 4  property key            = #0451A5 [VS Code JSON-blue]\n");
+        } else {
+            fprintf(stderr, "  FAIL JSON       style 4  property key: got #%02X%02X%02X, expected #0451A5\n",
+                    jsonKey.red(), jsonKey.green(), jsonKey.blue());
+            total_failed++;
+        }
     }
 
     // ─── Bash ──────────────────────────────────────────────────────────

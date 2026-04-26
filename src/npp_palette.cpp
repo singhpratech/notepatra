@@ -94,10 +94,17 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QStr
     // Variable ($var, $env:VAR), Cmdlet (Verb-Noun), Alias (ls, gci, ...).
     // Used as defaults for PowerShell lexer; other lexers don't have these
     // style kinds in their description() output so they're harmless.
-    // Hex codes verified against N++ stylers.model.xml PowerShell section.
-    QColor npVariable         = monokai ? QColor("#FD971F") : (dark ? QColor("#DCDCCC") : QColor("#000000"));
-    QColor npCmdlet           = monokai ? QColor("#A6E22E") : (dark ? QColor("#FFCFAF") : QColor("#8000FF"));
-    QColor npAlias            = monokai ? QColor("#FD971F") : (dark ? QColor("#CEDF99") : QColor("#0080FF"));
+    //
+    // v0.1.32 — Microsoft PowerShell ISE canonical palette, verified against
+    // ISE TokenColors + the official "PowerShell ISE" theme bundled with the
+    // VS Code PowerShell extension (PowerShell/vscode-powershell repo,
+    // themes/theme-psise/theme.json). The signature triple:
+    //   $variable  = #FF4500 OrangeRed     (most distinctive — ISE signature)
+    //   Get-Item   = #0000FF pure blue     (cmdlets always blue in ISE)
+    //   ls / gci   = #0080FF lighter blue  (aliases distinct from cmdlets)
+    QColor npVariable         = monokai ? QColor("#FD971F") : (dark ? QColor("#FF7F50") : QColor("#FF4500"));
+    QColor npCmdlet           = monokai ? QColor("#A6E22E") : (dark ? QColor("#9CDCFE") : QColor("#0000FF"));
+    QColor npAlias            = monokai ? QColor("#FD971F") : (dark ? QColor("#9CDCFE") : QColor("#0080FF"));
     QColor npHereString       = npString;
 
     // ── Per-language accent palette ───────────────────────────────────────
@@ -130,37 +137,76 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QStr
         npKeyword   = monokai ? QColor("#FD971F") : (dark ? QColor("#CC7832") : QColor("#0033B3"));
         npKeyword2  = monokai ? QColor("#A6E22E") : (dark ? QColor("#FFC66D") : QColor("#000080"));
         npClassName = monokai ? QColor("#A6E22E") : (dark ? QColor("#FFC66D") : QColor("#000080"));
-    } else if (lang == QLatin1String("TypeScript") ||
-               lang == QLatin1String("JavaScript") ||
-               lang == QLatin1String("CoffeeScript") ||
-               lang == QLatin1String("Python") ||
-               lang == QLatin1String("C") || lang == QLatin1String("C++") ||
-               lang == QLatin1String("C#") ||
-               lang == QLatin1String("SQL") ||
-               lang == QLatin1String("Bash") || lang == QLatin1String("Batch") ||
-               lang == QLatin1String("Perl") || lang == QLatin1String("Lua") ||
-               lang == QLatin1String("Pascal") || lang == QLatin1String("Makefile") ||
-               lang == QLatin1String("YAML") ||
-               lang == QLatin1String("PowerShell") ||
-               lang == QLatin1String("TCL") || lang == QLatin1String("Diff") ||
-               lang == QLatin1String("Fortran") || lang == QLatin1String("Fortran77") ||
-               lang == QLatin1String("Matlab") || lang == QLatin1String("Octave") ||
-               lang == QLatin1String("IDL") || lang == QLatin1String("Verilog") ||
-               lang == QLatin1String("VHDL") || lang == QLatin1String("TeX") ||
-               lang == QLatin1String("PostScript") || lang == QLatin1String("POV") ||
-               lang == QLatin1String("Spice") || lang == QLatin1String("AVS") ||
-               lang == QLatin1String("Properties") || lang == QLatin1String("PO") ||
-               lang == QLatin1String("IntelHex") || lang == QLatin1String("SRecord") ||
-               lang == QLatin1String("ASM") || lang == QLatin1String("NASM") ||
-               lang == QLatin1String("MASM")) {
-        // Generic-palette languages — v0.1.31 prunes per-language overrides
-        // that just re-stated the generic blue/teal pattern. The new generic
-        // palette uses the canonical N++ 9-hue scheme (blue keyword + violet
-        // type + green comment + orange number + grey string + navy operator
-        // + brown preprocessor + maroon class + plain identifier) which
-        // gives clearer visual differentiation than the old per-language
-        // teal-types overrides. Listed explicitly so future readers can
-        // confirm they're handled, not skipped.
+    } else if (lang == QLatin1String("Python")) {
+        // VS Code Dark+ canonical for Python — the most-used Python theme on
+        // earth. Keywords stay blue (consensus across N++ Light + VS Code
+        // Light/Dark+); types and built-ins shift to teal so `print`/`len`/
+        // `int` stand out from the keyword-blue. Class/function names get
+        // amber so def NAME pops out — same convention as VS Code, PyCharm.
+        // Decorators (@property, @dataclass) inherit the generic
+        // npDecorator (orange italic) which already gives them their own
+        // hue independent of keyword + type.
+        npKeyword2  = monokai ? QColor("#66D9EF") : (dark ? QColor("#4EC9B0") : QColor("#267F99"));
+        npClassName = monokai ? QColor("#A6E22E") : (dark ? QColor("#DCDCAA") : QColor("#795E26"));
+    }
+    else if (lang == QLatin1String("SQL")) {
+        // SSMS / Azure Data Studio canonical — keywords blue (SELECT, FROM,
+        // WHERE, JOIN), keyword2 MAGENTA for system functions and data
+        // types (COUNT, SUM, INT, VARCHAR, DATETIME). The blue+magenta
+        // combination is the SSMS signature — instantly recognisable as SQL.
+        // VS Code SQL Server (mssql) extension uses a similar pattern.
+        npKeyword2  = monokai ? QColor("#AE81FF") : (dark ? QColor("#C586C0") : QColor("#FF00FF"));
+        npClassName = monokai ? QColor("#A6E22E") : (dark ? QColor("#DCDCAA") : QColor("#7F0000"));
+    }
+    else if (lang == QLatin1String("JavaScript") ||
+             lang == QLatin1String("TypeScript") ||
+             lang == QLatin1String("CoffeeScript")) {
+        // VS Code Dark+ canonical for JS/TS — already the de-facto industry
+        // default. Keywords blue, types teal `#4EC9B0`, function/class names
+        // amber `#DCDCAA`. Light theme uses the VS Code Light+ analog.
+        npKeyword2  = monokai ? QColor("#66D9EF") : (dark ? QColor("#4EC9B0") : QColor("#267F99"));
+        npClassName = monokai ? QColor("#A6E22E") : (dark ? QColor("#DCDCAA") : QColor("#795E26"));
+    }
+    else if (lang == QLatin1String("C") || lang == QLatin1String("C++") ||
+             lang == QLatin1String("C#")) {
+        // VS Code C/C++ extension defaults — keywords blue, types teal,
+        // function/class names amber, preprocessor brown (light) / peach
+        // (dark) — already in the generic palette. Just tighten secondary
+        // keywords (types like int, char, std::string) to the VS Code teal.
+        npKeyword2  = monokai ? QColor("#66D9EF") : (dark ? QColor("#4EC9B0") : QColor("#267F99"));
+        npClassName = monokai ? QColor("#A6E22E") : (dark ? QColor("#DCDCAA") : QColor("#795E26"));
+    }
+    else if (lang == QLatin1String("Bash")) {
+        // Bash / shell — stay close to VS Code's shellscript scope. Keywords
+        // blue (if/then/for/while), built-ins also blue (echo/cd/read).
+        // Variables (`$var`, `${var}`) get the SCALAR style which the
+        // generic identifier matcher catches as plain text — fine. Operators
+        // and pipes get the operator navy bold treatment.
+        npKeyword2  = monokai ? QColor("#A6E22E") : (dark ? QColor("#CEDF99") : QColor("#8000FF"));
+    }
+    else if (lang == QLatin1String("Batch") ||
+             lang == QLatin1String("Perl") || lang == QLatin1String("Lua") ||
+             lang == QLatin1String("Pascal") || lang == QLatin1String("Makefile") ||
+             lang == QLatin1String("YAML") ||
+             lang == QLatin1String("PowerShell") ||
+             lang == QLatin1String("TCL") || lang == QLatin1String("Diff") ||
+             lang == QLatin1String("Fortran") || lang == QLatin1String("Fortran77") ||
+             lang == QLatin1String("Matlab") || lang == QLatin1String("Octave") ||
+             lang == QLatin1String("IDL") || lang == QLatin1String("Verilog") ||
+             lang == QLatin1String("VHDL") || lang == QLatin1String("TeX") ||
+             lang == QLatin1String("PostScript") || lang == QLatin1String("POV") ||
+             lang == QLatin1String("Spice") || lang == QLatin1String("AVS") ||
+             lang == QLatin1String("Properties") || lang == QLatin1String("PO") ||
+             lang == QLatin1String("IntelHex") || lang == QLatin1String("SRecord") ||
+             lang == QLatin1String("ASM") || lang == QLatin1String("NASM") ||
+             lang == QLatin1String("MASM")) {
+        // Generic-palette languages — fall through to the canonical N++
+        // 9-hue palette set above (blue keyword + violet type + green
+        // comment + orange number + grey string + navy operator + brown
+        // preprocessor + maroon class + plain identifier). PowerShell sits
+        // here because its distinctive hues come from the PS-specific
+        // npVariable / npCmdlet / npAlias style matchers — not from the
+        // generic keyword/type colours.
     }
     // ── Per-language brand overrides (kept for visual identity) ──────────
     // Below: only languages where a brand-specific accent gives a stronger
@@ -195,12 +241,14 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QStr
         npKeyword   = monokai ? QColor("#F92672") : (dark ? QColor("#E3CEAB") : QColor("#0000FF"));
     }
     else if (lang == QLatin1String("JSON")) {
-        // N++ canonical JSON: property name violet (#8000FF), string maroon,
-        // keyword (true/false/null) JSON-blue. Light theme keeps a darker
-        // saturated JSON-blue (#0451A5) so true/false/null reads clearly
-        // distinct from generic #0000FF blue keywords.
-        npKeyword   = monokai ? QColor("#F92672") : (dark ? QColor("#DFC47D") : QColor("#0451A5"));
-        npKeyword2  = monokai ? QColor("#66D9EF") : (dark ? QColor("#CEDF99") : QColor("#8000FF"));
+        // VS Code Dark+ canonical for JSON — the de-facto JSON expectation.
+        //   Light: key #0451A5 darker JSON-blue, value-string maroon
+        //          (handled by npString), keyword (true/false/null) #0000FF
+        //   Dark:  key #9CDCFE light-blue (VS Code variable colour), keyword
+        //          (true/false/null) #569CD6 (VS Code constant.language)
+        // Distinctly different visual from C/C++ even though both use blues.
+        npKeyword   = monokai ? QColor("#F92672") : (dark ? QColor("#569CD6") : QColor("#0000FF"));
+        npKeyword2  = monokai ? QColor("#66D9EF") : (dark ? QColor("#9CDCFE") : QColor("#0451A5"));
     }
     else if (lang == QLatin1String("Ruby")) {
         // Ruby red — matches ruby-lang.org branding. Light keeps the brand
@@ -326,6 +374,13 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QStr
         }
         else if (d.contains("link") || d.contains("url")) {
             fg = npClassName;
+        }
+        else if (d.contains("property")) {
+            // JSON property keys (`"name":`), CSS property names (`color:`),
+            // YAML keys, TOML keys etc. Use npKeyword2 so the per-language
+            // brand override controls the colour — JSON gets its
+            // `#0451A5` JSON-blue, CSS gets its red, etc.
+            fg = npKeyword2;
         }
         else if (d.contains("identifier")) {
             // v0.1.31 fix: identifiers paint as default text colour instead

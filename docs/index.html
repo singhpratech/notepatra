@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.8 MB (Linux x64 tar.gz), 25.5 MB (macOS DMG with bundled Qt), 43.5 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 48 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.31",
+      "softwareVersion": "0.1.32",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.31 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.32 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.31">
-        Download v0.1.31 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.32">
+        Download v0.1.32 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.31 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.32 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1389,7 +1389,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.31</div>
+        <div class="section-label">Download v0.1.32</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1439,20 +1439,20 @@
     </section>
 
     <!-- ─────────────────────────────────────────────────────────────
-         See it in action — animated GIF rebuilt in v0.1.31 from the two
-         PII-clean frames of the original tour (Welcome screen → editor
-         with C++ syntax highlighting). The longer Project Search / AI
-         frames from the v0.1.30 tour leaked filesystem paths and were
-         dropped; a fresh full tour from a neutral cwd will replace this
-         once captured.
+         See it in action — 3-scene PII-clean tour: Welcome screen →
+         editor with C++ syntax highlighting → Project Search streaming
+         results from a clean cwd (C:\backup\config). All frames verified
+         frame-by-frame with no /home/<user> paths or other-project
+         filenames visible. AI Assistant scene to be added once a clean
+         AI capture is recorded.
          ───────────────────────────────────────────────────────────── -->
     <section id="see-it-in-action" style="max-width: 1120px; margin: 0 auto 60px; padding: 0 24px; text-align: center;">
         <div class="section-label">See it in action</div>
-        <div class="section-title" style="margin-bottom: 12px;">Welcome to editor — instant.</div>
-        <p class="section-desc">Welcome screen → C++ source with Notepad++ canonical syntax highlighting. Captured from a running Notepatra on Linux.</p>
+        <div class="section-title" style="margin-bottom: 12px;">Welcome → editor → search.</div>
+        <p class="section-desc">Welcome screen · C++ source with Notepad++ canonical syntax highlighting · Project Search streaming 51 matches across 924 lines in 99 ms. Captured from running Notepatra on Linux + Windows.</p>
         <div style="position: relative; max-width: 960px; margin: 28px auto 0; background: var(--c-surface); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px -20px rgba(20,20,19,0.18);">
             <img src="screenshots/tour-clean.gif"
-                 alt="Notepatra tour — Welcome screen with toolbar, then editor.cpp source with syntax highlighting"
+                 alt="Notepatra tour — Welcome screen, then editor.cpp source with syntax highlighting, then Project Search with live streaming results"
                  loading="lazy"
                  style="display: block; width: 100%; height: auto;">
         </div>
@@ -1841,7 +1841,60 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.31 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.32 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-26</span>
+                        <span>· PowerShell highlighting hotfix + per-language brand palettes</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🐛 PowerShell <code style="color:var(--green);font-size:12px;">New-Object</code> rendering as default text — fixed</h5>
+                        <ul>
+                            <li>User shared a Windows screenshot showing <code style="color:var(--green);font-size:12px;">New-Object</code> rendering as plain white text in a <code style="color:var(--green);font-size:12px;">.ps1</code> file. Root cause: <code style="color:var(--green);font-size:12px;">LexerPowerShell::keywords(int set)</code> had its keyword sets misordered against Scintilla's <code style="color:var(--green);font-size:12px;">SCI_SETKEYWORDS</code> slots. QScintilla's 1-based set N maps to Scintilla idx N-1; the old code put full Verb-Noun cmdlet names like <code style="color:var(--green);font-size:12px;">New-Object</code> at idx 4 (User1 slot) instead of idx 1 (Cmdlets slot), and the User1 description "User-defined word 1" wasn't caught by any palette matcher → fell through to default text colour.</li>
+                            <li>Fix: sets reordered. set 1 → Keywords (control flow), set 2 → Cmdlets (full Verb-Noun + verbs), set 3 → Aliases, set 5 → User1 (.NET type names for <code style="color:var(--green);font-size:12px;">[type]</code> literals). Operators (<code style="color:var(--green);font-size:12px;">-eq</code>, <code style="color:var(--green);font-size:12px;">-ne</code>) removed from keyword sets — Scintilla detects <code style="color:var(--green);font-size:12px;">-word</code> prefixes natively.</li>
+                            <li><code style="color:var(--green);font-size:12px;">New-Object</code>, <code style="color:var(--green);font-size:12px;">Get-ChildItem</code>, <code style="color:var(--green);font-size:12px;">Where-Object</code>, and friends now paint as cmdlets correctly.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🎨 PowerShell ISE canonical palette</h5>
+                        <ul>
+                            <li><code style="color:var(--green);font-size:12px;">$variable</code> paints <strong>OrangeRed <code style="color:var(--green);font-size:12px;">#FF4500</code></strong> light / coral <code style="color:var(--green);font-size:12px;">#FF7F50</code> dark — the single most-recognisable PS colour from Microsoft's ISE.</li>
+                            <li>Cmdlets paint pure blue <code style="color:var(--green);font-size:12px;">#0000FF</code> light / <code style="color:var(--green);font-size:12px;">#9CDCFE</code> dark — matches ISE + the official "PowerShell ISE" theme bundled with the VS Code PowerShell extension.</li>
+                            <li>Aliases get a distinct lighter cyan <code style="color:var(--green);font-size:12px;">#0080FF</code>.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🎨 Per-language brand palettes restored</h5>
+                        <ul>
+                            <li><strong>Python</strong> — VS Code Dark+ canonical: keywords blue, built-ins/types teal <code style="color:var(--green);font-size:12px;">#267F99</code>/<code style="color:var(--green);font-size:12px;">#4EC9B0</code>, function/class names amber <code style="color:var(--green);font-size:12px;">#795E26</code>/<code style="color:var(--green);font-size:12px;">#DCDCAA</code>.</li>
+                            <li><strong>SQL</strong> — SSMS signature: keywords blue, system functions/types <strong>magenta <code style="color:var(--green);font-size:12px;">#FF00FF</code></strong>/<code style="color:var(--green);font-size:12px;">#C586C0</code>. Per Microsoft's SSMS colour-coding documentation.</li>
+                            <li><strong>JSON</strong> — VS Code Light+/Dark+ canonical: property keys <code style="color:var(--green);font-size:12px;">#0451A5</code>/<code style="color:var(--green);font-size:12px;">#9CDCFE</code>, true/false/null <code style="color:var(--green);font-size:12px;">#0000FF</code>/<code style="color:var(--green);font-size:12px;">#569CD6</code>. Five clearly distinct token kinds per JSON file.</li>
+                            <li><strong>JS/TS/CoffeeScript</strong> — VS Code Dark+ industry default: types teal <code style="color:var(--green);font-size:12px;">#4EC9B0</code> dark / <code style="color:var(--green);font-size:12px;">#267F99</code> light.</li>
+                            <li><strong>C/C++/C#</strong> — VS Code teal types <code style="color:var(--green);font-size:12px;">#267F99</code>/<code style="color:var(--green);font-size:12px;">#4EC9B0</code> (the de-facto C-family expectation; v0.1.31 had used N++ canonical violet).</li>
+                            <li><strong>Bash</strong> — built-ins (<code style="color:var(--green);font-size:12px;">echo</code>, <code style="color:var(--green);font-size:12px;">cd</code>, <code style="color:var(--green);font-size:12px;">read</code>) get violet keyword2 — distinct from primary blue.</li>
+                            <li>New <code style="color:var(--green);font-size:12px;">d.contains("property")</code> palette matcher so JSON keys, CSS properties, YAML keys all pick up the per-language brand colour automatically.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>📚 Driven by multi-editor research</h5>
+                        <ul>
+                            <li>Per-language colour choices verified against: Notepad++ master <code style="color:var(--green);font-size:12px;">stylers.model.xml</code> + <code style="color:var(--green);font-size:12px;">DarkModeDefault.xml</code>, VS Code Dark+/Light+ built-in defaults (microsoft/vscode), PowerShell ISE + the bundled VS Code PowerShell extension theme, SQL Server Management Studio (SSMS) docs, PyCharm Darcula (JetBrains), and Sublime Text Mariana.</li>
+                            <li>Full hex tables across 11 languages in <a href="https://github.com/singhpratech/notepatra/blob/main/release_notes/v0.1.32.md">release_notes/v0.1.32.md</a>.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.32">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.32">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.31</div>
                     <div class="version-meta">
                         <span>2026-04-26</span>
                         <span>· Notepad++ canonical palette + persistent stream stats + privacy hotfix</span>
