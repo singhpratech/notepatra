@@ -269,22 +269,464 @@ int main(int argc, char *argv[]) {
         check("list_dir filters node_modules", !sawNodeModules);
     }
 
+    // ── v0.1.39: write_file ───────────────────────────────────────────
+    {
+        AiTools::ToolCall call;
+        call.name = "write_file";
+        QJsonObject args;
+        args["path"]    = "new/hello.py";
+        args["content"] = "print('hi')\n";
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("write_file: creates new file (default overwrite)", !r.isError);
+        QJsonObject result = QJsonDocument::fromJson(r.content.toUtf8())
+                                .object().value("result").toObject();
+        check("  result.created == true (new file)", result.value("created").toBool());
+        check("  result.bytes_written == 12", result.value("bytes_written").toInt() == 12);
+        check("  result.mode == overwrite", result.value("mode").toString() == "overwrite");
+        check("  result.abs_path is absolute",
+              result.value("abs_path").toString().startsWith('/'));
+        // Verify the file actually exists with correct content.
+        QFile fread(ws + "/new/hello.py");
+        fread.open(QFile::ReadOnly);
+        check("  file on disk has expected content",
+              fread.readAll() == QByteArray("print('hi')\n"));
+        fread.close();
+    }
+
+    // write_file mode=create with a new path → ok, created=true
+    {
+        AiTools::ToolCall call;
+        call.name = "write_file";
+        QJsonObject args;
+        args["path"]    = "fresh.txt";
+        args["content"] = "fresh\n";
+        args["mode"]    = "create";
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("write_file mode=create on new path: ok", !r.isError);
+    }
+
+    // write_file mode=create on existing path → error_kind:exists
+    {
+        AiTools::ToolCall call;
+        call.name = "write_file";
+        QJsonObject args;
+        args["path"]    = "fresh.txt";
+        args["content"] = "different\n";
+        args["mode"]    = "create";
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("write_file mode=create on existing: errors", r.isError);
+        check("  errorKind == exists", r.errorKind == "exists");
+    }
+
+    // write_file mode=overwrite → succeeds, created=false
+    {
+        AiTools::ToolCall call;
+        call.name = "write_file";
+        QJsonObject args;
+        args["path"]    = "fresh.txt";
+        args["content"] = "v2\n";
+        args["mode"]    = "overwrite";
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("write_file mode=overwrite: ok", !r.isError);
+        QJsonObject result = QJsonDocument::fromJson(r.content.toUtf8())
+                                .object().value("result").toObject();
+        check("  result.created == false (was already there)",
+              !result.value("created").toBool());
+    }
+
+    // write_file mode=append → adds to end
+    {
+        AiTools::ToolCall call;
+        call.name = "write_file";
+        QJsonObject args;
+        args["path"]    = "fresh.txt";
+        args["content"] = "tail\n";
+        args["mode"]    = "append";
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("write_file mode=append: ok", !r.isError);
+        QFile fread(ws + "/fresh.txt");
+        fread.open(QFile::ReadOnly);
+        check("  on-disk content is concatenation",
+              fread.readAll() == QByteArray("v2\ntail\n"));
+        fread.close();
+    }
+
+    // write_file traversal attempt → denied / outside_workspace
+    {
+        AiTools::ToolCall call;
+        call.name = "write_file";
+        QJsonObject args;
+        args["path"]    = "../escape.txt";
+        args["content"] = "x";
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("write_file('../escape.txt'): refused", r.isError);
+        check("  errorKind is a refusal",
+              r.errorKind == "outside_workspace"
+              || r.errorKind == "denied"
+              || r.errorKind == "not_found");
+    }
+
+    // write_file to deny-listed path inside workspace → denied
+    // (Simulate a hardcoded-deny path: a .pem file inside the workspace.
+    //  The deny-list catches *.pem regardless of where it is.)
+    {
+        AiTools::ToolCall call;
+        call.name = "write_file";
+        QJsonObject args;
+        args["path"]    = "creds.pem";
+        args["content"] = "-----BEGIN PRIVATE KEY-----\n";
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("write_file('creds.pem'): refused by deny-list", r.isError);
+        check("  errorKind == denied", r.errorKind == "denied");
+    }
+
+    // ── v0.1.39: search ──────────────────────────────────────────────
+    {
+        // Seed some content to search against.
+        writeFile(ws + "/src/util.rs", "fn util() { println!(\"hi\"); }\n");
+        AiTools::ToolCall call;
+        call.name = "search";
+        QJsonObject args;
+        args["pattern"] = "println";
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("search('println'): ok", !r.isError);
+        QJsonObject result = QJsonDocument::fromJson(r.content.toUtf8())
+                                .object().value("result").toObject();
+        check("  total_matches >= 2 (main.rs + util.rs)",
+              result.value("total_matches").toInt() >= 2);
+        check("  matches array shape: each entry has path + line",
+              result.value("matches").toArray().first().toObject().contains("path")
+              && result.value("matches").toArray().first().toObject().contains("line"));
+    }
+
+    // search with glob filter
+    {
+        AiTools::ToolCall call;
+        call.name = "search";
+        QJsonObject args;
+        args["pattern"] = "println";
+        args["glob"]    = "*.txt";
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("search with glob='*.txt': no .rs matches", !r.isError);
+        QJsonObject result = QJsonDocument::fromJson(r.content.toUtf8())
+                                .object().value("result").toObject();
+        check("  total_matches == 0 (only .txt scanned)",
+              result.value("total_matches").toInt() == 0);
+    }
+
+    // search with regex
+    {
+        AiTools::ToolCall call;
+        call.name = "search";
+        QJsonObject args;
+        args["pattern"] = "fn\\s+\\w+\\(\\)";
+        args["regex"]   = true;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("search regex: ok", !r.isError);
+        QJsonObject result = QJsonDocument::fromJson(r.content.toUtf8())
+                                .object().value("result").toObject();
+        check("  matches >= 2 (main + util)",
+              result.value("total_matches").toInt() >= 2);
+    }
+
+    // search with empty pattern → error
+    {
+        AiTools::ToolCall call;
+        call.name = "search";
+        QJsonObject args;
+        args["pattern"] = "";
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("search(''): rejects empty pattern", r.isError);
+    }
+
+    // ── v0.1.39: apply_diff ──────────────────────────────────────────
+    {
+        // Set up: 5-line file we'll edit.
+        writeFile(ws + "/diff_target.txt",
+                  "line A\nline B\nline C\nline D\nline E\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"] = "diff_target.txt";
+        QJsonArray hunks;
+        QJsonObject h1;
+        h1["old_start_line"] = 2;
+        h1["old_lines"]      = "line B\n";
+        h1["new_lines"]      = "line B (edited)\n";
+        hunks.append(h1);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("apply_diff: single-hunk success", !r.isError);
+        QFile fread(ws + "/diff_target.txt");
+        fread.open(QFile::ReadOnly);
+        const QByteArray after = fread.readAll();
+        fread.close();
+        check("  file content contains 'line B (edited)'",
+              after.contains("line B (edited)"));
+        check("  unchanged lines preserved",
+              after.contains("line A\n") && after.contains("line E\n"));
+    }
+
+    // apply_diff with conflict (old_lines doesn't match) → file untouched
+    {
+        // First reset target.
+        writeFile(ws + "/diff_target.txt",
+                  "line A\nline B\nline C\nline D\nline E\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"] = "diff_target.txt";
+        QJsonArray hunks;
+        QJsonObject h1;
+        h1["old_start_line"] = 2;
+        h1["old_lines"]      = "line WRONG\n";  // doesn't match!
+        h1["new_lines"]      = "should never appear\n";
+        hunks.append(h1);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("apply_diff conflict: errors", r.isError);
+        check("  errorKind == conflict", r.errorKind == "conflict");
+        QFile fread(ws + "/diff_target.txt");
+        fread.open(QFile::ReadOnly);
+        const QByteArray after = fread.readAll();
+        fread.close();
+        check("  file is UNCHANGED on conflict (atomic)",
+              !after.contains("should never appear")
+              && after.contains("line B\n"));
+    }
+
+    // apply_diff multiple hunks (must be applied in REVERSE order so
+    // earlier line numbers stay stable). Test: edit lines 2 and 4.
+    {
+        writeFile(ws + "/diff_target.txt",
+                  "line A\nline B\nline C\nline D\nline E\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"] = "diff_target.txt";
+        QJsonArray hunks;
+        QJsonObject h1;
+        h1["old_start_line"] = 2;
+        h1["old_lines"]      = "line B\n";
+        h1["new_lines"]      = "BB\n";
+        QJsonObject h2;
+        h2["old_start_line"] = 4;
+        h2["old_lines"]      = "line D\n";
+        h2["new_lines"]      = "DD\n";
+        hunks.append(h1);
+        hunks.append(h2);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("apply_diff multi-hunk: ok", !r.isError);
+        QFile fread(ws + "/diff_target.txt");
+        fread.open(QFile::ReadOnly);
+        const QByteArray after = fread.readAll();
+        fread.close();
+        check("  result is 'line A\\nBB\\nline C\\nDD\\nline E\\n'",
+              after == QByteArray("line A\nBB\nline C\nDD\nline E\n"));
+    }
+
+    // apply_diff on missing file → not_found
+    {
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"] = "nonexistent.txt";
+        QJsonArray hunks;
+        QJsonObject h1;
+        h1["old_start_line"] = 1;
+        h1["old_lines"]      = "x\n";
+        h1["new_lines"]      = "y\n";
+        hunks.append(h1);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("apply_diff on missing file: errors", r.isError);
+    }
+
+    // ── v0.1.39 deeper edge cases ────────────────────────────────────
+
+    // write_file: empty content (zero-length file is legitimate)
+    {
+        AiTools::ToolCall call;
+        call.name = "write_file";
+        QJsonObject args;
+        args["path"]    = "empty.txt";
+        args["content"] = "";
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("write_file: empty content writes 0-byte file", !r.isError);
+        QJsonObject res = QJsonDocument::fromJson(r.content.toUtf8())
+                              .object().value("result").toObject();
+        check("  bytes_written == 0", res.value("bytes_written").toInt() == 0);
+    }
+
+    // write_file: invalid mode → error (defensive — rejects unknown modes)
+    {
+        AiTools::ToolCall call;
+        call.name = "write_file";
+        QJsonObject args;
+        args["path"]    = "weird.txt";
+        args["content"] = "x";
+        args["mode"]    = "totally-not-a-mode";
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("write_file: unknown mode rejected", r.isError);
+    }
+
+    // search case-sensitivity respected
+    {
+        writeFile(ws + "/case.txt", "Apple\napple\nAPPLE\n");
+        AiTools::ToolCall call;
+        call.name = "search";
+        QJsonObject args;
+        args["pattern"]        = "apple";
+        args["case_sensitive"] = true;
+        args["glob"]           = "case.txt";
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("search case_sensitive=true: ok", !r.isError);
+        QJsonObject res = QJsonDocument::fromJson(r.content.toUtf8())
+                              .object().value("result").toObject();
+        check("  finds exactly 1 lowercase match",
+              res.value("total_matches").toInt() == 1);
+    }
+
+    // search case_sensitive=false (default) finds all 3
+    {
+        AiTools::ToolCall call;
+        call.name = "search";
+        QJsonObject args;
+        args["pattern"] = "apple";
+        args["glob"]    = "case.txt";
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        QJsonObject res = QJsonDocument::fromJson(r.content.toUtf8())
+                              .object().value("result").toObject();
+        check("search case-insensitive (default): finds all 3 cases",
+              res.value("total_matches").toInt() == 3);
+    }
+
+    // apply_diff with hunks supplied OUT OF ORDER — internal sort
+    // should fix this and apply correctly.
+    {
+        writeFile(ws + "/diff_target.txt",
+                  "line A\nline B\nline C\nline D\nline E\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"] = "diff_target.txt";
+        QJsonArray hunks;
+        // Submit out of order: line 4 BEFORE line 2.
+        QJsonObject h2; h2["old_start_line"] = 4;
+        h2["old_lines"] = "line D\n"; h2["new_lines"] = "DD2\n";
+        QJsonObject h1; h1["old_start_line"] = 2;
+        h1["old_lines"] = "line B\n"; h1["new_lines"] = "BB2\n";
+        hunks.append(h2);
+        hunks.append(h1);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("apply_diff: hunks supplied out-of-order still apply correctly", !r.isError);
+        QFile fread(ws + "/diff_target.txt");
+        fread.open(QFile::ReadOnly);
+        const QByteArray after = fread.readAll();
+        fread.close();
+        check("  result is 'line A\\nBB2\\nline C\\nDD2\\nline E\\n'",
+              after == QByteArray("line A\nBB2\nline C\nDD2\nline E\n"));
+    }
+
+    // apply_diff on a deny-listed path → refused (deny-list catches
+    // even if the file exists in the workspace)
+    {
+        writeFile(ws + "/secret.pem", "----BEGIN PRIVATE KEY----\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"] = "secret.pem";
+        QJsonArray hunks;
+        QJsonObject h1; h1["old_start_line"] = 1;
+        h1["old_lines"] = "----BEGIN PRIVATE KEY----\n";
+        h1["new_lines"] = "tampered\n";
+        hunks.append(h1);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("apply_diff('secret.pem'): refused by deny-list", r.isError);
+        check("  errorKind == denied", r.errorKind == "denied");
+    }
+
+    // Unknown tool name routes through execute() → io_error refusal
+    {
+        AiTools::ToolCall call;
+        call.name = "rm_rf";  // not a real tool
+        call.args = QJsonObject{};
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("execute(unknown tool): refused", r.isError);
+        check("  errorKind == io_error", r.errorKind == "io_error");
+    }
+
+    // apply_diff on a hunk that references lines beyond EOF → conflict
+    {
+        writeFile(ws + "/short.txt", "only one line\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"] = "short.txt";
+        QJsonArray hunks;
+        QJsonObject h1; h1["old_start_line"] = 99;
+        h1["old_lines"] = "missing\n"; h1["new_lines"] = "x\n";
+        hunks.append(h1);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("apply_diff: line 99 of 1-line file → conflict", r.isError);
+        check("  errorKind == conflict", r.errorKind == "conflict");
+        QFile fread(ws + "/short.txt");
+        fread.open(QFile::ReadOnly);
+        check("  file unchanged on out-of-bounds hunk",
+              fread.readAll() == QByteArray("only one line\n"));
+        fread.close();
+    }
+
     // Tool registry — verify availableTools() returns valid JSONSchema
     {
         QJsonArray tools = AiTools::availableTools();
-        check("availableTools() has 2+ entries", tools.size() >= 2);
+        check("availableTools() has 5 entries (read/list/write/search/apply_diff)",
+              tools.size() == 5);
+        QStringList names;
         for (const QJsonValue &tv : tools) {
             QJsonObject t = tv.toObject();
             check("  each tool has type=function",
                   t.value("type").toString() == "function");
             QJsonObject fn = t.value("function").toObject();
-            check("  each tool has function.name",
-                  !fn.value("name").toString().isEmpty());
+            const QString name = fn.value("name").toString();
+            names << name;
+            check("  each tool has function.name", !name.isEmpty());
             check("  each tool has function.description",
                   !fn.value("description").toString().isEmpty());
             check("  each tool has function.parameters object",
                   fn.value("parameters").isObject());
         }
+        check("  registry has read_file",  names.contains("read_file"));
+        check("  registry has list_dir",   names.contains("list_dir"));
+        check("  registry has write_file", names.contains("write_file"));
+        check("  registry has search",     names.contains("search"));
+        check("  registry has apply_diff", names.contains("apply_diff"));
     }
 
     // Model allowlist — happy paths and rejections

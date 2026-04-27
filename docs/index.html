@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.8 MB (Linux x64 tar.gz), 25.5 MB (macOS DMG with bundled Qt), 43.5 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 48 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.38",
+      "softwareVersion": "0.1.39",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.38 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.39 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.38">
-        Download v0.1.38 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.39">
+        Download v0.1.39 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.38 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.39 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. AI-powered formatters that fix your broken JSON, HTML, and code — locally, privately, instantly.</p>
 
@@ -1389,7 +1389,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.38</div>
+        <div class="section-label">Download v0.1.39</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1841,7 +1841,61 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.38 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.39 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-27</span>
+                        <span>· Coding Mode write tools + persistent chat history + visible close button</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🤖 Coding Mode can finally <em>write</em> code (3 new agentic tools)</h5>
+                        <ul>
+                            <li><code style="color:var(--green);font-size:12px;">write_file(path, content, mode?)</code> — creates or overwrites text files; modes <code style="color:var(--green);font-size:12px;">overwrite</code> (default) / <code style="color:var(--green);font-size:12px;">create</code> (fails if exists) / <code style="color:var(--green);font-size:12px;">append</code>. Auto-creates parent directories <strong>inside the workspace</strong>; refuses to write outside it; refuses paths matching the credential deny-list (.ssh, *.pem, /etc/passwd, etc.). After writing, the file auto-opens in a tab — or the buffer reloads silently if it's already open.</li>
+                            <li><code style="color:var(--green);font-size:12px;">search(pattern, path?, regex?, glob?, case_sensitive?, max_matches?)</code> — pattern hunt across the workspace. Literal substring or regex. Glob filter (e.g. <code style="color:var(--green);font-size:12px;">*.py</code>). Capped at 200 matches. Same heavy-dir skip-list as the file explorer.</li>
+                            <li><code style="color:var(--green);font-size:12px;">apply_diff(path, hunks)</code> — surgical line-level edits. Each hunk has <code style="color:var(--green);font-size:12px;">old_start_line</code> + <code style="color:var(--green);font-size:12px;">old_lines</code> (expected current text) + <code style="color:var(--green);font-size:12px;">new_lines</code>. <strong>Atomic two-phase apply</strong>: validates ALL hunks against the live file first → if any drifted, return <code style="color:var(--green);font-size:12px;">error_kind: conflict</code> and <strong>nothing</strong> is written. Otherwise hunks apply in reverse-line-order so earlier indices stay stable. Write goes through <code style="color:var(--green);font-size:12px;">.tmp + std::rename</code> so a kill-9 mid-write leaves either old or new — never half-baked.</li>
+                            <li>The user reported they expected <em>"create me a Python file"</em> to actually create a .py file — and it did nothing. v0.1.35 shipped agentic tool-calling but only with the <em>read</em> side (<code style="color:var(--green);font-size:12px;">read_file</code>, <code style="color:var(--green);font-size:12px;">list_dir</code>); v0.1.39 closes that gap.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>💾 Persistent chat history (per-workspace)</h5>
+                        <ul>
+                            <li>Conversations now survive app restart. Stored at <code style="color:var(--green);font-size:12px;">~/.config/notepatra/chat-history/&lt;sha1-of-workspace&gt;.json</code>. One file per workspace; switching workspaces swaps in the right history.</li>
+                            <li>Saves debounced 2 s, capped at 1 MB per workspace (oldest messages roll off the front when full). <code style="color:var(--green);font-size:12px;">Reset</code> deletes the on-disk file. Atomic write via <code style="color:var(--green);font-size:12px;">.tmp + rename</code>.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🎨 AI dock close button now visibly red</h5>
+                        <ul>
+                            <li>The X close button on the AI Assistant header was tone-on-tone against the chrome on every theme — invisible at rest, only showing on hover. Replaced with theme-independent red: <code style="color:var(--green);font-size:12px;">#E81123</code> (Windows-canonical close-button red, UWP/Fluent) at rest, red bg + white X on hover.</li>
+                            <li>Glyph is U+00D7 MULTIPLICATION SIGN (×) — present in every font on every desktop OS for the last 30+ years. The earlier U+2715 ✕ attempt rendered as tofu on some Windows installs.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🛡 Path safety extended for writes (<code style="color:var(--green);font-size:12px;">resolveSafeWritePath</code>)</h5>
+                        <ul>
+                            <li>The three-layer safety from v0.1.35 (workspace anchor + canonicalize + hardcoded deny-list) still holds. New helper for write-side: target may not exist yet, but the lowest existing ancestor's canonical path must be inside the workspace; only THEN is <code style="color:var(--green);font-size:12px;">mkpath</code> called for the rest. Hardcoded deny-list applies to the candidate target, so creating <code style="color:var(--green);font-size:12px;">~/.ssh/foo</code> via a mkpath chain is still refused.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧪 134 tool tests (was 80)</h5>
+                        <ul>
+                            <li>+54 new assertions covering every <code style="color:var(--green);font-size:12px;">write_file</code> mode, <code style="color:var(--green);font-size:12px;">search</code> regex/glob/case-sensitivity, <code style="color:var(--green);font-size:12px;">apply_diff</code> success / multi-hunk / out-of-order hunks / conflict-aborts-atomically / line-beyond-EOF / deny-listed paths.</li>
+                            <li>16 / 16 regression suites green. Total assertions across the suite ≈ 2050.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.39">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.39">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.38</div>
                     <div class="version-meta">
                         <span>2026-04-26</span>
                         <span>· AI Assistant crash fix + custom-chat file-leak fix</span>

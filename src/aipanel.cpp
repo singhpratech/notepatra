@@ -33,6 +33,10 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QRegularExpression>
+#include <QCryptographicHash>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QStandardPaths>
 #include <QTextDocument>
 #include <QUrl>
@@ -507,21 +511,30 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
 
     // Close button — use the OS-native close glyph via QStyle so we never
     // depend on a Unicode codepoint that might mojibake on Windows fonts.
-    // The previous '✕' (U+2715) was rendering as a tofu box on some
-    // Windows installations. QStyle::SP_TitleCloseButton always returns
-    // the platform's own close X icon (the same one Qt uses on its own
-    // window decorations), so it's guaranteed to render.
-    auto *closeBtn = new QPushButton;
-    closeBtn->setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
-    closeBtn->setIconSize(QSize(14, 14));
+    // v0.1.39 — theme-independent red close button. The previous
+    // platform-icon variant (SP_TitleBarCloseButton over pal.chromeBg)
+    // was tone-on-tone against the panel header on both Light and Dark
+    // themes, so the X was effectively invisible at rest. Using the
+    // U+00D7 MULTIPLICATION SIGN (×) — present in every font shipped on
+    // every desktop OS, no tofu risk — and the Windows-canonical close-
+    // button red (#E81123) at rest, red background + white X on hover.
+    // Theme-independent on purpose: should be prominent on every chrome.
+    auto *closeBtn = new QPushButton(QString::fromUtf8("\xC3\x97"));  // U+00D7 MULTIPLICATION SIGN
+    {
+        QFont closeFont = closeBtn->font();
+        closeFont.setPointSize(closeFont.pointSize() > 0 ? closeFont.pointSize() + 6 : 18);
+        closeFont.setBold(true);
+        closeBtn->setFont(closeFont);
+    }
     closeBtn->setFixedSize(36, 28);
     closeBtn->setCursor(Qt::PointingHandCursor);
     closeBtn->setFlat(true);
     closeBtn->setToolTip("Close the AI dock (session stays — press Reset to clear chat)");
-    closeBtn->setStyleSheet(QString(
-        "QPushButton { background: %1; border: none; padding: 0; } "
-        "QPushButton:hover { background: %2; }")
-        .arg(pal.chromeBg, pal.recBtnBg));
+    closeBtn->setStyleSheet(
+        "QPushButton { background: transparent; border: none; "
+        "color: #E81123; font-weight: 700; padding: 0 0 2px 0; } "
+        "QPushButton:hover { background: #E81123; color: white; } "
+        "QPushButton:pressed { background: #C41019; color: white; }");
     connect(closeBtn, &QPushButton::clicked, this, [this]() {
         // Hide by walking up to the enclosing dock host (m_aiDockHost
         // in MainWindow is our grandparent via QVBoxLayout → QWidget).
@@ -1037,6 +1050,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
                 break;
             }
         }
+        scheduleChatSave();
         renderTranscript();
     });
     connect(m_ollama, &OllamaClient::error, this, [this](const QString &msg) {
@@ -1174,8 +1188,20 @@ void AIPanel::setWorkspaceContext(const QString &selectedText,
     m_currentFilePath = currentFilePath;
     m_currentFileText = currentFileText;
     m_openTabs = openTabs;
+    const QString prevWorkspace = m_workspaceRoot;
     m_workspaceRoot = workspaceRoot;
     m_workspaceFilePaths = workspaceFilePaths;
+
+    // v0.1.39 — when the workspace root changes, swap to the per-workspace
+    // chat history file. (Re-)compute the on-disk path; if a saved file
+    // exists, load it and re-render the transcript.
+    if (workspaceRoot != prevWorkspace) {
+        updateChatHistoryPath();
+        if (!m_chatHistoryPath.isEmpty() && QFileInfo::exists(m_chatHistoryPath)) {
+            loadChatHistory();
+            renderTranscript();
+        }
+    }
 }
 
 void AIPanel::refreshModels() {
@@ -1749,6 +1775,10 @@ void AIPanel::clearChat() {
     }
 
     m_messages.clear();
+    // v0.1.39 — also delete the on-disk persisted history for this
+    // workspace. Reset means start fresh on next launch too.
+    if (!m_chatHistoryPath.isEmpty() && QFileInfo::exists(m_chatHistoryPath))
+        QFile::remove(m_chatHistoryPath);
     setStatus("AI Assistant session reset", false);
 }
 
@@ -2031,6 +2061,7 @@ void AIPanel::appendErrorBubble(const QString &text) {
     message.role = ChatMessage::Error;
     message.text = text;
     m_messages.push_back(message);
+    scheduleChatSave();
     renderTranscript();
 }
 
@@ -2078,6 +2109,7 @@ void AIPanel::appendUserBubble(const QString &text) {
     message.role = ChatMessage::User;
     message.text = text;
     m_messages.push_back(message);
+    scheduleChatSave();
     renderTranscript();
 }
 
@@ -2226,6 +2258,7 @@ void AIPanel::endAssistantBubble() {
         if (finalTokens > 0)       message.evalTokens = finalTokens;
         if (finalElapsedMs >= 0)   message.elapsedMs  = finalElapsedMs;
         m_messages.push_back(message);
+        scheduleChatSave();
     }
     // Full re-render with markdown now that we have the complete text.
     renderTranscript();
@@ -2324,9 +2357,14 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
     ++m_toolCallsTotal;
 
     // Build a short user-facing summary of the args. Keeps the card
-    // readable without dumping full JSON.
+    // readable without dumping full JSON. search uses 'pattern' as its
+    // primary arg (path is optional + workspace-root by default), so
+    // surface that instead of '(...)'.
     QString argsSummary;
-    if (args.contains("path")) {
+    if (name == "search") {
+        const QString pattern = args.value("pattern").toString();
+        argsSummary = "(\"" + pattern + "\")";
+    } else if (args.contains("path")) {
         argsSummary = "(" + args.value("path").toString() + ")";
     } else {
         argsSummary = "(...)";
@@ -2356,6 +2394,33 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
         QJsonObject body = jd.object().value("result").toObject();
         const int n = body.value("entries").toArray().size();
         resultSummary = QString("%1 entries").arg(n);
+    } else if (name == "write_file") {
+        QJsonDocument jd = QJsonDocument::fromJson(result.content.toUtf8());
+        QJsonObject body = jd.object().value("result").toObject();
+        const int bytes = body.value("bytes_written").toInt();
+        const QString mode = body.value("mode").toString();
+        const bool created = body.value("created").toBool();
+        resultSummary = QString("%1 %2 (%3 bytes)")
+                            .arg(created ? "created" : "wrote", mode).arg(bytes);
+        // Auto-open / reload the file in the editor.
+        const QString absPath = body.value("abs_path").toString();
+        if (!absPath.isEmpty()) emit fileWrittenByAgent(absPath, created);
+    } else if (name == "search") {
+        QJsonDocument jd = QJsonDocument::fromJson(result.content.toUtf8());
+        QJsonObject body = jd.object().value("result").toObject();
+        const int total = body.value("total_matches").toInt();
+        const int files = body.value("files_scanned").toInt();
+        const bool tr = body.value("truncated").toBool();
+        resultSummary = QString("%1 matches in %2 files%3")
+                            .arg(total).arg(files).arg(tr ? " (truncated)" : "");
+    } else if (name == "apply_diff") {
+        QJsonDocument jd = QJsonDocument::fromJson(result.content.toUtf8());
+        QJsonObject body = jd.object().value("result").toObject();
+        const int hunks = body.value("hunks_applied").toInt();
+        resultSummary = QString("%1 hunk%2 applied").arg(hunks).arg(hunks == 1 ? "" : "s");
+        // Reload the editor for the modified file.
+        const QString absPath = body.value("abs_path").toString();
+        if (!absPath.isEmpty()) emit fileWrittenByAgent(absPath, false);
     }
 
     const AiPalette pal = aiPalette();
@@ -2487,4 +2552,121 @@ void AIPanel::onThemeChanged() {
     // error / assistant cards are rebuilt with the new colours.
     renderTranscript();
     update();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// v0.1.39 — persistent chat history (per-workspace JSON).
+//
+// Path:    ~/.config/notepatra/chat-history/<sha1-of-workspace>.json
+// Schema:  { "version": 1, "workspace": "<absPath>",
+//            "messages": [{role, text, model?, promptTokens?, evalTokens?, elapsedMs?}, ...] }
+// Limit:   1 MB on disk per workspace; older messages roll off the front
+//          if the next save would exceed.
+//
+// Only User / Assistant / Error roles are persisted — transient tool-
+// call cards (rendered inline by handleToolCall) aren't part of
+// m_messages and aren't saved. Saves are debounced 2s so the disk
+// doesn't see a write per token.
+// ═══════════════════════════════════════════════════════════════════════
+
+void AIPanel::updateChatHistoryPath() {
+    if (m_workspaceRoot.isEmpty()) {
+        m_chatHistoryPath.clear();
+        return;
+    }
+    const QString configDir =
+        QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    if (configDir.isEmpty()) {
+        m_chatHistoryPath.clear();
+        return;
+    }
+    const QString historyDir = configDir + "/chat-history";
+    QDir().mkpath(historyDir);
+    const QByteArray hash = QCryptographicHash::hash(
+        m_workspaceRoot.toUtf8(), QCryptographicHash::Sha1).toHex();
+    m_chatHistoryPath = historyDir + "/" + QString::fromLatin1(hash) + ".json";
+}
+
+void AIPanel::scheduleChatSave() {
+    if (m_chatHistoryPath.isEmpty()) return;  // no workspace open → no persistence
+    if (!m_chatSaveTimer) {
+        m_chatSaveTimer = new QTimer(this);
+        m_chatSaveTimer->setSingleShot(true);
+        m_chatSaveTimer->setInterval(2000);
+        connect(m_chatSaveTimer, &QTimer::timeout, this, &AIPanel::saveChatHistory);
+    }
+    m_chatSaveTimer->start();
+}
+
+void AIPanel::saveChatHistory() {
+    if (m_chatHistoryPath.isEmpty()) return;
+    QJsonArray arr;
+    for (const ChatMessage &m : m_messages) {
+        QJsonObject o;
+        const char *roleStr = "user";
+        if (m.role == ChatMessage::Assistant) roleStr = "assistant";
+        else if (m.role == ChatMessage::Error) roleStr = "error";
+        o["role"] = QString::fromLatin1(roleStr);
+        o["text"] = m.text;
+        if (!m.model.isEmpty())   o["model"]        = m.model;
+        if (m.promptTokens >= 0)  o["promptTokens"] = m.promptTokens;
+        if (m.evalTokens >= 0)    o["evalTokens"]   = m.evalTokens;
+        if (m.elapsedMs >= 0)     o["elapsedMs"]    = m.elapsedMs;
+        arr.append(o);
+    }
+    QJsonObject root;
+    root["version"]   = 1;
+    root["workspace"] = m_workspaceRoot;
+    root["messages"]  = arr;
+
+    QByteArray bytes = QJsonDocument(root).toJson(QJsonDocument::Compact);
+
+    // Roll-off oldest messages until under the 1 MB cap.
+    constexpr int kMaxBytes = 1 * 1024 * 1024;
+    while (bytes.size() > kMaxBytes && !arr.isEmpty()) {
+        arr.removeFirst();
+        root["messages"] = arr;
+        bytes = QJsonDocument(root).toJson(QJsonDocument::Compact);
+    }
+
+    // Atomic write: .tmp + rename. Don't risk a half-written history
+    // file if the app gets killed mid-save.
+    const QString tmp = m_chatHistoryPath + ".tmp";
+    QFile f(tmp);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return;
+    f.write(bytes);
+    f.close();
+    QFile::remove(m_chatHistoryPath);  // Windows rename can't overwrite
+    QFile::rename(tmp, m_chatHistoryPath);
+}
+
+void AIPanel::loadChatHistory() {
+    if (m_chatHistoryPath.isEmpty()) return;
+    QFile f(m_chatHistoryPath);
+    if (!f.open(QIODevice::ReadOnly)) return;
+    const QByteArray bytes = f.readAll();
+    f.close();
+
+    QJsonParseError err{};
+    const QJsonDocument doc = QJsonDocument::fromJson(bytes, &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) return;
+    const QJsonArray arr = doc.object().value("messages").toArray();
+
+    m_messages.clear();
+    m_messages.reserve(arr.size());
+    for (const QJsonValue &v : arr) {
+        if (!v.isObject()) continue;
+        const QJsonObject o = v.toObject();
+        ChatMessage m;
+        const QString role = o.value("role").toString();
+        if      (role == "assistant") m.role = ChatMessage::Assistant;
+        else if (role == "error")     m.role = ChatMessage::Error;
+        else                          m.role = ChatMessage::User;
+        m.text         = o.value("text").toString();
+        m.model        = o.value("model").toString();
+        m.promptTokens = o.value("promptTokens").toInt(-1);
+        m.evalTokens   = o.value("evalTokens").toInt(-1);
+        m.elapsedMs    = static_cast<qint64>(o.value("elapsedMs").toDouble(-1));
+        m_messages.push_back(m);
+    }
 }

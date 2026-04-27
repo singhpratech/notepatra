@@ -111,13 +111,23 @@ static QString languageHint(const QString &language) {
 // text content.
 static QString toolModeLayer() {
     return QStringLiteral(
-        "You have file-reading tools available: `read_file(path, offset?, limit?)` "
-        "to read a workspace file with line numbers, and `list_dir(path)` to list "
-        "directory entries. Use them via the tool_calls structured field — never "
-        "by typing JSON in your text response. Paths are workspace-relative; "
-        "secret/credential paths (.ssh, .pem, .key, /etc/passwd, etc.) are "
-        "refused. Read files before answering questions about specific code, and "
-        "list directories when you don't know what's in the workspace."
+        "You have agentic workspace tools available. READ side: "
+        "`read_file(path, offset?, limit?)` to read a file with line numbers, "
+        "`list_dir(path)` to list directory entries, "
+        "`search(pattern, path?, regex?, glob?, case_sensitive?, max_matches?)` "
+        "to find a string/pattern across the workspace. WRITE side: "
+        "`write_file(path, content, mode?)` to create or overwrite a file "
+        "(mode: 'overwrite' default, 'create' fails if exists, 'append' adds to end), "
+        "`apply_diff(path, hunks)` for line-level edits where each hunk has "
+        "old_start_line + old_lines (expected current text) + new_lines "
+        "(replacement) — atomic; if any hunk's old_lines doesn't match the file "
+        "the call returns error_kind:conflict and nothing is written. "
+        "Use the tool_calls structured field — never type JSON in your text "
+        "response. Paths are workspace-relative; secret/credential paths "
+        "(.ssh, .pem, .key, /etc/passwd, etc.) are refused. Prefer write_file "
+        "for new files or full rewrites; prefer apply_diff for surgical edits "
+        "to large existing files. After writing, the user's editor auto-opens "
+        "or reloads the file — no need to ask them to refresh."
     );
 }
 

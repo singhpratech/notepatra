@@ -99,6 +99,14 @@ signals:
     // / Cursor's layout.
     void codingModeRequested(bool on);
 
+    // v0.1.39 — fired when an agentic write_file or apply_diff tool
+    // call modifies a file on disk. MainWindow connects this to its
+    // openFile() so the new/edited file appears in a tab (or the open
+    // editor reloads from disk if already open). `created` is true if
+    // the tool just created a brand-new file (write_file mode=create or
+    // a fresh overwrite where the path didn't exist before).
+    void fileWrittenByAgent(const QString &absPath, bool created);
+
 private:
     void sendPrompt(const QString &action);
     void setStatus(const QString &text, bool error = false);
@@ -209,6 +217,21 @@ private:
     QProcess *m_transcribeProcess = nullptr;
     QString m_recordedAudioPath;
     QVector<ChatMessage> m_messages;
+
+    // v0.1.39 — persistent chat history. Stored at
+    // ~/.config/notepatra/chat-history/<sha1-of-workspace-root>.json
+    // (one file per workspace). Loaded on setWorkspaceContext when the
+    // workspace changes; saved (debounced 2s) after every push to
+    // m_messages. Cleared (file deleted) by clearChat(). Capped at 1MB
+    // — older messages roll off the front when the file would exceed.
+    // Only User / Assistant / Error roles are persisted; transient tool-
+    // call cards are not part of m_messages and aren't saved.
+    QString m_chatHistoryPath;
+    class QTimer *m_chatSaveTimer = nullptr;
+    void updateChatHistoryPath();
+    void saveChatHistory();
+    void loadChatHistory();
+    void scheduleChatSave();
 
 private slots:
     void attachFile();

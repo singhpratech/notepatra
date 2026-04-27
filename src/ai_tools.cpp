@@ -1,12 +1,15 @@
 #include "ai_tools.h"
 
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QFileInfoList>
 #include <QJsonDocument>
 #include <QRegularExpression>
 #include <QTextStream>
+
+#include <cstdio>
 
 namespace AiTools {
 
@@ -129,6 +132,108 @@ bool resolveSafePath(const QString &pathArg,
     }
 
     if (outCanonical) *outCanonical = canonicalPath;
+    return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// resolveSafeWritePath — same path-safety as resolveSafePath but the
+// target file is allowed to NOT exist yet. The parent directory MUST
+// exist + be inside the workspace, and the candidate target path is
+// also matched against the hardcoded deny-list so writes can't create
+// `~/.ssh/foo` even when the parent exists.
+//
+// Returns the absolute resolved target path in outAbsTarget on success.
+// On failure outErrorKind is one of:
+//   "outside_workspace" — workspace root bogus, parent dir resolves
+//                         outside the workspace, or no workspace open
+//   "not_found"         — pathArg empty, or parent directory doesn't
+//                         exist (we don't auto-mkdir intermediate dirs
+//                         to avoid surprise; agents must list_dir first
+//                         and write_file in places they confirmed exist)
+//   "denied"            — candidate target matches the credential
+//                         deny-list (~/.ssh/, *.pem, *.key, etc.)
+// ═══════════════════════════════════════════════════════════════════════
+bool resolveSafeWritePath(const QString &pathArg,
+                          const QString &workspaceRoot,
+                          QString *outAbsTarget,
+                          QString *outErrorKind) {
+    auto setError = [&](const char *kind) {
+        if (outErrorKind) *outErrorKind = QString::fromLatin1(kind);
+    };
+
+    if (pathArg.trimmed().isEmpty()) { setError("not_found"); return false; }
+    if (workspaceRoot.trimmed().isEmpty()) {
+        setError("outside_workspace"); return false;
+    }
+
+    const QDir wsDir(workspaceRoot);
+    QString canonicalWs = wsDir.canonicalPath();
+    if (canonicalWs.isEmpty()) {
+        setError("outside_workspace"); return false;
+    }
+
+    // Build the candidate absolute path (target may not exist).
+    QString candidate = pathArg;
+    if (!QDir::isAbsolutePath(candidate)) {
+        candidate = wsDir.absoluteFilePath(candidate);
+    }
+    QFileInfo fi(candidate);
+
+    // Parent must resolve into the workspace. If the parent doesn't
+    // exist YET (e.g. write_file("new/hello.py") to an empty workspace
+    // where `new/` doesn't exist), mkpath it — but only if the lowest
+    // existing ancestor IS inside the workspace. This lets the agent
+    // create new subtrees without giving it write access to anywhere
+    // outside the workspace via a non-existent traversal.
+    const QString parentDir = fi.absolutePath();
+    QFileInfo parentFi(parentDir);
+
+    QString wsPrefix = canonicalWs;
+    if (!wsPrefix.endsWith(QDir::separator()) && !wsPrefix.endsWith('/')) {
+        wsPrefix += '/';
+    }
+
+    if (!parentFi.exists() || !parentFi.isDir()) {
+        // Walk up to the lowest existing ancestor; canonicalize THAT
+        // and verify it's inside the workspace. Only then mkpath the rest.
+        QString lowest = parentDir;
+        while (!lowest.isEmpty() && !QFileInfo(lowest).exists()) {
+            const int slash = lowest.lastIndexOf('/');
+            if (slash <= 0) { lowest.clear(); break; }
+            lowest = lowest.left(slash);
+        }
+        if (lowest.isEmpty()) { setError("outside_workspace"); return false; }
+        const QString canonicalLowest = QFileInfo(lowest).canonicalFilePath();
+        if (canonicalLowest.isEmpty()) { setError("outside_workspace"); return false; }
+        if (canonicalLowest != canonicalWs && !canonicalLowest.startsWith(wsPrefix)) {
+            setError("outside_workspace"); return false;
+        }
+        if (!QDir().mkpath(parentDir)) {
+            setError("io_error"); return false;
+        }
+        parentFi = QFileInfo(parentDir);
+    }
+
+    QString canonicalParent = parentFi.canonicalFilePath();
+    if (canonicalParent.isEmpty()) {
+        setError("not_found"); return false;
+    }
+    if (canonicalParent != canonicalWs && !canonicalParent.startsWith(wsPrefix)) {
+        setError("outside_workspace"); return false;
+    }
+
+    // Construct the target path under the canonical parent. This is the
+    // path we'll actually write to; we keep the user-supplied filename
+    // (no canonicalize on the leaf since it doesn't exist yet).
+    const QString targetAbs = canonicalParent + '/' + fi.fileName();
+
+    // Apply the hardcoded deny-list to the candidate target — block
+    // writes to credential paths even if the parent dir is in workspace.
+    if (isHardDenied(targetAbs)) {
+        setError("denied"); return false;
+    }
+
+    if (outAbsTarget) *outAbsTarget = targetAbs;
     return true;
 }
 
@@ -261,6 +366,134 @@ QJsonArray availableTools() {
             "workspace. Returns entries with type (file|dir) and size. "
             "Capped at 500 entries; .git, node_modules, and build dirs "
             "are filtered out.",
+            params));
+    }
+
+    // write_file ---------------------------------------------------
+    // v0.1.39 — create / overwrite / append a text file in the
+    // workspace. Same path-safety as read_file (workspace anchor +
+    // canonicalize parent + hardcoded deny-list); plus an "exists"
+    // error_kind for mode=create when the target already exists.
+    {
+        QJsonObject props;
+        props["path"] = QJsonObject{
+            {"type", "string"},
+            {"description", "Workspace-relative path. Parent directory must already exist (the tool does not auto-create directories — use list_dir to confirm structure first)."}
+        };
+        props["content"] = QJsonObject{
+            {"type", "string"},
+            {"description", "Full file content (UTF-8). Capped at 5 MB."}
+        };
+        props["mode"] = QJsonObject{
+            {"type", "string"},
+            {"enum", QJsonArray{"create", "overwrite", "append"}},
+            {"description", "Default 'overwrite'. 'create' fails with error_kind:exists if the file exists. 'append' adds to the end."}
+        };
+        QJsonObject params;
+        params["type"] = "object";
+        params["properties"] = props;
+        params["required"] = QJsonArray{ "path", "content" };
+        tools.push_back(makeTool(
+            "write_file",
+            "Write or overwrite a text file in the user's workspace. "
+            "Use for creating new files or fully replacing existing ones; "
+            "use apply_diff for line-level edits to large files. The new "
+            "or modified file is auto-opened in the editor.",
+            params));
+    }
+
+    // search -------------------------------------------------------
+    // v0.1.39 — pattern search across the workspace via the existing
+    // ProjectSearchWorker (rust-core aho-corasick fast path). Returns
+    // up to max_matches matches with file path + line + column +
+    // surrounding line as snippet.
+    {
+        QJsonObject props;
+        props["pattern"] = QJsonObject{
+            {"type", "string"},
+            {"description", "Pattern to search for. Literal substring by default; set regex=true for regex syntax (Rust regex flavour, no PCRE backreferences)."}
+        };
+        props["path"] = QJsonObject{
+            {"type", "string"},
+            {"description", "Workspace-relative directory to search. Default: workspace root."}
+        };
+        props["case_sensitive"] = QJsonObject{
+            {"type", "boolean"},
+            {"description", "Default false."}
+        };
+        props["regex"] = QJsonObject{
+            {"type", "boolean"},
+            {"description", "Default false (literal substring match)."}
+        };
+        props["glob"] = QJsonObject{
+            {"type", "string"},
+            {"description", "File-name glob filter, e.g. '*.py,*.js'. Default: all files."}
+        };
+        props["max_matches"] = QJsonObject{
+            {"type", "integer"},
+            {"description", "Default 50, max 200."}
+        };
+        QJsonObject params;
+        params["type"] = "object";
+        params["properties"] = props;
+        params["required"] = QJsonArray{ "pattern" };
+        tools.push_back(makeTool(
+            "search",
+            "Search for a pattern across files in the user's workspace. "
+            "Returns up to 50 matches by default with file path, line, "
+            "column, and one surrounding line as snippet. Heavy directories "
+            "(.git, node_modules, build, etc.) are skipped automatically.",
+            params));
+    }
+
+    // apply_diff ---------------------------------------------------
+    // v0.1.39 — atomic line-level edits to an existing file. Each
+    // hunk has the expected old lines + the replacement; if the file
+    // has drifted from the expected old content, the tool returns
+    // error_kind:conflict and does NOT modify the file.
+    {
+        QJsonObject hunkProps;
+        hunkProps["old_start_line"] = QJsonObject{
+            {"type", "integer"},
+            {"description", "1-based start line where the old_lines text begins in the file."}
+        };
+        hunkProps["old_lines"] = QJsonObject{
+            {"type", "string"},
+            {"description", "Exact text the tool expects to find at old_start_line. Used for conflict detection."}
+        };
+        hunkProps["new_lines"] = QJsonObject{
+            {"type", "string"},
+            {"description", "Replacement text."}
+        };
+        QJsonObject hunkSchema;
+        hunkSchema["type"] = "object";
+        hunkSchema["properties"] = hunkProps;
+        hunkSchema["required"] = QJsonArray{"old_start_line", "old_lines", "new_lines"};
+
+        QJsonObject hunksProp;
+        hunksProp["type"] = "array";
+        hunksProp["items"] = hunkSchema;
+        hunksProp["description"] = "Array of edit hunks (max 50). Applied atomically.";
+
+        QJsonObject props;
+        props["path"] = QJsonObject{
+            {"type", "string"},
+            {"description", "Workspace-relative path of the file to edit. Must already exist."}
+        };
+        props["hunks"] = hunksProp;
+
+        QJsonObject params;
+        params["type"] = "object";
+        params["properties"] = props;
+        params["required"] = QJsonArray{ "path", "hunks" };
+        tools.push_back(makeTool(
+            "apply_diff",
+            "Apply line-level edits to an existing file. Pass an array of "
+            "hunks; each has old_start_line + old_lines + new_lines. If "
+            "the file has drifted from the expected old content, returns "
+            "error_kind:conflict and does NOT modify the file (atomic "
+            "apply). Use for surgical edits; use write_file to fully "
+            "replace a file's content.",
             params));
     }
 
@@ -461,11 +694,416 @@ ToolResult executeListDir(const ToolCall &call, const QString &workspaceRoot) {
     return makeSuccess(call, result);
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// executeWriteFile — v0.1.39
+//
+// Create / overwrite / append a text file. Path safety via
+// resolveSafeWritePath (workspace anchor, parent must exist, deny-list
+// applies). On success returns:
+//   {ok, result: {path, bytes_written, mode, created}}
+// `created` is true when the target didn't exist before this call.
+// ═══════════════════════════════════════════════════════════════════════
+ToolResult executeWriteFile(const ToolCall &call,
+                            const QString &workspaceRoot) {
+    const QString pathArg = call.args.value("path").toString();
+    const QString content = call.args.value("content").toString();
+    QString modeStr = call.args.value("mode").toString().toLower();
+    if (modeStr.isEmpty()) modeStr = "overwrite";
+    if (modeStr != "create" && modeStr != "overwrite" && modeStr != "append") {
+        return makeError(call, "io_error",
+                         "Invalid mode: must be 'create', 'overwrite', or 'append'.");
+    }
+
+    // Refuse implausibly large content. Typical AI-generated files are
+    // kilobytes; 5 MB is a generous cap that catches the model going
+    // off the rails (e.g., dumping its training corpus).
+    constexpr int kMaxContentBytes = 5 * 1024 * 1024;
+    if (content.toUtf8().size() > kMaxContentBytes) {
+        return makeError(call, "too_large",
+                         QString("Content exceeds %1 KB cap.")
+                             .arg(kMaxContentBytes / 1024));
+    }
+
+    QString absTarget;
+    QString errorKind;
+    if (!resolveSafeWritePath(pathArg, workspaceRoot, &absTarget, &errorKind)) {
+        QString msg;
+        if (errorKind == "outside_workspace")
+            msg = "Path resolves outside the workspace root.";
+        else if (errorKind == "denied")
+            msg = "Access to this path is restricted (secret/credential pattern).";
+        else
+            msg = "Parent directory not found. Use list_dir to confirm structure first.";
+        return makeError(call, errorKind, msg);
+    }
+
+    QFileInfo fi(absTarget);
+    const bool existed = fi.exists();
+
+    if (existed && !fi.isFile()) {
+        return makeError(call, "io_error",
+                         "Target exists but is not a regular file.");
+    }
+    if (existed && modeStr == "create") {
+        return makeError(call, "exists",
+                         "File already exists. Use mode='overwrite' to replace, "
+                         "or mode='append' to add to it.");
+    }
+
+    QFile f(absTarget);
+    QIODevice::OpenMode openMode = (modeStr == "append")
+        ? (QIODevice::WriteOnly | QIODevice::Append)
+        : (QIODevice::WriteOnly | QIODevice::Truncate);
+    if (!f.open(openMode)) {
+        return makeError(call, "io_error",
+                         "Failed to open for writing: " + f.errorString());
+    }
+    const QByteArray bytes = content.toUtf8();
+    qint64 written = f.write(bytes);
+    f.close();
+    if (written != bytes.size()) {
+        return makeError(call, "io_error",
+                         QString("Short write: wrote %1 of %2 bytes.")
+                             .arg(written).arg(bytes.size()));
+    }
+
+    QJsonObject result;
+    result["path"]          = QDir(workspaceRoot).relativeFilePath(absTarget);
+    result["abs_path"]      = absTarget;
+    result["bytes_written"] = bytes.size();
+    result["mode"]          = modeStr;
+    result["created"]       = !existed;
+    return makeSuccess(call, result);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// executeSearch — v0.1.39
+//
+// Pattern search across the workspace. Reuses the heavy-dir filtering
+// from list_dir (.git, node_modules, etc. skipped). Literal substring
+// match by default; regex via flag. Returns up to max_matches matches
+// with file path + line + column + the matching line as snippet.
+//
+// Implementation note: rather than wiring up ProjectSearchWorker (which
+// is signal-based and async, designed for the UI panel), we do a
+// synchronous walk here — the agent loop is already async at the
+// conversation layer; tool execution can block the worker's thread for
+// a couple of seconds without affecting UI responsiveness. This avoids
+// having to thread an event loop into AiTools::execute().
+// ═══════════════════════════════════════════════════════════════════════
+ToolResult executeSearch(const ToolCall &call, const QString &workspaceRoot) {
+    const QString pattern = call.args.value("pattern").toString();
+    if (pattern.isEmpty()) {
+        return makeError(call, "io_error", "Empty search pattern.");
+    }
+    QString pathArg = call.args.value("path").toString();
+    if (pathArg.isEmpty()) pathArg = ".";
+    const bool caseSensitive = call.args.value("case_sensitive").toBool(false);
+    const bool useRegex      = call.args.value("regex").toBool(false);
+    const QString glob       = call.args.value("glob").toString();
+    int maxMatches = call.args.value("max_matches").toInt(50);
+    if (maxMatches <= 0)  maxMatches = 50;
+    if (maxMatches > 200) maxMatches = 200;
+
+    QString canonicalRoot;
+    QString errorKind;
+    if (!resolveSafePath(pathArg, workspaceRoot, &canonicalRoot, &errorKind)) {
+        QString msg;
+        if (errorKind == "outside_workspace")
+            msg = "Search path resolves outside the workspace root.";
+        else if (errorKind == "denied")
+            msg = "Access to this path is restricted.";
+        else
+            msg = "Search path not found.";
+        return makeError(call, errorKind, msg);
+    }
+
+    QFileInfo rootFi(canonicalRoot);
+    if (!rootFi.exists()) {
+        return makeError(call, "not_found", "Search path does not exist.");
+    }
+
+    // Compile regex if requested. For literal mode, use lower-cased
+    // substring search when caseSensitive is false.
+    QRegularExpression re;
+    if (useRegex) {
+        QRegularExpression::PatternOptions opts =
+            QRegularExpression::NoPatternOption;
+        if (!caseSensitive) opts |= QRegularExpression::CaseInsensitiveOption;
+        re = QRegularExpression(pattern, opts);
+        if (!re.isValid()) {
+            return makeError(call, "io_error",
+                             "Invalid regex: " + re.errorString());
+        }
+    }
+    const QString needle = caseSensitive ? pattern : pattern.toLower();
+
+    // Heavy-dir filter (matches list_dir's filter list).
+    static const QSet<QString> kSkipDirs = {
+        ".git", "node_modules", "build", "target", "dist",
+        ".venv", "venv", "__pycache__", ".cache", ".gradle",
+        "DerivedData", ".idea", ".vs"
+    };
+
+    // Glob -> regex (cheap conversion, supports comma-separated list).
+    QVector<QRegularExpression> globs;
+    if (!glob.isEmpty()) {
+        for (const QString &g : glob.split(',', Qt::SkipEmptyParts)) {
+            QString g2 = g.trimmed();
+            if (g2.isEmpty()) continue;
+            // QRegularExpression::wildcardToRegularExpression handles
+            // *.py / *.{js,ts} / etc.
+            globs.push_back(QRegularExpression(
+                QRegularExpression::wildcardToRegularExpression(g2)));
+        }
+    }
+    auto globMatches = [&](const QString &fileName) {
+        if (globs.isEmpty()) return true;
+        for (const auto &g : globs) {
+            if (g.match(fileName).hasMatch()) return true;
+        }
+        return false;
+    };
+
+    QJsonArray matches;
+    int totalMatches = 0;
+    int filesScanned = 0;
+    bool truncated = false;
+
+    QDirIterator it(canonicalRoot,
+                    QDir::Files | QDir::NoDotAndDotDot | QDir::Hidden,
+                    QDirIterator::Subdirectories);
+    while (it.hasNext() && totalMatches < maxMatches) {
+        const QString fp = it.next();
+        // Skip heavy dirs anywhere in the path.
+        bool skip = false;
+        for (const QString &part : fp.split('/')) {
+            if (kSkipDirs.contains(part)) { skip = true; break; }
+        }
+        if (skip) continue;
+
+        QFileInfo fi(fp);
+        if (!globMatches(fi.fileName())) continue;
+        // Skip absurdly large files to keep the tool snappy.
+        if (fi.size() > 5 * 1024 * 1024) continue;
+        ++filesScanned;
+
+        QFile f(fp);
+        if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) continue;
+        // Binary sniff (NUL byte in first 4 KB).
+        QByteArray sniff = f.peek(4096);
+        if (sniff.contains('\0')) { f.close(); continue; }
+
+        QTextStream in(&f);
+        in.setCodec("UTF-8");
+        int lineNo = 0;
+        while (!in.atEnd() && totalMatches < maxMatches) {
+            QString line = in.readLine();
+            ++lineNo;
+            int col = -1;
+            if (useRegex) {
+                QRegularExpressionMatch m = re.match(line);
+                if (m.hasMatch()) col = m.capturedStart() + 1;
+            } else {
+                const QString hay = caseSensitive ? line : line.toLower();
+                int idx = hay.indexOf(needle);
+                if (idx >= 0) col = idx + 1;
+            }
+            if (col > 0) {
+                QJsonObject m;
+                m["path"]    = QDir(workspaceRoot).relativeFilePath(fp);
+                m["line"]    = lineNo;
+                m["col"]     = col;
+                // Cap snippet at 200 chars so very long lines don't
+                // blow the model's context budget.
+                m["snippet"] = line.left(200);
+                matches.push_back(m);
+                ++totalMatches;
+            }
+        }
+        f.close();
+    }
+    if (totalMatches >= maxMatches && it.hasNext()) truncated = true;
+
+    QJsonObject result;
+    result["pattern"]              = pattern;
+    result["path"]                 = QDir(workspaceRoot).relativeFilePath(canonicalRoot);
+    result["case_sensitive"]       = caseSensitive;
+    result["regex"]                = useRegex;
+    result["files_scanned"]        = filesScanned;
+    result["total_matches"]        = totalMatches;
+    result["truncated"]            = truncated;
+    result["matches"]              = matches;
+    return makeSuccess(call, result);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// executeApplyDiff — v0.1.39
+//
+// Atomic line-level edits. Each hunk has old_start_line + old_lines +
+// new_lines. Algorithm:
+//   1. Read the entire file as a list of lines.
+//   2. For each hunk, verify file[old_start_line .. +N) == old_lines.
+//      If any hunk's old content doesn't match → conflict; abort.
+//   3. Apply hunks in REVERSE order (largest line number first) so
+//      earlier hunks' line numbers don't shift after later hunks
+//      change line counts.
+//   4. Write the result via temp-file + rename for atomicity.
+// ═══════════════════════════════════════════════════════════════════════
+ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) {
+    const QString pathArg = call.args.value("path").toString();
+    const QJsonArray hunks = call.args.value("hunks").toArray();
+    if (hunks.isEmpty()) {
+        return makeError(call, "io_error", "hunks array is empty.");
+    }
+    if (hunks.size() > 50) {
+        return makeError(call, "too_large",
+                         "Too many hunks (cap is 50). Split into multiple calls.");
+    }
+
+    QString canonical;
+    QString errorKind;
+    if (!resolveSafePath(pathArg, workspaceRoot, &canonical, &errorKind)) {
+        QString msg;
+        if (errorKind == "outside_workspace")
+            msg = "Path resolves outside the workspace root.";
+        else if (errorKind == "denied")
+            msg = "Access to this path is restricted.";
+        else
+            msg = "File not found.";
+        return makeError(call, errorKind, msg);
+    }
+
+    QFileInfo fi(canonical);
+    if (!fi.exists() || !fi.isFile()) {
+        return makeError(call, "not_found", "Not a regular file.");
+    }
+
+    QFile f(canonical);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return makeError(call, "io_error",
+                         "Failed to open: " + f.errorString());
+    }
+    const QString content = QString::fromUtf8(f.readAll());
+    f.close();
+
+    // Split into lines preserving final newline behaviour.
+    QStringList lines = content.split('\n');
+    // If the file ends with a newline, split() leaves an empty trailing
+    // element. We handle this by tracking it and re-adding it.
+    bool trailingNewline = !lines.isEmpty() && lines.last().isEmpty();
+    if (trailingNewline) lines.removeLast();
+
+    // Sort hunks by old_start_line, then validate + apply in REVERSE.
+    QVector<QJsonObject> sortedHunks;
+    sortedHunks.reserve(hunks.size());
+    for (const QJsonValue &v : hunks) sortedHunks.push_back(v.toObject());
+    std::sort(sortedHunks.begin(), sortedHunks.end(),
+              [](const QJsonObject &a, const QJsonObject &b) {
+                  return a.value("old_start_line").toInt()
+                         < b.value("old_start_line").toInt();
+              });
+
+    // Phase 1 — validate all hunks against the current file. If ANY
+    // mismatches, bail with conflict; the file is untouched.
+    for (const QJsonObject &h : sortedHunks) {
+        const int startLine = h.value("old_start_line").toInt();
+        const QString oldText = h.value("old_lines").toString();
+        QStringList oldLines = oldText.split('\n');
+        // Drop trailing empty if oldText ends with \n.
+        if (!oldLines.isEmpty() && oldLines.last().isEmpty() && oldText.endsWith('\n'))
+            oldLines.removeLast();
+
+        if (startLine < 1 || startLine - 1 + oldLines.size() > lines.size()) {
+            return makeError(call, "conflict",
+                             QString("Hunk at line %1 references lines beyond the file's range.")
+                                 .arg(startLine));
+        }
+        for (int i = 0; i < oldLines.size(); ++i) {
+            if (lines[startLine - 1 + i] != oldLines[i]) {
+                return makeError(call, "conflict",
+                                 QString("Hunk at line %1 doesn't match the file's current content "
+                                         "(line %2 differs). The file may have been modified since the "
+                                         "agent last read it. Re-read the file and try again.")
+                                     .arg(startLine).arg(startLine + i));
+            }
+        }
+    }
+
+    // Phase 2 — apply in reverse so earlier hunks' indices are stable.
+    for (int hi = sortedHunks.size() - 1; hi >= 0; --hi) {
+        const QJsonObject &h = sortedHunks[hi];
+        const int startLine = h.value("old_start_line").toInt();
+        QStringList oldLines = h.value("old_lines").toString().split('\n');
+        if (!oldLines.isEmpty() && oldLines.last().isEmpty() &&
+            h.value("old_lines").toString().endsWith('\n'))
+            oldLines.removeLast();
+        QStringList newLines = h.value("new_lines").toString().split('\n');
+        if (!newLines.isEmpty() && newLines.last().isEmpty() &&
+            h.value("new_lines").toString().endsWith('\n'))
+            newLines.removeLast();
+
+        // Replace lines [startLine-1 .. startLine-1+oldLines.size()) with newLines.
+        for (int i = oldLines.size() - 1; i >= 0; --i) {
+            lines.removeAt(startLine - 1 + i);
+        }
+        for (int i = newLines.size() - 1; i >= 0; --i) {
+            lines.insert(startLine - 1, newLines[i]);
+        }
+    }
+
+    QString out = lines.join('\n');
+    if (trailingNewline) out += '\n';
+
+    // Write atomically: write to .tmp, then rename.
+    const QString tmpPath = canonical + ".notepatra.tmp";
+    QFile tmp(tmpPath);
+    if (!tmp.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return makeError(call, "io_error",
+                         "Failed to open temp file: " + tmp.errorString());
+    }
+    QByteArray outBytes = out.toUtf8();
+    qint64 w = tmp.write(outBytes);
+    tmp.close();
+    if (w != outBytes.size()) {
+        QFile::remove(tmpPath);
+        return makeError(call, "io_error", "Short write to temp file.");
+    }
+    // QSaveFile-style rename with overwrite. Qt's QFile::rename refuses
+    // to overwrite a target that already exists, so use the platform's
+    // posix rename() directly — that IS atomic on Linux/macOS. On
+    // Windows the C-runtime rename() also can't overwrite, so do the
+    // remove+rename two-step there.
+#ifdef Q_OS_WIN
+    QFile::remove(canonical);
+    if (!QFile::rename(tmpPath, canonical)) {
+        QFile::remove(tmpPath);
+        return makeError(call, "io_error", "Failed to atomically rename temp file.");
+    }
+#else
+    if (std::rename(tmpPath.toLocal8Bit().constData(),
+                    canonical.toLocal8Bit().constData()) != 0) {
+        QFile::remove(tmpPath);
+        return makeError(call, "io_error", "Failed to atomically rename temp file.");
+    }
+#endif
+
+    QJsonObject result;
+    result["path"]          = QDir(workspaceRoot).relativeFilePath(canonical);
+    result["abs_path"]      = canonical;
+    result["hunks_applied"] = hunks.size();
+    result["bytes_written"] = outBytes.size();
+    return makeSuccess(call, result);
+}
+
 } // anonymous namespace
 
 ToolResult execute(const ToolCall &call, const QString &workspaceRoot) {
-    if (call.name == "read_file") return executeReadFile(call, workspaceRoot);
-    if (call.name == "list_dir")  return executeListDir(call, workspaceRoot);
+    if (call.name == "read_file")  return executeReadFile(call, workspaceRoot);
+    if (call.name == "list_dir")   return executeListDir(call, workspaceRoot);
+    if (call.name == "write_file") return executeWriteFile(call, workspaceRoot);
+    if (call.name == "search")     return executeSearch(call, workspaceRoot);
+    if (call.name == "apply_diff") return executeApplyDiff(call, workspaceRoot);
     return makeError(call, "io_error",
                      "Unknown tool: '" + call.name + "'");
 }

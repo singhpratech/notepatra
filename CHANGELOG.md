@@ -7,6 +7,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.39] — 2026-04-27
+
+Coding Mode goes from "agent that can read your code" to "agent that can build with you." User reported they expected `"create me a Python file"` to actually create the .py file — that gap is now closed. Plus: persistent chat history per workspace, a finally-visible red close button on the AI dock.
+
+### Added
+- 🤖 **`write_file` tool.** The agent can now create or overwrite text files (modes: `overwrite` default, `create` fails-if-exists, `append` adds-to-end). Auto-creates parent directories inside the workspace, refuses to write outside it. 5 MB cap per call. New `error_kind: exists` for `mode=create` collisions.
+- 🤖 **`search` tool.** Pattern search across the workspace — literal substring or regex, optional glob filter (e.g. `*.py`), optional case-sensitivity, capped at 200 matches per call. Uses `QDirIterator` with the same heavy-dir filter as the file explorer (skips `.git`, `node_modules`, `target`, `dist`, `.venv`, etc.).
+- 🤖 **`apply_diff` tool.** Surgical line-level edits to existing files. Each hunk has `old_start_line` + `old_lines` (expected current text) + `new_lines` (replacement). **Atomic**: validates ALL hunks against the live file first; if any drifted, the call returns `error_kind: conflict` and **nothing** is written. Hunks are applied in reverse order so earlier line numbers stay stable.
+- 📂 **Auto-open / silent reload.** New files written by the agent open in a tab automatically. Files already open get reloaded silently (no "modified by another program" dialog — the user just told the AI to do it).
+- 💾 **Persistent chat history per workspace.** Conversations now survive app restart. Stored at `~/.config/notepatra/chat-history/<sha1-of-workspace>.json`, debounced 2 s, capped at 1 MB per workspace (oldest messages roll off the front when full). Each workspace has its own history file; switching workspaces swaps in the right history. `Reset` deletes the on-disk file.
+- 🎨 **Red close button on the AI dock** (theme-independent). Pre-v0.1.39, `SP_TitleBarCloseButton` over `pal.chromeBg` was tone-on-tone — invisible at rest on every theme. Now uses U+00D7 MULTIPLICATION SIGN (×) — present in every font on every desktop OS, no tofu risk — styled with the Windows-canonical close-button red `#E81123` at rest, red bg + white X on hover.
+
+### Improved
+- 🛡 **`resolveSafeWritePath` (defense in depth).** Lifted out of `resolveSafePath` for write-side tools whose target may not exist yet. The PARENT dir's lowest existing ancestor must canonicalize inside the workspace; only THEN do we `mkpath` new subdirs. Hardcoded deny-list still applies to the final candidate path so the agent can't create `~/.ssh/foo` even when the parent is in scope.
+- 🧠 **System prompt now mentions all 5 tools.** The Coding-Mode preamble (`toolModeLayer()`) was listing only `read_file` + `list_dir`. Updated to spell out the read+write tool surface and when to prefer `write_file` vs `apply_diff`.
+- 🧪 **Tests: 80 → 134.** New assertions for every `write_file` mode (overwrite/create/append), `search` (literal/regex/glob/case-sensitivity), `apply_diff` (single-hunk, multi-hunk, out-of-order hunks, conflict-aborts-atomically, deny-listed paths, line-beyond-EOF, missing file). Plus negative coverage: unknown tool name, unknown write mode, empty pattern, traversal attempts.
+- 🧰 **`apply_diff` atomic write fixed.** The first implementation used `QFile::rename` for the temp→target swap, which silently fails when target exists on Linux. Now uses `std::rename` directly (POSIX atomic) on Linux/macOS; remove-then-rename on Windows.
+
+### Files changed
+```
+src/ai_tools.{h,cpp}     — write_file, search, apply_diff + resolveSafeWritePath
+src/aipanel.{h,cpp}      — fileWrittenByAgent signal; tool-card result summaries;
+                           persistent chat history (load/save/clear); red close button
+src/mainwindow.cpp       — connect fileWrittenByAgent → openFile/silent-reload
+src/ai_systemprompt.cpp  — toolModeLayer mentions all 5 tools
+test_ai_tools.cpp        — +54 new assertions (134 total)
+CMakeLists.txt           — 0.1.38 → 0.1.39
+release_notes/v0.1.39.md — full notes
+README.md, docs/index.html — version refs + new release-card
+```
+
+### Notes
+- 134 / 134 tool tests pass. All 16 regression suites green.
+- Path safety unchanged in spirit, extended for writes: workspace anchor + canonicalize + hardcoded deny-list still hold.
+
+---
+
 ## [0.1.38] — 2026-04-26
 
 Two AI Assistant bugs reported by user — both root-caused and fixed.

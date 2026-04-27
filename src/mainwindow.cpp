@@ -745,6 +745,35 @@ MainWindow::MainWindow() {
     connect(m_aiDockPanel, &AIPanel::codingModeRequested, this, [this](bool on) {
         if (m_explorer) m_explorer->setVisible(on);
     });
+
+    // v0.1.39 — agentic write_file / apply_diff modified a file. If
+    // the file is already open in a tab, reload the editor silently
+    // (skip the "modified by another program" dialog — the user just
+    // told the AI to do this). Otherwise, open it in a new tab.
+    connect(m_aiDockPanel, &AIPanel::fileWrittenByAgent, this,
+            [this](const QString &absPath, bool /*created*/) {
+        if (absPath.isEmpty()) return;
+        const QString canonical = QFileInfo(absPath).absoluteFilePath();
+        for (int i = 0; i < m_tabs->count(); i++) {
+            auto *ed = m_tabs->editorAt(i);
+            if (ed && ed->filePath() == canonical) {
+                // Already open — silent reload. Update the watcher's
+                // timestamp first so its fileChanged dialog doesn't fire.
+                if (m_fileWatcher && m_fileTimestamps.contains(canonical))
+                    m_fileTimestamps[canonical] = QFileInfo(canonical).lastModified();
+                ed->loadFile(canonical);
+                if (m_fileWatcher) {
+                    m_fileTimestamps[canonical] = QFileInfo(canonical).lastModified();
+                    if (!m_fileWatcher->files().contains(canonical))
+                        m_fileWatcher->addPath(canonical);
+                }
+                updateTabTitle(i);
+                return;
+            }
+        }
+        // Not open — open it in a new tab.
+        openFile(canonical);
+    });
     m_aiDockHost->setVisible(false);
     m_splitter->addWidget(m_aiDockHost);
 

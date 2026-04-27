@@ -62,7 +62,9 @@ struct ToolResult {
     QString content;   // text body for the role:tool message
     bool isError = false;
     QString errorKind; // "not_found" | "denied" | "too_large" |
-                       // "outside_workspace" | "binary" | "io_error"
+                       // "outside_workspace" | "binary" | "io_error" |
+                       // "exists" (write_file mode=create, target exists) |
+                       // "conflict" (apply_diff, file drifted from expected)
 };
 
 // ── Tool registry ─────────────────────────────────────────────────────
@@ -114,6 +116,21 @@ bool resolveSafePath(const QString &pathArg,
                      const QString &workspaceRoot,
                      QString *outCanonical,
                      QString *outErrorKind = nullptr);
+
+// Like resolveSafePath but for WRITE-side tools (write_file / apply_diff
+// targeting a file that may not yet exist). The target itself need not
+// exist, but the PARENT directory must exist + be inside the workspace.
+// On success, outCanonical is set to the resolved absolute path of the
+// target (the path the tool will write to). The hardcoded deny-list is
+// also checked against that path so we never create `~/.ssh/foo` even
+// when the parent exists.
+//
+// outAbsTarget: same as outCanonical but always populated (even if the
+// target file doesn't yet exist; in that case it's parent + filename).
+bool resolveSafeWritePath(const QString &pathArg,
+                          const QString &workspaceRoot,
+                          QString *outAbsTarget,
+                          QString *outErrorKind = nullptr);
 
 } // namespace AiTools
 
