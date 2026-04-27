@@ -285,7 +285,7 @@ int main(int argc, char *argv[]) {
         check("  result.bytes_written == 12", result.value("bytes_written").toInt() == 12);
         check("  result.mode == overwrite", result.value("mode").toString() == "overwrite");
         check("  result.abs_path is absolute",
-              result.value("abs_path").toString().startsWith('/'));
+              QDir::isAbsolutePath(result.value("abs_path").toString()));
         // Verify the file actually exists with correct content.
         QFile fread(ws + "/new/hello.py");
         fread.open(QFile::ReadOnly);
