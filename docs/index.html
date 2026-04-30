@@ -1346,7 +1346,7 @@
                 <img src="screenshots/editor-code.png" alt="Notepatra editor — C++ source with Notepad++ canonical syntax highlighting" loading="lazy"
                      style="width: 100%; border-radius: 14px; box-shadow: 0 30px 60px -20px rgba(20,20,19,0.25), 0 0 0 1px rgba(20,20,19,0.05); display: block;">
                 <figcaption style="text-align: center; margin-top: 12px; color: var(--text-dim); font-size: 13px;">
-                    <strong style="color: var(--c-text);">Editor</strong> — C++ source, Notepad++ canonical 9-hue palette
+                    <strong style="color: var(--c-text);">Editor</strong> — C++ source, 9-hue canonical palette
                 </figcaption>
             </figure>
         </div>
@@ -1356,7 +1356,7 @@
     <section class="pillars" aria-label="Design pillars">
         <div class="pillars-header">
             <h2>Designed for people who write code.</h2>
-            <p>Notepad++ canonical palette across 48 lexers. Native Qt5 widgets. No Electron, no telemetry.</p>
+            <p>9-hue canonical color palette across 48 lexers. Native Qt5 widgets. No Electron, no telemetry.</p>
         </div>
         <div class="pillars-grid">
             <div class="pillar">
@@ -1449,7 +1449,7 @@
     <section id="see-it-in-action" style="max-width: 1120px; margin: 0 auto 60px; padding: 0 24px; text-align: center;">
         <div class="section-label">See it in action</div>
         <div class="section-title" style="margin-bottom: 12px;">Welcome → editor → search.</div>
-        <p class="section-desc" style="margin: 0 auto 28px; max-width: 720px;">Welcome screen · C++ source with Notepad++ canonical syntax highlighting · Project Search streaming results incrementally. Captured from running Notepatra on Linux + Windows.</p>
+        <p class="section-desc" style="margin: 0 auto 28px; max-width: 720px;">Welcome screen · C++ source with full syntax highlighting · Project Search streaming results incrementally. Captured from running Notepatra on Linux + Windows.</p>
         <div style="position: relative; max-width: 960px; margin: 28px auto 0; background: var(--c-surface); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px -20px rgba(20,20,19,0.18);">
             <img src="screenshots/tour-clean.gif"
                  alt="Notepatra tour — Welcome screen, then editor.cpp source with syntax highlighting, then Project Search with live streaming results"
@@ -1559,7 +1559,7 @@
             <div class="feature-card">
                 <div class="feature-icon fi-green">🔄</div>
                 <h3>Safe auto-update <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
-                <p>Notepad++-style update flow: click <strong>Download</strong> in the in-app "update available" dialog and the right artifact for your OS + architecture is fetched, <strong>SHA-256 verified against the release's <code>SHA256SUMS</code></strong>, and handed to the native installer (MSI on Windows, DMG in Finder on macOS, file manager on Linux). <strong>Your current install is never touched by the updater</strong> — the OS installer does the swap under its own transactional rollback. Checksum mismatch, cancelled download, network drop, disk full — any failure leaves the running app exactly as it was.</p>
+                <p>Click <strong>Download</strong> in the in-app "update available" dialog and the right artifact for your OS + architecture is fetched, <strong>SHA-256 verified against the release's <code>SHA256SUMS</code></strong>, and handed to the native installer (MSI on Windows, DMG in Finder on macOS, file manager on Linux). <strong>Your current install is never touched by the updater</strong> — the OS installer does the swap under its own transactional rollback. Checksum mismatch, cancelled download, network drop, disk full — any failure leaves the running app exactly as it was.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon fi-purple">📅</div>
@@ -3503,10 +3503,8 @@ Write-Host "Restarted Explorer — right-click any file now to verify" -Foregrou
     <!-- Story -->
     <div class="story">
         <h2>The Story</h2>
-        <p>I'm <strong>Prateek Singh</strong>. A developer who spent years on Linux watching Windows users open Notepad++ and fix things in seconds — broken JSON, messy SQL, tangled HTML — while I was stuck with Wine hacks or bloated Electron editors eating 500 MB of RAM to show a text file.</p>
-        <p>Every text editor told me to pick two: <strong>fast</strong>, <strong>powerful</strong>, or <strong>native</strong>. Vim is fast but cryptic. VS Code is powerful but heavy. Notepad++ is both — but it only runs on Windows.</p>
-        <p>So I built Notepatra. Not a port. Not a wrapper. Something new — for everyone. I asked: <em>what would Notepad++ look like if it was built today, in 2026, when AI is part of every developer's workflow?</em></p>
-        <p>The answer: a tiny native binary (~4 MB bare, ~2 MB compressed) with a Rust-powered core, Scintilla editing engine, and local AI integration. No cloud. No telemetry. No subscription. Just you and your code — on Linux, Windows, and macOS.</p>
+        <p>I'm <strong>Prateek Singh</strong>. After years on Linux and macOS reaching for an editor that's <strong>fast</strong>, <strong>native</strong>, and built for the AI era, I kept hitting the same wall: Vim is fast but cryptic, VS Code is capable but ships a 350 MB browser to render text, and the small native editors all stop at the Windows border.</p>
+        <p>So I built Notepatra. A tiny native binary (~4 MB bare) with a Rust-powered core, the Scintilla editing engine, and local AI integration that runs on your own machine. Same codebase, three platforms — Linux, macOS Apple Silicon, Windows. No cloud, no telemetry, no subscription. Just you and your code.</p>
     </div>
 
     <!-- CTA -->
