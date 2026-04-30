@@ -251,8 +251,82 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // Test 7 (v0.1.41): Diff-only toggle hides RowEqual rows. With a
+    // 4-line file where line 2 differs, full view should render 4 rows
+    // and 1 diff. After ticking "Diff only", rowCount drops to just the
+    // changed row (1) but diffCount remains 1 (the change is still there).
+    // Default-OFF preserves v0.1.40 behaviour.
+    {
+        CompareWidget widget;
+        widget.resize(1100, 720);
+        widget.show();
+
+        auto *diffOnly = findCheckBox(widget, "Diff only");
+        if (!diffOnly) {
+            std::fprintf(stderr, "✗ Test 7: Diff only checkbox not found\n");
+            failed++;
+        } else if (diffOnly->isChecked()) {
+            std::fprintf(stderr, "✗ Test 7: Diff only should default to OFF\n");
+            failed++;
+        } else {
+            widget.compare(
+                "alpha\nbeta\ngamma\ndelta\n", "left.txt",
+                "alpha\nBETA\ngamma\ndelta\n", "right.txt");
+            QApplication::processEvents();
+
+            const int fullRows = widget.rowCount();
+            const int fullDiffs = widget.diffCount();
+
+            if (fullRows < 4) {
+                std::fprintf(stderr, "✗ Test 7: full view expected ≥ 4 rows, got %d\n",
+                             fullRows);
+                failed++;
+            }
+            if (fullDiffs != 1) {
+                std::fprintf(stderr, "✗ Test 7: full view expected 1 diff, got %d\n",
+                             fullDiffs);
+                failed++;
+            }
+
+            // Tick "Diff only" — RowEqual lines disappear, only the
+            // single changed row remains.
+            diffOnly->setChecked(true);
+            QApplication::processEvents();
+
+            const int filteredRows = widget.rowCount();
+            const int filteredDiffs = widget.diffCount();
+
+            if (filteredRows >= fullRows) {
+                std::fprintf(stderr, "✗ Test 7: diff-only view should have FEWER rows; got %d (was %d)\n",
+                             filteredRows, fullRows);
+                failed++;
+            }
+            if (filteredDiffs != fullDiffs) {
+                std::fprintf(stderr, "✗ Test 7: diff-only view should preserve diffCount; got %d (was %d)\n",
+                             filteredDiffs, fullDiffs);
+                failed++;
+            }
+            if (filteredRows == fullDiffs) {
+                std::fprintf(stdout, "✓ Test 7: diff-only collapses to just changed rows (%d)\n",
+                             filteredRows);
+            }
+
+            // Untick — full view comes back with original row count.
+            diffOnly->setChecked(false);
+            QApplication::processEvents();
+
+            if (widget.rowCount() != fullRows) {
+                std::fprintf(stderr, "✗ Test 7: untoggling diff-only should restore full row count; got %d (was %d)\n",
+                             widget.rowCount(), fullRows);
+                failed++;
+            } else {
+                std::fprintf(stdout, "✓ Test 7: untoggling diff-only restores full view\n");
+            }
+        }
+    }
+
     if (failed == 0) {
-        std::fprintf(stdout, "\n=== ALL %d TESTS PASS ===\n", 6);
+        std::fprintf(stdout, "\n=== ALL %d TESTS PASS ===\n", 7);
         return 0;
     }
 

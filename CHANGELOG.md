@@ -7,6 +7,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.41] — 2026-04-30
+
+The "Diff only" toggle release. User asked for a one-click way to hide matching lines in Compare so only the differences remain visible — the existing full-files view still works exactly the same; the new toggle just adds a filtered view alongside it.
+
+### Added
+- ✂️ **Diff-only toggle** in the Compare toolbar. Tick **Diff only** and Compare hides every `RowEqual` line, leaving only Added / Deleted / Changed rows. Original line numbers are preserved in the gutter so you still see exactly where each diff lives in the source files. Default OFF — full-files view remains the v0.1.40 default behaviour.
+
+### Tests
+- `test_compare_widget` — Test 7 (NEW, 4 assertions): default-OFF, full-view row counts, diff-only collapses RowEqual but preserves diff count, untoggling restores full view.
+- 17/17 ctest suites green on Linux baseline.
+
+### Files changed
+```
+MODIFIED:
+  src/compare.h          — added m_diffOnly QCheckBox member
+  src/compare.cpp        — toolbar wiring + recompare() filter
+  test_compare_widget.cpp— +Test 7 (4 assertions)
+  CMakeLists.txt         — VERSION 0.1.40 → 0.1.41
+  CHANGELOG.md           — [0.1.41] entry
+```
+
+---
+
 ## [0.1.40] — 2026-04-29
 
 The "stop screwing up my JSON" release. User reported v0.1.39's AI Assistant chat would *add fields and restructure* when asked to fix broken JSON — the regex JSON fixer (Tools → JSON Tools → AI Fix) had strict minimal-change rules, but the chat-mode "fix my json" path didn't. v0.1.40 closes that gap and bundles five other agent-loop robustness fixes that came up while reproducing the bug.

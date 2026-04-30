@@ -704,6 +704,13 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     m_ignoreWhitespace->setChecked(true);
     m_ignoreCase = new QCheckBox("Ignore case");
     m_ignoreEmptyLines = new QCheckBox("Ignore empty lines");
+    // v0.1.41 — diff-only view. When checked, RowEqual lines are
+    // filtered out before rendering, leaving only Added / Deleted /
+    // Changed rows. Default OFF (full-files view, current behaviour).
+    m_diffOnly = new QCheckBox("Diff only");
+    m_diffOnly->setToolTip(
+        "Hide matching lines and show only Added / Deleted / Changed rows. "
+        "Original line numbers are preserved in the gutter.");
 
     m_statsLabel = new QLabel;
     // Theme-aware — onThemeChanged() re-applies this same format string when
@@ -722,6 +729,7 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     toolbar->addWidget(m_ignoreWhitespace);
     toolbar->addWidget(m_ignoreCase);
     toolbar->addWidget(m_ignoreEmptyLines);
+    toolbar->addWidget(m_diffOnly);
     toolbar->addStretch();
     toolbar->addWidget(m_statsLabel);
     toolbar->addSpacing(12);
@@ -817,6 +825,7 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     connect(m_ignoreWhitespace, &QCheckBox::toggled, this, [this]() { recompare(); });
     connect(m_ignoreCase, &QCheckBox::toggled, this, [this]() { recompare(); });
     connect(m_ignoreEmptyLines, &QCheckBox::toggled, this, [this]() { recompare(); });
+    connect(m_diffOnly, &QCheckBox::toggled, this, [this]() { recompare(); });
     connect(m_navBar, &CompareNavBar::rowActivated, this, &CompareWidget::jumpToRow);
     connect(closeBtn, &QPushButton::clicked, this, &CompareWidget::closeRequested);
 
@@ -888,7 +897,22 @@ void CompareWidget::recompare() {
 
     const RustCore::DiffInfo diff =
         RustCore::computeDiff(joinedComparableText(leftLines), joinedComparableText(rightLines));
-    const QVector<CompareDisplayRow> rows = buildDisplayRows(diff, leftLines, rightLines);
+    QVector<CompareDisplayRow> rows = buildDisplayRows(diff, leftLines, rightLines);
+
+    // v0.1.41 — diff-only mode. Hide matching (RowEqual) rows so the user
+    // sees only Added / Deleted / Changed rows. Original line numbers are
+    // preserved in each row's leftLineNumber / rightLineNumber, so the
+    // gutter still shows where each diff lives in the original file.
+    // Default OFF — preserves the v0.1.40 full-files behaviour.
+    const bool diffOnly = m_diffOnly && m_diffOnly->isChecked();
+    if (diffOnly) {
+        QVector<CompareDisplayRow> filtered;
+        filtered.reserve(rows.size());
+        for (const CompareDisplayRow &row : rows) {
+            if (row.kind != RowEqual) filtered.append(row);
+        }
+        rows = filtered;
+    }
 
     QString leftBuf;
     QString rightBuf;

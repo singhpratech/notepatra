@@ -98,6 +98,9 @@ private:
     QSplitter *m_splitter = nullptr;
     QLabel *m_leftHeader, *m_rightHeader, *m_statsLabel;
     QCheckBox *m_ignoreWhitespace, *m_ignoreCase, *m_ignoreEmptyLines;
+    // v0.1.41 — toolbar checkbox that hides matching lines so only
+    // Added / Deleted / Changed rows render. Default OFF (full-files view).
+    QCheckBox *m_diffOnly = nullptr;
 
     QString m_leftText, m_rightText;
     QVector<int> m_rowKinds;
