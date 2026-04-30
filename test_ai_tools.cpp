@@ -923,8 +923,8 @@ int main(int argc, char *argv[]) {
     // Tool registry — verify availableTools() returns valid JSONSchema
     {
         QJsonArray tools = AiTools::availableTools();
-        check("availableTools() has 5 entries (read/list/write/search/apply_diff)",
-              tools.size() == 5);
+        check("availableTools() has 7 entries (read/list/write/search/apply_diff + csv_query/query_sql)",
+              tools.size() == 7);
         QStringList names;
         for (const QJsonValue &tv : tools) {
             QJsonObject t = tv.toObject();
@@ -944,6 +944,8 @@ int main(int argc, char *argv[]) {
         check("  registry has write_file", names.contains("write_file"));
         check("  registry has search",     names.contains("search"));
         check("  registry has apply_diff", names.contains("apply_diff"));
+        check("  registry has csv_query",  names.contains("csv_query"));
+        check("  registry has query_sql",  names.contains("query_sql"));
     }
 
     // Model allowlist — happy paths and rejections
