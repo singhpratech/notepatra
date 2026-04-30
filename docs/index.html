@@ -145,7 +145,7 @@
           "name": "How is Notepatra different from Notepad++ and VS Code?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra is its own editor — written from scratch in C++ and Rust, not a port or a clone. It runs natively on Linux, macOS Apple Silicon, and Windows from a single codebase, with a ~4 MB bare executable (stripped). Compared to Notepad++: truly cross-platform, local-first AI is built in, Rust-powered search and formatters. Compared to VS Code: 6× to 14× smaller, zero Electron, zero telemetry, instant startup, no required account."
+            "text": "Notepatra is its own editor — written from scratch in C++ and Rust, not a port or a clone. It runs natively on Linux, macOS Apple Silicon, and Windows from a single codebase, with a ~4 MB bare executable (stripped). Compared to Notepad++: truly cross-platform, local-first AI is built in, Rust-powered search and formatters. Compared to VS Code: a much smaller install footprint (5–85 MB depending on platform vs 300+ MB for VS Code), no Electron runtime, no telemetry, no account required."
           }
         },
         {
@@ -153,7 +153,7 @@
           "name": "How big is Notepatra compared to VS Code?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Downloads from v0.1.30: 2.8 MB Linux x64 tar.gz, 2.6 MB Linux ARM64 tar.gz, 25.5 MB macOS DMG (with bundled Qt), 43.5 MB Windows MSI / 36.3 MB NSIS / 41.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload -- that's normal for any Qt app installer. Linux installs stay tiny (~5 MB on disk) because Qt5 comes from your distro repo. VS Code is 300+ MB downloaded AND 350+ MB installed. Notepatra is 6× to 14× smaller than VS Code on every platform."
+            "text": "The bare Notepatra executable is ~4 MB stripped across every platform. Latest download sizes: 2.8 MB Linux x64 tar.gz, 2.6 MB Linux ARM64 tar.gz, 25.5 MB macOS DMG (with bundled Qt), 43.5 MB Windows MSI / 36.3 MB NSIS / 41.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload -- that's normal for any Qt app installer. Linux installs stay tiny (~5 MB on disk) because Qt5 comes from your distro repo. VS Code is 300+ MB downloaded AND 350+ MB installed. Notepatra installs at 5–85 MB depending on platform."
           }
         },
         {
@@ -3471,7 +3471,7 @@ Write-Host "Restarted Explorer — right-click any file now to verify" -Foregrou
             </div>
             <div class="feature-card">
                 <h3>How big is it compared to VS Code?</h3>
-                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Actual downloads (v0.1.30): <strong>2.8 MB</strong> Linux x64 tar.gz · <strong>2.6 MB</strong> Linux ARM64 tar.gz · <strong>25.5 MB</strong> macOS DMG · <strong>43.5 MB</strong> Windows MSI / <strong>36.3 MB</strong> NSIS / <strong>41.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra installs at 5–85 MB depending on platform.</p>
+                <p>The bare executable is <strong>~4 MB stripped</strong> across every platform. Latest download sizes: <strong>2.8 MB</strong> Linux x64 tar.gz · <strong>2.6 MB</strong> Linux ARM64 tar.gz · <strong>25.5 MB</strong> macOS DMG · <strong>43.5 MB</strong> Windows MSI / <strong>36.3 MB</strong> NSIS / <strong>41.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra installs at 5–85 MB depending on platform.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>

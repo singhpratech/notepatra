@@ -296,7 +296,7 @@
   <div class="topbar-left">
     <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">v0.1.15 docs</span>
+    <span class="tag">v0.1.40 docs</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
@@ -351,7 +351,11 @@
       <li><a href="#ai-llamacpp">llama.cpp setup (GGUF)</a></li>
       <li><a href="#ai-openai-compat">OpenAI-compat (LM Studio, Jan, vLLM)</a></li>
       <li><a href="#ai-fix">AI Fix pipeline</a></li>
-      <li><a href="#ai-assistant">AI Assistant chat</a></li>
+      <li><a href="#ai-assistant">AI Assistant dock</a></li>
+      <li><a href="#ai-workspace-context">Workspace awareness</a></li>
+      <li><a href="#ai-persistent-history">Persistent chat history</a></li>
+      <li><a href="#ai-fix-intent">Fix-intent detection</a></li>
+      <li><a href="#ai-coding-mode">Coding Mode (agentic)</a></li>
       <li><a href="#thinking-models">Thinking models</a></li>
       <li><a href="#vision-models">Vision models &amp; attachments</a></li>
     </ul>
@@ -383,12 +387,13 @@
   <!-- ══════════════ Getting started ══════════════ -->
 
   <h2 id="introduction" class="anchor-target">Introduction</h2>
-  <p>Notepatra is a <strong>native</strong> code editor written in C++17 with a Rust core for the heavy-lifting (memory-mapped file I/O, Aho-Corasick search, Myers diff, formatters). It targets <strong>Linux x64 / ARM64, macOS Apple Silicon, and Windows x64</strong>. The bare executable is 2–5 MB depending on platform; downloads are 1.8 MB (Linux) to ~40 MB (Windows installer with Qt DLLs bundled).</p>
-  <p>Unlike Electron-based editors, Notepatra does not ship a browser runtime. It uses Qt5 + QScintilla for the editor engine — the same Scintilla core that powers Notepad++ — so all the behavior you expect from Notepad++ (100+ file types, 48+ language lexers, brace matching, folding, code completion) is built in.</p>
-  <p>Unlike cloud-first editors, Notepatra's AI is <strong>local-first</strong>. It talks to <strong>your choice</strong> of local AI runner — <a href="https://ollama.com">Ollama</a>, <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>'s llama-server (loads any GGUF directly), <a href="https://lmstudio.ai">LM Studio</a>, <a href="https://jan.ai">Jan</a>, <a href="https://docs.vllm.ai">vLLM</a>, KoboldCpp, text-generation-webui, or anything that speaks the OpenAI <code>/v1/chat/completions</code> API. Pick your backend in <em>Settings → Preferences → AI</em>. Nothing leaves your computer. No mandatory API keys, no subscription, no telemetry.</p>
+  <p>Notepatra is a <strong>native</strong> code editor written in C++17 with a Rust core for the heavy-lifting (memory-mapped file I/O, Aho-Corasick search, Myers diff, formatters). It targets <strong>Linux x64 / ARM64, macOS Apple Silicon, and Windows x64</strong>. The bare executable is ~4 MB stripped on each platform; downloads range 2.6 MB (Linux ARM64) to ~43.5 MB (Windows MSI with Qt DLLs bundled).</p>
+  <p>Unlike Electron-based editors, Notepatra does not ship a browser runtime. It uses Qt5 + QScintilla for the editor engine — the same Scintilla core that powers Notepad++ — so all the behavior you expect from Notepad++ (100+ file types, 48 language lexers, brace matching, folding, code completion) is built in.</p>
+  <p>Unlike cloud-first editors, Notepatra's AI is <strong>local-first</strong>. It talks to <strong>your choice</strong> of local AI runner — <a href="https://ollama.com">Ollama</a>, <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>'s llama-server (loads any GGUF directly), <a href="https://lmstudio.ai">LM Studio</a>, <a href="https://jan.ai">Jan</a>, <a href="https://docs.vllm.ai">vLLM</a>, KoboldCpp, text-generation-webui, or anything that speaks the OpenAI <code>/v1/chat/completions</code> API. Pick your backend in the AI dock dropdown. Nothing leaves your computer unless you opt into a cloud backend (OpenAI / OpenRouter / Anthropic via OpenRouter). No mandatory API keys, no subscription, no telemetry.</p>
+  <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock and the model gets 5 native tools — <code>read_file</code>, <code>list_dir</code>, <code>search</code>, <code>write_file</code>, <code>apply_diff</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
 
   <div class="callout info">
-    <strong>What "0.1.x" means.</strong> Notepatra is early-days software built by a one-person team in the open. It's production-quality native code but not yet feature-complete. The roadmap — and the gap between Notepatra and Notepad++ — is deliberately public. See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
+    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.40 (April 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
   </div>
 
   <h2 id="install" class="anchor-target">Install</h2>
@@ -405,7 +410,7 @@
 
   <h4>Windows (PowerShell)</h4>
   <pre><code>irm https://notepatra.org/install.ps1 | iex</code></pre>
-  <p>Downloads <code>notepatra-setup-0.1.15.exe</code>, runs the NSIS installer which registers in Settings → Apps → Installed apps, creates Start Menu + optional Desktop shortcut, optionally adds to <code>PATH</code>. Uninstall via Control Panel works.</p>
+  <p>Downloads the latest <code>notepatra-setup-&lt;version&gt;.exe</code>, runs the NSIS installer which registers in Settings → Apps → Installed apps, creates Start Menu + optional Desktop shortcut, optionally adds to <code>PATH</code>. Uninstall via Control Panel works.</p>
 
   <h3>Manual download</h3>
   <p>Every release is at <a href="https://github.com/singhpratech/notepatra/releases/latest">github.com/singhpratech/notepatra/releases/latest</a>.</p>
@@ -415,8 +420,8 @@
       <tr><td>🐧 Linux x64</td><td><code>notepatra-linux-x64.tar.gz</code></td><td>~1.8 MB</td></tr>
       <tr><td>🐧 Linux ARM64</td><td><code>notepatra-linux-arm64.tar.gz</code></td><td>~2 MB</td></tr>
       <tr><td>🍎 macOS Apple Silicon</td><td><code>notepatra-macos-arm64.dmg</code></td><td>~24 MB</td></tr>
-      <tr><td>🪟 Windows x64 (MSI)</td><td><code>notepatra-0.1.15.msi</code></td><td>~40 MB</td></tr>
-      <tr><td>🪟 Windows x64 (installer)</td><td><code>notepatra-setup-0.1.15.exe</code></td><td>~35 MB</td></tr>
+      <tr><td>🪟 Windows x64 (MSI)</td><td><code>notepatra-&lt;version&gt;.msi</code></td><td>~40 MB</td></tr>
+      <tr><td>🪟 Windows x64 (installer)</td><td><code>notepatra-setup-&lt;version&gt;.exe</code></td><td>~35 MB</td></tr>
       <tr><td>🪟 Windows x64 (portable)</td><td><code>notepatra-windows-x64.zip</code></td><td>~40 MB</td></tr>
     </tbody>
   </table>
@@ -873,18 +878,99 @@ Content-Type: application/json
   <h3>Why the strict prompt matters</h3>
   <p>Without explicit instructions, models love to <strong>reformat</strong> and <strong>reorder keys alphabetically</strong>. That's useless for a diff — every line looks different even when only one comma was missing. The strict prompt tells the model to preserve the original line order, key order, and indentation, and patch only the broken parts. Show Diff then shows just the actual fixes.</p>
 
-  <h2 id="ai-assistant" class="anchor-target">AI Assistant chat</h2>
-  <p>Open: <code>View → AI Assistant</code> or from the status bar. The panel is a full chat UI:</p>
+  <h2 id="ai-assistant" class="anchor-target">AI Assistant dock</h2>
+  <p>Open: <code>Ctrl+Shift+A</code>, <code>View → AI Assistant</code>, or from the status bar. The panel is a persistent right-side dock (not an editor tab) — one conversation, preserved across tab switches. Layout:</p>
   <ul>
-    <li><strong>Model dropdown</strong> at the top, populated from <code>/api/tags</code> with a ↻ refresh button</li>
-    <li><strong>Show thinking</strong> checkbox (default off) — toggle to see reasoning for Qwen3 / DeepSeek-R1</li>
-    <li><strong>Clear chat</strong> button — wipes history</li>
-    <li><strong>Chat area</strong> — right-aligned blue user bubbles, left-aligned gray assistant bubbles with the model name as the header</li>
-    <li><strong>Quick action buttons</strong> — Explain, Find Bugs, Refactor, Write Tests, Add Comments, Generate Docs, Optimize, Translate (Python ↔ JavaScript)</li>
-    <li><strong>Insert at Cursor</strong> / <strong>Replace Selection</strong> / <strong>Copy</strong> — apply the last assistant response to the editor</li>
-    <li><strong>Input bar at the bottom</strong> — 📎 attach button, text field, Send, Stop</li>
+    <li><strong>Backend dropdown</strong> — pick Ollama / llama.cpp (GGUF) / OpenRouter / LM Studio / Jan / OpenAI / Custom (any OpenAI-compatible URL). API key edits inline.</li>
+    <li><strong>Model dropdown</strong> — populated live from the backend's tags / models endpoint with a ↻ refresh button.</li>
+    <li><strong>Coding Mode</strong> toggle — flips the panel into 3-pane layout (file tree · editor · AI chat) and turns on agentic tools (see below).</li>
+    <li><strong>Show thinking</strong> checkbox — toggle reasoning for Qwen3 / DeepSeek-R1 / GPT-OSS / Hermes-3.</li>
+    <li><strong>Reset</strong> button — wipes chat history (in-memory + the on-disk per-workspace history file).</li>
+    <li><strong>Red close button</strong> (<code>×</code> in <code>#E81123</code>) — closes the dock; chat session is preserved.</li>
+    <li><strong>Chat area</strong> — user bubbles right-aligned; assistant bubbles left-aligned with the model name in the header. Per-code-block <strong>⧉ Copy code</strong> buttons inside every response. Streaming stats render live (<code>tok / tok-s / s</code>).</li>
+    <li><strong>Quick actions</strong> (revealed by ▸ chevron when Coding Mode is OFF) — three rows of buttons:
+      <ul>
+        <li>Row 1: Explain · Find Bugs · Refactor · Write Tests</li>
+        <li>Row 2: Add Comments · Generate Docs · Optimize · Translate (Py ↔ JS)</li>
+        <li>Row 3 (v0.1.40): <strong>Fix JSON</strong> · <strong>Fix HTML</strong> · <strong>Fix SQL</strong> — strict minimal-change patcher for the selection / file. Won't add fields, won't reformat, won't restructure.</li>
+      </ul>
+    </li>
+    <li><strong>Insert at Cursor</strong> / <strong>Replace Selection</strong> / <strong>Copy</strong> — apply the last assistant response to the editor.</li>
+    <li><strong>Input bar</strong> — 📎 attach (image / PDF / DOCX / PPTX / XLSX / text), 🎙 voice (uses <code>arecord</code> + local <code>whisper</code> CLI when installed), text field, Send, Stop.</li>
   </ul>
-  <p>Streaming tokens flow into the active assistant bubble in real time. Errors render as red error bubbles. The chat persists across multiple sends so you can have a multi-turn conversation.</p>
+  <p>Streaming tokens flow into the active assistant bubble in real time. Errors render as red error bubbles.</p>
+
+  <h3 id="ai-workspace-context" class="anchor-target">Workspace awareness</h3>
+  <p>Every prompt to the AI dock automatically carries the right context — Notepatra figures out what the model needs:</p>
+  <ul>
+    <li>The active <strong>selection</strong> (or the full current file if no selection)</li>
+    <li>Excerpts of every other open editor tab</li>
+    <li>The workspace root path</li>
+    <li>A flat listing of every file under the workspace (with <code>.git</code> / <code>node_modules</code> / <code>target</code> / <code>dist</code> / <code>__pycache__</code> filtered out)</li>
+  </ul>
+  <p>So the model can reference files you haven't opened yet — "import from utils.py" works even when <code>utils.py</code> isn't in a tab. The block is gated by intent so casual chat ("hi", "thanks") doesn't get spammed with workspace dump.</p>
+
+  <h3 id="ai-persistent-history" class="anchor-target">Persistent chat history (v0.1.39+)</h3>
+  <p>Conversations survive app restart. Stored at:</p>
+  <pre><code>~/.config/notepatra/chat-history/&lt;sha1-of-workspace&gt;.json</code></pre>
+  <p>One file per workspace; switching workspaces loads the right history. Saves debounced 2 s, capped at 1 MB per workspace (oldest messages roll off). <strong>Reset</strong> deletes the on-disk file. Atomic write via <code>.tmp + rename</code> so a kill-9 mid-write never leaves a corrupt history.</p>
+
+  <h3 id="ai-fix-intent" class="anchor-target">Fix-intent detection (v0.1.40+)</h3>
+  <p>Type <code>fix my json</code> / <code>repair this html</code> / <code>the sql is broken</code> in the chat input and the system prompt automatically swaps to a strict minimal-change patcher (same rules as Tools → JSON Tools → AI Fix). Models stop "improving" the input by adding fields, reordering keys, or restructuring.</p>
+  <p><strong>Does NOT trigger on:</strong></p>
+  <ul>
+    <li><code>explain my json</code> / <code>describe this json</code> / <code>what is json</code></li>
+    <li><code>show me my json files</code> / <code>list all json files</code> / <code>find json</code></li>
+    <li><code>teach me json</code></li>
+    <li><code>fix my code</code> (too generic — chat handles it normally)</li>
+  </ul>
+  <p>Implementation lives in <code>src/ai_intent.{h,cpp}</code>. 49 assertions in <code>test_ai_intent</code> cover positive intents (case-insensitive, mixed phrasing), negatives (explain / describe / teach / show / list / find / grep), and edge cases (multi-line, <code>@file</code> mention, generic "fix my code").</p>
+
+  <h2 id="ai-coding-mode" class="anchor-target">Coding Mode — agentic tool-using AI (v0.1.35+)</h2>
+  <p>Tick <strong>Coding Mode</strong> in the AI dock and Notepatra becomes an <strong>agent</strong>: the model can read your files, list directories, search, write files, and apply line-level edits — all on its own. The dock flips into a 3-pane layout (file tree · editor · AI chat).</p>
+
+  <h3>Agentic tools</h3>
+  <p>The agent gets <strong>5 native tools</strong> (v0.1.40 surface). Every tool call shows up as an inline <code>🔧 toolname (args) → result</code> card in the chat:</p>
+  <table>
+    <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>read_file(path, offset?, limit?, with_line_numbers?)</code></td><td>Read a text file from the workspace. Default emits <code>      N\t</code> line-number prefix per line so the model can reference exact lines. <strong>v0.1.40</strong>: pass <code>with_line_numbers=false</code> to get raw content (recommended when feeding lines into <code>apply_diff old_lines</code>).</td></tr>
+      <tr><td><code>list_dir(path)</code></td><td>List one level of entries with type (file/dir) and size. Filters <code>.git</code> / <code>node_modules</code> / <code>target</code> / <code>dist</code> / <code>__pycache__</code> / <code>.gradle</code> / <code>.idea</code> / <code>.vs</code>.</td></tr>
+      <tr><td><code>search(pattern, path?, regex?, glob?, case_sensitive?, max_matches?)</code></td><td>Find a string or regex across the workspace. Returns up to 50 (default) / 200 (max) matches with file path, line, column, and a snippet. Same heavy-dir skip-list as the file tree.</td></tr>
+      <tr><td><code>write_file(path, content, mode?)</code></td><td>Create or overwrite a text file. Modes: <code>overwrite</code> (default) / <code>create</code> (fails if exists, returns <code>error_kind: exists</code>) / <code>append</code>. Auto-creates parent directories <strong>inside the workspace</strong>; refuses paths matching the credential deny-list (<code>.ssh</code>, <code>.pem</code>, <code>.key</code>, <code>id_rsa*</code>, <code>/etc/passwd</code>, etc.). 5 MB content cap. After success the file auto-opens in a new tab — or the buffer reloads if it's already open.</td></tr>
+      <tr><td><code>apply_diff(path, hunks)</code></td><td>Atomic line-level edits. Each hunk has <code>old_start_line</code> + <code>old_lines</code> (expected current text) + <code>new_lines</code> (replacement). <strong>Two-phase apply</strong>: validates ALL hunks against the live file first → if any drifted, returns <code>error_kind: conflict</code> and <strong>nothing</strong> is written. Otherwise hunks apply in reverse-line-order so earlier indices stay stable. <strong>v0.1.40 three-tier match</strong>: strict → strip read_file's <code>      N\t</code> prefix from <code>old_lines</code> → <code>.trimmed()</code> comparison. Relaxed tiers still apply but emit <code>result.warnings</code> so the agent self-corrects on the next read. Atomic write via <code>.tmp + std::rename</code>.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Three-layer path security</h3>
+  <p>Every tool call goes through <code>resolveSafePath</code>:</p>
+  <ol>
+    <li><strong>Workspace anchor + canonicalize</strong>. Relative paths resolve against the workspace root; absolute paths are accepted only if they canonicalize back inside it. Catches <code>../../../../etc/passwd</code> and symlink-to-secrets attacks.</li>
+    <li><strong>Hardcoded deny-list</strong>. Refuses <code>~/.ssh/</code>, <code>*.pem</code>, <code>*.key</code>, <code>id_rsa*</code>, <code>/etc/passwd|shadow</code>, <code>~/.gnupg/</code>, <code>~/.aws/</code>, <code>~/.netrc</code>, <code>~/.npmrc</code>, <code>~/.docker/config.json</code>, etc. Applied to the candidate path itself, so creating <code>~/.ssh/foo</code> via a mkpath chain is still refused.</li>
+    <li><strong>Structured errors</strong>. Refusals come back as <code>error_kind: outside_workspace | denied | not_found | exists | binary | too_large | conflict | malformed_args | timed_out</code> — the model knows what to fix.</li>
+  </ol>
+
+  <h3>Per-turn budget (Hard cap)</h3>
+  <p>Hard cap of <strong>25 tool calls per user turn</strong> to prevent runaway loops on confused models. When exhausted, the agent receives: <em>"Tool-call budget exhausted (25 calls this turn). Stop and summarise what you've found."</em></p>
+
+  <h3>Tool-call wire format</h3>
+  <p>Notepatra uses each backend's native tool-call protocol:</p>
+  <ul>
+    <li><strong>Ollama</strong> — <code>/api/chat</code> with the <code>tools</code> array. Some open-weight models also need <code>--jinja</code> (we surface a friendly warning when the response shape suggests this).</li>
+    <li><strong>llama.cpp</strong> — <code>llama-server</code> with <code>--jinja</code> required. OpenAI-compatible <code>tool_calls</code> in the response.</li>
+    <li><strong>OpenAI-compat</strong> (OpenRouter, OpenAI, LM Studio, vLLM, Anthropic via OpenRouter, Gemini via OpenRouter, Jan, etc.) — standard SSE streaming with <code>finish_reason: tool_calls</code>.</li>
+  </ul>
+  <p>v0.1.40 surfaces <strong>malformed tool-call JSON</strong> as a structured <code>error_kind: malformed_args</code> result back to the model — so a model that emits unescaped quotes in <code>arguments</code> gets a clear "re-emit with valid JSON" message + raw-args preview, instead of silently passing empty args downstream.</p>
+
+  <h3>Models that work well in Coding Mode</h3>
+  <p>Notepatra has a model allowlist for Ollama (other backends always send tools and trust the server's support detection). Confirmed working:</p>
+  <ul>
+    <li><strong>Qwen3 / Qwen3.5</strong> — best small-model tool-call support today.</li>
+    <li><strong>Llama 3.1+</strong> (3.1 / 3.2 / 3.3) — first Meta line with native tool calls.</li>
+    <li><strong>Hermes-3</strong>, <strong>Mistral-Nemo</strong>, <strong>Granite 3+</strong>, <strong>GPT-OSS</strong>, <strong>Command R / R+</strong>.</li>
+    <li><strong>Cloud</strong> via OpenAI-compat: GPT-4o / GPT-5, Claude 3.5+ / Sonnet 4+, Gemini 1.5+ via OpenRouter.</li>
+  </ul>
+  <p>Models <strong>not</strong> recommended: phi-3-mini / phi-3.5 (no tool support), gemma-2-2b (sometimes hallucinates tool calls), tinyllama, llama 3 base.</p>
 
   <h2 id="thinking-models" class="anchor-target">Thinking models</h2>
   <p>Qwen3 / DeepSeek-R1 and other "thinking" models emit <code>&lt;think&gt;...&lt;/think&gt;</code> reasoning blocks before the actual answer. For JSON Tools, this breaks the parser (the thinking block isn't valid JSON). Notepatra's cleanup pipeline strips <code>&lt;think&gt;</code> tags three ways:</p>
@@ -965,6 +1051,8 @@ Content-Type: application/json
       <tr><td><span class="kbd">Ctrl+Tab</span></td><td>Next tab</td></tr>
       <tr><td><span class="kbd">Ctrl+Shift+Tab</span></td><td>Previous tab</td></tr>
       <tr><td><span class="kbd">Ctrl+Shift+E</span></td><td>Toggle File Explorer sidebar</td></tr>
+      <tr><td><span class="kbd">Ctrl+Shift+A</span></td><td>Toggle AI Assistant dock</td></tr>
+      <tr><td><span class="kbd">Ctrl+Shift+G</span></td><td>Open Project Search</td></tr>
       <tr><td><span class="kbd">F11</span></td><td>Full screen</td></tr>
     </tbody>
   </table>
@@ -1101,10 +1189,10 @@ sha256sum -c SHA256SUMS --ignore-missing</code></pre>
   <p>No. Notepad++ is Win32 C++. Notepatra is Qt5 + Rust. Different codebase, different platforms, similar spirit. Notepad++ doesn't run on Linux or macOS, Notepatra does.</p>
 
   <h4>How big is the binary compared to VS Code?</h4>
-  <p>The bare executable is 2.7–5.1 MB depending on platform. VS Code is 300+ MB. Notepatra is 6× to 14× smaller.</p>
+  <p>The bare executable is ~4 MB stripped on each platform. Notepatra installs at 5–85 MB depending on platform; VS Code is 300+ MB downloaded and 350+ MB installed.</p>
 
   <h4>Does my code go to the cloud?</h4>
-  <p>No. Notepatra is local-first. The only outbound connections are: (1) Ollama on <code>localhost:11434</code> when you use AI features, (2) <code>git push/pull</code> when you click the Git panel buttons, (3) the REST client when you send a request. Verifiable with <code>strace</code>.</p>
+  <p>By default, no — Notepatra is local-first. The outbound connections are: (1) your selected local AI backend (Ollama on <code>localhost:11434</code>, llama-server, LM Studio, etc.) when you use AI features, (2) <code>git push/pull</code> when you click the Git panel buttons, (3) the REST client when you send a request, (4) a single GitHub-API call on launch when the auto-updater checks for new releases. Cloud AI backends (OpenAI / OpenRouter / Anthropic via OpenRouter / Gemini via OpenRouter) are <strong>opt-in</strong> via the AI dock backend dropdown — your code only leaves the machine when you explicitly point Notepatra at one. No analytics, no telemetry. Verifiable with <code>strace</code>.</p>
 
   <h4>Why GPL-3.0?</h4>
   <p>Because the source is open, modifications should stay open. If you embed Notepatra in a product, the product has to be GPL-compatible. If that's a problem, reach out — alternative licensing can be discussed.</p>
