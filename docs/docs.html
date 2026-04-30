@@ -356,6 +356,7 @@
       <li><a href="#ai-persistent-history">Persistent chat history</a></li>
       <li><a href="#ai-fix-intent">Fix-intent detection</a></li>
       <li><a href="#ai-coding-mode">Coding Mode (agentic)</a></li>
+      <li><a href="#ai-data-analyst">Data Analyst Mode (v0.1.43)</a></li>
       <li><a href="#thinking-models">Thinking models</a></li>
       <li><a href="#vision-models">Vision models &amp; attachments</a></li>
     </ul>
@@ -971,6 +972,79 @@ Content-Type: application/json
     <li><strong>Cloud</strong> via OpenAI-compat: GPT-4o / GPT-5, Claude 3.5+ / Sonnet 4+, Gemini 1.5+ via OpenRouter.</li>
   </ul>
   <p>Models <strong>not</strong> recommended: phi-3-mini / phi-3.5 (no tool support), gemma-2-2b (sometimes hallucinates tool calls), tinyllama, llama 3 base.</p>
+
+  <h2 id="ai-data-analyst" class="anchor-target">Data Analyst Mode (v0.1.43+)</h2>
+  <p>Tick the new <strong>Data</strong> checkbox in the AI dock header (next to <em>Coding</em>) and the AI assistant becomes a <strong>data analyst</strong>: it can query attached CSVs, run SQL against your saved database connections, and emit live charts inline in the chat. Mutually exclusive with Coding Mode so the panel stays focused.</p>
+
+  <h3>What changes when Data Mode is on</h3>
+  <ul>
+    <li><strong>Header band turns orange</strong> — "AI · 📊 DATA" — so it's unmistakable which mode is active.</li>
+    <li>A <strong>Manage Connections…</strong> button appears under the model picker.</li>
+    <li>Attached CSVs get a <strong>structured digest</strong> instead of a raw text dump (delimiter sniff, header probe, per-column type — Integer / Real / Boolean / Date / DateTime / Text — null counts, ranges, head + tail rows, capped at 4 KB).</li>
+    <li>The system prompt swaps to a data-analyst persona that emits <strong>Findings → Method → Suggested follow-ups</strong> structure.</li>
+    <li>Two new agentic tools (below) are attached to the request alongside <code>read_file</code> / <code>list_dir</code> / <code>search</code>.</li>
+    <li>If you have a <code>.notepatra/data-analyst.md</code> in your workspace, its contents are auto-prepended as a "Project data context" layer (capped at 8 KB).</li>
+  </ul>
+
+  <h3>The two new agentic tools</h3>
+  <table>
+    <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>csv_query(file_path, sql, max_rows?, max_load_rows?)</code></td><td>Loads a workspace CSV into in-memory SQLite (table name <code>csv</code>, column names from the header) and runs your SQL. Default loads up to 250,000 rows; default returns up to 500. Lets the model ask <em>"SELECT category, SUM(amount) FROM csv WHERE order_date >= '2026-04-01' GROUP BY category ORDER BY 2 DESC"</em> instead of trying to mentally scan a million-line file.</td></tr>
+      <tr><td><code>query_sql(connection_name, sql, max_rows?, confirm?)</code></td><td>Runs SQL against a saved connection. <strong>SELECT-only by default</strong> (also: WITH / EXPLAIN / PRAGMA / SHOW / DESCRIBE). INSERT / UPDATE / DELETE / DDL require <code>confirm:true</code> after the user explicitly approves — no implicit mutations. Caps results at 500 rows.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Live charts inline in the chat</h3>
+  <p>When a visualization clarifies the answer, the model emits a fenced <code>```chart</code> block with a small JSON spec. Notepatra parses each one and embeds a <strong>real interactive QChartView</strong> under the assistant's prose:</p>
+  <pre><code>```chart
+{
+  "type": "bar",
+  "title": "Revenue by category, last 30 days",
+  "x": "category",
+  "y": "revenue",
+  "data": [
+    {"category": "electronics", "revenue": 284921.50},
+    {"category": "books",       "revenue":  52183.25},
+    {"category": "home",        "revenue":  98442.10}
+  ]
+}
+```</code></pre>
+  <p>Supported types: <code>line</code>, <code>bar</code>, <code>pie</code>, <code>scatter</code>. Theme-aware. Category-aware axes for string-valued X columns; numeric axes for numeric X. Malformed JSON falls back to displaying the spec as a code block — nothing breaks.</p>
+
+  <h3>Database connection manager</h3>
+  <p>Click <strong>Manage Connections…</strong> (visible only when Data Mode is on) to add SQLite, PostgreSQL, MySQL, or SQL Server connections. The dialog tests connections with one click and reports which Qt SQL drivers are actually installed on your system. Saved at <code>~/.config/notepatra/db-connections.json</code>.</p>
+  <p><strong>Driver availability:</strong></p>
+  <ul>
+    <li><strong>SQLite</strong> ships with Qt by default — works out of the box on every Notepatra build.</li>
+    <li><strong>PostgreSQL / MySQL / SQL Server</strong> need separate Qt SQL plugins:
+      <ul>
+        <li>Debian / Ubuntu: <code>sudo apt install libqt5sql5-psql libqt5sql5-mysql libqt5sql5-odbc</code></li>
+        <li>macOS Homebrew: bundled in <code>brew install qt@5</code></li>
+        <li>Windows: install via <code>aqtinstall</code> or the Qt installer (the Notepatra Windows release ships the matching plugin DLLs).</li>
+      </ul>
+    </li>
+  </ul>
+  <p><strong>Honest limitation:</strong> connection passwords are obscured at rest (XOR + base64), <em>NOT</em> real encryption. This is "don't show plaintext to people walking past my screen", NOT "survives a stolen laptop." For production secrets, use OS keychain / <code>.pgpass</code> / instance-role IAM. OS-keychain integration is a v0.1.44+ candidate.</p>
+
+  <h3>Project-level instruction file: <code>.notepatra/data-analyst.md</code></h3>
+  <p>Drop a markdown file at <code>.notepatra/data-analyst.md</code> in your workspace and Notepatra auto-prepends its contents to the system prompt as a "Project data context" layer when Data Mode is on. Per-workspace, version-controllable, capped at 8 KB. Use it for things like:</p>
+  <pre><code>- The `orders` table joins `customers` on `customer_id`.
+- Treat NULL in `amount` as 0 (legacy import bug, never backfilled).
+- `rate` is a percentage stored 0–1, not 0–100. Don't average it.
+- Q1 = Jan-Mar, fiscal year matches calendar.</code></pre>
+  <p>Then ask <em>"show me last quarter's top-revenue customers"</em> and the model already knows the schema and quirks.</p>
+
+  <h3>Model capability gating</h3>
+  <p>Multi-table SQL and chart-spec emission are harder than <code>read_file</code>. <code>AiTools::modelCapableOfDataAnalysis()</code> allowlists frontier cloud models (Claude 4.x, GPT-4 / 5, Gemini 2.x, DeepSeek-V3) and local models <strong>≥7B params</strong> from strong families (qwen2.5-coder, llama3.x, mistral-large). When you toggle Data Mode on with a model below the bar (e.g. <code>llama3.2:1b</code>), the panel shows an inline orange banner suggesting capable alternatives. The mode <strong>still works</strong> — the banner is the heads-up, not a hard block.</p>
+
+  <h3>What's NOT in v0.1.43 (deferred)</h3>
+  <ul>
+    <li><strong>PPT / image data extraction.</strong> Attaching a <code>.pptx</code> currently falls back to the existing text extractor; chart images aren't OCR'd into structured data. v0.1.44+ candidate.</li>
+    <li><strong>Real OS-keychain integration</strong> for connection passwords. The XOR obscuration is a placeholder. v0.1.44+ candidate.</li>
+    <li><strong>Multi-series charts.</strong> Current spec supports a single <code>x</code> / <code>y</code> per chart; multi-line / stacked-bar in v0.1.44+.</li>
+    <li><strong>Chart export</strong> to PNG / SVG. The QChartView is interactive; right-click → save image as a workaround.</li>
+  </ul>
 
   <h2 id="thinking-models" class="anchor-target">Thinking models</h2>
   <p>Qwen3 / DeepSeek-R1 and other "thinking" models emit <code>&lt;think&gt;...&lt;/think&gt;</code> reasoning blocks before the actual answer. For JSON Tools, this breaks the parser (the thinking block isn't valid JSON). Notepatra's cleanup pipeline strips <code>&lt;think&gt;</code> tags three ways:</p>

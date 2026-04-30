@@ -71,6 +71,11 @@ public:
     // llama-server too (it doesn't check auth by default).
     QString aiApiKey;
 
+    // v0.1.43 — Data Analyst Mode toggle persisted across launches.
+    // When true on startup, the AI panel restores the Data toggle on.
+    // Mutually exclusive with future aiCodingMode toggle persistence.
+    bool aiDataMode = false;
+
     // Session
     QStringList recentFiles;
     int maxRecent = 15;
@@ -113,6 +118,7 @@ public:
         aiBackend = o.value("aiBackend").toString(aiBackend);
         aiBaseUrl = o.value("aiBaseUrl").toString(aiBaseUrl);
         aiApiKey  = o.value("aiApiKey").toString(aiApiKey);
+        aiDataMode = o.value("aiDataMode").toBool(aiDataMode);
         windowX = o.value("windowX").toInt(windowX);
         windowY = o.value("windowY").toInt(windowY);
         windowW = o.value("windowW").toInt(windowW);
@@ -155,6 +161,7 @@ public:
         o["aiBackend"] = aiBackend;
         o["aiBaseUrl"] = aiBaseUrl;
         o["aiApiKey"]  = aiApiKey;
+        o["aiDataMode"] = aiDataMode;
         o["windowX"] = windowX;
         o["windowY"] = windowY;
         o["windowW"] = windowW;

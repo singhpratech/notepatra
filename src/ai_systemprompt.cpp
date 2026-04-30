@@ -1,14 +1,22 @@
 #include "ai_systemprompt.h"
 
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QRegularExpression>
 
 namespace AiSystemPrompt {
 
-Intent classifyIntent(const QString &action, bool codingMode) {
+Intent classifyIntent(const QString &action, bool codingMode, bool dataMode) {
     // Coding Mode always wins. The user has explicitly said "I want code,
     // nothing else" -- the action they picked is just the prompt template,
     // not the output style.
     if (codingMode) return Intent::CodingStrict;
+
+    // Data Analyst Mode is the next-strongest signal — when on, the user
+    // is exploring data (CSV / DB), not writing code. We enter DataAnalyst
+    // intent for ALL actions in this mode (it absorbs the action context).
+    if (dataMode) return Intent::DataAnalyst;
 
     if (action == QLatin1String("explain") ||
         action == QLatin1String("bugs")    ||
@@ -94,6 +102,36 @@ static QString modeLayer(Intent intent) {
                 "the output in markdown code fences (```). Preserve the "
                 "original indentation style (tabs vs spaces). Output must "
                 "be directly pasteable into the file -- nothing else.");
+
+        case Intent::DataAnalyst:
+            // v0.1.43 — Data Analyst Mode. The model is a senior data analyst
+            // with access to attached CSVs, configured SQL connections, and
+            // a chart-rendering channel. Differs from Chat in that prose is
+            // structured (Findings → Method → Suggested follow-ups) and the
+            // model is expected to use the data tools instead of speculating
+            // about contents.
+            return QStringLiteral(
+                "You are a senior data analyst. The user has attached CSV files "
+                "and/or configured database connections. Use the data tools "
+                "(`csv_query` for in-memory SQLite over attached CSVs, "
+                "`query_sql` for configured connections) instead of guessing "
+                "at file contents — querying is cheap and accurate; speculation "
+                "is not. When a visualization clarifies the answer, emit a "
+                "chart spec in a fenced block tagged `chart`:\n"
+                "```chart\n"
+                "{\"type\":\"bar\",\"title\":\"Revenue by quarter\","
+                "\"x\":\"quarter\",\"y\":\"revenue\","
+                "\"data\":[{\"quarter\":\"Q1\",\"revenue\":1200},"
+                "{\"quarter\":\"Q2\",\"revenue\":1850}]}\n"
+                "```\n"
+                "Supported `type` values: line, bar, pie, scatter. Use only "
+                "`x` + `y` for line/bar/scatter; for pie use `label` + `value`. "
+                "The editor renders the chart inline. Structure prose answers "
+                "as: brief Findings (1–3 bullets) → Method (one sentence on the "
+                "query you ran) → Suggested follow-ups (1–2 questions the user "
+                "could ask next). For database mutations (INSERT/UPDATE/DELETE/"
+                "DDL), do NOT run them silently — describe what you would run, "
+                "and ask the user to confirm. SELECT queries run freely.");
     }
     return QString(); // unreachable; quiets some compilers
 }
@@ -109,6 +147,29 @@ static QString languageHint(const QString &language) {
 // tools ARE available and structured. Keeps the model focused on using
 // `tool_calls` (the structured field) instead of typing JSON in plain
 // text content.
+//
+// v0.1.43 — split into two flavours: code (the default) lists the file
+// tools; data lists the data tools (query_sql, csv_query) plus read_file
+// for opening attachment-related text. DataAnalyst intent is the only
+// caller that gets the data flavour.
+static QString toolModeLayerData() {
+    return QStringLiteral(
+        "You have data-analyst tools available. "
+        "`csv_query(file_path, sql, max_rows?)` runs SQLite SQL against an "
+        "attached CSV (the table is named `csv`; column names match the CSV "
+        "header). `query_sql(connection_name, sql, max_rows?)` runs SQL "
+        "against a saved DB connection — by default SELECT-only; for "
+        "INSERT/UPDATE/DELETE/DDL ask the user first and pass "
+        "confirm:true only after they say yes. `read_file(path, ...)` is "
+        "available for opening text-shaped data attachments. "
+        "Use the tool_calls structured field — never type JSON in your "
+        "text response. Paths are workspace-relative; secret/credential "
+        "paths (.ssh, .pem, .key, /etc/passwd, etc.) are refused. After "
+        "querying, summarize findings concisely and emit a "
+        "```chart fenced spec when a chart adds value."
+    );
+}
+
 static QString toolModeLayer() {
     return QStringLiteral(
         "You have agentic workspace tools available. READ side: "
@@ -146,8 +207,13 @@ QString build(Intent intent, const QString &language, bool toolsActive) {
     out += identityLayer();
     out += QLatin1Char(' ');
     if (toolsActive) {
-        // Replace anti-tool-call with tool-mode preamble.
-        out += toolModeLayer();
+        // Replace anti-tool-call with tool-mode preamble. DataAnalyst gets
+        // a different preamble that advertises the data tools.
+        if (intent == Intent::DataAnalyst) {
+            out += toolModeLayerData();
+        } else {
+            out += toolModeLayer();
+        }
     } else {
         out += antiToolCallLayer();
     }
@@ -158,6 +224,35 @@ QString build(Intent intent, const QString &language, bool toolsActive) {
     const QString lang = languageHint(language);
     if (!lang.isEmpty()) { out += QLatin1Char(' '); out += lang; }
 
+    return out;
+}
+
+QString buildWithProjectContext(Intent intent,
+                                const QString &language,
+                                bool toolsActive,
+                                const QString &projectContext) {
+    QString out = build(intent, language, toolsActive);
+    if (intent != Intent::DataAnalyst || projectContext.isEmpty()) return out;
+
+    QString trimmed = projectContext.trimmed();
+    if (trimmed.isEmpty()) return out;
+
+    // Cap at 8KB so a runaway instruction file can't blow up the prompt.
+    constexpr int kMaxBytes = 8 * 1024;
+    if (trimmed.toUtf8().size() > kMaxBytes) {
+        // Truncate by characters until under the byte cap. UTF-8 chars are
+        // 1-4 bytes; this is safe-ish (won't split a multi-byte sequence
+        // because we test the encoded size after each cut).
+        int cut = trimmed.size();
+        while (cut > 0 && trimmed.left(cut).toUtf8().size() > kMaxBytes - 32) {
+            cut -= 64;
+        }
+        trimmed = trimmed.left(cut).trimmed() + QStringLiteral("\n[...truncated]");
+    }
+
+    out += QStringLiteral("\n\n--- Project data context (.notepatra/data-analyst.md) ---\n");
+    out += trimmed;
+    out += QStringLiteral("\n--- end project data context ---");
     return out;
 }
 
@@ -195,12 +290,31 @@ static bool hasProjectKeyword(const QString &userText) {
     return kProj.match(userText).hasMatch();
 }
 
+QString readDataAnalystInstructions(const QString &workspaceRoot) {
+    if (workspaceRoot.trimmed().isEmpty()) return QString();
+    const QString path = QDir(workspaceRoot).filePath(
+        QStringLiteral(".notepatra/data-analyst.md"));
+    QFileInfo fi(path);
+    if (!fi.exists() || !fi.isFile()) return QString();
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) return QString();
+    constexpr int kReadCap = 16 * 1024;
+    QByteArray bytes = f.read(kReadCap);
+    f.close();
+    return QString::fromUtf8(bytes).trimmed();
+}
+
 bool shouldAttachWorkspace(Intent intent,
                            const QString &selection,
                            const QString &userText) {
     // Coding Mode strict: code-only output. Workspace context just bloats
     // the prompt and risks the model echoing parts of it back.
     if (intent == Intent::CodingStrict) return false;
+
+    // Data Analyst Mode: model should query data via tools, not get a tree
+    // dump. The .notepatra/data-analyst.md project context (separate path)
+    // already covers project-level instructions when the user wants them.
+    if (intent == Intent::DataAnalyst) return false;
 
     // Explain / Transform with a selection: the selection IS the focus.
     // Other open files / project tree are noise that distracts the model.

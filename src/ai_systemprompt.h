@@ -22,10 +22,16 @@ enum class Intent {
     Explain,      // explain / bugs / docs -- prose with code references
     Transform,    // refactor / optimize / tests / comment / translate -- code+brief prose
     CodingStrict, // Coding Mode ON -- byte-identical to legacy strict prompt
+    DataAnalyst,  // v0.1.43 -- Data Analyst Mode ON (csv/db/charts).
+                  // Can attach query_sql + csv_query tools alongside the
+                  // file tools, and instructs the model to emit ```chart
+                  // fenced JSON specs when a visualization helps.
 };
 
-// Map (action, codingMode) -> Intent. Coding Mode always wins.
-Intent classifyIntent(const QString &action, bool codingMode);
+// Map (action, codingMode, dataMode) -> Intent. CodingMode > DataMode > action.
+// dataMode default is false to preserve the 2-arg overload contract for
+// existing call sites and tests.
+Intent classifyIntent(const QString &action, bool codingMode, bool dataMode = false);
 
 // Build the system prompt for this request. The prompt is layered so each
 // concern (identity, anti-tool-call, mode-specific behaviour, language hint)
@@ -49,6 +55,23 @@ Intent classifyIntent(const QString &action, bool codingMode);
 // instead append a brief tool-mode preamble explaining the available
 // tools so the model uses them confidently.
 QString build(Intent intent, const QString &language, bool toolsActive = false);
+
+// v0.1.43 — same as build() but allows callers to inject a "Project data
+// context" layer read from .notepatra/data-analyst.md (or similar). For
+// DataAnalyst intent only — silently ignored for the other intents to
+// keep their prompts untouched. Capped at 8KB inside the function.
+QString buildWithProjectContext(Intent intent,
+                                const QString &language,
+                                bool toolsActive,
+                                const QString &projectContext);
+
+// v0.1.43 — read the workspace's .notepatra/data-analyst.md instruction
+// file (if present) and return its content. Returns empty string when:
+// the workspace root is empty, the directory or file doesn't exist, the
+// file is unreadable, or the file is empty. Cap at 16KB on read so a
+// runaway file can't blow up memory; the system-prompt builder caps
+// again at 8KB before it lands in the prompt.
+QString readDataAnalystInstructions(const QString &workspaceRoot);
 
 // Decide whether the workspace-context block should be prepended to the
 // user prompt. Returns false for cases where workspace info is noise:

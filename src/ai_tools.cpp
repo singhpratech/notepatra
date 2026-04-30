@@ -1,5 +1,8 @@
 #include "ai_tools.h"
 
+#include "csvanalyst.h"
+#include "dbconnections.h"
+
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -7,6 +10,10 @@
 #include <QFileInfoList>
 #include <QJsonDocument>
 #include <QRegularExpression>
+#include <QSqlDatabase>
+#include <QSqlError>
+#include <QSqlQuery>
+#include <QSqlRecord>
 #include <QTextStream>
 
 #include <cstdio>
@@ -246,6 +253,90 @@ bool resolveSafeWritePath(const QString &pathArg,
 // vision-only tags.
 // ═══════════════════════════════════════════════════════════════════════
 
+bool modelCapableOfDataAnalysis(const QString &modelName) {
+    if (modelName.isEmpty()) return false;
+    const QString m = modelName.toLower();
+
+    // ── Cloud frontier / premium models — always pass ───────────────
+    static const QStringList kFrontierFamilies = {
+        // Anthropic Claude
+        "claude-3.5", "claude-3.7", "claude-4", "claude-opus", "claude-sonnet",
+        "anthropic/claude",
+        // OpenAI GPT-4 / o1 / o3 / 5
+        "gpt-4", "gpt-4o", "gpt-4-turbo", "gpt-4.1", "gpt-4.5", "gpt-5",
+        "o1-", "o3-", "openai/gpt-4", "openai/o1", "openai/o3",
+        // Google Gemini
+        "gemini-1.5-pro", "gemini-2.0", "gemini-2.5", "gemini-3", "gemini-pro",
+        "google/gemini-1.5", "google/gemini-2",
+        // DeepSeek
+        "deepseek-v3", "deepseek-r1", "deepseek-chat", "deepseek-coder-v2",
+        "deepseek/deepseek-v3", "deepseek/deepseek-r1",
+        // Mistral premium
+        "mistral-large", "mixtral-8x22", "mixtral",
+        // Command R+
+        "command-r-plus",
+        // xAI Grok
+        "grok-4", "grok-3", "x-ai/grok-3", "x-ai/grok-4",
+        // Kimi / GLM / MiniMax
+        "kimi-k2", "minimax-m2", "glm-4-plus", "glm-4.5",
+    };
+    for (const QString &fam : kFrontierFamilies) {
+        if (m.contains(fam)) return true;
+    }
+
+    // ── Local models — pass only at adequate parameter size ─────────
+    // We look for param-count tags like ":7b", "-7b", "7b-instruct", etc.
+    // Anything <7B is rejected because real-world data-analyst tasks
+    // (multi-table SQL, chart spec emission) need the larger models.
+    static const QStringList kStrongLocalFamilies = {
+        "qwen2.5-coder", "qwen3-coder", "qwen3",
+        "llama3.1", "llama-3.1", "llama3.2", "llama-3.2",
+        "llama3.3", "llama-3.3", "llama4", "llama-4",
+        "deepseek-coder", "mistral-nemo",
+        "command-r",  // base R is borderline; keep for users who picked it explicitly
+        "hermes3", "hermes-3",
+        "gemma2", "gemma-2", "gemma3", "gemma-3",
+        "gpt-oss", "phi-4",
+        "devstral", "nemotron",
+    };
+
+    // Param-count tag detection.
+    static const QRegularExpression kSize(QStringLiteral("[^a-z](\\d+(?:\\.\\d+)?)\\s*b\\b"));
+    auto getSizeBillions = [&]() -> double {
+        QRegularExpressionMatch mm = kSize.match("." + m);
+        if (!mm.hasMatch()) return -1.0;
+        bool ok = false;
+        double d = mm.captured(1).toDouble(&ok);
+        return ok ? d : -1.0;
+    };
+
+    bool inStrongFamily = false;
+    for (const QString &fam : kStrongLocalFamilies) {
+        if (m.contains(fam)) { inStrongFamily = true; break; }
+    }
+    if (!inStrongFamily) return false;
+
+    double sizeB = getSizeBillions();
+    // If we couldn't extract a size, accept the model on family alone —
+    // names like "qwen3-coder:latest" (no explicit tag) usually pull a
+    // capable default. Vision-only tags fail.
+    if (m.contains("vision") && !m.contains("instruct")) return false;
+    if (sizeB < 0) return true;
+    return sizeB >= 7.0;
+}
+
+QStringList suggestedModelsForDataAnalysis() {
+    return {
+        QStringLiteral("Claude 4 Opus / Sonnet"),
+        QStringLiteral("GPT-5 / GPT-4.1 / o3"),
+        QStringLiteral("Gemini 2.5 Pro"),
+        QStringLiteral("DeepSeek-V3 / DeepSeek-R1"),
+        QStringLiteral("qwen2.5-coder:14b+ (local)"),
+        QStringLiteral("llama3.3:70b (local)"),
+        QStringLiteral("mistral-large (local)"),
+    };
+}
+
 bool modelLikelySupportsTools(const QString &modelName) {
     if (modelName.isEmpty()) return false;
     const QString m = modelName.toLower();
@@ -449,6 +540,73 @@ QJsonArray availableTools() {
             "Returns up to 50 matches by default with file path, line, "
             "column, and one surrounding line as snippet. Heavy directories "
             "(.git, node_modules, build, etc.) are skipped automatically.",
+            params));
+    }
+
+    // query_sql ----------------------------------------------------
+    // v0.1.43 — run SQL against a saved DB connection (Data Analyst Mode).
+    {
+        QJsonObject props;
+        props["connection_name"] = QJsonObject{
+            {"type", "string"},
+            {"description", "Name of a connection saved via Manage Connections... in Data Analyst Mode."}
+        };
+        props["sql"] = QJsonObject{
+            {"type", "string"},
+            {"description", "SQL to execute. By default only SELECT / WITH / EXPLAIN / PRAGMA / SHOW / DESCRIBE are allowed; for INSERT / UPDATE / DELETE / DDL set confirm=true after the user has explicitly approved."}
+        };
+        props["max_rows"] = QJsonObject{
+            {"type", "integer"},
+            {"description", "Cap on returned rows. Default 100, max 500."}
+        };
+        props["confirm"] = QJsonObject{
+            {"type", "boolean"},
+            {"description", "Set true ONLY after the user has approved a non-SELECT query (mutation / DDL). Default false."}
+        };
+        QJsonObject params;
+        params["type"] = "object";
+        params["properties"] = props;
+        params["required"] = QJsonArray{ "connection_name", "sql" };
+        tools.push_back(makeTool(
+            "query_sql",
+            "Run SQL against a saved database connection. SELECT-only by "
+            "default. Returns columns + rows. Available only when Data "
+            "Analyst Mode is on; the user manages connections via the AI "
+            "panel's Manage Connections... button.",
+            params));
+    }
+
+    // csv_query -----------------------------------------------------
+    // v0.1.43 — query an attached CSV via in-memory SQLite. Saves the
+    // model from having to scan the whole file as text.
+    {
+        QJsonObject props;
+        props["file_path"] = QJsonObject{
+            {"type", "string"},
+            {"description", "Workspace-relative path to a CSV/TSV file. Loaded into an in-memory SQLite db with table name 'csv'; column names match the CSV header."}
+        };
+        props["sql"] = QJsonObject{
+            {"type", "string"},
+            {"description", "SQLite SQL referencing the 'csv' table, e.g. SELECT category, SUM(revenue) FROM csv GROUP BY category."}
+        };
+        props["max_rows"] = QJsonObject{
+            {"type", "integer"},
+            {"description", "Cap on returned rows. Default 500, max 2000."}
+        };
+        props["max_load_rows"] = QJsonObject{
+            {"type", "integer"},
+            {"description", "Cap on rows loaded from the CSV into SQLite. Default 250000."}
+        };
+        QJsonObject params;
+        params["type"] = "object";
+        params["properties"] = props;
+        params["required"] = QJsonArray{ "file_path", "sql" };
+        tools.push_back(makeTool(
+            "csv_query",
+            "Load a CSV into in-memory SQLite and run SQL against the 'csv' "
+            "table. Available only when Data Analyst Mode is on. Use this "
+            "instead of asking the model to manually scan a CSV — querying "
+            "is exact, fast, and cheap on the model's context budget.",
             params));
     }
 
@@ -1184,6 +1342,151 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
     return makeSuccess(call, result);
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// executeQuerySql — v0.1.43 (Data Analyst Mode)
+//
+// Runs SQL against a connection saved in db-connections.json. Defaults to
+// SELECT-only; mutations require confirm:true. Returns columns + rows in
+// a compact format the model can summarize.
+// ═══════════════════════════════════════════════════════════════════════
+ToolResult executeQuerySql(const ToolCall &call) {
+    const QString connectionName = call.args.value("connection_name").toString();
+    const QString sql = call.args.value("sql").toString();
+    int maxRows = call.args.value("max_rows").toInt(100);
+    if (maxRows <= 0) maxRows = 100;
+    if (maxRows > 500) maxRows = 500;
+    const bool allowMutation = call.args.value("confirm").toBool(false);
+
+    if (connectionName.isEmpty()) {
+        return makeError(call, "io_error", "connection_name is required.");
+    }
+    if (sql.trimmed().isEmpty()) {
+        return makeError(call, "io_error", "sql is required.");
+    }
+
+    DbConnections::Record rec;
+    if (!DbConnections::findByName(connectionName, &rec)) {
+        return makeError(call, "no_connection",
+                         QString("No connection named '%1'. Use the Manage "
+                                 "Connections... dialog in the AI panel to add one.")
+                             .arg(connectionName));
+    }
+
+    DbConnections::QueryResult qr =
+        DbConnections::runQuery(rec, sql, maxRows, allowMutation);
+    if (!qr.ok) {
+        return makeError(call, qr.errorKind.isEmpty() ? "exec_failed" : qr.errorKind,
+                         qr.error);
+    }
+
+    QJsonArray colsJson;
+    for (const QString &c : qr.columns) colsJson.append(c);
+    QJsonArray rowsJson;
+    for (const auto &row : qr.rows) {
+        QJsonArray r;
+        for (const QString &cell : row) r.append(cell);
+        rowsJson.append(r);
+    }
+    QJsonObject result;
+    result["connection_name"] = connectionName;
+    result["driver"]          = rec.driver;
+    result["columns"]         = colsJson;
+    result["rows"]            = rowsJson;
+    result["rows_returned"]   = qr.rowsReturned;
+    result["truncated"]       = qr.truncated;
+    return makeSuccess(call, result);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// executeCsvQuery — v0.1.43 (Data Analyst Mode)
+//
+// Loads a workspace CSV into in-memory SQLite (table name 'csv', columns
+// match the header), runs the supplied SQL against it, returns the rows.
+// Path safety via resolveSafePath. Tolerates non-CSV files only loosely
+// (the loader will produce a single TEXT column and load lines as rows).
+// ═══════════════════════════════════════════════════════════════════════
+ToolResult executeCsvQuery(const ToolCall &call, const QString &workspaceRoot) {
+    const QString pathArg = call.args.value("file_path").toString();
+    const QString sql = call.args.value("sql").toString();
+    int maxRows     = call.args.value("max_rows").toInt(500);
+    int maxLoadRows = call.args.value("max_load_rows").toInt(250000);
+    if (maxRows <= 0) maxRows = 500;
+    if (maxRows > 2000) maxRows = 2000;
+    if (maxLoadRows <= 0) maxLoadRows = 250000;
+
+    if (pathArg.isEmpty()) {
+        return makeError(call, "io_error", "file_path is required.");
+    }
+    if (sql.trimmed().isEmpty()) {
+        return makeError(call, "io_error", "sql is required.");
+    }
+
+    QString canonical;
+    QString errorKind;
+    if (!resolveSafePath(pathArg, workspaceRoot, &canonical, &errorKind)) {
+        QString msg;
+        if (errorKind == "outside_workspace")
+            msg = "CSV path resolves outside the workspace root.";
+        else if (errorKind == "denied")
+            msg = "Access to this path is restricted.";
+        else
+            msg = "CSV file not found.";
+        return makeError(call, errorKind, msg);
+    }
+
+    QString cname, loadErr;
+    bool truncatedLoad = false;
+    if (!CsvAnalyst::loadIntoSqlite(canonical, maxLoadRows, &cname, &truncatedLoad, &loadErr)) {
+        return makeError(call, "io_error",
+                         QString("CSV load failed: %1").arg(loadErr));
+    }
+
+    // Run the query — SELECT-only enforced lightly (user-supplied via the
+    // model; the agent should only emit SELECTs against in-memory data).
+    QJsonObject result;
+    {
+        QSqlDatabase db = QSqlDatabase::database(cname);
+        QSqlQuery q(db);
+        if (!q.exec(sql)) {
+            const QString err = q.lastError().text();
+            QSqlDatabase::removeDatabase(cname);
+            return makeError(call, "exec_failed",
+                             QString("SQL error: %1").arg(err));
+        }
+        const QSqlRecord rec = q.record();
+        const int cols = rec.count();
+        QJsonArray colsJson;
+        for (int i = 0; i < cols; ++i) colsJson.append(rec.fieldName(i));
+
+        QJsonArray rowsJson;
+        int rowsReturned = 0;
+        bool truncatedQuery = false;
+        while (q.next()) {
+            if (rowsReturned >= maxRows) { truncatedQuery = true; break; }
+            QJsonArray row;
+            for (int i = 0; i < cols; ++i) {
+                QVariant v = q.value(i);
+                if (v.isNull()) row.append(QJsonValue::Null);
+                else if (v.type() == QVariant::Double || v.type() == QVariant::LongLong ||
+                         v.type() == QVariant::Int)
+                    row.append(v.toDouble());
+                else row.append(v.toString());
+            }
+            rowsJson.append(row);
+            ++rowsReturned;
+        }
+        result["columns"]       = colsJson;
+        result["rows"]          = rowsJson;
+        result["rows_returned"] = rowsReturned;
+        result["truncated"]     = truncatedQuery;
+        result["load_truncated"] = truncatedLoad;
+        if (!loadErr.isEmpty()) result["load_warning"] = loadErr;
+        result["file_path"]     = QDir(workspaceRoot).relativeFilePath(canonical);
+    }
+    QSqlDatabase::removeDatabase(cname);
+    return makeSuccess(call, result);
+}
+
 } // anonymous namespace
 
 ToolResult execute(const ToolCall &call, const QString &workspaceRoot) {
@@ -1192,6 +1495,8 @@ ToolResult execute(const ToolCall &call, const QString &workspaceRoot) {
     if (call.name == "write_file") return executeWriteFile(call, workspaceRoot);
     if (call.name == "search")     return executeSearch(call, workspaceRoot);
     if (call.name == "apply_diff") return executeApplyDiff(call, workspaceRoot);
+    if (call.name == "query_sql")  return executeQuerySql(call);
+    if (call.name == "csv_query")  return executeCsvQuery(call, workspaceRoot);
     return makeError(call, "io_error",
                      "Unknown tool: '" + call.name + "'");
 }

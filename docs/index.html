@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.42 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.43 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.42">
-        Download v0.1.42 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.43">
+        Download v0.1.43 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.42 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.43 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. JSON / HTML / SQL fixers — regex first, local AI as fallback. No cloud unless you opt in.</p>
 
@@ -1389,7 +1389,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.42</div>
+        <div class="section-label">Download v0.1.43</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1841,11 +1841,79 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.42 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.43 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-30</span>
+                        <span>· Data Analyst Mode — query CSVs, run SQL on saved DB connections, render live charts inline. All native (Qt SQL + QtCharts).</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>📊 Data Analyst Mode — new toggle in the AI panel header</h5>
+                        <ul>
+                            <li>New <strong>Data</strong> checkbox alongside <em>Coding</em> in the AI panel header. Mutually exclusive with Coding Mode so the panel stays focused on one job. The header band switches to an accent-orange "AI · 📊 DATA" so it's unmistakable which mode is active.</li>
+                            <li>Toggle state persists across launches via <code style="color:var(--green);font-size:12px;">Config::aiDataMode</code>.</li>
+                            <li>When on: a <strong>Manage Connections…</strong> button + (only when needed) a model-capability banner appear under the model picker.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🛠 Two new agentic tools the model uses on your behalf</h5>
+                        <ul>
+                            <li><code style="color:var(--green);font-size:12px;">csv_query(file_path, sql, …)</code> loads a workspace CSV into in-memory SQLite (table name <code>csv</code>, column names from the header) and runs your SQL. Lets the model ask <em>"SELECT category, SUM(amount) FROM csv GROUP BY category"</em> instead of trying to mentally scan a million-line file.</li>
+                            <li><code style="color:var(--green);font-size:12px;">query_sql(connection_name, sql, …)</code> runs SQL against a saved connection. SELECT / WITH / EXPLAIN / PRAGMA / SHOW / DESCRIBE allowed by default. <strong>INSERT / UPDATE / DELETE / DDL require explicit <code>confirm:true</code></strong> after the user approves — no "yolo mode," by design.</li>
+                            <li>Both are wired into the existing agent loop with the same path-safety + structured-error contracts as <code>read_file</code> / <code>apply_diff</code>.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>📈 Live charts inline in the chat (real interactive QCharts, not images)</h5>
+                        <ul>
+                            <li>The model emits a fenced <code style="color:var(--green);font-size:12px;">```chart {...}```</code> block with a small JSON spec (type · title · x · y · data). Notepatra parses each one and embeds a real <strong>QChartView</strong> under the assistant's prose — interactive, theme-aware, and renders without a browser engine.</li>
+                            <li>Supported types: <code>line</code>, <code>bar</code>, <code>pie</code>, <code>scatter</code>. Category-aware axes for string-valued X columns; numeric axes for numeric X.</li>
+                            <li>Malformed JSON falls back to displaying the spec as a code block — nothing breaks.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🗂 Database connection manager (SQLite / PostgreSQL / MySQL / SQL Server)</h5>
+                        <ul>
+                            <li><strong>Manage Connections…</strong> dialog: add / edit / test / delete connections. Each record stores driver, host, port, database, username, password, options. Saved at <code style="color:var(--green);font-size:12px;">~/.config/notepatra/db-connections.json</code>.</li>
+                            <li>Driver detection on startup tells you which Qt SQL plugins are actually installed. SQLite ships built-in. Postgres / MySQL / SQL Server need the matching Qt SQL plugin (<code>libqt5sql5-psql</code> / <code>libqt5sql5-mysql</code> / <code>libqt5sql5-odbc</code> on Debian/Ubuntu; <code>brew install qt@5</code> bundles all on macOS).</li>
+                            <li><strong>Honest limitation:</strong> connection passwords are obscured at rest (XOR + base64), <em>NOT</em> encrypted. This is "don't show plaintext to people walking past my screen", NOT "survives a stolen laptop." Use OS keychain / <code>.pgpass</code> / instance-role IAM for production secrets.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧠 Smart CSV preview + project-level instruction file</h5>
+                        <ul>
+                            <li>When a CSV is attached AND Data Mode is on, the model gets a structured digest (delimiter sniff, header probe, per-column type — Integer / Real / Boolean / Date / DateTime / Text — null counts, min/max, head + tail rows, capped at 4 KB) instead of a raw text dump. The full file stays accessible via <code>csv_query</code>.</li>
+                            <li>Drop a <code style="color:var(--green);font-size:12px;">.notepatra/data-analyst.md</code> in your workspace and its contents are auto-prepended to the system prompt as a "Project data context" layer (capped at 8 KB). Use it for "join orders to customers on customer_id", "treat NULL in <code>amount</code> as 0", "<code>rate</code> is a percentage stored 0–1, not 0–100, don't average it", schema docs, etc.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>⚠️ Model capability gating — heads-up banner, not a hard block</h5>
+                        <ul>
+                            <li>New <code style="color:var(--green);font-size:12px;">AiTools::modelCapableOfDataAnalysis()</code> allowlists frontier cloud models (Claude 4.x, GPT-4 / 5 / o1 / o3, Gemini 2.x, DeepSeek-V3) and local models ≥7B params from strong families (qwen2.5-coder, llama3.x, mistral-large).</li>
+                            <li>When you toggle Data Mode on with a model below the bar, an inline orange banner suggests a few capable alternatives. Mode still works — banner is the heads-up.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧪 18 / 18 regression suites green — new <code>test_ai_dataanalyst</code> with ~50 assertions</h5>
+                        <ul>
+                            <li>Coverage: Intent classification (data flag wins over action; coding still wins over data) · system prompt phrasing for DataAnalyst · workspace-context gate returns false · project-context layer prepends + 8 KB cap · instruction file read · CSV schema (comma + tab delimiter, header probe, Integer / Real / Boolean / Date inference) · preview byte cap · in-memory SQLite ingest + COUNT/SUM round-trip · password obfuscation round-trip · Record JSON round-trip · driver predicates · real SQLite SELECT + DELETE rejection · model capability gating (positive + negative cases) · tool registry · chart spec parsing (bar / pie / malformed JSON).</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.43">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.43">Commits</a>
+                </div>
+            </div>
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.42</div>
                     <div class="version-meta">
                         <span>2026-04-30</span>
                         <span>· "Make every option actually work" release — Preferences dialog re-wired, Encoding menu re-decodes, View checkmarks sync, zoom persists, Compare polish</span>
-                        <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
@@ -1853,71 +1921,26 @@
                         <h5>⚙️ Preferences dialog: every control now actually works</h5>
                         <ul>
                             <li>Audit revealed the Preferences dialog's General / Editing / Margins / Tab Settings / Auto-Completion / New Document tabs were entirely <strong>stub UI</strong> — checkboxes / radios / spinboxes constructed with hardcoded values, never read from <code style="color:var(--green);font-size:12px;">Config</code>, never written back. There wasn't even an OK / Apply button.</li>
-                            <li><strong>Every dead control is now wired</strong> — 25+ controls across 6 tabs init from Config and persist on OK / Apply: Hide toolbar, Double-click to close tab, Show close button, Font family + size + anti-alias, Caret width, Highlight current line, Word wrap, Auto-indent, Show edge column + value, Fold style, Display line numbers, Display bookmark margin, Display indent guides, Display document rulers, Show crosshair, Tab size, Use Tabs/Spaces, Auto-completion + threshold, Default EOL.</li>
+                            <li><strong>Every dead control is now wired</strong> — 25+ controls across 6 tabs init from Config and persist on OK / Apply.</li>
                             <li>New <strong>Font picker</strong> — finally answers "where do I change the font?" (was config-file-only).</li>
-                            <li><strong>OK / Apply / Cancel</strong> buttons replaced the previous lone "Close" (which only saved AI-tab fields).</li>
-                            <li>New <code style="color:var(--green);font-size:12px;">Editor::applyConfig()</code> — single source of truth that reads every Config field and applies it. Called by Preferences OK, by app startup, by zoom shortcuts, by the Tab Settings menu. Pre-v0.1.42, every Config field had loaders/savers but no consumer.</li>
+                            <li>New <code style="color:var(--green);font-size:12px;">Editor::applyConfig()</code> — single source of truth that reads every Config field and applies it.</li>
                         </ul>
                     </div>
                     <div class="version-section">
                         <h5>🔣 Encoding menu actually re-decodes / converts files now</h5>
                         <ul>
-                            <li>Pre-v0.1.42 the menu only flipped a label — the file's bytes were never re-decoded so files showing mojibake stayed mojibake. Save always wrote UTF-8 regardless of the encoding label.</li>
-                            <li>New <strong>Reinterpret bytes as</strong> submenu — UTF-8 / UTF-8 BOM / UTF-16 LE / UTF-16 BE / Windows-1252 / ISO-8859-1. Re-reads bytes from disk via <code style="color:var(--green);font-size:12px;">QTextCodec</code> with confirmation if the buffer is dirty.</li>
-                            <li>New <strong>Convert to</strong> submenu — keeps the in-memory text but changes the save-encoding label. Next save writes bytes in the new encoding (BOM if requested).</li>
-                            <li><code style="color:var(--green);font-size:12px;">Editor::saveFile()</code> rewritten to actually use <code style="color:var(--green);font-size:12px;">QTextCodec::fromUnicode()</code> for non-UTF-8 encodings. UTF-16 LE / BE / UTF-8 BOM all produce correct bytes now.</li>
+                            <li>New <strong>Reinterpret bytes as</strong> + <strong>Convert to</strong> submenus — UTF-8 / UTF-8 BOM / UTF-16 LE / UTF-16 BE / Windows-1252 / ISO-8859-1.</li>
+                            <li><code style="color:var(--green);font-size:12px;">Editor::saveFile()</code> rewritten to actually use <code style="color:var(--green);font-size:12px;">QTextCodec::fromUnicode()</code> for non-UTF-8 encodings.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>👁️ View menu checkmarks sync to active editor</h5>
+                        <h5>👁️ View menu + 🔄 EOL / Tab / Zoom persistence + ✂️ Compare polish</h5>
                         <ul>
-                            <li>Show All Characters / Show Whitespace / Show End of Line / Show Indent Guide / Word Wrap — checkmarks now reflect each option's <strong>actual</strong> state on the active editor. Pre-v0.1.42 the QActions auto-toggled but stuck across tab switches and drifted from reality.</li>
-                            <li>Toggle now propagates to <strong>all open tabs</strong>, not just the active one.</li>
-                            <li>Indent Guide + Word Wrap persist to Config and reload on next launch.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>🔄 Edit → EOL Conversion + Settings → Tab Settings + Zoom — all persist now</h5>
-                        <ul>
-                            <li>Edit → EOL Conversion → Windows / Unix / Mac now flips the status-bar EOL pill (was stuck pre-v0.1.42). Powered by new <code style="color:var(--green);font-size:12px;">Editor::setEolModeByName()</code>.</li>
-                            <li>Settings → Tab Settings — Use Spaces / Use Tabs / Tab Width: 2/4/8 — now writes Config and propagates to every open editor. Pre-v0.1.42 changes affected only the active tab and reset on next launch.</li>
-                            <li>Ctrl+= / Ctrl+- / Ctrl+0 zoom shortcuts now persist <code style="color:var(--green);font-size:12px;">Config::fontSize</code> and re-apply across tabs. Pre-v0.1.42 used QScintilla's per-editor zoom which didn't persist.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>✂️ Compare polish (continuation)</h5>
-                        <ul>
-                            <li>The most common reason to compare two files is "show me what changed", not "show me the whole files." So <strong>Diff only</strong> is now ticked by default — Compare opens with matching lines hidden, only Added / Deleted / Changed rows visible. Untick the toolbar checkbox (now styled with a green border + bold text so it's immediately obvious you're in filtered mode) to see the full files.</li>
-                            <li>Original line numbers are preserved in the gutter so each diff still anchors to its real source-file line.</li>
-                            <li><strong>Edit-toggle auto-disables Diff only.</strong> Clicking <strong>Unlock Editing</strong> automatically unticks Diff only and recompares in full-files view before unlocking the panes — without this, editing while Diff only was on would have truncated the source files to just the visible changed rows.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>🌙 Dark-theme Compare toolbar fixes</h5>
-                        <ul>
-                            <li>Toolbar checkbox labels (<em>Ignore spaces</em>, <em>Ignore case</em>, <em>Ignore empty lines</em>, <em>Diff only</em>) were rendering in the default Qt palette colour (black) on the dark toolbar — invisible. Now uses the same theme-aware foreground colour the editor headers use, and re-applies on theme switch.</li>
-                            <li><strong>Buttons no longer truncate.</strong> Recompare / Unlock Editing / Lock Editing / Close all switched from <code style="color:var(--green);font-size:12px;">setFixedSize</code> to <code style="color:var(--green);font-size:12px;">setMinimumSize</code> so the buttons grow to fit their text on platforms where the system font is wider than the previous fixed widths assumed.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>🖱 AI Assistant dock — free manual resize on every platform</h5>
-                        <ul>
-                            <li>Removed the <code style="color:var(--green);font-size:12px;">setMaximumWidth(640)</code> cap on the AI dock. Users on Windows / macOS were hitting that limit when dragging the splitter handle to widen the chat — it presented as "manual resize doesn't work." The QSplitter parent still enforces a sane minimum on the editor pane so the dock can't take over the entire window.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>🔤 Broader modern monospace-font default chain</h5>
-                        <ul>
-                            <li>The font picker now walks <strong>Geist Mono → Berkeley Mono → MonoLisa → Commit Mono → JetBrains Mono → Cascadia Code → IBM Plex Mono → Monaspace Neon → Fira Code → SF Mono → Menlo → Consolas → DejaVu Sans Mono → Liberation Mono → Noto Sans Mono → Cousine</strong>. Uses the first one installed on the user's system.</li>
-                            <li>UI font picker now lives in Preferences → Editing → Font (v0.1.42); also overridable via <code style="color:var(--green);font-size:12px;">Config::fontFamily</code> in <code style="color:var(--green);font-size:12px;">~/.config/notepatra/config.json</code>.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>🧪 18 / 18 regression suites green — including the new "options actually work" suite</h5>
-                        <ul>
-                            <li>New <code style="color:var(--green);font-size:12px;">test_options_actually_work</code> — 49 assertions that programmatically toggle every Preferences control + every dynamic menu QAction and verify the editor / Config actually changes. This is the suite that would have caught the v0.1.41 stub-Preferences regression. Future stubbing fails here.</li>
-                            <li>Test 4 + Test 7 in <code style="color:var(--green);font-size:12px;">test_compare_widget</code> reworked for the new Diff-only default.</li>
-                            <li>All other tests unchanged and still pass.</li>
+                            <li>View menu checkmarks now reflect each option's actual state on the active editor and propagate to all open tabs.</li>
+                            <li>Edit → EOL Conversion / Settings → Tab Settings / Ctrl+= / Ctrl+- / Ctrl+0 — all persist to Config and re-apply across tabs.</li>
+                            <li>Compare: <strong>Diff only</strong> default ON + prominent styling; dark-theme toolbar labels visible; buttons no longer truncate.</li>
+                            <li>AI dock free manual resize on Windows / macOS (removed <code>setMaximumWidth(640)</code>).</li>
+                            <li>Broader modern monospace-font default chain (Geist Mono / Berkeley / MonoLisa / Commit / JetBrains / Cascadia / Plex / Monaspace / Fira / SF Mono / Menlo / Consolas / DejaVu / Liberation / Noto / Cousine).</li>
                         </ul>
                     </div>
                 </div>

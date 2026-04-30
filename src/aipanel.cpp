@@ -3,6 +3,9 @@
 #include "ai_intent.h"
 #include "ai_systemprompt.h"
 #include "ai_tools.h"
+#include "chartrender.h"
+#include "csvanalyst.h"
+#include "dbconnections.h"
 #include "fonts.h"
 #include "config.h"
 #include <QVBoxLayout>
@@ -764,7 +767,120 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         // the conversation so users don't lose context mid-thought.
         renderTranscript();
         emit codingModeRequested(checked);
+        // v0.1.43 — Coding Mode and Data Analyst Mode are mutually exclusive.
+        // If user turned Coding on, force Data off.
+        if (checked && m_dataMode && m_dataMode->isChecked()) {
+            QSignalBlocker block(m_dataMode);
+            m_dataMode->setChecked(false);
+            if (m_manageConnsBtn) m_manageConnsBtn->setVisible(false);
+            if (m_dataCapBanner)  m_dataCapBanner->setVisible(false);
+        }
     });
+
+    // ─── Data Mode toggle wiring ─────────────────────────────────────────
+    connect(m_dataMode, &QCheckBox::toggled, this, [this](bool checked) {
+        Config::instance().aiDataMode = checked;
+        Config::instance().save();
+        // Mutual exclusion with Coding Mode.
+        if (checked && m_codingMode && m_codingMode->isChecked()) {
+            QSignalBlocker block(m_codingMode);
+            m_codingMode->setChecked(false);
+            // Manually mirror the bits of the coding-mode toggle that we
+            // care about — the panel UI changes the coding-mode handler
+            // does (placeholder text, header, hide quick actions). Re-emit
+            // codingModeRequested(false) so MainWindow restores layout.
+            if (m_customInput)
+                m_customInput->setPlaceholderText("Type a message and press Enter to send…");
+            if (m_quickActionsWrap)  m_quickActionsWrap->setVisible(true);
+            if (m_resultActionsWrap) m_resultActionsWrap->setVisible(true);
+            if (m_thinkingCheck)     m_thinkingCheck->setEnabled(true);
+            emit codingModeRequested(false);
+        }
+
+        if (m_manageConnsBtn) m_manageConnsBtn->setVisible(checked);
+        if (m_customInput) {
+            m_customInput->setPlaceholderText(checked
+                ? "Data Mode · e.g. summarize this CSV / show top 10 customers / chart revenue by month"
+                : "Type a message and press Enter to send…");
+        }
+
+        // Header label flips to an accent-orange "AI · DATA" band.
+        if (m_headerLabel) {
+            const AiPalette p = aiPalette();
+            m_headerLabel->setText(checked ? "  AI  ·  📊 DATA" : "  AI");
+            m_headerLabel->setStyleSheet(QString(
+                "font-weight: 600; background: %1; color: %2; "
+                "padding: 6px 10px; letter-spacing: 1px; font-size: 11px;"
+                "border-bottom: 2px solid %3;")
+                .arg(p.chromeBg,
+                     checked ? QStringLiteral("#FF9F43") : p.headerFg,
+                     checked ? QStringLiteral("#FF9F43") : QStringLiteral("transparent")));
+        }
+
+        // Capability banner — show only if model is below the bar.
+        if (m_dataCapBanner) {
+            if (!checked) {
+                m_dataCapBanner->setVisible(false);
+            } else {
+                const QString modelName = m_modelCombo ? m_modelCombo->currentText() : QString();
+                const bool capable = AiTools::modelCapableOfDataAnalysis(modelName);
+                if (capable) {
+                    m_dataCapBanner->setVisible(false);
+                } else {
+                    QStringList suggested = AiTools::suggestedModelsForDataAnalysis().mid(0, 3);
+                    m_dataCapBanner->setText(tr(
+                        "⚠ %1 may struggle with multi-table SQL and chart specs. "
+                        "Try one of: %2.")
+                            .arg(modelName.isEmpty() ? tr("(no model selected)") : modelName,
+                                 suggested.join(QStringLiteral(", "))));
+                    m_dataCapBanner->setVisible(true);
+                }
+            }
+        }
+
+        renderTranscript();
+    });
+
+    // Manage Connections... button → open the connection-CRUD dialog.
+    connect(m_manageConnsBtn, &QPushButton::clicked, this, [this]() {
+        DbConnectionsDialog dlg(this);
+        dlg.exec();
+    });
+
+    // When the user picks a different model, refresh the capability banner.
+    if (m_modelCombo) {
+        connect(m_modelCombo, &QComboBox::currentTextChanged,
+                this, [this](const QString &modelName) {
+            if (!m_dataMode || !m_dataMode->isChecked() || !m_dataCapBanner) return;
+            const bool capable = AiTools::modelCapableOfDataAnalysis(modelName);
+            if (capable) {
+                m_dataCapBanner->setVisible(false);
+            } else {
+                QStringList suggested = AiTools::suggestedModelsForDataAnalysis().mid(0, 3);
+                m_dataCapBanner->setText(tr(
+                    "⚠ %1 may struggle with multi-table SQL and chart specs. "
+                    "Try one of: %2.")
+                        .arg(modelName.isEmpty() ? tr("(no model selected)") : modelName,
+                             suggested.join(QStringLiteral(", "))));
+                m_dataCapBanner->setVisible(true);
+            }
+        });
+    }
+
+    // ─── Data Analyst Mode toggle (v0.1.43) ──────────────────────────────
+    // Mutually exclusive with Coding Mode. When on, the panel shows a
+    // "Manage Connections..." button + a capability banner if the
+    // active model is below the recommended bar for SQL/chart work.
+    m_dataMode = new QCheckBox("Data");
+    m_dataMode->setChecked(Config::instance().aiDataMode);
+    m_dataMode->setStyleSheet(QString(
+        "QCheckBox { font-size: 11px; color: %1; margin-left: 4px; font-weight: 600; }"
+        "QCheckBox:checked { color: #FF9F43; }")
+        .arg(pal.muted));
+    m_dataMode->setToolTip(
+        "Data Analyst Mode: query CSVs and saved DB connections, generate "
+        "charts inline. Mutually exclusive with Coding Mode.");
+    modelRow->addWidget(m_dataMode);
 
     m_thinkingCheck = new QCheckBox("Think");
     m_thinkingCheck->setChecked(false);
@@ -781,6 +897,34 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     modelRow->addWidget(m_clearBtn);
     layout->addLayout(modelRow);
     layout->addWidget(apiKeyHost);
+
+    // ─── Data Analyst row (v0.1.43, hidden until Data Mode is on) ────────
+    // Manage Connections... button + capability banner. The banner is only
+    // visible when (a) Data Mode is on AND (b) the active model is below
+    // the recommended bar for SQL/chart work — see modelCapableOfDataAnalysis.
+    {
+        auto *dataRow = new QHBoxLayout();
+        m_manageConnsBtn = new QPushButton(tr("Manage Connections…"));
+        m_manageConnsBtn->setStyleSheet(
+            "QPushButton { font-size: 11px; padding: 4px 10px; "
+            "background: #FF9F43; color: white; border: none; border-radius: 4px; }"
+            "QPushButton:hover { background: #FFA726; }");
+        m_manageConnsBtn->setToolTip(tr(
+            "Add, edit, and test database connections for the query_sql tool. "
+            "SQLite ships built-in; install Qt SQL plugins for "
+            "Postgres/MySQL/SQL Server."));
+        dataRow->addWidget(m_manageConnsBtn);
+        dataRow->addStretch();
+        m_dataCapBanner = new QLabel;
+        m_dataCapBanner->setWordWrap(true);
+        m_dataCapBanner->setStyleSheet(
+            "QLabel { background: #553B19; color: #FFD49A; "
+            "padding: 4px 8px; border-radius: 4px; font-size: 11px; }");
+        dataRow->addWidget(m_dataCapBanner, 1);
+        layout->addLayout(dataRow);
+        m_manageConnsBtn->setVisible(false);
+        m_dataCapBanner->setVisible(false);
+    }
 
     m_statusLabel = new QLabel("");
     m_statusLabel->setStyleSheet(QString(
@@ -1592,15 +1736,29 @@ void AIPanel::sendPrompt(const QString &action) {
     // models (Qwen3, Qwen3.5, Hermes-3, Llama 3.1+) produce by default
     // when they see anything that looks like an agent frame.
     const bool codingMode = (m_codingMode && m_codingMode->isChecked());
+    const bool dataMode   = (m_dataMode   && m_dataMode->isChecked());
     const AiSystemPrompt::Intent intent =
-        AiSystemPrompt::classifyIntent(action, codingMode);
+        AiSystemPrompt::classifyIntent(action, codingMode, dataMode);
     // Predict whether tools will fire so the system prompt swaps in the
     // tool-mode preamble (instead of the anti-tool-call layer that
     // would otherwise contradict the tools we're about to attach).
-    const bool willUseTools = codingMode && !m_workspaceRoot.isEmpty()
+    // v0.1.43 — Data Mode also uses tools (csv_query, query_sql); the
+    // tool decision is the same model-allowlist test.
+    const bool toolModeActive = (codingMode || dataMode);
+    const bool willUseTools = toolModeActive && !m_workspaceRoot.isEmpty()
         && ((m_ollama->backend() != OllamaClient::Ollama)
             || AiTools::modelLikelySupportsTools(m_ollama->model()));
-    QString systemPrompt = AiSystemPrompt::build(intent, m_language, willUseTools);
+    QString systemPrompt;
+    if (intent == AiSystemPrompt::Intent::DataAnalyst) {
+        // Pull .notepatra/data-analyst.md (if present) so the model gets
+        // project-specific instructions automatically.
+        const QString projectCtx =
+            AiSystemPrompt::readDataAnalystInstructions(m_workspaceRoot);
+        systemPrompt = AiSystemPrompt::buildWithProjectContext(
+            intent, m_language, willUseTools, projectCtx);
+    } else {
+        systemPrompt = AiSystemPrompt::build(intent, m_language, willUseTools);
+    }
 
     // v0.1.40 — JSON / HTML / SQL "fix my X" intent detection. When the
     // user types "fix my json" (etc.) in the chat input, swap in the
@@ -1693,7 +1851,16 @@ void AIPanel::sendPrompt(const QString &action) {
     if (!m_pendingFilePath.isEmpty()) {
         QString imageB64;
         QString reason;
-        QString fileText = extractFileContent(m_pendingFilePath, m_pendingFileKind, imageB64, reason);
+        // v0.1.43 — when Data Mode is on AND the attachment is a CSV, swap
+        // the raw-text dump for a compact schema-aware preview so a 50 MB
+        // CSV doesn't blow the model's context window. The model can still
+        // query the full file via the csv_query tool.
+        QString fileText;
+        if (dataMode && CsvAnalyst::looksLikeCsv(m_pendingFilePath)) {
+            fileText = CsvAnalyst::buildPreviewText(m_pendingFilePath);
+        } else {
+            fileText = extractFileContent(m_pendingFilePath, m_pendingFileKind, imageB64, reason);
+        }
         if (!imageB64.isEmpty()) {
             // Vision-model image attachment
             imagesBase64 << imageB64;
@@ -1704,7 +1871,9 @@ void AIPanel::sendPrompt(const QString &action) {
             QFileInfo fi(m_pendingFilePath);
             QString header = QString("\n\n--- Attached file: %1 ---\n").arg(fi.fileName());
             prompt = prompt + header + fileText + "\n--- end file ---\n";
-            userBubbleText = QString("[📄 %1]\n%2").arg(fi.fileName()).arg(userBubbleText);
+            const QString icon = (dataMode && CsvAnalyst::looksLikeCsv(m_pendingFilePath))
+                                  ? QStringLiteral("📊") : QStringLiteral("📄");
+            userBubbleText = QString("[%1 %2]\n%3").arg(icon, fi.fileName(), userBubbleText);
         } else if (!reason.isEmpty()) {
             setStatus("✗ attachment error: " + reason, true);
         }
@@ -1781,7 +1950,7 @@ void AIPanel::sendPrompt(const QString &action) {
     m_toolCallsThisTurn = 0;
     m_toolCallsTotal = 0;
     m_toolsActiveThisTurn = false;
-    if (codingMode && !m_workspaceRoot.isEmpty()) {
+    if (toolModeActive && !m_workspaceRoot.isEmpty()) {
         const bool likelyOk =
             (m_ollama->backend() != OllamaClient::Ollama)
             || AiTools::modelLikelySupportsTools(m_ollama->model());
@@ -2031,6 +2200,31 @@ static QFrame *aiAddAssistantCard(QVBoxLayout *target,
     body->document()->setTextWidth(400);
     body->setFixedHeight(qMax(30, int(body->document()->size().height()) + 8));
     outer->addWidget(body);
+
+    // ── v0.1.43 — render any ```chart fenced JSON specs as real QCharts ──
+    // The model is instructed (via the DataAnalyst system prompt) to emit
+    // a fenced ```chart {...} block when a visualization helps. We parse
+    // each one and append a QChartView widget under the prose body so the
+    // user sees a real interactive chart alongside the explanation.
+    {
+        static const QRegularExpression kChartFence(
+            QStringLiteral("```chart\\s*\\n([\\s\\S]*?)```"));
+        QRegularExpressionMatchIterator it = kChartFence.globalMatch(msg.text);
+        while (it.hasNext()) {
+            const QRegularExpressionMatch m = it.next();
+            const QString json = m.captured(1).trimmed();
+            QString chartErr;
+            QWidget *chart = ChartRender::renderFromSpec(json, card, &chartErr);
+            if (chart) {
+                outer->addWidget(chart);
+            } else if (!chartErr.isEmpty()) {
+                auto *errLbl = new QLabel(QStringLiteral("⚠ Chart spec error: ") + chartErr);
+                errLbl->setStyleSheet("color: #c0392b; font-size: 10px; font-style: italic;");
+                errLbl->setWordWrap(true);
+                outer->addWidget(errLbl);
+            }
+        }
+    }
 
     // Bottom margin between cards
     auto *row = new QWidget;

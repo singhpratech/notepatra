@@ -64,7 +64,11 @@ struct ToolResult {
     QString errorKind; // "not_found" | "denied" | "too_large" |
                        // "outside_workspace" | "binary" | "io_error" |
                        // "exists" (write_file mode=create, target exists) |
-                       // "conflict" (apply_diff, file drifted from expected)
+                       // "conflict" (apply_diff, file drifted from expected) |
+                       // "no_connection" (query_sql, name not in db-connections.json) |
+                       // "non_select" (query_sql, mutation without confirm) |
+                       // "open_failed" (query_sql, driver/connection error) |
+                       // "exec_failed" (query_sql / csv_query, SQL error)
 };
 
 // ── Tool registry ─────────────────────────────────────────────────────
@@ -85,6 +89,23 @@ QJsonArray availableTools();
 // is case-insensitive substring against well-known tool-trained
 // families. False is the safe default.
 bool modelLikelySupportsTools(const QString &modelName);
+
+// v0.1.43 — stricter bar than tool support. Returns true only if the
+// model is plausibly capable of: writing correct SQL across multiple
+// dialects, reasoning about CSV schemas, and emitting correct chart-
+// spec JSON. Most cloud frontier models pass. Local models pass only
+// when the param-count tag in the name is ≥7B or it's a known-strong
+// family (qwen-coder, deepseek-coder, etc.).
+//
+// Used by AIPanel to show a "weak model" banner when the user toggles
+// Data Analyst Mode on with an underpowered model. Mode still works —
+// banner is a heads-up.
+bool modelCapableOfDataAnalysis(const QString &modelName);
+
+// List of model names known to be strong for data-analysis work. The
+// banner shown for unknown / weak models cites a few of these. Order
+// is rough preference (most capable first).
+QStringList suggestedModelsForDataAnalysis();
 
 // ── Execution ─────────────────────────────────────────────────────────
 

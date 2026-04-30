@@ -7,6 +7,80 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.43] — 2026-04-30
+
+**Data Analyst Mode** — the AI assistant gains a real data-analyst capability: query CSVs and saved database connections, generate inline charts, and read project-level instructions automatically. Fully native — Qt SQL + QtCharts, no Python sandbox, no external chart service. Toggle is mutually exclusive with Coding Mode so the panel stays focused.
+
+### Added — Data Analyst Mode
+
+- 📊 **`Data` toggle** in the AI panel header alongside Coding Mode. When on, the header band switches to an accent-orange "AI · 📊 DATA" so it's unmistakable which mode is active. State persists across launches via `Config::aiDataMode`.
+- 🗂 **Database connection manager** (`Manage Connections…` button, visible only when Data Mode is on). Add / edit / test / delete connections; each record stores driver (QSQLITE / QPSQL / QMYSQL / QODBC), host, port, database, username, password, options. Saved at `~/.config/notepatra/db-connections.json`. Passwords are obscured at rest (XOR + base64) — **NOT real encryption**; documented honestly. Use OS keychain / `.pgpass` for production secrets.
+- 🛠 **Two new agentic tools** wired into the agent loop:
+  - `query_sql(connection_name, sql, max_rows?, confirm?)` — runs SQL against a saved connection. SELECT / WITH / EXPLAIN / PRAGMA / SHOW / DESCRIBE allowed by default; mutations (INSERT / UPDATE / DELETE / DDL) require `confirm:true` after explicit user approval. Caps results at 500 rows.
+  - `csv_query(file_path, sql, max_rows?, max_load_rows?)` — loads a workspace CSV into in-memory SQLite (table name `csv`, column names match the header), runs the SQL, returns rows. The model can ask `SELECT category, SUM(revenue) FROM csv GROUP BY category` instead of scanning a 50 MB file as text.
+- 📈 **Inline chart rendering** via QtCharts. The model emits a fenced `​```chart` block:
+  ```
+  {"type":"bar","title":"Revenue by quarter","x":"quarter","y":"revenue",
+   "data":[{"quarter":"Q1","revenue":1200},{"quarter":"Q2","revenue":1850}]}
+  ```
+  Notepatra parses each one and embeds a real `QChartView` (interactive, theme-aware) under the assistant's prose. Supported types: `line`, `bar`, `pie`, `scatter`. Malformed JSON falls back to displaying the spec as a code block — nothing breaks.
+- 🧠 **Smart CSV preview** — when a CSV is attached AND Data Mode is on, the preview the model sees is a structured digest: detected delimiter, header inference, per-column type (Integer / Real / Boolean / Date / DateTime / Text), null counts, min/max ranges, and N head + N tail rows. Capped at 4 KB. The full file stays accessible via `csv_query`.
+- 📝 **`.notepatra/data-analyst.md` instruction file** — when present in the workspace, its contents are auto-prepended to the system prompt as a "Project data context" layer. Per-workspace, version-controllable, capped at 8 KB. Lets you tell the model "always join orders to customers on customer_id", "treat NULL in `amount` as 0", or share the schema in plain prose.
+- ⚠️ **Model capability gating** — `AiTools::modelCapableOfDataAnalysis` allowlists frontier cloud models (Claude 4.x, GPT-4/5, Gemini 2.x, DeepSeek-V3) and local models ≥7B params from strong families (qwen2.5-coder, llama3.x, mistral-large). When Data Mode is on with a model below the bar, an inline orange banner suggests a few capable alternatives. Mode still works — banner is the heads-up.
+
+### Added — Plumbing
+- New `AiSystemPrompt::Intent::DataAnalyst` — separate from Chat / Explain / Transform / CodingStrict. Has its own system-prompt body (data-analyst persona, structured Findings → Method → Suggested follow-ups output, chart-spec emission rules) and its own tool-mode preamble that mentions `csv_query` / `query_sql` instead of file ops.
+- `AiSystemPrompt::buildWithProjectContext` and `readDataAnalystInstructions` — composable layers for project-level data context.
+- `src/csvanalyst.{h,cpp}` — schema detection (delimiter sniff, header probe, type inference) + preview generation + in-memory SQLite ingestion.
+- `src/dbconnections.{h,cpp}` — Record struct, JSON persistence, `runQuery` (SELECT-only by default), driver-availability detection, the connection-manager dialog.
+- `src/chartrender.{h,cpp}` — JSON-spec → `QChartView` widget; supports line / bar / pie / scatter with category-aware axes.
+
+### Tests
+- New `test_ai_dataanalyst` — ~50 assertions covering Intent classification (data flag wins over action; coding still wins over data), system prompt phrasing, `shouldAttachWorkspace=false` for DataAnalyst, project-context prepend + 8KB cap, instruction-file read, CSV schema (comma + tab, header detection, Integer / Real / Boolean / Date inference), CSV preview byte cap, `looksLikeCsv`, in-memory SQLite ingestion, password obfuscation round-trip, Record JSON round-trip, driver predicates, real SQLite SELECT + DELETE rejection, model capability gating (positive + negative), tool registry, chart spec parsing (bar / pie / malformed JSON).
+- 18/18 ctest suites green on Linux baseline.
+
+### Driver availability
+SQLite ships with Qt by default — works out of the box on every Notepatra build. PostgreSQL / MySQL / SQL Server require the matching Qt SQL plugin to be installed:
+- Debian / Ubuntu: `sudo apt install libqt5sql5-psql libqt5sql5-mysql libqt5sql5-odbc`
+- macOS Homebrew: included in `brew install qt@5`
+- Windows: install via `aqtinstall` `addons.qtcharts` and SQL plugins; documented in [docs/docs.html](https://notepatra.org/docs.html).
+The Manage Connections… dialog reports which drivers are available on your system.
+
+### Files changed
+```
+NEW:
+  src/csvanalyst.{h,cpp}            — CSV schema + preview + SQLite ingest
+  src/dbconnections.{h,cpp}         — connection model + dialog + runQuery
+  src/chartrender.{h,cpp}           — chart spec → QChartView
+  test_ai_dataanalyst.cpp           — pure-logic regression suite
+  release_notes/v0.1.43.md          — full release notes
+
+MODIFIED:
+  src/ai_systemprompt.{h,cpp}       — Intent::DataAnalyst, buildWithProjectContext,
+                                       readDataAnalystInstructions, dataMode flag
+                                       on classifyIntent (default false to keep
+                                       2-arg call sites compiling)
+  src/ai_tools.{h,cpp}              — query_sql + csv_query tools, error kinds
+                                       no_connection / non_select / open_failed /
+                                       exec_failed; modelCapableOfDataAnalysis +
+                                       suggestedModelsForDataAnalysis
+  src/aipanel.{h,cpp}               — m_dataMode toggle + Manage Connections… btn
+                                       + capability banner; smart CSV preview hook;
+                                       inline chart rendering in aiAddAssistantCard
+  src/config.h                       — aiDataMode field load/save
+  CMakeLists.txt                    — Qt5 Sql + Charts; new sources; test target;
+                                       VERSION 0.1.42 → 0.1.43
+  .github/workflows/build.yml       — apt: libqt5charts5-dev libqt5sql5-sqlite
+                                       Windows: install-qt-action modules: qtcharts
+                                       Added test_ai_dataanalyst to all 4 target lists
+  CHANGELOG.md                      — [0.1.43] entry
+  README.md                         — v0.1.43 row in releases table
+  docs/index.html                   — v0.1.43 LATEST card
+  docs/docs.html                    — Data Analyst Mode section
+```
+
+---
+
 ## [0.1.42] — 2026-04-30
 
 User-flagged fix bundle right after v0.1.41 — five small things that

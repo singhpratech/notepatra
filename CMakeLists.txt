@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.42 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.43 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -40,7 +40,14 @@ endif()
 message(STATUS "Building for platform: ${PLATFORM_NAME}")
 
 # ── Qt5 ──
-find_package(Qt5 REQUIRED COMPONENTS Widgets PrintSupport Network Concurrent)
+# v0.1.43: Sql + Charts added for Data Analyst mode.
+# - Sql: SQLite driver ships with Qt by default; PostgreSQL/MySQL/SQL Server
+#   require separate Qt SQL plugin packages users install themselves
+#   (libqt5sql5-psql, libqt5sql5-mysql, libqt5sql5-odbc on Debian/Ubuntu;
+#   `brew install qt@5` ships them all on macOS).
+# - Charts: rendered inline in the AI chat transcript when the model emits
+#   a ```chart fenced spec.
+find_package(Qt5 REQUIRED COMPONENTS Widgets PrintSupport Network Concurrent Sql Charts)
 
 # ── QScintilla ──
 # Platform-specific search for QScintilla headers and library.
@@ -147,6 +154,9 @@ set(SOURCES
     src/ai_intent.cpp
     src/ai_systemprompt.cpp
     src/ai_tools.cpp
+    src/dbconnections.cpp
+    src/csvanalyst.cpp
+    src/chartrender.cpp
     src/lexer_go.cpp
     src/lexer_kotlin.cpp
     src/lexer_powershell.cpp
@@ -190,6 +200,9 @@ set(HEADERS
     src/gitgutter.h
     src/ollama.h
     src/aipanel.h
+    src/dbconnections.h
+    src/csvanalyst.h
+    src/chartrender.h
     src/restclient.h
     src/gitpanel.h
     src/sqlfmtpanel.h
@@ -279,6 +292,8 @@ target_link_libraries(${EXE_NAME} PRIVATE
     Qt5::PrintSupport
     Qt5::Network
     Qt5::Concurrent
+    Qt5::Sql
+    Qt5::Charts
     ${QSCINTILLA_LIB}
     ${RUST_LIB}
 )
@@ -438,19 +453,48 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexer_coverage.cpp
     message(STATUS "Regression test enabled — target: test_lexer_coverage")
 endif()
 
-# v0.1.35 — AI tool-call path-safety + execution tests
+# v0.1.35 — AI tool-call path-safety + execution tests.
+# v0.1.43 — also pulls in csvanalyst + dbconnections (used by query_sql /
+# csv_query) so the test target links against Qt SQL.
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_tools.cpp")
     add_executable(test_ai_tools
         test_ai_tools.cpp
         src/ai_tools.cpp
+        src/csvanalyst.cpp
+        src/dbconnections.cpp
     )
     target_include_directories(test_ai_tools PRIVATE
         ${CMAKE_SOURCE_DIR}/src
     )
-    target_link_libraries(test_ai_tools PRIVATE Qt5::Core)
+    target_link_libraries(test_ai_tools PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Sql)
     add_test(NAME test_ai_tools COMMAND $<TARGET_FILE:test_ai_tools>)
     set_tests_properties(test_ai_tools PROPERTIES LABELS "unit;ai;tools")
     message(STATUS "Regression test enabled — target: test_ai_tools")
+endif()
+
+# v0.1.43 — Data Analyst Mode regression suite. Pure-logic tests for the
+# DataAnalyst intent + CSV analyst + DB connections + chart renderer +
+# model capability gating. Runs offscreen so QChartView can construct.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_dataanalyst.cpp")
+    add_executable(test_ai_dataanalyst
+        test_ai_dataanalyst.cpp
+        src/ai_systemprompt.cpp
+        src/ai_tools.cpp
+        src/chartrender.cpp
+        src/csvanalyst.cpp
+        src/dbconnections.cpp
+    )
+    target_include_directories(test_ai_dataanalyst PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_ai_dataanalyst PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Sql Qt5::Charts)
+    add_test(NAME test_ai_dataanalyst COMMAND $<TARGET_FILE:test_ai_dataanalyst>)
+    set_tests_properties(test_ai_dataanalyst PROPERTIES
+        LABELS "unit;ai;data-analyst"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_ai_dataanalyst")
 endif()
 
 # ─── Project Search deep regression test ────────────────────────────────

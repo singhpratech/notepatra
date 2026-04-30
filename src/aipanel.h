@@ -184,6 +184,13 @@ private:
     QLabel *m_attachmentChip;
     QCheckBox *m_thinkingCheck;
     QCheckBox *m_codingMode;     // Cursor/Copilot-style "output code, not prose"
+    // v0.1.43 — Data Analyst Mode: CSV / DB / charts. Mutually exclusive
+    // with Coding Mode. When on, the AI gets the data-tools system prompt,
+    // a Manage Connections... button + a "model capability" banner if the
+    // current model is below the recommended bar.
+    QCheckBox *m_dataMode = nullptr;
+    QPushButton *m_manageConnsBtn = nullptr;
+    QLabel *m_dataCapBanner = nullptr;
     QLabel *m_statusLabel;
     QPushButton *m_applyCodeBtn; // one-click "replace selection with response code"
     // Clutter that hides when Coding Mode is on — we want the dock to feel
