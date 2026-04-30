@@ -676,15 +676,24 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     // other on Windows.
     toolbar->setSpacing(8);
 
+    // v0.1.42 — switched from setFixedSize() to setMinimumSize() so the
+    // buttons grow to fit their text on platforms where the system font
+    // is wider than the previous fixed widths assumed (Windows + Linux
+    // were truncating "Recompare" and "Unlock Editing"). Fixed height
+    // is preserved for vertical alignment with the checkboxes.
     auto *prevBtn = new QPushButton("< Prev");
-    prevBtn->setFixedSize(70, 26);
+    prevBtn->setMinimumSize(76, 26);
+    prevBtn->setFixedHeight(26);
     auto *nextBtn = new QPushButton("Next >");
-    nextBtn->setFixedSize(70, 26);
+    nextBtn->setMinimumSize(76, 26);
+    nextBtn->setFixedHeight(26);
     auto *recompBtn = new QPushButton("Recompare");
-    recompBtn->setFixedSize(90, 26);
+    recompBtn->setMinimumSize(110, 26);
+    recompBtn->setFixedHeight(26);
     m_editToggle = new QPushButton("Unlock Editing");
     m_editToggle->setObjectName("compareEditToggle");
     m_editToggle->setCheckable(true);
+    m_editToggle->setMinimumWidth(124);  // fits "Unlock Editing" + "Lock Editing"
     m_editToggle->setFixedHeight(26);
     // Close — use the OS-native close icon via QStyle so the glyph never
     // mojibakes on Windows fonts (the previous '✕' Unicode could render
@@ -692,9 +701,10 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     auto *closeBtn = new QPushButton("Close");
     closeBtn->setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
     closeBtn->setIconSize(QSize(12, 12));
-    closeBtn->setFixedSize(96, 26);
+    closeBtn->setMinimumSize(102, 26);
+    closeBtn->setFixedHeight(26);
     closeBtn->setToolTip("Close the compare view");
-    closeBtn->setStyleSheet("QPushButton { font-weight: 600; padding: 0 8px; }");
+    closeBtn->setStyleSheet("QPushButton { font-weight: 600; padding: 0 12px; }");
 
     m_ignoreWhitespace = new QCheckBox("Ignore spaces");
     // v0.1.36 — default ON. The most common compare-tab use case is
@@ -708,9 +718,39 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     // filtered out before rendering, leaving only Added / Deleted /
     // Changed rows. Default OFF (full-files view, current behaviour).
     m_diffOnly = new QCheckBox("Diff only");
+    // v0.1.42 — default ON. The most common reason to use Compare is
+    // "show me what changed, not everything that's the same." Users who
+    // want the full files (e.g. for context around a single edit) untick
+    // this. The checkbox is also styled prominently below so users see
+    // they're in diff-only mode by default.
+    m_diffOnly->setChecked(true);
     m_diffOnly->setToolTip(
-        "Hide matching lines and show only Added / Deleted / Changed rows. "
-        "Original line numbers are preserved in the gutter.");
+        "ON (default): show only Added / Deleted / Changed rows. "
+        "Untick to see the full files with matching lines included. "
+        "Original line numbers are preserved in the gutter either way.");
+
+    // v0.1.42 — apply theme-aware label colour to the toolbar checkboxes
+    // so the labels are visible on dark backgrounds. Without this, the
+    // default Qt palette colour was black on the dark toolbar chrome.
+    // Diff-only gets prominent styling (bold + accent colour + boxed)
+    // since it's now ON by default — users need to discover the toggle
+    // to see the full files when they want them.
+    {
+        const ComparePalette pal = comparePalette();
+        const QString labelColor = pal.headerFg.name();
+        const QString cbStyle = QString("QCheckBox { color: %1; }").arg(labelColor);
+        for (QCheckBox *cb : { m_ignoreWhitespace, m_ignoreCase,
+                               m_ignoreEmptyLines }) {
+            cb->setStyleSheet(cbStyle);
+        }
+        // Diff only — accent-coloured, bold, with a thin border so it
+        // reads as the primary toggle on the toolbar.
+        const QString accent = pal.symAddedFg.name();
+        m_diffOnly->setStyleSheet(QString(
+            "QCheckBox { color: %1; font-weight: 700; "
+            "padding: 2px 8px; border: 1px solid %1; border-radius: 4px; }")
+            .arg(accent));
+    }
 
     m_statsLabel = new QLabel;
     // Theme-aware — onThemeChanged() re-applies this same format string when
@@ -813,11 +853,33 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     connect(nextBtn, &QPushButton::clicked, this, &CompareWidget::navigateNext);
     connect(recompBtn, &QPushButton::clicked, this, &CompareWidget::recompare);
     connect(m_editToggle, &QPushButton::toggled, this, [this](bool checked) {
-        m_editable = checked;
-        updateEditToggle();
-        if (m_editable) {
+        if (checked) {
+            // Entering edit mode. Editing requires the FULL files in
+            // the panes — diff-only would hide matching context the
+            // user might want to edit.
+            //
+            // CRITICAL ORDERING: untick m_diffOnly and recompare BEFORE
+            // setting m_editable=true. recompare()'s first step when
+            // m_editable=true is syncTextsFromEditors(), which would
+            // overwrite m_leftText / m_rightText with whatever is
+            // currently visible in the panes — i.e. the filtered (diff-
+            // only) view. That truncates the source text to just the
+            // changed rows and breaks subsequent recompares. By flipping
+            // diff-only first while m_editable is still false, recompare
+            // uses the original m_leftText / m_rightText to render the
+            // full view; then we promote to edit mode.
+            if (m_diffOnly && m_diffOnly->isChecked()) {
+                m_diffOnly->blockSignals(true);
+                m_diffOnly->setChecked(false);
+                m_diffOnly->blockSignals(false);
+                recompare();
+            }
+            m_editable = true;
+            updateEditToggle();
             setEditorsEditable(true);
         } else {
+            m_editable = false;
+            updateEditToggle();
             syncTextsFromEditors();
             recompare();
         }
@@ -1252,6 +1314,19 @@ void CompareWidget::onThemeChanged() {
         m_statsLabel->setStyleSheet(QString("font-weight: bold; color: %1;")
             .arg(pal.headerFg.name()));
     }
+
+    // v0.1.42 — re-apply checkbox label colour so toolbar options stay
+    // legible after a theme switch (was hardcoded to default Qt palette
+    // text colour, which painted black on a dark toolbar).
+    {
+        const QString cbStyle = QString("QCheckBox { color: %1; }")
+                                    .arg(pal.headerFg.name());
+        for (QCheckBox *cb : { m_ignoreWhitespace, m_ignoreCase,
+                               m_ignoreEmptyLines, m_diffOnly }) {
+            if (cb) cb->setStyleSheet(cbStyle);
+        }
+    }
+
     // Re-colour the edit-toggle button — it stashes theme colour in its
     // stylesheet per editable state, so re-run updateEditToggle() which
     // reads a fresh comparePalette().

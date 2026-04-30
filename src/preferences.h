@@ -2,18 +2,17 @@
 #define PREFERENCES_H
 
 #include <QDialog>
-#include <functional>
 
 class PreferencesDialog : public QDialog {
     Q_OBJECT
 public:
     explicit PreferencesDialog(QWidget *parent = nullptr);
 
-private:
-    // Deferred save callback — filled in when the AI tab is constructed so
-    // the Close button can flush AI backend settings to Config without the
-    // dialog having to know the widget layout details.
-    std::function<void()> m_saveAiSettings;
+signals:
+    // v0.1.42 — emitted when the user clicks OK or Apply. MainWindow
+    // listens and re-applies Config to every open editor + propagates
+    // to chrome (toolbar visibility, tab bar settings, etc.).
+    void settingsApplied();
 };
 
 #endif

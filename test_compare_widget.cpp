@@ -159,10 +159,17 @@ int main(int argc, char *argv[]) {
     }
 
     // Test 4: changed rows must not use identical visual markers on both panes.
+    // v0.1.42: untick "Diff only" first since this test asserts on a specific
+    // editor line number (1) that only exists in the full-files view.
     {
         CompareWidget widget;
         widget.resize(1100, 720);
         widget.show();
+        if (auto *diffOnly = findCheckBox(widget, "Diff only")) {
+            diffOnly->blockSignals(true);
+            diffOnly->setChecked(false);
+            diffOnly->blockSignals(false);
+        }
         widget.compare("alpha\nbefore value\nomega\n", "left.txt",
                        "alpha\nafter value\nomega\n", "right.txt");
         QApplication::processEvents();
@@ -251,11 +258,13 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Test 7 (v0.1.41): Diff-only toggle hides RowEqual rows. With a
-    // 4-line file where line 2 differs, full view should render 4 rows
-    // and 1 diff. After ticking "Diff only", rowCount drops to just the
-    // changed row (1) but diffCount remains 1 (the change is still there).
-    // Default-OFF preserves v0.1.40 behaviour.
+    // Test 7 (v0.1.41 / v0.1.42): Diff-only toggle.
+    //
+    // v0.1.42 change: default flipped from OFF to ON. Compare opens with
+    // matching lines hidden by default — users untick the prominent
+    // "Diff only" toolbar checkbox to see the full files. This test
+    // verifies the new default behaviour AND the round-trip through
+    // both states.
     {
         CompareWidget widget;
         widget.resize(1100, 720);
@@ -265,8 +274,8 @@ int main(int argc, char *argv[]) {
         if (!diffOnly) {
             std::fprintf(stderr, "✗ Test 7: Diff only checkbox not found\n");
             failed++;
-        } else if (diffOnly->isChecked()) {
-            std::fprintf(stderr, "✗ Test 7: Diff only should default to OFF\n");
+        } else if (!diffOnly->isChecked()) {
+            std::fprintf(stderr, "✗ Test 7: Diff only should default to ON in v0.1.42+\n");
             failed++;
         } else {
             widget.compare(
@@ -274,53 +283,54 @@ int main(int argc, char *argv[]) {
                 "alpha\nBETA\ngamma\ndelta\n", "right.txt");
             QApplication::processEvents();
 
-            const int fullRows = widget.rowCount();
-            const int fullDiffs = widget.diffCount();
-
-            if (fullRows < 4) {
-                std::fprintf(stderr, "✗ Test 7: full view expected ≥ 4 rows, got %d\n",
-                             fullRows);
-                failed++;
-            }
-            if (fullDiffs != 1) {
-                std::fprintf(stderr, "✗ Test 7: full view expected 1 diff, got %d\n",
-                             fullDiffs);
-                failed++;
-            }
-
-            // Tick "Diff only" — RowEqual lines disappear, only the
-            // single changed row remains.
-            diffOnly->setChecked(true);
-            QApplication::processEvents();
-
+            // First compare runs in diff-only mode (default ON).
             const int filteredRows = widget.rowCount();
             const int filteredDiffs = widget.diffCount();
 
-            if (filteredRows >= fullRows) {
-                std::fprintf(stderr, "✗ Test 7: diff-only view should have FEWER rows; got %d (was %d)\n",
-                             filteredRows, fullRows);
+            if (filteredDiffs != 1) {
+                std::fprintf(stderr, "✗ Test 7: default diff-only view expected 1 diff, got %d\n",
+                             filteredDiffs);
                 failed++;
             }
-            if (filteredDiffs != fullDiffs) {
-                std::fprintf(stderr, "✗ Test 7: diff-only view should preserve diffCount; got %d (was %d)\n",
-                             filteredDiffs, fullDiffs);
+            if (filteredRows >= 4) {
+                std::fprintf(stderr, "✗ Test 7: default diff-only should hide matching lines; got %d rows for a 4-line file\n",
+                             filteredRows);
                 failed++;
             }
-            if (filteredRows == fullDiffs) {
-                std::fprintf(stdout, "✓ Test 7: diff-only collapses to just changed rows (%d)\n",
+            if (filteredRows == filteredDiffs) {
+                std::fprintf(stdout, "✓ Test 7: default diff-only collapses to just changed rows (%d)\n",
                              filteredRows);
             }
 
-            // Untick — full view comes back with original row count.
+            // Untick — full view comes back with all 4 rows.
             diffOnly->setChecked(false);
             QApplication::processEvents();
 
-            if (widget.rowCount() != fullRows) {
-                std::fprintf(stderr, "✗ Test 7: untoggling diff-only should restore full row count; got %d (was %d)\n",
+            const int fullRows = widget.rowCount();
+            const int fullDiffs = widget.diffCount();
+            if (fullRows < 4) {
+                std::fprintf(stderr, "✗ Test 7: untoggling should restore full row count; got %d (need ≥ 4)\n",
+                             fullRows);
+                failed++;
+            }
+            if (fullDiffs != filteredDiffs) {
+                std::fprintf(stderr, "✗ Test 7: untoggling should preserve diffCount; got %d (was %d)\n",
+                             fullDiffs, filteredDiffs);
+                failed++;
+            }
+            if (fullRows >= 4 && fullDiffs == filteredDiffs) {
+                std::fprintf(stdout, "✓ Test 7: untoggling diff-only restores full view\n");
+            }
+
+            // Re-tick — back to filtered view.
+            diffOnly->setChecked(true);
+            QApplication::processEvents();
+            if (widget.rowCount() >= fullRows) {
+                std::fprintf(stderr, "✗ Test 7: re-ticking diff-only should re-collapse; got %d (was %d)\n",
                              widget.rowCount(), fullRows);
                 failed++;
             } else {
-                std::fprintf(stdout, "✓ Test 7: untoggling diff-only restores full view\n");
+                std::fprintf(stdout, "✓ Test 7: re-ticking diff-only re-collapses to changed rows\n");
             }
         }
     }

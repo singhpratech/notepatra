@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.8 MB (Linux x64 tar.gz), 25.5 MB (macOS DMG with bundled Qt), 43.5 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 48 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.41",
+      "softwareVersion": "0.1.42",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.41 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.42 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.41">
-        Download v0.1.41 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.42">
+        Download v0.1.42 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.41 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.42 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. JSON / HTML / SQL fixers — regex first, local AI as fallback. No cloud unless you opt in.</p>
 
@@ -1383,13 +1383,13 @@
         <div class="stat"><div class="stat-number"><span>100</span>+</div><div class="stat-label">File Types</div></div>
         <div class="stat"><div class="stat-number"><span>48</span></div><div class="stat-label">Language Lexers</div></div>
         <div class="stat"><div class="stat-number"><span>2</span> GB</div><div class="stat-label">Max File Size</div></div>
-        <div class="stat"><div class="stat-number"><span>17</span></div><div class="stat-label">Regression Suites</div></div>
+        <div class="stat"><div class="stat-number"><span>18</span></div><div class="stat-label">Regression Suites</div></div>
         <div class="stat"><div class="stat-number"><span>0</span></div><div class="stat-label">Electron</div></div>
     </div>
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.41</div>
+        <div class="section-label">Download v0.1.42</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1841,7 +1841,96 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.41 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.42 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-04-30</span>
+                        <span>· "Make every option actually work" release — Preferences dialog re-wired, Encoding menu re-decodes, View checkmarks sync, zoom persists, Compare polish</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>⚙️ Preferences dialog: every control now actually works</h5>
+                        <ul>
+                            <li>Audit revealed the Preferences dialog's General / Editing / Margins / Tab Settings / Auto-Completion / New Document tabs were entirely <strong>stub UI</strong> — checkboxes / radios / spinboxes constructed with hardcoded values, never read from <code style="color:var(--green);font-size:12px;">Config</code>, never written back. There wasn't even an OK / Apply button.</li>
+                            <li><strong>Every dead control is now wired</strong> — 25+ controls across 6 tabs init from Config and persist on OK / Apply: Hide toolbar, Double-click to close tab, Show close button, Font family + size + anti-alias, Caret width, Highlight current line, Word wrap, Auto-indent, Show edge column + value, Fold style, Display line numbers, Display bookmark margin, Display indent guides, Display document rulers, Show crosshair, Tab size, Use Tabs/Spaces, Auto-completion + threshold, Default EOL.</li>
+                            <li>New <strong>Font picker</strong> — finally answers "where do I change the font?" (was config-file-only).</li>
+                            <li><strong>OK / Apply / Cancel</strong> buttons replaced the previous lone "Close" (which only saved AI-tab fields).</li>
+                            <li>New <code style="color:var(--green);font-size:12px;">Editor::applyConfig()</code> — single source of truth that reads every Config field and applies it. Called by Preferences OK, by app startup, by zoom shortcuts, by the Tab Settings menu. Pre-v0.1.42, every Config field had loaders/savers but no consumer.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🔣 Encoding menu actually re-decodes / converts files now</h5>
+                        <ul>
+                            <li>Pre-v0.1.42 the menu only flipped a label — the file's bytes were never re-decoded so files showing mojibake stayed mojibake. Save always wrote UTF-8 regardless of the encoding label.</li>
+                            <li>New <strong>Reinterpret bytes as</strong> submenu — UTF-8 / UTF-8 BOM / UTF-16 LE / UTF-16 BE / Windows-1252 / ISO-8859-1. Re-reads bytes from disk via <code style="color:var(--green);font-size:12px;">QTextCodec</code> with confirmation if the buffer is dirty.</li>
+                            <li>New <strong>Convert to</strong> submenu — keeps the in-memory text but changes the save-encoding label. Next save writes bytes in the new encoding (BOM if requested).</li>
+                            <li><code style="color:var(--green);font-size:12px;">Editor::saveFile()</code> rewritten to actually use <code style="color:var(--green);font-size:12px;">QTextCodec::fromUnicode()</code> for non-UTF-8 encodings. UTF-16 LE / BE / UTF-8 BOM all produce correct bytes now.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>👁️ View menu checkmarks sync to active editor</h5>
+                        <ul>
+                            <li>Show All Characters / Show Whitespace / Show End of Line / Show Indent Guide / Word Wrap — checkmarks now reflect each option's <strong>actual</strong> state on the active editor. Pre-v0.1.42 the QActions auto-toggled but stuck across tab switches and drifted from reality.</li>
+                            <li>Toggle now propagates to <strong>all open tabs</strong>, not just the active one.</li>
+                            <li>Indent Guide + Word Wrap persist to Config and reload on next launch.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🔄 Edit → EOL Conversion + Settings → Tab Settings + Zoom — all persist now</h5>
+                        <ul>
+                            <li>Edit → EOL Conversion → Windows / Unix / Mac now flips the status-bar EOL pill (was stuck pre-v0.1.42). Powered by new <code style="color:var(--green);font-size:12px;">Editor::setEolModeByName()</code>.</li>
+                            <li>Settings → Tab Settings — Use Spaces / Use Tabs / Tab Width: 2/4/8 — now writes Config and propagates to every open editor. Pre-v0.1.42 changes affected only the active tab and reset on next launch.</li>
+                            <li>Ctrl+= / Ctrl+- / Ctrl+0 zoom shortcuts now persist <code style="color:var(--green);font-size:12px;">Config::fontSize</code> and re-apply across tabs. Pre-v0.1.42 used QScintilla's per-editor zoom which didn't persist.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>✂️ Compare polish (continuation)</h5>
+                        <ul>
+                            <li>The most common reason to compare two files is "show me what changed", not "show me the whole files." So <strong>Diff only</strong> is now ticked by default — Compare opens with matching lines hidden, only Added / Deleted / Changed rows visible. Untick the toolbar checkbox (now styled with a green border + bold text so it's immediately obvious you're in filtered mode) to see the full files.</li>
+                            <li>Original line numbers are preserved in the gutter so each diff still anchors to its real source-file line.</li>
+                            <li><strong>Edit-toggle auto-disables Diff only.</strong> Clicking <strong>Unlock Editing</strong> automatically unticks Diff only and recompares in full-files view before unlocking the panes — without this, editing while Diff only was on would have truncated the source files to just the visible changed rows.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🌙 Dark-theme Compare toolbar fixes</h5>
+                        <ul>
+                            <li>Toolbar checkbox labels (<em>Ignore spaces</em>, <em>Ignore case</em>, <em>Ignore empty lines</em>, <em>Diff only</em>) were rendering in the default Qt palette colour (black) on the dark toolbar — invisible. Now uses the same theme-aware foreground colour the editor headers use, and re-applies on theme switch.</li>
+                            <li><strong>Buttons no longer truncate.</strong> Recompare / Unlock Editing / Lock Editing / Close all switched from <code style="color:var(--green);font-size:12px;">setFixedSize</code> to <code style="color:var(--green);font-size:12px;">setMinimumSize</code> so the buttons grow to fit their text on platforms where the system font is wider than the previous fixed widths assumed.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🖱 AI Assistant dock — free manual resize on every platform</h5>
+                        <ul>
+                            <li>Removed the <code style="color:var(--green);font-size:12px;">setMaximumWidth(640)</code> cap on the AI dock. Users on Windows / macOS were hitting that limit when dragging the splitter handle to widen the chat — it presented as "manual resize doesn't work." The QSplitter parent still enforces a sane minimum on the editor pane so the dock can't take over the entire window.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🔤 Broader modern monospace-font default chain</h5>
+                        <ul>
+                            <li>The font picker now walks <strong>Geist Mono → Berkeley Mono → MonoLisa → Commit Mono → JetBrains Mono → Cascadia Code → IBM Plex Mono → Monaspace Neon → Fira Code → SF Mono → Menlo → Consolas → DejaVu Sans Mono → Liberation Mono → Noto Sans Mono → Cousine</strong>. Uses the first one installed on the user's system.</li>
+                            <li>UI font picker now lives in Preferences → Editing → Font (v0.1.42); also overridable via <code style="color:var(--green);font-size:12px;">Config::fontFamily</code> in <code style="color:var(--green);font-size:12px;">~/.config/notepatra/config.json</code>.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧪 18 / 18 regression suites green — including the new "options actually work" suite</h5>
+                        <ul>
+                            <li>New <code style="color:var(--green);font-size:12px;">test_options_actually_work</code> — 49 assertions that programmatically toggle every Preferences control + every dynamic menu QAction and verify the editor / Config actually changes. This is the suite that would have caught the v0.1.41 stub-Preferences regression. Future stubbing fails here.</li>
+                            <li>Test 4 + Test 7 in <code style="color:var(--green);font-size:12px;">test_compare_widget</code> reworked for the new Diff-only default.</li>
+                            <li>All other tests unchanged and still pass.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.42">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.42">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.41</div>
                     <div class="version-meta">
                         <span>2026-04-30</span>
                         <span>· "Diff only" toggle — hide matching lines in Compare with one click</span>

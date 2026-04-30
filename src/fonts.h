@@ -33,20 +33,35 @@ inline QString notepatraDefaultUiFamily() {
 }
 
 inline QString notepatraDefaultCodeFamily() {
+    // v0.1.42 — broadened the curated monospace chain. The picker walks
+    // this list top-down and uses the first one installed on the user's
+    // system. To override, set Config::fontFamily in
+    // ~/.config/notepatra/config.json (UI font picker arrives in v0.1.43).
+    //
+    // Order: hand-tuned. Modern proportional-ligature designer fonts
+    // first (Geist / Berkeley / MonoLisa / Commit Mono / JetBrains /
+    // Cascadia / Monaspace / IBM Plex), then platform-native classics
+    // (SF Mono / Menlo / Consolas), then the always-available Linux
+    // distro defaults (DejaVu / Liberation / Noto Sans Mono / Cousine).
     const QString family = notepatraFirstAvailableFamily({
-        "JetBrains Mono",
-        "Cascadia Code",
-        "IBM Plex Mono",
-        "Monaspace Neon",
+        "Geist Mono",          // Vercel, 2024 — modern, very readable
+        "Berkeley Mono",       // Berkeley Graphics — premium, popular w/ devs
+        "MonoLisa",            // monolisa.dev — paid but very common
+        "Commit Mono",         // commitmono.com — free, neutral, modern
+        "JetBrains Mono",      // JetBrains — bundled with their IDEs
+        "Cascadia Code",       // Microsoft — Windows Terminal default
+        "IBM Plex Mono",       // IBM — well-tested across platforms
+        "Monaspace Neon",      // GitHub Next — texture-healing variants
         "Monaspace Krypton",
-        "Input Mono",
-        "SF Mono",
-        "Menlo",
-        "DejaVu Sans Mono",
-        "Liberation Mono",
-        "Noto Sans Mono",
-        "Cousine",
-        "Consolas"
+        "Input Mono",          // input.djr.com
+        "Fira Code",           // Mozilla, ligatures
+        "SF Mono",             // Apple system mono (macOS)
+        "Menlo",               // macOS classic
+        "Consolas",            // Windows classic
+        "DejaVu Sans Mono",    // Linux/Debian default
+        "Liberation Mono",     // Red Hat / Fedora default
+        "Noto Sans Mono",      // Google fallback
+        "Cousine"              // Chromebook / Croscoreboard default
     });
     return family.isEmpty() ? QStringLiteral("Monospace") : family;
 }
@@ -93,9 +108,11 @@ inline QString notepatraUiCssFamily() {
 }
 
 inline QString notepatraCodeCssFamily() {
-    return "\"JetBrains Mono\", \"Cascadia Code\", \"IBM Plex Mono\", \"SF Mono\", "
-           "\"Menlo\", \"DejaVu Sans Mono\", \"Liberation Mono\", \"Noto Sans Mono\", "
-           "\"Cousine\", \"Consolas\", " NOTEPATRA_EMOJI_FALLBACK ", monospace";
+    return "\"Geist Mono\", \"Berkeley Mono\", \"MonoLisa\", \"Commit Mono\", "
+           "\"JetBrains Mono\", \"Cascadia Code\", \"IBM Plex Mono\", "
+           "\"Monaspace Neon\", \"Fira Code\", \"SF Mono\", \"Menlo\", "
+           "\"Consolas\", \"DejaVu Sans Mono\", \"Liberation Mono\", "
+           "\"Noto Sans Mono\", \"Cousine\", " NOTEPATRA_EMOJI_FALLBACK ", monospace";
 }
 
 #endif

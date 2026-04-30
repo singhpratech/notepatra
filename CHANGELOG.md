@@ -7,6 +7,180 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.42] — 2026-04-30
+
+User-flagged fix bundle right after v0.1.41 — five small things that
+add up to a noticeable polish pass.
+
+### Changed
+- ✂️ **Diff only is now the DEFAULT** in Compare. The most common reason to compare two files is "show me what changed", not "show me the whole files." Users who want full files (e.g. for context around a single edit) untick the prominent **Diff only** checkbox in the toolbar — now styled with a green border + bold text so it's immediately obvious you're in filtered mode.
+- 🩹 **Edit-toggle auto-disables Diff only.** Clicking **Unlock Editing** in Compare automatically unticks Diff only and recompares in full-files view first, then unlocks the panes. Re-locking re-runs the diff with whatever full-text edits you made. Without this, editing while Diff only was active would have truncated the source files to just the visible (changed) rows.
+
+### Fixed
+- 🌙 **Dark-theme Compare toolbar checkboxes.** "Ignore spaces" / "Ignore case" / "Ignore empty lines" / "Diff only" labels were rendering in the default Qt palette colour (black) on the dark toolbar — invisible. Now uses `comparePalette().headerFg` (the same theme-aware foreground colour the editor headers use) and re-applies on theme switch.
+- 📏 **Compare toolbar buttons no longer truncate.** Recompare / Unlock Editing / Lock Editing / Close all switched from `setFixedSize` to `setMinimumSize` so the buttons grow to fit their text on platforms where the system font is wider than the previous fixed widths assumed (Windows + Linux were truncating "Recompare" and "Unlock Editing"). Added 12 px padding for visual breathing room.
+- 🖱 **AI Assistant dock manual-resize on Windows / macOS.** Removed the `setMaximumWidth(640)` cap on the AI dock host widget. The QSplitter parent still enforces a sane minimum on the editor pane so dragging too far is naturally bounded; users on wide screens can now widen the AI chat past 640 px (which presented as "manual resize doesn't work" on Windows because the splitter handle would refuse to widen the dock further).
+
+### Added
+- 🔤 **Broader modern monospace-font default chain** in `src/fonts.h`. The picker now walks: Geist Mono → Berkeley Mono → MonoLisa → Commit Mono → JetBrains Mono → Cascadia Code → IBM Plex Mono → Monaspace Neon → Fira Code → SF Mono → Menlo → Consolas → DejaVu Sans Mono → Liberation Mono → Noto Sans Mono → Cousine — uses the first one installed on the user's system. Override via `Config::fontFamily` in `~/.config/notepatra/config.json` (UI font picker arrives in v0.1.43).
+
+### Tests
+- `test_compare_widget` updated for the new Diff-only-default behaviour. Test 4 (changed-row markers) now ticks Diff only OFF first since it asserts on a specific editor line number in the full-files view. Test 7 reworded for the new default + verifies edit-toggle auto-disables Diff only correctly.
+- 17/17 ctest suites green on Linux baseline.
+
+### Files changed
+```
+MODIFIED:
+  src/compare.cpp        — Diff only default ON + prominent styling;
+                            auto-disable on edit unlock; theme-aware
+                            checkbox label colours; buttons grow to fit
+  src/compare.h          — (no change vs v0.1.41 — m_diffOnly already
+                            declared)
+  src/fonts.h            — broadened monospace font default chain
+  src/mainwindow.cpp     — removed AI dock setMaximumWidth(640)
+  test_compare_widget.cpp— Test 4 + Test 7 updated for new default
+  CMakeLists.txt         — VERSION 0.1.41 → 0.1.42
+  CHANGELOG.md           — [0.1.42] entry
+  README.md              — v0.1.42 row in releases table
+  docs/index.html        — v0.1.42 LATEST card; v0.1.41 demoted
+```
+
+---
+
+## [0.1.42] — 2026-04-30
+
+The "make every option actually work" release. Audit revealed the Preferences dialog's General / Editing / Margins / Tab Settings / Auto-Completion / New Document tabs were entirely **stub UI** — checkboxes / radios / spinboxes constructed with hardcoded values, never read from `Config`, never written back. There wasn't even an OK/Apply button. v0.1.42 fixes every dead control across the entire app.
+
+### Fixed — every Preferences-dialog control now reads + writes Config (16 stubs)
+
+**General tab**
+- "Hide toolbar" → wired to new `Config::hideToolbar`; toggles the actual feature toolbar.
+- "Double-click to close tab" → new `Config::doubleClickToCloseTab`.
+- "Show close button on each tab" → wired to `Config::tabsClosable`; calls `m_tabs->setTabsClosable()`.
+- "Show Welcome tab on startup" → was already in Config but no UI; now exposed.
+
+**Editing tab**
+- New **Font picker** (`QFontComboBox` + size spinbox) — finally answers the "where do I change the font?" question. Defaults to monospaced fonts; toggle "Show all fonts" to expand.
+- "Anti-aliased (smooth) font rendering" → new `Config::smoothFont`; sets `QFont::PreferAntialias` vs `NoAntialias`.
+- Caret width spinbox → `Config::caretWidth` (was hardcoded `setCaretWidth(2)`).
+- "Highlight current line" → `Config::highlightCurrentLine` (was hardcoded `setCaretLineVisible(true)`).
+- "Word wrap" → `Config::wordWrap` (was loaded but never applied).
+- "Auto-indent" → `Config::autoIndent` (was loaded but never applied).
+- "Show vertical line at column" + column spinbox → `Config::showEdge` + `Config::edgeColumn` (loaded but `EdgeNone` was hardcoded).
+
+**Margins tab**
+- Fold style combo → new `Config::foldStyle` (BoxedTree / CircleTree / Plain / Boxed / Circle / None). Was hardcoded `BoxedTreeFoldStyle`.
+- "Display line numbers" → `Config::showLineNumbers` (loaded but never applied).
+- "Display bookmark margin" → new `Config::showBookmarkMargin`.
+- "Display indent guides" → `Config::showIndentGuides` (loaded but never applied).
+- "Display document rulers" → existing `Config::showDocumentRulers`, now exposed in Preferences.
+- "Show crosshair overlay" → existing `Config::showCrosshair`, now exposed.
+
+**Tab Settings tab**
+- Tab size spinbox → `Config::tabWidth` (was hardcoded `setTabWidth(4)`).
+- "Replace tabs with spaces" / "Use tab character" radios — now in a `QButtonGroup`, init from `Config::useTabs`, save on OK.
+
+**Auto-Completion tab**
+- "Enable auto-completion" + threshold spinbox → both wired to `Config::autoComplete` / `Config::autoCompleteThreshold` (the dialog never read or wrote them; the values shown were defaults frozen at compile time).
+
+**New Document tab**
+- EOL radios (Windows CR LF / Unix LF / Macintosh CR) — now in a `QButtonGroup`, persist new `Config::defaultEol`. Fresh editors apply the chosen EOL via `Editor::applyConfig()`.
+
+**OK / Apply / Cancel buttons** — replaced the previous lone "Close" button (which only saved AI tab fields). Apply pushes Config + emits `settingsApplied()`; OK does the same and closes; Cancel discards.
+
+### Fixed — Encoding menu now actually re-decodes / converts (5 broken items)
+
+- New `Editor::reloadWithEncoding(name)` — re-reads file bytes from disk and decodes through the right `QTextCodec` (UTF-8, UTF-8 BOM, UTF-16 LE / BE, Windows-1252, ISO-8859-1). Pre-v0.1.42 the menu only flipped a label; the bytes were never re-decoded so files with mojibake stayed mojibake.
+- New `Editor::convertEncoding(name)` — keeps the in-memory text but changes the save-encoding label so the next `saveFile()` writes bytes in the new encoding (with BOM if requested).
+- `Editor::saveFile()` rewritten to actually honour `m_encoding` via `QTextCodec::fromUnicode()` (UTF-16 LE / BE / UTF-8 BOM / Windows-1252 / ISO-8859-1 all produce correct bytes). Pre-v0.1.42 every save wrote UTF-8 regardless of the encoding label.
+- Encoding menu split into two submenus:
+  - **Reinterpret bytes as** — re-decodes from disk (with confirmation if buffer dirty).
+  - **Convert to** — keeps text, changes save format.
+
+### Fixed — View menu checkmarks now sync to active editor (4 broken items)
+
+- "Show All Characters" / "Show Whitespace and TAB" / "Show End of Line" / "Show Indent Guide" / "Word Wrap" — checkmarks now reflect the **actual** state of each option on the active editor. On tab switch, `syncViewMenuToActiveEditor()` pulls real state from each editor and updates the checkmarks. Pre-v0.1.42, the QActions auto-toggled but stuck across tab switches and drifted from reality.
+- Toggle now propagates to **all open tabs** (not just the active one).
+- "Show Indent Guide" + "Word Wrap" persist to Config and reload at next launch.
+
+### Fixed — EOL conversion menu updates status bar (1 broken item)
+
+- New `Editor::setEolModeByName(name, convert)` — sets `QsciScintilla::EolMode` AND `Editor::m_eolName` AND emits `eolModeChanged` signal. Edit → EOL Conversion → Windows / Unix / Mac now flips the status-bar EOL pill (was stuck pre-v0.1.42).
+
+### Fixed — Settings → Tab Settings + Zoom shortcuts persist (4 holes)
+
+- Settings → Tab Settings → Use Spaces / Use Tabs / Tab Width: 2/4/8 — now writes Config and propagates to every open editor via `applyConfigEverywhere()`. Pre-v0.1.42 changes affected only the active tab and reset on next launch.
+- Ctrl+= / Ctrl+- / Ctrl+0 — zoom shortcuts now write `Config::fontSize` and re-apply across tabs. Pre-v0.1.42 they used QScintilla's per-editor `zoomIn()` which didn't persist.
+
+### Added — `Editor::applyConfig()` single source of truth
+
+Replaces hardcoded values in `setupEditor()` with one method that reads every relevant `Config` field and applies it. Called by:
+- `Editor` constructor (via `setupEditor`)
+- `MainWindow::applyConfigEverywhere()` after Preferences OK/Apply
+- Zoom shortcuts
+- Tab Settings menu
+- Indirectly on app startup so Config from previous session takes effect
+
+This is the wire that pre-v0.1.42 was missing — every Config field had loaders/savers but no consumer.
+
+### Added — broader monospace font default chain (`src/fonts.h`)
+
+The font picker now walks: **Geist Mono → Berkeley Mono → MonoLisa → Commit Mono → JetBrains Mono → Cascadia Code → IBM Plex Mono → Monaspace Neon → Fira Code → SF Mono → Menlo → Consolas → DejaVu Sans Mono → Liberation Mono → Noto Sans Mono → Cousine**. Picks the first one installed.
+
+### Added — Compare polish (continuation of v0.1.41)
+
+- **Diff only is now the default** in Compare. Most users want "show me what changed", not "show me the whole files". Untick the prominent green-bordered checkbox to see full files.
+- **Edit-toggle auto-disables Diff only.** Clicking Unlock Editing in Compare now first unticks Diff only and recompares in full-files view (so editing has the full context). Re-locking re-runs the diff.
+- **Dark-theme Compare toolbar fixes.** Checkbox labels were rendering in default Qt black on the dark toolbar — invisible. Now use `comparePalette().headerFg` (theme-aware).
+- **Compare toolbar buttons** (Recompare / Unlock Editing / Lock Editing / Close) switched from `setFixedSize` to `setMinimumSize` so the text isn't truncated on platforms where the system font is wider than the previous fixed widths.
+- **AI Assistant dock — free manual resize.** Removed `setMaximumWidth(640)` cap. Users on Windows / macOS were hitting that limit when dragging the splitter — presented as "manual resize doesn't work."
+
+### Tests — `test_options_actually_work` (NEW, 49 assertions)
+
+This is the test suite that would have caught the v0.1.41 stub-Preferences regression and will catch any future re-stubbing. Programmatically:
+
+- Sets each Config field, calls `Editor::applyConfig()`, asserts the editor's actual state changed (caret width, line-highlight, wrap mode, tab width, indentation, edge mode, auto-completion threshold, default EOL).
+- Constructs a `PreferencesDialog`, finds every checkbox / radio by visible label, toggles it, clicks OK, asserts `Config::<field>` flipped.
+- Verifies Cancel does NOT save.
+- Verifies `setEncoding`, `convertEncoding`, `setEolModeByName`, `zoomInPersistent` / `zoomOutPersistent` / `zoomResetPersistent` all behave correctly.
+
+**18/18 ctest suites green** on Linux (was 17 — `test_options_actually_work` is new). All previously existing tests untouched and still passing.
+
+### Files changed
+```
+NEW:
+  test_options_actually_work.cpp — 49-assertion integration test
+
+MODIFIED:
+  src/config.h           — 7 new Config fields (hideToolbar, tabsClosable,
+                           doubleClickToCloseTab, smoothFont, foldStyle,
+                           showBookmarkMargin, defaultEol) + load/save
+  src/editor.h / .cpp    — applyConfig(), setEncoding(), reloadWithEncoding(),
+                           convertEncoding(), setEolModeByName(),
+                           zoomInPersistent / zoomOutPersistent /
+                           zoomResetPersistent; saveFile() rewritten to
+                           use QTextCodec for non-UTF-8 encodings
+  src/preferences.h/.cpp — full rewrite; 25+ controls now wired to Config
+                           with OK/Apply/Cancel and settingsApplied() signal
+  src/mainwindow.h /.cpp — applyConfigEverywhere(), syncViewMenuToActiveEditor();
+                           Encoding menu re-decodes via QTextCodec; View
+                           menu QActions persist + propagate to all tabs;
+                           EOL conversion updates status bar; Tab Settings
+                           menu writes Config; zoom shortcuts persist;
+                           Preferences dialog constructor connects
+                           settingsApplied → applyConfigEverywhere
+  src/compare.cpp / .h   — Diff only default ON + prominent styling;
+                           edit-toggle auto-disables Diff only;
+                           theme-aware checkbox label colours; buttons
+                           grow to fit (fixed → minimum sizes)
+  src/fonts.h            — broadened monospace font default chain
+  CMakeLists.txt         — VERSION 0.1.41 → 0.1.42; new test target
+  test_compare_widget.cpp— Test 4 + Test 7 reworked for Diff-only default
+  CHANGELOG.md           — [0.1.42] entry (this)
+```
+
+---
+
 ## [0.1.41] — 2026-04-30
 
 The "Diff only" toggle release. User asked for a one-click way to hide matching lines in Compare so only the differences remain visible — the existing full-files view still works exactly the same; the new toggle just adds a filtered view alongside it.

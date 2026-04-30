@@ -109,6 +109,7 @@
 #define HAS_LEXER_SREC
 #endif
 
+#include <QFile>
 #include <QFont>
 #include <QColor>
 #include <QFileInfo>
@@ -118,6 +119,7 @@
 #include <QPainter>
 #include <QResizeEvent>
 #include <QScrollBar>
+#include <QTextCodec>
 #include <QToolTip>
 #include "gitgutter.h"
 
@@ -335,29 +337,22 @@ Editor::Editor(QWidget *parent) : QsciScintilla(parent) {
 }
 
 void Editor::setupEditor() {
-    QFont font = notepatraCodeFont();
-    setFont(font);
-    setMarginsFont(font);
+    // v0.1.42 — every Config-controlled value is consumed by applyConfig().
+    // setupEditor() now sets only the bits that don't have a Config knob
+    // (brace-match colours, sticky-scroll, paper colour). Everything else
+    // is applied through applyConfig() so the user's Preferences dialog
+    // changes propagate via a single code path.
     setUtf8(true);
-    setCaretLineVisible(true);
+
     setCaretLineBackgroundColor(QColor("#E8F5E9"));  // pastel green
-    setCaretWidth(2);
 
     // Explicit colors — black text on white background
     setPaper(QColor("#FFFFFF"));
     setColor(QColor("#000000"));
     setMarginsBackgroundColor(QColor("#E4E4E4"));
     setMarginsForegroundColor(QColor("#2B91AF"));
-    setEdgeMode(QsciScintilla::EdgeNone);
-    setEdgeColumn(120);
-    setWrapMode(QsciScintilla::WrapNone);
     setWhitespaceVisibility(QsciScintilla::WsInvisible);
     setEolVisibility(false);
-    setEolMode(QsciScintilla::EolUnix);
-    setIndentationsUseTabs(false);
-    setTabWidth(4);
-    setIndentationGuides(true);
-    setAutoIndent(true);
     setBackspaceUnindents(true);
     setTabIndents(true);
     setBraceMatching(QsciScintilla::StrictBraceMatch);
@@ -372,12 +367,189 @@ void Editor::setupEditor() {
     SendScintilla(SCI_SETSCROLLWIDTH, 1);
     SendScintilla(SCI_SETSCROLLWIDTHTRACKING, 1);
 
-    const auto &cfg = Config::instance();
-    setAutoCompletionSource(cfg.autoComplete ? QsciScintilla::AcsAll : QsciScintilla::AcsNone);
-    setAutoCompletionThreshold(cfg.autoComplete ? qMax(1, cfg.autoCompleteThreshold) : -1);
     setAutoCompletionCaseSensitivity(false);
     setAutoCompletionReplaceWord(true);
-    setFolding(QsciScintilla::BoxedTreeFoldStyle, 2);
+
+    // Apply every Config-controlled setting. Single source of truth.
+    applyConfig();
+}
+
+// v0.1.42 — applyConfig() reads every Config field that affects the
+// editor and applies it. Called by setupEditor() at construction, by
+// the Preferences dialog after OK, and by anything else that mutates
+// Config and needs to push the change to all open editors.
+void Editor::applyConfig() {
+    const auto &cfg = Config::instance();
+
+    // Font (family + size)
+    QFont font = notepatraCodeFont(cfg.fontSize > 0 ? cfg.fontSize : 11);
+    if (cfg.smoothFont) font.setStyleStrategy(QFont::PreferAntialias);
+    else                font.setStyleStrategy(QFont::NoAntialias);
+    setFont(font);
+    setMarginsFont(font);
+
+    // Caret
+    setCaretWidth(qBound(1, cfg.caretWidth, 3));
+    setCaretLineVisible(cfg.highlightCurrentLine);
+
+    // Tabs / indentation
+    setIndentationsUseTabs(cfg.useTabs);
+    setTabWidth(qMax(1, cfg.tabWidth));
+    setIndentationGuides(cfg.showIndentGuides);
+    setAutoIndent(cfg.autoIndent);
+
+    // Wrap
+    setWrapMode(cfg.wordWrap ? QsciScintilla::WrapWord : QsciScintilla::WrapNone);
+
+    // Edge column ruler
+    if (cfg.showEdge) {
+        setEdgeMode(QsciScintilla::EdgeLine);
+        setEdgeColumn(qMax(1, cfg.edgeColumn));
+    } else {
+        setEdgeMode(QsciScintilla::EdgeNone);
+    }
+
+    // Line-number margin
+    setMarginLineNumbers(0, cfg.showLineNumbers);
+    if (!cfg.showLineNumbers) setMarginWidth(0, 0);
+    // (the actual margin width is computed by setupMargins() based on
+    // line count; we just disable the lexer call when hidden)
+
+    // Auto-completion
+    setAutoCompletionSource(cfg.autoComplete ? QsciScintilla::AcsAll
+                                              : QsciScintilla::AcsNone);
+    setAutoCompletionThreshold(cfg.autoComplete
+                                  ? qMax(1, cfg.autoCompleteThreshold) : -1);
+
+    // Fold style
+    QsciScintilla::FoldStyle fs = QsciScintilla::BoxedTreeFoldStyle;
+    if (cfg.foldStyle == "CircleTree")  fs = QsciScintilla::CircledTreeFoldStyle;
+    else if (cfg.foldStyle == "Plain")  fs = QsciScintilla::PlainFoldStyle;
+    else if (cfg.foldStyle == "Boxed")  fs = QsciScintilla::BoxedFoldStyle;
+    else if (cfg.foldStyle == "Circle") fs = QsciScintilla::CircledFoldStyle;
+    else if (cfg.foldStyle == "None")   fs = QsciScintilla::NoFoldStyle;
+    setFolding(fs, 2);
+
+    // Default EOL for new documents — only applied when this editor has
+    // no file path yet (i.e. it's a fresh "Untitled" buffer). Applying
+    // it to a loaded file would silently change CRLF/LF/CR which the
+    // user explicitly opened.
+    if (m_filePath.isEmpty()) {
+        if      (cfg.defaultEol == "Windows") { setEolMode(QsciScintilla::EolWindows); m_eolName = "Windows (CR LF)"; }
+        else if (cfg.defaultEol == "Mac")     { setEolMode(QsciScintilla::EolMac);     m_eolName = "Macintosh (CR)"; }
+        else                                  { setEolMode(QsciScintilla::EolUnix);    m_eolName = "Unix (LF)"; }
+        emit eolModeChanged(m_eolName);
+    }
+
+    // Document rulers + crosshair (already had Config-driven setters)
+    setDocumentRulersVisible(cfg.showDocumentRulers);
+    setCrosshairVisible(cfg.showCrosshair);
+}
+
+// v0.1.42 — encoding API.
+void Editor::setEncoding(const QString &name) {
+    if (m_encoding == name) return;
+    m_encoding = name;
+    emit encodingChanged(m_encoding);
+}
+
+void Editor::convertEncoding(const QString &name) {
+    // Keep the current QString text in memory (Qt strings are unicode);
+    // only the LABEL changes. Next saveFile() writes bytes in the new
+    // encoding. Marks the buffer dirty so the user is prompted to save.
+    if (m_encoding == name) return;
+    m_encoding = name;
+    setModified(true);
+    emit encodingChanged(m_encoding);
+}
+
+bool Editor::reloadWithEncoding(const QString &name, bool force) {
+    if (m_filePath.isEmpty()) {
+        // No file on disk to re-read from. Treat like convertEncoding.
+        convertEncoding(name);
+        return true;
+    }
+    if (isModified() && !force) return false;
+
+    // Read raw bytes from disk and decode with the user's chosen codec.
+    QFile f(m_filePath);
+    if (!f.open(QIODevice::ReadOnly)) return false;
+    QByteArray bytes = f.readAll();
+    f.close();
+
+    QString decoded;
+    bool addBom = false;
+    if (name.compare("UTF-8 BOM", Qt::CaseInsensitive) == 0 ||
+        name.compare("UTF-8-BOM", Qt::CaseInsensitive) == 0) {
+        // Strip BOM if present, decode the rest as UTF-8.
+        if (bytes.startsWith(QByteArray::fromHex("EFBBBF")))
+            bytes.remove(0, 3);
+        decoded = QString::fromUtf8(bytes);
+        addBom = true;
+    } else if (name.compare("UTF-8", Qt::CaseInsensitive) == 0) {
+        if (bytes.startsWith(QByteArray::fromHex("EFBBBF")))
+            bytes.remove(0, 3);
+        decoded = QString::fromUtf8(bytes);
+    } else {
+        QTextCodec *codec = QTextCodec::codecForName(name.toUtf8());
+        if (!codec) {
+            // Common-name aliases to canonical Qt codec names.
+            const QString lower = name.toLower();
+            if (lower.contains("utf-16 le") || lower == "utf-16le")
+                codec = QTextCodec::codecForName("UTF-16LE");
+            else if (lower.contains("utf-16 be") || lower == "utf-16be")
+                codec = QTextCodec::codecForName("UTF-16BE");
+            else if (lower.contains("ansi") || lower.contains("windows-1252"))
+                codec = QTextCodec::codecForName("Windows-1252");
+            else if (lower.contains("iso-8859-1") || lower.contains("latin-1"))
+                codec = QTextCodec::codecForName("ISO 8859-1");
+        }
+        if (!codec) return false;
+        decoded = codec->toUnicode(bytes);
+    }
+
+    setText(decoded);
+    setModified(false);
+    m_encoding = addBom ? QStringLiteral("UTF-8 BOM") : name;
+    emit encodingChanged(m_encoding);
+    return true;
+}
+
+// v0.1.42 — set EOL by friendly name. Optionally converts existing text.
+void Editor::setEolModeByName(const QString &name, bool convertExisting) {
+    QsciScintilla::EolMode mode = QsciScintilla::EolUnix;
+    QString display = "Unix (LF)";
+    if (name.contains("Windows") || name.contains("CRLF") || name.contains("CR LF")) {
+        mode = QsciScintilla::EolWindows; display = "Windows (CR LF)";
+    } else if (name.contains("Mac") || (name.contains("CR") && !name.contains("LF"))) {
+        mode = QsciScintilla::EolMac; display = "Macintosh (CR)";
+    }
+    setEolMode(mode);
+    if (convertExisting) convertEols(mode);
+    if (m_eolName != display) {
+        m_eolName = display;
+        emit eolModeChanged(m_eolName);
+    }
+}
+
+// v0.1.42 — zoom that persists to Config.
+void Editor::zoomInPersistent() {
+    auto &cfg = Config::instance();
+    cfg.fontSize = qBound(6, cfg.fontSize + 1, 48);
+    cfg.save();
+    applyConfig();
+}
+void Editor::zoomOutPersistent() {
+    auto &cfg = Config::instance();
+    cfg.fontSize = qBound(6, cfg.fontSize - 1, 48);
+    cfg.save();
+    applyConfig();
+}
+void Editor::zoomResetPersistent() {
+    auto &cfg = Config::instance();
+    cfg.fontSize = 11;
+    cfg.save();
+    applyConfig();
 }
 
 int Editor::horizontalPixelOffset() const {
@@ -512,12 +684,59 @@ bool Editor::saveFile(const QString &path) {
     QString savePath = path.isEmpty() ? m_filePath : path;
     if (savePath.isEmpty()) return false;
 
-    bool ok = RustCore::saveFile(savePath, text(), m_encoding);
-    if (ok) {
-        m_filePath = savePath;
-        setModified(false);
+    // v0.1.42 — actually honour m_encoding when writing the file. Pre-
+    // v0.1.42, the Encoding menu set a label on the editor but saveFile
+    // only ever wrote UTF-8 bytes (RustCore::saveFile path was UTF-8-
+    // centric). Now we encode the QString through the right QTextCodec
+    // for the chosen encoding and write the bytes directly via QFile.
+    // BOM bytes are prepended for UTF-8 BOM / UTF-16 LE / UTF-16 BE.
+    const QString textOut = text();
+    QByteArray bytes;
+    const QString enc = m_encoding;
+
+    if (enc.compare("UTF-8 BOM", Qt::CaseInsensitive) == 0 ||
+        enc.compare("UTF-8-BOM", Qt::CaseInsensitive) == 0) {
+        bytes = QByteArray::fromHex("EFBBBF");
+        bytes += textOut.toUtf8();
+    } else if (enc.compare("UTF-8", Qt::CaseInsensitive) == 0 || enc.isEmpty()) {
+        bytes = textOut.toUtf8();
+    } else {
+        // Pick the right codec by name, with friendly aliases.
+        QTextCodec *codec = QTextCodec::codecForName(enc.toUtf8());
+        if (!codec) {
+            const QString lower = enc.toLower();
+            if (lower.contains("utf-16 le") || lower == "utf-16le")
+                codec = QTextCodec::codecForName("UTF-16LE");
+            else if (lower.contains("utf-16 be") || lower == "utf-16be")
+                codec = QTextCodec::codecForName("UTF-16BE");
+            else if (lower.contains("utf-16"))
+                codec = QTextCodec::codecForName("UTF-16");
+            else if (lower.contains("ansi") || lower.contains("windows-1252"))
+                codec = QTextCodec::codecForName("Windows-1252");
+            else if (lower.contains("iso-8859-1") || lower.contains("latin-1"))
+                codec = QTextCodec::codecForName("ISO 8859-1");
+        }
+        if (!codec) {
+            QMessageBox::warning(this, "Unknown encoding",
+                QString("Could not find a codec for %1. Falling back to UTF-8.").arg(enc));
+            bytes = textOut.toUtf8();
+        } else {
+            // QTextCodec::fromUnicode emits a BOM for UTF-16 by default.
+            bytes = codec->fromUnicode(textOut);
+        }
     }
-    return ok;
+
+    QFile f(savePath);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return false;
+    }
+    qint64 wrote = f.write(bytes);
+    f.close();
+    if (wrote != bytes.size()) return false;
+
+    m_filePath = savePath;
+    setModified(false);
+    return true;
 }
 
 void Editor::setLanguage(const QString &lang) {

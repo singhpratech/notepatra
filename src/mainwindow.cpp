@@ -720,7 +720,13 @@ MainWindow::MainWindow() {
     // AI Assistant — identical functionality, different surface.
     m_aiDockHost = new QWidget;
     m_aiDockHost->setMinimumWidth(320);
-    m_aiDockHost->setMaximumWidth(640);
+    // v0.1.42 — removed setMaximumWidth(640). The hard 640 cap stopped
+    // users from dragging the QSplitter handle past that width on
+    // Windows + macOS, where it presented as "manual resize doesn't
+    // work" (the splitter would refuse to widen the dock further).
+    // The QSplitter parent still enforces a sane minimum on the editor
+    // pane, so removing the max here just lets users size the chat as
+    // wide as their screen allows.
     auto *aiDockLayout = new QVBoxLayout(m_aiDockHost);
     aiDockLayout->setContentsMargins(0, 0, 0, 0);
     aiDockLayout->setSpacing(0);
@@ -787,6 +793,11 @@ MainWindow::MainWindow() {
         }
         updateTitle();
         updateStatusBar();
+        // v0.1.42 — refresh View menu checkmarks to mirror the new
+        // active editor's actual state (whitespace / EOL / wrap /
+        // indent guide). Pre-v0.1.42 these stuck on whatever the
+        // previously-active tab happened to be in.
+        syncViewMenuToActiveEditor();
     });
     connect(m_tabs, &TabManager::tabContextNew, this, [this]() { newFile(); });
     connect(m_tabs, &TabManager::tabContextClose, this, [this](int idx) { closeTab(idx); });
@@ -847,6 +858,12 @@ MainWindow::MainWindow() {
     buildMenus();
     buildToolbar();
     setupShortcuts();
+
+    // v0.1.42 — propagate Config to every editor + chrome at startup so
+    // settings the user persisted in a previous session actually take
+    // effect (font, tab width, word wrap, etc.). Pre-v0.1.42 these
+    // were loaded into Config but never read by any code path.
+    applyConfigEverywhere();
 
     // ── Status-bar click-through ──
     // Click the language / encoding / EOL indicators to open the
@@ -1366,15 +1383,19 @@ void MainWindow::buildMenus() {
     });
 
     // EOL conversion
+    // v0.1.42 — uses Editor::setEolModeByName so the status-bar EOL pill
+    // refreshes via the eolModeChanged signal (was stuck on the original
+    // EOL after conversion pre-v0.1.42 because the menu only updated
+    // QsciScintilla but not Editor::m_eolName).
     auto *eolMenu = edit->addMenu("EOL Conversion");
-    eolMenu->addAction("Windows (CR LF)", this, [E]() {
-        if (auto *e = E()) { e->setEolMode(QsciScintilla::EolWindows); e->convertEols(e->eolMode()); }
+    eolMenu->addAction("Windows (CR LF)", this, [this, E]() {
+        if (auto *e = E()) { e->setEolModeByName("Windows (CR LF)", true); m_statusBar->updateEol("Windows (CR LF)"); }
     });
-    eolMenu->addAction("Unix (LF)", this, [E]() {
-        if (auto *e = E()) { e->setEolMode(QsciScintilla::EolUnix); e->convertEols(e->eolMode()); }
+    eolMenu->addAction("Unix (LF)", this, [this, E]() {
+        if (auto *e = E()) { e->setEolModeByName("Unix (LF)", true); m_statusBar->updateEol("Unix (LF)"); }
     });
-    eolMenu->addAction("Macintosh (CR)", this, [E]() {
-        if (auto *e = E()) { e->setEolMode(QsciScintilla::EolMac); e->convertEols(e->eolMode()); }
+    eolMenu->addAction("Macintosh (CR)", this, [this, E]() {
+        if (auto *e = E()) { e->setEolModeByName("Macintosh (CR)", true); m_statusBar->updateEol("Macintosh (CR)"); }
     });
 
     // ── Insert Date / Time (Notepad++ parity) ──
@@ -1467,28 +1488,92 @@ void MainWindow::buildMenus() {
     }, QKeySequence("F11"));
     view->addSeparator();
 
+    // v0.1.42 — every View toggle now: (1) actually applies to the editor,
+    // (2) reflects the editor's TRUE state via setChecked, (3) persists
+    // its sticky-state config field, (4) propagates to all open tabs.
+    // QActions are tagged with objectName so syncViewMenuToActiveEditor()
+    // can refresh them on tab switch.
     auto *symMenu = view->addMenu("Show Symbol");
-    symMenu->addAction("Show All Characters", this, [E]() {
-        if (auto *e = E()) { e->toggleWhitespace(); e->toggleEol(); }
-    })->setCheckable(true);
+    auto *actShowAll = symMenu->addAction("Show All Characters");
+    actShowAll->setObjectName("viewShowAllCharacters");
+    actShowAll->setCheckable(true);
+    QObject::connect(actShowAll, &QAction::toggled, this, [this](bool on) {
+        for (int i = 0; i < m_tabs->count(); ++i) {
+            if (auto *e = m_tabs->editorAt(i)) {
+                e->setWhitespaceVisibility(on ? QsciScintilla::WsVisible
+                                              : QsciScintilla::WsInvisible);
+                e->setEolVisibility(on);
+            }
+        }
+    });
     symMenu->addSeparator();
-    symMenu->addAction("Show Whitespace and TAB", this, [E]() {
-        if (auto *e = E()) e->toggleWhitespace();
-    })->setCheckable(true);
-    symMenu->addAction("Show End of Line", this, [E]() {
-        if (auto *e = E()) e->toggleEol();
-    })->setCheckable(true);
-    symMenu->addAction("Show Indent Guide", this, [E]() {
-        if (auto *e = E()) e->setIndentationGuides(!e->indentationGuides());
-    })->setCheckable(true);
+
+    auto *actShowWs = symMenu->addAction("Show Whitespace and TAB");
+    actShowWs->setObjectName("viewShowWhitespace");
+    actShowWs->setCheckable(true);
+    QObject::connect(actShowWs, &QAction::toggled, this, [this](bool on) {
+        for (int i = 0; i < m_tabs->count(); ++i) {
+            if (auto *e = m_tabs->editorAt(i))
+                e->setWhitespaceVisibility(on ? QsciScintilla::WsVisible
+                                              : QsciScintilla::WsInvisible);
+        }
+    });
+
+    auto *actShowEol = symMenu->addAction("Show End of Line");
+    actShowEol->setObjectName("viewShowEol");
+    actShowEol->setCheckable(true);
+    QObject::connect(actShowEol, &QAction::toggled, this, [this](bool on) {
+        for (int i = 0; i < m_tabs->count(); ++i) {
+            if (auto *e = m_tabs->editorAt(i)) e->setEolVisibility(on);
+        }
+    });
+
+    auto *actShowIndent = symMenu->addAction("Show Indent Guide");
+    actShowIndent->setObjectName("viewShowIndentGuide");
+    actShowIndent->setCheckable(true);
+    actShowIndent->setChecked(Config::instance().showIndentGuides);
+    QObject::connect(actShowIndent, &QAction::toggled, this, [this](bool on) {
+        auto &cfg = Config::instance();
+        cfg.showIndentGuides = on;
+        cfg.save();
+        for (int i = 0; i < m_tabs->count(); ++i) {
+            if (auto *e = m_tabs->editorAt(i)) e->setIndentationGuides(on);
+        }
+    });
 
     auto *zoomMenu = view->addMenu("Zoom");
-    zoomMenu->addAction("Zoom In", this, [E]() { if (auto *e = E()) e->zoomIn(); }, QKeySequence("Ctrl+="));
-    zoomMenu->addAction("Zoom Out", this, [E]() { if (auto *e = E()) e->zoomOut(); }, QKeySequence("Ctrl+-"));
-    zoomMenu->addAction("Restore Default Zoom", this, [E]() { if (auto *e = E()) e->zoomTo(0); }, QKeySequence("Ctrl+0"));
+    // v0.1.42 — zoom now persists to Config::fontSize via Editor's helpers
+    // and propagates to every open tab through applyConfig().
+    zoomMenu->addAction("Zoom In", this, [this]() {
+        Config::instance().fontSize = qBound(6, Config::instance().fontSize + 1, 48);
+        Config::instance().save();
+        applyConfigEverywhere();
+    }, QKeySequence("Ctrl+="));
+    zoomMenu->addAction("Zoom Out", this, [this]() {
+        Config::instance().fontSize = qBound(6, Config::instance().fontSize - 1, 48);
+        Config::instance().save();
+        applyConfigEverywhere();
+    }, QKeySequence("Ctrl+-"));
+    zoomMenu->addAction("Restore Default Zoom", this, [this]() {
+        Config::instance().fontSize = 11;
+        Config::instance().save();
+        applyConfigEverywhere();
+    }, QKeySequence("Ctrl+0"));
 
     view->addSeparator();
-    view->addAction("Word Wrap", this, [E]() { if (auto *e = E()) e->toggleWordWrap(); })->setCheckable(true);
+    auto *actWordWrap = view->addAction("Word Wrap");
+    actWordWrap->setObjectName("viewWordWrap");
+    actWordWrap->setCheckable(true);
+    actWordWrap->setChecked(Config::instance().wordWrap);
+    QObject::connect(actWordWrap, &QAction::toggled, this, [this](bool on) {
+        auto &cfg = Config::instance();
+        cfg.wordWrap = on;
+        cfg.save();
+        for (int i = 0; i < m_tabs->count(); ++i) {
+            if (auto *e = m_tabs->editorAt(i))
+                e->setWrapMode(on ? QsciScintilla::WrapWord : QsciScintilla::WrapNone);
+        }
+    });
     view->addSeparator();
 
     auto *foldMenu = view->addMenu("Fold All");
@@ -1770,23 +1855,59 @@ void MainWindow::buildMenus() {
     });
 
     // ═══ ENCODING ═══
+    // v0.1.42 — encoding menu now actually re-decodes file bytes when the
+    // user picks a different codec, instead of just flipping a label.
+    // For unmodified files: re-reads bytes from disk via QTextCodec.
+    // For modified files: prompts before discarding edits, or just
+    // updates the save-encoding label if the user cancels.
     auto *enc = mb->addMenu("E&ncoding");
-    for (const auto &encName : {"UTF-8", "UTF-8-BOM", "ANSI (Windows-1252)", "ISO-8859-1", "UTF-16 LE", "UTF-16 BE"}) {
-        enc->addAction(encName, this, [this, E, encName]() {
+
+    // Section 1 — "Reinterpret as ..." (re-decode from disk)
+    auto *encReinterpretMenu = enc->addMenu("Reinterpret bytes as");
+    const QStringList reinterpretEncs = {
+        "UTF-8", "UTF-8 BOM", "UTF-16 LE", "UTF-16 BE",
+        "ANSI (Windows-1252)", "ISO-8859-1"
+    };
+    for (const QString &encName : reinterpretEncs) {
+        encReinterpretMenu->addAction(encName, this, [this, E, encName]() {
             auto *e = E(); if (!e) return;
-            // Re-save with new encoding
-            QString text = e->text();
-            QString encStr = QString(encName).split(" ").first();
-            if (encStr == "ANSI") encStr = "Windows-1252";
-            // Update editor's encoding marker
-            e->setUtf8(encStr.contains("UTF-8") || encStr.contains("UTF-16"));
+            if (e->isModified()) {
+                auto reply = QMessageBox::question(this, "Discard unsaved changes?",
+                    QString("Reinterpreting bytes as %1 will reload the file from disk and "
+                            "discard your unsaved edits.\n\nContinue?").arg(encName),
+                    QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+                if (reply != QMessageBox::Yes) return;
+            }
+            if (!e->reloadWithEncoding(encName, /*force=*/true)) {
+                QMessageBox::warning(this, "Encoding error",
+                    QString("Could not reload the file as %1. The codec may not be available.")
+                        .arg(encName));
+                return;
+            }
             m_statusBar->updateEncoding(encName);
         });
     }
+
     enc->addSeparator();
-    enc->addAction("Convert to UTF-8", this, [this, E]() {
+
+    // Section 2 — "Convert to ..." (keep current text, change save format)
+    auto *encConvertMenu = enc->addMenu("Convert to");
+    const QStringList convertEncs = {
+        "UTF-8", "UTF-8 BOM", "UTF-16 LE", "UTF-16 BE",
+        "ANSI (Windows-1252)", "ISO-8859-1"
+    };
+    for (const QString &encName : convertEncs) {
+        encConvertMenu->addAction(encName, this, [this, E, encName]() {
+            auto *e = E(); if (!e) return;
+            e->convertEncoding(encName);
+            m_statusBar->updateEncoding(encName);
+        });
+    }
+
+    enc->addSeparator();
+    enc->addAction("Convert to UTF-8 (legacy shortcut)", this, [this, E]() {
         auto *e = E(); if (!e) return;
-        e->setUtf8(true);
+        e->convertEncoding("UTF-8");
         m_statusBar->updateEncoding("UTF-8");
     });
 
@@ -1825,7 +1946,16 @@ void MainWindow::buildMenus() {
 
     // ═══ SETTINGS ═══
     auto *settings = mb->addMenu("&Settings");
-    settings->addAction("&Preferences...", this, [this]() { PreferencesDialog dlg(this); dlg.exec(); });
+    settings->addAction("&Preferences...", this, [this]() {
+        PreferencesDialog dlg(this);
+        // v0.1.42 — when the user clicks OK / Apply, propagate Config
+        // to every editor + chrome (toolbar, tab bar, etc.). Pre-v0.1.42
+        // the dialog wrote nothing to Config and nothing reapplied even
+        // if it had — full theatre.
+        QObject::connect(&dlg, &PreferencesDialog::settingsApplied,
+                         this, &MainWindow::applyConfigEverywhere);
+        dlg.exec();
+    });
     settings->addSeparator();
 
     // Theme selector. "System" picks up macOS AppleInterfaceStyle /
@@ -1860,12 +1990,28 @@ void MainWindow::buildMenus() {
     addTheme("Dark",    "Dark",    [this]() { applyThemeToAll(darkTheme()); });
     addTheme("Monokai", "Monokai", [this]() { applyThemeToAll(monokaiTheme()); });
     settings->addSeparator();
+    // v0.1.42 — persists via Config + propagates to every open editor.
+    // Pre-v0.1.42, these only affected the active tab and reset on next
+    // launch because Config::useTabs / Config::tabWidth weren't being
+    // written.
     auto *tabMenu = settings->addMenu("Tab Settings");
-    tabMenu->addAction("Use Spaces", this, [E]() { if (auto *e = E()) e->setIndentationsUseTabs(false); });
-    tabMenu->addAction("Use Tabs", this, [E]() { if (auto *e = E()) e->setIndentationsUseTabs(true); });
+    tabMenu->addAction("Use Spaces", this, [this]() {
+        Config::instance().useTabs = false;
+        Config::instance().save();
+        applyConfigEverywhere();
+    });
+    tabMenu->addAction("Use Tabs", this, [this]() {
+        Config::instance().useTabs = true;
+        Config::instance().save();
+        applyConfigEverywhere();
+    });
     tabMenu->addSeparator();
     for (int s : {2, 4, 8})
-        tabMenu->addAction(QString("Tab Width: %1").arg(s), this, [E, s]() { if (auto *e = E()) e->setTabWidth(s); });
+        tabMenu->addAction(QString("Tab Width: %1").arg(s), this, [this, s]() {
+            Config::instance().tabWidth = s;
+            Config::instance().save();
+            applyConfigEverywhere();
+        });
 
     // ═══ TOOLS ═══
     // "Utilities" menu — Hash, Measurement, etc. Renamed from "Tools" to
@@ -3834,4 +3980,62 @@ void MainWindow::checkForUpdates(bool silent) {
             Updater::installReleaseInteractive(this, assets, tag, htmlUrl);
         }
     });
+}
+
+// ─── v0.1.42: Config propagation + View menu state sync ────────────────────
+
+// Push every Config field to every open editor + every piece of chrome
+// that depends on it. Called after Preferences OK/Apply, and at startup
+// once the menus are built.
+void MainWindow::applyConfigEverywhere() {
+    const auto &cfg = Config::instance();
+
+    // 1. Per-editor settings (font, caret, tabs, wrap, fold, etc.)
+    if (m_tabs) {
+        for (int i = 0; i < m_tabs->count(); ++i) {
+            if (auto *ed = m_tabs->editorAt(i)) ed->applyConfig();
+        }
+    }
+
+    // 2. Toolbar visibility — Hide toolbar checkbox in Preferences.
+    if (auto *tb = findChild<QToolBar*>("featureShortcutBar")) {
+        tb->setVisible(!cfg.hideToolbar);
+    }
+
+    // 3. Tab-bar settings.
+    if (m_tabs) {
+        m_tabs->setTabsClosable(cfg.tabsClosable);
+    }
+
+    // 4. View menu checkmarks reflect the new state.
+    syncViewMenuToActiveEditor();
+}
+
+// Pull editor state back into the View menu's checkable QActions so the
+// menu reflects reality after a tab switch (or after applyConfig).
+void MainWindow::syncViewMenuToActiveEditor() {
+    Editor *e = m_tabs ? m_tabs->currentEditor() : nullptr;
+
+    auto sync = [this](const char *name, bool on) {
+        if (auto *act = findChild<QAction*>(QString::fromLatin1(name))) {
+            const QSignalBlocker block(act);
+            act->setChecked(on);
+        }
+    };
+
+    if (e) {
+        const bool ws = (e->whitespaceVisibility() != QsciScintilla::WsInvisible);
+        const bool eolVis = e->eolVisibility();
+        sync("viewShowAllCharacters", ws && eolVis);
+        sync("viewShowWhitespace",    ws);
+        sync("viewShowEol",           eolVis);
+        sync("viewShowIndentGuide",   e->indentationGuides());
+        sync("viewWordWrap",          e->wrapMode() != QsciScintilla::WrapNone);
+    } else {
+        sync("viewShowAllCharacters", false);
+        sync("viewShowWhitespace",    false);
+        sync("viewShowEol",           false);
+        sync("viewShowIndentGuide",   Config::instance().showIndentGuides);
+        sync("viewWordWrap",          Config::instance().wordWrap);
+    }
 }

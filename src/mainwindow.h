@@ -92,6 +92,15 @@ private:
 
     void updateRecentMenu();
     void applyThemeToAll(const Theme &theme);
+    // v0.1.42 — pushes Config to every editor tab + chrome (toolbar
+    // visibility, tabs-closable). Called after Preferences OK/Apply
+    // and at startup so every option in the Preferences dialog
+    // actually takes effect across the whole app.
+    void applyConfigEverywhere();
+    // v0.1.42 — refresh the View menu's checkable actions from the
+    // active editor's actual state (so the checkmark mirrors reality
+    // after a tab switch). Called by m_tabs::currentChanged.
+    void syncViewMenuToActiveEditor();
     // Show / focus the Welcome tab. Opens a new one if not already open,
     // otherwise switches to the existing one. Returns the tab index.
     int showWelcomeTab();

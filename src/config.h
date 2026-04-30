@@ -40,6 +40,18 @@ public:
     bool autoComplete = true;
     int autoCompleteThreshold = 3;
 
+    // v0.1.42 — fields added so the Preferences dialog stops being theatre.
+    // Every control on every Preferences tab now reads from these on init
+    // and writes back on OK. Editor::setupEditor() consults each one
+    // instead of hardcoding the default.
+    bool hideToolbar = false;            // General: Hide toolbar
+    bool tabsClosable = true;            // General: Show close button on each tab
+    bool doubleClickToCloseTab = false;  // General: Double-click to close tab
+    bool smoothFont = true;              // Editing: Enable smooth font (anti-alias)
+    QString foldStyle = "BoxedTree";     // Margins: BoxedTree | CircleTree | Plain | Boxed | Circle | None
+    bool showBookmarkMargin = true;      // Margins: Display bookmark margin
+    QString defaultEol = "Unix";         // New Document: Unix | Windows | Mac
+
     // Show the Welcome tab on launch when there are no session files to
     // restore. User can dismiss with "Don't show again" checkbox inside
     // the tab itself, or via View menu.
@@ -90,6 +102,13 @@ public:
         showCrosshair = o.value("showCrosshair").toBool(showCrosshair);
         autoComplete = o.value("autoComplete").toBool(autoComplete);
         autoCompleteThreshold = o.value("autoCompleteThreshold").toInt(autoCompleteThreshold);
+        hideToolbar = o.value("hideToolbar").toBool(hideToolbar);
+        tabsClosable = o.value("tabsClosable").toBool(tabsClosable);
+        doubleClickToCloseTab = o.value("doubleClickToCloseTab").toBool(doubleClickToCloseTab);
+        smoothFont = o.value("smoothFont").toBool(smoothFont);
+        foldStyle = o.value("foldStyle").toString(foldStyle);
+        showBookmarkMargin = o.value("showBookmarkMargin").toBool(showBookmarkMargin);
+        defaultEol = o.value("defaultEol").toString(defaultEol);
         showWelcomeOnStartup = o.value("showWelcomeOnStartup").toBool(showWelcomeOnStartup);
         aiBackend = o.value("aiBackend").toString(aiBackend);
         aiBaseUrl = o.value("aiBaseUrl").toString(aiBaseUrl);
@@ -125,6 +144,13 @@ public:
         o["showCrosshair"] = showCrosshair;
         o["autoComplete"] = autoComplete;
         o["autoCompleteThreshold"] = autoCompleteThreshold;
+        o["hideToolbar"] = hideToolbar;
+        o["tabsClosable"] = tabsClosable;
+        o["doubleClickToCloseTab"] = doubleClickToCloseTab;
+        o["smoothFont"] = smoothFont;
+        o["foldStyle"] = foldStyle;
+        o["showBookmarkMargin"] = showBookmarkMargin;
+        o["defaultEol"] = defaultEol;
         o["showWelcomeOnStartup"] = showWelcomeOnStartup;
         o["aiBackend"] = aiBackend;
         o["aiBaseUrl"] = aiBaseUrl;
