@@ -1,5 +1,6 @@
 #include "aipanel.h"
 #include "ai_context.h"
+#include "ai_intent.h"
 #include "ai_systemprompt.h"
 #include "ai_tools.h"
 #include "fonts.h"
@@ -875,6 +876,40 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         actionsRow2->addWidget(b);
     }
     quickWrapV->addLayout(actionsRow2);
+
+    // v0.1.40 — third row of strict-prompt format-fix buttons. These route
+    // to the same "minimal-change patcher" prompt that Tools → JSON Tools →
+    // AI Fix uses (mainwindow.cpp:2209), so small models stop "improving"
+    // the user's payload by adding fields, restructuring, hallucinating.
+    auto *actionsRow3 = new QHBoxLayout;
+    actionsRow3->setContentsMargins(8, 0, 8, 4);
+    actionsRow3->setSpacing(4);
+    auto *fixJsonBtn = new QPushButton("Fix JSON");
+    auto *fixHtmlBtn = new QPushButton("Fix HTML");
+    auto *fixSqlBtn  = new QPushButton("Fix SQL");
+    for (auto *b : {fixJsonBtn, fixHtmlBtn, fixSqlBtn}) {
+        b->setFixedHeight(24);
+        b->setStyleSheet("font-size: 11px; padding: 0 8px;");
+        b->setToolTip("Strict minimal-change fix for the selection (or current file). "
+                      "Won't add fields, won't reformat, won't restructure.");
+        actionsRow3->addWidget(b);
+    }
+    actionsRow3->addStretch();
+    quickWrapV->addLayout(actionsRow3);
+
+    // v0.1.40 — tip line under the quick-action rows pointing users at the
+    // dedicated panel for serious format-fixing work. Uses the existing
+    // text-dim palette colour so it's visible without competing with the
+    // buttons. Wraps to two lines on narrow docks.
+    auto *fixTip = new QLabel(
+        "💡 For larger or repeated fixes, open Tools → JSON Tools "
+        "(or HTML / SQL) — dedicated panel with side-by-side diff, "
+        "regex-first repair, AI fallback.");
+    fixTip->setWordWrap(true);
+    fixTip->setStyleSheet(QString(
+        "color: %1; font-size: 10px; padding: 2px 10px 4px;")
+        .arg(pal.muted));
+    quickWrapV->addWidget(fixTip);
     layout->addWidget(m_quickActionsWrap);
 
     // Insert/Replace/Copy mini row — also hidden by default, revealed
@@ -1121,6 +1156,10 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     connect(docBtn, &QPushButton::clicked, this, [this]() { sendPrompt("docs"); });
     connect(optimizeBtn, &QPushButton::clicked, this, [this]() { sendPrompt("optimize"); });
     connect(translateBtn, &QPushButton::clicked, this, [this]() { sendPrompt("translate"); });
+    // v0.1.40 strict-prompt format-fix actions.
+    connect(fixJsonBtn, &QPushButton::clicked, this, [this]() { sendPrompt("fix-json"); });
+    connect(fixHtmlBtn, &QPushButton::clicked, this, [this]() { sendPrompt("fix-html"); });
+    connect(fixSqlBtn,  &QPushButton::clicked, this, [this]() { sendPrompt("fix-sql"); });
     connect(sendBtn, &QPushButton::clicked, this, [this]() {
         if (!m_customInput->toPlainText().trimmed().isEmpty()) sendPrompt("custom");
     });
@@ -1561,7 +1600,28 @@ void AIPanel::sendPrompt(const QString &action) {
     const bool willUseTools = codingMode && !m_workspaceRoot.isEmpty()
         && ((m_ollama->backend() != OllamaClient::Ollama)
             || AiTools::modelLikelySupportsTools(m_ollama->model()));
-    const QString systemPrompt = AiSystemPrompt::build(intent, m_language, willUseTools);
+    QString systemPrompt = AiSystemPrompt::build(intent, m_language, willUseTools);
+
+    // v0.1.40 — JSON / HTML / SQL "fix my X" intent detection. When the
+    // user types "fix my json" (etc.) in the chat input, swap in the
+    // strict-patcher system prompt so small models stop "improving" the
+    // payload (adding fields, restructuring, hallucinating). Only fires
+    // for the "custom" action (i.e. user-typed prompts, not quick
+    // actions); doesn't run when Coding-Mode tools are active because
+    // the agent loop handles file edits itself.
+    if (action == "custom" && !willUseTools) {
+        const QString chatText = m_customInput->toPlainText();
+        AiIntent::FixKind fixKind = AiIntent::detectFixIntent(chatText);
+        if (fixKind != AiIntent::FixKind::None) {
+            systemPrompt = AiIntent::strictFixSystemPrompt(fixKind);
+        }
+    } else if (action == "fix-json") {
+        systemPrompt = AiIntent::strictFixSystemPrompt(AiIntent::FixKind::Json);
+    } else if (action == "fix-html") {
+        systemPrompt = AiIntent::strictFixSystemPrompt(AiIntent::FixKind::Html);
+    } else if (action == "fix-sql") {
+        systemPrompt = AiIntent::strictFixSystemPrompt(AiIntent::FixKind::Sql);
+    }
 
     // Build the prompt + the user-visible prompt label (just the action name
     // + the code snippet for context — no need to dump the verbose template
@@ -1595,6 +1655,18 @@ void AIPanel::sendPrompt(const QString &action) {
     } else if (action == "translate") {
         prompt = "Translate this code to Python (if not already Python) or to JavaScript (if already Python). Output only the translated code:\n\n```\n" + m_context + "\n```";
         userBubbleText = "Translate Python ↔ JavaScript:\n\n" + m_context;
+    } else if (action == "fix-json" || action == "fix-html" || action == "fix-sql") {
+        // v0.1.40 strict format fix. The system prompt is overridden a
+        // few lines below to AiIntent::strictFixSystemPrompt so the
+        // model gets the same minimal-change rules as Tools → JSON Tools.
+        QString format = (action == "fix-json") ? "JSON"
+                       : (action == "fix-html") ? "HTML" : "SQL";
+        prompt = "Fix ONLY the broken parts of this " + format
+               + ". Make MINIMAL changes. PRESERVE the original line order, "
+                 "key/element order, and formatting. Do NOT reorder, do NOT "
+                 "reformat, do NOT add new content. Return ONLY the corrected "
+                 + format + ".\n\nBROKEN " + format + ":\n" + m_context;
+        userBubbleText = "Fix " + format + " (minimal change):\n\n" + m_context;
     } else if (action == "custom") {
         const QString userText = m_customInput->toPlainText();
         customUserText = userText;
@@ -2355,6 +2427,46 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
     }
     ++m_toolCallsThisTurn;
     ++m_toolCallsTotal;
+
+    // v0.1.40: detect the malformed-args marker that ollama.cpp stuffs
+    // into args when the model emits invalid JSON in tool-call arguments.
+    // Surface it as a structured tool result so the model gets a clear
+    // signal to retry with valid JSON, instead of silently executing
+    // with empty args (which used to surface as confusing downstream
+    // errors like "hunks array is empty").
+    if (args.contains("_notepatra_parse_error")) {
+        const QString perr = args.value("_notepatra_parse_error").toString();
+        const QString rawArgs = args.value("_notepatra_raw_args").toString();
+        QString rawPreview = rawArgs;
+        if (rawPreview.size() > 240) rawPreview = rawPreview.left(240) + "…";
+        // Escape for JSON content embedding.
+        QString escapedPreview = rawPreview;
+        escapedPreview.replace('\\', "\\\\").replace('"', "\\\"")
+                      .replace('\n', "\\n").replace('\t', "\\t");
+        QString escapedErr = perr;
+        escapedErr.replace('\\', "\\\\").replace('"', "\\\"");
+        AiTools::ToolResult r;
+        r.id = id;
+        r.name = name;
+        r.isError = true;
+        r.errorKind = "malformed_args";
+        r.content = QString(
+            "{\"ok\":false,\"error_kind\":\"malformed_args\",\"message\":"
+            "\"Tool-call arguments JSON failed to parse: %1. "
+            "Re-emit the call with valid JSON. Make sure quotes inside "
+            "string values are escaped (\\\\\\\") and that nested objects "
+            "are well-formed. Raw args preview: %2\"}")
+            .arg(escapedErr, escapedPreview);
+        QJsonObject payload;
+        payload["id"] = r.id;
+        payload["name"] = r.name;
+        payload["args"] = args;
+        payload["content"] = r.content;
+        m_pendingToolResults.append(payload);
+        const AiPalette palErr = aiPalette();
+        aiAddToolCallCard(m_chatLayout, name, "(malformed args)", "✗ malformed_args", true, palErr);
+        return;
+    }
 
     // Build a short user-facing summary of the args. Keeps the card
     // readable without dumping full JSON. search uses 'pattern' as its

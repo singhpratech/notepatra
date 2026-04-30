@@ -336,6 +336,10 @@ QJsonArray availableTools() {
             {"type", "integer"},
             {"description", "Maximum lines to return. Default 1500. Files larger than this come back truncated:true."}
         };
+        props["with_line_numbers"] = QJsonObject{
+            {"type", "boolean"},
+            {"description", "Default true. Set false to receive raw file content WITHOUT the leading '      N\\t' line-number prefix. Use this when you plan to copy lines verbatim into apply_diff old_lines (saves you from having to strip the prefix)."}
+        };
         QJsonObject params;
         params["type"] = "object";
         params["properties"] = props;
@@ -343,9 +347,11 @@ QJsonArray availableTools() {
         tools.push_back(makeTool(
             "read_file",
             "Read the contents of a text file in the user's workspace. "
-            "Returns the file's text with cat -n style line numbers. "
-            "Paths must stay inside the workspace root; secret/credential "
-            "paths (~/.ssh/, *.pem, *.key, /etc/passwd, etc.) are refused.",
+            "Returns the file's text with cat -n style line numbers by "
+            "default; pass with_line_numbers=false for raw content (recommended "
+            "when feeding the result into apply_diff old_lines). Paths must "
+            "stay inside the workspace root; secret/credential paths "
+            "(~/.ssh/, *.pem, *.key, /etc/passwd, etc.) are refused.",
             params));
     }
 
@@ -547,6 +553,14 @@ ToolResult executeReadFile(const ToolCall &call, const QString &workspaceRoot) {
     const QString pathArg = call.args.value("path").toString();
     int offset = call.args.value("offset").toInt(1);
     int limit  = call.args.value("limit").toInt(Limits::kReadDefaultLines);
+    // v0.1.40: opt-out of the "      N\t" line-number prefix. Models that
+    // pipe read_file output back into apply_diff's old_lines without
+    // stripping the prefix get spurious conflicts; the agent can pass
+    // with_line_numbers=false on the read that feeds an apply_diff.
+    // Default true preserves v0.1.39 behaviour for every existing caller.
+    const bool withLineNums = call.args.contains("with_line_numbers")
+        ? call.args.value("with_line_numbers").toBool(true)
+        : true;
     if (offset < 1) offset = 1;
     if (limit  < 1) limit  = Limits::kReadDefaultLines;
 
@@ -614,12 +628,17 @@ ToolResult executeReadFile(const ToolCall &call, const QString &workspaceRoot) {
         }
         // cat -n style line-number prefix. The 70% token overhead is
         // acceptable on local models where tokens are effectively free,
-        // and the model uses these as edit-anchors.
+        // and the model uses these as edit-anchors. v0.1.40: callers can
+        // opt out of the prefix via with_line_numbers=false (e.g. when
+        // the result will be fed verbatim into apply_diff old_lines).
         if (line.size() > Limits::kReadMaxLineChars) {
             line.truncate(Limits::kReadMaxLineChars);
             line += "  ⟪truncated⟫";
         }
-        out += QString("%1\t%2\n").arg(lineNo, 6).arg(line);
+        if (withLineNums)
+            out += QString("%1\t%2\n").arg(lineNo, 6).arg(line);
+        else
+            out += line + "\n";
         ++emitted;
     }
     f.close();
@@ -1006,6 +1025,16 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
 
     // Phase 1 — validate all hunks against the current file. If ANY
     // mismatches, bail with conflict; the file is untouched.
+    //
+    // v0.1.40: three-tier match (strict → strip line-num prefix → trimmed)
+    // with structured warnings on the relaxed paths. Models often echo back
+    // read_file's "      N\t" line-number prefix into apply_diff's old_lines,
+    // or get whitespace slightly wrong. The relaxed tiers let the agent make
+    // forward progress while the warning lets it self-correct.
+    static const QRegularExpression kReadFilePrefix(QStringLiteral("^\\s*\\d+\\t"));
+    enum MatchTier { TierStrict = 0, TierStripPrefix = 1, TierTrimmed = 2 };
+    QStringList warnings;
+
     for (const QJsonObject &h : sortedHunks) {
         const int startLine = h.value("old_start_line").toInt();
         const QString oldText = h.value("old_lines").toString();
@@ -1019,14 +1048,68 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
                              QString("Hunk at line %1 references lines beyond the file's range.")
                                  .arg(startLine));
         }
+
+        // Try each match tier; first successful tier wins for this hunk.
+        MatchTier hunkTier = TierStrict;
+        bool matched = true;
+        int firstMismatch = -1;
+
+        // Tier 0 — strict equality.
         for (int i = 0; i < oldLines.size(); ++i) {
             if (lines[startLine - 1 + i] != oldLines[i]) {
-                return makeError(call, "conflict",
-                                 QString("Hunk at line %1 doesn't match the file's current content "
-                                         "(line %2 differs). The file may have been modified since the "
-                                         "agent last read it. Re-read the file and try again.")
-                                     .arg(startLine).arg(startLine + i));
+                matched = false;
+                firstMismatch = i;
+                break;
             }
+        }
+
+        // Tier 1 — strip "      N\t" line-num prefix from old_lines (the model
+        // copied read_file output verbatim).
+        if (!matched) {
+            matched = true;
+            firstMismatch = -1;
+            for (int i = 0; i < oldLines.size(); ++i) {
+                QString oldStripped = oldLines[i];
+                oldStripped.remove(kReadFilePrefix);
+                if (lines[startLine - 1 + i] != oldStripped) {
+                    matched = false;
+                    firstMismatch = i;
+                    break;
+                }
+            }
+            if (matched) hunkTier = TierStripPrefix;
+        }
+
+        // Tier 2 — trimmed comparison (whitespace-only difference).
+        if (!matched) {
+            matched = true;
+            firstMismatch = -1;
+            for (int i = 0; i < oldLines.size(); ++i) {
+                QString oldStripped = oldLines[i];
+                oldStripped.remove(kReadFilePrefix);
+                if (lines[startLine - 1 + i].trimmed() != oldStripped.trimmed()) {
+                    matched = false;
+                    firstMismatch = i;
+                    break;
+                }
+            }
+            if (matched) hunkTier = TierTrimmed;
+        }
+
+        if (!matched) {
+            return makeError(call, "conflict",
+                             QString("Hunk at line %1 doesn't match the file's current content "
+                                     "(line %2 differs). The file may have been modified since the "
+                                     "agent last read it. Re-read the file and try again.")
+                                 .arg(startLine).arg(startLine + firstMismatch));
+        }
+
+        if (hunkTier == TierStripPrefix) {
+            warnings.append(QString("hunk@%1: matched after stripping read_file line-number prefix from old_lines")
+                                .arg(startLine));
+        } else if (hunkTier == TierTrimmed) {
+            warnings.append(QString("hunk@%1: matched only after whitespace normalization — verify indentation in new_lines")
+                                .arg(startLine));
         }
     }
 
@@ -1093,6 +1176,11 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
     result["abs_path"]      = canonical;
     result["hunks_applied"] = hunks.size();
     result["bytes_written"] = outBytes.size();
+    if (!warnings.isEmpty()) {
+        QJsonArray w;
+        for (const QString &s : warnings) w.append(s);
+        result["warnings"] = w;
+    }
     return makeSuccess(call, result);
 }
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.39 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.40 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -144,6 +144,7 @@ set(SOURCES
     src/gitgutter.cpp
     src/ollama.cpp
     src/ai_context.cpp
+    src/ai_intent.cpp
     src/ai_systemprompt.cpp
     src/ai_tools.cpp
     src/lexer_go.cpp
@@ -386,6 +387,23 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_context.cpp")
     add_test(NAME test_ai_context COMMAND $<TARGET_FILE:test_ai_context>)
     set_tests_properties(test_ai_context PROPERTIES LABELS "unit;ai")
     message(STATUS "Regression test enabled — target: test_ai_context")
+endif()
+
+# v0.1.40 — AiIntent::detectFixIntent regression test. Validates the
+# "fix my json/html/sql" intent classifier that AIPanel::sendPrompt
+# uses to swap in the strict-patcher system prompt for that turn.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_intent.cpp")
+    add_executable(test_ai_intent
+        test_ai_intent.cpp
+        src/ai_intent.cpp
+    )
+    target_include_directories(test_ai_intent PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_ai_intent PRIVATE Qt5::Core)
+    add_test(NAME test_ai_intent COMMAND $<TARGET_FILE:test_ai_intent>)
+    set_tests_properties(test_ai_intent PROPERTIES LABELS "unit;ai")
+    message(STATUS "Regression test enabled — target: test_ai_intent")
 endif()
 
 # v0.1.37 — comprehensive lexer-coverage check. Walks every QsciLexer

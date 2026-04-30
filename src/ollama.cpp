@@ -487,12 +487,24 @@ void OllamaClient::onReadyReadOllama() {
                     // Ollama's `arguments` is already a parsed JSON object
                     // (NOT a stringified JSON like OpenAI canonical). Be
                     // defensive: accept both shapes.
+                    // v0.1.40: surface JSON parse failures via the
+                    // `_notepatra_parse_error` marker so AIPanel can return
+                    // a structured tool result to the model instead of
+                    // silently passing empty args.
                     QJsonObject args;
                     QJsonValue av = fn.value("arguments");
                     if (av.isObject()) {
                         args = av.toObject();
                     } else if (av.isString()) {
-                        args = QJsonDocument::fromJson(av.toString().toUtf8()).object();
+                        const QByteArray rawArgs = av.toString().toUtf8();
+                        QJsonParseError perr;
+                        QJsonDocument d = QJsonDocument::fromJson(rawArgs, &perr);
+                        if (perr.error != QJsonParseError::NoError && !rawArgs.trimmed().isEmpty()) {
+                            args["_notepatra_parse_error"] = perr.errorString();
+                            args["_notepatra_raw_args"] = QString::fromUtf8(rawArgs);
+                        } else {
+                            args = d.object();
+                        }
                     }
                     // Synthesize a client-side ID since Ollama doesn't
                     // supply one. AIPanel will round-trip it back on
@@ -630,8 +642,17 @@ void OllamaClient::onReadyReadOpenAI() {
                     QString id = p.id.isEmpty()
                         ? QString("call_o%1").arg(++m_toolCallSeq)
                         : p.id;
-                    QJsonObject args = QJsonDocument::fromJson(
-                        p.argsBuffer.toUtf8()).object();
+                    // v0.1.40: same parse-error surfacing as the Ollama path.
+                    const QByteArray rawArgs = p.argsBuffer.toUtf8();
+                    QJsonParseError perr;
+                    QJsonDocument d = QJsonDocument::fromJson(rawArgs, &perr);
+                    QJsonObject args;
+                    if (perr.error != QJsonParseError::NoError && !rawArgs.trimmed().isEmpty()) {
+                        args["_notepatra_parse_error"] = perr.errorString();
+                        args["_notepatra_raw_args"] = QString::fromUtf8(rawArgs);
+                    } else {
+                        args = d.object();
+                    }
                     emit toolCallReceived(id, p.name, args);
                 }
                 m_pendingToolCalls.clear();

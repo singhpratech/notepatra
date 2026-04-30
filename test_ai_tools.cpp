@@ -703,6 +703,223 @@ int main(int argc, char *argv[]) {
         fread.close();
     }
 
+    // ── v0.1.40: apply_diff three-tier match — strict → strip-prefix → trimmed
+    //
+    // Tier 1 — model echoed read_file's "      N\t" prefix verbatim into
+    // old_lines. The tool strips the prefix before matching, applies the
+    // edit, and reports it in result.warnings.
+    {
+        writeFile(ws + "/diff_target.txt",
+                  "line A\nline B\nline C\nline D\nline E\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"] = "diff_target.txt";
+        QJsonArray hunks;
+        QJsonObject h1;
+        h1["old_start_line"] = 2;
+        // The leading "     2\t" mimics what read_file emits with the
+        // default with_line_numbers=true. Without the v0.1.40 fallback this
+        // would conflict against the file's clean "line B".
+        h1["old_lines"] = "     2\tline B\n";
+        h1["new_lines"] = "line B (edited)\n";
+        hunks.append(h1);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("apply_diff tier-1: prefix-stripped match applies",
+              !r.isError);
+        // Verify the warning surfaced.
+        QJsonDocument jd = QJsonDocument::fromJson(r.content.toUtf8());
+        QJsonObject body = jd.object().value("result").toObject();
+        const QJsonArray warnings = body.value("warnings").toArray();
+        check("  result.warnings is non-empty",
+              warnings.size() == 1);
+        if (warnings.size() == 1) {
+            const QString w = warnings.at(0).toString();
+            check("  warning mentions stripping line-number prefix",
+                  w.contains("read_file line-number prefix"));
+        }
+        QFile fread(ws + "/diff_target.txt");
+        fread.open(QFile::ReadOnly);
+        const QByteArray after = fread.readAll();
+        fread.close();
+        check("  file actually edited",
+              after.contains("line B (edited)"));
+    }
+
+    // Tier 2 — old_lines has whitespace-only differences vs the file
+    // (trailing space, slightly different leading indent). Tool retries
+    // with .trimmed() and applies, with a separate warning that asks the
+    // model to verify new_lines indentation.
+    {
+        writeFile(ws + "/diff_target.txt",
+                  "line A\n    indented B\nline C\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"] = "diff_target.txt";
+        QJsonArray hunks;
+        QJsonObject h1;
+        h1["old_start_line"] = 2;
+        h1["old_lines"] = "indented B\n";  // missing 4-space indent
+        h1["new_lines"] = "    indented B (edited)\n";
+        hunks.append(h1);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("apply_diff tier-2: whitespace-trimmed match applies",
+              !r.isError);
+        QJsonDocument jd = QJsonDocument::fromJson(r.content.toUtf8());
+        QJsonObject body = jd.object().value("result").toObject();
+        const QJsonArray warnings = body.value("warnings").toArray();
+        check("  result.warnings has whitespace-normalisation entry",
+              warnings.size() == 1);
+        if (warnings.size() == 1) {
+            const QString w = warnings.at(0).toString();
+            check("  warning mentions whitespace normalization",
+                  w.contains("whitespace"));
+        }
+    }
+
+    // Tier 0 (strict) still wins when old_lines matches byte-exactly —
+    // verify NO warnings appear so we don't spam the model on clean calls.
+    {
+        writeFile(ws + "/diff_target.txt",
+                  "line A\nline B\nline C\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"] = "diff_target.txt";
+        QJsonArray hunks;
+        QJsonObject h1;
+        h1["old_start_line"] = 2;
+        h1["old_lines"] = "line B\n";  // exact match
+        h1["new_lines"] = "line B (clean)\n";
+        hunks.append(h1);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("apply_diff strict tier: clean match applies",
+              !r.isError);
+        QJsonDocument jd = QJsonDocument::fromJson(r.content.toUtf8());
+        QJsonObject body = jd.object().value("result").toObject();
+        check("  no warnings on clean strict match",
+              !body.contains("warnings"));
+    }
+
+    // True conflict (content actually differs even after trim) → still
+    // refuses, file untouched. Guards against the tier-fallback being
+    // too permissive.
+    {
+        writeFile(ws + "/diff_target.txt",
+                  "line A\nline B\nline C\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"] = "diff_target.txt";
+        QJsonArray hunks;
+        QJsonObject h1;
+        h1["old_start_line"] = 2;
+        // Genuinely different content — even after strip+trim, "totally
+        // different" is not "line B".
+        h1["old_lines"] = "totally different content\n";
+        h1["new_lines"] = "should not appear\n";
+        hunks.append(h1);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("apply_diff: true conflict still refused (no false-positive tier match)",
+              r.isError);
+        check("  errorKind == conflict", r.errorKind == "conflict");
+        QFile fread(ws + "/diff_target.txt");
+        fread.open(QFile::ReadOnly);
+        check("  file unchanged on real conflict",
+              fread.readAll() == QByteArray("line A\nline B\nline C\n"));
+        fread.close();
+    }
+
+    // ── v0.1.40: read_file with_line_numbers parameter ────────────────
+    //
+    // Default (no arg): line-number prefix included, back-compat with
+    // v0.1.39 callers that depend on the cat-n style output.
+    {
+        writeFile(ws + "/with_lines.txt", "alpha\nbeta\ngamma\n");
+        AiTools::ToolCall call;
+        call.name = "read_file";
+        QJsonObject args; args["path"] = "with_lines.txt";
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("read_file (default): success", !r.isError);
+        QJsonDocument jd = QJsonDocument::fromJson(r.content.toUtf8());
+        QString content = jd.object().value("result").toObject()
+                            .value("content").toString();
+        check("  default content has line-number prefix on first line",
+              content.startsWith("     1\talpha"));
+        check("  default content has line-number prefix on second line",
+              content.contains("\n     2\tbeta"));
+    }
+
+    // with_line_numbers=true (explicit) → identical to default.
+    {
+        AiTools::ToolCall call;
+        call.name = "read_file";
+        QJsonObject args;
+        args["path"] = "with_lines.txt";
+        args["with_line_numbers"] = true;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("read_file with_line_numbers=true: success", !r.isError);
+        QJsonDocument jd = QJsonDocument::fromJson(r.content.toUtf8());
+        QString content = jd.object().value("result").toObject()
+                            .value("content").toString();
+        check("  with_line_numbers=true matches default behaviour",
+              content.startsWith("     1\talpha"));
+    }
+
+    // with_line_numbers=false → raw content, no prefix. This is the path
+    // the model should use before feeding lines into apply_diff old_lines.
+    {
+        AiTools::ToolCall call;
+        call.name = "read_file";
+        QJsonObject args;
+        args["path"] = "with_lines.txt";
+        args["with_line_numbers"] = false;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("read_file with_line_numbers=false: success", !r.isError);
+        QJsonDocument jd = QJsonDocument::fromJson(r.content.toUtf8());
+        QString content = jd.object().value("result").toObject()
+                            .value("content").toString();
+        check("  raw content (no prefix on first line)",
+              content.startsWith("alpha"));
+        check("  raw content equals exactly the file bytes",
+              content == "alpha\nbeta\ngamma\n");
+    }
+
+    // read_file schema in availableTools() advertises with_line_numbers
+    {
+        QJsonArray tools = AiTools::availableTools();
+        QJsonObject readSchema;
+        for (const QJsonValue &tv : tools) {
+            QJsonObject t = tv.toObject();
+            if (t.value("function").toObject().value("name").toString()
+                  == "read_file") {
+                readSchema = t.value("function").toObject();
+                break;
+            }
+        }
+        check("read_file schema: located",
+              !readSchema.isEmpty());
+        QJsonObject props = readSchema.value("parameters").toObject()
+                              .value("properties").toObject();
+        check("read_file schema: properties contains with_line_numbers",
+              props.contains("with_line_numbers"));
+        check("read_file schema: with_line_numbers is boolean",
+              props.value("with_line_numbers").toObject()
+                   .value("type").toString() == "boolean");
+    }
+
     // Tool registry — verify availableTools() returns valid JSONSchema
     {
         QJsonArray tools = AiTools::availableTools();
