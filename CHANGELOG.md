@@ -7,6 +7,56 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.40] — 2026-04-29
+
+The "stop screwing up my JSON" release. User reported v0.1.39's AI Assistant chat would *add fields and restructure* when asked to fix broken JSON — the regex JSON fixer (Tools → JSON Tools → AI Fix) had strict minimal-change rules, but the chat-mode "fix my json" path didn't. v0.1.40 closes that gap and bundles five other agent-loop robustness fixes that came up while reproducing the bug.
+
+### Added
+- 🩹 **AI-chat fix-intent detection.** Type `fix my json` / `repair this html` / `the sql is broken` etc. into the AI dock and the system prompt automatically swaps to a strict minimal-change patcher (same rules as Tools → JSON Tools → AI Fix). Models stop "improving" the input by adding fields, reordering keys, or restructuring. Does NOT trigger on `explain my json` / `what is json` / `show me json files`. New module `src/ai_intent.{h,cpp}`; new test `test_ai_intent` (49 assertions).
+- 🔘 **Three new quick-action buttons** in the AI dock — **Fix JSON**, **Fix HTML**, **Fix SQL** — route directly to the strict-patcher prompt for the current selection / file, no need to type the trigger phrase.
+- 💡 **Tip line** under the quick-action grid pointing users at Tools → JSON Tools (or HTML / SQL) for repeated / large fixes — those still have side-by-side diff + regex-first repair + AI fallback.
+
+### Changed
+- 🛠 **`apply_diff` three-tier match.** The agent's `apply_diff` tool used to require byte-exact `old_lines` against the file; if the model echoed back read_file's `      N\t` line-number prefix (very common on small models) every hunk failed with `error_kind: conflict`. v0.1.40 falls back through three tiers:
+  1. Strict equality (existing behaviour, now the fast path).
+  2. Strip the `^\s*\d+\t` line-number prefix from `old_lines`, retry.
+  3. `.trimmed()` comparison on each line, retry.
+
+  On tier 2 or 3 the call still applies the edit but emits `result.warnings: ["..."]` so the agent self-corrects on the next read. True conflicts (genuinely different content) are still refused — verified with a regression test.
+- 📖 **`read_file` `with_line_numbers` parameter.** New optional bool, default `true` (full v0.1.39 back-compat). Pass `false` to receive raw file content with no `      N\t` prefix — recommended when feeding lines into `apply_diff old_lines`.
+- 🧠 **Tool-mode system prompt** updated to teach the model the new param and to NEVER copy the `      N\t` prefix into `apply_diff old_lines`.
+- 🧨 **Tool-call JSON parse-error surfacing.** When the model emits malformed JSON in tool-call `arguments`, both the Ollama `/api/chat` path and the OpenAI-compat SSE path now surface a structured `error_kind: malformed_args` tool result back to the model — instead of silently passing empty args downstream (which used to surface as confusing errors like `hunks array is empty`). The model now gets `Tool-call arguments JSON failed to parse: <error>. Re-emit the call with valid JSON.` plus a 240-char raw-args preview, so it can self-correct.
+
+### Tests
+- **17/17 ctest suites green** on Linux baseline (was 16 on v0.1.39 — adds `test_ai_intent`). New + extended assertions:
+  - `test_ai_intent` — 49 assertions: positive json/html/sql intents (case-insensitive, mixed phrasing), negatives (explain/describe/teach/show/list/find/grep), edge cases (multi-line, @file mention, generic "fix my code"), strict-prompt sanity.
+  - `test_ai_tools` extended — apply_diff three-tier match (prefix-stripped, whitespace-trimmed, strict-still-clean, true-conflict-still-refused), read_file with/without line-number prefix, schema advertises `with_line_numbers`. 157 total assertions.
+
+### Files changed
+```
+NEW:
+  src/ai_intent.{h,cpp}         — fix-intent classifier + strict-patcher prompts
+  test_ai_intent.cpp            — 49 assertions
+
+MODIFIED:
+  src/ai_tools.cpp              — apply_diff 3-tier match + warnings;
+                                  read_file with_line_numbers param + schema
+  src/ai_systemprompt.cpp       — toolModeLayer documents the prefix issue
+  src/ollama.cpp                — surface QJsonParseError on tool-call args
+                                  (Ollama + OpenAI-compat paths)
+  src/aipanel.cpp               — fix-intent path (custom action) + 3 new
+                                  quick-action buttons + tip line +
+                                  malformed_args short-circuit handler
+  test_ai_tools.cpp             — +20 new assertions for the v0.1.40 paths
+  CMakeLists.txt                — version 0.1.39 → 0.1.40; ai_intent.cpp
+                                  in main target; new test_ai_intent target
+```
+
+### Why two patch releases this close together
+v0.1.39 closed the file-WRITE gap (write_file / search / apply_diff). v0.1.40 closes the file-FIX gap — same theme, surfaced once people started actually using the agent on broken files. The big v0.2 mega-release continues independently on `v0.2-megafeatures`; v0.1.40's six fixes will be cherry-picked onto that branch so v0.2 ships with them.
+
+---
+
 ## [0.1.39] — 2026-04-27
 
 Coding Mode goes from "agent that can read your code" to "agent that can build with you." User reported they expected `"create me a Python file"` to actually create the .py file — that gap is now closed. Plus: persistent chat history per workspace, a finally-visible red close button on the AI dock.
@@ -121,7 +171,7 @@ Coding Mode is now AGENTIC — the AI can read files and list directories on its
   - Ollama: atomic NDJSON tool_calls frames, `arguments` is a JSON object (not string), no `id` field — synthesized client-side.
   - OpenAI-compat: SSE delta accumulation, `arguments` arrives as fragments per `index` until `finish_reason: tool_calls`, has unique `id`s.
 - 🤖 **Model allowlist** for tool-capable models — Ollama: qwen3, qwen2.5, llama3.1+, mistral-nemo, command-r+, hermes3, granite3, gpt-oss, deepseek-v3/r1, kimi-k2, glm-4, mixtral, devstral, lfm2, ministral, nemotron. Cloud: gpt-4/4o/turbo/3.5/o1/o3, claude-3+, gemini-1.5/2, mistral-large/medium/small, openai/*, anthropic/*, google/gemini, openrouter/*, x-ai/grok, deepseek/*. For OpenAI-compat backends tools are sent unconditionally — the server ignores them for non-tool models.
-- 🛡 **Tool-call budget** — 25 hard cap per user turn (matches Cursor/Aider). When exhausted the model gets a structured error telling it to summarise and stop, preventing runaway loops.
+- 🛡 **Tool-call budget** — 25 hard cap per user turn (prevents runaway loops). When exhausted the model gets a structured error telling it to summarise and stop, preventing runaway loops.
 - 🌡 **Temperature pinned to 0.1** for tool-bearing requests. Per Ollama/multi-editor research: high temperature produces malformed JSON in `arguments` even on tool-trained models. 0.1 is the documented sweet spot.
 - 📐 **Conditional anti-tool-call layer** in `ai_systemprompt.cpp`. The pre-existing layer ("you have no tools, do not produce JSON tool calls") is now suppressed when tools are actually attached — telling the model "no tools exist" while sending tool definitions produces contradictory guidance. Replaced with a brief tool-mode preamble telling the model the tools are available and to use the structured `tool_calls` field.
 
@@ -570,7 +620,7 @@ Quality-and-correctness pass on the two most-used features: **Project Search** (
 - 🔎 **Project Search honest 0→100% progress bar** — linear from `scanned / total`, no bouncing. Full live status line: `Searching — 48 / 212 files (22%) · 28,340 lines · 3 matches · 180 ms elapsed`.
 - 🔎 **Project Search live-ticking elapsed time** — 10 Hz UI timer refreshes elapsed-ms between worker events so it visibly scrolls instead of jumping per-file.
 - 🔎 **Project Search rolling elapsed format** — ms → s → min → h automatically.
-- 🔎 **Project Search page-level scroll** — whole tab lives in a `QScrollArea`, match tree grows to fit content, page scrollbar takes over. One scroll, not two. Matches VS Code / Cursor / Sublime.
+- 🔎 **Project Search page-level scroll** — whole tab lives in a `QScrollArea`, match tree grows to fit content, page scrollbar takes over. One scroll, not two. Matches VS Code / Sublime.
 - 🔎 **Project Search right-click context menu** on a match: Copy location (path:line:col), Copy full path, Copy match line text. Parent rows show full absolute paths.
 - 🔎 **Project Search instant Cancel** — immediate "Cancelling…" feedback, worker bails at next `m_cancel.load()` checkpoint, post-cancel events ignored via phase guard so a tail event can't resume the UI.
 - 🧩 **Help menu direct GitHub links** — Notepatra on GitHub, Latest Release, Report an Issue.
@@ -599,11 +649,11 @@ Quality-and-correctness pass on the two most-used features: **Project Search** (
 
 ## [0.1.16] — 2026-04-20
 
-AI Assistant becomes a proper Cursor-style dock · Project Search finally lives up to "Rust-powered" with a 10–50× speedup · terminal runs `claude` / `codex` / REPLs inline via PTY · CI back to green.
+AI Assistant becomes a proper side-dock · Project Search finally lives up to "Rust-powered" with a 10–50× speedup · terminal runs `claude` / `codex` / REPLs inline via PTY · CI back to green.
 
 ### Added
 - 🤖 **AI Assistant lives in a right-side dock** (`Ctrl+Shift+A`) — persistent chat that survives tab switches. No more spawning a new editor tab per session; one conversation, always in the same place.
-- 🤖 **Whole-workspace awareness** — every prompt carries the selection (or full file), every other open editor tab, the workspace root, AND a flat listing of every file under it. The AI can reason about files you haven't opened, Cursor-style. Budget-capped so small 3B models don't overflow. Skips `.git` / `node_modules` / `target` / `dist` / `__pycache__`.
+- 🤖 **Whole-workspace awareness** — every prompt carries the selection (or full file), every other open editor tab, the workspace root, AND a flat listing of every file under it. The AI can reason about files you haven't opened, modern AI-assistant style. Budget-capped so small 3B models don't overflow. Skips `.git` / `node_modules` / `target` / `dist` / `__pycache__`.
 - 🤖 **Coding Mode morphs the whole panel** — top strip turns accent-green with a "⌘ Coding Mode" badge + accent underline; chat body flips to monospace; quick-action grid and Insert/Replace/Copy row hide for a clean chat view. Chat history is preserved across toggles (not reset).
 - 🤖 **Per-code-block "⧉ Copy code" buttons** inside every assistant reply — copy just that snippet, not the whole message. Plus a whole-response pill in each bubble header.
 - 🖥️ **Terminal runs interactive CLIs inline via PTY** — `claude`, `codex`, `aider`, `gh`, `python` / `ipython`, `node`, `ssh`, `mosh`, `psql`, `mysql`, `sqlite3`, `gdb`, `lldb` now get a real TTY via `script(1)` wrapping. Input box flips to stdin-feed mode; prompt changes to `<cmd> ▷` so the mode is obvious.
@@ -635,7 +685,7 @@ AI Assistant becomes a proper Cursor-style dock · Project Search finally lives 
 Quality-of-life polish on top of v0.1.14. Theme-aware everywhere · AI Coding Mode + Backend picker · colourful ANSI terminal · modern REST client · real screenshots on the website.
 
 ### Added
-- 🤖 **AI Coding Mode toggle** — ON = system prompt becomes "return ONLY modified code, no prose, no fences, preserve indentation"; Replace Selection drops clean code straight into the editor (Cursor-style).
+- 🤖 **AI Coding Mode toggle** — ON = system prompt becomes "return ONLY modified code, no prose, no fences, preserve indentation"; Replace Selection drops clean code straight into the editor (modern AI-assistant style).
 - 🤖 **AI Backend picker** in the top bar — seven one-click presets: Ollama · llama.cpp (GGUF) · OpenRouter (cloud) · LM Studio · Jan · OpenAI · Custom. Selecting auto-fills the URL and refreshes the model list. OpenRouter now two clicks instead of buried in Settings.
 - 🖥️ **Terminal ANSI SGR parser** — renders ls / grep / git / cargo / npm output in colour instead of raw `\033[32m` gibberish. Injects `CLICOLOR=1`, `FORCE_COLOR=1`, `TERM=xterm-256color`. Honours `$SHELL` env var and shows which shell is running in the banner.
 - 🖥️ **zsh-style terminal prompt** — Clay-orange directory name + teal ❯ in a rounded pill, path collapsed to `~` or `.../dir1/dir2` for deep paths.
