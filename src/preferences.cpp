@@ -295,7 +295,9 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent) {
     layout->addWidget(btnRow);
 
     // Single save lambda — used by both OK and Apply.
-    auto save = [=, this]() {
+    // (Capture by value implicitly includes `this` in C++17; MSVC rejects
+    // the explicit `[=, this]` form when -std=c++17 — keep just `[=]`.)
+    auto save = [=]() {
         auto &cfg2 = Config::instance();
 
         // General
