@@ -45,8 +45,20 @@ signals:
     void closeRequested();
 
 private:
+    // v0.1.46 — flush the in-memory session list to disk so search
+    // history survives an app restart. Debounced via m_saveTimer.
+    void persistHistory();
+    void loadPersistedHistory();
+    void scheduleSave();
+
     QTreeWidget *m_tree;
     QLabel *m_header;
+    // v0.1.46 — kept for setVisible() toggling: hidden when the panel
+    // has no sessions (avoids a stray ✕ floating on an empty panel).
+    class QPushButton *m_closeBtn = nullptr;
+    class QPushButton *m_clearBtn = nullptr;
+    class QTimer *m_saveTimer = nullptr;
+    QString m_historyPath;
 
     // v0.1.45 — stacked-session bookkeeping. The current session is
     // the one new addFileSection / addResultLine calls land under;

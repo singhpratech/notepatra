@@ -1,11 +1,21 @@
 #include "searchresults.h"
 #include "fonts.h"
 #include "config.h"
+#include <QApplication>
+#include <QClipboard>
 #include <QDateTime>
+#include <QDir>
+#include <QFile>
 #include <QFont>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMenu>
 #include <QPushButton>
+#include <QStandardPaths>
+#include <QTimer>
 #include <QVBoxLayout>
 
 namespace {
@@ -67,10 +77,39 @@ SearchResultsPanel::SearchResultsPanel(QWidget *parent) : QWidget(parent) {
         "color: #E81123; font-weight: 700; padding: 0; } "
         "QPushButton:hover { background: #E81123; color: white; } "
         "QPushButton:pressed { background: #C41019; color: white; }");
+    // v0.1.46 — Reset/Clear button next to the close ✕. Wipes every
+    // stacked session AND deletes the on-disk history file so the
+    // user gets a clean slate (otherwise loadPersistedHistory would
+    // bring everything back on the next launch).
+    auto *clearBtn = new QPushButton("Clear");
+    QFont clearFont = clearBtn->font();
+    clearFont.setPointSize(10);
+    clearBtn->setFont(clearFont);
+    clearBtn->setFixedHeight(24);
+    clearBtn->setCursor(Qt::PointingHandCursor);
+    clearBtn->setFlat(true);
+    clearBtn->setToolTip("Clear all stacked search sessions (and on-disk history)");
+    clearBtn->setStyleSheet(QString(
+        "QPushButton { background: transparent; border: 1px solid %1; "
+        "color: %1; border-radius: 4px; padding: 2px 10px; margin-right: 6px; } "
+        "QPushButton:hover { border-color: #E81123; color: #E81123; }")
+        .arg(p.hdrFg));
+    connect(clearBtn, &QPushButton::clicked, this, [this]() {
+        clear();
+    });
+    clearBtn->setVisible(false);
+    m_clearBtn = clearBtn;
+    headerRow->addWidget(clearBtn);
+
     connect(closeBtn, &QPushButton::clicked, this, [this]() {
         emit closeRequested();
     });
     headerRow->addWidget(closeBtn);
+    // v0.1.46 — only show the ✕ when the panel actually has search
+    // sessions. An empty panel with a stray ✕ floating at the right
+    // edge looked like leftover UI noise.
+    closeBtn->setVisible(false);
+    m_closeBtn = closeBtn;
 
     layout->addWidget(headerHost);
 
@@ -97,6 +136,186 @@ SearchResultsPanel::SearchResultsPanel(QWidget *parent) : QWidget(parent) {
         QString file = item->data(0, Qt::UserRole + 1).toString();
         if (line > 0) emit resultDoubleClicked(file, line);
     });
+
+    // v0.1.46 — Notepad++-style right-click context menu on the
+    // results tree. Available actions depend on what the user
+    // clicked (a session, a file row, or a match line); shared
+    // actions (Copy, Select All, Clear all sessions) always show.
+    m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_tree, &QTreeWidget::customContextMenuRequested, this,
+            [this](const QPoint &pos) {
+        QTreeWidgetItem *item = m_tree->itemAt(pos);
+        QMenu menu;
+        if (item) {
+            const int line = item->data(0, Qt::UserRole).toInt();
+            const QString file = item->data(0, Qt::UserRole + 1).toString();
+            const bool isMatch = (line > 0 && !file.isEmpty());
+
+            if (isMatch) {
+                menu.addAction(tr("&Open"), this, [this, file, line]() {
+                    emit resultDoubleClicked(file, line);
+                });
+            }
+            menu.addAction(tr("&Copy"), this, [item]() {
+                QApplication::clipboard()->setText(item->text(0));
+            });
+            menu.addAction(tr("Copy &Path"), this, [file]() {
+                if (!file.isEmpty())
+                    QApplication::clipboard()->setText(file);
+            })->setEnabled(!file.isEmpty());
+            menu.addSeparator();
+        }
+        menu.addAction(tr("&Expand all"), this, [this]() {
+            m_tree->expandAll();
+        });
+        menu.addAction(tr("Co&llapse all"), this, [this]() {
+            m_tree->collapseAll();
+            for (QTreeWidgetItem *s : m_sessions)
+                if (s) s->setExpanded(false);
+        });
+        menu.addSeparator();
+        menu.addAction(tr("Select &All"), this, [this]() {
+            m_tree->selectAll();
+        });
+        menu.addSeparator();
+        menu.addAction(tr("Clear &all sessions"), this, [this]() { clear(); });
+        menu.exec(m_tree->viewport()->mapToGlobal(pos));
+    });
+
+    // v0.1.46 — persistent history. Debounced 1s save timer, fired
+    // whenever a search adds/updates a session; load any existing
+    // file from disk on construction so users see prior searches
+    // when the app restarts.
+    QString cfgDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    if (cfgDir.isEmpty()) {
+        cfgDir = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation);
+    }
+    if (!cfgDir.isEmpty()) {
+        QDir().mkpath(cfgDir);
+        m_historyPath = cfgDir + "/search-history.json";
+    }
+    m_saveTimer = new QTimer(this);
+    m_saveTimer->setSingleShot(true);
+    m_saveTimer->setInterval(1000);
+    connect(m_saveTimer, &QTimer::timeout, this, &SearchResultsPanel::persistHistory);
+    loadPersistedHistory();
+}
+
+void SearchResultsPanel::scheduleSave() {
+    if (m_saveTimer) m_saveTimer->start();
+}
+
+void SearchResultsPanel::persistHistory() {
+    if (m_historyPath.isEmpty()) return;
+    QJsonArray sessionsArr;
+    for (QTreeWidgetItem *session : m_sessions) {
+        if (!session) continue;
+        QJsonObject sessionObj;
+        sessionObj["label"] = session->text(0);
+        QJsonArray filesArr;
+        for (int i = 0; i < session->childCount(); i++) {
+            QTreeWidgetItem *fileItem = session->child(i);
+            if (!fileItem) continue;
+            QJsonObject fileObj;
+            fileObj["label"] = fileItem->text(0);
+            QJsonArray matchesArr;
+            for (int j = 0; j < fileItem->childCount(); j++) {
+                QTreeWidgetItem *matchItem = fileItem->child(j);
+                if (!matchItem) continue;
+                QJsonObject m;
+                m["label"] = matchItem->text(0);
+                m["line"] = matchItem->data(0, Qt::UserRole).toInt();
+                m["file"] = matchItem->data(0, Qt::UserRole + 1).toString();
+                matchesArr.append(m);
+            }
+            fileObj["matches"] = matchesArr;
+            filesArr.append(fileObj);
+        }
+        sessionObj["files"] = filesArr;
+        sessionsArr.append(sessionObj);
+    }
+    QJsonObject root;
+    root["version"] = 1;
+    root["sessions"] = sessionsArr;
+    QJsonDocument doc(root);
+    QByteArray bytes = doc.toJson(QJsonDocument::Compact);
+    // Cap on-disk size at 5 MB; if exceeded, drop the oldest sessions
+    // until we fit. (m_sessions is in chronological order; oldest
+    // first.) This avoids unbounded growth from massive search runs.
+    constexpr int kMaxBytes = 5 * 1024 * 1024;
+    while (bytes.size() > kMaxBytes && !sessionsArr.isEmpty()) {
+        sessionsArr.removeFirst();
+        root["sessions"] = sessionsArr;
+        bytes = QJsonDocument(root).toJson(QJsonDocument::Compact);
+    }
+    QFile f(m_historyPath);
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        f.write(bytes);
+        f.close();
+    }
+}
+
+void SearchResultsPanel::loadPersistedHistory() {
+    if (m_historyPath.isEmpty()) return;
+    QFile f(m_historyPath);
+    if (!f.exists() || !f.open(QIODevice::ReadOnly)) return;
+    const QByteArray bytes = f.readAll();
+    f.close();
+    if (bytes.isEmpty()) return;
+    QJsonParseError err;
+    QJsonDocument doc = QJsonDocument::fromJson(bytes, &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) return;
+    const QJsonArray sessionsArr = doc.object().value("sessions").toArray();
+    if (sessionsArr.isEmpty()) return;
+
+    const SRPalette p = srPalette();
+    // Sessions are stored in chronological order (oldest first); we
+    // insert each one BELOW the previously inserted one to preserve
+    // the on-disk order in the tree (oldest at the bottom, newest
+    // at the top — same convention beginSession uses live).
+    for (int i = sessionsArr.size() - 1; i >= 0; i--) {
+        const QJsonObject sObj = sessionsArr[i].toObject();
+        auto *session = new QTreeWidgetItem;
+        m_tree->addTopLevelItem(session);
+        session->setText(0, sObj.value("label").toString());
+        QFont sf = m_tree->font();
+        sf.setBold(true);
+        session->setFont(0, sf);
+        session->setForeground(0, QColor(p.sessionTone));
+        session->setExpanded(false);
+
+        const QJsonArray filesArr = sObj.value("files").toArray();
+        for (const QJsonValue &fv : filesArr) {
+            const QJsonObject fObj = fv.toObject();
+            auto *fileItem = new QTreeWidgetItem(session);
+            fileItem->setText(0, fObj.value("label").toString());
+            QFont bold = fileItem->font(0);
+            bold.setBold(true);
+            fileItem->setFont(0, bold);
+            fileItem->setForeground(0, QColor(p.fileTone));
+            fileItem->setExpanded(true);
+
+            const QJsonArray matchesArr = fObj.value("matches").toArray();
+            for (const QJsonValue &mv : matchesArr) {
+                const QJsonObject mObj = mv.toObject();
+                auto *matchItem = new QTreeWidgetItem(fileItem);
+                matchItem->setText(0, mObj.value("label").toString());
+                matchItem->setData(0, Qt::UserRole, mObj.value("line").toInt());
+                matchItem->setData(0, Qt::UserRole + 1, mObj.value("file").toString());
+                matchItem->setForeground(0, QColor(p.lineTone));
+            }
+        }
+
+        m_sessions.prepend(session);
+    }
+
+    // Make the close + clear buttons visible since we have content.
+    if (m_closeBtn) m_closeBtn->setVisible(true);
+    if (m_clearBtn) m_clearBtn->setVisible(true);
+
+    // Show the panel since there's history to look at — user can
+    // dismiss it via ✕ if they don't want it.
+    setVisible(true);
 }
 
 void SearchResultsPanel::clear() {
@@ -105,6 +324,12 @@ void SearchResultsPanel::clear() {
     m_sessions.clear();
     m_currentFileItem = nullptr;
     m_currentFile.clear();
+    if (m_closeBtn) m_closeBtn->setVisible(false);
+    if (m_clearBtn) m_clearBtn->setVisible(false);
+    // v0.1.46 — Reset wipes the on-disk file too so the next launch
+    // doesn't restore the just-cleared sessions.
+    if (!m_historyPath.isEmpty()) QFile::remove(m_historyPath);
+    if (m_saveTimer) m_saveTimer->stop();
 }
 
 void SearchResultsPanel::beginSession(const QString &searchTerm) {
@@ -128,6 +353,8 @@ void SearchResultsPanel::beginSession(const QString &searchTerm) {
     m_currentSession->setExpanded(true);
 
     m_sessions.append(m_currentSession);
+    if (m_closeBtn) m_closeBtn->setVisible(true);
+    if (m_clearBtn) m_clearBtn->setVisible(true);
 
     // Cap at 10 sessions; oldest pruned from the bottom of the tree.
     constexpr int kMaxSessions = 10;
@@ -140,6 +367,7 @@ void SearchResultsPanel::beginSession(const QString &searchTerm) {
     // creates a fresh child under this session.
     m_currentFileItem = nullptr;
     m_currentFile.clear();
+    scheduleSave();
 }
 
 void SearchResultsPanel::setHeader(const QString &searchTerm, int totalHits, int fileCount) {
@@ -156,6 +384,7 @@ void SearchResultsPanel::setHeader(const QString &searchTerm, int totalHits, int
               .arg(fileCount).arg(fileCount == 1 ? "" : "s");
     m_currentSession->setText(0, QString("🔎  Search \"%1\" — %2 · %3")
                                      .arg(searchTerm, hits, stamp));
+    scheduleSave();
 }
 
 void SearchResultsPanel::addFileSection(const QString &filePath, int hitCount) {

@@ -510,9 +510,12 @@ void FindReplaceDialog::doFindAllCurrent() {
                                         m_matchCase->isChecked(),
                                         m_wholeWord->isChecked());
 
-    // Show results in bottom panel (like Notepad++)
+    // Show results in bottom panel (like Notepad++).
+    // v0.1.46 — DO NOT clear(); each search must stack as a new
+    // session so the user can see previous queries collapsed below
+    // the current one. clear() wipes the entire history and is
+    // reserved for an explicit user action (panel close + reopen).
     auto *sr = mw->searchResults();
-    sr->clear();
 
     QString fileName = e->filePath().isEmpty() ? "Untitled" : e->filePath();
     QStringList lines = e->text().split('\n');

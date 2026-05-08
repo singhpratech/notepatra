@@ -7,6 +7,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.46] — 2026-05-08
+
+**Hotfix on top of v0.1.45.** Two issues: stacking didn't actually
+work for the most-common Find All path, and the new ✕ close button
+floated awkwardly on an empty SearchResultsPanel even before any
+search had been run.
+
+### Fixed
+
+- 🔍 **`doFindAllCurrent` no longer calls `sr->clear()`**. v0.1.45 added
+  the new `beginSession()` call but left a stale `sr->clear()` line
+  immediately above it, so every Find All in Current wiped the panel's
+  entire session history right before adding the new session. Symptom:
+  stacking never visible, previous searches always gone. Removed.
+- ❌ **Close ✕ on the SearchResultsPanel is now hidden until at least
+  one session exists.** Pre-fix the ✕ floated at the right edge of an
+  empty panel header even before any search had been run, looking like
+  leftover UI noise. Now: panel starts with the ✕ hidden; the first
+  `beginSession` call shows it; an explicit `clear()` hides it again.
+- All three Find paths now have consistent behaviour: each search
+  creates a new session at the top of the tree; previous sessions
+  collapse; capped at 10 with oldest pruned.
+
+---
+
 ## [0.1.45] — 2026-05-08
 
 **Hotfix on top of v0.1.44.** v0.1.44 added a close button + stacked
