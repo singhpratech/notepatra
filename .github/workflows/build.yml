@@ -604,7 +604,28 @@ jobs:
           # (Qt5_DIR is <root>/lib/cmake/Qt5 — too deep). Use the root so
           # find_package(Qt5) and find_path/find_library both work.
           $qtRoot = "${{ steps.qscintilla.outputs.QT_ROOT }}"
-          cmake .. -G "Visual Studio 17 2022" -A x64 `
+          # v0.1.44 — derive the CMake VS generator from whatever
+          # Visual Studio major version the MSVC dev shell exposed in
+          # $env:VisualStudioVersion. GitHub's windows-latest runner
+          # image rolled from VS 17 2022 to VS 18 2026 in May 2026 and
+          # a hard pin to "Visual Studio 17 2022" broke configure
+          # ("could not find any instance of Visual Studio"). The shell
+          # var travels with the toolset, so this stays correct if the
+          # runner rolls forward or back.
+          $vsMajor = 0
+          if ($env:VisualStudioVersion) {
+              $vsMajor = [int]($env:VisualStudioVersion.Split('.')[0])
+          }
+          switch ($vsMajor) {
+              18 { $vsGen = "Visual Studio 18 2026" }
+              17 { $vsGen = "Visual Studio 17 2022" }
+              default {
+                  Write-Host "::warning::Unrecognised VisualStudioVersion='$($env:VisualStudioVersion)'; falling back to VS 17 2022."
+                  $vsGen = "Visual Studio 17 2022"
+              }
+          }
+          Write-Host "Using CMake generator: $vsGen  (from VisualStudioVersion=$($env:VisualStudioVersion))"
+          cmake .. -G "$vsGen" -A x64 `
             "-DCMAKE_PREFIX_PATH=$qtRoot" `
             "-DQSCINTILLA_INCLUDE=${{ steps.qscintilla.outputs.QSC_INC }}" `
             "-DQSCINTILLA_LIB=${{ steps.qscintilla.outputs.QSC_LIB }}" 2>&1 | Tee-Object -FilePath ../cmake-configure.log
@@ -940,7 +961,23 @@ jobs:
           # Qt5 + QScintilla discovery the main exe used.
           $qtRoot = "${{ steps.qscintilla.outputs.QT_ROOT }}"
           Set-Location build
-          cmake .. -G "Visual Studio 17 2022" -A x64 `
+          # v0.1.44 — see the configure-step note above. Same VS-major
+          # detection so the regression-suite reconfigure picks up
+          # whatever VS the runner currently has installed.
+          $vsMajor = 0
+          if ($env:VisualStudioVersion) {
+              $vsMajor = [int]($env:VisualStudioVersion.Split('.')[0])
+          }
+          switch ($vsMajor) {
+              18 { $vsGen = "Visual Studio 18 2026" }
+              17 { $vsGen = "Visual Studio 17 2022" }
+              default {
+                  Write-Host "::warning::Unrecognised VisualStudioVersion='$($env:VisualStudioVersion)'; falling back to VS 17 2022."
+                  $vsGen = "Visual Studio 17 2022"
+              }
+          }
+          Write-Host "Using CMake generator: $vsGen  (from VisualStudioVersion=$($env:VisualStudioVersion))"
+          cmake .. -G "$vsGen" -A x64 `
             "-DCMAKE_PREFIX_PATH=$qtRoot" `
             "-DQSCINTILLA_INCLUDE=${{ steps.qscintilla.outputs.QSC_INC }}" `
             "-DQSCINTILLA_LIB=${{ steps.qscintilla.outputs.QSC_LIB }}" `
