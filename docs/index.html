@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.44 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.45 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.44">
-        Download v0.1.44 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.45">
+        Download v0.1.45 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.44 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.45 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. JSON / HTML / SQL fixers — regex first, local AI as fallback. No cloud unless you opt in.</p>
 
@@ -1389,7 +1389,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.44</div>
+        <div class="section-label">Download v0.1.45</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1841,7 +1841,43 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.44 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.45 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-05-08</span>
+                        <span>· Hotfix on top of v0.1.44 — Find-in-Files panel close button + stacked history; explicit Comment/Uncomment menu items (NPP-style).</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🔍 Bottom-docked Search Results panel — close + stacked history</h5>
+                        <ul>
+                            <li>v0.1.44 added the close button + stacked history to <code>ProjectSearch</code> (the Ctrl+Shift+G tab) but <strong>Find in Files</strong> (Ctrl+Shift+F) populates a different widget — the bottom-docked <code>SearchResultsPanel</code> — which still had no close button and wiped its history on every search.</li>
+                            <li>v0.1.45 ports both features there: <strong>red ✕ close button</strong> in the panel header (<code style="color:var(--green);font-size:12px;">#E81123</code>, theme-independent), each Find All becomes a top-level <strong>session row</strong> (<code>🔎 Search "needle" — N hits in M files · HH:MM:SS</code>), prior sessions auto-collapse, capped at 10 sessions.</li>
+                            <li>Click the ✕ → panel hides, history retained for next time. Find All / Find All in All Open Documents call <code>beginSession(needle)</code> first so the existing single-file + multi-file paths both flow through the new stacked-history path.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>💬 Explicit Comment / Uncomment menu items, Notepad++-style</h5>
+                        <ul>
+                            <li>v0.1.44's right-click menu only had <em>Toggle Line Comment</em> and <em>Toggle Block Comment</em>. v0.1.45 adds the explicit one-direction items so users don't have to know whether toggle is going to add or strip:</li>
+                            <li><strong>Comment Line</strong> (Ctrl+K — NPP default) — always adds the line marker, skips lines that already start with it.</li>
+                            <li><strong>Uncomment Line</strong> (Ctrl+Shift+K — NPP default) — always strips, but ONLY when the marker is the FIRST non-whitespace token on the line, so inline <code>--</code> in SQL or <code>#</code> in PowerShell strings stays intact.</li>
+                            <li><strong>Comment Block</strong> — always wraps the selection (or current line) in the language's block markers.</li>
+                            <li><strong>Uncomment Block</strong> — always unwraps if wrapped, idempotent no-op otherwise.</li>
+                            <li>All six items (the two toggles + the four explicit) are in the right-click context menu AND the Edit → Comment/Uncomment submenu. Disabled greyed-out for languages without that kind of comment.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.45">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.45">Commits</a>
+                </div>
+            </div>
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.44</div>
                     <div class="version-meta">
                         <span>2026-05-07</span>
                         <span>· Project Search UX + language-aware comment toggling — three Notepad++-style upgrades.</span>

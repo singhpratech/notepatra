@@ -7,6 +7,68 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.45] — 2026-05-08
+
+**Hotfix on top of v0.1.44.** v0.1.44 added a close button + stacked
+search history to `ProjectSearch` (the tab opened with Ctrl+Shift+G), but
+Find in Files (Ctrl+Shift+F) populates a different widget — the
+bottom-docked `SearchResultsPanel` — which still had no close button and
+still wiped its history on every search. The right-click comment menu
+also lacked explicit Comment / Uncomment items separate from the toggles.
+Both fixed.
+
+### Fixed
+
+- 🔍 **`SearchResultsPanel` (the bottom-docked Find-in-Files panel) now
+  has the same red ✕ close button + Notepad++-style stacked history**
+  that `ProjectSearch` got in v0.1.44. Each Find All / Find All in All
+  Open Documents call becomes a new top-level **session** row
+  (`🔎 Search "needle" — N hit(s) in M file(s) · HH:MM:SS`); previous
+  sessions auto-collapse, capped at 10. Pressing the red ✕ hides the
+  panel without losing the history. Was wired through the wrong widget
+  in v0.1.44 — fixed.
+- 💬 **Explicit Comment / Uncomment menu items, Notepad++-style.** The
+  v0.1.44 right-click menu only had Toggle Line / Toggle Block; users
+  who wanted a one-direction action ("just uncomment this") had to know
+  the toggle would do the right thing. Now each kind has both a Toggle
+  and explicit Comment-only / Uncomment-only items:
+  - `Toggle Line Comment` (Ctrl+/, Ctrl+Q) — toggles state
+  - `Toggle Block Comment` (Ctrl+Shift+Q) — toggles state
+  - `Comment Line` (Ctrl+K) — always inserts the line marker
+  - `Uncomment Line` (Ctrl+Shift+K) — always strips the line marker
+  - `Comment Block` — always wraps in the block markers
+  - `Uncomment Block` — always strips the block markers
+  Ctrl+K / Ctrl+Shift+K match Notepad++'s defaults. All six items are
+  in the right-click context menu AND the Edit → Comment/Uncomment
+  submenu. Disabled greyed-out for languages without that kind of
+  comment (Plain Text, Diff, etc.).
+
+### Internals
+
+- `src/searchresults.{h,cpp}` — header redesigned as a row with title +
+  red ✕ close button. New `closeRequested` signal. New `beginSession`
+  method opens a top-level session item; `setHeader` now updates the
+  active session's label with totals; `addFileSection` /
+  `addResultLine` add under the current session. Stacked sessions
+  capped at 10; oldest pruned when over.
+- `src/findreplace.cpp` — single-file Find All and multi-file Find All
+  in All Open Documents both call `beginSession(needle)` first, then
+  `setHeader` for the final label. The legacy `clear()` call is gone
+  from the multi-file path.
+- `src/mainwindow.cpp` — wires `SearchResultsPanel::closeRequested`
+  → `setVisible(false)`; adds Comment Line / Uncomment Line / Comment
+  Block / Uncomment Block actions to the Edit → Comment/Uncomment
+  submenu with NPP-default shortcuts.
+- `src/editor.{h,cpp}` — new `commentLine` / `uncommentLine` /
+  `commentBlock` / `uncommentBlock` methods (one-direction, idempotent).
+  Refactor: shared `commentSyntaxFor()` lookup. `uncommentLine` only
+  strips when the comment marker is the FIRST non-whitespace token, so
+  it doesn't mangle inline `--` in SQL expressions.
+- Right-click context menu in the editor now has 6 comment-related
+  items grouped after the standard Cut / Copy / Paste / Select All.
+
+---
+
 ## [0.1.44] — 2026-05-07
 
 **Project Search UX + language-aware comment toggling.** Three Notepad++-style

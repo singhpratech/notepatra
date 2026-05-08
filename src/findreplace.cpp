@@ -530,10 +530,14 @@ void FindReplaceDialog::doFindAllCurrent() {
             results.append({lineNum, lines[lineNum - 1]});
     }
 
-    sr->setHeader(needle, results.size(), 1);
+    // v0.1.45 — open a new session FIRST so files+lines land under
+    // the new top-level row (Notepad++-style stacked history). Final
+    // setHeader updates that row's label with the totals.
+    sr->beginSession(needle);
     sr->addFileSection(fileName, results.size());
     for (const auto &r : results)
         sr->addResultLine(r.first, r.second, needle);
+    sr->setHeader(needle, results.size(), 1);
 
     // Show the panel
     sr->setVisible(true);
@@ -550,7 +554,9 @@ void FindReplaceDialog::doFindAllOpened() {
     if (m_modeExtended->isChecked()) needle = processExtended(needle);
 
     auto *sr = mw->searchResults();
-    sr->clear();
+    // v0.1.45 — open a new stacked session instead of wiping history.
+    // Users can still hit "Clear" via the panel UI to reset everything.
+    sr->beginSession(needle);
 
     int totalHits = 0;
     int fileCount = 0;

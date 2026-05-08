@@ -75,6 +75,17 @@ public:
     void moveLineDown();
     void toggleComment();
     void toggleBlockComment();
+
+    // v0.1.45 — explicit Comment / Uncomment per kind, in addition to
+    // the toggles. NPP-style: callers know exactly which direction
+    // they want, so the right-click menu and Ctrl+K / Ctrl+Shift+K
+    // shortcuts can do "always-add" or "always-remove" without
+    // depending on the current state of the line.
+    void commentLine();
+    void uncommentLine();
+    void commentBlock();
+    void uncommentBlock();
+
     void toggleWordWrap();
     void toggleWhitespace();
     void toggleEol();

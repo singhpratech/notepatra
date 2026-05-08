@@ -1182,6 +1182,153 @@ void Editor::toggleBlockComment() {
     endUndoAction();
 }
 
+// v0.1.45 — explicit Comment-only / Uncomment-only operations. The
+// toggle helpers above flip state; these always go in one direction,
+// matching Notepad++'s separate menu items + Ctrl+K / Ctrl+Shift+K
+// shortcuts.
+void Editor::commentLine() {
+    const CommentSyntax cs = commentSyntaxFor(m_language);
+    if (cs.line.isEmpty()) return;
+
+    int lineFrom, lineTo, colFrom, colTo;
+    if (hasSelectedText()) {
+        getSelection(&lineFrom, &colFrom, &lineTo, &colTo);
+        if (colTo == 0) lineTo--;
+    } else {
+        getCursorPosition(&lineFrom, &colFrom);
+        lineTo = lineFrom;
+    }
+
+    beginUndoAction();
+    for (int i = lineFrom; i <= lineTo; i++) {
+        // Skip lines that already start with the comment token —
+        // commentLine never DOUBLES the comment marker.
+        if (text(i).trimmed().startsWith(cs.line)) continue;
+        insertAt(cs.line + " ", i, 0);
+    }
+    endUndoAction();
+}
+
+void Editor::uncommentLine() {
+    const CommentSyntax cs = commentSyntaxFor(m_language);
+    if (cs.line.isEmpty()) return;
+
+    int lineFrom, lineTo, colFrom, colTo;
+    if (hasSelectedText()) {
+        getSelection(&lineFrom, &colFrom, &lineTo, &colTo);
+        if (colTo == 0) lineTo--;
+    } else {
+        getCursorPosition(&lineFrom, &colFrom);
+        lineTo = lineFrom;
+    }
+
+    beginUndoAction();
+    for (int i = lineFrom; i <= lineTo; i++) {
+        QString line = text(i);
+        const int idx = line.indexOf(cs.line);
+        // Only strip if the comment is the FIRST non-whitespace token
+        // on the line — otherwise we'd remove the `--` from a SQL
+        // expression like `WHERE x = a-b -- comment`.
+        if (idx < 0) continue;
+        if (line.left(idx).trimmed().isEmpty()) {
+            int removeLen = cs.line.length();
+            if (idx + removeLen < line.length() && line[idx + removeLen] == ' ')
+                removeLen++;
+            setSelection(i, idx, i, idx + removeLen);
+            removeSelectedText();
+        }
+    }
+    endUndoAction();
+}
+
+void Editor::commentBlock() {
+    const CommentSyntax cs = commentSyntaxFor(m_language);
+    if (cs.blockOpen.isEmpty() || cs.blockClose.isEmpty()) return;
+
+    int lineFrom = 0, lineTo = 0, colFrom = 0, colTo = 0;
+    bool hadSelection = hasSelectedText();
+    if (hadSelection) {
+        getSelection(&lineFrom, &colFrom, &lineTo, &colTo);
+    } else {
+        getCursorPosition(&lineFrom, &colFrom);
+        lineTo = lineFrom;
+        colFrom = 0;
+        colTo = text(lineFrom).length();
+    }
+
+    QString sel;
+    if (hadSelection) {
+        sel = selectedText();
+    } else {
+        sel = text(lineFrom);
+        if (sel.endsWith('\n')) sel.chop(1);
+    }
+
+    // commentBlock is unconditional: always wrap. If the user wants
+    // toggle behaviour they can use Ctrl+Shift+Q.
+    beginUndoAction();
+    const QString wrapped = cs.blockOpen + " " + sel + " " + cs.blockClose;
+    if (hadSelection) {
+        replaceSelectedText(wrapped);
+    } else {
+        setSelection(lineFrom, 0, lineFrom, text(lineFrom).length());
+        replaceSelectedText(wrapped);
+    }
+    endUndoAction();
+}
+
+void Editor::uncommentBlock() {
+    const CommentSyntax cs = commentSyntaxFor(m_language);
+    if (cs.blockOpen.isEmpty() || cs.blockClose.isEmpty()) return;
+
+    int lineFrom = 0, lineTo = 0, colFrom = 0, colTo = 0;
+    bool hadSelection = hasSelectedText();
+    if (hadSelection) {
+        getSelection(&lineFrom, &colFrom, &lineTo, &colTo);
+    } else {
+        getCursorPosition(&lineFrom, &colFrom);
+        lineTo = lineFrom;
+        colFrom = 0;
+        colTo = text(lineFrom).length();
+    }
+
+    QString sel;
+    if (hadSelection) {
+        sel = selectedText();
+    } else {
+        sel = text(lineFrom);
+        if (sel.endsWith('\n')) sel.chop(1);
+    }
+
+    const QString trimmed = sel.trimmed();
+    if (!(trimmed.startsWith(cs.blockOpen) && trimmed.endsWith(cs.blockClose) &&
+          trimmed.length() >= cs.blockOpen.length() + cs.blockClose.length())) {
+        return; // not wrapped — uncommentBlock is a no-op (idempotent).
+    }
+
+    const int openIdx  = sel.indexOf(cs.blockOpen);
+    const int closeIdx = sel.lastIndexOf(cs.blockClose);
+    if (openIdx < 0 || closeIdx <= openIdx) return;
+
+    QString inner = sel.mid(openIdx + cs.blockOpen.length(),
+                            closeIdx - openIdx - cs.blockOpen.length());
+    if (inner.startsWith(' ')) inner.remove(0, 1);
+    if (inner.endsWith(' ')) inner.chop(1);
+    QString prefix = sel.left(openIdx);
+    QString suffix = sel.mid(closeIdx + cs.blockClose.length());
+    QString result = prefix + inner + suffix;
+
+    beginUndoAction();
+    if (hadSelection) {
+        setSelection(lineFrom, colFrom, lineTo, colTo);
+        replaceSelectedText(result);
+    } else {
+        setSelection(lineFrom, 0, lineFrom, text(lineFrom).length());
+        replaceSelectedText(result);
+    }
+    endUndoAction();
+}
+
 void Editor::contextMenuEvent(QContextMenuEvent *event) {
     QMenu menu(this);
 
@@ -1230,6 +1377,27 @@ void Editor::contextMenuEvent(QContextMenuEvent *event) {
         this, [this]() { toggleBlockComment(); });
     blockAct->setShortcut(QKeySequence("Ctrl+Shift+Q"));
     blockAct->setEnabled(!cs.blockOpen.isEmpty() && !cs.blockClose.isEmpty());
+
+    // ── v0.1.45 — explicit Comment / Uncomment, NPP-style ───────────
+    menu.addSeparator();
+
+    auto *cmtLineAct = menu.addAction(tr("&Comment Line"), this,
+        [this]() { commentLine(); });
+    cmtLineAct->setShortcut(QKeySequence("Ctrl+K"));
+    cmtLineAct->setEnabled(!cs.line.isEmpty());
+
+    auto *uncmtLineAct = menu.addAction(tr("&Uncomment Line"), this,
+        [this]() { uncommentLine(); });
+    uncmtLineAct->setShortcut(QKeySequence("Ctrl+Shift+K"));
+    uncmtLineAct->setEnabled(!cs.line.isEmpty());
+
+    auto *cmtBlockAct = menu.addAction(tr("Co&mment Block"), this,
+        [this]() { commentBlock(); });
+    cmtBlockAct->setEnabled(!cs.blockOpen.isEmpty() && !cs.blockClose.isEmpty());
+
+    auto *uncmtBlockAct = menu.addAction(tr("Un&comment Block"), this,
+        [this]() { uncommentBlock(); });
+    uncmtBlockAct->setEnabled(!cs.blockOpen.isEmpty() && !cs.blockClose.isEmpty());
 
     menu.exec(event->globalPos());
 }

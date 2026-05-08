@@ -667,6 +667,12 @@ MainWindow::MainWindow() {
     m_vertSplitter->addWidget(m_searchResults);
     m_vertSplitter->setSizes({700, 0});
 
+    // v0.1.45 — red ✕ in the panel header → hide it (history kept).
+    connect(m_searchResults, &SearchResultsPanel::closeRequested, this, [this]() {
+        m_searchResults->setVisible(false);
+        m_vertSplitter->setSizes({700, 0});
+    });
+
     // Double-click search result → jump to that line in editor
     connect(m_searchResults, &SearchResultsPanel::resultDoubleClicked, this, [this](const QString &file, int line) {
         // Find the tab with this file, or open it
@@ -1370,6 +1376,19 @@ void MainWindow::buildMenus() {
     auto *blockCommentAct = commentMenu->addAction("Toggle &Block Comment", this,
         [E]() { if (auto *e = E()) e->toggleBlockComment(); });
     blockCommentAct->setShortcut(QKeySequence("Ctrl+Shift+Q"));
+    // v0.1.45 — explicit Comment / Uncomment per kind, NPP-style.
+    // Ctrl+K + Ctrl+Shift+K match Notepad++'s defaults.
+    commentMenu->addSeparator();
+    auto *commentLineAct = commentMenu->addAction("&Comment Line", this,
+        [E]() { if (auto *e = E()) e->commentLine(); });
+    commentLineAct->setShortcut(QKeySequence("Ctrl+K"));
+    auto *uncommentLineAct = commentMenu->addAction("&Uncomment Line", this,
+        [E]() { if (auto *e = E()) e->uncommentLine(); });
+    uncommentLineAct->setShortcut(QKeySequence("Ctrl+Shift+K"));
+    commentMenu->addAction("Co&mment Block", this,
+        [E]() { if (auto *e = E()) e->commentBlock(); });
+    commentMenu->addAction("Un&comment Block", this,
+        [E]() { if (auto *e = E()) e->uncommentBlock(); });
 
     // Blank operations
     auto *blankMenu = edit->addMenu("Blank Operations");
