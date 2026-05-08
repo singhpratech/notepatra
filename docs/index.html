@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.8 MB (Linux x64 tar.gz), 25.5 MB (macOS DMG with bundled Qt), 43.5 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 48 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.42",
+      "softwareVersion": "0.1.48",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.47 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.48 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.47">
-        Download v0.1.47 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.48">
+        Download v0.1.48 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.47 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.48 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. JSON / HTML / SQL fixers — regex first, local AI as fallback. No cloud unless you opt in.</p>
 
@@ -1389,7 +1389,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.47</div>
+        <div class="section-label">Download v0.1.48</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1841,7 +1841,73 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.47 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.48 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-05-08</span>
+                        <span>· AI panel UX overhaul + JSON / HTML / Bracket / SQL hardening + git inline diff.</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🎛️ AI Assistant — 3-way segmented mode picker + 50% default width</h5>
+                        <ul>
+                            <li>The cluttered single row of seven controls (Ollama ▾ · model ▾ · ↻ · ☐ Coding · ☐ Data · ☐ Think · Reset) is now split cleanly into two rows. Top row: backend + model selection + Reset. Second row: a segmented selector <code>[ Chat | Coding | Data ]</code> + the Think checkbox. <strong>Chat</strong> is the explicit default ("no flag" used to be implicit and unlabelled).</li>
+                            <li>AI dock opens at <strong>~50% of window width</strong> on first toggle (was a narrow strip; users had to drag every session). Splitter is fully draggable after.</li>
+                            <li>Fixed two dead-code <code>connect()</code> calls in the panel constructor — the Data-mode toggle and the Manage Connections button were both wired BEFORE their widgets were constructed (they were <code>nullptr</code> pointers). Reordered so the connects fire correctly. Coding Mode now actually opens the file explorer at 220 px width when engaged.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🛡️ JSON / HTML / Bracket Tools — strict "no new content" AI Fix prompt parity</h5>
+                        <ul>
+                            <li>HTML Tools and Bracket Tools AI Fix prompts brought up to JSON Tools' 7-rule numbered-rules framework: <em>"PRESERVE all content / Do NOT add new tags / Do NOT 'improve' the code / Output ONLY the corrected X"</em>. Both also got Gemma/Phi-aware rules-in-user-prompt repetition and the full output cleanup pipeline (<code>&lt;think&gt;</code> strip, ``` fence strip, prose-prefix strip, empty-response fallback). And full Show Diff + recordFix + logAction + Show-thinking checkbox parity with JSON.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🔧 Rust core hardening (rust-core/)</h5>
+                        <ul>
+                            <li><strong>Bracket fixer</strong>: <code>insert(0, …)</code> per missing opener was O(n²) on multi-megabyte inputs — replaced with allocate-once-in-place. Separate single/double quote tracking (the previous shared <code>in_string</code> flag mis-toggled on <code>"don't"</code> and corrupted bracket counts). Consecutive-backslash escape counting (the previous code treated <code>"a\\"</code> as an unclosed string). Word-boundary keyword pair matching (no more <code>redo</code> matching <code>do</code>).</li>
+                            <li><strong>JSON</strong>: regexes compile once via <code>OnceLock</code> with <code>.ok()</code> fallback (no panic across the C ABI boundary if a regex ever fails to compile). <code>pretty_print</code> falls back to manual on serialize error.</li>
+                            <li><strong>All four formatters</strong> (JSON / HTML / SQL / Bracket): hard 50 MB input cap with a graceful safe-marker return.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🐛 SQL Formatter — real bugs found, dialect coverage extended</h5>
+                        <ul>
+                            <li><strong>T-SQL <code>SELECT TOP N</code> was being silently dropped</strong> during formatting. The Rust writer ignored <code>Select.top</code>, so a query like <code>SELECT TOP 10 * FROM t</code> formatted to <code>SELECT * FROM t</code>. Real bug, fixed.</li>
+                            <li><strong>PostgreSQL <code>ON CONFLICT</code> was also being silently dropped.</strong> Same bug pattern. Fixed.</li>
+                            <li>UPDATE / DELETE / INSERT statements now have proper Claude-style pretty-printers instead of falling back to sqlparser's compact 200-char single-line Display impl.</li>
+                            <li>CASE/WHEN expansion when total length &gt; 50 chars (one WHEN per line, aligned). Long IN list wrapping (one item per line when &gt; 80 chars). GROUP BY column-per-line for 3+ items.</li>
+                            <li>12 new real-world PostgreSQL tests: UPSERT (<code>ON CONFLICT DO UPDATE</code>), <code>WITH RECURSIVE</code>, window functions (<code>RANK() OVER (PARTITION BY)</code>), JSON operators (<code>-&gt;</code>, <code>-&gt;&gt;</code>), <code>ARRAY_AGG</code> + <code>STRING_AGG</code>, <code>UPDATE … RETURNING</code>, <code>DELETE … USING … RETURNING</code>, multi-CTE WITH, LATERAL joins, dollar-quoted strings, multi-condition JOIN ON, idempotent formatting.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🌐 REST client + 🔀 Git panel</h5>
+                        <ul>
+                            <li>REST client: <strong>30 s transfer timeout</strong> (was: hung forever); <code>errorOccurred</code> handler with semantic messages (DNS / refused / SSL / timeout); SSL-error display; HTML-escape + <code>&lt;pre&gt;</code> wrap on non-JSON response bodies (security: server can't inject markup); status badge shows <code>ERROR</code> instead of misleading <code>0</code> when request fails.</li>
+                            <li>Git panel: <strong>VS Code-style inline diff view</strong> — click a file in Changes and the panel splits to show the +/- lines right there with green/red/cyan colouring. Close ✕ collapses. Modeled after the daily-use win in VS Code Source Control.</li>
+                            <li>SQL Formatter no longer freezes UI for 3 seconds when checking Ollama — switched JSON / HTML / Bracket / SQL panels from blocking <code>OllamaClient::isAvailable()</code> (a 3 s <code>QEventLoop</code> spin) to <code>OllamaStatus</code>'s cached background-poll bool.</li>
+                            <li>Removed orphan "Search results will appear here…" QTextEdit from the Find/Replace dialog (results already render in the dockable bottom panel).</li>
+                            <li>Linux-only emoji-fallback fonts on Search Results + Project Search trees so 🔎 / 🔍 stop rendering as tofu boxes on distros where the default monospace font lacks emoji glyphs.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>✅ Tests — 115 / 115 Rust + 19 / 19 C++</h5>
+                        <ul>
+                            <li>82 net-new Rust unit tests (was 33). Rust covers: empty / already-valid / trailing commas everywhere / unquoted keys nested / Python-dict paste / mixed quotes / emoji 👋 + flag pairs 🇺🇸 / RTL Arabic / CJK / 1000-element arrays / 50 MB caps / truncated mid-string / JSONL / npm package.json / GeoJSON / JSON Schema. HTML: HTML5 full pages / forms with all input types / void elements / inline SVG / emoji in attrs+text / RTL Arabic / 200-deep nesting / mixed line endings / CDATA / boolean attrs / idempotence. Brackets: 16 languages from Python to Lisp + apostrophe-in-double-quote / escaped quotes / emoji-in-strings / 500-deep nesting. SQL: T-SQL TOP / bracketed identifiers / PostgreSQL ::cast / LATERAL / multi-CTE / idempotent.</li>
+                            <li>New <code>test_gitpanel.cpp</code> wires up the inline-diff splitter, color formatting on +/-/@@/header lines, and visibility lifecycle.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.48">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.48">Commits</a>
+                </div>
+            </div>
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.47</div>
                     <div class="version-meta">
                         <span>2026-05-08</span>
                         <span>· Icon refresh — leaf now fills ~85% of the canvas (was ~60%) so the taskbar icon reads at the same visual size as other apps.</span>
