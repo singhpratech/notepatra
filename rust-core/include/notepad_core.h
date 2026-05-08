@@ -111,6 +111,11 @@ void npc_free_diff(DiffResult result);
 TextResult npc_format_sql(const char *text, size_t len, int indent_width,
                           int uppercase, const char *dialect);
 
+/* v0.1.49 — compact one-line-where-possible SQL formatter. Same dialect
+ * support as npc_format_sql; only the line-break policy differs. */
+TextResult npc_format_sql_compact(const char *text, size_t len, int indent_width,
+                                  int uppercase, const char *dialect);
+
 /* ═══════════ JSON Formatter + Fixer ═══════════ */
 
 TextResult npc_format_json(const char *text, size_t len, int indent);

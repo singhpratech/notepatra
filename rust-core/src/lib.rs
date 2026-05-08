@@ -384,6 +384,35 @@ pub unsafe extern "C" fn npc_format_sql(
     text_to_result(result)
 }
 
+/// v0.1.49 — Compact / one-line-where-possible SQL formatter. Same dialect
+/// support as `npc_format_sql`; only the line-break policy differs. Useful
+/// when the user wants a tight rendering instead of the Claude-style
+/// expanded form.
+#[no_mangle]
+pub unsafe extern "C" fn npc_format_sql_compact(
+    text: *const c_char,
+    text_len: size_t,
+    indent_width: c_int,
+    uppercase: c_int,
+    dialect: *const c_char,
+) -> TextResult {
+    let input = unsafe { str_from_raw(text, text_len) };
+    let dialect_str = if dialect.is_null() {
+        "ansi"
+    } else {
+        unsafe { CStr::from_ptr(dialect) }
+            .to_str()
+            .unwrap_or("ansi")
+    };
+    let result = sql_fmt::format_sql_compact(
+        input,
+        indent_width as usize,
+        uppercase != 0,
+        dialect_str,
+    );
+    text_to_result(result)
+}
+
 // ═══════════════════════════════════════════════════════════
 // JSON Formatter + Fixer
 // ═══════════════════════════════════════════════════════════

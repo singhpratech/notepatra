@@ -1016,6 +1016,10 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     for (auto *b : {explainBtn, fixBugsBtn, refactorBtn, testsBtn}) {
         b->setFixedHeight(24);
         b->setStyleSheet("font-size: 11px; padding: 0 8px;");
+        // v0.1.49 — guarantee min width fits the label + padding so Windows
+        // (Segoe UI ~20 % wider than DejaVu) doesn't truncate "Write Tests"
+        // / "Find Bugs" / "Add Comments" with "...".
+        b->setMinimumWidth(b->fontMetrics().horizontalAdvance(b->text()) + 22);
         actionsRow1->addWidget(b);
     }
     quickWrapV->addLayout(actionsRow1);
@@ -1030,6 +1034,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     for (auto *b : {commentBtn, docBtn, optimizeBtn, translateBtn}) {
         b->setFixedHeight(24);
         b->setStyleSheet("font-size: 11px; padding: 0 8px;");
+        b->setMinimumWidth(b->fontMetrics().horizontalAdvance(b->text()) + 22);
         actionsRow2->addWidget(b);
     }
     quickWrapV->addLayout(actionsRow2);
@@ -1047,6 +1052,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     for (auto *b : {fixJsonBtn, fixHtmlBtn, fixSqlBtn}) {
         b->setFixedHeight(24);
         b->setStyleSheet("font-size: 11px; padding: 0 8px;");
+        b->setMinimumWidth(b->fontMetrics().horizontalAdvance(b->text()) + 22);
         b->setToolTip("Strict minimal-change fix for the selection (or current file). "
                       "Won't add fields, won't reformat, won't restructure.");
         actionsRow3->addWidget(b);
@@ -1082,6 +1088,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     for (auto *b : {insertBtn, replaceBtn, copyBtn}) {
         b->setFixedHeight(22);
         b->setStyleSheet("font-size: 10px; color: #888; padding: 0 8px;");
+        b->setMinimumWidth(b->fontMetrics().horizontalAdvance(b->text()) + 22);
         resultRow->addWidget(b);
     }
     resultRow->addStretch();

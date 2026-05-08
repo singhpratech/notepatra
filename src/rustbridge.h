@@ -71,6 +71,10 @@ DiffInfo computeDiff(const QString &left, const QString &right);
 QString formatSql(const QString &text, int indentWidth = 4, bool uppercase = true,
                   const QString &dialect = QStringLiteral("ansi"));
 
+// v0.1.49 — compact / one-line-where-possible SQL formatter.
+QString formatSqlCompact(const QString &text, int indentWidth = 4, bool uppercase = true,
+                         const QString &dialect = QStringLiteral("ansi"));
+
 // JSON
 QString formatJson(const QString &text, int indent = 4);
 QString minifyJson(const QString &text);

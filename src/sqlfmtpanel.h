@@ -37,6 +37,7 @@ private:
     QLabel *m_dialectLabel = nullptr;
     QLabel *m_indentLabel = nullptr;
     QPushButton *m_fmtBtn = nullptr;
+    QPushButton *m_compactBtn = nullptr;  // v0.1.49 — compact one-line-where-possible
     QPushButton *m_copyBtn = nullptr;
     QPushButton *m_aiBtn = nullptr;
     QString m_inputText;
@@ -52,6 +53,7 @@ private:
     QElapsedTimer m_aiTimer;
 
     void doFormat();
+    void doCompactFormat();  // v0.1.49 — one-line-where-possible variant
     void doAiFix();
     void onAiToken(const QString &token);
     void onAiFinished(const QString &full);

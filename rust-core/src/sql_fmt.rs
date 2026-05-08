@@ -43,6 +43,29 @@ pub fn format_sql_dialect(
     uppercase: bool,
     dialect_name: &str,
 ) -> String {
+    format_sql_inner(input, indent_width, uppercase, dialect_name, /*compact*/ false)
+}
+
+/// v0.1.49 — Compact / one-line-where-possible variant. Same dialect support
+/// (T-SQL, PostgreSQL, MySQL, SQLite, Oracle, ANSI, Generic) but keeps short
+/// statements on a single line, only breaking the long ones. Useful when
+/// pasting many short queries in a row or when screen real estate is tight.
+pub fn format_sql_compact(
+    input: &str,
+    indent_width: usize,
+    uppercase: bool,
+    dialect_name: &str,
+) -> String {
+    format_sql_inner(input, indent_width, uppercase, dialect_name, /*compact*/ true)
+}
+
+fn format_sql_inner(
+    input: &str,
+    indent_width: usize,
+    uppercase: bool,
+    dialect_name: &str,
+    compact: bool,
+) -> String {
     if input.len() > MAX_INPUT_BYTES {
         return format!(
             "-- (input too large: {} bytes, max {} bytes)\n{}",
@@ -59,11 +82,16 @@ pub fn format_sql_dialect(
             let mut out = String::new();
             for (i, stmt) in stmts.iter().enumerate() {
                 if i > 0 {
-                    out.push_str("\n\n");
+                    out.push_str(if compact { "\n" } else { "\n\n" });
                 }
                 let mut w = Writer::new(indent_width, uppercase);
+                w.compact = compact;
                 w.write_statement(stmt);
-                out.push_str(&w.finish());
+                let mut piece = w.finish();
+                if compact {
+                    piece = compress_whitespace(&piece);
+                }
+                out.push_str(&piece);
                 if !out.trim_end().ends_with(';') {
                     out.push(';');
                 }
@@ -75,16 +103,70 @@ pub fn format_sql_dialect(
             let options = FormatOptions {
                 indent: Indent::Spaces(indent_width as u8),
                 uppercase: Some(uppercase),
-                lines_between_queries: 2,
+                lines_between_queries: if compact { 1 } else { 2 },
                 ignore_case_convert: None,
             };
             let legacy = legacy_format(input, &QueryParams::None, &options);
             format!(
                 "-- (parser fallback: syntax unsupported by our parser)\n{}",
-                legacy
+                if compact { compress_whitespace(&legacy) } else { legacy }
             )
         }
     }
+}
+
+// Collapse the writer's expanded form into a tight one-line-where-possible
+// shape. Removes runs of newlines + leading whitespace that were inserted
+// by Writer::push_line(); preserves blank lines in string literals (we don't
+// touch text inside single quotes).
+fn compress_whitespace(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut in_str = false;
+    let mut last_was_space = false;
+    let mut prev = '\0';
+    for ch in input.chars() {
+        if ch == '\'' && prev != '\\' {
+            in_str = !in_str;
+            out.push(ch);
+            last_was_space = false;
+        } else if in_str {
+            out.push(ch);
+            last_was_space = false;
+        } else if ch == '\n' || ch == '\t' || ch == '\r' {
+            if !last_was_space {
+                out.push(' ');
+                last_was_space = true;
+            }
+        } else if ch == ' ' {
+            if !last_was_space {
+                out.push(' ');
+                last_was_space = true;
+            }
+        } else {
+            out.push(ch);
+            last_was_space = false;
+        }
+        prev = ch;
+    }
+    // Re-introduce a single break before each top-level keyword for
+    // readability. A "compact" query like:
+    //   SELECT a, b FROM t WHERE x = 1 GROUP BY a ORDER BY b
+    // stays on one line. Long ones break only at major clause boundaries.
+    let break_before = [
+        " WITH ", " SELECT ", " UPDATE ", " DELETE ", " INSERT ",
+        " FROM ", " WHERE ", " GROUP BY ", " HAVING ",
+        " ORDER BY ", " LIMIT ", " OFFSET ", " RETURNING ",
+        " UNION ", " UNION ALL ", " INTERSECT ", " EXCEPT ",
+    ];
+    if out.len() > 120 {
+        let mut buf = out.clone();
+        for kw in &break_before {
+            buf = buf.replace(kw, &format!("\n{}", kw.trim_start()));
+        }
+        // First keyword at line 0 should not have a leading newline.
+        out = buf.trim_start_matches('\n').to_string();
+    }
+    out
 }
 
 fn pick_dialect(name: &str) -> Box<dyn Dialect> {
@@ -110,6 +192,11 @@ struct Writer {
     indent_width: usize,
     uppercase: bool,
     level: usize,
+    // v0.1.49 — when true, the post-processing in `compress_whitespace`
+    // collapses every run of whitespace produced by push_line() into a
+    // single space. Writer itself still emits the expanded form; the
+    // squeeze happens in one pass after finish().
+    compact: bool,
 }
 
 impl Writer {
@@ -119,6 +206,7 @@ impl Writer {
             indent_width,
             uppercase,
             level: 0,
+            compact: false,
         }
     }
 
@@ -1256,6 +1344,40 @@ mod tests {
         // sqlparser may convert to a regular quoted string or fall back —
         // either way, must not crash and must contain the literal "test".
         assert!(out.to_lowercase().contains("test"), "lost dollar-quoted body in:\n{}", out);
+    }
+
+    #[test]
+    fn compact_short_select_stays_one_line() {
+        let sql = "select id, name from users where id = 1";
+        let out = format_sql_compact(sql, 4, true, "ansi");
+        // Short query — should fit on one line (no break-before keywords).
+        assert!(!out.contains("\nFROM"), "compact short query has line break:\n{}", out);
+        assert!(out.to_uppercase().contains("SELECT"));
+        assert!(out.to_uppercase().contains("FROM"));
+    }
+
+    #[test]
+    fn compact_long_query_breaks_at_clauses() {
+        let sql = "select user_id, full_name, email_address, created_at, last_login_at from users where active = true and created_at > '2024-01-01' group by user_id order by last_login_at desc";
+        let out = format_sql_compact(sql, 4, true, "ansi");
+        // Long query — should break at major clause boundaries (FROM/WHERE/GROUP BY/ORDER BY).
+        let breaks = out.lines().count();
+        assert!(breaks >= 4, "long compact query did not break at clauses (got {} lines):\n{}", breaks, out);
+    }
+
+    #[test]
+    fn compact_postgres_upsert_does_not_panic() {
+        let sql = "insert into t (id, name) values (1, 'a') on conflict (id) do update set name = excluded.name";
+        let out = format_sql_compact(sql, 4, true, "postgres");
+        assert!(out.to_uppercase().contains("INSERT"));
+        assert!(out.to_uppercase().contains("ON CONFLICT") || out.to_lowercase().contains("excluded"));
+    }
+
+    #[test]
+    fn compact_tsql_top_preserved() {
+        let sql = "select top 5 id, name from users order by created_at desc";
+        let out = format_sql_compact(sql, 4, true, "mssql");
+        assert!(out.to_uppercase().contains("TOP"));
     }
 
     #[test]

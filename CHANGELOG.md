@@ -7,6 +7,50 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.49] — 2026-05-08
+
+**Windows button-truncation fixes + Compact SQL formatter.**
+
+### Fixed — button labels truncated on Windows
+
+User reported multi-word button labels (`Format (2 spaces)`, `Generate Docs`,
+`Add Comments`, `Write Tests`, `Insert at Cursor`, `Replace Selection`, …)
+got cut off with `…` on Windows. Cause: Segoe UI (Windows default) is
+~20% wider than DejaVu Sans Mono (Linux default) for the same point size,
+and these buttons had `setFixedHeight(N)` but no minimum width, so layout
+squeeze on narrow rows truncated the text. Fix: every relevant button now
+calls `setMinimumWidth(fontMetrics().horizontalAdvance(text) + 22..28)` so
+the natural label width + a safety margin is always honoured. Linux/macOS
+unchanged because the natural width was already wide enough.
+
+Touched:
+- `FormatterPanel::addButton` (covers JSON / HTML / Bracket Tools' Format,
+  Minify, Fix+Format, Check, Auto-Fix buttons)
+- `FormatterPanel`'s built-in `Show Diff` and `Copy Output` buttons
+- AI panel quick-action rows: Explain · Find Bugs · Refactor · Write Tests
+  · Add Comments · Generate Docs · Optimize · Translate · Fix JSON · Fix
+  HTML · Fix SQL · Insert at Cursor · Replace Selection · Copy
+- SQL Formatter panel: Format · Compact · AI Fix (Ollama) · Copy Output
+
+### Added — SQL Formatter "Compact" button
+
+A second button next to "Format" emits a one-line-where-possible rendering
+of the same parsed AST. Short queries stay on one line; long queries
+break only at major clause boundaries (`SELECT` / `FROM` / `WHERE` /
+`GROUP BY` / `ORDER BY` / `RETURNING`). Same dialect coverage as Format
+(T-SQL, PostgreSQL, MySQL, SQLite, Oracle, ANSI). New Rust public fn
+`format_sql_compact` + new FFI `npc_format_sql_compact` + new C++ wrapper
+`RustCore::formatSqlCompact`. 4 new Rust unit tests verify: short SELECT
+stays single line, long SELECT breaks at clauses, PostgreSQL UPSERT
+round-trips, T-SQL `TOP` is preserved.
+
+### Tests
+
+- Rust unit tests: **119 / 119 pass** (was 115; 4 new for compact SQL).
+- C++ tests: **19 / 19 pass**.
+
+---
+
 ## [0.1.48] — 2026-05-08
 
 **AI Assistant UX overhaul + JSON / HTML / Bracket / SQL hardening pass.**

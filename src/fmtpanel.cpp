@@ -125,6 +125,13 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
     // AI Fix, etc.) — every transformation gets recorded automatically.
     m_diffBtn = new QPushButton("Show Diff");
     m_diffBtn->setFixedHeight(26);
+    // v0.1.49 — Windows Segoe UI is ~20 % wider than Linux DejaVu Sans Mono
+    // for the same point size, so any button without an explicit minimum
+    // width gets its label truncated with "..." on Windows. Compute the
+    // natural label width + a safety margin so the button is wide enough
+    // on every platform without forcing a fixed width that would over-pad
+    // narrow labels on Linux/macOS.
+    m_diffBtn->setMinimumWidth(m_diffBtn->fontMetrics().horizontalAdvance(m_diffBtn->text()) + 28);
     m_diffBtn->setEnabled(false);
     m_diffBtn->setToolTip("Open a side-by-side compare of the last action's input vs output");
     connect(m_diffBtn, &QPushButton::clicked, this, [this]() {
@@ -138,6 +145,7 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
 
     auto *copyBtn = new QPushButton("Copy Output");
     copyBtn->setFixedHeight(26);
+    copyBtn->setMinimumWidth(copyBtn->fontMetrics().horizontalAdvance(copyBtn->text()) + 28);
     connect(copyBtn, &QPushButton::clicked, this, [this]() {
         QString text = m_output->text();
         if (text.isEmpty()) {
@@ -330,6 +338,13 @@ void FormatterPanel::setInput(const QString &text) {
 void FormatterPanel::addButton(const QString &label, std::function<QString(const QString &)> fn) {
     auto *btn = new QPushButton(label);
     btn->setFixedHeight(26);
+    // v0.1.49 — guarantee buttons are wide enough on Windows where Segoe UI
+    // (the system default) is ~20 % wider than Linux DejaVu Sans Mono for
+    // the same point size. Without this, multi-word labels like
+    // "Format (2 spaces)" / "Generate Docs" / "Add Comments" got truncated
+    // with "..." on Windows. fontMetrics() reads from the actual button so
+    // it picks up the platform-appropriate font automatically.
+    btn->setMinimumWidth(btn->fontMetrics().horizontalAdvance(label) + 28);
     m_btnRow->insertWidget(m_btnRow->count() - 2, btn);
 
     if (!m_hasFirstAction) {

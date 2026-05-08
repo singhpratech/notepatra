@@ -55,12 +55,29 @@ SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
 
     m_fmtBtn = new QPushButton("Format");
     m_fmtBtn->setFixedHeight(26);
+    m_fmtBtn->setMinimumWidth(m_fmtBtn->fontMetrics().horizontalAdvance(m_fmtBtn->text()) + 28);
+    m_fmtBtn->setToolTip(
+        "Claude-style expanded formatting — one column per line, JOINs aligned, "
+        "WHERE predicates stacked, CASE/WHEN expanded.");
     optRow->addWidget(m_fmtBtn);
+
+    // v0.1.49 — Compact / one-line-where-possible variant. Same parser +
+    // dialect support as Format, but keeps short statements on a single
+    // line and only breaks at major clause boundaries when the query is
+    // long. Useful for pasting many short queries in a row.
+    m_compactBtn = new QPushButton("Compact");
+    m_compactBtn->setFixedHeight(26);
+    m_compactBtn->setMinimumWidth(m_compactBtn->fontMetrics().horizontalAdvance(m_compactBtn->text()) + 28);
+    m_compactBtn->setToolTip(
+        "Compact / one-line-where-possible. Short queries stay on a single line; "
+        "long ones break only at major clauses (SELECT / FROM / WHERE / GROUP BY).");
+    optRow->addWidget(m_compactBtn);
 
     // AI Fix (Ollama) — patches syntax errors with a local LLM, then
     // re-runs the Claude-style formatter so the output stays beautiful.
     m_aiBtn = new QPushButton("AI Fix (Ollama)");
     m_aiBtn->setFixedHeight(26);
+    m_aiBtn->setMinimumWidth(m_aiBtn->fontMetrics().horizontalAdvance(m_aiBtn->text()) + 28);
     m_aiBtn->setToolTip("Ask a local LLM to fix SQL syntax errors (preserves intent).");
     optRow->addWidget(m_aiBtn);
 
@@ -68,6 +85,7 @@ SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
 
     m_copyBtn = new QPushButton("Copy Output");
     m_copyBtn->setFixedHeight(26);
+    m_copyBtn->setMinimumWidth(m_copyBtn->fontMetrics().horizontalAdvance(m_copyBtn->text()) + 28);
     optRow->addWidget(m_copyBtn);
     layout->addLayout(optRow);
 
@@ -106,6 +124,7 @@ SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
     applyPalette();
 
     connect(m_fmtBtn, &QPushButton::clicked, this, &SqlFmtPanel::doFormat);
+    connect(m_compactBtn, &QPushButton::clicked, this, &SqlFmtPanel::doCompactFormat);
     connect(m_aiBtn, &QPushButton::clicked, this, &SqlFmtPanel::doAiFix);
     connect(m_dialectCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int) {
@@ -250,6 +269,42 @@ void SqlFmtPanel::doFormat() {
     m_inputText = formatted;
     setStatus(QString("✓ Formatted — %1 chars, %2 lines")
               .arg(formatted.length()).arg(formatted.count('\n') + 1), false);
+}
+
+// v0.1.49 — Compact one-line-where-possible formatter. Same parser path
+// as doFormat; only the line-break policy differs (Rust handles it).
+void SqlFmtPanel::doCompactFormat() {
+    QString input = m_output->text();
+    if (input.isEmpty()) input = m_inputText;
+    if (input.isEmpty()) {
+        setStatus("Empty input — paste SQL into the panel below first", true);
+        return;
+    }
+
+    setStatus(QString("Compacting %1 chars (%2)...")
+              .arg(input.length()).arg(m_dialectCombo->currentText()), false);
+
+    QString out;
+    try {
+        out = RustCore::formatSqlCompact(input, m_indent->value(),
+                                         m_uppercase->isChecked(),
+                                         m_dialectCombo->currentText());
+    } catch (const std::exception &e) {
+        setStatus(QString("✗ Compact failed: %1").arg(e.what()), true);
+        return;
+    } catch (...) {
+        setStatus("✗ Compact failed (unknown error)", true);
+        return;
+    }
+
+    if (out.isEmpty()) {
+        setStatus("✗ Compact formatter returned empty output", true);
+        return;
+    }
+    m_output->setText(out);
+    m_inputText = out;
+    setStatus(QString("✓ Compact — %1 chars, %2 lines")
+              .arg(out.length()).arg(out.count('\n') + 1), false);
 }
 
 void SqlFmtPanel::setStatus(const QString &text, bool isError) {

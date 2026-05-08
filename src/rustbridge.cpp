@@ -209,6 +209,15 @@ QString formatSql(const QString &text, int indentWidth, bool uppercase,
                                          d.constData()));
 }
 
+QString formatSqlCompact(const QString &text, int indentWidth, bool uppercase,
+                         const QString &dialect) {
+    QByteArray b = text.toUtf8();
+    QByteArray d = normaliseDialect(dialect);
+    return textFromResult(npc_format_sql_compact(b.constData(), b.size(),
+                                                 indentWidth, uppercase ? 1 : 0,
+                                                 d.constData()));
+}
+
 // ── JSON ──
 QString formatJson(const QString &text, int indent) {
     QByteArray b = text.toUtf8();
