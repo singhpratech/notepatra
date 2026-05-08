@@ -7,6 +7,87 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.48] — 2026-05-08
+
+**AI Assistant UX overhaul + JSON / HTML / Bracket / SQL hardening pass.**
+
+### Changed — AI Assistant panel
+
+- 🎛️ **3-way mode segmented selector replaces the cluttered checkbox row.**
+  The top toolbar was previously seven controls jammed into one line
+  (`Ollama ▾ · model ▾ · ↻ · ☐ Coding · ☐ Data · ☐ Think · Reset`).
+  Now split cleanly into two rows: model selection on top, mode picker
+  `[ Chat | Coding | Data ]` plus `Think` checkbox below. Chat is the
+  explicit default ("no flag" used to be implicit and unlabeled).
+- 📐 **AI dock opens at ~50% of window width by default.** Previously it
+  opened narrow and the user had to drag the splitter every session.
+  First-toggle-per-session sizing; manual drag is respected after.
+- 🐛 **Fixed two dead-code `connect()` calls** in the AI panel constructor:
+  `connect(m_dataMode, …)` and `connect(m_manageConnsBtn, …)` were both
+  wired BEFORE their widgets were constructed (they were `nullptr`
+  pointers), so toggling the Data checkbox or clicking "Manage
+  Connections…" went through fallback paths instead of the proper
+  handlers. Reordered so the connects fire correctly.
+- 🪟 **Coding Mode now actually opens the file explorer.** When the AI
+  dock had been sized to 50/50, the splitter slot for the explorer was 0,
+  so `setVisible(true)` produced a zero-width strip. Re-allocates 220 px
+  from the editor tabs when Coding Mode is engaged.
+
+### Changed — JSON / HTML / Bracket Tools (AI Fix prompt parity)
+
+- 🛡️ **HTML Tools and Bracket Tools AI Fix prompts brought up to JSON
+  Tools' strict "minimal change" framework.** User reported the AI was
+  occasionally adding new tags/fields/code statements when fixing
+  format. New prompts use the same numbered-rules pattern JSON has:
+  "PRESERVE all content", "Do NOT add new tags", "Do NOT 'improve'
+  the code", explicit Gemma/Phi-aware rules-in-user-prompt.
+- ✨ **HTML Tools + Bracket Tools now have full output cleanup pipeline
+  parity with JSON:** strip `<think>` blocks, strip ``` fences, strip
+  prose prefixes, empty-response fallback with raw-response display.
+- 📊 **HTML Tools + Bracket Tools now wire Show Diff, recordFix,
+  logAction, and a Show-thinking checkbox** — all the JSON Tools UX
+  features that were missing.
+
+### Fixed — Rust core hardening (rust-core/)
+
+- 🐛 **SQL T-SQL `TOP N` clause was silently dropped during formatting.**
+  The AST `Select.top` field wasn't read by the writer, so
+  `SELECT TOP 10 * FROM t` formatted to `SELECT * FROM t`. Real bug,
+  fixed.
+- ⚡ **Bracket fixer no longer O(n²) on big inputs.** `result.insert(0, …)`
+  per missing opener used to allocate + copy the whole string each
+  call. Now we allocate once with the right capacity and prepend in
+  O(n).
+- 🔒 **Bracket string-state tracking now uses separate single/double
+  quote state.** Previously a single `in_string` flag was shared, so
+  apostrophes inside double-quoted strings (`"don't"`) and quoted
+  literals adjacent to other quotes mis-toggled the flag and corrupted
+  the bracket count.
+- 🔒 **Bracket backslash-escape detection now counts consecutive
+  backslashes** (odd = escape next, even = literal). Previously
+  `"a\\"` was parsed as an unclosed string because the closing quote
+  was treated as escaped.
+- 🛡️ **All three formatters (JSON, HTML, Bracket, SQL) hard-cap input at
+  50 MB** with a graceful safe-marker return — was unbounded before.
+- 🛡️ **JSON regexes now compile once via `OnceLock`** with safe
+  `.ok()` fallback (skip pass instead of panic if a regex ever fails
+  to compile across the C ABI boundary).
+- 🛡️ **JSON `pretty_print` no longer panics on serialization error** —
+  falls back to manual pretty-print so the user always gets output.
+
+### Tests
+
+- 16 new Rust unit tests in `rust-core` covering: empty input, already-
+  valid passthrough, missing close brace, trailing comma, unquoted key,
+  deeply nested 1000-level structure, oversize-input safe marker,
+  mixed quotes in string values, garbage no-crash, T-SQL TOP, T-SQL
+  bracketed identifiers, PostgreSQL `::cast`, PostgreSQL LATERAL,
+  multi-CTE WITH, idempotent SQL formatting, huge-bracket-run linear
+  performance, escaped-quote string handling.
+- All 19 existing C++ tests still pass.
+
+---
+
 ## [0.1.47] — 2026-05-08
 
 **Icon refresh.** User reported the Notepatra taskbar icon looked

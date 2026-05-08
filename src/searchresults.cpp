@@ -121,6 +121,31 @@ SearchResultsPanel::SearchResultsPanel(QWidget *parent) : QWidget(parent) {
     m_tree->setUniformRowHeights(true);
 
     QFont mono = notepatraCodeFont();
+    // v0.1.48 — on Linux, the default monospace font (DejaVu Sans Mono,
+    // Liberation Mono, etc.) has no glyph for U+1F50E (🔎 magnifying glass)
+    // so each session header row showed a tofu box. Append the system
+    // emoji font(s) to the families list so Qt falls through to one of
+    // them for emoji codepoints. Windows / macOS already have working
+    // emoji fallback in their default monospace fonts so we leave them
+    // untouched. Order matches what's typically installed on modern
+    // Debian/Ubuntu/Fedora — Qt picks the first family that ships the
+    // requested glyph.
+#ifdef Q_OS_LINUX
+    {
+        QStringList families = mono.families();
+        if (families.isEmpty()) families << mono.family();
+        const QStringList emojiFallbacks = {
+            "Noto Color Emoji",
+            "Twemoji Mozilla",
+            "Symbola",
+            "Joypixels",
+        };
+        for (const QString &emoji : emojiFallbacks) {
+            if (!families.contains(emoji, Qt::CaseInsensitive)) families << emoji;
+        }
+        mono.setFamilies(families);
+    }
+#endif
     m_tree->setFont(mono);
 
     m_tree->setStyleSheet(QString(

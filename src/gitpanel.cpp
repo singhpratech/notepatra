@@ -27,6 +27,10 @@
 #include <QToolTip>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
+#include <QSplitter>
+#include <QTextCharFormat>
+#include <QTextCursor>
+#include <QTextBlock>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers (file-local)
@@ -162,7 +166,10 @@ GitPanel::GitPanel(QWidget *parent) : QWidget(parent) {
 
     root->addWidget(commitWrap);
 
-    // ── 4. Changes tree ─────────────────────────────────────────────────────
+    // ── 4. Changes tree + inline diff (v0.1.48) ─────────────────────────────
+    // Tree on top, diff viewer on bottom, share a vertical QSplitter so the
+    // user can resize. Diff starts hidden (zero-height); selecting a file
+    // row reveals it. Modeled after VS Code Source Control.
     m_tree = new QTreeWidget;
     m_tree->setHeaderHidden(true);
     m_tree->setRootIsDecorated(false);
@@ -176,7 +183,63 @@ GitPanel::GitPanel(QWidget *parent) : QWidget(parent) {
     m_tree->header()->setSectionResizeMode(1, QHeaderView::Fixed);
     m_tree->header()->resizeSection(1, 28);
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
-    root->addWidget(m_tree, 1);
+
+    // Inline diff wrap = small header (path + close ✕) + monospace diff body.
+    m_diffWrap = new QWidget;
+    {
+        auto *diffLay = new QVBoxLayout(m_diffWrap);
+        diffLay->setContentsMargins(0, 0, 0, 0);
+        diffLay->setSpacing(0);
+
+        auto *hdr = new QWidget;
+        hdr->setFixedHeight(24);
+        auto *hdrLay = new QHBoxLayout(hdr);
+        hdrLay->setContentsMargins(8, 2, 4, 2);
+        hdrLay->setSpacing(6);
+        m_diffHeader = new QLabel("diff");
+        m_diffHeader->setStyleSheet("font-size: 11px; font-weight: 600;");
+        hdrLay->addWidget(m_diffHeader, 1);
+        m_diffCloseBtn = new QPushButton(QString::fromUtf8("\xC3\x97"));  // ×
+        m_diffCloseBtn->setFlat(true);
+        m_diffCloseBtn->setFixedSize(20, 20);
+        m_diffCloseBtn->setToolTip("Close inline diff");
+        m_diffCloseBtn->setCursor(Qt::PointingHandCursor);
+        m_diffCloseBtn->setStyleSheet(
+            "QPushButton { background: transparent; border: none; "
+            "color: #E81123; font-weight: 700; padding: 0 0 2px 0; } "
+            "QPushButton:hover { background: #E81123; color: white; }");
+        connect(m_diffCloseBtn, &QPushButton::clicked, this, &GitPanel::hideInlineDiff);
+        hdrLay->addWidget(m_diffCloseBtn);
+        diffLay->addWidget(hdr);
+
+        m_diffView = new QPlainTextEdit;
+        m_diffView->setReadOnly(true);
+        m_diffView->setFont(QFont("monospace", 10));
+        m_diffView->setLineWrapMode(QPlainTextEdit::NoWrap);
+        m_diffView->setFrameShape(QFrame::NoFrame);
+        diffLay->addWidget(m_diffView, 1);
+    }
+    m_diffWrap->setVisible(false);
+
+    m_treeDiffSplitter = new QSplitter(Qt::Vertical);
+    m_treeDiffSplitter->addWidget(m_tree);
+    m_treeDiffSplitter->addWidget(m_diffWrap);
+    m_treeDiffSplitter->setStretchFactor(0, 1);
+    m_treeDiffSplitter->setStretchFactor(1, 1);
+    // Initial split: tree gets all space until a file is selected.
+    m_treeDiffSplitter->setSizes({400, 0});
+    root->addWidget(m_treeDiffSplitter, 1);
+
+    // When the user clicks a file row in the tree, populate the inline diff.
+    connect(m_tree, &QTreeWidget::currentItemChanged, this,
+            [this](QTreeWidgetItem *cur, QTreeWidgetItem *) {
+        if (!cur) return;
+        if (cur->data(0, KindRole).toInt() != KindFile) return;
+        const QString path = cur->data(0, PathRole).toString();
+        const bool staged  = cur->data(0, StagedRole).toBool();
+        if (path.isEmpty()) return;
+        showInlineDiffForPath(path, staged);
+    });
 
     // ── 5. Sync row ─────────────────────────────────────────────────────────
     m_syncRow = new QWidget;
@@ -1006,6 +1069,103 @@ void GitPanel::openDiffForPath(const QString &path) {
 
     const QString title = QString("Diff · %1").arg(QFileInfo(path).fileName());
     emit openDiffInTab(title, leftText, rightText);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Inline diff (v0.1.48) — VS Code-style "click a file → see the diff in panel".
+// Replaces the previous behavior where every click opened a separate Compare
+// tab and stole the editor focus. Inline diff stays in the panel; Compare tab
+// is still available via the context menu's "Open diff" item.
+// ─────────────────────────────────────────────────────────────────────────────
+void GitPanel::showInlineDiffForPath(const QString &path, bool staged) {
+    if (m_repoRoot.isEmpty() || path.isEmpty()) return;
+    m_diffPath = path;
+    m_diffStaged = staged;
+
+    QStringList args = {"diff", "--no-color"};
+    if (staged) args << "--cached";
+    args << "--" << path;
+
+    runGitAsync(args, [this, path, staged](const QByteArray &out, const QByteArray &err, bool ok) {
+        if (m_diffPath != path || m_diffStaged != staged) return; // race: user moved on
+        QString text;
+        if (!ok) {
+            text = QString("(failed to load diff)\n%1").arg(QString::fromUtf8(err));
+        } else if (out.isEmpty()) {
+            // git diff prints nothing for new untracked files. Show a hint
+            // + the file content as a synthetic +diff so the user sees
+            // SOMETHING useful instead of an empty pane.
+            const QString abs = QDir(m_repoRoot).filePath(path);
+            QFile f(abs);
+            if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                const QString body = QTextStream(&f).readAll();
+                QString synth;
+                synth += QString("--- /dev/null\n+++ b/%1\n").arg(path);
+                for (const QString &ln : body.split('\n', Qt::KeepEmptyParts)) {
+                    synth += "+" + ln + "\n";
+                }
+                text = synth;
+            } else {
+                text = "(file is empty or unreadable)";
+            }
+        } else {
+            text = QString::fromUtf8(out);
+        }
+
+        m_diffHeader->setText(QString("%1  %2")
+            .arg(staged ? "STAGED" : "CHANGES")
+            .arg(path));
+        renderDiffText(text);
+
+        if (m_treeDiffSplitter) {
+            m_diffWrap->setVisible(true);
+            // Ensure the diff pane has at least 200 px when first revealed.
+            QList<int> sizes = m_treeDiffSplitter->sizes();
+            const int total = sizes.value(0, 0) + sizes.value(1, 0);
+            if (total > 0 && sizes.value(1, 0) < 200) {
+                int diffH = qMax(200, total / 2);
+                int treeH = qMax(120, total - diffH);
+                m_treeDiffSplitter->setSizes({treeH, diffH});
+            }
+        }
+    });
+}
+
+void GitPanel::hideInlineDiff() {
+    if (m_diffWrap) m_diffWrap->setVisible(false);
+    if (m_treeDiffSplitter) {
+        QList<int> sizes = m_treeDiffSplitter->sizes();
+        const int total = sizes.value(0, 0) + sizes.value(1, 0);
+        m_treeDiffSplitter->setSizes({total, 0});
+    }
+    m_diffPath.clear();
+}
+
+void GitPanel::renderDiffText(const QString &raw) {
+    if (!m_diffView) return;
+    // Color each diff line: + green, - red, @@ cyan, headers gray, rest fg.
+    m_diffView->clear();
+    QTextCursor cur = m_diffView->textCursor();
+    QTextCharFormat fmtAdd;     fmtAdd.setForeground(QColor("#3FB950"));
+    QTextCharFormat fmtDel;     fmtDel.setForeground(QColor("#F85149"));
+    QTextCharFormat fmtHunk;    fmtHunk.setForeground(QColor("#79C0FF"));  fmtHunk.setFontWeight(QFont::Bold);
+    QTextCharFormat fmtHeader;  fmtHeader.setForeground(QColor("#8B949E"));
+    QTextCharFormat fmtCtx;     // default
+
+    for (const QString &line : raw.split('\n', Qt::KeepEmptyParts)) {
+        if (line.startsWith("@@"))         cur.setCharFormat(fmtHunk);
+        else if (line.startsWith("+++") ||
+                 line.startsWith("---") ||
+                 line.startsWith("diff ") ||
+                 line.startsWith("index ")) cur.setCharFormat(fmtHeader);
+        else if (line.startsWith('+'))     cur.setCharFormat(fmtAdd);
+        else if (line.startsWith('-'))     cur.setCharFormat(fmtDel);
+        else                                cur.setCharFormat(fmtCtx);
+        cur.insertText(line);
+        cur.insertBlock();
+    }
+    cur.movePosition(QTextCursor::Start);
+    m_diffView->setTextCursor(cur);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

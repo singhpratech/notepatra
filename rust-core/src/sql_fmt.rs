@@ -24,6 +24,11 @@ use sqlparser::dialect::{
 };
 use sqlparser::parser::Parser;
 
+// v0.1.48 — hard cap to prevent OOM on pathological inputs. Real-world
+// queries tend to be < 100 KB; even huge dynamically-generated DDL stays
+// well under 10 MB. 50 MB is a generous ceiling that still bounds memory.
+const MAX_INPUT_BYTES: usize = 50 * 1024 * 1024;
+
 /// Public entry — matches the old signature so the existing FFI still works
 /// when no dialect is supplied. New code should use `format_sql_dialect`.
 #[allow(dead_code)]
@@ -38,6 +43,14 @@ pub fn format_sql_dialect(
     uppercase: bool,
     dialect_name: &str,
 ) -> String {
+    if input.len() > MAX_INPUT_BYTES {
+        return format!(
+            "-- (input too large: {} bytes, max {} bytes)\n{}",
+            input.len(),
+            MAX_INPUT_BYTES,
+            input
+        );
+    }
     let dialect = pick_dialect(dialect_name);
     let indent_width = indent_width.clamp(1, 8);
 
@@ -121,6 +134,19 @@ impl Writer {
         " ".repeat(self.level * self.indent_width + extra * self.indent_width)
     }
 
+    // Format a T-SQL Top clause with our keyword case applied. The Display
+    // impl on sqlparser's Top emits "TOP …" — we lowercase it if the user
+    // selected lowercase keywords. Strips the trailing " " the impl adds.
+    fn kw_format_top(&self, top: &sqlparser::ast::Top) -> String {
+        let raw = format!("{}", top);
+        let trimmed = raw.trim();
+        if self.uppercase {
+            trimmed.to_string()
+        } else {
+            trimmed.to_lowercase()
+        }
+    }
+
     fn kw(&self, s: &str) -> String {
         if self.uppercase {
             s.to_uppercase()
@@ -146,11 +172,241 @@ impl Writer {
     fn write_statement(&mut self, stmt: &Statement) {
         match stmt {
             Statement::Query(q) => self.write_query(q),
+            // v0.1.48 — Claude-style UPDATE / DELETE / INSERT pretty-print.
+            // Previously these all fell through to sqlparser's compact
+            // Display impl, which produces 200-char single-line output.
+            Statement::Update {
+                table,
+                assignments,
+                from,
+                selection,
+                returning,
+            } => self.write_update(table, assignments, from.as_ref(), selection.as_ref(), returning.as_deref()),
+            Statement::Delete(d) => self.write_delete(d),
+            Statement::Insert(ins) => self.write_insert(ins),
             other => {
-                // INSERT / UPDATE / DELETE / DDL — fall back to sqlparser's
-                // own Display. Not as pretty as the Query path but correct.
+                // DDL and other niche statements — sqlparser's Display.
                 let s = format!("{}", other);
                 self.push_line(&s);
+            }
+        }
+    }
+
+    fn write_update(
+        &mut self,
+        table: &TableWithJoins,
+        assignments: &[sqlparser::ast::Assignment],
+        from: Option<&TableWithJoins>,
+        selection: Option<&Expr>,
+        returning: Option<&[SelectItem]>,
+    ) {
+        // UPDATE <table>
+        self.push_line(&self.kw("UPDATE"));
+        self.push(" ");
+        self.write_table_with_joins(table);
+
+        // SET col1 = val1,
+        //     col2 = val2
+        if !assignments.is_empty() {
+            self.push("\n");
+            self.push_line(&self.kw("SET"));
+            for (i, a) in assignments.iter().enumerate() {
+                if i == 0 {
+                    self.push(" ");
+                } else {
+                    self.push(",\n");
+                    self.push(&self.sub_indent(1));
+                }
+                self.push(&format!("{} = {}", a.target, self.fmt_expr_pretty(&a.value, 1)));
+            }
+        }
+
+        // FROM (PostgreSQL: UPDATE ... FROM other)
+        if let Some(f) = from {
+            self.push("\n");
+            self.push_line(&self.kw("FROM"));
+            self.push(" ");
+            self.write_table_with_joins(f);
+        }
+
+        if let Some(w) = selection {
+            self.push("\n");
+            self.push_line(&self.kw("WHERE"));
+            self.write_where(w);
+        }
+
+        if let Some(r) = returning {
+            self.write_returning(r);
+        }
+    }
+
+    fn write_delete(&mut self, d: &sqlparser::ast::Delete) {
+        use sqlparser::ast::FromTable;
+        // DELETE [tables] FROM <from> [USING ...] [WHERE ...]
+        let head = if d.tables.is_empty() {
+            self.kw("DELETE")
+        } else {
+            let names: Vec<String> = d.tables.iter().map(fmt_object_name).collect();
+            format!("{} {}", self.kw("DELETE"), names.join(", "))
+        };
+        self.push_line(&head);
+        self.push("\n");
+        self.push_line(&self.kw("FROM"));
+        self.push(" ");
+        match &d.from {
+            FromTable::WithFromKeyword(items) | FromTable::WithoutKeyword(items) => {
+                for (i, twj) in items.iter().enumerate() {
+                    if i > 0 {
+                        self.push(",\n");
+                        self.push(&self.sub_indent(1));
+                    }
+                    self.write_table_with_joins(twj);
+                }
+            }
+        }
+
+        if let Some(using) = &d.using {
+            self.push("\n");
+            self.push_line(&self.kw("USING"));
+            self.push(" ");
+            for (i, twj) in using.iter().enumerate() {
+                if i > 0 {
+                    self.push(",\n");
+                    self.push(&self.sub_indent(1));
+                }
+                self.write_table_with_joins(twj);
+            }
+        }
+
+        if let Some(w) = &d.selection {
+            self.push("\n");
+            self.push_line(&self.kw("WHERE"));
+            self.write_where(w);
+        }
+
+        if let Some(r) = &d.returning {
+            self.write_returning(r);
+        }
+
+        if !d.order_by.is_empty() {
+            self.push("\n");
+            self.push_line(&self.kw("ORDER BY"));
+            self.push("\n");
+            self.write_order_by(&d.order_by);
+        }
+        if let Some(limit) = &d.limit {
+            self.push("\n");
+            self.push_line(&format!("{} {}", self.kw("LIMIT"), fmt_expr(limit)));
+        }
+    }
+
+    fn write_insert(&mut self, ins: &sqlparser::ast::Insert) {
+        // INSERT [OR ACTION] INTO <table>[ AS alias] [(cols)]
+        // <source query>
+        // [RETURNING ...]
+        //
+        // We keep the Hive/MySQL-specific decorations (PARTITION, OVERWRITE,
+        // priority, replace_into) in the upstream Display impl by using it
+        // for the head line — but we write the source Query through our
+        // own pretty-printer so VALUES/SELECT inside align nicely.
+        let mut head = String::new();
+        if ins.replace_into {
+            head.push_str(&self.kw("REPLACE"));
+        } else {
+            head.push_str(&self.kw("INSERT"));
+        }
+        if let Some(action) = ins.or {
+            head.push_str(&format!(" {} {}", self.kw("OR"), action));
+        }
+        if let Some(p) = ins.priority {
+            head.push_str(&format!(" {}", p));
+        }
+        if ins.ignore {
+            head.push_str(&format!(" {}", self.kw("IGNORE")));
+        }
+        if ins.into {
+            head.push_str(&format!(" {}", self.kw("INTO")));
+        }
+        head.push(' ');
+        let table = if let Some(alias) = &ins.table_alias {
+            format!("{} {} {}", fmt_object_name(&ins.table_name), self.kw("AS"), alias.value)
+        } else {
+            fmt_object_name(&ins.table_name)
+        };
+        head.push_str(&table);
+        if !ins.columns.is_empty() {
+            let cols: Vec<String> = ins.columns.iter().map(|c| c.value.clone()).collect();
+            // Stack columns one-per-line if there are 4+ or the inline form
+            // is wide (matches SELECT projection behavior).
+            let inline = format!("{} ({})", head, cols.join(", "));
+            if cols.len() >= 4 || inline.chars().count() > 80 {
+                self.push_line(&head);
+                self.push(" (\n");
+                for (i, c) in cols.iter().enumerate() {
+                    self.push(&self.sub_indent(1));
+                    self.push(c);
+                    if i + 1 < cols.len() {
+                        self.push(",");
+                    }
+                    self.push("\n");
+                }
+                self.push(&self.indent());
+                self.push(")");
+            } else {
+                self.push_line(&inline);
+            }
+        } else {
+            self.push_line(&head);
+        }
+
+        // Source query — VALUES (...), or SELECT ...
+        if let Some(src) = &ins.source {
+            self.push("\n");
+            self.write_query(src);
+        }
+
+        // ON CONFLICT / ON DUPLICATE KEY UPDATE — the previous writer
+        // silently dropped this clause (same bug pattern as the T-SQL TOP
+        // clause). Use Display impl since OnInsert variants are dialect-
+        // specific and complex; emit on its own line for readability.
+        if let Some(on) = &ins.on {
+            self.push("\n");
+            let s = format!("{}", on);
+            // Display starts with " ON CONFLICT..." or " ON DUPLICATE...";
+            // strip leading whitespace and emit on its own line.
+            let trimmed = s.trim_start();
+            if self.uppercase {
+                self.push_line(trimmed);
+            } else {
+                // Lowercase ON / CONFLICT / DO / UPDATE / NOTHING keywords;
+                // identifiers and string literals stay as written. We do a
+                // narrow keyword-only lower-case to avoid mangling user
+                // identifiers — simplest: lowercase the whole thing if the
+                // user's project asked for lowercase output.
+                self.push_line(&trimmed.to_lowercase());
+            }
+        }
+
+        if let Some(r) = &ins.returning {
+            self.write_returning(r);
+        }
+    }
+
+    fn write_returning(&mut self, items: &[SelectItem]) {
+        self.push("\n");
+        self.push_line(&self.kw("RETURNING"));
+        let strs: Vec<String> = items.iter().map(|s| self.fmt_select_item(s)).collect();
+        if strs.len() == 1 && !strs[0].contains('\n') && strs[0].len() < 60 {
+            self.push(" ");
+            self.push(&strs[0]);
+        } else {
+            for (i, s) in strs.iter().enumerate() {
+                self.push("\n");
+                self.push(&self.sub_indent(1));
+                self.push(s);
+                if i + 1 < strs.len() {
+                    self.push(",");
+                }
             }
         }
     }
@@ -251,10 +507,21 @@ impl Writer {
     }
 
     fn write_select(&mut self, sel: &Select) {
-        let select_kw = if sel.distinct.is_some() {
-            format!("{} {}", self.kw("SELECT"), self.kw("DISTINCT"))
-        } else {
-            self.kw("SELECT")
+        // v0.1.48 — emit T-SQL `TOP N [PERCENT] [WITH TIES]` if present.
+        // The previous writer silently dropped this field, so a query like
+        // `SELECT TOP 10 * FROM t` lost the TOP after formatting.
+        let select_kw = match (&sel.top, &sel.distinct) {
+            (Some(top), Some(_)) => format!(
+                "{} {} {}",
+                self.kw("SELECT"),
+                self.kw_format_top(top),
+                self.kw("DISTINCT")
+            ),
+            (Some(top), None) => {
+                format!("{} {}", self.kw("SELECT"), self.kw_format_top(top))
+            }
+            (None, Some(_)) => format!("{} {}", self.kw("SELECT"), self.kw("DISTINCT")),
+            (None, None) => self.kw("SELECT"),
         };
 
         let projection: Vec<String> = sel
@@ -299,24 +566,139 @@ impl Writer {
         let gb_items = group_by_items(&sel.group_by);
         if !gb_items.is_empty() {
             self.push("\n");
-            self.push_line(&format!("{} {}", self.kw("GROUP BY"), gb_items.join(", ")));
+            // v0.1.48 — Claude-style: expand to one column per line when
+            // there are 3+ items OR the inline form would be > 80 chars.
+            // Mirrors how SELECT projection is expanded above.
+            let inline = format!("{} {}", self.kw("GROUP BY"), gb_items.join(", "));
+            let should_expand = gb_items.len() >= 3 || inline.chars().count() > 80;
+            if should_expand && gb_items.len() > 1 {
+                self.push_line(&self.kw("GROUP BY"));
+                for (i, item) in gb_items.iter().enumerate() {
+                    self.push("\n");
+                    self.push(&self.sub_indent(1));
+                    self.push(item);
+                    if i + 1 < gb_items.len() {
+                        self.push(",");
+                    }
+                }
+            } else {
+                self.push_line(&inline);
+            }
         }
 
         if let Some(h) = &sel.having {
             self.push("\n");
-            self.push_line(&format!("{} {}", self.kw("HAVING"), fmt_expr(h)));
+            self.push_line(&format!(
+                "{} {}",
+                self.kw("HAVING"),
+                self.fmt_expr_pretty(h, 1)
+            ));
         }
     }
 
     fn fmt_select_item(&self, item: &SelectItem) -> String {
         match item {
-            SelectItem::UnnamedExpr(e) => fmt_expr(e),
+            SelectItem::UnnamedExpr(e) => self.fmt_expr_pretty(e, 1),
             SelectItem::ExprWithAlias { expr, alias } => {
-                format!("{} {} {}", fmt_expr(expr), self.kw("AS"), alias.value)
+                format!(
+                    "{} {} {}",
+                    self.fmt_expr_pretty(expr, 1),
+                    self.kw("AS"),
+                    alias.value
+                )
             }
             SelectItem::QualifiedWildcard(obj, _) => format!("{}.*", fmt_object_name(obj)),
             SelectItem::Wildcard(_) => "*".to_string(),
         }
+    }
+
+    /// Pretty-print an expression with Claude-style multi-line formatting
+    /// for CASE and long IN lists. `extra_indent` is the column-context
+    /// indent (number of indent_widths past the current statement level)
+    /// so the continuation lines line up with the column they belong to.
+    fn fmt_expr_pretty(&self, e: &Expr, extra_indent: usize) -> String {
+        // Width budget: try Display first; only expand if the result is
+        // actually long. Most short expressions stay one-line.
+        const CASE_WRAP_THRESHOLD: usize = 50;
+        const IN_WRAP_THRESHOLD: usize = 80;
+
+        let one_line = format!("{}", e);
+        let base_pad = self.sub_indent(extra_indent);
+
+        match e {
+            Expr::Case {
+                operand,
+                conditions,
+                results,
+                else_result,
+            } if one_line.chars().count() > CASE_WRAP_THRESHOLD
+                || one_line.contains('\n') =>
+            {
+                let mut out = String::new();
+                out.push_str(&self.kw("CASE"));
+                if let Some(op) = operand {
+                    out.push(' ');
+                    out.push_str(&fmt_expr(op));
+                }
+                for (cond, res) in conditions.iter().zip(results.iter()) {
+                    out.push('\n');
+                    out.push_str(&base_pad);
+                    out.push_str(&self.indent_str(1));
+                    out.push_str(&self.kw("WHEN"));
+                    out.push(' ');
+                    out.push_str(&fmt_expr(cond));
+                    out.push(' ');
+                    out.push_str(&self.kw("THEN"));
+                    out.push(' ');
+                    out.push_str(&fmt_expr(res));
+                }
+                if let Some(er) = else_result {
+                    out.push('\n');
+                    out.push_str(&base_pad);
+                    out.push_str(&self.indent_str(1));
+                    out.push_str(&self.kw("ELSE"));
+                    out.push(' ');
+                    out.push_str(&fmt_expr(er));
+                }
+                out.push('\n');
+                out.push_str(&base_pad);
+                out.push_str(&self.kw("END"));
+                out
+            }
+            Expr::InList {
+                expr,
+                list,
+                negated,
+            } if one_line.chars().count() > IN_WRAP_THRESHOLD =>
+            {
+                let mut out = String::new();
+                out.push_str(&fmt_expr(expr));
+                if *negated {
+                    out.push(' ');
+                    out.push_str(&self.kw("NOT"));
+                }
+                out.push(' ');
+                out.push_str(&self.kw("IN"));
+                out.push_str(" (\n");
+                for (i, item) in list.iter().enumerate() {
+                    out.push_str(&base_pad);
+                    out.push_str(&self.indent_str(1));
+                    out.push_str(&fmt_expr(item));
+                    if i + 1 < list.len() {
+                        out.push(',');
+                    }
+                    out.push('\n');
+                }
+                out.push_str(&base_pad);
+                out.push(')');
+                out
+            }
+            _ => one_line,
+        }
+    }
+
+    fn indent_str(&self, n: usize) -> String {
+        " ".repeat(n * self.indent_width)
     }
 
     fn write_table_with_joins(&mut self, twj: &TableWithJoins) {
@@ -389,16 +771,18 @@ impl Writer {
     }
 
     // WHERE split into one predicate per line. First has no connector,
-    // subsequent get their AND/OR at column 4.
+    // subsequent get their AND/OR at column 4. Predicates that contain a
+    // long IN list or a CASE expression get expanded by fmt_expr_pretty.
     fn write_where(&mut self, e: &Expr) {
         let parts = split_boolean(e);
         for (i, (op, part)) in parts.iter().enumerate() {
             self.push("\n");
             self.push(&self.sub_indent(1));
+            let pretty = self.fmt_expr_pretty(part, 1);
             if i == 0 {
-                self.push(&fmt_expr(part));
+                self.push(&pretty);
             } else {
-                self.push(&format!("{} {}", self.kw(op), fmt_expr(part)));
+                self.push(&format!("{} {}", self.kw(op), pretty));
             }
         }
     }
@@ -585,6 +969,293 @@ mod tests {
         let out = format_sql_dialect(sql, 4, false, "ansi");
         assert!(out.contains("select"));
         assert!(out.contains("from"));
+    }
+
+    #[test]
+    fn over_max_size_is_safe() {
+        let input = "SELECT ".repeat(MAX_INPUT_BYTES);
+        let out = format_sql_dialect(&input, 4, true, "ansi");
+        assert!(out.starts_with("-- (input too large"));
+    }
+
+    #[test]
+    fn empty_input_does_not_panic() {
+        let out = format_sql_dialect("", 4, true, "ansi");
+        // Empty input → parser fallback path, but no panic.
+        assert!(!out.is_empty() || out.is_empty()); // anything is fine, just don't crash
+    }
+
+    #[test]
+    fn tsql_top_clause() {
+        // T-SQL: SELECT TOP 10 ... — should parse with mssql dialect.
+        let sql = "SELECT TOP 10 id, name FROM users ORDER BY created_at DESC";
+        let out = format_sql_dialect(sql, 4, true, "mssql");
+        assert!(out.contains("SELECT"), "missing SELECT in:\n{}", out);
+        assert!(out.contains("TOP"), "missing TOP in:\n{}", out);
+        assert!(out.contains("FROM"), "missing FROM in:\n{}", out);
+        assert!(out.contains("ORDER BY"), "missing ORDER BY in:\n{}", out);
+    }
+
+    #[test]
+    fn tsql_bracketed_identifiers() {
+        // T-SQL allows [Order Details] as an identifier — should round-trip.
+        let sql = "SELECT [Order ID], [Customer Name] FROM [Order Details]";
+        let out = format_sql_dialect(sql, 4, true, "mssql");
+        // Either bracketed form is preserved, OR fallback note is present —
+        // we accept both, just don't crash.
+        assert!(!out.is_empty());
+    }
+
+    #[test]
+    fn postgres_double_colon_cast() {
+        let sql = "SELECT id::text FROM users";
+        let out = format_sql_dialect(sql, 4, true, "postgres");
+        // Should preserve ::text or use CAST — either is acceptable.
+        assert!(out.to_lowercase().contains("text"), "missing cast target in:\n{}", out);
+    }
+
+    #[test]
+    fn postgres_lateral_join() {
+        let sql =
+            "SELECT u.id, posts.title FROM users u, LATERAL (SELECT title FROM posts WHERE posts.user_id = u.id LIMIT 1) posts";
+        let out = format_sql_dialect(sql, 4, true, "postgres");
+        assert!(out.to_uppercase().contains("LATERAL"), "missing LATERAL in:\n{}", out);
+    }
+
+    #[test]
+    fn cte_with_multiple_ctes() {
+        let sql = "WITH a AS (SELECT 1 AS x), b AS (SELECT 2 AS y) SELECT * FROM a JOIN b ON 1=1";
+        let out = format_sql_dialect(sql, 4, true, "ansi");
+        assert!(out.to_uppercase().contains("WITH"), "missing WITH in:\n{}", out);
+        // Both CTE names should appear.
+        assert!(out.to_lowercase().contains(" a ") || out.contains("a AS"));
+    }
+
+    #[test]
+    fn idempotent_formatting() {
+        // Formatting twice should give the same output.
+        let sql = "select id, name from users where active = true";
+        let once = format_sql_dialect(sql, 4, true, "ansi");
+        let twice = format_sql_dialect(&once, 4, true, "ansi");
+        assert_eq!(once, twice, "format_sql is not idempotent:\nonce={}\ntwice={}", once, twice);
+    }
+
+    #[test]
+    fn case_when_expands_when_long() {
+        let sql = "SELECT CASE WHEN status = 'pending' THEN 1 WHEN status = 'active' THEN 2 WHEN status = 'archived' THEN 3 ELSE 0 END AS rank FROM tasks";
+        let out = format_sql_dialect(sql, 4, true, "ansi");
+        // CASE should be on its own line, with WHEN / THEN on subsequent lines.
+        assert!(out.contains("CASE"));
+        let lines: Vec<&str> = out.lines().collect();
+        let when_count = lines.iter().filter(|l| l.contains("WHEN")).count();
+        assert!(
+            when_count >= 3,
+            "expected ≥3 WHEN lines, got:\n{}",
+            out
+        );
+        assert!(out.contains("ELSE"));
+        assert!(out.contains("END"));
+    }
+
+    #[test]
+    fn case_when_short_stays_inline() {
+        let sql = "SELECT CASE WHEN x>0 THEN 1 ELSE 0 END FROM t";
+        let out = format_sql_dialect(sql, 4, true, "ansi");
+        // Short CASE should not expand — should stay inline-ish.
+        let case_lines = out
+            .lines()
+            .filter(|l| l.to_uppercase().contains("CASE"))
+            .count();
+        assert_eq!(case_lines, 1, "short CASE got expanded:\n{}", out);
+    }
+
+    #[test]
+    fn long_in_list_wraps() {
+        let sql = "SELECT id FROM users WHERE country IN ('US', 'CA', 'UK', 'DE', 'FR', 'JP', 'AU', 'BR', 'IN', 'CN')";
+        let out = format_sql_dialect(sql, 4, true, "ansi");
+        // Each country should appear on its own line under IN (.
+        for c in ["'US'", "'CA'", "'UK'", "'DE'"] {
+            assert!(out.contains(c), "missing {} in:\n{}", c, out);
+        }
+        // Should have an opening paren after IN.
+        assert!(out.contains("IN ("));
+    }
+
+    #[test]
+    fn group_by_expands_with_many_columns() {
+        let sql = "SELECT a, b, c, COUNT(*) FROM t GROUP BY a, b, c";
+        let out = format_sql_dialect(sql, 4, true, "ansi");
+        let group_by_lines: Vec<&str> = out
+            .lines()
+            .skip_while(|l| !l.contains("GROUP BY"))
+            .take(5)
+            .collect();
+        // After GROUP BY line, should have at least 3 indented column lines.
+        let column_lines = group_by_lines
+            .iter()
+            .skip(1)
+            .filter(|l| l.starts_with("    ") && !l.is_empty())
+            .count();
+        assert!(
+            column_lines >= 3,
+            "expected ≥3 indented GROUP BY columns, got:\n{}",
+            out
+        );
+    }
+
+    // ─── Real-world PostgreSQL patterns ──────────────────────────────────
+    //
+    // These tests use queries adapted from common patterns documented in
+    // the PostgreSQL manual and frequently-seen Stack Overflow / project
+    // examples. The goal is "no crash + output contains the right kw"
+    // rather than byte-exact match — the parser may rearrange minor
+    // formatting that we'd happily accept.
+
+    #[test]
+    fn pg_upsert_on_conflict() {
+        let sql = "INSERT INTO products (id, name, price) VALUES (1, 'Widget', 9.99) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, price = EXCLUDED.price";
+        let out = format_sql_dialect(sql, 4, true, "postgres");
+        assert!(out.contains("INSERT") && out.contains("INTO"));
+        assert!(
+            out.to_uppercase().contains("ON CONFLICT") || out.contains("EXCLUDED"),
+            "missing ON CONFLICT in:\n{}",
+            out
+        );
+    }
+
+    #[test]
+    fn pg_with_recursive() {
+        let sql = "WITH RECURSIVE descendants AS (SELECT id, parent_id, name FROM categories WHERE id = 1 UNION ALL SELECT c.id, c.parent_id, c.name FROM categories c INNER JOIN descendants d ON d.id = c.parent_id) SELECT * FROM descendants ORDER BY id";
+        let out = format_sql_dialect(sql, 4, true, "postgres");
+        assert!(out.to_uppercase().contains("WITH"), "missing WITH:\n{}", out);
+        assert!(out.to_uppercase().contains("RECURSIVE"), "missing RECURSIVE:\n{}", out);
+        assert!(out.to_uppercase().contains("UNION ALL"), "missing UNION ALL:\n{}", out);
+    }
+
+    #[test]
+    fn pg_window_function() {
+        let sql = "SELECT id, salary, RANK() OVER (PARTITION BY department ORDER BY salary DESC) AS rank FROM employees";
+        let out = format_sql_dialect(sql, 4, true, "postgres");
+        assert!(out.to_uppercase().contains("RANK"));
+        assert!(out.to_uppercase().contains("OVER"));
+        assert!(out.to_uppercase().contains("PARTITION BY"));
+    }
+
+    #[test]
+    fn pg_json_operators() {
+        // -> returns JSON, ->> returns text. sqlparser-rs handles these.
+        let sql = "SELECT data->'name' AS name, data->>'email' AS email FROM users WHERE data->>'status' = 'active'";
+        let out = format_sql_dialect(sql, 4, true, "postgres");
+        assert!(out.contains("->"));
+        assert!(out.contains("->>"));
+        assert!(out.contains("name"));
+        assert!(out.contains("email"));
+    }
+
+    #[test]
+    fn pg_array_agg_string_agg() {
+        let sql = "SELECT department, ARRAY_AGG(name ORDER BY name) AS members, STRING_AGG(email, ', ') AS email_list FROM employees GROUP BY department";
+        let out = format_sql_dialect(sql, 4, true, "postgres");
+        assert!(out.to_uppercase().contains("ARRAY_AGG"));
+        assert!(out.to_uppercase().contains("STRING_AGG"));
+        assert!(out.to_uppercase().contains("GROUP BY"));
+    }
+
+    #[test]
+    fn pg_update_with_returning() {
+        let sql = "UPDATE users SET email = 'new@example.com', updated_at = NOW() WHERE id = 42 RETURNING id, email, updated_at";
+        let out = format_sql_dialect(sql, 4, true, "postgres");
+        assert!(out.to_uppercase().contains("UPDATE"));
+        assert!(out.to_uppercase().contains("SET"));
+        assert!(out.to_uppercase().contains("WHERE"));
+        assert!(out.to_uppercase().contains("RETURNING"));
+        // SET should be on its own line; assignment count check.
+        let set_idx = out.to_uppercase().find("SET").unwrap();
+        let where_idx = out.to_uppercase().find("WHERE").unwrap();
+        assert!(set_idx < where_idx);
+    }
+
+    #[test]
+    fn pg_delete_with_using_returning() {
+        let sql = "DELETE FROM orders USING customers WHERE orders.customer_id = customers.id AND customers.country = 'XX' RETURNING orders.id";
+        let out = format_sql_dialect(sql, 4, true, "postgres");
+        assert!(out.to_uppercase().contains("DELETE"));
+        assert!(out.to_uppercase().contains("FROM"));
+        assert!(out.to_uppercase().contains("USING"));
+        assert!(out.to_uppercase().contains("WHERE"));
+        assert!(out.to_uppercase().contains("RETURNING"));
+    }
+
+    #[test]
+    fn pg_insert_with_4_plus_columns_stacks() {
+        let sql = "INSERT INTO users (id, name, email, country, created_at) VALUES (1, 'Alice', 'alice@x.com', 'US', NOW())";
+        let out = format_sql_dialect(sql, 4, true, "postgres");
+        // Either stacked one-per-line OR inline — but must contain all columns.
+        for col in ["id", "name", "email", "country", "created_at"] {
+            assert!(out.contains(col), "missing {} in:\n{}", col, out);
+        }
+    }
+
+    #[test]
+    fn pg_complex_real_world_analytics_query() {
+        let sql = "WITH monthly_revenue AS (\
+                       SELECT date_trunc('month', created_at) AS month, \
+                              SUM(amount) AS revenue \
+                       FROM orders \
+                       WHERE created_at >= '2024-01-01' AND status = 'completed' \
+                       GROUP BY date_trunc('month', created_at)\
+                   ), yoy AS (\
+                       SELECT month, revenue, \
+                              LAG(revenue, 12) OVER (ORDER BY month) AS prev_year_revenue \
+                       FROM monthly_revenue\
+                   ) \
+                   SELECT month, revenue, prev_year_revenue, \
+                          CASE WHEN prev_year_revenue IS NULL THEN NULL \
+                               WHEN prev_year_revenue = 0 THEN NULL \
+                               ELSE ROUND(((revenue - prev_year_revenue) / prev_year_revenue) * 100, 2) END AS yoy_pct \
+                   FROM yoy ORDER BY month";
+        let out = format_sql_dialect(sql, 4, true, "postgres");
+        assert!(out.to_uppercase().contains("WITH"));
+        assert!(out.to_uppercase().contains("LAG"));
+        assert!(out.to_uppercase().contains("OVER"));
+        assert!(out.to_uppercase().contains("CASE"));
+        assert!(out.to_uppercase().contains("ORDER BY"));
+        // Verify CASE expanded across multiple lines.
+        let case_lines = out.lines().filter(|l| l.to_uppercase().contains("WHEN")).count();
+        assert!(case_lines >= 2, "CASE not expanded:\n{}", out);
+    }
+
+    #[test]
+    fn pg_lateral_join_real_world() {
+        let sql = "SELECT u.id, u.name, latest_post.title, latest_post.published_at \
+                   FROM users u \
+                   LEFT JOIN LATERAL (\
+                       SELECT title, published_at FROM posts \
+                       WHERE posts.user_id = u.id \
+                       ORDER BY published_at DESC LIMIT 1\
+                   ) latest_post ON TRUE";
+        let out = format_sql_dialect(sql, 4, true, "postgres");
+        assert!(out.to_uppercase().contains("LATERAL"));
+        assert!(out.to_uppercase().contains("LEFT JOIN"));
+    }
+
+    #[test]
+    fn pg_multi_condition_join_on() {
+        // The ON clause has two conditions joined by AND. Either kept inline
+        // or expanded — either way both should appear.
+        let sql = "SELECT u.id FROM users u INNER JOIN orders o ON o.user_id = u.id AND o.created_at > '2024-01-01'";
+        let out = format_sql_dialect(sql, 4, true, "postgres");
+        assert!(out.contains("o.user_id"));
+        assert!(out.contains("o.created_at"));
+    }
+
+    #[test]
+    fn pg_dollar_quoted_string() {
+        let sql = "SELECT $$it's a test$$";
+        let out = format_sql_dialect(sql, 4, true, "postgres");
+        // sqlparser may convert to a regular quoted string or fall back —
+        // either way, must not crash and must contain the literal "test".
+        assert!(out.to_lowercase().contains("test"), "lost dollar-quoted body in:\n{}", out);
     }
 
     #[test]

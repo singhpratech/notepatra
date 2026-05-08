@@ -116,6 +116,17 @@ private:
     QTreeWidgetItem *m_stagedSection       = nullptr;
     QTreeWidgetItem *m_changesSection      = nullptr;
 
+    // v0.1.48 — VS Code-style inline diff. Tree on top, diff view below
+    // sharing a QSplitter so the user can resize. Hidden until the user
+    // selects a file row; collapses back when the diff is closed.
+    class QSplitter   *m_treeDiffSplitter = nullptr;
+    QWidget           *m_diffWrap         = nullptr;
+    QLabel            *m_diffHeader       = nullptr;
+    QPushButton       *m_diffCloseBtn     = nullptr;
+    class QPlainTextEdit *m_diffView      = nullptr;
+    QString            m_diffPath;        // path currently shown
+    bool               m_diffStaged       = false;
+
     QPushButton     *m_pullBtn             = nullptr;
     QPushButton     *m_pushBtn             = nullptr;
     QWidget         *m_syncRow             = nullptr;  // 36 px bottom chrome strip
@@ -192,6 +203,10 @@ private:
     void discardPath(const QString &path);
     void openFilePath(const QString &path);
     void openDiffForPath(const QString &path);
+    // v0.1.48 — inline diff: show / hide / refresh.
+    void showInlineDiffForPath(const QString &path, bool staged);
+    void hideInlineDiff();
+    void renderDiffText(const QString &raw);
 
     // ─── Context menus ──────────────────────────────────────────────────────
     void showFileContextMenu(const QPoint &pos);

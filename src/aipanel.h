@@ -9,6 +9,7 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QCheckBox>
+#include <QAbstractButton>
 #include <QVector>
 #include <functional>
 #include "ollama.h"
@@ -183,12 +184,13 @@ private:
     QPushButton *m_voiceBtn;
     QLabel *m_attachmentChip;
     QCheckBox *m_thinkingCheck;
-    QCheckBox *m_codingMode;     // Cursor/Copilot-style "output code, not prose"
-    // v0.1.43 — Data Analyst Mode: CSV / DB / charts. Mutually exclusive
-    // with Coding Mode. When on, the AI gets the data-tools system prompt,
-    // a Manage Connections... button + a "model capability" banner if the
-    // current model is below the recommended bar.
-    QCheckBox *m_dataMode = nullptr;
+    // v0.1.48 — Coding/Data are no longer two checkboxes; they're two
+    // segmented buttons in a 3-way mode selector (Chat | Coding | Data).
+    // Kept as QAbstractButton* so existing isChecked()/setChecked()/
+    // toggled() call sites compile unchanged.
+    QAbstractButton *m_codingMode = nullptr;  // Coding agent — write_file / apply_diff / search / run_command
+    QAbstractButton *m_dataMode = nullptr;    // Data Analyst — query_sql / csv_query / chart_spec
+    QAbstractButton *m_chatMode = nullptr;    // Default — general chat assistant (no flag set)
     QPushButton *m_manageConnsBtn = nullptr;
     QLabel *m_dataCapBanner = nullptr;
     QLabel *m_statusLabel;

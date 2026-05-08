@@ -15,6 +15,9 @@
 #include <QPushButton>
 #include <QApplication>
 #include <QClipboard>
+#include <QTimer>
+#include <QSslError>
+#include <QTextCursor>
 
 // ═══════════════════════════════════════════════════════════════════════
 // Modern REST client — inspired by Postman / Thunder Client / Bruno.
@@ -403,9 +406,63 @@ void RestClient::parseAndSend(const QString &block) {
         return;
     }
 
+    // v0.1.48 — 30-second transfer timeout. Without this a hanging server
+    // would keep the Send button disabled and the user stuck staring at
+    // "Sending…". QNetworkRequest::setTransferTimeout was added in 5.15.
+    if (reply) {
+        reply->setReadBufferSize(0);  // unlimited; we cap response size in lambda below
+    }
+    QTimer *timeoutGuard = new QTimer(this);
+    timeoutGuard->setSingleShot(true);
+    timeoutGuard->setInterval(30 * 1000);
+    connect(timeoutGuard, &QTimer::timeout, this, [reply]() {
+        if (reply && reply->isRunning()) reply->abort();
+    });
+    timeoutGuard->start();
+
+    // v0.1.48 — explicit error handler. Pre-v0.1.48 a DNS / SSL / refused
+    // connection silently produced an empty response with status 0, so
+    // users couldn't tell if the server returned 200 OK with empty body
+    // or if the request never reached anyone. Now we emit a clear error
+    // line into the response area BEFORE finished() fires.
+    connect(reply, &QNetworkReply::errorOccurred, this,
+            [this, reply, pal, timeoutGuard](QNetworkReply::NetworkError err) {
+        if (err == QNetworkReply::NoError) return;
+        timeoutGuard->stop();
+        const QString hint = (err == QNetworkReply::OperationCanceledError)
+            ? QStringLiteral("Request aborted (timeout after 30s, or you clicked Send again).")
+            : (err == QNetworkReply::HostNotFoundError)
+                ? QStringLiteral("DNS resolution failed — check the URL or your network.")
+                : (err == QNetworkReply::ConnectionRefusedError)
+                    ? QStringLiteral("Connection refused — server not listening on this port.")
+                    : (err == QNetworkReply::SslHandshakeFailedError)
+                        ? QStringLiteral("SSL handshake failed — invalid / expired / self-signed cert.")
+                        : (err == QNetworkReply::TimeoutError)
+                            ? QStringLiteral("Request timed out before the server responded.")
+                            : QStringLiteral("Network error.");
+        m_output->append(QString("<span style='color:%1; font-weight:600;'>✗ %2</span>")
+                             .arg(pal.errorFg, reply->errorString().toHtmlEscaped()));
+        m_output->append(QString("<span style='color:%1;'>%2</span>")
+                             .arg(pal.textMuted, hint.toHtmlEscaped()));
+    });
+
+    // SSL errors — show but don't block (Qt blocks by default on cert
+    // errors; we're a developer tool so we let the user see what went
+    // wrong rather than auto-trusting). The error path above already
+    // surfaces SslHandshakeFailedError; this lambda just adds detail.
+    connect(reply, &QNetworkReply::sslErrors, this,
+            [this, pal](const QList<QSslError> &errs) {
+        for (const QSslError &e : errs) {
+            m_output->append(QString("<span style='color:%1;'>SSL: %2</span>")
+                             .arg(pal.warningFg, e.errorString().toHtmlEscaped()));
+        }
+    });
+
     // Capture the palette by value into the finished lambda so the
     // response-time restyle doesn't need another npPalette() call.
-    connect(reply, &QNetworkReply::finished, this, [this, reply, timer, pal]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, timer, pal, timeoutGuard]() {
+        timeoutGuard->stop();
+        timeoutGuard->deleteLater();
         qint64 elapsed = timer.elapsed();
         int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         QString reason = reply->attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString();
@@ -414,12 +471,22 @@ void RestClient::parseAndSend(const QString &block) {
 
         // Semantic status colors — 2xx success, 3xx info, 4xx warning,
         // 5xx error. Pulls from the palette cached in the request slot
-        // so Light/Dark themes each get theme-appropriate shades.
-        QString statusColor = (status >= 200 && status < 300) ? pal.successFg
-                            : (status >= 300 && status < 400) ? pal.accent
-                            : (status >= 400 && status < 500) ? pal.warningFg
-                            : (status >= 500)                 ? pal.errorFg
-                            :                                   pal.textMuted;
+        // so Light/Dark themes each get theme-appropriate shades. Errored
+        // requests have status==0; show that explicitly so the user
+        // doesn't read it as an HTTP 0 response.
+        QString statusColor;
+        QString statusLabel;
+        if (status == 0 && reply->error() != QNetworkReply::NoError) {
+            statusColor = pal.errorFg;
+            statusLabel = QStringLiteral("ERROR");
+        } else {
+            statusColor = (status >= 200 && status < 300) ? pal.successFg
+                        : (status >= 300 && status < 400) ? pal.accent
+                        : (status >= 400 && status < 500) ? pal.warningFg
+                        : (status >= 500)                 ? pal.errorFg
+                        :                                   pal.textMuted;
+            statusLabel = QString::number(status) + " " + reason;
+        }
 
         m_statusBadge->setStyleSheet(QString(
             "background: %1; color: %2; padding: 5px 12px; "
@@ -429,8 +496,8 @@ void RestClient::parseAndSend(const QString &block) {
         const QString sizeDisp = bytes < 1024 ? QString("%1 B").arg(bytes)
                                : bytes < 1024 * 1024 ? QString("%1 KB").arg(bytes / 1024.0, 0, 'f', 1)
                                :                       QString("%1 MB").arg(bytes / 1024.0 / 1024.0, 0, 'f', 2);
-        m_statusBadge->setText(QString("  %1 %2  ·  %3 ms  ·  %4")
-                                   .arg(status).arg(reason).arg(elapsed).arg(sizeDisp));
+        m_statusBadge->setText(QString("  %1  ·  %2 ms  ·  %3")
+                                   .arg(statusLabel).arg(elapsed).arg(sizeDisp));
 
         m_output->append(QString("\n<span style='color:%1;'>── Response Headers ──</span>")
                             .arg(pal.textMuted));
@@ -443,11 +510,23 @@ void RestClient::parseAndSend(const QString &block) {
 
         m_output->append(QString("\n<span style='color:%1;'>── Response Body ──</span>\n")
                             .arg(pal.textMuted));
+        // v0.1.48 — pretty-print JSON, otherwise HTML-escape so a server
+        // returning <html>...<script>alert(1)</script>... doesn't get
+        // rendered as actual markup in our QTextEdit. Pre-fix any text/*
+        // body went through QTextEdit::append() which interprets HTML.
         QJsonDocument doc = QJsonDocument::fromJson(responseBody);
         if (!doc.isNull()) {
-            m_output->append(doc.toJson(QJsonDocument::Indented));
+            // Plain-text insertion of pretty JSON via setPlainText would
+            // wipe headers; use insertPlainText at end so headers remain.
+            QTextCursor cur = m_output->textCursor();
+            cur.movePosition(QTextCursor::End);
+            cur.insertText(QString::fromUtf8(doc.toJson(QJsonDocument::Indented)));
+            m_output->setTextCursor(cur);
         } else {
-            m_output->append(QString::fromUtf8(responseBody));
+            // Non-JSON: HTML-escape and wrap in <pre> so whitespace is
+            // preserved and any tags in the body are shown as text.
+            const QString safe = QString::fromUtf8(responseBody).toHtmlEscaped();
+            m_output->append(QString("<pre style='margin:0;'>%1</pre>").arg(safe));
         }
 
         m_sendBtn->setEnabled(true);

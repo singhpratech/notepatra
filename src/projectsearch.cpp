@@ -737,7 +737,22 @@ void ProjectSearch::buildUi() {
     // ── Results tree ─────────────────────────────────────────────────
     m_results = new QTreeWidget;
     m_results->setHeaderHidden(true);
-    m_results->setFont(notepatraCodeFont());
+    {
+        QFont treeFont = notepatraCodeFont();
+        // v0.1.48 — same Linux-only emoji fallback as SearchResultsPanel:
+        // 🔍 / 🔎 in session headers were tofu-boxes on most Linux distros
+        // because the default monospace font has no emoji glyphs.
+#ifdef Q_OS_LINUX
+        QStringList families = treeFont.families();
+        if (families.isEmpty()) families << treeFont.family();
+        for (const QString &e : QStringList{
+                "Noto Color Emoji", "Twemoji Mozilla", "Symbola", "Joypixels"}) {
+            if (!families.contains(e, Qt::CaseInsensitive)) families << e;
+        }
+        treeFont.setFamilies(families);
+#endif
+        m_results->setFont(treeFont);
+    }
     m_results->setUniformRowHeights(true);
     m_results->setAlternatingRowColors(false);
     // NO internal scrollbars — the tree grows with its content and the

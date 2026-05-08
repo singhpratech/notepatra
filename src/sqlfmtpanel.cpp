@@ -362,7 +362,13 @@ void SqlFmtPanel::doAiFix() {
         return;
     }
 
-    if (!m_ollama->isAvailable()) {
+    // v0.1.48 — use the OllamaStatus widget's cached probe instead of
+    // calling m_ollama->isAvailable() directly. The OllamaClient version
+    // is synchronous with a 3-second QEventLoop spin, which froze the UI
+    // and made the AI Assistant feel "locked" while SQL Formatter was
+    // checking. OllamaStatus polls in the background and just returns a
+    // cached bool — no blocking.
+    if (!m_ollamaBar->isAvailable()) {
         setStatus("Ollama not running — start it: ollama serve", true);
         m_output->setText(
             "-- Ollama is not running.\n"

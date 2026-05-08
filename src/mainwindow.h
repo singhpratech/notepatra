@@ -132,6 +132,7 @@ private:
     // | AI chat). Toggleable from View menu / toolbar / Coding Mode.
     QWidget *m_aiDockHost = nullptr;
     AIPanel *m_aiDockPanel = nullptr;
+    bool m_aiDockSizedOnce = false;  // v0.1.48 — split 50/50 on first show
     void toggleAiDock();
     // Push current workspace state (all open editor tabs, current file,
     // selection, workspace root) into an AIPanel so the model can reason

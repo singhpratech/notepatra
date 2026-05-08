@@ -5,6 +5,8 @@
 #include "rustbridge.h"
 #include "fonts.h"
 #include "updater.h"
+#include <numeric>
+#include <algorithm>
 #include <QDir>
 #include <QDirIterator>
 
@@ -755,7 +757,22 @@ MainWindow::MainWindow() {
     // to open, the dock is already visible (that's where the toggle
     // is). Uncheck hides the explorer so the user gets a clean editor.
     connect(m_aiDockPanel, &AIPanel::codingModeRequested, this, [this](bool on) {
-        if (m_explorer) m_explorer->setVisible(on);
+        if (!m_explorer) return;
+        m_explorer->setVisible(on);
+        // v0.1.48 — when Coding Mode shows the explorer for the first time
+        // after the AI dock has been sized 50/50, the splitter's slot for
+        // the explorer is 0 (it was hidden), so setVisible(true) alone
+        // produces a zero-width strip. Re-allocate ~220 px from the editor
+        // tabs so the file tree is actually usable.
+        if (on && m_splitter) {
+            QList<int> sizes = m_splitter->sizes();
+            if (sizes.size() >= 2 && sizes[0] < 180) {
+                const int need = 220 - sizes[0];
+                sizes[0] = 220;
+                sizes[1] = std::max(280, sizes[1] - need);
+                m_splitter->setSizes(sizes);
+            }
+        }
     });
 
     // v0.1.39 — agentic write_file / apply_diff modified a file. If
@@ -2314,9 +2331,10 @@ void MainWindow::buildMenus() {
             fixState->originalInput = input;
             fixState->hasResult = false;
 
-            // Use OllamaClient's synchronous isAvailable() (3s timeout via
-            // QEventLoop) instead of OllamaStatus's cached/racing one.
-            if (!ollama->isAvailable()) {
+            // v0.1.48 — use OllamaStatus widget's cached probe (background
+            // poll, non-blocking) instead of OllamaClient::isAvailable()
+            // which spins a 3-second QEventLoop and froze the UI.
+            if (!ollamaBar->isAvailable()) {
                 p->setStatus("Ollama not running — start it: ollama serve", true);
                 p->setOutput("Ollama is not running.\n\n"
                              "Setup:\n"
@@ -2554,25 +2572,120 @@ void MainWindow::buildMenus() {
         auto *panelLayout = p->layout();
         if (panelLayout) panelLayout->addWidget(ollamaBar);
 
+        // v0.1.48 — Show thinking toggle (was missing on HTML Tools).
+        auto *thinkingCheckHtml = new QCheckBox("Show thinking (slower, may break format)");
+        thinkingCheckHtml->setChecked(false);
+        thinkingCheckHtml->setStyleSheet("padding: 4px 8px; font-size: 11px;");
+        if (panelLayout) panelLayout->addWidget(thinkingCheckHtml);
+
         auto *aiBtn = new QPushButton("AI Fix (Ollama)");
         aiBtn->setFixedHeight(26);
         auto *btnLayout = p->findChild<QHBoxLayout *>();
-        if (btnLayout) btnLayout->insertWidget(btnLayout->count() - 2, aiBtn);
+        if (btnLayout) btnLayout->insertWidget(btnLayout->count() - 3, aiBtn);
+
+        // v0.1.48 — wire Show Diff (was missing for HTML Tools)
+        connect(p, &FormatterPanel::showDiffRequested, this,
+                [this](const QString &before, const QString &after, const QString &title) {
+            auto *cmp = new CompareWidget;
+            connect(this, &MainWindow::themeChanged, cmp, &CompareWidget::onThemeChanged);
+            cmp->compare(before, "Before", after, "After");
+            int idx = m_tabs->addTab(cmp, title);
+            m_tabs->setCurrentIndex(idx);
+            connect(cmp, &CompareWidget::closeRequested, this, [this, cmp]() {
+                int i = m_tabs->indexOf(cmp);
+                if (i >= 0) closeTab(i);
+            });
+        });
+
+        struct HtmlFixState { QString originalInput; bool hasResult = false; };
+        auto *fixState = new HtmlFixState;
 
         auto *ollama = new OllamaClient(p);
 
-        connect(aiBtn, &QPushButton::clicked, p, [p, ollama, ollamaBar]() {
+        connect(aiBtn, &QPushButton::clicked, p, [p, ollama, ollamaBar, thinkingCheckHtml, fixState]() {
             QString input = p->inputText();
-            if (input.isEmpty()) return;
-            if (!ollamaBar->isAvailable()) {
-                p->setOutput("Ollama is not running.\n\nSetup:\n  1. curl -fsSL https://ollama.com/install.sh | sh\n  2. ollama pull qwen3.5:9b\n  3. ollama serve");
+            if (input.isEmpty()) {
+                p->setStatus("Empty input — paste HTML into the panel below first", true);
                 return;
             }
-            ollama->setModel(ollamaBar->selectedModel());
-            p->setOutput("Asking " + ollamaBar->selectedModel() + "...");
-            ollama->generate(
-                "Fix this broken HTML. Return ONLY valid HTML. No markdown, no explanation.\n\n" + input,
-                "You are an HTML repair tool. Return ONLY fixed HTML. Preserve ALL content.");
+            fixState->originalInput = input;
+            fixState->hasResult = false;
+
+            if (!ollamaBar->isAvailable()) {  // v0.1.48 — cached, non-blocking
+                p->setStatus("Ollama not running — start it: ollama serve", true);
+                p->setOutput("Ollama is not running.\n\n"
+                             "Setup:\n"
+                             "  1. Install:  curl -fsSL https://ollama.com/install.sh | sh\n"
+                             "  2. Pull:     ollama pull qwen2.5:7b\n"
+                             "  3. Start:    ollama serve\n"
+                             "  4. Click AI Fix again");
+                return;
+            }
+
+            QString model = ollamaBar->selectedModel();
+            if (model.isEmpty() || model.startsWith("(")) {
+                ollamaBar->checkStatus();
+                model = ollamaBar->selectedModel();
+                if (model.isEmpty() || model.startsWith("(")) {
+                    p->setStatus("No models installed — run: ollama pull qwen2.5:7b", true);
+                    return;
+                }
+            }
+
+            bool wantThinking = thinkingCheckHtml->isChecked();
+            ollama->setModel(model);
+            p->setStatus(QString("Asking %1 to fix the HTML%2...")
+                         .arg(model)
+                         .arg(wantThinking ? " (with reasoning)" : ""), false);
+            p->setOutput("Asking " + model + "...\n");
+
+            // ─── Strict minimal-change prompt ─────────────────────────
+            // Same framework JSON Tools uses — numbered rules, "preserve
+            // everything", "do NOT add new content". v0.1.48 brought HTML
+            // up to JSON parity after user reported the AI was occasionally
+            // adding tags / restructuring documents.
+            const QString rules =
+                "RULES (follow ALL of these):\n"
+                "1. PRESERVE the original element order, attribute order, content text, "
+                "indentation, and whitespace EXACTLY where the input was already correct.\n"
+                "2. Make MINIMAL changes — only patch the broken parts.\n"
+                "3. PRESERVE ALL CONTENT. Never delete elements, attributes, text nodes, "
+                "or comments. Never add new tags, attributes, or content the user didn't write.\n"
+                "4. Fix ONLY broken syntax:\n"
+                "   - Close unclosed tags\n"
+                "   - Self-close void elements (br hr img input meta link area base col embed source track wbr) as ' />'\n"
+                "   - Quote unquoted attribute values\n"
+                "   - Lowercase tag names if the document is otherwise lowercase\n"
+                "   - Remove stray < or > that aren't part of a valid tag\n"
+                "5. Output ONLY the corrected HTML. No prose, no markdown ``` "
+                "fences, no comments, no <think> blocks, no preamble.\n"
+                "6. If the input is already valid HTML, output it UNCHANGED.\n";
+
+            QString systemPrompt =
+                "You are a minimal-change HTML patcher. Your job is to take broken HTML "
+                "and return the SAME HTML with ONLY the broken parts fixed. Preserve "
+                "everything else exactly — element order, attribute order, content text, "
+                "indentation, whitespace.\n\n" + rules;
+
+            QString modelLower = model.toLower();
+            bool isGemmaLike = modelLower.contains("gemma") ||
+                               modelLower.contains("phi") ||
+                               modelLower.contains("tiny");
+
+            QString userPrompt;
+            if (isGemmaLike) {
+                userPrompt = rules + "\n"
+                    "Fix this broken HTML now with MINIMAL changes. Return ONLY the corrected HTML.\n\n"
+                    "BROKEN HTML:\n" + input;
+            } else {
+                userPrompt =
+                    "Fix ONLY the broken parts of this HTML. Make MINIMAL changes. "
+                    "PRESERVE the original element order, attribute order, and content. "
+                    "Do NOT add new tags. Do NOT remove content. Return ONLY the corrected HTML.\n\n"
+                    "BROKEN HTML:\n" + input;
+            }
+
+            ollama->generate(userPrompt, systemPrompt, wantThinking);
         });
 
         auto *firstToken = new bool(true);
@@ -2581,20 +2694,56 @@ void MainWindow::buildMenus() {
             p->appendOutput(token);
             aiBtn->setText("AI Fixing...");
         });
-        connect(ollama, &OllamaClient::finished, p, [p, aiBtn, firstToken](const QString &response) {
+        connect(ollama, &OllamaClient::finished, p, [p, aiBtn, firstToken, fixState](const QString &response) {
             aiBtn->setText("AI Fix (Ollama)");
             *firstToken = true;
+
             QString cleaned = response.trimmed();
+
+            // 1. Strip <think>...</think> blocks
+            QRegularExpression thinkRe("<think>.*?</think>",
+                                       QRegularExpression::DotMatchesEverythingOption);
+            cleaned.remove(thinkRe);
+            cleaned = cleaned.trimmed();
+
+            // 2. Strip markdown ``` code blocks
             if (cleaned.startsWith("```")) {
-                int f = cleaned.indexOf('\n'), l = cleaned.lastIndexOf("```");
+                int f = cleaned.indexOf('\n');
+                int l = cleaned.lastIndexOf("```");
                 if (f > 0 && l > f) cleaned = cleaned.mid(f + 1, l - f - 1).trimmed();
             }
-            p->setOutput(RustCore::formatHtml(cleaned, 2));
+
+            // 3. Strip "Here is the fixed HTML:" prose prefix — find first <
+            //    that looks like a real tag start.
+            int firstAngle = cleaned.indexOf('<');
+            if (firstAngle > 0) cleaned = cleaned.mid(firstAngle);
+
+            // 4. Format the result; fall back to cleaned text if formatHtml
+            //    returns something useless (empty / single space).
+            QString formatted = RustCore::formatHtml(cleaned, 2);
+            QString result = formatted.length() > 1 ? formatted : cleaned;
+
+            if (result.isEmpty()) {
+                p->setOutput("(model returned empty response after stripping)\n\nRaw response:\n" + response);
+                p->setStatus("✗ AI fix returned empty — try a different model or enable Show thinking", true);
+            } else {
+                p->setOutput(result);
+                QString desc = FormatterPanel::describeChanges(fixState->originalInput, result);
+                int origChars = fixState->originalInput.length();
+                int newChars  = result.length();
+                int newLines  = result.count('\n') + 1;
+                p->setStatus(QString("✓ AI fix complete — %1 chars, %2 lines (%3). Click 'Show Diff' to see changes.")
+                             .arg(newChars).arg(newLines).arg(desc), false);
+                p->logAction("AI Fix (Ollama)", origChars, newChars, desc);
+                fixState->hasResult = true;
+                p->recordFix(fixState->originalInput, result, "AI Fix (Ollama)");
+            }
         });
         connect(ollama, &OllamaClient::error, p, [p, aiBtn, firstToken](const QString &msg) {
             aiBtn->setText("AI Fix (Ollama)");
             *firstToken = true;
-            p->setOutput("Error: " + msg + "\n\nRun: ollama serve");
+            p->setStatus("✗ AI fix failed: " + msg, true);
+            p->setOutput("Error: " + msg + "\n\nIs Ollama running? Try: ollama serve");
         });
 
         if (E()) p->setInput(E()->hasSelectedText() ? E()->selectedText() : E()->text());
@@ -2614,26 +2763,122 @@ void MainWindow::buildMenus() {
         auto *panelLayout = p->layout();
         if (panelLayout) panelLayout->addWidget(ollamaBar);
 
+        // v0.1.48 — Show thinking toggle (was missing on Bracket Tools).
+        auto *thinkingCheckBr = new QCheckBox("Show thinking (slower, may break format)");
+        thinkingCheckBr->setChecked(false);
+        thinkingCheckBr->setStyleSheet("padding: 4px 8px; font-size: 11px;");
+        if (panelLayout) panelLayout->addWidget(thinkingCheckBr);
+
         auto *aiBtn = new QPushButton("AI Fix (Ollama)");
         aiBtn->setFixedHeight(26);
         auto *btnLayout = p->findChild<QHBoxLayout *>();
-        if (btnLayout) btnLayout->insertWidget(btnLayout->count() - 2, aiBtn);
+        if (btnLayout) btnLayout->insertWidget(btnLayout->count() - 3, aiBtn);
+
+        // v0.1.48 — wire Show Diff (was missing for Bracket Tools)
+        connect(p, &FormatterPanel::showDiffRequested, this,
+                [this](const QString &before, const QString &after, const QString &title) {
+            auto *cmp = new CompareWidget;
+            connect(this, &MainWindow::themeChanged, cmp, &CompareWidget::onThemeChanged);
+            cmp->compare(before, "Before", after, "After");
+            int idx = m_tabs->addTab(cmp, title);
+            m_tabs->setCurrentIndex(idx);
+            connect(cmp, &CompareWidget::closeRequested, this, [this, cmp]() {
+                int i = m_tabs->indexOf(cmp);
+                if (i >= 0) closeTab(i);
+            });
+        });
+
+        struct BrFixState { QString originalInput; bool hasResult = false; };
+        auto *fixState = new BrFixState;
 
         auto *ollama = new OllamaClient(p);
 
-        connect(aiBtn, &QPushButton::clicked, p, [p, ollama, ollamaBar]() {
+        connect(aiBtn, &QPushButton::clicked, p, [p, ollama, ollamaBar, thinkingCheckBr, fixState]() {
             QString input = p->inputText();
-            if (input.isEmpty()) return;
-            if (!ollamaBar->isAvailable()) {
-                p->setOutput("Ollama not running.\n\nSetup:\n  1. curl -fsSL https://ollama.com/install.sh | sh\n  2. ollama pull qwen3.5:9b\n  3. ollama serve");
+            if (input.isEmpty()) {
+                p->setStatus("Empty input — paste code into the panel below first", true);
                 return;
             }
-            ollama->setModel(ollamaBar->selectedModel());
-            p->setOutput("Asking " + ollamaBar->selectedModel() + " to fix brackets...");
-            ollama->generate(
-                "Fix ALL bracket issues in this code. Fix missing (), [], {}, matching begin/end, if/fi, do/done. "
-                "Return ONLY the fixed code, nothing else. No explanation. No markdown.\n\n" + input,
-                "You are a code bracket repair tool. Fix all mismatched and missing brackets, parentheses, braces. Preserve all code logic.");
+            fixState->originalInput = input;
+            fixState->hasResult = false;
+
+            if (!ollamaBar->isAvailable()) {  // v0.1.48 — cached, non-blocking
+                p->setStatus("Ollama not running — start it: ollama serve", true);
+                p->setOutput("Ollama is not running.\n\n"
+                             "Setup:\n"
+                             "  1. Install:  curl -fsSL https://ollama.com/install.sh | sh\n"
+                             "  2. Pull:     ollama pull qwen2.5:7b\n"
+                             "  3. Start:    ollama serve\n"
+                             "  4. Click AI Fix again");
+                return;
+            }
+
+            QString model = ollamaBar->selectedModel();
+            if (model.isEmpty() || model.startsWith("(")) {
+                ollamaBar->checkStatus();
+                model = ollamaBar->selectedModel();
+                if (model.isEmpty() || model.startsWith("(")) {
+                    p->setStatus("No models installed — run: ollama pull qwen2.5:7b", true);
+                    return;
+                }
+            }
+
+            bool wantThinking = thinkingCheckBr->isChecked();
+            ollama->setModel(model);
+            p->setStatus(QString("Asking %1 to fix brackets%2...")
+                         .arg(model)
+                         .arg(wantThinking ? " (with reasoning)" : ""), false);
+            p->setOutput("Asking " + model + "...\n");
+
+            // ─── Strict minimal-change prompt ─────────────────────────
+            // The pre-v0.1.48 prompt said "Fix ALL bracket issues" — which
+            // many models read as license to "improve" the code by adding
+            // missing semicolons, fixing typos, renaming variables, etc.
+            // The new prompt is laser-focused on bracket / paren / brace /
+            // keyword-pair syntax ONLY. Same numbered-rules framework JSON
+            // and HTML Tools use.
+            const QString rules =
+                "RULES (follow ALL of these):\n"
+                "1. PRESERVE the code EXACTLY. Same line order, same indentation, "
+                "same identifiers, same operators, same strings, same comments.\n"
+                "2. Fix ONLY bracket / paren / brace / keyword-pair syntax:\n"
+                "   - Add missing close brackets: )  ]  }\n"
+                "   - Add missing open brackets: (  [  { (rare; only when clearly needed)\n"
+                "   - Match shell/SQL keyword pairs: if/fi · do/done · case/esac · BEGIN/END\n"
+                "   - Remove stray duplicate brackets that don't match anything\n"
+                "3. Do NOT add, remove, or rename any code statements.\n"
+                "4. Do NOT add semicolons, fix typos, change variable names, "
+                "reformat indentation, or 'improve' the code in any way.\n"
+                "5. Do NOT add new functions, imports, or comments.\n"
+                "6. Output ONLY the corrected code. No prose, no markdown ``` "
+                "fences, no explanation, no <think> blocks, no preamble.\n"
+                "7. If the input has balanced brackets already, output it UNCHANGED.\n";
+
+            QString systemPrompt =
+                "You are a minimal-change bracket patcher. Your only job is to balance "
+                "brackets, parentheses, braces, and keyword pairs (if/fi, do/done, BEGIN/END, etc.). "
+                "Preserve EVERY other character of the source code exactly.\n\n" + rules;
+
+            QString modelLower = model.toLower();
+            bool isGemmaLike = modelLower.contains("gemma") ||
+                               modelLower.contains("phi") ||
+                               modelLower.contains("tiny");
+
+            QString userPrompt;
+            if (isGemmaLike) {
+                userPrompt = rules + "\n"
+                    "Fix ONLY bracket/paren/brace mismatches. Make NO other changes. "
+                    "Return ONLY the corrected code.\n\n"
+                    "BROKEN CODE:\n" + input;
+            } else {
+                userPrompt =
+                    "Fix ONLY bracket / paren / brace / keyword-pair syntax. "
+                    "Make MINIMAL changes. Do NOT 'improve' the code. "
+                    "Return ONLY the corrected code.\n\n"
+                    "BROKEN CODE:\n" + input;
+            }
+
+            ollama->generate(userPrompt, systemPrompt, wantThinking);
         });
 
         auto *firstToken = new bool(true);
@@ -2642,20 +2887,53 @@ void MainWindow::buildMenus() {
             p->appendOutput(token);
             aiBtn->setText("AI Fixing...");
         });
-        connect(ollama, &OllamaClient::finished, p, [p, aiBtn, firstToken](const QString &response) {
+        connect(ollama, &OllamaClient::finished, p, [p, aiBtn, firstToken, fixState](const QString &response) {
             aiBtn->setText("AI Fix (Ollama)");
             *firstToken = true;
+
             QString cleaned = response.trimmed();
+
+            // 1. Strip <think>...</think> blocks
+            QRegularExpression thinkRe("<think>.*?</think>",
+                                       QRegularExpression::DotMatchesEverythingOption);
+            cleaned.remove(thinkRe);
+            cleaned = cleaned.trimmed();
+
+            // 2. Strip markdown ``` code blocks
             if (cleaned.startsWith("```")) {
-                int f = cleaned.indexOf('\n'), l = cleaned.lastIndexOf("```");
+                int f = cleaned.indexOf('\n');
+                int l = cleaned.lastIndexOf("```");
                 if (f > 0 && l > f) cleaned = cleaned.mid(f + 1, l - f - 1).trimmed();
             }
-            p->setOutput(cleaned);
+
+            // 3. For brackets we don't strip a "Here is..." prose prefix —
+            //    code can legitimately start with any character (including
+            //    text in shell scripts that begin with comments). The
+            //    fence-stripping above + <think> removal are usually enough.
+
+            QString result = cleaned;
+
+            if (result.isEmpty()) {
+                p->setOutput("(model returned empty response after stripping)\n\nRaw response:\n" + response);
+                p->setStatus("✗ AI fix returned empty — try a different model or enable Show thinking", true);
+            } else {
+                p->setOutput(result);
+                QString desc = FormatterPanel::describeChanges(fixState->originalInput, result);
+                int origChars = fixState->originalInput.length();
+                int newChars  = result.length();
+                int newLines  = result.count('\n') + 1;
+                p->setStatus(QString("✓ AI fix complete — %1 chars, %2 lines (%3). Click 'Show Diff' to see changes.")
+                             .arg(newChars).arg(newLines).arg(desc), false);
+                p->logAction("AI Fix (Ollama)", origChars, newChars, desc);
+                fixState->hasResult = true;
+                p->recordFix(fixState->originalInput, result, "AI Fix (Ollama)");
+            }
         });
         connect(ollama, &OllamaClient::error, p, [p, aiBtn, firstToken](const QString &msg) {
             aiBtn->setText("AI Fix (Ollama)");
             *firstToken = true;
-            p->setOutput("Error: " + msg + "\n\nRun: ollama serve");
+            p->setStatus("✗ AI fix failed: " + msg, true);
+            p->setOutput("Error: " + msg + "\n\nIs Ollama running? Try: ollama serve");
         });
 
         if (E()) p->setInput(E()->hasSelectedText() ? E()->selectedText() : E()->text());
@@ -3733,6 +4011,32 @@ void MainWindow::toggleAiDock() {
         // appears when the user explicitly ticks Coding Mode (which flips
         // the 3-column layout). Matches user's "nothing in between" ask.
         populateAiContext(m_aiDockPanel);
+
+        // v0.1.48 — first time the dock is shown in a session, give it
+        // ~50% of the splitter's width. Subsequent toggles respect
+        // whatever the user dragged the handle to. The splitter has up
+        // to 4 widgets (explorer · tabs · aiDockHost · funcList); we
+        // leave explorer and funcList at their current sizes (or 0 if
+        // hidden) and rebalance tabs ↔ aiDockHost to 50/50.
+        if (!m_aiDockSizedOnce && m_splitter) {
+            QList<int> sizes = m_splitter->sizes();
+            const int total = std::accumulate(sizes.begin(), sizes.end(), 0);
+            if (total > 0 && sizes.size() >= 3) {
+                const int explorerW = sizes.value(0, 0);
+                const int funcListW = sizes.size() >= 4 ? sizes.value(3, 0) : 0;
+                const int half = total / 2;
+                // tabs (idx 1) gets total/2 minus explorer; aiDockHost
+                // (idx 2) gets total/2 minus funcList. Clamp to a minimum
+                // so the editor doesn't collapse.
+                const int tabsW = std::max(280, half - explorerW);
+                const int aiW   = std::max(360, half - funcListW);
+                QList<int> next;
+                next << explorerW << tabsW << aiW;
+                if (sizes.size() >= 4) next << funcListW;
+                m_splitter->setSizes(next);
+            }
+            m_aiDockSizedOnce = true;
+        }
     }
 }
 

@@ -45,13 +45,14 @@ FindReplaceDialog::FindReplaceDialog(QWidget *parent) : QDialog(parent) {
     auto *markTab = new QWidget;    buildMarkTab(markTab);       m_tabs->addTab(markTab, "Mark");
     auto *gotoTab = new QWidget;    buildGotoTab(gotoTab);       m_tabs->addTab(gotoTab, "Go to");
 
-    // Results output panel
-    m_resultsOutput = new QTextEdit;
-    m_resultsOutput->setReadOnly(true);
-    m_resultsOutput->setMaximumHeight(150);
-    m_resultsOutput->setFont(notepatraCodeFont(10));
-    m_resultsOutput->setPlaceholderText("Search results will appear here...");
-    mainLayout->addWidget(m_resultsOutput);
+    // v0.1.48 — the stale "Search results will appear here…" QTextEdit was
+    // removed. Find in Files now publishes results to the dockable
+    // SearchResultsPanel at the bottom of the main window (v0.1.46), and
+    // single-file Find/Replace writes a one-line status into the dialog
+    // status bar instead of into a redundant 150-px panel. m_resultsOutput
+    // is kept as a nullptr field so the few remaining writers stay null-
+    // safe without needing call-site changes elsewhere.
+    m_resultsOutput = nullptr;
 }
 
 // ═══════════════════════════════════════
@@ -640,8 +641,8 @@ void FindReplaceDialog::doReplaceAll() {
                                            m_rMatchCase->isChecked());
     e->selectAll();
     e->replaceSelectedText(result);
-    m_resultsOutput->clear();
-    m_resultsOutput->append(QString("Replaced %1 occurrence(s)").arg(count));
+    if (m_resultsOutput) m_resultsOutput->clear();
+    if (m_resultsOutput) m_resultsOutput->append(QString("Replaced %1 occurrence(s)").arg(count));
 }
 
 void FindReplaceDialog::doReplaceAllOpened() {
@@ -659,7 +660,7 @@ void FindReplaceDialog::doReplaceAllOpened() {
     if (!tabs) return;
 
     int totalReplaced = 0;
-    m_resultsOutput->clear();
+    if (m_resultsOutput) m_resultsOutput->clear();
 
     for (int t = 0; t < tabs->count(); t++) {
         auto *ed = qobject_cast<Editor *>(tabs->widget(t));
@@ -678,10 +679,10 @@ void FindReplaceDialog::doReplaceAllOpened() {
         totalReplaced += count;
 
         QString name = ed->filePath().isEmpty() ? tabs->tabText(t) : QFileInfo(ed->filePath()).fileName();
-        m_resultsOutput->append(QString("  %1: %2 replacement(s)").arg(name).arg(count));
+        if (m_resultsOutput) m_resultsOutput->append(QString("  %1: %2 replacement(s)").arg(name).arg(count));
     }
 
-    m_resultsOutput->insertPlainText(QString("Replace All in All Opened: %1 total replacement(s)\n\n").arg(totalReplaced));
+    if (m_resultsOutput) m_resultsOutput->insertPlainText(QString("Replace All in All Opened: %1 total replacement(s)\n\n").arg(totalReplaced));
 }
 
 void FindReplaceDialog::doFindInFiles() {
@@ -690,9 +691,9 @@ void FindReplaceDialog::doFindInFiles() {
     QString filterStr = comboText(m_fifFilters);
     if (needle.isEmpty() || dir.isEmpty()) return;
 
-    m_resultsOutput->clear();
-    m_resultsOutput->append(QString("Searching for \"%1\" in %2...").arg(needle, dir));
-    m_resultsOutput->append("");
+    if (m_resultsOutput) m_resultsOutput->clear();
+    if (m_resultsOutput) m_resultsOutput->append(QString("Searching for \"%1\" in %2...").arg(needle, dir));
+    if (m_resultsOutput) m_resultsOutput->append("");
 
     QStringList filters;
     for (const auto &f : filterStr.split(' ', Qt::SkipEmptyParts))
@@ -727,7 +728,7 @@ void FindReplaceDialog::doFindInFiles() {
         fileCount++;
         totalHits += count;
 
-        m_resultsOutput->append(QString("  %1 (%2 hits)").arg(filePath).arg(count));
+        if (m_resultsOutput) m_resultsOutput->append(QString("  %1 (%2 hits)").arg(filePath).arg(count));
 
         // Show first few matching lines
         QStringList lines = content.split('\n');
@@ -744,19 +745,19 @@ void FindReplaceDialog::doFindInFiles() {
                 match = lines[i].contains(needle, Qt::CaseInsensitive);
             }
             if (match) {
-                m_resultsOutput->append(QString("    Line %1: %2").arg(i + 1).arg(lines[i].trimmed().left(120)));
+                if (m_resultsOutput) m_resultsOutput->append(QString("    Line %1: %2").arg(i + 1).arg(lines[i].trimmed().left(120)));
                 shown++;
             }
         }
-        m_resultsOutput->append("");
+        if (m_resultsOutput) m_resultsOutput->append("");
 
         if (fileCount >= 1000) {
-            m_resultsOutput->append("... (stopped after 1000 files)");
+            if (m_resultsOutput) m_resultsOutput->append("... (stopped after 1000 files)");
             break;
         }
     }
 
-    m_resultsOutput->insertPlainText(QString("\nSearch complete: %1 hits in %2 files\n").arg(totalHits).arg(fileCount));
+    if (m_resultsOutput) m_resultsOutput->insertPlainText(QString("\nSearch complete: %1 hits in %2 files\n").arg(totalHits).arg(fileCount));
 }
 
 void FindReplaceDialog::doMarkAll() {

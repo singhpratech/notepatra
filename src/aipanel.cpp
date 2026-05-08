@@ -28,6 +28,8 @@
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QFrame>
+#include <QButtonGroup>
+#include <QAbstractButton>
 #include <QScrollArea>
 #include <QProcess>
 #include <QImage>
@@ -694,132 +696,142 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     });
     gearBtn->setVisible(false);  // hidden until we wire up the jump cleanly
     modelRow->addWidget(gearBtn);
-    // ─── Coding Mode toggle (Cursor / Copilot-Agent style) ─────────────
-    // ON  = sharper system prompt ("return ONLY the modified code, no
-    //       prose, no markdown fences") + the post-response [Apply] button
-    //       turns into the primary call-to-action and drops selected text
-    //       straight into the editor. Great for "refactor this function"
-    //       / "rewrite this type" / "translate to Rust" tasks.
-    // OFF = classic chat panel with explanations in prose form.
-    // Short label keeps the header from overflowing on narrow docks.
-    m_codingMode = new QCheckBox("Coding");
-    m_codingMode->setChecked(false);
-    m_codingMode->setStyleSheet(QString(
-        "QCheckBox { font-size: 11px; color: %1; margin-left: 4px; font-weight: 600; }"
-        "QCheckBox:checked { color: %2; }")
-        .arg(pal.muted, pal.accent));
-    m_codingMode->setToolTip(
-        "Coding Mode: AI returns code only (no prose). Replaces selection "
-        "directly. Auto-arranges the window as a 3-column Cursor-style "
-        "layout: [FileExplorer | Editor | AI Chat]. Off = chat explanations.");
-    modelRow->addWidget(m_codingMode);
 
-    // Visible mode change when Coding Mode toggles — placeholder text,
-    // CODING badge, "Show thinking" hides, "Apply Code" button becomes
-    // the primary call to action. Also emits codingModeRequested() so
-    // MainWindow can flip the 3-column layout (file tree + editor + AI
-    // dock on right).
-    connect(m_codingMode, &QCheckBox::toggled, this, [this](bool checked) {
+    // Reset session — moved here in v0.1.48 from the bottom of the row so
+    // the top-bar shape is just [backend | model ↻ ⚙ Reset]. Mode toggles
+    // (Chat/Coding/Data + Think) live on a dedicated second row below.
+    m_clearBtn = new QPushButton("Reset");
+    m_clearBtn->setObjectName("aiResetSessionButton");
+    m_clearBtn->setFixedWidth(56);
+    m_clearBtn->setStyleSheet("font-size: 11px;");
+    m_clearBtn->setToolTip("Reset the AI Assistant session");
+    modelRow->addWidget(m_clearBtn);
+    layout->addLayout(modelRow);
+    layout->addWidget(apiKeyHost);
+
+    // ─── Mode row: 3-way segmented selector + Think checkbox ─────────────
+    // v0.1.48 — Coding/Data are no longer two independent checkboxes that
+    // had to ping-pong each other off (the previous wiring also had a
+    // dead-code bug: connect(m_dataMode,…) ran before m_dataMode was
+    // constructed, so toggling Data did nothing through that path). They
+    // are now a 3-way mode group:
+    //
+    //   [ Chat ][ Coding ][ Data ]   ☐ Think
+    //
+    //   Chat   = general chat assistant (default; conversational prompt,
+    //            quick actions visible, no agentic tools)
+    //   Coding = full agentic coding agent (read/write files, search,
+    //            apply diffs, run shell commands; code-only output;
+    //            [Apply] button replaces selection)
+    //   Data   = data analyst (query_sql / csv_query / chart_spec, prompt
+    //            steered toward CSV + DB analysis, Manage Connections
+    //            button + model-capability banner)
+    //
+    // Mutual exclusion is enforced by QButtonGroup::setExclusive(true).
+    auto *modeRow = new QHBoxLayout;
+    modeRow->setContentsMargins(8, 0, 8, 4);
+    modeRow->setSpacing(0);
+
+    auto *modeFrame = new QFrame;
+    modeFrame->setStyleSheet(QString(
+        "QFrame { background: %1; border: 1px solid %2; border-radius: 6px; }")
+        .arg(pal.chromeBg, pal.btnBorder));
+    auto *modeLay = new QHBoxLayout(modeFrame);
+    modeLay->setContentsMargins(2, 2, 2, 2);
+    modeLay->setSpacing(2);
+
+    auto makeModeBtn = [&pal](const QString &label,
+                              const QString &accentColor,
+                              const QString &tip) {
+        auto *btn = new QPushButton(label);
+        btn->setCheckable(true);
+        btn->setCursor(Qt::PointingHandCursor);
+        btn->setFixedHeight(22);
+        btn->setMinimumWidth(54);
+        btn->setToolTip(tip);
+        btn->setStyleSheet(QString(
+            "QPushButton { background: transparent; border: none; "
+            "color: %1; font-size: 11px; font-weight: 600; padding: 2px 10px; "
+            "border-radius: 4px; } "
+            "QPushButton:hover { background: %2; color: %3; } "
+            "QPushButton:checked { background: %4; color: white; }")
+            .arg(pal.muted, pal.btnHover, pal.inputText, accentColor));
+        return btn;
+    };
+
+    auto *chatBtn   = makeModeBtn("Chat",   pal.accent,
+        "General chat assistant — explain code, brainstorm, ask anything. "
+        "Default mode. No agentic file edits, no DB tools.");
+    auto *codingBtn = makeModeBtn("Coding", QStringLiteral("#4EC9B0"),
+        "Coding Agent — full agentic mode: read/write files, search workspace, "
+        "apply diffs, run shell commands. Returns code, applies changes.");
+    auto *dataBtn   = makeModeBtn("Data",   QStringLiteral("#FF9F43"),
+        "Data Analyst — query CSVs and saved DB connections, generate charts "
+        "inline. Best with capable models (banner appears if a smaller model is loaded).");
+
+    auto *modeGroup = new QButtonGroup(this);
+    modeGroup->setExclusive(true);
+    modeGroup->addButton(chatBtn);
+    modeGroup->addButton(codingBtn);
+    modeGroup->addButton(dataBtn);
+
+    modeLay->addWidget(chatBtn);
+    modeLay->addWidget(codingBtn);
+    modeLay->addWidget(dataBtn);
+
+    m_chatMode   = chatBtn;
+    m_codingMode = codingBtn;
+    m_dataMode   = dataBtn;
+
+    modeRow->addWidget(modeFrame);
+    modeRow->addStretch();
+
+    m_thinkingCheck = new QCheckBox("Think");
+    m_thinkingCheck->setChecked(false);
+    m_thinkingCheck->setStyleSheet(QString(
+        "font-size: 11px; color: %1; margin-left: 8px;").arg(pal.muted));
+    m_thinkingCheck->setToolTip("Show the model's reasoning blocks (Qwen3, DeepSeek-R1). "
+                                "Off = faster, cleaner answers. On = see how the model thinks.");
+    modeRow->addWidget(m_thinkingCheck);
+    layout->addLayout(modeRow);
+
+    // ─── Mode toggled — single applier wired to all three buttons. ───────
+    // Only fires when a button transitions to checked (the "off" toggle of
+    // the previously-active button is ignored — applyMode reads the
+    // current state of all three pointers, so handling the on-edge alone
+    // is sufficient). All widget access is null-guarded because applyMode
+    // is also called once at the end of the constructor before some
+    // later-constructed widgets exist (m_customInput etc.).
+    auto applyMode = [this]() {
+        const bool coding = m_codingMode && m_codingMode->isChecked();
+        const bool data   = m_dataMode   && m_dataMode->isChecked();
+
+        Config::instance().aiDataMode = data;
+        Config::instance().save();
+
         if (m_customInput) {
-            m_customInput->setPlaceholderText(checked
-                ? "Coding Mode · e.g. Refactor this function / Add types / Translate to TypeScript"
-                : "Type a message and press Enter to send…");
+            m_customInput->setPlaceholderText(
+                coding ? "Coding Mode · e.g. Refactor this function / Add types / Translate to TypeScript"
+              : data   ? "Data Mode · e.g. summarize this CSV / show top 10 customers / chart revenue by month"
+                       : "Type a message and press Enter to send…");
         }
-        // Collapse the panel to a Cursor/Copilot-style minimal chat when
-        // Coding Mode is on: just the model header, chat transcript, and
-        // input bar. The 8-button quick-action grid and Insert/Replace/
-        // Copy row hide so the panel stops feeling crowded.
-        //
-        // The "Think" checkbox stays VISIBLE but disabled+greyed when
-        // Coding Mode is on (rather than hidden, which was confusing UX
-        // -- users reported it disappeared and they didn't know why).
-        // Coding Mode forces code-only output; thinking blocks would
-        // interfere with the [Apply] button's clean code paste, so the
-        // checkbox is greyed out to communicate "not available right now"
-        // instead of vanishing.
+
         if (m_thinkingCheck) {
-            m_thinkingCheck->setEnabled(!checked);
-            m_thinkingCheck->setToolTip(checked
+            m_thinkingCheck->setEnabled(!coding);
+            m_thinkingCheck->setToolTip(coding
                 ? "Disabled while Coding Mode is on — Coding Mode forces code-only output, "
                   "so reasoning blocks would interfere with the [Apply] button paste. "
-                  "Turn Coding Mode off to use thinking mode."
+                  "Switch to Chat or Data to use thinking mode."
                 : "Show the model's reasoning blocks (Qwen3, DeepSeek-R1). "
                   "Off = faster, cleaner answers. On = see how the model thinks.");
         }
-        if (m_quickActionsWrap)   m_quickActionsWrap->setVisible(!checked);
-        if (m_resultActionsWrap)  m_resultActionsWrap->setVisible(!checked);
-        // Repaint the top strip so the mode switch is unmistakable —
-        // accent-green "AI · Coding Mode" on, back to neutral off.
-        if (m_headerLabel) {
-            const AiPalette p = aiPalette();
-            m_headerLabel->setText(checked ? "  AI  ·  ⌘ CODING" : "  AI");
-            m_headerLabel->setStyleSheet(QString(
-                "font-weight: 600; background: %1; color: %2; "
-                "padding: 6px 10px; letter-spacing: 1px; font-size: 11px;"
-                "border-bottom: 2px solid %3;")
-                .arg(p.chromeBg,
-                     checked ? QStringLiteral("#4EC9B0") : p.headerFg,
-                     checked ? QStringLiteral("#4EC9B0") : QStringLiteral("transparent")));
-        }
-        // Re-render the transcript with the new Coding-Mode CSS — flips
-        // the chat to monospace + darker surface + "CODING MODE" badge.
-        // Crucially, m_messages is NOT touched: switching modes preserves
-        // the conversation so users don't lose context mid-thought.
-        renderTranscript();
-        emit codingModeRequested(checked);
-        // v0.1.43 — Coding Mode and Data Analyst Mode are mutually exclusive.
-        // If user turned Coding on, force Data off.
-        if (checked && m_dataMode && m_dataMode->isChecked()) {
-            QSignalBlocker block(m_dataMode);
-            m_dataMode->setChecked(false);
-            if (m_manageConnsBtn) m_manageConnsBtn->setVisible(false);
-            if (m_dataCapBanner)  m_dataCapBanner->setVisible(false);
-        }
-    });
 
-    // ─── Data Mode toggle wiring ─────────────────────────────────────────
-    connect(m_dataMode, &QCheckBox::toggled, this, [this](bool checked) {
-        Config::instance().aiDataMode = checked;
-        Config::instance().save();
-        // Mutual exclusion with Coding Mode.
-        if (checked && m_codingMode && m_codingMode->isChecked()) {
-            QSignalBlocker block(m_codingMode);
-            m_codingMode->setChecked(false);
-            // Manually mirror the bits of the coding-mode toggle that we
-            // care about — the panel UI changes the coding-mode handler
-            // does (placeholder text, header, hide quick actions). Re-emit
-            // codingModeRequested(false) so MainWindow restores layout.
-            if (m_customInput)
-                m_customInput->setPlaceholderText("Type a message and press Enter to send…");
-            if (m_quickActionsWrap)  m_quickActionsWrap->setVisible(true);
-            if (m_resultActionsWrap) m_resultActionsWrap->setVisible(true);
-            if (m_thinkingCheck)     m_thinkingCheck->setEnabled(true);
-            emit codingModeRequested(false);
-        }
+        if (m_quickActionsWrap)  m_quickActionsWrap->setVisible(!coding);
+        if (m_resultActionsWrap) m_resultActionsWrap->setVisible(!coding);
 
-        if (m_manageConnsBtn) m_manageConnsBtn->setVisible(checked);
-        if (m_customInput) {
-            m_customInput->setPlaceholderText(checked
-                ? "Data Mode · e.g. summarize this CSV / show top 10 customers / chart revenue by month"
-                : "Type a message and press Enter to send…");
-        }
-
-        // Header label flips to an accent-orange "AI · DATA" band.
-        if (m_headerLabel) {
-            const AiPalette p = aiPalette();
-            m_headerLabel->setText(checked ? "  AI  ·  📊 DATA" : "  AI");
-            m_headerLabel->setStyleSheet(QString(
-                "font-weight: 600; background: %1; color: %2; "
-                "padding: 6px 10px; letter-spacing: 1px; font-size: 11px;"
-                "border-bottom: 2px solid %3;")
-                .arg(p.chromeBg,
-                     checked ? QStringLiteral("#FF9F43") : p.headerFg,
-                     checked ? QStringLiteral("#FF9F43") : QStringLiteral("transparent")));
-        }
-
-        // Capability banner — show only if model is below the bar.
+        if (m_manageConnsBtn) m_manageConnsBtn->setVisible(data);
         if (m_dataCapBanner) {
-            if (!checked) {
+            if (!data) {
                 m_dataCapBanner->setVisible(false);
             } else {
                 const QString modelName = m_modelCombo ? m_modelCombo->currentText() : QString();
@@ -838,16 +850,35 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             }
         }
 
-        renderTranscript();
-    });
+        if (m_headerLabel) {
+            const AiPalette p = aiPalette();
+            const QString text = coding ? "  AI  ·  ⌘ CODING"
+                              : data   ? "  AI  ·  📊 DATA"
+                                       : "  AI";
+            const QString fg   = coding ? QStringLiteral("#4EC9B0")
+                              : data   ? QStringLiteral("#FF9F43")
+                                       : p.headerFg;
+            const QString rule = coding ? QStringLiteral("#4EC9B0")
+                              : data   ? QStringLiteral("#FF9F43")
+                                       : QStringLiteral("transparent");
+            m_headerLabel->setText(text);
+            m_headerLabel->setStyleSheet(QString(
+                "font-weight: 600; background: %1; color: %2; "
+                "padding: 6px 10px; letter-spacing: 1px; font-size: 11px;"
+                "border-bottom: 2px solid %3;")
+                .arg(p.chromeBg, fg, rule));
+        }
 
-    // Manage Connections... button → open the connection-CRUD dialog.
-    connect(m_manageConnsBtn, &QPushButton::clicked, this, [this]() {
-        DbConnectionsDialog dlg(this);
-        dlg.exec();
-    });
+        if (m_chatLayout) renderTranscript();
+        emit codingModeRequested(coding);
+    };
 
-    // When the user picks a different model, refresh the capability banner.
+    connect(m_chatMode,   &QAbstractButton::toggled, this, [applyMode](bool on) { if (on) applyMode(); });
+    connect(m_codingMode, &QAbstractButton::toggled, this, [applyMode](bool on) { if (on) applyMode(); });
+    connect(m_dataMode,   &QAbstractButton::toggled, this, [applyMode](bool on) { if (on) applyMode(); });
+
+    // Refresh the data-mode capability banner when the user picks a
+    // different model.
     if (m_modelCombo) {
         connect(m_modelCombo, &QComboBox::currentTextChanged,
                 this, [this](const QString &modelName) {
@@ -867,36 +898,9 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         });
     }
 
-    // ─── Data Analyst Mode toggle (v0.1.43) ──────────────────────────────
-    // Mutually exclusive with Coding Mode. When on, the panel shows a
-    // "Manage Connections..." button + a capability banner if the
-    // active model is below the recommended bar for SQL/chart work.
-    m_dataMode = new QCheckBox("Data");
-    m_dataMode->setChecked(Config::instance().aiDataMode);
-    m_dataMode->setStyleSheet(QString(
-        "QCheckBox { font-size: 11px; color: %1; margin-left: 4px; font-weight: 600; }"
-        "QCheckBox:checked { color: #FF9F43; }")
-        .arg(pal.muted));
-    m_dataMode->setToolTip(
-        "Data Analyst Mode: query CSVs and saved DB connections, generate "
-        "charts inline. Mutually exclusive with Coding Mode.");
-    modelRow->addWidget(m_dataMode);
-
-    m_thinkingCheck = new QCheckBox("Think");
-    m_thinkingCheck->setChecked(false);
-    m_thinkingCheck->setStyleSheet(QString(
-        "font-size: 11px; color: %1; margin-left: 8px;").arg(pal.muted));
-    m_thinkingCheck->setToolTip("Show the model's reasoning blocks (Qwen3, DeepSeek-R1). "
-                                "Off = faster, cleaner answers. On = see how the model thinks.");
-    modelRow->addWidget(m_thinkingCheck);
-    m_clearBtn = new QPushButton("Reset");
-    m_clearBtn->setObjectName("aiResetSessionButton");
-    m_clearBtn->setFixedWidth(56);
-    m_clearBtn->setStyleSheet("font-size: 11px;");
-    m_clearBtn->setToolTip("Reset the AI Assistant session");
-    modelRow->addWidget(m_clearBtn);
-    layout->addLayout(modelRow);
-    layout->addWidget(apiKeyHost);
+    // Initial mode is set at the END of the constructor, once all
+    // referenced widgets (m_customInput, m_quickActionsWrap, m_chatLayout,
+    // etc.) are constructed. See the trailing applyMode() call below.
 
     // ─── Data Analyst row (v0.1.43, hidden until Data Mode is on) ────────
     // Manage Connections... button + capability banner. The banner is only
@@ -924,6 +928,15 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         layout->addLayout(dataRow);
         m_manageConnsBtn->setVisible(false);
         m_dataCapBanner->setVisible(false);
+
+        // Manage Connections… opens the connection-CRUD dialog. Wired here
+        // (not earlier next to the mode-row connects) because m_manageConnsBtn
+        // is created in this block — connecting before construction was a
+        // dead-code bug in v0.1.43-v0.1.47.
+        connect(m_manageConnsBtn, &QPushButton::clicked, this, [this]() {
+            DbConnectionsDialog dlg(this);
+            dlg.exec();
+        });
     }
 
     m_statusLabel = new QLabel("");
@@ -1330,6 +1343,18 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     connect(copyBtn, &QPushButton::clicked, this, [this]() {
         if (!m_lastResponse.isEmpty()) QApplication::clipboard()->setText(m_lastResponse);
     });
+
+    // ─── Initial mode (v0.1.48) ──────────────────────────────────────────
+    // All UI is now constructed (m_customInput, m_quickActionsWrap,
+    // m_chatLayout, etc.). Picking the initial mode here fires the
+    // QButtonGroup::toggled handler, which calls the applyMode lambda that
+    // syncs every dependent widget. Persisted aiDataMode wins; otherwise
+    // Chat is the default.
+    if (Config::instance().aiDataMode && m_dataMode) {
+        m_dataMode->setChecked(true);
+    } else if (m_chatMode) {
+        m_chatMode->setChecked(true);
+    }
 }
 
 void AIPanel::setContext(const QString &selectedText, const QString &filePath, const QString &language) {
