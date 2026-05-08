@@ -5,6 +5,8 @@
 #include <Qsci/qscilexer.h>
 #include <QString>
 
+class QContextMenuEvent;
+
 class Editor : public QsciScintilla {
     Q_OBJECT
 public:
@@ -58,6 +60,13 @@ public:
     // without having to construct a full Editor (which pulls in the Rust core).
     static void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont);
 
+    // v0.1.44 — language-aware comment syntax. Public + static so tests
+    // and the right-click menu can both query without constructing an
+    // Editor. Returns empty strings for languages that lack the given
+    // comment kind; "Plain Text" / unknown returns all empty.
+    struct CommentSyntax { QString line; QString blockOpen; QString blockClose; };
+    static CommentSyntax commentSyntaxFor(const QString &lang);
+
     void gotoLine(int line);
     void updateGitGutter();
     void duplicateLine();
@@ -65,6 +74,7 @@ public:
     void moveLineUp();
     void moveLineDown();
     void toggleComment();
+    void toggleBlockComment();
     void toggleWordWrap();
     void toggleWhitespace();
     void toggleEol();
@@ -78,6 +88,7 @@ signals:
 
 protected:
     void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void contextMenuEvent(QContextMenuEvent *event) override;
     bool eventFilter(QObject *obj, QEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
 

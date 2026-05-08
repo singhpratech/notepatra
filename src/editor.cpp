@@ -109,11 +109,15 @@
 #define HAS_LEXER_SREC
 #endif
 
+#include <QAction>
+#include <QContextMenuEvent>
 #include <QFile>
 #include <QFont>
 #include <QColor>
 #include <QFileInfo>
 #include <QHash>
+#include <QKeySequence>
+#include <QMenu>
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
@@ -1005,19 +1009,80 @@ void Editor::moveLineDown() {
     endUndoAction();
 }
 
+// v0.1.44 — single source of truth for line + block comment syntax per
+// language. Returns empty strings for languages that don't have that
+// kind of comment; callers (toggleComment, toggleBlockComment, the
+// right-click menu) check emptiness to disable the action.
+Editor::CommentSyntax Editor::commentSyntaxFor(const QString &lang) {
+    static const QHash<QString, CommentSyntax> map = {
+        // Hash-comment family
+        {"Python",       {"#",     "",        ""      }},
+        {"Bash",         {"#",     "",        ""      }},
+        {"YAML",         {"#",     "",        ""      }},
+        {"Ruby",         {"#",     "=begin",  "=end"  }},
+        {"Perl",         {"#",     "",        ""      }},
+        {"PowerShell",   {"#",     "<#",      "#>"    }},
+        {"TCL",          {"#",     "",        ""      }},
+        {"CMake",        {"#",     "",        ""      }},
+        {"Makefile",     {"#",     "",        ""      }},
+        {"Properties",   {"#",     "",        ""      }},
+        {"AVS",          {"#",     "",        ""      }},
+        // C-family (// line + /* */ block)
+        {"C",            {"//",    "/*",      "*/"    }},
+        {"C++",          {"//",    "/*",      "*/"    }},
+        {"C#",           {"//",    "/*",      "*/"    }},
+        {"Java",         {"//",    "/*",      "*/"    }},
+        {"JavaScript",   {"//",    "/*",      "*/"    }},
+        {"TypeScript",   {"//",    "/*",      "*/"    }},
+        {"D",            {"//",    "/*",      "*/"    }},
+        {"Rust",         {"//",    "/*",      "*/"    }},
+        {"Go",           {"//",    "/*",      "*/"    }},
+        {"Swift",        {"//",    "/*",      "*/"    }},
+        {"Kotlin",       {"//",    "/*",      "*/"    }},
+        {"CSS",          {"",      "/*",      "*/"    }},
+        {"Verilog",      {"//",    "/*",      "*/"    }},
+        {"Pascal",       {"//",    "{",       "}"     }},
+        {"POV",          {"//",    "/*",      "*/"    }},
+        // SQL-family (-- line + /* */ block)
+        {"SQL",          {"--",    "/*",      "*/"    }},
+        {"VHDL",         {"--",    "",        ""      }},
+        // Lua
+        {"Lua",          {"--",    "--[[",    "]]"    }},
+        // Markup (no line comment, only block)
+        {"HTML",         {"",      "<!--",    "-->"   }},
+        {"XML",          {"",      "<!--",    "-->"   }},
+        {"Markdown",     {"",      "<!--",    "-->"   }},
+        // Assembly / scripting variants
+        {"ASM",          {";",     "",        ""      }},
+        {"NASM",         {";",     "",        ""      }},
+        {"MASM",         {";",     "",        ""      }},
+        {"IDL",          {";",     "",        ""      }},
+        {"Spice",        {";",     "",        ""      }},
+        {"PostScript",   {"%",     "",        ""      }},
+        {"TeX",          {"%",     "",        ""      }},
+        {"Matlab",       {"%",     "%{",      "%}"    }},
+        {"Octave",       {"%",     "%{",      "%}"    }},
+        {"Fortran",      {"!",     "",        ""      }},
+        {"Fortran77",    {"!",     "",        ""      }},
+        {"CoffeeScript", {"#",     "###",     "###"   }},
+        {"Batch",        {"REM ",  "",        ""      }},
+        // Explicitly no comment syntax — menu items will be disabled.
+        // Listed so the lookup is exhaustive and adding a new lang
+        // surfaces here rather than silently falling through to
+        // an empty default.
+        {"JSON",         {"",      "",        ""      }},
+        {"Diff",         {"",      "",        ""      }},
+        {"IntelHex",     {"",      "",        ""      }},
+        {"SRecord",      {"",      "",        ""      }},
+        {"Plain Text",   {"",      "",        ""      }},
+    };
+    return map.value(lang, CommentSyntax{"", "", ""});
+}
+
 void Editor::toggleComment() {
-    QsciLexer *lex = lexer();
-    QString comment = "#";
-    if (lex) {
-        QString name = lex->metaObject()->className();
-        if (name.contains("CPP") || name.contains("Java") || name.contains("JavaScript") ||
-            name.contains("CSharp") || name.contains("JSON"))
-            comment = "//";
-        else if (name.contains("SQL") || name.contains("Lua"))
-            comment = "--";
-        else if (name.contains("Batch"))
-            comment = "REM ";
-    }
+    const CommentSyntax cs = commentSyntaxFor(m_language);
+    if (cs.line.isEmpty()) return;
+    const QString comment = cs.line;
 
     int lineFrom, lineTo, colFrom, colTo;
     if (hasSelectedText()) {
@@ -1053,6 +1118,120 @@ void Editor::toggleComment() {
         }
     }
     endUndoAction();
+}
+
+void Editor::toggleBlockComment() {
+    const CommentSyntax cs = commentSyntaxFor(m_language);
+    if (cs.blockOpen.isEmpty() || cs.blockClose.isEmpty()) return;
+
+    int lineFrom = 0, lineTo = 0, colFrom = 0, colTo = 0;
+    bool hadSelection = hasSelectedText();
+    if (hadSelection) {
+        getSelection(&lineFrom, &colFrom, &lineTo, &colTo);
+    } else {
+        // No selection → wrap the current line.
+        getCursorPosition(&lineFrom, &colFrom);
+        lineTo = lineFrom;
+        colFrom = 0;
+        colTo = text(lineFrom).length();
+    }
+
+    QString sel;
+    if (hadSelection) {
+        sel = selectedText();
+    } else {
+        sel = text(lineFrom);
+        if (sel.endsWith('\n')) sel.chop(1);
+    }
+
+    beginUndoAction();
+    const QString trimmed = sel.trimmed();
+    if (trimmed.startsWith(cs.blockOpen) && trimmed.endsWith(cs.blockClose) &&
+        trimmed.length() >= cs.blockOpen.length() + cs.blockClose.length()) {
+        // Already wrapped — strip the markers.
+        const int openIdx  = sel.indexOf(cs.blockOpen);
+        const int closeIdx = sel.lastIndexOf(cs.blockClose);
+        if (openIdx >= 0 && closeIdx > openIdx) {
+            QString inner = sel.mid(openIdx + cs.blockOpen.length(),
+                                    closeIdx - openIdx - cs.blockOpen.length());
+            // Strip a single leading/trailing space that toggleBlockComment
+            // itself inserted on the wrap step, so a wrap+unwrap round-trip
+            // is idempotent.
+            if (inner.startsWith(' ')) inner.remove(0, 1);
+            if (inner.endsWith(' ')) inner.chop(1);
+            QString prefix = sel.left(openIdx);
+            QString suffix = sel.mid(closeIdx + cs.blockClose.length());
+            QString result = prefix + inner + suffix;
+            if (hadSelection) {
+                setSelection(lineFrom, colFrom, lineTo, colTo);
+                replaceSelectedText(result);
+            } else {
+                setSelection(lineFrom, 0, lineFrom, text(lineFrom).length());
+                replaceSelectedText(result);
+            }
+        }
+    } else {
+        const QString wrapped = cs.blockOpen + " " + sel + " " + cs.blockClose;
+        if (hadSelection) {
+            replaceSelectedText(wrapped);
+        } else {
+            setSelection(lineFrom, 0, lineFrom, text(lineFrom).length());
+            replaceSelectedText(wrapped);
+        }
+    }
+    endUndoAction();
+}
+
+void Editor::contextMenuEvent(QContextMenuEvent *event) {
+    QMenu menu(this);
+
+    auto *undoAct = menu.addAction(tr("&Undo"), this, [this]() { undo(); });
+    undoAct->setShortcut(QKeySequence::Undo);
+    undoAct->setEnabled(isUndoAvailable());
+
+    auto *redoAct = menu.addAction(tr("&Redo"), this, [this]() { redo(); });
+    redoAct->setShortcut(QKeySequence::Redo);
+    redoAct->setEnabled(isRedoAvailable());
+
+    menu.addSeparator();
+
+    auto *cutAct = menu.addAction(tr("Cu&t"), this, [this]() { cut(); });
+    cutAct->setShortcut(QKeySequence::Cut);
+    cutAct->setEnabled(hasSelectedText());
+
+    auto *copyAct = menu.addAction(tr("&Copy"), this, [this]() { copy(); });
+    copyAct->setShortcut(QKeySequence::Copy);
+    copyAct->setEnabled(hasSelectedText());
+
+    auto *pasteAct = menu.addAction(tr("&Paste"), this, [this]() { paste(); });
+    pasteAct->setShortcut(QKeySequence::Paste);
+
+    menu.addSeparator();
+    menu.addAction(tr("Select &All"), this, [this]() { selectAll(); })
+        ->setShortcut(QKeySequence::SelectAll);
+
+    menu.addSeparator();
+
+    // ── v0.1.44 — language-aware comment toggles ──
+    const CommentSyntax cs = commentSyntaxFor(m_language);
+
+    auto *lineAct = menu.addAction(
+        cs.line.isEmpty()
+            ? tr("Toggle &Line Comment  (no syntax for %1)").arg(m_language)
+            : tr("Toggle &Line Comment  (%1)").arg(cs.line.trimmed().isEmpty() ? cs.line : cs.line.trimmed()),
+        this, [this]() { toggleComment(); });
+    lineAct->setShortcut(QKeySequence("Ctrl+Q"));
+    lineAct->setEnabled(!cs.line.isEmpty());
+
+    auto *blockAct = menu.addAction(
+        (cs.blockOpen.isEmpty() || cs.blockClose.isEmpty())
+            ? tr("Toggle &Block Comment  (no syntax for %1)").arg(m_language)
+            : tr("Toggle &Block Comment  (%1 %2)").arg(cs.blockOpen, cs.blockClose),
+        this, [this]() { toggleBlockComment(); });
+    blockAct->setShortcut(QKeySequence("Ctrl+Shift+Q"));
+    blockAct->setEnabled(!cs.blockOpen.isEmpty() && !cs.blockClose.isEmpty());
+
+    menu.exec(event->globalPos());
 }
 
 void Editor::toggleWordWrap() {

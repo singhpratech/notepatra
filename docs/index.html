@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.43 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.44 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.43">
-        Download v0.1.43 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.44">
+        Download v0.1.44 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.43 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.44 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. JSON / HTML / SQL fixers — regex first, local AI as fallback. No cloud unless you opt in.</p>
 
@@ -1389,7 +1389,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.43</div>
+        <div class="section-label">Download v0.1.44</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1841,7 +1841,48 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.43 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.44 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-05-07</span>
+                        <span>· Project Search UX + language-aware comment toggling — three Notepad++-style upgrades.</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🔍 Project Search — close button + stackable history</h5>
+                        <ul>
+                            <li>New <strong>red ✕ close button</strong> on the Project Search panel header (theme-independent <code style="color:var(--green);font-size:12px;">#E81123</code>, white-on-red on hover). Pre-v0.1.44 there was no way to dismiss the panel except right-clicking the tab.</li>
+                            <li><strong>Stackable, collapsible search history</strong> — pressing Search no longer wipes prior results. Each search becomes a top-level session row (<code>🔎 "pwd" Aa W — 5 hits in 1 file · 12:34:07 · /path</code>) with files as children + matches as grandchildren. Earlier sessions auto-collapse so the new one stands out. Capped at 10 sessions; oldest pruned.</li>
+                            <li>New <strong>Clear history</strong> button wipes every stacked session in one click.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>💬 Right-click Toggle Line / Block Comment — language-aware</h5>
+                        <ul>
+                            <li>New <strong>Toggle Line Comment</strong> + <strong>Toggle Block Comment</strong> in the editor's right-click context menu. <strong>Enabled only when the file's language is recognised</strong> — pre-v0.1.44 the editor prepended <code>#</code> regardless of file type, silently turning Markdown lines into headings.</li>
+                            <li>Single source of truth: new public static <code style="color:var(--green);font-size:12px;">Editor::commentSyntaxFor(lang) → {line, blockOpen, blockClose}</code>. Python <code>#</code> · C-family <code>//</code> + <code>/* */</code> · SQL <code>--</code> + <code>/* */</code> · HTML / Markdown <code>&lt;!-- --&gt;</code> · PowerShell <code>#</code> + <code>&lt;# #&gt;</code> · Lua <code>--</code> + <code>--[[ ]]</code> · Bash / YAML / Ruby <code>#</code> · Batch <code>REM </code> · etc.</li>
+                            <li><strong>Notepad++ shortcuts</strong> — <code>Ctrl+Q</code> for line comment (alongside the existing <code>Ctrl+/</code>) and <code>Ctrl+Shift+Q</code> for block comment.</li>
+                            <li>New <code style="color:var(--green);font-size:12px;">Editor::toggleBlockComment()</code> wraps the selection (or current line) in the language's block markers; if already wrapped, strips them. Atomic — wrap then unwrap returns the original text.</li>
+                            <li>Plain Text and unrecognised extensions show <code>(no syntax for X)</code> on disabled menu items — the user sees why nothing happens.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧪 25 new test asserts in <code>test_options_actually_work</code></h5>
+                        <ul>
+                            <li>Coverage for the language map across Python, JS, C++, SQL, Lua, HTML, Markdown, PowerShell, Bash, Batch, Plain Text, and an unknown language. Catches any regression that silently breaks comment toggling for a specific lexer.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.44">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.44">Commits</a>
+                </div>
+            </div>
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.43</div>
                     <div class="version-meta">
                         <span>2026-04-30</span>
                         <span>· Data Analyst Mode — query CSVs, run SQL on saved DB connections, render live charts inline. All native (Qt SQL + QtCharts).</span>

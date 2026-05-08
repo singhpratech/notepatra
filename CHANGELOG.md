@@ -7,6 +7,73 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.44] — 2026-05-07
+
+**Project Search UX + language-aware comment toggling.** Three Notepad++-style
+quality-of-life upgrades the editor was missing:
+
+### Added — Project Search
+
+- **Close button (red ✕) on the search panel header** — sits at the far right of
+  the title row, theme-independent (Windows-canonical close-button red `#E81123`
+  at rest, white-on-red on hover). Emits `ProjectSearch::closeRequested`; the
+  host removes the panel's tab. Replaces the previous "no way to dismiss the
+  panel" UX where users had to right-click the tab.
+- **Stackable, collapsible search history** — pressing Search no longer wipes
+  the prior results. Each search now becomes a top-level **session row** in the
+  results tree with the query, flags, folder, hit count, and timestamp:
+  `🔎  "pwd"  Aa W .* — 5 hits in 1 file · 12:34:07 · /path`. Files of that
+  search are children; matches are grandchildren. Previous sessions auto-collapse
+  so the new one stands out. Capped at **10 sessions**; oldest pruned.
+- **Clear history button** in the action row wipes every stacked session in one
+  click. Disabled when the tree is empty.
+
+### Added — Editor
+
+- **Right-click `Toggle Line Comment` and `Toggle Block Comment`** in the editor
+  context menu, **enabled only when the language is recognized** (no more
+  "comment everything as `#`" no matter the file type — the pre-v0.1.44
+  behaviour silently mangled Markdown by prepending `#`, turning paragraphs
+  into headings).
+- **Language-aware comment syntax** via the new public static helper
+  `Editor::commentSyntaxFor(lang) → {line, blockOpen, blockClose}` — single
+  source of truth so the right-click menu, the menu-bar Comment/Uncomment
+  submenu, and the keyboard shortcuts all agree.
+  - **Line comment** support: Python · Bash · YAML · Ruby · Perl · PowerShell ·
+    TCL · CMake · Makefile · Properties (`#`) · C/C++/C#/Java/JS/TS/D/Rust/Go/
+    Swift/Kotlin/Verilog/POV (`//`) · SQL/VHDL/Lua (`--`) · ASM/NASM/MASM/IDL/
+    Spice (`;`) · TeX/PostScript/Matlab/Octave (`%`) · Fortran (`!`) ·
+    CoffeeScript (`#`) · Batch (`REM `).
+  - **Block comment** support: C-family + CSS + Pascal (`/* */`) · HTML/XML/
+    Markdown (`<!-- -->`) · PowerShell (`<# #>`) · Lua (`--[[ ]]`) ·
+    Matlab/Octave (`%{ %}`) · CoffeeScript (`### ###`) · Ruby (`=begin =end`).
+  - Plain text and unknown extensions return empty strings → menu items show
+    "(no syntax for X)" and are disabled.
+- **`Editor::toggleBlockComment()`** — wraps the selection (or current line) in
+  the language's block markers; if already wrapped, strips them. Atomic round
+  trip: wrap then unwrap returns the original text.
+- **Notepad++ shortcuts**: `Ctrl+Q` for line comment (in addition to the
+  pre-existing `Ctrl+/`), `Ctrl+Shift+Q` for block comment.
+
+### Internals
+
+- `src/editor.{h,cpp}` — new `CommentSyntax` struct + `commentSyntaxFor()`
+  static helper, `toggleBlockComment()` method, `contextMenuEvent()` override
+  that builds Cut/Copy/Paste/Select All + the two new comment toggles. Refactor
+  removes the inline `name.contains("CPP")` ladder from `toggleComment()` —
+  every language now flows through one canonical map.
+- `src/projectsearch.{h,cpp}` — new `closeRequested` signal, `m_currentSession`
+  pointer + `m_sessions` history list + `m_perSessionFiles` per-session
+  file-row index. `startSearch()` no longer calls `m_results->clear()`.
+- `src/mainwindow.cpp` — wires `ProjectSearch::closeRequested` → tab removal;
+  binds `Ctrl+Q` (in addition to `Ctrl+/`) and `Ctrl+Shift+Q` to the menu-bar
+  Comment/Uncomment submenu.
+- `test_options_actually_work.cpp` — +25 assertions covering
+  `commentSyntaxFor()` output for Python, JS, C++, SQL, Lua, HTML, Markdown,
+  PowerShell, Bash, Batch, Plain Text, and an unknown language.
+
+---
+
 ## [0.1.43] — 2026-04-30
 
 **Data Analyst Mode** — the AI assistant gains a real data-analyst capability: query CSVs and saved database connections, generate inline charts, and read project-level instructions automatically. Fully native — Qt SQL + QtCharts, no Python sandbox, no external chart service. Toggle is mutually exclusive with Coding Mode so the panel stays focused.

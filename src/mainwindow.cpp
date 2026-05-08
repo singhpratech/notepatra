@@ -1359,9 +1359,17 @@ void MainWindow::buildMenus() {
         if (auto *e = E()) { e->selectAll(); e->replaceSelectedText(RustCore::reverseLines(e->text())); }
     });
 
-    // Comment
+    // Comment / Uncomment — v0.1.44 added Toggle Block Comment + Notepad++
+    // shortcuts (Ctrl+Q / Ctrl+Shift+Q). Both menu items are always present;
+    // they no-op silently when the active language has no syntax for that
+    // kind of comment (right-click context menu greys them out instead).
     auto *commentMenu = edit->addMenu("Comment/Uncomment");
-    commentMenu->addAction("Toggle &Line Comment", this, [E]() { if (auto *e = E()) e->toggleComment(); }, QKeySequence("Ctrl+/"));
+    auto *lineCommentAct = commentMenu->addAction("Toggle &Line Comment", this,
+        [E]() { if (auto *e = E()) e->toggleComment(); });
+    lineCommentAct->setShortcuts({QKeySequence("Ctrl+/"), QKeySequence("Ctrl+Q")});
+    auto *blockCommentAct = commentMenu->addAction("Toggle &Block Comment", this,
+        [E]() { if (auto *e = E()) e->toggleBlockComment(); });
+    blockCommentAct->setShortcut(QKeySequence("Ctrl+Shift+Q"));
 
     // Blank operations
     auto *blankMenu = edit->addMenu("Blank Operations");
@@ -1692,6 +1700,12 @@ void MainWindow::buildMenus() {
                 ed->setCursorPosition(line - 1, col - 1);
                 ed->ensureLineVisible(line - 1);
             }
+        });
+        // v0.1.44 — close button inside the search panel header → drop the tab.
+        connect(ps, &ProjectSearch::closeRequested, this, [this, ps]() {
+            int i = m_tabs->indexOf(ps);
+            if (i >= 0) m_tabs->removeTab(i);
+            ps->deleteLater();
         });
         int idx = m_tabs->addTab(ps, "Project Search");
         m_tabs->setCurrentIndex(idx);

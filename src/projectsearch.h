@@ -122,6 +122,9 @@ signals:
     // Emitted when the user double-clicks a result — column is 1-based
     // and lets the host scroll the editor to the exact match character.
     void openFileAtLineCol(const QString &filePath, int lineNumber, int column);
+    // v0.1.44 — fired by the red × in the title row. The host (MainWindow)
+    // catches this and removes the search panel's tab.
+    void closeRequested();
 
 private:
     void buildUi();
@@ -158,7 +161,24 @@ private:
     QThread    *m_thread = nullptr;
     ProjectSearchWorker *m_worker = nullptr;
 
-    QHash<QString, QTreeWidgetItem*> m_fileItems;  // file path → tree parent
+    // v0.1.44 — search results are now stacked as collapsible "session"
+    // top-level items (one per query) with files nested as children and
+    // matches as grandchildren. The previous flat-tree single-search model
+    // had two problems users hit: pressing Search wiped the prior results,
+    // and there was no way to flip back and forth between two queries.
+    //
+    //  m_currentSession   — the session row populated by the in-flight
+    //                       search; null between searches.
+    //  m_sessions         — every session row in chronological order; we
+    //                       cap at 10 and prune the oldest.
+    //  m_perSessionFiles  — per-session file-path → file-row map (the
+    //                       same file path can appear in multiple
+    //                       sessions, so the file-lookup index is keyed
+    //                       by session item).
+    QTreeWidgetItem *m_currentSession = nullptr;
+    QVector<QTreeWidgetItem*> m_sessions;
+    QHash<QTreeWidgetItem*, QHash<QString, QTreeWidgetItem*>> m_perSessionFiles;
+    QPushButton *m_clearHistoryBtn = nullptr;
     int m_matchesSoFar = 0;
     int m_filesWithMatches = 0;
 

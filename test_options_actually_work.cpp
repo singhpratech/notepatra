@@ -395,6 +395,74 @@ int main(int argc, char *argv[]) {
         CHECK("Cancel: wordWrap NOT saved", Config::instance().wordWrap == false);
     }
 
+    // ── 17. v0.1.44 — Editor::commentSyntaxFor() per language ────────
+    // The right-click context menu + Ctrl+Q / Ctrl+Shift+Q shortcuts
+    // route through this same map. Languages without a kind of comment
+    // return an empty string, which the caller uses to disable / hide
+    // the menu item. A regression that breaks this map silently breaks
+    // every Toggle Comment action across the editor.
+    {
+        using CS = Editor::CommentSyntax;
+        const auto py    = Editor::commentSyntaxFor("Python");
+        const auto js    = Editor::commentSyntaxFor("JavaScript");
+        const auto cpp   = Editor::commentSyntaxFor("C++");
+        const auto sql   = Editor::commentSyntaxFor("SQL");
+        const auto lua   = Editor::commentSyntaxFor("Lua");
+        const auto html  = Editor::commentSyntaxFor("HTML");
+        const auto md    = Editor::commentSyntaxFor("Markdown");
+        const auto ps    = Editor::commentSyntaxFor("PowerShell");
+        const auto bash  = Editor::commentSyntaxFor("Bash");
+        const auto bat   = Editor::commentSyntaxFor("Batch");
+        const auto plain = Editor::commentSyntaxFor("Plain Text");
+        const auto unkn  = Editor::commentSyntaxFor("ThisLanguageDoesNotExist");
+
+        // Python: # line, no block.
+        CHECK("commentSyntax Python  line == #",   py.line == "#");
+        CHECK("commentSyntax Python  block empty", py.blockOpen.isEmpty() && py.blockClose.isEmpty());
+
+        // JavaScript / C++: // line + /* */ block.
+        CHECK("commentSyntax JS      line == //",  js.line == "//");
+        CHECK("commentSyntax JS      block /* */", js.blockOpen == "/*" && js.blockClose == "*/");
+        CHECK("commentSyntax C++     line == //",  cpp.line == "//");
+        CHECK("commentSyntax C++     block /* */", cpp.blockOpen == "/*" && cpp.blockClose == "*/");
+
+        // SQL: -- line + /* */ block.
+        CHECK("commentSyntax SQL     line == --",  sql.line == "--");
+        CHECK("commentSyntax SQL     block /* */", sql.blockOpen == "/*" && sql.blockClose == "*/");
+
+        // Lua: -- line + --[[ ]] block.
+        CHECK("commentSyntax Lua     line == --",  lua.line == "--");
+        CHECK("commentSyntax Lua     block --[[ ]]", lua.blockOpen == "--[[" && lua.blockClose == "]]");
+
+        // HTML / Markdown: no line, <!-- --> block.
+        CHECK("commentSyntax HTML    line empty", html.line.isEmpty());
+        CHECK("commentSyntax HTML    block <!-- -->",
+              html.blockOpen == "<!--" && html.blockClose == "-->");
+        CHECK("commentSyntax MD      line empty", md.line.isEmpty());
+        CHECK("commentSyntax MD      block <!-- -->",
+              md.blockOpen == "<!--" && md.blockClose == "-->");
+
+        // PowerShell: # line + <# #> block.
+        CHECK("commentSyntax PS      line == #",   ps.line == "#");
+        CHECK("commentSyntax PS      block <# #>", ps.blockOpen == "<#" && ps.blockClose == "#>");
+
+        // Bash: # line, no block.
+        CHECK("commentSyntax Bash    line == #",   bash.line == "#");
+        CHECK("commentSyntax Bash    block empty", bash.blockOpen.isEmpty() && bash.blockClose.isEmpty());
+
+        // Batch: REM (with trailing space).
+        CHECK("commentSyntax Batch   line == REM ", bat.line == "REM ");
+
+        // Plain Text + unknown: everything empty so menu items disable.
+        CHECK("commentSyntax Plain   all empty",
+              plain.line.isEmpty() && plain.blockOpen.isEmpty() && plain.blockClose.isEmpty());
+        CHECK("commentSyntax Unknown all empty",
+              unkn.line.isEmpty() && unkn.blockOpen.isEmpty() && unkn.blockClose.isEmpty());
+
+        // Sanity: struct is the public type the right-click menu reads.
+        (void)CS{};
+    }
+
     // ── Restore user's real config ───────────────────────────────────
     restore();
 

@@ -18,6 +18,7 @@ static int s_matchVecId   = qRegisterMetaType<QVector<ProjectSearchMatch>>("QVec
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
+#include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
 #ifdef Q_OS_WIN
@@ -548,13 +549,43 @@ void ProjectSearch::buildUi() {
     m_scrollArea->setWidget(m_content);
     outer->addWidget(m_scrollArea);
 
-    // ── Title + hint ─────────────────────────────────────────────────
+    // ── Title row + close button ─────────────────────────────────────
+    // v0.1.44 — header is a row with the title stretched and a red ✕
+    // close button at the far right that emits closeRequested(). The
+    // colour is theme-independent (Windows-canonical close-button red
+    // #E81123, white-on-red on hover) so it stays visible on every
+    // theme without consulting the palette.
+    auto *titleRow = new QHBoxLayout;
+    titleRow->setContentsMargins(0, 0, 0, 0);
+    titleRow->setSpacing(8);
+
     m_title = new QLabel("🔍 Project Search");
     QFont tf = notepatraUiFont();
     tf.setPointSize(18);
     tf.setWeight(QFont::DemiBold);
     m_title->setFont(tf);
-    root->addWidget(m_title);
+    titleRow->addWidget(m_title, /*stretch*/ 1);
+
+    auto *closeBtn = new QPushButton("×");
+    QFont closeFont = closeBtn->font();
+    closeFont.setPointSize(18);
+    closeFont.setBold(true);
+    closeBtn->setFont(closeFont);
+    closeBtn->setFixedSize(36, 28);
+    closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setFlat(true);
+    closeBtn->setToolTip("Close Project Search");
+    closeBtn->setStyleSheet(
+        "QPushButton { background: transparent; border: none; "
+        "color: #E81123; font-weight: 700; padding: 0; } "
+        "QPushButton:hover { background: #E81123; color: white; } "
+        "QPushButton:pressed { background: #C41019; color: white; }");
+    connect(closeBtn, &QPushButton::clicked, this, [this]() {
+        emit closeRequested();
+    });
+    titleRow->addWidget(closeBtn);
+
+    root->addLayout(titleRow);
 
     // Compact hint — the old three-line paragraph was eating vertical
     // space from the results view. One short line is plenty; full doc
@@ -657,8 +688,30 @@ void ProjectSearch::buildUi() {
         "QPushButton:disabled { color: #AAA; border-color: #CCC; }"
     ).arg(p.textPrimary, p.inputBorder, p.accent));
 
+    // v0.1.44 — Clear history wipes every stacked session in the
+    // results tree. Disabled until at least one session exists.
+    m_clearHistoryBtn = new QPushButton("Clear history");
+    m_clearHistoryBtn->setCursor(Qt::PointingHandCursor);
+    m_clearHistoryBtn->setEnabled(false);
+    m_clearHistoryBtn->setToolTip("Remove every stacked search session");
+    m_clearHistoryBtn->setStyleSheet(QString(
+        "QPushButton { background: transparent; color: %1; "
+        "border: 1px solid %2; border-radius: 8px; padding: 10px 16px; }"
+        "QPushButton:hover { border-color: %3; color: %3; }"
+        "QPushButton:disabled { color: #AAA; border-color: #CCC; }"
+    ).arg(p.textPrimary, p.inputBorder, p.accent));
+    connect(m_clearHistoryBtn, &QPushButton::clicked, this, [this]() {
+        m_results->clear();
+        m_sessions.clear();
+        m_perSessionFiles.clear();
+        m_currentSession = nullptr;
+        m_clearHistoryBtn->setEnabled(false);
+        if (m_resizeTree) m_resizeTree();
+    });
+
     actionRow->addWidget(m_searchBtn);
     actionRow->addWidget(m_cancelBtn);
+    actionRow->addWidget(m_clearHistoryBtn);
 
     m_progressBar = new QProgressBar;
     m_progressBar->setTextVisible(false);
@@ -918,9 +971,51 @@ void ProjectSearch::startSearch() {
         return;
     }
 
-    m_results->clear();
-    m_fileItems.clear();
+    // v0.1.44 — DON'T clear the tree any more. Each search becomes a
+    // new top-level "session" row stacked at the top, with prior
+    // searches collapsed underneath. Capped at 10 sessions; the oldest
+    // is pruned when the cap is exceeded.
+    const QString queryText = m_queryInput->text().trimmed();
+    const QString folderText = m_folderInput->text();
+    const QString flagsLabel = QString("%1%2%3")
+        .arg(m_caseChk->isChecked() ? "Aa "  : "")
+        .arg(m_wordChk->isChecked() ? "W "   : "")
+        .arg(m_regexChk->isChecked() ? ".*"  : "");
+    const QString stamp = QDateTime::currentDateTime().toString("HH:mm:ss");
+    const auto pal = psearchPalette();
+
+    // Collapse every prior session so the new one stands out without
+    // hiding the history below it.
+    for (QTreeWidgetItem *prior : m_sessions) {
+        if (prior) prior->setExpanded(false);
+    }
+
+    m_currentSession = new QTreeWidgetItem;
+    // Insert at the TOP of the tree so the most recent session is
+    // visible without scrolling.
+    m_results->insertTopLevelItem(0, m_currentSession);
+    m_currentSession->setText(0, QString("🔎  \"%1\"  %2 — searching… · %3 · %4")
+                                     .arg(queryText, flagsLabel, folderText, stamp));
+    QFont sf = m_results->font();
+    sf.setBold(true);
+    sf.setPointSize(sf.pointSize() + 1);
+    m_currentSession->setFont(0, sf);
+    m_currentSession->setForeground(0, QBrush(QColor(pal.accent)));
+    m_currentSession->setExpanded(true);
+    m_sessions.append(m_currentSession);
+    m_perSessionFiles.insert(m_currentSession, {});
+
+    // Cap history at 10. Oldest sessions evicted from the top of the
+    // tree (and from m_sessions / m_perSessionFiles).
+    constexpr int kMaxSessions = 10;
+    while (m_sessions.size() > kMaxSessions) {
+        QTreeWidgetItem *oldest = m_sessions.takeFirst();
+        m_perSessionFiles.remove(oldest);
+        delete m_results->takeTopLevelItem(m_results->indexOfTopLevelItem(oldest));
+    }
+
     if (m_resizeTree) m_resizeTree();
+    if (m_clearHistoryBtn) m_clearHistoryBtn->setEnabled(true);
     m_matchesSoFar = 0;
     m_filesWithMatches = 0;
     m_searchBtn->setEnabled(false);
@@ -992,20 +1087,21 @@ void ProjectSearch::cancelSearch() {
     // top of one that's still unwinding.
 }
 
-// Add or fetch the per-file parent row. Shows the FULL absolute path on
-// the parent so the user can read and copy it — not just the file name.
-static QTreeWidgetItem *fileParent(QTreeWidget *tree, QHash<QString, QTreeWidgetItem*> &index,
+// v0.1.44 — per-session file-row factory. Files are children of the
+// session item now, not top-level rows. Same display rules as before
+// (full path, bold, accent colour, expanded).
+static QTreeWidgetItem *fileParent(QTreeWidgetItem *session,
+                                   QHash<QString, QTreeWidgetItem*> &index,
                                    const QString &path, const QString &accent) {
+    if (!session) return nullptr;
     auto it = index.find(path);
     if (it != index.end()) return it.value();
-    auto *root = new QTreeWidgetItem(tree);
-    // Display the full absolute path — single-click row, Ctrl+C copies
-    // the path directly (tree widget's clipboard-text role).
+    auto *root = new QTreeWidgetItem(session);
     root->setText(0, QString("  %1").arg(path));
     root->setToolTip(0, path);
-    root->setData(0, Qt::UserRole, path);     // for double-click-to-open
-    root->setData(0, Qt::UserRole + 1, 1);    // line 1
-    QFont f = tree->font();
+    root->setData(0, Qt::UserRole, path);
+    root->setData(0, Qt::UserRole + 1, 1);
+    QFont f = session->treeWidget() ? session->treeWidget()->font() : QFont();
     f.setBold(true);
     root->setFont(0, f);
     root->setForeground(0, QBrush(QColor(accent)));
@@ -1015,8 +1111,10 @@ static QTreeWidgetItem *fileParent(QTreeWidget *tree, QHash<QString, QTreeWidget
 }
 
 void ProjectSearch::onFileNameMatch(const QString &filePath) {
+    if (!m_currentSession) return;
     const auto p = psearchPalette();
-    auto *parent = fileParent(m_results, m_fileItems, filePath, p.accent);
+    auto &fileMap = m_perSessionFiles[m_currentSession];
+    auto *parent = fileParent(m_currentSession, fileMap, filePath, p.accent);
     auto *child = new QTreeWidgetItem(parent);
     child->setText(0, "      ↳ filename matches query");
     child->setData(0, Qt::UserRole, filePath);
@@ -1028,9 +1126,10 @@ void ProjectSearch::onFileNameMatch(const QString &filePath) {
 
 void ProjectSearch::onMatches(const QVector<ProjectSearchMatch> &matches) {
     if (matches.isEmpty()) return;
+    if (!m_currentSession) return;
     const auto p = psearchPalette();
-    // All matches in a batch share the same file — pull the parent once.
-    auto *parent = fileParent(m_results, m_fileItems, matches.first().filePath, p.accent);
+    auto &fileMap = m_perSessionFiles[m_currentSession];
+    auto *parent = fileParent(m_currentSession, fileMap, matches.first().filePath, p.accent);
     for (const ProjectSearchMatch &m : matches) {
         QString line = m.lineContent;
         if (line.length() > 240) line = line.left(240) + "…";
@@ -1112,6 +1211,13 @@ void ProjectSearch::onFinished(int totalMatches, int totalFiles,
     m_progressBar->setValue(100);
     const QString elapsed = psearchFormatElapsed(elapsedMs);
     const QString lines   = psearchFormatCount(linesScanned);
+
+    // v0.1.44 — files-with-matches now counts the CURRENT session's
+    // file map, not a global flat hash, since each session has its own.
+    const int filesWithMatches = m_currentSession
+        ? m_perSessionFiles.value(m_currentSession).size()
+        : 0;
+
     if (totalMatches == 0) {
         m_statusLabel->setText(QString("No matches — scanned %1 files, %2 lines in %3.")
                                    .arg(totalFiles).arg(lines).arg(elapsed));
@@ -1119,11 +1225,40 @@ void ProjectSearch::onFinished(int totalMatches, int totalFiles,
         m_statusLabel->setText(
             QString("✓ %1 matches across %2 file(s) · scanned %3 files, %4 lines in %5.")
                 .arg(totalMatches)
-                .arg(m_fileItems.size())
+                .arg(filesWithMatches)
                 .arg(totalFiles)
                 .arg(lines)
                 .arg(elapsed));
     }
+
+    // v0.1.44 — stamp the session header with the final result so the
+    // collapsed history reads at a glance. Format mirrors Notepad++:
+    //   🔎  "pwd"  — 5 hits in 1 file · 12:34:07 · /path
+    if (m_currentSession) {
+        // Pull the original query string + flags + folder out of the
+        // existing label by re-deriving from the inputs (cheaper than
+        // parsing the placeholder text).
+        const QString queryText  = m_queryInput->text().trimmed();
+        const QString folderText = m_folderInput->text();
+        const QString flagsLabel = QString("%1%2%3")
+            .arg(m_caseChk->isChecked() ? "Aa "  : "")
+            .arg(m_wordChk->isChecked() ? "W "   : "")
+            .arg(m_regexChk->isChecked() ? ".*"  : "");
+        const QString hitsText = totalMatches == 0
+            ? QString("no hits")
+            : QString("%1 hits in %2 file%3")
+                  .arg(totalMatches)
+                  .arg(filesWithMatches)
+                  .arg(filesWithMatches == 1 ? "" : "s");
+        m_currentSession->setText(0,
+            QString("🔎  \"%1\"  %2 — %3 · %4 · %5")
+                .arg(queryText, flagsLabel, hitsText,
+                     QDateTime::currentDateTime().toString("HH:mm:ss"),
+                     folderText));
+    }
+    // Search done — drop the in-flight pointer; new searches make a
+    // fresh session row at the top of the tree.
+    m_currentSession = nullptr;
 }
 
 // Called by the 10 Hz QTimer between worker updates AND immediately
