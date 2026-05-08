@@ -678,15 +678,25 @@ void ProjectSearch::buildUi() {
         "QPushButton:disabled { background: #B8B5B1; color: #6C6C6C; }"
     ).arg(p.accent));
 
+    // v0.1.51 — Cancel + Clear history button labels in a strong orange
+    // (#E67E22) that's visible on Light, Dark, and Monokai themes. The
+    // previous styling used `p.textPrimary` (dark grey on Light, light
+    // grey on Dark) for the enabled state and `#AAA` for disabled, which
+    // made the labels nearly invisible on Light when disabled. Orange
+    // gives high contrast on every theme background.
+    const QString orangeFg     = QStringLiteral("#E67E22");
+    const QString orangeHover  = QStringLiteral("#FFA94D");
+    const QString orangeMuted  = QStringLiteral("#C97B3F");
+
     m_cancelBtn = new QPushButton("Cancel");
     m_cancelBtn->setCursor(Qt::PointingHandCursor);
     m_cancelBtn->setEnabled(false);
     m_cancelBtn->setStyleSheet(QString(
-        "QPushButton { background: transparent; color: %1; "
+        "QPushButton { background: transparent; color: %1; font-weight: 600; "
         "border: 1px solid %2; border-radius: 8px; padding: 10px 24px; }"
         "QPushButton:hover { border-color: %3; color: %3; }"
-        "QPushButton:disabled { color: #AAA; border-color: #CCC; }"
-    ).arg(p.textPrimary, p.inputBorder, p.accent));
+        "QPushButton:disabled { color: %4; border-color: %4; }"
+    ).arg(orangeFg, p.inputBorder, orangeHover, orangeMuted));
 
     // v0.1.44 — Clear history wipes every stacked session in the
     // results tree. Disabled until at least one session exists.
@@ -695,11 +705,11 @@ void ProjectSearch::buildUi() {
     m_clearHistoryBtn->setEnabled(false);
     m_clearHistoryBtn->setToolTip("Remove every stacked search session");
     m_clearHistoryBtn->setStyleSheet(QString(
-        "QPushButton { background: transparent; color: %1; "
+        "QPushButton { background: transparent; color: %1; font-weight: 600; "
         "border: 1px solid %2; border-radius: 8px; padding: 10px 16px; }"
         "QPushButton:hover { border-color: %3; color: %3; }"
-        "QPushButton:disabled { color: #AAA; border-color: #CCC; }"
-    ).arg(p.textPrimary, p.inputBorder, p.accent));
+        "QPushButton:disabled { color: %4; border-color: %4; }"
+    ).arg(orangeFg, p.inputBorder, orangeHover, orangeMuted));
     connect(m_clearHistoryBtn, &QPushButton::clicked, this, [this]() {
         m_results->clear();
         m_sessions.clear();
@@ -925,12 +935,21 @@ void ProjectSearch::applyPalette() {
         ).arg(p.accent));
     }
     if (m_cancelBtn) {
+        // v0.1.51 — orange label visible on every theme.
         m_cancelBtn->setStyleSheet(QString(
-            "QPushButton { background: transparent; color: %1; "
-            "border: 1px solid %2; border-radius: 8px; padding: 10px 24px; }"
-            "QPushButton:hover { border-color: %3; color: %3; }"
-            "QPushButton:disabled { color: #AAA; border-color: #CCC; }"
-        ).arg(p.textPrimary, p.inputBorder, p.accent));
+            "QPushButton { background: transparent; color: #E67E22; font-weight: 600; "
+            "border: 1px solid %1; border-radius: 8px; padding: 10px 24px; }"
+            "QPushButton:hover { border-color: #FFA94D; color: #FFA94D; }"
+            "QPushButton:disabled { color: #C97B3F; border-color: #C97B3F; }"
+        ).arg(p.inputBorder));
+    }
+    if (m_clearHistoryBtn) {
+        m_clearHistoryBtn->setStyleSheet(QString(
+            "QPushButton { background: transparent; color: #E67E22; font-weight: 600; "
+            "border: 1px solid %1; border-radius: 8px; padding: 10px 16px; }"
+            "QPushButton:hover { border-color: #FFA94D; color: #FFA94D; }"
+            "QPushButton:disabled { color: #C97B3F; border-color: #C97B3F; }"
+        ).arg(p.inputBorder));
     }
     if (m_progressBar) {
         m_progressBar->setStyleSheet(QString(

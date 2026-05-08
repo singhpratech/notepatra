@@ -442,13 +442,40 @@ static void drawGitFeatureGlyph(QPainter &painter, const QRectF &rect) {
 }
 
 static QIcon makeFeatureIcon(const QColor &base, const QString &iconKind, const QString &glyph = QString()) {
-    QPixmap pixmap(32, 32);
+    // v0.1.51 — paint at native device-pixel resolution so the toolbar
+    // icons stay crisp on Windows 150 % display zoom and other fractional
+    // / Retina configurations. Pre-fix the icon was always rasterized
+    // into a 32×32 pixmap, then bilinear-scaled by Qt to ~48 device px
+    // at 150 %, which produced the pixelation the user reported. Now we:
+    //
+    //   1. Multiply backing-store size by `devicePixelRatio()` so the
+    //      pixmap holds enough pixels for the actual display density.
+    //   2. Tag the pixmap with `setDevicePixelRatio(dpr)` so Qt treats
+    //      it as logical 32×32 (and doesn't re-scale it again on draw).
+    //   3. Scale every QPainter coordinate by `dpr` so the gradient,
+    //      rounded-rect, and glyph are drawn in real device pixels —
+    //      i.e. each pen stroke + circle remains sub-pixel-precise
+    //      instead of being rasterized at 32-px resolution and then
+    //      stretched.
+    //
+    // The drawXxxFeatureGlyph() helpers take a QRect in painter coords;
+    // we pass a scaled rect so they produce a 48×48 (at 1.5×) image
+    // already at the correct density. AA_UseHighDpiPixmaps from main.cpp
+    // tells Qt to use the result without any further scaling.
+    const qreal dpr = qApp ? qApp->devicePixelRatio() : 1.0;
+    const int   nat = static_cast<int>(32 * dpr + 0.5);  // device-px backing
+    QPixmap pixmap(nat, nat);
+    pixmap.setDevicePixelRatio(dpr);
     pixmap.fill(Qt::transparent);
 
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::Antialiasing);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform);
+    // Scale the painter so every drawXxxFeatureGlyph() helper's "32"
+    // means "32 logical px"; we render that into `nat × nat` device px.
+    painter.scale(dpr, dpr);
 
-    QRect rect = pixmap.rect().adjusted(1, 1, -1, -1);
+    QRect rect = QRect(0, 0, 32, 32).adjusted(1, 1, -1, -1);
     QLinearGradient gradient(rect.topLeft(), rect.bottomRight());
     gradient.setColorAt(0.0, base.lighter(125));
     gradient.setColorAt(1.0, base.darker(110));

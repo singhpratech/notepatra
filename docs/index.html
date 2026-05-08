@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.8 MB (Linux x64 tar.gz), 25.5 MB (macOS DMG with bundled Qt), 43.5 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 48 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.50",
+      "softwareVersion": "0.1.52",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -242,7 +242,7 @@
         html { scroll-behavior: smooth; }
 
         body {
-            /* v0.1.50 — append the platform emoji fonts AND the CSS
+            /* v0.1.52 — append the platform emoji fonts AND the CSS
              * 'emoji' generic so 🔎 / 🤖 / 📊 etc. fall through to the
              * appropriate system emoji font on every OS instead of
              * tofu-boxing on Linux (which lacks an emoji glyph in
@@ -1236,7 +1236,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.50 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.52 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.50">
-        Download v0.1.50 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.52">
+        Download v0.1.52 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.50 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.52 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. JSON / HTML / SQL fixers — regex first, local AI as fallback. No cloud unless you opt in.</p>
 
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.50</div>
+        <div class="section-label">Download v0.1.52</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1851,7 +1851,45 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.50 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.52 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-05-08</span>
+                        <span>· Toolbar icon HiDPI rendering + Project Search button visibility.</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🖼️ Toolbar icons — sharp at every zoom level</h5>
+                        <ul>
+                            <li>v0.1.50's <code>AA_UseHighDpiPixmaps</code> was the right global flag, but <code>makeFeatureIcon()</code> was still rasterizing each toolbar icon (Search · AI · Terminal · Compare · JSON · HTML · SQL · Brackets · REST · Git) into a fixed <code>QPixmap(32, 32)</code>. On 150 % display zoom Qt then bilinear-scaled the 32-px pixmap up to ~48 device px → the slight pixelation the user noticed.</li>
+                            <li>Fix: paint into a <code>32 × dpr</code> backing store, tag with <code>setDevicePixelRatio(dpr)</code>, then <code>painter.scale(dpr, dpr)</code> so every <code>drawXxxFeatureGlyph()</code> helper's "32" still means "32 logical px" but renders at sub-pixel precision into a 48 × 48 buffer at 150 %, 64 × 64 at 200 %, etc.</li>
+                            <li><strong>Buttons are NOT affected</strong> — v0.1.49's per-button minimum-width fixes and v0.1.50's <code>HighDpiScaleFactorRoundingPolicy::PassThrough</code> are preserved. The icon fix is purely additive.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🟧 Project Search — Cancel + Clear history button labels visible on every theme</h5>
+                        <ul>
+                            <li>User reported the button labels were nearly invisible on Light theme. Cause: the previous styling used <code>p.textPrimary</code> for enabled state (dark grey on Light) and <code>#AAA</code> for disabled — on Light theme that read as a blank rectangle.</li>
+                            <li>Both buttons now use a strong orange (<code>#E67E22</code>) with bold weight on every theme. Hover brightens to <code>#FFA94D</code>; disabled dims to <code>#C97B3F</code> (still readable on Light · Dark · Monokai).</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>✅ Tests — 119 / 119 Rust + 19 / 19 C++</h5>
+                        <ul>
+                            <li>All existing tests still pass. Build clean, no warnings.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.52">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.52">Commits</a>
+                </div>
+            </div>
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.50</div>
                     <div class="version-meta">
                         <span>2026-05-08</span>
                         <span>· HiDPI / fractional-zoom fix — Windows 125 % / 150 % / 175 % render correctly.</span>
@@ -1860,20 +1898,10 @@
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>🖥️ HiDPI / fractional-zoom — Windows 125 % / 150 % / 175 % finally render at the right size</h5>
+                        <h5>🖥️ HiDPI / fractional-zoom — three Qt attributes set BEFORE QApplication construction</h5>
                         <ul>
-                            <li>User reported Bracket / HTML / SQL Tools button labels were <em>still</em> getting cut on Windows even after v0.1.49's per-button minimum-width fix. Root cause: Notepatra had <strong>zero Qt HiDPI attributes set</strong> — Qt 5.15's default scale-factor rounding policy is <code>Round</code>, so on Windows at 150 % display zoom the app actually rendered at <strong>200 %</strong>. Every button, font, and icon was 33 % wider than the layout was sized for. At 125 % it rendered at 100 % (everything tiny). At 175 % it also rendered at 200 %.</li>
-                            <li>Fix: three Qt application attributes set <strong>BEFORE</strong> <code>QApplication</code> construction (Qt requires this — they're inspected during static platform-plugin init):</li>
-                            <li><code>Qt::AA_EnableHighDpiScaling</code> — opt the app into Qt's logical-pixel coordinate system. <code>setFixedHeight(26)</code> now means "26 logical px"; Qt translates to device pixels based on each monitor's DPI.</li>
-                            <li><code>Qt::HighDpiScaleFactorRoundingPolicy::PassThrough</code> — use the OS-reported scale factor exactly (1.25, 1.5, 1.75, …) instead of rounding to the nearest integer. This is what makes 150 % actually behave as 1.5 ×.</li>
-                            <li><code>Qt::AA_UseHighDpiPixmaps</code> — opt into @2x bitmap variants for QIcon / QPixmap so toolbar icons and the leaf-circuit logo stay crisp on Retina / 200 % displays.</li>
-                            <li>Linux distros that report fractional fontconfig DPI (typically 1.25 × on 1080p with <code>Xft.dpi: 120</code>) also get exact-DPI rendering instead of rounded-to-100 %. macOS Retina was already handled by Qt's default macOS path — nothing changes there.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>✅ Tests — 119 / 119 Rust + 19 / 19 C++</h5>
-                        <ul>
-                            <li>All existing tests still pass. Build clean, no warnings.</li>
+                            <li>User reported Bracket / HTML / SQL Tools button labels were still getting cut on Windows even after v0.1.49's per-button minimum-width fix. Root cause: Notepatra had zero Qt HiDPI attributes set — Qt 5.15's default scale-factor rounding policy is <code>Round</code>, so on Windows at 150 % display zoom the app actually rendered at 200 %.</li>
+                            <li><code>Qt::AA_EnableHighDpiScaling</code> + <code>Qt::HighDpiScaleFactorRoundingPolicy::PassThrough</code> + <code>Qt::AA_UseHighDpiPixmaps</code> set in <code>main.cpp</code> before <code>QApplication</code> is constructed. Qt now uses the OS-reported scale factor exactly (1.25, 1.5, 1.75 …) instead of rounding to integers.</li>
                         </ul>
                     </div>
                 </div>

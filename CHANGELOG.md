@@ -7,6 +7,48 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.52] — 2026-05-08
+
+**Toolbar icon HiDPI rendering + Project Search button visibility.**
+
+### Fixed — toolbar icons stayed pixelated at 150 % DPI
+
+v0.1.50's `Qt::AA_UseHighDpiPixmaps` was the right global flag, but
+`makeFeatureIcon()` was still rasterizing each toolbar icon (Search /
+AI / Terminal / Compare / JSON / HTML / SQL / Brackets / REST / Git)
+into a fixed `QPixmap(32, 32)`. On a 150 % display Qt then bilinear-
+scaled the 32-px pixmap to ~48 device px → blurry. The fix:
+
+* Multiply backing-store size by `qApp->devicePixelRatio()` so the
+  pixmap holds enough pixels for the actual display density.
+* Tag the pixmap with `setDevicePixelRatio(dpr)` so Qt treats it as
+  logical 32×32 (no second scale on draw).
+* `painter.scale(dpr, dpr)` so every `drawXxxFeatureGlyph()` helper's
+  "32" still means "32 logical px"; the rounded-rect, gradient, and
+  glyph render at sub-pixel precision into the high-density backing
+  store.
+
+Net effect: at 100 % the icon looks identical to before; at 125 % /
+150 % / 175 % / 200 % it now stays sharp. **Buttons are not affected**
+— all of v0.1.49's per-button minimum-width fixes are preserved, and
+v0.1.50's `AA_EnableHighDpiScaling` + `PassThrough` policy still apply.
+
+### Fixed — Project Search Cancel + Clear history button labels invisible
+
+User reported the labels were nearly invisible on every theme. Cause:
+the previous styling used `p.textPrimary` for enabled state (dark grey
+on Light, light grey on Dark) and `#AAA` for disabled. On Light theme,
+`#AAA` on a beige background read as "blank rectangle". Both buttons
+now use a strong orange (`#E67E22`) with bold weight on every theme
+state — clearly visible on Light, Dark, and Monokai. Hover brightens
+to `#FFA94D`; disabled dims to `#C97B3F` (still visible).
+
+### Tests
+
+C++ 19 / 19 + Rust 119 / 119 still pass. Build clean.
+
+---
+
 ## [0.1.50] — 2026-05-08
 
 **HiDPI / fractional-zoom support — fixes Windows 125 % / 150 % / 175 %.**
