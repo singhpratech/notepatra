@@ -7,6 +7,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.47] — 2026-05-08
+
+**Icon refresh.** User reported the Notepatra taskbar icon looked
+visibly smaller than other apps' icons. The artwork was correct but
+the leaf+circuit graphic only filled ~60% of the canvas, leaving lots
+of dark padding around it — at small taskbar sizes (16×16, 24×24) the
+leaf shrunk to a thumbnail and the icon read as "small black square".
+
+### Changed
+
+- 🎨 **All icons regenerated with the leaf scaled up ~22% within the
+  rounded-square frame.** The leaf now fills ~85% of the canvas, so
+  the icon reads larger at every taskbar / dock / file-manager size.
+- All standard PNG sizes regenerated from the new 1024px master:
+  16, 24, 32, 48, 64, 128, 256, 512, 1024 + the unsuffixed
+  `notepatra.png` used as the Linux desktop icon.
+- Windows `.ico` rebuilt with the 7 standard embedded sizes (16, 24,
+  32, 48, 64, 128, 256).
+- macOS `.icns` regenerated from the new master so the Dock + Finder
+  + Mission Control icons all pick up the change.
+
+---
+
 ## [0.1.46] — 2026-05-08
 
 **Hotfix on top of v0.1.45.** Two issues: stacking didn't actually

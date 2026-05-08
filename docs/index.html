@@ -1226,7 +1226,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.46 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.47 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1274,8 +1274,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.46">
-        Download v0.1.46 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.47">
+        Download v0.1.47 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1302,7 +1302,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.46 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.47 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. JSON / HTML / SQL fixers — regex first, local AI as fallback. No cloud unless you opt in.</p>
 
@@ -1389,7 +1389,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.46</div>
+        <div class="section-label">Download v0.1.47</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1841,7 +1841,32 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.46 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.47 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-05-08</span>
+                        <span>· Icon refresh — leaf now fills ~85% of the canvas (was ~60%) so the taskbar icon reads at the same visual size as other apps.</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🎨 Icon refresh — leaf scaled up so the taskbar icon reads larger</h5>
+                        <ul>
+                            <li>User reported the Notepatra taskbar icon looked visibly smaller than other apps' icons. The artwork was correct but the leaf+circuit graphic only filled ~60% of the canvas, leaving lots of dark padding around it. At small taskbar sizes (16×16, 24×24) the leaf shrunk to a thumbnail and the icon read as a "small black square".</li>
+                            <li>All icons regenerated with the leaf scaled up ~22% within the rounded-square frame. The leaf now fills ~85% of the canvas, so the icon reads at the same visual size as other apps in the taskbar / dock / file manager.</li>
+                            <li>Standard PNG sizes regenerated from the new 1024px master (16/24/32/48/64/128/256/512/1024) plus the unsuffixed <code>notepatra.png</code> used as the Linux desktop icon. Windows <code>.ico</code> rebuilt with the 7 standard embedded sizes; macOS <code>.icns</code> regenerated.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.47">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.47">Commits</a>
+                </div>
+            </div>
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.46</div>
                     <div class="version-meta">
                         <span>2026-05-08</span>
                         <span>· Hotfix on top of v0.1.45 — Find All in Current stacking + close ✕ on empty panel.</span>
