@@ -7,6 +7,50 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.50] — 2026-05-08
+
+**HiDPI / fractional-zoom support — fixes Windows 125 % / 150 % / 175 %.**
+
+User reported Bracket Tools / HTML Tools / SQL Tools button labels were
+still being cut on Windows even after v0.1.49's per-button minimum-width
+fix. Root cause: Notepatra had **no Qt application attributes set for
+HiDPI scaling at all**. Qt 5.15's default scale-factor rounding policy
+is `Round`, so on Windows at 150 % display zoom the app actually rendered
+at **200 %** — every button, font, and icon was 33 % wider than the
+layout was sized for. At 125 % it rendered at 100 % (everything tiny).
+At 175 % it rendered at 200 % (same as 150 %).
+
+### Fixed — three Qt attributes set BEFORE QApplication construction
+
+```cpp
+QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
+    Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling, true);
+QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps, true);
+```
+
+* **`AA_EnableHighDpiScaling`** opts the app into Qt's logical-pixel
+  coordinate system. `setFixedHeight(26)` now means "26 logical px";
+  Qt translates to device pixels based on each monitor's DPI.
+* **`HighDpiScaleFactorRoundingPolicy::PassThrough`** uses the OS scale
+  factor exactly (1.25, 1.5, 1.75 …) instead of rounding to integers.
+* **`AA_UseHighDpiPixmaps`** opts into @2x bitmap variants for QIcon /
+  QPixmap so toolbar icons + the leaf-circuit logo stay crisp on
+  Retina / 200 % displays.
+
+### Side-effect for Linux + macOS
+
+Linux distros that report fractional fontconfig DPI (typically 1.25 ×
+on a 1080p screen with `Xft.dpi: 120`) also get exact-DPI rendering
+instead of rounded-to-100 %. macOS Retina was already handled by Qt's
+default macOS path; nothing changes there.
+
+### Tests
+
+C++ 19 / 19 + Rust 119 / 119 still pass. Build clean.
+
+---
+
 ## [0.1.49] — 2026-05-08
 
 **Windows button-truncation fixes + Compact SQL formatter.**

@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QGuiApplication>
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QLocalServer>
@@ -82,6 +83,46 @@ int main(int argc, char *argv[]) {
     signal(SIGSEGV, crashHandler);
     signal(SIGABRT, crashHandler);
     signal(SIGFPE, crashHandler);
+
+    // ───────────────────────────────────────────────────────────────────
+    // v0.1.50 — HiDPI / fractional-zoom support, especially for Windows.
+    //
+    // BACKGROUND. Qt 5.15 defaults its scale-factor rounding policy to
+    // `Round`, so a Windows machine set to 125 % rounds DOWN to 100 %,
+    // 150 % rounds UP to 200 %, and 175 % rounds UP to 200 % too. The
+    // first case makes everything tiny; the latter two make every button
+    // / icon / font 33 % wider than its layout was sized for, which is
+    // the exact cause of the user-reported "Bracket Tools / HTML Tools
+    // button labels are cut on Windows" bug at 150 % display zoom.
+    //
+    // FIX. Three Qt application attributes, set BEFORE QApplication is
+    // constructed (Qt requires this — they're inspected during static
+    // platform-plugin init):
+    //
+    //   1. `Qt::AA_EnableHighDpiScaling` — opt the app into Qt's logical-
+    //      pixel coordinate system. setFixedHeight(26) means "26 logical
+    //      px" instead of "26 device px"; Qt translates to device px
+    //      based on the monitor's DPI.
+    //   2. `Qt::HighDpiScaleFactorRoundingPolicy::PassThrough` — use the
+    //      OS-reported scale factor exactly (1.25, 1.5, 1.75, …) instead
+    //      of rounding to the nearest integer. This is what makes 150 %
+    //      actually behave as 1.5 ×.
+    //   3. `Qt::AA_UseHighDpiPixmaps` — opt into @2x bitmap variants for
+    //      QIcon / QPixmap so toolbar icons and the leaf-circuit logo
+    //      stay crisp on Retina / 200 % displays.
+    //
+    // Linux / macOS already behave correctly in most cases (Wayland +
+    // GNOME Mutter scale at the compositor level; macOS handles Retina
+    // transparently), so these flags are mainly for Windows but the
+    // PassThrough policy is also a quality-of-life win on Linux distros
+    // that report fractional fontconfig DPI.
+    // ───────────────────────────────────────────────────────────────────
+#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+    QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
+        Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+#endif
+    QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling, true);
+    QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps, true);
 
     QApplication app(argc, argv);
     app.setApplicationName("Notepatra");
