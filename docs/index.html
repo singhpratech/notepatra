@@ -242,8 +242,18 @@
         html { scroll-behavior: smooth; }
 
         body {
+            /* v0.1.50 — append the platform emoji fonts AND the CSS
+             * 'emoji' generic so 🔎 / 🤖 / 📊 etc. fall through to the
+             * appropriate system emoji font on every OS instead of
+             * tofu-boxing on Linux (which lacks an emoji glyph in
+             * its default sans-serif fonts). 'Apple Color Emoji'
+             * covers macOS / iOS, 'Segoe UI Emoji' covers Windows,
+             * 'Noto Color Emoji' covers Linux. */
             font-family: "Söhne", "Inter", -apple-system, BlinkMacSystemFont,
-                         ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+                         ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif,
+                         "Apple Color Emoji", "Segoe UI Emoji",
+                         "Noto Color Emoji", "Twemoji Mozilla",
+                         "EmojiOne Color", "Android Emoji", emoji;
             background: var(--c-bone);
             color: var(--c-text);
             line-height: 1.6;
