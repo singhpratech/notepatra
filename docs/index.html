@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.8 MB (Linux x64 tar.gz), 25.5 MB (macOS DMG with bundled Qt), 43.5 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 48 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.55",
+      "softwareVersion": "0.1.57",
       "fileSize": "9 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -145,7 +145,7 @@
           "name": "What makes Notepatra different from other code editors?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra is its own editor — written from scratch in C++17 and Rust, not a port or a clone. It runs natively on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase, with a ~9 MB bare executable (stripped). Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. Native DuckDB engine ships in v0.1.55 for the Data Analyst mode. No Electron runtime, no telemetry, no mandatory account."
+            "text": "Notepatra is its own editor — written from scratch in C++17 and Rust, not a port or a clone. It runs natively on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase, with a ~9 MB bare executable (stripped). Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. Native DuckDB engine ships in v0.1.55 for the Data Analyst mode. v0.1.57 adds a Composer tab with multi-file Edit Plan, `@file` mentions, Ctrl+I inline edit, agentic git tools, and multi-cursor editing. No Electron runtime, no telemetry, no mandatory account."
           }
         },
         {
@@ -169,7 +169,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 100+ file types with 78 language lexers as of v0.1.55: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 100+ file types with 78 language lexers as of v0.1.57: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1236,7 +1236,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.55 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.57 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.55">
-        Download v0.1.55 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.57">
+        Download v0.1.57 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.55 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.57 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~9 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. JSON / HTML / SQL fixers — regex first, local AI as fallback. No cloud unless you opt in.</p>
 
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.55</div>
+        <div class="section-label">Download v0.1.57</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1851,7 +1851,95 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.55 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.57 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-05-09</span>
+                        <span>· Coding-mode revamp + agentic git tools + multi-cursor + fullscreen AI dock + Windows mojibake fix.</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🧠 Coding mode revamp — Composer tab + multi-file Edit Plan + per-hunk apply</h5>
+                        <ul>
+                            <li>Slices A → F shipped together: a separate <strong>Composer</strong> tab joins <em>Chat</em> in the AI dock. The Composer keeps its own scrollback, its own input, and surfaces the <strong>Edit Plan</strong> — a list of every file the model wants to change in this turn.</li>
+                            <li>Each Edit Plan entry shows the file path + a unified diff preview with <strong>per-hunk Accept / Reject checkboxes</strong>. Action bar at the bottom: <em>Apply All</em> / <em>Apply Selected</em> / <em>Reject All</em> — no more all-or-nothing diffs.</li>
+                            <li>Coding mode <strong>auto-expands the AI dock to fullscreen</strong> the moment you flip the switch (and restores the previous width when you switch back to Chat / Data Mode) so the diff preview has room to breathe.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>📎 <code>@file</code> mention picker — workspace context, one keystroke</h5>
+                        <ul>
+                            <li>Type <code>@</code> in the chat input and a <strong>workspace-files popup</strong> appears with fuzzy-matched results from the project tree.</li>
+                            <li>Selected files are <strong>prepended to the prompt as context</strong> — the model sees real file content, not paths. Useful for "@auth.py @user.py refactor the session helper" without manually pasting.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>⌨️ Ctrl+I inline edit — selection in, replacement out</h5>
+                        <ul>
+                            <li>Select code in the editor → <kbd>Ctrl</kbd>+<kbd>I</kbd> opens a small modal asking <em>"what should this become?"</em>. Type the change in plain English.</li>
+                            <li>The AI returns the replacement with a <strong>side-by-side diff</strong>; <em>Apply</em> replaces the selection in place, <em>Cancel</em> keeps the original. Works against whatever backend / model you have selected — local or cloud.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🌿 Agentic git tools (read-only) — the AI can read your repo state</h5>
+                        <ul>
+                            <li>Five new tools wired into the agentic loop: <code>git_status</code>, <code>git_diff</code>, <code>git_log</code>, <code>git_branch_list</code>, <code>git_show</code>. Read-only by design — no writes, no resets, no force-push paths.</li>
+                            <li>The model can answer "what's my git status?" / "what changed since yesterday?" / "show me the diff on branch foo" by calling these autonomously, no shell-out and no copy-paste.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🎯 Multi-cursor editing — Alt+drag, Ctrl+click, type once</h5>
+                        <ul>
+                            <li><strong>Alt+drag</strong> for column-select rectangles, <strong>Ctrl+click</strong> to add a cursor at any caret position, type once and the same edit lands at every selection simultaneously.</li>
+                            <li>Works with the existing find-all-occurrences and bracket-match flows. Esc collapses to a single caret.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🎨 Mode-aware model dropdown coloring</h5>
+                        <ul>
+                            <li>The model dropdown now <strong>colors entries by capability per active mode</strong>: in Coding mode, models without tool-calling render <span style="color:#E67E22;font-weight:600;">amber</span> with a hover tooltip explaining why; in Data mode, models that lack the recommended Data-Analyst capability surface render amber the same way.</li>
+                            <li>Tool-capable / Data-capable models stay accented in green. The signal is purely visual — you can still pick any model; the color tells you what to expect.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🏥 MSSQL + Synthea install assets for the Data Analyst demo</h5>
+                        <ul>
+                            <li>Optional one-script setup vendored under <code>installers/</code>: spins up a local SQL Server container + loads a <strong>Synthea synthetic patient dataset</strong> so the Data Analyst flow has a real, large, schema-rich database to demo against.</li>
+                            <li>Skipped by default; users opt in when they want a non-trivial dataset to point Data Mode at.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🪟 Windows mojibake compile fix — <code>/utf-8</code> MSVC flag</h5>
+                        <ul>
+                            <li>Pre-fix: emoji and non-ASCII (en-dash, ellipsis, middle-dot) were rendering as <code>ðŸ"</code> / <code>â€¦</code> / <code>Â·</code> garbage on Windows MSVC builds — string literals in C++ source were being interpreted as Windows-1252 instead of UTF-8.</li>
+                            <li>Added the <code>/utf-8</code> flag to the MSVC compile path so source files are now read as UTF-8 and execution-character-set output is also UTF-8. Banners, chat strings, and AI tool-call messages now render correctly on Windows.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🪶 Banner wrap + llama.cpp install detection polish</h5>
+                        <ul>
+                            <li>Data Mode capability banner moved to <strong>its own row</strong> + <code>heightForWidth(true)</code> so the panel resizes without clipping when the dock is narrow.</li>
+                            <li>llama.cpp probe now <strong>distinguishes "installed but not running" from "not installed"</strong> so the status hint is actionable ("start <code>llama-server</code>" vs. "install llama.cpp").</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🛡 Crash hardening — never-crash AI</h5>
+                        <ul>
+                            <li>Null-pointer guards, network timeouts, and structured error surfacing across <code>aipanel.cpp</code>, <code>ollama.cpp</code>, and <code>ai_tools.cpp</code>.</li>
+                            <li>Backend disappears mid-stream? Cloud key revoked? Tool returns malformed JSON? The dock shows a clean error and stays alive — no crash, no white screen, no lost session history.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.57">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.57">Commits</a>
+                </div>
+            </div>
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.55</div>
                     <div class="version-meta">
                         <span>2026-05-09</span>
                         <span>· DuckDB engine, Azure OpenAI, Ollama Cloud, 78 language lexers, privacy toggle, credential scrubber.</span>
