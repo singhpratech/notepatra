@@ -1059,7 +1059,9 @@ int main(int argc, char *argv[]) {
         AiTools::ToolResult r = AiTools::execute(call, QString());
         check("git_status w/ empty workspace: isError=true", r.isError);
         check("  errorKind == no_workspace", r.errorKind == "no_workspace");
-    // ── v0.1.56: dry_run on write_file / apply_diff (Composer mode) ──
+    }
+
+    // ── v0.1.57: dry_run on write_file / apply_diff (Composer mode) ──
     //
     // The dry_run path runs every safety check the real path runs, but
     // returns a {dry_run:true, proposed:{path,before,after,mode}} body

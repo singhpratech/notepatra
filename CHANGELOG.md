@@ -7,6 +7,116 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.57] — 2026-05-09
+
+**Coding-mode revamp + agentic git tools + multi-cursor + fullscreen AI dock + Windows mojibake fix.**
+
+> Largest release since v0.1.55. v0.1.56 was prepared but never released — its content (Windows mojibake fix, multi-cursor scaffolding, fullscreen AI dock, banner / chat-input / llama.cpp polish) is folded into v0.1.57.
+
+### Added — Coding mode revamp (Cursor-style Composer)
+
+* **Composer tab** — separate scrollback + input from the regular Chat tab; appears when Coding Mode is on. Top of the AI dock now shows `[ Chat | Composer ]` tabs.
+* **Edit Plan list** — every file the model wants to change in this turn surfaces as a panel of unified-diff cards with **per-hunk Accept / Reject checkboxes**. Bottom action bar: *Apply All* / *Apply Selected* / *Reject All*. New `EditPlanList` and `DiffView` widgets in `src/edit_plan.cpp/h` and `src/diff_view.cpp/h`.
+* **`dry_run:true` system layer for Composer** — the model's `write_file` and `apply_diff` calls return proposed-edit payloads instead of touching disk; the agent loop routes them to the Edit Plan instead of the live filesystem.
+* **Auto-fullscreen on Coding** — toggling Coding Mode expands the AI dock to fill the window; toggling back to Chat / Data restores the previous splitter width.
+* **Coding-mode welcome card** — branch name · ahead/behind upstream · modified file count + quick-action buttons. Renders only when a workspace is open.
+* **`@file` mention picker** — typing `@` in the chat input opens a fuzzy-matched workspace files popup. Selected files are prepended to the prompt as real content (not paths).
+* **Ctrl+I inline edit** — select code in the editor, press Ctrl+I, type the change in plain English. AI returns the replacement with a side-by-side diff preview; Apply replaces the selection. New `InlineEditDialog` in `src/inlineedit.cpp/h`.
+
+### Added — Agentic git tools (read-only)
+
+Five new tools wired into the agentic loop, **read-only by design** (no writes, no resets, no force-push paths):
+
+* `git_status`
+* `git_diff`
+* `git_log`
+* `git_branch_list`
+* `git_show`
+
+Implemented as a `GitTools` namespace (`src/git_tools.cpp/h`) with `QProcess` + 5 s timeout per call, hardcoded verb argv, path-safety on cwd, and `git_show` commit-arg sanitization to refuse anything that isn't a 4–40-char hex SHA. The model can answer "what's my git status?" / "show me the diff on branch foo" by calling these autonomously.
+
+### Added — Multi-cursor editing
+
+* **Alt+drag** for column-select rectangles
+* **Ctrl+click** to add a cursor at any caret position
+* Type once → same edit lands at every selection simultaneously
+* Esc collapses to a single caret
+
+Wired through QScintilla: `SCI_SETMULTIPLESELECTION`, `SCI_SETADDITIONALSELECTIONTYPING`, `SCI_SETMULTIPASTE = SC_MULTIPASTE_EACH`, `SCI_SETRECTANGULARSELECTIONMODIFIER = SCMOD_ALT`, `SCI_SETADDITIONALSELALPHA = 90`.
+
+### Added — Mode-aware model dropdown coloring
+
+The model dropdown now colors entries by capability per active mode: in Coding mode, models without tool-calling render in amber (`#E67E22`) with a hover tooltip; in Data mode, models that lack the recommended Data-Analyst capability surface render amber the same way. Tool-capable / Data-capable models stay accented in green.
+
+### Fixed — Windows mojibake (every emoji and special char)
+
+Every emoji in the UI was rendering as garbage on Windows: 📊 → `ðŸ"š`, 🔒 → `ðŸ""`, 📌 → `ðŸ"Œ`, … → `â€¦`, ≈ → `â‰ˆ`, · → `Â·`. Root cause: MSVC reads C++ source as the system code page (Windows-1252 on en-US) by default. **Fix:** `add_compile_options(/utf-8)` for MSVC in CMakeLists. Linux + macOS were unaffected.
+
+### Fixed — UI polish from v0.1.56 prep
+
+* **Chat input auto-grows** for multi-line messages (40 px → 140 px max), driven by document height (was using the buggy `blockCount()`). Auto-collapses to 40 px after Send.
+* **llama.cpp dropdown** — when llama-server isn't running and no GGUF is loaded, the curated 12-model catalog now reads as suggestions to download: disabled header item `— llama-server not running · pick one to download —` at the top, every catalog row prefixed with `↓ `.
+* **Banner truncation** — Data Mode capability banner moved to its own row + `setHeightForWidth(true)` + `QSizePolicy::Ignored` horizontal so the panel resizes without clipping when the dock is narrow.
+* **llama.cpp install probe** — distinguishes "installed but not running" from "not installed" via `QStandardPaths::findExecutable`, so the status hint is actionable.
+
+### Fixed — Crash hardening
+
+Null-pointer guards, network timeouts, and structured error surfacing across `aipanel.cpp`, `ollama.cpp`, and `ai_tools.cpp`. Backend disappears mid-stream? Cloud key revoked? Tool returns malformed JSON? The dock shows a clean error and stays alive — no crash, no white screen, no lost session history. ~100 hardening annotations marked `// hardening:`.
+
+### Tests
+
+24 → 25 test files (added `test_edit_plan.cpp`). New cases cover dry-run write_file/apply_diff, all 5 git tools' success + error paths, EditPlan model add/remove/select, DiffView rendering for empty / single-line / multi-hunk diffs.
+
+### Stats
+
+24 commits since v0.1.55, 28 files changed, +4,390 / −244 lines. Bare binary **~9 MB stripped** (8.93 MB Linux x64) — basically flat from v0.1.55. New widget code is C++ Qt and compiles tight.
+
+---
+
+## [0.1.55] — 2026-05-09
+
+**DuckDB engine, Azure OpenAI, Ollama Cloud, 80+ language lexers, privacy toggle, credential scrubber.**
+
+### Added — Cloud AI
+
+* 4 cloud backends with per-provider key slots (no cross-provider bleed): **OpenRouter**, **OpenAI**, **Ollama Cloud**, **Azure OpenAI**.
+* New AI Settings dialog with Test/Save/Forget per provider.
+* Searchable model dropdown — type `xai`/`grok`, `claude`, `gpt`, `kimi`, `gemini` to surface the right group.
+* Ollama `/api/show` capability probe — new tool-trained models work without a Notepatra release.
+* OpenRouter `reasoning` parameter routing — Think checkbox now actually works for Claude / o-series / Gemini.
+
+### Added — DuckDB native engine for Data mode
+
+`libduckdb-1.1.3` linked dynamically (RAII C wrapper, structurally leak-proof, streaming row callback, schema introspection, httpfs/S3/Parquet/CSV/JSON view registration). New `DUCKDB` driver in DB Connections panel.
+
+### Added — Database Tree dialog (Browse Schemas...)
+
+Connection → schemas → tables → columns, lazy-loaded, right-click "Send schema to AI" / "Sample 10 rows" / "Copy SELECT *".
+
+### Added — 32 dedicated language lexers (47 → 80+)
+
+Dart · Solidity · Zig · Vala · Hack · Julia · R · Protobuf · F# · HCL/Terraform · Thrift · GraphQL · GDScript · Nim · Cython · Mojo · Crystal · Elixir · Scala · Groovy · Apex · Jinja · Liquid · Twig · Dockerfile · Fish · Nushell · TOML · DotEnv · Gitignore · JSON5 · BibTeX. Each keyword table verified against the official spec by parallel research agents. Comment toggling (Ctrl+Q / Ctrl+Shift+Q) wired for every new language.
+
+### Added — Privacy
+
+* **Credential scrubber** catches 14 vendor patterns (OpenRouter / Anthropic / OpenAI / GitHub / GitLab / AWS / Slack / Stripe / SendGrid / Google / JWT / PEM / generic key=value) before any text leaves the machine.
+* New 🔒 **Share file with AI** toggle (default OFF, Coding mode only) — Chat / Data modes never see file content.
+* Welcome page emoji fallback chain — Linux tofu boxes (□) for icons replaced with real glyphs.
+
+### Added — Multi-file analyst context
+
+`.notepatra/data-analyst/` directory loader (instructions / data-dictionary / business-rules / KPIs / sample-queries).
+
+### Tests
+
+21/21 pass — added `test_credscrub` (14 vendor patterns) + `test_duckdb` (streaming + RAII + schema).
+
+### Binary size
+
+**~9 MB** Linux x64 stripped (basically flat from v0.1.54 — DuckDB is a separate `.so` users install once).
+
+---
+
 ## [0.1.54] — 2026-05-08
 
 **Backend dropdown clean-up + AI panel wiring fixes + Search icon polish.**

@@ -3,7 +3,7 @@
   <h1 align="center"><a href="https://notepatra.org" style="text-decoration:none;color:inherit;">Notepatra</a></h1>
   <p align="center"><em>The first code editor built for the AI era.</em></p>
   <p align="center">
-    <strong>C++ + Rust</strong> · <strong>~9 MB bare native executable</strong> · <strong>Zero Electron</strong> · <strong>100+ file types</strong> · <strong>Local AI formatters</strong>
+    <strong>C++ + Rust</strong> · <strong>~9 MB bare native executable</strong> · <strong>Zero Electron</strong> · <strong>200+ file types</strong> · <strong>80+ language lexers</strong> · <strong>Local AI formatters</strong>
   </p>
   <p align="center">
     <a href="https://notepatra.org">Website</a> ·
@@ -58,7 +58,7 @@ Notepatra started on Linux — because that's where the gap was. But great tools
 ## Features
 
 ### Editor — Battle-tested basics done right
-- **178 file extensions** mapped to the best available QScintilla lexer — Python, C/C++, Java, JavaScript, TypeScript, SQL, HTML, CSS, JSON, YAML, Markdown, Bash, Fortran, VHDL, Verilog, MATLAB, LaTeX, and more. Rust / Go / Swift / Kotlin currently fall back to the C-family lexer (close enough for brace/string/comment highlighting — not a Rust-native analyser)
+- **236 file extensions** mapped to **80+ language lexers** — Python, C/C++, C#, Java, Kotlin, JavaScript, TypeScript, Rust, Go, Swift, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, SQL (5 dialects), HTML, CSS, JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Fortran, VHDL, Verilog, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and more. Rust / Go / Swift / Kotlin / TypeScript / PowerShell ship as Notepatra-local lexers (not just C-family fallbacks)
 - **Tabbed editing** — drag, reorder, middle-click close, double-click empty area for new tab
 - **Tab right-click menu** — Close, Close All BUT This, Close All to the Left/Right, Close All, Save, Save As, Rename, Copy Full Path, Copy Filename, Copy Directory Path, Open Containing Folder, Open Terminal Here, Read-Only toggle, **Color Tag** (7 named colors + custom + Remove)
 - **3 themes** — Light, Dark, Monokai (Settings > Theme)
@@ -235,7 +235,7 @@ Notepatra auto-detects the running Ollama and picks the most CPU-friendly model 
 **Why this hybrid?**
 - **C++** because Qt and QScintilla are C++ — zero friction for UI
 - **Rust** because file I/O, text processing, and parsing must never crash — Rust's ownership system guarantees memory safety
-- **Result**: the speed of C++, the safety of Rust. The bare stripped executable is **~9 MB** on every platform (8.8 MB Linux x64, similar on macOS / Windows after stripping). Latest v0.1.55 download sizes: **3.2 MB** Linux x64 tar.gz · **3.0 MB** Linux ARM64 tar.gz · **26.6 MB** macOS DMG (with bundled Qt) · **39.9 MB** Windows MSI · **32.0 MB** Windows NSIS · **36.5 MB** Windows portable zip. _Installed footprint on Windows is ~75-85 MB after the MSI extracts bundled Qt + QScintilla DLLs — normal for any Qt-based installer._
+- **Result**: the speed of C++, the safety of Rust. The bare stripped executable is **~9 MB** on every platform (8.9 MB Linux x64, similar on macOS / Windows after stripping). Latest v0.1.57 download sizes: **3.2 MB** Linux x64 tar.gz · **3.0 MB** Linux ARM64 tar.gz · **26.6 MB** macOS DMG (with bundled Qt) · **39.9 MB** Windows MSI · **32.0 MB** Windows NSIS · **36.5 MB** Windows portable zip. _Installed footprint on Windows is ~75-85 MB after the MSI extracts bundled Qt + QScintilla DLLs — normal for any Qt-based installer._
 
 ---
 
