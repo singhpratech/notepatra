@@ -405,11 +405,21 @@ endif()
 
 # ── Regression tests (opt in via -DBUILD_TESTING=ON) ──
 # BUILD_LEXER_TEST remains as a compatibility alias for old scripts/docs.
+#
+# Each call to notepatra_add_qt_test() also appends the target name to the
+# global property `notepatra_test_targets`. After all tests are registered
+# below, we expose them as a single `notepatra_all_tests` meta-target so
+# CI's `cmake --build . --target notepatra_all_tests` builds every test
+# without having to manually keep build.yml in sync with new test_*.cpp
+# files. v0.1.57 hit a CI regression because test_edit_plan.cpp existed
+# in CMake but wasn't in build.yml's --target list — this prevents that
+# class of failure forever.
 function(notepatra_add_qt_test target_name)
     add_test(
         NAME ${target_name}
         COMMAND ${CMAKE_COMMAND} -E env QT_QPA_PLATFORM=offscreen $<TARGET_FILE:${target_name}>
     )
+    set_property(GLOBAL APPEND PROPERTY notepatra_test_targets ${target_name})
 endfunction()
 
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_terminal_ansi.cpp")
@@ -1055,4 +1065,31 @@ elseif(WIN32)
     install(TARGETS ${EXE_NAME} RUNTIME DESTINATION bin)
 else()
     install(TARGETS ${EXE_NAME} DESTINATION bin)
+endif()
+
+# ── notepatra_all_tests meta-target ──
+# Auto-discovers every executable target named test_* and aggregates them
+# under one custom target. CI uses `cmake --build . --target
+# notepatra_all_tests` so adding a new test_xxx.cpp + add_executable just
+# works in CI without touching build.yml.
+#
+# v0.1.57 hit a CI regression because test_edit_plan was registered with
+# CTest but missing from build.yml's hardcoded --target list — this
+# discovery loop prevents that class of failure forever.
+if(NOTEPATRA_BUILD_TESTS)
+    get_property(_all_targets DIRECTORY "${CMAKE_SOURCE_DIR}" PROPERTY BUILDSYSTEM_TARGETS)
+    set(_test_targets "")
+    foreach(_t IN LISTS _all_targets)
+        if(_t MATCHES "^test_")
+            get_target_property(_type ${_t} TYPE)
+            if(_type STREQUAL "EXECUTABLE")
+                list(APPEND _test_targets ${_t})
+            endif()
+        endif()
+    endforeach()
+    if(_test_targets)
+        add_custom_target(notepatra_all_tests DEPENDS ${_test_targets})
+        list(LENGTH _test_targets _n)
+        message(STATUS "Aggregated ${_n} test_* executables into notepatra_all_tests")
+    endif()
 endif()
