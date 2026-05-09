@@ -17,6 +17,7 @@
 
 class QProcess;
 class QUrl;
+class QCompleter;
 
 class AIPanel : public QWidget {
     Q_OBJECT
@@ -294,6 +295,17 @@ private:
     // on model dropdown change for the Ollama backend; preferred over
     // AiTools::modelLikelySupportsTools when present.
     QHash<QString, QStringList> m_ollamaModelCaps;
+
+    // v0.1.56 — @file mention picker. When the user types `@` in the
+    // chat input on a word boundary, the completer pops up listing
+    // workspace files (m_workspaceFilePaths). Picking one inserts
+    // `@<relative-path> ` into the input. Before Send, sendPrompt calls
+    // resolveFileMentions() which scans userText for `@<path>` tokens,
+    // resolves each via AiTools::resolveSafePath, reads the file (capped
+    // at 64 KB / file, 256 KB total) and appends the contents as
+    // `[file: <relpath>]\n<content>\n[end file]` onto the prompt.
+    QCompleter *m_filementionCompleter = nullptr;
+    void resolveFileMentions(QString &userText);
 
 private slots:
     void attachFile();
