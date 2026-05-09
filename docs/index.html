@@ -1922,13 +1922,6 @@
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🏥 MSSQL + Synthea install assets for the Data Analyst demo</h5>
-                        <ul>
-                            <li>Optional one-script setup vendored under <code>installers/</code>: spins up a local SQL Server container + loads a <strong>Synthea synthetic patient dataset</strong> so the Data Analyst flow has a real, large, schema-rich database to demo against.</li>
-                            <li>Skipped by default; users opt in when they want a non-trivial dataset to point Data Mode at.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
                         <h5>🪟 Windows mojibake compile fix — <code>/utf-8</code> MSVC flag</h5>
                         <ul>
                             <li>Pre-fix: emoji and non-ASCII (en-dash, ellipsis, middle-dot) were rendering as <code>ðŸ"</code> / <code>â€¦</code> / <code>Â·</code> garbage on Windows MSVC builds — string literals in C++ source were being interpreted as Windows-1252 instead of UTF-8.</li>
