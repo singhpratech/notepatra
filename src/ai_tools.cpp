@@ -1315,7 +1315,11 @@ ToolResult executeSearch(const ToolCall &call, const QString &workspaceRoot) {
 // ═══════════════════════════════════════════════════════════════════════
 ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) {
     const QString pathArg = call.args.value("path").toString();
-    const QJsonArray hunks = call.args.value("hunks").toArray();
+    const QJsonValue hunksVal = call.args.value("hunks");
+    if (!hunksVal.isArray()) {  // hardening: explicit type check (was an implicit toArray() that yielded empty for bad shapes)
+        return makeError(call, "io_error", "hunks must be an array.");
+    }
+    const QJsonArray hunks = hunksVal.toArray();
     if (hunks.isEmpty()) {
         return makeError(call, "io_error", "hunks array is empty.");
     }
@@ -1361,7 +1365,12 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
     // Sort hunks by old_start_line, then validate + apply in REVERSE.
     QVector<QJsonObject> sortedHunks;
     sortedHunks.reserve(hunks.size());
-    for (const QJsonValue &v : hunks) sortedHunks.push_back(v.toObject());
+    for (const QJsonValue &v : hunks) {
+        if (!v.isObject()) {  // hardening: refuse non-object hunk entries instead of silently coercing to {}
+            return makeError(call, "io_error", "Each hunk must be an object.");
+        }
+        sortedHunks.push_back(v.toObject());
+    }
     std::sort(sortedHunks.begin(), sortedHunks.end(),
               [](const QJsonObject &a, const QJsonObject &b) {
                   return a.value("old_start_line").toInt()
@@ -1703,6 +1712,10 @@ ToolResult executeCsvQuery(const ToolCall &call, const QString &workspaceRoot) {
 } // anonymous namespace
 
 ToolResult execute(const ToolCall &call, const QString &workspaceRoot) {
+    // hardening: empty tool name produced an "Unknown tool: ''" before — guard early.
+    if (call.name.isEmpty()) {
+        return makeError(call, "io_error", "Empty tool name.");
+    }
     if (call.name == "read_file")       return executeReadFile(call, workspaceRoot);
     if (call.name == "list_dir")        return executeListDir(call, workspaceRoot);
     if (call.name == "write_file")      return executeWriteFile(call, workspaceRoot);

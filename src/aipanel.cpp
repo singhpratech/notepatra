@@ -1123,29 +1123,30 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // the previous splitter layout. The user can still hit ⛶ to override
     // mid-session — if they do, that override stands until the next mode
     // change.
+    //
+    // hardening: mode-toggle mid-stream cancels the in-flight request first
+    // so the response doesn't keep streaming into the now-rebuilt chat surface
+    // (renderTranscript inside applyMode wipes m_streamingCard / m_streamingBody).
+    auto applyModeWithCancel = [this, applyMode]() {
+        if (m_inAssistantBubble && m_ollama) {
+            m_ollama->cancel();   // hardening: kill in-flight stream on mode swap
+            m_inAssistantBubble = false;
+            if (m_stopBtn) m_stopBtn->setEnabled(false);
+        }
+        applyMode();
+        decorateModelsByMode();
+    };
     connect(m_chatMode,   &QAbstractButton::toggled, this,
-            [this, applyMode](bool on) {
-                if (on) {
-                    applyMode();
-                    decorateModelsByMode();
-                    emit fullscreenToggled(false);
-                }
+            [this, applyModeWithCancel](bool on) {
+                if (on) { applyModeWithCancel(); emit fullscreenToggled(false); }
             });
     connect(m_codingMode, &QAbstractButton::toggled, this,
-            [this, applyMode](bool on) {
-                if (on) {
-                    applyMode();
-                    decorateModelsByMode();
-                    emit fullscreenToggled(true);
-                }
+            [this, applyModeWithCancel](bool on) {
+                if (on) { applyModeWithCancel(); emit fullscreenToggled(true); }
             });
     connect(m_dataMode,   &QAbstractButton::toggled, this,
-            [this, applyMode](bool on) {
-                if (on) {
-                    applyMode();
-                    decorateModelsByMode();
-                    emit fullscreenToggled(false);
-                }
+            [this, applyModeWithCancel](bool on) {
+                if (on) { applyModeWithCancel(); emit fullscreenToggled(false); }
             });
 
     // Refresh the data-mode capability banner when the user picks a
@@ -1766,6 +1767,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         });
 
     connect(m_ollama, &OllamaClient::tokenReceived, this, [this](const QString &token) {
+        if (!m_chatLayout) return;  // hardening: ignore tokens after panel teardown
         streamIntoAssistantBubble(token);
     });
     connect(m_ollama, &OllamaClient::finished, this, [this](const QString &response) {
@@ -1781,7 +1783,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         m_toolsActiveThisTurn = false;
         m_toolCallsThisTurn = 0;
         m_toolCallsTotal = 0;
-        m_stopBtn->setEnabled(false);
+        if (m_stopBtn) m_stopBtn->setEnabled(false);  // hardening: guard m_stopBtn (slot may fire after teardown)
         endAssistantBubble();
     });
     // v0.1.35 — Tool-call from the model. Execute against the workspace,
@@ -1793,6 +1795,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // and trigger a re-render so the bubble shows "1234 tokens · 2.3s".
     connect(m_ollama, &OllamaClient::responseStats, this,
             [this](int promptTokens, int evalTokens, qint64 elapsedMs) {
+        if (m_messages.isEmpty()) return;  // hardening: nothing to attach stats to
         for (int i = m_messages.size() - 1; i >= 0; --i) {
             if (m_messages[i].role == ChatMessage::Assistant) {
                 m_messages[i].promptTokens = promptTokens;
@@ -1802,17 +1805,20 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             }
         }
         scheduleChatSave();
-        renderTranscript();
+        if (m_chatLayout) renderTranscript();  // hardening: skip render if surface gone
     });
     connect(m_ollama, &OllamaClient::error, this, [this](const QString &msg) {
         endAssistantBubble();
-        appendErrorBubble(msg);
-        m_stopBtn->setEnabled(false);
+        // hardening: surface even an empty error string with a generic notice
+        // so a silent backend failure never becomes an invisible failure.
+        appendErrorBubble(msg.isEmpty() ? QStringLiteral("AI request failed.") : msg);
+        if (m_stopBtn) m_stopBtn->setEnabled(false);  // hardening: guard m_stopBtn
     });
     connect(m_clearBtn, &QPushButton::clicked, this, &AIPanel::clearChat);
 
     // Dynamic model detection
     connect(m_ollama, &OllamaClient::modelsListed, this, [this](const QStringList &models) {
+        if (!m_modelCombo) return;  // hardening: guard against teardown
         QString prev = m_modelCombo->currentText();
         m_modelCombo->clear();
 
@@ -2068,6 +2074,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
 
     connect(m_ollama, &OllamaClient::modelsError, this, [this](const QString &reason) {
         Q_UNUSED(reason);
+        if (!m_modelCombo) return;  // hardening: skip if dropdown gone
         const QString backend = Config::instance().aiBackend;
         const QString baseUrl = Config::instance().aiBaseUrl;
         const bool isLlamaCpp   = backend.compare("llama.cpp", Qt::CaseInsensitive) == 0;
@@ -2163,8 +2170,17 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // stay active with the live-stats timer still ticking. Hook the stop
     // button to also end the bubble cleanly + stop the timer.
     connect(m_stopBtn, &QPushButton::clicked, this, [this]() {
+        // hardening: safe to invoke even if the reply already finished
+        // (m_inAssistantBubble is false by then). Also guard m_stopBtn
+        // pointer in case the slot fires during teardown.
+        if (m_stopBtn) m_stopBtn->setEnabled(false);
+        // hardening: also flush any half-built agent state so the next
+        // turn doesn't carry stale tool-result fragments from the aborted run.
+        m_pendingToolResults = QJsonArray();
+        m_toolCallsThisTurn = 0;
+        m_toolCallsTotal = 0;
+        m_toolsActiveThisTurn = false;
         if (m_inAssistantBubble) {
-            m_stopBtn->setEnabled(false);
             endAssistantBubble();
         }
     });
@@ -2247,11 +2263,16 @@ void AIPanel::setWorkspaceContext(const QString &selectedText,
 }
 
 void AIPanel::refreshModels() {
+    if (!m_ollama) {  // hardening: guard m_ollama (refreshModels can fire from QTimer::singleShot before ctor wires it up)
+        setStatus(QStringLiteral("AI client not ready"), true);
+        return;
+    }
     setStatus("Detecting Ollama models...", false);
     m_ollama->listModels();
 }
 
 void AIPanel::setStatus(const QString &text, bool isError) {
+    if (!m_statusLabel) return;  // hardening: guard m_statusLabel (status calls happen during teardown / early ctor)
     m_statusLabel->setText(text);
     // v0.1.54 — theme-aware status colours. The previous hard-coded
     // #4EC9B0 (mint/teal) and #F48771 (salmon) read fine on Dark but
@@ -2653,6 +2674,13 @@ QString AIPanel::buildWorkspaceContextBlock(const QString &currentFilePath,
 }
 
 void AIPanel::sendPrompt(const QString &action) {
+    // hardening: bail early if core widgets were never built or m_ollama is null.
+    // sendPrompt can be reached via QButtonGroup activation that fires before
+    // ctor fully wires every member, or after a teardown signal storm.
+    if (!m_ollama || !m_customInput || !m_modelCombo) {
+        setStatus(QStringLiteral("AI panel not ready — try again in a moment"), true);
+        return;
+    }
     // Pull the freshest workspace state right before we send. The provider
     // lets MainWindow push the current editor text + open-tab list without
     // us having to subscribe to every edit signal.
@@ -3059,7 +3087,7 @@ void AIPanel::sendPrompt(const QString &action) {
 
     appendUserBubble(userBubbleText);
     beginAssistantBubble();
-    m_stopBtn->setEnabled(true);
+    if (m_stopBtn) m_stopBtn->setEnabled(true);  // hardening: guard m_stopBtn
 
     // v0.1.35 — agent-loop activation. Tools fire when:
     //   1. Coding Mode is on (the user has explicitly opted into agent
@@ -3093,8 +3121,8 @@ void AIPanel::sendPrompt(const QString &action) {
 // ───── Chat-bubble rendering ──────────────────────────────────────────
 
 void AIPanel::clearChat() {
-    m_ollama->cancel();
-    m_stopBtn->setEnabled(false);
+    if (m_ollama) m_ollama->cancel();  // hardening: guard m_ollama (clearChat can be invoked during teardown)
+    if (m_stopBtn) m_stopBtn->setEnabled(false);  // hardening: guard m_stopBtn
 
     if (m_recordProcess) {
         QProcess *recordProcess = m_recordProcess;
@@ -3116,7 +3144,7 @@ void AIPanel::clearChat() {
         transcribeProcess->deleteLater();
     }
 
-    m_voiceBtn->setEnabled(true);
+    if (m_voiceBtn) m_voiceBtn->setEnabled(true);  // hardening: guard m_voiceBtn
     updateVoiceButtonVisual(false);
 
     if (m_chatLayout) aiClearChat(m_chatLayout);
@@ -3127,12 +3155,14 @@ void AIPanel::clearChat() {
     m_streamingCard = nullptr;
     m_streamingBody = nullptr;
     m_lastResponse.clear();
-    m_customInput->clear();
+    if (m_customInput) m_customInput->clear();  // hardening: guard m_customInput
     m_pendingFilePath.clear();
     m_pendingFileKind.clear();
-    m_attachmentChip->setText("");
-    m_attachmentChip->setVisible(false);
-    m_attachmentChip->setFixedHeight(0);
+    if (m_attachmentChip) {  // hardening: guard m_attachmentChip
+        m_attachmentChip->setText("");
+        m_attachmentChip->setVisible(false);
+        m_attachmentChip->setFixedHeight(0);
+    }
 
     if (!m_recordedAudioPath.isEmpty()) {
         QFileInfo audioInfo(m_recordedAudioPath);
@@ -3469,10 +3499,11 @@ void AIPanel::renderTranscript() {
 void AIPanel::appendErrorBubble(const QString &text) {
     ChatMessage message;
     message.role = ChatMessage::Error;
-    message.text = text;
+    // hardening: never push a totally empty error — the user must see SOMETHING.
+    message.text = text.isEmpty() ? QStringLiteral("AI request failed.") : text;
     m_messages.push_back(message);
     scheduleChatSave();
-    renderTranscript();
+    if (m_chatLayout) renderTranscript();  // hardening: skip render when chat surface not built yet
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4386,13 +4417,17 @@ void AIPanel::beginAssistantBubble() {
     m_streamingStatsTimer->start();
     if (m_chatArea) {
         QTimer::singleShot(0, m_chatArea, [this]() {
-            m_chatArea->verticalScrollBar()->setValue(
-                m_chatArea->verticalScrollBar()->maximum());
+            // hardening: re-check m_chatArea inside the deferred lambda — the
+            // panel could be destroyed between the singleShot post and fire.
+            if (!m_chatArea) return;
+            QScrollBar *sb = m_chatArea->verticalScrollBar();
+            if (sb) sb->setValue(sb->maximum());
         });
     }
 }
 
 void AIPanel::streamIntoAssistantBubble(const QString &token) {
+    if (!m_chatLayout) return;  // hardening: drop tokens if chat surface is gone
     if (!m_inAssistantBubble) beginAssistantBubble();
 
     // Count this token for the live streaming-stats display. Ollama emits
@@ -4525,6 +4560,7 @@ QFrame *aiAddToolCallCard(QVBoxLayout *target,
 
 void AIPanel::handleToolCall(const QString &id, const QString &name,
                              const QJsonObject &args) {
+    if (!m_chatLayout) return;  // hardening: drop tool calls if chat surface is gone
     // Hard cap: 25 tool calls per user turn — match Cursor / Aider's
     // budget. Soft cap (10 consecutive) is handled implicitly by
     // emitting a system-reminder string into the next round.
@@ -4613,25 +4649,34 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
     call.args = args;
     AiTools::ToolResult result = AiTools::execute(call, m_workspaceRoot);
 
+    // hardening: shared JSON-parse helper. AiTools::execute always returns
+    // valid compact JSON, but if a future change returns garbage (or the
+    // content gets truncated/corrupted across some IPC layer) we don't
+    // want to crash on .toObject() of a non-object QJsonValue.
+    auto parseResultBody = [](const QString &content) -> QJsonObject {
+        QJsonParseError perr{};
+        const QJsonDocument jd = QJsonDocument::fromJson(content.toUtf8(), &perr);
+        if (perr.error != QJsonParseError::NoError || !jd.isObject()) return QJsonObject();
+        const QJsonValue rv = jd.object().value("result");
+        return rv.isObject() ? rv.toObject() : QJsonObject();
+    };
+
     // Build a one-line result summary for the card UI.
     QString resultSummary;
     if (result.isError) {
         resultSummary = "✗ " + result.errorKind;
     } else if (name == "read_file") {
         // Pull lines/truncated from the JSON content for a tight summary.
-        QJsonDocument jd = QJsonDocument::fromJson(result.content.toUtf8());
-        QJsonObject body = jd.object().value("result").toObject();
+        const QJsonObject body = parseResultBody(result.content);  // hardening: shared safe-parse
         const int n = body.value("lines_emitted").toInt();
         const bool tr = body.value("truncated").toBool();
         resultSummary = QString("%1 lines%2").arg(n).arg(tr ? " (truncated)" : "");
     } else if (name == "list_dir") {
-        QJsonDocument jd = QJsonDocument::fromJson(result.content.toUtf8());
-        QJsonObject body = jd.object().value("result").toObject();
+        const QJsonObject body = parseResultBody(result.content);  // hardening: shared safe-parse
         const int n = body.value("entries").toArray().size();
         resultSummary = QString("%1 entries").arg(n);
     } else if (name == "write_file") {
-        QJsonDocument jd = QJsonDocument::fromJson(result.content.toUtf8());
-        QJsonObject body = jd.object().value("result").toObject();
+        const QJsonObject body = parseResultBody(result.content);  // hardening: shared safe-parse
         const int bytes = body.value("bytes_written").toInt();
         const QString mode = body.value("mode").toString();
         const bool created = body.value("created").toBool();
@@ -4641,16 +4686,14 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
         const QString absPath = body.value("abs_path").toString();
         if (!absPath.isEmpty()) emit fileWrittenByAgent(absPath, created);
     } else if (name == "search") {
-        QJsonDocument jd = QJsonDocument::fromJson(result.content.toUtf8());
-        QJsonObject body = jd.object().value("result").toObject();
+        const QJsonObject body = parseResultBody(result.content);  // hardening: shared safe-parse
         const int total = body.value("total_matches").toInt();
         const int files = body.value("files_scanned").toInt();
         const bool tr = body.value("truncated").toBool();
         resultSummary = QString("%1 matches in %2 files%3")
                             .arg(total).arg(files).arg(tr ? " (truncated)" : "");
     } else if (name == "apply_diff") {
-        QJsonDocument jd = QJsonDocument::fromJson(result.content.toUtf8());
-        QJsonObject body = jd.object().value("result").toObject();
+        const QJsonObject body = parseResultBody(result.content);  // hardening: shared safe-parse
         const int hunks = body.value("hunks_applied").toInt();
         resultSummary = QString("%1 hunk%2 applied").arg(hunks).arg(hunks == 1 ? "" : "s");
         // Reload the editor for the modified file.
@@ -4673,6 +4716,11 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
 
 void AIPanel::flushPendingToolResults() {
     if (m_pendingToolResults.isEmpty()) return;
+    if (!m_ollama) {  // hardening: guard m_ollama (continueWithToolResults would deref a null nam)
+        m_pendingToolResults = QJsonArray();
+        appendErrorBubble(QStringLiteral("AI client unavailable — tool-call results dropped."));
+        return;
+    }
 
     const QJsonArray batch = m_pendingToolResults;
     m_pendingToolResults = QJsonArray();
@@ -4732,11 +4780,13 @@ void AIPanel::attachFile() {
     else if (kind == "pptx") icon = "📙";
     else if (kind == "xlsx") icon = "📗";
 
-    m_attachmentChip->setText(QString("%1 %2 (%3 KB) — will be included as context. Click chip to remove.")
-                              .arg(icon).arg(name).arg(sizeKb));
-    m_attachmentChip->setVisible(true);
-    m_attachmentChip->setFixedHeight(24);
-    m_attachmentChip->installEventFilter(this);  // catch click → clear
+    if (m_attachmentChip) {  // hardening: guard m_attachmentChip
+        m_attachmentChip->setText(QString("%1 %2 (%3 KB) — will be included as context. Click chip to remove.")
+                                  .arg(icon).arg(name).arg(sizeKb));
+        m_attachmentChip->setVisible(true);
+        m_attachmentChip->setFixedHeight(24);
+        m_attachmentChip->installEventFilter(this);  // catch click → clear
+    }
 
     setStatus(QString("✓ Attached: %1 (%2)").arg(name).arg(kind), false);
 }
