@@ -33,3 +33,6 @@ images/
 vendor/duckdb/libduckdb.zip
 vendor/duckdb/libduckdb.so
 vendor/duckdb/libduckdb_static.a
+
+# Vendored binary deps (downloaded by build scripts)
+vendor/
