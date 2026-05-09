@@ -196,7 +196,17 @@ static QString toolModeLayer() {
         "(.ssh, .pem, .key, /etc/passwd, etc.) are refused. Prefer write_file "
         "for new files or full rewrites; prefer apply_diff for surgical edits "
         "to large existing files. After writing, the user's editor auto-opens "
-        "or reloads the file — no need to ask them to refresh."
+        "or reloads the file — no need to ask them to refresh. "
+        "GIT (read-only): `git_status()` returns branch + ahead/behind + "
+        "staged/modified/untracked file lists; `git_diff(staged?, path?)` "
+        "returns the unified diff (capped 32 KB); `git_log(max_count?, path?)` "
+        "returns recent commits as {hash, author, date, subject} (default 20, "
+        "max 100); `git_branch_list()` returns local branches with upstream "
+        "tracking; `git_show(commit)` returns metadata + diff for a sha or "
+        "HEAD~N (capped 32 KB). These tools are inspection-only — there is "
+        "no add / commit / push / fetch / pull / reset / merge tool, so do "
+        "not promise to perform mutations; if asked, describe what you would "
+        "do and let the user run it themselves."
     );
 }
 

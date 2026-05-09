@@ -2,6 +2,7 @@
 
 #include "csvanalyst.h"
 #include "dbconnections.h"
+#include "git_tools.h"
 
 #include <QDir>
 #include <QDirIterator>
@@ -612,6 +613,111 @@ QJsonArray availableTools() {
             "table. Available only when Data Analyst Mode is on. Use this "
             "instead of asking the model to manually scan a CSV — querying "
             "is exact, fast, and cheap on the model's context budget.",
+            params));
+    }
+
+    // git_status ---------------------------------------------------
+    // Read-only git inspection — branch, ahead/behind, staged + modified
+    // + untracked file lists. Backed by `git status --porcelain=v2`.
+    {
+        QJsonObject params;
+        params["type"] = "object";
+        params["properties"] = QJsonObject{};
+        params["required"] = QJsonArray{};
+        tools.push_back(makeTool(
+            "git_status",
+            "Show the working-tree status of the user's git workspace. "
+            "Returns current branch, upstream, ahead/behind counts, plus "
+            "arrays of staged, modified, untracked, and conflicted file "
+            "paths. Read-only; does not change anything. Returns error_kind: "
+            "no_workspace if no folder is open, not_a_repo if the workspace "
+            "is not a git checkout.",
+            params));
+    }
+
+    // git_diff -----------------------------------------------------
+    // Working-tree or staged unified diff. Capped at 32 KB.
+    {
+        QJsonObject props;
+        props["staged"] = QJsonObject{
+            {"type", "boolean"},
+            {"description", "Default false — diff working tree against HEAD. Set true to diff the staging area (--cached)."}
+        };
+        props["path"] = QJsonObject{
+            {"type", "string"},
+            {"description", "Optional workspace-relative path to limit the diff to a single file or subdirectory."}
+        };
+        QJsonObject params;
+        params["type"] = "object";
+        params["properties"] = props;
+        params["required"] = QJsonArray{};
+        tools.push_back(makeTool(
+            "git_diff",
+            "Show a unified diff of changes in the user's git workspace. "
+            "By default diffs the working tree against HEAD; pass staged:true "
+            "for the staged-vs-HEAD diff. Optional path argument narrows to a "
+            "specific file. Output capped at 32 KB; truncated:true is set "
+            "when capped. Read-only.",
+            params));
+    }
+
+    // git_log ------------------------------------------------------
+    // Recent commit list with hash / author / date / subject. Cap 100.
+    {
+        QJsonObject props;
+        props["max_count"] = QJsonObject{
+            {"type", "integer"},
+            {"description", "Number of commits to return. Default 20, hard cap 100."}
+        };
+        props["path"] = QJsonObject{
+            {"type", "string"},
+            {"description", "Optional workspace-relative path — limit log to commits touching that file or directory."}
+        };
+        QJsonObject params;
+        params["type"] = "object";
+        params["properties"] = props;
+        params["required"] = QJsonArray{};
+        tools.push_back(makeTool(
+            "git_log",
+            "Return the most recent commits in the user's git workspace as a "
+            "structured array of {hash, author, date, subject}. Default 20 "
+            "commits, max 100. Optional path argument scopes to commits that "
+            "touched a particular file. Read-only.",
+            params));
+    }
+
+    // git_branch_list ----------------------------------------------
+    // Local branches + their tracking refs + which is current.
+    {
+        QJsonObject params;
+        params["type"] = "object";
+        params["properties"] = QJsonObject{};
+        params["required"] = QJsonArray{};
+        tools.push_back(makeTool(
+            "git_branch_list",
+            "List local branches in the user's git workspace, plus the "
+            "current branch and each branch's upstream tracking ref. "
+            "Read-only.",
+            params));
+    }
+
+    // git_show -----------------------------------------------------
+    // Full commit object — message + diff. Capped at 32 KB.
+    {
+        QJsonObject props;
+        props["commit"] = QJsonObject{
+            {"type", "string"},
+            {"description", "Commit reference. Accepts a full or abbreviated SHA (e.g. 'a1b2c3d'), a relative ref (HEAD, HEAD~1, HEAD~3), or a branch name. Must NOT start with '-' or contain shell metacharacters."}
+        };
+        QJsonObject params;
+        params["type"] = "object";
+        params["properties"] = props;
+        params["required"] = QJsonArray{ "commit" };
+        tools.push_back(makeTool(
+            "git_show",
+            "Show full metadata + diff for a single commit (header, author, "
+            "message, file changes). Output capped at 32 KB; truncated:true "
+            "is set when capped. Read-only.",
             params));
     }
 
@@ -1495,13 +1601,22 @@ ToolResult executeCsvQuery(const ToolCall &call, const QString &workspaceRoot) {
 } // anonymous namespace
 
 ToolResult execute(const ToolCall &call, const QString &workspaceRoot) {
-    if (call.name == "read_file")  return executeReadFile(call, workspaceRoot);
-    if (call.name == "list_dir")   return executeListDir(call, workspaceRoot);
-    if (call.name == "write_file") return executeWriteFile(call, workspaceRoot);
-    if (call.name == "search")     return executeSearch(call, workspaceRoot);
-    if (call.name == "apply_diff") return executeApplyDiff(call, workspaceRoot);
-    if (call.name == "query_sql")  return executeQuerySql(call);
-    if (call.name == "csv_query")  return executeCsvQuery(call, workspaceRoot);
+    if (call.name == "read_file")       return executeReadFile(call, workspaceRoot);
+    if (call.name == "list_dir")        return executeListDir(call, workspaceRoot);
+    if (call.name == "write_file")      return executeWriteFile(call, workspaceRoot);
+    if (call.name == "search")          return executeSearch(call, workspaceRoot);
+    if (call.name == "apply_diff")      return executeApplyDiff(call, workspaceRoot);
+    if (call.name == "query_sql")       return executeQuerySql(call);
+    if (call.name == "csv_query")       return executeCsvQuery(call, workspaceRoot);
+    // Read-only git inspection tools — branch / status / diff / log /
+    // show / branch_list. Implemented in src/git_tools.cpp; the QProcess
+    // verb list is hard-coded so there's no path through these to mutate
+    // the repo.
+    if (call.name == "git_status")      return GitTools::executeGitStatus(call, workspaceRoot);
+    if (call.name == "git_diff")        return GitTools::executeGitDiff(call, workspaceRoot);
+    if (call.name == "git_log")         return GitTools::executeGitLog(call, workspaceRoot);
+    if (call.name == "git_branch_list") return GitTools::executeGitBranchList(call, workspaceRoot);
+    if (call.name == "git_show")        return GitTools::executeGitShow(call, workspaceRoot);
     return makeError(call, "io_error",
                      "Unknown tool: '" + call.name + "'");
 }

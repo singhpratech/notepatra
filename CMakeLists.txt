@@ -167,6 +167,7 @@ set(SOURCES
     src/ai_intent.cpp
     src/ai_systemprompt.cpp
     src/ai_tools.cpp
+    src/git_tools.cpp
     src/dbconnections.cpp
     src/csvanalyst.cpp
     src/chartrender.cpp
@@ -544,6 +545,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_tools.cpp")
     add_executable(test_ai_tools
         test_ai_tools.cpp
         src/ai_tools.cpp
+        src/git_tools.cpp
         src/csvanalyst.cpp
         src/dbconnections.cpp
     )
@@ -565,6 +567,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_dataanalyst.cpp
         test_ai_dataanalyst.cpp
         src/ai_systemprompt.cpp
         src/ai_tools.cpp
+        src/git_tools.cpp
         src/chartrender.cpp
         src/csvanalyst.cpp
         src/dbconnections.cpp
