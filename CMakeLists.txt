@@ -187,6 +187,11 @@ set(SOURCES
     src/welcome.cpp
     src/projectsearch.cpp
     src/updater.cpp
+    # v0.2 Coding-mode revamp (Slice B+C) — Composer's Edit Plan list and
+    # per-file diff preview. Drops into m_composerArea once Slice A's tab
+    # split lands.
+    src/diff_view.cpp
+    src/edit_plan.cpp
 )
 
 set(HEADERS
@@ -231,6 +236,9 @@ set(HEADERS
     src/ollamastatus.h
     src/themes.h
     src/config.h
+    # v0.2 Coding-mode revamp (Slice B+C)
+    src/diff_view.h
+    src/edit_plan.h
 )
 
 # ── Platform-specific resources ──
@@ -749,6 +757,48 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_credscrub.cpp")
     add_test(NAME test_credscrub COMMAND $<TARGET_FILE:test_credscrub>)
     set_tests_properties(test_credscrub PROPERTIES LABELS "unit;security;credscrub")
     message(STATUS "Security test enabled — target: test_credscrub")
+endif()
+
+# v0.2 Coding-mode revamp — smoke test for EditPlanList + DiffView. Builds
+# only the two new sources plus rustbridge (the Rust diff path) so it stays
+# cheap and never accidentally links aipanel.cpp (which would drag in the
+# whole UI tree).
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_edit_plan.cpp")
+    add_executable(test_edit_plan
+        test_edit_plan.cpp
+        src/edit_plan.cpp
+        src/diff_view.cpp
+        src/rustbridge.cpp
+    )
+    add_dependencies(test_edit_plan rust_core)
+    target_include_directories(test_edit_plan PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+    )
+    target_link_libraries(test_edit_plan PRIVATE
+        Qt5::Core
+        Qt5::Gui
+        Qt5::Widgets
+        ${RUST_LIB}
+    )
+    if(WIN32)
+        # Rust staticlib pulls in winsock / crypto / ntdll. Same set the
+        # main notepatra target links against — without these the stdlib's
+        # sync I/O symbols go unresolved.
+        target_link_libraries(test_edit_plan PRIVATE
+            ws2_32 userenv bcrypt ntdll
+            advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32
+        )
+    elseif(APPLE)
+        target_link_libraries(test_edit_plan PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_edit_plan PRIVATE pthread dl m)
+    endif()
+    notepatra_add_qt_test(test_edit_plan)
+    set_tests_properties(test_edit_plan PROPERTIES LABELS "smoke;ui;coding-mode")
+    message(STATUS "Smoke test enabled — target: test_edit_plan")
 endif()
 
 # v0.1.55 — DuckDB smoke test. Validates RAII handle lifecycle, streaming
