@@ -7,6 +7,69 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.53] — 2026-05-08
+
+**Curated model lists per backend + Data Analyst welcome card.**
+
+### Added — curated model lists
+
+The model dropdown previously showed whatever the live `/v1/models` endpoint
+returned: useful for Ollama (your pulled models) but useless for OpenRouter
+(100+ unsorted models) or for `llama.cpp` (just the loaded one). Now each
+backend gets a curated catalog when relevant:
+
+* **`llama.cpp` backend**: 12 popular GGUF models (Qwen2.5-Coder 1.5B / 7B /
+  14B, Qwen2.5 7B, Llama 3.2 3B / 3.1 8B, Phi-4 14B, Gemma 2 2B / 9B,
+  Mistral 7B v0.3, DeepSeek-Coder-V2-Lite, StarCoder2 3B). Each entry's
+  tooltip carries the HuggingFace direct-download URL. The currently-loaded
+  model (if `llama-server` is running) appears at the top with a `●`
+  marker; the catalog follows below as recommended picks.
+* **OpenRouter backend**: 13 cross-provider picks — Claude Sonnet 4.5 / Opus
+  4.5 / Haiku 4.5, GPT-5 / GPT-5 mini / GPT-4o / o1-mini, Gemini 2.5 Pro /
+  Flash, DeepSeek R1, Llama 3.3 70B, Qwen2.5-Coder 32B, Mistral Large.
+  Tooltip shows price per million tokens where known. Live `/v1/models`
+  output is appended below.
+* **OpenAI direct backend**: 6 official models — GPT-5 / GPT-5 mini /
+  GPT-4o / GPT-4o mini / o1 / o1-mini.
+* **LM Studio + Jan**: unchanged from before — show whatever the local
+  server is serving via `/v1/models`. Each app has its own download UI;
+  Notepatra doesn't duplicate it.
+
+### Added — Data Analyst welcome card (`AIPanel`)
+
+When the user toggles into Data Analyst mode on a fresh chat, a styled
+orange card now appears at the top of the chat area showing:
+
+* **Title**: "📊  Data Analyst Mode"
+* **One-paragraph explainer**
+* **Three clickable example prompts** (chips) — clicking fills the input
+  with the example
+* **Connection status** — number of saved DB connections + a "Manage
+  Connections…" button that opens the CRUD dialog
+* **Model capability indicator** — "✓ capable for Data mode" (green) or
+  "⚠ too small for multi-table SQL" (orange) with a recommended fix
+  (`ollama pull qwen2.5-coder:14b` for local users, or a frontier cloud
+  model)
+* **Hide button** — sticky via `Config::aiHideDataWelcome`
+
+The card removes itself once the chat has any content (one prompt sent)
+and re-appears if the user clicks Reset to clear the chat.
+
+### Fixed — capability banner now mentions a local fix
+
+Pre-fix, the orange "model too small" banner only suggested cloud models
+("Try Claude Sonnet / GPT-5 / Gemini 2.5 Pro"), making local-Ollama users
+think they had to pay for a cloud API. New banner: "Try
+`ollama pull qwen2.5-coder:14b` (~9 GB) or a cloud model
+(Claude Sonnet 4.5 / GPT-5 / Gemini 2.5)". One tight line that fits
+alongside the welcome card.
+
+### Tests
+
+C++ 19 / 19 + Rust 119 / 119 still pass. Build clean, no warnings.
+
+---
+
 ## [0.1.52] — 2026-05-08
 
 **Toolbar icon HiDPI rendering + Project Search button visibility.**

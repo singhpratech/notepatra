@@ -76,6 +76,12 @@ public:
     // Mutually exclusive with future aiCodingMode toggle persistence.
     bool aiDataMode = false;
 
+    // v0.1.53 — when true, the Data Analyst welcome card (model capability +
+    // connection status + example prompt chips) is suppressed. Default
+    // false: card shows on first Data-mode entry of every fresh chat,
+    // until the user clicks "Hide".
+    bool aiHideDataWelcome = false;
+
     // Session
     QStringList recentFiles;
     int maxRecent = 15;
@@ -119,6 +125,7 @@ public:
         aiBaseUrl = o.value("aiBaseUrl").toString(aiBaseUrl);
         aiApiKey  = o.value("aiApiKey").toString(aiApiKey);
         aiDataMode = o.value("aiDataMode").toBool(aiDataMode);
+        aiHideDataWelcome = o.value("aiHideDataWelcome").toBool(aiHideDataWelcome);
         windowX = o.value("windowX").toInt(windowX);
         windowY = o.value("windowY").toInt(windowY);
         windowW = o.value("windowW").toInt(windowW);
@@ -162,6 +169,7 @@ public:
         o["aiBaseUrl"] = aiBaseUrl;
         o["aiApiKey"]  = aiApiKey;
         o["aiDataMode"] = aiDataMode;
+        o["aiHideDataWelcome"] = aiHideDataWelcome;
         o["windowX"] = windowX;
         o["windowY"] = windowY;
         o["windowW"] = windowW;

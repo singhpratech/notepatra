@@ -29,6 +29,8 @@
 #include <QTextDocument>
 #include <QFrame>
 #include <QButtonGroup>
+#include <QStandardItemModel>
+#include <QStandardItem>
 #include <QAbstractButton>
 #include <QScrollArea>
 #include <QProcess>
@@ -830,6 +832,16 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         if (m_resultActionsWrap) m_resultActionsWrap->setVisible(!coding);
 
         if (m_manageConnsBtn) m_manageConnsBtn->setVisible(data);
+
+        // v0.1.53 — show the welcome card whenever Data mode is on AND
+        // the chat is empty AND the user hasn't dismissed it. Always
+        // shown regardless of banner state.
+        if (data && m_messages.isEmpty() && !Config::instance().aiHideDataWelcome) {
+            renderDataWelcomeCard();
+        } else {
+            removeDataWelcomeCard();
+        }
+
         if (m_dataCapBanner) {
             if (!data) {
                 m_dataCapBanner->setVisible(false);
@@ -839,12 +851,16 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
                 if (capable) {
                     m_dataCapBanner->setVisible(false);
                 } else {
-                    QStringList suggested = AiTools::suggestedModelsForDataAnalysis().mid(0, 3);
+                    // v0.1.53 — single-line tight banner. The welcome card
+                    // below carries the rich version with examples + chips;
+                    // this banner just flags the model issue at a glance.
                     m_dataCapBanner->setText(tr(
-                        "⚠ %1 may struggle with multi-table SQL and chart specs. "
-                        "Try one of: %2.")
-                            .arg(modelName.isEmpty() ? tr("(no model selected)") : modelName,
-                                 suggested.join(QStringLiteral(", "))));
+                        "⚠ %1 is too small — try <code>ollama pull qwen2.5-coder:14b</code> "
+                        "(~9 GB) or a cloud model (Claude Sonnet 4.5 / GPT-5 / Gemini 2.5).")
+                            .arg(modelName.isEmpty() ? tr("(no model selected)") : modelName));
+                    m_dataCapBanner->setTextFormat(Qt::RichText);
+                    m_dataCapBanner->setWordWrap(true);
+                    m_dataCapBanner->setMaximumHeight(32);
                     m_dataCapBanner->setVisible(true);
                 }
             }
@@ -878,7 +894,10 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     connect(m_dataMode,   &QAbstractButton::toggled, this, [applyMode](bool on) { if (on) applyMode(); });
 
     // Refresh the data-mode capability banner when the user picks a
-    // different model.
+    // different model. v0.1.53: includes the local recommendation
+    // (`qwen2.5-coder:14b`) — pre-fix the suggestion list was cloud-only,
+    // which made local-Ollama users think the only fix was paying for a
+    // cloud API.
     if (m_modelCombo) {
         connect(m_modelCombo, &QComboBox::currentTextChanged,
                 this, [this](const QString &modelName) {
@@ -887,13 +906,18 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             if (capable) {
                 m_dataCapBanner->setVisible(false);
             } else {
-                QStringList suggested = AiTools::suggestedModelsForDataAnalysis().mid(0, 3);
                 m_dataCapBanner->setText(tr(
-                    "⚠ %1 may struggle with multi-table SQL and chart specs. "
-                    "Try one of: %2.")
-                        .arg(modelName.isEmpty() ? tr("(no model selected)") : modelName,
-                             suggested.join(QStringLiteral(", "))));
+                    "⚠ %1 is too small for reliable multi-table SQL and chart specs.\n"
+                    "<b>Local (free)</b>: <code>ollama pull qwen2.5-coder:14b</code>  (≈9 GB)\n"
+                    "<b>Cloud</b>: Claude Sonnet 4.5 · GPT-5 · Gemini 2.5 Pro · DeepSeek-V3")
+                        .arg(modelName.isEmpty() ? tr("(no model selected)") : modelName));
+                m_dataCapBanner->setTextFormat(Qt::RichText);
                 m_dataCapBanner->setVisible(true);
+            }
+            // v0.1.53 — refresh the welcome card to show the new model + capability.
+            if (m_dataWelcomeFrame && m_messages.isEmpty()) {
+                removeDataWelcomeCard();
+                renderDataWelcomeCard();
             }
         });
     }
@@ -1263,6 +1287,214 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     connect(m_ollama, &OllamaClient::modelsListed, this, [this](const QStringList &models) {
         QString prev = m_modelCombo->currentText();
         m_modelCombo->clear();
+
+        // v0.1.53 — when the user picks "llama.cpp (GGUF)" in the backend
+        // dropdown, llama-server's /v1/models endpoint only returns the
+        // single model that's currently loaded (or nothing if no server
+        // is running). That's not a "list" the user can pick from. So we
+        // augment the dropdown with a curated catalog of well-known GGUF
+        // models — they pick one, then download + run llama-server with
+        // that model. Each item's userData carries the HuggingFace direct-
+        // download URL so a future "Download + start server" wizard can
+        // pull the file. For now, the names + tooltips guide the user.
+        const QString backendNow = Config::instance().aiBackend;
+        const bool isLlamaCpp = backendNow.compare("llama.cpp", Qt::CaseInsensitive) == 0;
+
+        if (isLlamaCpp) {
+            // Group: actually-loaded model first (if any), then catalog.
+            if (!models.isEmpty()) {
+                m_modelCombo->addItem(QString("● Loaded: %1").arg(models.first()));
+                m_modelCombo->setItemData(0, models.first(), Qt::UserRole);
+                m_modelCombo->insertSeparator(m_modelCombo->count());
+            }
+            struct GgufEntry {
+                const char *label;     // dropdown text
+                const char *params;    // "1.5B" etc — for display
+                const char *family;    // group separator
+                const char *url;       // HuggingFace GGUF URL (Q4_K_M)
+                const char *useCase;   // tooltip
+            };
+            static const GgufEntry CATALOG[] = {
+                {"Qwen2.5-Coder 1.5B (Q4_K_M)", "1.5B", "Qwen — code",
+                    "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+                    "Tiny code model — fast on CPU. ~1 GB. Great default."},
+                {"Qwen2.5-Coder 7B (Q4_K_M)", "7B", "Qwen — code",
+                    "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+                    "Best small-model coding choice. ~4.7 GB."},
+                {"Qwen2.5-Coder 14B (Q4_K_M)", "14B", "Qwen — code",
+                    "https://huggingface.co/Qwen/Qwen2.5-Coder-14B-Instruct-GGUF/resolve/main/qwen2.5-coder-14b-instruct-q4_k_m.gguf",
+                    "Excellent code model — needs 16 GB+ RAM. ~8.4 GB."},
+                {"Qwen2.5 7B (Q4_K_M)", "7B", "Qwen — chat",
+                    "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf",
+                    "General-purpose chat model from Alibaba."},
+                {"Llama 3.2 3B (Q4_K_M)", "3B", "Meta — small",
+                    "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+                    "Small, fast Meta model. ~2 GB. Good for short chats."},
+                {"Llama 3.1 8B (Q4_K_M)", "8B", "Meta — chat",
+                    "https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+                    "Capable mid-size Meta model. ~4.9 GB."},
+                {"Phi-4 14B (Q4_K_M)", "14B", "Microsoft",
+                    "https://huggingface.co/bartowski/phi-4-GGUF/resolve/main/phi-4-Q4_K_M.gguf",
+                    "Microsoft's smart compact model. ~9 GB."},
+                {"Gemma 2 2B (Q4_K_M)", "2B", "Google",
+                    "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf",
+                    "Google's smallest Gemma — great on weak hardware. ~1.6 GB."},
+                {"Gemma 2 9B (Q4_K_M)", "9B", "Google",
+                    "https://huggingface.co/bartowski/gemma-2-9b-it-GGUF/resolve/main/gemma-2-9b-it-Q4_K_M.gguf",
+                    "Google's mid-size Gemma. ~5.8 GB."},
+                {"Mistral 7B Instruct v0.3 (Q4_K_M)", "7B", "Mistral",
+                    "https://huggingface.co/bartowski/Mistral-7B-Instruct-v0.3-GGUF/resolve/main/Mistral-7B-Instruct-v0.3-Q4_K_M.gguf",
+                    "Mistral's classic 7B chat model. ~4.4 GB."},
+                {"DeepSeek-Coder-V2-Lite (Q4_K_M)", "16B (MoE)", "DeepSeek",
+                    "https://huggingface.co/bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF/resolve/main/DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf",
+                    "MoE coding model — only 2.4B active params. ~10 GB."},
+                {"StarCoder2 3B (Q4_K_M)", "3B", "BigCode — code",
+                    "https://huggingface.co/bartowski/starcoder2-3b-GGUF/resolve/main/starcoder2-3b-Q4_K_M.gguf",
+                    "Compact code completion model. ~2 GB."},
+            };
+            QString lastFamily;
+            for (const auto &e : CATALOG) {
+                const QString fam = QString::fromUtf8(e.family);
+                if (fam != lastFamily) {
+                    if (!lastFamily.isEmpty()) m_modelCombo->insertSeparator(m_modelCombo->count());
+                    lastFamily = fam;
+                }
+                const QString label = QString::fromUtf8(e.label);
+                m_modelCombo->addItem(label);
+                const int idx = m_modelCombo->count() - 1;
+                m_modelCombo->setItemData(idx, label, Qt::UserRole);
+                m_modelCombo->setItemData(idx, QString::fromUtf8(e.url), Qt::UserRole + 1);
+                m_modelCombo->setItemData(idx,
+                    QString("%1 · %2 · %3 GB / RAM\n%4\n\nGGUF URL: %5")
+                        .arg(QString::fromUtf8(e.label),
+                             QString::fromUtf8(e.params),
+                             QString::fromUtf8(e.params).startsWith("1") ? "1-2" :
+                             QString::fromUtf8(e.params).startsWith("2") ? "2-3" :
+                             QString::fromUtf8(e.params).startsWith("3") ? "3-4" :
+                             QString::fromUtf8(e.params).startsWith("7") ? "5-8" : "8+",
+                             QString::fromUtf8(e.useCase),
+                             QString::fromUtf8(e.url)),
+                    Qt::ToolTipRole);
+            }
+            m_modelCombo->setEnabled(true);
+            int restoreIdx = m_modelCombo->findText(prev);
+            if (restoreIdx >= 0) m_modelCombo->setCurrentIndex(restoreIdx);
+            const QString status = models.isEmpty()
+                ? QString("llama.cpp catalog · %1 GGUF models · pick one and run "
+                          "`llama-server -m <file>` then click ↻").arg(sizeof(CATALOG)/sizeof(CATALOG[0]))
+                : QString("llama.cpp · loaded %1 · plus %2 catalog options below")
+                      .arg(models.first()).arg(sizeof(CATALOG)/sizeof(CATALOG[0]));
+            setStatus(status, false);
+            return;
+        }
+
+        // v0.1.53 — curated catalogs for cloud + local OpenAI-compat backends.
+        // Prepended ABOVE whatever the live /v1/models returned, so the user
+        // sees the recommended picks without losing access to everything else
+        // the server reports. Each entry's tooltip explains cost / capability
+        // tradeoff so users don't have to memorise model slugs.
+        const QString baseUrl = Config::instance().aiBaseUrl;
+        const bool isOpenRouter = baseUrl.contains("openrouter", Qt::CaseInsensitive);
+        const bool isOpenAI     = baseUrl.contains("openai.com", Qt::CaseInsensitive);
+        const bool isLMStudio   = baseUrl.contains(":1234", Qt::CaseInsensitive);
+        const bool isJan        = baseUrl.contains(":1337", Qt::CaseInsensitive);
+
+        struct CuratedModel { const char *slug; const char *label; const char *tip; };
+
+        // OpenRouter — top picks across providers; slugs are OpenRouter format.
+        // Pricing accurate as of 2026-Q2; user should still cross-check on
+        // openrouter.ai/models for current rates.
+        static const CuratedModel OPENROUTER_CATALOG[] = {
+            {"anthropic/claude-sonnet-4.5",   "Claude Sonnet 4.5  (recommended)",
+             "Best balance of speed and reasoning. ~$3 / $15 per M tokens."},
+            {"anthropic/claude-opus-4.5",     "Claude Opus 4.5  (smartest)",
+             "Anthropic's flagship — slowest but the highest-quality output. ~$15 / $75 per M."},
+            {"anthropic/claude-haiku-4.5",    "Claude Haiku 4.5  (fast)",
+             "Fastest Claude — great for short tasks. ~$1 / $5 per M."},
+            {"openai/gpt-5",                  "GPT-5",
+             "OpenAI's flagship reasoning model."},
+            {"openai/gpt-5-mini",             "GPT-5 mini  (cheap)",
+             "Smaller and cheaper GPT-5 variant."},
+            {"openai/gpt-4o",                 "GPT-4o",
+             "Multimodal GPT-4 class. ~$2.5 / $10 per M."},
+            {"openai/o1-mini",                "o1-mini  (reasoning, cheap)",
+             "Reasoning-tuned cheap variant. ~$3 / $12 per M."},
+            {"google/gemini-2.5-pro",         "Gemini 2.5 Pro",
+             "Google's flagship — large 2 M-token context."},
+            {"google/gemini-2.5-flash",       "Gemini 2.5 Flash  (cheap)",
+             "Fast cheap Google model."},
+            {"deepseek/deepseek-r1",          "DeepSeek R1  (reasoning)",
+             "Strong reasoning model — cheap relative to o1."},
+            {"meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B",
+             "Meta's open-weights flagship via OpenRouter."},
+            {"qwen/qwen-2.5-coder-32b-instruct",  "Qwen2.5-Coder 32B  (code)",
+             "Top-tier open-source coding model."},
+            {"mistralai/mistral-large",       "Mistral Large",
+             "Mistral's flagship — strong on multilingual."},
+        };
+
+        // OpenAI direct — current-gen models. Costs in USD per 1M tokens (in/out).
+        static const CuratedModel OPENAI_CATALOG[] = {
+            {"gpt-5",       "GPT-5  (recommended)",      "OpenAI's flagship."},
+            {"gpt-5-mini",  "GPT-5 mini  (cheap)",       "Smaller, cheaper GPT-5."},
+            {"gpt-4o",      "GPT-4o",                    "Multimodal GPT-4 class."},
+            {"gpt-4o-mini", "GPT-4o mini  (cheapest)",   "Tiny GPT-4o."},
+            {"o1",          "o1  (reasoning)",           "Premier reasoning model."},
+            {"o1-mini",     "o1-mini  (reasoning, cheap)", "Cheap reasoning model."},
+        };
+
+        const CuratedModel *catalog = nullptr;
+        size_t catalog_n = 0;
+        QString catalog_label;
+        if (isOpenRouter) { catalog = OPENROUTER_CATALOG; catalog_n = sizeof(OPENROUTER_CATALOG)/sizeof(OPENROUTER_CATALOG[0]); catalog_label = "OpenRouter recommended"; }
+        else if (isOpenAI) { catalog = OPENAI_CATALOG;     catalog_n = sizeof(OPENAI_CATALOG)/sizeof(OPENAI_CATALOG[0]);    catalog_label = "OpenAI"; }
+
+        if (catalog) {
+            // Header
+            m_modelCombo->addItem(QString("── %1 ──").arg(catalog_label));
+            qobject_cast<QStandardItemModel *>(m_modelCombo->model())
+                ->item(m_modelCombo->count() - 1)->setEnabled(false);
+            for (size_t i = 0; i < catalog_n; ++i) {
+                m_modelCombo->addItem(QString::fromUtf8(catalog[i].label));
+                const int idx = m_modelCombo->count() - 1;
+                m_modelCombo->setItemData(idx, QString::fromUtf8(catalog[i].slug), Qt::UserRole);
+                m_modelCombo->setItemData(idx, QString::fromUtf8(catalog[i].tip), Qt::ToolTipRole);
+            }
+            if (!models.isEmpty()) {
+                m_modelCombo->insertSeparator(m_modelCombo->count());
+                m_modelCombo->addItem("── all available ──");
+                qobject_cast<QStandardItemModel *>(m_modelCombo->model())
+                    ->item(m_modelCombo->count() - 1)->setEnabled(false);
+                m_modelCombo->addItems(models);
+            }
+            m_modelCombo->setEnabled(true);
+            // Default to first curated entry (skip the disabled header).
+            if (m_modelCombo->count() > 1) m_modelCombo->setCurrentIndex(1);
+            setStatus(QString("%1 — %2 curated picks · %3 total")
+                          .arg(catalog_label).arg(catalog_n).arg(models.size() + (int)catalog_n), false);
+            return;
+        }
+
+        // LM Studio / Jan — same shape as llama.cpp (local server, list what's loaded).
+        if (isLMStudio || isJan) {
+            if (models.isEmpty()) {
+                m_modelCombo->addItem(isLMStudio ? "(LM Studio offline)" : "(Jan offline)");
+                m_modelCombo->setEnabled(false);
+                setStatus(isLMStudio
+                    ? "LM Studio not running on :1234 — start it from the LM Studio app"
+                    : "Jan not running on :1337 — start it from the Jan app", true);
+            } else {
+                m_modelCombo->addItems(models);
+                m_modelCombo->setEnabled(true);
+                if (!models.isEmpty()) m_modelCombo->setCurrentIndex(0);
+                setStatus(QString("%1: %2 model%3 detected · using %4")
+                          .arg(isLMStudio ? "LM Studio" : "Jan")
+                          .arg(models.size()).arg(models.size() == 1 ? "" : "s")
+                          .arg(m_modelCombo->currentText()), false);
+            }
+            return;
+        }
+
         if (models.isEmpty()) {
             m_modelCombo->addItem("(no models installed)");
             m_modelCombo->setEnabled(false);
@@ -2028,6 +2260,7 @@ void AIPanel::clearChat() {
     updateVoiceButtonVisual(false);
 
     if (m_chatLayout) aiClearChat(m_chatLayout);
+    m_dataWelcomeFrame = nullptr;  // wiped by aiClearChat above; clear our pointer to avoid use-after-free
     m_currentAssistantText.clear();
     m_inAssistantBubble = false;
     m_streamingCard = nullptr;
@@ -2320,6 +2553,7 @@ void AIPanel::renderTranscript() {
     m_streamingTokenCount = 0;
     m_streamingStartMs = 0;
     aiClearChat(m_chatLayout);
+    m_dataWelcomeFrame = nullptr;  // pointed at a now-deleteLater'd widget
     m_streamingCard = nullptr;
     m_streamingBody = nullptr;
 
@@ -2345,6 +2579,16 @@ void AIPanel::renderTranscript() {
             }
         }
     }
+    // v0.1.53 — re-render the Data Analyst welcome card if we're in Data
+    // mode with an empty chat and the user hasn't dismissed it. Covers the
+    // "Reset" path (m_messages cleared → renderTranscript) and the initial
+    // first-mode-toggle path.
+    if (m_messages.isEmpty()
+        && m_dataMode && m_dataMode->isChecked()
+        && !Config::instance().aiHideDataWelcome) {
+        renderDataWelcomeCard();
+    }
+
     // Scroll to bottom after layout settles
     QTimer::singleShot(0, m_chatArea, [this]() {
         if (m_chatArea) {
@@ -2361,6 +2605,172 @@ void AIPanel::appendErrorBubble(const QString &text) {
     m_messages.push_back(message);
     scheduleChatSave();
     renderTranscript();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Data Analyst welcome card (v0.1.53)
+//
+// When the user toggles into Data mode for the first time on a fresh chat,
+// pop a rich card at the top of the chat area that explains what Data mode
+// does, shows the current model's capability check, lists saved DB
+// connections, and offers three clickable example prompts to seed the input.
+//
+// The card is removed automatically once any chat content exists or the
+// user clicks "Hide". The "Hide" choice is sticky via Config::aiHideDataWelcome.
+// ─────────────────────────────────────────────────────────────────────────────
+void AIPanel::renderDataWelcomeCard() {
+    if (!m_chatLayout) return;
+    if (m_dataWelcomeFrame) return;  // already shown
+
+    const AiPalette pal = aiPalette();
+    const QString modelName = m_modelCombo ? m_modelCombo->currentText() : QString();
+    const bool capable = AiTools::modelCapableOfDataAnalysis(modelName);
+    const int connCount = DbConnections::loadAll().size();
+
+    auto *card = new QFrame;
+    card->setFrameShape(QFrame::StyledPanel);
+    card->setStyleSheet(QString(
+        "QFrame { background: %1; border: 1px solid #FF9F43; border-radius: 10px; }"
+        "QLabel { background: transparent; color: %2; }")
+        .arg(pal.assistBg, pal.chatFg));
+
+    auto *cardLay = new QVBoxLayout(card);
+    cardLay->setContentsMargins(16, 14, 16, 14);
+    cardLay->setSpacing(10);
+
+    // Title row
+    auto *titleRow = new QHBoxLayout;
+    titleRow->setSpacing(8);
+    auto *title = new QLabel(QStringLiteral("📊  Data Analyst Mode"));
+    {
+        QFont f = title->font();
+        f.setPointSize(f.pointSize() + 2);
+        f.setBold(true);
+        title->setFont(f);
+        title->setStyleSheet("color: #FF9F43;");
+    }
+    titleRow->addWidget(title, 1);
+    auto *hideBtn = new QPushButton(QStringLiteral("Hide"));
+    hideBtn->setFlat(true);
+    hideBtn->setCursor(Qt::PointingHandCursor);
+    hideBtn->setToolTip("Don't show this card again — you can re-enable it from Preferences");
+    hideBtn->setStyleSheet(QString(
+        "QPushButton { color: %1; background: transparent; border: none; "
+        "padding: 2px 8px; font-size: 11px; }"
+        "QPushButton:hover { color: %2; }")
+        .arg(pal.muted, pal.accent));
+    connect(hideBtn, &QPushButton::clicked, this, [this]() {
+        Config::instance().aiHideDataWelcome = true;
+        Config::instance().save();
+        removeDataWelcomeCard();
+    });
+    titleRow->addWidget(hideBtn);
+    cardLay->addLayout(titleRow);
+
+    // One-paragraph explainer
+    auto *blurb = new QLabel(QStringLiteral(
+        "Ask questions about CSVs and saved database connections. The AI "
+        "can run real SQL, summarise tables, and render charts inline."));
+    blurb->setWordWrap(true);
+    blurb->setStyleSheet(QString("color: %1; font-size: 12px;").arg(pal.chatFg));
+    cardLay->addWidget(blurb);
+
+    // Example prompt chips — clicking fills the input + focuses it.
+    auto *chips = new QVBoxLayout;
+    chips->setSpacing(6);
+    static const char *EXAMPLES[] = {
+        "Top 10 customers by revenue last quarter",
+        "Plot monthly signups for 2024 as a line chart",
+        "Schema of users table — find duplicate emails",
+    };
+    for (const char *prompt : EXAMPLES) {
+        auto *chip = new QPushButton(QString::fromUtf8("›  ") + QString::fromUtf8(prompt));
+        chip->setCursor(Qt::PointingHandCursor);
+        chip->setStyleSheet(QString(
+            "QPushButton { background: %1; color: %2; border: 1px solid %3; "
+            "border-radius: 6px; padding: 6px 10px; text-align: left; font-size: 12px; }"
+            "QPushButton:hover { background: %4; border-color: #FF9F43; color: #FF9F43; }")
+            .arg(pal.codeBg, pal.chatFg, pal.assistBorder, pal.btnHover));
+        const QString text = QString::fromUtf8(prompt);
+        connect(chip, &QPushButton::clicked, this, [this, text]() {
+            if (m_customInput) {
+                m_customInput->setPlainText(text);
+                m_customInput->setFocus();
+                QTextCursor c = m_customInput->textCursor();
+                c.movePosition(QTextCursor::End);
+                m_customInput->setTextCursor(c);
+            }
+        });
+        chips->addWidget(chip);
+    }
+    cardLay->addLayout(chips);
+
+    // Status row — connection count + model capability.
+    auto *status = new QVBoxLayout;
+    status->setSpacing(4);
+
+    auto *connRow = new QHBoxLayout;
+    connRow->setSpacing(6);
+    auto *connLabel = new QLabel(connCount == 0
+        ? QStringLiteral("🔌  <b>No connections saved.</b>")
+        : QString::fromUtf8("🔌  <b>%1 connection%2 saved.</b>")
+              .arg(connCount).arg(connCount == 1 ? "" : "s"));
+    connLabel->setTextFormat(Qt::RichText);
+    connLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
+    connRow->addWidget(connLabel);
+    connRow->addStretch();
+    auto *manageBtn = new QPushButton(QStringLiteral("Manage Connections…"));
+    manageBtn->setCursor(Qt::PointingHandCursor);
+    manageBtn->setStyleSheet(QString(
+        "QPushButton { background: #FF9F43; color: white; border: none; "
+        "border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600; }"
+        "QPushButton:hover { background: #FFA94D; }"));
+    connect(manageBtn, &QPushButton::clicked, this, [this]() {
+        DbConnectionsDialog dlg(this);
+        dlg.exec();
+        // Refresh the card so the connection count updates.
+        if (m_dataWelcomeFrame) {
+            removeDataWelcomeCard();
+            renderDataWelcomeCard();
+        }
+    });
+    connRow->addWidget(manageBtn);
+    status->addLayout(connRow);
+
+    auto *modelLabel = new QLabel(capable
+        ? QString::fromUtf8("🤖  <b>%1</b> &nbsp;·&nbsp; <span style='color:#3FB950'>capable for Data mode ✓</span>")
+              .arg(modelName.isEmpty() ? QStringLiteral("(no model selected)") : modelName)
+        : QString::fromUtf8("🤖  <b>%1</b> &nbsp;·&nbsp; <span style='color:#FF9F43'>too small for multi-table SQL ⚠</span>")
+              .arg(modelName.isEmpty() ? QStringLiteral("(no model selected)") : modelName));
+    modelLabel->setTextFormat(Qt::RichText);
+    modelLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
+    status->addWidget(modelLabel);
+
+    if (!capable) {
+        auto *fix = new QLabel(QStringLiteral(
+            "&nbsp;&nbsp;&nbsp;<i>Pull a stronger local model:</i> "
+            "<code>ollama pull qwen2.5-coder:14b</code> &nbsp;(≈9 GB) "
+            "<br>&nbsp;&nbsp;&nbsp;<i>Or use a cloud model:</i> "
+            "Claude Sonnet 4.5 · GPT-5 · Gemini 2.5 Pro · DeepSeek-V3"));
+        fix->setTextFormat(Qt::RichText);
+        fix->setWordWrap(true);
+        fix->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
+        status->addWidget(fix);
+    }
+
+    cardLay->addLayout(status);
+
+    // Insert at the top of m_chatLayout (above the trailing stretch).
+    // m_chatLayout last item is the stretch (added in ctor at line ~979).
+    m_chatLayout->insertWidget(0, card);
+    m_dataWelcomeFrame = card;
+}
+
+void AIPanel::removeDataWelcomeCard() {
+    if (!m_dataWelcomeFrame) return;
+    m_dataWelcomeFrame->setParent(nullptr);
+    m_dataWelcomeFrame->deleteLater();
+    m_dataWelcomeFrame = nullptr;
 }
 
 void AIPanel::handleChatLink(const QUrl &url) {

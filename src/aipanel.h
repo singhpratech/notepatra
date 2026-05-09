@@ -193,6 +193,13 @@ private:
     QAbstractButton *m_chatMode = nullptr;    // Default — general chat assistant (no flag set)
     QPushButton *m_manageConnsBtn = nullptr;
     QLabel *m_dataCapBanner = nullptr;
+    // v0.1.53 — Data Analyst welcome card (model capability + connection
+    // status + example-prompt chips + Hide button). Lives inside the chat
+    // scroll area, shown only when Data mode is on AND chat is empty AND
+    // Config::aiHideDataWelcome is false.
+    QFrame *m_dataWelcomeFrame = nullptr;
+    void renderDataWelcomeCard();
+    void removeDataWelcomeCard();
     QLabel *m_statusLabel;
     QPushButton *m_applyCodeBtn; // one-click "replace selection with response code"
     // Clutter that hides when Coding Mode is on — we want the dock to feel
