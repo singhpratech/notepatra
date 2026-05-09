@@ -371,6 +371,28 @@ void Editor::setupEditor() {
     SendScintilla(SCI_SETSCROLLWIDTH, 1);
     SendScintilla(SCI_SETSCROLLWIDTHTRACKING, 1);
 
+    // v0.1.56 — multi-cursor / column-edit support.
+    // SCI_SETMULTIPLESELECTION              → allow more than one caret/selection
+    // SCI_SETADDITIONALSELECTIONTYPING      → typing inserts at every caret
+    // SCI_SETMULTIPASTE                     → paste duplicates to every selection
+    // SCI_SETADDITIONALCARETSBLINK / VISIBLE→ secondary carets render exactly like
+    //                                          the primary so the user sees them all
+    // SCI_SETRECTANGULARSELECTIONMODIFIER   → Alt+drag → column / rectangular select
+    //                                          (matches VS Code, Sublime, Notepad++)
+    // After this is enabled the user can:
+    //   • Ctrl+click anywhere to ADD a caret at that position
+    //   • Alt+drag down 50 lines to make a column selection
+    //   • Type once and the same text appears at every caret / column row
+    //   • Esc collapses back to a single caret
+    SendScintilla(SCI_SETMULTIPLESELECTION, 1);
+    SendScintilla(SCI_SETADDITIONALSELECTIONTYPING, 1);
+    SendScintilla(SCI_SETMULTIPASTE, SC_MULTIPASTE_EACH);
+    SendScintilla(SCI_SETADDITIONALCARETSBLINK, 1);
+    SendScintilla(SCI_SETADDITIONALCARETSVISIBLE, 1);
+    SendScintilla(SCI_SETRECTANGULARSELECTIONMODIFIER, SCMOD_ALT);
+    // Make additional selections visually distinct enough to see at a glance.
+    SendScintilla(SCI_SETADDITIONALSELALPHA, 90);
+
     setAutoCompletionCaseSensitivity(false);
     setAutoCompletionReplaceWord(true);
 

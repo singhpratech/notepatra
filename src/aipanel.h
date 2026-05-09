@@ -109,6 +109,12 @@ signals:
     // a fresh overwrite where the path didn't exist before).
     void fileWrittenByAgent(const QString &absPath, bool created);
 
+    // v0.1.56 — fired when the user clicks the expand (⛶) button in the
+    // header. MainWindow handles this by hiding sibling splitter widgets
+    // and resizing the AI dock to fill the window. `on=false` restores the
+    // previous splitter sizes and visibility.
+    void fullscreenToggled(bool on);
+
 private:
     void sendPrompt(const QString &action);
     void setStatus(const QString &text, bool error = false);
@@ -131,6 +137,17 @@ private:
     // the tools field for non-tool models, so we always send tools and
     // let the server decide.
     bool currentModelSupportsTools() const;
+
+    // v0.1.56 — paint each row in the model dropdown so the user can see at
+    // a glance which models are suitable for the active mode. Coding mode
+    // checks tool-call support (via the /api/show capabilities cache for
+    // Ollama, or the substring allowlist for cloud / llama.cpp). Data mode
+    // checks modelCapableOfDataAnalysis() — local must be ≥7B from a strong
+    // family. Chat mode is a no-op (any model is fine for chat). Called
+    // after every dropdown repopulate AND on mode toggle. Does NOT remove
+    // models from the list — the user can still pick them — it just dims
+    // and tooltips them so the choice is informed.
+    void decorateModelsByMode();
     // v0.1.55 — guided AI Settings dialog. Replaces the inline API-key
     // QLineEdit on the AI panel and the v0.1.54 ⚙ popup menu. Has one
     // section per cloud provider (OpenRouter, OpenAI) with: a link to

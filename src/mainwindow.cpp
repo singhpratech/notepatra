@@ -840,6 +840,47 @@ MainWindow::MainWindow() {
         // Not open — open it in a new tab.
         openFile(canonical);
     });
+    // v0.1.56 — fullscreen toggle for the AI dock. When the user clicks the
+    // ⛶ button in the panel header, hide every sibling widget in the
+    // splitter (file explorer, editor tabs) and resize the AI dock to take
+    // the whole window. Click again to restore. Splitter sizes + sibling
+    // visibility are saved at expand-time so restore is exact. Useful for
+    // heavy data-analyst sessions where the chat is the primary surface.
+    connect(m_aiDockPanel, &AIPanel::fullscreenToggled, this, [this](bool on) {
+        if (!m_splitter || !m_aiDockHost) return;
+        if (on) {
+            m_aiSavedSplitterSizes = m_splitter->sizes();
+            m_aiSavedSiblingVisibility.clear();
+            for (int i = 0; i < m_splitter->count(); ++i) {
+                QWidget *w = m_splitter->widget(i);
+                if (w == m_aiDockHost) continue;
+                m_aiSavedSiblingVisibility.insert(w, w->isVisible());
+                w->setVisible(false);
+            }
+            // Make sure the AI dock is visible AND takes 100 % of the splitter.
+            m_aiDockHost->setVisible(true);
+            QList<int> sizes;
+            const int total = m_splitter->size().width();
+            for (int i = 0; i < m_splitter->count(); ++i) {
+                sizes.append(m_splitter->widget(i) == m_aiDockHost ? total : 0);
+            }
+            m_splitter->setSizes(sizes);
+        } else {
+            // Restore sibling visibility BEFORE applying saved sizes — Qt
+            // ignores size hints for hidden widgets and would silently drop
+            // their slots back to 0.
+            for (auto it = m_aiSavedSiblingVisibility.constBegin();
+                 it != m_aiSavedSiblingVisibility.constEnd(); ++it) {
+                if (it.key()) it.key()->setVisible(it.value());
+            }
+            if (!m_aiSavedSplitterSizes.isEmpty()) {
+                m_splitter->setSizes(m_aiSavedSplitterSizes);
+            }
+            m_aiSavedSiblingVisibility.clear();
+            m_aiSavedSplitterSizes.clear();
+        }
+    });
+
     m_aiDockHost->setVisible(false);
     m_splitter->addWidget(m_aiDockHost);
 

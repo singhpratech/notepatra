@@ -133,6 +133,12 @@ private:
     QWidget *m_aiDockHost = nullptr;
     AIPanel *m_aiDockPanel = nullptr;
     bool m_aiDockSizedOnce = false;  // v0.1.48 — split 50/50 on first show
+    // v0.1.56 — saved state for the AI fullscreen toggle. When the user
+    // expands the AI dock, we hide sibling widgets and squash the splitter
+    // to give the dock 100 % of the width. These two members let the
+    // restore branch reverse that exactly.
+    QList<int> m_aiSavedSplitterSizes;
+    QHash<QWidget*, bool> m_aiSavedSiblingVisibility;
     void toggleAiDock();
     // Push current workspace state (all open editor tabs, current file,
     // selection, workspace root) into an AIPanel so the model can reason

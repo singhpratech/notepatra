@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.55 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.56 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -23,6 +23,16 @@ endif()
 if(WIN32 AND POLICY CMP0091)
     cmake_policy(SET CMP0091 NEW)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+endif()
+
+# v0.1.56: Force MSVC to interpret string literals as UTF-8.
+# Without this, MSVC reads non-ASCII bytes (e.g. the 🔒 emoji at U+1F512) as
+# the system code page (Windows-1252 on en-US), so QStringLiteral("🔒 Share")
+# becomes mojibake at compile time. Affects every emoji / accented / non-Latin
+# character in the codebase. The `/utf-8` flag sets both -execution-charset
+# and -source-charset to UTF-8 — the canonical fix.
+if(MSVC)
+    add_compile_options(/utf-8)
 endif()
 
 # ── Platform detection ──

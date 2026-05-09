@@ -12,6 +12,7 @@
 #include "config.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QtMath>
 #include <QLabel>
 #include <QFont>
 #include <QScrollBar>
@@ -531,6 +532,38 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // every desktop OS, no tofu risk — and the Windows-canonical close-
     // button red (#E81123) at rest, red background + white X on hover.
     // Theme-independent on purpose: should be prominent on every chrome.
+    // v0.1.56 — Expand-to-fullscreen button. Lets the user blow the AI dock
+    // out to take the entire MainWindow client area for heavy data-analyst
+    // and coding sessions where the chat is the primary surface. Works as
+    // a toggle: first click hides every sibling widget in the splitter and
+    // resizes the AI dock to fill it; second click restores the saved
+    // splitter sizes + sibling visibility. Implemented as a signal here +
+    // slot in MainWindow so this panel doesn't need to know about its
+    // splitter parent. Keyboard shortcut F11 also works (registered in
+    // MainWindow).
+    auto *expandBtn = new QPushButton(QString::fromUtf8("\xE2\x9B\xB6")); // U+26F6 SQUARE FOUR CORNERS
+    {
+        QFont f = expandBtn->font();
+        f.setPointSize(f.pointSize() > 0 ? f.pointSize() + 4 : 14);
+        f.setBold(true);
+        expandBtn->setFont(f);
+    }
+    expandBtn->setFixedSize(36, 28);
+    expandBtn->setCursor(Qt::PointingHandCursor);
+    expandBtn->setFlat(true);
+    expandBtn->setCheckable(true);
+    expandBtn->setToolTip(tr("Expand the AI panel to take the full window. "
+                             "Click again to restore. (F11)"));
+    expandBtn->setStyleSheet(
+        "QPushButton { background: transparent; border: none; "
+        "color: #888; padding: 0 0 2px 0; } "
+        "QPushButton:hover { background: rgba(120,120,120,0.18); color: #444; } "
+        "QPushButton:checked { background: rgba(204,120,92,0.18); color: #CC785C; }");
+    connect(expandBtn, &QPushButton::toggled, this, [this](bool on) {
+        emit fullscreenToggled(on);
+    });
+    headerLay->addWidget(expandBtn, 0, Qt::AlignRight);
+
     auto *closeBtn = new QPushButton(QString::fromUtf8("\xC3\x97"));  // U+00D7 MULTIPLICATION SIGN
     {
         QFont closeFont = closeBtn->font();
@@ -1054,9 +1087,36 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         emit codingModeRequested(coding);
     };
 
-    connect(m_chatMode,   &QAbstractButton::toggled, this, [applyMode](bool on) { if (on) applyMode(); });
-    connect(m_codingMode, &QAbstractButton::toggled, this, [applyMode](bool on) { if (on) applyMode(); });
-    connect(m_dataMode,   &QAbstractButton::toggled, this, [applyMode](bool on) { if (on) applyMode(); });
+    // v0.1.57 — Coding mode AUTO-EXPANDS the AI dock to fullscreen so the
+    // user gets the dedicated coding surface (Composer, multi-file edits,
+    // diff preview) at full size. Switching back to Chat / Data restores
+    // the previous splitter layout. The user can still hit ⛶ to override
+    // mid-session — if they do, that override stands until the next mode
+    // change.
+    connect(m_chatMode,   &QAbstractButton::toggled, this,
+            [this, applyMode](bool on) {
+                if (on) {
+                    applyMode();
+                    decorateModelsByMode();
+                    emit fullscreenToggled(false);
+                }
+            });
+    connect(m_codingMode, &QAbstractButton::toggled, this,
+            [this, applyMode](bool on) {
+                if (on) {
+                    applyMode();
+                    decorateModelsByMode();
+                    emit fullscreenToggled(true);
+                }
+            });
+    connect(m_dataMode,   &QAbstractButton::toggled, this,
+            [this, applyMode](bool on) {
+                if (on) {
+                    applyMode();
+                    decorateModelsByMode();
+                    emit fullscreenToggled(false);
+                }
+            });
 
     // Refresh the data-mode capability banner when the user picks a
     // different model. v0.1.53: includes the local recommendation
@@ -1098,9 +1158,9 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
                 m_dataCapBanner->setVisible(false);
             } else {
                 m_dataCapBanner->setText(tr(
-                    "⚠ %1 is too small for reliable multi-table SQL and chart specs.\n"
+                    "⚠ %1 is too small for reliable multi-table SQL and chart specs.<br>"
                     "<b>Local (free)</b>: <code>ollama pull qwen2.5-coder:14b</code> "
-                    "(or any Qwen-Coder / DeepSeek-Coder / Llama 7B+)\n"
+                    "(or any Qwen-Coder / DeepSeek-Coder / Llama 7B+)<br>"
                     "<b>Cloud</b>: any frontier Claude · GPT · Gemini · DeepSeek")
                         .arg(modelName.isEmpty() ? tr("(no model selected)") : modelName));
                 m_dataCapBanner->setTextFormat(Qt::RichText);
@@ -1158,14 +1218,20 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         });
 
         dataRow->addStretch();
+        layout->addLayout(dataRow);
+
+        // v0.1.56: banner moved to its OWN row below the button row so it
+        // gets the full panel width to wrap into. Previously it shared a
+        // QHBoxLayout with the buttons and any text past ~600 px clipped
+        // off the right edge instead of wrapping to a second line.
         m_dataCapBanner = new QLabel;
         m_dataCapBanner->setWordWrap(true);
-        // v0.1.54 — theme-aware banner colours. Pre-fix the banner was
-        // hard-coded brown (#553B19) + cream (#FFD49A) which looked OK on
-        // Dark theme but read as muddy/illegible on Light. Use a soft
-        // amber palette that works on both, with extra contrast on the
-        // text. Light theme: cream-bg + dark-amber-text (#7A4A0E).
-        // Dark theme: muted-orange-bg + cream-text. Reactive via aiPalette().
+        m_dataCapBanner->setMinimumWidth(0);
+        {
+            QSizePolicy sp(QSizePolicy::Ignored, QSizePolicy::Minimum);
+            sp.setHeightForWidth(true);
+            m_dataCapBanner->setSizePolicy(sp);
+        }
         const bool dark = aiIsDark();
         const QString bg = dark ? QStringLiteral("#3F2E16")
                                 : QStringLiteral("#FFF1D6");
@@ -1177,8 +1243,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             "QLabel { background: %1; color: %2; border: 1px solid %3; "
             "padding: 6px 10px; border-radius: 6px; font-size: 12px; }")
             .arg(bg, fg, border));
-        dataRow->addWidget(m_dataCapBanner, 1);
-        layout->addLayout(dataRow);
+        layout->addWidget(m_dataCapBanner);
         m_manageConnsBtn->setVisible(false);
         if (m_browseSchemasBtn) m_browseSchemasBtn->setVisible(false);
         m_dataCapBanner->setVisible(false);
@@ -1202,7 +1267,16 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // 1-line case, but it can grow to 2-3 lines for long URLs.
     m_statusLabel->setWordWrap(true);
     m_statusLabel->setMinimumHeight(18);
-    m_statusLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::MinimumExpanding);
+    // v0.1.56: Ignored horizontal + heightForWidth(true) makes the label
+    // recompute its required height every time the panel width changes.
+    // Without heightForWidth the layout caches the original sizeHint and
+    // the label still clips when the user drags the dock narrower.
+    {
+        QSizePolicy sp(QSizePolicy::Ignored, QSizePolicy::Minimum);
+        sp.setHeightForWidth(true);
+        m_statusLabel->setSizePolicy(sp);
+    }
+    m_statusLabel->setMinimumWidth(0);
     layout->addWidget(m_statusLabel);
 
     // ─── MIDDLE: chat area — REAL Qt widgets, not HTML ─────────────────
@@ -1436,16 +1510,23 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         vb->setStyleSheet("QScrollBar::add-line:vertical, "
                           "QScrollBar::sub-line:vertical { height: 0; }");
     }
-    // Auto-grow: resize to fit content up to maximumHeight.
+    // Auto-grow: resize to fit content (including visually-wrapped long lines)
+    // up to maximumHeight. Uses the document's rendered height rather than
+    // blockCount() so a single typed line that wraps still triggers a grow.
+    // Empty document collapses back to the 40px single-line default — that's
+    // the post-Send / post-clear() behaviour the user expects.
     auto resizeInput = [this]() {
-        const int lines = qMax(1, m_customInput->document()->blockCount());
-        const int lineH = m_customInput->fontMetrics().lineSpacing();
-        const int h = qBound(40, lineH * lines + 18, 140);
+        m_customInput->document()->setTextWidth(
+            m_customInput->viewport()->width());
+        const int docH = qCeil(m_customInput->document()->size().height());
+        const int padding = 18; // matches the 8px top/bottom padding + frame
+        const int h = qBound(40, docH + padding, 140);
         m_customInput->setFixedHeight(h);
     };
     connect(m_customInput->document(), &QTextDocument::contentsChanged, this, resizeInput);
-    // Enter = send, Shift+Enter = newline. Registered via the existing
-    // eventFilter() hook below.
+    // Enter = send, Shift+Enter = newline. The eventFilter() hook below
+    // intercepts both Return key handling AND a Resize event so the
+    // wrap-driven height recalculates when the dock is resized.
     m_customInput->installEventFilter(this);
     customRow->addWidget(m_customInput, 1);
 
@@ -1563,9 +1644,29 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
 
         if (isLlamaCpp) {
             // Group: actually-loaded model first (if any), then catalog.
-            if (!models.isEmpty()) {
+            // When models.isEmpty() llama-server isn't running OR no GGUF
+            // is loaded — make the dropdown items clearly read as
+            // "download these to use", not "pick an available model".
+            const bool serverDown = models.isEmpty();
+            const bool serverInstalledHere =
+                serverDown && (!QStandardPaths::findExecutable("llama-server").isEmpty() ||
+                               !QStandardPaths::findExecutable("llamafile").isEmpty());
+            if (!serverDown) {
                 m_modelCombo->addItem(QString("● Loaded: %1").arg(models.first()));
                 m_modelCombo->setItemData(0, models.first(), Qt::UserRole);
+                m_modelCombo->insertSeparator(m_modelCombo->count());
+            } else {
+                // Disabled header reflects whether llama-server is on PATH
+                // ("installed but not running") vs absent entirely.
+                const QString header = serverInstalledHere
+                    ? QStringLiteral("— llama-server installed but not running · pick a GGUF below —")
+                    : QStringLiteral("— llama.cpp not installed · pick one to download a GGUF —");
+                m_modelCombo->addItem(header);
+                if (auto *m = qobject_cast<QStandardItemModel*>(m_modelCombo->model())) {
+                    if (auto *it = m->item(0)) {
+                        it->setFlags(it->flags() & ~Qt::ItemIsSelectable & ~Qt::ItemIsEnabled);
+                    }
+                }
                 m_modelCombo->insertSeparator(m_modelCombo->count());
             }
             struct GgufEntry {
@@ -1620,7 +1721,13 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
                     if (!lastFamily.isEmpty()) m_modelCombo->insertSeparator(m_modelCombo->count());
                     lastFamily = fam;
                 }
-                const QString label = QString::fromUtf8(e.label);
+                // Prefix with "↓ " when llama-server isn't running so each
+                // dropdown row visually reads "download me" instead of
+                // looking like an installed-and-ready option.
+                const QString rawLabel = QString::fromUtf8(e.label);
+                const QString label = serverDown
+                    ? QStringLiteral("↓ ") + rawLabel
+                    : rawLabel;
                 m_modelCombo->addItem(label);
                 const int idx = m_modelCombo->count() - 1;
                 m_modelCombo->setItemData(idx, label, Qt::UserRole);
@@ -1640,12 +1747,27 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             m_modelCombo->setEnabled(true);
             int restoreIdx = m_modelCombo->findText(prev);
             if (restoreIdx >= 0) m_modelCombo->setCurrentIndex(restoreIdx);
-            const QString status = models.isEmpty()
-                ? QString("llama.cpp catalog · %1 GGUF models · pick one and run "
-                          "`llama-server -m <file>` then click ↻").arg(sizeof(CATALOG)/sizeof(CATALOG[0]))
-                : QString("llama.cpp · loaded %1 · plus %2 catalog options below")
-                      .arg(models.first()).arg(sizeof(CATALOG)/sizeof(CATALOG[0]));
+            // v0.1.56 — distinguish "not installed" from "installed but not
+            // running". `which llama-server` is the cheap test; if the
+            // binary is on PATH we can give a more accurate hint.
+            const bool serverInstalled =
+                !QStandardPaths::findExecutable("llama-server").isEmpty() ||
+                !QStandardPaths::findExecutable("llamafile").isEmpty();
+            QString status;
+            if (!models.isEmpty()) {
+                status = QString("llama.cpp · loaded %1 · plus %2 catalog options below")
+                            .arg(models.first()).arg(sizeof(CATALOG)/sizeof(CATALOG[0]));
+            } else if (serverInstalled) {
+                status = QString("llama-server is installed but not running. "
+                                 "Pick a GGUF below and run `llama-server -m <file>`, "
+                                 "then click ↻.");
+            } else {
+                status = QString("llama.cpp not installed. Install it (brew install "
+                                 "llama.cpp · or build from github.com/ggml-org/llama.cpp), "
+                                 "pick a GGUF below, and run `llama-server -m <file>`.");
+            }
             setStatus(status, false);
+            decorateModelsByMode();
             return;
         }
 
@@ -1677,6 +1799,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             // Status will be set by the rich handler once the grouped tree
             // is rendered, OR by modelsError when the cache fallback kicks
             // in. Don't overwrite it here.
+            decorateModelsByMode();
             return;
         }
 
@@ -1716,6 +1839,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
                       .arg(models.size() == 1 ? "" : "s")
                       .arg(m_modelCombo->currentText()), false);
         }
+        decorateModelsByMode();
     });
     // v0.1.54 — dispatch the offline message by backend AND keep the
     // curated catalog usable for backends where it makes sense even
@@ -3106,6 +3230,85 @@ bool AIPanel::currentModelSupportsTools() const {
     return AiTools::modelLikelySupportsTools(model);
 }
 
+// v0.1.56 — mode-aware visual cue on each dropdown row. Same model name
+// rule as currentModelSupportsTools() / modelCapableOfDataAnalysis(): we
+// don't second-guess the user, we just colour and tooltip the rows so
+// "this won't really work for what you're doing" is obvious before they
+// pick. Capable rows render in the panel's normal foreground; not-capable
+// rows go amber (#FF9F43) and grow a tooltip that says why. Section
+// headers / disabled placeholders are skipped (not selectable → no point
+// decorating them). Cleared by passing through chat mode (any model OK).
+void AIPanel::decorateModelsByMode() {
+    if (!m_modelCombo) return;
+    auto *m = qobject_cast<QStandardItemModel*>(m_modelCombo->model());
+    if (!m) return;
+
+    const bool dataMode   = m_dataMode   && m_dataMode->isChecked();
+    const bool codingMode = m_codingMode && m_codingMode->isChecked();
+    const bool chatMode   = !dataMode && !codingMode;
+
+    const QColor amber("#FF9F43");
+    const QBrush defaultBrush;  // default = palette text colour
+
+    for (int i = 0; i < m_modelCombo->count(); ++i) {
+        QStandardItem *item = m->item(i);
+        if (!item) continue;
+        // Separators and the disabled "— pick one to download —" header
+        // are not selectable — leave them alone.
+        if (!(item->flags() & Qt::ItemIsSelectable)) continue;
+
+        // Resolve the underlying model name. UserRole holds it for the
+        // llama.cpp catalog rows we set ourselves; for live /v1/models
+        // and Ollama lists the visible label IS the model name.
+        QString name = item->data(Qt::UserRole).toString();
+        if (name.isEmpty()) name = item->text();
+        // Strip any "↓ " download prefix we added for not-installed
+        // llama.cpp catalog items, so capability lookup hits the real id.
+        if (name.startsWith(QStringLiteral("↓ "))) name.remove(0, 2);
+
+        if (chatMode) {
+            // Wipe any earlier mode's decoration.
+            item->setForeground(defaultBrush);
+            item->setToolTip(QString());
+            continue;
+        }
+
+        bool capable = false;
+        QString reason;
+        if (dataMode) {
+            capable = AiTools::modelCapableOfDataAnalysis(name);
+            reason = capable
+                ? tr("✓ Capable for Data mode (multi-table SQL + chart specs)")
+                : tr("⚠ Too small for reliable Data mode. "
+                     "Need a frontier cloud model OR a local 7B+ from a "
+                     "strong family (qwen2.5-coder, deepseek-coder, "
+                     "llama3.x, mistral-large).");
+        } else { // codingMode
+            // Same logic as currentModelSupportsTools() but for an
+            // arbitrary model name, not the active one.
+            if (m_ollama && m_ollama->backend() != OllamaClient::Ollama) {
+                // Cloud / llama.cpp: server decides, treat as capable.
+                capable = true;
+            } else {
+                auto it = m_ollamaModelCaps.constFind(name);
+                if (it != m_ollamaModelCaps.constEnd() && !it.value().isEmpty()) {
+                    capable = it.value().contains(QStringLiteral("tools"), Qt::CaseInsensitive);
+                } else {
+                    capable = AiTools::modelLikelySupportsTools(name);
+                }
+            }
+            reason = capable
+                ? tr("✓ Supports function-calling tools — Coding mode will work")
+                : tr("⚠ No tool support known for this model. Coding mode "
+                     "needs function-calling. Try qwen2.5-coder, llama3.1+, "
+                     "qwen3, hermes3, command-r, or any frontier cloud model.");
+        }
+
+        item->setForeground(capable ? defaultBrush : QBrush(amber));
+        item->setToolTip(reason);
+    }
+}
+
 void AIPanel::renderGroupedModelTree(const QJsonArray &dataArr) {
     if (!m_modelCombo) return;
     QSignalBlocker blockSignals(m_modelCombo);
@@ -3288,6 +3491,7 @@ void AIPanel::renderGroupedModelTree(const QJsonArray &dataArr) {
                       "type a custom id to override")
                   .arg(backendName).arg(dataArr.size()),
               false);
+    decorateModelsByMode();
 }
 
 void AIPanel::renderDataWelcomeCard() {
@@ -3388,6 +3592,7 @@ void AIPanel::renderDataWelcomeCard() {
         : QString::fromUtf8("🔌  <b>%1 connection%2 saved.</b>")
               .arg(connCount).arg(connCount == 1 ? "" : "s"));
     connLabel->setTextFormat(Qt::RichText);
+    connLabel->setWordWrap(true);
     connLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
     connRow->addWidget(connLabel);
     connRow->addStretch();
@@ -3415,6 +3620,7 @@ void AIPanel::renderDataWelcomeCard() {
         : QString::fromUtf8("🤖  <b>%1</b> &nbsp;·&nbsp; <span style='color:#FF9F43'>too small for multi-table SQL ⚠</span>")
               .arg(modelName.isEmpty() ? QStringLiteral("(no model selected)") : modelName));
     modelLabel->setTextFormat(Qt::RichText);
+    modelLabel->setWordWrap(true);
     modelLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
     status->addWidget(modelLabel);
 
