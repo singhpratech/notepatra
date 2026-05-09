@@ -19,6 +19,7 @@ class QProcess;
 class QUrl;
 class QTabWidget;
 class QCompleter;
+class EditPlanList;
 
 class AIPanel : public QWidget {
     Q_OBJECT
@@ -206,6 +207,12 @@ private:
     QTabWidget        *m_chatTabs       = nullptr;
     QScrollArea       *m_composerArea   = nullptr;
     QWidget           *m_composerInner  = nullptr;
+    // Slice B/C/D — the Edit Plan list that lives inside the Composer tab.
+    // Populated when the model returns a dry_run write_file / apply_diff
+    // result. Apply All / Apply Selected fires AIPanel::applyComposerEdits
+    // which writes the chosen files atomically and then opens / reloads
+    // them via the existing fileWrittenByAgent signal.
+    EditPlanList      *m_editPlan       = nullptr;
 
     // Live streaming-stats display — shows "GENERATING: 145 tok · 23
     // tok/s · 6.3 s" updating every 250 ms while the model is producing
@@ -344,6 +351,12 @@ private:
 
 private slots:
     void attachFile();
+    // Slice D — apply the user-approved subset of the Edit Plan. Each
+    // (absPath, afterText) pair is written atomically (.tmp + rename),
+    // then fileWrittenByAgent is emitted so the editor opens / reloads
+    // the buffer. Failures surface as an error bubble; successes drop
+    // the row from the list.
+    void applyComposerEdits(const QList<QPair<QString, QString>> &edits);
 };
 
 #endif
