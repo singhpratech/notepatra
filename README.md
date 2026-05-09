@@ -47,7 +47,7 @@ Not a port. Not a wrapper. Something new — **for everyone**.
 
 I asked: **what would a small native code editor look like if it was built today, in 2026, when AI is part of every developer's workflow, and ran natively on Linux + macOS + Windows from one codebase?**
 
-The answer: a tiny native executable — roughly 9 MB bare (stripped) on every platform — with a Rust-powered core, Scintilla editing engine, and local-first AI integration. v0.1.55 downloads: 3.2 MB Linux x64 (tarball, Qt from the system), 26.6 MB on macOS (DMG with bundled Qt), 32–39.9 MB on Windows (MSI/zip/setup.exe with bundled Qt DLLs). An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your local AI to figure it out. No cloud. No telemetry. No subscription. Just you and your code.
+The answer: a tiny native executable — roughly 9 MB bare (stripped) on every platform — with a Rust-powered core, Scintilla editing engine, and local-first AI integration. v0.1.57 downloads: 3.2 MB Linux x64 (tarball, Qt from the system), 26.6 MB on macOS (DMG with bundled Qt), 32–39.9 MB on Windows (MSI/zip/setup.exe with bundled Qt DLLs). An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your local AI to figure it out. No cloud. No telemetry. No subscription. Just you and your code.
 
 Notepatra started on Linux — because that's where the gap was. But great tools shouldn't have borders. **Notepatra runs on Linux, Windows, and macOS.** Same codebase. Same features. No one gets left behind.
 
