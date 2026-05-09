@@ -3,7 +3,7 @@
   <h1 align="center"><a href="https://notepatra.org" style="text-decoration:none;color:inherit;">Notepatra</a></h1>
   <p align="center"><em>The first code editor built for the AI era.</em></p>
   <p align="center">
-    <strong>C++ + Rust</strong> · <strong>~9 MB bare native executable</strong> · <strong>Zero Electron</strong> · <strong>200+ file types</strong> · <strong>80+ language lexers</strong> · <strong>Local AI formatters</strong>
+    <strong>C++ + Rust</strong> · <strong>~9 MB bare native executable</strong> · <strong>Zero Electron</strong> · <strong>226 file types</strong> · <strong>92 language lexers</strong> · <strong>Local AI formatters</strong>
   </p>
   <p align="center">
     <a href="https://notepatra.org">Website</a> ·
@@ -58,7 +58,7 @@ Notepatra started on Linux — because that's where the gap was. But great tools
 ## Features
 
 ### Editor — Battle-tested basics done right
-- **236 file extensions** mapped to **80+ language lexers** — Python, C/C++, C#, Java, Kotlin, JavaScript, TypeScript, Rust, Go, Swift, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, SQL (5 dialects), HTML, CSS, JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Fortran, VHDL, Verilog, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and more. Rust / Go / Swift / Kotlin / TypeScript / PowerShell ship as Notepatra-local lexers (not just C-family fallbacks)
+- **226 file extensions** mapped to **92 language lexers** — Python, C/C++, C#, Java, Kotlin, JavaScript, TypeScript, Rust, Go, Swift, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, SQL (5 dialects), HTML, CSS, JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Fortran, VHDL, Verilog, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and more. Rust / Go / Swift / Kotlin / TypeScript / PowerShell ship as Notepatra-local lexers (not just C-family fallbacks)
 - **Tabbed editing** — drag, reorder, middle-click close, double-click empty area for new tab
 - **Tab right-click menu** — Close, Close All BUT This, Close All to the Left/Right, Close All, Save, Save As, Rename, Copy Full Path, Copy Filename, Copy Directory Path, Open Containing Folder, Open Terminal Here, Read-Only toggle, **Color Tag** (7 named colors + custom + Remove)
 - **3 themes** — Light, Dark, Monokai (Settings > Theme)
