@@ -54,7 +54,16 @@ Intent classifyIntent(const QString &action, bool codingMode, bool dataMode = fa
 // of the structured tool_calls field. When tools are present, we
 // instead append a brief tool-mode preamble explaining the available
 // tools so the model uses them confidently.
-QString build(Intent intent, const QString &language, bool toolsActive = false);
+//
+// `composerMode` (v0.1.56): when true AND toolsActive is true AND the
+// intent is CodingStrict, an additional "Composer mode" layer is
+// appended to the prompt. Composer mode tells the model to PROPOSE
+// multi-file edits (via dry_run:true on write_file / apply_diff) so
+// the user can review them in the Composer UI before any bytes hit
+// disk. Has no effect when toolsActive is false (no tools attached
+// means no dry_run path to invoke).
+QString build(Intent intent, const QString &language, bool toolsActive = false,
+              bool composerMode = false);
 
 // v0.1.43 — same as build() but allows callers to inject a "Project data
 // context" layer read from .notepatra/data-analyst.md (or similar). For
@@ -63,7 +72,8 @@ QString build(Intent intent, const QString &language, bool toolsActive = false);
 QString buildWithProjectContext(Intent intent,
                                 const QString &language,
                                 bool toolsActive,
-                                const QString &projectContext);
+                                const QString &projectContext,
+                                bool composerMode = false);
 
 // v0.1.43 — read the workspace's .notepatra/data-analyst.md instruction
 // file (if present) and return its content. Returns empty string when:

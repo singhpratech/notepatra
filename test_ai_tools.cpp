@@ -970,6 +970,289 @@ int main(int argc, char *argv[]) {
         check("REJECTS empty",       !AiTools::modelLikelySupportsTools(""));
     }
 
+    // ── v0.1.56: dry_run on write_file / apply_diff (Composer mode) ──
+    //
+    // The dry_run path runs every safety check the real path runs, but
+    // returns a {dry_run:true, proposed:{path,before,after,mode}} body
+    // instead of touching the filesystem. Used by the Composer UI to
+    // present a diff preview the user clicks Apply on.
+
+    // write_file dry_run on a NEW path → ok, file NOT created on disk
+    {
+        AiTools::ToolCall call;
+        call.name = "write_file";
+        QJsonObject args;
+        args["path"]    = "composer_proposal.txt";
+        args["content"] = "hello composer\n";
+        args["dry_run"] = true;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("dry_run write_file: ok=true", !r.isError);
+        QJsonObject result = QJsonDocument::fromJson(r.content.toUtf8())
+                                .object().value("result").toObject();
+        check("  result.dry_run == true", result.value("dry_run").toBool());
+        QJsonObject proposed = result.value("proposed").toObject();
+        check("  result.proposed has path/before/after/mode",
+              proposed.contains("path") && proposed.contains("before")
+              && proposed.contains("after") && proposed.contains("mode"));
+        check("  proposed.after contains the new content",
+              proposed.value("after").toString() == "hello composer\n");
+        check("  proposed.before is empty (target didn't exist)",
+              proposed.value("before").toString().isEmpty());
+        // The file MUST NOT exist on disk after a dry run.
+        check("  file on disk was NOT created",
+              !QFileInfo(ws + "/composer_proposal.txt").exists());
+    }
+
+    // write_file dry_run on an EXISTING path captures the before/after
+    {
+        writeFile(ws + "/exists_for_dry.txt", "old version\n");
+        AiTools::ToolCall call;
+        call.name = "write_file";
+        QJsonObject args;
+        args["path"]    = "exists_for_dry.txt";
+        args["content"] = "new version\n";
+        args["dry_run"] = true;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("dry_run write_file on existing: ok=true", !r.isError);
+        QJsonObject result = QJsonDocument::fromJson(r.content.toUtf8())
+                                .object().value("result").toObject();
+        QJsonObject proposed = result.value("proposed").toObject();
+        check("  proposed.before == old content",
+              proposed.value("before").toString() == "old version\n");
+        check("  proposed.after  == new content",
+              proposed.value("after").toString() == "new version\n");
+        QFile fread(ws + "/exists_for_dry.txt");
+        fread.open(QFile::ReadOnly);
+        check("  file on disk is UNCHANGED (still 'old version')",
+              fread.readAll() == QByteArray("old version\n"));
+        fread.close();
+    }
+
+    // write_file dry_run with mode=append composes after = before + content
+    {
+        writeFile(ws + "/append_for_dry.txt", "head\n");
+        AiTools::ToolCall call;
+        call.name = "write_file";
+        QJsonObject args;
+        args["path"]    = "append_for_dry.txt";
+        args["content"] = "tail\n";
+        args["mode"]    = "append";
+        args["dry_run"] = true;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("dry_run write_file mode=append: ok", !r.isError);
+        QJsonObject result = QJsonDocument::fromJson(r.content.toUtf8())
+                                .object().value("result").toObject();
+        QJsonObject proposed = result.value("proposed").toObject();
+        check("  proposed.after == before + content",
+              proposed.value("after").toString() == "head\ntail\n");
+        QFile fread(ws + "/append_for_dry.txt");
+        fread.open(QFile::ReadOnly);
+        check("  file on disk untouched after append dry_run",
+              fread.readAll() == QByteArray("head\n"));
+        fread.close();
+    }
+
+    // write_file dry_run with denied path → error_kind:denied, file
+    // NOT created. Verifies safety checks run on the dry-run path.
+    {
+        AiTools::ToolCall call;
+        call.name = "write_file";
+        QJsonObject args;
+        args["path"]    = "secret_dry.pem";
+        args["content"] = "----BEGIN PRIVATE KEY----\n";
+        args["dry_run"] = true;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("dry_run write_file('secret_dry.pem'): refused", r.isError);
+        check("  errorKind == denied", r.errorKind == "denied");
+        check("  file on disk was NOT created",
+              !QFileInfo(ws + "/secret_dry.pem").exists());
+    }
+
+    // write_file dry_run with traversal → refused, file NOT created.
+    {
+        AiTools::ToolCall call;
+        call.name = "write_file";
+        QJsonObject args;
+        args["path"]    = "../escape_dry.txt";
+        args["content"] = "x";
+        args["dry_run"] = true;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("dry_run write_file('../escape_dry.txt'): refused", r.isError);
+        check("  errorKind is a refusal",
+              r.errorKind == "outside_workspace"
+              || r.errorKind == "denied"
+              || r.errorKind == "not_found");
+    }
+
+    // write_file dry_run with mode=create on EXISTING file → exists
+    // (same as the non-dry path). File untouched.
+    {
+        writeFile(ws + "/exists_create_dry.txt", "v1\n");
+        AiTools::ToolCall call;
+        call.name = "write_file";
+        QJsonObject args;
+        args["path"]    = "exists_create_dry.txt";
+        args["content"] = "v2\n";
+        args["mode"]    = "create";
+        args["dry_run"] = true;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("dry_run write_file mode=create on existing: errors", r.isError);
+        check("  errorKind == exists", r.errorKind == "exists");
+        QFile fread(ws + "/exists_create_dry.txt");
+        fread.open(QFile::ReadOnly);
+        check("  on-disk content unchanged",
+              fread.readAll() == QByteArray("v1\n"));
+        fread.close();
+    }
+
+    // apply_diff dry_run on a valid hunk → proposal, file unchanged
+    {
+        writeFile(ws + "/dry_diff.txt",
+                  "line A\nline B\nline C\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"]    = "dry_diff.txt";
+        args["dry_run"] = true;
+        QJsonArray hunks;
+        QJsonObject h1;
+        h1["old_start_line"] = 2;
+        h1["old_lines"]      = "line B\n";
+        h1["new_lines"]      = "line B (proposed)\n";
+        hunks.append(h1);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("dry_run apply_diff: ok=true", !r.isError);
+        QJsonObject result = QJsonDocument::fromJson(r.content.toUtf8())
+                                .object().value("result").toObject();
+        check("  result.dry_run == true", result.value("dry_run").toBool());
+        QJsonObject proposed = result.value("proposed").toObject();
+        check("  proposed.before == original file",
+              proposed.value("before").toString() == "line A\nline B\nline C\n");
+        check("  proposed.after  reflects the hunk",
+              proposed.value("after").toString() == "line A\nline B (proposed)\nline C\n");
+        check("  proposed.mode == apply_diff",
+              proposed.value("mode").toString() == "apply_diff");
+        QFile fread(ws + "/dry_diff.txt");
+        fread.open(QFile::ReadOnly);
+        check("  file on disk UNCHANGED after dry_run",
+              fread.readAll() == QByteArray("line A\nline B\nline C\n"));
+        fread.close();
+    }
+
+    // apply_diff dry_run with conflict → error_kind:conflict, no proposal
+    {
+        writeFile(ws + "/dry_conflict.txt",
+                  "line A\nline B\nline C\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"]    = "dry_conflict.txt";
+        args["dry_run"] = true;
+        QJsonArray hunks;
+        QJsonObject h1;
+        h1["old_start_line"] = 2;
+        h1["old_lines"]      = "WRONG content\n";  // doesn't match
+        h1["new_lines"]      = "should never appear\n";
+        hunks.append(h1);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("dry_run apply_diff conflict: errors", r.isError);
+        check("  errorKind == conflict", r.errorKind == "conflict");
+        QFile fread(ws + "/dry_conflict.txt");
+        fread.open(QFile::ReadOnly);
+        check("  file unchanged on dry_run conflict",
+              fread.readAll() == QByteArray("line A\nline B\nline C\n"));
+        fread.close();
+    }
+
+    // apply_diff dry_run on deny-listed path → denied, no proposal
+    {
+        writeFile(ws + "/secret_diff.pem", "----BEGIN PRIVATE KEY----\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"]    = "secret_diff.pem";
+        args["dry_run"] = true;
+        QJsonArray hunks;
+        QJsonObject h1; h1["old_start_line"] = 1;
+        h1["old_lines"] = "----BEGIN PRIVATE KEY----\n";
+        h1["new_lines"] = "tampered\n";
+        hunks.append(h1);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("dry_run apply_diff on deny-listed path: refused", r.isError);
+        check("  errorKind == denied", r.errorKind == "denied");
+    }
+
+    // Default (no dry_run arg) STILL writes — backwards-compat guard.
+    {
+        AiTools::ToolCall call;
+        call.name = "write_file";
+        QJsonObject args;
+        args["path"]    = "default_writes.txt";
+        args["content"] = "real write\n";
+        // No dry_run field at all.
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("default write_file (no dry_run arg): writes for real", !r.isError);
+        check("  file exists on disk",
+              QFileInfo(ws + "/default_writes.txt").exists());
+    }
+
+    // dry_run:false explicitly → still writes (proves the flag default
+    // path is unbroken).
+    {
+        AiTools::ToolCall call;
+        call.name = "write_file";
+        QJsonObject args;
+        args["path"]    = "explicit_false.txt";
+        args["content"] = "yes write\n";
+        args["dry_run"] = false;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("write_file dry_run=false: writes for real", !r.isError);
+        check("  file exists on disk",
+              QFileInfo(ws + "/explicit_false.txt").exists());
+    }
+
+    // Schemas advertise dry_run on write_file + apply_diff
+    {
+        QJsonArray tools = AiTools::availableTools();
+        QJsonObject writeProps, applyProps;
+        for (const QJsonValue &tv : tools) {
+            QJsonObject t = tv.toObject();
+            QJsonObject fn = t.value("function").toObject();
+            const QString name = fn.value("name").toString();
+            if (name == "write_file") {
+                writeProps = fn.value("parameters").toObject()
+                               .value("properties").toObject();
+            } else if (name == "apply_diff") {
+                applyProps = fn.value("parameters").toObject()
+                               .value("properties").toObject();
+            }
+        }
+        check("write_file schema declares dry_run",
+              writeProps.contains("dry_run"));
+        check("  write_file dry_run is boolean",
+              writeProps.value("dry_run").toObject()
+                        .value("type").toString() == "boolean");
+        check("apply_diff schema declares dry_run",
+              applyProps.contains("dry_run"));
+        check("  apply_diff dry_run is boolean",
+              applyProps.value("dry_run").toObject()
+                        .value("type").toString() == "boolean");
+    }
+
     fprintf(stdout, "\n=== test_ai_tools: %d passed, %d failed ===\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
 }
