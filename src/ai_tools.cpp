@@ -492,6 +492,10 @@ QJsonArray availableTools() {
             {"enum", QJsonArray{"create", "overwrite", "append"}},
             {"description", "Default 'overwrite'. 'create' fails with error_kind:exists if the file exists. 'append' adds to the end."}
         };
+        props["dry_run"] = QJsonObject{
+            {"type", "boolean"},
+            {"description", "If true, return what WOULD be written instead of writing. Used by Composer mode to preview. The file on disk is untouched; the result carries {dry_run:true, proposed:{path,before,after,mode}} for the UI to render a diff."}
+        };
         QJsonObject params;
         params["type"] = "object";
         params["properties"] = props;
@@ -501,7 +505,9 @@ QJsonArray availableTools() {
             "Write or overwrite a text file in the user's workspace. "
             "Use for creating new files or fully replacing existing ones; "
             "use apply_diff for line-level edits to large files. The new "
-            "or modified file is auto-opened in the editor.",
+            "or modified file is auto-opened in the editor. Pass "
+            "dry_run:true to PROPOSE the change for user review (Composer "
+            "mode) instead of writing immediately.",
             params));
     }
 
@@ -756,6 +762,10 @@ QJsonArray availableTools() {
             {"description", "Workspace-relative path of the file to edit. Must already exist."}
         };
         props["hunks"] = hunksProp;
+        props["dry_run"] = QJsonObject{
+            {"type", "boolean"},
+            {"description", "If true, return what WOULD be written instead of writing. Used by Composer mode to preview. The file on disk is untouched; the result carries {dry_run:true, proposed:{path,before,after,mode}} for the UI to render a diff."}
+        };
 
         QJsonObject params;
         params["type"] = "object";
@@ -768,7 +778,9 @@ QJsonArray availableTools() {
             "the file has drifted from the expected old content, returns "
             "error_kind:conflict and does NOT modify the file (atomic "
             "apply). Use for surgical edits; use write_file to fully "
-            "replace a file's content.",
+            "replace a file's content. Pass dry_run:true to PROPOSE the "
+            "change for user review (Composer mode) instead of writing "
+            "immediately.",
             params));
     }
 
@@ -990,6 +1002,17 @@ ToolResult executeListDir(const ToolCall &call, const QString &workspaceRoot) {
 // applies). On success returns:
 //   {ok, result: {path, bytes_written, mode, created}}
 // `created` is true when the target didn't exist before this call.
+//
+// v0.1.56 — when args carry `dry_run:true`, runs ALL the same safety
+// checks (path resolve, hard-deny, mode validation, content cap,
+// exists-check for mode=create) but DOES NOT touch the filesystem
+// for writes. The "before" snapshot (existing file content, if any)
+// is read so the UI can render a diff preview. Returns:
+//   {ok, result: {dry_run:true, proposed: {path, before, after, mode},
+//                 created (would be), bytes_would_write}}
+// Used by Composer mode where the user reviews the proposal in the
+// UI and clicks Apply to commit. The Apply path re-issues the same
+// call with dry_run:false (or, equivalently, drops the field).
 // ═══════════════════════════════════════════════════════════════════════
 ToolResult executeWriteFile(const ToolCall &call,
                             const QString &workspaceRoot) {
@@ -1001,10 +1024,13 @@ ToolResult executeWriteFile(const ToolCall &call,
         return makeError(call, "io_error",
                          "Invalid mode: must be 'create', 'overwrite', or 'append'.");
     }
+    const bool dryRun = call.args.value("dry_run").toBool(false);
 
     // Refuse implausibly large content. Typical AI-generated files are
     // kilobytes; 5 MB is a generous cap that catches the model going
     // off the rails (e.g., dumping its training corpus).
+    // Apply this BEFORE the dry_run branch so a too-large proposal is
+    // rejected at the same gate the real write would have hit.
     constexpr int kMaxContentBytes = 5 * 1024 * 1024;
     if (content.toUtf8().size() > kMaxContentBytes) {
         return makeError(call, "too_large",
@@ -1036,6 +1062,44 @@ ToolResult executeWriteFile(const ToolCall &call,
         return makeError(call, "exists",
                          "File already exists. Use mode='overwrite' to replace, "
                          "or mode='append' to add to it.");
+    }
+
+    if (dryRun) {
+        // Read the existing content for the "before" snapshot of the
+        // diff preview. If the file doesn't exist (mode=create or fresh
+        // overwrite of an absent path), `before` is empty.
+        QString before;
+        if (existed) {
+            QFile fr(absTarget);
+            if (fr.open(QIODevice::ReadOnly)) {
+                before = QString::fromUtf8(fr.readAll());
+                fr.close();
+            }
+            // Read failure on an existing file is non-fatal for a dry
+            // run — we just present an empty `before`. The UI can warn.
+        }
+        // Compose the "after" snapshot from the proposed mode.
+        QString after;
+        if (modeStr == "append") {
+            after = before + content;
+        } else {
+            // overwrite / create — replacement is the entire new content.
+            after = content;
+        }
+        QJsonObject proposed;
+        proposed["path"]   = QDir(workspaceRoot).relativeFilePath(absTarget);
+        proposed["before"] = before;
+        proposed["after"]  = after;
+        proposed["mode"]   = modeStr;
+        QJsonObject result;
+        result["dry_run"]           = true;
+        result["proposed"]          = proposed;
+        result["path"]              = QDir(workspaceRoot).relativeFilePath(absTarget);
+        result["abs_path"]          = absTarget;
+        result["mode"]              = modeStr;
+        result["created"]           = !existed;
+        result["bytes_would_write"] = content.toUtf8().size();
+        return makeSuccess(call, result);
     }
 
     QFile f(absTarget);
@@ -1237,6 +1301,17 @@ ToolResult executeSearch(const ToolCall &call, const QString &workspaceRoot) {
 //      earlier hunks' line numbers don't shift after later hunks
 //      change line counts.
 //   4. Write the result via temp-file + rename for atomicity.
+//
+// v0.1.56 — when args carry `dry_run:true`, runs all of phases 1-3
+// (path resolve, hard-deny, hunk validation, in-memory apply) but
+// SKIPS phase 4 (the temp-file + rename). Returns a proposal:
+//   {ok, result: {dry_run:true,
+//                 proposed: {path, before, after, mode:"apply_diff"},
+//                 hunks_applied, warnings?}}
+// `before` is the file's current content read for hunk validation;
+// `after` is the in-memory result after applying all hunks. The file
+// is NEVER modified on the dry_run path. A hunk that would conflict
+// returns error_kind:"conflict" (same as the real path) and no proposal.
 // ═══════════════════════════════════════════════════════════════════════
 ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) {
     const QString pathArg = call.args.value("path").toString();
@@ -1248,6 +1323,7 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
         return makeError(call, "too_large",
                          "Too many hunks (cap is 50). Split into multiple calls.");
     }
+    const bool dryRun = call.args.value("dry_run").toBool(false);
 
     QString canonical;
     QString errorKind;
@@ -1406,6 +1482,32 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
 
     QString out = lines.join('\n');
     if (trailingNewline) out += '\n';
+
+    if (dryRun) {
+        // Composer mode preview: return the proposed before/after without
+        // touching disk. `content` is the current file (already read above
+        // for hunk validation). `out` is the in-memory result of applying
+        // the hunks. The file itself is NEVER opened for writing on this
+        // path — no temp file, no rename.
+        QJsonObject proposed;
+        proposed["path"]   = QDir(workspaceRoot).relativeFilePath(canonical);
+        proposed["before"] = content;
+        proposed["after"]  = out;
+        proposed["mode"]   = "apply_diff";
+        QJsonObject result;
+        result["dry_run"]           = true;
+        result["proposed"]          = proposed;
+        result["path"]              = QDir(workspaceRoot).relativeFilePath(canonical);
+        result["abs_path"]          = canonical;
+        result["hunks_applied"]     = hunks.size();
+        result["bytes_would_write"] = out.toUtf8().size();
+        if (!warnings.isEmpty()) {
+            QJsonArray w;
+            for (const QString &s : warnings) w.append(s);
+            result["warnings"] = w;
+        }
+        return makeSuccess(call, result);
+    }
 
     // Write atomically: write to .tmp, then rename.
     const QString tmpPath = canonical + ".notepatra.tmp";

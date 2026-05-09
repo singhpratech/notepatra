@@ -56,6 +56,13 @@ struct ToolCall {
 // Result of executing a tool call. Even errors are returned as
 // structured results (never thrown) so the agent loop can give the
 // model a recoverable error rather than crashing the conversation.
+//
+// v0.1.56 — write_file / apply_diff support a `dry_run: true` arg
+// that DOES NOT touch the filesystem. The result body carries
+// {ok:true, result: {dry_run:true, proposed: {path, before, after,
+// mode}}} so the Composer UI can render a diff preview. When
+// dry_run is false (default) behaviour is unchanged: the file IS
+// written and the result body has the legacy shape.
 struct ToolResult {
     QString id;        // matches ToolCall.id
     QString name;      // matches ToolCall.name

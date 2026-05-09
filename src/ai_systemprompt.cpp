@@ -170,6 +170,39 @@ static QString toolModeLayerData() {
     );
 }
 
+// v0.1.56 — Composer mode preamble. Layered on TOP of toolModeLayer()
+// when the user is in Coding mode AND the Composer tab is active. The
+// behaviour the model needs to learn is:
+//   1. NEVER write files directly. Always pass dry_run:true to
+//      write_file / apply_diff so the change comes back as a
+//      proposal, not a fait-accompli.
+//   2. Group every file edit it intends to make in a SINGLE response
+//      (one tool call per file). The user reviews the whole batch in
+//      the UI, then clicks Apply to commit.
+//   3. dry_run results carry the proposed before/after content so the
+//      UI can render a diff preview. The model should NOT re-read the
+//      file after a successful dry_run — it has already made the
+//      proposal and a non-dry write would bypass the user's review.
+//
+// The dry_run mechanism is also defended at the tool layer: when
+// dry_run:true the file is never opened for writing, only read for
+// the "before" snapshot of the diff preview.
+static QString composerModeLayer() {
+    return QStringLiteral(
+        "You are in Composer mode. NEVER write files directly with "
+        "`write_file` or `apply_diff` — always pass `dry_run: true` so "
+        "the user can review the proposed change in the Composer UI "
+        "before any bytes hit disk. Group all proposed edits in a "
+        "SINGLE response: one `dry_run` tool call per file you want to "
+        "modify. The user will review every proposal and click Apply "
+        "to commit them. After issuing your dry_run calls, summarise "
+        "what each file change does in plain prose — do not re-read "
+        "the file or issue a non-dry-run write to confirm. The dry_run "
+        "result carries the proposed before/after; that IS the proof "
+        "your edit is well-formed."
+    );
+}
+
 static QString toolModeLayer() {
     return QStringLiteral(
         "You have agentic workspace tools available. READ side: "
@@ -210,7 +243,8 @@ static QString toolModeLayer() {
     );
 }
 
-QString build(Intent intent, const QString &language, bool toolsActive) {
+QString build(Intent intent, const QString &language, bool toolsActive,
+              bool composerMode) {
     QString out;
     out.reserve(900);
 
@@ -223,6 +257,14 @@ QString build(Intent intent, const QString &language, bool toolsActive) {
             out += toolModeLayerData();
         } else {
             out += toolModeLayer();
+        }
+        // v0.1.56 — Composer mode rides on top of the tool-mode layer.
+        // Only meaningful when CodingStrict is the intent (Composer tab
+        // exists in Coding mode); silently skipped for DataAnalyst since
+        // dry_run is not meaningful for query_sql / csv_query.
+        if (composerMode && intent == Intent::CodingStrict) {
+            out += QLatin1Char(' ');
+            out += composerModeLayer();
         }
     } else {
         out += antiToolCallLayer();
@@ -240,8 +282,9 @@ QString build(Intent intent, const QString &language, bool toolsActive) {
 QString buildWithProjectContext(Intent intent,
                                 const QString &language,
                                 bool toolsActive,
-                                const QString &projectContext) {
-    QString out = build(intent, language, toolsActive);
+                                const QString &projectContext,
+                                bool composerMode) {
+    QString out = build(intent, language, toolsActive, composerMode);
     if (intent != Intent::DataAnalyst || projectContext.isEmpty()) return out;
 
     QString trimmed = projectContext.trimmed();
