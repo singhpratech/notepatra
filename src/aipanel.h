@@ -17,6 +17,7 @@
 
 class QProcess;
 class QUrl;
+class QTabWidget;
 
 class AIPanel : public QWidget {
     Q_OBJECT
@@ -194,6 +195,16 @@ private:
     class QVBoxLayout *m_chatLayout     = nullptr;
     class QFrame      *m_streamingCard  = nullptr;   // active during a stream
     QTextBrowser      *m_streamingBody  = nullptr;   // inner body of ^
+
+    // Slice A — Coding-mode revamp. The chat scroll lives inside a
+    // two-tab widget (Chat | Composer). In Chat / Data modes the tab
+    // bar is hidden so the dock looks identical to today's UX. In
+    // Coding mode the tab bar is shown so the user can flip between
+    // the live chat transcript and the agent's Edit Plan / diff
+    // viewer (filled in by Slices B/C/D).
+    QTabWidget        *m_chatTabs       = nullptr;
+    QScrollArea       *m_composerArea   = nullptr;
+    QWidget           *m_composerInner  = nullptr;
 
     // Live streaming-stats display — shows "GENERATING: 145 tok · 23
     // tok/s · 6.3 s" updating every 250 ms while the model is producing

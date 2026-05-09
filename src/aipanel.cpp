@@ -38,6 +38,8 @@
 #include <QStandardItem>
 #include <QAbstractButton>
 #include <QScrollArea>
+#include <QTabWidget>
+#include <QTabBar>
 #include <QProcess>
 #include <QImage>
 #include <QBuffer>
@@ -1083,6 +1085,19 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
                 .arg(p.chromeBg, fg, rule));
         }
 
+        // Slice A — show the Chat | Composer tab bar only in Coding mode.
+        // Chat / Data modes hide it so the panel looks identical to the
+        // pre-revamp UX. Coding mode also pins the active tab back to
+        // Chat on entry so the user starts on the transcript.
+        if (m_chatTabs && m_chatTabs->tabBar()) {
+            m_chatTabs->tabBar()->setVisible(coding);
+            if (coding && m_chatTabs->currentIndex() != 0) {
+                m_chatTabs->setCurrentIndex(0);
+            } else if (!coding) {
+                m_chatTabs->setCurrentIndex(0);
+            }
+        }
+
         if (m_chatLayout) renderTranscript();
         emit codingModeRequested(coding);
     };
@@ -1304,7 +1319,51 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     m_chatLayout->setSpacing(0);
     m_chatLayout->addStretch(1);   // bubbles get inserted BEFORE this stretch
     m_chatArea->setWidget(m_chatContent);
-    layout->addWidget(m_chatArea, 1);
+
+    // Slice A — wrap the chat scroll plus an empty Composer scroll in a
+    // two-tab QTabWidget. The tab bar is HIDDEN by default so Chat/Data
+    // mode looks identical to today's UX; applyMode shows it only when
+    // Coding mode is active. Composer body is a placeholder for now —
+    // Slices B/C/D fill it with the Edit Plan list, diff viewer, and
+    // per-hunk apply controls.
+    m_composerArea = new QScrollArea;
+    m_composerArea->setWidgetResizable(true);
+    m_composerArea->setFrameShape(QFrame::NoFrame);
+    m_composerArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_composerArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_composerArea->setStyleSheet(QString(
+        "QScrollArea { background: %1; border: none; } "
+        "QScrollBar:vertical { background: %1; width: 10px; margin: 0; } "
+        "QScrollBar::handle:vertical { background: %2; border-radius: 4px; min-height: 24px; } "
+        "QScrollBar::handle:vertical:hover { background: %3; } "
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }")
+        .arg(pal.chatBg, pal.assistBorder, pal.accent));
+
+    m_composerInner = new QWidget;
+    m_composerInner->setStyleSheet(QString("background: %1;").arg(pal.chatBg));
+    auto *composerLayout = new QVBoxLayout(m_composerInner);
+    composerLayout->setContentsMargins(12, 12, 12, 12);
+    composerLayout->setSpacing(8);
+    auto *composerPlaceholder = new QLabel(
+        tr("Composer — coming in Slice B/C/D"), m_composerInner);
+    composerPlaceholder->setAlignment(Qt::AlignCenter);
+    composerPlaceholder->setStyleSheet(QString(
+        "color: %1; font-size: 12px; padding: 24px;").arg(pal.muted));
+    composerLayout->addStretch(1);
+    composerLayout->addWidget(composerPlaceholder, 0, Qt::AlignCenter);
+    composerLayout->addStretch(1);
+    m_composerArea->setWidget(m_composerInner);
+
+    m_chatTabs = new QTabWidget;
+    m_chatTabs->setDocumentMode(true);
+    m_chatTabs->addTab(m_chatArea,     tr("Chat"));
+    m_chatTabs->addTab(m_composerArea, tr("Composer"));
+    if (m_chatTabs->tabBar()) {
+        // Default state matches Chat/Data UX — hidden until Coding mode
+        // flips it on via applyMode.
+        m_chatTabs->tabBar()->setVisible(false);
+    }
+    layout->addWidget(m_chatTabs, 1);
 
     // ─── BOTTOM STRIP: quick actions + input + send (like a real chat) ──
     // A thin chevron row always shows; clicking it reveals / hides the
