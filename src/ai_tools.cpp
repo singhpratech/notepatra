@@ -326,14 +326,19 @@ bool modelCapableOfDataAnalysis(const QString &modelName) {
 }
 
 QStringList suggestedModelsForDataAnalysis() {
+    // v0.1.54 — family names, not version pins. Pre-fix the list named
+    // specific versions (Claude 4 Opus, GPT-5, Gemini 2.5 Pro, qwen2.5-
+    // coder:14b) which would all need refreshing every couple of months
+    // as new releases land. Family names ("Claude", "GPT") stay accurate
+    // for years.
     return {
-        QStringLiteral("Claude 4 Opus / Sonnet"),
-        QStringLiteral("GPT-5 / GPT-4.1 / o3"),
-        QStringLiteral("Gemini 2.5 Pro"),
-        QStringLiteral("DeepSeek-V3 / DeepSeek-R1"),
-        QStringLiteral("qwen2.5-coder:14b+ (local)"),
-        QStringLiteral("llama3.3:70b (local)"),
-        QStringLiteral("mistral-large (local)"),
+        QStringLiteral("Claude (Anthropic)"),
+        QStringLiteral("GPT (OpenAI)"),
+        QStringLiteral("Gemini (Google)"),
+        QStringLiteral("DeepSeek"),
+        QStringLiteral("Qwen-Coder ≥7B (local)"),
+        QStringLiteral("Llama ≥7B (local)"),
+        QStringLiteral("Mistral / Mistral Large (local)"),
     };
 }
 

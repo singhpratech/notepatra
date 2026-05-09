@@ -257,15 +257,25 @@ static void drawSearchFeatureGlyph(QPainter &painter, const QRectF &rect) {
     // Magnifying-glass icon for the Project Search toolbar button.
     // Circle lens in the upper-left, diagonal handle extending to the
     // bottom-right. White stroke on the feature's accent-coloured tile.
+    //
+    // v0.1.54 — pulled the lens 4 % toward centre (0.40 → 0.44) and shrank
+    // the radius from 0.28 to 0.25 to keep the stroke clear of the
+    // rounded-square's corner curve at every DPI. Pre-fix the lens's
+    // top-left stroke pixel sat at logical (3.6, 3.6) which is only 0.36
+    // logical px inside the rounded corner — at 150 % DPI antialiasing
+    // smeared the corner curve and the lens stroke into the same physical
+    // pixel and the lens read as "clipped at the top". With the new
+    // values the lens stroke sits ≥ 1.5 logical px inside the corner —
+    // crisp on every monitor.
     painter.setPen(QPen(Qt::white, 2.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     painter.setBrush(Qt::NoBrush);
 
-    const qreal r = rect.width() * 0.28;
-    const QPointF center(rect.left() + rect.width() * 0.40,
-                         rect.top()  + rect.height() * 0.40);
+    const qreal r = rect.width() * 0.25;
+    const QPointF center(rect.left() + rect.width() * 0.44,
+                         rect.top()  + rect.height() * 0.44);
     painter.drawEllipse(center, r, r);
 
-    // Handle: 45° line from lens edge to rect corner
+    // Handle: 45° line from lens edge to rect corner.
     const QPointF edge(center.x() + r * 0.707, center.y() + r * 0.707);
     const QPointF tip (rect.right() - 5.0,     rect.bottom() - 5.0);
     painter.drawLine(edge, tip);

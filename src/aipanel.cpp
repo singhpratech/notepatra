@@ -566,14 +566,19 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // Header labels ("Backend:", "Model:") were removed for a Cursor-style
     // cleaner look — the dropdowns self-describe and the tooltips carry any
     // extra hint. The combos speak for themselves on screen.
+    // v0.1.54 — backend dropdown trimmed to 4 entries. "Custom" was removed
+    // earlier (no URL field in panel chrome). LM Studio + Jan are removed
+    // here because they're just GUI wrappers around llama.cpp's HTTP
+    // server — Ollama covers the easy local case, llama.cpp covers the
+    // power-user case, and a curated catalog of 12 GGUF models is in the
+    // model dropdown so users don't need a separate "GUI catalog" app.
+    // Users who DO run LM Studio / Jan can still reach them by picking
+    // "llama.cpp" + setting the port via Settings → Preferences → AI.
     auto *backendCombo = new QComboBox;
-    backendCombo->addItem("Ollama",           "Ollama");
-    backendCombo->addItem("llama.cpp (GGUF)", "llama.cpp");
+    backendCombo->addItem("Ollama",             "Ollama");
+    backendCombo->addItem("llama.cpp (GGUF)",   "llama.cpp");
     backendCombo->addItem("OpenRouter (cloud)", "OpenRouter");
-    backendCombo->addItem("LM Studio",        "LMStudio");
-    backendCombo->addItem("Jan",              "Jan");
-    backendCombo->addItem("OpenAI",           "OpenAI");
-    backendCombo->addItem("Custom",           "Custom");
+    backendCombo->addItem("OpenAI",             "OpenAI");
     backendCombo->setFixedWidth(170);
 
     // Initialise from Config. blockSignals() prevents the
@@ -585,10 +590,9 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         const QString be = Config::instance().aiBackend;
         if (be.compare("llama.cpp", Qt::CaseInsensitive) == 0) backendCombo->setCurrentIndex(1);
         else if (Config::instance().aiBaseUrl.contains("openrouter")) backendCombo->setCurrentIndex(2);
-        else if (Config::instance().aiBaseUrl.contains(":1234"))      backendCombo->setCurrentIndex(3); // LM Studio
-        else if (Config::instance().aiBaseUrl.contains(":1337"))      backendCombo->setCurrentIndex(4); // Jan
-        else if (Config::instance().aiBaseUrl.contains("openai.com")) backendCombo->setCurrentIndex(5);
-        else if (be.startsWith("OpenAI", Qt::CaseInsensitive))        backendCombo->setCurrentIndex(6); // custom
+        else if (Config::instance().aiBaseUrl.contains("openai.com")) backendCombo->setCurrentIndex(3);
+        // Stale LM Studio / Jan URLs from older configs fall through to
+        // Ollama default — user just picks llama.cpp manually if needed.
         else backendCombo->setCurrentIndex(0);  // Ollama
     }
     backendCombo->blockSignals(false);
@@ -599,15 +603,25 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         if (key == "Ollama")          { cfg.aiBackend = "Ollama";        cfg.aiBaseUrl.clear(); }
         else if (key == "llama.cpp")  { cfg.aiBackend = "llama.cpp";     cfg.aiBaseUrl.clear(); }
         else if (key == "OpenRouter") { cfg.aiBackend = "OpenAI-compat"; cfg.aiBaseUrl = "https://openrouter.ai/api/v1"; }
-        else if (key == "LMStudio")   { cfg.aiBackend = "OpenAI-compat"; cfg.aiBaseUrl = "http://localhost:1234/v1"; }
-        else if (key == "Jan")        { cfg.aiBackend = "OpenAI-compat"; cfg.aiBaseUrl = "http://localhost:1337/v1"; }
         else if (key == "OpenAI")     { cfg.aiBackend = "OpenAI-compat"; cfg.aiBaseUrl = "https://api.openai.com/v1"; }
-        else                          { cfg.aiBackend = "OpenAI-compat"; /* leave URL as-is */ }
+        else                          { cfg.aiBackend = "Ollama";        cfg.aiBaseUrl.clear(); }
         cfg.save();
-        // Reconfigure the client and refresh the model list
+        // Reconfigure the client and refresh the model list.
+        // v0.1.54 — ALWAYS reset the OllamaClient's base URL on every
+        // backend switch. Pre-fix the call was only made when
+        // cfg.aiBaseUrl was non-empty, so switching cloud → Ollama left
+        // m_baseUrl pointing at openrouter.ai (or wherever the previous
+        // cloud backend lived) and the /api/tags probe failed silently.
         if (m_ollama) {
             m_ollama->setBackend(OllamaClient::backendFromString(cfg.aiBackend));
-            if (!cfg.aiBaseUrl.isEmpty()) m_ollama->setBaseUrl(cfg.aiBaseUrl);
+            QString resolved = cfg.aiBaseUrl;
+            if (resolved.isEmpty()) {
+                // Fall back to the backend's documented default endpoint.
+                if      (cfg.aiBackend == "Ollama")    resolved = "http://localhost:11434";
+                else if (cfg.aiBackend == "llama.cpp") resolved = "http://localhost:8080";
+                else                                    resolved = "http://localhost:8080";
+            }
+            m_ollama->setBaseUrl(resolved);
             refreshModels();
         }
     });
@@ -646,7 +660,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
 
     auto showKeyRow = [apiKeyHost, apiKeyInput, backendCombo]() {
         const QString key = backendCombo->currentData().toString();
-        const bool needsKey = (key == "OpenRouter" || key == "OpenAI" || key == "Custom");
+        const bool needsKey = (key == "OpenRouter" || key == "OpenAI");
         const QString existing = Config::instance().aiApiKey;
         if (needsKey && existing.isEmpty()) {
             apiKeyInput->clear();
@@ -831,16 +845,24 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         if (m_quickActionsWrap)  m_quickActionsWrap->setVisible(!coding);
         if (m_resultActionsWrap) m_resultActionsWrap->setVisible(!coding);
 
-        if (m_manageConnsBtn) m_manageConnsBtn->setVisible(data);
-
         // v0.1.53 — show the welcome card whenever Data mode is on AND
         // the chat is empty AND the user hasn't dismissed it. Always
         // shown regardless of banner state.
-        if (data && m_messages.isEmpty() && !Config::instance().aiHideDataWelcome) {
+        const bool showWelcome =
+            data && m_messages.isEmpty() && !Config::instance().aiHideDataWelcome;
+        if (showWelcome) {
             renderDataWelcomeCard();
         } else {
             removeDataWelcomeCard();
         }
+        // v0.1.54 — when the welcome card is up, it carries its OWN
+        // "Manage Connections…" button right next to the connection
+        // count. The standalone external button on the data row is
+        // duplicate chrome in that case — hide it. When the welcome
+        // card is hidden (chat in progress, or user clicked Hide), the
+        // external button is the only way to reach the dialog, so we
+        // show it.
+        if (m_manageConnsBtn) m_manageConnsBtn->setVisible(data && !showWelcome);
 
         if (m_dataCapBanner) {
             if (!data) {
@@ -854,9 +876,16 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
                     // v0.1.53 — single-line tight banner. The welcome card
                     // below carries the rich version with examples + chips;
                     // this banner just flags the model issue at a glance.
+                    // v0.1.54 — family names instead of version pins. Specific
+                    // model versions (Claude Sonnet 4.5, GPT-5, Qwen 2.5)
+                    // get retired/renamed every few months; Notepatra would
+                    // need an app update to refresh them. Family names
+                    // (Claude / GPT / Gemini / Qwen-Coder) are stable.
                     m_dataCapBanner->setText(tr(
-                        "⚠ %1 is too small — try <code>ollama pull qwen2.5-coder:14b</code> "
-                        "(~9 GB) or a cloud model (Claude Sonnet 4.5 / GPT-5 / Gemini 2.5).")
+                        "⚠ %1 is too small — try a strong local code model "
+                        "(<code>ollama pull qwen2.5-coder:14b</code> or any "
+                        "Qwen-Coder / DeepSeek-Coder / Llama 7B+) or a "
+                        "frontier cloud model (Claude / GPT / Gemini).")
                             .arg(modelName.isEmpty() ? tr("(no model selected)") : modelName));
                     m_dataCapBanner->setTextFormat(Qt::RichText);
                     m_dataCapBanner->setWordWrap(true);
@@ -908,8 +937,9 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             } else {
                 m_dataCapBanner->setText(tr(
                     "⚠ %1 is too small for reliable multi-table SQL and chart specs.\n"
-                    "<b>Local (free)</b>: <code>ollama pull qwen2.5-coder:14b</code>  (≈9 GB)\n"
-                    "<b>Cloud</b>: Claude Sonnet 4.5 · GPT-5 · Gemini 2.5 Pro · DeepSeek-V3")
+                    "<b>Local (free)</b>: <code>ollama pull qwen2.5-coder:14b</code> "
+                    "(or any Qwen-Coder / DeepSeek-Coder / Llama 7B+)\n"
+                    "<b>Cloud</b>: any frontier Claude · GPT · Gemini · DeepSeek")
                         .arg(modelName.isEmpty() ? tr("(no model selected)") : modelName));
                 m_dataCapBanner->setTextFormat(Qt::RichText);
                 m_dataCapBanner->setVisible(true);
@@ -945,9 +975,23 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         dataRow->addStretch();
         m_dataCapBanner = new QLabel;
         m_dataCapBanner->setWordWrap(true);
-        m_dataCapBanner->setStyleSheet(
-            "QLabel { background: #553B19; color: #FFD49A; "
-            "padding: 4px 8px; border-radius: 4px; font-size: 11px; }");
+        // v0.1.54 — theme-aware banner colours. Pre-fix the banner was
+        // hard-coded brown (#553B19) + cream (#FFD49A) which looked OK on
+        // Dark theme but read as muddy/illegible on Light. Use a soft
+        // amber palette that works on both, with extra contrast on the
+        // text. Light theme: cream-bg + dark-amber-text (#7A4A0E).
+        // Dark theme: muted-orange-bg + cream-text. Reactive via aiPalette().
+        const bool dark = aiIsDark();
+        const QString bg = dark ? QStringLiteral("#3F2E16")
+                                : QStringLiteral("#FFF1D6");
+        const QString fg = dark ? QStringLiteral("#FFD49A")
+                                : QStringLiteral("#7A4A0E");
+        const QString border = dark ? QStringLiteral("#7A4A0E")
+                                    : QStringLiteral("#E5A661");
+        m_dataCapBanner->setStyleSheet(QString(
+            "QLabel { background: %1; color: %2; border: 1px solid %3; "
+            "padding: 6px 10px; border-radius: 6px; font-size: 12px; }")
+            .arg(bg, fg, border));
         dataRow->addWidget(m_dataCapBanner, 1);
         layout->addLayout(dataRow);
         m_manageConnsBtn->setVisible(false);
@@ -1396,8 +1440,6 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         const QString baseUrl = Config::instance().aiBaseUrl;
         const bool isOpenRouter = baseUrl.contains("openrouter", Qt::CaseInsensitive);
         const bool isOpenAI     = baseUrl.contains("openai.com", Qt::CaseInsensitive);
-        const bool isLMStudio   = baseUrl.contains(":1234", Qt::CaseInsensitive);
-        const bool isJan        = baseUrl.contains(":1337", Qt::CaseInsensitive);
 
         struct CuratedModel { const char *slug; const char *label; const char *tip; };
 
@@ -1475,26 +1517,6 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             return;
         }
 
-        // LM Studio / Jan — same shape as llama.cpp (local server, list what's loaded).
-        if (isLMStudio || isJan) {
-            if (models.isEmpty()) {
-                m_modelCombo->addItem(isLMStudio ? "(LM Studio offline)" : "(Jan offline)");
-                m_modelCombo->setEnabled(false);
-                setStatus(isLMStudio
-                    ? "LM Studio not running on :1234 — start it from the LM Studio app"
-                    : "Jan not running on :1337 — start it from the Jan app", true);
-            } else {
-                m_modelCombo->addItems(models);
-                m_modelCombo->setEnabled(true);
-                if (!models.isEmpty()) m_modelCombo->setCurrentIndex(0);
-                setStatus(QString("%1: %2 model%3 detected · using %4")
-                          .arg(isLMStudio ? "LM Studio" : "Jan")
-                          .arg(models.size()).arg(models.size() == 1 ? "" : "s")
-                          .arg(m_modelCombo->currentText()), false);
-            }
-            return;
-        }
-
         if (models.isEmpty()) {
             m_modelCombo->addItem("(no models installed)");
             m_modelCombo->setEnabled(false);
@@ -1532,11 +1554,43 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
                       .arg(m_modelCombo->currentText()), false);
         }
     });
+    // v0.1.54 — dispatch the offline message by backend AND keep the
+    // curated catalog usable for backends where it makes sense even
+    // without a live probe (llama.cpp catalog, OpenRouter / OpenAI
+    // curated picks). Pre-fix this handler unconditionally cleared and
+    // disabled the combo, killing the catalog logic added in v0.1.53.
     connect(m_ollama, &OllamaClient::modelsError, this, [this](const QString &reason) {
+        Q_UNUSED(reason);
+        const QString backend = Config::instance().aiBackend;
+        const QString baseUrl = Config::instance().aiBaseUrl;
+        const bool isLlamaCpp   = backend.compare("llama.cpp", Qt::CaseInsensitive) == 0;
+        const bool isOpenRouter = baseUrl.contains("openrouter", Qt::CaseInsensitive);
+        const bool isOpenAI     = baseUrl.contains("openai.com", Qt::CaseInsensitive);
+
+        if (isLlamaCpp || isOpenRouter || isOpenAI) {
+            // For these backends, the model list is *largely* a static
+            // catalog — we don't need the live /v1/models response to
+            // populate it. Re-emit a synthetic empty modelsListed so the
+            // catalog-rendering branch in the success handler runs.
+            emit m_ollama->modelsListed(QStringList());
+            setStatus(isLlamaCpp
+                  ? tr("llama.cpp not running — pick a model below and run "
+                       "`llama-server -m <file>`")
+                  : isOpenRouter
+                      ? tr("OpenRouter — paste your API key to enable "
+                           "billing-aware live model list")
+                      : tr("OpenAI — paste your API key to enable live model list"),
+                false);
+            return;
+        }
+
+        // Default = Ollama offline. (LM Studio / Jan paths were removed in
+        // v0.1.54 since those backends are no longer in the dropdown.)
         m_modelCombo->clear();
-        m_modelCombo->addItem("(Ollama offline)");
+        m_modelCombo->addItem(QStringLiteral("(Ollama offline)"));
         m_modelCombo->setEnabled(false);
-        setStatus(reason, true);
+        setStatus(tr("Run `ollama serve` (or start the Ollama app); then "
+                     "click ↻ to refresh"), true);
     });
     connect(m_refreshBtn, &QPushButton::clicked, this, &AIPanel::refreshModels);
 

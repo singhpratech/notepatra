@@ -122,7 +122,8 @@ void OllamaClient::listModels() {
                 }
             } else {
                 // OpenAI-compat /v1/models format: {"data": [{"id": "..."}, ...]}
-                for (const QJsonValue &v : root.value("data").toArray()) {
+                const QJsonArray dataArr = root.value("data").toArray();
+                for (const QJsonValue &v : dataArr) {
                     QString id = v.toObject().value("id").toString();
                     if (!id.isEmpty()) models << id;
                 }
@@ -131,6 +132,10 @@ void OllamaClient::listModels() {
                 // the list would otherwise be empty.
                 if (models.isEmpty() && root.contains("object"))
                     models << "(default-loaded-model)";
+
+                // v0.1.54 — also emit the raw array so aipanel can show
+                // pricing / provider grouping for OpenRouter et al.
+                if (!dataArr.isEmpty()) emit modelsListedRich(dataArr);
             }
         }
         models.sort(Qt::CaseInsensitive);

@@ -7,6 +7,88 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.54] — 2026-05-08
+
+**Backend dropdown clean-up + AI panel wiring fixes + Search icon polish.**
+
+### Removed — three rarely-used backend dropdown entries
+
+* **`Custom`** — promised free-form OpenAI-compat URLs but offered nowhere
+  in the AI panel chrome to type the URL, so picking it was a no-op.
+  Power users running vLLM / KoboldCpp / text-generation-webui /
+  llamafile on a non-standard port can still reach those backends by
+  picking `llama.cpp` and setting `aiBaseUrl` via Settings → Preferences
+  → AI.
+* **`LM Studio`** and **`Jan`** — both are GUI Electron apps that just
+  wrap llama.cpp's HTTP server. Ollama covers the easy local case and
+  llama.cpp covers the power-user case; the curated catalog of 12 GGUF
+  models in the model dropdown means users don't need a separate "GUI
+  catalog" app. Removing these reduces dropdown noise + maintenance
+  burden when LM Studio / Jan rev their port or API.
+
+The dropdown is now exactly **4 entries**: Ollama / llama.cpp (GGUF) /
+OpenRouter (cloud) / OpenAI.
+
+### Fixed — Ollama not re-detected after switching back from cloud
+
+Pre-fix, the backend-change handler did `if (!cfg.aiBaseUrl.isEmpty())
+m_ollama->setBaseUrl(...)`, so switching cloud → Ollama (where
+`aiBaseUrl` is cleared) skipped the call and `m_ollama` kept pointing at
+the cloud URL. The `/api/tags` probe then went to the wrong host and
+returned no models, leaving the dropdown stuck on "(Ollama offline)".
+The fix: always call `setBaseUrl` with the explicit URL OR the backend's
+documented default (`localhost:11434` for Ollama, `localhost:8080` for
+llama.cpp).
+
+### Fixed — model dropdown disabled for backends that don't need a probe
+
+`OllamaClient::modelsError` previously cleared and disabled the combo
+unconditionally, killing the curated catalog logic added in v0.1.53.
+Now dispatched by backend: `llama.cpp` / OpenRouter / OpenAI keep their
+catalog visible (with an actionable status hint) even when the live
+probe fails.
+
+### Changed — Data Analyst banner uses family names instead of version pins
+
+Pre-fix the banner read "*Try Claude Sonnet 4.5 / GPT-5 / Gemini 2.5
+Pro*" — names that go stale every couple of months as new model versions
+land. Now it reads "*Try a strong local code model (Qwen-Coder /
+DeepSeek-Coder / Llama 7B+) or a frontier cloud model (Claude / GPT /
+Gemini)*". Family names stay accurate for years.
+
+`AiTools::suggestedModelsForDataAnalysis()` updated the same way.
+
+### Changed — Banner colours theme-aware
+
+Old: hard-coded brown background (`#553B19`) + cream text (`#FFD49A`) —
+fine on Dark, muddy/illegible on Light. New: theme-reactive — Light
+gets cream `#FFF1D6` bg + dark amber `#7A4A0E` text + soft border;
+Dark gets brown bg + cream text. Both highly readable.
+
+### Fixed — Project Search toolbar icon's lens edge anti-aliased into the rounded corner at 150 % DPI
+
+The magnifying-glass lens used `center = 0.40 × width`, `radius =
+0.28 × width`, putting its top-left stroke pixel at logical
+`(3.6, 3.6)` — only `0.36 px` inside the rounded square's corner curve.
+At 150 % DPI antialiasing smeared the corner curve and the lens stroke
+into the same physical pixel and it read as "lens clipped at top". Bumped
+to `center = 0.44`, `radius = 0.25` — top-left stroke pixel now sits
+`2.0 logical px` inside the corner, well clear of the curve at every DPI.
+
+### Added — `OllamaClient::modelsListedRich(QJsonArray)` signal
+
+For OpenAI-compat backends (OpenRouter / OpenAI), `listModels()` now
+also emits the raw `data` array from `/v1/models`, carrying pricing,
+context length, and provider metadata. Ground-work for the upcoming
+v0.1.55 live model picker UX (grouped by provider, price column,
+24 h disk cache).
+
+### Tests
+
+C++ 19 / 19 + Rust 119 / 119 still pass. Build clean.
+
+---
+
 ## [0.1.53] — 2026-05-08
 
 **Curated model lists per backend + Data Analyst welcome card.**

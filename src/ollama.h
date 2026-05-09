@@ -66,6 +66,12 @@ signals:
     void finished(const QString &fullResponse);
     void error(const QString &message);
     void modelsListed(const QStringList &models);
+    // v0.1.54 — rich variant carrying the raw /v1/models response for
+    // backends that publish metadata (OpenRouter pricing, context length,
+    // provider breakdown). Emitted alongside modelsListed for OpenAI-compat
+    // backends; aipanel uses the richer data to render grouped + priced
+    // dropdown entries instead of the flat alphabetical list.
+    void modelsListedRich(const QJsonArray &dataArray);
     void modelsError(const QString &reason);
 
     // v0.1.35 — Emitted when the backend's stream contains a tool_calls

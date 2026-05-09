@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~3-5 MB stripped across platforms; full downloads are 2.8 MB (Linux x64 tar.gz), 25.5 MB (macOS DMG with bundled Qt), 43.5 MB (Windows MSI with bundled Qt DLLs). 100+ file types. 48 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.53",
+      "softwareVersion": "0.1.54",
       "fileSize": "4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -242,7 +242,7 @@
         html { scroll-behavior: smooth; }
 
         body {
-            /* v0.1.53 — append the platform emoji fonts AND the CSS
+            /* v0.1.54 — append the platform emoji fonts AND the CSS
              * 'emoji' generic so 🔎 / 🤖 / 📊 etc. fall through to the
              * appropriate system emoji font on every OS instead of
              * tofu-boxing on Linux (which lacks an emoji glyph in
@@ -1236,7 +1236,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.53 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.54 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.53">
-        Download v0.1.53 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.54">
+        Download v0.1.54 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.53 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.54 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~4 MB bare, ~2 MB compressed on Linux). C++ and Rust. 100+ file types. JSON / HTML / SQL fixers — regex first, local AI as fallback. No cloud unless you opt in.</p>
 
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.53</div>
+        <div class="section-label">Download v0.1.54</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1851,33 +1851,79 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.53 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.54 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-05-08</span>
-                        <span>· Toolbar icon HiDPI rendering + Project Search button visibility.</span>
+                        <span>· AI backend dropdown trimmed + wiring fixes + Search-icon polish.</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>🖼️ Toolbar icons — sharp at every zoom level</h5>
+                        <h5>📋 AI backend dropdown — 4 entries, no more dead options</h5>
                         <ul>
-                            <li>v0.1.50's <code>AA_UseHighDpiPixmaps</code> was the right global flag, but <code>makeFeatureIcon()</code> was still rasterizing each toolbar icon (Search · AI · Terminal · Compare · JSON · HTML · SQL · Brackets · REST · Git) into a fixed <code>QPixmap(32, 32)</code>. On 150 % display zoom Qt then bilinear-scaled the 32-px pixmap up to ~48 device px → the slight pixelation the user noticed.</li>
-                            <li>Fix: paint into a <code>32 × dpr</code> backing store, tag with <code>setDevicePixelRatio(dpr)</code>, then <code>painter.scale(dpr, dpr)</code> so every <code>drawXxxFeatureGlyph()</code> helper's "32" still means "32 logical px" but renders at sub-pixel precision into a 48 × 48 buffer at 150 %, 64 × 64 at 200 %, etc.</li>
-                            <li><strong>Buttons are NOT affected</strong> — v0.1.49's per-button minimum-width fixes and v0.1.50's <code>HighDpiScaleFactorRoundingPolicy::PassThrough</code> are preserved. The icon fix is purely additive.</li>
+                            <li>Removed <strong>Custom</strong> (promised free-form OpenAI-compat URLs but offered nowhere to type the URL — was a no-op), <strong>LM Studio</strong>, and <strong>Jan</strong> (both are GUI Electron apps wrapping llama.cpp's HTTP server; Ollama covers easy local + llama.cpp covers power-user + the curated 12-GGUF catalog already lives in the model dropdown).</li>
+                            <li>Dropdown is now exactly <strong>Ollama / llama.cpp (GGUF) / OpenRouter (cloud) / OpenAI</strong>. Power users running vLLM / KoboldCpp / text-generation-webui / llamafile on a non-standard port can still reach those backends by picking <code>llama.cpp</code> + setting <code>aiBaseUrl</code> via Settings → Preferences → AI.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🟧 Project Search — Cancel + Clear history button labels visible on every theme</h5>
+                        <h5>🐛 Switching cloud → Ollama left Ollama "(offline)"</h5>
                         <ul>
-                            <li>User reported the button labels were nearly invisible on Light theme. Cause: the previous styling used <code>p.textPrimary</code> for enabled state (dark grey on Light) and <code>#AAA</code> for disabled — on Light theme that read as a blank rectangle.</li>
-                            <li>Both buttons now use a strong orange (<code>#E67E22</code>) with bold weight on every theme. Hover brightens to <code>#FFA94D</code>; disabled dims to <code>#C97B3F</code> (still readable on Light · Dark · Monokai).</li>
+                            <li>Pre-fix the backend-change handler did <code>if (!cfg.aiBaseUrl.isEmpty()) m_ollama->setBaseUrl(...)</code>, so switching cloud → Ollama (where <code>aiBaseUrl</code> is cleared) skipped the call and <code>m_ollama</code> kept pointing at the cloud URL. The <code>/api/tags</code> probe then went to the wrong host and returned no models.</li>
+                            <li>Fix: always call <code>setBaseUrl</code> with the explicit URL OR the backend's documented default (<code>localhost:11434</code> for Ollama, <code>localhost:8080</code> for llama.cpp).</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🐛 Model dropdown disabled when probe failed — even for backends with static catalogs</h5>
+                        <ul>
+                            <li><code>OllamaClient::modelsError</code> previously cleared and disabled the combo unconditionally, killing the curated catalog logic added in v0.1.53. Now dispatched by backend: <code>llama.cpp</code> / OpenRouter / OpenAI keep their catalog visible (with an actionable status hint) even when the live probe fails.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🪶 Data Analyst banner uses family names (won't go stale)</h5>
+                        <ul>
+                            <li>Pre-fix: <em>"Try Claude Sonnet 4.5 / GPT-5 / Gemini 2.5 Pro"</em> — version pins that go stale every couple of months as new model versions land. Now: <em>"Try a strong local code model (Qwen-Coder / DeepSeek-Coder / Llama 7B+) or a frontier cloud model (Claude / GPT / Gemini)"</em>. Family names stay accurate for years.</li>
+                            <li><code>AiTools::suggestedModelsForDataAnalysis()</code> updated the same way.</li>
+                            <li>Banner colours are now theme-aware — readable on Light, Dark, Monokai (was hard-coded brown which read muddy on Light).</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🔍 Project Search toolbar icon — lens crisp at 150 % DPI</h5>
+                        <ul>
+                            <li>The magnifying-glass lens used <code>centre = 0.40 × width</code>, <code>radius = 0.28 × width</code>, putting its top-left stroke pixel at logical <code>(3.6, 3.6)</code> — only <code>0.36 px</code> inside the rounded square's corner curve. At 150 % DPI antialiasing smeared the corner curve and the lens stroke into the same physical pixel and it read as "lens clipped at top".</li>
+                            <li>Bumped to <code>centre = 0.44</code>, <code>radius = 0.25</code> — top-left stroke pixel now sits <code>2.0 logical px</code> inside the corner, well clear of the curve at every DPI.</li>
                         </ul>
                     </div>
                     <div class="version-section">
                         <h5>✅ Tests — 119 / 119 Rust + 19 / 19 C++</h5>
                         <ul>
                             <li>All existing tests still pass. Build clean, no warnings.</li>
+                            <li>New <code>OllamaClient::modelsListedRich(QJsonArray)</code> signal added for upcoming v0.1.55 live model picker (grouped by provider, price column, 24 h disk cache).</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.54">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.54">Commits</a>
+                </div>
+            </div>
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.53</div>
+                    <div class="version-meta">
+                        <span>2026-05-08</span>
+                        <span>· Curated model lists per backend + Data Analyst welcome card.</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>📚 Curated model catalogs per backend</h5>
+                        <ul>
+                            <li>llama.cpp: 12 popular GGUF models (Qwen2.5-Coder 1.5B/7B/14B, Qwen2.5 7B, Llama 3.2 3B / 3.1 8B, Phi-4 14B, Gemma 2 2B/9B, Mistral 7B v0.3, DeepSeek-Coder-V2-Lite, StarCoder2 3B), each with HuggingFace download URL in tooltip.</li>
+                            <li>OpenRouter: 13 cross-provider picks. OpenAI direct: 6 picks.</li>
+                            <li>Data Analyst welcome card: orange QFrame at the top of the AI chat with title, explainer, three clickable example prompt chips, connection count + Manage Connections button, model-capability indicator, Hide button (sticky via Config).</li>
                         </ul>
                     </div>
                 </div>
