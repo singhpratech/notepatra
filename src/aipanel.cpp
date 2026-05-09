@@ -18,7 +18,9 @@
 #include <QScrollBar>
 #include <QMenu>
 #include <QCompleter>
+#include <QAbstractItemView>
 #include <QSortFilterProxyModel>
+#include <QStringListModel>
 #include <QApplication>
 #include <QStyle>
 #include <QClipboard>
@@ -30,6 +32,7 @@
 #include <QDesktopServices>
 #include <QMouseEvent>
 #include <QKeyEvent>
+#include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QFrame>
@@ -48,6 +51,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QRegularExpression>
+#include <QSet>
 #include <QCryptographicHash>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -1589,6 +1593,118 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     m_customInput->installEventFilter(this);
     customRow->addWidget(m_customInput, 1);
 
+    // v0.1.56 — `@file` mention picker. When the caret is in a word that
+    // starts with `@` (and the `@` is on a word boundary, i.e. the char
+    // before it is not alphanumeric), pop the completer. Picking inserts
+    // `@<relative-path> ` into the input, replacing the typed `@xxx`.
+    // Empty workspace → completer stays empty, no popup, no crash.
+    {
+        m_filementionCompleter = new QCompleter(this);
+        m_filementionCompleter->setModel(new QStringListModel(m_filementionCompleter));
+        m_filementionCompleter->setWidget(m_customInput);
+        m_filementionCompleter->setCompletionMode(QCompleter::PopupCompletion);
+        m_filementionCompleter->setCaseSensitivity(Qt::CaseInsensitive);
+        m_filementionCompleter->setFilterMode(Qt::MatchContains);
+        if (auto *popup = m_filementionCompleter->popup()) {
+            popup->setObjectName("aiFileMentionPopup");
+        }
+
+        // Returns the `@…` token at the caret (without the leading `@`),
+        // or an empty QString when the caret is not inside one. A token
+        // is recognised when:
+        //   * the previous non-token char is start-of-line or non-alnum
+        //     (so "foo@bar" isn't treated as a mention)
+        //   * the run of chars after `@` so far contains no whitespace
+        auto mentionTokenAtCursor = [this]() -> QString {
+            QTextCursor cur = m_customInput->textCursor();
+            if (cur.hasSelection()) return QString();
+            const QString block = cur.block().text();
+            const int pos = cur.positionInBlock();
+            // Walk backwards from the caret to find the most recent `@`,
+            // bailing if we hit whitespace or a path-illegal char first.
+            int i = pos - 1;
+            while (i >= 0) {
+                const QChar c = block.at(i);
+                if (c == QLatin1Char('@')) {
+                    // Word-boundary check: char before `@` must be SOL or
+                    // a non-alnum / non-`_` char. Otherwise this is
+                    // something like "user@host" — not a mention.
+                    if (i == 0) return block.mid(i + 1, pos - i - 1);
+                    const QChar prev = block.at(i - 1);
+                    if (!prev.isLetterOrNumber() && prev != QLatin1Char('_')) {
+                        return block.mid(i + 1, pos - i - 1);
+                    }
+                    return QString();
+                }
+                if (c.isSpace()) return QString();
+                --i;
+            }
+            return QString();
+        };
+
+        // Open / refresh the completer popup when a mention token is
+        // active at the caret. Closes silently when no token, no
+        // workspace files, or no matches.
+        auto refreshMentionPopup = [this, mentionTokenAtCursor]() {
+            if (!m_filementionCompleter) return;
+            const QString token = mentionTokenAtCursor();
+            QAbstractItemView *popup = m_filementionCompleter->popup();
+            if (token.isNull() || m_workspaceFilePaths.isEmpty()) {
+                if (popup) popup->hide();
+                return;
+            }
+            // Re-seed the model lazily — the workspace file list can
+            // change between turns (e.g. user opened a different folder).
+            auto *m = qobject_cast<QStringListModel*>(m_filementionCompleter->model());
+            if (m) m->setStringList(m_workspaceFilePaths);
+            m_filementionCompleter->setCompletionPrefix(token);
+            // No matches → don't show the popup.
+            if (m_filementionCompleter->completionCount() == 0) {
+                if (popup) popup->hide();
+                return;
+            }
+            // Anchor the popup to the caret, then size it to the input.
+            QRect r = m_customInput->cursorRect();
+            r.setWidth(qMax(220, m_customInput->width() - 20));
+            m_filementionCompleter->complete(r);
+        };
+
+        connect(m_customInput->document(), &QTextDocument::contentsChanged,
+                this, refreshMentionPopup);
+
+        // Picking a file → replace the `@token` typed so far with
+        // `@<path> ` and close the popup. The replacement is scoped to
+        // the run from the active `@` up to the current caret.
+        connect(m_filementionCompleter,
+                QOverload<const QString &>::of(&QCompleter::activated),
+                this, [this](const QString &chosen) {
+            if (chosen.isEmpty()) return;
+            QTextCursor cur = m_customInput->textCursor();
+            const QString block = cur.block().text();
+            const int pos = cur.positionInBlock();
+            const int blockStart = cur.block().position();
+            // Find the nearest `@` walking backwards.
+            int i = pos - 1;
+            while (i >= 0) {
+                const QChar c = block.at(i);
+                if (c == QLatin1Char('@')) break;
+                if (c.isSpace()) { i = -1; break; }
+                --i;
+            }
+            if (i < 0) {
+                // Defensive: completer fired but we no longer see the
+                // `@` (e.g. user backspaced). Just insert the token.
+                cur.insertText(QString("@%1 ").arg(chosen));
+                m_customInput->setTextCursor(cur);
+                return;
+            }
+            cur.setPosition(blockStart + i);
+            cur.setPosition(blockStart + pos, QTextCursor::KeepAnchor);
+            cur.insertText(QString("@%1 ").arg(chosen));
+            m_customInput->setTextCursor(cur);
+        });
+    }
+
     auto *sendBtn = new QPushButton("Send");
     sendBtn->setFixedSize(72, 36);
     sendBtn->setStyleSheet(QString(
@@ -2138,6 +2254,88 @@ void AIPanel::setStatus(const QString &text, bool isError) {
     m_statusLabel->setStyleSheet(QString(
         "color: %1; padding: 2px 8px; font-size: 12px; font-weight: 500;")
         .arg(isError ? errorFg : successFg));
+}
+
+// v0.1.56 — `@file` mention resolver. Scans `userText` (which is the
+// outgoing prompt, NOT the visible bubble) for `@<path>` tokens at word
+// boundaries, resolves each via AiTools::resolveSafePath against
+// m_workspaceRoot, reads the file (cap 64 KB / file, 256 KB total
+// across all mentions), and appends each as
+//   \n\n[file: <relpath>]\n<content>\n[end file]
+// to `userText`. The function is a no-op when:
+//   * the workspace root is empty (no folder open), OR
+//   * no `@<path>` tokens are found, OR
+//   * resolveSafePath rejects every mention (e.g. user typed a path
+//     outside the workspace, or the file disappeared between the time
+//     the picker was shown and Send).
+// Mentions that fail to resolve are silently dropped from the prompt
+// payload but the bare `@<path>` token still ships in the visible bubble
+// so the user can see what they tried to attach.
+void AIPanel::resolveFileMentions(QString &userText) {
+    if (m_workspaceRoot.isEmpty()) return;
+
+    static const qint64 PER_FILE_CAP   = 64 * 1024;   // 64 KB / file
+    static const qint64 TOTAL_CAP      = 256 * 1024;  // 256 KB across all
+
+    // Match `@<path>` where the leading `@` is on a word boundary (start
+    // of string OR preceded by whitespace / non-alnum). The path body
+    // accepts characters that are typically legal in relative POSIX
+    // paths: letters, digits, `_`, `-`, `.`, `/`. We deliberately stop
+    // at whitespace and at most punctuation that is typically NOT in a
+    // path (commas, parentheses, quotes), so trailing punctuation in
+    // the user's sentence ("see @foo.py.") doesn't get sucked into the
+    // token.
+    static const QRegularExpression mentionRx(
+        QStringLiteral("(?:^|[^A-Za-z0-9_])@([A-Za-z0-9_\\-./]+)"));
+
+    QSet<QString> seen;          // dedupe — pasting "@foo.py @foo.py" reads once
+    qint64 totalBytes = 0;
+
+    auto it = mentionRx.globalMatch(userText);
+    while (it.hasNext()) {
+        const QRegularExpressionMatch m = it.next();
+        const QString rel = m.captured(1);
+        if (rel.isEmpty()) continue;
+        if (seen.contains(rel)) continue;
+        seen.insert(rel);
+
+        // Workspace-anchor + symlink + deny-list checks.
+        QString canonical;
+        QString errorKind;
+        if (!AiTools::resolveSafePath(rel, m_workspaceRoot, &canonical, &errorKind))
+            continue;
+
+        QFileInfo fi(canonical);
+        if (!fi.isFile() || !fi.isReadable()) continue;
+
+        QFile f(canonical);
+        if (!f.open(QIODevice::ReadOnly)) continue;
+
+        // Per-file cap. Reading PER_FILE_CAP+1 lets us know whether the
+        // file was truncated, so we can flag it to the model.
+        const QByteArray raw = f.read(PER_FILE_CAP + 1);
+        f.close();
+
+        QByteArray contentBytes = raw;
+        bool truncated = false;
+        if (contentBytes.size() > PER_FILE_CAP) {
+            contentBytes.truncate(PER_FILE_CAP);
+            truncated = true;
+        }
+
+        // Total-cap gate. If this file would push us over the global
+        // budget, skip it entirely (better than silently truncating a
+        // file the user explicitly mentioned to half its size).
+        if (totalBytes + contentBytes.size() > TOTAL_CAP) continue;
+        totalBytes += contentBytes.size();
+
+        const QString content = QString::fromUtf8(contentBytes);
+        userText += QStringLiteral("\n\n[file: %1]\n%2%3\n[end file]")
+                        .arg(rel,
+                             content,
+                             truncated ? QStringLiteral("\n... (truncated)")
+                                       : QString());
+    }
 }
 
 static QString findFirstExecutable(const QStringList &candidates) {
@@ -2731,6 +2929,13 @@ void AIPanel::sendPrompt(const QString &action) {
             prompt = userText;
             userBubbleText = userText;
         }
+        // v0.1.56 — `@file` mentions. Scan the user's typed text for
+        // `@<path>` tokens, resolve each via AiTools::resolveSafePath,
+        // read the file (cap 64 KB / file, 256 KB total), and append
+        // each as `[file: <relpath>]\n<content>\n[end file]` to the
+        // outgoing prompt. The visible bubble keeps the bare `@<path>`
+        // tokens — only the request body gets the inlined contents.
+        resolveFileMentions(prompt);
         m_customInput->clear();
     }
 
