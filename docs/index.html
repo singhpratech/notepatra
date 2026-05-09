@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Notepatra — The Code Editor Built for the AI Era</title>
-    <meta name="description" content="Native C++/Rust code editor built for the AI era. ~9 MB bare native executable. 100+ file types. 48 language lexers. JSON/HTML/SQL fixers. Local AI — Ollama, llama.cpp (GGUF), LM Studio, any OpenAI-compatible server. Free forever. Linux, Windows, macOS.">
-    <meta name="keywords" content="notepatra, code editor, notepad++, linux, windows, mac, macos, AI, ollama, JSON formatter, HTML fixer, rust, c++, qscintilla, native, lightweight">
+    <meta name="description" content="Native C++/Rust code editor built for the AI era. ~9 MB bare native executable. 100+ file types. 78 language lexers. JSON/HTML/SQL fixers. DuckDB-powered Data Analyst mode. Local AI — Ollama, llama.cpp (GGUF), LM Studio, OpenRouter, OpenAI, Azure OpenAI. Free forever. Linux, Windows, macOS.">
+    <meta name="keywords" content="notepatra, code editor, linux, windows, mac, macos, AI code editor, ollama, llama.cpp, openrouter, azure openai, duckdb, data analyst, JSON formatter, HTML fixer, rust, c++, qscintilla, native, lightweight">
     <meta name="author" content="Prateek Singh">
     <link rel="canonical" href="https://notepatra.org/">
 
@@ -142,18 +142,18 @@
         },
         {
           "@type": "Question",
-          "name": "How is Notepatra different from Notepad++ and VS Code?",
+          "name": "What makes Notepatra different from other code editors?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra is its own editor — written from scratch in C++ and Rust, not a port or a clone. It runs natively on Linux, macOS Apple Silicon, and Windows from a single codebase, with a ~9 MB bare executable (stripped). Compared to Notepad++: truly cross-platform, local-first AI is built in, Rust-powered search and formatters. Compared to VS Code: a much smaller install footprint (5–85 MB depending on platform vs 300+ MB for VS Code), no Electron runtime, no telemetry, no account required."
+            "text": "Notepatra is its own editor — written from scratch in C++17 and Rust, not a port or a clone. It runs natively on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase, with a ~9 MB bare executable (stripped). Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. Native DuckDB engine ships in v0.1.55 for the Data Analyst mode. No Electron runtime, no telemetry, no mandatory account."
           }
         },
         {
           "@type": "Question",
-          "name": "How big is Notepatra compared to VS Code?",
+          "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest download sizes: 2.8 MB Linux x64 tar.gz, 2.6 MB Linux ARM64 tar.gz, 25.5 MB macOS DMG (with bundled Qt), 43.5 MB Windows MSI / 36.3 MB NSIS / 41.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload -- that's normal for any Qt app installer. Linux installs stay tiny (~5 MB on disk) because Qt5 comes from your distro repo. VS Code is 300+ MB downloaded AND 350+ MB installed. Notepatra installs at 5–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest download sizes: 2.8 MB Linux x64 tar.gz, 2.6 MB Linux ARM64 tar.gz, 25.5 MB macOS DMG (with bundled Qt), 43.5 MB Windows MSI / 36.3 MB NSIS / 41.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~5 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 5–85 MB depending on platform."
           }
         },
         {
@@ -169,7 +169,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 100+ file types with 48 language lexers including Python, JavaScript, TypeScript, C, C++, C#, Java, Rust, Go, HTML, CSS, SQL, JSON, YAML, Markdown, Bash, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, and many more."
+            "text": "Notepatra supports 100+ file types with 78 language lexers as of v0.1.55: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -193,7 +193,7 @@
           "name": "Who built Notepatra?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra was envisioned and is maintained by Prateek Singh, with much of the implementation written with Claude's help. Single-maintainer open-source project, free forever under GPL-3.0. Credit goes to Don Ho for proving 15+ years ago — via Notepad++ — that a code editor can be small, fast, and free."
+            "text": "Notepatra was envisioned and is maintained by Prateek Singh, with much of the implementation written with Claude's help. Single-maintainer open-source project, free forever under GPL-3.0."
           }
         }
       ]
@@ -1353,7 +1353,7 @@
                 </figcaption>
             </figure>
             <figure style="margin: 0;">
-                <img src="screenshots/editor-code.png" alt="Notepatra editor — C++ source with Notepad++ canonical syntax highlighting" loading="lazy"
+                <img src="screenshots/editor-code.png" alt="Notepatra editor — C++ source with 9-hue canonical syntax highlighting" loading="lazy"
                      style="width: 100%; border-radius: 14px; box-shadow: 0 30px 60px -20px rgba(20,20,19,0.25), 0 0 0 1px rgba(20,20,19,0.05); display: block;">
                 <figcaption style="text-align: center; margin-top: 12px; color: var(--text-dim); font-size: 13px;">
                     <strong style="color: var(--c-text);">Editor</strong> — C++ source, 9-hue canonical palette
@@ -1540,7 +1540,7 @@
     <section id="features">
         <div class="section-label">Features</div>
         <div class="section-title">Everything you need. Nothing you don't.</div>
-        <div class="section-desc">Built on QScintilla — the same engine that powers Notepad++. Hot-path file I/O and search use Rust for memory safety on untrusted input.</div>
+        <div class="section-desc">Built on QScintilla — a battle-tested Scintilla-based editor engine. Hot-path file I/O and search use Rust for memory safety on untrusted input.</div>
 
         <div class="features-grid">
             <!-- AI Assistant promoted to slot 1 — the headline feature,
@@ -1854,7 +1854,7 @@
                     <div class="version-tag">v0.1.55 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-05-09</span>
-                        <span>· DuckDB engine, Azure OpenAI, Ollama Cloud, 80+ language lexers, privacy toggle, credential scrubber.</span>
+                        <span>· DuckDB engine, Azure OpenAI, Ollama Cloud, 78 language lexers, privacy toggle, credential scrubber.</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
@@ -1880,7 +1880,7 @@
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🌐 Languages — 47 → 80+ supported, 32 new dedicated lexers</h5>
+                        <h5>🌐 Languages — 47 → 78 supported, 32 new dedicated lexers</h5>
                         <ul>
                             <li>New: Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, Jinja, Liquid, Twig, Dockerfile, Fish, Nushell, TOML, DotEnv, Gitignore, JSON5, BibTeX.</li>
                             <li>Each keyword table verified against the official spec by parallel research agents.</li>
@@ -4032,24 +4032,24 @@ Write-Host "Restarted Explorer — right-click any file now to verify" -Foregrou
                 <p style="margin-bottom: 0;"><strong>Verify it worked:</strong> right-click any <code style="color:var(--green);font-size:12px;">.txt</code> or <code style="color:var(--green);font-size:12px;">.json</code> file → <em>Open with</em> → the Notepatra entry should now read <code style="color:var(--green);font-size:12px;">Notepatra native code editor for the AI era</code> with a clean icon. If you still see the old text, log out and back in (forces every cache layer to flush). New v0.1.24 installs on a clean machine never see this — it only affects upgrades from v0.1.23 or earlier.</p>
             </div>
             <div class="feature-card">
-                <h3>How is Notepatra different from Notepad++ or VS Code?</h3>
-                <p>Notepatra is its own native code editor — written from scratch in C++ and Rust, not a port or a clone. Runs on Linux, macOS Apple Silicon, and Windows from one codebase. Compared to <strong>Notepad++</strong>: truly cross-platform, local-first AI is built in, Rust-powered search and formatters. Compared to <strong>VS Code</strong>: a much smaller install footprint (5–85 MB depending on platform vs 300+ MB for VS Code), no Electron runtime, no telemetry, no account required. Credit to Don Ho for proving a code editor can be small, fast, and free.</p>
+                <h3>What is Notepatra?</h3>
+                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.55: native DuckDB engine for the Data Analyst mode, 78+ language lexers, agentic Coding Mode with read / list / search / write / apply_diff tools.</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
                 <p>No catch. GPL-3.0, no telemetry, no analytics, no API key, no enterprise tier, no subscription. Source on GitHub. The "catch" is that it's a one-person open-source project — no SLA, no warranty, no support contract. See the disclaimer in the footer.</p>
             </div>
             <div class="feature-card">
-                <h3>How big is it compared to VS Code?</h3>
-                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest download sizes: <strong>2.8 MB</strong> Linux x64 tar.gz · <strong>2.6 MB</strong> Linux ARM64 tar.gz · <strong>25.5 MB</strong> macOS DMG · <strong>43.5 MB</strong> Windows MSI / <strong>36.3 MB</strong> NSIS / <strong>41.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux is small because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability. VS Code is 300+ MB regardless. Notepatra installs at 5–85 MB depending on platform.</p>
+                <h3>How big is the binary?</h3>
+                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest download sizes: <strong>2.8 MB</strong> Linux x64 tar.gz · <strong>2.6 MB</strong> Linux ARM64 tar.gz · <strong>25.5 MB</strong> macOS DMG · <strong>43.5 MB</strong> Windows MSI / <strong>36.3 MB</strong> NSIS / <strong>41.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~5 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
-                <p>No. Notepatra is local-first. The AI runs on your machine via Ollama (which you install separately). The only outbound connections are: localhost Ollama, git push/pull when you click them, and the REST client when you send a request. Verifiable with <code style="color:var(--green);font-size:12px;">strace</code>.</p>
+                <p>By default no — Notepatra is local-first. Pick a local AI backend (Ollama on <code>localhost:11434</code>, llama.cpp's llama-server, LM Studio, Jan, vLLM, KoboldCpp) and nothing leaves your machine. Cloud backends (OpenRouter, OpenAI, Azure OpenAI, Ollama Cloud) are <strong>opt-in</strong> from the AI dock dropdown. Even when you opt in, the v0.1.55 credential scrubber strips API keys / tokens / private-key blocks from any code or chat content before it leaves the machine, and the privacy "Share file with AI" toggle (default OFF) controls whether the active editor file is even visible to the model. Verifiable with <code style="color:var(--green);font-size:12px;">strace</code>.</p>
             </div>
             <div class="feature-card">
-                <h3>What languages does it highlight?</h3>
-                <p>100+ file types via 48 language lexers — Python, JavaScript, TypeScript, C, C++, C#, Java, Rust, Go, HTML, CSS, SQL (T-SQL/PL/SQL/MySQL/PostgreSQL/SQLite), JSON, YAML, Markdown, Bash, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, Pascal, CMake, Makefile, and more.</p>
+                <h3>What languages does Notepatra highlight?</h3>
+                <p>100+ file types via <strong>78 language lexers</strong> as of v0.1.55 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>How do I verify a download is genuine?</h3>
@@ -4065,7 +4065,7 @@ Write-Host "Restarted Explorer — right-click any file now to verify" -Foregrou
             </div>
             <div class="feature-card">
                 <h3>Who built it and why?</h3>
-                <p>Built by <a href="https://github.com/singhpratech" style="color:var(--green);">Prateek Singh</a>, constructed with Claude. The short version: Linux and macOS deserved a first-class native code editor, and 2026 deserved one with AI built in. Respect to Don Ho for showing — 15+ years ago, with Notepad++ — that a code editor can be small, fast, and free.</p>
+                <p>Built by <a href="https://github.com/singhpratech" style="color:var(--green);">Prateek Singh</a>, constructed with Claude. The short version: Linux and macOS deserved a first-class native code editor, and 2026 deserved one with AI built in — local-first by default, cross-platform from one codebase, ~9 MB stripped.</p>
             </div>
         </div>
     </section>
@@ -4073,9 +4073,9 @@ Write-Host "Restarted Explorer — right-click any file now to verify" -Foregrou
     <!-- Story -->
     <div class="story">
         <h2>The Story</h2>
-        <p>I'm <strong>Prateek Singh</strong>. A developer who spent years on Linux watching Windows users have Notepad++ as their go-to native code editor — small, fast, free — while I was stuck with Wine hacks or bloated Electron editors eating 500 MB of RAM to show a text file.</p>
-        <p>Every text editor told me to pick two: <strong>fast</strong>, <strong>powerful</strong>, or <strong>native</strong>. Vim is fast but cryptic. VS Code is powerful but heavy. Notepad++ is both — but it only runs on Windows.</p>
-        <p>So I built Notepatra. Not a port. Not a wrapper. Something new — for everyone. I asked: <em>what would a Notepad++-style editor look like if it was built today, in 2026, when AI is part of every developer's workflow, and ran natively on Linux + macOS + Windows from one codebase?</em></p>
+        <p>I'm <strong>Prateek Singh</strong>. A developer who spent years on Linux wanting a small, fast, free native code editor — and finding only Wine hacks or bloated Electron editors eating 500 MB of RAM to show a text file.</p>
+        <p>Every text editor told me to pick two of three: <strong>fast</strong>, <strong>powerful</strong>, <strong>native</strong>. Vim is fast and native but cryptic. Modern Electron editors are powerful but heavy. The truly tiny native ones either don't have AI or don't run cross-platform.</p>
+        <p>So I built Notepatra. Not a port. Not a wrapper. Something new — for everyone. I asked: <em>what would a small native code editor look like if it was built today, in 2026, when AI is part of every developer's workflow, and ran natively on Linux + macOS + Windows from one codebase?</em></p>
         <p>The answer: a tiny native binary (~9 MB bare) with a Rust-powered core, Scintilla editing engine, and local-first AI integration. No cloud. No telemetry. No subscription. Just you and your code — on Linux, macOS, and Windows.</p>
     </div>
 

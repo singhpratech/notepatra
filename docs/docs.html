@@ -392,7 +392,7 @@
 
   <h2 id="introduction" class="anchor-target">Introduction</h2>
   <p>Notepatra is a <strong>native</strong> code editor written in C++17 with a Rust core for the heavy-lifting (memory-mapped file I/O, Aho-Corasick search, Myers diff, formatters). It targets <strong>Linux x64 / ARM64, macOS Apple Silicon, and Windows x64</strong>. The bare executable is ~9 MB stripped on each platform; downloads range 2.6 MB (Linux ARM64) to ~43.5 MB (Windows MSI with Qt DLLs bundled).</p>
-  <p>Unlike Electron-based editors, Notepatra does not ship a browser runtime. It uses Qt5 + QScintilla for the editor engine — the same Scintilla core that powers Notepad++ — so all the behavior you expect from Notepad++ (100+ file types, 48 language lexers, brace matching, folding, code completion) is built in.</p>
+  <p>Unlike Electron-based editors, Notepatra does not ship a browser runtime. It uses Qt5 + QScintilla — a battle-tested Scintilla-based editor engine — so 100+ file types, 78 language lexers, brace matching, folding, and code completion are built in.</p>
   <p>Unlike cloud-first editors, Notepatra's AI is <strong>local-first</strong>. It talks to <strong>your choice</strong> of local AI runner — <a href="https://ollama.com">Ollama</a>, <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>'s llama-server (loads any GGUF directly), <a href="https://lmstudio.ai">LM Studio</a>, <a href="https://jan.ai">Jan</a>, <a href="https://docs.vllm.ai">vLLM</a>, KoboldCpp, text-generation-webui, or anything that speaks the OpenAI <code>/v1/chat/completions</code> API. Pick your backend in the AI dock dropdown. Nothing leaves your computer unless you opt into a cloud backend (OpenAI / OpenRouter / Anthropic via OpenRouter). No mandatory API keys, no subscription, no telemetry.</p>
   <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock and the model gets 5 native tools — <code>read_file</code>, <code>list_dir</code>, <code>search</code>, <code>write_file</code>, <code>apply_diff</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
 
@@ -590,7 +590,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
   <!-- ══════════════ Editor ══════════════ -->
 
   <h2 id="editor-basics" class="anchor-target">Editor basics</h2>
-  <p>The editor is QScintilla 2.14.1 (official Riverbank source) under the hood. Everything Notepad++ does, Notepatra does — folding, brace matching, auto-indent, bookmarks, multi-cursor (hold Alt), rectangular selection, code completion, snippets.</p>
+  <p>The editor is QScintilla 2.14.1 (official Riverbank source) under the hood: folding, brace matching, auto-indent, bookmarks, multi-cursor (hold Alt), rectangular selection, code completion, and snippets are all built in.</p>
 
   <h3>Opening &amp; saving</h3>
   <ul>
@@ -612,16 +612,17 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
   </ul>
 
   <h2 id="languages-lexers" class="anchor-target">Languages &amp; lexers</h2>
-  <p>Notepatra ships 48+ language lexers. The Language menu has every supported syntax; extensions are auto-detected from the filename.</p>
-  <p>Full list: Python, JavaScript/TypeScript/JSX, CoffeeScript, C/C++, C#, D, Java (+ Kotlin, Scala, Groovy), HTML/PHP, CSS/SCSS/LESS, XML, JSON, SQL (ANSI / T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite), Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Matlab, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile.</p>
+  <p>Notepatra ships <strong>78+ language lexers</strong> as of v0.1.55. The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
+  <p><strong>Core (Qt-bundled):</strong> Python, JavaScript/TypeScript/JSX, CoffeeScript, C/C++, C#, D, Java/Kotlin, HTML/PHP, CSS/SCSS/LESS, XML, JSON, SQL (ANSI / T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite), Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Matlab, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile.</p>
+  <p><strong>v0.1.55 additions (32 dedicated lexers, keyword tables verified against official specs):</strong> Dart · Solidity · Zig · Vala · Hack · Julia · R · Protobuf · F# · HCL/Terraform · Thrift · GraphQL · GDScript · Nim · Cython · Mojo · Crystal · Elixir · Scala · Groovy · Apex · Jinja · Liquid · Twig · Dockerfile · Fish · Nushell · TOML · DotEnv · Gitignore · JSON5 · BibTeX. Each ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing — <code>.dart</code>, <code>.zig</code>, <code>.jl</code>, <code>.toml</code>, <code>.ex</code>, <code>Cargo.toml</code>, <code>Dockerfile</code>, <code>.gitignore</code>, <code>.env</code>, <code>.fish</code>, <code>.json5</code>, <code>.tf</code>, etc. now point at their dedicated lexers instead of falling back to the closest-fit generic.</p>
 
   <div class="callout info">
-    <strong>Rust / Go / Swift</strong> use the C++ lexer for now — brace/bracket handling is right but language-specific keywords aren't. A dedicated Rust lexer is planned.
+    <strong>Rust / Go / Swift</strong> still use the C++ lexer base — brace/bracket handling is correct but language-specific keywords are generic. Dedicated lexers for these are planned.
   </div>
 
   <h2 id="themes-palette" class="anchor-target">Themes &amp; palette</h2>
-  <p>Three themes ship: <strong>Light</strong> (default), <strong>Dark</strong> (VS Code-inspired), and <strong>Monokai</strong>. Change via <code>Settings → Theme</code>. The theme is persisted in <code>config.json</code>.</p>
-  <p>Every theme applies the Notepad++ canonical 9-hue palette: keywords blue bold (<code>#0000FF</code>), types violet (<code>#8000FF</code>), comments green italic (<code>#008000</code>), numbers orange (<code>#FF8000</code>), strings grey (<code>#808080</code>), operators navy bold (<code>#000080</code>), preprocessor brown (<code>#804000</code>), classes maroon (<code>#7F0000</code>), identifiers plain (default text). Dark theme uses Zenburn-derived hues from N++ <code>DarkModeDefault.xml</code> (warm sand keywords, sage types, rose strings, olive operators, peach preprocessor) so each token kind is on a distinct hue arc — no more "all blue shades" effect. The palette is driven by <code>lexer-&gt;description(i)</code> — it walks every style slot in every lexer, matches substrings like "keyword", "comment", "string", and paints accordingly. Works across all 48+ lexers without hard-coding. Hex codes verified against notepad-plus-plus master <code>stylers.model.xml</code>.</p>
+  <p>Three themes ship: <strong>Light</strong> (default), <strong>Dark</strong>, and <strong>Monokai</strong>. Change via <code>Settings → Theme</code>. The theme is persisted in <code>config.json</code>.</p>
+  <p>Every theme applies a curated 9-hue palette: keywords blue bold (<code>#0000FF</code>), types violet (<code>#8000FF</code>), comments green italic (<code>#008000</code>), numbers orange (<code>#FF8000</code>), strings grey (<code>#808080</code>), operators navy bold (<code>#000080</code>), preprocessor brown (<code>#804000</code>), classes maroon (<code>#7F0000</code>), identifiers plain (default text). Dark theme uses Zenburn-derived hues (warm sand keywords, sage types, rose strings, olive operators, peach preprocessor) so each token kind is on a distinct hue arc — no more "all blue shades" effect. The palette is driven by <code>lexer-&gt;description(i)</code> — it walks every style slot in every lexer, matches substrings like "keyword", "comment", "string", and paints accordingly. Works across all 78+ lexers without hard-coding.</p>
 
   <h2 id="rulers-crosshair" class="anchor-target">Rulers &amp; crosshair overlay</h2>
   <p>Optional visual aids for long files and precise cursor placement:</p>
@@ -724,11 +725,11 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
   </ul>
   <p>Dialect-specific keyword sets are fed to Scintilla via <code>SCI_SETKEYWORDS</code> (since <code>QsciLexerSQL::setKeywords</code> is protected). T-SQL adds DECLARE/MERGE/OUTPUT/PIVOT/OVER/PARTITION, PL/SQL adds PLS_INTEGER/SYSDATE/NVL/DECODE/CONNECT BY, etc.</p>
 
-  <h2 id="compare" class="anchor-target">Compare &amp; ComparePlus</h2>
-  <p>Two menu entries under Plugins: <code>Compare (inbuilt)</code> and <code>ComparePlus</code>. Both share the same <code>CompareWidget</code> — different tab labels so you can have multiple compare tabs open at once.</p>
+  <h2 id="compare" class="anchor-target">Compare</h2>
+  <p>A side-by-side diff view shipped under Plugins → Compare. Backed by Rust's Myers diff (<code>similar</code> crate) and a custom <code>CompareWidget</code> rendered with Qt.</p>
 
   <blockquote>
-    Visual UX inspired by <a href="https://github.com/pnedev/comparePlus">ComparePlus</a> by Pavel Nedev — the gold-standard diff plugin for Notepad++. Notepatra's implementation is a fresh Qt + Rust port in a different codebase, but the visual conventions are credit to Pavel.
+    Visual UX inspired by <a href="https://github.com/pnedev/comparePlus">ComparePlus</a> by Pavel Nedev. Notepatra's implementation is a fresh Qt + Rust port in a different codebase, but the visual conventions are credit to Pavel.
   </blockquote>
 
   <h3>How it works</h3>
@@ -791,22 +792,29 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
   <!-- ══════════════ AI ══════════════ -->
 
   <h2 id="ai-overview" class="anchor-target">AI integration overview</h2>
-  <p>Notepatra's AI is <strong>local-first</strong>. Pick any of <strong>three backends</strong> in <em>Settings → Preferences → AI</em> — all run on your machine, none phone home, none require a mandatory API key:</p>
+  <p>Notepatra's AI is <strong>local-first by default</strong> with optional cloud backends. As of v0.1.55, six backends are available — pick from the AI dock dropdown:</p>
   <table>
-    <thead><tr><th>Backend</th><th>Protocol</th><th>Default URL</th><th>What it gives you</th></tr></thead>
+    <thead><tr><th>Backend</th><th>Type</th><th>Protocol / URL</th><th>What it gives you</th></tr></thead>
     <tbody>
-      <tr><td><strong>Ollama</strong> (default)</td><td>Native <code>/api/generate</code></td><td><code>http://localhost:11434</code></td><td>Easiest to install. One-line install, auto-detects models with <code>/api/tags</code>.</td></tr>
-      <tr><td><strong>llama.cpp</strong></td><td>OpenAI <code>/v1/chat/completions</code></td><td><code>http://localhost:8080</code></td><td>Loads any GGUF file directly — no daemon, no config format. Maximum control + minimum overhead.</td></tr>
-      <tr><td><strong>OpenAI-compat</strong></td><td>OpenAI <code>/v1/chat/completions</code></td><td>user-configurable</td><td>Works with LM Studio, Jan, vLLM, KoboldCpp, llamafile, text-generation-webui, OpenRouter, or OpenAI itself.</td></tr>
+      <tr><td><strong>Ollama</strong> (default)</td><td>Local</td><td>Native <code>/api/generate</code> · <code>http://localhost:11434</code></td><td>Easiest to install. One-line install, auto-detects models with <code>/api/tags</code>. <code>/api/show</code> capability probe (v0.1.55) auto-detects which models support tools / thinking / vision.</td></tr>
+      <tr><td><strong>Ollama Cloud</strong></td><td>Cloud</td><td>OpenAI-compat over HTTPS · <code>https://ollama.com</code></td><td>Same Ollama models, served from Ollama's hosted infrastructure. Per-provider key slot in Settings.</td></tr>
+      <tr><td><strong>llama.cpp</strong></td><td>Local</td><td>OpenAI <code>/v1/chat/completions</code> · <code>http://localhost:8080</code></td><td>Loads any GGUF file directly — no daemon, no config format. Maximum control + minimum overhead.</td></tr>
+      <tr><td><strong>OpenRouter</strong></td><td>Cloud</td><td>OpenAI-compat · <code>https://openrouter.ai/api</code></td><td>One key, hundreds of models (Anthropic, OpenAI, Google, Mistral, Meta, xAI, DeepSeek, Qwen). Unified <code>reasoning</code> field — Think checkbox toggles thinking on Claude / o-series / Gemini consistently.</td></tr>
+      <tr><td><strong>OpenAI</strong></td><td>Cloud</td><td>OpenAI <code>/v1/chat/completions</code> · <code>https://api.openai.com</code></td><td>Direct OpenAI access for GPT-4 family + o-series. Per-provider key slot.</td></tr>
+      <tr><td><strong>Azure OpenAI</strong></td><td>Cloud</td><td>Azure deployment URL with <code>?api-version=...</code></td><td>Enterprise OpenAI through your Azure subscription. Configure resource name + deployment name + API version in the dedicated Azure section of the Settings dialog.</td></tr>
     </tbody>
   </table>
-  <p>If the selected backend isn't reachable, AI panels show a friendly backend-specific banner (e.g. "Ollama not running — start it: <code>ollama serve</code>" or "llama-server not running on <code>http://localhost:8080</code> — start it: <code>llama-server -m model.gguf --port 8080</code>").</p>
+  <p>If the selected backend isn't reachable, AI panels show a backend-specific banner (e.g. "Ollama not running — start it: <code>ollama serve</code>", or for cloud backends "OpenRouter key not set — open Settings"). The cloud-config banner is red when keys are missing for the selected backend, green when configured.</p>
+  <p><strong>Per-provider key slots (v0.1.55).</strong> The AI Settings dialog has a 4-section layout — OpenRouter, OpenAI, Ollama Cloud, Azure OpenAI — each with its own <em>Test</em> / <em>Save</em> / <em>Forget</em> buttons and key slot. Strict no-cross-provider lookup: the OpenRouter backend will never accidentally use the OpenAI key, and vice-versa. Legacy single-key configs migrate automatically by sniffing the prefix (<code>sk-or-</code> → OpenRouter, <code>sk-</code> → OpenAI).</p>
+  <p><strong>Searchable model dropdown (v0.1.55).</strong> Type any provider key (<code>openai</code>, <code>anthropic</code>, <code>google</code>, <code>xai</code>) or alias (<code>grok</code>, <code>claude</code>, <code>gpt</code>, <code>gemini</code>, <code>kimi</code>, <code>qwen</code>) and the dropdown filters to that provider's models — works whether you remember the brand name or the model name.</p>
   <p>AI surfaces in Notepatra:</p>
   <ul>
     <li><strong>AI Fix buttons</strong> in JSON Tools / HTML Tools / Bracket Tools plugins — sends broken content, gets fixed content back</li>
-    <li><strong>AI Assistant panel</strong> — general-purpose chat with your code, supports multi-turn, attach files, voice input</li>
-    <li><strong>Ollama Status bar</strong> in every AI panel showing a green/red dot, the model dropdown (populated live from <code>/api/tags</code>), and a refresh button</li>
+    <li><strong>AI Assistant panel</strong> — general-purpose chat with your code, supports multi-turn, attach files, voice input. Modes: Chat / Coding / Data Analyst.</li>
+    <li><strong>Status bar</strong> in every AI panel showing connectivity dot, the searchable model dropdown, and a refresh button</li>
   </ul>
+  <p><strong>Privacy: "Share file with AI" toggle (v0.1.55).</strong> A red lock indicator next to the AI dock title controls whether the file currently in the editor is included in the AI's context. <strong>Default OFF</strong>. Available <strong>only in Coding Mode</strong> — Chat and Data Analyst modes never see file content. The system prompt teaches the model to politely instruct you to enable the toggle if asked "can you see this file?".</p>
+  <p><strong>Credential scrubber (v0.1.55).</strong> Every editor-derived chunk (selection, workspace block, attached file, user input) passes through a 14-pattern redactor before leaving the machine — OpenRouter / Anthropic / OpenAI / GitHub / GitLab / AWS / Slack / Stripe / SendGrid / Google API / JWT / PEM private-key blocks / generic <code>password=</code>/<code>api_key=</code>/<code>token=</code>. Replacement is in-place with a <code>[REDACTED-VENDOR-KEY]</code> marker so the model still sees that a credential was redacted.</p>
 
   <h2 id="ai-setup" class="anchor-target">Ollama setup</h2>
   <ol>
@@ -1016,10 +1024,11 @@ Content-Type: application/json
   <p>Supported types: <code>line</code>, <code>bar</code>, <code>pie</code>, <code>scatter</code>. Theme-aware. Category-aware axes for string-valued X columns; numeric axes for numeric X. Malformed JSON falls back to displaying the spec as a code block — nothing breaks.</p>
 
   <h3>Database connection manager</h3>
-  <p>Click <strong>Manage Connections…</strong> (visible only when Data Mode is on) to add SQLite, PostgreSQL, MySQL, or SQL Server connections. The dialog tests connections with one click and reports which Qt SQL drivers are actually installed on your system. Saved at <code>~/.config/notepatra/db-connections.json</code>.</p>
+  <p>Click <strong>Manage Connections…</strong> (visible only when Data Mode is on) to add SQLite, PostgreSQL, MySQL, SQL Server, or <strong>DuckDB</strong> (v0.1.55) connections. The dialog tests connections with one click and reports which Qt SQL drivers are actually installed on your system. Saved at <code>~/.config/notepatra/db-connections.json</code>.</p>
   <p><strong>Driver availability:</strong></p>
   <ul>
     <li><strong>SQLite</strong> ships with Qt by default — works out of the box on every Notepatra build.</li>
+    <li><strong>DuckDB (v0.1.55)</strong> — native libduckdb engine, vendored into the build. Auto-detects file type by extension when you point a connection at a path: <code>.duckdb</code> → file database; <code>.csv</code> / <code>.parquet</code> / <code>.json</code> → registered as a view; <code>s3://…</code> URIs use httpfs + S3 with options <code>region;akid;secret;sess</code>. RAII per-handle, streaming row callback, schema introspection. No external Qt SQL plugin needed.</li>
     <li><strong>PostgreSQL / MySQL / SQL Server</strong> need separate Qt SQL plugins:
       <ul>
         <li>Debian / Ubuntu: <code>sudo apt install libqt5sql5-psql libqt5sql5-mysql libqt5sql5-odbc</code></li>
@@ -1028,10 +1037,28 @@ Content-Type: application/json
       </ul>
     </li>
   </ul>
-  <p><strong>Honest limitation:</strong> connection passwords are obscured at rest (XOR + base64), <em>NOT</em> real encryption. This is "don't show plaintext to people walking past my screen", NOT "survives a stolen laptop." For production secrets, use OS keychain / <code>.pgpass</code> / instance-role IAM. OS-keychain integration is a v0.1.44+ candidate.</p>
 
-  <h3>Project-level instruction file: <code>.notepatra/data-analyst.md</code></h3>
-  <p>Drop a markdown file at <code>.notepatra/data-analyst.md</code> in your workspace and Notepatra auto-prepends its contents to the system prompt as a "Project data context" layer when Data Mode is on. Per-workspace, version-controllable, capped at 8 KB. Use it for things like:</p>
+  <h3>Browse Schemas… (Database tree dialog, v0.1.55)</h3>
+  <p>Click <strong>Browse Schemas…</strong> in the Data Analyst panel to open a tree view of every saved connection. Schema introspection is lazy — clicking a connection node loads its schemas; clicking a schema loads its tables; clicking a table loads its columns + types. Supports SQLite (via <code>sqlite_master</code>), DuckDB (via the native <code>listTables</code> / <code>describeTable</code> wrappers), and any database with <code>INFORMATION_SCHEMA</code> (PostgreSQL, MySQL, SQL Server). Live filter input narrows the tree by name. Right-click any node:</p>
+  <ul>
+    <li><strong>Send schema to AI</strong> — pins the table's column list to the next prompt as authoritative schema context.</li>
+    <li><strong>Sample 10 rows</strong> — runs <code>SELECT * FROM &lt;table&gt; LIMIT 10</code> in a results pane.</li>
+    <li><strong>Copy SELECT *</strong> — drops a fully-qualified <code>SELECT * FROM schema.table</code> into your clipboard.</li>
+  </ul>
+
+  <p><strong>Honest limitation:</strong> connection passwords are obscured at rest (XOR + base64), <em>NOT</em> real encryption. This is "don't show plaintext to people walking past my screen", NOT "survives a stolen laptop." For production secrets, use OS keychain / <code>.pgpass</code> / instance-role IAM. OS-keychain integration is a future candidate.</p>
+
+  <h3>Project-level data context: <code>.notepatra/data-analyst/</code> (v0.1.55)</h3>
+  <p>Drop one or more markdown / SQL files into a <code>.notepatra/data-analyst/</code> directory in your workspace and Notepatra auto-prepends their contents to the system prompt as a "Project data context" layer when Data Mode is on. Per-workspace, version-controllable. Conventions:</p>
+  <ul>
+    <li><code>instructions.md</code> — high-level analyst guidance ("treat NULL amounts as 0", "fiscal year matches calendar")</li>
+    <li><code>data-dictionary.md</code> — column-by-column meaning for tricky tables</li>
+    <li><code>business-rules.md</code> — domain rules, edge cases, segment definitions</li>
+    <li><code>kpis.md</code> — definitions of revenue / churn / retention / ARR / LTV in your business</li>
+    <li><code>sample-queries.sql</code> — reference SQL the model can adapt</li>
+    <li>any other <code>*.md</code> / <code>*.sql</code> files in the directory get loaded too</li>
+  </ul>
+  <p>Caps: 64 KB total across all files, 16 KB per file. The Welcome card surfaces the loaded-files count so you know context was picked up. The legacy single-file <code>.notepatra/data-analyst.md</code> is also still supported.</p>
   <pre><code>- The `orders` table joins `customers` on `customer_id`.
 - Treat NULL in `amount` as 0 (legacy import bug, never backfilled).
 - `rate` is a percentage stored 0–1, not 0–100. Don't average it.
@@ -1262,11 +1289,11 @@ sha256sum -c SHA256SUMS --ignore-missing</code></pre>
 
   <h2 id="faq" class="anchor-target">FAQ</h2>
 
-  <h4>Is Notepatra a Notepad++ port?</h4>
-  <p>No. Notepad++ is Win32 C++. Notepatra is Qt5 + Rust. Different codebase, different platforms, similar spirit. Notepad++ doesn't run on Linux or macOS, Notepatra does.</p>
+  <h4>Is Notepatra a port of another editor?</h4>
+  <p>No. Notepatra is its own editor — written from scratch in C++17 with a Rust core for hot paths (mmap I/O, Aho-Corasick search, Myers diff, formatters). It runs natively on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase.</p>
 
-  <h4>How big is the binary compared to VS Code?</h4>
-  <p>The bare executable is ~9 MB stripped on each platform. Notepatra installs at 5–85 MB depending on platform; VS Code is 300+ MB downloaded and 350+ MB installed.</p>
+  <h4>How big is the binary?</h4>
+  <p>The bare executable is ~9 MB stripped on each platform. Installed footprint ranges 5 MB on Linux (Qt comes from your distro) to ~85 MB on Windows (Qt5 DLLs + QScintilla DLL bundled in the MSI). Truly tiny — and zero browser runtime.</p>
 
   <h4>Does my code go to the cloud?</h4>
   <p>By default, no — Notepatra is local-first. The outbound connections are: (1) your selected local AI backend (Ollama on <code>localhost:11434</code>, llama-server, LM Studio, etc.) when you use AI features, (2) <code>git push/pull</code> when you click the Git panel buttons, (3) the REST client when you send a request, (4) a single GitHub-API call on launch when the auto-updater checks for new releases. Cloud AI backends (OpenAI / OpenRouter / Anthropic via OpenRouter / Gemini via OpenRouter) are <strong>opt-in</strong> via the AI dock backend dropdown — your code only leaves the machine when you explicitly point Notepatra at one. No analytics, no telemetry. Verifiable with <code>strace</code>.</p>
@@ -1298,7 +1325,7 @@ sha256sum -c SHA256SUMS --ignore-missing</code></pre>
   <p>Notepatra is licensed under the <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE">GNU General Public License v3.0</a>. No warranty. See GPL-3.0 §15 and §16 for the disclaimer of warranty and limitation of liability.</p>
 
   <footer class="doc-footer">
-    Notepatra — <strong>Envisioned by Prateek Singh. Inspired by Notepad++. Built by Claude.</strong><br>
+    Notepatra — <strong>Envisioned by Prateek Singh. Built with Claude.</strong><br>
     © 2026 Prateek Singh · GPL-3.0 · <a href="/">notepatra.org</a> · <a href="https://github.com/singhpratech/notepatra">GitHub</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Changelog</a>
   </footer>
 
