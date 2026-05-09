@@ -168,6 +168,7 @@ set(SOURCES
     src/lexer_typescript.cpp
     src/lexer_extras.cpp
     src/aipanel.cpp
+    src/inlineedit.cpp
     src/restclient.cpp
     src/gitpanel.cpp
     src/sqlfmtpanel.cpp
@@ -204,6 +205,7 @@ set(HEADERS
     src/gitgutter.h
     src/ollama.h
     src/aipanel.h
+    src/inlineedit.h
     src/dbconnections.h
     src/csvanalyst.h
     src/chartrender.h
