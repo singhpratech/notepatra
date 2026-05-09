@@ -141,7 +141,7 @@ Every plugin opens in its own tab. Real UI, not just a menu click.
 
 ### AI Powered — Local, private, no cloud
 
-Backend dropdown ships **7 entries** — **Ollama**, **llama.cpp (GGUF)**, **OpenRouter** (cloud), **LM Studio**, **Jan**, **OpenAI**, and **Custom** (any OpenAI-compatible endpoint, so vLLM / KoboldCpp / llamafile / TGI all work via the Custom entry with the URL pasted in). API key edits inline — no digging into settings. Nothing leaves your machine unless you point it to a cloud backend. No telemetry. No subscription.
+Backend dropdown ships **6 entries** as of v0.1.55 — **Ollama** (local default · `localhost:11434`), **llama.cpp (GGUF)** (local · `localhost:8080`), **OpenRouter** (cloud · 100+ models), **Ollama Cloud** (cloud · gpt-oss:120b / qwen3-coder:480b / deepseek-v3.1:671b), **OpenAI** (cloud · GPT-4o / GPT-5 / o-series), **Azure OpenAI** (enterprise). Per-provider key slots — no cross-provider bleed. To use **LM Studio**, **Jan**, **vLLM**, **KoboldCpp**, **llamafile**, or **text-generation-webui**, pick the `llama.cpp` entry and set the base URL in Settings → Preferences → AI (they all speak OpenAI-compat). Nothing leaves your machine unless you point it to a cloud backend. No telemetry. No subscription.
 
 #### AI Assistant — side-dock (`Ctrl+Shift+A`)
 The AI chat lives in a **persistent right-side dock**, not an editor tab. One conversation, preserved across tab switches. Tick **Coding Mode** to open the 3-column coding layout (file tree · editor · AI chat) 3-pane layout.
@@ -166,7 +166,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 ollama pull qwen2.5-coder:3b   # 2 GB, best for code on CPU-only / 16 GB RAM
 ollama serve
 ```
-Notepatra auto-detects the running Ollama and picks the most CPU-friendly model installed. For llama.cpp / LM Studio / OpenRouter, pick the backend from the dropdown at the top of the AI panel; base URL and API key are editable inline.
+Notepatra auto-detects the running Ollama and picks the most CPU-friendly model installed. For **llama.cpp / OpenRouter / Ollama Cloud / OpenAI / Azure OpenAI**, pick the backend from the dropdown at the top of the AI panel; base URL and API key are editable inline. To use LM Studio / Jan / vLLM / KoboldCpp / llamafile / text-generation-webui, pick `llama.cpp` and set the base URL in Settings → Preferences → AI.
 
 ### More Features
 

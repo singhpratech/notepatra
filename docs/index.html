@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Notepatra — The Code Editor Built for the AI Era</title>
-    <meta name="description" content="Native C++/Rust code editor built for the AI era. ~9 MB bare native executable. 200+ file types. 80+ language lexers. JSON/HTML/SQL fixers. DuckDB-powered Data Analyst mode. Local AI — Ollama, llama.cpp (GGUF), LM Studio, OpenRouter, OpenAI, Azure OpenAI. Free forever. Linux, Windows, macOS.">
+    <meta name="description" content="Native C++/Rust code editor built for the AI era. ~9 MB bare native executable. 200+ file types. 80+ language lexers. JSON/HTML/SQL fixers. DuckDB-powered Data Analyst mode. AI dock dropdown: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI — plus any OpenAI-compatible server. Free forever. Linux, Windows, macOS.">
     <meta name="keywords" content="notepatra, code editor, linux, windows, mac, macos, AI code editor, ollama, llama.cpp, openrouter, azure openai, duckdb, data analyst, JSON formatter, HTML fixer, rust, c++, qscintilla, native, lightweight">
     <meta name="author" content="Prateek Singh">
     <link rel="canonical" href="https://notepatra.org/">
@@ -21,7 +21,7 @@
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://notepatra.org/">
     <meta property="og:title" content="Notepatra — The Code Editor Built for the AI Era">
-    <meta property="og:description" content="Tiny native C++/Rust binary (~9 MB bare). 200+ file types · 80+ language lexers. AI-powered JSON/HTML/SQL fixers. Local AI — Ollama · llama.cpp · LM Studio · any OpenAI-compatible server. Linux · Windows · macOS. Free forever.">
+    <meta property="og:description" content="Tiny native C++/Rust binary (~9 MB bare). 200+ file types · 80+ language lexers. AI-powered JSON/HTML/SQL fixers. 6 AI backends (Ollama · llama.cpp · OpenRouter · Ollama Cloud · OpenAI · Azure OpenAI) plus any OpenAI-compatible server. Linux · Windows · macOS. Free forever.">
     <meta property="og:image" content="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-512.png">
 
     <!-- Twitter -->
@@ -1480,7 +1480,7 @@
             <div>
                 <div class="section-label">AI Powered · Local-first</div>
                 <div class="section-title">Your AI. Your machine. Zero cloud.</div>
-                <p style="color: var(--text-dim); margin-bottom: 16px;">Notepatra's AI runs on YOUR laptop. Pick any local runner — <strong>Ollama</strong>, <strong>llama.cpp</strong> (loads any GGUF), <strong>LM Studio</strong>, <strong>Jan</strong>, <strong>vLLM</strong>, <strong>KoboldCpp</strong>, <strong>text-generation-webui</strong>, or anything that speaks OpenAI's <code>/v1/chat/completions</code>. Nothing leaves your computer. No mandatory API key. No subscription. No telemetry.</p>
+                <p style="color: var(--text-dim); margin-bottom: 16px;">Notepatra's AI runs on YOUR laptop. Pick <strong>Ollama</strong> (default) or <strong>llama.cpp</strong> (loads any GGUF) — or point the <code>llama.cpp</code> entry at any other OpenAI-compatible server (LM Studio, Jan, vLLM, KoboldCpp, llamafile, text-generation-webui). Nothing leaves your computer. No mandatory API key. No subscription. No telemetry.</p>
                 <p style="color: var(--text-dim); margin-bottom: 24px;">When the regex fixer can't repair your broken JSON — the AI can. Hybrid approach: speed of regex, intelligence of AI.</p>
                 <div class="ai-actions">
                     <span class="ai-tag">Explain Code</span>
@@ -1495,22 +1495,21 @@
                     <span class="ai-tag">Optimize</span>
                     <span class="ai-tag">Translate Py↔JS</span>
                 </div>
-                <!-- Explicit backend list so users know they're not locked in. -->
+                <!-- Backend dropdown — 6 entries as of v0.1.55 + bonus OpenAI-compat. -->
                 <div style="margin-top: 28px; padding: 16px 18px; background: rgba(204,120,92,0.06); border: 1px solid rgba(204,120,92,0.22); border-radius: 10px;">
-                    <div style="font-size: 12px; color: var(--c-text); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px;">Supported backends — pick your own</div>
+                    <div style="font-size: 12px; color: var(--c-text); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px;">Supported backends — 6 in the dropdown, plus OpenAI-compat</div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; font-size: 13px; color: var(--text-dim);">
                         <div>🏠 <strong>Local (no account, no key)</strong></div><div></div>
-                        <div>• <strong>Ollama</strong></div><div>localhost:11434</div>
-                        <div>• <strong>llama.cpp</strong> (GGUF)</div><div>localhost:8080</div>
-                        <div>• <strong>LM Studio</strong></div><div>localhost:1234</div>
-                        <div>• <strong>Jan</strong></div><div>localhost:1337</div>
-                        <div>• <strong>vLLM</strong></div><div>localhost:8000</div>
-                        <div>• <strong>KoboldCpp</strong></div><div>localhost:5001</div>
-                        <div>• <strong>llamafile</strong></div><div>localhost:8080</div>
-                        <div>• <strong>text-generation-webui</strong></div><div>localhost:5000</div>
+                        <div>• <strong>Ollama</strong></div><div>localhost:11434 · default</div>
+                        <div>• <strong>llama.cpp</strong> (GGUF)</div><div>localhost:8080 · llama-server</div>
                         <div style="margin-top: 10px;">☁ <strong>Cloud (API key)</strong></div><div></div>
-                        <div>• <a href="https://openrouter.ai" style="color: var(--c-accent); text-decoration: none;"><strong>OpenRouter</strong></a></div><div style="color: var(--text-dim);">100+ models — Claude, GPT, Gemini, Llama, Mistral, DeepSeek, Qwen</div>
-                        <div>• <a href="https://openai.com" style="color: var(--c-accent); text-decoration: none;"><strong>OpenAI</strong></a></div><div style="color: var(--text-dim);">ChatGPT API directly</div>
+                        <div>• <a href="https://openrouter.ai" style="color: var(--c-accent); text-decoration: none;"><strong>OpenRouter</strong></a></div><div style="color: var(--text-dim);">100+ models — Claude, GPT, Gemini, Llama, Mistral, DeepSeek, Qwen, Grok, Kimi</div>
+                        <div>• <a href="https://ollama.com/cloud" style="color: var(--c-accent); text-decoration: none;"><strong>Ollama Cloud</strong></a></div><div style="color: var(--text-dim);">gpt-oss:120b · qwen3-coder:480b · deepseek-v3.1:671b</div>
+                        <div>• <a href="https://openai.com" style="color: var(--c-accent); text-decoration: none;"><strong>OpenAI</strong></a></div><div style="color: var(--text-dim);">ChatGPT API · GPT-4o, GPT-5, o-series</div>
+                        <div>• <a href="https://azure.microsoft.com/en-us/products/ai-services/openai-service" style="color: var(--c-accent); text-decoration: none;"><strong>Azure OpenAI</strong></a></div><div style="color: var(--text-dim);">enterprise Azure resource + deployment</div>
+                    </div>
+                    <div style="margin-top: 14px; font-size: 12px; color: var(--text-dim); border-top: 1px solid rgba(204,120,92,0.18); padding-top: 12px;">
+                        <strong>Plus any OpenAI-compatible server</strong> — point the <code>llama.cpp</code> entry at any URL/port. Works with <a href="https://lmstudio.ai" style="color: var(--c-accent);">LM Studio</a> · <a href="https://jan.ai" style="color: var(--c-accent);">Jan</a> · <a href="https://docs.vllm.ai" style="color: var(--c-accent);">vLLM</a> · <a href="https://github.com/LostRuins/koboldcpp" style="color: var(--c-accent);">KoboldCpp</a> · <a href="https://github.com/Mozilla-Ocho/llamafile" style="color: var(--c-accent);">llamafile</a> · <a href="https://github.com/oobabooga/text-generation-webui" style="color: var(--c-accent);">text-generation-webui</a> — set the base URL in Settings → Preferences → AI.
                     </div>
                 </div>
             </div>
