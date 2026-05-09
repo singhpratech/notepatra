@@ -268,6 +268,13 @@ private:
     QFrame *m_dataWelcomeFrame = nullptr;
     void renderDataWelcomeCard();
     void removeDataWelcomeCard();
+    // v0.1.57 — Coding-mode welcome card (Composer / @file mention / Ctrl+I
+    // inline edit / agentic git tools intro). Lives inside the chat scroll
+    // area, shown only when Coding mode is on AND chat is empty AND
+    // Config::aiHideCodingWelcome is false. Parallel to the Data version.
+    QFrame *m_codingWelcomeFrame = nullptr;
+    void renderCodingWelcomeCard();
+    void removeCodingWelcomeCard();
     QLabel *m_statusLabel;
     QPushButton *m_applyCodeBtn; // one-click "replace selection with response code"
     // Clutter that hides when Coding Mode is on — we want the dock to feel

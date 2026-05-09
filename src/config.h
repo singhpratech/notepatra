@@ -152,6 +152,12 @@ public:
     // until the user clicks "Hide".
     bool aiHideDataWelcome = false;
 
+    // v0.1.57 — when true, the Coding mode welcome card (Composer / @file /
+    // Ctrl+I / agentic git tools introduction) is suppressed. Default false:
+    // card shows on first Coding-mode entry of every fresh chat, until the
+    // user clicks "Hide".
+    bool aiHideCodingWelcome = false;
+
     // v0.1.55 — privacy / safety toggle. When false (default), Notepatra
     // does NOT auto-attach the currently-open editor file to AI prompts:
     //   * workspace-context block is not built (current file + open tabs)
@@ -235,6 +241,7 @@ public:
         }
         aiDataMode = o.value("aiDataMode").toBool(aiDataMode);
         aiHideDataWelcome = o.value("aiHideDataWelcome").toBool(aiHideDataWelcome);
+        aiHideCodingWelcome = o.value("aiHideCodingWelcome").toBool(aiHideCodingWelcome);
         aiShareOpenFile = o.value("aiShareOpenFile").toBool(aiShareOpenFile);
         windowX = o.value("windowX").toInt(windowX);
         windowY = o.value("windowY").toInt(windowY);
@@ -287,6 +294,7 @@ public:
         o["aiAzureKey"]        = aiAzureKey;
         o["aiDataMode"] = aiDataMode;
         o["aiHideDataWelcome"] = aiHideDataWelcome;
+        o["aiHideCodingWelcome"] = aiHideCodingWelcome;
         o["aiShareOpenFile"] = aiShareOpenFile;
         o["windowX"] = windowX;
         o["windowY"] = windowY;
