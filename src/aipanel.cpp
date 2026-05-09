@@ -8,6 +8,7 @@
 #include "csvanalyst.h"
 #include "dbconnections.h"
 #include "dbtree.h"
+#include "edit_plan.h"
 #include "fonts.h"
 #include "config.h"
 #include <QVBoxLayout>
@@ -1360,14 +1361,21 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     auto *composerLayout = new QVBoxLayout(m_composerInner);
     composerLayout->setContentsMargins(12, 12, 12, 12);
     composerLayout->setSpacing(8);
-    auto *composerPlaceholder = new QLabel(
-        tr("Composer — coming in Slice B/C/D"), m_composerInner);
-    composerPlaceholder->setAlignment(Qt::AlignCenter);
-    composerPlaceholder->setStyleSheet(QString(
-        "color: %1; font-size: 12px; padding: 24px;").arg(pal.muted));
-    composerLayout->addStretch(1);
-    composerLayout->addWidget(composerPlaceholder, 0, Qt::AlignCenter);
-    composerLayout->addStretch(1);
+
+    // Slice B/C/D — the live Edit Plan list. When the model returns a
+    // dry_run write_file / apply_diff, handleToolCall calls
+    // m_editPlan->addEdit(absPath, before, after) and we expose the row
+    // here. The list is empty + replaced by a friendly hint when there
+    // are no pending edits (handled inside EditPlanList itself).
+    m_editPlan = new EditPlanList(m_composerInner);
+    composerLayout->addWidget(m_editPlan, 1);
+
+    // Apply pipeline — when the user clicks Apply All / Apply Selected
+    // inside EditPlanList, write each (absPath, afterText) to disk and
+    // open / reload the file in the editor.
+    connect(m_editPlan, &EditPlanList::applyRequested,
+            this,        &AIPanel::applyComposerEdits);
+
     m_composerArea->setWidget(m_composerInner);
 
     m_chatTabs = new QTabWidget;
@@ -2250,6 +2258,11 @@ void AIPanel::setWorkspaceContext(const QString &selectedText,
     m_workspaceRoot = workspaceRoot;
     m_workspaceFilePaths = workspaceFilePaths;
 
+    // Slice C — keep the Edit Plan's workspace root in sync so the per-row
+    // path label renders relative to the project (instead of dumping a
+    // full /home/.../project/src/foo.cpp on every row).
+    if (m_editPlan) m_editPlan->setWorkspaceRoot(workspaceRoot);
+
     // v0.1.39 — when the workspace root changes, swap to the per-workspace
     // chat history file. (Re-)compute the on-disk path; if a saved file
     // exists, load it and re-render the transcript.
@@ -2748,6 +2761,14 @@ void AIPanel::sendPrompt(const QString &action) {
     const bool toolModeActive = (codingMode || dataMode);
     const bool willUseTools = toolModeActive && !m_workspaceRoot.isEmpty()
         && currentModelSupportsTools();
+    // Slice D — Composer mode flips on when the user is actively viewing
+    // the Composer tab inside Coding mode. The composerModeLayer in the
+    // system prompt instructs the model to ALWAYS pass dry_run:true on
+    // write_file / apply_diff, which AIPanel::handleToolCall then routes
+    // to the Edit Plan list instead of touching disk directly.
+    const bool composerActive = (intent == AiSystemPrompt::Intent::CodingStrict)
+        && m_chatTabs && m_composerArea
+        && m_chatTabs->currentWidget() == m_composerArea;
     QString systemPrompt;
     if (intent == AiSystemPrompt::Intent::DataAnalyst) {
         // Pull .notepatra/data-analyst.md (if present) so the model gets
@@ -2755,9 +2776,9 @@ void AIPanel::sendPrompt(const QString &action) {
         const QString projectCtx =
             AiSystemPrompt::readDataAnalystInstructions(m_workspaceRoot);
         systemPrompt = AiSystemPrompt::buildWithProjectContext(
-            intent, m_language, willUseTools, projectCtx);
+            intent, m_language, willUseTools, projectCtx, composerActive);
     } else {
-        systemPrompt = AiSystemPrompt::build(intent, m_language, willUseTools);
+        systemPrompt = AiSystemPrompt::build(intent, m_language, willUseTools, composerActive);
     }
 
     // v0.1.40 — JSON / HTML / SQL "fix my X" intent detection. When the
@@ -4677,14 +4698,30 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
         resultSummary = QString("%1 entries").arg(n);
     } else if (name == "write_file") {
         const QJsonObject body = parseResultBody(result.content);  // hardening: shared safe-parse
-        const int bytes = body.value("bytes_written").toInt();
-        const QString mode = body.value("mode").toString();
-        const bool created = body.value("created").toBool();
-        resultSummary = QString("%1 %2 (%3 bytes)")
-                            .arg(created ? "created" : "wrote", mode).arg(bytes);
-        // Auto-open / reload the file in the editor.
-        const QString absPath = body.value("abs_path").toString();
-        if (!absPath.isEmpty()) emit fileWrittenByAgent(absPath, created);
+        // Slice D — dry_run interception. Composer-mode write_file calls
+        // come back with {dry_run:true, proposed:{path, before, after,
+        // mode}} instead of touching disk. Route them to the Edit Plan
+        // list so the user can review + click Apply per file.
+        if (body.value("dry_run").toBool() && m_editPlan) {
+            const QJsonObject proposed = body.value("proposed").toObject();
+            const QString absPath = proposed.value("path").toString();
+            const QString before  = proposed.value("before").toString();
+            const QString after   = proposed.value("after").toString();
+            if (!absPath.isEmpty()) {
+                m_editPlan->addEdit(absPath, before, after);
+                if (m_chatTabs) m_chatTabs->setCurrentWidget(m_composerArea);
+            }
+            resultSummary = QString("queued for review (%1 chars)").arg(after.size());
+        } else {
+            const int bytes = body.value("bytes_written").toInt();
+            const QString mode = body.value("mode").toString();
+            const bool created = body.value("created").toBool();
+            resultSummary = QString("%1 %2 (%3 bytes)")
+                                .arg(created ? "created" : "wrote", mode).arg(bytes);
+            // Auto-open / reload the file in the editor.
+            const QString absPath = body.value("abs_path").toString();
+            if (!absPath.isEmpty()) emit fileWrittenByAgent(absPath, created);
+        }
     } else if (name == "search") {
         const QJsonObject body = parseResultBody(result.content);  // hardening: shared safe-parse
         const int total = body.value("total_matches").toInt();
@@ -4694,11 +4731,29 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
                             .arg(total).arg(files).arg(tr ? " (truncated)" : "");
     } else if (name == "apply_diff") {
         const QJsonObject body = parseResultBody(result.content);  // hardening: shared safe-parse
-        const int hunks = body.value("hunks_applied").toInt();
-        resultSummary = QString("%1 hunk%2 applied").arg(hunks).arg(hunks == 1 ? "" : "s");
-        // Reload the editor for the modified file.
-        const QString absPath = body.value("abs_path").toString();
-        if (!absPath.isEmpty()) emit fileWrittenByAgent(absPath, false);
+        // Slice D — same dry_run interception as write_file. The
+        // ai_tools layer composes proposed.before/after by reading the
+        // file then materialising the post-hunk text in memory, so the
+        // EditPlan side doesn't need to know about hunks.
+        if (body.value("dry_run").toBool() && m_editPlan) {
+            const QJsonObject proposed = body.value("proposed").toObject();
+            const QString absPath = proposed.value("path").toString();
+            const QString before  = proposed.value("before").toString();
+            const QString after   = proposed.value("after").toString();
+            if (!absPath.isEmpty()) {
+                m_editPlan->addEdit(absPath, before, after);
+                if (m_chatTabs) m_chatTabs->setCurrentWidget(m_composerArea);
+            }
+            resultSummary = QString("queued for review (%1 hunk%2)")
+                                .arg(args.value("hunks").toArray().size())
+                                .arg(args.value("hunks").toArray().size() == 1 ? "" : "s");
+        } else {
+            const int hunks = body.value("hunks_applied").toInt();
+            resultSummary = QString("%1 hunk%2 applied").arg(hunks).arg(hunks == 1 ? "" : "s");
+            // Reload the editor for the modified file.
+            const QString absPath = body.value("abs_path").toString();
+            if (!absPath.isEmpty()) emit fileWrittenByAgent(absPath, false);
+        }
     }
 
     const AiPalette pal = aiPalette();
@@ -5383,4 +5438,85 @@ void AIPanel::openAiSettingsDialog() {
     root->addWidget(btnBox);
 
     dlg.exec();
+}
+
+// ─── Slice D — apply Edit Plan rows ─────────────────────────────────
+//
+// Called when EditPlanList::applyRequested fires. Each pair is the
+// absolute file path + the post-edit text the user approved. We write
+// each one with the same atomic .tmp + rename pattern AiTools uses for
+// the non-dry path, then emit fileWrittenByAgent so the open editor
+// picks up the change (or opens the file if it wasn't open). Failures
+// surface as a single error bubble listing the bad paths — partial
+// success still counts as success for the rows that wrote cleanly.
+//
+// The Edit Plan list keeps the failed rows so the user can retry; the
+// successful rows are removed by EditPlanList itself when applyRequested
+// completes (it removes whatever it sent us, then the host can re-add
+// any failures via addEdit if needed). For now we just log failures.
+void AIPanel::applyComposerEdits(const QList<QPair<QString, QString>> &edits) {
+    if (edits.isEmpty()) return;
+
+    QStringList failures;
+    int wrote = 0;
+    for (const auto &pair : edits) {
+        const QString &absPath = pair.first;
+        const QString &after   = pair.second;
+        if (absPath.isEmpty()) {
+            failures << "(empty path)";
+            continue;
+        }
+
+        // Ensure parent directory exists. The AI tool layer already
+        // canonicalised + workspace-anchored this path; we just need to
+        // make the on-disk parent exist before we write.
+        QFileInfo fi(absPath);
+        QDir parent = fi.dir();
+        if (!parent.exists() && !parent.mkpath(".")) {
+            failures << absPath + " (parent dir creation failed)";
+            continue;
+        }
+
+        // Atomic write — same pattern as ai_tools::executeWriteFile.
+        const QString tmp = absPath + ".notepatra.tmp";
+        QFile out(tmp);
+        if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            failures << absPath + " (open " + tmp + " failed: " + out.errorString() + ")";
+            continue;
+        }
+        const QByteArray bytes = after.toUtf8();
+        const qint64 written = out.write(bytes);
+        out.close();
+        if (written != bytes.size()) {
+            QFile::remove(tmp);
+            failures << absPath + " (short write: " + QString::number(written) + "/"
+                                + QString::number(bytes.size()) + ")";
+            continue;
+        }
+        // QFile::rename refuses to overwrite on some platforms; remove
+        // first if the destination exists, then rename. This races with
+        // an external editor saving simultaneously, but the same is true
+        // of the non-dry path (and the user is reviewing the diff at
+        // this point so concurrent external saves are unlikely).
+        const bool wasNew = !QFile::exists(absPath);
+        if (!wasNew) QFile::remove(absPath);
+        if (!QFile::rename(tmp, absPath)) {
+            QFile::remove(tmp);
+            failures << absPath + " (rename failed)";
+            continue;
+        }
+
+        ++wrote;
+        emit fileWrittenByAgent(absPath, wasNew);
+    }
+
+    // Surface a summary bubble. Successful rows are silent (the file
+    // tabs popping open / reloading is the user-visible signal); any
+    // failures get a single grouped error message.
+    if (!failures.isEmpty()) {
+        QString msg = QString("Composer Apply: %1 wrote, %2 failed:")
+                        .arg(wrote).arg(failures.size());
+        for (const QString &f : failures) msg += "\n  • " + f;
+        appendErrorBubble(msg);
+    }
 }
