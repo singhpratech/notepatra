@@ -7,6 +7,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.58] — 2026-05-09
+
+**Composer wiring complete — Slices B/C/D land end-to-end (dry_run → Edit Plan → Apply).**
+
+### Fixed — Composer tab is no longer a placeholder
+
+* The v0.1.57 Composer tab body was a literal placeholder QLabel ("Composer — coming in Slice B/C/D"). EditPlanList + DiffView were compiled but never instantiated. v0.1.58 drops `EditPlanList` into the Composer body and wires the full pipeline:
+* **dry_run interception** — when `write_file` or `apply_diff` returns `{dry_run: true, proposed: {path, before, after, mode}}`, AIPanel's `handleToolCall` routes the proposal to `EditPlanList::addEdit` instead of touching disk. The dock auto-switches to the Composer tab so the queued edit is visible.
+* **Apply pipeline** — `EditPlanList::applyRequested` is connected to a new `AIPanel::applyComposerEdits` slot. Each (absPath, afterText) pair is written atomically (`.tmp + rename`), then `fileWrittenByAgent` fires so the editor opens or reloads the file. Failures surface as a single grouped error bubble; partial success leaves the failed rows visible for retry.
+* **Workspace-relative row labels** — `EditPlanList::setWorkspaceRoot` is synced from `setWorkspaceContext`, so per-row paths render `src/foo.cpp` instead of `/home/.../project/src/foo.cpp`.
+* **System prompt closes the loop** — `composerMode=true` is now passed to `AiSystemPrompt::build` / `buildWithProjectContext` whenever the user is on the Composer tab in CodingStrict intent. The existing `composerModeLayer` instructs the model to ALWAYS pass `dry_run: true`, so file writes never bypass the Edit Plan review step.
+
+### Tests
+
+21/21 deterministic tests pass. test_aifix needs a live Ollama.
+
+### Stats
+
+2 files changed (`src/aipanel.cpp` + `src/aipanel.h`), +172 / −23 lines. Bare binary unchanged at **~9 MB stripped** (Composer wiring is pure C++ Qt glue, no new heavy deps).
+
+---
+
 ## [0.1.57] — 2026-05-09
 
 **Coding-mode revamp + agentic git tools + multi-cursor + fullscreen AI dock + Windows mojibake fix.**
