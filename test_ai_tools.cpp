@@ -21,6 +21,7 @@
 #include <cstdio>
 
 #include "ai_tools.h"
+#include "git_tools.h"
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -923,8 +924,10 @@ int main(int argc, char *argv[]) {
     // Tool registry — verify availableTools() returns valid JSONSchema
     {
         QJsonArray tools = AiTools::availableTools();
-        check("availableTools() has 7 entries (read/list/write/search/apply_diff + csv_query/query_sql)",
-              tools.size() == 7);
+        check("availableTools() has 12 entries "
+              "(read/list/write/search/apply_diff + csv_query/query_sql + "
+              "git_status/git_diff/git_log/git_branch_list/git_show)",
+              tools.size() == 12);
         QStringList names;
         for (const QJsonValue &tv : tools) {
             QJsonObject t = tv.toObject();
@@ -946,6 +949,11 @@ int main(int argc, char *argv[]) {
         check("  registry has apply_diff", names.contains("apply_diff"));
         check("  registry has csv_query",  names.contains("csv_query"));
         check("  registry has query_sql",  names.contains("query_sql"));
+        check("  registry has git_status",      names.contains("git_status"));
+        check("  registry has git_diff",        names.contains("git_diff"));
+        check("  registry has git_log",         names.contains("git_log"));
+        check("  registry has git_branch_list", names.contains("git_branch_list"));
+        check("  registry has git_show",        names.contains("git_show"));
     }
 
     // Model allowlist — happy paths and rejections
@@ -968,6 +976,89 @@ int main(int argc, char *argv[]) {
         check("REJECTS phi-3-mini",  !AiTools::modelLikelySupportsTools("phi-3-mini"));
         check("REJECTS gemma-2-2b",  !AiTools::modelLikelySupportsTools("gemma-2-2b"));
         check("REJECTS empty",       !AiTools::modelLikelySupportsTools(""));
+    }
+
+    // ── GitTools parsers — pure-function checks, no shell-out ─────────
+    // These exercise the parsing logic for porcelain v2 + log records
+    // without depending on git being installed or a real repo.
+    {
+        // Synthesize a porcelain-v2 byte string: NUL-delimited records
+        // with a branch header, one staged file, one modified file,
+        // and one untracked file.
+        QByteArray buf;
+        buf.append("# branch.head main\0", 19);
+        buf.append("# branch.upstream origin/main\0", 30);
+        buf.append("# branch.ab +2 -1\0", 18);
+        buf.append("1 M. N... 100644 100644 100644 abc def src/foo.cpp\0", 51);
+        buf.append("1 .M N... 100644 100644 100644 abc def src/bar.cpp\0", 51);
+        buf.append("? new_file.txt\0", 15);
+
+        QJsonObject parsed = GitTools::parsePorcelainV2(buf);
+        check("git_status parser: branch == main",
+              parsed.value("branch").toString() == "main");
+        check("git_status parser: ahead == 2",
+              parsed.value("ahead").toInt() == 2);
+        check("git_status parser: behind == 1",
+              parsed.value("behind").toInt() == 1);
+        check("git_status parser: 1 staged file",
+              parsed.value("staged").toArray().size() == 1);
+        check("git_status parser: 1 modified file",
+              parsed.value("modified").toArray().size() == 1);
+        check("git_status parser: 1 untracked file",
+              parsed.value("untracked").toArray().size() == 1);
+        check("git_status parser: clean == false",
+              parsed.value("clean").toBool() == false);
+
+        // Empty input → clean repo on the default branch ("").
+        QJsonObject empty = GitTools::parsePorcelainV2(QByteArray());
+        check("git_status parser: empty input is clean",
+              empty.value("clean").toBool());
+    }
+
+    {
+        // git log records: %H %x1f %an %x1f %aI %x1f %s %x1e
+        // (use single-char concatenation so \x1f doesn't gobble adjacent
+        // alphanumerics into a wider hex escape).
+        const char US = 0x1f; // unit separator
+        const char RS = 0x1e; // record separator
+        QByteArray buf;
+        buf.append("abc123").append(US).append("Alice").append(US)
+           .append("2026-05-09T10:00:00Z").append(US).append("first commit").append(RS);
+        buf.append('\n');
+        buf.append("def456").append(US).append("Bob").append(US)
+           .append("2026-05-08T09:00:00Z").append(US).append("second commit").append(RS);
+
+        QJsonArray arr = GitTools::parseLogRecords(buf);
+        check("git_log parser: 2 records", arr.size() == 2);
+        if (arr.size() >= 2) {
+            QJsonObject e0 = arr[0].toObject();
+            check("git_log parser: hash[0] == abc123",
+                  e0.value("hash").toString() == "abc123");
+            check("git_log parser: author[0] == Alice",
+                  e0.value("author").toString() == "Alice");
+            check("git_log parser: subject[0] == first commit",
+                  e0.value("subject").toString() == "first commit");
+            QJsonObject e1 = arr[1].toObject();
+            check("git_log parser: subject[1] == second commit",
+                  e1.value("subject").toString() == "second commit");
+        }
+
+        // Empty input → empty array, no crash.
+        QJsonArray emptyArr = GitTools::parseLogRecords(QByteArray());
+        check("git_log parser: empty input → empty array",
+              emptyArr.isEmpty());
+    }
+
+    // execute() with empty workspace must surface error_kind:no_workspace
+    // for any of the new git tools.
+    {
+        AiTools::ToolCall call;
+        call.id = "gs1";
+        call.name = "git_status";
+        call.args = QJsonObject{};
+        AiTools::ToolResult r = AiTools::execute(call, QString());
+        check("git_status w/ empty workspace: isError=true", r.isError);
+        check("  errorKind == no_workspace", r.errorKind == "no_workspace");
     }
 
     fprintf(stdout, "\n=== test_ai_tools: %d passed, %d failed ===\n", g_pass, g_fail);
