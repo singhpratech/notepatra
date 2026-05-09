@@ -3,7 +3,9 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonParseError>
 #include <QNetworkRequest>
+#include <QPointer>
 #include <QUrl>
 #include <QEventLoop>
 #include <QTimer>
@@ -116,10 +118,14 @@ OllamaClient::OllamaClient(QObject *parent) : QObject(parent) {
 // ─── isAvailable ───────────────────────────────────────────────────────
 // Synchronous probe, 3 s timeout. Endpoint varies by backend.
 bool OllamaClient::isAvailable() {
+    if (!m_nam) return false;  // hardening: guard NAM (defensive even though ctor always sets it)
     const QString probePath = (m_backend == Ollama) ? "/api/tags" : "/v1/models";
     QUrl url(m_baseUrl + probePath);
+    if (!url.isValid()) return false;  // hardening: malformed base URL guard
     QNetworkRequest req(url);
+    req.setTransferTimeout(3000);  // hardening: explicit transfer timeout (matches sync 3 s budget)
     auto *reply = m_nam->get(req);
+    if (!reply) return false;  // hardening: NAM may return null on extreme OOM
 
     QEventLoop loop;
     QTimer timer;
@@ -138,6 +144,10 @@ bool OllamaClient::isAvailable() {
 // Ollama: GET /api/tags → {"models": [{"name": "..."}, ...]}
 // OpenAI-compat: GET /v1/models → {"data": [{"id": "..."}, ...]}
 void OllamaClient::listModels() {
+    if (!m_nam) {  // hardening: guard NAM
+        emit modelsError(QStringLiteral("Network manager unavailable"));
+        return;
+    }
     QUrl url;
     if (m_backend == Ollama) {
         url = QUrl(m_baseUrl + "/api/tags");
@@ -146,7 +156,12 @@ void OllamaClient::listModels() {
     } else {
         url = QUrl(m_baseUrl + "/v1/models");
     }
+    if (!url.isValid()) {  // hardening: bad base-url short-circuits with explicit error
+        emit modelsError(QStringLiteral("Invalid backend URL: ") + m_baseUrl);
+        return;
+    }
     QNetworkRequest req(url);
+    req.setTransferTimeout(5000);  // hardening: 5 s probe budget for /api/tags + /v1/models
     // v0.1.55 — Send the saved API key on /v1/models too. OpenRouter's public
     // catalog endpoint accepts unauth GETs, but OpenAI's does not — and we
     // also rely on this call to surface 401/403 when validating a freshly
@@ -156,12 +171,18 @@ void OllamaClient::listModels() {
         setOpenAiAuth(req, apiKey);
     }
     auto *reply = m_nam->get(req);
+    if (!reply) {  // hardening: NAM->get can theoretically return null
+        emit modelsError(QStringLiteral("Failed to start network request"));
+        return;
+    }
 
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         if (reply->error() != QNetworkReply::NoError) {
             QString msg = reply->errorString();
             if (msg.contains("refused", Qt::CaseInsensitive) ||
-                msg.contains("unreachable", Qt::CaseInsensitive)) {
+                msg.contains("unreachable", Qt::CaseInsensitive) ||
+                msg.contains("timed out", Qt::CaseInsensitive) ||  // hardening: timeout hint
+                msg.contains("timeout", Qt::CaseInsensitive)) {
                 if (m_backend == Ollama)
                     msg = "Ollama not running. Start it: ollama serve";
                 else if (m_backend == LlamaCpp)
@@ -171,23 +192,36 @@ void OllamaClient::listModels() {
                     msg = "No local-AI server reachable at " + m_baseUrl;
             }
             emit modelsError(msg);
-            reply->deleteLater();
+            reply->deleteLater();  // hardening: ensure deleteLater on every error path
             return;
         }
 
-        QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+        const QByteArray rawBody = reply->readAll();
+        QJsonParseError perr{};  // hardening: capture parse error explicitly
+        QJsonDocument doc = QJsonDocument::fromJson(rawBody, &perr);
+        if (perr.error != QJsonParseError::NoError) {  // hardening: surface malformed-JSON to UI
+            emit modelsError(QStringLiteral("Backend returned malformed JSON: ") + perr.errorString());
+            reply->deleteLater();
+            return;
+        }
         QStringList models;
         if (doc.isObject()) {
             const QJsonObject root = doc.object();
             if (m_backend == Ollama) {
-                for (const QJsonValue &v : root.value("models").toArray()) {
-                    QString name = v.toObject().value("name").toString();
-                    if (!name.isEmpty()) models << name;
+                const QJsonValue mv = root.value("models");
+                if (mv.isArray()) {  // hardening: verify "models" really is array
+                    for (const QJsonValue &v : mv.toArray()) {
+                        if (!v.isObject()) continue;  // hardening: tolerate non-object entries
+                        QString name = v.toObject().value("name").toString();
+                        if (!name.isEmpty()) models << name;
+                    }
                 }
             } else {
                 // OpenAI-compat /v1/models format: {"data": [{"id": "..."}, ...]}
-                const QJsonArray dataArr = root.value("data").toArray();
+                const QJsonValue dv = root.value("data");
+                const QJsonArray dataArr = dv.isArray() ? dv.toArray() : QJsonArray();  // hardening: type-check
                 for (const QJsonValue &v : dataArr) {
+                    if (!v.isObject()) continue;  // hardening: skip malformed entries
                     QString id = v.toObject().value("id").toString();
                     if (!id.isEmpty()) models << id;
                 }
@@ -227,12 +261,25 @@ void OllamaClient::showModel(const QString &name) {
         emit modelCapabilitiesError(name, "empty model name");
         return;
     }
+    if (!m_nam) {  // hardening: guard NAM
+        emit modelCapabilitiesError(name, "Network manager unavailable");
+        return;
+    }
     QUrl url(m_baseUrl + "/api/show");
+    if (!url.isValid()) {  // hardening: bad base-url
+        emit modelCapabilitiesError(name, "Invalid backend URL: " + m_baseUrl);
+        return;
+    }
     QNetworkRequest req(url);
+    req.setTransferTimeout(5000);  // hardening: 5 s budget for capabilities probe
     req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     QJsonObject body;
     body["name"] = name;
     auto *reply = m_nam->post(req, QJsonDocument(body).toJson());
+    if (!reply) {  // hardening: NAM->post can theoretically return null
+        emit modelCapabilitiesError(name, "Failed to start /api/show request");
+        return;
+    }
 
     connect(reply, &QNetworkReply::finished, this, [this, reply, name]() {
         if (reply->error() != QNetworkReply::NoError) {
@@ -240,16 +287,21 @@ void OllamaClient::showModel(const QString &name) {
             reply->deleteLater();
             return;
         }
-        const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+        const QByteArray rawBody = reply->readAll();
+        QJsonParseError perr{};  // hardening: explicit parse-error capture
+        const QJsonDocument doc = QJsonDocument::fromJson(rawBody, &perr);
         reply->deleteLater();
-        if (!doc.isObject()) {
+        if (perr.error != QJsonParseError::NoError || !doc.isObject()) {
             emit modelCapabilitiesError(name, "non-JSON response");
             return;
         }
         QStringList caps;
-        for (const QJsonValue &v : doc.object().value("capabilities").toArray()) {
-            const QString s = v.toString().trimmed().toLower();
-            if (!s.isEmpty()) caps << s;
+        const QJsonValue cv = doc.object().value("capabilities");
+        if (cv.isArray()) {  // hardening: verify capabilities really is array
+            for (const QJsonValue &v : cv.toArray()) {
+                const QString s = v.toString().trimmed().toLower();
+                if (!s.isEmpty()) caps << s;
+            }
         }
         emit modelCapabilitiesLoaded(name, caps);
     });
@@ -260,6 +312,10 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
                             bool enableThinking,
                             const QStringList &imagesBase64,
                             const QJsonArray &tools) {
+    if (!m_nam) {  // hardening: guard NAM (defensive — ctor always sets it)
+        emit error(QStringLiteral("Network manager unavailable"));
+        return;
+    }
     cancel();
     m_fullResponse.clear();
     m_sseBuffer.clear();
@@ -318,9 +374,18 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
             body["keep_alive"] = "5m";
 
             QUrl url(m_baseUrl + "/api/chat");
+            if (!url.isValid()) {  // hardening: invalid base-url short-circuit
+                emit error(QStringLiteral("Invalid backend URL: ") + m_baseUrl);
+                return;
+            }
             QNetworkRequest req(url);
             req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+            req.setTransferTimeout(120000);  // hardening: 120 s chat-stream connect/transfer ceiling
             m_reply = m_nam->post(req, QJsonDocument(body).toJson());
+            if (!m_reply) {  // hardening: guard against null reply
+                emit error(QStringLiteral("Failed to start chat request"));
+                return;
+            }
 
             connect(m_reply, &QNetworkReply::readyRead, this, &OllamaClient::onReadyReadOllama);
             connect(m_reply, &QNetworkReply::finished,  this, &OllamaClient::onFinishedOllama);
@@ -354,9 +419,18 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
         body["keep_alive"] = "5m";
 
         QUrl url(m_baseUrl + "/api/generate");
+        if (!url.isValid()) {  // hardening: invalid base-url short-circuit
+            emit error(QStringLiteral("Invalid backend URL: ") + m_baseUrl);
+            return;
+        }
         QNetworkRequest req(url);
         req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+        req.setTransferTimeout(120000);  // hardening: 120 s generate-stream connect/transfer ceiling
         m_reply = m_nam->post(req, QJsonDocument(body).toJson());
+        if (!m_reply) {  // hardening: guard against null reply
+            emit error(QStringLiteral("Failed to start generate request"));
+            return;
+        }
 
         connect(m_reply, &QNetworkReply::readyRead, this, &OllamaClient::onReadyReadOllama);
         connect(m_reply, &QNetworkReply::finished,  this, &OllamaClient::onFinishedOllama);
@@ -439,17 +513,27 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
         QUrl url = isAzureBackend()
                      ? azureUrl("chat/completions")
                      : QUrl(m_baseUrl + "/v1/chat/completions");
+        if (!url.isValid()) {  // hardening: invalid url short-circuit
+            emit error(QStringLiteral("Invalid backend URL: ") + url.toString());
+            return;
+        }
         QNetworkRequest req(url);
         req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+        req.setTransferTimeout(120000);  // hardening: 120 s OpenAI-compat stream ceiling
         // llama-server ignores Authorization; LM Studio / OpenAI expect
         // Bearer; Azure expects api-key header. setOpenAiAuth normalises.
         setOpenAiAuth(req, Config::instance().aiKeyForBackend(Config::instance().aiBackend));
         m_reply = m_nam->post(req, QJsonDocument(body).toJson());
+        if (!m_reply) {  // hardening: guard against null reply
+            emit error(QStringLiteral("Failed to start OpenAI-compat request"));
+            return;
+        }
 
         connect(m_reply, &QNetworkReply::readyRead, this, &OllamaClient::onReadyReadOpenAI);
         connect(m_reply, &QNetworkReply::finished,  this, &OllamaClient::onFinishedOpenAI);
     }
 
+    if (!m_reply) return;  // hardening: skip wiring if every branch failed to allocate
     connect(m_reply, &QNetworkReply::finished, this, [this]() {
         if (m_reply && m_reply->error() != QNetworkReply::NoError && !m_done) {
             emit error(m_reply->errorString());
@@ -469,6 +553,10 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
 void OllamaClient::continueWithToolResults(const QJsonArray &toolResults,
                                            const QString &systemPrompt,
                                            const QJsonArray &tools) {
+    if (!m_nam) {  // hardening: guard NAM
+        emit error(QStringLiteral("Network manager unavailable"));
+        return;
+    }
     cancel();
     m_fullResponse.clear();
     m_sseBuffer.clear();
@@ -537,9 +625,18 @@ void OllamaClient::continueWithToolResults(const QJsonArray &toolResults,
         body["keep_alive"] = "5m";
 
         QUrl url(m_baseUrl + "/api/chat");
+        if (!url.isValid()) {  // hardening: invalid base-url short-circuit
+            emit error(QStringLiteral("Invalid backend URL: ") + m_baseUrl);
+            return;
+        }
         QNetworkRequest req(url);
         req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+        req.setTransferTimeout(120000);  // hardening: 120 s ceiling on tool-result continuation
         m_reply = m_nam->post(req, QJsonDocument(body).toJson());
+        if (!m_reply) {  // hardening: guard against null reply
+            emit error(QStringLiteral("Failed to start tool-result continuation"));
+            return;
+        }
         connect(m_reply, &QNetworkReply::readyRead, this, &OllamaClient::onReadyReadOllama);
         connect(m_reply, &QNetworkReply::finished,  this, &OllamaClient::onFinishedOllama);
     } else {
@@ -555,10 +652,19 @@ void OllamaClient::continueWithToolResults(const QJsonArray &toolResults,
         QUrl url = isAzureBackend()
                      ? azureUrl("chat/completions")
                      : QUrl(m_baseUrl + "/v1/chat/completions");
+        if (!url.isValid()) {  // hardening: invalid url short-circuit
+            emit error(QStringLiteral("Invalid backend URL: ") + url.toString());
+            return;
+        }
         QNetworkRequest req(url);
         req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+        req.setTransferTimeout(120000);  // hardening: 120 s ceiling on OpenAI-compat continuation
         setOpenAiAuth(req, Config::instance().aiKeyForBackend(Config::instance().aiBackend));
         m_reply = m_nam->post(req, QJsonDocument(body).toJson());
+        if (!m_reply) {  // hardening: guard against null reply
+            emit error(QStringLiteral("Failed to start OpenAI-compat continuation"));
+            return;
+        }
         connect(m_reply, &QNetworkReply::readyRead, this, &OllamaClient::onReadyReadOpenAI);
         connect(m_reply, &QNetworkReply::finished,  this, &OllamaClient::onFinishedOpenAI);
     }
@@ -595,8 +701,9 @@ void OllamaClient::onReadyReadOllama() {
     QByteArray data = m_reply->readAll();
     for (const QByteArray &line : data.split('\n')) {
         if (line.trimmed().isEmpty()) continue;
-        QJsonDocument doc = QJsonDocument::fromJson(line);
-        if (doc.isNull()) continue;
+        QJsonParseError perr{};  // hardening: capture parse errors
+        QJsonDocument doc = QJsonDocument::fromJson(line, &perr);
+        if (perr.error != QJsonParseError::NoError || doc.isNull() || !doc.isObject()) continue;  // hardening: skip malformed/non-object frames
         QJsonObject obj = doc.object();
         if (obj.contains("error")) {
             emit error(obj["error"].toString());
@@ -607,16 +714,24 @@ void OllamaClient::onReadyReadOllama() {
         QString token = obj["response"].toString();
         // /api/chat path — `message.content` + `message.tool_calls`
         if (obj.contains("message")) {
-            QJsonObject msg = obj.value("message").toObject();
+            const QJsonValue mv = obj.value("message");
+            if (!mv.isObject()) continue;  // hardening: tolerate non-object message field
+            QJsonObject msg = mv.toObject();
             QString content = msg.value("content").toString();
             if (!content.isEmpty()) {
                 token = content;
             }
             if (msg.contains("tool_calls")) {
-                QJsonArray calls = msg.value("tool_calls").toArray();
+                const QJsonValue tcv = msg.value("tool_calls");
+                if (!tcv.isArray()) {  // hardening: tolerate non-array tool_calls
+                    // skip — fall through to token emit below
+                } else {
+                QJsonArray calls = tcv.toArray();
                 for (const QJsonValue &cv : calls) {
+                    if (!cv.isObject()) continue;  // hardening: skip non-object call entries
                     QJsonObject c = cv.toObject();
-                    QJsonObject fn = c.value("function").toObject();
+                    const QJsonValue fnv = c.value("function");
+                    QJsonObject fn = fnv.isObject() ? fnv.toObject() : QJsonObject();  // hardening: type-check function
                     QString name = fn.value("name").toString();
                     // Ollama's `arguments` is already a parsed JSON object
                     // (NOT a stringified JSON like OpenAI canonical). Be
@@ -646,6 +761,7 @@ void OllamaClient::onReadyReadOllama() {
                     QString id = QString("call_n%1").arg(++m_toolCallSeq);
                     emit toolCallReceived(id, name, args);
                 }
+                }  // hardening: close else (isArray) branch
             }
         }
         if (!token.isEmpty()) {
@@ -695,8 +811,9 @@ void OllamaClient::onReadyReadOpenAI() {
                 }
                 continue;
             }
-            QJsonDocument doc = QJsonDocument::fromJson(payload);
-            if (!doc.isObject()) continue;
+            QJsonParseError perr{};  // hardening: capture parse error
+            QJsonDocument doc = QJsonDocument::fromJson(payload, &perr);
+            if (perr.error != QJsonParseError::NoError || !doc.isObject()) continue;  // hardening: skip malformed/non-object
             QJsonObject obj = doc.object();
             if (obj.contains("error")) {
                 QJsonValue err = obj.value("error");
@@ -709,15 +826,23 @@ void OllamaClient::onReadyReadOpenAI() {
             // chunk (or sometimes a separate non-choice frame). Capture
             // it before we look at choices.
             if (obj.contains("usage")) {
-                QJsonObject u = obj.value("usage").toObject();
-                if (u.contains("prompt_tokens"))      m_promptTokens = u.value("prompt_tokens").toInt();
-                if (u.contains("completion_tokens"))  m_evalTokens   = u.value("completion_tokens").toInt();
+                const QJsonValue uv = obj.value("usage");
+                if (uv.isObject()) {  // hardening: type-check usage
+                    QJsonObject u = uv.toObject();
+                    if (u.contains("prompt_tokens"))      m_promptTokens = u.value("prompt_tokens").toInt();
+                    if (u.contains("completion_tokens"))  m_evalTokens   = u.value("completion_tokens").toInt();
+                }
             }
             // choices[0].delta.content — the streaming chunk token
-            QJsonArray choices = obj.value("choices").toArray();
+            const QJsonValue chv = obj.value("choices");
+            if (!chv.isArray()) continue;  // hardening: skip frames without choices array
+            QJsonArray choices = chv.toArray();
             if (choices.isEmpty()) continue;
-            QJsonObject choice = choices.first().toObject();
-            QJsonObject delta  = choice.value("delta").toObject();
+            const QJsonValue cf = choices.first();
+            if (!cf.isObject()) continue;  // hardening: skip malformed first choice
+            QJsonObject choice = cf.toObject();
+            const QJsonValue dv = choice.value("delta");
+            QJsonObject delta  = dv.isObject() ? dv.toObject() : QJsonObject();  // hardening: type-check delta
             QString tok = delta.value("content").toString();
             if (!tok.isEmpty()) {
                 m_fullResponse += tok;
@@ -735,15 +860,19 @@ void OllamaClient::onReadyReadOpenAI() {
             // OpenRouter / OpenAI / Anthropic-proxy / vLLM / llama.cpp
             // (with --jinja) all use this canonical pattern.
             if (delta.contains("tool_calls")) {
-                QJsonArray calls = delta.value("tool_calls").toArray();
+                const QJsonValue tcv = delta.value("tool_calls");
+                if (tcv.isArray()) {  // hardening: tolerate non-array tool_calls field
+                QJsonArray calls = tcv.toArray();
                 for (const QJsonValue &cv : calls) {
+                    if (!cv.isObject()) continue;  // hardening: skip malformed call entries
                     QJsonObject c = cv.toObject();
                     int idx = c.value("index").toInt(0);
                     PendingToolCall &p = m_pendingToolCalls[idx];
                     if (c.contains("id") && !c.value("id").toString().isEmpty()) {
                         p.id = c.value("id").toString();
                     }
-                    QJsonObject fn = c.value("function").toObject();
+                    const QJsonValue fnv = c.value("function");
+                    QJsonObject fn = fnv.isObject() ? fnv.toObject() : QJsonObject();  // hardening: type-check function
                     if (fn.contains("name") && !fn.value("name").toString().isEmpty()) {
                         p.name = fn.value("name").toString();
                     }
@@ -759,6 +888,7 @@ void OllamaClient::onReadyReadOpenAI() {
                         }
                     }
                 }
+                }  // hardening: close isArray guard
             }
 
             const QString finishReason = choice.value("finish_reason").toString();
@@ -822,8 +952,9 @@ void OllamaClient::onFinishedOllama() {
     QByteArray remaining = m_reply->readAll();
     for (const QByteArray &line : remaining.split('\n')) {
         if (line.trimmed().isEmpty()) continue;
-        QJsonDocument doc = QJsonDocument::fromJson(line);
-        if (doc.isNull()) continue;
+        QJsonParseError perr{};  // hardening: capture parse error
+        QJsonDocument doc = QJsonDocument::fromJson(line, &perr);
+        if (perr.error != QJsonParseError::NoError || doc.isNull() || !doc.isObject()) continue;  // hardening: skip malformed/non-object lines
         QString token = doc.object().value("response").toString();
         if (!token.isEmpty()) {
             m_fullResponse += token;
@@ -834,8 +965,10 @@ void OllamaClient::onFinishedOllama() {
         m_done = true;
         emit finished(m_fullResponse);
     }
-    m_reply->deleteLater();
-    m_reply = nullptr;
+    if (m_reply) {  // hardening: re-check pointer (cancel may have nulled it)
+        m_reply->deleteLater();
+        m_reply = nullptr;
+    }
 }
 
 void OllamaClient::onFinishedOpenAI() {
@@ -850,8 +983,10 @@ void OllamaClient::onFinishedOpenAI() {
         m_done = true;
         emit finished(m_fullResponse);
     }
-    m_reply->deleteLater();
-    m_reply = nullptr;
+    if (m_reply) {  // hardening: re-check pointer (cancel may have nulled it during onReadyReadOpenAI)
+        m_reply->deleteLater();
+        m_reply = nullptr;
+    }
 }
 
 void OllamaClient::onError(QNetworkReply::NetworkError) {
