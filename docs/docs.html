@@ -352,6 +352,7 @@
       <li><a href="#ai-overview">Overview</a></li>
       <li><a href="#ai-setup">Ollama setup</a></li>
       <li><a href="#ai-llamacpp">llama.cpp setup (GGUF)</a></li>
+      <li><a href="#ai-setup-full">Full setup guide (per OS)</a></li>
       <li><a href="#ai-openai-compat">OpenAI-compat (LM Studio, Jan, vLLM)</a></li>
       <li><a href="#ai-fix">AI Fix pipeline</a></li>
       <li><a href="#ai-assistant">AI Assistant dock</a></li>
@@ -843,6 +844,305 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
     <li><strong>Run the server</strong> — <code>llama-server -m path/to/model.gguf --port 8080</code>. Exposes OpenAI-compatible endpoints at <code>http://localhost:8080/v1/</code>.</li>
     <li><strong>In Notepatra</strong> → Settings → Preferences → AI → pick "llama.cpp" → Save. Done.</li>
   </ol>
+
+  <h2 id="ai-setup-full" class="anchor-target">AI backend setup — full guide</h2>
+  <p>The condensed setup blocks above cover the happy path. This guide walks every supported backend through install, first-run, and the most common failure modes — per OS where the steps differ. Use it when something doesn't work or you're setting up a new machine.</p>
+
+  <h3 id="setup-ollama">Ollama (recommended for beginners)</h3>
+  <p>One installer, auto-discovery of models, native HTTP API on port <code>11434</code>. Works on every desktop OS Notepatra runs on.</p>
+
+  <h4>🐧 Linux</h4>
+  <ol>
+    <li><strong>Install</strong> — one-liner provided by Ollama:
+      <pre><code>curl -fsSL https://ollama.com/install.sh | sh</code></pre>
+      The installer drops a binary in <code>/usr/local/bin/ollama</code> and registers a systemd unit <code>ollama.service</code>.
+    </li>
+    <li><strong>Daemon</strong> — the installer starts and enables it. Check status:
+      <pre><code>systemctl status ollama
+journalctl -u ollama -f         # follow logs</code></pre>
+      If your distro has no systemd (Void, Artix, Alpine, WSL1), run <code>ollama serve</code> in a terminal you keep open.
+    </li>
+    <li><strong>Pull a model</strong>:
+      <pre><code>ollama pull qwen2.5-coder:7b</code></pre>
+    </li>
+    <li><strong>Verify</strong>:
+      <pre><code>ollama list                     # should show the model
+curl http://localhost:11434/api/tags    # JSON list of installed models</code></pre>
+    </li>
+    <li><strong>Notepatra config</strong> — open the AI dock, pick "Ollama" in the backend dropdown. The model dropdown auto-populates. No URL field to set; <code>http://localhost:11434</code> is hard-wired.</li>
+  </ol>
+
+  <h4>🪟 Windows</h4>
+  <ol>
+    <li><strong>Install</strong> — download <code>OllamaSetup.exe</code> from <a href="https://ollama.com/download/windows">ollama.com/download/windows</a> and run it. Installs to <code>%LOCALAPPDATA%\Programs\Ollama</code> and starts a tray icon at boot.</li>
+    <li><strong>Daemon</strong> — the tray icon means it's running. Right-click the tray icon → "Quit Ollama" to stop. Re-launch from the Start menu.</li>
+    <li><strong>Pull a model</strong> — open <strong>PowerShell</strong> or <strong>cmd</strong>:
+      <pre><code>ollama pull qwen2.5-coder:7b</code></pre>
+    </li>
+    <li><strong>Verify</strong>:
+      <pre><code>ollama list
+curl http://localhost:11434/api/tags</code></pre>
+    </li>
+    <li><strong>Notepatra config</strong> — same as Linux: pick "Ollama" in the backend dropdown.</li>
+  </ol>
+
+  <h4>🍎 macOS</h4>
+  <ol>
+    <li><strong>Install</strong> — either the <code>.dmg</code> from <a href="https://ollama.com/download/mac">ollama.com/download/mac</a>, or via Homebrew:
+      <pre><code>brew install --cask ollama</code></pre>
+    </li>
+    <li><strong>Daemon</strong> — launching the Ollama app puts an icon in the menu bar and starts the server. Quit from the menu-bar icon to stop.</li>
+    <li><strong>Pull a model</strong> — open <strong>Terminal</strong>:
+      <pre><code>ollama pull qwen2.5-coder:7b</code></pre>
+    </li>
+    <li><strong>Verify</strong>:
+      <pre><code>ollama list
+curl http://localhost:11434/api/tags</code></pre>
+    </li>
+    <li><strong>Notepatra config</strong> — pick "Ollama" in the backend dropdown.</li>
+  </ol>
+
+  <h4>Troubleshooting</h4>
+
+  <h5>"Ollama not running" banner won't go away</h5>
+  <p>Notepatra polls <code>http://localhost:11434</code> and the banner stays red while the probe fails. Causes:</p>
+  <ul>
+    <li><strong>Daemon not started</strong> — <code>systemctl start ollama</code> (Linux) / launch the app (Win/macOS) / <code>ollama serve</code> (manual).</li>
+    <li><strong>Wrong port</strong> — Ollama only binds <code>11434</code>. If you set <code>OLLAMA_HOST=0.0.0.0:11500</code> or similar, Notepatra won't find it. Either unset that env var or restart Ollama on the default port.</li>
+    <li><strong>Firewall</strong> — uncommon on localhost, but Windows Defender has been known to block first-time loopback connections. Allow <code>ollama.exe</code> when prompted.</li>
+    <li><strong>Refresh</strong> — click the refresh button in the AI panel status bar to re-probe immediately instead of waiting for the next poll cycle.</li>
+  </ul>
+
+  <h5>Models don't appear in Notepatra dropdown</h5>
+  <p>Ollama is reachable (banner is green) but the dropdown is empty or stale.</p>
+  <ul>
+    <li><strong>Nothing pulled</strong> — run <code>ollama list</code>. If empty, pull at least one model.</li>
+    <li><strong>Pulled after Notepatra started</strong> — click the refresh button next to the model dropdown. Notepatra re-fetches <code>/api/tags</code>.</li>
+    <li><strong>Search filter active</strong> — the dropdown is searchable (v0.1.55). Clear the search text or type a fragment of the model name.</li>
+  </ul>
+
+  <h5>Model pulled but capability probe says no tools</h5>
+  <p>v0.1.55 introduced an <code>/api/show</code> capability probe — Coding Mode hides models that can't call tools. If a model you expect to support tools is greyed out:</p>
+  <ul>
+    <li><strong>Base / instruct distinction</strong> — only instruct-tuned models declare tool support. <code>qwen2.5:7b</code> works; <code>qwen2.5-base:7b</code> does not.</li>
+    <li><strong>Old quant</strong> — re-pull the latest tag: <code>ollama pull qwen2.5-coder:7b</code> overwrites the local copy with the current manifest, which may now include the tools capability flag.</li>
+    <li><strong>Workaround</strong> — switch to Chat mode, which doesn't require tools, or pick a model from the curated list (Notepatra ships a known-good list per backend).</li>
+  </ul>
+
+  <h5>Out of memory on 7B+ models</h5>
+  <p>Symptom: Ollama logs show <code>llama_model_load: error loading model: failed to allocate buffer</code>, or the daemon segfaults mid-generation.</p>
+  <ul>
+    <li><strong>RAM budget</strong> — 7B Q4 needs ~6 GB free; 13B ~10 GB; 34B ~24 GB. Close browsers / VMs first.</li>
+    <li><strong>Pick a smaller quant</strong> — <code>ollama pull qwen2.5-coder:7b-instruct-q4_0</code> uses ~1 GB less than the default Q4_K_M.</li>
+    <li><strong>Drop to a 3B</strong> — <code>llama3.2:3b</code>, <code>qwen2.5-coder:3b</code>, or <code>gemma2:2b</code> all run on 8 GB laptops. Notepatra auto-prefers these on memory-constrained machines.</li>
+    <li><strong>GPU offload</strong> — set <code>OLLAMA_NUM_GPU=999</code> to push all layers to VRAM if you have a discrete GPU.</li>
+  </ul>
+
+  <h3 id="setup-llamacpp">llama.cpp (power users)</h3>
+  <p>Maximum control. You pick the GGUF, you pick the quant, you pick the GPU layers. No daemon, no model registry — just <code>llama-server</code> with your file. Default port <code>8080</code>, OpenAI-compatible at <code>/v1</code>.</p>
+
+  <h4>🐧 Linux — build from source</h4>
+  <ol>
+    <li><strong>Clone and build</strong>:
+      <pre><code>git clone https://github.com/ggml-org/llama.cpp
+cd llama.cpp
+cmake -B build -DGGML_CUDA=ON     # or -DGGML_VULKAN=ON, or omit for CPU-only
+cmake --build build --config Release -j</code></pre>
+      Binaries land in <code>build/bin/</code>. Add to PATH or copy <code>llama-server</code> somewhere in your <code>$PATH</code>.
+    </li>
+    <li><strong>Verify</strong>:
+      <pre><code>llama-server --version</code></pre>
+    </li>
+  </ol>
+
+  <h4>🪟 Windows — Releases zip</h4>
+  <ol>
+    <li><strong>Download</strong> the latest pre-built zip from <a href="https://github.com/ggml-org/llama.cpp/releases">github.com/ggml-org/llama.cpp/releases</a>. Pick <code>llama-bXXXX-bin-win-cuda-x64.zip</code> if you have an NVIDIA GPU, or <code>...-vulkan-...</code> for AMD/Intel, or <code>...-avx2-...</code> for CPU-only.</li>
+    <li><strong>Extract</strong> to a folder you'll remember (e.g. <code>C:\llama.cpp</code>) and add it to your <code>PATH</code> environment variable, or always invoke with the full path.</li>
+    <li><strong>Verify</strong> in PowerShell:
+      <pre><code>llama-server.exe --version</code></pre>
+    </li>
+  </ol>
+
+  <h4>🍎 macOS — Homebrew</h4>
+  <ol>
+    <li><strong>Install</strong>:
+      <pre><code>brew install llama.cpp</code></pre>
+      Apple Silicon Macs get Metal acceleration by default — no extra flags needed.
+    </li>
+    <li><strong>Verify</strong>:
+      <pre><code>llama-server --version</code></pre>
+    </li>
+  </ol>
+
+  <h4>Picking a GGUF</h4>
+  <p>GGUF is a quantised single-file model format. Smaller files run faster but lose accuracy. The sweet spot for 7B-13B models is <strong>Q4_K_M</strong>; pick higher only if you have spare VRAM.</p>
+  <table>
+    <thead><tr><th>Quant</th><th>Size (7B)</th><th>Quality</th><th>When to pick</th></tr></thead>
+    <tbody>
+      <tr><td><code>Q4_K_M</code></td><td>~4.4 GB</td><td>Good</td><td>Default. Fits on 8 GB RAM / 6 GB VRAM. Recommended.</td></tr>
+      <tr><td><code>Q5_K_M</code></td><td>~5.1 GB</td><td>Better</td><td>Noticeably sharper on coding. Needs ~10 GB free.</td></tr>
+      <tr><td><code>Q8_0</code></td><td>~7.7 GB</td><td>Near-lossless</td><td>If you have 16 GB+ and want max fidelity short of full precision.</td></tr>
+      <tr><td><code>F16</code> / <code>BF16</code></td><td>~14 GB</td><td>Lossless</td><td>Research / fine-tuning. Overkill for chat.</td></tr>
+    </tbody>
+  </table>
+  <p>For ready-to-use quants, <a href="https://huggingface.co/bartowski">bartowski on Hugging Face</a> publishes consistent re-quants of every popular release with all sizes side by side.</p>
+
+  <h4>Running llama-server</h4>
+  <p>Minimum command — just point at the GGUF:</p>
+  <pre><code>llama-server -m /path/to/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf --port 8080</code></pre>
+  <p>Useful flags:</p>
+  <ul>
+    <li><code>-c 8192</code> — context window in tokens. Bigger = more RAM. Default 4096.</li>
+    <li><code>-ngl 999</code> — offload all layers to GPU (requires CUDA / Vulkan / Metal build).</li>
+    <li><code>--host 0.0.0.0</code> — bind to all interfaces. Default <code>127.0.0.1</code> (localhost only) is what Notepatra expects.</li>
+    <li><code>--api-key SECRET</code> — require an Authorization header. Leave off for local-only use.</li>
+    <li><code>--jinja</code> — use the model's chat template. Required for tool calls in Coding Mode.</li>
+  </ul>
+  <p>In Notepatra, pick "llama.cpp" in the backend dropdown. The connectivity dot turns green and the model name (read from the running server) appears in the dropdown.</p>
+
+  <h4>Troubleshooting</h4>
+
+  <h5>"llama-server not running" — but it IS running</h5>
+  <p>Connectivity probe to <code>http://localhost:8080/v1/models</code> failed. Causes:</p>
+  <ul>
+    <li><strong>Wrong port</strong> — Notepatra expects <code>8080</code>. If you started <code>--port 8000</code>, restart with <code>--port 8080</code>.</li>
+    <li><strong>Bound to a non-localhost interface</strong> — if you used <code>--host 192.168.x.x</code>, Notepatra won't probe that. Use <code>--host 127.0.0.1</code> (default) or <code>0.0.0.0</code>.</li>
+    <li><strong>Server still loading the model</strong> — large GGUFs take 30-60 s to mmap on first start. Watch the terminal until you see <code>HTTP server listening</code>, then click refresh in Notepatra.</li>
+    <li><strong>API key set on the server but not in Notepatra</strong> — if you started with <code>--api-key</code>, paste the same key in Settings → AI → OpenAI-compat. Most users skip <code>--api-key</code> entirely.</li>
+  </ul>
+
+  <h5>Curated catalog showing instead of my loaded model</h5>
+  <p>The dropdown lists Notepatra's curated catalog rather than the model you loaded.</p>
+  <ul>
+    <li><strong>Probe didn't reach <code>/v1/models</code></strong> — see "not running" above. The catalog is a fallback when the live probe fails.</li>
+    <li><strong>Server returns an empty model list</strong> — older llama.cpp builds didn't return a name. Update llama.cpp; recent builds always populate <code>id</code>.</li>
+    <li><strong>You can still type any name</strong> — the dropdown is editable. Type the exact model id <code>llama-server</code> reports in its startup banner.</li>
+  </ul>
+
+  <h3 id="setup-cloud">Cloud backends (OpenAI, OpenRouter, Anthropic, Azure, Ollama Cloud)</h3>
+  <p>Cloud backends need a key. Notepatra has <strong>per-provider key slots</strong> — keys never cross-pollinate between providers. Open Settings → Preferences → AI to see the four sections (OpenRouter, OpenAI, Ollama Cloud, Azure OpenAI), each with its own Test / Save / Forget buttons.</p>
+
+  <h4>OpenRouter (recommended cloud — one key, many models)</h4>
+  <ol>
+    <li><strong>Sign up</strong> at <a href="https://openrouter.ai">openrouter.ai</a>. Add a few dollars credit; pay-as-you-go per token, no subscription.</li>
+    <li><strong>Create a key</strong> — Account → Keys → Create. Copy the <code>sk-or-v1-...</code> string.</li>
+    <li><strong>Paste in Notepatra</strong> — Settings → AI → <em>OpenRouter</em> section → API Key field → click <em>Test</em>. Green = good. Click <em>Save</em>.</li>
+    <li><strong>Pick "OpenRouter" in the backend dropdown</strong>. The model dropdown lists hundreds of models — type <code>claude</code>, <code>gpt</code>, <code>gemini</code>, <code>grok</code>, <code>kimi</code>, <code>qwen</code>, etc. to filter.</li>
+  </ol>
+
+  <h4>OpenAI direct</h4>
+  <ol>
+    <li><strong>Get a key</strong> at <a href="https://platform.openai.com/api-keys">platform.openai.com/api-keys</a>. The string starts with <code>sk-</code> (or <code>sk-proj-</code> for project keys).</li>
+    <li><strong>Paste</strong> in Settings → AI → <em>OpenAI</em> section → Test → Save.</li>
+    <li><strong>Pick "OpenAI"</strong> in the backend dropdown. Curated list of GPT-4 family + o-series; type <code>o1</code> or <code>gpt-4</code> to filter.</li>
+  </ol>
+
+  <h4>Azure OpenAI deployment</h4>
+  <p>Azure exposes OpenAI through your tenant — you pay your Azure bill, not OpenAI directly. Setup is fiddlier because you address a <em>deployment</em> not a model.</p>
+  <ol>
+    <li><strong>Get the three values</strong> from the Azure portal:
+      <ul>
+        <li><strong>Resource name</strong> — e.g. <code>my-openai-east</code> (the part before <code>.openai.azure.com</code>).</li>
+        <li><strong>Deployment name</strong> — what you called the deployment when you created it. NOT the same as the model name. Example: <code>gpt-4o-prod</code>.</li>
+        <li><strong>API version</strong> — e.g. <code>2024-08-01-preview</code>. Use the latest stable from <a href="https://learn.microsoft.com/azure/ai-services/openai/reference">the Azure docs</a>.</li>
+        <li><strong>Key</strong> — Azure portal → your resource → Keys and Endpoint.</li>
+      </ul>
+    </li>
+    <li><strong>Settings → AI → Azure OpenAI</strong> — fill all four fields. Notepatra builds the URL <code>https://{resource}.openai.azure.com/openai/deployments/{deployment}/chat/completions?api-version={version}</code> for you.</li>
+    <li><strong>Test</strong> — green = the deployment answered. <em>Save</em>, then pick "Azure OpenAI" in the backend dropdown.</li>
+  </ol>
+
+  <h4>Ollama Cloud</h4>
+  <p>Same Ollama models, served from Ollama's hosted infra. Useful when you want Ollama's catalog without the local RAM cost.</p>
+  <ol>
+    <li><strong>Sign up</strong> at <a href="https://ollama.com">ollama.com</a> and create an API key in your account settings.</li>
+    <li><strong>Settings → AI → Ollama Cloud</strong> — paste the key → Test → Save.</li>
+    <li><strong>Pick "Ollama Cloud"</strong> in the backend dropdown. The model list is the cloud catalog.</li>
+  </ol>
+
+  <h4>Per-provider key management</h4>
+  <p>Every key slot has three buttons:</p>
+  <ul>
+    <li><strong>Test</strong> — fires a probe at the provider's <code>/models</code> endpoint with the key. Doesn't save anything; only validates.</li>
+    <li><strong>Save</strong> — writes the key to the platform's secure store (libsecret on Linux, Credential Manager on Windows, Keychain on macOS). Never written to disk in plaintext.</li>
+    <li><strong>Forget</strong> — wipes the stored key. Use this on shared machines before logging out.</li>
+  </ul>
+  <p>Notepatra <strong>never</strong> uses a key from one provider against another. Selecting OpenRouter as the backend with no OpenRouter key set will show "OpenRouter key not set", even if your OpenAI key is configured.</p>
+
+  <h4>Reasoning / thinking models</h4>
+  <p>The Think checkbox in the AI dock toggles reasoning mode. Notepatra normalises the protocol per provider:</p>
+  <ul>
+    <li><strong>OpenRouter</strong> — sends a unified <code>reasoning</code> field; works across Claude, o-series, Gemini, DeepSeek-R1, Qwen-QwQ.</li>
+    <li><strong>Anthropic / Claude (via OpenRouter or direct)</strong> — extended thinking with <code>thinking: { type: "enabled", budget_tokens: ... }</code>.</li>
+    <li><strong>OpenAI o-series</strong> — <code>reasoning_effort</code> field. Note: o1/o3 don't accept <code>temperature</code> overrides.</li>
+    <li><strong>Local (Ollama, llama.cpp)</strong> — models that emit <code>&lt;think&gt;...&lt;/think&gt;</code> blocks (Qwen-QwQ, DeepSeek-R1) are auto-detected; Notepatra renders the thinking in a collapsed disclosure.</li>
+  </ul>
+
+  <h4>Troubleshooting</h4>
+
+  <h5>"Key invalid" — but it works in curl</h5>
+  <p>Test button reports failure even though the same key works from a terminal.</p>
+  <ul>
+    <li><strong>Trailing whitespace</strong> — copy-paste from a web page often appends a newline. Re-paste, then click in the field and press End to confirm no trailing characters.</li>
+    <li><strong>Wrong slot</strong> — OpenRouter keys (<code>sk-or-...</code>) belong in the OpenRouter slot only. Pasting them in the OpenAI slot will fail because Notepatra won't cross-route.</li>
+    <li><strong>Org / project header missing</strong> — some OpenAI project keys require an <code>OpenAI-Project</code> header. Use a user key (starts <code>sk-</code> not <code>sk-proj-</code>) if you don't want to manage that.</li>
+    <li><strong>Rate-limited the test endpoint</strong> — the Test button hits <code>/models</code>. If you've already burned through the free tier, the probe fails. Top up credit and retry.</li>
+  </ul>
+
+  <h5>Rate-limit errors / 429</h5>
+  <p>Provider replies with HTTP 429.</p>
+  <ul>
+    <li><strong>Free tier exhausted</strong> — most cloud providers cap requests-per-minute on free credit. Add credit or wait the reset window.</li>
+    <li><strong>Concurrent requests</strong> — Notepatra serialises requests per panel, but if you have multiple AI panels open and all hit the same provider, you can pile on. Close idle panels.</li>
+    <li><strong>Exponential backoff</strong> — Notepatra retries 429s with exponential backoff up to 3 attempts before surfacing the error in the panel.</li>
+  </ul>
+
+  <h5>Model not in dropdown after refresh</h5>
+  <p>You expect a specific model and it's not in the list, even after clicking refresh.</p>
+  <ul>
+    <li><strong>Curated list filter</strong> — Notepatra ships a curated list of known-good models per backend (v0.1.53+) for a clean UX. The dropdown is editable — type the full model id and press Enter to use any model the provider supports.</li>
+    <li><strong>Provider doesn't expose it on <code>/models</code></strong> — some preview models are key-gated and only appear on accounts with a flag enabled. Type the id manually.</li>
+    <li><strong>Region / deployment scoping</strong> — for Azure, the deployment name is what you address; the underlying model is invisible. Make sure you have a deployment for the model family you want.</li>
+  </ul>
+
+  <h3 id="setup-troubleshooting-cross">Cross-cutting troubleshooting</h3>
+  <p>Backend-agnostic problems and their fixes.</p>
+
+  <h5>AI panel says "thinking…" forever</h5>
+  <ul>
+    <li><strong>Streaming stalled</strong> — for local backends, a busy GPU or a context overflow can hang the stream. Click the Stop button; if that does nothing, restart the local server.</li>
+    <li><strong>Network timeout for cloud</strong> — Notepatra times out at 120 s of stream silence. If the provider is degraded, you'll see a timeout error after the wait.</li>
+    <li><strong>Reasoning model with huge budget</strong> — o1, Claude extended thinking, and DeepSeek-R1 can think for minutes on hard prompts. The "thinking" indicator is real progress; check the disclosure if visible.</li>
+  </ul>
+
+  <h5>Stop button doesn't stop</h5>
+  <ul>
+    <li><strong>Local backend mid-prompt-eval</strong> — Ollama and llama.cpp can ignore HTTP cancellation during the prompt-evaluation phase (before the first token is emitted). Stop is honoured once generation starts.</li>
+    <li><strong>Workaround</strong> — for stuck local servers, kill the process: <code>pkill -f ollama</code> / <code>pkill -f llama-server</code>, then restart.</li>
+    <li><strong>Cloud</strong> — the Stop button closes the SSE stream immediately; the backend may still be generating but you stop being charged for streamed tokens.</li>
+  </ul>
+
+  <h5>Coding mode sends but no tool calls fire</h5>
+  <ul>
+    <li><strong>Model lacks tools capability</strong> — the v0.1.55 capability probe should have hidden it. If you bypassed the probe by typing the id manually, the model may not emit tool calls regardless of prompt.</li>
+    <li><strong>llama.cpp without <code>--jinja</code></strong> — restart with <code>llama-server --jinja ...</code> so the chat template is applied. Without it, the model never sees the tool schema.</li>
+    <li><strong>"Share file with AI" toggle off</strong> — Coding Mode without the file context is still functional, but the model can only act on what you paste. Toggle the red lock by the AI dock title to share the current file.</li>
+  </ul>
+
+  <h5>Capabilities probe never returns</h5>
+  <ul>
+    <li><strong>Model not yet pulled all layers</strong> — first <code>/api/show</code> on a model triggers full metadata read; takes a few seconds. Wait, then refresh.</li>
+    <li><strong>Backend timeout</strong> — Notepatra times the probe at 5 s. If your local server is overloaded, the probe fails open (assumes no special caps) — switch to Chat mode to keep working.</li>
+  </ul>
+
+  <h5>Where Notepatra stores AI config</h5>
+  <ul>
+    <li><strong>Backend selection, model id, base URL, options</strong> — <code>~/.config/notepatra/preferences.json</code> on Linux, <code>%APPDATA%\notepatra\preferences.json</code> on Windows, <code>~/Library/Application Support/notepatra/preferences.json</code> on macOS.</li>
+    <li><strong>API keys</strong> — never in JSON. Linux: libsecret (e.g. GNOME Keyring). Windows: Credential Manager. macOS: Keychain.</li>
+    <li><strong>Chat history</strong> — <code>~/.config/notepatra/ai_history/</code> (or platform equivalent), one JSON file per session.</li>
+    <li><strong>Reset</strong> — close Notepatra, delete <code>preferences.json</code>, click <em>Forget</em> in each provider section to clear keychain entries. Restart for a clean slate.</li>
+  </ul>
 
   <h2 id="ai-openai-compat" class="anchor-target">OpenAI-compat (LM Studio, Jan, vLLM, KoboldCpp, llamafile, OpenRouter)</h2>
   <p>Any local server speaking the OpenAI <code>/v1/chat/completions</code> API works. Paste its URL in Settings → Preferences → AI → OpenAI-compat → Base URL. If the server requires an API key (e.g. OpenRouter, OpenAI itself), paste it in the API Key field — it's sent as a <code>Authorization: Bearer</code> header. Ollama and llama-server ignore it.</p>
