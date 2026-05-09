@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "editor.h"
+#include "inlineedit.h"
 #include "npp_palette.h"
 #include "preferences.h"
 #include "rustbridge.h"
@@ -3471,6 +3472,37 @@ void MainWindow::setupShortcuts() {
     new QShortcut(QKeySequence("Ctrl+Shift+Tab"), this, [this]() {
         int idx = (m_tabs->currentIndex() - 1 + m_tabs->count()) % qMax(m_tabs->count(), 1);
         m_tabs->setCurrentIndex(idx);
+    });
+
+    // Ctrl+I — inline AI rewrite. Grabs the current selection, opens
+    // InlineEditDialog, on Apply replaces the selection in place. The
+    // shortcut is registered on `this` (the MainWindow) and given
+    // ApplicationShortcut context so it fires even when the editor
+    // (a QsciScintilla subclass) has focus and is intercepting key
+    // events from its own command map.
+    auto *inlineEditSc = new QShortcut(QKeySequence("Ctrl+I"), this);
+    inlineEditSc->setContext(Qt::ApplicationShortcut);
+    connect(inlineEditSc, &QShortcut::activated, this, [this]() {
+        auto *e = currentEditor();
+        if (!e) {
+            statusBar()->showMessage("Open a file first", 2500);
+            return;
+        }
+        if (!e->hasSelectedText()) {
+            statusBar()->showMessage("Select code first, then press Ctrl+I", 3000);
+            return;
+        }
+        const QString sel  = e->selectedText();
+        const QString path = e->filePath();
+        const QString lang = e->language();
+        auto *dlg = new InlineEditDialog(sel, path, lang, this);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        connect(dlg, &InlineEditDialog::applyRequested, this, [this](const QString &text) {
+            if (auto *ed = currentEditor(); ed && ed->hasSelectedText()) {
+                ed->replaceSelectedText(text);
+            }
+        });
+        dlg->show();
     });
 }
 
