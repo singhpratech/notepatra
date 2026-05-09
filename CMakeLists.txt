@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.54 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.55 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -150,6 +150,9 @@ set(SOURCES
     src/hexeditor.cpp
     src/gitgutter.cpp
     src/ollama.cpp
+    src/credscrub.cpp
+    src/duckdb_client.cpp
+    src/dbtree.cpp
     src/ai_context.cpp
     src/ai_intent.cpp
     src/ai_systemprompt.cpp
@@ -163,6 +166,7 @@ set(SOURCES
     src/lexer_rust.cpp
     src/lexer_swift.cpp
     src/lexer_typescript.cpp
+    src/lexer_extras.cpp
     src/aipanel.cpp
     src/restclient.cpp
     src/gitpanel.cpp
@@ -320,6 +324,64 @@ else()
     target_link_libraries(${EXE_NAME} PRIVATE pthread dl m)
 endif()
 
+# ── DuckDB (optional, vendored) ──
+# v0.1.55 — DuckDB is the universal-reader engine for the Data Analyst
+# mode: CSV / Parquet / JSON / S3 / SQLite federation, all behind one SQL
+# dialect. We detect a vendored copy at vendor/duckdb/ first; if missing,
+# fall back to a system-installed libduckdb; if neither exists, build
+# without DuckDB and the connection panel hides the DuckDB option.
+#
+# Vendored layout (after `cd vendor/duckdb && unzip libduckdb-*.zip`):
+#   vendor/duckdb/duckdb.h
+#   vendor/duckdb/libduckdb.so         (Linux x64)
+#   vendor/duckdb/libduckdb.dylib      (macOS arm64/x64)
+#   vendor/duckdb/duckdb.dll, duckdb.lib (Windows x64)
+#
+# Runtime: an RPATH of $ORIGIN tells the loader to look for
+# libduckdb.so next to the notepatra binary so we can ship them together.
+option(NOTEPATRA_USE_DUCKDB "Enable DuckDB-backed connection types in Data mode" ON)
+if(NOTEPATRA_USE_DUCKDB)
+    set(_DUCKDB_VENDOR_DIR "${CMAKE_SOURCE_DIR}/vendor/duckdb")
+    find_path(DUCKDB_INCLUDE_DIR
+        NAMES duckdb.h
+        HINTS "${_DUCKDB_VENDOR_DIR}"
+        PATHS /usr/include /usr/local/include /opt/homebrew/include
+    )
+    if(WIN32)
+        set(_DUCKDB_LIB_NAMES duckdb)
+    elseif(APPLE)
+        set(_DUCKDB_LIB_NAMES duckdb libduckdb)
+    else()
+        set(_DUCKDB_LIB_NAMES duckdb libduckdb)
+    endif()
+    find_library(DUCKDB_LIBRARY
+        NAMES ${_DUCKDB_LIB_NAMES}
+        HINTS "${_DUCKDB_VENDOR_DIR}"
+        PATHS /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu
+              /opt/homebrew/lib /opt/local/lib
+    )
+    if(DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        message(STATUS "DuckDB: found at ${DUCKDB_LIBRARY}")
+        target_compile_definitions(${EXE_NAME} PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(${EXE_NAME} PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(${EXE_NAME} PRIVATE ${DUCKDB_LIBRARY})
+        # Tell the runtime loader to look next to the binary first.
+        if(UNIX AND NOT APPLE)
+            set_target_properties(${EXE_NAME} PROPERTIES
+                INSTALL_RPATH "$ORIGIN"
+                BUILD_RPATH   "${_DUCKDB_VENDOR_DIR}"
+            )
+        elseif(APPLE)
+            set_target_properties(${EXE_NAME} PROPERTIES
+                INSTALL_RPATH "@executable_path"
+                BUILD_RPATH   "${_DUCKDB_VENDOR_DIR}"
+            )
+        endif()
+    else()
+        message(STATUS "DuckDB: not found — Data-mode DuckDB connection types will be disabled at runtime")
+    endif()
+endif()
+
 # ── Regression tests (opt in via -DBUILD_TESTING=ON) ──
 # BUILD_LEXER_TEST remains as a compatibility alias for old scripts/docs.
 function(notepatra_add_qt_test target_name)
@@ -347,6 +409,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexers_v0125.cpp")
         src/lexer_rust.cpp
         src/lexer_swift.cpp
         src/lexer_typescript.cpp
+        src/lexer_extras.cpp
     )
     target_include_directories(test_lexers_v0125 PRIVATE
         ${CMAKE_SOURCE_DIR}/src
@@ -436,6 +499,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexer_coverage.cpp
         src/lexer_swift.cpp
         src/lexer_kotlin.cpp
         src/lexer_typescript.cpp
+        src/lexer_extras.cpp
     )
     target_include_directories(test_lexer_coverage PRIVATE
         ${CMAKE_SOURCE_DIR}/src
@@ -656,6 +720,58 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_aifix.cpp")
     message(STATUS "Regression test enabled — target: test_aifix")
 endif()
 
+# v0.1.55 — credential scrubber test. Validates that the redactor catches
+# every vendor pattern we know about and never lets a real-shape secret
+# through to the model.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_credscrub.cpp")
+    add_executable(test_credscrub
+        test_credscrub.cpp
+        src/credscrub.cpp
+    )
+    target_include_directories(test_credscrub PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_credscrub PRIVATE
+        Qt5::Core
+    )
+    add_test(NAME test_credscrub COMMAND $<TARGET_FILE:test_credscrub>)
+    set_tests_properties(test_credscrub PROPERTIES LABELS "unit;security;credscrub")
+    message(STATUS "Security test enabled — target: test_credscrub")
+endif()
+
+# v0.1.55 — DuckDB smoke test. Validates RAII handle lifecycle, streaming
+# row callback, schema introspection, error path, and CSV register-then-
+# query. Skipped automatically if NOTEPATRA_USE_DUCKDB is OFF or libduckdb
+# wasn't found at configure time.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_duckdb.cpp"
+   AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+    add_executable(test_duckdb
+        test_duckdb.cpp
+        src/duckdb_client.cpp
+    )
+    target_include_directories(test_duckdb PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${DUCKDB_INCLUDE_DIR}
+    )
+    target_compile_definitions(test_duckdb PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+    target_link_libraries(test_duckdb PRIVATE
+        Qt5::Core
+        ${DUCKDB_LIBRARY}
+    )
+    if(UNIX AND NOT APPLE)
+        set_target_properties(test_duckdb PROPERTIES
+            BUILD_RPATH "${CMAKE_SOURCE_DIR}/vendor/duckdb"
+        )
+    elseif(APPLE)
+        set_target_properties(test_duckdb PROPERTIES
+            BUILD_RPATH "${CMAKE_SOURCE_DIR}/vendor/duckdb"
+        )
+    endif()
+    add_test(NAME test_duckdb COMMAND $<TARGET_FILE:test_duckdb>)
+    set_tests_properties(test_duckdb PROPERTIES LABELS "unit;duckdb;data")
+    message(STATUS "DuckDB smoke test enabled — target: test_duckdb")
+endif()
+
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_fmtpanel_diff.cpp")
     add_executable(test_fmtpanel_diff
         test_fmtpanel_diff.cpp
@@ -699,6 +815,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_compare_widget.cpp
         src/lexer_rust.cpp
         src/lexer_swift.cpp
         src/lexer_typescript.cpp
+        src/lexer_extras.cpp
     )
     add_dependencies(test_compare_widget rust_core)
     target_include_directories(test_compare_widget PRIVATE
@@ -751,6 +868,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_options_actually_w
         src/lexer_rust.cpp
         src/lexer_swift.cpp
         src/lexer_typescript.cpp
+        src/lexer_extras.cpp
     )
     add_dependencies(test_options_actually_work rust_core)
     target_include_directories(test_options_actually_work PRIVATE
@@ -793,6 +911,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_palette.cpp")
         src/lexer_swift.cpp
         src/lexer_kotlin.cpp
         src/lexer_typescript.cpp
+        src/lexer_extras.cpp
     )
     target_include_directories(test_palette PRIVATE
         ${CMAKE_SOURCE_DIR}/src

@@ -28,3 +28,8 @@ img*.png
 images.zip
 images/
 *.gif.local
+
+# Vendored libduckdb prebuilt amalgamation (~32 MB) — fetched at configure time
+vendor/duckdb/libduckdb.zip
+vendor/duckdb/libduckdb.so
+vendor/duckdb/libduckdb_static.a

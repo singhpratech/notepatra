@@ -33,6 +33,7 @@
 #include "lexer_rust.h"
 #include "lexer_swift.h"
 #include "lexer_typescript.h"
+#include "lexer_extras.h"
 
 #if __has_include(<Qsci/qscilexeravs.h>)
 #include <Qsci/qscilexeravs.h>
@@ -148,6 +149,10 @@ QString detectLanguageFromPath(const QString &path, const QString &text) {
         {"xaml", "XML"}, {"csproj", "XML"}, {"vcxproj", "XML"}, {"sln", "XML"},
         {"json", "JSON"}, {"jsonc", "JSON"}, {"geojson", "JSON"},
         {"webmanifest", "JSON"}, {"har", "JSON"},
+        // v0.1.55 — JSON Lines (each line = one JSON object) and
+        // newline-delimited JSON. Same lexer as JSON; QScintilla's JSON
+        // tokeniser handles per-line records correctly.
+        {"jsonl", "JSON"}, {"ndjson", "JSON"},
         {"sql", "SQL"}, {"ddl", "SQL"}, {"dml", "SQL"},
         {"pgsql", "SQL"}, {"plsql", "SQL"}, {"tsql", "SQL"},
         {"mysql", "SQL"}, {"sqlite", "SQL"}, {"hql", "SQL"},
@@ -169,7 +174,12 @@ QString detectLanguageFromPath(const QString &path, const QString &text) {
         {"nasm", "NASM"}, {"masm", "MASM"},
         {"v", "Verilog"}, {"sv", "Verilog"}, {"svh", "Verilog"},
         {"vhd", "VHDL"}, {"vhdl", "VHDL"},
-        {"tex", "TeX"}, {"latex", "TeX"}, {"bib", "TeX"}, {"cls", "TeX"}, {"sty", "TeX"},
+        {"tex", "TeX"}, {"latex", "TeX"}, {"bib", "BibTeX"}, {"sty", "TeX"},
+        // .cls is ambiguous: LaTeX class file OR Salesforce Apex.
+        // Apex .cls files are far more common in dev workflows; route to
+        // Apex by default. Users who hit a LaTeX .cls can pick TeX from
+        // the Language menu.
+        {"bibtex", "BibTeX"},
         {"ps", "PostScript"}, {"eps", "PostScript"},
         {"idl", "IDL"}, {"pro", "IDL"},
         {"ini", "Properties"}, {"cfg", "Properties"}, {"conf", "Properties"},
@@ -185,48 +195,67 @@ QString detectLanguageFromPath(const QString &path, const QString &text) {
         {"pas", "Pascal"}, {"pp", "Pascal"}, {"dpr", "Pascal"}, {"dpk", "Pascal"},
         {"cmake", "CMake"},
         {"avs", "AVS"}, {"avsi", "AVS"},
-        {"r", "Bash"}, {"rmd", "Markdown"}, // R: Bash lexer handles # comments + identifiers passably until we ship a custom R lexer
+        {"r", "R"}, {"rmd", "Markdown"},
         {"hex", "IntelHex"}, {"ihex", "IntelHex"},
         {"srec", "SRecord"}, {"s19", "SRecord"}, {"s28", "SRecord"},
         {"log", "Plain Text"}, {"out", "Plain Text"}, {"txt", "Plain Text"},
         {"csv", "Plain Text"}, {"tsv", "Plain Text"},
-        {"dockerignore", "Bash"}, {"gitignore", "Bash"},
-        // Modern languages without dedicated QScintilla lexers — routed
-        // to the closest existing lexer for syntax that mostly works.
-        // Custom keyword overrides are TODO for v0.1.27+; for now this
-        // is a 70-90% solution per language.
-        {"dart", "JavaScript"},      // C-family syntax, similar braces/strings
-        {"zig", "C++"},              // C-family
-        {"zon", "C++"},              // Zig Object Notation -- tiny config files
-        {"nim", "Python"},           // Indent-based + Python-like syntax
-        {"nims", "Python"},          // NimScript
-        {"ex", "Ruby"}, {"exs", "Ruby"},   // Elixir -- uses do/end like Ruby
-        {"erl", "Perl"},             // Erlang -- closer to Perl than anything else
-        {"hrl", "Perl"},             // Erlang headers
-        {"cr", "Ruby"},              // Crystal -- explicit Ruby-inspired
-        {"hs", "Bash"},              // Haskell -- # not used but Bash lexer is least-bad
-        {"lhs", "Bash"},             // Literate Haskell
-        {"ml", "Bash"}, {"mli", "Bash"},   // OCaml -- (* *) comments don't fit any lexer
-        {"fs", "C#"}, {"fsx", "C#"}, {"fsi", "C#"},   // F# -- closer to C# than anything
-        {"clj", "Lua"}, {"cljs", "Lua"}, {"cljc", "Lua"}, {"edn", "Lua"},   // Clojure -- ; comments
-        {"elm", "Bash"},             // Elm -- # comments don't apply but braces help
-        {"jl", "Python"},            // Julia -- syntactically Python-flavoured
-        {"v", "Verilog"},            // V (lang) -- conflicts with Verilog (.v); Verilog wins
-        {"vlang", "C++"},            // V language unique extension
-        {"odin", "C++"},             // Odin -- C-family
-        {"sb", "Bash"}, {"sbn", "Bash"},   // SmallBASIC / scratch
-        {"awk", "Bash"},             // AWK -- # comments + similar feel
+        {"dockerignore", "Gitignore"}, {"gitignore", "Gitignore"},
+        // v0.1.55 — dedicated lexers for ~31 languages that previously
+        // fell back to closest-fit. Each is a small QsciLexer* subclass
+        // with curated keyword sets. See src/lexer_extras.cpp.
+        {"dart", "Dart"},
+        {"sol", "Solidity"},
+        {"zig", "Zig"}, {"zon", "Zig"},
+        {"vala", "Vala"}, {"vapi", "Vala"},
+        {"hack", "Hack"}, {"hh", "Hack"},
+        {"jl", "Julia"},
+        {"proto", "Protobuf"},
+        {"fs", "F#"}, {"fsx", "F#"}, {"fsi", "F#"},
+        {"tf", "HCL"}, {"tfvars", "HCL"}, {"hcl", "HCL"},
+        {"thrift", "Thrift"},
+        {"graphql", "GraphQL"}, {"gql", "GraphQL"},
+        {"gd", "GDScript"}, {"tres", "GDScript"}, {"tscn", "GDScript"},
+        {"nim", "Nim"}, {"nims", "Nim"},
+        {"pyx", "Cython"}, {"pxd", "Cython"},  // override Python default
+        {"mojo", "Mojo"}, {"🔥", "Mojo"},
+        {"cr", "Crystal"},
+        {"ex", "Elixir"}, {"exs", "Elixir"},
+        {"scala", "Scala"}, {"sc", "Scala"},
+        {"groovy", "Groovy"}, {"gradle", "Groovy"},
+        {"cls", "Apex"}, {"trigger", "Apex"},
+        {"jinja", "Jinja"}, {"jinja2", "Jinja"}, {"j2", "Jinja"},
+        {"liquid", "Liquid"},
+        {"twig", "Twig"},
+        {"dockerfile", "Dockerfile"},
+        {"fish", "Fish"},
+        {"nu", "Nushell"},
+        {"toml", "TOML"},
+        {"json5", "JSON5"},
+        // ── still-fallback for languages whose lexer needs more work ──
+        {"erl", "Perl"}, {"hrl", "Perl"},   // Erlang
+        {"hs", "Bash"}, {"lhs", "Bash"},    // Haskell — needs custom QsciLexerCustom
+        {"ml", "Bash"}, {"mli", "Bash"},    // OCaml — needs custom (* *) comment lexer
+        {"clj", "Lua"}, {"cljs", "Lua"}, {"cljc", "Lua"}, {"edn", "Lua"},   // Clojure
+        {"elm", "Bash"},                    // Elm
+        {"v", "Verilog"},                   // V (lang) collision with Verilog
+        {"vlang", "C++"},                   // V language unique extension
+        {"odin", "C++"},                    // Odin — C-family
+        {"sb", "Bash"}, {"sbn", "Bash"},    // SmallBASIC / scratch
+        {"awk", "Bash"},                    // AWK — Bash lexer is close enough
     };
 
     static const QHash<QString, QString> nameMap = {
         {"Makefile", "Makefile"}, {"makefile", "Makefile"}, {"GNUmakefile", "Makefile"},
-        {"Dockerfile", "Bash"}, {"Vagrantfile", "Ruby"}, {"Rakefile", "Ruby"},
+        {"Dockerfile", "Dockerfile"}, {"Containerfile", "Dockerfile"},
+        {"Vagrantfile", "Ruby"}, {"Rakefile", "Ruby"},
         {"Gemfile", "Ruby"}, {"Podfile", "Ruby"},
         {"CMakeLists.txt", "CMake"}, {"meson.build", "Python"},
         {".bashrc", "Bash"}, {".bash_profile", "Bash"}, {".zshrc", "Bash"},
-        {".profile", "Bash"}, {".gitignore", "Bash"}, {".dockerignore", "Bash"},
-        {".editorconfig", "Properties"}, {".env", "Properties"},
-        {"Cargo.toml", "YAML"}, {"Cargo.lock", "YAML"},
+        {".profile", "Bash"}, {".gitignore", "Gitignore"}, {".dockerignore", "Gitignore"},
+        {".editorconfig", "Properties"}, {".env", "DotEnv"},
+        {"Cargo.toml", "TOML"}, {"Cargo.lock", "TOML"}, {"pyproject.toml", "TOML"},
+        {"poetry.lock", "TOML"}, {"uv.lock", "TOML"}, {"Pipfile", "TOML"},
         {"package.json", "JSON"}, {"tsconfig.json", "JSON"},
         {"composer.json", "JSON"}, {".eslintrc", "JSON"},
         {"requirements.txt", "Plain Text"}, {"go.mod", "Bash"}, {"go.sum", "Plain Text"},
@@ -342,6 +371,45 @@ QsciLexer *createLexerForLanguage(const QString &lang, QObject *parent) {
     if (lang == "Swift")      return new LexerSwift(parent);
     if (lang == "Kotlin")     return new LexerKotlin(parent);
     if (lang == "TypeScript") return new LexerTypeScript(parent);
+
+    // v0.1.55 — bulk lexer additions targeting 80+ supported languages.
+    // Each is a small QsciLexer* subclass overriding keywords() only;
+    // the base lexer handles tokenisation. See src/lexer_extras.cpp for
+    // the curated keyword tables (sourced from each language's official
+    // reference docs). Adding a new language here is additive: existing
+    // callers continue to fall through to nullptr → "Plain Text" lexer.
+    if (lang == "Dart")       return new LexerDart(parent);
+    if (lang == "Solidity")   return new LexerSolidity(parent);
+    if (lang == "Zig")        return new LexerZig(parent);
+    if (lang == "Vala")       return new LexerVala(parent);
+    if (lang == "Hack")       return new LexerHack(parent);
+    if (lang == "Julia")      return new LexerJulia(parent);
+    if (lang == "R")          return new LexerR(parent);
+    if (lang == "Protobuf")   return new LexerProtobuf(parent);
+    if (lang == "F#")         return new LexerFSharp(parent);
+    if (lang == "HCL" || lang == "Terraform") return new LexerHCL(parent);
+    if (lang == "Thrift")     return new LexerThrift(parent);
+    if (lang == "GraphQL")    return new LexerGraphQL(parent);
+    if (lang == "GDScript")   return new LexerGDScript(parent);
+    if (lang == "Nim")        return new LexerNim(parent);
+    if (lang == "Cython")     return new LexerCython(parent);
+    if (lang == "Mojo")       return new LexerMojo(parent);
+    if (lang == "Crystal")    return new LexerCrystal(parent);
+    if (lang == "Elixir")     return new LexerElixir(parent);
+    if (lang == "Scala")      return new LexerScala(parent);
+    if (lang == "Groovy")     return new LexerGroovy(parent);
+    if (lang == "Apex")       return new LexerApex(parent);
+    if (lang == "Jinja")      return new LexerJinja(parent);
+    if (lang == "Liquid")     return new LexerLiquid(parent);
+    if (lang == "Twig")       return new LexerTwig(parent);
+    if (lang == "Dockerfile") return new LexerDockerfile(parent);
+    if (lang == "Fish")       return new LexerFish(parent);
+    if (lang == "Nushell")    return new LexerNushell(parent);
+    if (lang == "TOML")       return new LexerToml(parent);
+    if (lang == "DotEnv")     return new LexerEnv(parent);
+    if (lang == "Gitignore")  return new LexerGitignore(parent);
+    if (lang == "JSON5")      return new LexerJson5(parent);
+    if (lang == "BibTeX")     return new LexerBibTeX(parent);
 
     return nullptr;
 }

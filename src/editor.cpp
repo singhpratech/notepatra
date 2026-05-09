@@ -1075,6 +1075,57 @@ Editor::CommentSyntax Editor::commentSyntaxFor(const QString &lang) {
         {"IntelHex",     {"",      "",        ""      }},
         {"SRecord",      {"",      "",        ""      }},
         {"Plain Text",   {"",      "",        ""      }},
+        // v0.1.55 — comment syntax for the 32 new lexers shipped in this
+        // release. Each entry is sourced from the language's official
+        // reference docs (linked in src/lexer_extras.cpp). Without this
+        // map populated, Ctrl+Q (Toggle Line Comment) and Ctrl+Shift+Q
+        // (Toggle Block Comment) would no-op for the new languages.
+        // C-family — // line + /* */ block
+        {"Dart",         {"//",    "/*",      "*/"    }},
+        {"Solidity",     {"//",    "/*",      "*/"    }},
+        {"Zig",          {"//",    "",        ""      }},  // no block comments by design
+        {"Vala",         {"//",    "/*",      "*/"    }},
+        {"Hack",         {"//",    "/*",      "*/"    }},
+        {"Protobuf",     {"//",    "/*",      "*/"    }},
+        {"Thrift",       {"//",    "/*",      "*/"    }},  // Thrift also accepts # but // is canonical
+        {"GraphQL",      {"#",     "",        ""      }},  // GraphQL spec uses # only
+        {"Scala",        {"//",    "/*",      "*/"    }},
+        {"Groovy",       {"//",    "/*",      "*/"    }},
+        {"Apex",         {"//",    "/*",      "*/"    }},
+        // R, Julia — # line + #= =# block (Julia)
+        {"R",            {"#",     "",        ""      }},
+        {"Julia",        {"#",     "#=",      "=#"    }},
+        // F# — // line + (* *) block, ML-derived
+        {"F#",           {"//",    "(*",      "*)"    }},
+        // HCL / Terraform — # OR // line, /* */ block
+        {"HCL",          {"#",     "/*",      "*/"    }},
+        // Python-family — # line, no block (use ''' or """)
+        {"GDScript",     {"#",     "",        ""      }},
+        {"Nim",          {"#",     "#[",      "]#"    }},
+        {"Cython",       {"#",     "",        ""      }},
+        {"Mojo",         {"#",     "",        ""      }},
+        // Ruby-family
+        {"Crystal",      {"#",     "",        ""      }},
+        // Elixir — # line, no formal block; convention is #'#'#
+        {"Elixir",       {"#",     "",        ""      }},
+        // HTML-templating engines — Jinja {# #}, Liquid {% comment %},
+        // Twig {# #} (host HTML uses <!-- --> separately).
+        {"Jinja",        {"",      "{#",      "#}"    }},
+        {"Liquid",       {"",      "{% comment %}", "{% endcomment %}"}},
+        {"Twig",         {"",      "{#",      "#}"    }},
+        // Shell-family — # line. Nushell + Fish + Dockerfile all use #
+        {"Dockerfile",   {"#",     "",        ""      }},
+        {"Fish",         {"#",     "",        ""      }},
+        {"Nushell",      {"#",     "",        ""      }},
+        // Properties / config formats
+        {"TOML",         {"#",     "",        ""      }},
+        {"DotEnv",       {"#",     "",        ""      }},
+        {"Gitignore",    {"#",     "",        ""      }},
+        // JSON5 (extends JSON which has no comments — JSON5 adds them)
+        {"JSON5",        {"//",    "/*",      "*/"    }},
+        // BibTeX — % line comment per BibTeX convention; @comment{...}
+        // is a directive, not a comment per se.
+        {"BibTeX",       {"%",     "",        ""      }},
     };
     return map.value(lang, CommentSyntax{"", "", ""});
 }

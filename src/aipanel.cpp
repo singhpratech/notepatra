@@ -4,8 +4,10 @@
 #include "ai_systemprompt.h"
 #include "ai_tools.h"
 #include "chartrender.h"
+#include "credscrub.h"
 #include "csvanalyst.h"
 #include "dbconnections.h"
+#include "dbtree.h"
 #include "fonts.h"
 #include "config.h"
 #include <QVBoxLayout>
@@ -14,6 +16,8 @@
 #include <QFont>
 #include <QScrollBar>
 #include <QMenu>
+#include <QCompleter>
+#include <QSortFilterProxyModel>
 #include <QApplication>
 #include <QStyle>
 #include <QClipboard>
@@ -576,9 +580,17 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // "llama.cpp" + setting the port via Settings → Preferences → AI.
     auto *backendCombo = new QComboBox;
     backendCombo->addItem("Ollama",             "Ollama");
+    backendCombo->addItem("Ollama Cloud",       "Ollama Cloud");
     backendCombo->addItem("llama.cpp (GGUF)",   "llama.cpp");
-    backendCombo->addItem("OpenRouter (cloud)", "OpenRouter");
+    backendCombo->addItem("OpenRouter",         "OpenRouter");
     backendCombo->addItem("OpenAI",             "OpenAI");
+    backendCombo->addItem("Azure OpenAI",       "Azure OpenAI");
+    backendCombo->setItemData(0, "Local Ollama daemon · 11434", Qt::ToolTipRole);
+    backendCombo->setItemData(1, "Hosted Ollama models · gpt-oss:120b · qwen3-coder:480b · deepseek-v3.1:671b", Qt::ToolTipRole);
+    backendCombo->setItemData(2, "Self-hosted GGUF · llama-server on 8080", Qt::ToolTipRole);
+    backendCombo->setItemData(3, "367 models routed across providers · paste OpenRouter key in Settings", Qt::ToolTipRole);
+    backendCombo->setItemData(4, "OpenAI direct · GPT-4o / GPT-5 / o-series", Qt::ToolTipRole);
+    backendCombo->setItemData(5, "Azure OpenAI · enterprise Azure resource + deployment", Qt::ToolTipRole);
     backendCombo->setFixedWidth(170);
 
     // Initialise from Config. blockSignals() prevents the
@@ -588,23 +600,54 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     backendCombo->blockSignals(true);
     {
         const QString be = Config::instance().aiBackend;
-        if (be.compare("llama.cpp", Qt::CaseInsensitive) == 0) backendCombo->setCurrentIndex(1);
-        else if (Config::instance().aiBaseUrl.contains("openrouter")) backendCombo->setCurrentIndex(2);
-        else if (Config::instance().aiBaseUrl.contains("openai.com")) backendCombo->setCurrentIndex(3);
-        // Stale LM Studio / Jan URLs from older configs fall through to
-        // Ollama default — user just picks llama.cpp manually if needed.
-        else backendCombo->setCurrentIndex(0);  // Ollama
+        const QString url = Config::instance().aiBaseUrl;
+        // Index map: 0=Ollama, 1=Ollama Cloud, 2=llama.cpp, 3=OpenRouter,
+        // 4=OpenAI, 5=Azure OpenAI.
+        if (be.compare("Ollama Cloud", Qt::CaseInsensitive) == 0
+            || url.contains("ollama.com")) {
+            backendCombo->setCurrentIndex(1);
+        } else if (be.compare("llama.cpp", Qt::CaseInsensitive) == 0) {
+            backendCombo->setCurrentIndex(2);
+        } else if (be.compare("OpenRouter", Qt::CaseInsensitive) == 0
+                   || url.contains("openrouter")) {
+            backendCombo->setCurrentIndex(3);
+        } else if (be.compare("OpenAI", Qt::CaseInsensitive) == 0
+                   || url.contains("api.openai.com")) {
+            backendCombo->setCurrentIndex(4);
+        } else if (be.compare("Azure OpenAI", Qt::CaseInsensitive) == 0
+                   || url.contains("openai.azure.com")) {
+            backendCombo->setCurrentIndex(5);
+        } else {
+            // Stale LM Studio / Jan URLs from older configs fall through to
+            // Ollama default — user just picks llama.cpp manually if needed.
+            backendCombo->setCurrentIndex(0);
+        }
     }
     backendCombo->blockSignals(false);
     connect(backendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this, backendCombo](int) {
         const QString key = backendCombo->currentData().toString();
         auto &cfg = Config::instance();
-        if (key == "Ollama")          { cfg.aiBackend = "Ollama";        cfg.aiBaseUrl.clear(); }
-        else if (key == "llama.cpp")  { cfg.aiBackend = "llama.cpp";     cfg.aiBaseUrl.clear(); }
-        else if (key == "OpenRouter") { cfg.aiBackend = "OpenAI-compat"; cfg.aiBaseUrl = "https://openrouter.ai/api/v1"; }
-        else if (key == "OpenAI")     { cfg.aiBackend = "OpenAI-compat"; cfg.aiBaseUrl = "https://api.openai.com/v1"; }
-        else                          { cfg.aiBackend = "Ollama";        cfg.aiBaseUrl.clear(); }
+        // v0.1.55 — preserve the per-provider distinction in cfg.aiBackend.
+        // Pre-v0.1.55 we stored "OpenAI-compat" for both OpenRouter and
+        // OpenAI, which made aiKeyForBackend() unable to tell them apart.
+        // backendFromString() still maps "OpenRouter" / "OpenAI" → the
+        // OpenAICompat enum so OllamaClient routing is unchanged.
+        if (key == "Ollama")            { cfg.aiBackend = "Ollama";        cfg.aiBaseUrl.clear(); }
+        else if (key == "Ollama Cloud") { cfg.aiBackend = "Ollama Cloud";  cfg.aiBaseUrl = "https://ollama.com/v1"; }
+        else if (key == "llama.cpp")    { cfg.aiBackend = "llama.cpp";     cfg.aiBaseUrl.clear(); }
+        else if (key == "OpenRouter")   { cfg.aiBackend = "OpenRouter";    cfg.aiBaseUrl = "https://openrouter.ai/api/v1"; }
+        else if (key == "OpenAI")       { cfg.aiBackend = "OpenAI";        cfg.aiBaseUrl = "https://api.openai.com/v1"; }
+        else if (key == "Azure OpenAI") {
+            cfg.aiBackend = "Azure OpenAI";
+            // Azure URL is reconstructed at request time from
+            // aiAzureResource + aiAzureDeployment + aiAzureApiVersion;
+            // aiBaseUrl carries the resource hostname for visibility.
+            cfg.aiBaseUrl = cfg.aiAzureResource.isEmpty()
+                ? QString("https://<resource>.openai.azure.com/")
+                : QString("https://%1.openai.azure.com/").arg(cfg.aiAzureResource);
+        }
+        else                            { cfg.aiBackend = "Ollama";        cfg.aiBaseUrl.clear(); }
         cfg.save();
         // Reconfigure the client and refresh the model list.
         // v0.1.54 — ALWAYS reset the OllamaClient's base URL on every
@@ -627,90 +670,133 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     });
     modelRow->addWidget(backendCombo);
 
-    // ─── API-key inline prompt (shown only when a cloud backend is
-    // selected AND Config::aiApiKey is empty). Lets users paste their
-    // OpenRouter / OpenAI key right in the AI panel without digging
-    // into Settings → Preferences → AI. Saves on Enter.
-    auto *apiKeyHost = new QWidget;
-    apiKeyHost->setVisible(false);
-    auto *apiKeyRow = new QHBoxLayout(apiKeyHost);
-    apiKeyRow->setContentsMargins(8, 2, 8, 4);
-    apiKeyRow->setSpacing(6);
-    auto *apiKeyLabel = new QLabel("API key:");
-    apiKeyLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
-    apiKeyRow->addWidget(apiKeyLabel);
-    auto *apiKeyInput = new QLineEdit;
-    apiKeyInput->setEchoMode(QLineEdit::Password);
-    apiKeyInput->setPlaceholderText("Paste your API key (sk-or-v1-... for OpenRouter). Stored locally only.");
-    apiKeyInput->setStyleSheet(QString(
-        "QLineEdit { background: %1; color: %2; border: 1px solid %3; "
-        "border-radius: 4px; padding: 4px 8px; font-size: 12px; }"
-        "QLineEdit:focus { border: 1px solid %4; }")
-        .arg(pal.inputBg, pal.inputText, pal.inputBorder, pal.inputFocus));
-    apiKeyRow->addWidget(apiKeyInput, 1);
-    auto *apiKeySaveBtn = new QPushButton("Save");
-    apiKeySaveBtn->setFixedHeight(26);
-    apiKeySaveBtn->setFixedWidth(60);
-    apiKeySaveBtn->setStyleSheet(QString(
-        "QPushButton { background: %1; color: white; border: none; "
-        "border-radius: 4px; font-size: 11px; font-weight: 600; }"
-        "QPushButton:hover { background: %2; }")
-        .arg(pal.accent, pal.userBorder));
-    apiKeyRow->addWidget(apiKeySaveBtn);
-
-    auto showKeyRow = [apiKeyHost, apiKeyInput, backendCombo]() {
-        const QString key = backendCombo->currentData().toString();
-        const bool needsKey = (key == "OpenRouter" || key == "OpenAI");
-        const QString existing = Config::instance().aiApiKey;
-        if (needsKey && existing.isEmpty()) {
-            apiKeyInput->clear();
-            apiKeyInput->setPlaceholderText(key == "OpenRouter"
-                ? "Paste your OpenRouter key (sk-or-v1-...) — get one at openrouter.ai/keys"
-                : key == "OpenAI"
-                    ? "Paste your OpenAI key (sk-...) — get one at platform.openai.com"
-                    : "Paste API key (leave empty if the server doesn't require one)");
-            apiKeyHost->setVisible(true);
-        } else if (needsKey && !existing.isEmpty()) {
-            apiKeyInput->setText(existing);
-            apiKeyHost->setVisible(true);  // keep visible so users can update
-        } else {
-            apiKeyHost->setVisible(false);
+    // ─── Cloud-config banner (replaces the v0.1.54 inline API-key row) ──
+    //
+    // Pre-v0.1.55 the AI panel had an inline "API key:" QLineEdit + Save
+    // button that appeared whenever a cloud backend was selected. That
+    // worked for one provider at a time but a) cluttered the panel and
+    // b) silently broke when users alternated between OpenRouter and
+    // OpenAI because the single Config::aiApiKey field couldn't hold
+    // both. Now: per-provider keys live in Config::aiOpenRouterKey /
+    // aiOpenAIKey, and the AI panel just shows a one-line banner that
+    // points users at the gear (⚙) icon when the active cloud backend
+    // has no key saved yet.
+    auto *cloudConfigBanner = new QLabel;
+    cloudConfigBanner->setVisible(false);
+    cloudConfigBanner->setWordWrap(true);
+    cloudConfigBanner->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    cloudConfigBanner->setOpenExternalLinks(false);
+    cloudConfigBanner->setContentsMargins(10, 6, 10, 6);
+    auto refreshCloudConfigBanner = [cloudConfigBanner, backendCombo]() {
+        const QString backend = backendCombo->currentData().toString();
+        const auto &cfg = Config::instance();
+        const QString key = cfg.aiKeyForBackend(backend);
+        const bool isCloud = (backend == "OpenRouter" || backend == "OpenAI"
+                              || backend == "Ollama Cloud"
+                              || backend == "Azure OpenAI");
+        if (!isCloud) {
+            cloudConfigBanner->setVisible(false);
+            return;
         }
+        const AiPalette p = aiPalette();
+        if (key.isEmpty()) {
+            // Provider selected but no key — block the chat path and tell
+            // the user exactly where to go.
+            const QString warnBg = aiIsDark() ? "#3A2E1A" : "#FFF6DD";
+            const QString warnFg = aiIsDark() ? "#F6D77A" : "#7A5A0E";
+            const QString warnBorder = aiIsDark() ? "#7A5E2E" : "#E8C764";
+            cloudConfigBanner->setStyleSheet(QString(
+                "QLabel { background: %1; color: %2; border: 1px solid %3; "
+                "border-radius: 4px; padding: 6px 10px; font-size: 12px; }")
+                .arg(warnBg, warnFg, warnBorder));
+            cloudConfigBanner->setText(QString(
+                "⚠ No %1 API key saved. Click <b>⚙ Settings</b> next to the "
+                "model dropdown to add one — both OpenRouter and OpenAI keys "
+                "can be saved side by side.")
+                .arg(backend));
+        } else {
+            // Key is present — show a friendly confirmation. Folded into
+            // the same banner so users always see *some* signal about what
+            // backend is active.
+            const QString okBg     = aiIsDark() ? "#1F2D24" : "#EAF8EE";
+            const QString okFg     = aiIsDark() ? "#9BD9A0" : "#1B5E20";
+            const QString okBorder = aiIsDark() ? "#3F6B49" : "#B7D8B8";
+            cloudConfigBanner->setStyleSheet(QString(
+                "QLabel { background: %1; color: %2; border: 1px solid %3; "
+                "border-radius: 4px; padding: 6px 10px; font-size: 12px; }")
+                .arg(okBg, okFg, okBorder));
+            // Show only the prefix + last 4 chars of the key, never the
+            // middle. Even a quick screen capture won't expose enough to
+            // make the secret usable.
+            QString masked = key.length() > 12
+                ? key.left(8) + "…" + key.right(4)
+                : QString("•").repeated(key.length());
+            cloudConfigBanner->setText(QString(
+                "✓ %1 connected · key %2 · click <b>⚙</b> to change or remove")
+                .arg(backend).arg(masked));
+        }
+        cloudConfigBanner->setVisible(true);
+        Q_UNUSED(p);
     };
-    auto saveKey = [apiKeyInput]() {
-        auto &cfg = Config::instance();
-        cfg.aiApiKey = apiKeyInput->text().trimmed();
-        cfg.save();
-    };
-    connect(apiKeySaveBtn, &QPushButton::clicked, this, saveKey);
-    connect(apiKeyInput, &QLineEdit::returnPressed, this, saveKey);
     connect(backendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, [showKeyRow](int) { showKeyRow(); });
-    // Call once on construction to reflect current backend state
-    showKeyRow();
+            this, [refreshCloudConfigBanner](int) { refreshCloudConfigBanner(); });
 
     m_modelCombo = new QComboBox;
     m_modelCombo->setEditable(true);
     m_modelCombo->addItem("(detecting…)");
     m_modelCombo->setEnabled(false);
+    // v0.1.55 — searchable dropdown. The QCompleter searches against
+    // Qt::EditRole on each item (a fused blob of label + provider key +
+    // nice name + synonyms like "claude haiku sonnet opus anthropic …"
+    // installed by renderGroupedModelTree) while the popup renders
+    // Qt::DisplayRole (the pretty visible label). The custom subclass
+    // below overrides pathFromIndex so picking an item from the
+    // completer's popup writes the pretty label back into the lineEdit
+    // instead of the gibberish blob.
+    if (auto *le = m_modelCombo->lineEdit()) {
+        class SearchCompleter : public QCompleter {
+        public:
+            using QCompleter::QCompleter;
+        protected:
+            QString pathFromIndex(const QModelIndex &idx) const override {
+                if (!idx.isValid()) return QString();
+                // Pretty label for the lineEdit; never the search blob.
+                return idx.data(Qt::DisplayRole).toString();
+            }
+        };
+        auto *completer = new SearchCompleter(m_modelCombo->model(), m_modelCombo);
+        completer->setCaseSensitivity(Qt::CaseInsensitive);
+        completer->setFilterMode(Qt::MatchContains);
+        completer->setCompletionMode(QCompleter::PopupCompletion);
+        completer->setCompletionRole(Qt::EditRole);  // search the blob
+        m_modelCombo->setCompleter(completer);
+        le->setPlaceholderText("type to search (e.g. claude · xai · gpt · gemini)");
+    }
     modelRow->addWidget(m_modelCombo, 1);
     m_refreshBtn = new QPushButton("↻");
     m_refreshBtn->setFixedWidth(28);
     m_refreshBtn->setToolTip("Refresh model list from the selected backend");
     modelRow->addWidget(m_refreshBtn);
 
-    // Gear ⚙ — jumps to Preferences → AI for URL / API-key editing
-    auto *gearBtn = new QPushButton("⚙");
-    gearBtn->setFixedWidth(28);
-    gearBtn->setToolTip("AI settings — edit base URL, API key, advanced options");
-    connect(gearBtn, &QPushButton::clicked, this, []() {
-        // Defer open to the top-level window — it owns the menu action.
-        // We can't include preferences.h here (circular), so just emit
-        // a QShortcut-style broadcast via QApplication::sendEvent.
-        // Simplest: users can also open Settings → Preferences.
-        // TODO: wire a proper signal if needed.
-    });
-    gearBtn->setVisible(false);  // hidden until we wire up the jump cleanly
+    // Gear ⚙ — opens a guided AI Settings dialog. The dialog lets users
+    // save BOTH OpenRouter and OpenAI keys side-by-side, test each one
+    // against the provider's /v1/models endpoint without leaving the
+    // dialog, and forget either key independently. Pre-v0.1.55 this
+    // button was a small popup menu against a single shared aiApiKey;
+    // now it owns the whole cloud-config story.
+    auto *gearBtn = new QPushButton("⚙ Settings");
+    gearBtn->setFixedHeight(26);
+    gearBtn->setToolTip("AI Settings — manage OpenRouter / OpenAI keys");
+    gearBtn->setStyleSheet(QString(
+        "QPushButton { background: %1; color: %2; border: 1px solid %3; "
+        "border-radius: 4px; font-size: 11px; padding: 0 8px; }"
+        "QPushButton:hover { background: %4; }")
+        .arg(pal.btnBg, pal.inputText, pal.btnBorder, pal.btnHover));
+    connect(gearBtn, &QPushButton::clicked, this,
+        [this, refreshCloudConfigBanner]() {
+            openAiSettingsDialog();
+            refreshCloudConfigBanner();
+        });
     modelRow->addWidget(gearBtn);
 
     // Reset session — moved here in v0.1.48 from the bottom of the row so
@@ -723,7 +809,9 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     m_clearBtn->setToolTip("Reset the AI Assistant session");
     modelRow->addWidget(m_clearBtn);
     layout->addLayout(modelRow);
-    layout->addWidget(apiKeyHost);
+    layout->addWidget(cloudConfigBanner);
+    // Reflect current backend / saved-key state on construction.
+    refreshCloudConfigBanner();
 
     // ─── Mode row: 3-way segmented selector + Think checkbox ─────────────
     // v0.1.48 — Coding/Data are no longer two independent checkboxes that
@@ -809,6 +897,45 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     m_thinkingCheck->setToolTip("Show the model's reasoning blocks (Qwen3, DeepSeek-R1). "
                                 "Off = faster, cleaner answers. On = see how the model thinks.");
     modeRow->addWidget(m_thinkingCheck);
+
+    // v0.1.55 — privacy / safety toggle. Default off so the AI cannot see
+    // the file you're editing unless you explicitly grant access. Lock
+    // glyph + colored state make the toggle's privacy posture obvious at
+    // a glance (red lock = AI is blind, green key = AI can see). Tooltip
+    // explains the surface so users know what it controls.
+    m_shareFileCheck = new QCheckBox(QStringLiteral("🔒 Share file"));
+    m_shareFileCheck->setChecked(Config::instance().aiShareOpenFile);
+    m_shareFileCheck->setCursor(Qt::PointingHandCursor);
+    auto applyShareCheckStyle = [this, pal]() {
+        const bool on = m_shareFileCheck->isChecked();
+        m_shareFileCheck->setStyleSheet(QString(
+            "QCheckBox { font-size: 11px; font-weight: 600; "
+            "color: %1; margin-left: 12px; padding: 2px 6px; "
+            "border-radius: 4px; }")
+            .arg(on ? (aiIsDark() ? "#9BD9A0" : "#1B5E20")    // green = AI can see
+                    : (aiIsDark() ? "#F48771" : "#B92E1B"))); // red = AI blind
+        m_shareFileCheck->setText(on ? QStringLiteral("🔓 Sharing file")
+                                     : QStringLiteral("🔒 Share file"));
+        m_shareFileCheck->setToolTip(on
+            ? "ON — the AI can see your currently-open file (path, language, "
+              "and content) and any other open editor tabs. Click to revoke."
+            : "OFF — the AI is BLIND to your open file. It can't read your "
+              "code, paths, or filenames unless you explicitly include them "
+              "in your message. Click to grant access.");
+    };
+    applyShareCheckStyle();
+    connect(m_shareFileCheck, &QCheckBox::toggled, this,
+        [this, applyShareCheckStyle](bool on) {
+            Config::instance().aiShareOpenFile = on;
+            Config::instance().save();
+            applyShareCheckStyle();
+            setStatus(on
+                ? "📄 File access granted — AI can now see your open editor tab"
+                : "🔒 File access revoked — AI is blind to your open file",
+                false);
+        });
+    modeRow->addWidget(m_shareFileCheck);
+
     layout->addLayout(modeRow);
 
     // ─── Mode toggled — single applier wired to all three buttons. ───────
@@ -842,8 +969,16 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
                   "Off = faster, cleaner answers. On = see how the model thinks.");
         }
 
-        if (m_quickActionsWrap)  m_quickActionsWrap->setVisible(!coding);
-        if (m_resultActionsWrap) m_resultActionsWrap->setVisible(!coding);
+        // v0.1.55 — collapse quick actions on every mode change. User
+        // explicitly asked for "always collapses on chat". Re-using the
+        // chevron toggle here drives both the visibility AND the chevron's
+        // own ▸/▾ glyph update so the UI stays consistent. Users can still
+        // click ▸ Quick actions to reveal them after the mode change.
+        if (auto *qa = findChild<QPushButton*>("aiQuickActionsToggle")) {
+            if (qa->isChecked()) qa->setChecked(false);
+        }
+        if (m_quickActionsWrap)  m_quickActionsWrap->setVisible(false);
+        if (m_resultActionsWrap) m_resultActionsWrap->setVisible(false);
 
         // v0.1.53 — show the welcome card whenever Data mode is on AND
         // the chat is empty AND the user hasn't dismissed it. Always
@@ -863,6 +998,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         // external button is the only way to reach the dialog, so we
         // show it.
         if (m_manageConnsBtn) m_manageConnsBtn->setVisible(data && !showWelcome);
+        if (m_browseSchemasBtn) m_browseSchemasBtn->setVisible(data && !showWelcome);
 
         if (m_dataCapBanner) {
             if (!data) {
@@ -927,6 +1063,32 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // (`qwen2.5-coder:14b`) — pre-fix the suggestion list was cloud-only,
     // which made local-Ollama users think the only fix was paying for a
     // cloud API.
+    // v0.1.55 — Ollama capability probe. Whenever the user changes the
+    // model dropdown AND the active backend is local Ollama, ask
+    // /api/show for that model's capabilities. We cache the result
+    // (m_ollamaModelCaps[name]) and consult it in sendPrompt before
+    // falling back to the substring allowlist. This is what lets new
+    // tool-capable Ollama models (Gemma 3 Instruct with function calling,
+    // Phi-4, Magistral, Granite-3.3, etc.) actually work in Coding Mode
+    // without needing a Notepatra release to update the allowlist.
+    if (m_modelCombo) {
+        connect(m_modelCombo, &QComboBox::currentTextChanged,
+                this, [this](const QString &) {
+            if (!m_ollama || m_ollama->backend() != OllamaClient::Ollama) return;
+            const int idx = m_modelCombo->currentIndex();
+            const QString id = (idx >= 0)
+                ? m_modelCombo->itemData(idx, Qt::UserRole).toString()
+                : QString();
+            const QString name = id.isEmpty() ? m_modelCombo->currentText().trimmed() : id;
+            if (name.isEmpty() || name.startsWith('(')) return;
+            if (m_ollamaModelCaps.contains(name)) return;  // cached
+            m_ollama->showModel(name);
+        });
+        // The two connect(m_ollama, …) calls that pair with the probe above
+        // are deferred until after m_ollama is constructed (search this
+        // file for "modelCapabilitiesLoaded" later in the constructor).
+    }
+
     if (m_modelCombo) {
         connect(m_modelCombo, &QComboBox::currentTextChanged,
                 this, [this](const QString &modelName) {
@@ -972,6 +1134,29 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             "SQLite ships built-in; install Qt SQL plugins for "
             "Postgres/MySQL/SQL Server."));
         dataRow->addWidget(m_manageConnsBtn);
+
+        // v0.1.55 — "Browse Schemas" button opens the DbTreeDialog so the
+        // user can drill into connections → schemas → tables → columns
+        // and pin a table's schema for the next AI prompt without making
+        // the agent do an introspection round-trip.
+        m_browseSchemasBtn = new QPushButton(tr("Browse Schemas…"));
+        m_browseSchemasBtn->setStyleSheet(
+            "QPushButton { font-size: 11px; padding: 4px 10px; "
+            "background: #4A6FA5; color: white; border: none; border-radius: 4px; }"
+            "QPushButton:hover { background: #5A7FB5; }");
+        m_browseSchemasBtn->setToolTip(tr(
+            "Lazy-load tables/columns from any saved DB connection. "
+            "Right-click a table to pin its schema for the next AI question."));
+        dataRow->addWidget(m_browseSchemasBtn);
+        connect(m_browseSchemasBtn, &QPushButton::clicked, this, [this]() {
+            DbTreeDialog dlg(this);
+            connect(&dlg, &DbTreeDialog::schemaForAi, this,
+                [this](const QString &blob) {
+                    m_pendingSchemaPin = blob;
+                });
+            dlg.exec();
+        });
+
         dataRow->addStretch();
         m_dataCapBanner = new QLabel;
         m_dataCapBanner->setWordWrap(true);
@@ -995,6 +1180,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         dataRow->addWidget(m_dataCapBanner, 1);
         layout->addLayout(dataRow);
         m_manageConnsBtn->setVisible(false);
+        if (m_browseSchemasBtn) m_browseSchemasBtn->setVisible(false);
         m_dataCapBanner->setVisible(false);
 
         // Manage Connections… opens the connection-CRUD dialog. Wired here
@@ -1055,6 +1241,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     actionsToggleRow->setContentsMargins(8, 2, 8, 0);
     actionsToggleRow->setSpacing(0);
     auto *actionsToggle = new QPushButton("▸ Quick actions");
+    actionsToggle->setObjectName("aiQuickActionsToggle");
     actionsToggle->setCheckable(true);
     actionsToggle->setCursor(Qt::PointingHandCursor);
     actionsToggle->setStyleSheet(QString(
@@ -1074,35 +1261,49 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     quickWrapV->setContentsMargins(0, 0, 0, 0);
     quickWrapV->setSpacing(0);
 
+    // v0.1.55 — prominent quick-action buttons. Pre-v0.1.55 these were
+    // 24 px tall flat text labels that read more like footer chrome than
+    // primary affordances. Now: 32 px tall, accent border, hover lift,
+    // sized to actually invite clicks. The user asked to make them
+    // "proper prominent" once revealed.
+    const QString quickActionStyle = QString(
+        "QPushButton { background: %1; color: %2; border: 1px solid %3; "
+        "border-radius: 5px; font-size: 12px; font-weight: 500; padding: 0 12px; }"
+        "QPushButton:hover { background: %4; border-color: %5; color: %5; }"
+        "QPushButton:pressed { background: %5; color: white; border-color: %5; }")
+        .arg(pal.btnBg, pal.inputText, pal.btnBorder, pal.btnHover, pal.accent);
+
     auto *actionsRow1 = new QHBoxLayout;
-    actionsRow1->setContentsMargins(8, 4, 8, 0);
-    actionsRow1->setSpacing(4);
+    actionsRow1->setContentsMargins(8, 4, 8, 4);
+    actionsRow1->setSpacing(6);
     auto *explainBtn = new QPushButton("Explain");
     auto *fixBugsBtn = new QPushButton("Find Bugs");
     auto *refactorBtn = new QPushButton("Refactor");
     auto *testsBtn = new QPushButton("Write Tests");
     for (auto *b : {explainBtn, fixBugsBtn, refactorBtn, testsBtn}) {
-        b->setFixedHeight(24);
-        b->setStyleSheet("font-size: 11px; padding: 0 8px;");
+        b->setFixedHeight(32);
+        b->setStyleSheet(quickActionStyle);
+        b->setCursor(Qt::PointingHandCursor);
         // v0.1.49 — guarantee min width fits the label + padding so Windows
         // (Segoe UI ~20 % wider than DejaVu) doesn't truncate "Write Tests"
         // / "Find Bugs" / "Add Comments" with "...".
-        b->setMinimumWidth(b->fontMetrics().horizontalAdvance(b->text()) + 22);
+        b->setMinimumWidth(b->fontMetrics().horizontalAdvance(b->text()) + 28);
         actionsRow1->addWidget(b);
     }
     quickWrapV->addLayout(actionsRow1);
 
     auto *actionsRow2 = new QHBoxLayout;
     actionsRow2->setContentsMargins(8, 0, 8, 4);
-    actionsRow2->setSpacing(4);
+    actionsRow2->setSpacing(6);
     auto *commentBtn = new QPushButton("Add Comments");
     auto *docBtn = new QPushButton("Generate Docs");
     auto *optimizeBtn = new QPushButton("Optimize");
     auto *translateBtn = new QPushButton("Translate");
     for (auto *b : {commentBtn, docBtn, optimizeBtn, translateBtn}) {
-        b->setFixedHeight(24);
-        b->setStyleSheet("font-size: 11px; padding: 0 8px;");
-        b->setMinimumWidth(b->fontMetrics().horizontalAdvance(b->text()) + 22);
+        b->setFixedHeight(32);
+        b->setStyleSheet(quickActionStyle);
+        b->setCursor(Qt::PointingHandCursor);
+        b->setMinimumWidth(b->fontMetrics().horizontalAdvance(b->text()) + 28);
         actionsRow2->addWidget(b);
     }
     quickWrapV->addLayout(actionsRow2);
@@ -1118,9 +1319,10 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     auto *fixHtmlBtn = new QPushButton("Fix HTML");
     auto *fixSqlBtn  = new QPushButton("Fix SQL");
     for (auto *b : {fixJsonBtn, fixHtmlBtn, fixSqlBtn}) {
-        b->setFixedHeight(24);
-        b->setStyleSheet("font-size: 11px; padding: 0 8px;");
-        b->setMinimumWidth(b->fontMetrics().horizontalAdvance(b->text()) + 22);
+        b->setFixedHeight(32);
+        b->setStyleSheet(quickActionStyle);
+        b->setCursor(Qt::PointingHandCursor);
+        b->setMinimumWidth(b->fontMetrics().horizontalAdvance(b->text()) + 28);
         b->setToolTip("Strict minimal-change fix for the selection (or current file). "
                       "Won't add fields, won't reformat, won't restructure.");
         actionsRow3->addWidget(b);
@@ -1280,6 +1482,21 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
 
     // Ollama client
     m_ollama = new OllamaClient(this);
+
+    // v0.1.55 — capability-cache wiring (paired with the probe trigger
+    // earlier in this constructor). Now that m_ollama exists, the two
+    // signal connections are safe.
+    connect(m_ollama, &OllamaClient::modelCapabilitiesLoaded, this,
+        [this](const QString &model, const QStringList &caps) {
+            m_ollamaModelCaps.insert(model, caps);
+        });
+    connect(m_ollama, &OllamaClient::modelCapabilitiesError, this,
+        [this](const QString &model, const QString &) {
+            // Cache an empty list so we don't hammer /api/show on every
+            // keystroke when the model genuinely lacks capabilities
+            // metadata. The substring allowlist still applies.
+            m_ollamaModelCaps.insert(model, QStringList());
+        });
 
     connect(m_ollama, &OllamaClient::tokenReceived, this, [this](const QString &token) {
         streamIntoAssistantBubble(token);
@@ -1441,79 +1658,25 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         const bool isOpenRouter = baseUrl.contains("openrouter", Qt::CaseInsensitive);
         const bool isOpenAI     = baseUrl.contains("openai.com", Qt::CaseInsensitive);
 
-        struct CuratedModel { const char *slug; const char *label; const char *tip; };
-
-        // OpenRouter — top picks across providers; slugs are OpenRouter format.
-        // Pricing accurate as of 2026-Q2; user should still cross-check on
-        // openrouter.ai/models for current rates.
-        static const CuratedModel OPENROUTER_CATALOG[] = {
-            {"anthropic/claude-sonnet-4.5",   "Claude Sonnet 4.5  (recommended)",
-             "Best balance of speed and reasoning. ~$3 / $15 per M tokens."},
-            {"anthropic/claude-opus-4.5",     "Claude Opus 4.5  (smartest)",
-             "Anthropic's flagship — slowest but the highest-quality output. ~$15 / $75 per M."},
-            {"anthropic/claude-haiku-4.5",    "Claude Haiku 4.5  (fast)",
-             "Fastest Claude — great for short tasks. ~$1 / $5 per M."},
-            {"openai/gpt-5",                  "GPT-5",
-             "OpenAI's flagship reasoning model."},
-            {"openai/gpt-5-mini",             "GPT-5 mini  (cheap)",
-             "Smaller and cheaper GPT-5 variant."},
-            {"openai/gpt-4o",                 "GPT-4o",
-             "Multimodal GPT-4 class. ~$2.5 / $10 per M."},
-            {"openai/o1-mini",                "o1-mini  (reasoning, cheap)",
-             "Reasoning-tuned cheap variant. ~$3 / $12 per M."},
-            {"google/gemini-2.5-pro",         "Gemini 2.5 Pro",
-             "Google's flagship — large 2 M-token context."},
-            {"google/gemini-2.5-flash",       "Gemini 2.5 Flash  (cheap)",
-             "Fast cheap Google model."},
-            {"deepseek/deepseek-r1",          "DeepSeek R1  (reasoning)",
-             "Strong reasoning model — cheap relative to o1."},
-            {"meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B",
-             "Meta's open-weights flagship via OpenRouter."},
-            {"qwen/qwen-2.5-coder-32b-instruct",  "Qwen2.5-Coder 32B  (code)",
-             "Top-tier open-source coding model."},
-            {"mistralai/mistral-large",       "Mistral Large",
-             "Mistral's flagship — strong on multilingual."},
-        };
-
-        // OpenAI direct — current-gen models. Costs in USD per 1M tokens (in/out).
-        static const CuratedModel OPENAI_CATALOG[] = {
-            {"gpt-5",       "GPT-5  (recommended)",      "OpenAI's flagship."},
-            {"gpt-5-mini",  "GPT-5 mini  (cheap)",       "Smaller, cheaper GPT-5."},
-            {"gpt-4o",      "GPT-4o",                    "Multimodal GPT-4 class."},
-            {"gpt-4o-mini", "GPT-4o mini  (cheapest)",   "Tiny GPT-4o."},
-            {"o1",          "o1  (reasoning)",           "Premier reasoning model."},
-            {"o1-mini",     "o1-mini  (reasoning, cheap)", "Cheap reasoning model."},
-        };
-
-        const CuratedModel *catalog = nullptr;
-        size_t catalog_n = 0;
-        QString catalog_label;
-        if (isOpenRouter) { catalog = OPENROUTER_CATALOG; catalog_n = sizeof(OPENROUTER_CATALOG)/sizeof(OPENROUTER_CATALOG[0]); catalog_label = "OpenRouter recommended"; }
-        else if (isOpenAI) { catalog = OPENAI_CATALOG;     catalog_n = sizeof(OPENAI_CATALOG)/sizeof(OPENAI_CATALOG[0]);    catalog_label = "OpenAI"; }
-
-        if (catalog) {
-            // Header
-            m_modelCombo->addItem(QString("── %1 ──").arg(catalog_label));
-            qobject_cast<QStandardItemModel *>(m_modelCombo->model())
-                ->item(m_modelCombo->count() - 1)->setEnabled(false);
-            for (size_t i = 0; i < catalog_n; ++i) {
-                m_modelCombo->addItem(QString::fromUtf8(catalog[i].label));
-                const int idx = m_modelCombo->count() - 1;
-                m_modelCombo->setItemData(idx, QString::fromUtf8(catalog[i].slug), Qt::UserRole);
-                m_modelCombo->setItemData(idx, QString::fromUtf8(catalog[i].tip), Qt::ToolTipRole);
-            }
-            if (!models.isEmpty()) {
-                m_modelCombo->insertSeparator(m_modelCombo->count());
-                m_modelCombo->addItem("── all available ──");
-                qobject_cast<QStandardItemModel *>(m_modelCombo->model())
-                    ->item(m_modelCombo->count() - 1)->setEnabled(false);
+        // v0.1.55 — for cloud OpenAI-compat backends we DON'T render any
+        // hardcoded catalog any more. The flat `models` list arriving here
+        // (just IDs) is too sparse for a useful tree — we wait for the
+        // richer data via modelsListedRich and group it there. If the
+        // probe failed entirely (modelsError fires), the disk cache loader
+        // populates the dropdown from a previous successful fetch.
+        if (isOpenRouter || isOpenAI) {
+            if (models.isEmpty()) {
+                m_modelCombo->addItem(isOpenRouter
+                    ? "(loading OpenRouter catalog…)"
+                    : "(loading OpenAI catalog…)");
+                m_modelCombo->setEnabled(false);
+            } else {
                 m_modelCombo->addItems(models);
+                m_modelCombo->setEnabled(true);
             }
-            m_modelCombo->setEnabled(true);
-            // Default to first curated entry (skip the disabled header).
-            if (m_modelCombo->count() > 1) m_modelCombo->setCurrentIndex(1);
-            setStatus(QString("%1 — %2 curated picks · %3 total")
-                          .arg(catalog_label).arg(catalog_n).arg(models.size() + (int)catalog_n), false);
+            // Status will be set by the rich handler once the grouped tree
+            // is rendered, OR by modelsError when the cache fallback kicks
+            // in. Don't overwrite it here.
             return;
         }
 
@@ -1559,6 +1722,40 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // without a live probe (llama.cpp catalog, OpenRouter / OpenAI
     // curated picks). Pre-fix this handler unconditionally cleared and
     // disabled the combo, killing the catalog logic added in v0.1.53.
+    // v0.1.55 — live tree-grouped renderer for OpenRouter / OpenAI. Fires
+    // when the rich /v1/models response arrives. Groups by provider prefix
+    // (anthropic / openai / google / meta-llama / mistralai / qwen / x-ai
+    // / minimax / moonshotai / deepseek / nvidia / others), renders
+    // section headers + per-model entries with price suffix, caches the
+    // raw array to disk so subsequent offline launches show the last
+    // known catalog. The user can still type a custom model id in the
+    // editable combo (setEditable(true) above) — that bypasses the tree
+    // entirely.
+    connect(m_ollama, &OllamaClient::modelsListedRich, this,
+            [this](const QJsonArray &dataArr) {
+        const QString baseUrl = Config::instance().aiBaseUrl;
+        const bool isOpenRouter = baseUrl.contains("openrouter", Qt::CaseInsensitive);
+        const bool isOpenAI     = baseUrl.contains("openai.com", Qt::CaseInsensitive);
+        if (!isOpenRouter && !isOpenAI) return;
+
+        renderGroupedModelTree(dataArr);
+        // Cache the raw response so a future offline launch falls back to
+        // the last successful fetch.
+        const QString cacheDir = QStandardPaths::writableLocation(
+            QStandardPaths::ConfigLocation) + "/notepatra/cache";
+        QDir().mkpath(cacheDir);
+        const QString cacheFile = cacheDir + "/" +
+            (isOpenRouter ? "openrouter-models.json" : "openai-models.json");
+        QJsonObject cache;
+        cache["fetched"] = QDateTime::currentSecsSinceEpoch();
+        cache["data"] = dataArr;
+        QFile f(cacheFile);
+        if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            f.write(QJsonDocument(cache).toJson(QJsonDocument::Compact));
+            f.close();
+        }
+    });
+
     connect(m_ollama, &OllamaClient::modelsError, this, [this](const QString &reason) {
         Q_UNUSED(reason);
         const QString backend = Config::instance().aiBackend;
@@ -1567,20 +1764,54 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         const bool isOpenRouter = baseUrl.contains("openrouter", Qt::CaseInsensitive);
         const bool isOpenAI     = baseUrl.contains("openai.com", Qt::CaseInsensitive);
 
-        if (isLlamaCpp || isOpenRouter || isOpenAI) {
-            // For these backends, the model list is *largely* a static
-            // catalog — we don't need the live /v1/models response to
-            // populate it. Re-emit a synthetic empty modelsListed so the
-            // catalog-rendering branch in the success handler runs.
+        if (isOpenRouter || isOpenAI) {
+            // v0.1.55 — for cloud backends, fall back to the last cached
+            // /v1/models response if any (per the user's "only list if
+            // API succeeds" rule, the cache only exists when a previous
+            // fetch was successful, so this is safe). No hardcoded list.
+            const QString cacheDir = QStandardPaths::writableLocation(
+                QStandardPaths::ConfigLocation) + "/notepatra/cache";
+            const QString cacheFile = cacheDir + "/" +
+                (isOpenRouter ? "openrouter-models.json" : "openai-models.json");
+            QFile f(cacheFile);
+            if (f.exists() && f.open(QIODevice::ReadOnly)) {
+                QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+                f.close();
+                const qint64 fetched = doc.object().value("fetched").toVariant().toLongLong();
+                const QJsonArray dataArr = doc.object().value("data").toArray();
+                if (!dataArr.isEmpty()) {
+                    renderGroupedModelTree(dataArr);
+                    const qint64 ageH = (QDateTime::currentSecsSinceEpoch() - fetched) / 3600;
+                    setStatus(QString("Showing cached %1 catalog (%2 models, %3 h old). "
+                                      "Click ↻ to refresh from %4 API.")
+                                  .arg(isOpenRouter ? "OpenRouter" : "OpenAI")
+                                  .arg(dataArr.size()).arg(ageH)
+                                  .arg(isOpenRouter ? "openrouter.ai" : "api.openai.com"),
+                              false);
+                    return;
+                }
+            }
+            // No cache and no live data → empty editable combo. User can
+            // still type a custom model id by hand.
+            m_modelCombo->clear();
+            m_modelCombo->setEditable(true);
+            m_modelCombo->setEnabled(true);
+            setStatus(isOpenRouter
+                  ? tr("OpenRouter API unreachable — paste API key + click ↻, "
+                       "or type a custom model id (e.g. anthropic/claude-3.5-sonnet)")
+                  : tr("OpenAI API unreachable — paste API key + click ↻, "
+                       "or type a custom model id (e.g. gpt-4o)"),
+                true);
+            return;
+        }
+
+        if (isLlamaCpp) {
+            // llama.cpp catalog stays usable when server is offline (those
+            // models are downloadable via tooltip URL, server-independent).
             emit m_ollama->modelsListed(QStringList());
-            setStatus(isLlamaCpp
-                  ? tr("llama.cpp not running — pick a model below and run "
-                       "`llama-server -m <file>`")
-                  : isOpenRouter
-                      ? tr("OpenRouter — paste your API key to enable "
-                           "billing-aware live model list")
-                      : tr("OpenAI — paste your API key to enable live model list"),
-                false);
+            setStatus(tr("llama.cpp not running — pick a model below and run "
+                         "`llama-server -m <file>`"),
+                      false);
             return;
         }
 
@@ -1712,9 +1943,18 @@ void AIPanel::refreshModels() {
 
 void AIPanel::setStatus(const QString &text, bool isError) {
     m_statusLabel->setText(text);
-    m_statusLabel->setStyleSheet(isError
-        ? "color: #F48771; padding: 0 6px;"
-        : "color: #4EC9B0; padding: 0 6px;");
+    // v0.1.54 — theme-aware status colours. The previous hard-coded
+    // #4EC9B0 (mint/teal) and #F48771 (salmon) read fine on Dark but
+    // washed out badly on Light theme — the user reported the
+    // "llama.cpp not running" hint was barely visible.
+    const bool dark = aiIsDark();
+    const QString successFg = dark ? QStringLiteral("#4EC9B0")
+                                   : QStringLiteral("#1B7A3E");
+    const QString errorFg   = dark ? QStringLiteral("#F48771")
+                                   : QStringLiteral("#B92E1B");
+    m_statusLabel->setStyleSheet(QString(
+        "color: %1; padding: 2px 8px; font-size: 12px; font-weight: 500;")
+        .arg(isError ? errorFg : successFg));
 }
 
 static QString findFirstExecutable(const QStringList &candidates) {
@@ -2026,7 +2266,30 @@ void AIPanel::sendPrompt(const QString &action) {
     // us having to subscribe to every edit signal.
     if (m_contextProvider) m_contextProvider(this);
 
-    QString model = m_modelCombo->currentText();
+    // v0.1.55 — resolve the model id from the dropdown. For tree-grouped
+    // dropdowns (OpenRouter), the visible text is a decorated label like
+    // "    claude-opus-4-5  ·  $15/$75 per M" — we don't want to send THAT
+    // verbatim to the API. The actual model id ("anthropic/claude-opus-4-5")
+    // is stashed at Qt::UserRole on each item by renderGroupedModelTree.
+    // Fall back to currentText for editable / Ollama / llama.cpp dropdowns
+    // where the visible text IS the id.
+    QString model;
+    {
+        const int idx = m_modelCombo->currentIndex();
+        const QString userRoleId = (idx >= 0)
+            ? m_modelCombo->itemData(idx, Qt::UserRole).toString()
+            : QString();
+        const QString typed = m_modelCombo->currentText().trimmed();
+        // If the user typed a custom id (one that's not in the dropdown),
+        // currentText differs from the visible label of the highlighted
+        // item — prefer the typed text in that case so paste-a-custom-id
+        // still works.
+        const QString visible = (idx >= 0) ? m_modelCombo->itemText(idx) : QString();
+        if (!userRoleId.isEmpty() && typed == visible.trimmed())
+            model = userRoleId;
+        else
+            model = typed;
+    }
     if (model.startsWith("(") || !m_modelCombo->isEnabled()) {
         clearChat();
         setStatus("No Ollama model selected", true);
@@ -2064,8 +2327,7 @@ void AIPanel::sendPrompt(const QString &action) {
     // tool decision is the same model-allowlist test.
     const bool toolModeActive = (codingMode || dataMode);
     const bool willUseTools = toolModeActive && !m_workspaceRoot.isEmpty()
-        && ((m_ollama->backend() != OllamaClient::Ollama)
-            || AiTools::modelLikelySupportsTools(m_ollama->model()));
+        && currentModelSupportsTools();
     QString systemPrompt;
     if (intent == AiSystemPrompt::Intent::DataAnalyst) {
         // Pull .notepatra/data-analyst.md (if present) so the model gets
@@ -2099,38 +2361,161 @@ void AIPanel::sendPrompt(const QString &action) {
         systemPrompt = AiIntent::strictFixSystemPrompt(AiIntent::FixKind::Sql);
     }
 
+    // v0.1.55 — consume any pending schema pin from the DB tree dialog.
+    // The user clicked "Send schema to AI" on a table; we staged the
+    // blob in m_pendingSchemaPin. Prepend it to the system prompt for
+    // THIS turn only, then clear so it doesn't bleed into future turns.
+    if (!m_pendingSchemaPin.isEmpty()) {
+        systemPrompt += "\n\n--- Pinned table schema (from DB tree) ---\n"
+                      + m_pendingSchemaPin;
+        m_pendingSchemaPin.clear();
+    }
+
+    // v0.1.55 — file-access policy (defined here so all downstream
+    // gates — system-prompt pin, quick-action fallback, workspace block —
+    // share the same answer). Chat and Data modes are HARD-blocked from
+    // file access; Coding mode is gated on the privacy toggle (default
+    // off). Selection is implicit consent and stays unaffected.
+    const bool codingModeOn    = (m_codingMode && m_codingMode->isChecked());
+    const bool shareFileToggle = Config::instance().aiShareOpenFile;
+    const bool aiCanSeeFile    = codingModeOn && shareFileToggle;
+
+    // File awareness in the system prompt. Two cases:
+    //   * AI can see the file (Coding Mode + Share File toggle ON): pin
+    //     a short "Currently open: foo.py" line so phrases like "this
+    //     function" disambiguate without burning tokens.
+    //   * AI is blind (Chat / Data mode, OR Coding Mode with toggle OFF):
+    //     pin a DIFFERENT line — tell the model the user has hidden the
+    //     file, and that if asked it should guide them to flip the toggle
+    //     and switch to Coding mode. This is what makes "can you see
+    //     this file?" → "no, but I can if you check 🔒 Share file in the
+    //     AI panel and switch to Coding mode" — exactly the safety UX.
+    if (aiCanSeeFile && (!m_currentFilePath.isEmpty() || !m_currentFileText.isEmpty())) {
+        QString openLine = "\n\nUser's currently-open editor tab: ";
+        if (!m_currentFilePath.isEmpty()) {
+            QFileInfo fi(m_currentFilePath);
+            QString shown = m_currentFilePath;
+            if (!m_workspaceRoot.isEmpty()
+                && shown.startsWith(m_workspaceRoot)) {
+                shown = shown.mid(m_workspaceRoot.size());
+                if (shown.startsWith('/')) shown.remove(0, 1);
+            } else {
+                shown = fi.fileName();
+            }
+            openLine += shown;
+        } else {
+            openLine += "(unsaved buffer)";
+        }
+        if (!m_language.isEmpty()) openLine += " · " + m_language;
+        const int lineCount = m_currentFileText.count('\n') + 1;
+        const int byteSize  = m_currentFileText.toUtf8().size();
+        if (byteSize > 0) {
+            openLine += QString(" · %1 lines · %2 bytes")
+                            .arg(lineCount).arg(byteSize);
+        }
+        if (m_contextIsSelection && !m_context.isEmpty()) {
+            openLine += " · user has a selection highlighted";
+        }
+        openLine += ". When the user says \"this file\", \"this code\", or "
+                    "asks about something without naming a file, they mean "
+                    "this one. Use read_file (if available) or rely on any "
+                    "workspace context already attached.";
+        systemPrompt += openLine;
+    } else {
+        // Privacy mode active. The model knows nothing about the editor
+        // contents — and crucially, must KNOW it knows nothing so it
+        // doesn't hallucinate. Plus an explicit instruction: if the user
+        // asks "can you see this file?" guide them to flip the toggle.
+        QString blindLine =
+            "\n\nFile-access policy: the user has NOT shared their open "
+            "editor file with you. You have no visibility into the file's "
+            "name, path, or content. ";
+        if (codingModeOn) {
+            blindLine +=
+                "Coding mode IS active, but the safety toggle (🔒 Share "
+                "file) is OFF — the user must enable it for you to see "
+                "the file. ";
+        } else {
+            blindLine +=
+                "The user is in Chat mode or Data mode; only Coding mode "
+                "can access the open file, and only when the 🔒 Share "
+                "file toggle is enabled. ";
+        }
+        blindLine +=
+            "If the user asks something like \"can you see this file?\", "
+            "\"explain this code\", \"what does this function do\", or any "
+            "question that implies you should be reading their editor "
+            "buffer, do NOT guess or pretend. Answer plainly: \"I can't "
+            "see your open file right now — your privacy toggle is on. "
+            "To grant me access, switch the AI panel to Coding mode and "
+            "enable the 🔒 Share file toggle (it'll turn green and read "
+            "🔓 Sharing file).\" Keep that guidance short and friendly.";
+        systemPrompt += blindLine;
+    }
+
     // Build the prompt + the user-visible prompt label (just the action name
     // + the code snippet for context — no need to dump the verbose template
     // text into the user bubble). customUserText captures just the raw text
     // the user typed for the "custom" action; the workspace-gate heuristic
     // reads it without the appended code context.
+    // v0.1.55 — Credential leak prevention. Anything we forward to a remote
+    // backend (cloud OR a llama.cpp / Ollama server, since "local" can still
+    // be reached over LAN) must be scrubbed of credential-shaped strings
+    // first. The 2026-05 incident: a user pasted their OpenRouter key into
+    // an editor buffer, then asked the AI Assistant a casual question. The
+    // selected-text inlining at action="custom" plus the workspace-context
+    // block both forwarded the key to OpenRouter, where it landed in their
+    // server-side logs. CredScrub::redact() rewrites the key as
+    // "[REDACTED-OPENROUTER-KEY]" before it leaves the machine.
+    //
+    // We track an aggregate count across all four sources (selection,
+    // workspace, attached file, user-typed) so the status bar can warn the
+    // user that something was scrubbed — both reassurance ("we caught it")
+    // and an action prompt ("you should rotate it anyway").
+    int redactionCount = 0;
+    auto scrubAndCount = [&redactionCount](const QString &in) -> QString {
+        int n = 0;
+        QString out = CredScrub::redact(in, &n);
+        redactionCount += n;
+        return out;
+    };
+    // Quick-action context fallback. Only fires when the AI is allowed
+    // to see the file in the first place. The aiCanSeeFile / codingModeOn
+    // / shareFileToggle locals are defined earlier in this function (the
+    // unified file-access policy).
+    QString contextForActions = m_context;
+    if (contextForActions.isEmpty() && aiCanSeeFile && !m_currentFileText.isEmpty()) {
+        contextForActions = m_currentFileText;
+    }
+    const QString safeContext = scrubAndCount(contextForActions);
+
     QString prompt;
     QString userBubbleText;
     QString customUserText;
     if (action == "explain") {
-        prompt = "Explain this code clearly and concisely:\n\n```\n" + m_context + "\n```";
-        userBubbleText = "Explain this code:\n\n" + m_context;
+        prompt = "Explain this code clearly and concisely:\n\n```\n" + safeContext + "\n```";
+        userBubbleText = "Explain this code:\n\n" + safeContext;
     } else if (action == "bugs") {
-        prompt = "Find bugs and potential issues in this code. List each bug with a fix:\n\n```\n" + m_context + "\n```";
-        userBubbleText = "Find bugs in:\n\n" + m_context;
+        prompt = "Find bugs and potential issues in this code. List each bug with a fix:\n\n```\n" + safeContext + "\n```";
+        userBubbleText = "Find bugs in:\n\n" + safeContext;
     } else if (action == "refactor") {
-        prompt = "Refactor this code to be cleaner and more readable. Output only the refactored code:\n\n```\n" + m_context + "\n```";
-        userBubbleText = "Refactor:\n\n" + m_context;
+        prompt = "Refactor this code to be cleaner and more readable. Output only the refactored code:\n\n```\n" + safeContext + "\n```";
+        userBubbleText = "Refactor:\n\n" + safeContext;
     } else if (action == "tests") {
-        prompt = "Write unit tests for this code:\n\n```\n" + m_context + "\n```";
-        userBubbleText = "Write unit tests for:\n\n" + m_context;
+        prompt = "Write unit tests for this code:\n\n```\n" + safeContext + "\n```";
+        userBubbleText = "Write unit tests for:\n\n" + safeContext;
     } else if (action == "comment") {
-        prompt = "Add clear comments to this code. Output the code with comments:\n\n```\n" + m_context + "\n```";
-        userBubbleText = "Add comments to:\n\n" + m_context;
+        prompt = "Add clear comments to this code. Output the code with comments:\n\n```\n" + safeContext + "\n```";
+        userBubbleText = "Add comments to:\n\n" + safeContext;
     } else if (action == "docs") {
-        prompt = "Generate documentation (docstrings/JSDoc/etc) for this code. Output the code with docs:\n\n```\n" + m_context + "\n```";
-        userBubbleText = "Generate docs for:\n\n" + m_context;
+        prompt = "Generate documentation (docstrings/JSDoc/etc) for this code. Output the code with docs:\n\n```\n" + safeContext + "\n```";
+        userBubbleText = "Generate docs for:\n\n" + safeContext;
     } else if (action == "optimize") {
-        prompt = "Optimize this code for performance. Explain what you changed and output the optimized code:\n\n```\n" + m_context + "\n```";
-        userBubbleText = "Optimize:\n\n" + m_context;
+        prompt = "Optimize this code for performance. Explain what you changed and output the optimized code:\n\n```\n" + safeContext + "\n```";
+        userBubbleText = "Optimize:\n\n" + safeContext;
     } else if (action == "translate") {
-        prompt = "Translate this code to Python (if not already Python) or to JavaScript (if already Python). Output only the translated code:\n\n```\n" + m_context + "\n```";
-        userBubbleText = "Translate Python ↔ JavaScript:\n\n" + m_context;
+        prompt = "Translate this code to Python (if not already Python) or to JavaScript (if already Python). Output only the translated code:\n\n```\n" + safeContext + "\n```";
+        userBubbleText = "Translate Python ↔ JavaScript:\n\n" + safeContext;
     } else if (action == "fix-json" || action == "fix-html" || action == "fix-sql") {
         // v0.1.40 strict format fix. The system prompt is overridden a
         // few lines below to AiIntent::strictFixSystemPrompt so the
@@ -2141,10 +2526,12 @@ void AIPanel::sendPrompt(const QString &action) {
                + ". Make MINIMAL changes. PRESERVE the original line order, "
                  "key/element order, and formatting. Do NOT reorder, do NOT "
                  "reformat, do NOT add new content. Return ONLY the corrected "
-                 + format + ".\n\nBROKEN " + format + ":\n" + m_context;
-        userBubbleText = "Fix " + format + " (minimal change):\n\n" + m_context;
+                 + format + ".\n\nBROKEN " + format + ":\n" + safeContext;
+        userBubbleText = "Fix " + format + " (minimal change):\n\n" + safeContext;
     } else if (action == "custom") {
-        const QString userText = m_customInput->toPlainText();
+        // Scrub the user-typed text too, in case they pasted a key directly
+        // into the chat input.
+        const QString userText = scrubAndCount(m_customInput->toPlainText());
         customUserText = userText;
         // v0.1.38 — only inline m_context if it's a REAL user selection.
         // Pre-v0.1.38 every casual chat appended the entire open file
@@ -2154,9 +2541,9 @@ void AIPanel::sendPrompt(const QString &action) {
         // file still benefit from the workspace-context block via the
         // shouldAttachWorkspace gate; or use Coding Mode's read_file tool
         // for explicit file access.
-        if (m_contextIsSelection && !m_context.isEmpty()) {
-            prompt = userText + "\n\n```\n" + m_context + "\n```";
-            userBubbleText = userText + "\n\n" + m_context;
+        if (m_contextIsSelection && !safeContext.isEmpty()) {
+            prompt = userText + "\n\n```\n" + safeContext + "\n```";
+            userBubbleText = userText + "\n\n" + safeContext;
         } else {
             prompt = userText;
             userBubbleText = userText;
@@ -2185,10 +2572,13 @@ void AIPanel::sendPrompt(const QString &action) {
             QFileInfo fi(m_pendingFilePath);
             userBubbleText = QString("[🖼 %1]\n%2").arg(fi.fileName()).arg(userBubbleText);
         } else if (!fileText.isEmpty()) {
-            // Text-extracted attachment — embed in the prompt as context
+            // Text-extracted attachment — embed in the prompt as context.
+            // Scrub credentials before forwarding (a user could attach a
+            // .env file with secrets without thinking about it).
+            const QString safeFileText = scrubAndCount(fileText);
             QFileInfo fi(m_pendingFilePath);
             QString header = QString("\n\n--- Attached file: %1 ---\n").arg(fi.fileName());
-            prompt = prompt + header + fileText + "\n--- end file ---\n";
+            prompt = prompt + header + safeFileText + "\n--- end file ---\n";
             const QString icon = (dataMode && CsvAnalyst::looksLikeCsv(m_pendingFilePath))
                                   ? QStringLiteral("📊") : QStringLiteral("📄");
             userBubbleText = QString("[%1 %2]\n%3").arg(icon, fi.fileName(), userBubbleText);
@@ -2214,7 +2604,12 @@ void AIPanel::sendPrompt(const QString &action) {
     // like "show me my files" and code-shaped chat ("how do I import X?").
     const bool attachWorkspace =
         AiSystemPrompt::shouldAttachWorkspace(intent, m_context, customUserText);
-    if (attachWorkspace) {
+    // v0.1.55 — workspace attachment is gated on the privacy toggle AND on
+    // the mode being Coding. Without the gate, Chat-mode questions like
+    // "what's a closure?" (when there's a `.py` open) would still attach
+    // the file because hasOpenFileKeyword fires on "the file" buried in
+    // a model's tone. Now: blind unless Coding+Share are both green.
+    if (attachWorkspace && aiCanSeeFile) {
         QVector<AiContext::OpenTabInfo> acTabs;
         acTabs.reserve(m_openTabs.size());
         for (const auto &t : m_openTabs) {
@@ -2222,16 +2617,31 @@ void AIPanel::sendPrompt(const QString &action) {
             n.filePath = t.filePath;
             n.displayName = t.displayName;
             n.language = t.language;
-            n.text = t.text;
+            // Scrub each tab's buffer — this is the broader leak vector.
+            // Without this, ANY open tab containing a credential gets
+            // forwarded to the model whenever workspace awareness fires.
+            n.text = scrubAndCount(t.text);
             n.isCurrent = t.isCurrent;
             acTabs.append(n);
         }
+        const QString safeCurrentFileText = scrubAndCount(m_currentFileText);
         QString workspaceBlock = AiContext::buildWorkspaceContextBlockWithTree(
-            m_currentFilePath, m_currentFileText, acTabs,
+            m_currentFilePath, safeCurrentFileText, acTabs,
             m_workspaceRoot, m_workspaceFilePaths);
         if (!workspaceBlock.isEmpty()) {
             prompt = workspaceBlock + "\n---\n\n" + prompt;
         }
+    }
+
+    // Surface the redaction in the status bar so the user knows we caught
+    // something and can decide whether to rotate the secret. We do this
+    // BEFORE rendering the user bubble so the warning is the first thing
+    // they see; setStatus is overwritten by streaming-stats milliseconds
+    // later, but it persists long enough for the warning to register.
+    if (redactionCount > 0) {
+        const QString plural = (redactionCount == 1) ? "credential" : "credentials";
+        setStatus(QString("⚠ Redacted %1 %2 from outgoing prompt — rotate any real secrets")
+                      .arg(redactionCount).arg(plural), true);
     }
 
     // Opt-in debug sink for end-to-end verification of the context pipeline.
@@ -2269,10 +2679,7 @@ void AIPanel::sendPrompt(const QString &action) {
     m_toolCallsTotal = 0;
     m_toolsActiveThisTurn = false;
     if (toolModeActive && !m_workspaceRoot.isEmpty()) {
-        const bool likelyOk =
-            (m_ollama->backend() != OllamaClient::Ollama)
-            || AiTools::modelLikelySupportsTools(m_ollama->model());
-        if (likelyOk) {
+        if (currentModelSupportsTools()) {
             toolsForRequest = AiTools::availableTools();
             m_toolsActiveThisTurn = true;
             m_lastSystemPromptForTools = systemPrompt;
@@ -2672,6 +3079,217 @@ void AIPanel::appendErrorBubble(const QString &text) {
 // The card is removed automatically once any chat content exists or the
 // user clicks "Hide". The "Hide" choice is sticky via Config::aiHideDataWelcome.
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// renderGroupedModelTree — v0.1.55 live cloud-catalog dropdown for
+// OpenRouter / OpenAI. Takes the raw `/v1/models` array, groups by provider
+// prefix (id format = "<provider>/<model>"), sorts groups by a curated
+// importance order, then writes the dropdown as section headers + indented
+// model entries with a "<provider>/<model>  ·  $in/$out" price suffix.
+// ─────────────────────────────────────────────────────────────────────────────
+bool AIPanel::currentModelSupportsTools() const {
+    if (!m_ollama) return false;
+    const QString model = m_ollama->model();
+    if (model.isEmpty()) return false;
+
+    // For non-Ollama backends, the server decides — always send tools.
+    if (m_ollama->backend() != OllamaClient::Ollama) return true;
+
+    // For Ollama: prefer the /api/show capabilities cache. "tools" in the
+    // capabilities array is Ollama's own ground-truth answer to the
+    // function-calling question. Falls back to the substring allowlist
+    // when the cache hasn't been populated yet (first turn after model
+    // selection, or /api/show failed).
+    auto it = m_ollamaModelCaps.constFind(model);
+    if (it != m_ollamaModelCaps.constEnd() && !it.value().isEmpty()) {
+        return it.value().contains(QStringLiteral("tools"), Qt::CaseInsensitive);
+    }
+    return AiTools::modelLikelySupportsTools(model);
+}
+
+void AIPanel::renderGroupedModelTree(const QJsonArray &dataArr) {
+    if (!m_modelCombo) return;
+    QSignalBlocker blockSignals(m_modelCombo);
+    const QString prev = m_modelCombo->currentText();
+    m_modelCombo->clear();
+
+    // Group by provider prefix (the part before "/" in the id).
+    QMap<QString, QVector<QJsonObject>> grouped;
+    for (const QJsonValue &v : dataArr) {
+        const QJsonObject obj = v.toObject();
+        const QString id = obj.value("id").toString();
+        if (id.isEmpty()) continue;
+        const QString prov = id.contains('/') ? id.section('/', 0, 0) : "other";
+        grouped[prov].append(obj);
+    }
+
+    // Curated provider order — flagships first, then mid-tier, then long
+    // tail alphabetised. Anything not listed falls into "Other".
+    static const QStringList CURATED_ORDER = {
+        "anthropic",      // Claude
+        "openai",         // GPT
+        "google",         // Gemini
+        "deepseek",       // R1, V3
+        "meta-llama",     // Llama
+        "mistralai",      // Mistral
+        "qwen",           // Qwen / Qwen-Coder
+        "x-ai",           // Grok
+        "minimax",        // MiniMax
+        "moonshotai",     // Kimi
+        "z-ai",           // GLM
+        "nvidia",         // Nemotron
+        "amazon",         // Nova
+        "cohere",         // Command R
+        "perplexity",     // Sonar
+        "nousresearch",   // Hermes
+        "01-ai",          // Yi
+        "baidu",          // ERNIE
+    };
+
+    auto formatPrice = [](const QJsonObject &obj) -> QString {
+        const QJsonObject p = obj.value("pricing").toObject();
+        const double inP  = p.value("prompt").toString().toDouble();
+        const double outP = p.value("completion").toString().toDouble();
+        if (inP == 0.0 && outP == 0.0) return QStringLiteral("free");
+        // OpenRouter prices are per-token; convert to per-M-tokens.
+        const double inM = inP * 1'000'000.0;
+        const double outM = outP * 1'000'000.0;
+        return QString("$%1/$%2 per M")
+            .arg(inM, 0, 'g', 3).arg(outM, 0, 'g', 3);
+    };
+
+    auto pretty = [](const QString &id) -> QString {
+        // Strip provider prefix; keep tag suffix (":free" / ":beta" / etc).
+        return id.contains('/') ? id.section('/', 1) : id;
+    };
+
+    auto *qsim = qobject_cast<QStandardItemModel *>(m_modelCombo->model());
+    auto addHeader = [this, qsim](const QString &text) {
+        if (m_modelCombo->count() > 0) m_modelCombo->insertSeparator(m_modelCombo->count());
+        m_modelCombo->addItem(text);
+        if (qsim) qsim->item(m_modelCombo->count() - 1)->setEnabled(false);
+    };
+
+    // v0.1.55 — provider synonyms / aliases users actually type. Users
+    // search "claude" or "anthropic" interchangeably, "xai" without a dash
+    // for x-ai/grok, "gemini" for google. Each item gets these merged
+    // into its Qt::UserRole+2 search blob so the QCompleter can match on
+    // them.
+    static const QMap<QString, QString> PROVIDER_SYNONYMS = {
+        {"anthropic",    "claude haiku sonnet opus"},
+        {"openai",       "gpt o1 o3 chatgpt"},
+        {"google",       "gemini bard palm"},
+        {"deepseek",     "deepseek r1 v3"},
+        {"meta-llama",   "llama meta facebook"},
+        {"mistralai",    "mistral codestral"},
+        {"qwen",         "alibaba"},
+        {"x-ai",         "xai grok elon"},
+        {"minimax",      "abab"},
+        {"moonshotai",   "kimi moonshot"},
+        {"z-ai",         "glm zai zhipu"},
+        {"nvidia",       "nemotron"},
+        {"amazon",       "aws nova bedrock"},
+        {"cohere",       "command"},
+        {"perplexity",   "sonar pplx"},
+        {"nousresearch", "hermes nous"},
+        {"01-ai",        "yi zeroone"},
+        {"baidu",        "ernie"},
+    };
+
+    auto addProviderGroup = [&](const QString &provKey,
+                                const QString &headerText) {
+        if (!grouped.contains(provKey)) return;
+        const QVector<QJsonObject> models = grouped.take(provKey);
+        addHeader(QString("── %1  (%2 models) ──")
+                  .arg(headerText).arg(models.size()));
+        const QString synonyms = PROVIDER_SYNONYMS.value(provKey);
+        for (const QJsonObject &m : models) {
+            const QString id = m.value("id").toString();
+            const QString name = m.value("name").toString();
+            const QString priceStr = formatPrice(m);
+            const QString label = QString("    %1  ·  %2")
+                                    .arg(pretty(id))
+                                    .arg(priceStr);
+            m_modelCombo->addItem(label);
+            const int idx = m_modelCombo->count() - 1;
+            m_modelCombo->setItemData(idx, id, Qt::UserRole);
+            // v0.1.55 — search blob in Qt::EditRole. QCompleter reads
+            // EditRole when matching the typed text, while the popup
+            // renders DisplayRole. So typing "xai" / "claude" / "gpt"
+            // matches the blob even though the visible label is just
+            // "claude-opus-4-5 · $15/$75 per M". The blob fuses:
+            //   * full id (so "anthropic/claude-…" matches)
+            //   * model's friendly name ("GPT-5 Codex")
+            //   * curated header ("Anthropic — Claude")
+            //   * raw provider key ("x-ai")
+            //   * synonyms ("xai", "grok", "elon" for x-ai;
+            //     "claude haiku sonnet opus" for anthropic; etc.)
+            //   * the visible label itself
+            const QString blob = QStringList{
+                label, id, name, headerText, provKey, synonyms
+            }.join(' ').toLower();
+            m_modelCombo->setItemData(idx, blob, Qt::EditRole);
+            // Keep UserRole+2 around for any tooling that wants the raw
+            // blob without round-tripping through EditRole.
+            m_modelCombo->setItemData(idx, blob, Qt::UserRole + 2);
+            // Tooltip = full id + name + description (truncated).
+            const QString desc = m.value("description").toString().left(280);
+            const qint64 ctx   = m.value("context_length").toVariant().toLongLong();
+            m_modelCombo->setItemData(idx,
+                QString("%1\n\n%2\n\nContext: %3 tokens · Pricing: %4")
+                    .arg(name.isEmpty() ? id : name, desc)
+                    .arg(ctx).arg(priceStr),
+                Qt::ToolTipRole);
+        }
+    };
+
+    static const QMap<QString, QString> NICE_NAMES = {
+        {"anthropic",    "Anthropic — Claude"},
+        {"openai",       "OpenAI — GPT / o1 / o3"},
+        {"google",       "Google — Gemini"},
+        {"deepseek",     "DeepSeek"},
+        {"meta-llama",   "Meta — Llama"},
+        {"mistralai",    "Mistral AI"},
+        {"qwen",         "Alibaba — Qwen"},
+        {"x-ai",         "xAI — Grok"},
+        {"minimax",      "MiniMax"},
+        {"moonshotai",   "Moonshot AI — Kimi"},
+        {"z-ai",         "Z.ai — GLM"},
+        {"nvidia",       "NVIDIA"},
+        {"amazon",       "Amazon — Nova"},
+        {"cohere",       "Cohere"},
+        {"perplexity",   "Perplexity"},
+        {"nousresearch", "NousResearch — Hermes"},
+        {"01-ai",        "01.AI — Yi"},
+        {"baidu",        "Baidu — ERNIE"},
+    };
+
+    for (const QString &provKey : CURATED_ORDER) {
+        if (NICE_NAMES.contains(provKey))
+            addProviderGroup(provKey, NICE_NAMES.value(provKey));
+        else
+            addProviderGroup(provKey, provKey);
+    }
+    // Any remaining providers — long tail, alphabetised.
+    QStringList rest = grouped.keys();
+    rest.sort(Qt::CaseInsensitive);
+    for (const QString &k : rest) {
+        addProviderGroup(k, k.toUpper().left(1) + k.mid(1));
+    }
+
+    m_modelCombo->setEnabled(true);
+    int restoreIdx = m_modelCombo->findText(prev);
+    if (restoreIdx >= 0) m_modelCombo->setCurrentIndex(restoreIdx);
+    else if (m_modelCombo->count() > 1) m_modelCombo->setCurrentIndex(1);
+
+    const QString backendName =
+        Config::instance().aiBaseUrl.contains("openrouter", Qt::CaseInsensitive)
+            ? "OpenRouter" : "OpenAI";
+    setStatus(QString("%1 — %2 models from live API · grouped by provider · "
+                      "type a custom id to override")
+                  .arg(backendName).arg(dataArr.size()),
+              false);
+}
+
 void AIPanel::renderDataWelcomeCard() {
     if (!m_chatLayout) return;
     if (m_dataWelcomeFrame) return;  // already shown
@@ -2810,6 +3428,49 @@ void AIPanel::renderDataWelcomeCard() {
         fix->setWordWrap(true);
         fix->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
         status->addWidget(fix);
+    }
+
+    // v0.1.55 — surface the loaded analyst-context files. Counts every file
+    // under .notepatra/data-analyst.md + .notepatra/data-analyst/* with one
+    // of the supported extensions. Lets users SEE that their data dictionary
+    // / business rules / KPIs are actually being attached to the prompt.
+    {
+        QStringList loadedFiles;
+        if (!m_workspaceRoot.isEmpty()) {
+            const QDir root(m_workspaceRoot);
+            QFileInfo legacy(root.filePath(".notepatra/data-analyst.md"));
+            if (legacy.exists() && legacy.isFile())
+                loadedFiles << "data-analyst.md";
+            const QString subdir = root.filePath(".notepatra/data-analyst");
+            QDir sd(subdir);
+            if (sd.exists()) {
+                const QStringList exts = {"*.md", "*.sql", "*.yaml", "*.yml", "*.json", "*.txt"};
+                for (const QString &fn : sd.entryList(exts, QDir::Files, QDir::Name))
+                    loadedFiles << fn;
+            }
+        }
+        if (loadedFiles.isEmpty()) {
+            auto *ctxHint = new QLabel(QStringLiteral(
+                "📚  <i>No analyst-context files yet. Drop a "
+                "<code>.notepatra/data-analyst/business-rules.md</code> or "
+                "<code>data-dictionary.md</code> into your workspace and the "
+                "AI will use them as ground truth.</i>"));
+            ctxHint->setTextFormat(Qt::RichText);
+            ctxHint->setWordWrap(true);
+            ctxHint->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
+            status->addWidget(ctxHint);
+        } else {
+            const QString joined = loadedFiles.join(" · ");
+            auto *ctxLine = new QLabel(QString::fromUtf8(
+                "📚  <b>%1 context file%2 loaded</b> &nbsp;·&nbsp; <span style='color:%3;'>%4</span>")
+                .arg(loadedFiles.size())
+                .arg(loadedFiles.size() == 1 ? "" : "s")
+                .arg(pal.muted, joined.left(160) + (joined.size() > 160 ? "…" : "")));
+            ctxLine->setTextFormat(Qt::RichText);
+            ctxLine->setWordWrap(true);
+            ctxLine->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
+            status->addWidget(ctxLine);
+        }
     }
 
     cardLay->addLayout(status);
@@ -3471,4 +4132,433 @@ void AIPanel::loadChatHistory() {
         m.elapsedMs    = static_cast<qint64>(o.value("elapsedMs").toDouble(-1));
         m_messages.push_back(m);
     }
+}
+
+// ─── Guided AI Settings dialog ──────────────────────────────────────────
+//
+// Two provider sections (OpenRouter, OpenAI), each with a numbered
+// step-by-step layout:
+//
+//   1. Get your key →  hyperlink to provider's keys page
+//   2. Paste it here  →  password-masked QLineEdit
+//   3. Test / Save / Forget buttons + inline status label
+//
+// The dialog can save both keys at once — no need to switch backends to
+// configure them, no shared aiApiKey field that gets clobbered.
+//
+// Keys are validated by hitting the provider's /v1/models endpoint with
+// a fresh QNetworkAccessManager (we don't reuse m_ollama here because
+// that would disrupt the panel's current backend state mid-test). If
+// the request returns 200 the key is saved; on 401/403 we tell the user
+// the key was rejected without persisting it.
+#include <QDialog>
+#include <QGroupBox>
+#include <QFormLayout>
+#include <QGridLayout>
+#include <QDialogButtonBox>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+
+namespace {
+
+// One per-provider section inside the AI Settings dialog. Self-contained
+// so the dialog body is just two of these stacked vertically.
+class ProviderSection : public QGroupBox {
+public:
+    enum Provider { OpenRouter, OpenAI, OllamaCloud, AzureOpenAI };
+    ProviderSection(Provider provider, QWidget *parent)
+        : QGroupBox(parent), m_provider(provider) {
+        QString title, keysUrl, prefix, hint;
+        switch (provider) {
+        case OpenRouter:
+            title   = "OpenRouter  ·  recommended for variety";
+            keysUrl = "https://openrouter.ai/keys";
+            prefix  = "sk-or-v1-…";
+            hint    = "367+ models — Claude, GPT, Gemini, DeepSeek, Llama, Qwen — one key";
+            break;
+        case OpenAI:
+            title   = "OpenAI";
+            keysUrl = "https://platform.openai.com/api-keys";
+            prefix  = "sk-…";
+            hint    = "Direct OpenAI access — GPT-4o, GPT-5, o-series reasoning";
+            break;
+        case OllamaCloud:
+            title   = "Ollama Cloud  ·  hosted big models";
+            keysUrl = "https://ollama.com/settings/keys";
+            prefix  = "your Ollama Cloud key";
+            hint    = "gpt-oss:120b · qwen3-coder:480b · deepseek-v3.1:671b — subscription based";
+            break;
+        case AzureOpenAI:
+            title   = "Azure OpenAI  ·  enterprise";
+            keysUrl = "https://portal.azure.com";
+            prefix  = "your Azure OpenAI key";
+            hint    = "Resource + deployment routing · uses api-key header (not Bearer)";
+            break;
+        }
+        setTitle(title);
+        setStyleSheet(
+            "QGroupBox { font-weight: 600; font-size: 13px; "
+            "  margin-top: 12px; padding-top: 14px; "
+            "  border: 1px solid #D4D1C4; border-radius: 6px; }"
+            "QGroupBox::title { subcontrol-origin: margin; "
+            "  left: 12px; padding: 0 6px; }");
+
+        auto *form = new QVBoxLayout(this);
+        form->setContentsMargins(14, 18, 14, 14);
+        form->setSpacing(10);
+
+        // Single guidance line — replaces the previous numbered Step 1 / 2 / 3
+        // chrome that ate vertical space and competed with the input itself.
+        auto *hintLabel = new QLabel(QString("<span style=\"color:#444;\">%1</span>").arg(hint));
+        hintLabel->setWordWrap(true);
+        hintLabel->setStyleSheet("font-size: 11px;");
+        form->addWidget(hintLabel);
+
+        auto *guide = new QLabel(QString(
+            "Get a key at "
+            "<a href=\"%1\" style=\"color:#0B5BAF; text-decoration:none;\"><b>%1</b></a>"
+            ", paste it below, then click <b>Test</b> or <b>Save</b>.")
+            .arg(keysUrl));
+        guide->setOpenExternalLinks(true);
+        guide->setTextInteractionFlags(Qt::TextBrowserInteraction);
+        guide->setWordWrap(true);
+        guide->setStyleSheet("font-size: 11px; color: #666; font-weight: 400;");
+        form->addWidget(guide);
+
+        if (provider == OllamaCloud) {
+            // Smart UX hint: many users will already have run `ollama signin`
+            // and don't need the explicit Bearer key path. Make this obvious.
+            auto *signinHint = new QLabel(
+                "<i style=\"color:#777;\">Already ran "
+                "<code style=\"background:#EFEDE3; padding:1px 4px; border-radius:2px;\">"
+                "ollama signin</code>? Pick the <b>Ollama</b> backend instead — your local "
+                "daemon proxies <code>:cloud</code> models automatically. This section is "
+                "for using Ollama Cloud without the local CLI.</i>");
+            signinHint->setWordWrap(true);
+            signinHint->setStyleSheet("font-size: 11px; padding: 4px 0;");
+            form->addWidget(signinHint);
+        }
+
+        if (provider == AzureOpenAI) {
+            // Azure has three extra fields beyond the API key: resource
+            // name (subdomain of openai.azure.com), deployment name (the
+            // user's named deployment of e.g. gpt-4o), and API version.
+            auto *grid = new QGridLayout;
+            grid->setHorizontalSpacing(8);
+            grid->setVerticalSpacing(6);
+
+            const auto &cfg = Config::instance();
+
+            auto *resLabel = new QLabel("Resource name:");
+            m_azureResource = new QLineEdit;
+            m_azureResource->setText(cfg.aiAzureResource);
+            m_azureResource->setPlaceholderText("e.g. my-org-gpt");
+            auto *resSuffix = new QLabel("<span style=\"color:#888;\">.openai.azure.com</span>");
+            resSuffix->setTextFormat(Qt::RichText);
+            grid->addWidget(resLabel, 0, 0);
+            grid->addWidget(m_azureResource, 0, 1);
+            grid->addWidget(resSuffix, 0, 2);
+
+            auto *depLabel = new QLabel("Deployment:");
+            m_azureDeployment = new QLineEdit;
+            m_azureDeployment->setText(cfg.aiAzureDeployment);
+            m_azureDeployment->setPlaceholderText("e.g. gpt-4o-prod");
+            grid->addWidget(depLabel, 1, 0);
+            grid->addWidget(m_azureDeployment, 1, 1, 1, 2);
+
+            auto *verLabel = new QLabel("API version:");
+            m_azureApiVersion = new QLineEdit;
+            m_azureApiVersion->setText(cfg.aiAzureApiVersion.isEmpty()
+                                        ? QStringLiteral("2024-10-21")
+                                        : cfg.aiAzureApiVersion);
+            grid->addWidget(verLabel, 2, 0);
+            grid->addWidget(m_azureApiVersion, 2, 1);
+
+            for (auto *e : {m_azureResource, m_azureDeployment, m_azureApiVersion}) {
+                e->setMinimumHeight(28);
+                e->setStyleSheet(
+                    "QLineEdit { font-size: 12px; padding: 4px 8px; "
+                    "  border: 1px solid #C7C4B7; border-radius: 4px; }"
+                    "QLineEdit:focus { border: 1px solid #CC785C; }");
+            }
+
+            form->addLayout(grid);
+        }
+
+        // Input on its own row — so it gets the full dialog width and never
+        // gets squeezed by the buttons next to it.
+        m_input = new QLineEdit;
+        m_input->setEchoMode(QLineEdit::Password);
+        m_input->setPlaceholderText(QString("Paste your %1 key here").arg(prefix));
+        m_input->setMinimumHeight(30);
+        m_input->setStyleSheet(
+            "QLineEdit { font-size: 12px; padding: 5px 10px; "
+            "  border: 1px solid #C7C4B7; border-radius: 4px; }"
+            "QLineEdit:focus { border: 1px solid #CC785C; }");
+        form->addWidget(m_input);
+
+        // Buttons + status on a second row, with the status label taking the
+        // remaining space and elide-on-overflow behavior so long error
+        // messages from the provider don't blow out the layout.
+        auto *actionRow = new QHBoxLayout;
+        actionRow->setSpacing(8);
+
+        m_testBtn = new QPushButton("Test");
+        m_testBtn->setToolTip("Send a /v1/models probe with this key without saving it");
+        m_testBtn->setMinimumWidth(72);
+        m_testBtn->setMinimumHeight(28);
+
+        m_saveBtn = new QPushButton("Save");
+        m_saveBtn->setToolTip("Validate, then save locally");
+        m_saveBtn->setMinimumWidth(72);
+        m_saveBtn->setMinimumHeight(28);
+        m_saveBtn->setStyleSheet(
+            "QPushButton { background: #CC785C; color: white; border: none; "
+            "  border-radius: 4px; font-weight: 600; padding: 0 12px; }"
+            "QPushButton:hover { background: #B86A4E; }"
+            "QPushButton:disabled { background: #E0DDD2; color: #999; }");
+
+        m_forgetBtn = new QPushButton("Forget");
+        m_forgetBtn->setToolTip("Remove this key from your local config");
+        m_forgetBtn->setMinimumWidth(72);
+        m_forgetBtn->setMinimumHeight(28);
+
+        actionRow->addWidget(m_testBtn);
+        actionRow->addWidget(m_saveBtn);
+        actionRow->addWidget(m_forgetBtn);
+
+        m_status = new QLabel;
+        m_status->setMinimumHeight(20);
+        m_status->setWordWrap(false);
+        m_status->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        m_status->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        m_status->setText(currentKey().isEmpty()
+            ? "<i style=\"color:#888;\">No key saved yet.</i>"
+            : QString("<i style=\"color:#666;\">Saved key: <code>%1</code></i>").arg(maskedSavedKey()));
+        m_status->setStyleSheet("font-size: 11px; padding-left: 8px;");
+        actionRow->addWidget(m_status, 1);
+
+        form->addLayout(actionRow);
+
+        connect(m_input, &QLineEdit::textChanged, this, [this](const QString &t) {
+            m_testBtn->setEnabled(!t.trimmed().isEmpty());
+            m_saveBtn->setEnabled(!t.trimmed().isEmpty());
+        });
+        m_testBtn->setEnabled(false);
+        m_saveBtn->setEnabled(false);
+        m_forgetBtn->setEnabled(!currentKey().isEmpty());
+
+        connect(m_testBtn,   &QPushButton::clicked, this, [this]() { runValidation(false); });
+        connect(m_saveBtn,   &QPushButton::clicked, this, [this]() { runValidation(true); });
+        connect(m_forgetBtn, &QPushButton::clicked, this, [this]() { forgetKey(); });
+    }
+
+    QString currentKey() const {
+        const auto &cfg = Config::instance();
+        switch (m_provider) {
+        case OpenRouter:  return cfg.aiOpenRouterKey;
+        case OpenAI:      return cfg.aiOpenAIKey;
+        case OllamaCloud: return cfg.aiOllamaCloudKey;
+        case AzureOpenAI: return cfg.aiAzureKey;
+        }
+        return QString();
+    }
+
+    QString maskedSavedKey() const {
+        const QString k = currentKey();
+        if (k.length() > 12) return k.left(8) + "…" + k.right(4);
+        return QString("•").repeated(k.length());
+    }
+
+    void writeKey(const QString &k) {
+        auto &cfg = Config::instance();
+        switch (m_provider) {
+        case OpenRouter:  cfg.aiOpenRouterKey  = k; break;
+        case OpenAI:      cfg.aiOpenAIKey      = k; break;
+        case OllamaCloud: cfg.aiOllamaCloudKey = k; break;
+        case AzureOpenAI:
+            cfg.aiAzureKey = k;
+            // Persist the three extra Azure fields too — they only mean
+            // anything in conjunction with the key.
+            if (m_azureResource)    cfg.aiAzureResource   = m_azureResource->text().trimmed();
+            if (m_azureDeployment)  cfg.aiAzureDeployment = m_azureDeployment->text().trimmed();
+            if (m_azureApiVersion)  cfg.aiAzureApiVersion = m_azureApiVersion->text().trimmed();
+            break;
+        }
+        cfg.save();
+    }
+
+    void forgetKey() {
+        writeKey(QString());
+        m_input->clear();
+        m_forgetBtn->setEnabled(false);
+        m_status->setText("<i>(no key saved)</i>");
+        m_status->setStyleSheet("font-size: 11px; color: #666;");
+    }
+
+    // GET /v1/models with the candidate key. If `commitOnSuccess` is true,
+    // a 200 response also persists the key to Config; otherwise it's
+    // purely a connectivity / authentication probe (Test button).
+    void runValidation(bool commitOnSuccess) {
+        const QString candidate = m_input->text().trimmed();
+        if (candidate.isEmpty()) return;
+
+        m_testBtn->setEnabled(false);
+        m_saveBtn->setEnabled(false);
+        m_status->setStyleSheet("font-size: 11px; color: #666;");
+        m_status->setText("<i>Validating against the provider…</i>");
+
+        QString endpoint;
+        bool azureAuth = false;
+        switch (m_provider) {
+        case OpenRouter:  endpoint = "https://openrouter.ai/api/v1/models"; break;
+        case OpenAI:      endpoint = "https://api.openai.com/v1/models";    break;
+        case OllamaCloud: endpoint = "https://ollama.com/v1/models";        break;
+        case AzureOpenAI: {
+            // Azure validation: list deployments under the configured
+            // resource. Requires resource name + API version; deployment
+            // name is not used here (it'd narrow to one model).
+            const QString resource = m_azureResource
+                ? m_azureResource->text().trimmed() : QString();
+            const QString version  = m_azureApiVersion
+                ? m_azureApiVersion->text().trimmed() : QStringLiteral("2024-10-21");
+            if (resource.isEmpty()) {
+                m_status->setStyleSheet("font-size: 11px; color: #B92E1B; font-weight: 600;");
+                m_status->setText("✗ Resource name required");
+                m_testBtn->setEnabled(true); m_saveBtn->setEnabled(true);
+                return;
+            }
+            endpoint = QString("https://%1.openai.azure.com/openai/deployments?api-version=%2")
+                          .arg(resource, version.isEmpty() ? "2024-10-21" : version);
+            azureAuth = true;
+            break;
+        }
+        }
+
+        QNetworkRequest req((QUrl(endpoint)));
+        if (azureAuth) {
+            req.setRawHeader("api-key", candidate.toUtf8());
+        } else {
+            req.setRawHeader("Authorization", ("Bearer " + candidate).toUtf8());
+        }
+        req.setRawHeader("User-Agent", "Notepatra/0.1.55");
+
+        // Lazy-create a NAM owned by this section so it lives as long as
+        // the dialog. Replies are auto-cleaned via deleteLater().
+        if (!m_nam) m_nam = new QNetworkAccessManager(this);
+        QNetworkReply *reply = m_nam->get(req);
+
+        connect(reply, &QNetworkReply::finished, this,
+            [this, reply, candidate, commitOnSuccess]() {
+                const int httpCode = reply->attribute(
+                    QNetworkRequest::HttpStatusCodeAttribute).toInt();
+                const QNetworkReply::NetworkError err = reply->error();
+                const QByteArray body = reply->readAll();
+                reply->deleteLater();
+
+                m_testBtn->setEnabled(true);
+                m_saveBtn->setEnabled(true);
+
+                if (err == QNetworkReply::NoError && httpCode == 200) {
+                    // Count returned models for an informative success line.
+                    int modelCount = 0;
+                    QJsonDocument doc = QJsonDocument::fromJson(body);
+                    if (doc.isObject())
+                        modelCount = doc.object().value("data").toArray().size();
+
+                    if (commitOnSuccess) {
+                        writeKey(candidate);
+                        m_forgetBtn->setEnabled(true);
+                        m_status->setStyleSheet(
+                            "font-size: 11px; color: #1B7A3E; font-weight: 600;");
+                        m_status->setText(QString(
+                            "✓ Valid &amp; saved · %1 models reachable").arg(modelCount));
+                    } else {
+                        m_status->setStyleSheet(
+                            "font-size: 11px; color: #1B7A3E; font-weight: 600;");
+                        m_status->setText(QString(
+                            "✓ Test passed · %1 models reachable · click Save to persist")
+                            .arg(modelCount));
+                    }
+                } else {
+                    QString reason;
+                    if (httpCode == 401) reason = "Invalid key (HTTP 401)";
+                    else if (httpCode == 403) reason = "Forbidden (HTTP 403)";
+                    else if (httpCode == 429) reason = "Rate limited (HTTP 429)";
+                    else if (httpCode > 0)    reason = QString("HTTP %1").arg(httpCode);
+                    else                      reason = reply->errorString();
+                    m_status->setStyleSheet(
+                        "font-size: 11px; color: #B92E1B; font-weight: 600;");
+                    m_status->setText(QString("✗ %1 — key not saved").arg(reason));
+                }
+            });
+    }
+
+private:
+    Provider m_provider;
+    QLineEdit *m_input;
+    QPushButton *m_testBtn;
+    QPushButton *m_saveBtn;
+    QPushButton *m_forgetBtn;
+    QLabel *m_status;
+    QNetworkAccessManager *m_nam = nullptr;
+    // Azure-only — three extra inputs above the API key row.
+    QLineEdit *m_azureResource    = nullptr;
+    QLineEdit *m_azureDeployment  = nullptr;
+    QLineEdit *m_azureApiVersion  = nullptr;
+};
+
+}  // namespace
+
+void AIPanel::openAiSettingsDialog() {
+    QDialog dlg(this);
+    dlg.setWindowTitle("AI Settings — Cloud Providers");
+    dlg.setMinimumWidth(640);
+    dlg.setMinimumHeight(460);
+    dlg.resize(720, 500);
+
+    auto *root = new QVBoxLayout(&dlg);
+    root->setContentsMargins(20, 18, 20, 14);
+    root->setSpacing(14);
+
+    auto *intro = new QLabel(
+        "<b>Configure cloud AI providers.</b><br>"
+        "Both keys can be saved at once — Notepatra picks the right one "
+        "based on which backend you select in the panel. Keys are stored "
+        "locally only (in <code>~/.config/notepatra/notepatra.conf</code>) "
+        "and never synced or transmitted except as the <code>Authorization: "
+        "Bearer</code> header on requests to the provider you chose.");
+    intro->setWordWrap(true);
+    intro->setStyleSheet("font-size: 12px;");
+    root->addWidget(intro);
+
+    // Wrap sections in a scroll area — three providers + intro + footer is
+    // taller than a typical first-time dialog screen, and we want every
+    // setting reachable without resizing.
+    auto *scroll = new QScrollArea(&dlg);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    auto *scrollHost = new QWidget;
+    auto *scrollBox = new QVBoxLayout(scrollHost);
+    scrollBox->setContentsMargins(0, 0, 0, 0);
+    scrollBox->setSpacing(12);
+    auto *or_section = new ProviderSection(ProviderSection::OpenRouter, scrollHost);
+    auto *oa_section = new ProviderSection(ProviderSection::OpenAI, scrollHost);
+    auto *oc_section = new ProviderSection(ProviderSection::OllamaCloud, scrollHost);
+    auto *az_section = new ProviderSection(ProviderSection::AzureOpenAI, scrollHost);
+    scrollBox->addWidget(or_section);
+    scrollBox->addWidget(oa_section);
+    scrollBox->addWidget(oc_section);
+    scrollBox->addWidget(az_section);
+    scrollBox->addStretch(1);
+    scroll->setWidget(scrollHost);
+    root->addWidget(scroll, 1);
+
+    auto *btnBox = new QDialogButtonBox(QDialogButtonBox::Close);
+    connect(btnBox, &QDialogButtonBox::rejected, &dlg, &QDialog::accept);
+    connect(btnBox, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    root->addWidget(btnBox);
+
+    dlg.exec();
 }

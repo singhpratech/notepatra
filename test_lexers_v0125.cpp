@@ -171,12 +171,13 @@ int main(int argc, char *argv[]) {
     check_eq(".bat   -> Batch",       detectLanguageFromPath("install.bat", ""), QStringLiteral("Batch"));
     check_eq(".cmd   -> Batch (NOT PowerShell)", detectLanguageFromPath("setup.cmd", ""), QStringLiteral("Batch"));
 
-    // Verify Phase 4 additions
-    check_eq(".dart  -> JavaScript",  detectLanguageFromPath("main.dart", ""), QStringLiteral("JavaScript"));
-    check_eq(".zig   -> C++",         detectLanguageFromPath("main.zig", ""), QStringLiteral("C++"));
-    check_eq(".jl    -> Python",      detectLanguageFromPath("primes.jl", ""), QStringLiteral("Python"));
-    check_eq(".clj   -> Lua",         detectLanguageFromPath("core.clj", ""), QStringLiteral("Lua"));
-    check_eq(".ex    -> Ruby",        detectLanguageFromPath("server.ex", ""), QStringLiteral("Ruby"));
+    // Verify Phase 4 additions — v0.1.55 promoted these from
+    // closest-fit fallbacks to dedicated lexers (lexer_extras.cpp).
+    check_eq(".dart  -> Dart",        detectLanguageFromPath("main.dart", ""), QStringLiteral("Dart"));
+    check_eq(".zig   -> Zig",         detectLanguageFromPath("main.zig", ""), QStringLiteral("Zig"));
+    check_eq(".jl    -> Julia",       detectLanguageFromPath("primes.jl", ""), QStringLiteral("Julia"));
+    check_eq(".clj   -> Lua",         detectLanguageFromPath("core.clj", ""), QStringLiteral("Lua"));  // still fallback (Lisp lexer pending)
+    check_eq(".ex    -> Elixir",      detectLanguageFromPath("server.ex", ""), QStringLiteral("Elixir"));
 
     // ───── 3. createLexerForLanguage returns instances for new langs ───
     {

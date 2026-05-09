@@ -27,11 +27,61 @@
 // unless the user switches backend in Settings → AI Backend.
 // ═══════════════════════════════════════════════════════════════════════
 
+// v0.1.55 — Azure OpenAI URL + auth helpers. Azure routes through
+// `<resource>.openai.azure.com/openai/deployments/<deployment>` instead
+// of a single global API endpoint, requires `?api-version=` on every
+// call, and uses an `api-key` header instead of `Authorization: Bearer`.
+// These helpers normalise that for the three call sites (listModels,
+// chat tools, chat no-tools) so the per-site code stays readable.
+namespace {
+bool isAzureBackend() {
+    return Config::instance().aiBackend.compare("Azure OpenAI", Qt::CaseInsensitive) == 0;
+}
+
+QString azureApiVersion() {
+    const QString v = Config::instance().aiAzureApiVersion.trimmed();
+    return v.isEmpty() ? QStringLiteral("2024-10-21") : v;
+}
+
+// Build the right URL for an Azure call. `op` is one of:
+//   "models"           → list deployments
+//   "chat/completions" → chat endpoint (uses the configured deployment)
+QUrl azureUrl(const QString &op) {
+    const auto &cfg = Config::instance();
+    const QString resource = cfg.aiAzureResource.trimmed();
+    const QString version  = azureApiVersion();
+    if (op == QLatin1String("models")) {
+        return QUrl(QString("https://%1.openai.azure.com/openai/deployments?api-version=%2")
+                        .arg(resource, version));
+    }
+    const QString deployment = cfg.aiAzureDeployment.trimmed();
+    return QUrl(QString("https://%1.openai.azure.com/openai/deployments/%2/%3?api-version=%4")
+                    .arg(resource, deployment, op, version));
+}
+
+// Set the right auth header for whichever cloud we're talking to. Azure
+// uses `api-key` (lowercase, hyphenated), every other OpenAI-compat
+// server uses `Authorization: Bearer`.
+void setOpenAiAuth(QNetworkRequest &req, const QString &apiKey) {
+    if (apiKey.isEmpty()) return;
+    if (isAzureBackend()) {
+        req.setRawHeader("api-key", apiKey.toUtf8());
+    } else {
+        req.setRawHeader("Authorization", ("Bearer " + apiKey).toUtf8());
+    }
+}
+}  // anonymous namespace
+
 OllamaClient::Backend OllamaClient::backendFromString(const QString &s) {
     if (s.compare("llama.cpp", Qt::CaseInsensitive) == 0 ||
         s.compare("llamacpp", Qt::CaseInsensitive) == 0)
         return LlamaCpp;
     if (s.compare("OpenAI", Qt::CaseInsensitive) == 0 ||
+        s.compare("OpenRouter", Qt::CaseInsensitive) == 0 ||
+        s.compare("Ollama Cloud", Qt::CaseInsensitive) == 0 ||
+        s.compare("OllamaCloud", Qt::CaseInsensitive) == 0 ||
+        s.compare("Azure OpenAI", Qt::CaseInsensitive) == 0 ||
+        s.compare("AzureOpenAI", Qt::CaseInsensitive) == 0 ||
         s.compare("OpenAICompat", Qt::CaseInsensitive) == 0 ||
         s.compare("OpenAI-compat", Qt::CaseInsensitive) == 0 ||
         s.compare("custom", Qt::CaseInsensitive) == 0)
@@ -88,9 +138,23 @@ bool OllamaClient::isAvailable() {
 // Ollama: GET /api/tags → {"models": [{"name": "..."}, ...]}
 // OpenAI-compat: GET /v1/models → {"data": [{"id": "..."}, ...]}
 void OllamaClient::listModels() {
-    const QString path = (m_backend == Ollama) ? "/api/tags" : "/v1/models";
-    QUrl url(m_baseUrl + path);
+    QUrl url;
+    if (m_backend == Ollama) {
+        url = QUrl(m_baseUrl + "/api/tags");
+    } else if (isAzureBackend()) {
+        url = azureUrl("models");
+    } else {
+        url = QUrl(m_baseUrl + "/v1/models");
+    }
     QNetworkRequest req(url);
+    // v0.1.55 — Send the saved API key on /v1/models too. OpenRouter's public
+    // catalog endpoint accepts unauth GETs, but OpenAI's does not — and we
+    // also rely on this call to surface 401/403 when validating a freshly
+    // pasted key from the AI panel's "Save" button.
+    if (m_backend != Ollama) {
+        const QString apiKey = Config::instance().aiKeyForBackend(Config::instance().aiBackend);
+        setOpenAiAuth(req, apiKey);
+    }
     auto *reply = m_nam->get(req);
 
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
@@ -141,6 +205,53 @@ void OllamaClient::listModels() {
         models.sort(Qt::CaseInsensitive);
         emit modelsListed(models);
         reply->deleteLater();
+    });
+}
+
+// ─── showModel — capabilities probe for local Ollama models ───────────
+// POSTs {"name": "<model>"} to /api/show. The response object includes:
+//   - "capabilities": ["completion", "tools", "thinking", "vision", ...]
+//   - "modelfile", "parameters", "template", "details", "model_info"
+// We only care about capabilities here; everything else is ignored.
+//
+// This is the load-bearing replacement for the hardcoded allowlist in
+// AiTools::modelLikelySupportsTools — Ollama's own answer to "does
+// this model support function calling?" beats any substring guess.
+void OllamaClient::showModel(const QString &name) {
+    if (m_backend != Ollama) {
+        // /api/show is Ollama-native; OpenAI-compat servers don't have it.
+        emit modelCapabilitiesError(name, "not an Ollama backend");
+        return;
+    }
+    if (name.isEmpty()) {
+        emit modelCapabilitiesError(name, "empty model name");
+        return;
+    }
+    QUrl url(m_baseUrl + "/api/show");
+    QNetworkRequest req(url);
+    req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    QJsonObject body;
+    body["name"] = name;
+    auto *reply = m_nam->post(req, QJsonDocument(body).toJson());
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply, name]() {
+        if (reply->error() != QNetworkReply::NoError) {
+            emit modelCapabilitiesError(name, reply->errorString());
+            reply->deleteLater();
+            return;
+        }
+        const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+        reply->deleteLater();
+        if (!doc.isObject()) {
+            emit modelCapabilitiesError(name, "non-JSON response");
+            return;
+        }
+        QStringList caps;
+        for (const QJsonValue &v : doc.object().value("capabilities").toArray()) {
+            const QString s = v.toString().trimmed().toLower();
+            if (!s.isEmpty()) caps << s;
+        }
+        emit modelCapabilitiesLoaded(name, caps);
     });
 }
 
@@ -307,14 +418,32 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
             body["tool_choice"] = "auto";
         }
 
-        QUrl url(m_baseUrl + "/v1/chat/completions");
+        // v0.1.55 — OpenRouter unified reasoning parameter. OpenRouter
+        // normalises every provider's reasoning knob (Anthropic extended-
+        // thinking max_tokens, OpenAI reasoning_effort, Gemini
+        // thinkingBudget) into one `reasoning` field. We only send it on
+        // OpenRouter; for other backends the /no_think system-prompt
+        // suffix above remains the universal toggle.
+        const QString backend = Config::instance().aiBackend;
+        if (backend.compare("OpenRouter", Qt::CaseInsensitive) == 0) {
+            QJsonObject reasoning;
+            if (enableThinking) {
+                reasoning["effort"] = "medium";       // OpenAI o-series
+                reasoning["max_tokens"] = 4000;       // Anthropic / Gemini
+            } else {
+                reasoning["exclude"] = true;          // suppress on all
+            }
+            body["reasoning"] = reasoning;
+        }
+
+        QUrl url = isAzureBackend()
+                     ? azureUrl("chat/completions")
+                     : QUrl(m_baseUrl + "/v1/chat/completions");
         QNetworkRequest req(url);
         req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
         // llama-server ignores Authorization; LM Studio / OpenAI expect
-        // a Bearer token. Pass-through from Config::aiApiKey if set.
-        const QString apiKey = Config::instance().aiApiKey;
-        if (!apiKey.isEmpty())
-            req.setRawHeader("Authorization", ("Bearer " + apiKey).toUtf8());
+        // Bearer; Azure expects api-key header. setOpenAiAuth normalises.
+        setOpenAiAuth(req, Config::instance().aiKeyForBackend(Config::instance().aiBackend));
         m_reply = m_nam->post(req, QJsonDocument(body).toJson());
 
         connect(m_reply, &QNetworkReply::readyRead, this, &OllamaClient::onReadyReadOpenAI);
@@ -423,12 +552,12 @@ void OllamaClient::continueWithToolResults(const QJsonArray &toolResults,
         body["tools"] = m_lastTools;
         body["tool_choice"] = "auto";
 
-        QUrl url(m_baseUrl + "/v1/chat/completions");
+        QUrl url = isAzureBackend()
+                     ? azureUrl("chat/completions")
+                     : QUrl(m_baseUrl + "/v1/chat/completions");
         QNetworkRequest req(url);
         req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-        const QString apiKey = Config::instance().aiApiKey;
-        if (!apiKey.isEmpty())
-            req.setRawHeader("Authorization", ("Bearer " + apiKey).toUtf8());
+        setOpenAiAuth(req, Config::instance().aiKeyForBackend(Config::instance().aiBackend));
         m_reply = m_nam->post(req, QJsonDocument(body).toJson());
         connect(m_reply, &QNetworkReply::readyRead, this, &OllamaClient::onReadyReadOpenAI);
         connect(m_reply, &QNetworkReply::finished,  this, &OllamaClient::onFinishedOpenAI);

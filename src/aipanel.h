@@ -10,6 +10,7 @@
 #include <QLabel>
 #include <QCheckBox>
 #include <QAbstractButton>
+#include <QHash>
 #include <QVector>
 #include <functional>
 #include "ollama.h"
@@ -113,6 +114,31 @@ private:
     void setStatus(const QString &text, bool error = false);
     void updateVoiceButtonVisual(bool recording);
     void renderTranscript();
+    // v0.1.55 — populate m_modelCombo with a tree-grouped view of an
+    // OpenRouter / OpenAI /v1/models response. Groups by provider prefix
+    // (anthropic / openai / google / meta-llama / mistralai / qwen / x-ai
+    // / minimax / moonshotai / deepseek / nvidia / others), sorted by a
+    // curated provider-importance order. Each entry includes a price-per-
+    // M-tokens suffix so users can tell flagship from cheap at a glance.
+    void renderGroupedModelTree(const QJsonArray &dataArr);
+
+    // v0.1.55 — does the currently-selected model support tool calling?
+    // For Ollama backends, prefers /api/show capabilities (cached in
+    // m_ollamaModelCaps); falls back to AiTools::modelLikelySupportsTools
+    // when the cache is empty (probe still in flight, or model probe
+    // failed). For non-Ollama backends the cache is irrelevant — those
+    // servers handle support detection server-side and silently ignore
+    // the tools field for non-tool models, so we always send tools and
+    // let the server decide.
+    bool currentModelSupportsTools() const;
+    // v0.1.55 — guided AI Settings dialog. Replaces the inline API-key
+    // QLineEdit on the AI panel and the v0.1.54 ⚙ popup menu. Has one
+    // section per cloud provider (OpenRouter, OpenAI) with: a link to
+    // the provider's keys page, a password-masked input, Test / Save /
+    // Forget buttons, and an inline status label that reports either
+    // "✓ Valid · N models" or the precise HTTP error returned by the
+    // provider. Both keys can be saved at once.
+    void openAiSettingsDialog();
     void appendErrorBubble(const QString &text);
     void handleChatLink(const QUrl &url);
 
@@ -184,6 +210,12 @@ private:
     QPushButton *m_voiceBtn;
     QLabel *m_attachmentChip;
     QCheckBox *m_thinkingCheck;
+    // v0.1.55 — privacy toggle. When unchecked (default), Notepatra
+    // suppresses every implicit file-share path: workspace context block,
+    // currently-open-file pin in the system prompt, and the empty-
+    // selection fallback to whole-file content for quick actions. The
+    // user explicitly opts INTO sharing.
+    QCheckBox *m_shareFileCheck = nullptr;
     // v0.1.48 — Coding/Data are no longer two checkboxes; they're two
     // segmented buttons in a 3-way mode selector (Chat | Coding | Data).
     // Kept as QAbstractButton* so existing isChecked()/setChecked()/
@@ -192,6 +224,13 @@ private:
     QAbstractButton *m_dataMode = nullptr;    // Data Analyst — query_sql / csv_query / chart_spec
     QAbstractButton *m_chatMode = nullptr;    // Default — general chat assistant (no flag set)
     QPushButton *m_manageConnsBtn = nullptr;
+    // v0.1.55 — "Browse Schemas..." button next to Manage Connections.
+    // Opens DbTreeDialog. Visible only in Data mode.
+    QPushButton *m_browseSchemasBtn = nullptr;
+    // v0.1.55 — when the user picks "Send schema to AI" on a table in
+    // the DbTreeDialog, the schema blob is staged here until the next
+    // sendPrompt, which prepends it to the user message.
+    QString m_pendingSchemaPin;
     QLabel *m_dataCapBanner = nullptr;
     // v0.1.53 — Data Analyst welcome card (model capability + connection
     // status + example-prompt chips + Hide button). Lives inside the chat
@@ -248,6 +287,13 @@ private:
     void saveChatHistory();
     void loadChatHistory();
     void scheduleChatSave();
+
+    // v0.1.55 — Ollama /api/show capabilities cache. Keyed by model name
+    // (e.g. "qwen3-coder:7b"), value is the lowercased capabilities array
+    // ("tools", "thinking", "vision", "completion", "embedding"). Probed
+    // on model dropdown change for the Ollama backend; preferred over
+    // AiTools::modelLikelySupportsTools when present.
+    QHash<QString, QStringList> m_ollamaModelCaps;
 
 private slots:
     void attachFile();

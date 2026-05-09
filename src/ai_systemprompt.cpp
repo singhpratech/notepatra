@@ -250,7 +250,12 @@ QString buildWithProjectContext(Intent intent,
         trimmed = trimmed.left(cut).trimmed() + QStringLiteral("\n[...truncated]");
     }
 
-    out += QStringLiteral("\n\n--- Project data context (.notepatra/data-analyst.md) ---\n");
+    out += QStringLiteral(
+        "\n\n--- Project data context "
+        "(.notepatra/data-analyst.md and .notepatra/data-analyst/*) ---\n"
+        "These are the project-specific instructions, data dictionary, "
+        "business rules, KPIs, and sample queries. Cite the file name "
+        "(e.g. \"per business-rules.md\") when you rely on a fact from them.\n");
     out += trimmed;
     out += QStringLiteral("\n--- end project data context ---");
     return out;
@@ -290,18 +295,111 @@ static bool hasProjectKeyword(const QString &userText) {
     return kProj.match(userText).hasMatch();
 }
 
+// v0.1.55 — keyword set for "the user is asking about the file currently
+// open in the editor". Triggers workspace attachment so the current file's
+// content gets pinned into the prompt. Without this, asking "explain this
+// file" left the model staring at a system prompt with no actual code.
+static bool hasOpenFileKeyword(const QString &userText) {
+    static const QRegularExpression kOpen(
+        QStringLiteral(
+            "\\b(?:"
+            "this\\s+(?:file|code|script|module|class|function|method|component|page|view|model|fn|func)"
+            "|(?:the|current|open|active)\\s+(?:file|code|script|buffer|editor|tab|module)"
+            "|editor|buffer"
+            ")\\b"),
+        QRegularExpression::CaseInsensitiveOption);
+    return kOpen.match(userText).hasMatch();
+}
+
+// v0.1.55 — multi-file Data Analyst context. Pre-v0.1.55 we loaded ONE file
+// (`.notepatra/data-analyst.md`). Real analyst workflows need more: a data
+// dictionary, business rules, KPI definitions, sample queries. The loader
+// now reads:
+//
+//   .notepatra/data-analyst.md             (legacy single-file path; kept)
+//   .notepatra/data-analyst/instructions.md (the persona / tone)
+//   .notepatra/data-analyst/data-dictionary.md
+//   .notepatra/data-analyst/business-rules.md
+//   .notepatra/data-analyst/kpis.md
+//   .notepatra/data-analyst/sample-queries.sql
+//   .notepatra/data-analyst/*.md            (anything else — alphabetical)
+//   .notepatra/data-analyst/*.sql           (extra sample queries)
+//
+// Each file is concatenated under a header comment so the model can cite
+// its source ("per business-rules.md, …"). Hard cap: 64 KB total — past
+// that we truncate with a marker so a runaway dump doesn't blow the
+// model's context window.
 QString readDataAnalystInstructions(const QString &workspaceRoot) {
     if (workspaceRoot.trimmed().isEmpty()) return QString();
-    const QString path = QDir(workspaceRoot).filePath(
-        QStringLiteral(".notepatra/data-analyst.md"));
-    QFileInfo fi(path);
-    if (!fi.exists() || !fi.isFile()) return QString();
-    QFile f(path);
-    if (!f.open(QIODevice::ReadOnly)) return QString();
-    constexpr int kReadCap = 16 * 1024;
-    QByteArray bytes = f.read(kReadCap);
-    f.close();
-    return QString::fromUtf8(bytes).trimmed();
+    constexpr int kPerFileCap = 16 * 1024;
+    constexpr int kTotalCap   = 64 * 1024;
+
+    auto readCapped = [&](const QString &path) -> QString {
+        QFile f(path);
+        if (!f.open(QIODevice::ReadOnly)) return QString();
+        const QByteArray bytes = f.read(kPerFileCap);
+        f.close();
+        return QString::fromUtf8(bytes).trimmed();
+    };
+
+    // Curated load order — most important first so if we hit kTotalCap
+    // the highest-signal docs are already in.
+    QStringList loaded;
+    int totalBytes = 0;
+    auto addFile = [&](const QString &absPath, const QString &shortName) {
+        if (totalBytes >= kTotalCap) return;
+        QFileInfo fi(absPath);
+        if (!fi.exists() || !fi.isFile()) return;
+        QString body = readCapped(absPath);
+        if (body.isEmpty()) return;
+        const QString block = QStringLiteral("--- %1 ---\n").arg(shortName) + body;
+        if (totalBytes + block.size() > kTotalCap) {
+            const int remaining = kTotalCap - totalBytes - 80;
+            if (remaining > 200) {
+                loaded.append(block.left(remaining)
+                              + "\n\n[truncated — context cap reached]");
+                totalBytes = kTotalCap;
+            }
+            return;
+        }
+        loaded.append(block);
+        totalBytes += block.size();
+    };
+
+    const QDir root(workspaceRoot);
+
+    // 1. Legacy single-file path. Stays first so existing projects with
+    //    only this file see no behavior change.
+    addFile(root.filePath(".notepatra/data-analyst.md"), "data-analyst.md");
+
+    // 2. Curated section files in priority order.
+    const QString subdir = root.filePath(".notepatra/data-analyst");
+    static const QStringList kCurated = {
+        "instructions.md",
+        "data-dictionary.md",
+        "business-rules.md",
+        "kpis.md",
+        "sample-queries.sql",
+    };
+    for (const QString &name : kCurated) {
+        addFile(QDir(subdir).filePath(name), name);
+    }
+
+    // 3. Anything else in the subdir — alphabetical, .md / .sql / .yaml /
+    //    .yml / .json / .txt only. Skip the curated names already loaded.
+    QDir subdirAccess(subdir);
+    if (subdirAccess.exists()) {
+        QStringList namesAlready = kCurated;
+        QStringList allowedExts = {"*.md", "*.sql", "*.yaml", "*.yml", "*.json", "*.txt"};
+        QStringList extras = subdirAccess.entryList(allowedExts, QDir::Files, QDir::Name);
+        for (const QString &fname : extras) {
+            if (namesAlready.contains(fname, Qt::CaseInsensitive)) continue;
+            addFile(subdirAccess.filePath(fname), fname);
+        }
+    }
+
+    if (loaded.isEmpty()) return QString();
+    return loaded.join("\n\n");
 }
 
 bool shouldAttachWorkspace(Intent intent,
@@ -328,6 +426,7 @@ bool shouldAttachWorkspace(Intent intent,
     // Chat with no selection: distinguish casual greeting from project query.
     if (intent == Intent::Chat) {
         if (looksLikeCasualChat(userText)) return false;            // "hi", "thanks"
+        if (hasOpenFileKeyword(userText))  return true;             // "explain this file"
         if (hasProjectKeyword(userText))   return true;             // "show me my files"
         if (hasCodeShape(userText))        return true;             // mentions code shapes
         // Mid-length conversational message with no code/project signals --

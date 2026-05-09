@@ -1,4 +1,7 @@
 #include "dbconnections.h"
+#ifdef NOTEPATRA_HAVE_DUCKDB
+#include "duckdb_client.h"
+#endif
 
 #include <QDir>
 #include <QFile>
@@ -157,11 +160,17 @@ bool findByName(const QString &name, Record *out) {
 }
 
 QStringList availableDrivers() {
-    return QSqlDatabase::drivers();
+    QStringList ds = QSqlDatabase::drivers();
+#ifdef NOTEPATRA_HAVE_DUCKDB
+    if (DuckDb::Client::available() && !ds.contains("DUCKDB"))
+        ds.append("DUCKDB");
+#endif
+    return ds;
 }
 
 bool driverNeedsNetwork(const QString &driver) {
-    return driver != QStringLiteral("QSQLITE");
+    return driver != QStringLiteral("QSQLITE")
+        && driver != QStringLiteral("DUCKDB");
 }
 
 // ── Open + query ────────────────────────────────────────────────────────
@@ -233,6 +242,106 @@ QueryResult runQuery(const Record &r,
         out.errorKind = QStringLiteral("non_select");
         return out;
     }
+
+    // v0.1.55 — DuckDB driver path. Routes through the native libduckdb
+    // wrapper instead of QSqlDatabase. Lets users connect to:
+    //   * .duckdb files (driver=DUCKDB, database=/path/file.duckdb)
+    //   * in-memory DBs  (driver=DUCKDB, database=:memory:)
+    //   * CSV files       (driver=DUCKDB, database=/path/file.csv)
+    //   * Parquet         (driver=DUCKDB, database=/path/file.parquet)
+    //   * JSON            (driver=DUCKDB, database=/path/file.json)
+    //   * S3              (driver=DUCKDB, database=s3://bucket/key,
+    //                      options=region;access_key_id;secret;session_token)
+    if (r.driver.compare(QStringLiteral("DUCKDB"), Qt::CaseInsensitive) == 0) {
+#ifndef NOTEPATRA_HAVE_DUCKDB
+        out.error = "DuckDB support not compiled in (rebuild with NOTEPATRA_USE_DUCKDB=ON)";
+        out.errorKind = QStringLiteral("no_connection");
+        return out;
+#else
+        if (!DuckDb::Client::available()) {
+            out.error = "DuckDB support not compiled in (rebuild with NOTEPATRA_USE_DUCKDB=ON)";
+            out.errorKind = QStringLiteral("no_connection");
+            return out;
+        }
+        DuckDb::Client client;
+        QString openErr;
+        // DuckDB file vs file-as-data-source: distinguish by extension.
+        const QString dbField = r.database.trimmed();
+        QString openPath = ":memory:";
+        QString registerCsv, registerParquet, registerJson;
+        bool isS3 = dbField.startsWith("s3://", Qt::CaseInsensitive);
+        if (dbField.isEmpty() || dbField == ":memory:") {
+            openPath = ":memory:";
+        } else if (dbField.endsWith(".duckdb", Qt::CaseInsensitive)
+                   || dbField.endsWith(".db", Qt::CaseInsensitive)) {
+            openPath = dbField;
+        } else if (dbField.endsWith(".csv", Qt::CaseInsensitive)) {
+            registerCsv = dbField;
+        } else if (dbField.endsWith(".parquet", Qt::CaseInsensitive)) {
+            registerParquet = dbField;
+        } else if (dbField.endsWith(".json", Qt::CaseInsensitive)
+                   || dbField.endsWith(".ndjson", Qt::CaseInsensitive)) {
+            registerJson = dbField;
+        }  // else: leave as :memory: and let user reference via SQL
+
+        if (!client.open(openPath, &openErr)) {
+            out.error = openErr;
+            out.errorKind = QStringLiteral("open_failed");
+            return out;
+        }
+        if (!registerCsv.isEmpty()
+            && !client.registerCsv(registerCsv, "data", &openErr)) {
+            out.error = openErr;
+            out.errorKind = QStringLiteral("open_failed");
+            return out;
+        }
+        if (!registerParquet.isEmpty()
+            && !client.registerParquet(registerParquet, "data", &openErr)) {
+            out.error = openErr;
+            out.errorKind = QStringLiteral("open_failed");
+            return out;
+        }
+        if (!registerJson.isEmpty()
+            && !client.registerJson(registerJson, "data", &openErr)) {
+            out.error = openErr;
+            out.errorKind = QStringLiteral("open_failed");
+            return out;
+        }
+        if (isS3) {
+            // r.options encodes the S3 creds: region;access_key_id;secret;session_token
+            const QStringList parts = r.options.split(';');
+            const QString region = parts.value(0);
+            const QString akid   = parts.value(1);
+            const QString secret = parts.value(2);
+            const QString sess   = parts.value(3);
+            if (!client.configureS3(region, akid, secret, sess, &openErr)) {
+                out.error = openErr;
+                out.errorKind = QStringLiteral("open_failed");
+                return out;
+            }
+        }
+        const int cap = qMax(1, qMin(maxRows, 50000));
+        DuckDb::ResultSet rs = client.exec(sql, cap);
+        if (!rs.errorMessage.isEmpty()) {
+            out.error = rs.errorMessage;
+            out.errorKind = QStringLiteral("exec_failed");
+            return out;
+        }
+        out.columns = rs.columns;
+        out.rowsReturned = rs.rows.size();
+        out.truncated = rs.truncated;
+        out.rows.reserve(rs.rows.size());
+        for (const DuckDb::Row &row : rs.rows) {
+            QVector<QString> r2;
+            r2.reserve(row.values.size());
+            for (const QString &v : row.values) r2.append(v);
+            out.rows.append(r2);
+        }
+        out.ok = true;
+        return out;
+#endif
+    }
+
     QString cname, openErr;
     if (!open(r, &cname, &openErr)) {
         out.error = openErr;
@@ -302,7 +411,7 @@ DbConnectionsDialog::DbConnectionsDialog(QWidget *parent)
     auto *form = new QFormLayout();
     m_name = new QLineEdit;
     m_driver = new QComboBox;
-    m_driver->addItems({"QSQLITE", "QPSQL", "QMYSQL", "QODBC"});
+    m_driver->addItems({"QSQLITE", "QPSQL", "QMYSQL", "QODBC", "DUCKDB"});
     m_host = new QLineEdit;
     m_port = new QSpinBox;
     m_port->setRange(0, 65535);
@@ -353,7 +462,7 @@ DbConnectionsDialog::DbConnectionsDialog(QWidget *parent)
     // Hint about driver availability
     const QStringList have = DbConnections::availableDrivers();
     QStringList missing;
-    for (const QString &d : {"QSQLITE", "QPSQL", "QMYSQL", "QODBC"}) {
+    for (const QString &d : {"QSQLITE", "QPSQL", "QMYSQL", "QODBC", "DUCKDB"}) {
         if (!have.contains(d)) missing.append(d);
     }
     if (!missing.isEmpty()) {
@@ -377,9 +486,22 @@ DbConnectionsDialog::DbConnectionsDialog(QWidget *parent)
     connect(m_driver, &QComboBox::currentTextChanged,
             this, &DbConnectionsDialog::onDriverChanged);
     connect(m_browseDb, &QPushButton::clicked, this, [this]() {
+        // Filter set varies per driver: SQLite shows .db files; DuckDB
+        // accepts a wider mix (its own files + CSV/Parquet/JSON sources).
+        const QString drv = m_driver->currentText();
+        QString filter;
+        if (drv == QStringLiteral("DUCKDB")) {
+            filter = tr("All sources (*.duckdb *.db *.csv *.parquet *.json);;"
+                       "DuckDB files (*.duckdb *.db);;"
+                       "CSV (*.csv);;"
+                       "Parquet (*.parquet);;"
+                       "JSON (*.json *.ndjson);;"
+                       "All files (*)");
+        } else {
+            filter = tr("SQLite databases (*.db *.sqlite *.sqlite3);;All files (*)");
+        }
         const QString f = QFileDialog::getOpenFileName(
-            this, tr("Select SQLite database file"), QString(),
-            tr("SQLite databases (*.db *.sqlite *.sqlite3);;All files (*)"));
+            this, tr("Select database file"), QString(), filter);
         if (!f.isEmpty()) m_database->setText(f);
     });
 }
@@ -463,10 +585,24 @@ void DbConnectionsDialog::onAccept() {
 void DbConnectionsDialog::onDriverChanged(const QString &drv) {
     setNetworkFieldsEnabled(DbConnections::driverNeedsNetwork(drv));
     if (drv == QStringLiteral("QSQLITE")) {
-        // Default browse path becomes more useful
         m_browseDb->setVisible(true);
+        m_database->setPlaceholderText(tr("/path/to/your.db"));
+    } else if (drv == QStringLiteral("DUCKDB")) {
+        // v0.1.55 — DuckDB path uses the Database field as a multi-mode
+        // source: DuckDB file, in-memory, CSV, Parquet, JSON, or S3.
+        // Hint via placeholder + show Browse for file paths.
+        m_browseDb->setVisible(true);
+        m_database->setPlaceholderText(tr(
+            ":memory:    or    /path/to.duckdb    or    /path/to.csv    "
+            "or    /path/to.parquet    or    s3://bucket/key"));
+        // Options field repurposed for S3 creds when database starts with s3://
+        m_options->setPlaceholderText(tr(
+            "S3 only: region;access_key_id;secret;session_token  "
+            "(leave empty for non-S3)"));
     } else {
         m_browseDb->setVisible(false);
+        m_database->setPlaceholderText(QString());
+        m_options->setPlaceholderText(QString());
     }
 }
 

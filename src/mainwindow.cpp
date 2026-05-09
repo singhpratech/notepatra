@@ -1998,37 +1998,72 @@ void MainWindow::buildMenus() {
         m_statusBar->updateEncoding("UTF-8");
     });
 
-    // ═══ LANGUAGE — 45 languages ═══
+    // ═══ LANGUAGE — narrow two-tier layout, 78 languages ═══
+    // v0.1.55 — keeps the original simple structure (Normal Text + Common
+    // + SQL Dialects + More Languages submenu) the user is used to. The
+    // 31 newly-added languages are folded into "More Languages" in one
+    // alphabetical sweep so the top-level Language menu doesn't bloat.
     auto *lang = mb->addMenu("&Language");
-    lang->addAction("Normal Text", this, [this, E]() { if (auto *e = E()) { e->setLanguage("Plain Text"); m_statusBar->updateLanguage("Plain Text"); } });
+    lang->addAction("Normal Text", this, [this, E]() {
+        if (auto *e = E()) { e->setLanguage("Plain Text"); m_statusBar->updateLanguage("Plain Text"); }
+    });
     lang->addSeparator();
 
-    // Common languages
-    for (const auto &l : {"Python", "JavaScript", "C", "C++", "C#", "Java", "HTML", "CSS",
-                          "JSON", "XML", "SQL", "Bash", "Ruby", "Perl", "Lua", "YAML", "Markdown"}) {
-        lang->addAction(l, this, [this, E, l]() { if (auto *e = E()) { e->setLanguage(l); m_statusBar->updateLanguage(l); } });
+    // Common languages — flat, alphabetical for predictable scanning.
+    for (const auto &l : {"Bash", "C", "C#", "C++", "CSS", "HTML", "Java",
+                          "JavaScript", "JSON", "Lua", "Markdown", "Perl",
+                          "Python", "Ruby", "SQL", "XML", "YAML"}) {
+        lang->addAction(l, this, [this, E, l]() {
+            if (auto *e = E()) { e->setLanguage(l); m_statusBar->updateLanguage(l); }
+        });
     }
     lang->addSeparator();
 
-    // SQL variants submenu
-    auto *sqlMenu = lang->addMenu("SQL Variants");
-    for (const auto &l : {"SQL"}) {
-        sqlMenu->addAction("SQL (ANSI / Generic)", this, [this, E]() { if (auto *e = E()) { e->setLanguage("SQL"); m_statusBar->updateLanguage("SQL"); } });
-        sqlMenu->addAction("T-SQL (SQL Server)", this, [this, E]() { if (auto *e = E()) { e->setLanguage("SQL"); m_statusBar->updateLanguage("T-SQL (SQL Server)"); } });
-        sqlMenu->addAction("PL/SQL (Oracle)", this, [this, E]() { if (auto *e = E()) { e->setLanguage("SQL"); m_statusBar->updateLanguage("PL/SQL (Oracle)"); } });
-        sqlMenu->addAction("MySQL", this, [this, E]() { if (auto *e = E()) { e->setLanguage("SQL"); m_statusBar->updateLanguage("MySQL"); } });
-        sqlMenu->addAction("PostgreSQL", this, [this, E]() { if (auto *e = E()) { e->setLanguage("SQL"); m_statusBar->updateLanguage("PostgreSQL"); } });
-        sqlMenu->addAction("SQLite", this, [this, E]() { if (auto *e = E()) { e->setLanguage("SQL"); m_statusBar->updateLanguage("SQLite"); } });
-    }
+    // SQL dialect submenu — display-only labels (lexer is QsciLexerSQL).
+    auto *sqlMenu = lang->addMenu("SQL Dialects");
+    sqlMenu->addAction("SQL (ANSI / Generic)", this, [this, E]() {
+        if (auto *e = E()) { e->setLanguage("SQL"); m_statusBar->updateLanguage("SQL"); }
+    });
+    sqlMenu->addAction("T-SQL (SQL Server)", this, [this, E]() {
+        if (auto *e = E()) { e->setLanguage("SQL"); m_statusBar->updateLanguage("T-SQL (SQL Server)"); }
+    });
+    sqlMenu->addAction("PL/SQL (Oracle)", this, [this, E]() {
+        if (auto *e = E()) { e->setLanguage("SQL"); m_statusBar->updateLanguage("PL/SQL (Oracle)"); }
+    });
+    sqlMenu->addAction("MySQL", this, [this, E]() {
+        if (auto *e = E()) { e->setLanguage("SQL"); m_statusBar->updateLanguage("MySQL"); }
+    });
+    sqlMenu->addAction("PostgreSQL", this, [this, E]() {
+        if (auto *e = E()) { e->setLanguage("SQL"); m_statusBar->updateLanguage("PostgreSQL"); }
+    });
+    sqlMenu->addAction("SQLite", this, [this, E]() {
+        if (auto *e = E()) { e->setLanguage("SQL"); m_statusBar->updateLanguage("SQLite"); }
+    });
     lang->addSeparator();
 
-    // More languages submenu
+    // More Languages — the long tail. Single alphabetical submenu listing
+    // everything else. Adding a new language is one line: append to the
+    // initializer list.
     auto *moreLang = lang->addMenu("More Languages");
-    for (const auto &l : {"ASM", "AVS", "Batch", "CMake", "CoffeeScript", "D", "Diff",
-                          "Fortran", "Fortran77", "IDL", "IntelHex", "Makefile", "MASM",
-                          "Matlab", "NASM", "Octave", "Pascal", "PO", "PostScript", "POV",
-                          "Properties", "Spice", "SRecord", "TCL", "TeX", "Verilog", "VHDL"}) {
-        moreLang->addAction(l, this, [this, E, l]() { if (auto *e = E()) { e->setLanguage(l); m_statusBar->updateLanguage(l); } });
+    QStringList more = {
+        "ASM", "Apex", "AVS", "Batch", "BibTeX",
+        "CMake", "CoffeeScript", "Crystal", "Cython",
+        "D", "Dart", "Diff", "Dockerfile", "DotEnv",
+        "Elixir", "F#", "Fish", "Fortran", "Fortran77",
+        "GDScript", "Gitignore", "Go", "GraphQL", "Groovy",
+        "Hack", "HCL", "IDL", "IntelHex", "Jinja", "JSON5", "Julia",
+        "Kotlin", "Liquid", "Makefile", "MASM", "Matlab", "Mojo",
+        "NASM", "Nim", "Nushell", "Octave", "Pascal", "PO",
+        "PostScript", "POV", "PowerShell", "Properties", "Protobuf",
+        "R", "Rust", "Scala", "Solidity", "Spice", "SRecord", "Swift",
+        "TCL", "TeX", "Thrift", "TOML", "Twig", "TypeScript",
+        "Vala", "Verilog", "VHDL", "Zig",
+    };
+    more.sort(Qt::CaseInsensitive);
+    for (const QString &l : more) {
+        moreLang->addAction(l, this, [this, E, l]() {
+            if (auto *e = E()) { e->setLanguage(l); m_statusBar->updateLanguage(l); }
+        });
     }
 
     // ═══ SETTINGS ═══

@@ -370,7 +370,13 @@ QWidget *WelcomeWidget::makeFeatureCard(const QString &icon, const QString &titl
     layout->setSpacing(8);
 
     auto *iconLabel = new QLabel(icon);
-    QFont iconFont = notepatraUiFont();
+    // v0.1.55 — emoji-aware font for the welcome card icons (🌐 💡 🔀 🔎 🤖
+    // etc.). Without setFamilies, Linux's primary UI family (DejaVu Sans /
+    // Cantarell / Inter) has no color-emoji glyphs and renders these as
+    // tofu boxes □. notepatraUiFontWithEmoji adds the emoji fallback
+    // chain (Noto Color Emoji on Linux, Apple Color / Segoe UI Emoji on
+    // macOS / Windows) so Qt walks the list and finds a glyph.
+    QFont iconFont = notepatraUiFontWithEmoji();
     iconFont.setPointSize(22);
     iconLabel->setFont(iconFont);
     iconLabel->setStyleSheet(QString("background: transparent; color: %1;").arg(accentColor));
@@ -431,7 +437,7 @@ void WelcomeWidget::buildFeatureCards(QVBoxLayout *parent) {
         {"⌨", "Terminal",
          "Built-in shell tab. Run git, npm, make, cargo — without leaving the editor.",
          "Terminal", "#2D7D46"},
-        {"🔀", "Compare (ComparePlus)",
+        {"🔀", "Compare",
          "Word-level diff with red/green intra-line highlighting. Pick any two tabs or any file on disk.",
          "Compare", "#C27A13"},
         {"{ }", "JSON Tools",

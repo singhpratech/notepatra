@@ -60,6 +60,13 @@ public:
     void cancel();
     bool isAvailable();
     void listModels();   // async — emits modelsListed or modelsError
+    // v0.1.55 — async probe of Ollama's /api/show, which returns the
+    // model's capabilities array (["completion", "tools", "thinking",
+    // "vision", …]). Emits modelCapabilitiesLoaded on success or
+    // modelCapabilitiesError on failure. Only meaningful when m_backend
+    // == Ollama; OpenAI-compat servers don't expose this metadata so
+    // AIPanel falls back to the substring allowlist for them.
+    void showModel(const QString &name);
 
 signals:
     void tokenReceived(const QString &token);
@@ -73,6 +80,12 @@ signals:
     // dropdown entries instead of the flat alphabetical list.
     void modelsListedRich(const QJsonArray &dataArray);
     void modelsError(const QString &reason);
+    // v0.1.55 — outcome of /api/show probe. `caps` is the lowercased
+    // capabilities list as Ollama reports it ("tools", "thinking",
+    // "vision", "completion", "embedding"). Authoritative — replaces
+    // the hardcoded substring allowlist for local models.
+    void modelCapabilitiesLoaded(const QString &model, const QStringList &caps);
+    void modelCapabilitiesError(const QString &model, const QString &reason);
 
     // v0.1.35 — Emitted when the backend's stream contains a tool_calls
     // frame (Ollama atomic NDJSON / OpenAI accumulated SSE). `id` is
