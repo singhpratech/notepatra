@@ -140,60 +140,11 @@ add_custom_target(rust_core
 )
 
 # ── Sources ──
-set(SOURCES
-    src/main.cpp
-    src/mainwindow.cpp
-    src/editor.cpp
-    src/lexerutils.cpp
-    src/npp_palette.cpp
-    src/tabmanager.cpp
-    src/statusbar.cpp
-    src/findreplace.cpp
-    src/fileexplorer.cpp
-    src/functionlist.cpp
-    src/preferences.cpp
-    src/rustbridge.cpp
-    src/compare.cpp
-    src/plugin.cpp
-    src/terminal.cpp
-    src/markdownpreview.cpp
-    src/hexeditor.cpp
-    src/gitgutter.cpp
-    src/ollama.cpp
-    src/credscrub.cpp
-    src/duckdb_client.cpp
-    src/dbtree.cpp
-    src/ai_context.cpp
-    src/ai_intent.cpp
-    src/ai_systemprompt.cpp
-    src/ai_tools.cpp
-    src/git_tools.cpp
-    src/dbconnections.cpp
-    src/csvanalyst.cpp
-    src/chartrender.cpp
-    src/lexer_go.cpp
-    src/lexer_kotlin.cpp
-    src/lexer_powershell.cpp
-    src/lexer_rust.cpp
-    src/lexer_swift.cpp
-    src/lexer_typescript.cpp
-    src/lexer_extras.cpp
-    src/aipanel.cpp
-    src/inlineedit.cpp
-    src/restclient.cpp
-    src/gitpanel.cpp
-    src/sqlfmtpanel.cpp
-    src/fmtpanel.cpp
-    src/searchresults.cpp
-    src/welcome.cpp
-    src/projectsearch.cpp
-    src/updater.cpp
-    # v0.2 Coding-mode revamp (Slice B+C) — Composer's Edit Plan list and
-    # per-file diff preview. Drops into m_composerArea once Slice A's tab
-    # split lands.
-    src/diff_view.cpp
-    src/edit_plan.cpp
-)
+# Auto-discover every src/*.cpp file. CONFIGURE_DEPENDS makes CMake re-run
+# whenever a new .cpp lands in src/, so adding a feature just means dropping
+# the file in — no manual SOURCES edit required. Eliminates the "I added a
+# new src file but forgot to register it" class of release-day failure.
+file(GLOB SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/*.cpp")
 
 set(HEADERS
     src/mainwindow.h
