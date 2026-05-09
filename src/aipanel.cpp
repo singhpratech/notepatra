@@ -26,6 +26,7 @@
 #include <QFileInfo>
 #include <QFile>
 #include <QDir>
+#include <QMessageBox>
 #include <QDesktopServices>
 #include <QMouseEvent>
 #include <QKeyEvent>
@@ -989,6 +990,16 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             renderDataWelcomeCard();
         } else {
             removeDataWelcomeCard();
+        }
+        // v0.1.57 — Coding-mode welcome card (parallel to the Data path).
+        // Shown only when Coding is on AND the chat is empty AND the user
+        // hasn't dismissed it. Removed whenever Coding is left.
+        const bool showCodingWelcome =
+            coding && m_messages.isEmpty() && !Config::instance().aiHideCodingWelcome;
+        if (showCodingWelcome) {
+            renderCodingWelcomeCard();
+        } else {
+            removeCodingWelcomeCard();
         }
         // v0.1.54 — when the welcome card is up, it carries its OWN
         // "Manage Connections…" button right next to the connection
@@ -2722,6 +2733,7 @@ void AIPanel::clearChat() {
 
     if (m_chatLayout) aiClearChat(m_chatLayout);
     m_dataWelcomeFrame = nullptr;  // wiped by aiClearChat above; clear our pointer to avoid use-after-free
+    m_codingWelcomeFrame = nullptr;  // ditto for the v0.1.57 Coding welcome card
     m_currentAssistantText.clear();
     m_inAssistantBubble = false;
     m_streamingCard = nullptr;
@@ -3015,6 +3027,7 @@ void AIPanel::renderTranscript() {
     m_streamingStartMs = 0;
     aiClearChat(m_chatLayout);
     m_dataWelcomeFrame = nullptr;  // pointed at a now-deleteLater'd widget
+    m_codingWelcomeFrame = nullptr;  // ditto for the v0.1.57 Coding welcome card
     m_streamingCard = nullptr;
     m_streamingBody = nullptr;
 
@@ -3048,6 +3061,12 @@ void AIPanel::renderTranscript() {
         && m_dataMode && m_dataMode->isChecked()
         && !Config::instance().aiHideDataWelcome) {
         renderDataWelcomeCard();
+    }
+    // v0.1.57 — same idea for the Coding welcome card.
+    if (m_messages.isEmpty()
+        && m_codingMode && m_codingMode->isChecked()
+        && !Config::instance().aiHideCodingWelcome) {
+        renderCodingWelcomeCard();
     }
 
     // Scroll to bottom after layout settles
@@ -3486,6 +3505,289 @@ void AIPanel::removeDataWelcomeCard() {
     m_dataWelcomeFrame->setParent(nullptr);
     m_dataWelcomeFrame->deleteLater();
     m_dataWelcomeFrame = nullptr;
+}
+
+// v0.1.57 — Coding-mode welcome card. Mirrors the Data welcome card pattern
+// (renderDataWelcomeCard above) so users entering Coding mode for the first
+// time see a quick tour of the new agentic features (Composer tab, @file
+// mention, Ctrl+I inline edit, agentic git tools). Uses the same teal accent
+// (#4EC9B0) as the Coding mode header. The git status pill is computed via
+// QProcess with a 1s timeout so the card never blocks the UI; if git is
+// missing, slow, or the workspace isn't a repo, the pill degrades gracefully.
+void AIPanel::renderCodingWelcomeCard() {
+    if (!m_chatLayout) return;
+    if (m_codingWelcomeFrame) return;  // already shown
+
+    const AiPalette pal = aiPalette();
+    const QString modelName = m_modelCombo ? m_modelCombo->currentText() : QString();
+    const bool toolsCapable = currentModelSupportsTools();
+
+    auto *card = new QFrame;
+    card->setFrameShape(QFrame::StyledPanel);
+    card->setStyleSheet(QString(
+        "QFrame { background: %1; border: 1px solid #4EC9B0; border-radius: 10px; }"
+        "QLabel { background: transparent; color: %2; }")
+        .arg(pal.assistBg, pal.chatFg));
+
+    auto *cardLay = new QVBoxLayout(card);
+    cardLay->setContentsMargins(16, 14, 16, 14);
+    cardLay->setSpacing(10);
+
+    // Title row + Hide button
+    auto *titleRow = new QHBoxLayout;
+    titleRow->setSpacing(8);
+    auto *title = new QLabel(QStringLiteral("💻  Coding Mode"));
+    {
+        QFont f = title->font();
+        f.setPointSize(f.pointSize() + 2);
+        f.setBold(true);
+        title->setFont(f);
+        title->setStyleSheet("color: #4EC9B0;");
+    }
+    titleRow->addWidget(title, 1);
+    auto *hideBtn = new QPushButton(QStringLiteral("Hide"));
+    hideBtn->setFlat(true);
+    hideBtn->setCursor(Qt::PointingHandCursor);
+    hideBtn->setToolTip("Don't show this card again — you can re-enable it from Preferences");
+    hideBtn->setStyleSheet(QString(
+        "QPushButton { color: %1; background: transparent; border: none; "
+        "padding: 2px 8px; font-size: 11px; }"
+        "QPushButton:hover { color: %2; }")
+        .arg(pal.muted, pal.accent));
+    connect(hideBtn, &QPushButton::clicked, this, [this]() {
+        Config::instance().aiHideCodingWelcome = true;
+        Config::instance().save();
+        removeCodingWelcomeCard();
+    });
+    titleRow->addWidget(hideBtn);
+    cardLay->addLayout(titleRow);
+
+    // One-sentence blurb
+    auto *blurb = new QLabel(QStringLiteral(
+        "Ask questions, propose multi-file edits, run git, all without "
+        "leaving your editor."));
+    blurb->setWordWrap(true);
+    blurb->setStyleSheet(QString("color: %1; font-size: 12px;").arg(pal.chatFg));
+    cardLay->addWidget(blurb);
+
+    // Quick start row — three boxed example chips. The first fills the
+    // input + focuses; the other two are informational (Ctrl+I and @file
+    // are editor-side surfaces, not chat prompts).
+    {
+        auto *qsLabel = new QLabel(QStringLiteral("Quick start"));
+        QFont qsF = qsLabel->font();
+        qsF.setBold(true);
+        qsF.setPointSize(qsF.pointSize() - 1);
+        qsLabel->setFont(qsF);
+        qsLabel->setStyleSheet(QString("color: %1;").arg(pal.muted));
+        cardLay->addWidget(qsLabel);
+    }
+    auto *chips = new QVBoxLayout;
+    chips->setSpacing(6);
+    struct QuickStart {
+        const char *label;
+        const char *prompt;  // empty = informational (no autofill)
+    };
+    static const QuickStart QS[] = {
+        { "Show what changed since yesterday",
+          "Show what changed since yesterday" },
+        { "Refactor selection — Ctrl+I in editor",
+          "" },
+        { "Mention a file with @path/to/file.py",
+          "" },
+    };
+    for (const auto &qs : QS) {
+        auto *chip = new QPushButton(QString::fromUtf8("›  ") + QString::fromUtf8(qs.label));
+        chip->setCursor(Qt::PointingHandCursor);
+        chip->setStyleSheet(QString(
+            "QPushButton { background: %1; color: %2; border: 1px solid %3; "
+            "border-radius: 6px; padding: 6px 10px; text-align: left; font-size: 12px; }"
+            "QPushButton:hover { background: %4; border-color: #4EC9B0; color: #4EC9B0; }")
+            .arg(pal.codeBg, pal.chatFg, pal.assistBorder, pal.btnHover));
+        const QString prompt = QString::fromUtf8(qs.prompt);
+        connect(chip, &QPushButton::clicked, this, [this, prompt]() {
+            if (prompt.isEmpty() || !m_customInput) return;
+            m_customInput->setPlainText(prompt);
+            m_customInput->setFocus();
+            QTextCursor c = m_customInput->textCursor();
+            c.movePosition(QTextCursor::End);
+            m_customInput->setTextCursor(c);
+        });
+        chips->addWidget(chip);
+    }
+    cardLay->addLayout(chips);
+
+    // Status block — model tool-call capability + git status pill.
+    auto *status = new QVBoxLayout;
+    status->setSpacing(4);
+
+    auto *modelLabel = new QLabel(toolsCapable
+        ? QString::fromUtf8("🤖  <b>%1</b> &nbsp;·&nbsp; <span style='color:#3FB950'>tool calls supported ✓</span>")
+              .arg(modelName.isEmpty() ? QStringLiteral("(no model selected)") : modelName)
+        : QString::fromUtf8("🤖  <b>%1</b> &nbsp;·&nbsp; <span style='color:#FF9F43'>tool calls unverified ⚠</span>")
+              .arg(modelName.isEmpty() ? QStringLiteral("(no model selected)") : modelName));
+    modelLabel->setTextFormat(Qt::RichText);
+    modelLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
+    status->addWidget(modelLabel);
+
+    if (!toolsCapable) {
+        auto *toolsHint = new QLabel(QStringLiteral(
+            "&nbsp;&nbsp;&nbsp;<i>For agentic git / file edits, use a tool-"
+            "capable model: Claude Sonnet · GPT-4o / GPT-5 · Gemini 2.5 Pro · "
+            "qwen2.5-coder · DeepSeek-Coder.</i>"));
+        toolsHint->setTextFormat(Qt::RichText);
+        toolsHint->setWordWrap(true);
+        toolsHint->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
+        status->addWidget(toolsHint);
+    }
+
+    // Git status pill — uses QProcess with 1s timeout so render never blocks.
+    // If the workspace is missing, not a git repo, or git times out, we fall
+    // back to a friendly "not a repo / couldn't read state" line.
+    auto *gitRow = new QHBoxLayout;
+    gitRow->setSpacing(6);
+    auto *gitLabel = new QLabel;
+    gitLabel->setTextFormat(Qt::RichText);
+    gitLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
+    gitLabel->setWordWrap(true);
+
+    QString branch;
+    int modifiedCount = 0;
+    int aheadCount = 0;
+    int behindCount = 0;
+    bool isRepo = false;
+    bool gitOk = true;
+
+    if (!m_workspaceRoot.isEmpty()) {
+        // Check if it's a git repo via rev-parse.
+        QProcess pBranch;
+        pBranch.start("git", { "-C", m_workspaceRoot, "rev-parse",
+                               "--abbrev-ref", "HEAD" });
+        if (pBranch.waitForStarted(500) && pBranch.waitForFinished(1000)
+            && pBranch.exitCode() == 0) {
+            branch = QString::fromUtf8(pBranch.readAllStandardOutput()).trimmed();
+            isRepo = !branch.isEmpty();
+        } else if (pBranch.state() != QProcess::NotRunning) {
+            pBranch.kill();
+            pBranch.waitForFinished(200);
+            gitOk = false;
+        }
+
+        if (isRepo) {
+            QProcess pStatus;
+            pStatus.start("git", { "-C", m_workspaceRoot, "status",
+                                   "--porcelain=v2", "-b" });
+            if (pStatus.waitForStarted(500) && pStatus.waitForFinished(1000)
+                && pStatus.exitCode() == 0) {
+                const QString out = QString::fromUtf8(pStatus.readAllStandardOutput());
+                const QStringList lines = out.split('\n', Qt::SkipEmptyParts);
+                for (const QString &ln : lines) {
+                    if (ln.startsWith("# branch.ab ")) {
+                        // Format: "# branch.ab +N -M"
+                        const QStringList parts = ln.split(' ', Qt::SkipEmptyParts);
+                        for (const QString &p : parts) {
+                            if (p.startsWith('+')) aheadCount = p.mid(1).toInt();
+                            else if (p.startsWith('-')) behindCount = p.mid(1).toInt();
+                        }
+                    } else if (!ln.startsWith('#')) {
+                        // Any non-header line is a tracked-change entry.
+                        ++modifiedCount;
+                    }
+                }
+            } else if (pStatus.state() != QProcess::NotRunning) {
+                pStatus.kill();
+                pStatus.waitForFinished(200);
+                gitOk = false;
+            }
+        }
+    }
+
+    if (!gitOk) {
+        gitLabel->setText(QStringLiteral("🌿  <i>(couldn't read git state)</i>"));
+        gitRow->addWidget(gitLabel, 1);
+    } else if (isRepo) {
+        QStringList parts;
+        parts << QString("<b>%1</b>").arg(branch.toHtmlEscaped());
+        if (modifiedCount > 0)
+            parts << QString("%1 modified").arg(modifiedCount);
+        if (aheadCount > 0)
+            parts << QString("%1 ahead").arg(aheadCount);
+        if (behindCount > 0)
+            parts << QString("%1 behind").arg(behindCount);
+        if (modifiedCount == 0 && aheadCount == 0 && behindCount == 0)
+            parts << "clean";
+        gitLabel->setText(QString::fromUtf8("🌿  ") + parts.join(" · "));
+        gitRow->addWidget(gitLabel, 1);
+    } else if (m_workspaceRoot.isEmpty()) {
+        gitLabel->setText(QStringLiteral("🌿  <i>no workspace folder open</i>"));
+        gitRow->addWidget(gitLabel, 1);
+    } else {
+        gitLabel->setText(QStringLiteral(
+            "🌿  <i>not a git repo (init with: <code>git init</code>)</i>"));
+        gitRow->addWidget(gitLabel, 1);
+
+        auto *initBtn = new QPushButton(QStringLiteral("Initialize repo"));
+        initBtn->setCursor(Qt::PointingHandCursor);
+        initBtn->setStyleSheet(QString(
+            "QPushButton { background: #4EC9B0; color: white; border: none; "
+            "border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600; }"
+            "QPushButton:hover { background: #6FD9C2; }"));
+        connect(initBtn, &QPushButton::clicked, this, [this]() {
+            if (m_workspaceRoot.isEmpty()) return;
+            const auto reply = QMessageBox::question(this,
+                tr("Initialize git repository?"),
+                tr("Run <code>git init</code> in:<br><b>%1</b><br><br>"
+                   "This creates a <code>.git/</code> folder so the AI can "
+                   "use git tools (log, diff, blame, status) on this "
+                   "workspace.")
+                    .arg(m_workspaceRoot.toHtmlEscaped()),
+                QMessageBox::Ok | QMessageBox::Cancel,
+                QMessageBox::Cancel);
+            if (reply != QMessageBox::Ok) return;
+            QProcess p;
+            p.start("git", { "-C", m_workspaceRoot, "init" });
+            if (!p.waitForStarted(1500)) {
+                setStatus(tr("git not installed (apt install git)"), true);
+                return;
+            }
+            p.waitForFinished(5000);
+            if (p.exitCode() == 0) {
+                setStatus(tr("✓ Initialized git repo in %1").arg(m_workspaceRoot), false);
+            } else {
+                const QString err = QString::fromUtf8(p.readAllStandardError()).trimmed();
+                setStatus(tr("git init failed: %1").arg(err.isEmpty() ? "unknown error" : err), true);
+            }
+            // Refresh the card so the pill updates to the new branch state.
+            if (m_codingWelcomeFrame) {
+                removeCodingWelcomeCard();
+                renderCodingWelcomeCard();
+            }
+        });
+        gitRow->addWidget(initBtn);
+    }
+    status->addLayout(gitRow);
+
+    cardLay->addLayout(status);
+
+    // Composer tip — tiny one-liner pointing at the dedicated tab.
+    auto *composerTip = new QLabel(QStringLiteral(
+        "<i>Tip: switch to the <b>Composer</b> tab for multi-file edits with "
+        "diff preview.</i>"));
+    composerTip->setTextFormat(Qt::RichText);
+    composerTip->setWordWrap(true);
+    composerTip->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
+    cardLay->addWidget(composerTip);
+
+    // Insert at the top of m_chatLayout (above the trailing stretch).
+    m_chatLayout->insertWidget(0, card);
+    m_codingWelcomeFrame = card;
+}
+
+void AIPanel::removeCodingWelcomeCard() {
+    if (!m_codingWelcomeFrame) return;
+    m_codingWelcomeFrame->setParent(nullptr);
+    m_codingWelcomeFrame->deleteLater();
+    m_codingWelcomeFrame = nullptr;
 }
 
 void AIPanel::handleChatLink(const QUrl &url) {
