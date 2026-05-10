@@ -7,6 +7,64 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.67] — 2026-05-10
+
+**AI Assistant: three independent per-mode conversations (Chat / Coding / Data).**
+
+### Fixed — cross-mode chat contamination
+
+* `src/aipanel.{cpp,h}` — the single shared `m_messages` vector (one chat session per workspace, used by all three mode toggles) is replaced with **three independent vectors**: `m_chatMessages`, `m_codingMessages`, `m_dataMessages`. Each mode now keeps its own conversation history, so flipping from Coding → Data no longer mixes the previous mode's bubbles with the new mode's system prompt. Closes the UX bug where the AI's first reply after a mode swap referenced the previous mode's tools or topic.
+* New private helper `activeMessages()` returns a reference to whichever vector matches the currently checked mode button. Every read/write to chat state — `appendUserBubble`, `appendErrorBubble`, `beginAssistantBubble`, `endAssistantBubble`, `renderTranscript`, `responseStats` handler, copy-link handlers, the data + coding welcome-card gates — now goes through it.
+
+### Changed — mode-switch behaviour
+
+* `applyModeWithCancel` (the toggle handler shared by all three mode buttons) now:
+  1. Cancels any in-flight stream so it doesn't keep pumping tokens into the rebuilt chat surface.
+  2. Force-saves the outgoing mode's bubbles to disk (`saveChatHistoryNow()`) so a kill-and-restart doesn't lose recent activity to the 2-second debounce.
+  3. Calls `renderTranscript()`, which wipes every bubble widget from `m_chatLayout` and re-adds bubbles from the new active vector.
+
+### Changed — `clearChat()` (Reset button)
+
+* Clears **only the active mode's vector**, not all three. The other two modes retain their history. Force-saves immediately.
+
+### Changed — on-disk chat-history JSON schema (v1 → v2)
+
+```json
+// Old (v1)
+{ "version": 1, "messages": [...] }
+
+// New (v2)
+{ "version": 2, "chat": [...], "coding": [...], "data": [...] }
+```
+
+* `saveChatHistory()` writes the v2 form.
+* `loadChatHistory()` migrates old files automatically: `{version: 1, messages: [...]}` and bare top-level arrays both land in `m_chatMessages`; coding + data start empty. No user action required.
+* Roll-off (1 MB on-disk cap) rotates `chat → coding → data` when trimming, so heavy use of one mode doesn't starve the others.
+
+### Added — `saveChatHistoryNow()`
+
+* New private method that cancels the pending 2 s debounce timer and saves synchronously. Called at every key transition (user submit, assistant stream end, mode switch, Reset). The debounce stays as a backstop for streaming-chunk flurries (token frames fire 20+ times/second).
+
+### Added — `test_ai_chat_history.cpp`
+
+* New regression suite, 61 sub-checks across four sections:
+  * Cross-mode partitioning — activeMessages() swaps the right vector; appending in one mode doesn't leak into the other two; switching back resurfaces the original messages.
+  * `clearChat()` clears only the active vector.
+  * Save + reload round-trips every field (text, role, model, promptTokens, evalTokens, elapsedMs) verbatim across all three vectors.
+  * v1 migration — flat-array dump and `{version: 1, messages: [...]}` both land in `m_chatMessages`.
+* Constructs a real `AIPanel` under `QT_QPA_PLATFORM=offscreen`. Adds an `AIPanelTestAccess` friend class so tests can drive the three private vectors and the mode buttons without leaking those internals into the production API.
+* Wired into `notepatra_all_tests`. Total deterministic test count: 25 → 26. All pass on the lite build.
+
+### Files changed
+
+* `CMakeLists.txt` — version 0.1.66 → 0.1.67; new test target.
+* `src/aipanel.h` — replaced `m_messages`; added activeMessages() / saveChatHistoryNow() / AIPanelTestAccess friend.
+* `src/aipanel.cpp` — all 32 m_messages references rewritten; persistence layer rewritten for v2 schema with v1 migration; mode-switch handler force-saves before re-render.
+* `test_ai_chat_history.cpp` — new.
+* `release_notes/v0.1.67.md` — this release.
+
+---
+
 ## [0.1.66] — 2026-05-10
 
 **Manage Connections UX + local SQL Server harness + website cleanup.**

@@ -23,8 +23,16 @@ class QDragEnterEvent;
 class QDropEvent;
 class EditPlanList;
 
+// v0.1.67 — friend hook for the chat-history regression test. Lets
+// test_ai_chat_history.cpp read the three per-mode vectors directly and
+// flip the mode buttons without going through the toggled() signal
+// (which would otherwise drag the entire GUI re-render path into a
+// headless unit test). Kept narrow on purpose.
+class AIPanelTestAccess;
+
 class AIPanel : public QWidget {
     Q_OBJECT
+    friend class AIPanelTestAccess;
 public:
     explicit AIPanel(QWidget *parent = nullptr);
 
@@ -389,20 +397,42 @@ private:
     QProcess *m_recordProcess = nullptr;
     QProcess *m_transcribeProcess = nullptr;
     QString m_recordedAudioPath;
-    QVector<ChatMessage> m_messages;
+
+    // v0.1.67 — THREE independent conversation vectors, one per mode.
+    // Replaces the v0.1.39-v0.1.66 single m_messages vector that mixed
+    // every mode's history together. Flipping Chat → Coding → Data now
+    // swaps the entire transcript; cross-mode contamination (e.g. the
+    // coding-agent system prompt seeing data-analyst chat) is gone.
+    //
+    // The currently visible vector is selected by activeMessages() based
+    // on which of m_chatMode / m_codingMode / m_dataMode is checked.
+    // Reads and writes everywhere go through activeMessages(); the
+    // three named members are only touched directly in load/save and
+    // in tests that need to inspect cross-mode state.
+    QVector<ChatMessage> m_chatMessages;     // Chat mode (no tools, default)
+    QVector<ChatMessage> m_codingMessages;   // Coding Mode (agentic, file ops)
+    QVector<ChatMessage> m_dataMessages;     // Data Analyst Mode (csv_query / query_sql / generate_chart)
+    QVector<ChatMessage>       &activeMessages();
+    const QVector<ChatMessage> &activeMessages() const;
 
     // v0.1.39 — persistent chat history. Stored at
     // ~/.config/notepatra/chat-history/<sha1-of-workspace-root>.json
     // (one file per workspace). Loaded on setWorkspaceContext when the
-    // workspace changes; saved (debounced 2s) after every push to
-    // m_messages. Cleared (file deleted) by clearChat(). Capped at 1MB
+    // workspace changes; saved (debounced 2s) after every push to the
+    // active vector. Cleared (file deleted) by clearChat(). Capped at 1MB
     // — older messages roll off the front when the file would exceed.
     // Only User / Assistant / Error roles are persisted; transient tool-
-    // call cards are not part of m_messages and aren't saved.
+    // call cards are not part of the vectors and aren't saved.
+    //
+    // v0.1.67 — file format is now { version: 2, chat: [...], coding:
+    // [...], data: [...] } so all three vectors round-trip. Old (v1)
+    // flat-array files migrate into m_chatMessages; coding/data start
+    // empty.
     QString m_chatHistoryPath;
     class QTimer *m_chatSaveTimer = nullptr;
     void updateChatHistoryPath();
     void saveChatHistory();
+    void saveChatHistoryNow();  // v0.1.67 — cancel pending debounce + save synchronously
     void loadChatHistory();
     void scheduleChatSave();
 
