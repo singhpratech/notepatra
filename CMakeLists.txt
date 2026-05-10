@@ -731,6 +731,68 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_chat_history.cp
     message(STATUS "Regression test enabled — target: test_ai_chat_history")
 endif()
 
+# v0.1.68 — integration test for AI dock auto-exit-fullscreen on tab
+# switching. Drives a real MainWindow under offscreen Qt and verifies
+# the four user-facing scenarios: openFile, programmatic setCurrentIndex
+# (Ctrl+Tab equivalent), Ctrl+N (must STAY fullscreen per v0.1.61 UX),
+# and openFile against an already-open path. Needs the full SOURCES
+# set because MainWindow's construction graph pulls in everything.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_fullscreen_exit.cpp")
+    set(AI_FULLSCREEN_EXIT_SOURCES ${SOURCES})
+    list(FILTER AI_FULLSCREEN_EXIT_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_ai_fullscreen_exit
+        test_ai_fullscreen_exit.cpp
+        ${AI_FULLSCREEN_EXIT_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_ai_fullscreen_exit rust_core)
+    target_compile_definitions(test_ai_fullscreen_exit PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_ai_fullscreen_exit PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_ai_fullscreen_exit PRIVATE
+        Qt5::Widgets
+        Qt5::PrintSupport
+        Qt5::Network
+        Qt5::Concurrent
+        Qt5::Sql
+        Qt5::Charts
+        ${QSCINTILLA_LIB}
+        ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_ai_fullscreen_exit PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_ai_fullscreen_exit PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_ai_fullscreen_exit PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_ai_fullscreen_exit PRIVATE
+            ws2_32 userenv bcrypt ntdll
+            advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_ai_fullscreen_exit PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_ai_fullscreen_exit PRIVATE pthread dl m)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_ai_fullscreen_exit PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_ai_fullscreen_exit PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_ai_fullscreen_exit PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_ai_fullscreen_exit COMMAND $<TARGET_FILE:test_ai_fullscreen_exit>)
+    set_tests_properties(test_ai_fullscreen_exit PROPERTIES
+        LABELS "integration;ai;fullscreen;v0168"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_ai_fullscreen_exit")
+endif()
+
 # ─── Project Search deep regression test ────────────────────────────────
 # Exercises ProjectSearchWorker against a hermetic on-disk fixture:
 # coordinate correctness, heavy-dir pruning, binary skip, unicode columns,
