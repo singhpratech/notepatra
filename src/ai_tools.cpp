@@ -4,6 +4,7 @@
 #include "dbconnections.h"
 #include "git_tools.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -619,6 +620,49 @@ QJsonArray availableTools() {
             "table. Available only when Data Analyst Mode is on. Use this "
             "instead of asking the model to manually scan a CSV — querying "
             "is exact, fast, and cheap on the model's context budget.",
+            params));
+    }
+
+    // generate_chart -----------------------------------------------
+    // v0.1.63 — Data Analyst Mode visualization. The model emits a
+    // Vega-Lite spec object (https://vega.github.io/vega-lite/) and
+    // AIPanel renders it inline via VegaChartRenderer (QtWebEngine).
+    // The tool result echoes the chart id back so the model can
+    // reference the chart in subsequent turns ("the second chart
+    // shows ..."). Validation is intentionally light — Vega-Lite has
+    // its own JSON Schema and the JS shell surfaces parse / runtime
+    // errors as renderError signals, which the UI shows inline.
+    {
+        QJsonObject specProp;
+        specProp["type"] = "object";
+        specProp["description"] =
+            "A complete Vega-Lite v5 spec. Required keys: 'mark' (string or "
+            "object) and 'encoding' (object with at least one channel). "
+            "Either include a 'data.values' array literal OR a 'data.url' "
+            "pointing at a workspace-relative CSV. Keep specs under 100 KB.";
+        QJsonObject props;
+        props["spec"] = specProp;
+        props["title"] = QJsonObject{
+            {"type", "string"},
+            {"description", "Optional human-readable chart title. If omitted "
+                            "and the spec contains spec.title, that wins."}
+        };
+        props["id"] = QJsonObject{
+            {"type", "string"},
+            {"description", "Optional stable id the model can use to refer "
+                            "to this chart later. Auto-generated if omitted."}
+        };
+        QJsonObject params;
+        params["type"] = "object";
+        params["properties"] = props;
+        params["required"] = QJsonArray{ "spec" };
+        tools.push_back(makeTool(
+            "generate_chart",
+            "Render a Vega-Lite chart inline in the chat transcript. Pass a "
+            "complete Vega-Lite v5 spec object as the 'spec' parameter — the "
+            "spec must include 'mark' + 'encoding'. Use this AFTER query_sql "
+            "or csv_query has produced numbers to visualize. Available only "
+            "when Data Analyst Mode is on.",
             params));
     }
 
@@ -1709,6 +1753,77 @@ ToolResult executeCsvQuery(const ToolCall &call, const QString &workspaceRoot) {
     return makeSuccess(call, result);
 }
 
+// ─────────────────────────────────────────────────────────────────
+// executeGenerateChart — v0.1.63 (Data Analyst Mode)
+//
+// Validates that the model gave us something that at least *resembles* a
+// Vega-Lite spec (object with `mark` + `encoding`), then hands the spec
+// + id back to AIPanel via the tool-result body. AIPanel reads the body,
+// instantiates a VegaChartRenderer, and renders the chart inline.
+//
+// We DO NOT execute Vega-Lite here — JSON-schema validation and JS
+// runtime errors live in the browser shell. Doing only the shallow
+// shape check keeps the executor cheap and avoids dragging vega-lite
+// schemas into the C++ side.
+// ─────────────────────────────────────────────────────────────────
+ToolResult executeGenerateChart(const ToolCall &call) {
+    const QJsonValue specVal = call.args.value("spec");
+    if (!specVal.isObject()) {
+        return makeError(call, "io_error",
+                         "generate_chart: 'spec' must be an object (Vega-Lite v5 spec).");
+    }
+    const QJsonObject spec = specVal.toObject();
+    // Cheap shape sanity — every meaningful Vega-Lite spec has `mark`
+    // and `encoding`. We accept `layer`/`hconcat`/`vconcat`/`repeat`
+    // composite specs as a relaxation (they don't have top-level
+    // `mark`/`encoding`). This guards against the model emitting a bare
+    // JSON-string-of-spec or a placeholder {}.
+    const bool hasMark = spec.contains("mark");
+    const bool hasEncoding = spec.contains("encoding");
+    const bool isComposite =
+        spec.contains("layer") || spec.contains("hconcat") ||
+        spec.contains("vconcat") || spec.contains("repeat") ||
+        spec.contains("facet") || spec.contains("concat");
+    if (!isComposite && (!hasMark || !hasEncoding)) {
+        return makeError(call, "io_error",
+                         "generate_chart: spec is missing required keys "
+                         "'mark' and/or 'encoding'. Use the Vega-Lite v5 "
+                         "format: {\"mark\":\"bar\",\"encoding\":{...},"
+                         "\"data\":{\"values\":[...]}}.");
+    }
+    // Hard cap to keep the chat transcript JSON sane. 100 KB is more
+    // than enough for any reasonable chart spec; data.values for huge
+    // datasets should be sliced server-side before being handed off.
+    const QByteArray specBytes =
+        QJsonDocument(spec).toJson(QJsonDocument::Compact);
+    if (specBytes.size() > 100 * 1024) {
+        return makeError(call, "too_large",
+                         "generate_chart: spec exceeds 100 KB. Aggregate or "
+                         "sample the data before generating the chart.");
+    }
+
+    QString chartId = call.args.value("id").toString().trimmed();
+    if (chartId.isEmpty()) {
+        // Synthesize one — VegaChartRenderer also synthesizes when
+        // none is supplied, but echoing one here lets the model
+        // reference it in subsequent turns even before the widget
+        // exists.
+        chartId = QStringLiteral("chart-") +
+                  QString::number(QDateTime::currentMSecsSinceEpoch(), 16);
+    }
+    const QString title = call.args.value("title").toString();
+
+    QJsonObject result;
+    result["chart_id"]  = chartId;
+    result["spec"]      = spec;
+    if (!title.isEmpty()) result["title"] = title;
+    result["bytes"]     = specBytes.size();
+    result["message"]   = QStringLiteral(
+        "Chart rendered inline. Reference it as chart_id=") + chartId +
+        QStringLiteral(" in follow-ups.");
+    return makeSuccess(call, result);
+}
+
 } // anonymous namespace
 
 ToolResult execute(const ToolCall &call, const QString &workspaceRoot) {
@@ -1723,6 +1838,7 @@ ToolResult execute(const ToolCall &call, const QString &workspaceRoot) {
     if (call.name == "apply_diff")      return executeApplyDiff(call, workspaceRoot);
     if (call.name == "query_sql")       return executeQuerySql(call);
     if (call.name == "csv_query")       return executeCsvQuery(call, workspaceRoot);
+    if (call.name == "generate_chart")  return executeGenerateChart(call);
     // Read-only git inspection tools — branch / status / diff / log /
     // show / branch_list. Implemented in src/git_tools.cpp; the QProcess
     // verb list is hard-coded so there's no path through these to mutate

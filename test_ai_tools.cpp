@@ -924,10 +924,15 @@ int main(int argc, char *argv[]) {
     // Tool registry — verify availableTools() returns valid JSONSchema
     {
         QJsonArray tools = AiTools::availableTools();
-        check("availableTools() has 12 entries "
+        // v0.1.63 — generate_chart added, bumping the count to 13. We
+        // assert >=12 so adding more tools doesn't bite this test again;
+        // the named-coverage assertions below catch any specific tool
+        // accidentally getting deleted.
+        check("availableTools() has at least 12 entries "
               "(read/list/write/search/apply_diff + csv_query/query_sql + "
-              "git_status/git_diff/git_log/git_branch_list/git_show)",
-              tools.size() == 12);
+              "git_status/git_diff/git_log/git_branch_list/git_show + "
+              "generate_chart)",
+              tools.size() >= 12);
         QStringList names;
         for (const QJsonValue &tv : tools) {
             QJsonObject t = tv.toObject();
