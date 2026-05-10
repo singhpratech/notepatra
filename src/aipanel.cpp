@@ -1826,11 +1826,11 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             btn->setStyleSheet(QString(
                 "QPushButton { background: transparent; border: none; "
                 "color: %1; font-size: 11px; font-weight: 600; padding: 4px 10px; "
-                "%6 } "
+                "%5 } "
                 "QPushButton:hover { background: %2; color: %3; } "
                 "QPushButton:checked { background: %4; color: white; }")
                 .arg(pal.muted, pal.btnHover, pal.inputText,
-                     accentColor, QString(), cornerRule));
+                     accentColor, cornerRule));
             return btn;
         };
 
