@@ -532,10 +532,10 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // itself. Height bumped so the underline for Coding Mode doesn't
     // clip the ascenders.
     // ── Header row: label on the left, close-dock (✕) on the right ──
-    // Close hides the dock but PRESERVES the chat session (m_messages is
-    // not cleared). Reset (in the model row below) still clears the
-    // session. This mirrors how every real chat app works — closing
-    // the window != starting over.
+    // Close hides the dock but PRESERVES the chat session (the per-mode
+    // message vectors are not cleared). Reset (in the model row below)
+    // still clears the active session. This mirrors how every real
+    // chat app works — closing the window != starting over.
     auto *headerRow = new QWidget;
     headerRow->setFixedHeight(28);
     headerRow->setStyleSheet(QString("background: %1;").arg(pal.chromeBg));
@@ -612,8 +612,8 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         // in MainWindow is our grandparent via QVBoxLayout → QWidget).
         QWidget *host = parentWidget();
         if (host) host->setVisible(false);
-        // Do NOT clear m_messages — the chat is preserved for when the
-        // user reopens via Ctrl+Shift+A or the menu.
+        // Do NOT clear the per-mode message vectors — the chat is preserved
+        // for when the user reopens via Ctrl+Shift+A or the menu.
     });
     headerLay->addWidget(closeBtn, 0, Qt::AlignRight);
     layout->addWidget(headerRow);
@@ -1067,7 +1067,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         // the chat is empty AND the user hasn't dismissed it. Always
         // shown regardless of banner state.
         const bool showWelcome =
-            data && m_messages.isEmpty() && !Config::instance().aiHideDataWelcome;
+            data && activeMessages().isEmpty() && !Config::instance().aiHideDataWelcome;
         if (showWelcome) {
             renderDataWelcomeCard();
         } else {
@@ -1077,7 +1077,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         // Shown only when Coding is on AND the chat is empty AND the user
         // hasn't dismissed it. Removed whenever Coding is left.
         const bool showCodingWelcome =
-            coding && m_messages.isEmpty() && !Config::instance().aiHideCodingWelcome;
+            coding && activeMessages().isEmpty() && !Config::instance().aiHideCodingWelcome;
         if (showCodingWelcome) {
             renderCodingWelcomeCard();
         } else {
@@ -1173,13 +1173,22 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // hardening: mode-toggle mid-stream cancels the in-flight request first
     // so the response doesn't keep streaming into the now-rebuilt chat surface
     // (renderTranscript inside applyMode wipes m_streamingCard / m_streamingBody).
+    //
+    // v0.1.67 — the mode toggle now ALSO swaps the active conversation
+    // vector (Chat / Coding / Data each get their own m_*Messages). The
+    // renderTranscript call inside applyMode re-reads via activeMessages()
+    // so the transcript repaints from scratch using the new mode's
+    // history. We also persist before the swap so any unsaved bubbles in
+    // the outgoing mode hit disk — the next mode toggle could otherwise
+    // race the 2-second debounce.
     auto applyModeWithCancel = [this, applyMode]() {
         if (m_inAssistantBubble && m_ollama) {
             m_ollama->cancel();   // hardening: kill in-flight stream on mode swap
             m_inAssistantBubble = false;
             if (m_stopBtn) m_stopBtn->setEnabled(false);
         }
-        applyMode();
+        saveChatHistoryNow();  // v0.1.67 — flush outgoing mode's pending bubbles
+        applyMode();           // calls renderTranscript() which now reads activeMessages()
         decorateModelsByMode();
     };
     connect(m_chatMode,   &QAbstractButton::toggled, this,
@@ -1247,7 +1256,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
                 m_dataCapBanner->setVisible(true);
             }
             // v0.1.53 — refresh the welcome card to show the new model + capability.
-            if (m_dataWelcomeFrame && m_messages.isEmpty()) {
+            if (m_dataWelcomeFrame && activeMessages().isEmpty()) {
                 removeDataWelcomeCard();
                 renderDataWelcomeCard();
             }
@@ -1939,12 +1948,13 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // and trigger a re-render so the bubble shows "1234 tokens · 2.3s".
     connect(m_ollama, &OllamaClient::responseStats, this,
             [this](int promptTokens, int evalTokens, qint64 elapsedMs) {
-        if (m_messages.isEmpty()) return;  // hardening: nothing to attach stats to
-        for (int i = m_messages.size() - 1; i >= 0; --i) {
-            if (m_messages[i].role == ChatMessage::Assistant) {
-                m_messages[i].promptTokens = promptTokens;
-                m_messages[i].evalTokens   = evalTokens;
-                m_messages[i].elapsedMs    = elapsedMs;
+        QVector<ChatMessage> &msgs = activeMessages();
+        if (msgs.isEmpty()) return;  // hardening: nothing to attach stats to
+        for (int i = msgs.size() - 1; i >= 0; --i) {
+            if (msgs[i].role == ChatMessage::Assistant) {
+                msgs[i].promptTokens = promptTokens;
+                msgs[i].evalTokens   = evalTokens;
+                msgs[i].elapsedMs    = elapsedMs;
                 break;
             }
         }
@@ -3409,12 +3419,14 @@ void AIPanel::clearChat() {
         m_recordedAudioPath.clear();
     }
 
-    m_messages.clear();
-    // v0.1.39 — also delete the on-disk persisted history for this
-    // workspace. Reset means start fresh on next launch too.
-    if (!m_chatHistoryPath.isEmpty() && QFileInfo::exists(m_chatHistoryPath))
-        QFile::remove(m_chatHistoryPath);
-    setStatus("AI Assistant session reset", false);
+    // v0.1.67 — Reset clears ONLY the active mode's transcript, not all
+    // three. The other two modes keep their independent history. Persist
+    // the new state (the active vector is now empty; the others are
+    // unchanged) immediately to disk so a kill-and-restart doesn't bring
+    // the cleared bubbles back.
+    activeMessages().clear();
+    saveChatHistoryNow();
+    setStatus("AI Assistant session reset (active mode only)", false);
 }
 
 void AIPanel::updateVoiceButtonVisual(bool recording) {
@@ -3716,14 +3728,16 @@ void AIPanel::renderTranscript() {
     m_streamingBody = nullptr;
 
     const AiPalette pal = aiPalette();
+    const QVector<ChatMessage> &msgs = activeMessages();
     auto copyCb = [this](int index) {
-        if (index >= 0 && index < m_messages.size()) {
-            QApplication::clipboard()->setText(m_messages.at(index).text);
+        const QVector<ChatMessage> &cbMsgs = activeMessages();
+        if (index >= 0 && index < cbMsgs.size()) {
+            QApplication::clipboard()->setText(cbMsgs.at(index).text);
             setStatus("✓ Response copied to clipboard", false);
         }
     };
-    for (int i = 0; i < m_messages.size(); ++i) {
-        const ChatMessage &m = m_messages.at(i);
+    for (int i = 0; i < msgs.size(); ++i) {
+        const ChatMessage &m = msgs.at(i);
         if (m.role == ChatMessage::User) {
             aiAddUserBubble(m_chatLayout, m.text, pal);
         } else if (m.role == ChatMessage::Error) {
@@ -3739,15 +3753,15 @@ void AIPanel::renderTranscript() {
     }
     // v0.1.53 — re-render the Data Analyst welcome card if we're in Data
     // mode with an empty chat and the user hasn't dismissed it. Covers the
-    // "Reset" path (m_messages cleared → renderTranscript) and the initial
+    // "Reset" path (active vector cleared → renderTranscript) and the initial
     // first-mode-toggle path.
-    if (m_messages.isEmpty()
+    if (msgs.isEmpty()
         && m_dataMode && m_dataMode->isChecked()
         && !Config::instance().aiHideDataWelcome) {
         renderDataWelcomeCard();
     }
     // v0.1.57 — same idea for the Coding welcome card.
-    if (m_messages.isEmpty()
+    if (msgs.isEmpty()
         && m_codingMode && m_codingMode->isChecked()
         && !Config::instance().aiHideCodingWelcome) {
         renderCodingWelcomeCard();
@@ -3767,7 +3781,7 @@ void AIPanel::appendErrorBubble(const QString &text) {
     message.role = ChatMessage::Error;
     // hardening: never push a totally empty error — the user must see SOMETHING.
     message.text = text.isEmpty() ? QStringLiteral("AI request failed.") : text;
-    m_messages.push_back(message);
+    activeMessages().push_back(message);
     scheduleChatSave();
     if (m_chatLayout) renderTranscript();  // hardening: skip render when chat surface not built yet
 }
@@ -4805,8 +4819,9 @@ void AIPanel::handleChatLink(const QUrl &url) {
         const QString path = url.path();
         bool ok = false;
         const int index = path.section('/', -1).toInt(&ok);
-        if (ok && index >= 0 && index < m_messages.size()) {
-            QApplication::clipboard()->setText(m_messages.at(index).text);
+        const QVector<ChatMessage> &msgs = activeMessages();
+        if (ok && index >= 0 && index < msgs.size()) {
+            QApplication::clipboard()->setText(msgs.at(index).text);
             setStatus("Assistant reply copied", false);
         }
         return;
@@ -4822,8 +4837,9 @@ void AIPanel::handleChatLink(const QUrl &url) {
             bool okMsg = false, okBlk = false;
             const int msgIdx = parts[0].toInt(&okMsg);
             const int blkIdx = parts[2].toInt(&okBlk);
-            if (okMsg && okBlk && msgIdx >= 0 && msgIdx < m_messages.size()) {
-                const QString block = extractFencedBlock(m_messages.at(msgIdx).text, blkIdx);
+            const QVector<ChatMessage> &msgs = activeMessages();
+            if (okMsg && okBlk && msgIdx >= 0 && msgIdx < msgs.size()) {
+                const QString block = extractFencedBlock(msgs.at(msgIdx).text, blkIdx);
                 if (!block.isEmpty()) {
                     QApplication::clipboard()->setText(block);
                     setStatus("Code block copied", false);
@@ -4842,8 +4858,12 @@ void AIPanel::appendUserBubble(const QString &text) {
     ChatMessage message;
     message.role = ChatMessage::User;
     message.text = text;
-    m_messages.push_back(message);
-    scheduleChatSave();
+    activeMessages().push_back(message);
+    // v0.1.67 — user submit is a key transition; force-save right away so a
+    // crash mid-stream doesn't lose the prompt. The 2-second debounce stays
+    // wired (via scheduleChatSave inside the assistant + stats paths) as a
+    // backstop for the streaming chunk flurry.
+    saveChatHistoryNow();
     renderTranscript();
 }
 
@@ -4868,7 +4888,7 @@ void AIPanel::beginAssistantBubble() {
     };
     // Render the card with an empty body; we'll stream into it.
     m_streamingCard = aiAddAssistantCard(m_chatLayout, placeholder,
-                                         m_messages.size(), pal,
+                                         activeMessages().size(), pal,
                                          copyCb, &m_streamingBody);
     if (m_streamingBody) {
         m_streamingBody->setPlainText("");
@@ -4995,8 +5015,10 @@ void AIPanel::endAssistantBubble() {
         // ends. responseStats will replace these with canonical counts.
         if (finalTokens > 0)       message.evalTokens = finalTokens;
         if (finalElapsedMs >= 0)   message.elapsedMs  = finalElapsedMs;
-        m_messages.push_back(message);
-        scheduleChatSave();
+        activeMessages().push_back(message);
+        // v0.1.67 — stream end is a key transition; persist immediately so a
+        // crash on the next user prompt doesn't lose the assistant's reply.
+        saveChatHistoryNow();
     }
     // Full re-render with markdown now that we have the complete text.
     renderTranscript();
@@ -5488,17 +5510,23 @@ void AIPanel::onThemeChanged() {
 
 // ═══════════════════════════════════════════════════════════════════════
 // v0.1.39 — persistent chat history (per-workspace JSON).
+// v0.1.67 — schema bumped to version 2; three independent conversations.
 //
 // Path:    ~/.config/notepatra/chat-history/<sha1-of-workspace>.json
-// Schema:  { "version": 1, "workspace": "<absPath>",
-//            "messages": [{role, text, model?, promptTokens?, evalTokens?, elapsedMs?}, ...] }
-// Limit:   1 MB on disk per workspace; older messages roll off the front
-//          if the next save would exceed.
+// Schema (v2): { "version": 2, "workspace": "<absPath>",
+//                "chat":   [{role, text, model?, promptTokens?, evalTokens?, elapsedMs?}, ...],
+//                "coding": [...],
+//                "data":   [...] }
+// Schema (v1, migration): flat top-level array of messages → loaded into
+//          m_chatMessages; coding/data start empty.
+// Limit:   1 MB on disk per workspace; older messages roll off the
+//          front of each vector if the next save would exceed.
 //
 // Only User / Assistant / Error roles are persisted — transient tool-
-// call cards (rendered inline by handleToolCall) aren't part of
-// m_messages and aren't saved. Saves are debounced 2s so the disk
-// doesn't see a write per token.
+// call cards (rendered inline by handleToolCall) aren't part of the
+// vectors and aren't saved. Saves are debounced 2s for streaming chunk
+// flurries, with saveChatHistoryNow() at key transitions (user submit,
+// stream end, mode switch).
 // ═══════════════════════════════════════════════════════════════════════
 
 void AIPanel::updateChatHistoryPath() {
@@ -5530,14 +5558,42 @@ void AIPanel::scheduleChatSave() {
     m_chatSaveTimer->start();
 }
 
-void AIPanel::saveChatHistory() {
-    if (m_chatHistoryPath.isEmpty()) return;
+// v0.1.67 — synchronous save. Cancels the pending debounce timer and
+// writes immediately. Called at every key transition (user submit,
+// stream end, mode switch, Reset) so we never lose more than the
+// current streaming chunk on a crash. The 2 s debounce stays as a
+// backstop for the streaming chunk flurry.
+void AIPanel::saveChatHistoryNow() {
+    if (m_chatSaveTimer) m_chatSaveTimer->stop();
+    saveChatHistory();
+}
+
+// v0.1.67 — return the conversation vector for the currently selected
+// mode. The three QAbstractButton pointers may all be null in tests
+// that construct an AIPanel before its constructor wires the toggle
+// row; treat that as Chat mode (the v0.1.66 default).
+QVector<AIPanel::ChatMessage> &AIPanel::activeMessages() {
+    if (m_codingMode && m_codingMode->isChecked()) return m_codingMessages;
+    if (m_dataMode   && m_dataMode->isChecked())   return m_dataMessages;
+    return m_chatMessages;
+}
+const QVector<AIPanel::ChatMessage> &AIPanel::activeMessages() const {
+    if (m_codingMode && m_codingMode->isChecked()) return m_codingMessages;
+    if (m_dataMode   && m_dataMode->isChecked())   return m_dataMessages;
+    return m_chatMessages;
+}
+
+// v0.1.67 — helpers for (de)serialising one ChatMessage vector. Pulled
+// out of saveChatHistory / loadChatHistory so the three-vector body
+// stays uncluttered.
+namespace {
+QJsonArray chatVectorToJson(const QVector<AIPanel::ChatMessage> &vec) {
     QJsonArray arr;
-    for (const ChatMessage &m : m_messages) {
+    for (const AIPanel::ChatMessage &m : vec) {
         QJsonObject o;
         const char *roleStr = "user";
-        if (m.role == ChatMessage::Assistant) roleStr = "assistant";
-        else if (m.role == ChatMessage::Error) roleStr = "error";
+        if (m.role == AIPanel::ChatMessage::Assistant) roleStr = "assistant";
+        else if (m.role == AIPanel::ChatMessage::Error) roleStr = "error";
         o["role"] = QString::fromLatin1(roleStr);
         o["text"] = m.text;
         if (!m.model.isEmpty())   o["model"]        = m.model;
@@ -5546,18 +5602,68 @@ void AIPanel::saveChatHistory() {
         if (m.elapsedMs >= 0)     o["elapsedMs"]    = m.elapsedMs;
         arr.append(o);
     }
+    return arr;
+}
+void chatVectorFromJson(const QJsonArray &arr,
+                        QVector<AIPanel::ChatMessage> &out) {
+    out.clear();
+    out.reserve(arr.size());
+    for (const QJsonValue &v : arr) {
+        if (!v.isObject()) continue;
+        const QJsonObject o = v.toObject();
+        AIPanel::ChatMessage m;
+        const QString role = o.value("role").toString();
+        if      (role == "assistant") m.role = AIPanel::ChatMessage::Assistant;
+        else if (role == "error")     m.role = AIPanel::ChatMessage::Error;
+        else                          m.role = AIPanel::ChatMessage::User;
+        m.text         = o.value("text").toString();
+        m.model        = o.value("model").toString();
+        m.promptTokens = o.value("promptTokens").toInt(-1);
+        m.evalTokens   = o.value("evalTokens").toInt(-1);
+        m.elapsedMs    = static_cast<qint64>(o.value("elapsedMs").toDouble(-1));
+        out.push_back(m);
+    }
+}
+}  // namespace
+
+void AIPanel::saveChatHistory() {
+    if (m_chatHistoryPath.isEmpty()) return;
+
     QJsonObject root;
-    root["version"]   = 1;
+    root["version"]   = 2;     // v0.1.67 — three independent conversations
     root["workspace"] = m_workspaceRoot;
-    root["messages"]  = arr;
+    root["chat"]      = chatVectorToJson(m_chatMessages);
+    root["coding"]    = chatVectorToJson(m_codingMessages);
+    root["data"]      = chatVectorToJson(m_dataMessages);
 
     QByteArray bytes = QJsonDocument(root).toJson(QJsonDocument::Compact);
 
-    // Roll-off oldest messages until under the 1 MB cap.
+    // Roll-off oldest messages until under the 1 MB cap. We rotate
+    // through chat → coding → data so heavy use of one mode doesn't
+    // starve the other two.
     constexpr int kMaxBytes = 1 * 1024 * 1024;
-    while (bytes.size() > kMaxBytes && !arr.isEmpty()) {
+    int rot = 0;
+    while (bytes.size() > kMaxBytes) {
+        QJsonArray arr;
+        const char *key = nullptr;
+        switch (rot % 3) {
+        case 0: key = "chat";   arr = root.value("chat").toArray();   break;
+        case 1: key = "coding"; arr = root.value("coding").toArray(); break;
+        case 2: key = "data";   arr = root.value("data").toArray();   break;
+        }
+        if (arr.isEmpty()) {
+            // If the next victim vector is already empty, try the next
+            // one. If all three are empty but the bytes are still over
+            // budget (impossible in practice — overhead is ~100 B), bail.
+            if (root.value("chat").toArray().isEmpty()
+                && root.value("coding").toArray().isEmpty()
+                && root.value("data").toArray().isEmpty()) break;
+            ++rot;
+            continue;
+        }
         arr.removeFirst();
-        root["messages"] = arr;
+        root[QString::fromLatin1(key)] = arr;
+        ++rot;
         bytes = QJsonDocument(root).toJson(QJsonDocument::Compact);
     }
 
@@ -5573,6 +5679,12 @@ void AIPanel::saveChatHistory() {
 }
 
 void AIPanel::loadChatHistory() {
+    // Reset all three vectors up front so a partial / unreadable file
+    // doesn't leave stale data in the panel.
+    m_chatMessages.clear();
+    m_codingMessages.clear();
+    m_dataMessages.clear();
+
     if (m_chatHistoryPath.isEmpty()) return;
     QFile f(m_chatHistoryPath);
     if (!f.open(QIODevice::ReadOnly)) return;
@@ -5581,25 +5693,38 @@ void AIPanel::loadChatHistory() {
 
     QJsonParseError err{};
     const QJsonDocument doc = QJsonDocument::fromJson(bytes, &err);
-    if (err.error != QJsonParseError::NoError || !doc.isObject()) return;
-    const QJsonArray arr = doc.object().value("messages").toArray();
+    if (err.error != QJsonParseError::NoError) return;
 
-    m_messages.clear();
-    m_messages.reserve(arr.size());
-    for (const QJsonValue &v : arr) {
-        if (!v.isObject()) continue;
-        const QJsonObject o = v.toObject();
-        ChatMessage m;
-        const QString role = o.value("role").toString();
-        if      (role == "assistant") m.role = ChatMessage::Assistant;
-        else if (role == "error")     m.role = ChatMessage::Error;
-        else                          m.role = ChatMessage::User;
-        m.text         = o.value("text").toString();
-        m.model        = o.value("model").toString();
-        m.promptTokens = o.value("promptTokens").toInt(-1);
-        m.evalTokens   = o.value("evalTokens").toInt(-1);
-        m.elapsedMs    = static_cast<qint64>(o.value("elapsedMs").toDouble(-1));
-        m_messages.push_back(m);
+    // v0.1.67 — migration path. Pre-v0.1.67 files stored a flat array at
+    // the top level (or a {version:1, messages:[...]} object). v0.1.67
+    // files use {version:2, chat:[...], coding:[...], data:[...]}.
+    //
+    //   - Top-level array → v0.0 single-vector dump (shouldn't actually
+    //     exist in the wild — v0.1.39+ wrote {version:1, messages:[]} —
+    //     but cheap to handle and matches the spec ask). Treated as
+    //     chat.
+    //   - {version:1, messages:[...]} → v0.1.39-v0.1.66 single-mode
+    //     history. Migrate to m_chatMessages; coding+data start empty.
+    //   - {version:2, chat:[...], coding:[...], data:[...]} → v0.1.67+
+    //     three-mode history. Split into the three vectors verbatim.
+    if (doc.isArray()) {
+        // v0.0 migration: flat-array dump → chat vector.
+        chatVectorFromJson(doc.array(), m_chatMessages);
+        return;
+    }
+    if (!doc.isObject()) return;
+    const QJsonObject root = doc.object();
+    const int version = root.value("version").toInt(1);
+
+    if (version >= 2) {
+        chatVectorFromJson(root.value("chat").toArray(),   m_chatMessages);
+        chatVectorFromJson(root.value("coding").toArray(), m_codingMessages);
+        chatVectorFromJson(root.value("data").toArray(),   m_dataMessages);
+    } else {
+        // v1 migration: single "messages" array → chat vector; the
+        // coding/data vectors stay empty since pre-v0.1.67 didn't
+        // partition by mode.
+        chatVectorFromJson(root.value("messages").toArray(), m_chatMessages);
     }
 }
 

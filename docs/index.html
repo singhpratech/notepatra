@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~9 MB stripped across platforms; full downloads are 3.2 MB (Linux x64 tar.gz), 26.6 MB (macOS DMG with bundled Qt), 39.9 MB (Windows MSI with bundled Qt DLLs). 226 file types. 92 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.66",
+      "softwareVersion": "0.1.67",
       "fileSize": "9 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -153,7 +153,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.66 download sizes: 3.2 MB Linux x64 tar.gz, 3.0 MB Linux ARM64 tar.gz, 26.6 MB macOS DMG (with bundled Qt), 39.9 MB Windows MSI / 32.0 MB NSIS / 36.5 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.67 download sizes: 3.2 MB Linux x64 tar.gz, 3.0 MB Linux ARM64 tar.gz, 26.6 MB macOS DMG (with bundled Qt), 39.9 MB Windows MSI / 32.0 MB NSIS / 36.5 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
           }
         },
         {
@@ -169,7 +169,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.66: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.67: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1236,7 +1236,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.66 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.67 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.66">
-        Download v0.1.66 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.67">
+        Download v0.1.67 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.66 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.67 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~9 MB bare, ~2 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. No cloud unless you opt in.</p>
 
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.66</div>
+        <div class="section-label">Download v0.1.67</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1850,50 +1850,49 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.66 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.67 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-05-10</span>
-                        <span>· Manage Connections UX + local SQL Server harness + website cleanup.</span>
+                        <span>· AI Assistant: three independent per-mode conversations.</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>🗂 Manage Connections — preset dropdown + smart defaults</h5>
+                        <h5>💬 Three independent conversations (Chat / Coding / Data)</h5>
                         <ul>
-                            <li>Seven ready-to-use presets fill the form with sensible defaults: <strong>SQL Server (localhost ODBC)</strong>, <strong>SQL Server Express (named instance + Windows Auth)</strong>, <strong>Azure SQL Database (TLS-required)</strong>, <strong>PostgreSQL</strong>, <strong>MySQL/MariaDB</strong>, <strong>SQLite</strong>, <strong>DuckDB</strong>.</li>
-                            <li>Per-driver smart fill — port auto-populates to <strong>1433 / 5432 / 3306</strong> when still 0, every field gets a driver-specific placeholder (e.g. SQL Server username placeholder is <code>sa   (leave empty for Windows Auth)</code>).</li>
-                            <li>New <strong>driverHint label</strong> below the form — paints <strong>amber + per-OS install commands</strong> when the Qt SQL plugin is missing (covers Microsoft <code>msodbcsql18</code> setup for Linux / macOS / Windows), <strong>green usage tip</strong> when present.</li>
+                            <li>Pre-v0.1.67 the AI Assistant shared <strong>one</strong> chat session across all three mode toggles. Flipping from Coding into Data left the previous bubbles on screen, but ran the next model turn under the data-analyst system prompt — producing erratic first replies that referenced the wrong mode's tools or topic.</li>
+                            <li>v0.1.67 replaces the single <code>m_messages</code> vector (32 references in <code>src/aipanel.cpp</code>) with <strong>three independent vectors</strong>: <code>m_chatMessages</code>, <code>m_codingMessages</code>, <code>m_dataMessages</code> — one per mode. A new <code>activeMessages()</code> private helper returns the right vector based on which mode button is checked. Every read and write to chat state now goes through it.</li>
+                            <li><strong>Mode toggle</strong> now cancels any in-flight stream, force-saves the outgoing mode's bubbles to disk, then re-renders the transcript from the new active vector. <strong>Reset</strong> clears only the active mode's vector — the other two retain their history.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🐳 Local SQL Server Docker harness for testing</h5>
+                        <h5>💾 On-disk schema: v1 → v2 (auto-migrating)</h5>
                         <ul>
-                            <li>New <code>docker/sql-server-local.yml</code> runs <code>mcr.microsoft.com/mssql/server:2022-latest</code> on <code>127.0.0.1:1433</code> (localhost-only — not 0.0.0.0).</li>
-                            <li>One command: <code>bash scripts/sql-server-local-setup.sh</code> — brings up the container, waits for healthy, seeds <strong>NotepatraTest</strong> with customers / products / orders tables (5 + 5 + 9 rows), and registers a <code>sql-server-local</code> connection in your Notepatra config. <code>--teardown</code> and <code>--wipe</code> flags for cleanup.</li>
-                            <li>Apple Silicon note: SQL Server's official image is Linux x64 only. Docker Desktop on M-series Macs runs it under Rosetta/QEMU (~3× slower than native). Microsoft never shipped a native ARM64 image.</li>
+                            <li>The per-workspace chat-history JSON file (<code>~/.config/notepatra/chat-history/&lt;sha1&gt;.json</code>) bumps <code>"version": 1</code> → <code>"version": 2</code> with three named keys: <code>chat</code>, <code>coding</code>, <code>data</code>.</li>
+                            <li>Old files <strong>migrate automatically</strong> on first load: <code>{version: 1, messages: [...]}</code> and bare top-level arrays both land in <code>m_chatMessages</code>; coding + data start empty. No user action required.</li>
+                            <li>Roll-off (1 MB per-workspace cap) rotates <code>chat → coding → data</code> when trimming so heavy use of one mode doesn't starve the others.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>📖 Comprehensive "How to connect" documentation</h5>
+                        <h5>⚡ Synchronous save at key transitions</h5>
                         <ul>
-                            <li>New section in <code>docs/docs.html</code> with per-database walkthroughs: SQL Server (local + remote + Windows Auth + Azure SQL TLS), PostgreSQL (local + RDS / Cloud SQL / Neon with sslmode, Unix-socket), MySQL/MariaDB (local + managed with SSL_CA, Unix-socket), SQLite (file picker), DuckDB (multi-mode Database field: files, S3, in-memory).</li>
-                            <li>Driver-availability matrix per OS (apt / brew / bundled), plus troubleshooting for the five most common connection failures.</li>
+                            <li>New <code>saveChatHistoryNow()</code> cancels the pending 2-second debounce and writes immediately. Called at every key transition: user submit, assistant stream end, mode switch, Reset.</li>
+                            <li>The 2 s debounce stays wired as a backstop for the streaming-chunk flurry (token frames fire 20+ times / second; we don't want to write the JSON on every chunk). A crash mid-stream now loses at most the current streaming chunk.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>✂ Website cleanup</h5>
+                        <h5>🧪 Regression test: <code>test_ai_chat_history.cpp</code></h5>
                         <ul>
-                            <li>Removed the obsolete FAQ entry about <strong>v0.1.23 → v0.1.24 Windows MuiCache cleanup</strong> — one-time shell-cache fix from an upgrade-only edge case, no longer relevant.</li>
-                            <li>Collapsed <strong>~60 historical version cards</strong> (~2500 lines of HTML) into a single <strong>"See every release on GitHub →"</strong> link. The LATEST card stays inline. <code>docs/index.html</code> dropped from 4787 to 2201 lines (54% smaller).</li>
-                            <li><strong>Version history housekeeping:</strong> v0.1.63 and v0.1.64 GitHub Releases backfilled with notes-only entries ("rolled into v0.1.65") so the Releases page shows a continuous v0.1.62 → v0.1.66 ladder with no gaps.</li>
+                            <li><strong>61 sub-checks</strong> across four sections: cross-mode partitioning, <code>clearChat()</code> semantics, full save+reload round-trip, v1 migration paths. Total deterministic test count: 25 → 26. All pass on the lite build.</li>
+                            <li>Constructs a real <code>AIPanel</code> under <code>QT_QPA_PLATFORM=offscreen</code>. A new <code>AIPanelTestAccess</code> friend class lets the test drive the three private vectors and the mode buttons without leaking those internals into the production API.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.66">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.67">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.66">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.67">Commits</a>
                 </div>
             </div>
             <a href="https://github.com/singhpratech/notepatra/releases"
@@ -1927,7 +1926,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.66: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
+                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.67: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -1935,7 +1934,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.66 download sizes: <strong>3.2 MB</strong> Linux x64 tar.gz · <strong>3.0 MB</strong> Linux ARM64 tar.gz · <strong>26.6 MB</strong> macOS DMG · <strong>39.9 MB</strong> Windows MSI / <strong>32.0 MB</strong> NSIS / <strong>36.5 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.67 download sizes: <strong>3.2 MB</strong> Linux x64 tar.gz · <strong>3.0 MB</strong> Linux ARM64 tar.gz · <strong>26.6 MB</strong> macOS DMG · <strong>39.9 MB</strong> Windows MSI / <strong>32.0 MB</strong> NSIS / <strong>36.5 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -1943,7 +1942,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.66 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.67 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>How do I verify a download is genuine?</h3>

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.66 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.67 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -653,6 +653,82 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_dataanalyst.cpp
         LABELS "unit;ai;data-analyst"
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     message(STATUS "Regression test enabled — target: test_ai_dataanalyst")
+endif()
+
+# v0.1.67 — AIPanel three-vector chat-history regression test.
+#
+# Verifies the per-mode partitioning introduced in v0.1.67: Chat /
+# Coding / Data each get an independent m_*Messages vector, switching
+# modes swaps the active vector without cross-contamination, clearChat
+# clears only the active one, and the on-disk JSON format
+# ({version:2, chat:[...], coding:[...], data:[...]}) round-trips.
+# Also exercises the v1 migration path (flat-array → chat vector).
+#
+# Constructs a real AIPanel under QT_QPA_PLATFORM=offscreen — it
+# therefore needs the full notepatra source tree (every dependency
+# AIPanel's constructor pulls in: ai_systemprompt, ai_tools,
+# dbconnections, csvanalyst, edit_plan, vega_chart_renderer,
+# plugin_loader, credscrub, etc.). We use the same SOURCES glob
+# notepatra uses, MINUS src/main.cpp (so the test provides its own).
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_chat_history.cpp")
+    # Pull every src/*.cpp + src/charts/*.cpp via glob, then strip
+    # main.cpp (the test has its own main). Matches the SOURCES list
+    # the notepatra executable uses.
+    set(AI_CHAT_HISTORY_SOURCES ${SOURCES})
+    list(FILTER AI_CHAT_HISTORY_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_ai_chat_history
+        test_ai_chat_history.cpp
+        ${AI_CHAT_HISTORY_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_ai_chat_history rust_core)
+    # AIPanel uses NOTEPATRA_VERSION in the Charts Pack install hand-off
+    # — the same macro the main executable carries via target_compile_definitions.
+    target_compile_definitions(test_ai_chat_history PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_ai_chat_history PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_ai_chat_history PRIVATE
+        Qt5::Widgets
+        Qt5::PrintSupport
+        Qt5::Network
+        Qt5::Concurrent
+        Qt5::Sql
+        Qt5::Charts
+        ${QSCINTILLA_LIB}
+        ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_ai_chat_history PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_ai_chat_history PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_ai_chat_history PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_ai_chat_history PRIVATE
+            ws2_32 userenv bcrypt ntdll
+            advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_ai_chat_history PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_ai_chat_history PRIVATE pthread dl m)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_ai_chat_history PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_ai_chat_history PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_ai_chat_history PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_ai_chat_history COMMAND $<TARGET_FILE:test_ai_chat_history>)
+    set_tests_properties(test_ai_chat_history PROPERTIES
+        LABELS "unit;ai;chat-history"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_ai_chat_history")
 endif()
 
 # ─── Project Search deep regression test ────────────────────────────────
