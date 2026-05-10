@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.61 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.62 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -191,6 +191,9 @@ set(HEADERS
     # v0.2 Coding-mode revamp (Slice B+C)
     src/diff_view.h
     src/edit_plan.h
+    # v0.1.62 — per-hunk staging
+    src/git_hunk_apply.h
+    src/gutter_hunk_popup.h
 )
 
 # ── Platform-specific resources ──
@@ -940,6 +943,9 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_options_actually_w
         src/preferences.cpp
         src/editor.cpp
         src/gitgutter.cpp
+        src/git_hunk_apply.cpp
+        src/gutter_hunk_popup.cpp
+        src/diff_view.cpp
         src/lexerutils.cpp
         src/npp_palette.cpp
         src/rustbridge.cpp

@@ -183,6 +183,7 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include <QJsonArray>
 #include <QTimer>
 #include "compare.h"
+#include "merge_helper_widget.h"
 #include "hexeditor.h"
 #include "gitgutter.h"
 #include "fmtpanel.h"
@@ -2378,10 +2379,15 @@ void MainWindow::buildMenus() {
         // HEAD-vs-working-copy (same pattern as the FormatterPanel diff path
         // a few dozen lines below).
         connect(panel, &GitPanel::openFileInTab, this, &MainWindow::openFile);
-        connect(panel, &GitPanel::openDiffInTab, this,
-                [this](const QString &title, const QString &leftText, const QString &rightText) {
+        // v0.1.62 — git-aware diff opener. The CompareWidget receives the
+        // repo root + relative file path so it can render its per-hunk
+        // Stage / Revert strip. Legacy openDiffInTab signal stays defined
+        // for out-of-tree consumers but no longer fires from the panel.
+        connect(panel, &GitPanel::openDiffInTabWithGit, this,
+                [this](const QString &title, const QString &leftText,
+                       const QString &rightText, const QString &repoRoot,
+                       const QString &relPath) {
             auto *cmp = new CompareWidget;
-            // Theme propagation — diff markers re-render on theme flip.
             connect(this, &MainWindow::themeChanged, cmp, &CompareWidget::onThemeChanged);
             int idx = m_tabs->addTab(cmp, title);
             m_tabs->setCurrentIndex(idx);
@@ -2389,10 +2395,47 @@ void MainWindow::buildMenus() {
                 int i = m_tabs->indexOf(cmp);
                 if (i >= 0) closeTab(i);
             });
-            // compare() must run AFTER closeRequested is connected — if the
-            // two sides are identical the widget emits closeRequested right
-            // away from inside compare().
+            // setGitContext BEFORE compare(); compare() calls recompare()
+            // which rebuilds the per-hunk strip. If we set context after,
+            // the first paint would have an empty strip until the next
+            // recompare cycle.
+            cmp->setGitContext(repoRoot, relPath);
             cmp->compare(leftText, "HEAD", rightText, "Working copy");
+        });
+
+        // v0.1.62 — conflict resolver. The user clicked the inline
+        // "Resolve" button on a UU file row. Open the file in an editor
+        // tab and dock a MergeHelperWidget at the bottom so the per-
+        // region action buttons render alongside the buffer.
+        connect(panel, &GitPanel::openMergeHelperRequested, this,
+                [this](const QString &repoRoot, const QString &relPath) {
+            const QString abs = QDir(repoRoot).filePath(relPath);
+            openFile(abs);
+
+            // Locate the editor we just opened. openFile() ends with the
+            // new tab as current; the widget there is an Editor*.
+            Editor *editor = nullptr;
+            if (m_tabs && m_tabs->currentWidget()) {
+                editor = qobject_cast<Editor *>(m_tabs->currentWidget());
+            }
+            if (!editor) return;
+
+            // The merge helper is constructed as a top-level window so
+            // it doesn't fight the tab layout (which is owned by m_tabs
+            // and not easily augmented per-tab without invasive rewiring).
+            auto *helper = new MergeHelperWidget;
+            helper->setWindowFlags(Qt::Window);
+            helper->setWindowTitle(QString("Resolve conflicts — %1")
+                                       .arg(QFileInfo(relPath).fileName()));
+            helper->resize(720, 240);
+            helper->attach(editor, abs);
+            helper->show();
+            // Auto-close on full resolution so the workflow ends cleanly.
+            connect(helper, &MergeHelperWidget::allConflictsResolved,
+                    helper, [helper]() {
+                        helper->close();
+                        helper->deleteLater();
+                    });
         });
         if (auto *e = E(); e && !e->filePath().isEmpty()) {
             panel->refresh(e->filePath());
