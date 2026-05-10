@@ -22,7 +22,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake \
             qtbase5-dev libqscintilla2-qt5-dev \
-            libqt5charts5-dev libqt5sql5-sqlite
+            libqt5charts5-dev libqt5sql5-sqlite \
+            qtwebengine5-dev libqt5webenginewidgets5
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -78,7 +79,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake \
             qtbase5-dev libqscintilla2-qt5-dev \
-            libqt5charts5-dev libqt5sql5-sqlite
+            libqt5charts5-dev libqt5sql5-sqlite \
+            qtwebengine5-dev libqt5webenginewidgets5
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -426,8 +428,13 @@ jobs:
           target: 'desktop'
           arch: 'win64_msvc2019_64'
           # v0.1.43: qtcharts needed for inline AI Data Analyst charts.
+          # v0.1.63: qtwebengine needed for the Vega-Lite chart renderer in
+          # Data mode. Without it, NOTEPATRA_WITH_WEBENGINE auto-downgrades
+          # to OFF and the renderer becomes a stub QLabel — degraded UX,
+          # not a crash. We install qtwebengine here so users get a real
+          # chart out of the box; CMake's auto-downgrade is the backstop.
           # Qt SQL is part of base Qt; SQLite driver also ships by default.
-          modules: 'qtcharts'
+          modules: 'qtcharts qtwebengine'
           dir: '${{ runner.temp }}/Qt'
 
       - name: Install OpenSSL 1.1 runtime DLLs (for QNetworkAccessManager HTTPS)

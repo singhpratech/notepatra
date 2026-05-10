@@ -4,6 +4,7 @@
 #include "ai_systemprompt.h"
 #include "ai_tools.h"
 #include "chartrender.h"
+#include "charts/vega_chart_renderer.h"
 #include "credscrub.h"
 #include "csvanalyst.h"
 #include "dbconnections.h"
@@ -5244,6 +5245,71 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
             const QString absPath = body.value("abs_path").toString();
             if (!absPath.isEmpty()) emit fileWrittenByAgent(absPath, false);
         }
+    } else if (name == "generate_chart" && !result.isError) {
+        // v0.1.63 — Data Analyst Mode chart inline. The executor echoed
+        // the Vega-Lite spec back on the result body; instantiate a
+        // VegaChartRenderer and slot it into the chat layout above the
+        // bottom stretch, mirroring how aiAddToolCallCard / aiAddBubble
+        // insert their widgets.
+        const QJsonObject body = parseResultBody(result.content);
+        const QJsonObject spec = body.value("spec").toObject();
+        const QString chartId = body.value("chart_id").toString();
+        const QString title   = body.value("title").toString();
+        const AiPalette palChart = aiPalette();
+
+        // Outer card frame: 1px border + 8px padding per the v0.1.63 spec.
+        auto *card = new QFrame(m_chatContent);
+        card->setObjectName("chartCard");
+        card->setStyleSheet(QString(
+            "#chartCard { background: %1; border: 1px solid %2; "
+            "border-radius: 8px; padding: 0px; }"
+            "QLabel#chartTitle { color: %3; font-size: 11px; "
+            "font-weight: 600; letter-spacing: 0.4px; "
+            "padding: 6px 10px 0px 10px; background: transparent; }")
+            .arg(palChart.assistBg, palChart.assistBorder, palChart.muted));
+        auto *cardLay = new QVBoxLayout(card);
+        cardLay->setContentsMargins(8, 8, 8, 8);
+        cardLay->setSpacing(4);
+
+        if (!title.isEmpty()) {
+            auto *titleLbl = new QLabel(title, card);
+            titleLbl->setObjectName("chartTitle");
+            titleLbl->setWordWrap(true);
+            cardLay->addWidget(titleLbl);
+        }
+
+        auto *renderer = new VegaChartRenderer(card);
+        cardLay->addWidget(renderer);
+
+        // Error row sits hidden until the JS shell reports a parse /
+        // runtime failure. Connecting the lambda by-value to `card`
+        // means it survives the dispatch loop returning.
+        auto *errLbl = new QLabel(card);
+        errLbl->setStyleSheet(QString(
+            "color: %1; font-size: 10px; font-style: italic;").arg(palChart.errBorder));
+        errLbl->setWordWrap(true);
+        errLbl->setVisible(false);
+        cardLay->addWidget(errLbl);
+        QObject::connect(renderer, &VegaChartRenderer::renderError, errLbl,
+                         [errLbl](const QString &msg) {
+                             errLbl->setText(QStringLiteral("⚠ Chart error: ") + msg);
+                             errLbl->setVisible(true);
+                         });
+
+        // Wrap in a margin row, matching the bubble cadence.
+        auto *row = new QWidget(m_chatContent);
+        row->setStyleSheet(QStringLiteral("background: transparent;"));
+        auto *rowLay = new QVBoxLayout(row);
+        rowLay->setContentsMargins(0, 0, 0, 12);
+        rowLay->setSpacing(0);
+        rowLay->addWidget(card);
+        m_chatLayout->insertWidget(m_chatLayout->count() - 1, row);
+
+        // Feed the spec in. setSpec stashes it if the WebEngine page
+        // isn't ready yet and replays on loadFinished.
+        renderer->setSpec(spec);
+
+        resultSummary = QStringLiteral("rendered (id=") + chartId + QStringLiteral(")");
     }
 
     const AiPalette pal = aiPalette();

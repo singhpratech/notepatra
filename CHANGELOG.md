@@ -7,6 +7,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.63] — 2026-05-10
+
+**Data Analyst charts — Vega-Lite renderer scaffold.**
+
+### Added — `generate_chart` AI tool
+
+* New `generate_chart(spec, title?, id?)` tool — `spec` is a Vega-Lite JSON object. Validated for `mark` + `encoding` keys (relaxed for composite specs using `layer` / `hconcat` / `vconcat` / `repeat` / `facet`). 100 KB spec size cap.
+
+### Added — `VegaChartRenderer` widget
+
+* `src/charts/vega_chart_renderer.{h,cpp}` — `QWidget` subclass with dual paths. With `NOTEPATRA_WITH_WEBENGINE=ON` (default): embeds `QWebEngineView`, loads inline HTML shell that imports vega/vega-lite/vega-embed from JSDelivr. With OFF: stub `QLabel` showing rebuild hint.
+* Public API: `setSpec(QJsonObject)`, `chartId()`, `exportPng(scaleFactor=2)`. Signals: `renderReady()`, `renderError(QString)`.
+
+### Added — inline chart rendering in the chat
+
+* `handleToolCall` `generate_chart` branch builds a `QFrame#chartCard` hosting the renderer + optional title + error label. Inserted into the chat content layout inline (not in a separate panel).
+
+### Added — CI installs Qt5 WebEngine on every runner
+
+* `.github/workflows/build.yml` — Linux x64 + ARM jobs add `qtwebengine5-dev` + `libqt5webenginewidgets5` to apt; Windows `install-qt-action` modules `'qtcharts'` → `'qtcharts qtwebengine'`; macOS brew qt@5 already includes WebEngine.
+
+### Build / test
+
+* New `test_vega_chart` — 5 subcases (construction, setSpec, registry contains generate_chart, valid/rejected specs, composite specs).
+* `test_ai_tools` hardcoded `tools.size() == 12` relaxed to `>= 12` (now 13 with generate_chart).
+* Stale-text audit: 21/21 surfaces match canonicals.
+
+### Deferred to v0.1.64+
+
+* On-demand QtWebEngine plugin architecture so bare binary stays ~9 MB.
+* PPTX writer (PNG-in-pptx via miniz).
+* "Explain this chart" modal with PNG / SVG / Excel export.
+* Poppler-Qt5 PDF→PNG rendering for vision models.
+
+---
+
 ## [0.1.62] — 2026-05-10
 
 **VS Code-parity Git in Coding mode.**

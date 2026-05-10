@@ -1,11 +1,16 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.62 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.63 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 option(BUILD_TESTING "Build Notepatra regression tests" OFF)
 option(BUILD_LEXER_TEST "Backward-compatible alias for BUILD_TESTING" OFF)
+# v0.1.63 — Vega-Lite chart renderer. ON by default; users on minimal Qt5
+# stacks without libqt5webengine5 can opt out, in which case
+# VegaChartRenderer compiles a QLabel stub and the generate_chart tool
+# still emits a result but renders a rebuild hint instead of a chart.
+option(NOTEPATRA_WITH_WEBENGINE "Embed Vega-Lite chart renderer via QtWebEngine" ON)
 
 if(BUILD_TESTING OR BUILD_LEXER_TEST)
     enable_testing()
@@ -58,6 +63,27 @@ message(STATUS "Building for platform: ${PLATFORM_NAME}")
 # - Charts: rendered inline in the AI chat transcript when the model emits
 #   a ```chart fenced spec.
 find_package(Qt5 REQUIRED COMPONENTS Widgets PrintSupport Network Concurrent Sql Charts)
+
+# v0.1.63 — optional QtWebEngine for Vega-Lite chart rendering. On distros
+# that don't ship libqt5webengine5 (e.g. minimal CI containers), the option
+# can be flipped off and VegaChartRenderer compiles a QLabel stub instead.
+# We probe via find_package(... QUIET) so a missing component downgrades
+# NOTEPATRA_WITH_WEBENGINE to OFF with a warning rather than failing the
+# configure outright.
+if(NOTEPATRA_WITH_WEBENGINE)
+    find_package(Qt5 QUIET COMPONENTS WebEngineWidgets)
+    if(Qt5WebEngineWidgets_FOUND)
+        message(STATUS "Vega-Lite renderer: Qt5WebEngineWidgets ${Qt5WebEngineWidgets_VERSION}")
+    else()
+        message(WARNING
+            "Qt5WebEngineWidgets not found — Vega-Lite renderer will compile "
+            "a stub. Install libqt5webengine5-dev (Debian/Ubuntu) / "
+            "qt5-webengine (Arch) / qt@5 includes it on macOS, then "
+            "reconfigure. To silence this warning configure with "
+            "-DNOTEPATRA_WITH_WEBENGINE=OFF.")
+        set(NOTEPATRA_WITH_WEBENGINE OFF)
+    endif()
+endif()
 
 # ── QScintilla ──
 # Platform-specific search for QScintilla headers and library.
@@ -146,6 +172,12 @@ add_custom_target(rust_core
 # new src file but forgot to register it" class of release-day failure.
 file(GLOB SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/*.cpp")
 
+# v0.1.63 — pull in subsystem .cpp files (e.g. src/charts/*.cpp for the
+# Vega-Lite renderer). Kept as a separate glob so reviewers see the
+# subdirectory structure at a glance.
+file(GLOB CHART_SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/charts/*.cpp")
+list(APPEND SOURCES ${CHART_SOURCES})
+
 set(HEADERS
     src/mainwindow.h
     src/editor.h
@@ -194,6 +226,8 @@ set(HEADERS
     # v0.1.62 — per-hunk staging
     src/git_hunk_apply.h
     src/gutter_hunk_popup.h
+    # v0.1.63 — Vega-Lite chart renderer (Data Analyst slice).
+    src/charts/vega_chart_renderer.h
 )
 
 # ── Platform-specific resources ──
@@ -276,6 +310,17 @@ target_link_libraries(${EXE_NAME} PRIVATE
     ${QSCINTILLA_LIB}
     ${RUST_LIB}
 )
+
+# v0.1.63 — link WebEngineWidgets when the renderer is enabled. The
+# stub path (NOTEPATRA_WITH_WEBENGINE=OFF) doesn't include any
+# WebEngine header, so the link skip is required as well as the
+# compile define (see src/charts/vega_chart_renderer.cpp), so the stub
+# build neither links nor includes any WebEngine header.
+target_include_directories(${EXE_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src/charts)
+if(NOTEPATRA_WITH_WEBENGINE)
+    target_compile_definitions(${EXE_NAME} PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+    target_link_libraries(${EXE_NAME} PRIVATE Qt5::WebEngineWidgets)
+endif()
 
 if(WIN32)
     # CRITICAL: QScintilla on Windows is built as a DLL by default. Its headers
@@ -1085,6 +1130,35 @@ endif()
 # notepatra_all_tests` so adding a new test_xxx.cpp + add_executable just
 # works in CI without touching build.yml.
 #
+# v0.1.63 — Vega-Lite chart renderer regression test.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_vega_chart.cpp")
+    add_executable(test_vega_chart
+        test_vega_chart.cpp
+        src/ai_tools.cpp
+        src/git_tools.cpp
+        src/csvanalyst.cpp
+        src/dbconnections.cpp
+        src/charts/vega_chart_renderer.cpp
+    )
+    target_include_directories(test_vega_chart PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+    )
+    target_link_libraries(test_vega_chart PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Sql
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_vega_chart PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_vega_chart PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    add_test(NAME test_vega_chart COMMAND
+        ${CMAKE_COMMAND} -E env QT_QPA_PLATFORM=offscreen $<TARGET_FILE:test_vega_chart>)
+    set_tests_properties(test_vega_chart PROPERTIES
+        LABELS "unit;ai;data-analyst;charts;v0163"
+    )
+    message(STATUS "Regression test enabled — target: test_vega_chart")
+endif()
+
 # v0.1.57 hit a CI regression because test_edit_plan was registered with
 # CTest but missing from build.yml's hardcoded --target list — this
 # discovery loop prevents that class of failure forever.
