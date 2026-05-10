@@ -104,6 +104,16 @@ public slots:
     // chat transcript so every bubble inline style is rebuilt against
     // the new aiPalette(). Wired to MainWindow::themeChanged().
     void onThemeChanged();
+    // v0.1.67 — programmatically un-fullscreen the AI dock. Used by
+    // MainWindow::exitAiFullscreenIfActive() so that opening a new tool
+    // tab (Project Search, JSON Tools, REST, Git, …) while the AI dock
+    // is expanded restores sibling widgets (file explorer, editor tabs)
+    // and lets the user actually see the tab they just opened. We do this
+    // by un-checking m_aiExpandBtn, which fires its toggled(false) slot
+    // and emits fullscreenToggled(false) — the same path the user takes
+    // when they click ⛶ themselves, so MainWindow's existing handler runs
+    // unchanged. The AIPanel widget itself is preserved.
+    void forceExitFullscreen();
 
 signals:
     void insertText(const QString &text);

@@ -5438,6 +5438,17 @@ void AIPanel::attachFile() {
     setStatus(QString("✓ Attached: %1 (%2)").arg(name).arg(kind), false);
 }
 
+// v0.1.67 — un-check the ⛶ expand button so its toggled(false) connect
+// fires fullscreenToggled(false) — same path the user takes when they
+// click the button themselves. MainWindow's existing handler restores
+// the splitter sizes + sibling visibility. No-op when the button is
+// missing or already unchecked.
+void AIPanel::forceExitFullscreen() {
+    if (m_aiExpandBtn && m_aiExpandBtn->isChecked()) {
+        m_aiExpandBtn->setChecked(false);
+    }
+}
+
 void AIPanel::onThemeChanged() {
     // The bubble HTML (user / assistant / error cards) embeds per-theme
     // colours inline; renderTranscript() rebuilds every bubble by
