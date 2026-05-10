@@ -21,6 +21,7 @@
 
 #include "src/ai_tools.h"
 #include "src/charts/vega_chart_renderer.h"
+#include "src/plugin_loader.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -28,6 +29,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QPushButton>
 #include <QString>
 #include <QTimer>
 
@@ -135,12 +137,81 @@ int main(int argc, char **argv) {
         if (sawError) {
             EXPECT(!errMsg.contains("Web view not initialised"));
         }
+        EXPECT(!r.isLiteStub());
 #else
-        // Stub path: setSpec MUST emit renderError so the UI shows the
-        // rebuild hint.
-        EXPECT(sawError);
-        EXPECT(errMsg.contains(QStringLiteral("disabled")));
+        // v0.1.64 — lite-mode stub. setSpec() must NOT emit renderError;
+        // a missing Charts Pack is a feature-gap state, not an error. The
+        // widget displays a [Install charts pack] / [View JSON instead]
+        // card and stashes the spec for [View JSON]. The previous
+        // "rebuild hint" assertion is intentionally removed — that text
+        // was replaced with the proper plugin-required UX.
+        EXPECT(!sawError);
+        EXPECT(r.isLiteStub());
 #endif
+    }
+
+    // ── 2b. v0.1.64 — lite-mode button → signal wiring ──
+    //       Skipped in WebEngine builds (there's no install card UI in
+    //       that path). The card builds two QPushButtons: [Install
+    //       charts pack] and [View JSON instead]. Clicking each should
+    //       emit the corresponding signal exactly once. Catches
+    //       regressions where someone re-wires the renderer and forgets
+    //       to hook up the buttons.
+#ifndef NOTEPATRA_WITH_WEBENGINE
+    {
+        VegaChartRenderer r;
+        bool installFired = false;
+        bool viewJsonFired = false;
+        QJsonObject receivedSpec;
+        QObject::connect(&r, &VegaChartRenderer::installRequested,
+                         [&]() { installFired = true; });
+        QObject::connect(&r, &VegaChartRenderer::viewJsonRequested,
+                         [&](const QJsonObject &s) {
+                             viewJsonFired = true;
+                             receivedSpec = s;
+                         });
+        const QJsonObject spec = makeBarSpec();
+        r.setSpec(spec);
+
+        QList<QPushButton *> buttons = r.findChildren<QPushButton *>();
+        // Lite-mode card creates exactly two buttons.
+        EXPECT(buttons.size() == 2);
+
+        for (QPushButton *b : buttons) {
+            if (b->text().contains(QStringLiteral("Install"))) b->click();
+        }
+        EXPECT(installFired);
+
+        for (QPushButton *b : buttons) {
+            if (b->text().contains(QStringLiteral("View JSON"))) b->click();
+        }
+        EXPECT(viewJsonFired);
+        // The signal carries the stashed spec — confirm it round-tripped.
+        EXPECT(receivedSpec.value(QStringLiteral("mark")).toString()
+               == QStringLiteral("bar"));
+    }
+#endif
+
+    // ── 2c. v0.1.64 — plugin_loader sanity ──
+    //       isInstalled() must reflect the build-time flag; for unknown
+    //       packs it must return false (not throw / not crash).
+    {
+        const bool chartsLinked =
+#ifdef NOTEPATRA_WITH_WEBENGINE
+            true;
+#else
+            false;
+#endif
+        EXPECT(NotepatraPlugins::isInstalled(
+                   QString::fromLatin1(NotepatraPlugins::kChartsPack))
+               == chartsLinked);
+        EXPECT(NotepatraPlugins::isInstalled(
+                   QStringLiteral("nonexistent-pack-name")) == false);
+        EXPECT(NotepatraPlugins::approximateDownloadSize(
+                   QString::fromLatin1(NotepatraPlugins::kChartsPack)) > 0);
+        EXPECT(!NotepatraPlugins::manualInstallDocUrl(
+                   QString::fromLatin1(NotepatraPlugins::kChartsPack)).isEmpty());
+        EXPECT(!NotepatraPlugins::pluginDir().isEmpty());
     }
 
     // ── 3. AiTools::availableTools() includes generate_chart ──

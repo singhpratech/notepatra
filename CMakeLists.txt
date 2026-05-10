@@ -1,16 +1,21 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.63 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.64 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 option(BUILD_TESTING "Build Notepatra regression tests" OFF)
 option(BUILD_LEXER_TEST "Backward-compatible alias for BUILD_TESTING" OFF)
-# v0.1.63 — Vega-Lite chart renderer. ON by default; users on minimal Qt5
-# stacks without libqt5webengine5 can opt out, in which case
-# VegaChartRenderer compiles a QLabel stub and the generate_chart tool
-# still emits a result but renders a rebuild hint instead of a chart.
-option(NOTEPATRA_WITH_WEBENGINE "Embed Vega-Lite chart renderer via QtWebEngine" ON)
+# v0.1.64 — Lite mode by default. The bare binary stays ~9 MB and the
+# Vega-Lite renderer shows a "Charts Pack required" prompt with manual-
+# install docs (auto-installer ships v0.1.65). Pass
+# -DNOTEPATRA_WITH_WEBENGINE=ON at configure time for a "full" build that
+# bundles QtWebEngine and renders charts inline.
+#
+# This mirrors DuckDB's extension philosophy: tiny core, optional heavy
+# bits installed on demand. Keeps download / launch / disk footprint
+# small for users who don't need charts.
+option(NOTEPATRA_WITH_WEBENGINE "Bundle QtWebEngine for inline Vega-Lite chart rendering (full-mode build)" OFF)
 
 if(BUILD_TESTING OR BUILD_LEXER_TEST)
     enable_testing()
@@ -228,6 +233,8 @@ set(HEADERS
     src/gutter_hunk_popup.h
     # v0.1.63 — Vega-Lite chart renderer (Data Analyst slice).
     src/charts/vega_chart_renderer.h
+    # v0.1.64 — Lite-mode plugin discovery.
+    src/plugin_loader.h
 )
 
 # ── Platform-specific resources ──
@@ -1139,6 +1146,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_vega_chart.cpp")
         src/csvanalyst.cpp
         src/dbconnections.cpp
         src/charts/vega_chart_renderer.cpp
+        src/plugin_loader.cpp
     )
     target_include_directories(test_vega_chart PRIVATE
         ${CMAKE_SOURCE_DIR}/src

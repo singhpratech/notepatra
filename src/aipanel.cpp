@@ -5296,6 +5296,34 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
                              errLbl->setVisible(true);
                          });
 
+        // v0.1.64 — lite-mode (no WebEngine) "Charts Pack required" actions.
+        // The renderer emits installRequested when the user clicks the
+        // primary button; we hand off to AIPanel::openChartsPackInstall(),
+        // which routes the user to the matching "full" GitHub Release
+        // asset for their OS. viewJsonRequested appends the Vega-Lite
+        // spec as a fenced code block under the card so users can copy
+        // it into a standalone Vega-Lite editor.
+        QObject::connect(renderer, &VegaChartRenderer::installRequested,
+                         this, &AIPanel::openChartsPackInstall);
+        QObject::connect(renderer, &VegaChartRenderer::viewJsonRequested,
+                         this, [this, cardLay](const QJsonObject &liteSpec) {
+            const QString json = QString::fromUtf8(
+                QJsonDocument(liteSpec).toJson(QJsonDocument::Indented));
+            const AiPalette p = aiPalette();
+            auto *jsonBlock = new QLabel(cardLay->parentWidget());
+            jsonBlock->setTextFormat(Qt::PlainText);
+            jsonBlock->setTextInteractionFlags(Qt::TextSelectableByMouse);
+            jsonBlock->setText(json);
+            jsonBlock->setWordWrap(false);
+            jsonBlock->setStyleSheet(QString(
+                "background: %1; color: %2; border: 1px solid %3; "
+                "border-radius: 4px; padding: 6px 8px; "
+                "font-family: 'JetBrains Mono', 'Cascadia Code', "
+                "'Consolas', monospace; font-size: 11px;")
+                .arg(p.codeBg, p.codeFg, p.assistBorder));
+            cardLay->addWidget(jsonBlock);
+        });
+
         // Wrap in a margin row, matching the bubble cadence.
         auto *row = new QWidget(m_chatContent);
         row->setStyleSheet(QStringLiteral("background: transparent;"));
@@ -5306,10 +5334,13 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
         m_chatLayout->insertWidget(m_chatLayout->count() - 1, row);
 
         // Feed the spec in. setSpec stashes it if the WebEngine page
-        // isn't ready yet and replays on loadFinished.
+        // isn't ready yet and replays on loadFinished. In lite-mode the
+        // stub renderer simply stashes the spec for [View JSON instead].
         renderer->setSpec(spec);
 
-        resultSummary = QStringLiteral("rendered (id=") + chartId + QStringLiteral(")");
+        resultSummary = renderer->isLiteStub()
+                            ? QStringLiteral("charts pack required (id=") + chartId + ")"
+                            : QStringLiteral("rendered (id=") + chartId + ")";
     }
 
     const AiPalette pal = aiPalette();
@@ -6204,5 +6235,83 @@ void AIPanel::updateInputAvailability() {
         m_sendBtn->setToolTip(ready
             ? QString()
             : QStringLiteral("Pick a model first — see the dropdown above"));
+    }
+}
+
+// v0.1.64 — Charts Pack install hand-off.
+//
+// The lite-mode VegaChartRenderer emits installRequested() when the user
+// clicks [Install charts pack]. We route them to the GitHub Releases page
+// for the current Notepatra version with a one-shot QMessageBox explaining
+// which asset to grab. Two flavors ship per platform:
+//
+//   notepatra-X.Y.Z-{linux-x64|linux-arm64|macos|windows-x64}-lite.{tar.gz|dmg|zip}
+//     → bare binary, no charts (default)
+//   notepatra-X.Y.Z-{...}-full.{...}
+//     → bundles QtWebEngine, charts render inline
+//
+// In-app HTTP download + dynamic-load ships in v0.1.65 once we have the
+// Qt plugin shim + macOS/Windows CI runner test coverage that's the only
+// reliable way to verify the install actually works across platforms.
+void AIPanel::openChartsPackInstall() {
+    // Compose the canonical Releases-tag URL. The user lands on a page
+    // that lists both flavors side by side; they pick the "full" one.
+    // We prefer the tag-specific URL over /releases/latest so users on
+    // older Notepatra installs don't get sent to an even-newer pack
+    // they're not ready for.
+    const QString version = QStringLiteral(NOTEPATRA_VERSION);
+    const QString releasesUrl =
+        QStringLiteral("https://github.com/singhpratech/notepatra/releases/tag/v") + version;
+
+    // Platform-specific instruction line. Detected via Qt's compile-time
+    // OS macros — matches what the CI release artifacts are named after.
+    // v0.1.64 ships Linux full flavors; macOS/Windows full flavors land in
+    // v0.1.65 — see CHANGELOG. For those platforms we currently route
+    // users to the source-build instructions.
+    QString platformInstruction;
+#if defined(Q_OS_WIN)
+    platformInstruction = QStringLiteral(
+        "<b>Windows full-flavor ships in v0.1.65.</b> For v0.1.64 you can either "
+        "(a) wait for the next release, or (b) build from source with "
+        "<code>-DNOTEPATRA_WITH_WEBENGINE=ON</code> — see the docs page below.");
+#elif defined(Q_OS_MACOS)
+    platformInstruction = QStringLiteral(
+        "<b>macOS full-flavor ships in v0.1.65.</b> For v0.1.64 you can either "
+        "(a) wait for the next release, or (b) build from source with "
+        "<code>-DNOTEPATRA_WITH_WEBENGINE=ON</code> — see the docs page below.");
+#else
+    platformInstruction = QStringLiteral(
+        "On Linux: download the file named "
+        "<code>notepatra-linux-x64-full</code> "
+        "(or <code>-linux-arm64-full</code> for ARM), make it executable, "
+        "and replace your existing <code>notepatra</code> binary "
+        "(typically <code>~/.local/bin/notepatra</code> or "
+        "<code>/usr/local/bin/notepatra</code>).");
+#endif
+
+    QMessageBox box(this);
+    box.setWindowTitle(QStringLiteral("Install Charts Pack"));
+    box.setTextFormat(Qt::RichText);
+    box.setIcon(QMessageBox::Information);
+    box.setText(QStringLiteral(
+        "<p><b>The Charts Pack is bundled with the \"full\" build flavor.</b></p>"
+        "<p>Notepatra ships two binaries per release:</p>"
+        "<ul>"
+        "<li><b>Lite</b> (≈ 9 MB) — what you're running now. No charts.</li>"
+        "<li><b>Full</b> (≈ 95 MB) — bundles QtWebEngine. Renders Vega-Lite "
+        "charts inline.</li>"
+        "</ul>"
+        "<p>%1</p>"
+        "<p>Your settings, chat history, and connections are preserved when "
+        "you swap binaries — they live in your config folder, not the binary "
+        "itself.</p>")
+        .arg(platformInstruction));
+    auto *openBtn = box.addButton(QStringLiteral("Open Releases Page"),
+                                  QMessageBox::AcceptRole);
+    box.addButton(QStringLiteral("Cancel"), QMessageBox::RejectRole);
+    box.setDefaultButton(openBtn);
+    box.exec();
+    if (box.clickedButton() == openBtn) {
+        QDesktopServices::openUrl(QUrl(releasesUrl));
     }
 }
