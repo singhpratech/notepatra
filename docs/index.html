@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~9 MB stripped across platforms; full downloads are 3.2 MB (Linux x64 tar.gz), 26.6 MB (macOS DMG with bundled Qt), 39.9 MB (Windows MSI with bundled Qt DLLs). 226 file types. 92 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.63",
+      "softwareVersion": "0.1.64",
       "fileSize": "9 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -153,7 +153,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.63 download sizes: 3.2 MB Linux x64 tar.gz, 3.0 MB Linux ARM64 tar.gz, 26.6 MB macOS DMG (with bundled Qt), 39.9 MB Windows MSI / 32.0 MB NSIS / 36.5 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.64 download sizes: 3.2 MB Linux x64 tar.gz, 3.0 MB Linux ARM64 tar.gz, 26.6 MB macOS DMG (with bundled Qt), 39.9 MB Windows MSI / 32.0 MB NSIS / 36.5 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
           }
         },
         {
@@ -169,7 +169,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.63: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.64: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1236,7 +1236,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.63 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.64 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.63">
-        Download v0.1.63 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.64">
+        Download v0.1.64 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.63 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.64 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~9 MB bare, ~2 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. No cloud unless you opt in.</p>
 
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.63</div>
+        <div class="section-label">Download v0.1.64</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1850,7 +1850,63 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.63 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.64 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-05-10</span>
+                        <span>· Lite mode by default — bare binary 9.2 MB, charts on-demand.</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>📦 Lite-mode default — <code>NOTEPATRA_WITH_WEBENGINE</code> flipped OFF</h5>
+                        <ul>
+                            <li>The default Notepatra binary is now lite: <strong>9.2 MB on Linux x64</strong> with zero WebEngine deps (verified via <code>ldd</code>). Down from ~95 MB with WebEngine bundled in v0.1.63.</li>
+                            <li>Same speed, same features, minus the inline Vega-Lite chart renderer. Power users who want charts grab the new <code>-full</code> flavor or rebuild from source with <code>-DNOTEPATRA_WITH_WEBENGINE=ON</code>.</li>
+                            <li>DuckDB-extension philosophy: tiny core, heavy features install on demand. Keeps download / launch / disk footprint small for the 80% of users who'll never trigger a chart.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🪧 "Charts Pack required" card replaces the rebuild-hint stub</h5>
+                        <ul>
+                            <li>When <code>generate_chart</code> fires on a lite binary, instead of the old red italic "rebuild with <code>-DNOTEPATRA_WITH_WEBENGINE=ON</code>" label, users now see a proper theme-aware card with title "📊 Chart rendering requires the Charts Pack", description, size + download metadata, and two buttons: <strong>[Install charts pack]</strong> + <strong>[View JSON instead]</strong>.</li>
+                            <li><strong>[Install charts pack]</strong> shows a <code>QMessageBox</code> explaining the lite / full flavor split, then routes the user's default browser to the GitHub Releases page for the current tag with platform-specific download instructions.</li>
+                            <li><strong>[View JSON instead]</strong> appends the Vega-Lite spec as a fenced code block under the card — users can copy it into a standalone Vega-Lite editor without installing anything.</li>
+                            <li>New signals on <code>VegaChartRenderer</code>: <code>installRequested()</code>, <code>viewJsonRequested(QJsonObject)</code>. New accessor: <code>isLiteStub()</code>.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧱 <code>src/plugin_loader.{h,cpp}</code> scaffolding</h5>
+                        <ul>
+                            <li><code>NotepatraPlugins::isInstalled(name)</code>, <code>installPath(name)</code>, <code>pluginDir()</code>, <code>packDescription(name)</code>, <code>approximateDownloadSize(name)</code>, <code>manualInstallDocUrl(name)</code>.</li>
+                            <li>Uses <code>QStandardPaths::AppDataLocation</code>: Linux → <code>~/.local/share/notepatra/plugins/</code>; macOS → <code>~/Library/Application Support/notepatra/plugins/</code>; Windows → <code>%APPDATA%/notepatra/plugins/</code>.</li>
+                            <li>Registered packs: <code>charts</code> (95 MB, ships in v0.1.64 <code>-full</code> Linux flavors), <code>pdf</code> (12 MB, v0.1.66 candidate).</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🛠 Linux full-flavor CI artifacts</h5>
+                        <ul>
+                            <li>Linux x64 and ARM jobs each run a second build pass with <code>-DNOTEPATRA_WITH_WEBENGINE=ON</code>, producing <code>notepatra-linux-x64-full.tar.gz</code> + <code>notepatra-linux-arm64-full.tar.gz</code> alongside the lite defaults. SHA-256, cosign signing (keyless OIDC), and SLSA build provenance all extended.</li>
+                            <li><strong>macOS + Windows full-flavor artifacts ship in v0.1.65</strong> — the existing <code>macdeployqt</code> / <code>windeployqt</code> pipeline needs a second pass with WebEngine frameworks plus testing across the OpenSSL / QScintilla / signing flow.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧪 Test coverage</h5>
+                        <ul>
+                            <li><code>test_vega_chart.cpp</code> extended with two new subcases: lite-mode button → signal wiring (find both <code>QPushButton</code>s, click each, assert signals fire exactly once with the round-tripped spec) and <code>plugin_loader</code> sanity (<code>isInstalled(charts)</code> matches build-time flag, unknown pack names return false, <code>approximateDownloadSize &gt; 0</code>, doc URL non-empty).</li>
+                            <li>All <strong>25 / 25</strong> tests pass on the lite build.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.64">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.64">Commits</a>
+                </div>
+            </div>
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.63</div>
                     <div class="version-meta">
                         <span>2026-05-10</span>
                         <span>· Data Analyst charts — Vega-Lite renderer scaffold.</span>
@@ -1861,35 +1917,20 @@
                     <div class="version-section">
                         <h5>📊 <code>generate_chart</code> AI tool + inline Vega-Lite rendering</h5>
                         <ul>
-                            <li>New tool: <code>generate_chart(spec, title?, id?)</code>. <code>spec</code> is a Vega-Lite JSON object — short, flat, schema-validatable. Mark + encoding required (relaxed for composite specs using <code>layer</code> / <code>hconcat</code> / <code>vconcat</code> / <code>repeat</code> / <code>facet</code>). 100 KB cap.</li>
-                            <li>Inline rendering — tool result triggers a styled <code>QFrame#chartCard</code> hosting the new <code>VegaChartRenderer</code> + optional title + hidden error label. Card inserts into the chat content layout in the message timeline at the moment the call fired.</li>
-                            <li>Coverage: bar (V/H/stacked), line, area, pie / donut, scatter, histogram (via <code>bin</code>), heatmap (via <code>mark: "rect"</code>), box-plot.</li>
+                            <li>New tool: <code>generate_chart(spec, title?, id?)</code>. <code>spec</code> is a Vega-Lite JSON object. Mark + encoding required (relaxed for composite specs). 100 KB cap.</li>
+                            <li>Inline rendering — tool result triggers a styled <code>QFrame#chartCard</code> hosting the new <code>VegaChartRenderer</code> + optional title + hidden error label.</li>
+                            <li>Coverage: bar (V/H/stacked), line, area, pie / donut, scatter, histogram, heatmap, box-plot.</li>
                         </ul>
                     </div>
                     <div class="version-section">
                         <h5>🧱 <code>VegaChartRenderer</code> widget</h5>
                         <ul>
-                            <li>Dual-path. With <code>NOTEPATRA_WITH_WEBENGINE=ON</code> (default when <code>Qt5::WebEngineWidgets</code> is found at configure time): embeds <code>QWebEngineView</code>, loads inline HTML shell importing vega / vega-lite / vega-embed from JSDelivr (all BSD-3, GPLv3-compatible).</li>
-                            <li>With WebEngine OFF: stub <code>QLabel</code> showing the rebuild hint. Slim ~9 MB build keeps compiling + running. CMake auto-downgrades the flag with a warning if WebEngine isn't found.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>🛠 CI now installs Qt5 WebEngine on every runner</h5>
-                        <ul>
-                            <li>Linux x64 + ARM jobs add <code>qtwebengine5-dev</code> + <code>libqt5webenginewidgets5</code> to apt; Windows <code>install-qt-action</code> modules <code>'qtcharts'</code> → <code>'qtcharts qtwebengine'</code>; macOS brew <code>qt@5</code> already includes WebEngine.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>📊 Build / test</h5>
-                        <ul>
-                            <li>New <code>test_vega_chart</code> — 5 subcases. <code>test_ai_tools</code> hardcoded <code>tools.size() == 12</code> relaxed to <code>&gt;= 12</code> (now 13). Stale-text audit: 21/21 surfaces match canonicals.</li>
+                            <li>Dual-path: <code>NOTEPATRA_WITH_WEBENGINE=ON</code> embeds <code>QWebEngineView</code> + vega-embed shell from JSDelivr; OFF compiles a stub QLabel rebuild-hint (revamped in v0.1.64 as the proper Charts Pack card).</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
                     <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.63">Release page</a>
-                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.63">Commits</a>
                 </div>
             </div>
             <div class="version-card">
@@ -2009,7 +2050,7 @@
                         <ul>
                             <li>23/23 deterministic regression tests pass.</li>
                             <li>Stale-text audit returns 21/21 surfaces matching canonicals (92 lexers / 226 file extensions / 6 AI backends).</li>
-                            <li>Coordinated by five parallel agents (four research, two implementation in isolated worktrees) plus a test-scenarios author. Item 9 (Data Analyst charts) deferred to v0.1.63 with a complete Vega-Lite + on-demand QtWebEngine plugin-architecture roadmap.</li>
+                            <li>Coordinated by five parallel agents (four research, two implementation in isolated worktrees) plus a test-scenarios author. Item 9 (Data Analyst charts) deferred to v0.1.64 with a complete Vega-Lite + on-demand QtWebEngine plugin-architecture roadmap.</li>
                         </ul>
                     </div>
                 </div>
@@ -4449,7 +4490,7 @@ Write-Host "Restarted Explorer — right-click any file now to verify" -Foregrou
             </div>
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.63: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
+                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.64: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -4457,7 +4498,7 @@ Write-Host "Restarted Explorer — right-click any file now to verify" -Foregrou
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.63 download sizes: <strong>3.2 MB</strong> Linux x64 tar.gz · <strong>3.0 MB</strong> Linux ARM64 tar.gz · <strong>26.6 MB</strong> macOS DMG · <strong>39.9 MB</strong> Windows MSI / <strong>32.0 MB</strong> NSIS / <strong>36.5 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.64 download sizes: <strong>3.2 MB</strong> Linux x64 tar.gz · <strong>3.0 MB</strong> Linux ARM64 tar.gz · <strong>26.6 MB</strong> macOS DMG · <strong>39.9 MB</strong> Windows MSI / <strong>32.0 MB</strong> NSIS / <strong>36.5 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -4465,7 +4506,7 @@ Write-Host "Restarted Explorer — right-click any file now to verify" -Foregrou
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.63 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.64 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>How do I verify a download is genuine?</h3>

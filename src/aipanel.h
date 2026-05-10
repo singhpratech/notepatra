@@ -435,6 +435,16 @@ private slots:
     // hint, and toggles the inline Edit Plan list's visibility. Purely
     // internal state — no signals are emitted to the host MainWindow.
     void chatModeSelectorChanged(int segment);
+
+    // v0.1.64 — Charts Pack install hand-off. Invoked when the user
+    // clicks [Install charts pack] on the lite-mode VegaChartRenderer
+    // stub. Opens the GitHub Releases page for the current Notepatra
+    // version in the user's default browser, and shows a one-shot
+    // QMessageBox with platform-specific install instructions so the
+    // user knows which of the two release flavors ("lite" / "full") to
+    // download. In-app download lands in v0.1.65 once the Qt plugin
+    // shim and cross-platform CI testing are in place.
+    void openChartsPackInstall();
 };
 
 #endif

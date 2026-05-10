@@ -69,6 +69,26 @@ jobs:
           name: notepatra-linux-x64
           path: build/notepatra
 
+      # v0.1.64 — "Full" flavor (bundles QtWebEngine). The lite binary
+      # above is the default download; users who want inline Vega-Lite
+      # chart rendering grab this -full artifact instead. CMake's
+      # NOTEPATRA_WITH_WEBENGINE=ON flips on the WebEngine linkage and
+      # the renderer's WebEngine code path. ~85 MB extra on disk; ships
+      # alongside the lite artifact in every Release.
+      - name: Build C++ (full flavor — WebEngine bundled)
+        run: |
+          rm -rf build-full && mkdir -p build-full && cd build-full
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DNOTEPATRA_WITH_WEBENGINE=ON
+          make -j$(nproc)
+          ls -lh notepatra
+          ldd notepatra | grep -i webengine | head -3 || echo "WARN: full build did not link WebEngine"
+
+      - name: Upload artifact (full flavor)
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepatra-linux-x64-full
+          path: build-full/notepatra
+
   build-linux-arm:
     runs-on: ubuntu-24.04-arm
     steps:
@@ -119,6 +139,21 @@ jobs:
         with:
           name: notepatra-linux-arm64
           path: build/notepatra
+
+      # v0.1.64 — Full flavor for ARM. Same dual-output pattern as x64.
+      - name: Build C++ (full flavor — WebEngine bundled)
+        run: |
+          rm -rf build-full && mkdir -p build-full && cd build-full
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DNOTEPATRA_WITH_WEBENGINE=ON
+          make -j$(nproc)
+          ls -lh notepatra
+          ldd notepatra | grep -i webengine | head -3 || echo "WARN: full ARM build did not link WebEngine"
+
+      - name: Upload artifact (full flavor)
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepatra-linux-arm64-full
+          path: build-full/notepatra
 
   # Note: Intel Mac (macos-13) build was removed — Apple stopped selling Intel Macs in 2023,
   # and the macos-13 free runner has been unreliable. Apple Silicon build covers all current
@@ -1267,6 +1302,17 @@ jobs:
           chmod +x notepatra-linux-arm64/notepatra || true
           tar czf notepatra-linux-x64.tar.gz -C notepatra-linux-x64 notepatra
           tar czf notepatra-linux-arm64.tar.gz -C notepatra-linux-arm64 notepatra
+          # v0.1.64 — Linux "full" flavor tarballs (bundles QtWebEngine for
+          # inline Vega-Lite chart rendering). macOS / Windows full-flavor
+          # artifacts ship in v0.1.65.
+          if [ -d notepatra-linux-x64-full ]; then
+            chmod +x notepatra-linux-x64-full/notepatra
+            tar czf notepatra-linux-x64-full.tar.gz -C notepatra-linux-x64-full notepatra
+          fi
+          if [ -d notepatra-linux-arm64-full ]; then
+            chmod +x notepatra-linux-arm64-full/notepatra
+            tar czf notepatra-linux-arm64-full.tar.gz -C notepatra-linux-arm64-full notepatra
+          fi
           cp notepatra-macos-arm64/Notepatra.dmg notepatra-macos-arm64.dmg
           if [ -d notepatra-windows-x64 ]; then
             cd notepatra-windows-x64 && zip -r ../notepatra-windows-x64.zip . && cd ..
@@ -1301,7 +1347,9 @@ jobs:
           # Generate a single SHA256SUMS file in the standard format that
           # `sha256sum -c` understands. Users can verify with:
           #   sha256sum -c SHA256SUMS
-          for f in notepatra-linux-x64.tar.gz notepatra-linux-arm64.tar.gz notepatra-macos-arm64.dmg \
+          for f in notepatra-linux-x64.tar.gz notepatra-linux-arm64.tar.gz \
+                   notepatra-linux-x64-full.tar.gz notepatra-linux-arm64-full.tar.gz \
+                   notepatra-macos-arm64.dmg \
                    notepatra-windows-x64.zip notepatra-setup-*.exe notepatra-*.msi; do
             [ -f "$f" ] && sha256sum "$f" >> SHA256SUMS
           done
@@ -1351,7 +1399,9 @@ jobs:
           # Actions OIDC token, no long-lived secrets. Each .sig is the
           # detached signature, each .pem is the short-lived cert that
           # ties the signature to this repo + workflow + commit SHA.
-          for f in notepatra-linux-x64.tar.gz notepatra-linux-arm64.tar.gz notepatra-macos-arm64.dmg \
+          for f in notepatra-linux-x64.tar.gz notepatra-linux-arm64.tar.gz \
+                   notepatra-linux-x64-full.tar.gz notepatra-linux-arm64-full.tar.gz \
+                   notepatra-macos-arm64.dmg \
                    notepatra-windows-x64.zip notepatra-setup-*.exe notepatra-*.msi SHA256SUMS; do
             [ -f "$f" ] || continue
             cosign sign-blob --yes \
@@ -1367,6 +1417,8 @@ jobs:
           subject-path: |
             notepatra-linux-x64.tar.gz
             notepatra-linux-arm64.tar.gz
+            notepatra-linux-x64-full.tar.gz
+            notepatra-linux-arm64-full.tar.gz
             notepatra-macos-arm64.dmg
             notepatra-windows-x64.zip
             notepatra-setup-*.exe
@@ -1378,6 +1430,8 @@ jobs:
           files: |
             notepatra-linux-x64.tar.gz
             notepatra-linux-arm64.tar.gz
+            notepatra-linux-x64-full.tar.gz
+            notepatra-linux-arm64-full.tar.gz
             notepatra-macos-arm64.dmg
             notepatra-windows-x64.zip
             notepatra-setup-*.exe
@@ -1387,6 +1441,10 @@ jobs:
             notepatra-linux-x64.tar.gz.pem
             notepatra-linux-arm64.tar.gz.sig
             notepatra-linux-arm64.tar.gz.pem
+            notepatra-linux-x64-full.tar.gz.sig
+            notepatra-linux-x64-full.tar.gz.pem
+            notepatra-linux-arm64-full.tar.gz.sig
+            notepatra-linux-arm64-full.tar.gz.pem
             notepatra-macos-arm64.dmg.sig
             notepatra-macos-arm64.dmg.pem
             notepatra-windows-x64.zip.sig

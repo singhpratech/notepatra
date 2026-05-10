@@ -7,6 +7,49 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.64] — 2026-05-10
+
+**Lite mode by default — bare binary stays small, charts move to an on-demand pack.**
+
+### Changed — `NOTEPATRA_WITH_WEBENGINE` default flipped OFF
+
+* `CMakeLists.txt` — option default `ON` → `OFF`. The default binary no longer links `Qt5::WebEngineWidgets` and drops from ~95 MB (with WebEngine bundled) to **9.2 MB on Linux x64**. Same speed, same features, minus the inline Vega-Lite renderer.
+
+### Added — proper "Charts Pack required" card
+
+* `src/charts/vega_chart_renderer.cpp` lite-mode path rewritten. Old behavior: `setSpec()` emitted `renderError("WebEngine support disabled at build time")` → small italic red label. New behavior: theme-aware card with title "📊 Chart rendering requires the Charts Pack", description from `plugin_loader::packDescription()`, size + download metadata, and two buttons: **[Install charts pack]** + **[View JSON instead]**.
+* New signals on `VegaChartRenderer`: `installRequested()`, `viewJsonRequested(QJsonObject)`. New accessor `isLiteStub()`.
+
+### Added — `src/plugin_loader.{h,cpp}` scaffolding
+
+* `NotepatraPlugins::isInstalled(name)`, `installPath(name)`, `pluginDir()`, `packDescription(name)`, `approximateDownloadSize(name)`, `manualInstallDocUrl(name)`. Registered packs: `charts` (95 MB, ships in v0.1.64 `-full` Linux flavors), `pdf` (12 MB, v0.1.66 candidate).
+* Uses `QStandardPaths::AppDataLocation` so the plugin root lands at `~/.local/share/notepatra/plugins/` on Linux, `~/Library/Application Support/notepatra/plugins/` on macOS, `%APPDATA%/notepatra/plugins/` on Windows.
+
+### Added — `AIPanel::openChartsPackInstall()`
+
+* Slot wired to `VegaChartRenderer::installRequested`. Shows a `QMessageBox` explaining the lite/full flavor split with platform-specific download instructions, then opens the GitHub Releases page for the current tag in the user's default browser. macOS / Windows users see honest messaging: "Full build for {platform} ships in v0.1.65."
+
+### Added — Linux full-flavor CI artifacts
+
+* `.github/workflows/build.yml` — Linux x64 and ARM jobs each run a second build pass with `-DNOTEPATRA_WITH_WEBENGINE=ON`. New artifacts:
+  * `notepatra-linux-x64-full.tar.gz` — bundles QtWebEngine
+  * `notepatra-linux-arm64-full.tar.gz` — bundles QtWebEngine
+* SHA-256, cosign signing (keyless OIDC), and SLSA build provenance all extended to cover the new artifacts.
+
+### Added — `test_vega_chart` lite-mode coverage
+
+* `test_vega_chart.cpp` — two new subcases: lite-mode button → signal wiring (find both `QPushButton`s, click each, assert signals fire exactly once with the round-tripped spec) and `plugin_loader` sanity (`isInstalled(charts)` matches build-time flag, unknown pack names return false, `approximateDownloadSize > 0`, doc URL non-empty).
+* Updated existing subcase: lite-mode `setSpec()` must NOT emit `renderError` anymore (missing pack is a feature-gap, not an error).
+* All 25 tests pass on the lite build.
+
+### Deferred to v0.1.65
+
+* macOS + Windows full-flavor CI artifacts (need careful `macdeployqt` / `windeployqt` second-pass work plus testing across the OpenSSL / QScintilla / signing pipeline).
+* In-app HTTP-download install (stream the pack into `pluginDir()`, verify SHA-256, load via Qt plugin shim so the main binary can dlopen WebEngine at runtime without re-linking).
+* "Explain this chart" modal + export PNG/SVG/Excel buttons.
+
+---
+
 ## [0.1.63] — 2026-05-10
 
 **Data Analyst charts — Vega-Lite renderer scaffold.**

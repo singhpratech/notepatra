@@ -7,22 +7,20 @@
 // The AI emits a Vega-Lite JSON spec via the `generate_chart` tool. This
 // widget embeds a QWebEngineView, loads a tiny HTML+JS shell that imports
 // vega + vega-lite + vega-embed from the public CDN, and renders the spec
-// inline in the AI chat transcript. v0.1.64 polish: bundle the JS as a
-// Qt resource so charts render offline; this scaffold accepts the CDN
-// dependency to ship the foundation cheaply.
+// inline in the AI chat transcript.
+//
+// v0.1.64 — Lite mode by default. The bare-binary build flips
+// NOTEPATRA_WITH_WEBENGINE OFF, in which case setSpec() does NOT render
+// a chart; instead the widget paints a "Charts Pack required" card with
+// two actions: [Install charts pack] (currently links to manual-install
+// docs, auto-installer ships v0.1.65) and [View JSON instead] (emits
+// viewJsonRequested(spec) so the host can swap in a code block). This
+// keeps the bare binary ~9 MB while giving users a clean upgrade path.
 //
 // Library choice — Vega-Lite via QtWebEngine. Reason: AI emission
 // ergonomics. Vega-Lite specs are short, flat, schema-validatable;
 // LLMs emit them cleanly compared to QtCharts' imperative axis/series
-// API. The runtime cost (≈70 MB QtWebEngine link surface) is one-time
-// per binary and we revisit the on-demand plugin architecture in
-// v0.1.64 if install-size complaints surface.
-//
-// Build gating — `NOTEPATRA_WITH_WEBENGINE` (default ON). When OFF the
-// .cpp compiles a stub implementation that renders a single QLabel
-// pointing the user at the rebuild flag. Lets distros without
-// Qt5WebEngineWidgets installed still produce a working notepatra
-// binary minus the chart surface.
+// API.
 // ═══════════════════════════════════════════════════════════════════════
 
 #include <QJsonObject>
@@ -33,6 +31,7 @@ QT_BEGIN_NAMESPACE
 class QVBoxLayout;
 class QWebEngineView;
 class QLabel;
+class QPushButton;
 QT_END_NAMESPACE
 
 class VegaChartRenderer : public QWidget {
@@ -41,10 +40,10 @@ public:
     explicit VegaChartRenderer(QWidget *parent = nullptr);
     ~VegaChartRenderer() override;
 
-    // Feed a Vega-Lite spec object. The widget will (re)load the JS shell
-    // and call vegaEmbed('#chart', spec). Emits renderReady() on success,
-    // renderError(message) on failure. Safe to call repeatedly — each call
-    // replaces the previous chart.
+    // Feed a Vega-Lite spec object. With WebEngine ON, the widget (re)loads
+    // the JS shell and calls vegaEmbed('#chart', spec). With WebEngine OFF
+    // (lite-mode build) the spec is stashed for [View JSON instead] but
+    // not rendered.
     void setSpec(const QJsonObject &vegaLiteSpec);
 
     // Stable identifier — synthesized at construction time. Round-trips
@@ -56,6 +55,11 @@ public:
     // scaffold returns "" (export wiring lands with the pptx writer).
     QString exportPng(int scaleFactor = 2);
 
+    // True iff this is the lite-mode stub variant (no WebEngine).
+    // The host (AIPanel) uses this to decide whether to forgo the
+    // surrounding chartCard title row.
+    bool isLiteStub() const;
+
 signals:
     // Fires once the chart has painted. UI layers use this to size the
     // surrounding card or fade out a loading shimmer.
@@ -66,6 +70,17 @@ signals:
     // under the chart card.
     void renderError(const QString &message);
 
+    // v0.1.64 — emitted when the user clicks [Install charts pack] on the
+    // lite-mode "Charts Pack required" card. AIPanel listens and opens
+    // the install instructions dialog. Never emitted in the WebEngine
+    // build path.
+    void installRequested();
+
+    // v0.1.64 — emitted when the user clicks [View JSON instead] on the
+    // lite-mode card. The argument is the stashed spec. AIPanel listens
+    // and appends a fenced-JSON code block under the card.
+    void viewJsonRequested(const QJsonObject &spec);
+
 private:
     QString m_chartId;
 #ifdef NOTEPATRA_WITH_WEBENGINE
@@ -74,7 +89,11 @@ private:
     bool m_pageReady = false;
     void emitWhenReady();
 #else
-    QLabel *m_stubLabel = nullptr;
+    // Lite-mode stub state. The card is built once; setSpec() just
+    // stashes the spec for [View JSON instead].
+    QJsonObject m_stashedSpec;
+    QPushButton *m_viewJsonBtn = nullptr;
+    void buildLiteStubCard();
 #endif
 };
 
