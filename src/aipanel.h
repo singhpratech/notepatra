@@ -246,21 +246,32 @@ private:
     class QFrame      *m_streamingCard  = nullptr;   // active during a stream
     QTextBrowser      *m_streamingBody  = nullptr;   // inner body of ^
 
-    // Slice A — Coding-mode revamp. The chat scroll lives inside a
-    // two-tab widget (Chat | Composer). In Chat / Data modes the tab
-    // bar is hidden so the dock looks identical to today's UX. In
-    // Coding mode the tab bar is shown so the user can flip between
-    // the live chat transcript and the agent's Edit Plan / diff
-    // viewer (filled in by Slices B/C/D).
-    QTabWidget        *m_chatTabs       = nullptr;
-    QScrollArea       *m_composerArea   = nullptr;
-    QWidget           *m_composerInner  = nullptr;
-    // Slice B/C/D — the Edit Plan list that lives inside the Composer tab.
-    // Populated when the model returns a dry_run write_file / apply_diff
-    // result. Apply All / Apply Selected fires AIPanel::applyComposerEdits
-    // which writes the chosen files atomically and then opens / reloads
-    // them via the existing fileWrittenByAgent signal.
+    // v0.1.61 (Item 8) — chat surface is now ONE conversation with a
+    // 3-segment bottom toggle (Chat / Compose / Agent). The previous
+    // QTabWidget(Chat | Composer) split is gone — the Edit Plan list
+    // now renders inline at the bottom of the chat scroll content,
+    // visible whenever it has at least one pending hunk.
+    // Edit Plan list — populated when the model returns a dry_run
+    // write_file / apply_diff result. Apply All / Apply Selected fires
+    // AIPanel::applyComposerEdits which writes the chosen files
+    // atomically and emits fileWrittenByAgent. Parented into
+    // m_chatContent so it renders inline below the bubbles.
     EditPlanList      *m_editPlan       = nullptr;
+
+    // v0.1.61 (Item 8) — bottom-of-panel 3-segment toggle.
+    //   Chat    = plain conversation, no tools
+    //   Compose = tools enabled but write_file/apply_diff are forced
+    //             to dry_run → routed to the Edit Plan list inline
+    //   Agent   = full autonomous loop (tools fire, edits hit disk)
+    // This is INDEPENDENT of the existing Chat/Coding/Data intent
+    // selector — that one picks WHICH model gating + system-prompt
+    // layer applies; this one picks how the CURRENT conversation
+    // should be presented and which tool surface is active.
+    enum class ChatModeSegment { Chat = 0, Compose = 1, Agent = 2 };
+    ChatModeSegment m_chatModeSegment = ChatModeSegment::Chat;
+    QAbstractButton *m_chatSegBtn    = nullptr;
+    QAbstractButton *m_composeSegBtn = nullptr;
+    QAbstractButton *m_agentSegBtn   = nullptr;
 
     // Live streaming-stats display — shows "GENERATING: 145 tok · 23
     // tok/s · 6.3 s" updating every 250 ms while the model is producing
@@ -418,6 +429,12 @@ private slots:
     // placeholder so the user doesn't type into a dead field. Called from
     // dropdown change handlers, backend switches, and ollama/openai probes.
     void updateInputAvailability();
+
+    // v0.1.61 (Item 8) — handler for the bottom 3-segment toggle.
+    // Stores the new value in m_chatModeSegment, refreshes the placeholder
+    // hint, and toggles the inline Edit Plan list's visibility. Purely
+    // internal state — no signals are emitted to the host MainWindow.
+    void chatModeSelectorChanged(int segment);
 };
 
 #endif
