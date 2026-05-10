@@ -1,5 +1,4 @@
 #include "git_hunk_apply.h"
-#include "ai_tools.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -15,6 +14,61 @@ namespace {
 // should refuse and tell the user to use the GitPanel's "stage whole
 // file" path.
 constexpr int kMaxPatchBodyLines = 5000;
+
+// v0.1.62 — inline path-safety check rather than depending on
+// AiTools::resolveSafePath (which pulls QSql / dbconnections via ai_tools.cpp).
+// Mirrors the read-shape contract: file must exist AND be inside repoRoot
+// (after canonicalising both sides to defeat ../ traversal + symlinks).
+// Returns true and writes canonical absolute path on success; false on
+// any anchor / existence / symlink-escape failure with errKind set.
+bool inlineResolveReadPath(const QString &absFilePath,
+                           const QString &repoRoot,
+                           QString *outCanonical,
+                           QString *outErrorKind) {
+    if (absFilePath.isEmpty() || repoRoot.isEmpty()) {
+        if (outErrorKind) *outErrorKind = "io_error";
+        return false;
+    }
+    QFileInfo fi(absFilePath);
+    if (!fi.exists()) {
+        if (outErrorKind) *outErrorKind = "io_error";
+        return false;
+    }
+    QString fileCanonical = fi.canonicalFilePath();
+    QString rootCanonical = QFileInfo(repoRoot).canonicalFilePath();
+    if (fileCanonical.isEmpty() || rootCanonical.isEmpty()) {
+        if (outErrorKind) *outErrorKind = "io_error";
+        return false;
+    }
+    QString rootPrefix = rootCanonical;
+    if (!rootPrefix.endsWith('/')) rootPrefix += '/';
+    if (fileCanonical != rootCanonical && !fileCanonical.startsWith(rootPrefix)) {
+        if (outErrorKind) *outErrorKind = "outside_workspace";
+        return false;
+    }
+    // Hardcoded deny-list — never stage hunks against credentials / keys.
+    // Mirrors ai_tools.cpp::isHardDenied.
+    const QString lower = fileCanonical.toLower();
+    static const QStringList denyExt = {".pem", ".key", ".p12", ".pfx", ".jks"};
+    for (const QString &e : denyExt) {
+        if (lower.endsWith(e)) {
+            if (outErrorKind) *outErrorKind = "denied";
+            return false;
+        }
+    }
+    static const QStringList denySubstr = {
+        "/.ssh/", "/.gnupg/", "/.aws/", "/.netrc", "/.npmrc",
+        "/.docker/config.json", "id_rsa", "/etc/passwd", "/etc/shadow"
+    };
+    for (const QString &s : denySubstr) {
+        if (lower.contains(s)) {
+            if (outErrorKind) *outErrorKind = "denied";
+            return false;
+        }
+    }
+    if (outCanonical) *outCanonical = fileCanonical;
+    return true;
+}
 
 // Normalise a single line to LF — strip any trailing \r before we splice
 // it into the patch. We do NOT touch internal carriage returns because
@@ -57,12 +111,12 @@ QString synthesizePatch(const QString &absFilePath,
 
     if (hunks.isEmpty()) { setErr("io_error"); return QString(); }
 
-    // Workspace-anchor + deny-list check. We use resolveSafePath in its
-    // read-shape (file must exist) because we're staging hunks against a
-    // file we just diffed against HEAD — by definition it's on disk.
+    // Workspace-anchor + deny-list check (inline above) — see comment on
+    // inlineResolveReadPath for why we don't lean on AiTools::resolveSafePath
+    // here (it would pull in ai_tools.cpp, which drags QSql / dbconnections).
     QString canonical;
     QString errKind;
-    if (!AiTools::resolveSafePath(absFilePath, repoRoot, &canonical, &errKind)) {
+    if (!inlineResolveReadPath(absFilePath, repoRoot, &canonical, &errKind)) {
         setErr(errKind.isEmpty() ? "outside_workspace" : errKind.toUtf8().constData());
         return QString();
     }

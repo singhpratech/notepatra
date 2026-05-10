@@ -7,6 +7,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.62] — 2026-05-10
+
+**VS Code-parity Git in Coding mode.**
+
+The "real" Source Control work the v0.1.61 release notes promised, coordinated by two parallel implementation agents in isolated worktrees.
+
+### Added — per-hunk stage / revert from the editor gutter
+
+* New `GutterHunkPopup` — click any green / red / blue line marker to anchor a popup showing the hunk's before-vs-after content (embedded `DiffView`) plus **Stage hunk** / **Revert hunk** / **Copy diff** buttons.
+* New `src/git_hunk_apply.{h,cpp}` with patch synthesizer + `git apply --cached --whitespace=nowarn` wrapper. Inline safety rails (workspace-anchor + canonical-path + credentials deny-list + 5000-line hunk cap).
+* `src/editor.{h,cpp}` enables margin-3 sensitivity and routes `marginClicked` → hunk lookup → popup at clicked line's screen position.
+* `src/gitgutter.{h,cpp}` exposes `DiffHunk` + `hunksForFile()` / `hunkIndexForLine()`.
+
+### Added — `CompareWidget` per-hunk Stage / Revert buttons
+
+* `CompareWidget::setGitContext(repoRoot, filePath)` enables a scrollable hunk strip — one row per contiguous diff-row run, with **Stage hunk** / **Revert hunk** / **Jump →** routing via new signals.
+
+### Added — marker-based merge resolution helper
+
+* New `src/merge_helper.{h,cpp}` — `scanConflicts(buffer)` returns regions of column-0 `<<<<<<<` / `=======` / `>>>>>>>` markers; `applyResolution()` rewrites the buffer for Ours / Theirs / Both.
+* New `src/merge_helper_widget.{h,cpp}` — renders Take buttons per region + QScintilla annotation labels.
+* `GitPanel` — `UU`-status files now show a **Resolve** button instead of +/-.
+
+### Build / test
+
+* 23/23 deterministic regression tests pass.
+* `git_hunk_apply.cpp` inlines its path-safety check so `test_options_actually_work` doesn't transitively pull QSql / dbconnections.
+* Stale-text audit: 21/21 surfaces match canonicals.
+
+---
+
 ## [0.1.61] — 2026-05-10
 
 **UX overhaul: smarter gating, vision drops, coding redesign.**
