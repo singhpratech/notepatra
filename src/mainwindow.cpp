@@ -745,7 +745,8 @@ MainWindow::MainWindow() {
         }
     });
 
-    // File explorer (hidden by default)
+    // File explorer (hidden by default — only shown when Coding Mode
+    // is active in the AI dock, see codingModeChanged wiring below).
     m_explorer = new FileExplorer;
     m_explorer->setMinimumWidth(180);
     m_explorer->setMaximumWidth(400);
@@ -753,6 +754,14 @@ MainWindow::MainWindow() {
     m_splitter->addWidget(m_explorer);
 
     connect(m_explorer, &FileExplorer::fileOpenRequested, this, &MainWindow::openFile);
+    // v0.1.61 — restore the user's hidden-paths set from Config, and
+    // persist any changes the user makes via the right-click menu.
+    m_explorer->setHiddenPaths(Config::instance().explorerHiddenPaths);
+    connect(m_explorer, &FileExplorer::hiddenPathsChanged, this,
+            [](const QStringList &paths) {
+        Config::instance().explorerHiddenPaths = paths;
+        Config::instance().save();
+    });
 
     // Center: tabs
     m_tabs = new TabManager;
@@ -1309,7 +1318,15 @@ void MainWindow::buildMenus() {
     }, QKeySequence("Ctrl+O"));
     file->addAction("Open Folder as Workspace...", this, [this]() {
         QString p = QFileDialog::getExistingDirectory(this, "Open Folder", QDir::homePath());
-        if (!p.isEmpty()) { m_explorer->setRoot(p); m_explorer->setVisible(true); }
+        if (p.isEmpty()) return;
+        m_explorer->setRoot(p);
+        // v0.1.61 — explorer visibility is owned by Coding mode. Setting
+        // the workspace folder here primes the root so the AI / search
+        // see the right tree, but the sidebar stays hidden until the
+        // user flips Coding mode in the AI dock.
+        const bool codingOn = m_aiDockPanel && m_aiDockPanel->isCodingMode()
+                              && m_aiDockHost && m_aiDockHost->isVisible();
+        m_explorer->setVisible(codingOn);
     });
     file->addAction("Reload from Disk", this, [E]() {
         if (auto *e = E(); e && !e->filePath().isEmpty()) e->loadFile(e->filePath());
@@ -1717,7 +1734,18 @@ void MainWindow::buildMenus() {
     auto *explorerAct = view->addAction("Folder as Workspace");
     explorerAct->setCheckable(true);
     explorerAct->setShortcut(QKeySequence("Ctrl+Shift+E"));
+    // v0.1.61 — explorer is gated to Coding mode. The View toggle only
+    // works while Coding mode is active in the AI dock; otherwise it's
+    // a no-op so we preserve the "explorer == coding workspace" invariant.
     connect(explorerAct, &QAction::triggered, this, [this, explorerAct]() {
+        const bool codingOn = m_aiDockPanel && m_aiDockPanel->isCodingMode()
+                              && m_aiDockHost && m_aiDockHost->isVisible();
+        if (!codingOn) {
+            explorerAct->setChecked(false);
+            statusBar()->showMessage(
+                tr("Folder as Workspace requires Coding mode in the AI dock."), 4000);
+            return;
+        }
         m_explorer->setVisible(!m_explorer->isVisible());
         explorerAct->setChecked(m_explorer->isVisible());
     });
@@ -2336,10 +2364,14 @@ void MainWindow::buildMenus() {
         connect(this, &MainWindow::themeChanged, panel, &GitPanel::onThemeChanged);
         connect(panel, &GitPanel::fileClicked, this, &MainWindow::openFile);
         connect(panel, &GitPanel::repositoryOpened, this, [this](const QString &repoRoot) {
-            if (!repoRoot.isEmpty()) {
-                m_explorer->setRoot(repoRoot);
-                m_explorer->setVisible(true);
-            }
+            if (repoRoot.isEmpty()) return;
+            m_explorer->setRoot(repoRoot);
+            // v0.1.61 — only surface the explorer if Coding mode is active.
+            // Otherwise just seed the workspace root; the user gets the tree
+            // the moment they flip Coding mode.
+            const bool codingOn = m_aiDockPanel && m_aiDockPanel->isCodingMode()
+                                  && m_aiDockHost && m_aiDockHost->isVisible();
+            m_explorer->setVisible(codingOn);
         });
         // New signals from the v2 GitPanel rewrite — `openFileInTab` opens a
         // plain-file tab, `openDiffInTab` opens a CompareWidget tab showing
@@ -3459,9 +3491,14 @@ void MainWindow::buildToolbar() {
     addFeatureShortcut(featureTb, findActionByPrefix(this, "REST Client"),
                        QColor("#00838F"), "rest", "REST",
                        "Open REST Client");
-    addFeatureShortcut(featureTb, findActionByPrefix(this, "Git Integration"),
-                       QColor("#B23A48"), "git", "Git",
-                       "Open Git Integration");
+    // v0.1.61 — dropped the standalone Git Integration toolbar shortcut.
+    // Full VS Code-parity Source Control integration inside Coding mode
+    // lands in v0.1.62 (agent-A roadmap: per-hunk gutter popup, stage/
+    // unstage, branch picker, sync). Until then, the Plugins menu entry
+    // (`Plugins → Git Integration (inbuilt)`) is still the way to open
+    // the existing tab-based Git panel. Removing the toolbar shortcut
+    // declutters the chrome and prevents the user from forming a habit
+    // around a button we're about to relocate.
 }
 
 void MainWindow::setupShortcuts() {
@@ -4150,6 +4187,13 @@ void MainWindow::toggleAiDock() {
     if (!m_aiDockHost) return;
     const bool show = !m_aiDockHost->isVisible();
     m_aiDockHost->setVisible(show);
+    // v0.1.61 — explorer is strictly subordinate to Coding mode AND the
+    // dock being open. Hiding the dock forces the explorer off; showing
+    // the dock only restores the explorer if Coding mode is on.
+    if (m_explorer) {
+        const bool codingOn = m_aiDockPanel && m_aiDockPanel->isCodingMode();
+        m_explorer->setVisible(show && codingOn);
+    }
     if (show) {
         // DON'T auto-open the file explorer here — opening the AI chat is
         // a lightweight "start a conversation" action. The explorer only

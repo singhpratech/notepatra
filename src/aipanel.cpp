@@ -34,6 +34,9 @@
 #include <QDesktopServices>
 #include <QMouseEvent>
 #include <QKeyEvent>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -403,15 +406,23 @@ QString messageTranscriptHtml(const QVector<AIPanel::ChatMessage> &messages,
             // applied on the <td> via bgcolor for Qt rich-text reliability
             // (same reason as the assistant card below — nested-div bg in
             // Qt's CSS subset can drop).
+            // v0.1.61 — copy anchor below the pill, matches the assistant
+            // card's per-message ⧉ copy link. Routes through the same
+            // copy://message/N handler in handleChatLink().
             html += QString(
                 "<table class='msg' cellpadding='0' cellspacing='0' style='margin-bottom:14px;'>"
                 "<tr><td align='right'>"
-                "<table cellpadding='0' cellspacing='0'><tr>"
-                "<td bgcolor='%2' style='padding:10px 16px; color:%3; font-size:13px; font-weight:500;'>"
+                "<table cellpadding='0' cellspacing='0'>"
+                "<tr><td bgcolor='%2' style='padding:10px 16px; color:%3; font-size:13px; font-weight:500;'>"
                 "<div class='message-plain'>%1</div>"
-                "</td></tr></table>"
+                "</td></tr>"
+                "<tr><td align='right' style='padding:3px 4px 0 0;'>"
+                "<a href='copy://message/%4' style='color:%5; font-size:10px; text-decoration:none; font-weight:600;'>⧉ copy</a>"
+                "</td></tr>"
+                "</table>"
                 "</td></tr></table>")
-                .arg(plainTextHtml(message.text), pal.userBg, pal.userFg);
+                .arg(plainTextHtml(message.text), pal.userBg, pal.userFg,
+                     QString::number(i), pal.linkFg);
             continue;
         }
 
@@ -500,6 +511,13 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // Like a real chat app — narrow chat looks cramped.
     setMinimumWidth(420);
 
+    // v0.1.61 — drag-and-drop support: users can drop images / PDFs / DOCX
+    // / PPTX directly onto the AI panel and they'll be attached as context.
+    // dragEnterEvent / dropEvent below handle the heavy lifting; vision-only
+    // kinds (images) are gated on modelSupportsVision() so we don't silently
+    // drop the image when the active model can't read it.
+    setAcceptDrops(true);
+
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(2);
@@ -549,28 +567,28 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // slot in MainWindow so this panel doesn't need to know about its
     // splitter parent. Keyboard shortcut F11 also works (registered in
     // MainWindow).
-    auto *expandBtn = new QPushButton(QString::fromUtf8("\xE2\x9B\xB6")); // U+26F6 SQUARE FOUR CORNERS
+    m_aiExpandBtn = new QPushButton(QString::fromUtf8("\xE2\x9B\xB6")); // U+26F6 SQUARE FOUR CORNERS
     {
-        QFont f = expandBtn->font();
+        QFont f = m_aiExpandBtn->font();
         f.setPointSize(f.pointSize() > 0 ? f.pointSize() + 4 : 14);
         f.setBold(true);
-        expandBtn->setFont(f);
+        m_aiExpandBtn->setFont(f);
     }
-    expandBtn->setFixedSize(36, 28);
-    expandBtn->setCursor(Qt::PointingHandCursor);
-    expandBtn->setFlat(true);
-    expandBtn->setCheckable(true);
-    expandBtn->setToolTip(tr("Expand the AI panel to take the full window. "
+    m_aiExpandBtn->setFixedSize(36, 28);
+    m_aiExpandBtn->setCursor(Qt::PointingHandCursor);
+    m_aiExpandBtn->setFlat(true);
+    m_aiExpandBtn->setCheckable(true);
+    m_aiExpandBtn->setToolTip(tr("Expand the AI panel to take the full window. "
                              "Click again to restore. (F11)"));
-    expandBtn->setStyleSheet(
+    m_aiExpandBtn->setStyleSheet(
         "QPushButton { background: transparent; border: none; "
         "color: #888; padding: 0 0 2px 0; } "
         "QPushButton:hover { background: rgba(120,120,120,0.18); color: #444; } "
         "QPushButton:checked { background: rgba(204,120,92,0.18); color: #CC785C; }");
-    connect(expandBtn, &QPushButton::toggled, this, [this](bool on) {
+    connect(m_aiExpandBtn, &QPushButton::toggled, this, [this](bool on) {
         emit fullscreenToggled(on);
     });
-    headerLay->addWidget(expandBtn, 0, Qt::AlignRight);
+    headerLay->addWidget(m_aiExpandBtn, 0, Qt::AlignRight);
 
     auto *closeBtn = new QPushButton(QString::fromUtf8("\xC3\x97"));  // U+00D7 MULTIPLICATION SIGN
     {
@@ -786,6 +804,14 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     m_modelCombo->setEditable(true);
     m_modelCombo->addItem("(detecting…)");
     m_modelCombo->setEnabled(false);
+    // v0.1.61 — watch dropdown enable/disable transitions so the chat input
+    // auto-enables the instant a probe completes (no Reset required).
+    // Previously updateInputAvailability() only fired on currentTextChanged,
+    // which races setEnabled(true) — the dropdown text changed while still
+    // disabled, so `ready` was computed as false; then setEnabled(true) ran
+    // silently. Net effect: user had to wiggle the dropdown (or hit Reset)
+    // to coax the input on. EnabledChange catches every code path.
+    m_modelCombo->installEventFilter(this);
     // v0.1.55 — searchable dropdown. The QCompleter searches against
     // Qt::EditRole on each item (a fused blob of label + provider key +
     // nice name + synonyms like "claude haiku sonnet opus anthropic …"
@@ -993,6 +1019,21 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         Config::instance().aiDataMode = data;
         Config::instance().save();
 
+        // v0.1.61 — chrome visibility per mode:
+        //   * Coding/Data: committed AI-first workflow — hide the ⛶ expand
+        //     toggle. Only the ✕ close button shows. To exit fullscreen the
+        //     user switches back to Chat mode (mode-button click).
+        //   * Coding only: 🔒 Share file toggle is meaningful (controls
+        //     whether the open editor file ships with the prompt). In Chat
+        //     and Data modes there's no current-file concept worth sharing,
+        //     so the toggle disappears.
+        if (m_aiExpandBtn) {
+            m_aiExpandBtn->setVisible(!(coding || data));
+        }
+        if (m_shareFileCheck) {
+            m_shareFileCheck->setVisible(coding);
+        }
+
         if (m_customInput) {
             m_customInput->setPlaceholderText(
                 coding ? "Coding Mode · e.g. Refactor this function / Add types / Translate to TypeScript"
@@ -1101,21 +1142,24 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
                 .arg(p.chromeBg, fg, rule));
         }
 
-        // Slice A — show the Chat | Composer tab bar only in Coding mode.
-        // Chat / Data modes hide it so the panel looks identical to the
-        // pre-revamp UX. Coding mode also pins the active tab back to
-        // Chat on entry so the user starts on the transcript.
-        if (m_chatTabs && m_chatTabs->tabBar()) {
-            m_chatTabs->tabBar()->setVisible(coding);
-            if (coding && m_chatTabs->currentIndex() != 0) {
-                m_chatTabs->setCurrentIndex(0);
-            } else if (!coding) {
-                m_chatTabs->setCurrentIndex(0);
+        // v0.1.61 (Item 8) — chat surface is now ONE conversation surface,
+        // controlled by the bottom 3-segment toggle (Chat / Compose / Agent).
+        // Default segment by intent: Coding → Agent, Data → Chat,
+        // otherwise Chat. Switching ALSO refreshes the input placeholder
+        // via chatModeSelectorChanged.
+        if (m_chatSegBtn && m_composeSegBtn && m_agentSegBtn) {
+            QAbstractButton *target =
+                  coding ? m_agentSegBtn
+                : data   ? m_chatSegBtn
+                         : m_chatSegBtn;
+            if (target && !target->isChecked()) {
+                target->setChecked(true);
             }
         }
 
         if (m_chatLayout) renderTranscript();
         emit codingModeRequested(coding);
+        emit codingModeChanged(coding);   // v0.1.61 — explorer-visibility gate
     };
 
     // v0.1.57 — Coding mode AUTO-EXPANDS the AI dock to fullscreen so the
@@ -1145,9 +1189,12 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             [this, applyModeWithCancel](bool on) {
                 if (on) { applyModeWithCancel(); emit fullscreenToggled(true); }
             });
+    // v0.1.61 — Data mode is AI-first and auto-fullscreens like Coding
+    // mode. Pre-fix Data mode stayed in split layout, which conflicted
+    // with the request to have a committed Data-mode workflow.
     connect(m_dataMode,   &QAbstractButton::toggled, this,
             [this, applyModeWithCancel](bool on) {
-                if (on) { applyModeWithCancel(); emit fullscreenToggled(false); }
+                if (on) { applyModeWithCancel(); emit fullscreenToggled(true); }
             });
 
     // Refresh the data-mode capability banner when the user picks a
@@ -1348,59 +1395,32 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     m_chatLayout->setContentsMargins(12, 12, 12, 12);
     m_chatLayout->setSpacing(0);
     m_chatLayout->addStretch(1);   // bubbles get inserted BEFORE this stretch
-    m_chatArea->setWidget(m_chatContent);
 
-    // Slice A — wrap the chat scroll plus an empty Composer scroll in a
-    // two-tab QTabWidget. The tab bar is HIDDEN by default so Chat/Data
-    // mode looks identical to today's UX; applyMode shows it only when
-    // Coding mode is active. Composer body is a placeholder for now —
-    // Slices B/C/D fill it with the Edit Plan list, diff viewer, and
-    // per-hunk apply controls.
-    m_composerArea = new QScrollArea;
-    m_composerArea->setWidgetResizable(true);
-    m_composerArea->setFrameShape(QFrame::NoFrame);
-    m_composerArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    m_composerArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    m_composerArea->setStyleSheet(QString(
-        "QScrollArea { background: %1; border: none; } "
-        "QScrollBar:vertical { background: %1; width: 10px; margin: 0; } "
-        "QScrollBar::handle:vertical { background: %2; border-radius: 4px; min-height: 24px; } "
-        "QScrollBar::handle:vertical:hover { background: %3; } "
-        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }")
-        .arg(pal.chatBg, pal.assistBorder, pal.accent));
-
-    m_composerInner = new QWidget;
-    m_composerInner->setStyleSheet(QString("background: %1;").arg(pal.chatBg));
-    auto *composerLayout = new QVBoxLayout(m_composerInner);
-    composerLayout->setContentsMargins(12, 12, 12, 12);
-    composerLayout->setSpacing(8);
-
-    // Slice B/C/D — the live Edit Plan list. When the model returns a
-    // dry_run write_file / apply_diff, handleToolCall calls
-    // m_editPlan->addEdit(absPath, before, after) and we expose the row
-    // here. The list is empty + replaced by a friendly hint when there
-    // are no pending edits (handled inside EditPlanList itself).
-    m_editPlan = new EditPlanList(m_composerInner);
-    composerLayout->addWidget(m_editPlan, 1);
+    // v0.1.61 (Item 8) — Edit Plan list lives INLINE inside the chat
+    // scroll content (parented to m_chatContent), positioned after the
+    // stretch so it always sits at the bottom of the transcript when
+    // it has rows. Hidden by default; addEdit() makes it visible.
+    // Replaces the previous QTabWidget(Chat | Composer) split.
+    m_editPlan = new EditPlanList(m_chatContent);
+    m_editPlan->setVisible(false);
+    m_chatLayout->addWidget(m_editPlan, 0);
 
     // Apply pipeline — when the user clicks Apply All / Apply Selected
     // inside EditPlanList, write each (absPath, afterText) to disk and
     // open / reload the file in the editor.
     connect(m_editPlan, &EditPlanList::applyRequested,
             this,        &AIPanel::applyComposerEdits);
+    // v0.1.61 (Item 8) — auto-hide the inline panel when the last row
+    // is removed (Reject All / per-row [x] / Apply pipeline housekeeping).
+    connect(m_editPlan, &EditPlanList::editRemoved, this,
+            [this](const QString &) {
+                if (m_editPlan && m_editPlan->count() == 0) {
+                    m_editPlan->setVisible(false);
+                }
+            });
 
-    m_composerArea->setWidget(m_composerInner);
-
-    m_chatTabs = new QTabWidget;
-    m_chatTabs->setDocumentMode(true);
-    m_chatTabs->addTab(m_chatArea,     tr("Chat"));
-    m_chatTabs->addTab(m_composerArea, tr("Composer"));
-    if (m_chatTabs->tabBar()) {
-        // Default state matches Chat/Data UX — hidden until Coding mode
-        // flips it on via applyMode.
-        m_chatTabs->tabBar()->setVisible(false);
-    }
-    layout->addWidget(m_chatTabs, 1);
+    m_chatArea->setWidget(m_chatContent);
+    layout->addWidget(m_chatArea, 1);
 
     // ─── BOTTOM STRIP: quick actions + input + send (like a real chat) ──
     // A thin chevron row always shows; clicking it reveals / hides the
@@ -1761,6 +1781,107 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
              pal.recBtnBg, pal.recBtnBorder));
     customRow->addWidget(m_stopBtn);
     layout->addLayout(customRow);
+
+    // ─── v0.1.61 (Item 8) — Bottom 3-segment toggle ─────────────────────
+    // Full-width row sitting BELOW the input bar. Replaces the previous
+    // top-tabbed (Chat | Composer) split and brings the panel in line
+    // with the iOS / Slack keyboard-accessory mental model: mode is a
+    // property of the next message, not a destination. Works alongside
+    // the existing Chat / Coding / Data intent selector at the top —
+    // that one picks WHICH model gating + system-prompt layer applies;
+    // this one picks how the CURRENT conversation should be presented
+    // and which tool surface is active.
+    //
+    //   Chat    — plain conversation, no tools fire
+    //   Compose — tools enabled but write_file / apply_diff are forced
+    //             to dry_run → routed to the inline Edit Plan list
+    //   Agent   — full autonomous loop (tools fire, edits hit disk)
+    {
+        auto *segWrap = new QHBoxLayout;
+        segWrap->setContentsMargins(8, 0, 8, 8);
+        segWrap->setSpacing(0);
+
+        auto *segFrame = new QFrame;
+        segFrame->setStyleSheet(QString(
+            "QFrame { background: %1; border: 1px solid %2; "
+            "border-radius: 8px; }")
+            .arg(pal.chromeBg, pal.btnBorder));
+        auto *segLay = new QHBoxLayout(segFrame);
+        segLay->setContentsMargins(2, 2, 2, 2);
+        segLay->setSpacing(2);
+
+        // Three segments share the same QSS but differ in corner radius
+        // (rounded outer corners on the leftmost / rightmost only) and
+        // accent colour while checked. Pattern mirrors the existing
+        // Chat/Coding/Data row near line 875.
+        auto makeSegBtn = [&pal](const QString &label,
+                                 const QString &accentColor,
+                                 const QString &tip,
+                                 const QString &cornerRule) {
+            auto *btn = new QPushButton(label);
+            btn->setCheckable(true);
+            btn->setCursor(Qt::PointingHandCursor);
+            btn->setFixedHeight(26);
+            btn->setToolTip(tip);
+            btn->setStyleSheet(QString(
+                "QPushButton { background: transparent; border: none; "
+                "color: %1; font-size: 11px; font-weight: 600; padding: 4px 10px; "
+                "%5 } "
+                "QPushButton:hover { background: %2; color: %3; } "
+                "QPushButton:checked { background: %4; color: white; }")
+                .arg(pal.muted, pal.btnHover, pal.inputText,
+                     accentColor, cornerRule));
+            return btn;
+        };
+
+        m_chatSegBtn = makeSegBtn("Chat", pal.accent,
+            "Chat — plain conversation, no agentic tool calls. "
+            "Picks how the CURRENT conversation behaves; the Chat / "
+            "Coding / Data buttons above pick the AI INTENT.",
+            "border-top-left-radius: 6px; border-bottom-left-radius: 6px;");
+        m_composeSegBtn = makeSegBtn("Compose", QStringLiteral("#4EC9B0"),
+            "Compose — tools enabled but write_file / apply_diff are "
+            "forced to dry_run. Proposed edits land in the Edit Plan "
+            "list (inline below the chat) for you to review + Apply.",
+            "border-radius: 0;");
+        m_agentSegBtn = makeSegBtn("Agent", QStringLiteral("#E07B5A"),
+            "Agent — full autonomous loop. Tool calls fire and edits "
+            "hit disk immediately. Use when you trust the model to "
+            "drive the workspace end-to-end.",
+            "border-top-right-radius: 6px; border-bottom-right-radius: 6px;");
+
+        auto *segGroup = new QButtonGroup(this);
+        segGroup->setExclusive(true);
+        segGroup->addButton(m_chatSegBtn,    static_cast<int>(ChatModeSegment::Chat));
+        segGroup->addButton(m_composeSegBtn, static_cast<int>(ChatModeSegment::Compose));
+        segGroup->addButton(m_agentSegBtn,   static_cast<int>(ChatModeSegment::Agent));
+
+        segLay->addWidget(m_chatSegBtn,    1);
+        segLay->addWidget(m_composeSegBtn, 1);
+        segLay->addWidget(m_agentSegBtn,   1);
+
+        segWrap->addWidget(segFrame, 1);
+
+        // Default state — applyMode below will override based on the
+        // active intent (Coding → Agent, Data → Chat, otherwise Chat).
+        m_chatSegBtn->setChecked(true);
+
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+        connect(segGroup, &QButtonGroup::idToggled, this,
+                [this](int id, bool on) {
+                    if (on) chatModeSelectorChanged(id);
+                });
+#else
+        connect(segGroup,
+                QOverload<int, bool>::of(&QButtonGroup::buttonToggled),
+                this,
+                [this](int id, bool on) {
+                    if (on) chatModeSelectorChanged(id);
+                });
+#endif
+
+        layout->addLayout(segWrap);
+    }
 
     // Per-message anchorClicked connects are installed in aiAddAssistantCard
     // now (each assistant card has its own QTextBrowser body). The global
@@ -2236,6 +2357,10 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     updateInputAvailability();
 }
 
+bool AIPanel::isCodingMode() const {
+    return m_codingMode && m_codingMode->isChecked();
+}
+
 void AIPanel::setContext(const QString &selectedText, const QString &filePath, const QString &language) {
     // Legacy 3-arg path — keep working for callers that haven't moved to
     // setWorkspaceContext yet. We treat the passed selected text as both
@@ -2508,6 +2633,14 @@ static QString extractFileContent(const QString &path, const QString &kind,
 }
 
 bool AIPanel::eventFilter(QObject *obj, QEvent *evt) {
+    // v0.1.61 — model dropdown enable/disable transitions retrigger the
+    // input gate. See the installEventFilter call where m_modelCombo is
+    // created for the full rationale. Defer to next event-loop tick so any
+    // currentText change that came along with the enable lands first.
+    if (obj == m_modelCombo && evt->type() == QEvent::EnabledChange) {
+        QTimer::singleShot(0, this, [this]() { updateInputAvailability(); });
+        return false;  // don't swallow — let the widget process the event
+    }
     if (obj == m_attachmentChip && evt->type() == QEvent::MouseButtonPress) {
         // Click on the chip → clear the attachment
         m_pendingFilePath.clear();
@@ -2763,6 +2896,68 @@ void AIPanel::sendPrompt(const QString &action) {
     }
     m_ollama->setModel(model);
 
+    // v0.1.61 — pre-send capability + context guard. Refuse politely BEFORE
+    // dispatching when the selected model can't do what's needed (no tool
+    // calls) OR the prerequisite workspace/DB context hasn't been wired
+    // (Coding without an open file/folder, Data without a configured
+    // connection). Otherwise the model generates plausible prose that
+    // fails silently, and the failure mode is invisible to a new user.
+    // Skip for the plain Chat path — chat doesn't need workspace/DB.
+    {
+        const bool codingNow = (m_codingMode && m_codingMode->isChecked());
+        const bool dataNow   = (m_dataMode   && m_dataMode->isChecked());
+
+        // Context gate: Coding needs a workspace root. Data needs at least
+        // one saved DB connection. Refuse with a one-click setup pointer.
+        if (codingNow && m_workspaceRoot.isEmpty()) {
+            appendErrorBubble(
+                "Coding Mode needs an open folder so I can read/edit your "
+                "files. Open one via File → Open Folder… (or drag a folder "
+                "onto the window), then ask again. If you just want to chat "
+                "about code in general (no file ops), switch to Chat mode.");
+            return;
+        }
+        if (dataNow && DbConnections::loadAll().isEmpty()) {
+            appendErrorBubble(
+                "Data Mode needs at least one database connection (SQLite, "
+                "PostgreSQL, MySQL, SQL Server, or DuckDB). Click "
+                "Manage Connections… in the Data row above to add one, "
+                "then ask again. If you just have a CSV / Parquet file, add "
+                "it as a DuckDB connection pointing at the file path.");
+            return;
+        }
+
+        if (codingNow && !currentModelSupportsTools()) {
+            appendErrorBubble(QString(
+                "The selected model '%1' doesn't support tool calls, "
+                "which Coding Mode needs to read your files and apply edits. "
+                "Switch to a tool-capable model:\n\n"
+                "  • Local (Ollama):  qwen2.5-coder:7b · qwen2.5-coder:14b · "
+                "llama3.1:8b · mistral-nemo\n"
+                "  • Cloud (OpenRouter / direct):  claude-sonnet-4-5 · "
+                "claude-opus-4-7 · gpt-5 · gpt-4o · gemini-2.5-flash\n\n"
+                "Tip: tool-capable models render in green in the dropdown; "
+                "the amber ones can't call tools. Or turn off Coding Mode if "
+                "you just want to chat.").arg(model));
+            return;
+        }
+        if (dataNow && !AiTools::modelCapableOfDataAnalysis(model)) {
+            appendErrorBubble(QString(
+                "The selected model '%1' isn't strong enough for the Data "
+                "Analyst mode — that workflow needs both tool calls (to run "
+                "SQL against your DB) AND structured reasoning (to plan "
+                "queries + summarise results). Switch to:\n\n"
+                "  • Local (Ollama):  qwen2.5-coder:14b (recommended) · "
+                "qwen2.5-coder:7b · deepseek-coder:33b\n"
+                "  • Cloud:  claude-sonnet-4-5 · claude-opus-4-7 · gpt-5 · "
+                "gpt-4o · gemini-2.5-pro · deepseek-r1\n\n"
+                "Tip: data-capable models render in green; amber ones won't "
+                "be reliable for SQL + charts. Or turn off Data Mode if you "
+                "just want to chat.").arg(model));
+            return;
+        }
+    }
+
     // Build the system prompt via the layered builder in ai_systemprompt.cpp.
     // The builder composes: identity + anti-tool-call + mode-specific +
     // language hint. Coding Mode -> CodingStrict intent which preserves the
@@ -2782,14 +2977,14 @@ void AIPanel::sendPrompt(const QString &action) {
     const bool toolModeActive = (codingMode || dataMode);
     const bool willUseTools = toolModeActive && !m_workspaceRoot.isEmpty()
         && currentModelSupportsTools();
-    // Slice D — Composer mode flips on when the user is actively viewing
-    // the Composer tab inside Coding mode. The composerModeLayer in the
-    // system prompt instructs the model to ALWAYS pass dry_run:true on
-    // write_file / apply_diff, which AIPanel::handleToolCall then routes
-    // to the Edit Plan list instead of touching disk directly.
+    // v0.1.61 (Item 8) — Compose mode flips on when the user has the
+    // bottom segment toggle set to "Compose" while Coding intent is
+    // active. The composerModeLayer in the system prompt instructs the
+    // model to ALWAYS pass dry_run:true on write_file / apply_diff,
+    // which AIPanel::handleToolCall then routes to the inline Edit Plan
+    // list instead of touching disk directly.
     const bool composerActive = (intent == AiSystemPrompt::Intent::CodingStrict)
-        && m_chatTabs && m_composerArea
-        && m_chatTabs->currentWidget() == m_composerArea;
+        && m_chatModeSegment == ChatModeSegment::Compose;
     QString systemPrompt;
     if (intent == AiSystemPrompt::Intent::DataAnalyst) {
         // Pull .notepatra/data-analyst.md (if present) so the model gets
@@ -3267,6 +3462,16 @@ static void aiAddUserBubble(QVBoxLayout *target, const QString &text,
     rowLay->setContentsMargins(0, 0, 0, 10);
     rowLay->addStretch(1);
 
+    // v0.1.61 — wrap pill + copy button in a vertical stack so the copy
+    // icon sits just under the pill, right-aligned. Users have been asking
+    // to copy their own prompt back (re-edit, paste elsewhere) and the
+    // assistant card has had a copy button forever — now both sides match.
+    auto *stack = new QWidget;
+    stack->setStyleSheet("background: transparent;");
+    auto *stackLay = new QVBoxLayout(stack);
+    stackLay->setContentsMargins(0, 0, 0, 0);
+    stackLay->setSpacing(2);
+
     auto *pill = new QFrame;
     pill->setObjectName("userPill");
     pill->setStyleSheet(QString(
@@ -3283,8 +3488,26 @@ static void aiAddUserBubble(QVBoxLayout *target, const QString &text,
         .arg(pal.userFg));
     msg->setMaximumWidth(480);
     pillLay->addWidget(msg);
+    stackLay->addWidget(pill, 0, Qt::AlignRight);
 
-    rowLay->addWidget(pill, 0, Qt::AlignRight);
+    auto *copyBtn = new QPushButton("⧉ copy");
+    copyBtn->setCursor(Qt::PointingHandCursor);
+    copyBtn->setFlat(true);
+    copyBtn->setToolTip("Copy this message to the clipboard");
+    copyBtn->setStyleSheet(QString(
+        "QPushButton { "
+        "  color: %1; font-size: 10px; font-weight: 600; "
+        "  padding: 2px 8px; border: none; "
+        "  background: transparent; "
+        "} "
+        "QPushButton:hover { color: %2; text-decoration: underline; }")
+        .arg(pal.muted, pal.accent));
+    QObject::connect(copyBtn, &QPushButton::clicked, copyBtn, [text]() {
+        QApplication::clipboard()->setText(text);
+    });
+    stackLay->addWidget(copyBtn, 0, Qt::AlignRight);
+
+    rowLay->addWidget(stack, 0, Qt::AlignRight);
 
     target->insertWidget(target->count() - 1, row);
 }
@@ -3584,6 +3807,248 @@ bool AIPanel::currentModelSupportsTools() const {
         return it.value().contains(QStringLiteral("tools"), Qt::CaseInsensitive);
     }
     return AiTools::modelLikelySupportsTools(model);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// modelSupportsVision — does the currently-selected model accept image inputs?
+//
+// Two-path resolver (mirrors currentModelSupportsTools):
+//   1. Ollama backend: trust the /api/show capabilities cache. If it exists
+//      and is non-empty, "vision" in the capabilities array is the answer.
+//      If the cache is EMPTY for this model, fall through to the prefix
+//      allowlist below — but the allowlist only matches known vision tags
+//      (qwen2.5vl, llava, gemma3, …) so an unknown / freshly-installed
+//      Ollama model returns false. That's the safe default: it's better to
+//      tell the user "switch model" than to silently strip the image and
+//      let the model hallucinate a description of nothing.
+//   2. Cloud / llama.cpp / OpenAI-compat: read the dropdown text, lowercase
+//      it, strip any leading "<provider>/" segment (OpenRouter format), then
+//      check a hardcoded May-2026 allowlist of multimodal model families.
+//
+// Returns false if there's no model selected or no client.
+// ─────────────────────────────────────────────────────────────────────────────
+bool AIPanel::modelSupportsVision() const {
+    if (!m_ollama) return false;
+
+    // Prefer the model the dropdown currently shows — that's what the user
+    // sees and is the source of truth for "what model are we about to use."
+    // Falls back to whatever m_ollama has cached (covers the brief window
+    // before the dropdown's currentTextChanged fires after a refresh).
+    QString rawName;
+    if (m_modelCombo) rawName = m_modelCombo->currentText();
+    if (rawName.isEmpty()) rawName = m_ollama->model();
+    if (rawName.isEmpty()) return false;
+
+    QString name = rawName.trimmed().toLower();
+    if (name.isEmpty()) return false;
+
+    // Path 1: Ollama — capabilities cache is ground truth when populated.
+    if (m_ollama->backend() == OllamaClient::Ollama) {
+        auto it = m_ollamaModelCaps.constFind(rawName);
+        if (it == m_ollamaModelCaps.constEnd()) {
+            // Try the lowercased key as well — m_ollamaModelCaps is keyed by
+            // exact model id; combobox text and ollama-list text agree, so
+            // this is mostly defensive.
+            it = m_ollamaModelCaps.constFind(name);
+        }
+        if (it != m_ollamaModelCaps.constEnd() && !it.value().isEmpty()) {
+            return it.value().contains(QStringLiteral("vision"), Qt::CaseInsensitive);
+        }
+        // Cache empty: fall through to the allowlist. We do NOT default-true
+        // here — silent-drop is the worst trap on Ollama.
+    }
+
+    // Path 2: prefix allowlist (May 2026). Strip any "<provider>/" prefix
+    // first so "anthropic/claude-sonnet-4-6" matches the same way as the
+    // bare "claude-sonnet-4-6" name. Then check each family with a simple
+    // startsWith / contains rule. Order matters only insofar as we want to
+    // match the more-specific tags first — startsWith checks are mutually
+    // exclusive on these prefixes, so the order is mostly cosmetic.
+    QString stem = name;
+    int slash = stem.indexOf('/');
+    if (slash >= 0) stem = stem.mid(slash + 1);
+
+    // Anthropic Claude — anything 3.5 and up is multimodal.
+    static const QStringList kClaudePrefixes = {
+        QStringLiteral("claude-3.5"),
+        QStringLiteral("claude-3.7"),
+        QStringLiteral("claude-4"),
+        QStringLiteral("claude-opus-4"),
+        QStringLiteral("claude-sonnet-4"),
+        QStringLiteral("claude-haiku-4"),
+    };
+    // OpenAI — 4o family + 4.1 / 4.5 / 5 / o4 / chatgpt-4o.
+    static const QStringList kOpenAiPrefixes = {
+        QStringLiteral("gpt-4o"),
+        QStringLiteral("gpt-4.1"),
+        QStringLiteral("gpt-4.5"),
+        QStringLiteral("gpt-5"),
+        QStringLiteral("o4"),
+        QStringLiteral("chatgpt-4o"),
+    };
+    // Google Gemini — 1.5 / 2.x / 3.x are all multimodal.
+    static const QStringList kGeminiPrefixes = {
+        QStringLiteral("gemini-1.5"),
+        QStringLiteral("gemini-2"),
+        QStringLiteral("gemini-3"),
+    };
+    // Ollama / open-source vision tags. Used both as a fallback when the
+    // /api/show cache is empty AND when the user is on a non-Ollama
+    // backend that happens to expose one of these models (e.g. a llama.cpp
+    // server hosting a local vision model).
+    static const QStringList kOllamaVisionPrefixes = {
+        QStringLiteral("qwen2.5vl"),
+        QStringLiteral("qwen2.5-vl"),
+        QStringLiteral("llava"),
+        QStringLiteral("gemma3"),
+        QStringLiteral("llama3.2-vision"),
+        QStringLiteral("minicpm-v"),
+        QStringLiteral("moondream"),
+        QStringLiteral("mistral-small3.1"),
+    };
+
+    auto matchesAny = [&stem](const QStringList &prefixes) {
+        for (const QString &p : prefixes) {
+            if (stem.startsWith(p)) return true;
+        }
+        return false;
+    };
+
+    if (matchesAny(kClaudePrefixes))        return true;
+    if (matchesAny(kOpenAiPrefixes))        return true;
+    if (matchesAny(kGeminiPrefixes))        return true;
+    if (matchesAny(kOllamaVisionPrefixes))  return true;
+
+    return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// acceptAttachment — shared vision-capability gate.
+//
+// Both attachFile() (file picker) and dropEvent() (drag-drop) funnel through
+// here so the refusal logic lives in exactly one place. Returns true to mean
+// "go ahead — set m_pendingFilePath / m_pendingFileKind and show the chip."
+// Returns false (after appending a helpful error bubble) when the kind is
+// "image" and modelSupportsVision() is false. The bubble cites concrete
+// model tags so the user's next action is obvious — switch the dropdown,
+// or `ollama pull qwen2.5vl:7b`, etc.
+// ─────────────────────────────────────────────────────────────────────────────
+bool AIPanel::acceptAttachment(const QString &path, const QString &kind) {
+    if (kind != QLatin1String("image")) {
+        // Non-image kinds (pdf / docx / pptx / xlsx / text / code) flow
+        // through extractFileContent at send time and don't require a
+        // multimodal model. Always accept.
+        return true;
+    }
+
+    if (modelSupportsVision()) return true;
+
+    // Action-oriented refusal: name the file, name the current model, then
+    // give the user a one-step path forward for both local and cloud.
+    QString currentName;
+    if (m_modelCombo) currentName = m_modelCombo->currentText().trimmed();
+    if (currentName.isEmpty()) currentName = QStringLiteral("the selected model");
+
+    QFileInfo fi(path);
+    const QString fname = fi.fileName().isEmpty() ? path : fi.fileName();
+
+    const QString message = tr(
+        "🖼 Can't attach <b>%1</b> — <b>%2</b> doesn't support image input.<br>"
+        "<br>"
+        "Switch to a vision-capable model, then drop the image again:<br>"
+        "&nbsp;&nbsp;• <b>Local (Ollama)</b>: <code>ollama pull qwen2.5vl:7b</code> "
+        "or <code>ollama pull gemma3:4b</code><br>"
+        "&nbsp;&nbsp;• <b>Cloud</b>: pick <code>claude-sonnet-4-6</code>, "
+        "<code>gpt-5</code>, or <code>gemini-2.5-flash</code> from the model dropdown."
+    ).arg(fname.toHtmlEscaped(), currentName.toHtmlEscaped());
+
+    appendErrorBubble(message);
+
+    // Defensive — make sure no stale pending attachment lingers from a
+    // prior drop / pick. attachFile() and dropEvent() both clear these
+    // before they call acceptAttachment, but belt-and-braces.
+    m_pendingFilePath.clear();
+    m_pendingFileKind.clear();
+    if (m_attachmentChip) {
+        m_attachmentChip->setText(QString());
+        m_attachmentChip->setVisible(false);
+        m_attachmentChip->setFixedHeight(0);
+    }
+    return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// dragEnterEvent / dropEvent — accept file drops onto the AI panel.
+//
+// Drop semantics mirror attachFile(): the first dropped local file is staged
+// as m_pendingFilePath / m_pendingFileKind, the attachment chip appears, and
+// extractFileContent runs at send time. Image drops are gated by
+// modelSupportsVision() via acceptAttachment(); other kinds (PDF / DOCX /
+// PPTX) fall back to text-extraction unchanged. Drops with no local file
+// are silently ignored — same behaviour as MainWindow's drop handler.
+// ─────────────────────────────────────────────────────────────────────────────
+void AIPanel::dragEnterEvent(QDragEnterEvent *event) {
+    if (event->mimeData()->hasUrls()) event->acceptProposedAction();
+}
+
+void AIPanel::dropEvent(QDropEvent *event) {
+    const QList<QUrl> urls = event->mimeData()->urls();
+    if (urls.isEmpty()) return;
+
+    // Only handle the first file — the AI panel attaches one file at a time.
+    // Future improvement: stack multiple chips. For now, drop[0] wins.
+    QString path;
+    for (const QUrl &u : urls) {
+        if (u.isLocalFile()) { path = u.toLocalFile(); break; }
+    }
+    if (path.isEmpty()) return;  // remote URLs / non-file drops aren't supported
+
+    // Mirror attachFile()'s extension → kind detection so the chip / icon /
+    // send-time extraction behaves identically regardless of how the file
+    // landed in m_pendingFilePath.
+    QFileInfo fi(path);
+    const QString ext = fi.suffix().toLower();
+    QString kind;
+    static const QStringList imageExts = {"png", "jpg", "jpeg", "webp", "gif", "bmp"};
+    if (imageExts.contains(ext))                       kind = QStringLiteral("image");
+    else if (ext == QLatin1String("pdf"))              kind = QStringLiteral("pdf");
+    else if (ext == QLatin1String("docx") || ext == QLatin1String("doc"))   kind = QStringLiteral("docx");
+    else if (ext == QLatin1String("pptx") || ext == QLatin1String("ppt"))   kind = QStringLiteral("pptx");
+    else if (ext == QLatin1String("xlsx") || ext == QLatin1String("xls"))   kind = QStringLiteral("xlsx");
+    else                                               kind = QStringLiteral("text");
+
+    // Vision-capability gate. If acceptAttachment refuses, it has already
+    // appended a helpful error bubble — bail out without touching pending
+    // state and accept the drop event so the desktop's drop animation
+    // settles correctly.
+    if (!acceptAttachment(path, kind)) {
+        event->acceptProposedAction();
+        return;
+    }
+
+    // Happy path — same as attachFile() body from m_pendingFilePath onward.
+    m_pendingFilePath = path;
+    m_pendingFileKind = kind;
+
+    const QString name   = fi.fileName();
+    const qint64  sizeKb = fi.size() / 1024;
+    QString icon = QStringLiteral("📄");
+    if      (kind == QLatin1String("image")) icon = QStringLiteral("🖼");
+    else if (kind == QLatin1String("pdf"))   icon = QStringLiteral("📕");
+    else if (kind == QLatin1String("docx"))  icon = QStringLiteral("📘");
+    else if (kind == QLatin1String("pptx"))  icon = QStringLiteral("📙");
+    else if (kind == QLatin1String("xlsx"))  icon = QStringLiteral("📗");
+
+    if (m_attachmentChip) {
+        m_attachmentChip->setText(QString("%1 %2 (%3 KB) — will be included as context. Click chip to remove.")
+                                  .arg(icon).arg(name).arg(sizeKb));
+        m_attachmentChip->setVisible(true);
+        m_attachmentChip->setFixedHeight(24);
+        m_attachmentChip->installEventFilter(this);
+    }
+
+    setStatus(QString("✓ Attached (drop): %1 (%2)").arg(name).arg(kind), false);
+    event->acceptProposedAction();
 }
 
 // v0.1.56 — mode-aware visual cue on each dropdown row. Same model name
@@ -4730,7 +5195,10 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
             const QString after   = proposed.value("after").toString();
             if (!absPath.isEmpty()) {
                 m_editPlan->addEdit(absPath, before, after);
-                if (m_chatTabs) m_chatTabs->setCurrentWidget(m_composerArea);
+                // v0.1.61: Edit Plan is now inline in the chat scroll;
+                // show it so the user sees the queued edit at the
+                // bottom of the transcript.
+                m_editPlan->setVisible(true);
             }
             resultSummary = QString("queued for review (%1 chars)").arg(after.size());
         } else {
@@ -4763,7 +5231,8 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
             const QString after   = proposed.value("after").toString();
             if (!absPath.isEmpty()) {
                 m_editPlan->addEdit(absPath, before, after);
-                if (m_chatTabs) m_chatTabs->setCurrentWidget(m_composerArea);
+                // v0.1.61: same inline-EditPlan reveal as write_file.
+                m_editPlan->setVisible(true);
             }
             resultSummary = QString("queued for review (%1 hunk%2)")
                                 .arg(args.value("hunks").toArray().size())
@@ -4842,6 +5311,11 @@ void AIPanel::attachFile() {
     } else {
         kind = "text";
     }
+
+    // v0.1.61 — vision-capability gate. acceptAttachment refuses (and posts
+    // a helpful refusal bubble) when an image is picked but the active model
+    // can't read images. Same code path is hit by drag-and-drop in dropEvent.
+    if (!acceptAttachment(path, kind)) return;
 
     m_pendingFilePath = path;
     m_pendingFileKind = kind;
@@ -5461,6 +5935,51 @@ void AIPanel::openAiSettingsDialog() {
     dlg.exec();
 }
 
+// v0.1.61 (Item 8) — handler for the bottom 3-segment toggle.
+// Stores the new value and refreshes the input placeholder hint so
+// the user knows what the next message will do. Purely internal
+// state — the host MainWindow doesn't get a signal.
+void AIPanel::chatModeSelectorChanged(int segment) {
+    switch (segment) {
+        case static_cast<int>(ChatModeSegment::Chat):
+            m_chatModeSegment = ChatModeSegment::Chat;
+            break;
+        case static_cast<int>(ChatModeSegment::Compose):
+            m_chatModeSegment = ChatModeSegment::Compose;
+            break;
+        case static_cast<int>(ChatModeSegment::Agent):
+            m_chatModeSegment = ChatModeSegment::Agent;
+            break;
+        default:
+            return;
+    }
+
+    // Refresh the input placeholder so the affordance stays consistent
+    // with the active intent + segment combo. The intent layer's
+    // existing placeholder is a fine baseline for Chat; Compose / Agent
+    // append a hint about the tool surface.
+    if (m_customInput) {
+        const bool coding = m_codingMode && m_codingMode->isChecked();
+        const bool data   = m_dataMode   && m_dataMode->isChecked();
+        QString base =
+              coding ? QStringLiteral("Coding Mode · e.g. Refactor this function / Add types / Translate to TypeScript")
+            : data   ? QStringLiteral("Data Mode · e.g. summarize this CSV / show top 10 customers / chart revenue by month")
+                     : QStringLiteral("Type a message and press Enter to send…");
+        switch (m_chatModeSegment) {
+            case ChatModeSegment::Compose:
+                base = QStringLiteral("Compose · proposed edits land in the Edit Plan for review");
+                break;
+            case ChatModeSegment::Agent:
+                if (coding) base = QStringLiteral("Agent · autonomous loop · edits hit disk on the fly");
+                break;
+            case ChatModeSegment::Chat:
+            default:
+                break;
+        }
+        m_customInput->setPlaceholderText(base);
+    }
+}
+
 // ─── Slice D — apply Edit Plan rows ─────────────────────────────────
 //
 // Called when EditPlanList::applyRequested fires. Each pair is the
@@ -5574,20 +6093,39 @@ void AIPanel::updateInputAvailability() {
     if (m_customInput) {
         m_customInput->setEnabled(ready);
         if (!ready) {
-            // Override whatever mode-specific placeholder applyMode set
-            // — the user needs to know WHY they can't type.
-            QString why = QStringLiteral("Select a model in the dropdown above to start chatting…");
+            // v0.1.61 — placeholders now teach the user how to fix the
+            // disabled state. The prior copy ("Select a model…") was
+            // accurate but didn't help a first-time user who had no idea
+            // where to find a model in the first place. Each state gives
+            // a concrete next action with the exact command to run.
+            QString why = QStringLiteral(
+                "Please select a model to start chatting. "
+                "Pick one from the dropdown above — Ollama runs locally on your machine, "
+                "or click ⚙ to add an API key for OpenRouter / OpenAI / Azure / Ollama Cloud.");
             if (m_modelCombo) {
                 const QString text = m_modelCombo->currentText().trimmed();
                 if (text.contains("offline", Qt::CaseInsensitive))
-                    why = QStringLiteral("Ollama is offline — start it (`ollama serve`) and click ↻ Refresh.");
+                    why = QStringLiteral(
+                        "Ollama is offline. Open a terminal and run `ollama serve`, "
+                        "then click ↻ Refresh above. Alternatively, switch the backend "
+                        "dropdown to llama.cpp / OpenRouter / OpenAI / Azure to use a "
+                        "different runner.");
                 else if (text.contains("no models", Qt::CaseInsensitive))
-                    why = QStringLiteral("No models installed — `ollama pull qwen2.5-coder:7b` then click ↻.");
+                    why = QStringLiteral(
+                        "Ollama is running but has no models installed yet. Run "
+                        "`ollama pull qwen2.5-coder:7b` for code work (~5 GB), or "
+                        "`ollama pull llama3.2:3b` for a lightweight chat model "
+                        "(~2 GB). Then click ↻ Refresh above.");
                 else if (text.contains("api key", Qt::CaseInsensitive)
                       || text.contains("key required", Qt::CaseInsensitive))
-                    why = QStringLiteral("API key required — open ⚙ to add one, then pick a model.");
+                    why = QStringLiteral(
+                        "This backend needs an API key. Click ⚙ Settings (top of the AI dock) "
+                        "to paste your key for OpenRouter / OpenAI / Azure / Ollama Cloud, "
+                        "save, and pick a model from the dropdown.");
                 else if (text.contains("detecting", Qt::CaseInsensitive))
-                    why = QStringLiteral("Detecting available models…");
+                    why = QStringLiteral(
+                        "Detecting available models… "
+                        "If this hangs, click ↻ Refresh or switch the backend dropdown.");
             }
             m_customInput->setPlaceholderText(why);
         }

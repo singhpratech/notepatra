@@ -7,6 +7,80 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.61] — 2026-05-10
+
+**UX overhaul: smarter gating, vision drops, coding redesign.**
+
+Thirteen distinct improvements driven by a single user session. Coordinated by five parallel agents (four research, two implementation in isolated worktrees). Item 9 (data charts) deferred to v0.1.63 with a complete library evaluation; full VS Code-parity Git Source Control in Coding mode lands in v0.1.62.
+
+### Added — bottom segmented Chat/Compose/Agent toggle (item 8)
+
+* Replaced the top QTabWidget split between Chat and Composer with a **single unified conversation surface** and a **3-segment toggle at the bottom of the panel** — matches the iOS/Slack keyboard-accessory mental model that Continue.dev, Copilot Chat, and Cursor 3.0 all converged on. `ChatModeSegment` enum (`Chat=0`, `Compose=1`, `Agent=2`) replaces `m_chatTabs->currentWidget()` checks; `m_editPlan` reparented to `m_chatContent` and surfaced inline when the agent emits dry_run write_file / apply_diff.
+* `composerActive` (which forces `dry_run: true` on write tools) keyed off the new segment enum — Compose can fire even outside Coding intent.
+
+### Added — vision-aware drag-and-drop (item 10)
+
+* Drag image (PNG/JPG/WEBP/GIF/BMP) or document (PDF/DOCX/PPTX) onto the AI dock → auto-detects whether the currently-selected model supports vision; on refusal, styled error bubble lists alternatives: local `qwen2.5vl:7b` / `gemma3:4b`, cloud `claude-sonnet-4-6` / `gpt-5` / `gemini-2.5-flash`.
+* Detection strategy: Ollama via `/api/show` capability cache (conservative-false on empty cache to avoid silent-drop trap); cloud via May-2026 prefix allowlist (Claude 3.5+, GPT-4o/4.1/4.5/5/o4, Gemini 1.5+).
+* `setAcceptDrops(true)` + `dragEnterEvent`/`dropEvent` overrides on AIPanel. `attachFile()` and `dropEvent` share `acceptAttachment()` so the refusal logic isn't duplicated.
+
+### Added — context guards at sendPrompt (item 4)
+
+* Coding mode without a workspace → friendly assistant card pointing at File → Open Folder.
+* Data mode without a saved DB connection → pointer to Manage Connections, with DuckDB hint for raw CSV/Parquet.
+
+### Added — runtime capability response (item 11)
+
+* Coding mode + non-tool-capable model → refusal listing tool-capable alternatives (local: qwen2.5-coder family, llama3.1, mistral-nemo; cloud: claude-sonnet-4-5, gpt-5, gpt-4o, gemini-2.5-flash).
+* Data mode + insufficient model → refusal recommending qwen2.5-coder:14b local / claude-sonnet-4-5 / gpt-5 / gemini-2.5-pro / deepseek-r1.
+* Complements existing dropdown amber/green decoration — runtime guard catches the case where the user picks an amber model anyway.
+
+### Added — file-explorer Coding-only with hide/unhide (item 6)
+
+* Explorer sidebar shows when Coding mode toggles ON; hides on Chat/Data.
+* New `HiddenPathProxy : QSortFilterProxyModel` filters by absolute-path set; right-click → "Hide \"X\"" persists to `Config::explorerHiddenPaths`; "Show hidden (N)" undoes.
+* Four show-sites (File → Open Folder, View → Folder as Workspace, GitPanel `repositoryOpened`, `toggleAiDock`) gated on Coding mode.
+
+### Added — copy buttons on user bubbles (item 5)
+
+* Widget-rendered bubble (during streaming) gets a `⧉ copy` link below each user message.
+* HTML-rendered transcript (history reload) routes through the existing `copy://message/N` handler in `handleChatLink`.
+* Matches the assistant card's long-standing copy button.
+
+### Added — bonus chrome consolidations
+
+* Coding **and** Data modes auto-fullscreen (v0.1.57 did Coding only).
+* ⛶ expand button hidden in Coding/Data — those modes are AI-first, only ✕ remains. Chat keeps the toggle.
+* 🔒 Share file checkbox visible only in Coding (Chat/Data have no open-file concept worth gating).
+
+### Fixed — smart input gating (item 1)
+
+* `updateInputAvailability()` now also fires on `QEvent::EnabledChange` via an event filter on `m_modelCombo`, eliminating the v0.1.59 race where the dropdown enabled after `currentTextChanged` so the input stayed disabled until manual wiggle/Reset.
+* Placeholder copy rewritten with concrete next-action commands per state (`ollama serve`, `ollama pull qwen2.5-coder:7b`, click ⚙).
+
+### Removed — standalone Git toolbar shortcut (item 2 MVP)
+
+* The red "Git" feature shortcut on the toolbar is gone. Plugins → Git Integration (inbuilt) still opens the existing tab-based panel.
+* Full VS Code-parity Source Control in Coding mode lands in **v0.1.62** — research complete (per-hunk gutter popup, atomic `git apply --cached`, branch picker, sync, marker-based conflict helper); 90% of infrastructure already exists.
+
+### Verified — Ctrl+N in fullscreen (item 7)
+
+* Pressing Ctrl+N while the AI dock is fullscreen creates a background editor tab without exiting fullscreen. Lexer auto-attaches by extension on save. (No code change needed — verified end-to-end.)
+
+### Process — parallel agents + worktree isolation (item 12)
+
+* Four research agents (VS Code git architecture, chat-panel UI patterns, vision-model APIs, charting library evaluation) — reports inform v0.1.62 (git + vision PDF rendering) and v0.1.63 (charts).
+* Two implementation agents in isolated worktrees (items 8 + 10) merged back into `feature/v0.1.61-bigfeatures` — both auto-merged cleanly without conflict.
+* Test-scenarios agent produced a 38-case manual plan (Sections A golden paths, B edge cases, C regression hot spots, D performance smoke).
+
+### Tests
+
+* 23/23 deterministic regression tests pass.
+* `scripts/stale-text-check.sh` returns 21/21 surfaces matching canonicals.
+* `scripts/release-check.sh` clean for v0.1.61.
+
+---
+
 ## [0.1.60] — 2026-05-10
 
 **Stale-text drift killed — About dialog matches reality + wired audit.**

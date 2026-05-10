@@ -19,6 +19,8 @@ class QProcess;
 class QUrl;
 class QTabWidget;
 class QCompleter;
+class QDragEnterEvent;
+class QDropEvent;
 class EditPlanList;
 
 class AIPanel : public QWidget {
@@ -86,6 +88,14 @@ public:
 
 protected:
     bool eventFilter(QObject *obj, QEvent *evt) override;
+    // v0.1.61 — accept image / PDF / DOCX / PPTX drops onto the AI panel as
+    // attachments. Mirrors attachFile's happy-path: stash path + kind,
+    // surface the attachment chip, and let send-time extraction handle the
+    // rest. Vision-only kinds (image) gate on modelSupportsVision() — if
+    // the active model can't read images, we refuse with a helpful bubble
+    // listing concrete model tags the user can pull / switch to.
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
 
 public slots:
     void refreshModels();
@@ -118,6 +128,21 @@ signals:
     // previous splitter sizes and visibility.
     void fullscreenToggled(bool on);
 
+    // v0.1.61 — same payload as `codingModeRequested`, but with intent-
+    // neutral wording. MainWindow listens to gate the file-explorer
+    // sidebar visibility strictly to Coding mode. Kept separate so
+    // callers that only care about the mode flip (no auto-3-column
+    // layout side-effect) don't have to read intent into the older
+    // signal name.
+    void codingModeChanged(bool active);
+
+public:
+    // v0.1.61 — lets MainWindow query the current coding-mode state
+    // after constructor wiring (the constructor's internal applyMode()
+    // emit fires before MainWindow has hooked its slot, so we need a
+    // pull path for the initial sync).
+    bool isCodingMode() const;
+
 private:
     void sendPrompt(const QString &action);
     void setStatus(const QString &text, bool error = false);
@@ -140,6 +165,29 @@ private:
     // the tools field for non-tool models, so we always send tools and
     // let the server decide.
     bool currentModelSupportsTools() const;
+
+    // v0.1.61 — does the currently-selected model accept image inputs?
+    // Mirrors the dual-path strategy used by currentModelSupportsTools():
+    //   - Ollama: trust the /api/show capabilities cache (m_ollamaModelCaps)
+    //     when populated; if empty (probe still in flight) fall through
+    //     to the prefix allowlist below — but be CONSERVATIVE: an empty
+    //     cache plus an unknown model name returns false. Silent-drop on
+    //     a non-vision Ollama model is the worst trap because the model
+    //     just hallucinates a description of nothing.
+    //   - Cloud / llama.cpp / OpenAI-compat: lowercase the visible name,
+    //     strip any "<provider>/" prefix, then check a hardcoded May-2026
+    //     allowlist of multimodal model families (claude-3.5+, gpt-4o /
+    //     4.1 / 4.5 / 5, gemini-1.5+, etc.) plus known Ollama vision tags
+    //     (qwen2.5vl, llava, gemma3, llama3.2-vision, …).
+    bool modelSupportsVision() const;
+
+    // v0.1.61 — shared gate between attachFile() (file picker) and
+    // dropEvent() (drag-and-drop). Returns true if the attachment was
+    // accepted: the caller should set m_pendingFilePath / Kind and show
+    // the chip. Returns false after appending a refusal error bubble when
+    // the kind is "image" but modelSupportsVision() is false — caller
+    // should NOT proceed.
+    bool acceptAttachment(const QString &path, const QString &kind);
 
     // v0.1.56 — paint each row in the model dropdown so the user can see at
     // a glance which models are suitable for the active mode. Coding mode
@@ -198,21 +246,32 @@ private:
     class QFrame      *m_streamingCard  = nullptr;   // active during a stream
     QTextBrowser      *m_streamingBody  = nullptr;   // inner body of ^
 
-    // Slice A — Coding-mode revamp. The chat scroll lives inside a
-    // two-tab widget (Chat | Composer). In Chat / Data modes the tab
-    // bar is hidden so the dock looks identical to today's UX. In
-    // Coding mode the tab bar is shown so the user can flip between
-    // the live chat transcript and the agent's Edit Plan / diff
-    // viewer (filled in by Slices B/C/D).
-    QTabWidget        *m_chatTabs       = nullptr;
-    QScrollArea       *m_composerArea   = nullptr;
-    QWidget           *m_composerInner  = nullptr;
-    // Slice B/C/D — the Edit Plan list that lives inside the Composer tab.
-    // Populated when the model returns a dry_run write_file / apply_diff
-    // result. Apply All / Apply Selected fires AIPanel::applyComposerEdits
-    // which writes the chosen files atomically and then opens / reloads
-    // them via the existing fileWrittenByAgent signal.
+    // v0.1.61 (Item 8) — chat surface is now ONE conversation with a
+    // 3-segment bottom toggle (Chat / Compose / Agent). The previous
+    // QTabWidget(Chat | Composer) split is gone — the Edit Plan list
+    // now renders inline at the bottom of the chat scroll content,
+    // visible whenever it has at least one pending hunk.
+    // Edit Plan list — populated when the model returns a dry_run
+    // write_file / apply_diff result. Apply All / Apply Selected fires
+    // AIPanel::applyComposerEdits which writes the chosen files
+    // atomically and emits fileWrittenByAgent. Parented into
+    // m_chatContent so it renders inline below the bubbles.
     EditPlanList      *m_editPlan       = nullptr;
+
+    // v0.1.61 (Item 8) — bottom-of-panel 3-segment toggle.
+    //   Chat    = plain conversation, no tools
+    //   Compose = tools enabled but write_file/apply_diff are forced
+    //             to dry_run → routed to the Edit Plan list inline
+    //   Agent   = full autonomous loop (tools fire, edits hit disk)
+    // This is INDEPENDENT of the existing Chat/Coding/Data intent
+    // selector — that one picks WHICH model gating + system-prompt
+    // layer applies; this one picks how the CURRENT conversation
+    // should be presented and which tool surface is active.
+    enum class ChatModeSegment { Chat = 0, Compose = 1, Agent = 2 };
+    ChatModeSegment m_chatModeSegment = ChatModeSegment::Chat;
+    QAbstractButton *m_chatSegBtn    = nullptr;
+    QAbstractButton *m_composeSegBtn = nullptr;
+    QAbstractButton *m_agentSegBtn   = nullptr;
 
     // Live streaming-stats display — shows "GENERATING: 145 tok · 23
     // tok/s · 6.3 s" updating every 250 ms while the model is producing
@@ -245,6 +304,11 @@ private:
     QPushButton *m_clearBtn;
     QPushButton *m_attachBtn;
     QPushButton *m_voiceBtn;
+    // v0.1.61 — promoted to member so applyMode can hide the ⛶ expand
+    // toggle while in Coding/Data mode (those modes commit to fullscreen;
+    // user exits by switching back to Chat). In Chat mode it's visible
+    // and toggles split↔fullscreen as before.
+    QPushButton *m_aiExpandBtn = nullptr;
     QLabel *m_attachmentChip;
     QCheckBox *m_thinkingCheck;
     // v0.1.55 — privacy toggle. When unchecked (default), Notepatra
@@ -365,6 +429,12 @@ private slots:
     // placeholder so the user doesn't type into a dead field. Called from
     // dropdown change handlers, backend switches, and ollama/openai probes.
     void updateInputAvailability();
+
+    // v0.1.61 (Item 8) — handler for the bottom 3-segment toggle.
+    // Stores the new value in m_chatModeSegment, refreshes the placeholder
+    // hint, and toggles the inline Edit Plan list's visibility. Purely
+    // internal state — no signals are emitted to the host MainWindow.
+    void chatModeSelectorChanged(int segment);
 };
 
 #endif
