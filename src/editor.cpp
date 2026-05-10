@@ -126,6 +126,8 @@
 #include <QTextCodec>
 #include <QToolTip>
 #include "gitgutter.h"
+#include "git_hunk_apply.h"
+#include "gutter_hunk_popup.h"
 
 namespace {
 
@@ -610,7 +612,11 @@ void Editor::setupMargins() {
     // Git gutter markers (margin 3)
     setMarginType(3, QsciScintilla::SymbolMargin);
     setMarginWidth(3, 4);
-    setMarginSensitivity(3, false);
+    // v0.1.62 — margin is now sensitive so QScintilla emits marginClicked
+    // for the green / yellow / red bars. The handler in onMarginClicked
+    // looks up the containing hunk via GitGutter::hunksForFile and pops
+    // the GutterHunkPopup at the clicked line.
+    setMarginSensitivity(3, true);
     // Marker 1 = git added (green bar)
     markerDefine(QsciScintilla::Background, 1);
     setMarkerBackgroundColor(QColor("#4CAF50"), 1);
@@ -967,6 +973,79 @@ void Editor::onMarginClicked(int margin, int line, Qt::KeyboardModifiers) {
             markerDelete(line, 0);
         else
             markerAdd(line, 0);
+    } else if (margin == 3) {
+        // v0.1.62 — Git gutter click. Find the hunk that contains the
+        // clicked (0-based) line, build a GutterHunkPopup, and anchor it
+        // to that line's screen coordinates. Bails silently if the file
+        // isn't on disk, isn't in a git repo, or has no hunk at this
+        // line (e.g. user clicked the gutter between two hunks).
+        if (m_filePath.isEmpty()) return;
+        const int oneBased = line + 1;
+
+        const QVector<DiffHunk> hunks = GitGutter::hunksForFile(m_filePath);
+        if (hunks.isEmpty()) return;
+
+        const int idx = GitGutter::hunkIndexForLine(hunks, oneBased);
+        if (idx < 0) return;
+        const DiffHunk &hunk = hunks[idx];
+
+        // Reconstruct before/after text for the popup's DiffView. The
+        // "before" is the slice of HEAD that the hunk covers; the
+        // "after" is the slice of the on-disk file that the hunk
+        // produces. We rebuild both directly from the hunk body so the
+        // preview matches exactly the lines the user would stage.
+        QStringList beforeLines, afterLines;
+        for (const QString &raw : hunk.rawDiffLines) {
+            if (raw.isEmpty()) continue;
+            const QChar c = raw[0];
+            const QString rest = raw.mid(1);
+            if (c == '-') {
+                beforeLines.append(rest);
+            } else if (c == '+') {
+                afterLines.append(rest);
+            } else if (c == ' ') {
+                beforeLines.append(rest);
+                afterLines.append(rest);
+            }
+            // '\' = "No newline at end of file" — visually irrelevant.
+        }
+        const QString beforeText = beforeLines.join('\n');
+        const QString afterText  = afterLines.join('\n');
+
+        // Resolve the repo root from the file path itself — we can't
+        // assume MainWindow set a workspace, the file may be opened
+        // ad-hoc.
+        const QString repoRoot = GitHunkApply::repoRootForFile(m_filePath);
+        if (repoRoot.isEmpty()) return;
+
+        // Anchor: convert the (line, 0) caret position to a viewport
+        // pixel, then to global. QScintilla exposes SCI_POINTXFROMPOSITION
+        // and SCI_POINTYFROMPOSITION for that purpose. We add a small
+        // x-offset so the popup sits to the RIGHT of the gutter rather
+        // than over the gutter itself.
+        const int pos = positionFromLineIndex(line, 0);
+        const int px = (int)SendScintilla(SCI_POINTXFROMPOSITION, 0L, (long)pos);
+        const int py = (int)SendScintilla(SCI_POINTYFROMPOSITION, 0L, (long)pos);
+        const QPoint local(px + 8, py);
+        const QPoint globalPos = viewport()->mapToGlobal(local);
+
+        auto *popup = new GutterHunkPopup(m_filePath, repoRoot, hunk,
+                                          beforeText, afterText, this);
+        // Refresh the gutter as soon as the index changes — the marker
+        // disappears the moment staging succeeds.
+        connect(popup, &GutterHunkPopup::hunkStaged, this, [this](const QString &) {
+            updateGitGutter();
+        });
+        // Reverts mutate the working copy itself; we need to re-read the
+        // file from disk so the buffer matches.
+        connect(popup, &GutterHunkPopup::hunkReverted, this, [this](const QString &path) {
+            // Only reload if the buffer is clean — we don't want to clobber
+            // unsaved edits. (The popup only operates on the on-disk diff,
+            // but the buffer may have post-save edits on top.)
+            if (!isModified()) loadFile(path);
+            updateGitGutter();
+        });
+        popup->showAt(globalPos);
     }
 }
 
