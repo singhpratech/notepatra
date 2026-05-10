@@ -176,6 +176,12 @@ public:
     QStringList recentFiles;
     int maxRecent = 15;
 
+    // v0.1.61 — file-explorer hidden-paths set. Right-click any tree
+    // node → "Hide" appends to this list; the file-tree's filter proxy
+    // refuses to show anything whose absolute path is in here. Persists
+    // across launches so vendor / node_modules stay hidden after restart.
+    QStringList explorerHiddenPaths;
+
     // Window
     int windowX = -1, windowY = -1, windowW = 1280, windowH = 800;
     bool maximized = false;
@@ -252,6 +258,10 @@ public:
         recentFiles.clear();
         for (const auto &v : o.value("recentFiles").toArray())
             recentFiles.append(v.toString());
+
+        explorerHiddenPaths.clear();
+        for (const auto &v : o.value("explorerHiddenPaths").toArray())
+            explorerHiddenPaths.append(v.toString());
     }
 
     void save() {
@@ -305,6 +315,10 @@ public:
         QJsonArray arr;
         for (const auto &f : recentFiles) arr.append(f);
         o["recentFiles"] = arr;
+
+        QJsonArray hidden;
+        for (const auto &p : explorerHiddenPaths) hidden.append(p);
+        o["explorerHiddenPaths"] = hidden;
 
         QFile f(configPath());
         if (f.open(QIODevice::WriteOnly))

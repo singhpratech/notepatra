@@ -403,15 +403,23 @@ QString messageTranscriptHtml(const QVector<AIPanel::ChatMessage> &messages,
             // applied on the <td> via bgcolor for Qt rich-text reliability
             // (same reason as the assistant card below — nested-div bg in
             // Qt's CSS subset can drop).
+            // v0.1.61 — copy anchor below the pill, matches the assistant
+            // card's per-message ⧉ copy link. Routes through the same
+            // copy://message/N handler in handleChatLink().
             html += QString(
                 "<table class='msg' cellpadding='0' cellspacing='0' style='margin-bottom:14px;'>"
                 "<tr><td align='right'>"
-                "<table cellpadding='0' cellspacing='0'><tr>"
-                "<td bgcolor='%2' style='padding:10px 16px; color:%3; font-size:13px; font-weight:500;'>"
+                "<table cellpadding='0' cellspacing='0'>"
+                "<tr><td bgcolor='%2' style='padding:10px 16px; color:%3; font-size:13px; font-weight:500;'>"
                 "<div class='message-plain'>%1</div>"
-                "</td></tr></table>"
+                "</td></tr>"
+                "<tr><td align='right' style='padding:3px 4px 0 0;'>"
+                "<a href='copy://message/%4' style='color:%5; font-size:10px; text-decoration:none; font-weight:600;'>⧉ copy</a>"
+                "</td></tr>"
+                "</table>"
                 "</td></tr></table>")
-                .arg(plainTextHtml(message.text), pal.userBg, pal.userFg);
+                .arg(plainTextHtml(message.text), pal.userBg, pal.userFg,
+                     QString::number(i), pal.linkFg);
             continue;
         }
 
@@ -549,28 +557,28 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // slot in MainWindow so this panel doesn't need to know about its
     // splitter parent. Keyboard shortcut F11 also works (registered in
     // MainWindow).
-    auto *expandBtn = new QPushButton(QString::fromUtf8("\xE2\x9B\xB6")); // U+26F6 SQUARE FOUR CORNERS
+    m_aiExpandBtn = new QPushButton(QString::fromUtf8("\xE2\x9B\xB6")); // U+26F6 SQUARE FOUR CORNERS
     {
-        QFont f = expandBtn->font();
+        QFont f = m_aiExpandBtn->font();
         f.setPointSize(f.pointSize() > 0 ? f.pointSize() + 4 : 14);
         f.setBold(true);
-        expandBtn->setFont(f);
+        m_aiExpandBtn->setFont(f);
     }
-    expandBtn->setFixedSize(36, 28);
-    expandBtn->setCursor(Qt::PointingHandCursor);
-    expandBtn->setFlat(true);
-    expandBtn->setCheckable(true);
-    expandBtn->setToolTip(tr("Expand the AI panel to take the full window. "
+    m_aiExpandBtn->setFixedSize(36, 28);
+    m_aiExpandBtn->setCursor(Qt::PointingHandCursor);
+    m_aiExpandBtn->setFlat(true);
+    m_aiExpandBtn->setCheckable(true);
+    m_aiExpandBtn->setToolTip(tr("Expand the AI panel to take the full window. "
                              "Click again to restore. (F11)"));
-    expandBtn->setStyleSheet(
+    m_aiExpandBtn->setStyleSheet(
         "QPushButton { background: transparent; border: none; "
         "color: #888; padding: 0 0 2px 0; } "
         "QPushButton:hover { background: rgba(120,120,120,0.18); color: #444; } "
         "QPushButton:checked { background: rgba(204,120,92,0.18); color: #CC785C; }");
-    connect(expandBtn, &QPushButton::toggled, this, [this](bool on) {
+    connect(m_aiExpandBtn, &QPushButton::toggled, this, [this](bool on) {
         emit fullscreenToggled(on);
     });
-    headerLay->addWidget(expandBtn, 0, Qt::AlignRight);
+    headerLay->addWidget(m_aiExpandBtn, 0, Qt::AlignRight);
 
     auto *closeBtn = new QPushButton(QString::fromUtf8("\xC3\x97"));  // U+00D7 MULTIPLICATION SIGN
     {
@@ -786,6 +794,14 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     m_modelCombo->setEditable(true);
     m_modelCombo->addItem("(detecting…)");
     m_modelCombo->setEnabled(false);
+    // v0.1.61 — watch dropdown enable/disable transitions so the chat input
+    // auto-enables the instant a probe completes (no Reset required).
+    // Previously updateInputAvailability() only fired on currentTextChanged,
+    // which races setEnabled(true) — the dropdown text changed while still
+    // disabled, so `ready` was computed as false; then setEnabled(true) ran
+    // silently. Net effect: user had to wiggle the dropdown (or hit Reset)
+    // to coax the input on. EnabledChange catches every code path.
+    m_modelCombo->installEventFilter(this);
     // v0.1.55 — searchable dropdown. The QCompleter searches against
     // Qt::EditRole on each item (a fused blob of label + provider key +
     // nice name + synonyms like "claude haiku sonnet opus anthropic …"
@@ -993,6 +1009,21 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         Config::instance().aiDataMode = data;
         Config::instance().save();
 
+        // v0.1.61 — chrome visibility per mode:
+        //   * Coding/Data: committed AI-first workflow — hide the ⛶ expand
+        //     toggle. Only the ✕ close button shows. To exit fullscreen the
+        //     user switches back to Chat mode (mode-button click).
+        //   * Coding only: 🔒 Share file toggle is meaningful (controls
+        //     whether the open editor file ships with the prompt). In Chat
+        //     and Data modes there's no current-file concept worth sharing,
+        //     so the toggle disappears.
+        if (m_aiExpandBtn) {
+            m_aiExpandBtn->setVisible(!(coding || data));
+        }
+        if (m_shareFileCheck) {
+            m_shareFileCheck->setVisible(coding);
+        }
+
         if (m_customInput) {
             m_customInput->setPlaceholderText(
                 coding ? "Coding Mode · e.g. Refactor this function / Add types / Translate to TypeScript"
@@ -1116,6 +1147,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
 
         if (m_chatLayout) renderTranscript();
         emit codingModeRequested(coding);
+        emit codingModeChanged(coding);   // v0.1.61 — explorer-visibility gate
     };
 
     // v0.1.57 — Coding mode AUTO-EXPANDS the AI dock to fullscreen so the
@@ -1145,9 +1177,12 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             [this, applyModeWithCancel](bool on) {
                 if (on) { applyModeWithCancel(); emit fullscreenToggled(true); }
             });
+    // v0.1.61 — Data mode is AI-first and auto-fullscreens like Coding
+    // mode. Pre-fix Data mode stayed in split layout, which conflicted
+    // with the request to have a committed Data-mode workflow.
     connect(m_dataMode,   &QAbstractButton::toggled, this,
             [this, applyModeWithCancel](bool on) {
-                if (on) { applyModeWithCancel(); emit fullscreenToggled(false); }
+                if (on) { applyModeWithCancel(); emit fullscreenToggled(true); }
             });
 
     // Refresh the data-mode capability banner when the user picks a
@@ -2236,6 +2271,10 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     updateInputAvailability();
 }
 
+bool AIPanel::isCodingMode() const {
+    return m_codingMode && m_codingMode->isChecked();
+}
+
 void AIPanel::setContext(const QString &selectedText, const QString &filePath, const QString &language) {
     // Legacy 3-arg path — keep working for callers that haven't moved to
     // setWorkspaceContext yet. We treat the passed selected text as both
@@ -2508,6 +2547,14 @@ static QString extractFileContent(const QString &path, const QString &kind,
 }
 
 bool AIPanel::eventFilter(QObject *obj, QEvent *evt) {
+    // v0.1.61 — model dropdown enable/disable transitions retrigger the
+    // input gate. See the installEventFilter call where m_modelCombo is
+    // created for the full rationale. Defer to next event-loop tick so any
+    // currentText change that came along with the enable lands first.
+    if (obj == m_modelCombo && evt->type() == QEvent::EnabledChange) {
+        QTimer::singleShot(0, this, [this]() { updateInputAvailability(); });
+        return false;  // don't swallow — let the widget process the event
+    }
     if (obj == m_attachmentChip && evt->type() == QEvent::MouseButtonPress) {
         // Click on the chip → clear the attachment
         m_pendingFilePath.clear();
@@ -2762,6 +2809,68 @@ void AIPanel::sendPrompt(const QString &action) {
         return;
     }
     m_ollama->setModel(model);
+
+    // v0.1.61 — pre-send capability + context guard. Refuse politely BEFORE
+    // dispatching when the selected model can't do what's needed (no tool
+    // calls) OR the prerequisite workspace/DB context hasn't been wired
+    // (Coding without an open file/folder, Data without a configured
+    // connection). Otherwise the model generates plausible prose that
+    // fails silently, and the failure mode is invisible to a new user.
+    // Skip for the plain Chat path — chat doesn't need workspace/DB.
+    {
+        const bool codingNow = (m_codingMode && m_codingMode->isChecked());
+        const bool dataNow   = (m_dataMode   && m_dataMode->isChecked());
+
+        // Context gate: Coding needs a workspace root. Data needs at least
+        // one saved DB connection. Refuse with a one-click setup pointer.
+        if (codingNow && m_workspaceRoot.isEmpty()) {
+            appendErrorBubble(
+                "Coding Mode needs an open folder so I can read/edit your "
+                "files. Open one via File → Open Folder… (or drag a folder "
+                "onto the window), then ask again. If you just want to chat "
+                "about code in general (no file ops), switch to Chat mode.");
+            return;
+        }
+        if (dataNow && DbConnections::loadAll().isEmpty()) {
+            appendErrorBubble(
+                "Data Mode needs at least one database connection (SQLite, "
+                "PostgreSQL, MySQL, SQL Server, or DuckDB). Click "
+                "Manage Connections… in the Data row above to add one, "
+                "then ask again. If you just have a CSV / Parquet file, add "
+                "it as a DuckDB connection pointing at the file path.");
+            return;
+        }
+
+        if (codingNow && !currentModelSupportsTools()) {
+            appendErrorBubble(QString(
+                "The selected model '%1' doesn't support tool calls, "
+                "which Coding Mode needs to read your files and apply edits. "
+                "Switch to a tool-capable model:\n\n"
+                "  • Local (Ollama):  qwen2.5-coder:7b · qwen2.5-coder:14b · "
+                "llama3.1:8b · mistral-nemo\n"
+                "  • Cloud (OpenRouter / direct):  claude-sonnet-4-5 · "
+                "claude-opus-4-7 · gpt-5 · gpt-4o · gemini-2.5-flash\n\n"
+                "Tip: tool-capable models render in green in the dropdown; "
+                "the amber ones can't call tools. Or turn off Coding Mode if "
+                "you just want to chat.").arg(model));
+            return;
+        }
+        if (dataNow && !AiTools::modelCapableOfDataAnalysis(model)) {
+            appendErrorBubble(QString(
+                "The selected model '%1' isn't strong enough for the Data "
+                "Analyst mode — that workflow needs both tool calls (to run "
+                "SQL against your DB) AND structured reasoning (to plan "
+                "queries + summarise results). Switch to:\n\n"
+                "  • Local (Ollama):  qwen2.5-coder:14b (recommended) · "
+                "qwen2.5-coder:7b · deepseek-coder:33b\n"
+                "  • Cloud:  claude-sonnet-4-5 · claude-opus-4-7 · gpt-5 · "
+                "gpt-4o · gemini-2.5-pro · deepseek-r1\n\n"
+                "Tip: data-capable models render in green; amber ones won't "
+                "be reliable for SQL + charts. Or turn off Data Mode if you "
+                "just want to chat.").arg(model));
+            return;
+        }
+    }
 
     // Build the system prompt via the layered builder in ai_systemprompt.cpp.
     // The builder composes: identity + anti-tool-call + mode-specific +
@@ -3267,6 +3376,16 @@ static void aiAddUserBubble(QVBoxLayout *target, const QString &text,
     rowLay->setContentsMargins(0, 0, 0, 10);
     rowLay->addStretch(1);
 
+    // v0.1.61 — wrap pill + copy button in a vertical stack so the copy
+    // icon sits just under the pill, right-aligned. Users have been asking
+    // to copy their own prompt back (re-edit, paste elsewhere) and the
+    // assistant card has had a copy button forever — now both sides match.
+    auto *stack = new QWidget;
+    stack->setStyleSheet("background: transparent;");
+    auto *stackLay = new QVBoxLayout(stack);
+    stackLay->setContentsMargins(0, 0, 0, 0);
+    stackLay->setSpacing(2);
+
     auto *pill = new QFrame;
     pill->setObjectName("userPill");
     pill->setStyleSheet(QString(
@@ -3283,8 +3402,26 @@ static void aiAddUserBubble(QVBoxLayout *target, const QString &text,
         .arg(pal.userFg));
     msg->setMaximumWidth(480);
     pillLay->addWidget(msg);
+    stackLay->addWidget(pill, 0, Qt::AlignRight);
 
-    rowLay->addWidget(pill, 0, Qt::AlignRight);
+    auto *copyBtn = new QPushButton("⧉ copy");
+    copyBtn->setCursor(Qt::PointingHandCursor);
+    copyBtn->setFlat(true);
+    copyBtn->setToolTip("Copy this message to the clipboard");
+    copyBtn->setStyleSheet(QString(
+        "QPushButton { "
+        "  color: %1; font-size: 10px; font-weight: 600; "
+        "  padding: 2px 8px; border: none; "
+        "  background: transparent; "
+        "} "
+        "QPushButton:hover { color: %2; text-decoration: underline; }")
+        .arg(pal.muted, pal.accent));
+    QObject::connect(copyBtn, &QPushButton::clicked, copyBtn, [text]() {
+        QApplication::clipboard()->setText(text);
+    });
+    stackLay->addWidget(copyBtn, 0, Qt::AlignRight);
+
+    rowLay->addWidget(stack, 0, Qt::AlignRight);
 
     target->insertWidget(target->count() - 1, row);
 }
@@ -5574,20 +5711,39 @@ void AIPanel::updateInputAvailability() {
     if (m_customInput) {
         m_customInput->setEnabled(ready);
         if (!ready) {
-            // Override whatever mode-specific placeholder applyMode set
-            // — the user needs to know WHY they can't type.
-            QString why = QStringLiteral("Select a model in the dropdown above to start chatting…");
+            // v0.1.61 — placeholders now teach the user how to fix the
+            // disabled state. The prior copy ("Select a model…") was
+            // accurate but didn't help a first-time user who had no idea
+            // where to find a model in the first place. Each state gives
+            // a concrete next action with the exact command to run.
+            QString why = QStringLiteral(
+                "Please select a model to start chatting. "
+                "Pick one from the dropdown above — Ollama runs locally on your machine, "
+                "or click ⚙ to add an API key for OpenRouter / OpenAI / Azure / Ollama Cloud.");
             if (m_modelCombo) {
                 const QString text = m_modelCombo->currentText().trimmed();
                 if (text.contains("offline", Qt::CaseInsensitive))
-                    why = QStringLiteral("Ollama is offline — start it (`ollama serve`) and click ↻ Refresh.");
+                    why = QStringLiteral(
+                        "Ollama is offline. Open a terminal and run `ollama serve`, "
+                        "then click ↻ Refresh above. Alternatively, switch the backend "
+                        "dropdown to llama.cpp / OpenRouter / OpenAI / Azure to use a "
+                        "different runner.");
                 else if (text.contains("no models", Qt::CaseInsensitive))
-                    why = QStringLiteral("No models installed — `ollama pull qwen2.5-coder:7b` then click ↻.");
+                    why = QStringLiteral(
+                        "Ollama is running but has no models installed yet. Run "
+                        "`ollama pull qwen2.5-coder:7b` for code work (~5 GB), or "
+                        "`ollama pull llama3.2:3b` for a lightweight chat model "
+                        "(~2 GB). Then click ↻ Refresh above.");
                 else if (text.contains("api key", Qt::CaseInsensitive)
                       || text.contains("key required", Qt::CaseInsensitive))
-                    why = QStringLiteral("API key required — open ⚙ to add one, then pick a model.");
+                    why = QStringLiteral(
+                        "This backend needs an API key. Click ⚙ Settings (top of the AI dock) "
+                        "to paste your key for OpenRouter / OpenAI / Azure / Ollama Cloud, "
+                        "save, and pick a model from the dropdown.");
                 else if (text.contains("detecting", Qt::CaseInsensitive))
-                    why = QStringLiteral("Detecting available models…");
+                    why = QStringLiteral(
+                        "Detecting available models… "
+                        "If this hangs, click ↻ Refresh or switch the backend dropdown.");
             }
             m_customInput->setPlaceholderText(why);
         }

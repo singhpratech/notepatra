@@ -118,6 +118,21 @@ signals:
     // previous splitter sizes and visibility.
     void fullscreenToggled(bool on);
 
+    // v0.1.61 — same payload as `codingModeRequested`, but with intent-
+    // neutral wording. MainWindow listens to gate the file-explorer
+    // sidebar visibility strictly to Coding mode. Kept separate so
+    // callers that only care about the mode flip (no auto-3-column
+    // layout side-effect) don't have to read intent into the older
+    // signal name.
+    void codingModeChanged(bool active);
+
+public:
+    // v0.1.61 — lets MainWindow query the current coding-mode state
+    // after constructor wiring (the constructor's internal applyMode()
+    // emit fires before MainWindow has hooked its slot, so we need a
+    // pull path for the initial sync).
+    bool isCodingMode() const;
+
 private:
     void sendPrompt(const QString &action);
     void setStatus(const QString &text, bool error = false);
@@ -245,6 +260,11 @@ private:
     QPushButton *m_clearBtn;
     QPushButton *m_attachBtn;
     QPushButton *m_voiceBtn;
+    // v0.1.61 — promoted to member so applyMode can hide the ⛶ expand
+    // toggle while in Coding/Data mode (those modes commit to fullscreen;
+    // user exits by switching back to Chat). In Chat mode it's visible
+    // and toggles split↔fullscreen as before.
+    QPushButton *m_aiExpandBtn = nullptr;
     QLabel *m_attachmentChip;
     QCheckBox *m_thinkingCheck;
     // v0.1.55 — privacy toggle. When unchecked (default), Notepatra
