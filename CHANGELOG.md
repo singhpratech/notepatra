@@ -7,6 +7,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.66] — 2026-05-10
+
+**Manage Connections UX + local SQL Server harness + website cleanup.**
+
+### Added — Manage Connections preset dropdown
+
+* `src/dbconnections.{h,cpp}` — new Preset dropdown at the top of the connection form. Seven templates: SQL Server (localhost ODBC), SQL Server Express (named instance), Azure SQL Database, PostgreSQL (localhost), MySQL/MariaDB (localhost), SQLite (file), DuckDB (file or `:memory:`). Each preset fills driver / port / host / database / options with sensible defaults; user can edit anything afterwards.
+
+### Added — Per-driver smart defaults
+
+* `onDriverChanged()` auto-fills the default port (1433 / 5432 / 3306) when it's still 0, sets per-driver placeholders on every field, shows SQL Server-specific Options template (`DRIVER={ODBC Driver 18 for SQL Server};Encrypt=no`).
+* New `m_driverHint` QLabel below the form. Amber + per-OS install commands when the Qt SQL plugin is missing (covers Microsoft msodbcsql18 setup for Linux + macOS + Windows). Green usage tip when the plugin is present.
+
+### Added — Local SQL Server Docker harness
+
+* `docker/sql-server-local.yml` — `mcr.microsoft.com/mssql/server:2022-latest` bound to 127.0.0.1:1433. Localhost-only by design (not 0.0.0.0).
+* `scripts/sql-server-local-setup.sh` — one-command spin-up: brings container up, waits for healthy, seeds `NotepatraTest` DB with customers/products/orders tables (5 + 5 + 9 rows), registers a `sql-server-local` connection in `~/.config/notepatra/db-connections.json`. `--teardown` and `--wipe` flags for cleanup. Apple Silicon note (image is x64-only, runs under Rosetta/QEMU at ~3× speed).
+
+### Added — Comprehensive "How to connect" documentation
+
+* `docs/docs.html` — new "How to connect — step by step (v0.1.66+)" section under Data Analyst Mode. Per-database walkthroughs for SQL Server (local Docker + remote + Windows Auth + Azure SQL TLS), PostgreSQL (local + managed sslmode + Unix-socket), MySQL/MariaDB (local + managed SSL_CA + Unix-socket), SQLite (file picker), DuckDB (multi-mode Database field).
+* Driver-availability matrix per OS (Linux apt / macOS brew / Windows bundled).
+* Troubleshooting list for five most common connection failures.
+
+### Changed — Website cleanup
+
+* `docs/index.html` — removed the obsolete FAQ entry about v0.1.23 → v0.1.24 Windows MuiCache cleanup (only affected upgrades from a specific pre-fix release; no longer relevant). Historical version cards (every release pre-v0.1.65, ~60 cards, ~2500 lines of HTML) replaced with a single "See every release on GitHub →" link block. Latest version card stays inline. Page weight dropped 54% (4787 → 2201 lines).
+
+### Fixed — Version history housekeeping
+
+* v0.1.63 and v0.1.64 GitHub tags now have notes-only releases ("rolled into v0.1.65") so the Releases page shows a continuous v0.1.62 → v0.1.66 ladder with no gaps. The notes-only releases carry no binaries — they point users at v0.1.65 / v0.1.66 for artifacts.
+
+---
+
 ## [0.1.65] — 2026-05-10
 
 **Hotfix: full-flavor build crashed in CI on `QJsonDocument(QJsonValue)`.**
