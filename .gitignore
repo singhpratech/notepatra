@@ -1,4 +1,15 @@
 build/
+# v0.1.64+ uses build-lite/ for the default lite-flavor build and
+# build-full/ for the optional WebEngine-bundled flavor, so both are
+# ignored alongside the legacy build/ output dir.
+build-lite/
+build-full/
+# Historical per-release worktrees (v0.1.61 / v0.1.62 / v0.1.63 etc).
+# Registered via `git worktree add`; the working trees live inside
+# this directory but their commit history is on the corresponding
+# feature/* branches, so the top-level dir doesn't belong in the
+# main branch's index.
+.worktrees/
 rust-core/target/
 *.o
 *.so
