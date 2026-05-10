@@ -11,7 +11,9 @@
 #
 # Pre-reqs:
 #   - Docker engine + `docker compose` v2 plugin
-#   - jq (for JSON-safe edits to db-connections.json)
+#   - python3 (always present on modern Linux / macOS; used for JSON-safe
+#     edits to db-connections.json — replaces an earlier jq dependency
+#     because jq isn't installed on every dev box)
 #
 # Usage:
 #   bash scripts/sql-server-local-setup.sh                # spin up + seed
@@ -32,6 +34,10 @@ CONTAINER_NAME="notepatra-mssql-local"
 CONNECTION_NAME="sql-server-local"
 SA_PASSWORD="Notepatra_Local_Dev!2026"
 TEST_DB="NotepatraTest"
+# Default external port is 14330 (NOT 1433) so this harness coexists
+# with any other local SQL Server already on 1433. Override with the
+# NOTEPATRA_MSSQL_PORT env var when invoking the script.
+EXTERNAL_PORT="${NOTEPATRA_MSSQL_PORT:-14330}"
 
 # ─── Option parsing ────────────────────────────────────────────────────
 MODE="up"
@@ -139,9 +145,11 @@ TRUST_CERT=""
 if [[ "$SQLCMD_BIN" == *mssql-tools18* ]]; then TRUST_CERT="-C"; fi
 
 run_sql() {
+    # -I forces QUOTED_IDENTIFIER ON which is required for PERSISTED
+    # computed columns. Default sqlcmd setting is OFF.
     docker exec -i "$CONTAINER_NAME" "$SQLCMD_BIN" \
         -S localhost -U sa -P "$SA_PASSWORD" $TRUST_CERT \
-        -b -d "${1:-master}"
+        -I -b -d "${1:-master}"
 }
 
 # ─── Seed the test database ────────────────────────────────────────────
@@ -189,9 +197,13 @@ CREATE TABLE dbo.orders (
     product_id    INT          NOT NULL REFERENCES dbo.products(product_id),
     quantity      INT          NOT NULL CHECK (quantity > 0),
     order_date    DATETIME2    NOT NULL DEFAULT SYSUTCDATETIME(),
-    total_amount  AS (CAST(quantity AS DECIMAL(10,2)) *
-                      (SELECT unit_price FROM dbo.products
-                       WHERE products.product_id = orders.product_id)) PERSISTED
+    -- snapshot of unit price at order time + total_amount captured here.
+    -- SQL Server doesn't allow subqueries inside computed columns, so we
+    -- store the price snapshot at INSERT time. Side benefit: orders.total
+    -- is immutable if products.unit_price later changes — closer to how
+    -- real e-commerce systems model historical orders anyway.
+    unit_price    DECIMAL(10,2) NOT NULL,
+    total_amount  AS (CAST(quantity AS DECIMAL(10,2)) * unit_price) PERSISTED
 );
 
 INSERT INTO dbo.customers (name, email, country) VALUES
@@ -208,12 +220,17 @@ INSERT INTO dbo.products (sku, name, category, unit_price) VALUES
     ('SKU-HUB-7',   '7-port USB Hub',     'Electronics', 29.95),
     ('SKU-MAT-A4',  'A4 Desk Mat',        'Stationery', 14.00);
 
-INSERT INTO dbo.orders (customer_id, product_id, quantity) VALUES
-    (1, 1, 3),   (1, 2, 10),
-    (2, 3, 1),
-    (3, 4, 2),   (3, 1, 5),
-    (4, 5, 4),
-    (5, 2, 12),  (5, 3, 2),  (5, 4, 1);
+-- Insert orders with unit_price denormalised from products at order time.
+INSERT INTO dbo.orders (customer_id, product_id, quantity, unit_price)
+SELECT v.customer_id, v.product_id, v.quantity, p.unit_price
+FROM (VALUES
+    (1, 1,  3), (1, 2, 10),
+    (2, 3,  1),
+    (3, 4,  2), (3, 1,  5),
+    (4, 5,  4),
+    (5, 2, 12), (5, 3,  2), (5, 4, 1)
+) AS v(customer_id, product_id, quantity)
+JOIN dbo.products p ON p.product_id = v.product_id;
 
 PRINT 'seeded customers / products / orders';
 SQL
@@ -247,35 +264,53 @@ PY
 }
 OBSCURED="$(obfuscate_password "$SA_PASSWORD")"
 
-NEW_RECORD=$(jq -n \
-    --arg name "$CONNECTION_NAME" \
-    --arg driver "QODBC" \
-    --arg host "localhost" \
-    --argjson port 1433 \
-    --arg db "$TEST_DB" \
-    --arg user "sa" \
-    --arg pw "$OBSCURED" \
-    --arg opts "DRIVER={ODBC Driver 18 for SQL Server};Encrypt=no" \
-    '{name:$name, driver:$driver, host:$host, port:$port, database:$db,
-      username:$user, password:$pw, options:$opts}')
+# Atomic write of the connection record via python3 (jq-free so this
+# script works on dev boxes without jq installed). The python script
+# does the same upsert-by-name semantics: replace if a record with this
+# name already exists, append otherwise. tmp + rename gives atomicity.
+python3 - "$CONFIG_FILE" "$CONNECTION_NAME" "$EXTERNAL_PORT" "$TEST_DB" "$OBSCURED" <<'PY'
+import json, os, sys
 
-if [[ -f "$CONFIG_FILE" ]]; then
-    # Replace or append the named record.
-    NEW_CONFIG=$(jq --arg name "$CONNECTION_NAME" --argjson rec "$NEW_RECORD" \
-        '. as $orig
-         | if any($orig[]; .name == $name)
-           then map(if .name == $name then $rec else . end)
-           else . + [$rec]
-           end' "$CONFIG_FILE")
-else
-    NEW_CONFIG=$(jq -n --argjson rec "$NEW_RECORD" '[$rec]')
-fi
+cfg_path, name, port_str, db, obscured_pw = sys.argv[1:6]
 
-# Atomic write — tmp + rename.
-TMP="${CONFIG_FILE}.tmp"
-echo "$NEW_CONFIG" > "$TMP"
-mv "$TMP" "$CONFIG_FILE"
-echo "✓ Connection '$CONNECTION_NAME' written to $CONFIG_FILE"
+record = {
+    "name":     name,
+    "driver":   "QODBC",
+    "host":     "localhost",
+    "port":     int(port_str),
+    "database": db,
+    "username": "sa",
+    "password": obscured_pw,
+    "options":  "DRIVER={ODBC Driver 18 for SQL Server};Encrypt=no",
+}
+
+records = []
+if os.path.isfile(cfg_path):
+    with open(cfg_path, "r", encoding="utf-8") as f:
+        try:
+            records = json.load(f)
+        except json.JSONDecodeError:
+            records = []
+    if not isinstance(records, list):
+        records = []
+
+# Upsert by name.
+replaced = False
+for i, r in enumerate(records):
+    if isinstance(r, dict) and r.get("name") == name:
+        records[i] = record
+        replaced = True
+        break
+if not replaced:
+    records.append(record)
+
+tmp = cfg_path + ".tmp"
+with open(tmp, "w", encoding="utf-8") as f:
+    json.dump(records, f, indent=2)
+os.replace(tmp, cfg_path)
+print(f"✓ Connection '{name}' (replaced)" if replaced else f"✓ Connection '{name}' (appended)")
+PY
+echo "  written to $CONFIG_FILE"
 
 # ─── Done ──────────────────────────────────────────────────────────────
 cat <<EOF
@@ -284,7 +319,7 @@ cat <<EOF
 ✓ Local SQL Server is up and ready.
 
 Container:  $CONTAINER_NAME           (docker ps | grep mssql)
-Host:port:  127.0.0.1:1433
+Host:port:  127.0.0.1:$EXTERNAL_PORT
 Database:   $TEST_DB
 Username:   sa
 Password:   $SA_PASSWORD

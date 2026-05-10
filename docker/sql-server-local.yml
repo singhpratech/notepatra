@@ -46,7 +46,12 @@ services:
       # localhost-bind is deliberate. Without it Docker exposes 1433 on
       # ALL interfaces (0.0.0.0:1433) — a credential-discovery attack
       # surface on any laptop that joins a coffee-shop wifi.
-      - "127.0.0.1:1433:1433"
+      #
+      # External port defaults to 14330 (NOT 1433) so this harness can
+      # coexist with another local SQL Server (e.g. a project-specific
+      # container already bound to 1433). Override with NOTEPATRA_MSSQL_PORT
+      # if 14330 is also taken.
+      - "127.0.0.1:${NOTEPATRA_MSSQL_PORT:-14330}:1433"
     volumes:
       # Persist data + logs across container restarts so seeded test data
       # survives a `docker compose down` (use `down -v` to actually wipe).
