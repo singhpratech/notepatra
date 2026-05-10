@@ -299,7 +299,7 @@
   <div class="topbar-left">
     <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">v0.1.59 docs</span>
+    <span class="tag">v0.1.60 docs</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
@@ -398,7 +398,7 @@
   <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock and the model gets 5 native tools — <code>read_file</code>, <code>list_dir</code>, <code>search</code>, <code>write_file</code>, <code>apply_diff</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
 
   <div class="callout info">
-    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.59 (May 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
+    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.60 (May 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
   </div>
 
   <h2 id="install" class="anchor-target">Install</h2>
@@ -613,7 +613,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
   </ul>
 
   <h2 id="languages-lexers" class="anchor-target">Languages &amp; lexers</h2>
-  <p>Notepatra ships <strong>92 language lexers</strong> as of v0.1.59 (covering 226 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
+  <p>Notepatra ships <strong>92 language lexers</strong> as of v0.1.60 (covering 226 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
   <p><strong>Core (Qt-bundled):</strong> Python, JavaScript/TypeScript/JSX, CoffeeScript, C/C++, C#, D, Java/Kotlin, HTML/PHP, CSS/SCSS/LESS, XML, JSON, SQL (ANSI / T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite), Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Matlab, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile.</p>
   <p><strong>v0.1.55 additions (32 dedicated lexers, keyword tables verified against official specs):</strong> Dart · Solidity · Zig · Vala · Hack · Julia · R · Protobuf · F# · HCL/Terraform · Thrift · GraphQL · GDScript · Nim · Cython · Mojo · Crystal · Elixir · Scala · Groovy · Apex · Jinja · Liquid · Twig · Dockerfile · Fish · Nushell · TOML · DotEnv · Gitignore · JSON5 · BibTeX. Each ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing — <code>.dart</code>, <code>.zig</code>, <code>.jl</code>, <code>.toml</code>, <code>.ex</code>, <code>Cargo.toml</code>, <code>Dockerfile</code>, <code>.gitignore</code>, <code>.env</code>, <code>.fish</code>, <code>.json5</code>, <code>.tf</code>, etc. now point at their dedicated lexers instead of falling back to the closest-fit generic.</p>
 

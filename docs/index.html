@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~9 MB stripped across platforms; full downloads are 3.2 MB (Linux x64 tar.gz), 26.6 MB (macOS DMG with bundled Qt), 39.9 MB (Windows MSI with bundled Qt DLLs). 226 file types. 92 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.59",
+      "softwareVersion": "0.1.60",
       "fileSize": "9 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -153,7 +153,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.59 download sizes: 3.2 MB Linux x64 tar.gz, 3.0 MB Linux ARM64 tar.gz, 26.6 MB macOS DMG (with bundled Qt), 39.9 MB Windows MSI / 32.0 MB NSIS / 36.5 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.60 download sizes: 3.2 MB Linux x64 tar.gz, 3.0 MB Linux ARM64 tar.gz, 26.6 MB macOS DMG (with bundled Qt), 39.9 MB Windows MSI / 32.0 MB NSIS / 36.5 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
           }
         },
         {
@@ -169,7 +169,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.59: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.60: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1236,7 +1236,7 @@
             #sticky-cta { transition: none; }
         }
 
-        /* Sticky download CTA — dock a compact "Download v0.1.59 ↓" button
+        /* Sticky download CTA — dock a compact "Download v0.1.60 ↓" button
            to the bottom-right once the user scrolls past the hero. Classic
            Apple "Buy now" floating button. Hidden on very small screens
            (phone portrait) where the nav bar already has a similar link. */
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.59">
-        Download v0.1.59 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.60">
+        Download v0.1.60 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.59 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.60 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~9 MB bare, ~2 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. No cloud unless you opt in.</p>
 
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.59</div>
+        <div class="section-label">Download v0.1.60</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1850,7 +1850,57 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.59 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.60 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-05-10</span>
+                        <span>· Stale-text drift killed — About dialog matches reality + wired audit.</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🪪 About dialog now states the real numbers</h5>
+                        <ul>
+                            <li>v0.1.59 shipped with the in-app About dialog still claiming <code>100+ file types · 48 language lexers · Local AI via Ollama / llama.cpp / OpenAI-compatible</code>. Frozen since v0.1.31. The version <em>number</em> auto-flows from <code>NOTEPATRA_VERSION</code> at compile time, but the feature counts in the body string did not.</li>
+                            <li>v0.1.60 fixes the body to read the real numbers: <strong>226 file extensions · 92 language lexers</strong> and <strong>6 AI backends — Ollama / llama.cpp / OpenRouter / Ollama Cloud / OpenAI / Azure OpenAI</strong>.</li>
+                            <li>The GitHub repo description (rendered on github.com and in search snippets) was even further out of sync — <code>~4 MB bare binary, 100+ file types, local AI via Ollama / llama.cpp / OpenAI-compatible</code>. Updated via <code>gh repo edit</code> to match the App About body and the ~9 MB binary reality.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🔧 Wired stale-text audit so this can't drift again</h5>
+                        <ul>
+                            <li>New <code>scripts/stale-text-check.sh</code>: canonical counts at the top (<code>LEXER_COUNT=92 / FILE_EXT_COUNT=226 / BACKEND_COUNT=6</code>), then 21 grep-asserts across every surface — App About body, README intro + releases-table row, <code>docs/index.html</code> stat cards + meta description + version-card, <code>docs/docs.html</code> attribution lines, <code>CHANGELOG</code>, <code>release_notes/</code>, and the <strong>live GitHub repo description</strong> queried via <code>gh repo view</code>.</li>
+                            <li>Wired into <code>scripts/release-check.sh</code> as a sub-step under <code>── stale-text audit (feature counts) ──</code>. Every release preflight now runs the audit automatically; failures point at the exact surface that drifted.</li>
+                            <li>When a count actually changes (a lexer is added, a backend retires, etc.), bump the constant at the top of the script <em>and</em> every surface in the same commit. The script names which surface still has the old value if you miss one. The manual checklist that bit v0.1.59 is replaced by a wired test.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧹 Misc stale-text cleanups</h5>
+                        <ul>
+                            <li><code>.github/ISSUE_TEMPLATE/bug_report.yml</code> — version placeholder bumped from <code>v0.1.8</code> (frozen since April) to <code>v0.1.60</code>.</li>
+                            <li><code>SECURITY.md</code> — five SHA-256 / cosign / SLSA verification examples bumped from <code>v0.1.0</code> to the current release tag so a user landing on the security page can copy-paste a working command without first noticing the URL is for the very first release.</li>
+                            <li><code>AGENTS.md</code> — local-build test command replaced an outdated five-test list with the <code>notepatra_all_tests</code> meta-target so contributors don't miss any of the 26 test binaries.</li>
+                            <li><code>src/mainwindow.cpp</code> — Language-menu code comment count fixed from "78 languages" (frozen at v0.1.55) to "92 lexers / 226 file extensions".</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>📊 Build / test</h5>
+                        <ul>
+                            <li>21/21 deterministic regression tests pass.</li>
+                            <li>Stale-text audit returns 21/21 surfaces matching canonicals.</li>
+                            <li>Bare binary unchanged — pure copy + script changes, no new deps.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.60">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.60">Commits</a>
+                </div>
+            </div>
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.59</div>
                     <div class="version-meta">
                         <span>2026-05-10</span>
                         <span>· Input gating when no model is ready + author-link refresh.</span>
@@ -4228,7 +4278,7 @@ Write-Host "Restarted Explorer — right-click any file now to verify" -Foregrou
             </div>
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.59: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
+                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.60: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -4236,7 +4286,7 @@ Write-Host "Restarted Explorer — right-click any file now to verify" -Foregrou
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.59 download sizes: <strong>3.2 MB</strong> Linux x64 tar.gz · <strong>3.0 MB</strong> Linux ARM64 tar.gz · <strong>26.6 MB</strong> macOS DMG · <strong>39.9 MB</strong> Windows MSI / <strong>32.0 MB</strong> NSIS / <strong>36.5 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.60 download sizes: <strong>3.2 MB</strong> Linux x64 tar.gz · <strong>3.0 MB</strong> Linux ARM64 tar.gz · <strong>26.6 MB</strong> macOS DMG · <strong>39.9 MB</strong> Windows MSI / <strong>32.0 MB</strong> NSIS / <strong>36.5 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -4244,7 +4294,7 @@ Write-Host "Restarted Explorer — right-click any file now to verify" -Foregrou
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.59 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.60 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>How do I verify a download is genuine?</h3>

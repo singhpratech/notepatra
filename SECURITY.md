@@ -38,8 +38,8 @@ Every release ships a `SHA256SUMS` file alongside the binaries.
 
 **Linux / macOS:**
 ```sh
-curl -sL -O https://github.com/singhpratech/notepatra/releases/download/v0.1.0/SHA256SUMS
-curl -sL -O https://github.com/singhpratech/notepatra/releases/download/v0.1.0/notepatra-linux-x64.tar.gz
+curl -sL -O https://github.com/singhpratech/notepatra/releases/download/v0.1.60/SHA256SUMS
+curl -sL -O https://github.com/singhpratech/notepatra/releases/download/v0.1.60/notepatra-linux-x64.tar.gz
 sha256sum -c SHA256SUMS --ignore-missing
 # expected: notepatra-linux-x64.tar.gz: OK
 ```
@@ -48,8 +48,8 @@ If you downloaded the ARM64 Linux build, verify `notepatra-linux-arm64.tar.gz` t
 
 **Windows PowerShell:**
 ```powershell
-Invoke-WebRequest https://github.com/singhpratech/notepatra/releases/download/v0.1.0/SHA256SUMS -OutFile SHA256SUMS
-Invoke-WebRequest https://github.com/singhpratech/notepatra/releases/download/v0.1.0/notepatra-windows-x64.zip -OutFile notepatra-windows-x64.zip
+Invoke-WebRequest https://github.com/singhpratech/notepatra/releases/download/v0.1.60/SHA256SUMS -OutFile SHA256SUMS
+Invoke-WebRequest https://github.com/singhpratech/notepatra/releases/download/v0.1.60/notepatra-windows-x64.zip -OutFile notepatra-windows-x64.zip
 $expected = (Get-Content SHA256SUMS | Select-String 'notepatra-windows-x64.zip').Line.Split(' ')[0]
 $actual   = (Get-FileHash notepatra-windows-x64.zip -Algorithm SHA256).Hash.ToLower()
 if ($expected -ne $actual) { Write-Error 'CHECKSUM MISMATCH — DO NOT RUN' } else { 'OK' }

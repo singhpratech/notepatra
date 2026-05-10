@@ -58,6 +58,15 @@ check "docs/docs.html mentions $TAG" \
     "grep -q '$TAG' docs/docs.html"
 
 echo
+echo "── stale-text audit (feature counts) ──"
+if bash scripts/stale-text-check.sh >/tmp/stale-text-check.log 2>&1; then
+    check "stale-text-check.sh: every surface matches canonical counts" "true"
+else
+    check "stale-text-check.sh: every surface matches canonical counts" "false"
+    sed -n 's/^/    /p' /tmp/stale-text-check.log | tail -40
+fi
+
+echo
 echo "── working tree ──"
 check "git working tree clean (no uncommitted changes)" \
     "[[ -z \$(git status --porcelain) ]]"

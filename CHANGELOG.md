@@ -7,6 +7,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.60] — 2026-05-10
+
+**Stale-text drift killed — About dialog matches reality + wired audit.**
+
+A 24-hour follow-up to v0.1.59.
+
+### Fixed — App About dialog now states the real feature counts
+
+* `src/mainwindow.cpp:3411` had been hardcoded at `100+ file types · 48 language lexers` and `Local AI via Ollama / llama.cpp / OpenAI-compatible` since v0.1.31. The version *number* itself flowed correctly via the `NOTEPATRA_VERSION` compile define, but the **feature counts in the body string did not**. Updated to `226 file extensions · 92 language lexers` and `6 AI backends — Ollama / llama.cpp / OpenRouter / Ollama Cloud / OpenAI / Azure OpenAI`.
+* The Language-menu code comment in `src/mainwindow.cpp:2043` was also stale (`"78 languages"`, frozen at v0.1.55) — fixed to `"92 lexers / 226 file extensions"`.
+* The **GitHub repo description** (rendered on github.com and in every search snippet) was at `~4 MB bare binary, 100+ file types`, frozen at maybe v0.1.20-era. Updated via `gh repo edit` to match the App About body and the ~9 MB binary reality.
+
+### Added — `scripts/stale-text-check.sh`, wired into `release-check.sh`
+
+The fix above is two surfaces this release; the `100+ file types` string had survived three intervening releases. Manual checklists rot. Wired checks don't. New `scripts/stale-text-check.sh`:
+
+* Canonical counts live at the top of the script (`LEXER_COUNT=92 / FILE_EXT_COUNT=226 / BACKEND_COUNT=6 / BACKEND_LIST="Ollama / llama.cpp / OpenRouter / Ollama Cloud / OpenAI / Azure OpenAI"`).
+* 21 grep-asserts across every surface that has ever drifted: App About body · README intro line · README releases-table row · `docs/index.html` stat cards · `docs/index.html` meta description · `docs/index.html` LATEST version-card · `docs/docs.html` "ships N language lexers" line · `docs/docs.html` "Latest release is" callout · `CHANGELOG.md` top entry · `release_notes/vX.md` existence · **live GitHub repo description** queried via `gh repo view`.
+* Wired into `scripts/release-check.sh` as a sub-step under `── stale-text audit (feature counts) ──`. Every release preflight runs the audit automatically.
+
+When a count actually changes in the future (a lexer is added, a backend retires, etc.), bump the constant at the top of the script *and* every surface in the same commit. The script names which surface still has the old value if you miss one.
+
+### Changed — misc stale-text cleanups
+
+* `.github/ISSUE_TEMPLATE/bug_report.yml` — version placeholder bumped from `v0.1.8` (frozen since April) to `v0.1.60`.
+* `SECURITY.md` — five SHA-256 / cosign / SLSA verification examples bumped from `releases/download/v0.1.0/` to `releases/download/v0.1.60/` so copy-paste commands work without first noticing the URL is for the very first release.
+* `AGENTS.md` — local-build test command replaced an outdated five-test list with the `notepatra_all_tests` meta-target so contributors don't miss any of the 26 test binaries.
+
+### Build / test
+
+* 21/21 deterministic regression tests pass.
+* `scripts/stale-text-check.sh` returns 21/21 surfaces matching canonicals.
+* `scripts/release-check.sh` returns clean for v0.1.60.
+* Bare binary unchanged — pure copy + script changes, no new deps.
+
+---
+
 ## [0.1.59] — 2026-05-10
 
 **Input gating when no model is ready + author-link refresh.**

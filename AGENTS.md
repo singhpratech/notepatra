@@ -30,7 +30,7 @@ Run the registered regression tests manually with:
 ```bash
 cd build
 cmake .. -DBUILD_TESTING=ON
-cmake --build . --target test_lexers test_palette test_fmtpanel_diff test_ollama test_aifix
+cmake --build . --target notepatra_all_tests
 QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 ```
 
