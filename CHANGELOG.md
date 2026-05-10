@@ -7,6 +7,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.65] — 2026-05-10
+
+**Hotfix: full-flavor build crashed in CI on `QJsonDocument(QJsonValue)`.**
+
+### Fixed — `src/charts/vega_chart_renderer.cpp` WebEngine path
+
+* The WebEngine code path used `QJsonDocument(QJsonValue(QString))` to encode the spec as a JS string literal — but Qt5's `QJsonDocument` has no `QJsonValue` constructor (only `QJsonObject` / `QJsonArray`). Replaced with a 1-element-array wrap + `mid(1, size-2)` slice, which produces the same JS-safe string literal regardless of what control chars / quotes / backslashes the Vega-Lite spec contains.
+* This bug crashed v0.1.63 CI on Linux x64 + ARM + Windows silently (only macOS happened to compile under brew qt@5's patchset). The v0.1.63 GitHub Release never published. v0.1.64 inherited the bug; the new `-full` flavor build pass would have failed identically. v0.1.65 fixes it and re-cuts.
+
+### Same behavior as v0.1.64
+
+* All v0.1.64 lite-mode-default + Charts Pack prompt + plugin_loader scaffolding ships unchanged.
+
+---
+
 ## [0.1.64] — 2026-05-10
 
 **Lite mode by default — bare binary stays small, charts move to an on-demand pack.**

@@ -16,6 +16,7 @@
 
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLocale>
@@ -150,8 +151,21 @@ void VegaChartRenderer::setSpec(const QJsonObject &vegaLiteSpec) {
     const QByteArray specJson = QJsonDocument(vegaLiteSpec).toJson(QJsonDocument::Compact);
     // JSON-encode the JSON string so it embeds safely as a JS string
     // literal — handles every escape Vega-Lite specs can contain.
-    QString jsArg = QString::fromUtf8(
-        QJsonDocument(QJsonValue(QString::fromUtf8(specJson))).toJson(QJsonDocument::Compact));
+    //
+    // Qt5's QJsonDocument has no QJsonValue constructor (only QJsonObject /
+    // QJsonArray). Wrap the spec string in a 1-element array, serialize,
+    // and slice off the surrounding [ ] — that yields a valid JS string
+    // literal regardless of what control characters / quotes / backslashes
+    // the Vega-Lite spec contains. This bug crashed the v0.1.63 Linux CI
+    // build silently (the buggy line existed in v0.1.63 too but only the
+    // WebEngine code path compiles it, and local dev machines without
+    // libqt5webengine5-dev installed never tripped it).
+    QJsonArray wrap;
+    wrap.append(QString::fromUtf8(specJson));
+    const QByteArray wrapped = QJsonDocument(wrap).toJson(QJsonDocument::Compact);
+    // wrapped looks like: ["...escaped JSON..."]
+    // slice off [ and ] to get the bare JS string literal.
+    const QString jsArg = QString::fromUtf8(wrapped.mid(1, wrapped.size() - 2));
     const QString js = QStringLiteral("window.renderSpec(%1);").arg(jsArg);
     m_view->page()->runJavaScript(js, [this](const QVariant &) {
         QMetaObject::invokeMethod(this, [this]() { emitWhenReady(); },
