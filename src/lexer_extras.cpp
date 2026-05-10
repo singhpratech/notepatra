@@ -655,6 +655,7 @@ const char *LexerEnv::keywords(int set) const {
 }
 
 const char *LexerGitignore::keywords(int set) const {
+    Q_UNUSED(set)
     return nullptr;  // pure pattern syntax, no keywords
 }
 

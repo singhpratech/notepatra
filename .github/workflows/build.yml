@@ -50,8 +50,11 @@ jobs:
           # Reconfigure with -DBUILD_TESTING=ON so the existing smoke and
           # regression binaries are registered through CTest in the same build
           # tree as the main executable.
+          # -DCMAKE_BUILD_TYPE=Release explicitly re-asserted so a hypothetical
+          # generator switch (Ninja Multi-Config) or wiped cache can't silently
+          # run Debug binaries through ctest.
           cd build
-          cmake .. -DBUILD_TESTING=ON
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
           cmake --build . --parallel "$(nproc)" \
             --target notepatra_all_tests
 
@@ -82,6 +85,11 @@ jobs:
           make -j$(nproc)
           ls -lh notepatra
           ldd notepatra | grep -i webengine | head -3 || echo "WARN: full build did not link WebEngine"
+          # Runtime smoke test — v0.1.63 was a RUNTIME crash behind
+          # #ifdef NOTEPATRA_WITH_WEBENGINE; a compile-clean / link-broken
+          # binary would pass `ldd` and the lite ctest above, then crash in
+          # the wild. Headless --version forces Qt+WebEngine to initialize.
+          QT_QPA_PLATFORM=offscreen ./notepatra --version
 
       - name: Upload artifact (full flavor)
         uses: actions/upload-artifact@v4
@@ -121,8 +129,10 @@ jobs:
 
       - name: Build regression tests (CMake targets)
         run: |
+          # See x64 job — Release re-asserted so generator switches can't
+          # silently swap Debug binaries into ctest.
           cd build
-          cmake .. -DBUILD_TESTING=ON
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
           cmake --build . --parallel "$(nproc)" \
             --target notepatra_all_tests
 
@@ -148,6 +158,8 @@ jobs:
           make -j$(nproc)
           ls -lh notepatra
           ldd notepatra | grep -i webengine | head -3 || echo "WARN: full ARM build did not link WebEngine"
+          # Runtime smoke test — see x64 job for v0.1.63 backstory.
+          QT_QPA_PLATFORM=offscreen ./notepatra --version
 
       - name: Upload artifact (full flavor)
         uses: actions/upload-artifact@v4
@@ -777,8 +789,10 @@ jobs:
           # Without these, every https:// request from the app silently
           # fails with "TLS initialization failed" — Check for Updates
           # and the safe updater are both dead until these are present.
-          # Sourced from the Chocolatey openssl.light install above
-          # (which drops them in C:\Program Files\OpenSSL-Win64\bin).
+          # Sourced from the FireDaemon OpenSSL 1.1 download step earlier
+          # in this job (Chocolatey openssl.light was deprecated and removed;
+          # FireDaemon ships the libcrypto-1_1-x64 / libssl-1_1-x64 pair we
+          # need). Search dirs below also cover legacy paths just in case.
           $opensslDlls = @("libcrypto-1_1-x64.dll", "libssl-1_1-x64.dll")
           $sslSearchDirs = @(
             "C:\Program Files\OpenSSL-Win64\bin",
@@ -1285,7 +1299,10 @@ jobs:
 
   release:
     needs: [build-linux, build-linux-arm, build-macos-arm, build-windows]
-    runs-on: ubuntu-latest
+    # Pinned to ubuntu-24.04 to match every other Linux job in this file.
+    # Was previously ubuntu-latest, which would silently roll forward and
+    # could shift cosign / SLSA action runtime expectations under our feet.
+    runs-on: ubuntu-24.04
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write    # publish the release
@@ -1303,8 +1320,12 @@ jobs:
           tar czf notepatra-linux-x64.tar.gz -C notepatra-linux-x64 notepatra
           tar czf notepatra-linux-arm64.tar.gz -C notepatra-linux-arm64 notepatra
           # v0.1.64 — Linux "full" flavor tarballs (bundles QtWebEngine for
-          # inline Vega-Lite chart rendering). macOS / Windows full-flavor
-          # artifacts ship in v0.1.65.
+          # inline Vega-Lite chart rendering). LINUX ONLY for the foreseeable
+          # future — Charts Pack is downloaded on-demand on macOS/Windows
+          # rather than bundled, so there's no -full artifact for those
+          # platforms. If we ever ship bundled WebEngine for mac/Win, this
+          # comment + the macOS/Windows jobs above need to grow full-flavor
+          # build steps that mirror the Linux pattern.
           if [ -d notepatra-linux-x64-full ]; then
             chmod +x notepatra-linux-x64-full/notepatra
             tar czf notepatra-linux-x64-full.tar.gz -C notepatra-linux-x64-full notepatra

@@ -67,8 +67,11 @@ while true; do
 
     # gh release view returns non-zero if the release doesn't exist yet
     # (CI hasn't completed). Tolerate that until timeout.
-    if release_json=$(gh release view "$TAG" --json assets,tagName,publishedAt 2>/dev/null); then
-        ASSETS=$(echo "$release_json" | jq -r '.assets[].name' | sort)
+    #
+    # Uses gh's built-in --jq flag (gojq embedded in the gh binary, no
+    # standalone `jq` dependency — that's the whole reason for using it).
+    if release_assets=$(gh release view "$TAG" --json assets --jq '.assets[].name' 2>/dev/null); then
+        ASSETS=$(echo "$release_assets" | sort)
 
         MISSING_REQUIRED=()
         for art in "${REQUIRED_ARTIFACTS[@]}"; do

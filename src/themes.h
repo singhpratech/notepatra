@@ -79,8 +79,8 @@ inline QMap<QString, Theme> allThemes() {
 //     falls through)
 //   • macOS       → `defaults read -g AppleInterfaceStyle`  (prints
 //                    "Dark\n" on dark, fails on light)
-//   • Windows     → HKCU\Software\Microsoft\Windows\CurrentVersion\
-//                    Themes\Personalize\AppsUseLightTheme  (DWORD: 0=dark)
+//   • Windows     → HKCU\Software\Microsoft\Windows\CurrentVersion
+//                    \Themes\Personalize\AppsUseLightTheme  (DWORD: 0=dark)
 //   • GNOME/Linux → `gsettings get org.gnome.desktop.interface color-scheme`
 //                    or prefer-dark theme hint from gtk-theme
 //   • env var     → respect $NOTEPATRA_THEME / $COLOR_SCHEME / $GTK_THEME
