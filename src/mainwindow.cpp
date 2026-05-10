@@ -1851,6 +1851,7 @@ void MainWindow::buildMenus() {
             if (i >= 0) m_tabs->removeTab(i);
             ps->deleteLater();
         });
+        exitAiFullscreenIfActive();
         int idx = m_tabs->addTab(ps, "Project Search");
         m_tabs->setCurrentIndex(idx);
         ps->focusQuery();
@@ -1870,6 +1871,7 @@ void MainWindow::buildMenus() {
         connect(this, &MainWindow::themeChanged, term, &TerminalWidget::onThemeChanged);
         if (auto *e = E(); e && !e->filePath().isEmpty())
             term->setWorkingDirectory(QFileInfo(e->filePath()).path());
+        exitAiFullscreenIfActive();
         int idx = m_tabs->addTab(term, "Terminal");
         m_tabs->setCurrentIndex(idx);
     });
@@ -1947,6 +1949,7 @@ void MainWindow::buildMenus() {
         // Theme propagation — palette-driven stylesheets re-render.
         connect(this, &MainWindow::themeChanged, rest, &RestClient::onThemeChanged);
         if (E() && E()->hasSelectedText()) rest->executeRequest(E()->selectedText());
+        exitAiFullscreenIfActive();
         int idx = m_tabs->addTab(rest, "REST Client");
         m_tabs->setCurrentIndex(idx);
     });
@@ -2344,6 +2347,7 @@ void MainWindow::buildMenus() {
         // current theme on runtime flip.
         connect(this, &MainWindow::themeChanged, panel, &SqlFmtPanel::onThemeChanged);
         if (E()) panel->setInput(E()->hasSelectedText() ? E()->selectedText() : E()->text());
+        exitAiFullscreenIfActive();
         int idx = m_tabs->addTab(panel, "SQL Formatter");
         m_tabs->setCurrentIndex(idx);
     });
@@ -2389,6 +2393,7 @@ void MainWindow::buildMenus() {
                        const QString &relPath) {
             auto *cmp = new CompareWidget;
             connect(this, &MainWindow::themeChanged, cmp, &CompareWidget::onThemeChanged);
+            exitAiFullscreenIfActive();
             int idx = m_tabs->addTab(cmp, title);
             m_tabs->setCurrentIndex(idx);
             connect(cmp, &CompareWidget::closeRequested, this, [this, cmp]() {
@@ -2441,6 +2446,7 @@ void MainWindow::buildMenus() {
             panel->refresh(e->filePath());
             e->updateGitGutter();
         }
+        exitAiFullscreenIfActive();
         int idx = m_tabs->addTab(panel, "Git");
         m_tabs->setCurrentIndex(idx);
     });
@@ -2489,6 +2495,7 @@ void MainWindow::buildMenus() {
             // Theme propagation — diff markers re-render on theme flip.
             connect(this, &MainWindow::themeChanged, cmp, &CompareWidget::onThemeChanged);
             cmp->compare(before, "Before", after, "After");
+            exitAiFullscreenIfActive();
             int idx = m_tabs->addTab(cmp, title);
             m_tabs->setCurrentIndex(idx);
             connect(cmp, &CompareWidget::closeRequested, this, [this, cmp]() {
@@ -2688,6 +2695,7 @@ void MainWindow::buildMenus() {
         });
 
         if (E()) p->setInput(E()->hasSelectedText() ? E()->selectedText() : E()->text());
+        exitAiFullscreenIfActive();
         int idx = m_tabs->addTab(p, "JSON Tools");
         m_tabs->setCurrentIndex(idx);
     });
@@ -2778,6 +2786,7 @@ void MainWindow::buildMenus() {
             auto *cmp = new CompareWidget;
             connect(this, &MainWindow::themeChanged, cmp, &CompareWidget::onThemeChanged);
             cmp->compare(before, "Before", after, "After");
+            exitAiFullscreenIfActive();
             int idx = m_tabs->addTab(cmp, title);
             m_tabs->setCurrentIndex(idx);
             connect(cmp, &CompareWidget::closeRequested, this, [this, cmp]() {
@@ -2936,6 +2945,7 @@ void MainWindow::buildMenus() {
         });
 
         if (E()) p->setInput(E()->hasSelectedText() ? E()->selectedText() : E()->text());
+        exitAiFullscreenIfActive();
         int idx = m_tabs->addTab(p, "HTML Tools");
         m_tabs->setCurrentIndex(idx);
     });
@@ -2969,6 +2979,7 @@ void MainWindow::buildMenus() {
             auto *cmp = new CompareWidget;
             connect(this, &MainWindow::themeChanged, cmp, &CompareWidget::onThemeChanged);
             cmp->compare(before, "Before", after, "After");
+            exitAiFullscreenIfActive();
             int idx = m_tabs->addTab(cmp, title);
             m_tabs->setCurrentIndex(idx);
             connect(cmp, &CompareWidget::closeRequested, this, [this, cmp]() {
@@ -3126,6 +3137,7 @@ void MainWindow::buildMenus() {
         });
 
         if (E()) p->setInput(E()->hasSelectedText() ? E()->selectedText() : E()->text());
+        exitAiFullscreenIfActive();
         int idx = m_tabs->addTab(p, "Bracket Tools");
         m_tabs->setCurrentIndex(idx);
     });
@@ -4128,6 +4140,7 @@ void MainWindow::openComparePicker(const QString &tabLabel) {
     auto *cmp = new CompareWidget;
     // Theme propagation — diff markers re-render on theme flip.
     connect(this, &MainWindow::themeChanged, cmp, &CompareWidget::onThemeChanged);
+    exitAiFullscreenIfActive();
     int idx = m_tabs->addTab(cmp, tabLabel);
     m_tabs->setCurrentIndex(idx);
     connect(cmp, &CompareWidget::closeRequested, this, [this, cmp]() {
@@ -4272,6 +4285,24 @@ void MainWindow::toggleAiDock() {
     }
 }
 
+// v0.1.67 — bail out of AI dock fullscreen if we're currently inside it,
+// so a newly-opened tool tab is actually visible alongside the (now-
+// shrunk) AI conversation. Called from every tool-action lambda that
+// adds a tab via m_tabs->addTab(...). m_aiSavedSiblingVisibility is the
+// canonical "are we in fullscreen?" signal: populated by the on-branch
+// of the fullscreenToggled handler (see ~line 864 above) and emptied by
+// the off-branch. Non-empty ⇒ we're fullscreened.
+//
+// We trigger the un-fullscreen path by asking AIPanel itself to flip its
+// ⛶ toggle off — that fires the existing fullscreenToggled(false)
+// signal, which the handler above already drives correctly (restores
+// sibling visibility, restores saved splitter sizes). The AI session
+// itself is preserved: AIPanel is not destroyed, only visually resized.
+void MainWindow::exitAiFullscreenIfActive() {
+    if (m_aiSavedSiblingVisibility.isEmpty()) return;   // not fullscreen
+    if (m_aiDockPanel) m_aiDockPanel->forceExitFullscreen();
+}
+
 // ── Welcome tab ────────────────────────────────────────────────────────────
 
 int MainWindow::showWelcomeTab() {
@@ -4284,6 +4315,7 @@ int MainWindow::showWelcomeTab() {
     }
 
     auto *welcome = new WelcomeWidget;
+    exitAiFullscreenIfActive();
     int idx = m_tabs->addTab(welcome, "Welcome");
     m_tabs->setCurrentIndex(idx);
 

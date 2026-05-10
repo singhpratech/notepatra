@@ -140,6 +140,12 @@ private:
     QList<int> m_aiSavedSplitterSizes;
     QHash<QWidget*, bool> m_aiSavedSiblingVisibility;
     void toggleAiDock();
+    // v0.1.67 — gracefully exits AI dock fullscreen if active so a newly-
+    // opened tool tab is visible alongside the (now-shrunk) AI conversation.
+    // Called from every tool action that adds a tab via m_tabs->addTab().
+    // The AI session itself is preserved — AIPanel widget is never destroyed,
+    // only visually resized back to its docked width.
+    void exitAiFullscreenIfActive();
     // Push current workspace state (all open editor tabs, current file,
     // selection, workspace root) into an AIPanel so the model can reason
     // about cross-file questions like Cursor / Copilot.
