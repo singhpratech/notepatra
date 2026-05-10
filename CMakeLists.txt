@@ -191,6 +191,9 @@ set(HEADERS
     # v0.2 Coding-mode revamp (Slice B+C)
     src/diff_view.h
     src/edit_plan.h
+    # v0.1.62 — per-hunk staging
+    src/git_hunk_apply.h
+    src/gutter_hunk_popup.h
 )
 
 # ── Platform-specific resources ──
