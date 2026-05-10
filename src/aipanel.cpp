@@ -1101,16 +1101,18 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
                 .arg(p.chromeBg, fg, rule));
         }
 
-        // Slice A — show the Chat | Composer tab bar only in Coding mode.
-        // Chat / Data modes hide it so the panel looks identical to the
-        // pre-revamp UX. Coding mode also pins the active tab back to
-        // Chat on entry so the user starts on the transcript.
-        if (m_chatTabs && m_chatTabs->tabBar()) {
-            m_chatTabs->tabBar()->setVisible(coding);
-            if (coding && m_chatTabs->currentIndex() != 0) {
-                m_chatTabs->setCurrentIndex(0);
-            } else if (!coding) {
-                m_chatTabs->setCurrentIndex(0);
+        // v0.1.61 (Item 8) — chat surface is now ONE conversation surface,
+        // controlled by the bottom 3-segment toggle (Chat / Compose / Agent).
+        // Default segment by intent: Coding → Agent, Data → Chat,
+        // otherwise Chat. Switching ALSO refreshes the input placeholder
+        // via chatModeSelectorChanged.
+        if (m_chatSegBtn && m_composeSegBtn && m_agentSegBtn) {
+            QAbstractButton *target =
+                  coding ? m_agentSegBtn
+                : data   ? m_chatSegBtn
+                         : m_chatSegBtn;
+            if (target && !target->isChecked()) {
+                target->setChecked(true);
             }
         }
 
@@ -1348,59 +1350,32 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     m_chatLayout->setContentsMargins(12, 12, 12, 12);
     m_chatLayout->setSpacing(0);
     m_chatLayout->addStretch(1);   // bubbles get inserted BEFORE this stretch
-    m_chatArea->setWidget(m_chatContent);
 
-    // Slice A — wrap the chat scroll plus an empty Composer scroll in a
-    // two-tab QTabWidget. The tab bar is HIDDEN by default so Chat/Data
-    // mode looks identical to today's UX; applyMode shows it only when
-    // Coding mode is active. Composer body is a placeholder for now —
-    // Slices B/C/D fill it with the Edit Plan list, diff viewer, and
-    // per-hunk apply controls.
-    m_composerArea = new QScrollArea;
-    m_composerArea->setWidgetResizable(true);
-    m_composerArea->setFrameShape(QFrame::NoFrame);
-    m_composerArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    m_composerArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    m_composerArea->setStyleSheet(QString(
-        "QScrollArea { background: %1; border: none; } "
-        "QScrollBar:vertical { background: %1; width: 10px; margin: 0; } "
-        "QScrollBar::handle:vertical { background: %2; border-radius: 4px; min-height: 24px; } "
-        "QScrollBar::handle:vertical:hover { background: %3; } "
-        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }")
-        .arg(pal.chatBg, pal.assistBorder, pal.accent));
-
-    m_composerInner = new QWidget;
-    m_composerInner->setStyleSheet(QString("background: %1;").arg(pal.chatBg));
-    auto *composerLayout = new QVBoxLayout(m_composerInner);
-    composerLayout->setContentsMargins(12, 12, 12, 12);
-    composerLayout->setSpacing(8);
-
-    // Slice B/C/D — the live Edit Plan list. When the model returns a
-    // dry_run write_file / apply_diff, handleToolCall calls
-    // m_editPlan->addEdit(absPath, before, after) and we expose the row
-    // here. The list is empty + replaced by a friendly hint when there
-    // are no pending edits (handled inside EditPlanList itself).
-    m_editPlan = new EditPlanList(m_composerInner);
-    composerLayout->addWidget(m_editPlan, 1);
+    // v0.1.61 (Item 8) — Edit Plan list lives INLINE inside the chat
+    // scroll content (parented to m_chatContent), positioned after the
+    // stretch so it always sits at the bottom of the transcript when
+    // it has rows. Hidden by default; addEdit() makes it visible.
+    // Replaces the previous QTabWidget(Chat | Composer) split.
+    m_editPlan = new EditPlanList(m_chatContent);
+    m_editPlan->setVisible(false);
+    m_chatLayout->addWidget(m_editPlan, 0);
 
     // Apply pipeline — when the user clicks Apply All / Apply Selected
     // inside EditPlanList, write each (absPath, afterText) to disk and
     // open / reload the file in the editor.
     connect(m_editPlan, &EditPlanList::applyRequested,
             this,        &AIPanel::applyComposerEdits);
+    // v0.1.61 (Item 8) — auto-hide the inline panel when the last row
+    // is removed (Reject All / per-row [x] / Apply pipeline housekeeping).
+    connect(m_editPlan, &EditPlanList::editRemoved, this,
+            [this](const QString &) {
+                if (m_editPlan && m_editPlan->count() == 0) {
+                    m_editPlan->setVisible(false);
+                }
+            });
 
-    m_composerArea->setWidget(m_composerInner);
-
-    m_chatTabs = new QTabWidget;
-    m_chatTabs->setDocumentMode(true);
-    m_chatTabs->addTab(m_chatArea,     tr("Chat"));
-    m_chatTabs->addTab(m_composerArea, tr("Composer"));
-    if (m_chatTabs->tabBar()) {
-        // Default state matches Chat/Data UX — hidden until Coding mode
-        // flips it on via applyMode.
-        m_chatTabs->tabBar()->setVisible(false);
-    }
-    layout->addWidget(m_chatTabs, 1);
+    m_chatArea->setWidget(m_chatContent);
+    layout->addWidget(m_chatArea, 1);
 
     // ─── BOTTOM STRIP: quick actions + input + send (like a real chat) ──
     // A thin chevron row always shows; clicking it reveals / hides the
@@ -1761,6 +1736,107 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
              pal.recBtnBg, pal.recBtnBorder));
     customRow->addWidget(m_stopBtn);
     layout->addLayout(customRow);
+
+    // ─── v0.1.61 (Item 8) — Bottom 3-segment toggle ─────────────────────
+    // Full-width row sitting BELOW the input bar. Replaces the previous
+    // top-tabbed (Chat | Composer) split and brings the panel in line
+    // with the iOS / Slack keyboard-accessory mental model: mode is a
+    // property of the next message, not a destination. Works alongside
+    // the existing Chat / Coding / Data intent selector at the top —
+    // that one picks WHICH model gating + system-prompt layer applies;
+    // this one picks how the CURRENT conversation should be presented
+    // and which tool surface is active.
+    //
+    //   Chat    — plain conversation, no tools fire
+    //   Compose — tools enabled but write_file / apply_diff are forced
+    //             to dry_run → routed to the inline Edit Plan list
+    //   Agent   — full autonomous loop (tools fire, edits hit disk)
+    {
+        auto *segWrap = new QHBoxLayout;
+        segWrap->setContentsMargins(8, 0, 8, 8);
+        segWrap->setSpacing(0);
+
+        auto *segFrame = new QFrame;
+        segFrame->setStyleSheet(QString(
+            "QFrame { background: %1; border: 1px solid %2; "
+            "border-radius: 8px; }")
+            .arg(pal.chromeBg, pal.btnBorder));
+        auto *segLay = new QHBoxLayout(segFrame);
+        segLay->setContentsMargins(2, 2, 2, 2);
+        segLay->setSpacing(2);
+
+        // Three segments share the same QSS but differ in corner radius
+        // (rounded outer corners on the leftmost / rightmost only) and
+        // accent colour while checked. Pattern mirrors the existing
+        // Chat/Coding/Data row near line 875.
+        auto makeSegBtn = [&pal](const QString &label,
+                                 const QString &accentColor,
+                                 const QString &tip,
+                                 const QString &cornerRule) {
+            auto *btn = new QPushButton(label);
+            btn->setCheckable(true);
+            btn->setCursor(Qt::PointingHandCursor);
+            btn->setFixedHeight(26);
+            btn->setToolTip(tip);
+            btn->setStyleSheet(QString(
+                "QPushButton { background: transparent; border: none; "
+                "color: %1; font-size: 11px; font-weight: 600; padding: 4px 10px; "
+                "%6 } "
+                "QPushButton:hover { background: %2; color: %3; } "
+                "QPushButton:checked { background: %4; color: white; }")
+                .arg(pal.muted, pal.btnHover, pal.inputText,
+                     accentColor, QString(), cornerRule));
+            return btn;
+        };
+
+        m_chatSegBtn = makeSegBtn("Chat", pal.accent,
+            "Chat — plain conversation, no agentic tool calls. "
+            "Picks how the CURRENT conversation behaves; the Chat / "
+            "Coding / Data buttons above pick the AI INTENT.",
+            "border-top-left-radius: 6px; border-bottom-left-radius: 6px;");
+        m_composeSegBtn = makeSegBtn("Compose", QStringLiteral("#4EC9B0"),
+            "Compose — tools enabled but write_file / apply_diff are "
+            "forced to dry_run. Proposed edits land in the Edit Plan "
+            "list (inline below the chat) for you to review + Apply.",
+            "border-radius: 0;");
+        m_agentSegBtn = makeSegBtn("Agent", QStringLiteral("#E07B5A"),
+            "Agent — full autonomous loop. Tool calls fire and edits "
+            "hit disk immediately. Use when you trust the model to "
+            "drive the workspace end-to-end.",
+            "border-top-right-radius: 6px; border-bottom-right-radius: 6px;");
+
+        auto *segGroup = new QButtonGroup(this);
+        segGroup->setExclusive(true);
+        segGroup->addButton(m_chatSegBtn,    static_cast<int>(ChatModeSegment::Chat));
+        segGroup->addButton(m_composeSegBtn, static_cast<int>(ChatModeSegment::Compose));
+        segGroup->addButton(m_agentSegBtn,   static_cast<int>(ChatModeSegment::Agent));
+
+        segLay->addWidget(m_chatSegBtn,    1);
+        segLay->addWidget(m_composeSegBtn, 1);
+        segLay->addWidget(m_agentSegBtn,   1);
+
+        segWrap->addWidget(segFrame, 1);
+
+        // Default state — applyMode below will override based on the
+        // active intent (Coding → Agent, Data → Chat, otherwise Chat).
+        m_chatSegBtn->setChecked(true);
+
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+        connect(segGroup, &QButtonGroup::idToggled, this,
+                [this](int id, bool on) {
+                    if (on) chatModeSelectorChanged(id);
+                });
+#else
+        connect(segGroup,
+                QOverload<int, bool>::of(&QButtonGroup::buttonToggled),
+                this,
+                [this](int id, bool on) {
+                    if (on) chatModeSelectorChanged(id);
+                });
+#endif
+
+        layout->addLayout(segWrap);
+    }
 
     // Per-message anchorClicked connects are installed in aiAddAssistantCard
     // now (each assistant card has its own QTextBrowser body). The global
@@ -2782,14 +2858,14 @@ void AIPanel::sendPrompt(const QString &action) {
     const bool toolModeActive = (codingMode || dataMode);
     const bool willUseTools = toolModeActive && !m_workspaceRoot.isEmpty()
         && currentModelSupportsTools();
-    // Slice D — Composer mode flips on when the user is actively viewing
-    // the Composer tab inside Coding mode. The composerModeLayer in the
-    // system prompt instructs the model to ALWAYS pass dry_run:true on
-    // write_file / apply_diff, which AIPanel::handleToolCall then routes
-    // to the Edit Plan list instead of touching disk directly.
+    // v0.1.61 (Item 8) — Compose mode flips on when the user has the
+    // bottom segment toggle set to "Compose" while Coding intent is
+    // active. The composerModeLayer in the system prompt instructs the
+    // model to ALWAYS pass dry_run:true on write_file / apply_diff,
+    // which AIPanel::handleToolCall then routes to the inline Edit Plan
+    // list instead of touching disk directly.
     const bool composerActive = (intent == AiSystemPrompt::Intent::CodingStrict)
-        && m_chatTabs && m_composerArea
-        && m_chatTabs->currentWidget() == m_composerArea;
+        && m_chatModeSegment == ChatModeSegment::Compose;
     QString systemPrompt;
     if (intent == AiSystemPrompt::Intent::DataAnalyst) {
         // Pull .notepatra/data-analyst.md (if present) so the model gets
@@ -4730,7 +4806,10 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
             const QString after   = proposed.value("after").toString();
             if (!absPath.isEmpty()) {
                 m_editPlan->addEdit(absPath, before, after);
-                if (m_chatTabs) m_chatTabs->setCurrentWidget(m_composerArea);
+                // v0.1.61: Edit Plan is now inline in the chat scroll;
+                // show it so the user sees the queued edit at the
+                // bottom of the transcript.
+                m_editPlan->setVisible(true);
             }
             resultSummary = QString("queued for review (%1 chars)").arg(after.size());
         } else {
@@ -4763,7 +4842,8 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
             const QString after   = proposed.value("after").toString();
             if (!absPath.isEmpty()) {
                 m_editPlan->addEdit(absPath, before, after);
-                if (m_chatTabs) m_chatTabs->setCurrentWidget(m_composerArea);
+                // v0.1.61: same inline-EditPlan reveal as write_file.
+                m_editPlan->setVisible(true);
             }
             resultSummary = QString("queued for review (%1 hunk%2)")
                                 .arg(args.value("hunks").toArray().size())
@@ -5459,6 +5539,51 @@ void AIPanel::openAiSettingsDialog() {
     root->addWidget(btnBox);
 
     dlg.exec();
+}
+
+// v0.1.61 (Item 8) — handler for the bottom 3-segment toggle.
+// Stores the new value and refreshes the input placeholder hint so
+// the user knows what the next message will do. Purely internal
+// state — the host MainWindow doesn't get a signal.
+void AIPanel::chatModeSelectorChanged(int segment) {
+    switch (segment) {
+        case static_cast<int>(ChatModeSegment::Chat):
+            m_chatModeSegment = ChatModeSegment::Chat;
+            break;
+        case static_cast<int>(ChatModeSegment::Compose):
+            m_chatModeSegment = ChatModeSegment::Compose;
+            break;
+        case static_cast<int>(ChatModeSegment::Agent):
+            m_chatModeSegment = ChatModeSegment::Agent;
+            break;
+        default:
+            return;
+    }
+
+    // Refresh the input placeholder so the affordance stays consistent
+    // with the active intent + segment combo. The intent layer's
+    // existing placeholder is a fine baseline for Chat; Compose / Agent
+    // append a hint about the tool surface.
+    if (m_customInput) {
+        const bool coding = m_codingMode && m_codingMode->isChecked();
+        const bool data   = m_dataMode   && m_dataMode->isChecked();
+        QString base =
+              coding ? QStringLiteral("Coding Mode · e.g. Refactor this function / Add types / Translate to TypeScript")
+            : data   ? QStringLiteral("Data Mode · e.g. summarize this CSV / show top 10 customers / chart revenue by month")
+                     : QStringLiteral("Type a message and press Enter to send…");
+        switch (m_chatModeSegment) {
+            case ChatModeSegment::Compose:
+                base = QStringLiteral("Compose · proposed edits land in the Edit Plan for review");
+                break;
+            case ChatModeSegment::Agent:
+                if (coding) base = QStringLiteral("Agent · autonomous loop · edits hit disk on the fly");
+                break;
+            case ChatModeSegment::Chat:
+            default:
+                break;
+        }
+        m_customInput->setPlaceholderText(base);
+    }
 }
 
 // ─── Slice D — apply Edit Plan rows ─────────────────────────────────
