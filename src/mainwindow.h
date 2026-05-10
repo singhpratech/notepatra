@@ -146,6 +146,18 @@ private:
     // The AI session itself is preserved — AIPanel widget is never destroyed,
     // only visually resized back to its docked width.
     void exitAiFullscreenIfActive();
+    // v0.1.68 — when a programmatic tab switch fires QTabWidget::currentChanged
+    // we sometimes want to suppress the auto-exit-fullscreen side-effect.
+    // Specifically: newFile() (Ctrl+N) and openFile() create a new tab AND
+    // call setCurrentIndex(idx) to focus it. The v0.1.61 UX rule is that
+    // a Ctrl+N issued while the AI dock is fullscreen should NOT collapse
+    // the AI dock — the new tab becomes the focused tab but stays hidden
+    // behind the still-fullscreen AI dock until the user exits manually.
+    // Set this flag to true *immediately before* a programmatic setCurrentIndex
+    // that should not collapse the dock; the currentChanged slot consumes
+    // (and resets) the flag. User-initiated tab switches (Ctrl+Tab, click
+    // in the tab bar) never set this flag, so they correctly exit the dock.
+    bool m_skipAiAutoExitOnNextTabChange = false;
     // Push current workspace state (all open editor tabs, current file,
     // selection, workspace root) into an AIPanel so the model can reason
     // about cross-file questions like Cursor / Copilot.

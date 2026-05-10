@@ -910,6 +910,18 @@ MainWindow::MainWindow() {
         // indent guide). Pre-v0.1.42 these stuck on whatever the
         // previously-active tab happened to be in.
         syncViewMenuToActiveEditor();
+        // v0.1.68 — if the user (or anything other than newFile/openFile)
+        // switched the active tab while the AI dock is fullscreen, the new
+        // active tab is currently hidden behind the dock. Exit fullscreen
+        // so the switch actually becomes visible. newFile/openFile set
+        // m_skipAiAutoExitOnNextTabChange before their setCurrentIndex
+        // so this branch is skipped during the v0.1.61 background-tab
+        // create flow.
+        if (m_skipAiAutoExitOnNextTabChange) {
+            m_skipAiAutoExitOnNextTabChange = false;
+        } else {
+            exitAiFullscreenIfActive();
+        }
     });
     connect(m_tabs, &TabManager::tabContextNew, this, [this]() { newFile(); });
     connect(m_tabs, &TabManager::tabContextClose, this, [this](int idx) { closeTab(idx); });
@@ -1110,6 +1122,11 @@ Editor *MainWindow::newFile() {
     auto *editor = new Editor(this);
     editor->applyTheme(Config::instance().theme);
     int idx = m_tabs->addTab(editor, QString("new %1").arg(m_newCount));
+    // v0.1.68 — preserve v0.1.61 background-tab UX: Ctrl+N while the AI dock
+    // is fullscreen creates the new tab in the background (focus shifts but
+    // the dock stays fullscreen so the user can keep using AI). The flag is
+    // consumed by the currentChanged slot installed in createCentralWidget.
+    m_skipAiAutoExitOnNextTabChange = true;
     m_tabs->setCurrentIndex(idx);
 
     connect(editor, &QsciScintilla::modificationChanged, this, [this, editor](bool) {

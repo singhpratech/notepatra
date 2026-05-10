@@ -7,6 +7,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.68] — 2026-05-10
+
+**AI dock auto-exits fullscreen on editor tab switches too (closes v0.1.67 gap).**
+
+### Fixed — AI dock blocked editor tabs when fullscreen
+
+* v0.1.67 wired `exitAiFullscreenIfActive()` into 14 **tool-tab** open sites (Project Search, Terminal, Git, REST Client, SQL Formatter, JSON/HTML/Bracket Tools, Compare, Welcome), but **editor-tab switching** (Ctrl+Tab, clicking tabs in the tab bar, double-clicking a Project Search result, File > Open) still left the newly-focused tab hidden behind the fullscreen AI dock. The focus shift was real but invisible, so the editor felt frozen.
+* `src/mainwindow.{h,cpp}` — the `QTabWidget::currentChanged` slot now calls `exitAiFullscreenIfActive()` on every tab-focus change, gated by a one-shot `m_skipAiAutoExitOnNextTabChange` flag. `newFile()` (Ctrl+N) sets the flag immediately before `setCurrentIndex(idx)` to preserve the **v0.1.61 background-tab UX rule** — Ctrl+N while the AI dock is fullscreen creates the new editor in the background so the user doesn't lose AI flow. `openFile()` deliberately does NOT set the flag, so user-initiated file opens correctly collapse the dock.
+* The 14 explicit `exitAiFullscreenIfActive()` calls inside the v0.1.67 tool-tab handlers remain in place as belt-and-braces no-ops (the helper short-circuits when fullscreen isn't active).
+* All 26 deterministic regression tests still pass on the lite build.
+
+---
+
 ## [0.1.67] — 2026-05-10
 
 **Three independent AI threads + tool-tab fullscreen auto-exit + release-engineering hardening.**
