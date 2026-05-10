@@ -9,7 +9,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ## [0.1.67] — 2026-05-10
 
-**AI Assistant: three independent per-mode conversations (Chat / Coding / Data).**
+**Three independent AI threads + tool-tab fullscreen auto-exit + release-engineering hardening.**
+
+### Fixed — AI dock blocked tool tabs when fullscreen
+
+* `src/aipanel.{h,cpp}` — new `AIPanel::forceExitFullscreen()` public slot that drives the same code path as the fullscreen-toggle button (sets `m_aiExpandBtn->setChecked(false)`).
+* `src/mainwindow.{h,cpp}` — new `exitAiFullscreenIfActive()` helper that checks whether the AI dock is currently in fullscreen (`m_aiSavedSiblingVisibility` non-empty) and, if so, calls the slot above. Instrumented at 14 tool-tab open sites: Project Search, Terminal, REST Client, SQL Formatter, Git diff, Git, JSON Tools (parent + Compare child), HTML Tools (parent + Compare child), Bracket Tools (parent + Compare child), Compare picker, Welcome.
+* Editor-tab creation (Ctrl+N) deliberately untouched — the v0.1.61 background-tab UX (create-in-background while AI is fullscreen so the user doesn't lose AI flow) is preserved.
+* Hex Editor opens as a modal dialog, not a tab, so no instrumentation was needed there.
 
 ### Fixed — cross-mode chat contamination
 
@@ -55,13 +62,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 * Constructs a real `AIPanel` under `QT_QPA_PLATFORM=offscreen`. Adds an `AIPanelTestAccess` friend class so tests can drive the three private vectors and the mode buttons without leaking those internals into the production API.
 * Wired into `notepatra_all_tests`. Total deterministic test count: 25 → 26. All pass on the lite build.
 
+### Changed — release engineering (from the 4 parallel verification agents)
+
+* `.github/workflows/build.yml` — Linux x64 + ARM `-full` flavor builds now run `QT_QPA_PLATFORM=offscreen ./notepatra --version` *after* the `ldd | grep webengine` check. v0.1.63's silent-failure incident was a runtime crash behind `#ifdef NOTEPATRA_WITH_WEBENGINE`; the old gate caught compile/link failures but not boot-broken binaries. New gate catches both.
+* `.github/workflows/build.yml` — test-step `cmake .. -DBUILD_TESTING=ON` reconfigure now re-asserts `-DCMAKE_BUILD_TYPE=Release` so a future generator switch (Ninja Multi-Config) can't silently send Debug binaries through ctest.
+* `.github/workflows/build.yml` — release job pinned to `ubuntu-24.04` (was `ubuntu-latest`), matching every other Linux job in the file so cosign / SLSA action runtimes can't shift under us.
+* `.github/workflows/build.yml` — stale comments fixed: Chocolatey openssl.light reference (replaced by FireDaemon OpenSSL 1.1 download earlier in the job); the never-delivered "macOS / Windows full-flavor ship in v0.1.65" promise (full flavor is Linux-only by design — Charts Pack downloads on-demand on the other OSes).
+* `scripts/post-release-verify.sh` — switched from standalone `jq` to gh's built-in `--jq` (gojq embedded). Same pattern `scripts/stale-text-check.sh` already uses; drops one external dependency from the release-day toolchain.
+* `src/themes.h` — Windows registry path comment no longer ends in `\`, which the preprocessor treats as line-continuation inside `//` and cascades 12 `-Wcomment` warnings through every TU that includes themes.h.
+* `src/lexer_extras.cpp` — `Q_UNUSED(set)` on `LexerGitignore::keywords` (pattern-only lexer with no keyword sets — the parameter is intentionally unused).
+
 ### Files changed
 
+**Three independent AI threads:**
 * `CMakeLists.txt` — version 0.1.66 → 0.1.67; new test target.
 * `src/aipanel.h` — replaced `m_messages`; added activeMessages() / saveChatHistoryNow() / AIPanelTestAccess friend.
-* `src/aipanel.cpp` — all 32 m_messages references rewritten; persistence layer rewritten for v2 schema with v1 migration; mode-switch handler force-saves before re-render.
+* `src/aipanel.cpp` — all 32 m_messages references rewritten; persistence layer rewritten for v2 schema with v1 + v0 migration; mode-switch handler force-saves before re-render.
 * `test_ai_chat_history.cpp` — new.
+
+**Auto-exit AI dock fullscreen:**
+* `src/aipanel.{cpp,h}` — `forceExitFullscreen()` slot.
+* `src/mainwindow.{cpp,h}` — `exitAiFullscreenIfActive()` helper + 14 call-site instrumentations.
+
+**Release engineering:**
+* `.github/workflows/build.yml`, `scripts/post-release-verify.sh`, `src/themes.h`, `src/lexer_extras.cpp` (see above).
+
+**Docs + meta:**
 * `release_notes/v0.1.67.md` — this release.
+* `README.md` + `docs/index.html` + `docs/docs.html` — version refs bumped.
 
 ---
 
