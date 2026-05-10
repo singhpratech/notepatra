@@ -318,6 +318,7 @@
       <li><a href="#install">Install</a></li>
       <li><a href="#uninstall">Uninstall</a></li>
       <li><a href="#first-launch">First launch</a></li>
+      <li><a href="#lite-vs-full">Lite vs Full + packs (v0.1.64+)</a></li>
       <li><a href="#ui-overview">UI overview</a></li>
     </ul>
 
@@ -577,6 +578,106 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
   <h2 id="first-launch" class="anchor-target">First launch</h2>
   <p>Launch Notepatra from your start menu / Launchpad / <code>notepatra</code> command. You'll see an empty editor with the menu bar, toolbar, tab bar, status bar, and (collapsed) side panels.</p>
   <p>The first time you run Notepatra, it creates <code>~/.config/notepatra/</code> (Linux/macOS) or <code>%LOCALAPPDATA%\Notepatra\</code> (Windows) and writes a default <code>config.json</code>. Themes, fonts, tab width, word wrap, etc. are persisted there.</p>
+
+  <!-- ══════════════ Lite vs Full + packs (v0.1.64+) ══════════════ -->
+
+  <h2 id="lite-vs-full" class="anchor-target">Lite mode vs Full mode (v0.1.64+)</h2>
+  <p>Starting in v0.1.64, Notepatra ships two build flavors per release. <strong>Lite</strong> is the default download — a bare ~9 MB binary with no heavy dependencies bundled. <strong>Full</strong> is the opt-in flavor that includes QtWebEngine for inline Vega-Lite chart rendering (≈ 95 MB extra). Heavy features go through <strong>packs</strong> that you install on demand, the way DuckDB ships a tiny core plus optional extensions (<code>httpfs</code>, <code>parquet</code>, <code>spatial</code>, etc.).</p>
+
+  <h3>Why this split?</h3>
+  <p>v0.1.63 bundled QtWebEngine into every release for one specific feature — the AI Data Analyst's inline chart card. Most users will never trigger a chart, but every install paid the disk + download cost. v0.1.64 flipped the default: lite by default, charts move to an optional pack. Same architecture mirrors how Cursor / VS Code / Sublime add language servers and renderers — small core, install what you need.</p>
+
+  <table>
+    <thead>
+      <tr><th>Flavor</th><th>Bare binary</th><th>What you get</th><th>What's missing</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Lite</strong> (default)</td>
+        <td>~9 MB stripped</td>
+        <td>Everything: editor, lexers, AI Assistant, Coding Mode, Data Analyst tool calls, Git, REST client, hex editor, plugins, themes.</td>
+        <td>Inline Vega-Lite chart rendering. The Data Analyst can still generate chart specs — they show as a "Charts Pack required" card with [View JSON] to copy the spec out.</td>
+      </tr>
+      <tr>
+        <td><strong>Full</strong> (opt-in)</td>
+        <td>~95 MB bundled</td>
+        <td>Everything in Lite, plus the QtWebEngine-backed chart renderer that paints Vega-Lite specs inline in the chat transcript.</td>
+        <td>—</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 id="packs">Packs — what's installed where</h3>
+  <p>The plugin loader (<code>src/plugin_loader.{h,cpp}</code>) tracks which packs are available. Each pack lives under your per-user plugin directory:</p>
+  <ul>
+    <li><strong>Linux:</strong> <code>~/.local/share/notepatra/plugins/&lt;pack&gt;/</code></li>
+    <li><strong>macOS:</strong> <code>~/Library/Application Support/notepatra/plugins/&lt;pack&gt;/</code></li>
+    <li><strong>Windows:</strong> <code>%APPDATA%/notepatra/plugins/&lt;pack&gt;/</code></li>
+  </ul>
+  <p>v0.1.65 ships with the <em>charts</em> pack bundled into the Full flavor (it's the same binary — the pack is "installed" if WebEngine was linked at compile time). v0.1.66+ adds in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation so packs can be added without swapping binaries.</p>
+
+  <table>
+    <thead>
+      <tr><th>Pack ID</th><th>Size</th><th>What it does</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>charts</code></td>
+        <td>≈ 95 MB</td>
+        <td>Renders Vega-Lite charts (bar / line / scatter / area / composite) inline in the chat transcript. Powered by QtWebEngine + vega-embed.</td>
+        <td>Bundled in the Full flavor as of v0.1.65 (Linux x64 / Linux ARM64). macOS / Windows Full builds land in v0.1.66.</td>
+      </tr>
+      <tr>
+        <td><code>pdf</code></td>
+        <td>≈ 12 MB</td>
+        <td>Rasterises PDFs to PNG pages so vision-capable AI models can read them. Powered by Poppler-Qt5.</td>
+        <td>Planned for v0.1.67. Until then, dragging a PDF into the AI dock shows the "use a vision-capable model" error bubble.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 id="upgrade-to-full">Upgrading from Lite to Full</h3>
+  <p>Three paths, pick whichever matches your situation:</p>
+
+  <h4>Path A — Click [Install charts pack] in the app</h4>
+  <p>When you ask the AI Assistant to chart something in Data Analyst mode, the lite binary shows the <strong>📊 Chart rendering requires the Charts Pack</strong> card with two buttons:</p>
+  <ul>
+    <li><strong>[Install charts pack]</strong> — opens a dialog explaining the lite/full split, then opens your default browser to the GitHub Releases page for the current tag. Pick the file ending in <code>-full</code> for your OS.</li>
+    <li><strong>[View JSON instead]</strong> — appends the raw Vega-Lite spec under the card as a fenced code block. You can copy it into any standalone Vega-Lite editor (<a href="https://vega.github.io/editor/" rel="noopener">vega.github.io/editor</a>) without installing anything.</li>
+  </ul>
+
+  <h4>Path B — Download the Full flavor manually</h4>
+  <p>On <a href="https://github.com/singhpratech/notepatra/releases/latest" rel="noopener">the GitHub Releases page</a> pick the file with <code>-full</code> in the name:</p>
+  <ul>
+    <li><strong>Linux x64:</strong> <code>notepatra-linux-x64-full.tar.gz</code> — extract it, then replace <code>~/.local/bin/notepatra</code> (or wherever you installed). Your config, chat history, and connections live outside the binary and are preserved.</li>
+    <li><strong>Linux ARM64:</strong> <code>notepatra-linux-arm64-full.tar.gz</code> — same pattern.</li>
+    <li><strong>macOS:</strong> Full DMG ships in v0.1.66. Until then, use Path C.</li>
+    <li><strong>Windows:</strong> Full installer ships in v0.1.66. Until then, use Path C.</li>
+  </ul>
+
+  <h4>Path C — Build from source with <code>-DNOTEPATRA_WITH_WEBENGINE=ON</code></h4>
+  <p>Works on any platform with QtWebEngine dev headers available:</p>
+  <ul>
+    <li><strong>Linux:</strong> <code>sudo apt-get install qtwebengine5-dev libqt5webenginewidgets5</code> (Debian / Ubuntu) or <code>sudo dnf install qt5-qtwebengine-devel</code> (Fedora) or <code>sudo pacman -S qt5-webengine</code> (Arch)</li>
+    <li><strong>macOS:</strong> <code>brew install qt@5</code> already bundles WebEngine</li>
+    <li><strong>Windows:</strong> The install-qt-action equivalent (or aqtinstall) <code>qtwebengine</code> module</li>
+  </ul>
+  <p>Then:</p>
+  <pre><code>git clone https://github.com/singhpratech/notepatra.git
+cd notepatra
+mkdir build &amp;&amp; cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DNOTEPATRA_WITH_WEBENGINE=ON
+make -j$(nproc)
+./notepatra</code></pre>
+  <p>The binary will report a normal version string but the chart renderer's WebEngine code path is now compiled in, so the Data Analyst's chart cards render inline instead of showing the install prompt.</p>
+
+  <h3 id="lite-vs-full-faq">FAQ</h3>
+  <ul>
+    <li><strong>Do I lose anything by staying on Lite?</strong> No — every editor / lexer / AI / Git / data / plugin feature works identically. The only difference is that <code>generate_chart</code> tool results paint as a "Charts Pack required" card instead of as an inline rendered chart. You can still see the spec via [View JSON instead] and copy it elsewhere.</li>
+    <li><strong>Can I downgrade Full → Lite?</strong> Yes. Just download the Lite tarball and replace the binary. Your config / chat history / connections are preserved (they live under <code>~/.config/notepatra</code>, not inside the binary).</li>
+    <li><strong>Will the chart spec data be lost if I'm on Lite?</strong> No — the AI's tool result is preserved in your chat history just like any other tool result. If you upgrade to Full later, opening the same chat shows the rendered chart for those past results.</li>
+    <li><strong>When does the in-app installer ship?</strong> v0.1.66 candidate. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.65; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
+  </ul>
 
   <h2 id="ui-overview" class="anchor-target">UI overview</h2>
   <ul>
@@ -1241,6 +1342,41 @@ Content-Type: application/json
   <h2 id="ai-coding-mode" class="anchor-target">Coding Mode — agentic tool-using AI (v0.1.35+)</h2>
   <p>Tick <strong>Coding Mode</strong> in the AI dock and Notepatra becomes an <strong>agent</strong>: the model can read your files, list directories, search, write files, and apply line-level edits — all on its own. The dock flips into a 3-pane layout (file tree · editor · AI chat).</p>
 
+  <h3>Bottom segmented toggle — Chat / Compose / Agent (v0.1.61+)</h3>
+  <p>The old top-of-panel <code>Chat | Composer</code> tabs are gone. v0.1.61 introduced a 3-segment toggle at the <strong>bottom</strong> of the AI dock — matching the iOS / Slack keyboard-accessory mental model that Continue.dev, Copilot Chat, and Cursor 3.0 all converged on:</p>
+  <ul>
+    <li><strong>Chat</strong> — free-form conversation. The agent reads + searches but doesn't write.</li>
+    <li><strong>Compose</strong> — agent's write_file / apply_diff results land in the inline <strong>Edit Plan</strong> with per-file dry-run diffs. Nothing hits disk until you click <strong>Apply Selected</strong> or <strong>Apply All</strong>.</li>
+    <li><strong>Agent</strong> — write_file / apply_diff execute immediately (still subject to the path-safety / per-turn budget guards). The editor reloads the buffer automatically when a file the agent touched is currently open.</li>
+  </ul>
+
+  <h3>Per-hunk Stage / Revert from the editor gutter (v0.1.62+)</h3>
+  <p>Click any green / red / blue change marker in the editor's git gutter (margin 3) and a <strong>hunk popup</strong> anchors at that line showing the before-vs-after content (an embedded DiffView) with three buttons:</p>
+  <ul>
+    <li><strong>Stage hunk</strong> — pipes a unified-diff slice through <code>git apply --whitespace=nowarn --cached</code>. Same safety rails as the AI tools (workspace anchor + credential deny-list + 5000-line hunk cap).</li>
+    <li><strong>Revert hunk</strong> — reverses the patch direction so the working tree matches HEAD for just that hunk.</li>
+    <li><strong>Copy diff</strong> — drops the synthesized diff to your clipboard.</li>
+  </ul>
+  <p>The Compare widget (Tools → Compare Files) gets the same buttons in a docked strip — one row per contiguous diff region (<code>Hunk N/M · rows a–b · [Stage] [Revert] [Jump →]</code>).</p>
+
+  <h3>Marker-based merge resolution (v0.1.62+)</h3>
+  <p>Files with <code>UU</code> (both-modified) status in the Git panel now show a <strong>Resolve</strong> button instead of the +/− shortcuts. Clicking it opens the merge helper widget which scans column-0 <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code> / <code>=======</code> / <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code> markers and surfaces <strong>Take ours</strong> / <strong>Take theirs</strong> / <strong>Take both</strong> / <strong>Jump →</strong> buttons per conflict region, plus QScintilla annotation labels above each conflict. Full 3-way LOCAL/BASE/REMOTE merge editor is v0.2 scope; the marker-based path covers ~90% of conflicts.</p>
+
+  <h3>Vision drag-and-drop (v0.1.61+)</h3>
+  <p>Drop an image (PNG / JPG / WEBP / GIF / BMP) or document (PDF / DOCX / PPTX) onto the AI dock. If the active model is <strong>not</strong> vision-capable, you get a styled error bubble listing alternatives — local <code>qwen2.5vl:7b</code> / <code>gemma3:4b</code>, cloud <code>claude-sonnet-4-6</code> / <code>gpt-5</code> / <code>gemini-2.5-flash</code>. Detection:</p>
+  <ul>
+    <li><strong>Ollama</strong> via the <code>/api/show</code> capability cache (returns <code>capabilities</code> array; conservative-false on empty cache so a slow Ollama doesn't silently drop your attachment).</li>
+    <li><strong>Cloud</strong> via May-2026 prefix allowlist for Claude 3.5+, GPT-4o/4.1/5, Gemini 1.5+, Sonnet 4.x, etc.</li>
+  </ul>
+
+  <h3>Smart input gating + context guards (v0.1.61+)</h3>
+  <p>The chat input + Send button now <strong>disable</strong> whenever the model dropdown is in a placeholder state — <code>(detecting…)</code>, <code>(Ollama offline)</code>, <code>(no models installed)</code>, <code>(API key required)</code>. State-specific placeholders explain <em>why</em> with concrete next steps (<code>ollama serve</code>, <code>ollama pull qwen2.5-coder:7b</code>, click ⚙). Additional guards:</p>
+  <ul>
+    <li><strong>Coding Mode</strong> without a workspace → points you to File → Open Folder.</li>
+    <li><strong>Data Mode</strong> without a saved DB connection → points you to Manage Connections.</li>
+    <li><strong>Wrong-capability model</strong> in Coding mode → refusal card lists tool-capable alternatives.</li>
+  </ul>
+
   <h3>Agentic tools</h3>
   <p>The agent gets <strong>5 native tools</strong> (v0.1.40 surface). Every tool call shows up as an inline <code>🔧 toolname (args) → result</code> card in the chat:</p>
   <table>
@@ -1307,6 +1443,7 @@ Content-Type: application/json
   </table>
 
   <h3>Live charts inline in the chat</h3>
+  <p><strong>v0.1.64+ note:</strong> charts now ship behind the optional <a href="#packs"><code>charts</code> pack</a>. On a default (lite) install, the AI's <code>generate_chart</code> tool result paints as a <strong>📊 Chart rendering requires the Charts Pack</strong> card with two buttons — <strong>[Install charts pack]</strong> (opens GitHub Releases with the matching <code>-full</code> asset for your OS) and <strong>[View JSON instead]</strong> (shows the raw Vega-Lite spec in a fenced code block). See <a href="#lite-vs-full">Lite vs Full</a> for the upgrade paths. The flow described below is what you see once you're on the Full flavor.</p>
   <p>When a visualization clarifies the answer, the model emits a fenced <code>```chart</code> block with a small JSON spec. Notepatra parses each one and embeds a <strong>real interactive QChartView</strong> under the assistant's prose:</p>
   <pre><code>```chart
 {

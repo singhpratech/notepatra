@@ -92,6 +92,41 @@ fi
     || { check "ctest passes" "false"; tail -20 /tmp/release-ctest.log | sed 's/^/    /'; }
 
 echo
+echo "── full-flavor build sanity (WebEngine code path) ──"
+# v0.1.65 addition: catch the v0.1.63 silent-failure class of bugs. The
+# WebEngine code path in src/charts/vega_chart_renderer.cpp lives behind
+# #ifdef NOTEPATRA_WITH_WEBENGINE; it never compiles on dev machines that
+# don't have libqt5webengine5-dev installed. v0.1.63's QJsonDocument(QJsonValue)
+# bug shipped because no local pre-tag check exercised that path — CI failed
+# silently and the GitHub Release never published.
+#
+# Probe: does pkg-config / cmake's find_package see Qt5WebEngineWidgets?
+# If yes, run a throwaway configure + build in build-full/ with
+# -DNOTEPATRA_WITH_WEBENGINE=ON. Any compile error fails the gate hard.
+# If no, emit a loud warning — CI runners HAVE WebEngine, so a missing
+# local install means we're shipping blind.
+WEBENGINE_PROBE_LOG=/tmp/release-webengine-probe.log
+if dpkg -l libqt5webengine5-dev libqt5webenginewidgets5 2>/dev/null | grep -q '^ii' \
+   || (echo 'find_package(Qt5 REQUIRED COMPONENTS WebEngineWidgets)' | cmake -DCMAKE_BUILD_TYPE=Release -P /dev/stdin >/dev/null 2>&1); then
+    rm -rf build-full && mkdir -p build-full
+    if (cd build-full && cmake .. -DCMAKE_BUILD_TYPE=Release -DNOTEPATRA_WITH_WEBENGINE=ON >"$WEBENGINE_PROBE_LOG" 2>&1 \
+        && cmake --build . --target notepatra -j "$(nproc 2>/dev/null || echo 4)" >>"$WEBENGINE_PROBE_LOG" 2>&1); then
+        check "full-flavor build (WebEngine path) compiles" "true"
+    else
+        check "full-flavor build (WebEngine path) compiles" "false"
+        tail -25 "$WEBENGINE_PROBE_LOG" | sed 's/^/    /'
+    fi
+else
+    echo "  ⚠ libqt5webengine5-dev NOT installed locally — CANNOT verify the WebEngine"
+    echo "    code path compiles. CI runners DO have WebEngine, so a regression in"
+    echo "    src/charts/vega_chart_renderer.cpp (or anything else inside"
+    echo "    #ifdef NOTEPATRA_WITH_WEBENGINE) will fail CI silently like v0.1.63 did."
+    echo "    Install with:   sudo apt-get install qtwebengine5-dev libqt5webenginewidgets5"
+    # Don't fail the gate — devs without WebEngine should still be able to cut
+    # releases, but the warning makes the risk visible.
+fi
+
+echo
 echo "── tag ──"
 if git rev-parse "$TAG" >/dev/null 2>&1; then
     echo "  ⚠ tag $TAG already exists locally"
