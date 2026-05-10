@@ -239,6 +239,7 @@ private:
     QTextBrowser *m_output = nullptr;
     QPlainTextEdit *m_customInput;   // multi-line, Cursor-style. Enter sends, Shift+Enter newlines.
     QComboBox *m_modelCombo;
+    QPushButton *m_sendBtn = nullptr;
     QPushButton *m_stopBtn;
     QPushButton *m_refreshBtn;
     QPushButton *m_clearBtn;
@@ -357,6 +358,13 @@ private slots:
     // the buffer. Failures surface as an error bubble; successes drop
     // the row from the list.
     void applyComposerEdits(const QList<QPair<QString, QString>> &edits);
+    // v0.1.59 — gate the chat input + Send button on model readiness.
+    // The dropdown shows "(detecting…)", "(Ollama offline)", "(no models
+    // installed)", or "(API key required)" when no model is usable; the
+    // input must reflect that with a disabled state + explanatory
+    // placeholder so the user doesn't type into a dead field. Called from
+    // dropdown change handlers, backend switches, and ollama/openai probes.
+    void updateInputAvailability();
 };
 
 #endif

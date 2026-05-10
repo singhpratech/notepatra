@@ -7,6 +7,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.59] — 2026-05-10
+
+**Input gating when no model is ready + author-link refresh.**
+
+### Fixed — chat input refuses keystrokes until a real model is selected
+
+* The chat input + Send button now disable across **all three modes** (Chat / Coding / Data) whenever the model dropdown shows a placeholder/error label (`(detecting…)`, `(Ollama offline)`, `(no models installed)`, `(API key required)`). Until now the input was always editable, so users typed an entire prompt before learning at Send-time that no model was usable.
+* Implementation: a single `m_modelCombo currentTextChanged` connect routes to `AIPanel::updateInputAvailability()`, which keys off the parenthesis convention every placeholder entry already uses — so one helper covers all 9 dropdown-disable call sites without touching them.
+* State-specific placeholders explain *why* the field is disabled (e.g. `Ollama is offline — start it ('ollama serve') and click ↻ Refresh.`, `No models installed — 'ollama pull qwen2.5-coder:7b' then click ↻.`, `API key required — open ⚙ to add one, then pick a model.`).
+* The Send button gains a `:disabled` rule (45% label opacity) so the dock visibly signals the action is unavailable, not just unresponsive.
+* Defense in depth: the existing `sendPrompt()` guard at `aipanel.cpp:2747` (clear chat + error bubble on placeholder model) stays as a backstop.
+
+### Changed — "Prateek Singh" credit links to author's blog
+
+* The in-app About dialog (`src/mainwindow.cpp`), the website homepage footer (`docs/index.html`), and the docs-page footer (`docs/docs.html`) all now link `Prateek Singh` to <https://theaivibe.org/about> instead of a bare GitHub profile (or, in `docs.html`, plain text). GitHub remains on the About dialog as a separate "Source" line and on the site footer source-code links — navigation parity preserved.
+
+### Tests
+
+21/21 deterministic tests pass. Manual verification across Light + Dark themes: input + Send toggle correctly across Ollama-stop / start cycles and across all three mode toggles.
+
+### Stats
+
+3 source files changed (`src/aipanel.{cpp,h}` + `src/mainwindow.cpp`), plus docs + CMakeLists VERSION bump. Bare binary unchanged at **7.73 MB stripped**.
+
+---
+
 ## [0.1.58] — 2026-05-09
 
 **Composer wiring complete — Slices B/C/D land end-to-end (dry_run → Edit Plan → Apply).**

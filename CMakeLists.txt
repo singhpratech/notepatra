@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.58 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.59 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -408,6 +408,39 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexers_v0125.cpp")
     message(STATUS "Regression test enabled — target: test_lexers_v0125")
 endif()
 
+# ── v0.1.58 release validation: lexer smoke test ──
+# Builds tests/comprehensive/lexer_smoke.cpp which constructs a real
+# QsciScintilla widget per language, attaches the lexer returned by
+# Notepatra's createLexerForLanguage(), feeds it a keyword-rich snippet,
+# and verifies Scintilla reports >=2 distinct styles AND some non-zero
+# styled bytes — i.e. the lexer actually classified keywords as keywords.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/tests/comprehensive/lexer_smoke.cpp")
+    add_executable(test_lexer_smoke
+        tests/comprehensive/lexer_smoke.cpp
+        src/lexerutils.cpp
+        src/lexer_go.cpp
+        src/lexer_kotlin.cpp
+        src/lexer_powershell.cpp
+        src/lexer_rust.cpp
+        src/lexer_swift.cpp
+        src/lexer_typescript.cpp
+        src/lexer_extras.cpp
+    )
+    target_include_directories(test_lexer_smoke PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_lexer_smoke PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::PrintSupport ${QSCINTILLA_LIB}
+    )
+    if(WIN32)
+        target_compile_definitions(test_lexer_smoke PRIVATE QSCINTILLA_DLL)
+    endif()
+    notepatra_add_qt_test(test_lexer_smoke)
+    set_tests_properties(test_lexer_smoke PROPERTIES LABELS "smoke;lexer;v0158")
+    message(STATUS "Regression test enabled — target: test_lexer_smoke")
+endif()
+
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexers.cpp")
     add_executable(test_lexers test_lexers.cpp)
     target_include_directories(test_lexers PRIVATE
@@ -518,6 +551,28 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_tools.cpp")
     add_test(NAME test_ai_tools COMMAND $<TARGET_FILE:test_ai_tools>)
     set_tests_properties(test_ai_tools PROPERTIES LABELS "unit;ai;tools")
     message(STATUS "Regression test enabled — target: test_ai_tools")
+endif()
+
+# v0.1.58 — End-to-end git-tools harness. Spins up a temp git repo, runs
+# every git_* tool through AiTools::execute, asserts on the JSON wire
+# shape, and exercises the error paths (no_workspace, not_a_repo, traversal,
+# malformed commit refs). Also sweeps the live Notepatra repo read-only.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_git_tools_e2e.cpp")
+    add_executable(test_git_tools_e2e
+        test_git_tools_e2e.cpp
+        src/ai_tools.cpp
+        src/git_tools.cpp
+        src/csvanalyst.cpp
+        src/dbconnections.cpp
+    )
+    target_include_directories(test_git_tools_e2e PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_git_tools_e2e PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Sql)
+    add_test(NAME test_git_tools_e2e COMMAND $<TARGET_FILE:test_git_tools_e2e>)
+    set_tests_properties(test_git_tools_e2e PROPERTIES LABELS "integration;ai;tools;git")
+    message(STATUS "Regression test enabled — target: test_git_tools_e2e")
 endif()
 
 # v0.1.43 — Data Analyst Mode regression suite. Pure-logic tests for the

@@ -36,3 +36,17 @@ vendor/duckdb/libduckdb_static.a
 
 # Vendored binary deps (downloaded by build scripts)
 vendor/
+
+# Test harness scratch — generated artefacts from tests/comprehensive/.
+# The harness writes JSON results, captures screenshots, and Python
+# byte-caches its runners; none of it is checkable-in source.
+tests/comprehensive/results/
+tests/comprehensive/screenshots/
+tests/comprehensive/__pycache__/
+tests/comprehensive/run.log
+
+# Local-only test runners that still bake user-specific paths.
+# When their hardcoded `/home/...` paths are scrubbed they can be
+# checked in alongside the comprehensive harness.
+tests/comprehensive/run_ui_smoke.sh
+tests/comprehensive/run_duckdb_tests.py

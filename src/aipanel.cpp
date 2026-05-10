@@ -1206,6 +1206,19 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         });
     }
 
+    // v0.1.59 — gate input on model readiness. Whenever the dropdown text
+    // changes (initial population, refresh, user pick, "(detecting…)" →
+    // real model, etc.), re-check whether the input + Send button should be
+    // active. The dropdown's own enabled state already reflects backend
+    // health (set false on offline/no-models/api-key-required, true once a
+    // probe returns at least one model), so we mirror that with a small
+    // textual sanity-check (entries wrapped in parens like "(Ollama
+    // offline)" never count as a real model even if the combo is enabled).
+    if (m_modelCombo) {
+        connect(m_modelCombo, &QComboBox::currentTextChanged,
+                this, [this](const QString &) { updateInputAvailability(); });
+    }
+
     // Initial mode is set at the END of the constructor, once all
     // referenced widgets (m_customInput, m_quickActionsWrap, m_chatLayout,
     // etc.) are constructed. See the trailing applyMode() call below.
@@ -1725,16 +1738,17 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         });
     }
 
-    auto *sendBtn = new QPushButton("Send");
-    sendBtn->setFixedSize(72, 36);
-    sendBtn->setStyleSheet(QString(
+    m_sendBtn = new QPushButton("Send");
+    m_sendBtn->setFixedSize(72, 36);
+    m_sendBtn->setStyleSheet(QString(
         "QPushButton { background: %1; color: white; border: none; "
         "border-radius: 18px; font-weight: bold; font-size: 13px; }"
         "QPushButton:hover { background: %2; }"
-        "QPushButton:pressed { background: %3; }")
+        "QPushButton:pressed { background: %3; }"
+        "QPushButton:disabled { background: %1; color: rgba(255,255,255,0.45); }")
         .arg(pal.userBg, pal.userBorder,
              aiIsDark() ? "#0A4F7C" : "#A55B40"));
-    customRow->addWidget(sendBtn);
+    customRow->addWidget(m_sendBtn);
 
     m_stopBtn = new QPushButton("Stop");
     m_stopBtn->setFixedSize(56, 36);
@@ -2166,7 +2180,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     connect(fixJsonBtn, &QPushButton::clicked, this, [this]() { sendPrompt("fix-json"); });
     connect(fixHtmlBtn, &QPushButton::clicked, this, [this]() { sendPrompt("fix-html"); });
     connect(fixSqlBtn,  &QPushButton::clicked, this, [this]() { sendPrompt("fix-sql"); });
-    connect(sendBtn, &QPushButton::clicked, this, [this]() {
+    connect(m_sendBtn, &QPushButton::clicked, this, [this]() {
         if (!m_customInput->toPlainText().trimmed().isEmpty()) sendPrompt("custom");
     });
     // Enter-to-send wiring lives in eventFilter() — the event filter
@@ -2213,6 +2227,13 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     } else if (m_chatMode) {
         m_chatMode->setChecked(true);
     }
+
+    // v0.1.59 — initial state. The dropdown almost always says
+    // "(detecting…)" at this point (Ollama probe is in flight, OpenAI/
+    // OpenRouter catalog is loading, etc.), so the input should start
+    // disabled. The currentTextChanged connect installed earlier will
+    // re-fire and enable it once a real model name lands.
+    updateInputAvailability();
 }
 
 void AIPanel::setContext(const QString &selectedText, const QString &filePath, const QString &language) {
@@ -5518,5 +5539,66 @@ void AIPanel::applyComposerEdits(const QList<QPair<QString, QString>> &edits) {
                         .arg(wrote).arg(failures.size());
         for (const QString &f : failures) msg += "\n  • " + f;
         appendErrorBubble(msg);
+    }
+}
+
+// v0.1.59 — Gate the chat input + Send button on whether a real model is
+// currently selected. Behavior:
+//   • Dropdown disabled OR text empty OR text wrapped in parens like
+//     "(detecting…)" / "(Ollama offline)" / "(no models installed)" /
+//     "(API key required)" → input + Send disabled, placeholder explains
+//     why.
+//   • Real model name selected → input + Send enabled, mode-appropriate
+//     placeholder restored.
+// Called from m_modelCombo currentTextChanged AND from any code path that
+// flips the dropdown's enabled state (ollama probe complete, openai key
+// changed, backend switch). Safe to call before m_customInput / m_sendBtn
+// exist (early-construction path) — every member access is guarded.
+void AIPanel::updateInputAvailability() {
+    if (!m_customInput && !m_sendBtn) return;
+
+    bool ready = false;
+    if (m_modelCombo) {
+        const QString text = m_modelCombo->currentText().trimmed();
+        // Real model = dropdown is interactive AND the visible label
+        // isn't a placeholder/error string. We use the parenthesis
+        // convention because every error/placeholder entry in this file
+        // wraps its text in `(...)` — see "(detecting…)", "(Ollama
+        // offline)", "(no models installed)", "(API key required)",
+        // "(no model)", etc.
+        ready = m_modelCombo->isEnabled()
+             && !text.isEmpty()
+             && !(text.startsWith('(') && text.endsWith(')'));
+    }
+
+    if (m_customInput) {
+        m_customInput->setEnabled(ready);
+        if (!ready) {
+            // Override whatever mode-specific placeholder applyMode set
+            // — the user needs to know WHY they can't type.
+            QString why = QStringLiteral("Select a model in the dropdown above to start chatting…");
+            if (m_modelCombo) {
+                const QString text = m_modelCombo->currentText().trimmed();
+                if (text.contains("offline", Qt::CaseInsensitive))
+                    why = QStringLiteral("Ollama is offline — start it (`ollama serve`) and click ↻ Refresh.");
+                else if (text.contains("no models", Qt::CaseInsensitive))
+                    why = QStringLiteral("No models installed — `ollama pull qwen2.5-coder:7b` then click ↻.");
+                else if (text.contains("api key", Qt::CaseInsensitive)
+                      || text.contains("key required", Qt::CaseInsensitive))
+                    why = QStringLiteral("API key required — open ⚙ to add one, then pick a model.");
+                else if (text.contains("detecting", Qt::CaseInsensitive))
+                    why = QStringLiteral("Detecting available models…");
+            }
+            m_customInput->setPlaceholderText(why);
+        }
+        // When ready, leave the placeholder as whatever applyMode last
+        // set (Chat / Coding / Data appropriate) — don't overwrite it.
+    }
+
+    if (m_sendBtn) {
+        m_sendBtn->setEnabled(ready);
+        m_sendBtn->setToolTip(ready
+            ? QString()
+            : QStringLiteral("Pick a model first — see the dropdown above"));
     }
 }

@@ -3415,7 +3415,7 @@ void MainWindow::buildMenus() {
             "💻 Source: <a href='https://github.com/singhpratech/notepatra'>github.com/singhpratech/notepatra</a>"
             "</p>"
             "<p style='color:#888; font-size:11px; margin-top:14px;'>"
-            "Envisioned by <a href='https://github.com/singhpratech'>Prateek Singh</a>. Built with Claude."
+            "Envisioned by <a href='https://theaivibe.org/about'>Prateek Singh</a>. Built with Claude."
             "</p>")
             .arg(version));
         box.exec();
