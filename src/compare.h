@@ -66,6 +66,12 @@ public:
     int diffCount() const;
     int rowCount() const;
 
+    // v0.1.62 — when this compare view represents "HEAD vs working copy"
+    // for a tracked file, the host sets the workspace-relative path so
+    // the per-hunk Stage / Revert button row can route operations to the
+    // right file. When empty (the default), the hunk strip is hidden.
+    void setGitContext(const QString &repoRoot, const QString &filePath);
+
 public slots:
     // Re-apply the header / stats / splitter stylesheets and re-run
     // setupEditor() on both Scintilla panes so markers, paper, and
@@ -80,6 +86,14 @@ signals:
     // MainWindow) is responsible for actually closing the window/tab.
     void closeRequested();
 
+    // v0.1.62 — emitted by the per-hunk Stage / Revert buttons. The
+    // GitHunkApply API lands separately (sibling agent); MainWindow
+    // will route these signals to that API once it's wired. Until
+    // then, the buttons surface a TODO message so the user knows the
+    // wiring is pending.
+    void stageHunkRequested(const QString &filePath, int hunkIndex);
+    void revertHunkRequested(const QString &filePath, int hunkIndex);
+
 private:
     bool eventFilter(QObject *watched, QEvent *event) override;
     void navigateNext();
@@ -91,6 +105,12 @@ private:
     void updateEditToggle();
     void jumpToRow(int row);
     void updateOverviewViewport();
+
+    // v0.1.62 — rebuild the per-hunk action strip from m_rowKinds. Each
+    // contiguous run of non-RowEqual rows becomes one hunk with a row
+    // containing { "Hunk N (lines a–b)", [Stage], [Revert], [Jump →] }.
+    void rebuildHunkStrip();
+    void clearHunkStrip();
 
     QsciScintilla *m_leftEditor, *m_rightEditor;
     CompareNavBar *m_navBar;
@@ -108,6 +128,14 @@ private:
     int m_currentDiff = -1;
     bool m_editable = false;
     bool m_firstCompareDone = false;
+
+    // v0.1.62 — git-context for the per-hunk action strip. Both empty
+    // when the compare view is not anchored to a git working copy.
+    QString m_gitRepoRoot;
+    QString m_gitFilePath;
+    class QWidget *m_hunkStrip = nullptr;
+    class QVBoxLayout *m_hunkStripLayout = nullptr;
+    class QScrollArea *m_hunkStripScroll = nullptr;
 };
 
 // Backward compat

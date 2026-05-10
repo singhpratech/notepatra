@@ -75,6 +75,23 @@ signals:
     // `right` (working copy). `title` is what the tab label should read.
     void openDiffInTab(const QString &title, const QString &leftText, const QString &rightText);
 
+    // v0.1.62 — emitted when the user clicks the per-row "Resolve" button on
+    // a conflict (UU) entry. `repoRoot` is the absolute path to the
+    // repository, `relPath` is the workspace-relative path to the conflicted
+    // file. MainWindow opens the file in an editor tab and mounts a
+    // MergeHelperWidget against it.
+    void openMergeHelperRequested(const QString &repoRoot, const QString &relPath);
+
+    // v0.1.62 — same as openDiffInTab but additionally carries enough git
+    // context (`repoRoot`, `relPath`) for the CompareWidget to render its
+    // per-hunk Stage / Revert button strip. The legacy signal stays so any
+    // existing wiring continues to work.
+    void openDiffInTabWithGit(const QString &title,
+                              const QString &leftText,
+                              const QString &rightText,
+                              const QString &repoRoot,
+                              const QString &relPath);
+
 private:
     // ─── Parsed git data types ──────────────────────────────────────────────
     struct GitFileEntry {

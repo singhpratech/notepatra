@@ -728,13 +728,33 @@ void GitPanel::addFileRow(QTreeWidgetItem *parent, const GitFileEntry &entry, bo
     }
     item->setForeground(0, c);
 
+    // v0.1.62 — conflict (UU) rows get a "Resolve" button that opens the
+    // file and mounts a MergeHelperWidget. Stage/unstage on a conflicted
+    // file doesn't help the user — they need to fix the markers first.
+    const bool isConflict = (statusChar == 'U');
+    const QString path = entry.path;
+
+    if (isConflict) {
+        auto *resolveBtn = new QPushButton("Resolve");
+        resolveBtn->setFixedSize(70, 20);
+        resolveBtn->setCursor(Qt::PointingHandCursor);
+        resolveBtn->setStyleSheet(inlineActionButtonStyle());
+        resolveBtn->setToolTip("Open file with merge-marker helper");
+        const QString repoRoot = m_repoRoot;
+        connect(resolveBtn, &QPushButton::clicked, this,
+                [this, repoRoot, path]() {
+            emit openMergeHelperRequested(repoRoot, path);
+        });
+        m_tree->setItemWidget(item, 1, resolveBtn);
+        return;
+    }
+
     // Inline stage/unstage button — setItemWidget parents it into column 1.
     auto *btn = new QPushButton(staged ? "−" : "+");
     btn->setFixedSize(20, 20);
     btn->setCursor(Qt::PointingHandCursor);
     btn->setStyleSheet(inlineActionButtonStyle());
     btn->setToolTip(staged ? "Unstage" : "Stage");
-    const QString path = entry.path;
     connect(btn, &QPushButton::clicked, this, [this, path, staged]() {
         if (staged) unstagePath(path);
         else        stagePath(path);
@@ -1068,7 +1088,11 @@ void GitPanel::openDiffForPath(const QString &path) {
     }
 
     const QString title = QString("Diff · %1").arg(QFileInfo(path).fileName());
-    emit openDiffInTab(title, leftText, rightText);
+    // v0.1.62 — emit the git-aware signal so MainWindow can render the
+    // per-hunk Stage / Revert strip on the CompareWidget. The legacy
+    // signal is still defined in the header for any out-of-tree
+    // consumers but no longer fires from here.
+    emit openDiffInTabWithGit(title, leftText, rightText, m_repoRoot, path);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

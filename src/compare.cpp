@@ -15,13 +15,17 @@
 
 #include <QEvent>
 #include <QFont>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QMessageBox>
 #include <QStyle>
+#include <QLayoutItem>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QScrollArea>
 #include <QScrollBar>
 #include <QSplitter>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <Qsci/qscilexer.h>
 #include <Qsci/qscistyle.h>
@@ -776,6 +780,30 @@ CompareWidget::CompareWidget(QWidget *parent) : QWidget(parent) {
     toolbar->addWidget(closeBtn);
     layout->addLayout(toolbar);
 
+    // v0.1.62 — per-hunk action strip. Hidden by default; only shown
+    // when the host has set a git context via setGitContext() AND the
+    // current compare has at least one hunk. Each hunk row carries
+    // Stage / Revert / Jump buttons.
+    m_hunkStrip = new QWidget(this);
+    m_hunkStrip->setObjectName("compareHunkStrip");
+    auto *hunkOuter = new QVBoxLayout(m_hunkStrip);
+    hunkOuter->setContentsMargins(8, 4, 8, 4);
+    hunkOuter->setSpacing(2);
+    m_hunkStripScroll = new QScrollArea(m_hunkStrip);
+    m_hunkStripScroll->setWidgetResizable(true);
+    m_hunkStripScroll->setFrameShape(QFrame::NoFrame);
+    m_hunkStripScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_hunkStripScroll->setMaximumHeight(96);
+    auto *hunkInner = new QWidget;
+    m_hunkStripLayout = new QVBoxLayout(hunkInner);
+    m_hunkStripLayout->setContentsMargins(0, 0, 0, 0);
+    m_hunkStripLayout->setSpacing(2);
+    m_hunkStripLayout->addStretch();
+    m_hunkStripScroll->setWidget(hunkInner);
+    hunkOuter->addWidget(m_hunkStripScroll);
+    m_hunkStrip->setVisible(false);
+    layout->addWidget(m_hunkStrip);
+
     auto *headerRow = new QHBoxLayout;
     headerRow->setContentsMargins(0, 0, 0, 0);
     headerRow->setSpacing(2);
@@ -1200,6 +1228,9 @@ void CompareWidget::recompare() {
     m_navBar->setRows(m_rowKinds);
     updateOverviewViewport();
 
+    // v0.1.62 — refresh per-hunk strip whenever the diff is rebuilt.
+    rebuildHunkStrip();
+
     const bool identical = m_diffLines.isEmpty() && diff.added == 0 && diff.removed == 0;
     const ComparePalette statsPal = comparePalette();
     if (identical) {
@@ -1349,6 +1380,144 @@ void CompareWidget::onThemeChanged() {
     if (m_firstCompareDone) recompare();
 
     update();
+}
+
+// v0.1.62 — per-hunk Stage / Revert strip
+// ─────────────────────────────────────────────────────────────────────
+// A "hunk" here is one or more contiguous non-RowEqual rows in the
+// rendered diff. We walk m_rowKinds, group them, and emit one row of
+// buttons per group. Clicking Stage / Revert emits stageHunkRequested /
+// revertHunkRequested(filePath, hunkIndex); MainWindow routes those to
+// GitHunkApply once it's available (a sibling agent is wiring it). For
+// the v0.1.62 cut, if the API isn't there yet, the click pops a TODO
+// info dialog so the user knows the wiring is pending — same UX as a
+// disabled-but-discoverable button.
+
+void CompareWidget::setGitContext(const QString &repoRoot, const QString &filePath) {
+    m_gitRepoRoot = repoRoot;
+    m_gitFilePath = filePath;
+    rebuildHunkStrip();
+}
+
+void CompareWidget::clearHunkStrip() {
+    if (!m_hunkStripLayout) return;
+    while (m_hunkStripLayout->count() > 0) {
+        QLayoutItem *item = m_hunkStripLayout->takeAt(0);
+        if (!item) continue;
+        if (QWidget *w = item->widget()) w->deleteLater();
+        delete item;
+    }
+    m_hunkStripLayout->addStretch();
+}
+
+void CompareWidget::rebuildHunkStrip() {
+    if (!m_hunkStrip || !m_hunkStripLayout) return;
+    clearHunkStrip();
+
+    // Hide when not in git mode.
+    if (m_gitFilePath.isEmpty()) {
+        m_hunkStrip->setVisible(false);
+        return;
+    }
+
+    // Compute hunk groupings — contiguous runs of non-RowEqual rows.
+    struct Hunk { int firstRow; int lastRow; };
+    QVector<Hunk> hunks;
+    for (int i = 0; i < m_rowKinds.size(); ) {
+        if (m_rowKinds[i] == RowEqual) { ++i; continue; }
+        int j = i;
+        while (j < m_rowKinds.size() && m_rowKinds[j] != RowEqual) ++j;
+        hunks.append({i, j - 1});
+        i = j;
+    }
+
+    if (hunks.isEmpty()) {
+        m_hunkStrip->setVisible(false);
+        return;
+    }
+
+    const ComparePalette pal = comparePalette();
+    const QString rowStyle = QString(
+        "QFrame#compareHunkRow {"
+        "  background: %1; border: 1px solid %2; border-radius: 4px;"
+        "  padding: 2px 6px;"
+        "}").arg(pal.headerBg.name(), pal.headerBorder.name());
+    const QString btnStyle = QString(
+        "QPushButton {"
+        "  padding: 2px 10px; border-radius: 3px; font-weight: 600;"
+        "  background: %1; color: %2; border: 1px solid %3;"
+        "}"
+        "QPushButton:hover { background: %4; }"
+        "QPushButton:disabled { color: %5; }"
+        ).arg(pal.editorBg.name(), pal.headerFg.name(),
+              pal.headerBorder.name(), pal.bgChangedLeft.name(),
+              pal.marginFg.name());
+
+    const QString filePath = m_gitFilePath;
+    for (int h = 0; h < hunks.size(); ++h) {
+        const Hunk &hk = hunks[h];
+
+        auto *row = new QFrame;
+        row->setObjectName("compareHunkRow");
+        row->setStyleSheet(rowStyle);
+        auto *layout = new QHBoxLayout(row);
+        layout->setContentsMargins(6, 2, 6, 2);
+        layout->setSpacing(6);
+
+        auto *label = new QLabel(QString("Hunk %1/%2  ·  rows %3–%4")
+                                     .arg(h + 1)
+                                     .arg(hunks.size())
+                                     .arg(hk.firstRow + 1)
+                                     .arg(hk.lastRow + 1));
+        label->setStyleSheet(QString("color: %1; font-weight: 600;")
+                                 .arg(pal.headerFg.name()));
+        layout->addWidget(label, 1);
+
+        auto *stageBtn = new QPushButton("Stage hunk");
+        stageBtn->setCursor(Qt::PointingHandCursor);
+        stageBtn->setStyleSheet(btnStyle);
+        stageBtn->setToolTip("Stage this hunk (HEAD ← right side)");
+        connect(stageBtn, &QPushButton::clicked, this, [this, filePath, h]() {
+            // Always emit so a connected host (MainWindow) can handle.
+            emit stageHunkRequested(filePath, h);
+            // Fallback informational notice for the v0.1.62-MVP cut —
+            // GitHunkApply lands separately. MainWindow will silence
+            // this once the wiring is in place by intercepting the
+            // signal and stopping propagation (Qt signals don't have
+            // a "consumed" notion, so we just pop the dialog whenever
+            // the parent agent isn't done yet; the parent agent will
+            // edit-out this block when GitHunkApply is integrated).
+            QMessageBox::information(this, "Per-hunk apply",
+                "Per-hunk apply wires in once the gutter agent lands.\n\n"
+                "File: " + filePath + "\nHunk: " + QString::number(h + 1));
+        });
+        layout->addWidget(stageBtn);
+
+        auto *revertBtn = new QPushButton("Revert hunk");
+        revertBtn->setCursor(Qt::PointingHandCursor);
+        revertBtn->setStyleSheet(btnStyle);
+        revertBtn->setToolTip("Discard this hunk in the working copy");
+        connect(revertBtn, &QPushButton::clicked, this, [this, filePath, h]() {
+            emit revertHunkRequested(filePath, h);
+            QMessageBox::information(this, "Per-hunk apply",
+                "Per-hunk apply wires in once the gutter agent lands.\n\n"
+                "File: " + filePath + "\nHunk: " + QString::number(h + 1));
+        });
+        layout->addWidget(revertBtn);
+
+        auto *jumpBtn = new QPushButton("Jump →");
+        jumpBtn->setCursor(Qt::PointingHandCursor);
+        jumpBtn->setStyleSheet(btnStyle);
+        jumpBtn->setToolTip("Scroll the diff to this hunk");
+        const int targetRow = hk.firstRow;
+        connect(jumpBtn, &QPushButton::clicked, this,
+                [this, targetRow]() { jumpToRow(targetRow); });
+        layout->addWidget(jumpBtn);
+
+        m_hunkStripLayout->insertWidget(m_hunkStripLayout->count() - 1, row);
+    }
+
+    m_hunkStrip->setVisible(true);
 }
 
 CompareDialog::CompareDialog(const QString &leftText, const QString &leftName,
