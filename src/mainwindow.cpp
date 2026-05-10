@@ -3491,9 +3491,14 @@ void MainWindow::buildToolbar() {
     addFeatureShortcut(featureTb, findActionByPrefix(this, "REST Client"),
                        QColor("#00838F"), "rest", "REST",
                        "Open REST Client");
-    addFeatureShortcut(featureTb, findActionByPrefix(this, "Git Integration"),
-                       QColor("#B23A48"), "git", "Git",
-                       "Open Git Integration");
+    // v0.1.61 — dropped the standalone Git Integration toolbar shortcut.
+    // Full VS Code-parity Source Control integration inside Coding mode
+    // lands in v0.1.62 (agent-A roadmap: per-hunk gutter popup, stage/
+    // unstage, branch picker, sync). Until then, the Plugins menu entry
+    // (`Plugins → Git Integration (inbuilt)`) is still the way to open
+    // the existing tab-based Git panel. Removing the toolbar shortcut
+    // declutters the chrome and prevents the user from forming a habit
+    // around a button we're about to relocate.
 }
 
 void MainWindow::setupShortcuts() {
