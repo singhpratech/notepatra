@@ -409,6 +409,24 @@ DbConnectionsDialog::DbConnectionsDialog(QWidget *parent)
 
     // ─── Right: form ─
     auto *form = new QFormLayout();
+
+    // v0.1.66 — Preset dropdown above all the fields. Picking a preset
+    // populates driver / port / placeholder options with sane templates,
+    // so users don't have to know that SQL Server lives behind QODBC
+    // with a "DRIVER={...}" connection string, or that PostgreSQL's
+    // default port is 5432. They can still edit anything afterwards.
+    m_preset = new QComboBox;
+    m_preset->addItems({
+        tr("(custom — pick a driver below)"),
+        tr("SQL Server (localhost, ODBC)"),
+        tr("SQL Server Express (named instance, ODBC)"),
+        tr("Azure SQL Database (ODBC)"),
+        tr("PostgreSQL (localhost)"),
+        tr("MySQL / MariaDB (localhost)"),
+        tr("SQLite (file on disk)"),
+        tr("DuckDB (file or :memory:)"),
+    });
+
     m_name = new QLineEdit;
     m_driver = new QComboBox;
     m_driver->addItems({"QSQLITE", "QPSQL", "QMYSQL", "QODBC", "DUCKDB"});
@@ -427,6 +445,7 @@ DbConnectionsDialog::DbConnectionsDialog(QWidget *parent)
     m_password->setEchoMode(QLineEdit::Password);
     m_options = new QLineEdit;
 
+    form->addRow(tr("Preset:"), m_preset);
     form->addRow(tr("Name:"), m_name);
     form->addRow(tr("Driver:"), m_driver);
     form->addRow(tr("Host:"), m_host);
@@ -437,6 +456,17 @@ DbConnectionsDialog::DbConnectionsDialog(QWidget *parent)
     form->addRow(tr("Username:"), m_username);
     form->addRow(tr("Password:"), m_password);
     form->addRow(tr("Options:"), m_options);
+
+    // v0.1.66 — driver availability + install hint, refreshed on every
+    // driver change. Lives just under the form so the user sees actionable
+    // guidance ("Install msodbcsql18 — see…") instead of generic "plugin
+    // not available" text.
+    m_driverHint = new QLabel;
+    m_driverHint->setWordWrap(true);
+    m_driverHint->setOpenExternalLinks(true);
+    m_driverHint->setTextFormat(Qt::RichText);
+    m_driverHint->setStyleSheet("color: #888; font-size: 11px;");
+    form->addRow(QString(), m_driverHint);
 
     auto *rightCol = new QVBoxLayout();
     rightCol->addLayout(form);
@@ -459,18 +489,19 @@ DbConnectionsDialog::DbConnectionsDialog(QWidget *parent)
 
     root->addLayout(rightCol, 1);
 
-    // Hint about driver availability
+    // v0.1.66 — high-level availability summary stays on the status row
+    // below the action buttons; per-driver install detail lives on the
+    // form's driverHint label (filled by refreshDriverHint()).
     const QStringList have = DbConnections::availableDrivers();
     QStringList missing;
     for (const QString &d : {"QSQLITE", "QPSQL", "QMYSQL", "QODBC", "DUCKDB"}) {
         if (!have.contains(d)) missing.append(d);
     }
     if (!missing.isEmpty()) {
-        m_status->setText(tr("Drivers not installed on this system: %1. "
-                             "Install the matching Qt SQL plugin to use them.")
+        m_status->setText(tr("Drivers not installed on this system: %1.")
                               .arg(missing.join(", ")));
     } else {
-        m_status->setText(tr("All four drivers are available on this system."));
+        m_status->setText(tr("All drivers available."));
     }
 
     refreshList();
@@ -485,6 +516,8 @@ DbConnectionsDialog::DbConnectionsDialog(QWidget *parent)
     connect(box, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(m_driver, &QComboBox::currentTextChanged,
             this, &DbConnectionsDialog::onDriverChanged);
+    connect(m_preset, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &DbConnectionsDialog::onPresetChanged);
     connect(m_browseDb, &QPushButton::clicked, this, [this]() {
         // Filter set varies per driver: SQLite shows .db files; DuckDB
         // accepts a wider mix (its own files + CSV/Parquet/JSON sources).
@@ -582,28 +615,245 @@ void DbConnectionsDialog::onAccept() {
     }
 }
 
+// v0.1.66 — per-driver default port. Returns 0 ("default") for SQLite /
+// DuckDB which don't open TCP sockets. Used by onDriverChanged to populate
+// the port field whenever the user picks a driver and the port is still
+// at its zero default — saves the user from looking up that QODBC + SQL
+// Server wants 1433, QPSQL wants 5432, QMYSQL wants 3306.
+static int defaultPortForDriver(const QString &drv) {
+    if (drv == QLatin1String("QODBC"))  return 1433; // SQL Server — most common QODBC use
+    if (drv == QLatin1String("QPSQL"))  return 5432;
+    if (drv == QLatin1String("QMYSQL")) return 3306;
+    return 0; // QSQLITE / DUCKDB — file-based
+}
+
 void DbConnectionsDialog::onDriverChanged(const QString &drv) {
     setNetworkFieldsEnabled(DbConnections::driverNeedsNetwork(drv));
     if (drv == QStringLiteral("QSQLITE")) {
         m_browseDb->setVisible(true);
         m_database->setPlaceholderText(tr("/path/to/your.db"));
+        m_options->setPlaceholderText(
+            tr("Optional: QSQLITE_OPEN_URI=1, QSQLITE_BUSY_TIMEOUT=5000, etc."));
+        m_host->setPlaceholderText(QString());
+        m_username->setPlaceholderText(QString());
     } else if (drv == QStringLiteral("DUCKDB")) {
         // v0.1.55 — DuckDB path uses the Database field as a multi-mode
         // source: DuckDB file, in-memory, CSV, Parquet, JSON, or S3.
-        // Hint via placeholder + show Browse for file paths.
         m_browseDb->setVisible(true);
         m_database->setPlaceholderText(tr(
             ":memory:    or    /path/to.duckdb    or    /path/to.csv    "
             "or    /path/to.parquet    or    s3://bucket/key"));
-        // Options field repurposed for S3 creds when database starts with s3://
         m_options->setPlaceholderText(tr(
             "S3 only: region;access_key_id;secret;session_token  "
             "(leave empty for non-S3)"));
+        m_host->setPlaceholderText(QString());
+        m_username->setPlaceholderText(QString());
+    } else if (drv == QStringLiteral("QODBC")) {
+        // SQL Server is the dominant QODBC use case. Surface the canonical
+        // connection-string template + a hint about Windows Auth so users
+        // don't have to memorise the `DRIVER={...}` incantation.
+        m_browseDb->setVisible(false);
+        m_database->setPlaceholderText(tr("e.g. master, NotepatraTest, tempdb"));
+        m_host->setPlaceholderText(tr("127.0.0.1   (or SERVER\\INSTANCE for named instances)"));
+        m_username->setPlaceholderText(tr("sa   (leave empty for Windows Auth)"));
+        m_options->setPlaceholderText(tr(
+            "DRIVER={ODBC Driver 18 for SQL Server};Encrypt=no   "
+            "(add Trusted_Connection=yes for Windows Auth)"));
+    } else if (drv == QStringLiteral("QPSQL")) {
+        m_browseDb->setVisible(false);
+        m_database->setPlaceholderText(tr("e.g. postgres, myapp_dev"));
+        m_host->setPlaceholderText(tr("127.0.0.1"));
+        m_username->setPlaceholderText(tr("postgres"));
+        m_options->setPlaceholderText(tr(
+            "Optional: sslmode=disable;connect_timeout=10  "
+            "(use sslmode=require for production / managed PG)"));
+    } else if (drv == QStringLiteral("QMYSQL")) {
+        m_browseDb->setVisible(false);
+        m_database->setPlaceholderText(tr("e.g. mysql, myapp_dev"));
+        m_host->setPlaceholderText(tr("127.0.0.1"));
+        m_username->setPlaceholderText(tr("root"));
+        m_options->setPlaceholderText(tr(
+            "Optional: SSL_CA=/path/to/ca.pem;MYSQL_OPT_CONNECT_TIMEOUT=10"));
     } else {
         m_browseDb->setVisible(false);
         m_database->setPlaceholderText(QString());
         m_options->setPlaceholderText(QString());
+        m_host->setPlaceholderText(QString());
+        m_username->setPlaceholderText(QString());
     }
+
+    // Auto-fill the port ONLY if the user hasn't customised it (still at
+    // the zero "default" value). Don't clobber an explicit non-zero port.
+    const int dport = defaultPortForDriver(drv);
+    if (m_port->isEnabled() && m_port->value() == 0 && dport > 0) {
+        m_port->setValue(dport);
+    }
+
+    refreshDriverHint();
+}
+
+// v0.1.66 — preset applies a template + flips the driver. The "(custom)"
+// entry (idx 0) is a no-op so users can return to free-form editing.
+void DbConnectionsDialog::onPresetChanged(int idx) {
+    if (idx <= 0) return; // (custom) — leave the form alone
+
+    // Block signal recursion: setting m_driver below fires onDriverChanged,
+    // which in turn calls refreshDriverHint(). We want that — but we don't
+    // want onPresetChanged to fire again from a programmatic m_preset edit.
+    QSignalBlocker bp(m_preset);
+
+    switch (idx) {
+    case 1: // SQL Server (localhost, ODBC)
+        m_driver->setCurrentText("QODBC");
+        m_host->setText("127.0.0.1");
+        m_port->setValue(1433);
+        m_database->setText("master");
+        m_username->setText("sa");
+        m_options->setText("DRIVER={ODBC Driver 18 for SQL Server};Encrypt=no");
+        break;
+    case 2: // SQL Server Express (named instance, ODBC)
+        m_driver->setCurrentText("QODBC");
+        m_host->setText("localhost\\SQLEXPRESS");
+        m_port->setValue(0);  // Named instances use Browser service, not 1433
+        m_database->setText("master");
+        m_username->setText("");
+        m_options->setText("DRIVER={ODBC Driver 18 for SQL Server};Trusted_Connection=yes;Encrypt=no");
+        break;
+    case 3: // Azure SQL Database (ODBC)
+        m_driver->setCurrentText("QODBC");
+        m_host->setText("yourserver.database.windows.net");
+        m_port->setValue(1433);
+        m_database->setText("");
+        m_username->setText("admin@yourserver");
+        m_options->setText(
+            "DRIVER={ODBC Driver 18 for SQL Server};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30");
+        break;
+    case 4: // PostgreSQL (localhost)
+        m_driver->setCurrentText("QPSQL");
+        m_host->setText("127.0.0.1");
+        m_port->setValue(5432);
+        m_database->setText("postgres");
+        m_username->setText("postgres");
+        m_options->setText("connect_timeout=10");
+        break;
+    case 5: // MySQL / MariaDB (localhost)
+        m_driver->setCurrentText("QMYSQL");
+        m_host->setText("127.0.0.1");
+        m_port->setValue(3306);
+        m_database->setText("mysql");
+        m_username->setText("root");
+        m_options->setText("MYSQL_OPT_CONNECT_TIMEOUT=10");
+        break;
+    case 6: // SQLite (file on disk)
+        m_driver->setCurrentText("QSQLITE");
+        m_host->setText("");
+        m_port->setValue(0);
+        m_database->setText("");
+        m_database->setFocus();  // user picks the path next
+        m_username->setText("");
+        m_options->setText("");
+        break;
+    case 7: // DuckDB (file or :memory:)
+        m_driver->setCurrentText("DUCKDB");
+        m_host->setText("");
+        m_port->setValue(0);
+        m_database->setText(":memory:");
+        m_username->setText("");
+        m_options->setText("");
+        break;
+    default:
+        break;
+    }
+
+    refreshDriverHint();
+}
+
+// v0.1.66 — fills m_driverHint with driver-specific install / usage
+// guidance. Two cases:
+//   (1) the Qt SQL plugin for the selected driver is missing → emit a
+//       per-OS install command that actually works (apt / brew / etc.).
+//   (2) the plugin is present → emit a short usage note (e.g. "Use
+//       127.0.0.1\\SQLEXPRESS for SQL Server Express named instances").
+void DbConnectionsDialog::refreshDriverHint() {
+    if (!m_driverHint) return;
+
+    const QString drv = m_driver->currentText();
+    const QStringList have = DbConnections::availableDrivers();
+    const bool installed = have.contains(drv);
+
+    if (!installed) {
+        // Driver plugin missing — show actionable install commands.
+        QString cmd;
+        if (drv == QLatin1String("QODBC")) {
+            cmd =
+                "<b>SQL Server / ODBC driver is missing.</b><br>"
+                "<b>Linux (Debian/Ubuntu):</b> install Qt's ODBC plugin <i>and</i> "
+                "Microsoft's ODBC driver:<br>"
+                "<code>sudo apt-get install libqt5sql5-odbc unixodbc-dev</code><br>"
+                "<code>curl https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg</code><br>"
+                "<code>sudo ACCEPT_EULA=Y apt-get install msodbcsql18</code><br>"
+                "<b>macOS:</b> <code>brew tap microsoft/mssql-release &amp;&amp; HOMEBREW_ACCEPT_EULA=Y brew install msodbcsql18 unixodbc</code><br>"
+                "<b>Windows:</b> already bundled with Qt — restart Notepatra.";
+        } else if (drv == QLatin1String("QPSQL")) {
+            cmd =
+                "<b>PostgreSQL driver is missing.</b><br>"
+                "<b>Linux:</b> <code>sudo apt-get install libqt5sql5-psql</code><br>"
+                "<b>macOS:</b> already bundled with <code>brew install qt@5</code><br>"
+                "<b>Windows:</b> already bundled with Qt — restart Notepatra.";
+        } else if (drv == QLatin1String("QMYSQL")) {
+            cmd =
+                "<b>MySQL driver is missing.</b><br>"
+                "<b>Linux:</b> <code>sudo apt-get install libqt5sql5-mysql</code><br>"
+                "<b>macOS:</b> already bundled with <code>brew install qt@5</code><br>"
+                "<b>Windows:</b> already bundled with Qt — restart Notepatra.";
+        } else if (drv == QLatin1String("DUCKDB")) {
+            cmd = "<b>DuckDB is not bundled in this build.</b> Build from source with "
+                  "<code>-DNOTEPATRA_WITH_DUCKDB=ON</code>, or download the full-flavor "
+                  "release (v0.1.66+).";
+        } else {
+            cmd = tr("<b>%1 plugin is not available on this system.</b>").arg(drv);
+        }
+        m_driverHint->setText(cmd);
+        m_driverHint->setStyleSheet("color: #b8860b; font-size: 11px;");
+        return;
+    }
+
+    // Driver present — show usage hint (helps users avoid first-try blunders).
+    QString hint;
+    if (drv == QLatin1String("QODBC")) {
+        hint = tr(
+            "<b>Tip:</b> for a local SQL Server, run "
+            "<code>bash scripts/sql-server-local-setup.sh</code> "
+            "to spin up a Docker container + seed a sample DB. "
+            "Named instances (<code>SERVER\\SQLEXPRESS</code>) use the SQL Browser "
+            "service — leave Port at <i>default</i>. "
+            "Windows Auth: clear Username + add <code>Trusted_Connection=yes</code> in Options.");
+    } else if (drv == QLatin1String("QPSQL")) {
+        hint = tr(
+            "<b>Tip:</b> for managed Postgres (RDS, Cloud SQL, Neon), add "
+            "<code>sslmode=require</code> in Options. For Unix-socket connections, "
+            "leave Host empty and put the socket dir in Options as "
+            "<code>host=/var/run/postgresql</code>.");
+    } else if (drv == QLatin1String("QMYSQL")) {
+        hint = tr(
+            "<b>Tip:</b> for TLS-required servers (RDS, PlanetScale), add "
+            "<code>SSL_CA=/path/to/ca.pem</code> in Options. "
+            "For Unix sockets, set Host to an empty string and add "
+            "<code>UNIX_SOCKET=/var/run/mysqld/mysqld.sock</code> in Options.");
+    } else if (drv == QLatin1String("QSQLITE")) {
+        hint = tr(
+            "<b>Tip:</b> SQLite is file-based — no host / port / credentials. "
+            "Use <b>Browse…</b> to pick the .db file. The file is created if it "
+            "doesn't exist on first connect.");
+    } else if (drv == QLatin1String("DUCKDB")) {
+        hint = tr(
+            "<b>Tip:</b> the Database field accepts <code>:memory:</code>, a .duckdb file, "
+            "or a path to CSV / Parquet / JSON / S3 — DuckDB reads them all directly. "
+            "For S3 sources, fill Options with "
+            "<code>region;access_key_id;secret;session_token</code>.");
+    }
+    m_driverHint->setText(hint);
+    m_driverHint->setStyleSheet("color: #2c8c2c; font-size: 11px;");
 }
 
 void DbConnectionsDialog::setNetworkFieldsEnabled(bool on) {

@@ -113,16 +113,26 @@ private slots:
     void onTest();      // opens the current form's record without saving
     void onAccept();    // OK — persist all records to disk
     void onDriverChanged(const QString &drv);
+    // v0.1.66 — preset dropdown handler. Fills driver / port / placeholder
+    // options for the selected template (SQL Server / PostgreSQL / MySQL /
+    // SQLite / DuckDB). User can still edit anything afterwards.
+    void onPresetChanged(int idx);
 
 private:
     void refreshList(int selectIndex = -1);
     void formFromRecord(const DbConnections::Record &r);
     DbConnections::Record formToRecord() const;
     void setNetworkFieldsEnabled(bool on);
+    // v0.1.66 — paints the driver-availability + per-OS install-hint
+    // message under the form whenever the driver selection changes.
+    // Driver-missing case links to a concrete `apt-get` / `brew` /
+    // `vcpkg` command rather than a generic "install the plugin" line.
+    void refreshDriverHint();
 
     QVector<DbConnections::Record> m_records;
 
     QListWidget *m_list = nullptr;
+    QComboBox   *m_preset = nullptr;
     QLineEdit   *m_name = nullptr;
     QComboBox   *m_driver = nullptr;
     QLineEdit   *m_host = nullptr;
@@ -137,6 +147,7 @@ private:
     QPushButton *m_saveBtn = nullptr;
     QPushButton *m_testBtn = nullptr;
     QLabel      *m_status = nullptr;
+    QLabel      *m_driverHint = nullptr;
 };
 
 #endif // NOTEPATRA_DBCONNECTIONS_H

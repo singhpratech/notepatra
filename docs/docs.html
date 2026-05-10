@@ -1461,18 +1461,115 @@ Content-Type: application/json
   <p>Supported types: <code>line</code>, <code>bar</code>, <code>pie</code>, <code>scatter</code>. Theme-aware. Category-aware axes for string-valued X columns; numeric axes for numeric X. Malformed JSON falls back to displaying the spec as a code block — nothing breaks.</p>
 
   <h3>Database connection manager</h3>
-  <p>Click <strong>Manage Connections…</strong> (visible only when Data Mode is on) to add SQLite, PostgreSQL, MySQL, SQL Server, or <strong>DuckDB</strong> (v0.1.55) connections. The dialog tests connections with one click and reports which Qt SQL drivers are actually installed on your system. Saved at <code>~/.config/notepatra/db-connections.json</code>.</p>
-  <p><strong>Driver availability:</strong></p>
+  <p>Click <strong>Manage Connections…</strong> (visible only when Data Mode is on) to add a new connection. The dialog has a <strong>Preset</strong> dropdown at the top — pick one and the form fills with sensible defaults for that database type so you only edit what's specific to your server.</p>
+  <p>Available presets (v0.1.66+):</p>
   <ul>
-    <li><strong>SQLite</strong> ships with Qt by default — works out of the box on every Notepatra build.</li>
-    <li><strong>DuckDB (v0.1.55)</strong> — native libduckdb engine, vendored into the build. Auto-detects file type by extension when you point a connection at a path: <code>.duckdb</code> → file database; <code>.csv</code> / <code>.parquet</code> / <code>.json</code> → registered as a view; <code>s3://…</code> URIs use httpfs + S3 with options <code>region;akid;secret;sess</code>. RAII per-handle, streaming row callback, schema introspection. No external Qt SQL plugin needed.</li>
-    <li><strong>PostgreSQL / MySQL / SQL Server</strong> need separate Qt SQL plugins:
+    <li><strong>SQL Server (localhost, ODBC)</strong> — Driver = <code>QODBC</code>, Host = <code>127.0.0.1</code>, Port = <code>1433</code>, Database = <code>master</code>, Username = <code>sa</code>, Options = <code>DRIVER={ODBC Driver 18 for SQL Server};Encrypt=no</code></li>
+    <li><strong>SQL Server Express (named instance, ODBC)</strong> — Host = <code>localhost\SQLEXPRESS</code>, Port = <i>default</i> (named instances use the SQL Browser service), Options include <code>Trusted_Connection=yes</code> for Windows Auth</li>
+    <li><strong>Azure SQL Database (ODBC)</strong> — Host = <code>yourserver.database.windows.net</code>, Options include <code>Encrypt=yes;TrustServerCertificate=no</code> (Azure requires TLS)</li>
+    <li><strong>PostgreSQL (localhost)</strong> — Driver = <code>QPSQL</code>, Port = <code>5432</code>, Database = <code>postgres</code>, Username = <code>postgres</code></li>
+    <li><strong>MySQL / MariaDB (localhost)</strong> — Driver = <code>QMYSQL</code>, Port = <code>3306</code>, Database = <code>mysql</code>, Username = <code>root</code></li>
+    <li><strong>SQLite (file on disk)</strong> — Driver = <code>QSQLITE</code>, Browse… picker focused on Database for the .db path</li>
+    <li><strong>DuckDB (file or :memory:)</strong> — Driver = <code>DUCKDB</code>, Database = <code>:memory:</code> (also accepts a .duckdb / .csv / .parquet / s3:// path)</li>
+  </ul>
+
+  <p>Under the form, a hint label paints in <strong>green</strong> when the Qt SQL plugin for the chosen driver is present (with a usage tip — e.g. "Named instances use the SQL Browser service — leave Port at default") or <strong>amber</strong> with the exact per-OS install commands when the plugin is missing.</p>
+  <p>Connections are saved to <code>~/.config/notepatra/db-connections.json</code> (or platform equivalent). The dialog also has a <strong>Test</strong> button that opens + closes the connection without committing the record — green tick on success, red driver error on failure.</p>
+
+  <h3 id="db-connect-howto">How to connect — step by step (v0.1.66+)</h3>
+
+  <h4>SQL Server — local Docker for testing</h4>
+  <p>The fastest way to play with SQL Server is the bundled Docker harness:</p>
+  <pre><code># 1. Spin up MS SQL Server 2022 + seed a NotepatraTest database
+bash scripts/sql-server-local-setup.sh
+
+# 2. Linux only — install Microsoft's ODBC Driver 18:
+curl https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+curl https://packages.microsoft.com/config/ubuntu/24.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+sudo apt-get update
+sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev libqt5sql5-odbc
+
+# 3. Restart Notepatra. The 'sql-server-local' connection is already
+#    registered — open Data Mode → Manage Connections to see it.
+
+# Tear down later:
+bash scripts/sql-server-local-setup.sh --teardown      # stop + remove container
+bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volume</code></pre>
+  <p>The script creates a <code>NotepatraTest</code> database with <code>customers</code>, <code>products</code>, and <code>orders</code> tables already populated, plus a <code>sql-server-local</code> entry in your db-connections.json. After installing the ODBC driver, you can ask the Data Analyst:</p>
+  <ul>
+    <li><em>"Show top-3 customers by total spend from the sql-server-local connection"</em></li>
+    <li><em>"List the schema of dbo.orders"</em></li>
+    <li><em>"What's the average order value per country?"</em></li>
+  </ul>
+
+  <h4>SQL Server — connecting to an existing server (Windows / macOS / Linux)</h4>
+  <ol>
+    <li>In Manage Connections, pick the <strong>SQL Server (localhost, ODBC)</strong> preset to pre-fill the form.</li>
+    <li>Change <strong>Host</strong> to your server's address. For named instances (e.g. SQL Express): <code>SERVER\INSTANCE</code> and set Port to <i>default</i>.</li>
+    <li>For SQL Authentication: enter your SQL login + password.</li>
+    <li>For <strong>Windows Authentication</strong> (domain account / current Windows user, Windows only): clear Username, leave Password empty, and add <code>;Trusted_Connection=yes</code> to Options.</li>
+    <li>For TLS-required servers (Azure, modern on-prem): change Options to <code>DRIVER={ODBC Driver 18 for SQL Server};Encrypt=yes;TrustServerCertificate=no</code>.</li>
+    <li>Click <strong>Test</strong>. If green, click <strong>Save Changes</strong> then <strong>OK</strong>.</li>
+  </ol>
+  <p>If Test fails with <em>"data source name not found and no default driver specified"</em>, your <code>DRIVER={…}</code> string doesn't match a driver actually installed. Run <code>odbcinst -q -d</code> (Linux/macOS) or <code>ODBC Data Source Administrator</code> (Windows) to see which driver names are available — use the exact name in your Options string.</p>
+
+  <h4>PostgreSQL — local + managed (RDS / Cloud SQL / Neon / Supabase)</h4>
+  <ol>
+    <li>Pick the <strong>PostgreSQL (localhost)</strong> preset.</li>
+    <li>For a local Postgres, leave everything at the defaults and enter your password.</li>
+    <li>For a remote / managed Postgres, set Host to your endpoint (e.g. <code>myapp.abc123.us-east-1.rds.amazonaws.com</code>), Database to your specific DB name (RDS doesn't accept <code>postgres</code> as default).</li>
+    <li>For TLS-required servers (any managed PG should require TLS), set Options to <code>sslmode=require</code> (or <code>sslmode=verify-full;sslrootcert=/path/to/ca.pem</code> for cert pinning).</li>
+    <li><strong>Unix-socket connections</strong> (lower latency on the same host): leave Host empty, set Options to <code>host=/var/run/postgresql</code>.</li>
+  </ol>
+
+  <h4>MySQL / MariaDB</h4>
+  <ol>
+    <li>Pick the <strong>MySQL / MariaDB (localhost)</strong> preset.</li>
+    <li>For local servers, defaults are fine — set your password and the database name.</li>
+    <li>For RDS / PlanetScale / managed MySQL, set Options to <code>SSL_CA=/etc/ssl/certs/ca-certificates.crt;MYSQL_OPT_CONNECT_TIMEOUT=10</code>.</li>
+    <li>For Unix-socket: clear Host, add <code>UNIX_SOCKET=/var/run/mysqld/mysqld.sock</code> to Options.</li>
+  </ol>
+
+  <h4>SQLite — file-based</h4>
+  <ol>
+    <li>Pick the <strong>SQLite (file on disk)</strong> preset — focus jumps to Database.</li>
+    <li>Click <strong>Browse…</strong> and pick the .db / .sqlite / .sqlite3 file (or type a path — the file is created if it doesn't exist).</li>
+    <li>No host / port / username / password — SQLite is file-based.</li>
+  </ol>
+
+  <h4>DuckDB — files, S3, in-memory</h4>
+  <ol>
+    <li>Pick the <strong>DuckDB (file or :memory:)</strong> preset — Database defaults to <code>:memory:</code>.</li>
+    <li>The Database field is multi-mode — point it at:
       <ul>
-        <li>Debian / Ubuntu: <code>sudo apt install libqt5sql5-psql libqt5sql5-mysql libqt5sql5-odbc</code></li>
-        <li>macOS Homebrew: bundled in <code>brew install qt@5</code></li>
-        <li>Windows: install via <code>aqtinstall</code> or the Qt installer (the Notepatra Windows release ships the matching plugin DLLs).</li>
+        <li><code>:memory:</code> — ephemeral DB</li>
+        <li><code>/path/to.duckdb</code> — persistent DuckDB file</li>
+        <li><code>/path/to.csv</code>, <code>/path/to.parquet</code>, <code>/path/to.json</code> — DuckDB reads them directly (no import step)</li>
+        <li><code>s3://bucket/key.parquet</code> — S3 via DuckDB's httpfs extension; fill Options with <code>region;access_key_id;secret;session_token</code></li>
       </ul>
     </li>
+    <li>No host / port / username / password — DuckDB runs in-process via the native libduckdb engine.</li>
+  </ol>
+
+  <h4>Driver availability per OS</h4>
+  <table>
+    <thead><tr><th>Driver</th><th>Linux (Debian/Ubuntu)</th><th>macOS (Homebrew)</th><th>Windows</th></tr></thead>
+    <tbody>
+      <tr><td>QSQLITE</td><td>Built into Qt — always available</td><td>Built into Qt — always available</td><td>Built into Qt — always available</td></tr>
+      <tr><td>QPSQL (PostgreSQL)</td><td><code>sudo apt-get install libqt5sql5-psql</code></td><td>bundled in <code>brew install qt@5</code></td><td>Bundled with the Notepatra Windows release</td></tr>
+      <tr><td>QMYSQL (MySQL/MariaDB)</td><td><code>sudo apt-get install libqt5sql5-mysql</code></td><td>bundled in <code>brew install qt@5</code></td><td>Bundled with the Notepatra Windows release</td></tr>
+      <tr><td>QODBC (SQL Server)</td><td><code>sudo apt-get install libqt5sql5-odbc unixodbc-dev msodbcsql18</code> (see <a href="https://learn.microsoft.com/en-us/sql/connect/odbc/linux-mac/installing-the-microsoft-odbc-driver-for-sql-server" rel="noopener">MS install guide</a> for the package repo setup)</td><td><code>brew tap microsoft/mssql-release &amp;&amp; HOMEBREW_ACCEPT_EULA=Y brew install msodbcsql18 unixodbc</code></td><td>Bundled with the Notepatra Windows release (Microsoft ships ODBC drivers with Windows itself)</td></tr>
+      <tr><td>DUCKDB</td><td>Bundled in the Notepatra Linux release (vendored libduckdb.so)</td><td>Bundled in the Notepatra macOS release</td><td>Bundled in the Notepatra Windows release</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Troubleshooting</h4>
+  <ul>
+    <li><strong>"Driver not loaded"</strong> — the Qt SQL plugin for your driver isn't installed. The Manage Connections dialog now paints an amber install-command hint under the form when this happens; copy-paste the command for your OS.</li>
+    <li><strong>"data source name not found"</strong> (QODBC) — your Options <code>DRIVER={…}</code> string references an ODBC driver that isn't installed. Linux/macOS: <code>odbcinst -q -d</code> lists installed drivers. Windows: ODBC Data Source Administrator (in Administrative Tools). Use the exact name in your Options.</li>
+    <li><strong>"Server certificate not trusted"</strong> — add <code>TrustServerCertificate=yes</code> to QODBC Options (test environments only), or install the server's CA cert.</li>
+    <li><strong>"FATAL: password authentication failed"</strong> (QPSQL) — usually a <code>pg_hba.conf</code> mismatch. For local-only testing, add <code>host all all 127.0.0.1/32 md5</code> at the bottom of <code>pg_hba.conf</code> and <code>pg_ctl reload</code>.</li>
+    <li><strong>"Can't connect to MySQL server on 'localhost'"</strong> — MySQL often binds Unix-socket-only by default. Either start it with <code>--bind-address=127.0.0.1</code> or use socket-mode (clear Host, add <code>UNIX_SOCKET=…</code> to Options).</li>
   </ul>
 
   <h3>Browse Schemas… (Database tree dialog, v0.1.55)</h3>
