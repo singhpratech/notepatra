@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~9 MB stripped across platforms; full downloads are 3.2 MB (Linux x64 tar.gz), 26.6 MB (macOS DMG with bundled Qt), 39.9 MB (Windows MSI with bundled Qt DLLs). 226 file types. 92 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.68",
+      "softwareVersion": "0.1.69",
       "fileSize": "9 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.68">
-        Download v0.1.68 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.69">
+        Download v0.1.69 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.68 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.69 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~9 MB bare, ~2 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. No cloud unless you opt in.</p>
 
@@ -1850,7 +1850,40 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.68 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.69 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-05-10</span>
+                        <span>· AI Coding / Data mode no longer locks the app — tool buttons work.</span>
+                        <span>· Linux · macOS · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>🐛 Critical fix — Coding / Data mode app lock-up</h5>
+                        <ul>
+                            <li>Coding Mode and Data Mode <strong>auto-fullscreen</strong> the AI dock when activated (so chat / data-analyst gets the full window). They do this by emitting <code>fullscreenToggled(true)</code> directly — bypassing the <code>⛶</code> expand button.</li>
+                            <li>Pre-v0.1.69, clicking <strong>any tool button</strong> (Project Search, Terminal, REST Client, JSON / HTML / Bracket Tools, SQL Formatter, Compare, …) while in Coding / Data mode appeared to do nothing: the tab was added but <code>m_tabs</code> stayed hidden behind the splitter squashed to 100% AI dock. App felt locked up.</li>
+                            <li>Root cause: <code>AIPanel::forceExitFullscreen()</code> only un-checked the expand button; in Coding / Data the button was never checked, so the function was a no-op.</li>
+                            <li>Fix: <code>forceExitFullscreen()</code> now <code>emit fullscreenToggled(false)</code> directly when the button isn't checked, so MainWindow's restore handler runs in all paths.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧪 Integration test — extended to catch this class of bug</h5>
+                        <ul>
+                            <li><code>test_ai_fullscreen_exit</code> grows from 14 to 23 checks across 6 scenarios. Two new scenarios (S5, S6) drive Coding / Data mode + Project Search / Terminal clicks under offscreen Qt, asserting <code>m_tabs->isVisible()</code> after the click. They <strong>FAIL on pre-v0.1.69 code</strong> and PASS on the fix.</li>
+                            <li>Future regressions in the auto-fullscreen path will fail CI before shipping. v0.1.67 + v0.1.68 shipped this gap because no test exercised the real UI state machine.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.69">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.69">Commits</a>
+                </div>
+            </div>
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.68</div>
                     <div class="version-meta">
                         <span>2026-05-10</span>
                         <span>· AI dock auto-exits fullscreen on editor tab switches too — closes v0.1.67 gap.</span>

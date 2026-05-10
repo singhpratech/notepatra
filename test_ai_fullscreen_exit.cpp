@@ -26,6 +26,7 @@
 #include "aipanel.h"
 #include "config.h"
 
+#include <QAbstractButton>
 #include <QAction>
 #include <QApplication>
 #include <QDir>
@@ -236,6 +237,80 @@ int main(int argc, char *argv[]) {
     QApplication::processEvents();
     EXPECT_FALSE("S4: fullscreen exited after openFile(already-open)",
                  expandBtn->isChecked());
+
+    // First, restore the dock to a baseline (chat mode, NOT fullscreen)
+    // so S5/S6 start from a known state.
+    QAbstractButton *chatBtn = nullptr;
+    QAbstractButton *codingBtn = nullptr;
+    QAbstractButton *dataBtn = nullptr;
+    for (QAbstractButton *b : dockPanel->findChildren<QAbstractButton *>()) {
+        if (b->text() == QStringLiteral("Chat")) chatBtn = b;
+        else if (b->text() == QStringLiteral("Coding")) codingBtn = b;
+        else if (b->text() == QStringLiteral("Data")) dataBtn = b;
+    }
+    EXPECT_TRUE("Chat / Coding / Data mode buttons located",
+                chatBtn && codingBtn && dataBtn);
+    if (chatBtn) chatBtn->setChecked(true);
+    QApplication::processEvents();
+
+    // ───────────────────────────────────────────────────────────────
+    // SCENARIO 5: Coding mode auto-fullscreens via emit fullscreenToggled(
+    // true) directly — NOT via the expand button. The v0.1.67 fix calls
+    // forceExitFullscreen which only un-checks the expand button — but
+    // the button was never checked in this path, so forceExitFullscreen
+    // is a no-op and clicking Project Search appears to "do nothing"
+    // (the tab is added but m_tabs stays hidden behind the splitter
+    // squashed to 100% AI dock).
+    // ───────────────────────────────────────────────────────────────
+    std::printf("\n-- Scenario 5: Coding mode + Project Search → tabs MUST be visible --\n");
+    if (codingBtn) {
+        codingBtn->setChecked(true);
+        QApplication::processEvents();
+        // After Coding-mode switch, m_tabs should be HIDDEN by the
+        // fullscreen handler (sibling visibility saved + setVisible(false)).
+        EXPECT_FALSE("S5 setup: m_tabs hidden after Coding-mode auto-fullscreen",
+                     tabs->isVisible());
+
+        QAction *psAct = findActionByShortcut(&mw, QKeySequence("Ctrl+Shift+G"));
+        EXPECT_TRUE("S5: Project Search action found (Ctrl+Shift+G)", psAct != nullptr);
+        if (psAct) {
+            psAct->trigger();
+            QApplication::processEvents();
+            EXPECT_TRUE("S5: m_tabs VISIBLE after Project Search click (Coding mode)",
+                        tabs->isVisible());
+            EXPECT_TRUE("S5: Project Search tab is current",
+                        tabs->tabText(tabs->currentIndex()).contains(
+                            QStringLiteral("Project Search")));
+        }
+    }
+
+    // Reset to chat mode before S6
+    if (chatBtn) chatBtn->setChecked(true);
+    QApplication::processEvents();
+
+    // ───────────────────────────────────────────────────────────────
+    // SCENARIO 6: Data mode auto-fullscreens (same code path as Coding).
+    // Try the Terminal action this time so we cover a different tool.
+    // ───────────────────────────────────────────────────────────────
+    std::printf("\n-- Scenario 6: Data mode + Terminal (Ctrl+`) → tabs MUST be visible --\n");
+    if (dataBtn) {
+        dataBtn->setChecked(true);
+        QApplication::processEvents();
+        EXPECT_FALSE("S6 setup: m_tabs hidden after Data-mode auto-fullscreen",
+                     tabs->isVisible());
+
+        QAction *termAct = findActionByShortcut(&mw, QKeySequence("Ctrl+`"));
+        EXPECT_TRUE("S6: Terminal action found (Ctrl+`)", termAct != nullptr);
+        if (termAct) {
+            termAct->trigger();
+            QApplication::processEvents();
+            EXPECT_TRUE("S6: m_tabs VISIBLE after Terminal click (Data mode)",
+                        tabs->isVisible());
+            EXPECT_TRUE("S6: Terminal tab is current",
+                        tabs->tabText(tabs->currentIndex()).contains(
+                            QStringLiteral("Terminal")));
+        }
+    }
 
     // ───────────────────────────────────────────────────────────────
     std::printf("\n=== test_ai_fullscreen_exit: %d passed, %d failed ===\n",

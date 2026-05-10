@@ -5463,11 +5463,30 @@ void AIPanel::attachFile() {
 // v0.1.67 — un-check the ⛶ expand button so its toggled(false) connect
 // fires fullscreenToggled(false) — same path the user takes when they
 // click the button themselves. MainWindow's existing handler restores
-// the splitter sizes + sibling visibility. No-op when the button is
-// missing or already unchecked.
+// the splitter sizes + sibling visibility.
+//
+// v0.1.69 — Coding Mode and Data Mode auto-fullscreen the dock by
+// emitting fullscreenToggled(true) DIRECTLY from the mode-toggle slot
+// (see the m_codingMode / m_dataMode connect blocks above) without
+// setting m_aiExpandBtn->setChecked(true). The expand button is also
+// hidden in those modes (see applyMode ~line 1031), so the user has
+// no way to un-fullscreen it themselves. Before this fix, clicking
+// a tool button (Project Search, Terminal, JSON, etc.) while in
+// Coding/Data mode added the tool tab but left m_tabs hidden behind
+// the squashed splitter — the app looked frozen. The reproducer is
+// test_ai_fullscreen_exit S5/S6.
+//
+// Fix: if the button isn't checked but we may still be in the
+// auto-fullscreened state (only the parent MainWindow knows for sure
+// via m_aiSavedSiblingVisibility), emit fullscreenToggled(false)
+// directly. MainWindow's handler is idempotent — if there's no saved
+// state to restore, the off-branch is a no-op.
 void AIPanel::forceExitFullscreen() {
-    if (m_aiExpandBtn && m_aiExpandBtn->isChecked()) {
+    if (!m_aiExpandBtn) return;
+    if (m_aiExpandBtn->isChecked()) {
         m_aiExpandBtn->setChecked(false);
+    } else {
+        emit fullscreenToggled(false);
     }
 }
 

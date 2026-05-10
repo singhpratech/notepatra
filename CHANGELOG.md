@@ -7,6 +7,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.69] — 2026-05-10
+
+**Critical fix — AI Coding / Data mode no longer locks tool buttons.**
+
+### Fixed — Coding / Data mode + tool button click = nothing visible
+
+* Coding Mode and Data Mode auto-fullscreen the AI dock by emitting `fullscreenToggled(true)` directly from the mode-toggle slot (the expand `⛶` button is also hidden in those modes). Pre-v0.1.69, clicking any tool button (Project Search, Terminal, REST Client, JSON / HTML / Bracket Tools, SQL Formatter, Compare, Welcome) while in those modes appeared to do nothing — the tab was added but `m_tabs` stayed hidden behind the splitter squashed to 100% AI dock. App looked frozen / locked up.
+* `src/aipanel.cpp:5468` — `AIPanel::forceExitFullscreen()` only un-checked the expand button. In Coding / Data mode the button was never checked, so the function was a no-op. Fix: emit `fullscreenToggled(false)` directly when the button isn't checked. MainWindow's restore handler is idempotent.
+
+### Added — integration test that catches this class of bug
+
+* `test_ai_fullscreen_exit.cpp` extended from 14 to **23 sub-checks across 6 scenarios**. Two new scenarios (S5: Coding + Project Search, S6: Data + Terminal) drive the Coding / Data mode path under offscreen Qt and assert `m_tabs->isVisible()` after the tool action triggers. They FAIL on pre-v0.1.69 code and PASS on the fix. Runs in CI on every commit — future regressions in any auto-fullscreen entry path will fail before shipping. The v0.1.67 / v0.1.68 cycle leaked this bug because no test exercised the actual UI state machine; this commit closes that.
+
+---
+
 ## [0.1.68] — 2026-05-10
 
 **AI dock auto-exits fullscreen on editor tab switches too (closes v0.1.67 gap).**
