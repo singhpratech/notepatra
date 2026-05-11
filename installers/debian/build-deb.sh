@@ -299,7 +299,10 @@ echo "=== Built: $OUTPUT_DEB ==="
 ls -lh "$OUTPUT_DEB"
 echo ""
 echo "=== Control ==="
-dpkg-deb --info "$OUTPUT_DEB" | sed -n '1,30p'
+# `|| true` guards: these are diagnostic prints; the pipe-into-head will
+# trigger SIGPIPE on dpkg-deb under `set -o pipefail` once head -25
+# closes the pipe.  We do NOT want that to fail the whole release CI.
+dpkg-deb --info "$OUTPUT_DEB" 2>&1 | sed -n '1,30p' || true
 echo ""
 echo "=== Top 25 files ==="
-dpkg-deb --contents "$OUTPUT_DEB" | head -25
+dpkg-deb --contents "$OUTPUT_DEB" 2>&1 | head -25 || true

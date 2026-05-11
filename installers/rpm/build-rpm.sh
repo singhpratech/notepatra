@@ -132,7 +132,10 @@ echo "=== Built: notepatra-${VERSION}-1.${ARCH}.rpm ==="
 ls -lh "./notepatra-${VERSION}-1.${ARCH}.rpm"
 echo ""
 echo "=== Info ==="
-rpm -qip "./notepatra-${VERSION}-1.${ARCH}.rpm" 2>&1 | head -20
+# `|| true` guards: head -N closing the pipe triggers SIGPIPE on rpm,
+# which under `set -o pipefail` would fail the release CI on what is
+# purely a diagnostic print.
+rpm -qip "./notepatra-${VERSION}-1.${ARCH}.rpm" 2>&1 | head -20 || true
 echo ""
 echo "=== Top 20 files ==="
-rpm -qlp "./notepatra-${VERSION}-1.${ARCH}.rpm" | head -20
+rpm -qlp "./notepatra-${VERSION}-1.${ARCH}.rpm" 2>&1 | head -20 || true
