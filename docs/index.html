@@ -153,7 +153,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.73 download sizes: 3.2 MB Linux x64 tar.gz, 3.0 MB Linux ARM64 tar.gz, 26.6 MB macOS DMG (with bundled Qt), 39.9 MB Windows MSI / 32.0 MB NSIS / 36.5 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.74 download sizes: 3.2 MB Linux x64 tar.gz, 3.0 MB Linux ARM64 tar.gz, 26.6 MB macOS DMG (with bundled Qt), 39.9 MB Windows MSI / 32.0 MB NSIS / 36.5 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
           }
         },
         {
@@ -169,7 +169,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.73: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.74: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.73">
-        Download v0.1.73 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.74">
+        Download v0.1.74 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.73 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.74 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~9 MB bare, ~2 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints.</p>
 
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.73</div>
+        <div class="section-label">Download v0.1.74</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1467,7 +1467,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.73 →
+                Get Notepatra v0.1.74 →
               </a>
             </div>
 
@@ -1510,7 +1510,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.73 →
+                Get Notepatra Local AI v0.1.74 →
               </a>
             </div>
           </div>
@@ -1968,136 +1968,68 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.73 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.74 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-05-11</span>
-                        <span>· AI dock blank-on-reopen fix (patch on v0.1.72).</span>
+                        <span>· <code>notepatra-local-ai</code> MSI upgrade fix + website cleanup.</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>🐛 The bug — &quot;AI toggle space goes out but the AI assistant doesn't show up&quot;</h5>
+                        <h5>🐛 The bug — &quot;MSI update is not happening properly for notepatra-local-ai&quot;</h5>
                         <ul>
-                            <li>Reported within minutes of v0.1.72 going live: closing the AI dock via the red ✕ button in the panel header and then trying to re-open it from the toolbar AI button left the user looking at a blank, zero-width dock.</li>
-                            <li>Toolbar toggle alone worked fine. Toolbar toggle alone twice worked fine. <em>Only</em> the ✕ → toolbar combo hit it.</li>
+                            <li>When a user had <strong>both</strong> the regular Notepatra MSI and the cloud-free <code>notepatra-local-ai</code> MSI installed side-by-side (the v0.1.72 &quot;parallel install&quot; model), upgrading the local-ai MSI from v0.1.72 → v0.1.73 dropped into Windows Installer's <em>Repair / Remove</em> maintenance UI instead of running a clean major upgrade.</li>
+                            <li>The regular MSI was unaffected — most users only install one flavor, so the bug never surfaced there.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🔍 Root cause — two coupled regressions</h5>
+                        <h5>🔍 Root cause — hardcoded Component GUIDs shared across flavors</h5>
                         <ul>
-                            <li><strong>The red ✕ close button bypassed the canonical hide handler.</strong> Its click handler called <code>parentWidget()-&gt;setVisible(false)</code> directly, skipping <code>Config::aiDockVisible</code> persistence, toolbar button state sync, the file-explorer-gate-on-coding-mode sibling logic, and (critically) the splitter rebalance bookkeeping.</li>
-                            <li><strong><code>rebalanceAiDockSplit()</code> bailed unconditionally on <code>m_aiDockSizedOnce</code>.</strong> That flag was meant to preserve mid-session user splitter drags, but after a full hide → show cycle Qt's <code>QSplitter</code> leaves the hidden widget's slot at ~0 px. <code>setVisible(true)</code> alone doesn't restore the slot width — without an explicit <code>setSizes()</code> the user saw a 0-px-wide visually-empty dock.</li>
+                            <li>All three <code>&lt;Component&gt;</code> elements in <code>installers/windows.wxs</code> (<code>MainExecutable</code>, <code>ApplicationShortcut</code>, <code>DesktopShortcut</code>) used hardcoded Component GUIDs that were identical across both flavors. Windows Installer treats a Component GUID as a system-wide unique identifier — two products registering the same GUID get reference-counted as the <em>same component</em>.</li>
+                            <li>When both flavors were installed, the shared components had refcount = 2. The local-ai upgrade's MajorUpgrade tried to release v0.1.72 components, but the regular install's reference held them — so MSI bailed into maintenance mode.</li>
+                            <li>Diagnosed by extracting <code>ProductCode</code> / <code>UpgradeCode</code> / Component GUIDs from the v0.1.72, v0.1.73 regular, and v0.1.73 local-ai MSIs with <code>strings -e s</code> — all three flavors carried the same hardcoded <code>A2F3B641…</code>, <code>C3D4E5F6…</code>, <code>D4E5F6A7…</code> Component GUIDs.</li>
                         </ul>
                     </div>
                     <div class="version-section">
                         <h5>🔧 The fix</h5>
                         <ul>
-                            <li><strong>New <code>AIPanel::closeDockRequested()</code> signal</strong> — the ✕ button emits this instead of poking its grandparent. MainWindow hooks the signal into <code>setAiDockVisible(false)</code>, the single source of truth for hiding the dock.</li>
-                            <li><strong><code>rebalanceAiDockSplit()</code> now rescues 0-px slots</strong> — bail on <code>m_aiDockSizedOnce</code> <em>only</em> if the current slot width is &gt; 40 px (deliberate user drag). Below 40 px = collapsed by Qt's hide behavior → re-apply the 60/40 default.</li>
+                            <li><strong>All three Components switched to <code>Guid=&quot;*&quot;</code></strong> — WiX auto-generates a deterministic GUID from each component's KeyPath. The KeyPath includes <code>INSTALLFOLDER</code>, which differs between flavors (<code>Notepatra</code> vs <code>Notepatra Local AI</code>). → Different KeyPath → Different auto-generated GUID → Windows treats them as genuinely separate components and the refcount conflict disappears.</li>
+                            <li><strong><code>AllowSameVersionUpgrades=&quot;yes&quot;</code></strong> added to <code>&lt;MajorUpgrade&gt;</code> so re-running the same-version MSI runs the install flow instead of dropping into maintenance UI.</li>
+                            <li>Both flavors carry the fix in the v0.1.74 MSIs. Regular users see a no-op upgrade; local-ai users on v0.1.72/v0.1.73 see clean MajorUpgrade behavior.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🧪 Regression tests</h5>
+                        <h5>🧹 Website cleanup</h5>
                         <ul>
-                            <li><code>test_ai_fullscreen_exit.cpp</code> extended with <strong>S16</strong> (hide-show cycle restores dock width — drives <code>setAiDockVisible(false)</code> then <code>setAiDockVisible(true)</code> and asserts the reopened dock has &gt; 50 px width).</li>
-                            <li><strong>S17</strong> (red ✕ close → toolbar re-open works — finds the × button by tooltip, clicks it, then re-opens via <code>setAiDockVisible(true)</code>, asserts &gt; 50 px width AND <code>Config::aiDockVisible</code> was updated by the click handler).</li>
-                            <li>53 sub-checks in <code>test_ai_fullscreen_exit</code> (up from 47 in v0.1.72), 28/28 ctest pass on the lite build.</li>
+                            <li><code>docs/index.html</code> no longer shows the slim &quot;horizontal line&quot; rows for older releases. Previous policy demoted each past release to a one-line link row; v0.1.74 strips them entirely. The site now carries <strong>only the latest release detail card</strong> plus the &quot;See every release on GitHub&quot; link. v0.1.0–v0.1.73 live exclusively at <code>github.com/singhpratech/notepatra/releases</code>.</li>
+                            <li>82-line deletion. Reason: even the slim rows felt like clutter between the hero and the FAQ.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>📦 Carry-forward from v0.1.72</h5>
+                        <h5>📦 Carry-forward from v0.1.73</h5>
                         <ul>
-                            <li>Full installer matrix unchanged: <code>.deb</code> (Debian/Ubuntu x64+ARM64, regular + <code>notepatra-local-ai</code>), <code>.rpm</code> (Fedora/RHEL x64+ARM64), AppImage (universal Linux), DMG (macOS), and dual MSI (Windows regular + <code>notepatra-local-ai</code>).</li>
+                            <li>AI dock fixes (S16 / S17 regression tests) carry forward — 53 sub-checks in <code>test_ai_fullscreen_exit</code>, 28/28 ctest pass on the lite build.</li>
+                            <li>Full installer matrix unchanged: <code>.deb</code> (Debian/Ubuntu x64+ARM64, regular + <code>notepatra-local-ai</code>), <code>.rpm</code> (Fedora/RHEL x64+ARM64), AppImage (universal Linux), DMG (macOS), and dual MSI (Windows regular + <code>notepatra-local-ai</code>) — but Windows MSIs now upgrade cleanly with auto-generated Component GUIDs.</li>
                             <li><code>notepatra-local-ai</code> cloud-free build, 49-case <code>test_network_policy</code> allowlist, three-layer cloud refusal — all carry forward.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🗓️ Deferred to v0.1.75</h5>
+                        <ul>
+                            <li>Runtime font-pack downloader (Settings → Manage Fonts… with ~25 premium open-source fonts — JetBrains Mono, Fira Code, Cascadia Code, IBM Plex, Geist, Monaspace, Inter, Source Serif, … — fetched on demand to <code>~/.local/share/notepatra/fonts/</code>). Binary stays lite (~9 MB); fonts download only when the user wants them and register with <code>QFontDatabase</code> immediately, no restart. Held back from v0.1.74 until the dialog is end-to-end verified on Linux + Windows + macOS.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.73">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.74">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.73">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.74">Commits</a>
                 </div>
             </div>
-            <!-- Older releases: slim link rows only. Full notes live on GitHub. -->
-            <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.72"
-               class="version-card-link"
-               style="display:flex; justify-content:space-between; align-items:center;
-                      padding:14px 20px; margin-top:6px;
-                      background:var(--c-surface); border:1px solid var(--c-border);
-                      border-radius:10px; text-decoration:none;
-                      color:var(--c-text-muted); font-size:13px;
-                      transition:border-color .15s, color .15s;"
-               onmouseover="this.style.borderColor='var(--green)';this.style.color='var(--c-text)';"
-               onmouseout="this.style.borderColor='var(--c-border)';this.style.color='var(--c-text-muted)';">
-                <span><strong style="color:var(--c-text);">v0.1.72</strong> · 2026-05-11 · Enterprise installers (.deb / .rpm / AppImage / dual MSI) + cloud-free <code>notepatra-local-ai</code> build.</span>
-                <span style="color:var(--green); font-weight:600;">View on GitHub →</span>
-            </a>
-            <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.71"
-               class="version-card-link"
-               style="display:flex; justify-content:space-between; align-items:center;
-                      padding:14px 20px; margin-top:6px;
-                      background:var(--c-surface); border:1px solid var(--c-border);
-                      border-radius:10px; text-decoration:none;
-                      color:var(--c-text-muted); font-size:13px;
-                      transition:border-color .15s, color .15s;"
-               onmouseover="this.style.borderColor='var(--green)';this.style.color='var(--c-text)';"
-               onmouseout="this.style.borderColor='var(--c-border)';this.style.color='var(--c-text-muted)';">
-                <span><strong style="color:var(--c-text);">v0.1.71</strong> · 2026-05-11 · AI Interaction Log — audit every cloud + local LLM exchange (SQLite, WAL mode, 7-day rotation, credential scrubber).</span>
-                <span style="color:var(--green); font-weight:600;">View on GitHub →</span>
-            </a>
-            <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.70"
-               class="version-card-link"
-               style="display:flex; justify-content:space-between; align-items:center;
-                      padding:14px 20px; margin-top:6px;
-                      background:var(--c-surface); border:1px solid var(--c-border);
-                      border-radius:10px; text-decoration:none;
-                      color:var(--c-text-muted); font-size:13px;
-                      transition:border-color .15s, color .15s;"
-               onmouseover="this.style.borderColor='var(--green)';this.style.color='var(--c-text)';"
-               onmouseout="this.style.borderColor='var(--c-border)';this.style.color='var(--c-text-muted)';">
-                <span><strong style="color:var(--c-text);">v0.1.70</strong> · 2026-05-11 · AI cleanup + Notepad++-style session persistence + Data Mode attachments visible.</span>
-                <span style="color:var(--green); font-weight:600;">View on GitHub →</span>
-            </a>
-            <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.69"
-               class="version-card-link"
-               style="display:flex; justify-content:space-between; align-items:center;
-                      padding:14px 20px; margin-top:6px;
-                      background:var(--c-surface); border:1px solid var(--c-border);
-                      border-radius:10px; text-decoration:none;
-                      color:var(--c-text-muted); font-size:13px;
-                      transition:border-color .15s, color .15s;"
-               onmouseover="this.style.borderColor='var(--green)';this.style.color='var(--c-text)';"
-               onmouseout="this.style.borderColor='var(--c-border)';this.style.color='var(--c-text-muted)';">
-                <span><strong style="color:var(--c-text);">v0.1.69</strong> · 2026-05-10 · Critical fix — AI Coding / Data mode no longer locks tool buttons.</span>
-                <span style="color:var(--green); font-weight:600;">View on GitHub →</span>
-            </a>
-            <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.68"
-               class="version-card-link"
-               style="display:flex; justify-content:space-between; align-items:center;
-                      padding:14px 20px; margin-top:6px;
-                      background:var(--c-surface); border:1px solid var(--c-border);
-                      border-radius:10px; text-decoration:none;
-                      color:var(--c-text-muted); font-size:13px;
-                      transition:border-color .15s, color .15s;"
-               onmouseover="this.style.borderColor='var(--green)';this.style.color='var(--c-text)';"
-               onmouseout="this.style.borderColor='var(--c-border)';this.style.color='var(--c-text-muted)';">
-                <span><strong style="color:var(--c-text);">v0.1.68</strong> · 2026-05-10 · AI dock auto-exits fullscreen on editor tab switches.</span>
-                <span style="color:var(--green); font-weight:600;">View on GitHub →</span>
-            </a>
-            <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.67"
-               class="version-card-link"
-               style="display:flex; justify-content:space-between; align-items:center;
-                      padding:14px 20px; margin-top:6px;
-                      background:var(--c-surface); border:1px solid var(--c-border);
-                      border-radius:10px; text-decoration:none;
-                      color:var(--c-text-muted); font-size:13px;
-                      transition:border-color .15s, color .15s;"
-               onmouseover="this.style.borderColor='var(--green)';this.style.color='var(--c-text)';"
-               onmouseout="this.style.borderColor='var(--c-border)';this.style.color='var(--c-text-muted)';">
-                <span><strong style="color:var(--c-text);">v0.1.67</strong> · 2026-05-10 · AI Assistant: three independent per-mode conversations.</span>
-                <span style="color:var(--green); font-weight:600;">View on GitHub →</span>
-            </a>
+            <!-- v0.1.74 policy: only the LATEST release detail card is shown
+                 on the website.  Every older release lives on GitHub —
+                 single link below, no slim version rows. -->
             <a href="https://github.com/singhpratech/notepatra/releases"
                class="version-card-link"
                style="display:block; padding:24px 28px; margin-top:8px;
@@ -2129,7 +2061,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.73: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
+                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.74: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2137,7 +2069,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.73 download sizes: <strong>3.2 MB</strong> Linux x64 tar.gz · <strong>3.0 MB</strong> Linux ARM64 tar.gz · <strong>26.6 MB</strong> macOS DMG · <strong>39.9 MB</strong> Windows MSI / <strong>32.0 MB</strong> NSIS / <strong>36.5 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.74 download sizes: <strong>3.2 MB</strong> Linux x64 tar.gz · <strong>3.0 MB</strong> Linux ARM64 tar.gz · <strong>26.6 MB</strong> macOS DMG · <strong>39.9 MB</strong> Windows MSI / <strong>32.0 MB</strong> NSIS / <strong>36.5 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>

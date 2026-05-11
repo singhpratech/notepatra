@@ -57,8 +57,12 @@
              Comments="$(var.ProductComments)"
              Manufacturer="$(var.Publisher)" />
 
-    <!-- Auto-upgrade: uninstall older versions when installing newer ones -->
+    <!-- Auto-upgrade: uninstall older versions when installing newer ones.
+         v0.1.74 — added AllowSameVersionUpgrades=yes so reinstalling the
+         same version doesn't drop the user into the maintenance UI; it
+         re-runs the install cleanly. -->
     <MajorUpgrade DowngradeErrorMessage="A newer version of $(var.ProductName) is already installed."
+                  AllowSameVersionUpgrades="yes"
                   Schedule="afterInstallInitialize" />
 
     <!-- Embed all files in the MSI rather than an external .cab -->
@@ -93,7 +97,17 @@
         <Directory Id="INSTALLFOLDER" Name="$(var.ProductName)">
           <!-- All app files go here. The actual file list is generated
                by heat.exe at build time into a separate include file. -->
-          <Component Id="MainExecutable" Guid="A2F3B641-8E7D-4C5A-B1D2-3E4F5A6B7C8D" Win64="yes">
+          <!-- v0.1.74 — `Guid="*"` makes WiX auto-generate the component
+               GUID deterministically from the component's KeyPath. Because
+               INSTALLFOLDER differs by flavor ("Notepatra" vs "Notepatra
+               Local AI"), regular and local-ai end up with DIFFERENT
+               component GUIDs and Windows stops reference-counting them
+               as the same component. This is the fix for the v0.1.72/v0.1.73
+               local-ai upgrade dropping into Repair/Remove instead of
+               doing a major upgrade — when a user had BOTH flavors
+               installed, the shared hardcoded GUID caused refcount
+               conflicts that broke the local-ai upgrade flow. -->
+          <Component Id="MainExecutable" Guid="*" Win64="yes">
             <File Id="NotepatraExe"
                   Source="$(var.SourceDir)\notepatra.exe"
                   KeyPath="yes" />
@@ -194,7 +208,7 @@
 
     <!-- Start Menu shortcut component -->
     <DirectoryRef Id="ApplicationProgramsFolder">
-      <Component Id="ApplicationShortcut" Guid="C3D4E5F6-7A8B-9C0D-1E2F-3A4B5C6D7E8F">
+      <Component Id="ApplicationShortcut" Guid="*">
         <Shortcut Id="ApplicationStartMenuShortcut"
                   Name="$(var.ProductName)"
                   Description="Native C++/Rust code editor with AI formatters"
@@ -213,7 +227,7 @@
 
     <!-- Desktop shortcut component (optional feature) -->
     <DirectoryRef Id="DesktopFolder">
-      <Component Id="DesktopShortcut" Guid="D4E5F6A7-8B9C-0D1E-2F3A-4B5C6D7E8F9A">
+      <Component Id="DesktopShortcut" Guid="*">
         <Shortcut Id="DesktopShortcut"
                   Name="$(var.ProductName)"
                   Description="Native C++/Rust code editor with AI formatters"

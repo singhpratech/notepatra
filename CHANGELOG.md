@@ -7,6 +7,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.74] — 2026-05-11
+
+**`notepatra-local-ai` MSI upgrade fix + website cleanup. No editor / AI / core changes.**
+
+### Fixed
+
+- **`notepatra-local-ai` MSI no longer drops into Repair / Remove maintenance UI when upgrading from v0.1.72 / v0.1.73.** Three `<Component>` elements in `installers/windows.wxs` (`MainExecutable`, `ApplicationShortcut`, `DesktopShortcut`) used hardcoded Component GUIDs that were shared between the regular and local-ai flavors. With both flavors installed side-by-side, Windows Installer reference-counted them as the *same* component — when MajorUpgrade tried to release v0.1.72/v0.1.73 components, the regular install's reference held them, breaking the upgrade flow. Fixed by switching all three to `Guid="*"` — WiX auto-generates a deterministic GUID from each component's KeyPath, which differs between flavors (different `INSTALLFOLDER` names). Also added `AllowSameVersionUpgrades="yes"` to `<MajorUpgrade>` so re-running the same-version MSI runs the install flow instead of the maintenance UI. Regular MSI users were unaffected and the v0.1.74 regular MSI ships with the same fix as a no-op upgrade.
+
+### Website
+
+- **`docs/index.html` no longer shows slim "horizontal line" rows for older releases.** Previous policy demoted past releases to one-line link rows; from v0.1.74 onward the website carries **only the latest release detail card** and one "See every release on GitHub" link. v0.1.0–v0.1.73 live exclusively on GitHub Releases. 82-line deletion.
+
+### Deferred to v0.1.75
+
+- **Runtime font-pack downloader** (Settings → Manage Fonts… with ~25 premium open-source fonts fetched on demand to `~/.local/share/notepatra/fonts/`). Source files drafted; held until end-to-end UI verification on Linux + Windows + macOS.
+
+---
+
 ## [0.1.73] — 2026-05-11
 
 **AI dock blank-on-reopen fix (patch on v0.1.72).**
