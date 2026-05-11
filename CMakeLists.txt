@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.75 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.76 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -672,6 +672,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_dataanalyst.cpp
         src/ai_tools.cpp
         src/git_tools.cpp
         src/chartrender.cpp
+        src/chart_modal.cpp
         src/csvanalyst.cpp
         src/dbconnections.cpp
     )
@@ -1032,6 +1033,30 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_network_policy.cpp
     add_test(NAME test_network_policy COMMAND $<TARGET_FILE:test_network_policy>)
     set_tests_properties(test_network_policy PROPERTIES LABELS "unit;security;network-policy;v0172")
     message(STATUS "Security test enabled — target: test_network_policy")
+endif()
+
+# v0.1.76 — expanded chart-type catalogue regression test. Validates
+# that every new type in src/chartrender.cpp (area, horizontal-bar,
+# stacked-bar, stacked-horizontal-bar, grouped-bar, donut, histogram,
+# boxplot) renders without error.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_chart_types.cpp")
+    add_executable(test_chart_types
+        test_chart_types.cpp
+        src/chartrender.cpp
+        src/chart_modal.cpp
+    )
+    target_include_directories(test_chart_types PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_chart_types PRIVATE
+        Qt5::Core
+        Qt5::Gui
+        Qt5::Widgets
+        Qt5::Charts
+    )
+    add_test(NAME test_chart_types COMMAND $<TARGET_FILE:test_chart_types>)
+    set_tests_properties(test_chart_types PROPERTIES LABELS "unit;charts;v0176")
+    message(STATUS "Chart-types test enabled — target: test_chart_types")
 endif()
 
 # v0.1.75 — font-pack manifest + scan-and-load regression test. Builds

@@ -50,7 +50,7 @@
       "operatingSystem": ["Linux", "Windows", "macOS"],
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
-      "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~9 MB stripped across platforms; full downloads are 3.2 MB (Linux x64 tar.gz), 26.6 MB (macOS DMG with bundled Qt), 39.9 MB (Windows MSI with bundled Qt DLLs). 226 file types. 92 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
+      "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~9 MB stripped across platforms; full downloads are 3.4 MB (Linux x64 tar.gz), 26.8 MB (macOS DMG with bundled Qt), 40.4 MB (Windows MSI with bundled Qt DLLs). 226 file types. 92 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
       "softwareVersion": "0.1.69",
       "fileSize": "9 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
@@ -153,7 +153,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.75 download sizes: 3.2 MB Linux x64 tar.gz, 3.0 MB Linux ARM64 tar.gz, 26.6 MB macOS DMG (with bundled Qt), 39.9 MB Windows MSI / 32.0 MB NSIS / 36.5 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.76 download sizes: 3.4 MB Linux x64 tar.gz, 3.2 MB Linux ARM64 tar.gz, 26.8 MB macOS DMG (with bundled Qt), 40.4 MB Windows MSI / 32.1 MB NSIS / 36.6 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
           }
         },
         {
@@ -169,7 +169,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.75: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.76: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.75">
-        Download v0.1.75 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.76">
+        Download v0.1.76 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,9 +1312,9 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.75 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.76 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
-        <p>Tiny native binary (~9 MB bare, ~2 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints.</p>
+        <p>Tiny native binary (~9 MB bare, ~3 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints.</p>
 
         <div class="install-box">
             <div class="install-tabs">
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.75</div>
+        <div class="section-label">Download v0.1.76</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1467,7 +1467,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.75 →
+                Get Notepatra v0.1.76 →
               </a>
             </div>
 
@@ -1510,7 +1510,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.75 →
+                Get Notepatra Local AI v0.1.76 →
               </a>
             </div>
           </div>
@@ -1525,25 +1525,25 @@
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🐧</div>
                 <h4>Linux x64</h4>
-                <p>Binary · 3.2 MB .tar.gz</p>
+                <p>Binary · 3.4 MB .tar.gz</p>
                 <span class="download-btn">.tar.gz</span>
             </a>
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🐧</div>
                 <h4>Linux ARM64</h4>
-                <p>aarch64 · Raspberry Pi 5 · 3.0 MB .tar.gz</p>
+                <p>aarch64 · Raspberry Pi 5 · 3.2 MB .tar.gz</p>
                 <span class="download-btn">.tar.gz</span>
             </a>
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🍎</div>
                 <h4>macOS Apple Silicon</h4>
-                <p>M1 / M2 / M3 / M4 · 26.6 MB .dmg</p>
+                <p>M1 / M2 / M3 / M4 · 26.8 MB .dmg</p>
                 <span class="download-btn">.dmg</span>
             </a>
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🪟</div>
                 <h4>Windows x64</h4>
-                <p>36.5 MB zip · 39.9 MB MSI · 32.0 MB setup.exe</p>
+                <p>36.6 MB zip · 40.4 MB MSI · 32.1 MB setup.exe</p>
                 <span class="download-btn">.zip / .msi / .exe</span>
             </a>
         </div>
@@ -1968,59 +1968,72 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.75 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.76 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-05-11</span>
-                        <span>· Runtime font-pack downloader — 27 premium open-source fonts on demand.</span>
+                        <span>· Expanded chart catalogue (4 → 12), modal viewer + PNG export, AI picks the right chart.</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>✨ New — <code>Settings → Manage Fonts…</code></h5>
+                        <h5>📊 12 chart types now (up from 4)</h5>
                         <ul>
-                            <li>Curated catalogue of <strong>27 premium open-source fonts</strong> — JetBrains Mono · Fira Code · Cascadia Code · Source Code Pro · IBM Plex Mono · Hack · Geist Mono · Inconsolata · Roboto Mono · Fira Mono · Noto Sans Mono · Space Mono · Anonymous Pro · Victor Mono · Comic Mono · Inter (variable) · Roboto · Manrope · Source Serif 4 (variable) · Merriweather. Every entry is SIL OFL 1.1, Apache 2.0, or MIT.</li>
-                            <li>Pick any, click <strong>Install selected</strong>, dialog downloads each TTF / OTF from its pinned upstream HTTPS URL to <code>~/.local/share/notepatra/fonts/</code> and registers it with <code>QFontDatabase</code> immediately — <strong>no restart needed</strong>. Use the new family as your editor font via <em>Settings → Preferences → Editor → Font</em>.</li>
-                            <li>Grouped UI: Code · Monospace / UI · Sans-serif / Serif · Prose / Display · Distinctive. Each row shows family, variant, size, license, origin, installed status. Remove button deletes from disk.</li>
+                            <li>Existing: <code>line</code> · <code>bar</code> · <code>pie</code> · <code>scatter</code>.</li>
+                            <li>New: <code>area</code> · <code>horizontal-bar</code> · <code>stacked-bar</code> · <code>stacked-horizontal-bar</code> · <code>grouped-bar</code> · <code>donut</code> · <code>histogram</code> (auto-bins a numeric column) · <code>boxplot</code> (5-quantile per group).</li>
+                            <li>All 12 render via QtCharts — <strong>no WebEngine required</strong>, so the lite build (~9 MB) gets them too. The Vega-Lite <code>generate_chart</code> tool path is unchanged for advanced specs (heatmaps, layered, geo).</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>📦 Why the binary stays lite</h5>
+                        <h5>🤖 AI picks the chart based on data shape</h5>
                         <ul>
-                            <li><strong>Zero bytes bundled.</strong> The bare Notepatra binary is still ~9 MB stripped. Fonts ship via the same on-demand pattern as the Charts Pack and DuckDB extensions: manifest in <code>src/fontpack.cpp</code> points at pinned upstream GitHub URLs; downloads happen only when the user opens the dialog and ticks selections.</li>
-                            <li>Honours the project rule: <em>&quot;Bare binary stays small — heavy features on-demand.&quot;</em> If we'd bundled all 27 fonts, the binary would have grown ~10 MB for users who never wanted them.</li>
+                            <li>Rewrote the Data Analyst system prompt with explicit <strong>data-shape → chart-type mapping</strong>: time series → <code>line</code> / <code>area</code>; categorical comparison → <code>bar</code> / <code>horizontal-bar</code> / <code>grouped-bar</code>; distribution → <code>histogram</code>; distribution-across-groups → <code>boxplot</code>; composition → <code>donut</code> / <code>stacked-bar</code>; correlation → <code>scatter</code>.</li>
+                            <li>Multi-series spec format: <code>grouped-bar</code> / <code>stacked-bar</code> / <code>stacked-horizontal-bar</code> take <code>y</code> as an <strong>array</strong> of value column names.</li>
+                            <li>Histogram auto-bins (default 20, configurable). Boxplot computes min / Q1 / median / Q3 / max per group from raw rows.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🔐 Security &amp; air-gapped friendliness</h5>
+                        <h5>⛶ Modal viewer with PNG export</h5>
                         <ul>
-                            <li><strong>HTTPS-only manifest</strong> — every URL in <code>src/fontpack.cpp</code> is enforced HTTPS by <code>test_fontpack.cpp</code>. Network attackers can't substitute alternate bytes mid-stream.</li>
-                            <li><strong>Air-gapped path</strong> — for <code>notepatra-local-ai</code> deployments where <code>github.com</code> is blocked, drop TTFs into <code>~/.local/share/notepatra/fonts/</code> manually. Notepatra's startup hook scans that directory on every launch and registers every <code>*.ttf</code> / <code>*.otf</code> it finds, regardless of how they got there.</li>
+                            <li>Every inline chart now has a small <strong>⛶ expand button</strong> in the top-right corner. Click it → 960×640 modal opens with the chart re-rendered at full size, plus <strong>Save as PNG…</strong> (HiDPI-correct, defaults to <code>~/Pictures/</code>), <strong>Copy image</strong> (system clipboard), and <strong>Close</strong>.</li>
+                            <li>Modal re-renders from the original spec so the inline thumbnail keeps its own state and tooltips. Works for every chart type in the catalogue.</li>
+                            <li>New files: <code>src/chart_modal.{h,cpp}</code>.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>💬 Hover tooltips on every chart</h5>
+                        <ul>
+                            <li>QtCharts emits hover signals but doesn't display anything by default. v0.1.76 wires <code>QToolTip::showText()</code> to every series:</li>
+                            <li>Bar / stacked / grouped: <code>&lt;series&gt;\n&lt;category&gt;: &lt;value&gt;</code>.</li>
+                            <li>Line / area / scatter: <code>&lt;series&gt;\nx &lt;x&gt; · y &lt;y&gt;</code>.</li>
+                            <li>Pie / donut: <code>&lt;label&gt;\n&lt;value&gt; (&lt;pct&gt;%)</code>.</li>
+                            <li>Boxplot: full 5-quantile summary on hover.</li>
                         </ul>
                     </div>
                     <div class="version-section">
                         <h5>🧪 Regression coverage</h5>
                         <ul>
-                            <li>New <code>test_fontpack.cpp</code> — <strong>23 sub-checks</strong>: manifest sanity (no duplicate filenames, all-HTTPS URLs, every entry has license + origin + category, six industry-standard families present by name), path helpers (<code>fontsDir()</code>, <code>localPath()</code>), and an end-to-end load test that copies <code>/usr/share/fonts/truetype/ubuntu/UbuntuMono-RI.ttf</code> into <code>fontsDir()</code> and asserts <code>loadInstalledFonts()</code> registers it.</li>
-                            <li><strong>29/29 ctest pass</strong> on the lite build (up from 28). All v0.1.74 tests carry forward unchanged.</li>
-                            <li><code>docs/regression-log.md</code> appended with the new entry.</li>
+                            <li>New <code>test_chart_types.cpp</code> — <strong>26 sub-checks</strong>: every legacy + new chart type renders a non-null widget from a realistic spec; <code>looksLikeChartSpec()</code> accepts every type in the catalogue; unsupported types return <code>nullptr</code> + descriptive error (not a crash).</li>
+                            <li>Updated <code>test_ai_dataanalyst.cpp</code> to verify all 12 chart types appear in the Data Analyst system prompt as code-quoted backticks.</li>
+                            <li><strong>30/30 ctest pass</strong> on the lite build (up from 29). All v0.1.75 tests carry forward unchanged.</li>
+                            <li><code>docs/regression-log.md</code> appended with the v0.1.76 entry.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>📦 Carry-forward from v0.1.74</h5>
+                        <h5>📦 Carry-forward from v0.1.75</h5>
                         <ul>
-                            <li>MSI Component-GUID fix (<code>Guid=&quot;*&quot;</code> + <code>AllowSameVersionUpgrades=&quot;yes&quot;</code>) for <code>notepatra-local-ai</code> upgrades carries forward — installs from v0.1.74 onward upgrade cleanly.</li>
-                            <li>AI dock fixes (S16 / S17), 49-case <code>test_network_policy</code> allowlist, dual-flavor installer matrix (regular + cloud-free <code>notepatra-local-ai</code>) — all unchanged.</li>
+                            <li>Runtime font-pack downloader (Settings → Manage Fonts…) with 27 premium open-source fonts — unchanged.</li>
+                            <li>MSI Component-GUID fix (<code>Guid=&quot;*&quot;</code>) for <code>notepatra-local-ai</code> upgrades, AI dock fixes, 49-case <code>test_network_policy</code> allowlist, dual-flavor installer matrix — all unchanged.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.75">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.76">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.75">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.76">Commits</a>
                 </div>
             </div>
-            <!-- v0.1.75 policy: only the LATEST release detail card is shown
+            <!-- v0.1.76 policy: only the LATEST release detail card is shown
                  on the website.  Every older release lives on GitHub —
                  single link below, no slim version rows. -->
             <a href="https://github.com/singhpratech/notepatra/releases"
@@ -2054,7 +2067,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.75: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
+                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.76: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2062,7 +2075,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.75 download sizes: <strong>3.2 MB</strong> Linux x64 tar.gz · <strong>3.0 MB</strong> Linux ARM64 tar.gz · <strong>26.6 MB</strong> macOS DMG · <strong>39.9 MB</strong> Windows MSI / <strong>32.0 MB</strong> NSIS / <strong>36.5 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.76 download sizes: <strong>3.4 MB</strong> Linux x64 tar.gz · <strong>3.2 MB</strong> Linux ARM64 tar.gz · <strong>26.8 MB</strong> macOS DMG · <strong>40.4 MB</strong> Windows MSI / <strong>32.1 MB</strong> NSIS / <strong>36.6 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>

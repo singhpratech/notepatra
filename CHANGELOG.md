@@ -7,6 +7,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.76] — 2026-05-11
+
+**Expanded chart catalogue (4 → 12 types), hover tooltips, modal viewer with PNG export, AI picks the right chart for the data.**
+
+### Added
+
+- **Chart modal viewer (`src/chart_modal.{h,cpp}`)** — click the ⛶ button in the corner of any inline chart to open a 960×640 dialog with the chart re-rendered at full size, plus **Save as PNG…** (HiDPI-correct, defaults to `~/Pictures/`), **Copy image** (system clipboard), and **Close**. Works for every QtCharts-backed type.
+- **Hover tooltips on every chart** — `QToolTip::showText()` wired to each series after construction. Bars show `<series>\n<category>: <value>`, XY series show `x · y`, pie/donut show `<label>\n<value> (<pct>%)`, boxplot shows the 5-quantile summary.
+- **8 new chart types in `src/chartrender.cpp`** — `area`, `horizontal-bar`, `stacked-bar`, `stacked-horizontal-bar`, `grouped-bar`, `donut`, `histogram`, `boxplot`. All render via QtCharts (`QAreaSeries`, `QHorizontalBarSeries`, `QStackedBarSeries`, `QHorizontalStackedBarSeries`, `QBoxPlotSeries`), so they work in **both the lite build (~9 MB, no WebEngine) and the full build**. The `generate_chart` Vega-Lite tool path is unchanged for advanced specs (heatmaps, layered, geo-shapes).
+- **AI chart-selection guidance in `src/ai_systemprompt.cpp`** — rewrote the Data Analyst chart section with explicit **data-shape → chart-type mapping** rules: time series → `line` / `area`, categorical comparison → `bar` / `horizontal-bar` / `grouped-bar`, distribution → `histogram`, distribution-across-groups → `boxplot`, composition → `donut` / `stacked-bar`, correlation → `scatter`. The AI now picks the right chart for the data instead of defaulting to bar for everything.
+- **Multi-series spec format** — `grouped-bar` / `stacked-bar` / `stacked-horizontal-bar` take `y` as an **array** of value column names (e.g. `"y":["q1","q2","q3","q4"]`). Single-series types unchanged.
+- **Histogram** — auto-bins a numeric column (default 20 bins, configurable via `bins`). Title defaults to `"Distribution of <col>"` if unset.
+- **Boxplot** — groups rows by `x` (category column), then computes min / Q1 / median / Q3 / max for the `y` (numeric column) per group.
+- **`test_chart_types.cpp`** — 26 sub-checks covering every legacy + new chart type. Asserts each renders a non-null `QWidget`, `looksLikeChartSpec()` accepts every type in the catalogue, and unsupported types return `nullptr` + a descriptive error.
+- **`docs/regression-log.md`** — new v0.1.76 entry.
+
+### Tests
+
+- 30/30 ctest pass (up from 29).
+
+---
+
 ## [0.1.75] — 2026-05-11
 
 **Runtime font-pack downloader — 27 premium open-source fonts available on demand. Binary stays at ~9 MB.**

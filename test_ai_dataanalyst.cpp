@@ -95,7 +95,14 @@ static void testSystemPrompt() {
     QString sp = build(Intent::DataAnalyst, "python", false);
     EXPECT_CONTAINS("data analyst phrasing", sp, "data analyst");
     EXPECT_CONTAINS("chart fenced block", sp, "```chart");
-    EXPECT_CONTAINS("supported types", sp, "line, bar, pie, scatter");
+    // v0.1.76 — system prompt now lists all 12 chart types as one
+    // backtick-quoted block instead of a comma-separated sentence.
+    EXPECT_CONTAINS("legacy line type still documented",      sp, "`line`");
+    EXPECT_CONTAINS("legacy bar type still documented",       sp, "`bar`");
+    EXPECT_CONTAINS("legacy pie type still documented",       sp, "`pie`");
+    EXPECT_CONTAINS("legacy scatter type still documented",   sp, "`scatter`");
+    EXPECT_CONTAINS("new histogram type documented (v0.1.76)",sp, "`histogram`");
+    EXPECT_CONTAINS("new boxplot type documented (v0.1.76)",  sp, "`boxplot`");
 
     // toolsActive=true should switch to the data tool preamble.
     QString spTools = build(Intent::DataAnalyst, "", true);
@@ -440,7 +447,8 @@ static void testChartRenderer() {
     EXPECT_TRUE("missing type rejected", !ChartRender::looksLikeChartSpec(missingType));
 
     QJsonObject badType = ok;
-    badType["type"] = "histogram";
+    // v0.1.76 added histogram + 7 more types; pick something truly absent.
+    badType["type"] = "candlestick";
     EXPECT_TRUE("unsupported type rejected", !ChartRender::looksLikeChartSpec(badType));
 
     // renderFromSpec — needs a QApplication / offscreen platform.

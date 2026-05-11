@@ -14,6 +14,20 @@ the discipline is on us to keep it current.
 
 ---
 
+## v0.1.76 — Expanded chart-type catalogue
+
+### Every type in the dispatcher renders
+
+- **Test**: `test_chart_types.cpp`
+- **Guards against**:
+  - A new chart type being added to `looksLikeChartSpec()` (the gatekeeper) but missing its dispatcher branch in `renderFromObject()`, or vice versa.
+  - A render helper silently returning `nullptr` for a valid spec (legacy types like `line` / `bar` / `pie` / `scatter` would otherwise drift unnoticed).
+  - A future Qt5 / Qt6 transition dropping a `QtCharts` series we depend on (`QAreaSeries`, `QHorizontalBarSeries`, `QStackedBarSeries`, `QHorizontalStackedBarSeries`, `QBoxPlotSeries`).
+- **Coverage**: 26 sub-checks. (a) Every legacy type (line / bar / pie / scatter) still renders a non-null `QWidget`. (b) Every new v0.1.76 type (area, horizontal-bar, stacked-bar, stacked-horizontal-bar, grouped-bar, donut, histogram, boxplot) renders a non-null `QWidget` from a realistic spec. (c) `looksLikeChartSpec()` accepts every type in the catalogue. (d) An unsupported type returns `nullptr` + a descriptive error string (not a crash).
+- **When adding a new chart type**: append the type to `looksLikeChartSpec()`'s `kTypes` list, add a `renderXxx()` helper, wire it in `renderFromObject()`, and add a test case here. The test fails if any of these steps is skipped.
+
+---
+
 ## v0.1.75 — Runtime font-pack downloader
 
 ### Manifest validity + scan-and-load
