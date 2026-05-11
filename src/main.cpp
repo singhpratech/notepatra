@@ -54,8 +54,13 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         QString arg = QString::fromUtf8(argv[i]);
         if (arg == "--version" || arg == "-v") {
+#ifdef NOTEPATRA_NO_CLOUD
+            printf("Notepatra v%s (cloud-free / local-ai)\n", NOTEPATRA_VERSION);
+            printf("Native C++/Rust code editor — local & private-network LLM endpoints only\n");
+#else
             printf("Notepatra v%s\n", NOTEPATRA_VERSION);
             printf("Native C++/Rust code editor\n");
+#endif
             printf("https://github.com/singhpratech/notepatra\n");
             return 0;
         }

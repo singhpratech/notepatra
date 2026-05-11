@@ -1,0 +1,118 @@
+Name:           notepatra
+Version:        @VERSION@
+Release:        1%{?dist}
+Summary:        Notepad++-style native code editor for the AI era
+License:        GPL-3.0-or-later
+URL:            https://notepatra.org
+Source0:        notepatra-%{version}.tar.gz
+ExclusiveArch:  x86_64 aarch64
+
+# Stock Fedora/RHEL Qt5 stack — same components the Debian package depends
+# on, mapped to Fedora package names.
+Requires:       qt5-qtbase
+Requires:       qt5-qtbase-gui
+Requires:       qt5-qtbase-mysql
+Requires:       qt5-qtbase-postgresql
+Requires:       qt5-qtcharts
+Requires:       glibc
+Requires:       libstdc++
+
+# QScintilla is intentionally NOT listed as a Requires — we bundle it
+# in /opt/notepatra/lib/ alongside libduckdb.so so the same upstream-
+# built binary works regardless of distro QScintilla packaging quirks
+# (Fedora's qscintilla-qt5 does not export the same symbol set as
+# Ubuntu's libqscintilla2-qt5-15).
+
+# WebEngine pulled in via Recommends so the Charts/Data Vega renderer can
+# light up if the user wants it, but base install stays small (the lite
+# binary stubs the renderer when WebEngine is absent).
+Recommends:     qt5-qtwebengine
+
+# Ollama suggestion mirrors the .deb's Suggests: field.
+Suggests:       ollama
+
+AutoReqProv:    no
+
+%description
+Notepatra is a native C++/Rust code editor inspired by Notepad++,
+rebuilt for the AI era.  Local AI integration via Ollama and llama.cpp
+ships out of the box; an OpenAI-compatible URL field is supported for
+self-hosted servers (LM Studio, Jan, vLLM, text-generation-webui).
+
+%global debug_package %{nil}
+
+%prep
+%autosetup -n notepatra-%{version}
+
+%build
+# Pre-built binary tarball — nothing to compile.  The build phase here is
+# essentially a no-op; we relocate files in the install section below.
+:
+
+%install
+mkdir -p %{buildroot}/opt/notepatra/lib
+mkdir -p %{buildroot}%{_bindir}
+mkdir -p %{buildroot}%{_datadir}/applications
+mkdir -p %{buildroot}%{_datadir}/doc/notepatra
+
+install -m 0755 notepatra %{buildroot}/opt/notepatra/notepatra
+install -m 0644 libduckdb.so %{buildroot}/opt/notepatra/lib/libduckdb.so
+
+# Bundled QScintilla — copied with its SONAME chain so the dynamic linker
+# resolves the binary's DT_NEEDED entry against our bundled .so.15 file.
+for QSC in libqscintilla2_qt5.so.*; do
+    [ -f "$QSC" ] && install -m 0644 "$QSC" %{buildroot}/opt/notepatra/lib/"$QSC" || true
+done
+# Re-create the SONAME chain symlinks in the install root.
+if [ -f libqscintilla2_qt5.so.15.2.1 ]; then
+    ( cd %{buildroot}/opt/notepatra/lib && \
+      ln -sf libqscintilla2_qt5.so.15.2.1 libqscintilla2_qt5.so.15.2 && \
+      ln -sf libqscintilla2_qt5.so.15.2.1 libqscintilla2_qt5.so.15 )
+fi
+
+ln -sf /opt/notepatra/notepatra %{buildroot}%{_bindir}/notepatra
+
+install -m 0644 notepatra.desktop %{buildroot}%{_datadir}/applications/notepatra.desktop
+
+for SIZE in 16 24 32 48 64 128 256 512; do
+    if [ -f "icons/notepatra-${SIZE}.png" ]; then
+        mkdir -p %{buildroot}%{_datadir}/icons/hicolor/${SIZE}x${SIZE}/apps
+        install -m 0644 "icons/notepatra-${SIZE}.png" \
+                %{buildroot}%{_datadir}/icons/hicolor/${SIZE}x${SIZE}/apps/notepatra.png
+    fi
+done
+if [ -f "icons/notepatra-1024.png" ]; then
+    mkdir -p %{buildroot}%{_datadir}/icons/hicolor/scalable/apps
+    install -m 0644 "icons/notepatra-1024.png" \
+            %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/notepatra.png
+fi
+
+%post
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -q -f -t %{_datadir}/icons/hicolor 2>/dev/null || true
+fi
+
+%postun
+if [ $1 -eq 0 ]; then
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database -q || true
+    fi
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        gtk-update-icon-cache -q -f -t %{_datadir}/icons/hicolor 2>/dev/null || true
+    fi
+fi
+
+%files
+/opt/notepatra/notepatra
+/opt/notepatra/lib/libduckdb.so
+/opt/notepatra/lib/libqscintilla2_qt5.so.*
+%{_bindir}/notepatra
+%{_datadir}/applications/notepatra.desktop
+%{_datadir}/icons/hicolor/*/apps/notepatra.png
+
+%changelog
+* @CHANGELOG_DATE@ Prateek Singh <hi@notepatra.org> - @VERSION@-1
+- Notepatra v@VERSION@ — see https://github.com/singhpratech/notepatra/releases/tag/v@VERSION@

@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.71">
-        Download v0.1.71 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.72">
+        Download v0.1.72 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,9 +1312,9 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.71 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.72 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
-        <p>Tiny native binary (~9 MB bare, ~2 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. No cloud unless you opt in.</p>
+        <p>Tiny native binary (~9 MB bare, ~2 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints.</p>
 
         <div class="install-box">
             <div class="install-tabs">
@@ -1399,9 +1399,127 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.67</div>
+        <div class="section-label">Download v0.1.72</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
+
+        <!-- v0.1.72 — Two flavors. Pick the one that fits.  Local AI by
+             default in both; the cloud-free flavor is for teams that need
+             a hard guarantee that no public LLM endpoint can ever be
+             reached.  Hero placement above the per-platform grid because
+             flavor is the first decision a regulated-industry visitor
+             needs to make.  -->
+        <div style="max-width: 1120px; margin: 30px auto 24px; padding: 0 24px;">
+          <div style="display: grid; gap: 22px;
+                      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));">
+            <!-- Flavor 1 — regular Notepatra -->
+            <div style="position: relative; padding: 28px 26px;
+                        background: var(--c-surface);
+                        border: 1px solid var(--c-border);
+                        border-radius: 18px;
+                        box-shadow: 0 14px 40px -22px rgba(20,20,19,0.18);">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+                <span style="display: inline-flex; align-items: center; justify-content: center;
+                             width: 32px; height: 32px; border-radius: 8px;
+                             background: rgba(124,177,142,0.16);
+                             color: var(--green); font-size: 18px;">🌐</span>
+                <h4 style="margin: 0; font-size: 19px; font-weight: 650; color: var(--c-text);">Notepatra</h4>
+                <span style="font-size: 11px; padding: 2px 8px; border-radius: 999px;
+                             background: rgba(124,177,142,0.14); color: var(--green);
+                             font-weight: 600; letter-spacing: 0.4px;">DEFAULT</span>
+              </div>
+              <p style="margin: 0 0 14px; color: var(--c-text); font-size: 14.5px; line-height: 1.55;">
+                <strong>Local AI out of the box · cloud LLMs opt-in.</strong>
+                Talk to Ollama / llama.cpp / LM Studio / self-hosted Ollama on the LAN by default.
+                Paste an OpenAI / Anthropic / OpenRouter / Mistral / Azure URL in Settings if you want cloud — fully optional, no key required for local use.
+              </p>
+              <p style="margin: 0 0 16px; color: var(--text-dim); font-size: 13px; line-height: 1.55;">
+                Pick this if you want maximum flexibility — local first, with cloud available when you need a flagship model on a hard problem. Most users.
+              </p>
+              <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px;">
+                <span style="font-size: 12px; padding: 5px 10px; border-radius: 6px;
+                             background: var(--c-bg); color: var(--text-dim);
+                             border: 1px solid var(--c-border);">.tar.gz</span>
+                <span style="font-size: 12px; padding: 5px 10px; border-radius: 6px;
+                             background: var(--c-bg); color: var(--text-dim);
+                             border: 1px solid var(--c-border);">.deb</span>
+                <span style="font-size: 12px; padding: 5px 10px; border-radius: 6px;
+                             background: var(--c-bg); color: var(--text-dim);
+                             border: 1px solid var(--c-border);">.rpm</span>
+                <span style="font-size: 12px; padding: 5px 10px; border-radius: 6px;
+                             background: var(--c-bg); color: var(--text-dim);
+                             border: 1px solid var(--c-border);">.AppImage</span>
+                <span style="font-size: 12px; padding: 5px 10px; border-radius: 6px;
+                             background: var(--c-bg); color: var(--text-dim);
+                             border: 1px solid var(--c-border);">.dmg</span>
+                <span style="font-size: 12px; padding: 5px 10px; border-radius: 6px;
+                             background: var(--c-bg); color: var(--text-dim);
+                             border: 1px solid var(--c-border);">.msi</span>
+                <span style="font-size: 12px; padding: 5px 10px; border-radius: 6px;
+                             background: var(--c-bg); color: var(--text-dim);
+                             border: 1px solid var(--c-border);">.exe</span>
+                <span style="font-size: 12px; padding: 5px 10px; border-radius: 6px;
+                             background: var(--c-bg); color: var(--text-dim);
+                             border: 1px solid var(--c-border);">.zip</span>
+              </div>
+              <a href="https://github.com/singhpratech/notepatra/releases/latest"
+                 style="display: inline-flex; align-items: center; gap: 6px;
+                        margin-top: 18px; padding: 9px 16px; border-radius: 8px;
+                        background: var(--green); color: white; text-decoration: none;
+                        font-weight: 600; font-size: 13.5px;">
+                Get Notepatra v0.1.72 →
+              </a>
+            </div>
+
+            <!-- Flavor 2 — Notepatra Local AI (cloud-free) -->
+            <div style="position: relative; padding: 28px 26px;
+                        background: var(--c-surface);
+                        border: 1px solid rgba(168,123,196,0.32);
+                        border-radius: 18px;
+                        box-shadow: 0 14px 40px -22px rgba(20,20,19,0.18);">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+                <span style="display: inline-flex; align-items: center; justify-content: center;
+                             width: 32px; height: 32px; border-radius: 8px;
+                             background: rgba(168,123,196,0.18);
+                             color: #a87bc4; font-size: 18px;">🔒</span>
+                <h4 style="margin: 0; font-size: 19px; font-weight: 650; color: var(--c-text);">Notepatra Local AI</h4>
+                <span style="font-size: 11px; padding: 2px 8px; border-radius: 999px;
+                             background: rgba(168,123,196,0.18); color: #a87bc4;
+                             font-weight: 600; letter-spacing: 0.4px;">CLOUD-FREE</span>
+              </div>
+              <p style="margin: 0 0 14px; color: var(--c-text); font-size: 14.5px; line-height: 1.55;">
+                <strong>Physically cannot talk to any public LLM endpoint.</strong>
+                <code style="color: #a87bc4; font-size: 12.5px;">api.openai.com</code> · <code style="color: #a87bc4; font-size: 12.5px;">api.anthropic.com</code> · <code style="color: #a87bc4; font-size: 12.5px;">openrouter.ai</code> · <code style="color: #a87bc4; font-size: 12.5px;">api.mistral.ai</code> · <code style="color: #a87bc4; font-size: 12.5px;">api.groq.com</code> · everything else — refused at the network layer. Ollama / llama.cpp / LAN-hosted LLMs continue to work.
+              </p>
+              <p style="margin: 0 0 16px; color: var(--text-dim); font-size: 13px; line-height: 1.55;">
+                For regulated industries (finance, healthcare, legal, gov), data-sovereignty regions (EU GDPR, India RBI, China), air-gapped engineering networks. Built via <code style="color:#a87bc4; font-size:12px;">-DNOTEPATRA_NO_CLOUD=ON</code> — auditable, no setting to flip.
+              </p>
+              <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px;">
+                <span style="font-size: 12px; padding: 5px 10px; border-radius: 6px;
+                             background: var(--c-bg); color: var(--text-dim);
+                             border: 1px solid var(--c-border);">notepatra-local-ai_*_amd64.deb</span>
+                <span style="font-size: 12px; padding: 5px 10px; border-radius: 6px;
+                             background: var(--c-bg); color: var(--text-dim);
+                             border: 1px solid var(--c-border);">notepatra-local-ai_*_arm64.deb</span>
+                <span style="font-size: 12px; padding: 5px 10px; border-radius: 6px;
+                             background: var(--c-bg); color: var(--text-dim);
+                             border: 1px solid var(--c-border);">notepatra-local-ai-*.msi</span>
+              </div>
+              <a href="https://github.com/singhpratech/notepatra/releases/latest"
+                 style="display: inline-flex; align-items: center; gap: 6px;
+                        margin-top: 18px; padding: 9px 16px; border-radius: 8px;
+                        background: #a87bc4; color: white; text-decoration: none;
+                        font-weight: 600; font-size: 13.5px;">
+                Get Notepatra Local AI v0.1.72 →
+              </a>
+            </div>
+          </div>
+
+          <p style="margin: 18px auto 0; max-width: 760px; text-align: center;
+                    font-size: 12.5px; color: var(--text-dim); line-height: 1.6;">
+            Both flavors are local-first by default. The regular build adds optional cloud LLM URLs you paste in Settings; the Local AI build refuses them at the network layer for auditable compliance. <code style="color:var(--green); font-size:12px;">notepatra --version</code> tells you which flavor you have installed.
+          </p>
+        </div>
 
         <div class="download-grid">
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
@@ -1850,52 +1968,68 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.71 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.72 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-05-11</span>
-                        <span>· AI Interaction Log — audit every cloud + local LLM exchange.</span>
+                        <span>· Enterprise installers + cloud-free <code>notepatra-local-ai</code> build.</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>📜 AI Interaction Log (Tools → AI Interaction Log…)</h5>
+                        <h5>📦 Fleet-grade installers for every Linux distro</h5>
                         <ul>
-                            <li>Every request and response that hits any cloud (OpenRouter, OpenAI, Azure OpenAI, Ollama Cloud) or local (Ollama, llama.cpp, LM Studio / Jan / vLLM via OpenAI-compat) backend is recorded into <code>~/.config/notepatra/ai-logs/interactions.db</code> — SQLite in WAL mode, so writes never block the GUI.</li>
-                            <li>Schema captures timestamp, session id (one per app launch), backend tag, model, mode (chat / coding / data), role (user / system / assistant / tool_call / tool_result), full content, tool name + args + result, prompt + eval tokens, elapsed ms, and any error string. Total file capped at 50 MB; rows older than 7 days are pruned on every app start.</li>
-                            <li>New viewer dialog: backend / mode / model filters, table view with row-click → full content panel, <strong>Export JSON</strong> (up to 10,000 events), <strong>Prune now</strong>, <strong>Toggle "Log AI interactions"</strong> to opt out in-place.</li>
+                            <li><strong>.deb</strong> for Debian / Ubuntu / Mint / Pop!_OS (x64 + ARM64) — <code>sudo apt install ./notepatra_0.1.72_amd64.deb</code> drops the binary at <code>/opt/notepatra/</code> with a <code>/usr/bin/notepatra</code> symlink, full hicolor icon set, <code>.desktop</code> registration, GTK / desktop-database trigger hooks.</li>
+                            <li><strong>.rpm</strong> for Fedora / RHEL / CentOS Stream / Rocky / Alma (x64 + ARM64) — <code>sudo dnf install ./notepatra-0.1.72-1.x86_64.rpm</code>. Bundles QScintilla 2.14.1 alongside the binary because Fedora's <code>qscintilla-qt5</code> package exports a subtly different symbol set; the bundled copy means the same upstream binary runs uniformly across distros.</li>
+                            <li><strong>AppImage</strong> for Arch / openSUSE Tumbleweed / Manjaro / EndeavourOS / any glibc 2.38+ distro — <code>chmod +x Notepatra-0.1.72-x86_64.AppImage</code> and run. Linuxdeploy + linuxdeploy-plugin-qt bundle Qt5 + plugins; libGL stays a host dep (standard AppImage convention). Older glibc → use .deb / .rpm.</li>
+                            <li><strong>Windows MSI</strong> (already in v0.1.71) — <code>msiexec /i notepatra-0.1.72.msi /quiet</code> for SCCM / Intune push. <strong>macOS DMG</strong> — drag to <code>/Applications</code>; admins can <code>sudo cp -R</code> from a script.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🛡 Credential scrubbing before write</h5>
+                        <h5>🔒 <code>notepatra-local-ai</code> — by-construction cloud-free build</h5>
                         <ul>
-                            <li>Every value written to the DB runs through a regex pass that masks <code>Bearer …</code> tokens, OpenAI <code>sk-…</code>, Anthropic <code>sk-ant-…</code>, GitHub PATs (<code>ghp_/ghs_/gho_/ghu_/ghr_…</code>), AWS access keys (<code>AKIA…</code>), Google API keys (<code>AIza…</code>), and <code>-----BEGIN ... PRIVATE KEY-----</code> PEM blocks. The log can never become a new credential-exfil path.</li>
-                            <li><strong>No network egress.</strong> The log is purely local SQLite — Notepatra never uploads, mirrors, or syncs it.</li>
+                            <li>Compile-time flag <code>-DNOTEPATRA_NO_CLOUD=ON</code> produces a binary that <strong>physically refuses</strong> to talk to <code>api.openai.com</code>, <code>api.anthropic.com</code>, <code>api.mistral.ai</code>, <code>openrouter.ai</code>, <code>generativelanguage.googleapis.com</code>, <code>api.groq.com</code>, <code>api.together.xyz</code>, <code>api.deepseek.com</code>, <code>api.cohere.com</code>, <code>api.x.ai</code>, or any other public LLM endpoint. Three layers of defense: UI strips the cloud preset shortcuts + cloud-URL paste box, <code>QNetworkAccessManager</code> requests are gated by a 49-case unit-tested allowlist (<code>NotepatraNetworkPolicy::isPrivateNetworkHost</code>), <code>QNetworkRequest</code> refuses to fire if the host isn't loopback / RFC1918 / CGNAT-100.64/10 / IPv6-ULA fc00::/7 / <code>.local</code> / <code>.lan</code> / <code>.internal</code> / <code>.intranet</code> / <code>.corp</code> / <code>.home</code>.</li>
+                            <li><strong>Shipped as</strong> <code>notepatra-local-ai_0.1.72_amd64.deb</code> / <code>_arm64.deb</code> (Debian/Ubuntu) and <code>notepatra-local-ai-0.1.72.msi</code> (Windows, per-machine MSI to <code>C:\Program Files\Notepatra Local AI\</code> with its own UpgradeCode). Ollama / llama.cpp / LM Studio / Jan / vLLM / self-hosted Ollama on the LAN — all continue to work.</li>
+                            <li><strong>For regulated industries</strong> — finance, healthcare, legal, government — and data-sovereignty regions (EU GDPR, India RBI, China). Auditors confirm via <code>strings notepatra | grep -c openai.com</code> = zero hits, or <code>notepatra --version</code> = <code>Notepatra v0.1.72 (cloud-free / local-ai)</code>.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>⚙ Privacy-as-transparency — default ON, opt-out anywhere</h5>
+                        <h5>🧪 Validation</h5>
                         <ul>
-                            <li><code>Config::aiInteractionLogging = true</code> by default so users can see exactly what their editor is sending. Flip off from the dialog or set <code>aiInteractionLogging:false</code> in <code>config.json</code> — the recorder becomes a no-op and the database file isn't even opened.</li>
-                            <li>Existing installs opt in by default on first launch under v0.1.71; ~50 ms one-time cost to create the SQLite DB + indexes.</li>
+                            <li>New unit test <code>test_network_policy.cpp</code> — 49 cases (every loopback / RFC1918 / CGNAT / IPv6-ULA range + every cloud LLM endpoint we know about + adversarial look-alikes like <code>api.openai.com.evil.com</code> and <code>localhost.attacker.com</code>). 28/28 ctest pass on both the regular and cloud-free build flavors.</li>
+                            <li>Local Docker verification: <code>.deb</code> install on Ubuntu 24.04, <code>.rpm</code> install on Fedora 40, AppImage extract-and-run on bare Fedora — every artefact launches end-to-end with bundled QScintilla resolved via RPATH <code>$ORIGIN/lib</code>.</li>
                         </ul>
                     </div>
                     <div class="version-section">
                         <h5>🔌 How it's wired</h5>
                         <ul>
-                            <li>New module <code>src/ai_interaction_log.{h,cpp}</code> (~280 LoC) — public namespace API (<code>record / recordUser / recordAssistant / recordToolCall / recordToolResult / recordError / query / pruneOld / setEnabled</code>).</li>
-                            <li>New viewer <code>src/ai_log_dialog.{h,cpp}</code> (~250 LoC) — plain Qt widgets (<code>QTableWidget</code>, <code>QPlainTextEdit</code>, <code>QSplitter</code>). No new dependencies.</li>
-                            <li><code>OllamaClient::generate()</code> records the outgoing user prompt + system prompt before the HTTP request leaves; assistant completions log at every <code>responseStats</code> emit site (Ollama <code>/api/generate</code> + <code>/api/chat</code> done frame, OpenAI-compat <code>[DONE]</code> frame, OpenAI-compat <code>finish_reason</code> frame), each resolving the backend tag from <code>m_baseUrl</code>.</li>
+                            <li>New module <code>src/network_policy.{h,cpp}</code> — pure helper <code>isPrivateNetworkHost(QUrl)</code> with no DNS lookups (name-based, TOCTOU-safe).</li>
+                            <li>Gates inserted at every <code>m_nam-&gt;get()</code> / <code>m_nam-&gt;post()</code> call site in <code>ollama.cpp</code> via the <code>NOTEPATRA_NO_CLOUD_GATE</code> + <code>NOTEPATRA_NO_CLOUD_OK</code> macros (no-op in regular build, refuse-and-emit-error under <code>NOTEPATRA_NO_CLOUD</code>).</li>
+                            <li>New build scripts <code>installers/debian/build-deb.sh</code>, <code>installers/rpm/{notepatra.spec.in, build-rpm.sh}</code>, <code>installers/appimage/build-appimage.sh</code> — usable standalone for downstream packagers.</li>
+                            <li><code>installers/windows.wxs</code> parameterized via <code>&lt;?ifdef NoCloud ?&gt;</code> — passing <code>-dNoCloud</code> to <code>candle.exe</code> flips ProductName, UpgradeCode, install dir, Add/Remove Programs entry to the Local AI variant.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.71">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.72">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.71">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.72">Commits</a>
                 </div>
             </div>
             <!-- Older releases: slim link rows only. Full notes live on GitHub. -->
+            <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.71"
+               class="version-card-link"
+               style="display:flex; justify-content:space-between; align-items:center;
+                      padding:14px 20px; margin-top:6px;
+                      background:var(--c-surface); border:1px solid var(--c-border);
+                      border-radius:10px; text-decoration:none;
+                      color:var(--c-text-muted); font-size:13px;
+                      transition:border-color .15s, color .15s;"
+               onmouseover="this.style.borderColor='var(--green)';this.style.color='var(--c-text)';"
+               onmouseout="this.style.borderColor='var(--c-border)';this.style.color='var(--c-text-muted)';">
+                <span><strong style="color:var(--c-text);">v0.1.71</strong> · 2026-05-11 · AI Interaction Log — audit every cloud + local LLM exchange (SQLite, WAL mode, 7-day rotation, credential scrubber).</span>
+                <span style="color:var(--green); font-weight:600;">View on GitHub →</span>
+            </a>
             <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.70"
                class="version-card-link"
                style="display:flex; justify-content:space-between; align-items:center;

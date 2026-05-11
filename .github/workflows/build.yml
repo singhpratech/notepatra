@@ -97,6 +97,72 @@ jobs:
           name: notepatra-linux-x64-full
           path: build-full/notepatra
 
+      # ─── v0.1.72: Fleet-grade Linux installers ───────────────────────
+      # .deb + .rpm + AppImage for the regular (lite) flavor, plus a
+      # cloud-free .deb (notepatra-local-ai) built from a second pass
+      # with -DNOTEPATRA_NO_CLOUD=ON.  All three formats use the lite
+      # binary; heavy bits stay opt-in per the project's bare-binary
+      # policy.  Local Docker verification is in installers/{debian,rpm,
+      # appimage}/build-*.sh — they're authoritative; if anything in this
+      # block fails, the scripts themselves work standalone.
+      - name: Build C++ (cloud-free flavor for local-ai .deb)
+        run: |
+          rm -rf build-nocloud && mkdir -p build-nocloud && cd build-nocloud
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DNOTEPATRA_NO_CLOUD=ON
+          make -j$(nproc) notepatra
+          ./notepatra --version
+
+      - name: Install packaging deps
+        run: |
+          sudo apt-get install -y \
+            patchelf fakeroot dpkg-dev rpm \
+            curl ca-certificates file zsync libfuse2 \
+            qt5-qmake qttranslations5-l10n libqt5svg5 \
+            libxcb-cursor0 desktop-file-utils
+
+      - name: Build .deb (regular + cloud-free)
+        run: |
+          VERSION=$(grep -E "^project.*VERSION" CMakeLists.txt | sed -E 's/.*VERSION ([0-9.]+).*/\1/')
+          bash installers/debian/build-deb.sh "$VERSION" amd64 regular  build
+          bash installers/debian/build-deb.sh "$VERSION" amd64 local-ai build-nocloud
+          ls -lh notepatra*amd64.deb
+
+      - name: Build .rpm
+        run: |
+          VERSION=$(grep -E "^project.*VERSION" CMakeLists.txt | sed -E 's/.*VERSION ([0-9.]+).*/\1/')
+          bash installers/rpm/build-rpm.sh "$VERSION" x86_64 build
+          ls -lh notepatra-*x86_64.rpm
+
+      - name: Build AppImage (x86_64)
+        run: |
+          VERSION=$(grep -E "^project.*VERSION" CMakeLists.txt | sed -E 's/.*VERSION ([0-9.]+).*/\1/')
+          bash installers/appimage/build-appimage.sh "$VERSION" x86_64 build
+          ls -lh Notepatra-*x86_64.AppImage
+
+      - name: Upload artifact (.deb regular)
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepatra-linux-x64-deb
+          path: notepatra_*_amd64.deb
+
+      - name: Upload artifact (.deb local-ai cloud-free)
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepatra-linux-x64-deb-local-ai
+          path: notepatra-local-ai_*_amd64.deb
+
+      - name: Upload artifact (.rpm)
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepatra-linux-x64-rpm
+          path: notepatra-*x86_64.rpm
+
+      - name: Upload artifact (AppImage)
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepatra-linux-x64-appimage
+          path: Notepatra-*x86_64.AppImage
+
   build-linux-arm:
     runs-on: ubuntu-24.04-arm
     steps:
@@ -166,6 +232,53 @@ jobs:
         with:
           name: notepatra-linux-arm64-full
           path: build-full/notepatra
+
+      # ─── v0.1.72: Fleet-grade Linux installers (ARM64) ───────────────
+      # Same .deb + .rpm matrix as x64.  No AppImage on ARM in this
+      # release — linuxdeploy's aarch64 plugin support is less mature
+      # and we want to ship a known-good initial set; ARM AppImage can
+      # land in v0.1.73 after the v0.1.72 .deb/.rpm flow proves out.
+      - name: Build C++ (cloud-free flavor for local-ai .deb)
+        run: |
+          rm -rf build-nocloud && mkdir -p build-nocloud && cd build-nocloud
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DNOTEPATRA_NO_CLOUD=ON
+          make -j$(nproc) notepatra
+          ./notepatra --version
+
+      - name: Install packaging deps
+        run: |
+          sudo apt-get install -y patchelf fakeroot dpkg-dev rpm
+
+      - name: Build .deb (regular + cloud-free)
+        run: |
+          VERSION=$(grep -E "^project.*VERSION" CMakeLists.txt | sed -E 's/.*VERSION ([0-9.]+).*/\1/')
+          bash installers/debian/build-deb.sh "$VERSION" arm64 regular  build
+          bash installers/debian/build-deb.sh "$VERSION" arm64 local-ai build-nocloud
+          ls -lh notepatra*arm64.deb
+
+      - name: Build .rpm
+        run: |
+          VERSION=$(grep -E "^project.*VERSION" CMakeLists.txt | sed -E 's/.*VERSION ([0-9.]+).*/\1/')
+          bash installers/rpm/build-rpm.sh "$VERSION" aarch64 build
+          ls -lh notepatra-*aarch64.rpm
+
+      - name: Upload artifact (.deb regular ARM)
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepatra-linux-arm64-deb
+          path: notepatra_*_arm64.deb
+
+      - name: Upload artifact (.deb local-ai ARM)
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepatra-linux-arm64-deb-local-ai
+          path: notepatra-local-ai_*_arm64.deb
+
+      - name: Upload artifact (.rpm ARM)
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepatra-linux-arm64-rpm
+          path: notepatra-*aarch64.rpm
 
   # Note: Intel Mac (macos-13) build was removed — Apple stopped selling Intel Macs in 2023,
   # and the macos-13 free runner has been unreliable. Apple Silicon build covers all current
@@ -1175,6 +1288,115 @@ jobs:
           $msiSize = [math]::Round((Get-Item "notepatra-$version.msi").Length / 1MB, 2)
           Write-Host "✓ Built notepatra-$version.msi ($msiSize MB)"
 
+      # ─── v0.1.72: Cloud-free Windows variant (notepatra-local-ai) ───
+      # Second compile pass with -DNOTEPATRA_NO_CLOUD=ON produces a
+      # notepatra.exe that physically refuses to talk to public LLM
+      # endpoints (api.openai.com / api.anthropic.com / etc.).  We then
+      # re-use the already-assembled notepatra-win/ directory (Qt + Qt
+      # plugins + QScintilla DLL + Rust core) and just swap in the
+      # cloud-free exe before re-running heat + candle + light with
+      # -dNoCloud to flip the WiX wxs to the Notepatra Local AI variant
+      # (different ProductName, UpgradeCode, install dir).
+      - name: Build C++ (cloud-free flavor for local-ai MSI)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $qtRoot = "${{ steps.qscintilla.outputs.QT_ROOT }}"
+          New-Item -ItemType Directory -Force -Path build-nocloud | Out-Null
+          Set-Location build-nocloud
+          $vsMajor = 0
+          if ($env:VisualStudioVersion) {
+              $vsMajor = [int]($env:VisualStudioVersion.Split('.')[0])
+          }
+          switch ($vsMajor) {
+              18 { $vsGen = "Visual Studio 18 2026" }
+              17 { $vsGen = "Visual Studio 17 2022" }
+              default {
+                  Write-Host "::warning::Unrecognised VisualStudioVersion='$($env:VisualStudioVersion)'; falling back to VS 17 2022."
+                  $vsGen = "Visual Studio 17 2022"
+              }
+          }
+          cmake .. -G "$vsGen" -A x64 `
+              "-DCMAKE_PREFIX_PATH=$qtRoot" `
+              "-DQSCINTILLA_INCLUDE=${{ steps.qscintilla.outputs.QSC_INC }}" `
+              "-DQSCINTILLA_LIB=${{ steps.qscintilla.outputs.QSC_LIB }}" `
+              -DCMAKE_BUILD_TYPE=Release `
+              -DNOTEPATRA_NO_CLOUD=ON
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::cmake configure (cloud-free) failed"; exit 1 }
+          cmake --build . --config Release --target notepatra
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::cmake build (cloud-free) failed"; exit 1 }
+          if (-not (Test-Path "Release\notepatra.exe")) {
+              Write-Host "::error::cloud-free notepatra.exe missing"
+              exit 1
+          }
+
+      - name: Build Windows MSI cloud-free (notepatra-local-ai)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF -like "refs/tags/v*") {
+              $env:GITHUB_REF.Substring(11)
+          } else { "0.0.0" }
+          Write-Host "Building local-ai MSI for version: $version"
+
+          $wixBin = "${env:WIX}bin"
+          if (-not (Test-Path $wixBin)) {
+              $wixBin = "C:\Program Files (x86)\WiX Toolset v3.14\bin"
+              if (-not (Test-Path $wixBin)) {
+                  $wixBin = "C:\Program Files (x86)\WiX Toolset v3.11\bin"
+              }
+          }
+          $candle = Join-Path $wixBin "candle.exe"
+          $light  = Join-Path $wixBin "light.exe"
+          $heat   = Join-Path $wixBin "heat.exe"
+
+          # Re-use the regular Windows bundle (Qt DLLs + Qt plugins +
+          # QScintilla DLL + Rust core dll) but swap in the cloud-free
+          # exe.  ~85 MB of shared DLLs not rebuilt redundantly.
+          if (Test-Path notepatra-local-ai-win) {
+              Remove-Item -Recurse -Force notepatra-local-ai-win
+          }
+          Copy-Item notepatra-win notepatra-local-ai-win -Recurse -Force
+          Copy-Item build-nocloud\Release\notepatra.exe notepatra-local-ai-win\notepatra.exe -Force
+
+          # Harvest the new bundle dir into its own component-group file.
+          & $heat dir notepatra-local-ai-win `
+              -cg HarvestedComponents `
+              -dr INSTALLFOLDER `
+              -var var.SourceDir `
+              -gg -g1 -sfrag -srd -sreg -scom `
+              -out installers\HarvestedFiles-local-ai.wxs
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::heat (local-ai) failed"; exit 1 }
+          (Get-Content installers\HarvestedFiles-local-ai.wxs) `
+              -replace '<Component[^>]*>[^<]*<File[^>]*notepatra\.exe[^>]*/>[^<]*</Component>','' `
+              | Set-Content installers\HarvestedFiles-local-ai.wxs
+
+          # candle: pass -dNoCloud so the wxs's <?ifdef NoCloud ?>
+          # branches activate (ProductName, UpgradeCode, INSTALLFOLDER
+          # all flip to the Notepatra Local AI variants).  Output goes
+          # to installers\nocloud\ so we don't clobber the regular
+          # MSI's already-built wixobj files.
+          New-Item -ItemType Directory -Force -Path installers\nocloud | Out-Null
+          & $candle -arch x64 -dNoCloud "-dVersion=$version" `
+              "-dSourceDir=notepatra-local-ai-win" `
+              -ext WixUtilExtension `
+              -out installers\nocloud\ `
+              installers\windows.wxs installers\HarvestedFiles-local-ai.wxs
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::candle (local-ai) failed"; exit 1 }
+
+          & $light -ext WixUIExtension -ext WixUtilExtension `
+              -cultures:en-us `
+              -out "notepatra-local-ai-$version.msi" `
+              installers\nocloud\windows.wixobj installers\nocloud\HarvestedFiles-local-ai.wixobj
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::light (local-ai) failed"; exit 1 }
+
+          if (-not (Test-Path "notepatra-local-ai-$version.msi")) {
+              Write-Host "::error::local-ai MSI missing after build"
+              exit 1
+          }
+          $msiSize = [math]::Round((Get-Item "notepatra-local-ai-$version.msi").Length / 1MB, 2)
+          Write-Host "✓ Built notepatra-local-ai-$version.msi ($msiSize MB)"
+
       - name: Upload artifact (portable zip)
         uses: actions/upload-artifact@v4
         with:
@@ -1192,7 +1414,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: notepatra-windows-msi
-          path: notepatra-*.msi
+          path: notepatra-0.*.msi
+          if-no-files-found: ignore
+
+      - name: Upload artifact (MSI cloud-free / local-ai)
+        uses: actions/upload-artifact@v4
+        with:
+          name: notepatra-windows-msi-local-ai
+          path: notepatra-local-ai-*.msi
           if-no-files-found: ignore
 
       # ─── Failure diagnostics — must be LAST so it sees failures from any prior step ───
@@ -1355,8 +1584,36 @@ jobs:
               ls -la "notepatra-${VERSION}.msi"
             fi
           fi
+          # v0.1.72 — cloud-free Windows MSI (notepatra-local-ai)
+          if [ -d notepatra-windows-msi-local-ai ]; then
+            MSI=$(ls notepatra-windows-msi-local-ai/notepatra-local-ai-*.msi 2>/dev/null | head -1)
+            if [ -n "$MSI" ]; then
+              cp "$MSI" "notepatra-local-ai-${VERSION}.msi"
+              ls -la "notepatra-local-ai-${VERSION}.msi"
+            fi
+          fi
           ls -la *.tar.gz *.dmg 2>/dev/null
           ls -la *.zip *.exe *.msi 2>/dev/null || true
+          # v0.1.72 — Linux fleet installers.  Each build job already
+          # named its artefact directory after the package; we just move
+          # the file out so the rest of the release pipeline sees it at
+          # the workspace root next to the .tar.gz / .dmg / .msi etc.
+          for D in notepatra-linux-x64-deb notepatra-linux-x64-deb-local-ai \
+                   notepatra-linux-arm64-deb notepatra-linux-arm64-deb-local-ai; do
+              if [ -d "$D" ]; then
+                  cp "$D"/*.deb . 2>/dev/null || true
+              fi
+          done
+          for D in notepatra-linux-x64-rpm notepatra-linux-arm64-rpm; do
+              if [ -d "$D" ]; then
+                  cp "$D"/*.rpm . 2>/dev/null || true
+              fi
+          done
+          if [ -d notepatra-linux-x64-appimage ]; then
+              cp notepatra-linux-x64-appimage/*.AppImage . 2>/dev/null || true
+              chmod +x ./*.AppImage 2>/dev/null || true
+          fi
+          ls -la *.deb *.rpm *.AppImage 2>/dev/null || true
 
       - name: Checkout source for release notes
         uses: actions/checkout@v4
@@ -1371,7 +1628,11 @@ jobs:
           for f in notepatra-linux-x64.tar.gz notepatra-linux-arm64.tar.gz \
                    notepatra-linux-x64-full.tar.gz notepatra-linux-arm64-full.tar.gz \
                    notepatra-macos-arm64.dmg \
-                   notepatra-windows-x64.zip notepatra-setup-*.exe notepatra-*.msi; do
+                   notepatra-windows-x64.zip notepatra-setup-*.exe notepatra-*.msi \
+                   notepatra_*_amd64.deb notepatra_*_arm64.deb \
+                   notepatra-local-ai_*_amd64.deb notepatra-local-ai_*_arm64.deb \
+                   notepatra-*x86_64.rpm notepatra-*aarch64.rpm \
+                   Notepatra-*x86_64.AppImage; do
             [ -f "$f" ] && sha256sum "$f" >> SHA256SUMS
           done
           echo "=== SHA256SUMS ==="
@@ -1423,7 +1684,12 @@ jobs:
           for f in notepatra-linux-x64.tar.gz notepatra-linux-arm64.tar.gz \
                    notepatra-linux-x64-full.tar.gz notepatra-linux-arm64-full.tar.gz \
                    notepatra-macos-arm64.dmg \
-                   notepatra-windows-x64.zip notepatra-setup-*.exe notepatra-*.msi SHA256SUMS; do
+                   notepatra-windows-x64.zip notepatra-setup-*.exe notepatra-*.msi \
+                   notepatra_*_amd64.deb notepatra_*_arm64.deb \
+                   notepatra-local-ai_*_amd64.deb notepatra-local-ai_*_arm64.deb \
+                   notepatra-*x86_64.rpm notepatra-*aarch64.rpm \
+                   Notepatra-*x86_64.AppImage \
+                   SHA256SUMS; do
             [ -f "$f" ] || continue
             cosign sign-blob --yes \
               --output-signature "${f}.sig" \
@@ -1444,6 +1710,13 @@ jobs:
             notepatra-windows-x64.zip
             notepatra-setup-*.exe
             notepatra-*.msi
+            notepatra_*_amd64.deb
+            notepatra_*_arm64.deb
+            notepatra-local-ai_*_amd64.deb
+            notepatra-local-ai_*_arm64.deb
+            notepatra-*x86_64.rpm
+            notepatra-*aarch64.rpm
+            Notepatra-*x86_64.AppImage
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -1457,6 +1730,13 @@ jobs:
             notepatra-windows-x64.zip
             notepatra-setup-*.exe
             notepatra-*.msi
+            notepatra_*_amd64.deb
+            notepatra_*_arm64.deb
+            notepatra-local-ai_*_amd64.deb
+            notepatra-local-ai_*_arm64.deb
+            notepatra-*x86_64.rpm
+            notepatra-*aarch64.rpm
+            Notepatra-*x86_64.AppImage
             SHA256SUMS
             notepatra-linux-x64.tar.gz.sig
             notepatra-linux-x64.tar.gz.pem
@@ -1474,6 +1754,20 @@ jobs:
             notepatra-setup-*.exe.pem
             notepatra-*.msi.sig
             notepatra-*.msi.pem
+            notepatra_*_amd64.deb.sig
+            notepatra_*_amd64.deb.pem
+            notepatra_*_arm64.deb.sig
+            notepatra_*_arm64.deb.pem
+            notepatra-local-ai_*_amd64.deb.sig
+            notepatra-local-ai_*_amd64.deb.pem
+            notepatra-local-ai_*_arm64.deb.sig
+            notepatra-local-ai_*_arm64.deb.pem
+            notepatra-*x86_64.rpm.sig
+            notepatra-*x86_64.rpm.pem
+            notepatra-*aarch64.rpm.sig
+            notepatra-*aarch64.rpm.pem
+            Notepatra-*x86_64.AppImage.sig
+            Notepatra-*x86_64.AppImage.pem
             SHA256SUMS.sig
             SHA256SUMS.pem
           fail_on_unmatched_files: false

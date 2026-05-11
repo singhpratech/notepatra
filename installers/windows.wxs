@@ -15,9 +15,31 @@
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
      xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
 
-  <?define ProductName = "Notepatra" ?>
+  <!-- v0.1.72 — Two MSI flavors share this wxs file.  Pass `-dNoCloud`
+       to candle.exe to compile the cloud-free variant (notepatra-local-ai).
+       Both flavors install per-machine, but they have:
+         • different ProductName    (different entry in Add/Remove Programs)
+         • different UpgradeCode    (independent upgrade paths — MSI sees
+                                     them as two distinct products)
+         • different INSTALLFOLDER  (different install dir on disk)
+         • different Description / Comments in the package metadata
+       so an admin can deploy either or both side-by-side.  Pick the
+       local-ai MSI for regulated environments where public LLM
+       endpoints must be blocked at the binary level. -->
+  <?ifdef NoCloud ?>
+    <?define ProductName = "Notepatra Local AI" ?>
+    <?define UpgradeCode = "B7C8D9E0-1F2A-3B4C-5D6E-7F8A9B0C1D2E" ?>
+    <?define ProductDescription = "Notepatra Local AI" ?>
+    <?define ProductComments = "Cloud-free Notepatra — local and private-network LLM endpoints only. The binary physically refuses to talk to api.openai.com / api.anthropic.com / api.mistral.ai / openrouter.ai / generativelanguage.googleapis.com / any public LLM endpoint. Ollama, llama.cpp, LM Studio, Jan, self-hosted Ollama on the LAN continue to work. GPL-3.0 licensed." ?>
+    <?define LaunchText = "Launch Notepatra Local AI" ?>
+  <?else ?>
+    <?define ProductName = "Notepatra" ?>
+    <?define UpgradeCode = "8D5E3C42-1F9A-4B7E-9D6C-1A2B3C4D5E6F" ?>
+    <?define ProductDescription = "Notepatra" ?>
+    <?define ProductComments = "Native C++/Rust code editor for the AI era. Local AI formatters (Ollama/llama.cpp). GPL-3.0 licensed." ?>
+    <?define LaunchText = "Launch Notepatra" ?>
+  <?endif ?>
   <?define Publisher = "Prateek Singh" ?>
-  <?define UpgradeCode = "8D5E3C42-1F9A-4B7E-9D6C-1A2B3C4D5E6F" ?>
   <?define HelpUrl = "https://github.com/singhpratech/notepatra" ?>
   <?define HomeUrl = "https://notepatra.org" ?>
 
@@ -31,12 +53,12 @@
     <Package InstallerVersion="500"
              Compressed="yes"
              InstallScope="perMachine"
-             Description="Notepatra"
-             Comments="Native C++/Rust code editor for the AI era. Local AI formatters (Ollama/llama.cpp). GPL-3.0 licensed."
+             Description="$(var.ProductDescription)"
+             Comments="$(var.ProductComments)"
              Manufacturer="$(var.Publisher)" />
 
     <!-- Auto-upgrade: uninstall older versions when installing newer ones -->
-    <MajorUpgrade DowngradeErrorMessage="A newer version of Notepatra is already installed."
+    <MajorUpgrade DowngradeErrorMessage="A newer version of $(var.ProductName) is already installed."
                   Schedule="afterInstallInitialize" />
 
     <!-- Embed all files in the MSI rather than an external .cab -->
@@ -51,7 +73,7 @@
     <Property Id="ARPNOMODIFY" Value="1" />
 
     <!-- Launch after install checkbox -->
-    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch Notepatra" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="$(var.LaunchText)" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
     <Property Id="WixShellExecTarget" Value="[#NotepatraExe]" />
     <CustomAction Id="LaunchApplication"

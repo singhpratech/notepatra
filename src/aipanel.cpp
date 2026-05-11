@@ -641,19 +641,55 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // model dropdown so users don't need a separate "GUI catalog" app.
     // Users who DO run LM Studio / Jan can still reach them by picking
     // "llama.cpp" + setting the port via Settings → Preferences → AI.
+    // v0.1.72 — cloud-free build flavor (notepatra-local-ai).
+    // Under NOTEPATRA_NO_CLOUD the four cloud presets vanish from the
+    // dropdown: Ollama Cloud, OpenRouter, OpenAI, Azure OpenAI.  Local
+    // backends (Ollama on :11434, llama.cpp on :8080) stay.  Stored config
+    // pointing at any cloud backend is migrated back to plain "Ollama" so
+    // the user isn't stuck with a stale invalid choice after upgrade.
+#ifdef NOTEPATRA_NO_CLOUD
+    {
+        auto &cfg = Config::instance();
+        static const QStringList kCloudBackends = {
+            QStringLiteral("Ollama Cloud"),
+            QStringLiteral("OpenRouter"),
+            QStringLiteral("OpenAI"),
+            QStringLiteral("Azure OpenAI"),
+        };
+        if (kCloudBackends.contains(cfg.aiBackend, Qt::CaseInsensitive)) {
+            qWarning() << "[notepatra:no-cloud] migrating stored backend"
+                       << cfg.aiBackend << "→ Ollama";
+            cfg.aiBackend = QStringLiteral("Ollama");
+            cfg.aiBaseUrl.clear();
+            cfg.save();
+        }
+    }
+#endif
     auto *backendCombo = new QComboBox;
     backendCombo->addItem("Ollama",             "Ollama");
+    backendCombo->setItemData(backendCombo->count() - 1,
+        "Local Ollama daemon · 11434", Qt::ToolTipRole);
+#ifndef NOTEPATRA_NO_CLOUD
     backendCombo->addItem("Ollama Cloud",       "Ollama Cloud");
+    backendCombo->setItemData(backendCombo->count() - 1,
+        "Hosted Ollama models · gpt-oss:120b · qwen3-coder:480b · deepseek-v3.1:671b",
+        Qt::ToolTipRole);
+#endif
     backendCombo->addItem("llama.cpp (GGUF)",   "llama.cpp");
+    backendCombo->setItemData(backendCombo->count() - 1,
+        "Self-hosted GGUF · llama-server on 8080", Qt::ToolTipRole);
+#ifndef NOTEPATRA_NO_CLOUD
     backendCombo->addItem("OpenRouter",         "OpenRouter");
+    backendCombo->setItemData(backendCombo->count() - 1,
+        "367 models routed across providers · paste OpenRouter key in Settings",
+        Qt::ToolTipRole);
     backendCombo->addItem("OpenAI",             "OpenAI");
+    backendCombo->setItemData(backendCombo->count() - 1,
+        "OpenAI direct · GPT-4o / GPT-5 / o-series", Qt::ToolTipRole);
     backendCombo->addItem("Azure OpenAI",       "Azure OpenAI");
-    backendCombo->setItemData(0, "Local Ollama daemon · 11434", Qt::ToolTipRole);
-    backendCombo->setItemData(1, "Hosted Ollama models · gpt-oss:120b · qwen3-coder:480b · deepseek-v3.1:671b", Qt::ToolTipRole);
-    backendCombo->setItemData(2, "Self-hosted GGUF · llama-server on 8080", Qt::ToolTipRole);
-    backendCombo->setItemData(3, "367 models routed across providers · paste OpenRouter key in Settings", Qt::ToolTipRole);
-    backendCombo->setItemData(4, "OpenAI direct · GPT-4o / GPT-5 / o-series", Qt::ToolTipRole);
-    backendCombo->setItemData(5, "Azure OpenAI · enterprise Azure resource + deployment", Qt::ToolTipRole);
+    backendCombo->setItemData(backendCombo->count() - 1,
+        "Azure OpenAI · enterprise Azure resource + deployment", Qt::ToolTipRole);
+#endif
     backendCombo->setFixedWidth(170);
 
     // Initialise from Config. blockSignals() prevents the
@@ -664,27 +700,32 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     {
         const QString be = Config::instance().aiBackend;
         const QString url = Config::instance().aiBaseUrl;
-        // Index map: 0=Ollama, 1=Ollama Cloud, 2=llama.cpp, 3=OpenRouter,
-        // 4=OpenAI, 5=Azure OpenAI.
+        // findData by the userData string keeps us index-agnostic — the
+        // cloud-free build omits 4 entries from this combo, so any code
+        // that hard-coded "Ollama Cloud is index 1" would now point at the
+        // wrong row.  Returns -1 when the key isn't present, which
+        // QComboBox treats as a no-op (combo stays at its current index 0).
+        int idx = -1;
         if (be.compare("Ollama Cloud", Qt::CaseInsensitive) == 0
             || url.contains("ollama.com")) {
-            backendCombo->setCurrentIndex(1);
+            idx = backendCombo->findData("Ollama Cloud");
         } else if (be.compare("llama.cpp", Qt::CaseInsensitive) == 0) {
-            backendCombo->setCurrentIndex(2);
+            idx = backendCombo->findData("llama.cpp");
         } else if (be.compare("OpenRouter", Qt::CaseInsensitive) == 0
                    || url.contains("openrouter")) {
-            backendCombo->setCurrentIndex(3);
+            idx = backendCombo->findData("OpenRouter");
         } else if (be.compare("OpenAI", Qt::CaseInsensitive) == 0
                    || url.contains("api.openai.com")) {
-            backendCombo->setCurrentIndex(4);
+            idx = backendCombo->findData("OpenAI");
         } else if (be.compare("Azure OpenAI", Qt::CaseInsensitive) == 0
                    || url.contains("openai.azure.com")) {
-            backendCombo->setCurrentIndex(5);
-        } else {
-            // Stale LM Studio / Jan URLs from older configs fall through to
-            // Ollama default — user just picks llama.cpp manually if needed.
-            backendCombo->setCurrentIndex(0);
+            idx = backendCombo->findData("Azure OpenAI");
         }
+        // Fall through to default (Ollama) when the saved backend isn't
+        // selectable — covers stale LM Studio / Jan configs AND the
+        // post-upgrade cloud-free case where the user's cloud choice no
+        // longer exists in the dropdown.
+        backendCombo->setCurrentIndex(idx >= 0 ? idx : 0);
     }
     backendCombo->blockSignals(false);
     connect(backendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),

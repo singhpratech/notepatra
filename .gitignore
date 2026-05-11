@@ -4,6 +4,19 @@ build/
 # ignored alongside the legacy build/ output dir.
 build-lite/
 build-full/
+# v0.1.72+ per-release / per-flavor scratch build dirs created during
+# local Docker iteration on installers (build-v172, build-v172-nocloud,
+# build-nocloud).  Generic pattern catches future versions too.
+build-v*/
+build-nocloud/
+
+# v0.1.72 — Linux installer outputs left behind by local Docker test
+# runs (the installer build-* scripts write packages to cwd).  CI
+# uploads them to GitHub Releases directly; they should never land in
+# the repo.
+*.deb
+*.rpm
+*.AppImage
 # Historical per-release worktrees (v0.1.61 / v0.1.62 / v0.1.63 etc).
 # Registered via `git worktree add`; the working trees live inside
 # this directory but their commit history is on the corresponding

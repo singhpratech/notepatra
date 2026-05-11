@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.71 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.72 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,6 +16,22 @@ option(BUILD_LEXER_TEST "Backward-compatible alias for BUILD_TESTING" OFF)
 # bits installed on demand. Keeps download / launch / disk footprint
 # small for users who don't need charts.
 option(NOTEPATRA_WITH_WEBENGINE "Bundle QtWebEngine for inline Vega-Lite chart rendering (full-mode build)" OFF)
+
+# v0.1.72 — Cloud-free build variant. When ON, the binary physically
+# refuses to talk to any non-private network destination (i.e. anything
+# that's not localhost / 127.x / [::1] / 10.x / 172.16-31.x / 192.168.x /
+# *.local / *.lan / unix sockets). The cloud-URL paste UI is also
+# stripped so the user can't even type api.openai.com — there's no path
+# from the binary to a public LLM endpoint.
+#
+# Shipped as the `notepatra-local-ai` .deb for regulated industries,
+# air-gapped fleets, data-sovereignty compliance.  Ollama / llama.cpp /
+# LM Studio / Jan / self-hosted Ollama on the LAN all continue to work.
+option(NOTEPATRA_NO_CLOUD "Build cloud-free variant — block all non-private LLM endpoints" OFF)
+if(NOTEPATRA_NO_CLOUD)
+    add_compile_definitions(NOTEPATRA_NO_CLOUD=1)
+    message(STATUS "Building cloud-free variant: public LLM endpoints will be refused at runtime")
+endif()
 
 if(BUILD_TESTING OR BUILD_LEXER_TEST)
     enable_testing()
@@ -922,6 +938,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ollama.cpp")
         test_ollama.cpp
         src/ollama.cpp
         src/ai_interaction_log.cpp
+        src/network_policy.cpp   # v0.1.72 — gated in ollama.cpp under NOTEPATRA_NO_CLOUD
     )
     target_include_directories(test_ollama PRIVATE
         ${CMAKE_SOURCE_DIR}/src
@@ -941,6 +958,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_llamacpp.cpp")
         test_llamacpp.cpp
         src/ollama.cpp
         src/ai_interaction_log.cpp
+        src/network_policy.cpp   # v0.1.72 — gated in ollama.cpp under NOTEPATRA_NO_CLOUD
     )
     target_include_directories(test_llamacpp PRIVATE
         ${CMAKE_SOURCE_DIR}/src
@@ -960,6 +978,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_aifix.cpp")
         test_aifix.cpp
         src/ollama.cpp
         src/ai_interaction_log.cpp
+        src/network_policy.cpp   # v0.1.72 — gated in ollama.cpp under NOTEPATRA_NO_CLOUD
     )
     target_include_directories(test_aifix PRIVATE
         ${CMAKE_SOURCE_DIR}/src
@@ -991,6 +1010,28 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_credscrub.cpp")
     add_test(NAME test_credscrub COMMAND $<TARGET_FILE:test_credscrub>)
     set_tests_properties(test_credscrub PROPERTIES LABELS "unit;security;credscrub")
     message(STATUS "Security test enabled — target: test_credscrub")
+endif()
+
+# v0.1.72 — network policy test. Covers the by-construction allowlist that
+# powers the cloud-free build flavor: every loopback/RFC1918/CGNAT/ULA range
+# is private, every cloud LLM endpoint we know about is public.  Always
+# built (the helper compiles in regardless of NOTEPATRA_NO_CLOUD — only the
+# *use* of it inside aipanel/ollama is gated).
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_network_policy.cpp")
+    add_executable(test_network_policy
+        test_network_policy.cpp
+        src/network_policy.cpp
+    )
+    target_include_directories(test_network_policy PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_network_policy PRIVATE
+        Qt5::Core
+        Qt5::Network
+    )
+    add_test(NAME test_network_policy COMMAND $<TARGET_FILE:test_network_policy>)
+    set_tests_properties(test_network_policy PROPERTIES LABELS "unit;security;network-policy;v0172")
+    message(STATUS "Security test enabled — target: test_network_policy")
 endif()
 
 # v0.2 Coding-mode revamp — smoke test for EditPlanList + DiffView. Builds

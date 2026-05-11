@@ -7,6 +7,56 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.72] — 2026-05-11
+
+**Enterprise-ready Linux installers + cloud-free `notepatra-local-ai` build.**
+
+### Added — Fleet-grade Linux installers
+
+- **`.deb`** (Debian / Ubuntu / Mint / Pop!_OS, x64 + ARM64) at `/opt/notepatra/` with `/usr/bin/notepatra` symlink, hicolor icons, `.desktop` registration. `sudo apt install ./notepatra_0.1.72_amd64.deb`.
+- **`.rpm`** (Fedora / RHEL / CentOS Stream / Rocky / Alma, x64 + ARM64). Bundles QScintilla 2.14.1 to defuse Fedora's slightly-different qscintilla-qt5 packaging. `sudo dnf install ./notepatra-0.1.72-1.x86_64.rpm`.
+- **`Notepatra-0.1.72-x86_64.AppImage`** universal Linux build (Arch / openSUSE Tumbleweed / any glibc 2.38+). Built with linuxdeploy + linuxdeploy-plugin-qt.
+
+### Added — `notepatra-local-ai` cloud-free build
+
+- New CMake flag `-DNOTEPATRA_NO_CLOUD=ON` builds a binary that physically refuses to talk to public LLM endpoints. UI strips cloud preset shortcuts; `QNetworkAccessManager` requests gated by a 49-case unit-tested allowlist (`NotepatraNetworkPolicy::isPrivateNetworkHost`). Three independent enforcement layers: UI strip, stored-config migration, per-request gate.
+- Shipped as `notepatra-local-ai_0.1.72_amd64.deb` / `_arm64.deb` (Debian/Ubuntu) and `notepatra-local-ai-0.1.72.msi` (Windows, per-machine, separate UpgradeCode + install dir).
+- `notepatra --version` self-identifies: `Notepatra v0.1.72 (cloud-free / local-ai)`.
+- For regulated industries (finance, healthcare, legal, gov), data-sovereignty regions, air-gapped fleets.
+
+### Added — New files
+
+- `src/network_policy.{h,cpp}` — pure helper, name-based allowlist check, no DNS lookups.
+- `test_network_policy.cpp` — 49 table-driven cases.
+- `installers/debian/build-deb.sh` — single script, both flavors.
+- `installers/rpm/{notepatra.spec.in, build-rpm.sh}` — pre-built-binary RPM.
+- `installers/appimage/build-appimage.sh` — linuxdeploy harness.
+- `release_notes/v0.1.72.md`.
+
+### Changed
+
+- `CMakeLists.txt`: project VERSION 0.1.71 → 0.1.72. New `NOTEPATRA_NO_CLOUD` option.
+- `installers/windows.wxs`: parameterized via WiX `<?ifdef NoCloud ?>` — passing `-dNoCloud` to `candle.exe` produces the Local AI variant MSI (different ProductName, UpgradeCode, install dir).
+- `src/ollama.cpp`: every QNAM call site adds a no-op-or-refuse gate. Macros compile out completely in the regular build.
+- `src/aipanel.cpp`: backend dropdown wraps cloud entries in `#ifndef NOTEPATRA_NO_CLOUD`. Stored-config migration on panel construction.
+- `src/main.cpp`: `--version` output adds the cloud-free suffix when built with `NOTEPATRA_NO_CLOUD`.
+- `README.md`: new "Admin / Fleet install" section.
+- `docs/index.html`: v0.1.72 detail card; v0.1.71 demoted to slim link row.
+- `.github/workflows/build.yml`: 50+ new lines across `build-linux`, `build-linux-arm`, `build-windows`, and `release` jobs to build / sign / publish the new artifacts.
+
+### Tests
+
+- 28/28 ctest pass on both regular and cloud-free build flavors (was 27/27 in v0.1.71).
+- Local Docker verification matrix on Ubuntu 24.04, Fedora 40, and Debian 12 (for the AppImage glibc compat boundary).
+
+### Not in this release (deferred to v0.1.73+)
+
+- macOS DMG flavor of local-ai (notarization cost for a second variant DMG).
+- AppImage ARM64 (linuxdeploy aarch64 plugin maturity).
+- AppImage built on older Ubuntu (22.04 / glibc 2.35) for broader distro coverage.
+
+---
+
 ## [0.1.71] — 2026-05-11
 
 **AI Interaction Log — audit every cloud + local LLM exchange, 7-day rotation, opt-out-able, credential-scrubbed.**

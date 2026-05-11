@@ -12,6 +12,36 @@
 #include <QTimer>
 #include <QDateTime>
 
+// v0.1.72 — cloud-free build flavor. The macros below are no-ops in the
+// regular build; under NOTEPATRA_NO_CLOUD they interpose at every QNAM
+// fire site to refuse non-private destinations, even if the rest of the
+// stack (UI / Config / setBaseUrl override) somehow leaked a public URL
+// through.  Three layers of defense: UI hides cloud presets, setBaseUrl
+// refuses public assignments, these macros are the final firewall.
+//
+// _GATE  — drop-in for void member functions: emits error() + returns.
+// _OK    — predicate variant for probes / non-void callers; caller
+//          decides how to bail (typically return false / return empty).
+#ifdef NOTEPATRA_NO_CLOUD
+#include "network_policy.h"
+#define NOTEPATRA_NO_CLOUD_GATE(URL) \
+    do { \
+        if (!::NotepatraNetworkPolicy::isPrivateNetworkHost((URL))) { \
+            qWarning() << "[notepatra:no-cloud] refused" << (URL).host(); \
+            emit error(QStringLiteral( \
+                "Cloud-free build refused %1 — only localhost / " \
+                "private-network LLM endpoints are allowed in this " \
+                "flavor (notepatra-local-ai).").arg((URL).host())); \
+            return; \
+        } \
+    } while (0)
+#define NOTEPATRA_NO_CLOUD_OK(URL) \
+    (::NotepatraNetworkPolicy::isPrivateNetworkHost((URL)))
+#else
+#define NOTEPATRA_NO_CLOUD_GATE(URL) do { (void)(URL); } while (0)
+#define NOTEPATRA_NO_CLOUD_OK(URL)   (true)
+#endif
+
 // ═══════════════════════════════════════════════════════════════════════
 // Local-AI client.
 //
@@ -123,6 +153,7 @@ bool OllamaClient::isAvailable() {
     const QString probePath = (m_backend == Ollama) ? "/api/tags" : "/v1/models";
     QUrl url(m_baseUrl + probePath);
     if (!url.isValid()) return false;  // hardening: malformed base URL guard
+    if (!NOTEPATRA_NO_CLOUD_OK(url)) return false;  // cloud-free probe refusal — silent (sync caller)
     QNetworkRequest req(url);
     req.setTransferTimeout(3000);  // hardening: explicit transfer timeout (matches sync 3 s budget)
     auto *reply = m_nam->get(req);
@@ -159,6 +190,12 @@ void OllamaClient::listModels() {
     }
     if (!url.isValid()) {  // hardening: bad base-url short-circuits with explicit error
         emit modelsError(QStringLiteral("Invalid backend URL: ") + m_baseUrl);
+        return;
+    }
+    if (!NOTEPATRA_NO_CLOUD_OK(url)) {  // v0.1.72 cloud-free refusal
+        emit modelsError(QStringLiteral("Cloud-free build refused %1 — pick a "
+                                        "local backend (Ollama / llama.cpp).")
+                             .arg(url.host()));
         return;
     }
     QNetworkRequest req(url);
@@ -269,6 +306,10 @@ void OllamaClient::showModel(const QString &name) {
     QUrl url(m_baseUrl + "/api/show");
     if (!url.isValid()) {  // hardening: bad base-url
         emit modelCapabilitiesError(name, "Invalid backend URL: " + m_baseUrl);
+        return;
+    }
+    if (!NOTEPATRA_NO_CLOUD_OK(url)) {  // v0.1.72 cloud-free refusal
+        emit modelCapabilitiesError(name, QStringLiteral("Cloud-free build refused %1").arg(url.host()));
         return;
     }
     QNetworkRequest req(url);
@@ -428,6 +469,7 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
                 emit error(QStringLiteral("Invalid backend URL: ") + m_baseUrl);
                 return;
             }
+            NOTEPATRA_NO_CLOUD_GATE(url);   // v0.1.72 cloud-free refusal
             QNetworkRequest req(url);
             req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
             req.setTransferTimeout(120000);  // hardening: 120 s chat-stream connect/transfer ceiling
@@ -473,6 +515,7 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
             emit error(QStringLiteral("Invalid backend URL: ") + m_baseUrl);
             return;
         }
+        NOTEPATRA_NO_CLOUD_GATE(url);   // v0.1.72 cloud-free refusal
         QNetworkRequest req(url);
         req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
         req.setTransferTimeout(120000);  // hardening: 120 s generate-stream connect/transfer ceiling
@@ -575,6 +618,7 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
             emit error(QStringLiteral("Invalid backend URL: ") + url.toString());
             return;
         }
+        NOTEPATRA_NO_CLOUD_GATE(url);   // v0.1.72 cloud-free refusal
         QNetworkRequest req(url);
         req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
         req.setTransferTimeout(120000);  // hardening: 120 s OpenAI-compat stream ceiling
@@ -687,6 +731,7 @@ void OllamaClient::continueWithToolResults(const QJsonArray &toolResults,
             emit error(QStringLiteral("Invalid backend URL: ") + m_baseUrl);
             return;
         }
+        NOTEPATRA_NO_CLOUD_GATE(url);   // v0.1.72 cloud-free refusal
         QNetworkRequest req(url);
         req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
         req.setTransferTimeout(120000);  // hardening: 120 s ceiling on tool-result continuation
@@ -714,6 +759,7 @@ void OllamaClient::continueWithToolResults(const QJsonArray &toolResults,
             emit error(QStringLiteral("Invalid backend URL: ") + url.toString());
             return;
         }
+        NOTEPATRA_NO_CLOUD_GATE(url);   // v0.1.72 cloud-free refusal
         QNetworkRequest req(url);
         req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
         req.setTransferTimeout(120000);  // hardening: 120 s ceiling on OpenAI-compat continuation
