@@ -7,6 +7,48 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.71] — 2026-05-11
+
+**AI Interaction Log — audit every cloud + local LLM exchange, 7-day rotation, opt-out-able, credential-scrubbed.**
+
+### Added — `Tools → AI Interaction Log…`
+
+* Every request/response that hits any cloud (OpenRouter, OpenAI, Azure OpenAI, Ollama Cloud) or local (Ollama, llama.cpp, LM Studio / Jan / vLLM via OpenAI-compat) backend is recorded into `~/.config/notepatra/ai-logs/interactions.db` (SQLite, WAL mode). Schema captures: timestamp, session id, backend tag, model, mode (chat/coding/data), role (user/system/assistant/tool_call/tool_result), full content, tool name + args + result, prompt + eval tokens, elapsed ms, error string.
+* Rows older than 7 days are pruned on every app start; total DB file size capped at 50 MB (oldest rows dropped if exceeded). Cheap (~ms) SQLite DELETE; no-op when logging is disabled.
+* New viewer dialog: filter by backend / mode / model, table view with row-click → full content panel, **Export JSON** button (up to 10,000 events into a single pretty-printed file), **Prune now** button, **Toggle "Log AI interactions"** to opt out in-place.
+
+### Changed — `Config::aiInteractionLogging` default ON
+
+* Privacy-as-transparency: by default Notepatra records what it sends so the user can audit it. Flip off from the dialog or set `aiInteractionLogging:false` in `config.json` — the recorder becomes a no-op and the database file isn't even opened.
+
+### Added — credential scrubber before write
+
+* Every value written to the DB runs through a regex pass that masks: `Bearer …` tokens, OpenAI `sk-…`, Anthropic `sk-ant-…`, GitHub PATs (`ghp_/ghs_/gho_/ghu_/ghr_…`), AWS access keys (`AKIA…`), Google API keys (`AIza…`), and `-----BEGIN ... PRIVATE KEY-----` PEM blocks. False positives just blank a value; false negatives would let a credential leak — the regex set is intentionally aggressive.
+
+### Added — `OllamaClient::setMode("chat"|"coding"|"data")`
+
+* Cheap setter, no protocol impact. AIPanel calls it before each send so the log can filter by mode.
+
+### Hooked — `OllamaClient::generate()` recording
+
+* Records the outgoing user prompt + system prompt before the HTTP request leaves.
+* Records the assistant completion at every `responseStats` emit site: Ollama `/api/generate` + `/api/chat` done frame, OpenAI-compat `[DONE]` frame, OpenAI-compat `finish_reason` frame. Each resolves the backend tag from `m_baseUrl` (`openai.azure.com` → `azure-openai`, `api.openai.com` → `openai`, `ollama.com` → `ollama-cloud`, `openrouter.ai` → `openrouter`, else `openai-compat`).
+
+### Added — `MainWindow::checkCrashRecovery()` pre-hook
+
+* `AiInteractionLog::pruneOld()` runs once on startup before session restore so users come back to a tidy DB.
+
+### Files
+
+* `src/ai_interaction_log.{h,cpp}` — public namespace API, SQLite glue, scrubber, query/prune.
+* `src/ai_log_dialog.{h,cpp}` — read-only Qt viewer with filters + export.
+* `src/config.h` — new bool field `aiInteractionLogging = true` + JSON load/save.
+* `src/ollama.{h,cpp}` — new `m_mode` field + `setMode()` + record sites at every completion path.
+* `src/aipanel.cpp` — calls `setMode()` before each send.
+* `src/mainwindow.cpp` — Tools menu entry; pruneOld at startup.
+
+---
+
 ## [0.1.70] — 2026-05-11
 
 **AI cleanup + Notepad++-style session persistence + Data Mode actually knows what's attached.**

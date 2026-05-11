@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.70 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.71 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -921,6 +921,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ollama.cpp")
     add_executable(test_ollama
         test_ollama.cpp
         src/ollama.cpp
+        src/ai_interaction_log.cpp
     )
     target_include_directories(test_ollama PRIVATE
         ${CMAKE_SOURCE_DIR}/src
@@ -928,6 +929,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ollama.cpp")
     target_link_libraries(test_ollama PRIVATE
         Qt5::Core
         Qt5::Network
+        Qt5::Sql
     )
     add_test(NAME test_ollama COMMAND $<TARGET_FILE:test_ollama>)
     set_tests_properties(test_ollama PROPERTIES LABELS "integration;ollama")
@@ -938,6 +940,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_llamacpp.cpp")
     add_executable(test_llamacpp
         test_llamacpp.cpp
         src/ollama.cpp
+        src/ai_interaction_log.cpp
     )
     target_include_directories(test_llamacpp PRIVATE
         ${CMAKE_SOURCE_DIR}/src
@@ -945,6 +948,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_llamacpp.cpp")
     target_link_libraries(test_llamacpp PRIVATE
         Qt5::Core
         Qt5::Network
+        Qt5::Sql
     )
     add_test(NAME test_llamacpp COMMAND $<TARGET_FILE:test_llamacpp>)
     set_tests_properties(test_llamacpp PROPERTIES LABELS "integration;llamacpp;openai-compat")
@@ -955,6 +959,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_aifix.cpp")
     add_executable(test_aifix
         test_aifix.cpp
         src/ollama.cpp
+        src/ai_interaction_log.cpp
     )
     target_include_directories(test_aifix PRIVATE
         ${CMAKE_SOURCE_DIR}/src
@@ -962,6 +967,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_aifix.cpp")
     target_link_libraries(test_aifix PRIVATE
         Qt5::Core
         Qt5::Network
+        Qt5::Sql
     )
     add_test(NAME test_aifix COMMAND $<TARGET_FILE:test_aifix>)
     set_tests_properties(test_aifix PROPERTIES LABELS "integration;ollama;aifix")

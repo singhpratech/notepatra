@@ -1,5 +1,6 @@
 #include "ollama.h"
 #include "config.h"
+#include "ai_interaction_log.h"
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -329,6 +330,37 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
     m_lastSystemPrompt = systemPrompt;
     m_lastTools = tools;
     m_toolCallSeq = 0;
+
+    // v0.1.71 — AI interaction log. Record the outgoing user turn before
+    // the request leaves. Recorder is a no-op when the user has opted out
+    // (Config::aiInteractionLogging == false). Backend tag is one of
+    // "ollama" / "ollama-cloud" / "llama.cpp" / "openrouter" / "openai" /
+    // "azure-openai" — mirrors the backend dropdown labels. The model
+    // field is whatever the active OllamaClient is configured with.
+    {
+        QString backendTag;
+        switch (m_backend) {
+            case Ollama:           backendTag = QStringLiteral("ollama"); break;
+            case LlamaCpp:         backendTag = QStringLiteral("llama.cpp"); break;
+            case OpenAICompat:
+                if (m_baseUrl.contains("openai.azure.com", Qt::CaseInsensitive))     backendTag = QStringLiteral("azure-openai");
+                else if (m_baseUrl.contains("api.openai.com", Qt::CaseInsensitive))  backendTag = QStringLiteral("openai");
+                else if (m_baseUrl.contains("ollama.com", Qt::CaseInsensitive))      backendTag = QStringLiteral("ollama-cloud");
+                else if (m_baseUrl.contains("openrouter.ai", Qt::CaseInsensitive))   backendTag = QStringLiteral("openrouter");
+                else                                                                 backendTag = QStringLiteral("openai-compat");
+                break;
+        }
+        AiInteractionLog::recordUser(backendTag, m_model, m_mode, prompt);
+        if (!systemPrompt.isEmpty()) {
+            AiInteractionLog::Event sys;
+            sys.backend = backendTag;
+            sys.model   = m_model;
+            sys.mode    = m_mode;
+            sys.role    = AiInteractionLog::Role::System;
+            sys.content = systemPrompt;
+            AiInteractionLog::record(sys);
+        }
+    }
 
     const bool hasTools = !tools.isEmpty();
 
@@ -805,6 +837,9 @@ void OllamaClient::onReadyReadOllama() {
             const qint64 elapsed = QDateTime::currentMSecsSinceEpoch() - m_startMs;
             emit finished(m_fullResponse);
             emit responseStats(m_promptTokens, m_evalTokens, elapsed);
+            AiInteractionLog::recordAssistant(
+                QStringLiteral("ollama"), m_model, m_mode, m_fullResponse,
+                m_promptTokens, m_evalTokens, int(elapsed));
         }
     }
 }
@@ -834,6 +869,20 @@ void OllamaClient::onReadyReadOpenAI() {
                     const qint64 elapsed = QDateTime::currentMSecsSinceEpoch() - m_startMs;
                     emit finished(m_fullResponse);
                     emit responseStats(m_promptTokens, m_evalTokens, elapsed);
+                    QString bt;
+                    switch (m_backend) {
+                        case LlamaCpp:     bt = "llama.cpp"; break;
+                        case OpenAICompat:
+                            if (m_baseUrl.contains("openai.azure.com", Qt::CaseInsensitive))      bt = "azure-openai";
+                            else if (m_baseUrl.contains("api.openai.com", Qt::CaseInsensitive))   bt = "openai";
+                            else if (m_baseUrl.contains("ollama.com", Qt::CaseInsensitive))       bt = "ollama-cloud";
+                            else if (m_baseUrl.contains("openrouter.ai", Qt::CaseInsensitive))    bt = "openrouter";
+                            else                                                                  bt = "openai-compat";
+                            break;
+                        default:           bt = "openai-compat"; break;
+                    }
+                    AiInteractionLog::recordAssistant(bt, m_model, m_mode,
+                        m_fullResponse, m_promptTokens, m_evalTokens, int(elapsed));
                 }
                 continue;
             }
@@ -954,6 +1003,20 @@ void OllamaClient::onReadyReadOpenAI() {
                     const qint64 elapsed = QDateTime::currentMSecsSinceEpoch() - m_startMs;
                     emit finished(m_fullResponse);
                     emit responseStats(m_promptTokens, m_evalTokens, elapsed);
+                    QString bt;
+                    switch (m_backend) {
+                        case LlamaCpp:     bt = "llama.cpp"; break;
+                        case OpenAICompat:
+                            if (m_baseUrl.contains("openai.azure.com", Qt::CaseInsensitive))      bt = "azure-openai";
+                            else if (m_baseUrl.contains("api.openai.com", Qt::CaseInsensitive))   bt = "openai";
+                            else if (m_baseUrl.contains("ollama.com", Qt::CaseInsensitive))       bt = "ollama-cloud";
+                            else if (m_baseUrl.contains("openrouter.ai", Qt::CaseInsensitive))    bt = "openrouter";
+                            else                                                                  bt = "openai-compat";
+                            break;
+                        default:           bt = "openai-compat"; break;
+                    }
+                    AiInteractionLog::recordAssistant(bt, m_model, m_mode,
+                        m_fullResponse, m_promptTokens, m_evalTokens, int(elapsed));
                 }
                 continue;
             }
@@ -963,6 +1026,20 @@ void OllamaClient::onReadyReadOpenAI() {
                 const qint64 elapsed = QDateTime::currentMSecsSinceEpoch() - m_startMs;
                 emit finished(m_fullResponse);
                 emit responseStats(m_promptTokens, m_evalTokens, elapsed);
+                QString bt;
+                switch (m_backend) {
+                    case LlamaCpp:     bt = "llama.cpp"; break;
+                    case OpenAICompat:
+                        if (m_baseUrl.contains("openai.azure.com", Qt::CaseInsensitive))    bt = "azure-openai";
+                        else if (m_baseUrl.contains("api.openai.com", Qt::CaseInsensitive)) bt = "openai";
+                        else if (m_baseUrl.contains("ollama.com", Qt::CaseInsensitive))     bt = "ollama-cloud";
+                        else if (m_baseUrl.contains("openrouter.ai", Qt::CaseInsensitive))  bt = "openrouter";
+                        else                                                                bt = "openai-compat";
+                        break;
+                    default:           bt = "openai-compat"; break;
+                }
+                AiInteractionLog::recordAssistant(bt, m_model, m_mode,
+                    m_fullResponse, m_promptTokens, m_evalTokens, int(elapsed));
             }
         }
     }

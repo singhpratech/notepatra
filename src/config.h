@@ -184,6 +184,14 @@ public:
     // optional.
     bool aiDockVisible = true;
 
+    // v0.1.71 — AI interaction logging. When true (default), every
+    // request/response sent to a cloud or local LLM is recorded into
+    // ~/.config/notepatra/ai-logs/interactions.db (SQLite, WAL mode).
+    // Retained for 7 days then auto-pruned. User can opt out from
+    // Settings → Privacy; opt-out makes the recorder a no-op (the db
+    // file isn't even opened). See src/ai_interaction_log.h.
+    bool aiInteractionLogging = true;
+
     // Session
     QStringList recentFiles;
     int maxRecent = 15;
@@ -262,6 +270,7 @@ public:
         aiHideCodingWelcome = o.value("aiHideCodingWelcome").toBool(aiHideCodingWelcome);
         aiShareOpenFile = o.value("aiShareOpenFile").toBool(aiShareOpenFile);
         aiDockVisible = o.value("aiDockVisible").toBool(aiDockVisible);
+        aiInteractionLogging = o.value("aiInteractionLogging").toBool(aiInteractionLogging);
         windowX = o.value("windowX").toInt(windowX);
         windowY = o.value("windowY").toInt(windowY);
         windowW = o.value("windowW").toInt(windowW);
@@ -320,6 +329,7 @@ public:
         o["aiHideCodingWelcome"] = aiHideCodingWelcome;
         o["aiShareOpenFile"] = aiShareOpenFile;
         o["aiDockVisible"] = aiDockVisible;
+        o["aiInteractionLogging"] = aiInteractionLogging;
         o["windowX"] = windowX;
         o["windowY"] = windowY;
         o["windowW"] = windowW;

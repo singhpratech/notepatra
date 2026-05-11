@@ -6,6 +6,8 @@
 #include "rustbridge.h"
 #include "fonts.h"
 #include "updater.h"
+#include "ai_log_dialog.h"
+#include "ai_interaction_log.h"
 #include <numeric>
 #include <algorithm>
 #include <QDir>
@@ -1297,6 +1299,11 @@ MainWindow::MainWindow() {
         }
     }
 
+    // v0.1.71 — AI interaction log housekeeping. Prune rows older than
+    // 7 days + enforce the 50 MB size cap on startup. Cheap (millisecond)
+    // SQLite DELETE; no-op when the user has opted out of logging.
+    AiInteractionLog::pruneOld();
+
     // Notepad++-style: session.json IS the recovery mechanism. Saved every
     // 10s with full unsaved-buffer content + on every clean close. Reading
     // it silently restores everything — no separate "Restore recovered
@@ -2066,6 +2073,17 @@ void MainWindow::buildMenus() {
     connect(aiAct, &QAction::triggered, this, [this, aiAct]() {
         toggleAiDock();
         aiAct->setChecked(isAiDockVisible());
+    });
+
+    // v0.1.71 — AI interaction log viewer. Opens a read-only dialog with
+    // every request/response that has hit any cloud or local LLM over
+    // the last 7 days. Filters by backend / model / mode and exports
+    // JSON. Includes a toggle to opt out of logging entirely.
+    auto *aiLogAct = feat->addAction("AI Interaction Log…");
+    aiLogAct->setStatusTip("Audit every request/response sent to cloud or local LLMs in the last 7 days. SQLite-backed, credential-scrubbed, opt-out-able.");
+    connect(aiLogAct, &QAction::triggered, this, [this]() {
+        AiLogDialog dlg(this);
+        dlg.exec();
     });
 
     feat->addSeparator();

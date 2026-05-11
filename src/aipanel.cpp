@@ -3496,6 +3496,15 @@ void AIPanel::sendPrompt(const QString &action) {
             priorJson.append(obj);
         }
     }
+    // v0.1.71 — tag the request with the active mode so AiInteractionLog
+    // can filter by chat/coding/data. The setter is cheap; no protocol
+    // change to the actual HTTP payload.
+    {
+        const bool isCoding = (m_codingMode && m_codingMode->isChecked());
+        const bool isData   = (m_dataMode && m_dataMode->isChecked());
+        m_ollama->setMode(isCoding ? "coding" : isData ? "data" : "chat");
+    }
+
     m_ollama->generate(prompt, systemPrompt, m_thinkingCheck->isChecked(),
                        imagesBase64, toolsForRequest, priorJson);
 }

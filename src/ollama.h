@@ -33,6 +33,12 @@ public:
     QString baseUrl() const { return m_baseUrl; }
     void setModel(const QString &model) { m_model = model; }
     QString model() const { return m_model; }
+    // v0.1.71 — let the panel tag each request with the active mode
+    // ("chat" / "coding" / "data") so the AI interaction log can filter
+    // by mode without round-tripping that state out-of-band. Setting is
+    // cheap and harmless; defaults to "".
+    void setMode(const QString &mode) { m_mode = mode; }
+    QString mode() const { return m_mode; }
 
     // think=false disables Qwen3-style thinking blocks (the model will not
     // emit <think>...</think> reasoning before its answer). Default is false
@@ -132,6 +138,7 @@ private:
     Backend m_backend = Ollama;
     QString m_baseUrl = "http://localhost:11434";
     QString m_model = "qwen2.5-coder:3b";
+    QString m_mode;             // v0.1.71 — "chat" / "coding" / "data" tag for the interaction log
     QString m_fullResponse;
     QByteArray m_sseBuffer;  // for OpenAI SSE — frames span packets
     bool m_done = false;
