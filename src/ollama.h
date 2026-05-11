@@ -44,10 +44,18 @@ public:
     // prefix, just the raw base64). Pass to vision models like llava,
     // llama3.2-vision, qwen2-vl, moondream, etc. Models that don't support
     // images ignore the field.
+    // v0.1.70 — priorMessages threads multi-turn conversation history
+    // into the API payload. Pre-v0.1.70 every send() built a fresh
+    // [system, user] array and the model never saw prior turns — turn N
+    // landed as if it were turn 1. AIPanel now builds the history from
+    // activeMessages() (skipping Error roles + the just-appended current
+    // user message) and passes it here. Empty array = single-turn (old
+    // behaviour, fine for first send in a session).
     void generate(const QString &prompt, const QString &systemPrompt = "",
                   bool enableThinking = false,
                   const QStringList &imagesBase64 = QStringList(),
-                  const QJsonArray &tools = QJsonArray());
+                  const QJsonArray &tools = QJsonArray(),
+                  const QJsonArray &priorMessages = QJsonArray());
     // Continue an in-progress agent conversation by sending one or more
     // tool-result messages back to the model and starting a fresh stream.
     // toolResults is a JSON array of { id, name, content } objects (one

@@ -172,6 +172,18 @@ public:
     // privacy posture explicit — the user opts INTO sharing, not out.
     bool aiShareOpenFile = false;
 
+    // v0.1.70 — AI dock visibility persisted across launches. When true
+    // (default for new installs), Notepatra opens with the AI dock on
+    // screen at 50% width. Toggling the dock via Ctrl+Shift+A / the AI
+    // toolbar button / the Tools menu writes this field synchronously
+    // so the layout survives a quit/relaunch. AI features (Ctrl+I,
+    // Composer, agentic ops) remain enabled in BOTH states — invoking
+    // any of them while the dock is hidden auto-opens the dock via
+    // MainWindow::showAiDockForInvocation(). This is purely a layout
+    // flag, NOT a feature gate: Notepatra is an AI editor; AI is not
+    // optional.
+    bool aiDockVisible = true;
+
     // Session
     QStringList recentFiles;
     int maxRecent = 15;
@@ -249,6 +261,7 @@ public:
         aiHideDataWelcome = o.value("aiHideDataWelcome").toBool(aiHideDataWelcome);
         aiHideCodingWelcome = o.value("aiHideCodingWelcome").toBool(aiHideCodingWelcome);
         aiShareOpenFile = o.value("aiShareOpenFile").toBool(aiShareOpenFile);
+        aiDockVisible = o.value("aiDockVisible").toBool(aiDockVisible);
         windowX = o.value("windowX").toInt(windowX);
         windowY = o.value("windowY").toInt(windowY);
         windowW = o.value("windowW").toInt(windowW);
@@ -306,6 +319,7 @@ public:
         o["aiHideDataWelcome"] = aiHideDataWelcome;
         o["aiHideCodingWelcome"] = aiHideCodingWelcome;
         o["aiShareOpenFile"] = aiShareOpenFile;
+        o["aiDockVisible"] = aiDockVisible;
         o["windowX"] = windowX;
         o["windowY"] = windowY;
         o["windowW"] = windowW;

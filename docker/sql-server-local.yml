@@ -37,6 +37,11 @@ services:
     # has 10 GB DB-size and 1 GB RAM caps that bite during E2E tests.
     environment:
       ACCEPT_EULA: "Y"
+      # Dev password — must satisfy SQL Server's default policy (8+ chars,
+      # mixed case, digits, special). If you change this, also update
+      # scripts/sql-server-local-setup.sh AND the "SQL Server (Notepatra
+      # local Docker)" preset in src/dbconnections.cpp so all three stay
+      # aligned with the running container.
       MSSQL_SA_PASSWORD: "Notepatra_Local_Dev!2026"
       MSSQL_PID: Developer
       # Speed up cold-start by skipping the optional FILESTREAM feature

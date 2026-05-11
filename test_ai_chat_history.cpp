@@ -421,11 +421,20 @@ static void testV1Migration() {
 // main — offscreen QApplication; no event loop.
 // ───────────────────────────────────────────────────────────────────────
 int main(int argc, char *argv[]) {
+
     // Force offscreen platform BEFORE QApplication construction so any
     // QWidget the AIPanel constructor pulls in (status bar, completer,
     // etc.) lives in an offscreen surface.
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QApplication app(argc, argv);
+
+    // v0.1.70 — force Chat as the default mode regardless of the user's
+    // ~/.config/notepatra/config.json state. Config::configPath() uses
+    // QDir::homePath() directly (doesn't honour XDG_CONFIG_HOME), so an
+    // env-var override doesn't isolate the test. The cleanest fix is to
+    // override the in-memory Config singleton right after construction —
+    // AIPanel's ctor reads Config::aiDataMode AFTER this point.
+    Config::instance().aiDataMode = false;
 
     std::printf("=== AIPanel chat-history v0.1.67 three-vector refactor ===\n");
 

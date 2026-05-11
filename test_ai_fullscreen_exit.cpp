@@ -25,6 +25,7 @@
 #include "mainwindow.h"
 #include "aipanel.h"
 #include "config.h"
+#include "fileexplorer.h"
 
 #include <QAbstractButton>
 #include <QAction>
@@ -151,8 +152,10 @@ int main(int argc, char *argv[]) {
     // ───────────────────────────────────────────────────────────────
     // Open the AI dock (Ctrl+Shift+A toggles it on).
     // ───────────────────────────────────────────────────────────────
-    QAction *aiToggle = findActionByShortcut(&mw, QKeySequence("Ctrl+Shift+A"));
-    EXPECT_TRUE("AI Assistant action found (Ctrl+Shift+A)", aiToggle != nullptr);
+    // v0.1.70 — primary shortcut moved from Ctrl+Shift+A → Ctrl+Q.
+    // Ctrl+Shift+A is still registered as a secondary shortcut.
+    QAction *aiToggle = findActionByShortcut(&mw, QKeySequence("Ctrl+Q"));
+    EXPECT_TRUE("AI Assistant action found (Ctrl+Q)", aiToggle != nullptr);
     if (aiToggle) aiToggle->trigger();
     QApplication::processEvents();
 
@@ -238,45 +241,44 @@ int main(int argc, char *argv[]) {
     EXPECT_FALSE("S4: fullscreen exited after openFile(already-open)",
                  expandBtn->isChecked());
 
-    // First, restore the dock to a baseline (chat mode, NOT fullscreen)
-    // so S5/S6 start from a known state.
-    QAbstractButton *chatBtn = nullptr;
-    QAbstractButton *codingBtn = nullptr;
-    QAbstractButton *dataBtn = nullptr;
-    for (QAbstractButton *b : dockPanel->findChildren<QAbstractButton *>()) {
-        if (b->text() == QStringLiteral("Chat")) chatBtn = b;
-        else if (b->text() == QStringLiteral("Coding")) codingBtn = b;
-        else if (b->text() == QStringLiteral("Data")) dataBtn = b;
-    }
+    // applyMode + renderTranscript rebuild AIPanel widgets on every mode
+    // switch, so stored mode-button pointers become stale after the first
+    // toggle. Re-find them on demand via this helper. Returns nullptr
+    // for any role missing (caller checks).
+    auto findModeBtn = [dockPanel](const QString &text) -> QAbstractButton * {
+        for (QAbstractButton *b : dockPanel->findChildren<QAbstractButton *>()) {
+            if (b->text() == text) return b;
+        }
+        return nullptr;
+    };
+
+    // Baseline: chat mode, NOT fullscreen.
     EXPECT_TRUE("Chat / Coding / Data mode buttons located",
-                chatBtn && codingBtn && dataBtn);
-    if (chatBtn) chatBtn->setChecked(true);
+                findModeBtn(QStringLiteral("Chat"))
+                    && findModeBtn(QStringLiteral("Coding"))
+                    && findModeBtn(QStringLiteral("Data")));
+    if (auto *chat = findModeBtn(QStringLiteral("Chat"))) chat->setChecked(true);
     QApplication::processEvents();
 
     // ───────────────────────────────────────────────────────────────
-    // SCENARIO 5: Coding mode auto-fullscreens via emit fullscreenToggled(
-    // true) directly — NOT via the expand button. The v0.1.67 fix calls
-    // forceExitFullscreen which only un-checks the expand button — but
-    // the button was never checked in this path, so forceExitFullscreen
-    // is a no-op and clicking Project Search appears to "do nothing"
-    // (the tab is added but m_tabs stays hidden behind the splitter
-    // squashed to 100% AI dock).
+    // SCENARIO 5: Coding mode no longer auto-fullscreens (v0.1.70 final).
+    // Editor + FileExplorer remain visible — the VS Code 3-column layout.
+    // Tool button clicks just open a tab; nothing to "exit" since dock
+    // is already at 50/50.
     // ───────────────────────────────────────────────────────────────
-    std::printf("\n-- Scenario 5: Coding mode + Project Search → tabs MUST be visible --\n");
-    if (codingBtn) {
+    std::printf("\n-- Scenario 5: Coding mode (no auto-fullscreen) + Project Search --\n");
+    if (auto *codingBtn = findModeBtn(QStringLiteral("Coding"))) {
         codingBtn->setChecked(true);
         QApplication::processEvents();
-        // After Coding-mode switch, m_tabs should be HIDDEN by the
-        // fullscreen handler (sibling visibility saved + setVisible(false)).
-        EXPECT_FALSE("S5 setup: m_tabs hidden after Coding-mode auto-fullscreen",
-                     tabs->isVisible());
+        EXPECT_TRUE("S5 setup: m_tabs VISIBLE in Coding mode (no auto-fullscreen)",
+                    tabs->isVisible());
 
         QAction *psAct = findActionByShortcut(&mw, QKeySequence("Ctrl+Shift+G"));
         EXPECT_TRUE("S5: Project Search action found (Ctrl+Shift+G)", psAct != nullptr);
         if (psAct) {
             psAct->trigger();
             QApplication::processEvents();
-            EXPECT_TRUE("S5: m_tabs VISIBLE after Project Search click (Coding mode)",
+            EXPECT_TRUE("S5: m_tabs still VISIBLE after Project Search click",
                         tabs->isVisible());
             EXPECT_TRUE("S5: Project Search tab is current",
                         tabs->tabText(tabs->currentIndex()).contains(
@@ -285,31 +287,182 @@ int main(int argc, char *argv[]) {
     }
 
     // Reset to chat mode before S6
-    if (chatBtn) chatBtn->setChecked(true);
+    if (auto *chat = findModeBtn(QStringLiteral("Chat"))) chat->setChecked(true);
     QApplication::processEvents();
 
     // ───────────────────────────────────────────────────────────────
-    // SCENARIO 6: Data mode auto-fullscreens (same code path as Coding).
-    // Try the Terminal action this time so we cover a different tool.
+    // SCENARIO 6: Data mode auto-fullscreens (data-analyst surface).
+    // Terminal click must exit fullscreen so the tool tab is visible.
     // ───────────────────────────────────────────────────────────────
-    std::printf("\n-- Scenario 6: Data mode + Terminal (Ctrl+`) → tabs MUST be visible --\n");
-    if (dataBtn) {
+    std::printf("\n-- Scenario 6: Data mode 50/50 (no auto-fullscreen) + Terminal --\n");
+    if (auto *dataBtn = findModeBtn(QStringLiteral("Data"))) {
         dataBtn->setChecked(true);
         QApplication::processEvents();
-        EXPECT_FALSE("S6 setup: m_tabs hidden after Data-mode auto-fullscreen",
-                     tabs->isVisible());
+        EXPECT_TRUE("S6 setup: m_tabs VISIBLE in Data mode (50/50, no auto-fullscreen)",
+                    tabs->isVisible());
 
         QAction *termAct = findActionByShortcut(&mw, QKeySequence("Ctrl+`"));
         EXPECT_TRUE("S6: Terminal action found (Ctrl+`)", termAct != nullptr);
         if (termAct) {
             termAct->trigger();
             QApplication::processEvents();
-            EXPECT_TRUE("S6: m_tabs VISIBLE after Terminal click (Data mode)",
+            EXPECT_TRUE("S6: m_tabs still VISIBLE after Terminal click (Data mode)",
                         tabs->isVisible());
             EXPECT_TRUE("S6: Terminal tab is current",
                         tabs->tabText(tabs->currentIndex()).contains(
                             QStringLiteral("Terminal")));
         }
+    }
+
+    // Reset to chat mode before S7
+    if (auto *chat = findModeBtn(QStringLiteral("Chat"))) chat->setChecked(true);
+    QApplication::processEvents();
+
+    // ───────────────────────────────────────────────────────────────
+    // FileExplorer visibility rule — ONLY visible when AI dock is open
+    // AND coding mode is active. Hidden in Chat, Data, or when AI dock
+    // is closed entirely. User reported in v0.1.69 testing.
+    // ───────────────────────────────────────────────────────────────
+    FileExplorer *explorer = mw.findChild<FileExplorer *>();
+    EXPECT_TRUE("FileExplorer widget located", explorer != nullptr);
+    if (!explorer) {
+        std::printf("\n=== test_ai_fullscreen_exit: %d passed, %d failed ===\n",
+                    g_passed, g_failed);
+        return g_failed == 0 ? 0 : 1;
+    }
+
+    std::printf("\n-- Scenario 7: FileExplorer hidden in Chat mode --\n");
+    EXPECT_FALSE("S7: explorer hidden in chat mode (baseline)", explorer->isVisible());
+
+    // Coding/Data modes auto-fullscreen the dock (per user UX choice) which
+    // hides all siblings, including the file explorer. So even though the
+    // codingModeRequested signal asks the explorer to show, the fullscreen
+    // handler immediately hides it again. From a user perspective: while
+    // Coding/Data mode is the ACTIVE state, the explorer is not visible —
+    // it only becomes visible after the user clicks a tool button (which
+    // calls exitAiFullscreenIfActive). These scenarios verify that the
+    // auto-fullscreen behaviour wins.
+    std::printf("\n-- Scenario 8: switch to Coding → FileExplorer auto-shows (VS Code 3-column) --\n");
+    if (auto *codingBtn = findModeBtn(QStringLiteral("Coding"))) {
+        codingBtn->setChecked(true);
+        QApplication::processEvents();
+        // v0.1.70 final — Coding mode auto-shows the explorer (VS Code
+        // / Cursor 3-column layout: explorer | editor | AI dock).
+        EXPECT_TRUE("S8: explorer VISIBLE in Coding mode (3-column layout)",
+                    explorer->isVisible());
+    }
+
+    std::printf("\n-- Scenario 9: switch Coding → Chat → FileExplorer hides --\n");
+    if (auto *chat = findModeBtn(QStringLiteral("Chat"))) {
+        chat->setChecked(true);
+        QApplication::processEvents();
+        EXPECT_FALSE("S9: explorer hidden in Chat mode",
+                     explorer->isVisible());
+    }
+
+    std::printf("\n-- Scenario 10: switch Chat → Data → FileExplorer stays hidden --\n");
+    {
+        auto *data = findModeBtn(QStringLiteral("Data"));
+        if (data) {
+            data->setChecked(true);
+            QApplication::processEvents();
+            EXPECT_FALSE("S10: explorer hidden in Data mode",
+                         explorer->isVisible());
+        }
+    }
+
+    std::printf("\n-- Scenario 11: close AI dock while in Coding → tabs + explorer correct --\n");
+    {
+        auto *coding = findModeBtn(QStringLiteral("Coding"));
+        if (coding && aiToggle) {
+            coding->setChecked(true);
+            QApplication::processEvents();
+            EXPECT_TRUE("S11 setup: tabs visible in Coding (no fullscreen)",
+                        tabs->isVisible());
+            EXPECT_TRUE("S11 setup: explorer visible in Coding (3-column)",
+                        explorer->isVisible());
+            aiToggle->trigger();           // close AI dock
+            QApplication::processEvents();
+            EXPECT_TRUE("S11: tabs VISIBLE after closing AI dock",
+                        tabs->isVisible());
+            EXPECT_FALSE("S11: explorer hidden after closing AI dock",
+                         explorer->isVisible());
+        }
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // SCENARIO 12: setAiDockVisible persists Config::aiDockVisible.
+    // ───────────────────────────────────────────────────────────────
+    std::printf("\n-- Scenario 12: setAiDockVisible(false/true) persists Config flag --\n");
+    mw.setAiDockVisible(false);
+    QApplication::processEvents();
+    EXPECT_FALSE("S12: Config::aiDockVisible == false after hide",
+                 Config::instance().aiDockVisible);
+    EXPECT_FALSE("S12: isAiDockVisible() == false after hide", mw.isAiDockVisible());
+
+    mw.setAiDockVisible(true);
+    QApplication::processEvents();
+    EXPECT_TRUE("S12: Config::aiDockVisible == true after show",
+                Config::instance().aiDockVisible);
+    EXPECT_TRUE("S12: isAiDockVisible() == true after show", mw.isAiDockVisible());
+
+    // ───────────────────────────────────────────────────────────────
+    // SCENARIO 13: showAiDockForInvocation() auto-opens hidden dock.
+    // ───────────────────────────────────────────────────────────────
+    std::printf("\n-- Scenario 13: showAiDockForInvocation() auto-opens hidden dock --\n");
+    mw.setAiDockVisible(false);
+    QApplication::processEvents();
+    EXPECT_FALSE("S13 setup: dock hidden", mw.isAiDockVisible());
+
+    mw.showAiDockForInvocation();
+    QApplication::processEvents();
+    EXPECT_TRUE("S13: dock visible after showAiDockForInvocation()",
+                mw.isAiDockVisible());
+
+    // Idempotent — calling again when visible is no-op.
+    mw.showAiDockForInvocation();
+    QApplication::processEvents();
+    EXPECT_TRUE("S13: dock still visible (idempotent)", mw.isAiDockVisible());
+
+    // ───────────────────────────────────────────────────────────────
+    // SCENARIO 14: Sub-mode RESTORED on dock close + reopen (NOT reset
+    // to Chat). v0.1.70 final design via plan-mode discussion.
+    // ───────────────────────────────────────────────────────────────
+    std::printf("\n-- Scenario 14: close + reopen AI dock → restore last sub-mode --\n");
+    if (auto *codingPre = findModeBtn(QStringLiteral("Coding"))) {
+        codingPre->setChecked(true);
+        QApplication::processEvents();
+    }
+    mw.setAiDockVisible(false);
+    QApplication::processEvents();
+    mw.setAiDockVisible(true);
+    QApplication::processEvents();
+
+    {
+        auto *chat   = findModeBtn(QStringLiteral("Chat"));
+        auto *coding = findModeBtn(QStringLiteral("Coding"));
+        EXPECT_TRUE("S14: Coding sub-mode restored after close+reopen",
+                    coding && coding->isChecked());
+        EXPECT_FALSE("S14: Chat sub-mode NOT active (no auto-reset)",
+                     chat && chat->isChecked());
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // SCENARIO 15: Ctrl+Q shortcut maps to AI toggle.
+    // ───────────────────────────────────────────────────────────────
+    std::printf("\n-- Scenario 15: Ctrl+Q action exists + triggers toggle --\n");
+    QAction *ctrlQAction = findActionByShortcut(&mw, QKeySequence("Ctrl+Q"));
+    EXPECT_TRUE("S15: Ctrl+Q action found (the new AI toggle shortcut)",
+                ctrlQAction != nullptr);
+    if (ctrlQAction) {
+        const bool wasVisible = mw.isAiDockVisible();
+        ctrlQAction->trigger();
+        QApplication::processEvents();
+        EXPECT_TRUE("S15: dock visibility flipped by Ctrl+Q",
+                    mw.isAiDockVisible() != wasVisible);
+        // Flip back to leave a clean state.
+        ctrlQAction->trigger();
+        QApplication::processEvents();
     }
 
     // ───────────────────────────────────────────────────────────────

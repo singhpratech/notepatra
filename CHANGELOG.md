@@ -7,6 +7,56 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.70] — 2026-05-11
+
+**AI cleanup + Notepad++-style session persistence + Data Mode actually knows what's attached.**
+
+### Changed — app close never prompts; unsaved buffers restore silently
+
+* `closeEvent` no longer loops modified tabs asking Save / Discard / Cancel. All open tabs — file-backed and untitled, modified and pristine — are serialised to `~/.config/notepatra/session/session.json` (full unsaved content + cursor + tab name + modified flag).
+* Relaunch reads `session.json` and silently re-creates every tab. Modified file-backed tabs reopen the file then overlay the unsaved buffer; untitled tabs are recreated as new buffers with their content.
+* Tab close (the `X` on a tab) **still** shows the Save / Discard / Cancel dialog — that's the explicit-save decision point. App close is now an unconditional commit.
+* The legacy `recovery_*.txt` crash files + "Restore recovered files?" prompt now only run as a fallback when `session.json` is absent. With session.json present, recovery files + crash flag are wiped on launch so you can't get the double-restore that bolted an extra `[recovered]` tab on top of the silently-restored session.
+* `autoSaveRecovery()` removed from the 10 s autosave tick — `saveSession()` carries the full unsaved content now.
+
+### Removed — hard-coded model capability gates + amber dropdown coloring
+
+* `appendErrorBubble(...isn't strong enough for the Data Analyst mode…)` — gone. The substring allowlist behind it (`modelCapableOfDataAnalysis`) rotted with every release (Gemma 4 26B got rejected as "too small" despite being a 17 GB multimodal model with native tool calling).
+* `appendErrorBubble(...doesn't support tool calls…)` — gone. Same rationale; the model / backend will refuse if it actually can't comply.
+* The `⚠ … is too small` banner near the Data mode action bar — gone.
+* `decorateModelsByMode()` reduced to a no-op clear. Dropdown rows render in the default foreground colour; no second-guessing tooltips.
+* Memory saved (`feedback_no_hardcoded_model_allowlists.md`) so future sessions don't reintroduce these. Context gates (no folder open → Coding refuses; no DB connection → Data refuses) stay — those are about workspace state, not model identity.
+
+### Added — Data Mode "attached" chip + schema injected into system prompt
+
+* Visible green pill below the Manage Connections / Browse Schemas row: `✓ Attached: <conn name> (N tables) · <conn 2> (M tables) — visible to the model via query_sql.` Connection that won't open renders in red. Zero connections shows an amber "no databases attached" nudge.
+* Every Data-mode send now embeds the saved connections + their first ~30 user tables into the system prompt with: *"These are the ONLY data sources available via `query_sql`. Do NOT speculate about other data sources or the editor workspace."* Fixes the "I see a variety of files and directories in your workspace" hallucination where the model answered about the file tree when asked about the database.
+* New `DbConnections::listTables(record)` helper — per-driver introspection (`sqlite_master`, `INFORMATION_SCHEMA.tables` for PostgreSQL/MySQL, `sys.tables` for SQL Server via QODBC). Drives both the chip and the prompt injection.
+
+### Changed — chat-bubble breathing room + auto-fit
+
+* Bubble inner padding bumped: assistant 14/16 → 22/24, user 10/16 → 14/20. Inter-bubble gap 14 → 26 px. Card outer margin 14/12 → 20/18. Chat container margin 12 → 18. Line-height 1.55 → 1.7.
+* Tables + blockquotes get explicit CSS rules (previously fell through to QTextBrowser defaults and rendered cramped).
+* Chart widgets: 14 px spacer above, 10 px below, 280 px minimum height.
+* `QTextDocument::setDocumentMargin(0)` kills Qt's hidden 4 px frame margin that was padding every bubble. Removed the `+ 8 px` slop on the height calculation — that was the empty band users were seeing under single-line replies.
+* Viewport-resize event filter re-fits every bubble's height when the panel/splitter width changes, so the body refits on dock resize instead of freezing at first-render height.
+
+### Fixed — QODBC connection string composition
+
+* SQL Server connections now build `DRIVER=…;SERVER=host,port;DATABASE=…;UID=…;PWD=…;` and pass it via `setDatabaseName()` instead of the per-field setters (which don't compose for QODBC). This is what makes the SQL Server local Docker preset actually connect.
+* SQL Server local preset (case 2 in the Manage Connections preset dropdown) wired with port 14330, `NotepatraTest` DB, `sa` user — for use with `docker/sql-server-local.yml`. Password ships in the yml + setup script for local testing only; not for production.
+
+### Fixed — conversation history threading in Ollama backend
+
+* When prior messages exist, `Ollama::generate()` now uses `/api/chat` and splices the conversation history between the system prompt and the current user message. Pre-v0.1.70 the array was reset to `[]` on every send, so the model never saw the conversation it was in and replied as if every turn was the first.
+
+### Added — SVG icons replacing emoji codepoints
+
+* `resources/icons/` — 14 hand-crafted SVGs (bot, git-branch, database, image, file, file-text, lock, unlock, lightbulb, wrench, x, check, folder, alert-triangle) registered via `resources/icons.qrc`.
+* Replaces emoji codepoints (U+1F300+) in chrome that tofu'd on systems without a color emoji font (Linux being the worst case).
+
+---
+
 ## [0.1.69] — 2026-05-10
 
 **Critical fix — AI Coding / Data mode no longer locks tool buttons.**

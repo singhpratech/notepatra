@@ -311,7 +311,8 @@ void OllamaClient::showModel(const QString &name) {
 void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
                             bool enableThinking,
                             const QStringList &imagesBase64,
-                            const QJsonArray &tools) {
+                            const QJsonArray &tools,
+                            const QJsonArray &priorMessages) {
     if (!m_nam) {  // hardening: guard NAM (defensive — ctor always sets it)
         emit error(QStringLiteral("Network manager unavailable"));
         return;
@@ -331,18 +332,32 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
 
     const bool hasTools = !tools.isEmpty();
 
+    // v0.1.70 — switch to /api/chat for ANY request that carries multi-turn
+    // history, even if no tools are requested. The legacy /api/generate
+    // endpoint takes a single prompt + system and CANNOT replay prior
+    // conversation turns, so plain-chat mode on Ollama used to "forget"
+    // every previous message. Force /api/chat whenever priorMessages
+    // is non-empty so the conversation actually flows.
+    const bool useChatEndpoint = hasTools || !priorMessages.isEmpty();
+
     if (m_backend == Ollama) {
-        // ─── Ollama: /api/generate (legacy, no tools) or /api/chat (tools) ──
-        if (hasTools) {
-            // Tool-calling requires /api/chat (the messages-array endpoint).
-            // Build a minimal 2-message conversation: system + user. Future
-            // tool-result rounds get appended via continueWithToolResults().
+        // ─── Ollama: /api/generate (legacy, no tools, no history) or /api/chat ──
+        if (useChatEndpoint) {
+            // Build the full conversation: [system] + priorMessages + currentUser.
+            // Tool-result rounds (if any) get appended later via
+            // continueWithToolResults().
             if (!systemPrompt.isEmpty()) {
                 QJsonObject sys;
                 sys["role"] = "system";
                 sys["content"] = enableThinking ? systemPrompt
                                                 : systemPrompt + "\n/no_think";
                 m_messages.append(sys);
+            }
+            // v0.1.70 — splice the prior turns in before the new user message.
+            // AIPanel passes {role, content} objects; we copy them through
+            // unchanged so the model sees the full thread.
+            for (const QJsonValue &v : priorMessages) {
+                if (v.isObject()) m_messages.append(v);
             }
             QJsonObject user;
             user["role"] = "user";
@@ -358,7 +373,10 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
             body["model"] = m_model;
             body["messages"] = m_messages;
             body["stream"] = true;
-            body["tools"] = tools;
+            // v0.1.70 — only include tools field when we actually have
+            // tools. /api/chat allows tools=[] but some models choke on
+            // it; omit when empty for safety.
+            if (hasTools) body["tools"] = tools;
             body["think"] = enableThinking;
 
             QJsonObject options;
@@ -452,6 +470,14 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
             sys["role"] = "system";
             sys["content"] = "/no_think";
             messages.append(sys);
+        }
+
+        // v0.1.70 — thread conversation history into OpenAI-compat requests
+        // too. /v1/chat/completions natively supports a multi-message
+        // array (any cloud provider that speaks OpenAI does), so we splice
+        // the prior turns in before the current user message.
+        for (const QJsonValue &v : priorMessages) {
+            if (v.isObject()) messages.append(v);
         }
 
         QJsonObject user;

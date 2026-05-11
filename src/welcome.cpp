@@ -223,8 +223,8 @@ void WelcomeWidget::buildHeroSection(QVBoxLayout *parent) {
     title->setStyleSheet(QString("color: %1;").arg(p.textPrimary));
 
     auto *tagline = new QLabel(
-        "A native C++/Rust code editor with local AI. "
-        "Built for the AI era — free forever, no telemetry, no cloud by default*.");
+        "A native C++/Rust code editor with local-first AI (cloud-optional). "
+        "Built for the AI era — free forever, no telemetry, no mandatory API key*.");
     QFont taglineFont = notepatraUiFont();
     taglineFont.setPointSize(14);
     tagline->setFont(taglineFont);
@@ -432,7 +432,7 @@ void WelcomeWidget::buildFeatureCards(QVBoxLayout *parent) {
          "Lightning-fast recursive search across file names AND contents. Any size, any language. Exact line:col coordinates — double-click a match to jump the caret to the exact character.",
          "ProjectSearch", "#D47A1E"},
         {"🤖", "AI Assistant",
-         "Local AI — Ollama · llama.cpp (GGUF) · LM Studio · any OpenAI-compatible server. Explain · Find Bugs · Refactor · Tests. Zero cloud, zero telemetry.",
+         "Local-first AI — Ollama · llama.cpp (GGUF) · LM Studio · any OpenAI-compatible server. Cloud backends optional: OpenRouter, OpenAI, Azure, Ollama Cloud. Explain · Find Bugs · Refactor · Tests. Zero telemetry.",
          "AIAssistant", "#0E639C"},
         {"⌨", "Terminal",
          "Built-in shell tab. Run git, npm, make, cargo — without leaving the editor.",
@@ -562,8 +562,9 @@ void WelcomeWidget::buildFooter(QVBoxLayout *parent) {
     row->setSpacing(16);
 
     auto *hint = new QLabel(
-        "💡 Tip: run <code>ollama pull qwen2.5-coder:3b</code> to enable the AI Assistant. "
-        "Everything stays on your machine.");
+        "💡 Tip: run <code>ollama pull qwen2.5-coder:3b</code> for a local AI Assistant. "
+        "With Ollama, your code stays on your machine. Cloud backends "
+        "(OpenAI, OpenRouter, Azure, Ollama Cloud) are available too — opt-in.");
     QFont hintFont = notepatraUiFont();
     hintFont.setPointSize(11);
     hint->setFont(hintFont);

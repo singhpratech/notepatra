@@ -8,6 +8,57 @@
 #include <QMenu>
 #include <QAction>
 #include <QSortFilterProxyModel>
+#include <QProxyStyle>
+#include <QPainter>
+#include <QApplication>
+
+// v0.1.70 — SSMS Object Explorer-style `+/-` branch indicators for the
+// file tree. SSMS uses small bordered +/- boxes (not Qt's default
+// triangle arrows) for expand/collapse on database/table/view nodes.
+// User asked for the same look on Notepatra's file tree.
+//
+// QProxyStyle intercepts the QStyle::PE_IndicatorBranch primitive and
+// paints a 9×9 bordered box with a horizontal line (− for expanded)
+// plus a vertical line (− → + for collapsed). Falls through to the
+// default style for every other primitive so dock-tabs, scroll-bars,
+// and selection highlights stay native.
+class SsmsBranchStyle : public QProxyStyle {
+public:
+    using QProxyStyle::QProxyStyle;
+    void drawPrimitive(PrimitiveElement element, const QStyleOption *option,
+                       QPainter *painter, const QWidget *widget = nullptr) const override {
+        if (element == PE_IndicatorBranch && option) {
+            const bool hasChildren = option->state & QStyle::State_Children;
+            if (!hasChildren) return;   // leaf node — no indicator
+
+            painter->save();
+            painter->setRenderHint(QPainter::Antialiasing, false);
+
+            const QRect r = option->rect;
+            const int cx = r.center().x();
+            const int cy = r.center().y();
+            const int sz = 4;   // half-edge of the +/- box
+
+            QPen pen(option->palette.color(QPalette::Mid));
+            pen.setWidth(1);
+            painter->setPen(pen);
+            painter->setBrush(option->palette.base());
+            painter->drawRect(cx - sz, cy - sz, sz * 2, sz * 2);
+
+            // Horizontal stroke (always — represents the minus in −).
+            painter->drawLine(cx - sz + 2, cy, cx + sz - 2, cy);
+
+            // Vertical stroke — present only when collapsed (turns − into +).
+            const bool open = option->state & QStyle::State_Open;
+            if (!open) {
+                painter->drawLine(cx, cy - sz + 2, cx, cy + sz - 2);
+            }
+            painter->restore();
+            return;
+        }
+        QProxyStyle::drawPrimitive(element, option, painter, widget);
+    }
+};
 
 // v0.1.61 — proxy that hides entries whose absolute path is in m_hidden.
 // Subclass kept inside the .cpp because nothing else needs to touch it;
@@ -83,6 +134,11 @@ FileExplorer::FileExplorer(QWidget *parent) : QWidget(parent) {
     m_tree->setColumnHidden(3, true);
     m_tree->header()->setVisible(false);
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
+    // v0.1.70 — SSMS Object Explorer-style +/- branch indicators (user
+    // request: "like in ssms where we see database table views"). The
+    // SsmsBranchStyle proxy paints a bordered +/- box for nodes with
+    // children; leaf files get nothing (cleaner than Qt's default arrow).
+    m_tree->setStyle(new SsmsBranchStyle(qApp->style()));
     layout->addWidget(m_tree);
 
     connect(m_pathCombo, &QComboBox::currentTextChanged, this, [this](const QString &path) {

@@ -23,6 +23,47 @@
 #include <QSettings>
 #include <QTimer>
 #include <QUrl>
+#include <QPainter>
+#include <QMouseEvent>
+#include <functional>
+
+// ─── VerticalLabel ───────────────────────────────────────────────────
+// v0.1.70 — JetBrains-style rotated tool-window rail label. Renders
+// QLabel text rotated -90° (reads bottom-to-top). Used on the AI dock
+// activity strip to label the file-tree toggle button without eating
+// horizontal width. Click handler is stored as std::function so we can
+// avoid the Q_OBJECT-in-cpp moc dance.
+class VerticalLabel : public QLabel {
+public:
+    explicit VerticalLabel(const QString &text, QWidget *parent = nullptr)
+        : QLabel(text, parent) {
+        setAlignment(Qt::AlignCenter);
+    }
+    void setClickHandler(std::function<void()> h) { m_handler = std::move(h); }
+protected:
+    void paintEvent(QPaintEvent *) override {
+        QPainter p(this);
+        p.setRenderHint(QPainter::TextAntialiasing);
+        p.setFont(font());
+        p.setPen(palette().color(foregroundRole()));
+        p.translate(width() / 2.0, height() / 2.0);
+        p.rotate(-90);
+        const QFontMetrics fm(font());
+        const int tw = fm.horizontalAdvance(text());
+        p.drawText(-tw / 2, fm.ascent() / 2 - 2, text());
+    }
+    QSize sizeHint() const override {
+        const QFontMetrics fm(font());
+        return QSize(fm.height() + 2, fm.horizontalAdvance(text()) + 10);
+    }
+    QSize minimumSizeHint() const override { return sizeHint(); }
+    void mousePressEvent(QMouseEvent *ev) override {
+        if (ev->button() == Qt::LeftButton && m_handler) m_handler();
+        QLabel::mousePressEvent(ev);
+    }
+private:
+    std::function<void()> m_handler;
+};
 
 // ─── Tolerant JSON pretty printer ─────────────────────────────────────
 // Tokenizes ANY JSON-ish input (even broken JSON) and re-emits it with
@@ -528,7 +569,8 @@ static QIcon makeFeatureIcon(const QColor &base, const QString &iconKind, const 
 
 static void addFeatureShortcut(QToolBar *toolbar, QAction *action,
                                const QColor &base, const QString &iconKind,
-                               const QString &label, const QString &tooltip = QString()) {
+                               const QString &label, const QString &tooltip = QString(),
+                               bool showCheckedState = false) {
     if (!toolbar || !action) return;
 
     auto *button = new QToolButton;
@@ -543,6 +585,18 @@ static void addFeatureShortcut(QToolBar *toolbar, QAction *action,
     button->setMinimumSize(78, 60);
 
     QObject::connect(button, &QToolButton::clicked, action, &QAction::trigger);
+
+    // v0.1.70 — only the AI Assistant button reflects its action's checked
+    // state visually (ON/OFF toggle). Other tools (Terminal, JSON, etc.)
+    // have checkable actions internally (so the View menu shows a check
+    // when their tab is open) but the user wants the toolbar buttons to
+    // stay plain trigger-style. Pass showCheckedState=true to opt in.
+    if (showCheckedState && action->isCheckable()) {
+        button->setCheckable(true);
+        button->setChecked(action->isChecked());
+        QObject::connect(action, &QAction::toggled, button, &QToolButton::setChecked);
+    }
+
     toolbar->addWidget(button);
 }
 
@@ -747,12 +801,16 @@ MainWindow::MainWindow() {
     });
 
     // File explorer (hidden by default — only shown when Coding Mode
-    // is active in the AI dock, see codingModeChanged wiring below).
+    // is active inside the AI dock). v0.1.70 — moved from the main
+    // splitter (where it sat at index 0 on the far left) to live INSIDE
+    // the AI dock host as the left half of an internal splitter. User
+    // explicitly asked: "left panel should be inside the AI mode not
+    // outside" (red-arrow screenshot showing tree → AI dock).
     m_explorer = new FileExplorer;
     m_explorer->setMinimumWidth(180);
     m_explorer->setMaximumWidth(400);
     m_explorer->setVisible(false);
-    m_splitter->addWidget(m_explorer);
+    // NOTE: parenting happens below inside the aiDockHost construction.
 
     connect(m_explorer, &FileExplorer::fileOpenRequested, this, &MainWindow::openFile);
     // v0.1.61 — restore the user's hidden-paths set from Config, and
@@ -775,7 +833,12 @@ MainWindow::MainWindow() {
     // The dock re-uses the same AIPanel widget class as the tab-based
     // AI Assistant — identical functionality, different surface.
     m_aiDockHost = new QWidget;
-    m_aiDockHost->setMinimumWidth(320);
+    // v0.1.70 — lowered from 320 → 200 so a true 20% dock-width fits on
+    // typical windows. The earlier 320 min silently bumped Qt's setSizes
+    // up, distorting the user-requested 80/20 ratio to ~72/28 on a
+    // 1140px window. 200 gives the dock at least the activity strip
+    // (32px) + chat input (~150px) on the narrowest reasonable window.
+    m_aiDockHost->setMinimumWidth(200);
     // v0.1.42 — removed setMaximumWidth(640). The hard 640 cap stopped
     // users from dragging the QSplitter handle past that width on
     // Windows + macOS, where it presented as "manual resize doesn't
@@ -783,11 +846,104 @@ MainWindow::MainWindow() {
     // The QSplitter parent still enforces a sane minimum on the editor
     // pane, so removing the max here just lets users size the chat as
     // wide as their screen allows.
-    auto *aiDockLayout = new QVBoxLayout(m_aiDockHost);
+    // v0.1.70 — dock host is now a horizontal layout: [activity strip |
+    // internal split [tree | AI panel]]. The activity strip is a thin
+    // VS-Code-style icon column. Currently it holds one 📁 toggle for the
+    // file tree; future icons (search-in-AI-context, git status, etc.)
+    // can slot in below.
+    auto *aiDockLayout = new QHBoxLayout(m_aiDockHost);
     aiDockLayout->setContentsMargins(0, 0, 0, 0);
     aiDockLayout->setSpacing(0);
     m_aiDockPanel = new AIPanel;
-    aiDockLayout->addWidget(m_aiDockPanel);
+
+    // Activity strip — fixed 32px wide, full height. Holds:
+    //   • [+] menu button at the top (SSMS-style "Add…" affordance —
+    //     new file, open file, open folder, add database connection).
+    //   • 📁 file-tree toggle with a vertical "FILES" label below it
+    //     (JetBrains-style rotated tool-window label).
+    auto *activityStrip = new QWidget;
+    activityStrip->setFixedWidth(32);
+    activityStrip->setObjectName("aiActivityStrip");
+    activityStrip->setStyleSheet(
+        "#aiActivityStrip { background: rgba(0,0,0,0.05); "
+        "border-right: 1px solid rgba(0,0,0,0.08); }");
+    auto *stripLayout = new QVBoxLayout(activityStrip);
+    stripLayout->setContentsMargins(2, 6, 2, 6);
+    stripLayout->setSpacing(6);
+
+    // v0.1.70 — the standalone `+` button on the activity strip is removed.
+    // User clarification: the SSMS-style `+/-` belongs on the TREE BRANCH
+    // indicators (next to each folder, like SSMS Object Explorer shows for
+    // databases / tables / views), not on the strip. See FileExplorer's
+    // SsmsBranchStyle for that change. Activity strip now only hosts the
+    // folder-tree toggle + vertical FILES label.
+    m_explorerToggleBtn = new QToolButton;
+    m_explorerToggleBtn->setIcon(style()->standardIcon(QStyle::SP_DirIcon));
+    m_explorerToggleBtn->setIconSize(QSize(18, 18));
+    m_explorerToggleBtn->setCheckable(true);
+    m_explorerToggleBtn->setFixedSize(28, 28);
+    m_explorerToggleBtn->setToolTip(
+        tr("Toggle File Explorer · visible inside the AI dock when on (Ctrl+Shift+E)"));
+    m_explorerToggleBtn->setCursor(Qt::PointingHandCursor);
+    m_explorerToggleBtn->setStyleSheet(
+        "QToolButton { background: transparent; border: none; "
+        "border-radius: 4px; padding: 2px; }"
+        "QToolButton:hover { background: rgba(0,0,0,0.10); }"
+        "QToolButton:checked { background: rgba(78,201,176,0.30); }");
+    connect(m_explorerToggleBtn, &QToolButton::clicked, this, [this](bool checked) {
+        if (!m_explorer) return;
+        m_explorer->setVisible(checked);
+        // v0.1.70 — main splitter must re-balance because dock width
+        // depends on tree visibility (60/40 when tree shown, 80/20 when
+        // hidden). Order: setVisible above must run first so the
+        // rebalance reads the correct treeVisible state.
+        rebalanceAiDockSplit();
+        if (m_aiDockInternalSplit) {
+            const int dockW = m_aiDockInternalSplit->size().width();
+            if (checked) {
+                const int treeW = 220;
+                const int chatW = std::max(280, dockW - treeW);
+                m_aiDockInternalSplit->setSizes({treeW, chatW});
+            } else {
+                m_aiDockInternalSplit->setSizes({0, std::max(1, dockW)});
+            }
+        }
+    });
+    stripLayout->addWidget(m_explorerToggleBtn, 0, Qt::AlignHCenter);
+
+    // Vertical rotated "FILES" label under the folder icon —
+    // JetBrains-style tool-window rail label. Uses a custom-paint QLabel.
+    auto *filesVLabel = new VerticalLabel(tr("FILES"));
+    filesVLabel->setStyleSheet("color: rgba(0,0,0,0.55); font-size: 10px; "
+                               "font-weight: 600; letter-spacing: 1px;");
+    filesVLabel->setCursor(Qt::PointingHandCursor);
+    filesVLabel->setToolTip(tr("Click to toggle file explorer"));
+    // Clicking the rotated label is a shortcut for toggling the explorer.
+    filesVLabel->setClickHandler([this]() {
+        if (m_explorerToggleBtn) {
+            m_explorerToggleBtn->setChecked(!m_explorerToggleBtn->isChecked());
+            emit m_explorerToggleBtn->clicked(m_explorerToggleBtn->isChecked());
+        }
+    });
+    stripLayout->addWidget(filesVLabel, 0, Qt::AlignHCenter);
+
+    stripLayout->addStretch(1);
+
+    aiDockLayout->addWidget(activityStrip);
+
+    // Internal horizontal split: [file tree | AI panel]. File tree is
+    // hidden (zero width) by default; activity strip button + coding-mode
+    // signal both manage its visibility.
+    auto *dockSplit = new QSplitter(Qt::Horizontal);
+    dockSplit->setHandleWidth(4);
+    dockSplit->setChildrenCollapsible(false);
+    dockSplit->addWidget(m_explorer);     // index 0 — file tree (hidden by default)
+    dockSplit->addWidget(m_aiDockPanel);  // index 1 — AI chat surface
+    dockSplit->setStretchFactor(0, 0);    // file tree takes a fixed-ish width
+    dockSplit->setStretchFactor(1, 1);    // AI chat takes the rest
+    dockSplit->setSizes({0, 1000});       // start with tree collapsed
+    aiDockLayout->addWidget(dockSplit, 1);
+    m_aiDockInternalSplit = dockSplit;
     // Theme propagation — the panel re-renders its chat transcript and
     // chrome when the user flips Config::theme at runtime.
     connect(this, &MainWindow::themeChanged, m_aiDockPanel, &AIPanel::onThemeChanged);
@@ -806,20 +962,71 @@ MainWindow::MainWindow() {
     // is). Uncheck hides the explorer so the user gets a clean editor.
     connect(m_aiDockPanel, &AIPanel::codingModeRequested, this, [this](bool on) {
         if (!m_explorer) return;
+        // v0.1.70 — Coding mode auto-shows the file explorer INSIDE the
+        // AI dock; chat / data hide it. The activity-strip toggle button
+        // mirrors the same state so the user can manually flip later.
         m_explorer->setVisible(on);
-        // v0.1.48 — when Coding Mode shows the explorer for the first time
-        // after the AI dock has been sized 50/50, the splitter's slot for
-        // the explorer is 0 (it was hidden), so setVisible(true) alone
-        // produces a zero-width strip. Re-allocate ~220 px from the editor
-        // tabs so the file tree is actually usable.
-        if (on && m_splitter) {
-            QList<int> sizes = m_splitter->sizes();
-            if (sizes.size() >= 2 && sizes[0] < 180) {
-                const int need = 220 - sizes[0];
-                sizes[0] = 220;
-                sizes[1] = std::max(280, sizes[1] - need);
-                m_splitter->setSizes(sizes);
+        if (m_explorerToggleBtn) m_explorerToggleBtn->setChecked(on);
+
+        // Main splitter — tree-visible needs more dock width (60/40)
+        // than tree-hidden (80/20). Re-balance based on the new state.
+        rebalanceAiDockSplit();
+
+        // Internal dock split: allocate ~220px for the file tree, give the
+        // rest to the AI chat. When mode flips off, collapse tree to 0.
+        if (m_aiDockInternalSplit) {
+            const int dockW = m_aiDockInternalSplit->size().width();
+            if (on) {
+                const int treeW = 220;
+                const int chatW = std::max(280, dockW - treeW);
+                m_aiDockInternalSplit->setSizes({treeW, chatW});
+            } else {
+                m_aiDockInternalSplit->setSizes({0, std::max(1, dockW)});
             }
+        }
+
+        // v0.1.70 — VS Code-style "Open Folder / Open File / Skip" picker.
+        // When the user enters Coding mode for the first time in this
+        // session AND no workspace is set, prompt them to pick a folder
+        // (or file) so the AI has something concrete to read/edit. One-
+        // shot per session via m_codingFolderPromptShown — re-entering
+        // Coding mode after dismissing doesn't re-pester.
+        if (on && !m_codingFolderPromptShown
+            && m_explorer->rootPath().isEmpty()) {
+            m_codingFolderPromptShown = true;
+            QMessageBox box(this);
+            box.setWindowTitle(tr("Coding Mode — open something to work on"));
+            box.setIcon(QMessageBox::Information);
+            box.setTextFormat(Qt::RichText);
+            box.setText(tr(
+                "<b>Coding Mode</b> works best with a folder or file open "
+                "so the AI can read, edit, and run git operations against "
+                "real workspace files."));
+            box.setInformativeText(tr(
+                "Pick one — you can always change later:"));
+            QPushButton *openFolderBtn = box.addButton(
+                tr("Open Folder…"), QMessageBox::AcceptRole);
+            QPushButton *openFileBtn = box.addButton(
+                tr("Open File…"), QMessageBox::AcceptRole);
+            QPushButton *skipBtn = box.addButton(
+                tr("Skip — continue without a workspace"),
+                QMessageBox::RejectRole);
+            box.setDefaultButton(openFolderBtn);
+            box.exec();
+            QAbstractButton *clicked = box.clickedButton();
+            if (clicked == openFolderBtn) {
+                const QString p = QFileDialog::getExistingDirectory(this,
+                    tr("Open Folder as Workspace"), QDir::homePath());
+                if (!p.isEmpty()) {
+                    m_explorer->setRoot(p);
+                }
+            } else if (clicked == openFileBtn) {
+                const QStringList paths = QFileDialog::getOpenFileNames(this,
+                    tr("Open File(s)"), QDir::homePath());
+                for (const QString &f : paths) openFile(f);
+            }
+            // skipBtn or close-window → no-op; user stays in Coding mode
+            // without a workspace. AI tools that need one will say so.
         }
     });
 
@@ -860,12 +1067,26 @@ MainWindow::MainWindow() {
     connect(m_aiDockPanel, &AIPanel::fullscreenToggled, this, [this](bool on) {
         if (!m_splitter || !m_aiDockHost) return;
         if (on) {
-            m_aiSavedSplitterSizes = m_splitter->sizes();
-            m_aiSavedSiblingVisibility.clear();
+            // v0.1.70 — Only save siblings the FIRST time we enter fullscreen.
+            // Coding → Data (and back) re-fires fullscreenToggled(true) while
+            // already in fullscreen; if we cleared + re-saved here, we'd
+            // overwrite the original pre-fullscreen state with the (now-
+            // hidden) current state — so the subsequent fullscreen-off
+            // restore would leave siblings hidden. Reproducer:
+            // test_ai_fullscreen_exit S11.
+            if (m_aiSavedSiblingVisibility.isEmpty()) {
+                m_aiSavedSplitterSizes = m_splitter->sizes();
+                for (int i = 0; i < m_splitter->count(); ++i) {
+                    QWidget *w = m_splitter->widget(i);
+                    if (w == m_aiDockHost) continue;
+                    m_aiSavedSiblingVisibility.insert(w, w->isVisible());
+                }
+            }
+            // Hide all siblings (idempotent — they may already be hidden
+            // from a prior fullscreen-toggled(true) within the same session).
             for (int i = 0; i < m_splitter->count(); ++i) {
                 QWidget *w = m_splitter->widget(i);
                 if (w == m_aiDockHost) continue;
-                m_aiSavedSiblingVisibility.insert(w, w->isVisible());
                 w->setVisible(false);
             }
             // Make sure the AI dock is visible AND takes 100 % of the splitter.
@@ -892,7 +1113,13 @@ MainWindow::MainWindow() {
         }
     });
 
+    // v0.1.70 — AI dock ALWAYS starts hidden on app launch, regardless of
+    // saved Config::aiDockVisible. User UX rule: "AI cannot start on new
+    // app start only when AI assistant is clicked". The user opens it via
+    // Ctrl+Q / the AI toolbar icon / Tools menu. Config is synced to false
+    // here so the toggle logic stays consistent (next toggle flips to true).
     m_aiDockHost->setVisible(false);
+    Config::instance().aiDockVisible = false;
     m_splitter->addWidget(m_aiDockHost);
 
     connect(m_tabs, &QTabWidget::tabCloseRequested, this, &MainWindow::closeTab);
@@ -1070,11 +1297,27 @@ MainWindow::MainWindow() {
         }
     }
 
-    // Check for crash recovery first
-    checkCrashRecovery();
-
-    // Restore previous session (open files from last time)
+    // Notepad++-style: session.json IS the recovery mechanism. Saved every
+    // 10s with full unsaved-buffer content + on every clean close. Reading
+    // it silently restores everything — no separate "Restore recovered
+    // files?" prompt (that was the old recovery_*.txt path, which now
+    // double-restored the same tabs that session.json already brought back).
+    // checkCrashRecovery() left in place but only fires if session.json
+    // is absent (genuine first-launch crash before any save).
     restoreSession();
+    if (m_tabs && m_tabs->count() <= 1) {
+        // session.json gave us nothing → fall back to the legacy recovery
+        // pile, in case it has crash residue worth restoring.
+        checkCrashRecovery();
+    } else {
+        // session.json restored at least one tab — wipe stale recovery
+        // files so they don't re-appear on the next launch.
+        QFile::remove(recoveryDir() + "/.crash_flag");
+        QDir recovDir(recoveryDir());
+        for (const QString &rf : recovDir.entryList({"recovery_*"}, QDir::Files)) {
+            QFile::remove(recoveryDir() + "/" + rf);
+        }
+    }
 
     // Optional check-on-startup — throttled to once per 24h via QSettings
     // so we don't hammer the GitHub API on every launch. User can disable
@@ -1092,11 +1335,12 @@ MainWindow::MainWindow() {
         }
     }
 
-    // Auto-save session every 10 seconds + recovery every 30 seconds
+    // Auto-save session every 10 seconds. saveSession() now writes full
+    // unsaved-buffer content into session.json, so the legacy recovery_*.txt
+    // pile is no longer needed — autoSaveRecovery() removed from this tick.
     m_autoSaveTimer = new QTimer(this);
     connect(m_autoSaveTimer, &QTimer::timeout, this, [this]() {
         saveSession();
-        autoSaveRecovery();
         checkFileChanges();
         // Persist window geometry + config
         auto &cfg = Config::instance();
@@ -1338,13 +1582,9 @@ void MainWindow::buildMenus() {
         QString p = QFileDialog::getExistingDirectory(this, "Open Folder", QDir::homePath());
         if (p.isEmpty()) return;
         m_explorer->setRoot(p);
-        // v0.1.61 — explorer visibility is owned by Coding mode. Setting
-        // the workspace folder here primes the root so the AI / search
-        // see the right tree, but the sidebar stays hidden until the
-        // user flips Coding mode in the AI dock.
-        const bool codingOn = m_aiDockPanel && m_aiDockPanel->isCodingMode()
-                              && m_aiDockHost && m_aiDockHost->isVisible();
-        m_explorer->setVisible(codingOn);
+        // v0.1.70 — explorer does NOT auto-show even in Coding mode. Setting
+        // the workspace folder here primes the root only; user manually
+        // shows the sidebar via View > Files Explorer if they want it.
     });
     file->addAction("Reload from Disk", this, [E]() {
         if (auto *e = E(); e && !e->filePath().isEmpty()) e->loadFile(e->filePath());
@@ -1503,7 +1743,10 @@ void MainWindow::buildMenus() {
     auto *commentMenu = edit->addMenu("Comment/Uncomment");
     auto *lineCommentAct = commentMenu->addAction("Toggle &Line Comment", this,
         [E]() { if (auto *e = E()) e->toggleComment(); });
-    lineCommentAct->setShortcuts({QKeySequence("Ctrl+/"), QKeySequence("Ctrl+Q")});
+    // v0.1.70 — Ctrl+Q reassigned to AI dock toggle (user preference,
+    // closer to left hand than Ctrl+Shift+A). Line Comment keeps Ctrl+/
+    // only.
+    lineCommentAct->setShortcuts({QKeySequence("Ctrl+/")});
     auto *blockCommentAct = commentMenu->addAction("Toggle &Block Comment", this,
         [E]() { if (auto *e = E()) e->toggleBlockComment(); });
     blockCommentAct->setShortcut(QKeySequence("Ctrl+Shift+Q"));
@@ -1814,15 +2057,15 @@ void MainWindow::buildMenus() {
     // spawning a new editor tab. One chat, always in the same place, so
     // switching between files doesn't reset the conversation. Matches
     // the Cursor / VS Code layout the user asked for.
-    auto *aiAct = feat->addAction("AI Assistant      Ctrl+Shift+A");
+    // v0.1.70 — shortcut moved from Ctrl+Shift+A → Ctrl+Q (user preference;
+    // closer to left hand). Both still register the same toggle.
+    auto *aiAct = feat->addAction("AI Assistant      Ctrl+Q");
     aiAct->setCheckable(true);
-    aiAct->setShortcut(QKeySequence("Ctrl+Shift+A"));
+    aiAct->setShortcuts({QKeySequence("Ctrl+Q"), QKeySequence("Ctrl+Shift+A")});
     aiAct->setStatusTip("Toggle the AI Assistant dock (right side). Persistent chat that sees all your open files + workspace. Configure backends in Settings → Preferences → AI.");
     connect(aiAct, &QAction::triggered, this, [this, aiAct]() {
-        // toggleAiDock also seeds fresh workspace context into the dock,
-        // so the user can send immediately after opening.
         toggleAiDock();
-        aiAct->setChecked(m_aiDockHost && m_aiDockHost->isVisible());
+        aiAct->setChecked(isAiDockVisible());
     });
 
     feat->addSeparator();
@@ -2388,12 +2631,8 @@ void MainWindow::buildMenus() {
         connect(panel, &GitPanel::repositoryOpened, this, [this](const QString &repoRoot) {
             if (repoRoot.isEmpty()) return;
             m_explorer->setRoot(repoRoot);
-            // v0.1.61 — only surface the explorer if Coding mode is active.
-            // Otherwise just seed the workspace root; the user gets the tree
-            // the moment they flip Coding mode.
-            const bool codingOn = m_aiDockPanel && m_aiDockPanel->isCodingMode()
-                                  && m_aiDockHost && m_aiDockHost->isVisible();
-            m_explorer->setVisible(codingOn);
+            // v0.1.70 — don't auto-show explorer; seed root only. User
+            // shows it via View > Files Explorer if they want.
         });
         // New signals from the v2 GitPanel rewrite — `openFileInTab` opens a
         // plain-file tab, `openDiffInTab` opens a CompareWidget tab showing
@@ -3533,6 +3772,15 @@ void MainWindow::buildToolbar() {
     featureTb->setFloatable(false);
     featureTb->setIconSize(QSize(32, 32));
     featureTb->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+    // v0.1.70 — when a feature button is checkable AND checked (AI dock
+    // open being the main case), render a subtle highlighted background +
+    // accent border so the user sees the ON state at a glance.
+    featureTb->setStyleSheet(
+        "QToolButton#featureShortcutButton:checked { "
+        "  background: rgba(78,201,176,0.18); "
+        "  border: 1px solid rgba(78,201,176,0.55); "
+        "  border-radius: 6px; "
+        "}");
 
     // Project Search at slot 1 — most-used feature after AI. Clay-orange
     // accent matches its Welcome-tab card. Shortcut: Ctrl+Shift+G.
@@ -3541,7 +3789,8 @@ void MainWindow::buildToolbar() {
                        "Recursively search file names + contents (Ctrl+Shift+G)");
     addFeatureShortcut(featureTb, findActionByPrefix(this, "AI Assistant"),
                        QColor("#0E639C"), "ai", "AI",
-                       "Open AI Assistant in a new tab");
+                       "Toggle AI Assistant dock (Ctrl+Q) — ON / OFF",
+                       /*showCheckedState=*/true);
     addFeatureShortcut(featureTb, findActionByPrefix(this, "Terminal"),
                        QColor("#2D7D46"), "terminal", "Terminal",
                        "Open the built-in terminal");
@@ -3633,15 +3882,31 @@ void MainWindow::saveSession() {
     QJsonArray tabs;
     for (int i = 0; i < m_tabs->count(); i++) {
         auto *e = m_tabs->editorAt(i);
-        if (!e || e->filePath().isEmpty()) continue;
+        if (!e) continue;
+
+        const QString path = e->filePath();
+        const bool modified = e->isModified();
+        // Skip pristine empty untitled tabs — nothing to restore.
+        if (path.isEmpty() && !modified && e->text().isEmpty()) continue;
 
         QJsonObject tab;
-        tab["path"] = e->filePath();
+        tab["path"] = path;
+        tab["tabName"] = m_tabs->tabText(i).remove(" *").remove(" [recovered]");
         int line, col;
         e->getCursorPosition(&line, &col);
         tab["line"] = line;
         tab["col"] = col;
         tab["active"] = (i == m_tabs->currentIndex());
+        tab["modified"] = modified;
+        // Notepad++-style: persist unsaved content so the buffer survives
+        // app close → relaunch even without a save. Three cases store text:
+        //   1. Untitled tab (no path) with any content.
+        //   2. File-backed tab that's been modified since last save.
+        // Pristine file-backed tabs only need path + cursor — we re-read
+        // from disk on restore.
+        if (path.isEmpty() || modified) {
+            tab["unsavedContent"] = e->text();
+        }
         tabs.append(tab);
     }
 
@@ -3687,23 +3952,52 @@ void MainWindow::restoreSession() {
     for (int i = 0; i < tabs.size(); i++) {
         QJsonObject tab = tabs[i].toObject();
         QString path = tab["path"].toString();
-        if (path.isEmpty() || !QFileInfo(path).exists()) continue;
+        const bool hasUnsaved = tab.contains("unsavedContent");
+        const QString unsavedContent = tab["unsavedContent"].toString();
+        const bool wasModified = tab["modified"].toBool();
+        const QString tabName = tab["tabName"].toString();
 
-        openFile(path);
+        Editor *e = nullptr;
+        if (!path.isEmpty() && QFileInfo(path).exists() && !wasModified) {
+            // Pristine file-backed tab — re-read from disk.
+            openFile(path);
+            e = m_tabs->editorAt(m_tabs->count() - 1);
+        } else if (!path.isEmpty() && QFileInfo(path).exists() && wasModified && hasUnsaved) {
+            // Modified file-backed tab — open the file first (for path
+            // association + watcher + syntax), then overlay the unsaved
+            // buffer content and mark as modified.
+            openFile(path);
+            e = m_tabs->editorAt(m_tabs->count() - 1);
+            if (e) {
+                e->setText(unsavedContent);
+                e->setModified(true);
+            }
+        } else if (hasUnsaved) {
+            // Untitled tab or file-no-longer-exists — recreate as new buffer.
+            e = newFile();
+            if (e) {
+                e->setText(unsavedContent);
+                e->setModified(true);
+                if (!tabName.isEmpty()) {
+                    int idx = m_tabs->indexOf(e);
+                    if (idx >= 0) m_tabs->setTabText(idx, tabName);
+                }
+            }
+        } else {
+            continue;
+        }
 
-        // Restore cursor position
-        auto *e = m_tabs->editorAt(m_tabs->count() - 1);
         if (e) {
             e->setCursorPosition(tab["line"].toInt(), tab["col"].toInt());
         }
-
         if (tab["active"].toBool()) activeIdx = m_tabs->count() - 1;
     }
 
     if (m_tabs->count() > 1) {
         // Remove the initial empty "new 1" tab if we restored files
         auto *first = m_tabs->editorAt(0);
-        if (first && first->filePath().isEmpty() && !first->isModified()) {
+        if (first && first->filePath().isEmpty() && !first->isModified()
+            && first->text().isEmpty()) {
             m_tabs->removeTab(0);
             if (activeIdx > 0) activeIdx--;
         }
@@ -3896,35 +4190,20 @@ void MainWindow::checkFileChanges() {
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {
-    for (int i = 0; i < m_tabs->count(); i++) {
-        auto *e = m_tabs->editorAt(i);
-        if (e && e->isModified()) {
-            m_tabs->setCurrentIndex(i);
-            QString name = m_tabs->tabText(i).remove(" *");
-            auto result = QMessageBox::question(this, "Save",
-                QString("Save changes to %1?").arg(name),
-                QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
-            if (result == QMessageBox::Save) {
-                if (!e->filePath().isEmpty()) e->saveFile();
-                else {
-                    QString path = QFileDialog::getSaveFileName(this, "Save");
-                    if (!path.isEmpty()) e->saveFile(path);
-                    else { event->ignore(); return; }
-                }
-            } else if (result == QMessageBox::Cancel) {
-                event->ignore();
-                return;
-            }
-        }
-    }
+    // Notepad++-style persistence: app close NEVER prompts. All open tabs —
+    // including unsaved buffers and untitled tabs — are serialised to
+    // session.json so they reappear verbatim on next launch (with their
+    // modified flag intact). The Save / Discard / Cancel dialog is reserved
+    // for *individual* tab close (the X on a tab), where the user has
+    // explicitly chosen to dismiss one buffer. See closeTab() for that path.
 
-    // Save session before closing (clean shutdown)
+    // Save session including unsaved buffers and untitled tabs.
     saveSession();
 
-    // Remove crash flag (clean exit)
+    // Remove crash flag (clean exit) so next launch knows this was tidy.
     QFile::remove(recoveryDir() + "/.crash_flag");
 
-    // Clean recovery files (not needed on clean exit)
+    // Clean per-tab recovery files — session.json now carries unsaved state.
     QDir recovDir(recoveryDir());
     for (const QString &rf : recovDir.entryList({"recovery_*"}, QDir::Files)) {
         QFile::remove(recoveryDir() + "/" + rf);
@@ -4256,50 +4535,98 @@ void MainWindow::populateAiContext(AIPanel *panel) {
 // left-to-right as: FileExplorer · EditorTabs · AIPanel. When toggled
 // on, also auto-opens the file-tree sidebar so users get the full
 // 3-column coding layout immediately.
+//
+// v0.1.70 — Now a thin wrapper around setAiDockVisible() which is the
+// single source of truth for AI dock visibility. Config::aiDockVisible
+// is persisted on every toggle so the layout survives quit/relaunch.
 void MainWindow::toggleAiDock() {
-    if (!m_aiDockHost) return;
-    const bool show = !m_aiDockHost->isVisible();
-    m_aiDockHost->setVisible(show);
-    // v0.1.61 — explorer is strictly subordinate to Coding mode AND the
-    // dock being open. Hiding the dock forces the explorer off; showing
-    // the dock only restores the explorer if Coding mode is on.
-    if (m_explorer) {
-        const bool codingOn = m_aiDockPanel && m_aiDockPanel->isCodingMode();
-        m_explorer->setVisible(show && codingOn);
-    }
-    if (show) {
-        // DON'T auto-open the file explorer here — opening the AI chat is
-        // a lightweight "start a conversation" action. The explorer only
-        // appears when the user explicitly ticks Coding Mode (which flips
-        // the 3-column layout). Matches user's "nothing in between" ask.
-        populateAiContext(m_aiDockPanel);
+    setAiDockVisible(!isAiDockVisible());
+}
 
-        // v0.1.48 — first time the dock is shown in a session, give it
-        // ~50% of the splitter's width. Subsequent toggles respect
-        // whatever the user dragged the handle to. The splitter has up
-        // to 4 widgets (explorer · tabs · aiDockHost · funcList); we
-        // leave explorer and funcList at their current sizes (or 0 if
-        // hidden) and rebalance tabs ↔ aiDockHost to 50/50.
-        if (!m_aiDockSizedOnce && m_splitter) {
-            QList<int> sizes = m_splitter->sizes();
-            const int total = std::accumulate(sizes.begin(), sizes.end(), 0);
-            if (total > 0 && sizes.size() >= 3) {
-                const int explorerW = sizes.value(0, 0);
-                const int funcListW = sizes.size() >= 4 ? sizes.value(3, 0) : 0;
-                const int half = total / 2;
-                // tabs (idx 1) gets total/2 minus explorer; aiDockHost
-                // (idx 2) gets total/2 minus funcList. Clamp to a minimum
-                // so the editor doesn't collapse.
-                const int tabsW = std::max(280, half - explorerW);
-                const int aiW   = std::max(360, half - funcListW);
-                QList<int> next;
-                next << explorerW << tabsW << aiW;
-                if (sizes.size() >= 4) next << funcListW;
-                m_splitter->setSizes(next);
-            }
-            m_aiDockSizedOnce = true;
-        }
+bool MainWindow::isAiDockVisible() const {
+    return m_aiDockHost && m_aiDockHost->isVisible();
+}
+
+void MainWindow::setAiDockVisible(bool show) {
+    if (!m_aiDockHost) return;
+    if (show == m_aiDockHost->isVisible()) {
+        // Idempotent — ensure Config + button state agree but don't churn
+        // the splitter or kick off a re-populate.
+        Config::instance().aiDockVisible = show;
+        Config::instance().save();
+        return;
     }
+
+    if (!show) {
+        // Closing — exit any fullscreen state first so siblings (editor,
+        // explorer) come back. Without this the splitter stays squashed
+        // and the user sees an empty window after closing.
+        exitAiFullscreenIfActive();
+    }
+
+    m_aiDockHost->setVisible(show);
+    Config::instance().aiDockVisible = show;
+    Config::instance().save();
+
+    if (show) {
+        // v0.1.70 — DO NOT reset to Chat mode. The plan-mode design
+        // explicitly chose "restore last sub-mode on re-entry" — the
+        // AIPanel widget stayed alive while hidden so m_chatMode /
+        // m_codingMode / m_dataMode button states + the per-mode chat
+        // history are all intact. Just refresh workspace context.
+        populateAiContext(m_aiDockPanel);
+        rebalanceAiDockSplit();
+    }
+
+    // FileExplorer is gated on Coding mode + dock visible. Closing the
+    // dock hides it; opening doesn't show it (user opts in via View menu).
+    if (m_explorer && !show) {
+        m_explorer->setVisible(false);
+    }
+}
+
+void MainWindow::showAiDockForInvocation() {
+    if (!isAiDockVisible()) {
+        setAiDockVisible(true);
+    }
+}
+
+void MainWindow::rebalanceAiDockSplit() {
+    if (!m_splitter) return;
+    // v0.1.70 — only force the 60/40 default on the FIRST open per session.
+    // After that, the user's splitter drag is the source of truth. App
+    // restart resets m_aiDockSizedOnce back to false so the default re-
+    // applies on next session's first open. Prevents the "every click
+    // resets my drag" annoyance.
+    if (m_aiDockSizedOnce) return;
+    //
+    // Apply via a lambda we can defer. Calling setSizes() before Qt's
+    // layout pass has settled (e.g. right after setVisible(true) on the
+    // host) silently no-ops because total width is 0 — so the splitter
+    // falls back to its default 50/50 / 33/33/33 share. We invoke the
+    // lambda immediately AND via QTimer::singleShot(0) so it runs after
+    // the upcoming layout pass too. The second call is idempotent.
+    auto apply = [this]() {
+        if (!m_splitter) return;
+        const QList<int> sizes = m_splitter->sizes();
+        const int total = std::accumulate(sizes.begin(), sizes.end(), 0);
+        if (total <= 0 || sizes.size() < 2) return;
+        const int funcListW = sizes.size() >= 3 ? sizes.value(2, 0) : 0;
+        const int usable = total - funcListW;
+        // v0.1.70 — 60/40 split, AI dock gets the 60%. Notepatra is
+        // AI-first: the dock is the headline surface, editor tabs are the
+        // sidebar. Tried 80/20 and 70/30 along the way; settled on 60/40
+        // as the most usable for both AI conversations and code visibility.
+        const int aiW = (usable * 3) / 5;     // 60% AI dock
+        const int tabsW = usable - aiW;       // 40% editor sidebar
+        QList<int> next;
+        next << tabsW << aiW;
+        if (sizes.size() >= 3) next << funcListW;
+        m_splitter->setSizes(next);
+    };
+    apply();
+    QTimer::singleShot(0, this, apply);
+    m_aiDockSizedOnce = true;  // kept for back-compat
 }
 
 // v0.1.67 — bail out of AI dock fullscreen if we're currently inside it,

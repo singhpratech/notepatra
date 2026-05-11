@@ -123,6 +123,14 @@ public slots:
     // unchanged. The AIPanel widget itself is preserved.
     void forceExitFullscreen();
 
+    // v0.1.70 — Reset the panel to Chat mode. Called by MainWindow::toggleAiDock
+    // when the AI dock is being shown (Ctrl+Shift+A from hidden → visible) so
+    // every fresh open of the dock starts in Chat mode regardless of which
+    // mode was active when the dock was last hidden. Per user UX rule:
+    // "always default to chat whenever it opens from the button on AI Assistant".
+    // No-op when m_chatMode is null or already checked.
+    void resetToChatMode();
+
 signals:
     void insertText(const QString &text);
     void replaceSelection(const QString &text);
@@ -290,6 +298,12 @@ private:
     QAbstractButton *m_chatSegBtn    = nullptr;
     QAbstractButton *m_composeSegBtn = nullptr;
     QAbstractButton *m_agentSegBtn   = nullptr;
+    // v0.1.70 — wrapper around the Chat/Compose/Agent bottom strip so
+    // applyMode can hide it in Chat and Data modes (where Compose +
+    // Agent don't apply) and show it only in Coding mode. Hiding the
+    // frame collapses the QVBoxLayout slot, so the prompt input grows
+    // into the space.
+    QFrame *m_chatModeSegFrame = nullptr;
 
     // Live streaming-stats display — shows "GENERATING: 145 tok · 23
     // tok/s · 6.3 s" updating every 250 ms while the model is producing
@@ -351,6 +365,13 @@ private:
     // sendPrompt, which prepends it to the user message.
     QString m_pendingSchemaPin;
     QLabel *m_dataCapBanner = nullptr;
+    // Attached-DB confirmation chip — small green pill below the Manage
+    // Connections / Browse Schemas row in Data mode. Shows the list of
+    // saved connections with their table counts so the user knows what
+    // the model will see; refreshed whenever the connections dialog or
+    // schema browser closes.
+    QLabel *m_attachedDbsChip = nullptr;
+    void refreshAttachedDbsChip();
     // v0.1.53 — Data Analyst welcome card (model capability + connection
     // status + example-prompt chips + Hide button). Lives inside the chat
     // scroll area, shown only when Data mode is on AND chat is empty AND

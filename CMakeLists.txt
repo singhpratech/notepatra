@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.69 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.70 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -68,6 +68,11 @@ message(STATUS "Building for platform: ${PLATFORM_NAME}")
 # - Charts: rendered inline in the AI chat transcript when the model emits
 #   a ```chart fenced spec.
 find_package(Qt5 REQUIRED COMPONENTS Widgets PrintSupport Network Concurrent Sql Charts)
+# v0.1.70 — Qt5Svg is OPTIONAL: probe quietly, link if available. Without
+# the dev package, QImageReader still decodes SVG via the runtime plugin
+# (libqt5svg5) that ships with most distros. If neither is present the
+# icons render as broken-image placeholders — acceptable degradation.
+find_package(Qt5 QUIET COMPONENTS Svg)
 
 # v0.1.63 — optional QtWebEngine for Vega-Lite chart rendering. On distros
 # that don't ship libqt5webengine5 (e.g. minimal CI containers), the option
@@ -182,6 +187,14 @@ file(GLOB SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/*.cpp")
 # subdirectory structure at a glance.
 file(GLOB CHART_SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/charts/*.cpp")
 list(APPEND SOURCES ${CHART_SOURCES})
+
+# v0.1.70 — bundle 14 monochrome SVG icons used by AIPanel welcome cards,
+# attachment chips, lock toggles, etc. Replaces the previous emoji glyphs
+# (🤖 🌿 🔌 🖼 …) which rendered as tofu on Linux systems without color-
+# emoji fonts. Qt's QImageReader (via Qt5::Svg) decodes the icons; HTML
+# <img src=':/icons/foo.svg' width='14' height='14'> embeds them inline
+# in QLabel rich text.
+list(APPEND SOURCES resources/icons.qrc)
 
 set(HEADERS
     src/mainwindow.h
@@ -317,6 +330,9 @@ target_link_libraries(${EXE_NAME} PRIVATE
     ${QSCINTILLA_LIB}
     ${RUST_LIB}
 )
+if(Qt5Svg_FOUND)
+    target_link_libraries(${EXE_NAME} PRIVATE Qt5::Svg)
+endif()
 
 # v0.1.63 — link WebEngineWidgets when the renderer is enabled. The
 # stub path (NOTEPATRA_WITH_WEBENGINE=OFF) doesn't include any

@@ -297,7 +297,7 @@ bool modelCapableOfDataAnalysis(const QString &modelName) {
         "deepseek-coder", "mistral-nemo",
         "command-r",  // base R is borderline; keep for users who picked it explicitly
         "hermes3", "hermes-3",
-        "gemma2", "gemma-2", "gemma3", "gemma-3",
+        "gemma2", "gemma-2", "gemma3", "gemma-3", "gemma4", "gemma-4",
         "gpt-oss", "phi-4",
         "devstral", "nemotron",
     };

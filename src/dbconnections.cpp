@@ -188,6 +188,41 @@ bool open(const Record &r, QString *outConnectionName, QString *outError) {
     QSqlDatabase db = QSqlDatabase::addDatabase(r.driver, cname);
     if (r.driver == QStringLiteral("QSQLITE")) {
         db.setDatabaseName(r.database);
+    } else if (r.driver == QStringLiteral("QODBC")) {
+        // v0.1.70 — QODBC fix. Qt's QODBC driver treats setDatabaseName as
+        // either a DSN name (single token) OR a full DSN-less ODBC
+        // connection string. setHostName/setPort/setUserName/setPassword
+        // alone do NOT compose into a valid connection string for QODBC —
+        // they're only used by drivers like QPSQL/QMYSQL that speak the
+        // wire protocol natively. And setConnectOptions for QODBC takes
+        // Qt-specific options (SQL_ATTR_LOGIN_TIMEOUT etc.), NOT raw ODBC
+        // keywords like DRIVER={...} — those have to be inside the
+        // connection string itself.
+        //
+        // Symptom before this fix: error "[unixODBC][Driver Manager]Data
+        // source name not found and no default driver specified" because
+        // Qt passed just "master" (the database name) as the DSN to
+        // SQLDriverConnect, and unixODBC couldn't find a DSN with that
+        // name in odbcinst.ini.
+        //
+        // Fix: assemble the FULL connection string from all fields and
+        // pass it via setDatabaseName. The Options field can supply the
+        // DRIVER={...} (or other keywords); if it does, we splice the
+        // host/port/database/uid/pwd around it. If Options is empty we
+        // fall back to a minimal SERVER=host,port;DATABASE=db construct.
+        QString conn = r.options.trimmed();
+        // Ensure terminating semicolon so we can append more keywords.
+        if (!conn.isEmpty() && !conn.endsWith(';')) conn += ';';
+        // Server is host plus comma-port (the SQL Server / ODBC convention,
+        // distinct from the colon-port that PostgreSQL etc. use).
+        const QString server = (r.port > 0)
+            ? QString("%1,%2").arg(r.host).arg(r.port)
+            : r.host;
+        if (!server.isEmpty())     conn += QString("SERVER=%1;").arg(server);
+        if (!r.database.isEmpty()) conn += QString("DATABASE=%1;").arg(r.database);
+        if (!r.username.isEmpty()) conn += QString("UID=%1;").arg(r.username);
+        if (!r.password.isEmpty()) conn += QString("PWD=%1;").arg(r.password);
+        db.setDatabaseName(conn);
     } else {
         db.setHostName(r.host);
         if (r.port > 0) db.setPort(r.port);
@@ -227,6 +262,48 @@ static bool isSelectOnly(const QString &sql) {
         if (upper.startsWith(p + " ") || upper == p) return true;
     }
     return false;
+}
+
+QStringList listTables(const Record &r, bool *outOk) {
+    if (outOk) *outOk = false;
+    QStringList tables;
+
+    // Per-driver introspection query. Each one filters to user tables only —
+    // system catalogues (sys.* on MSSQL, pg_catalog on Postgres, mysql/perf
+    // schemas on MySQL, sqlite_* on SQLite) are excluded so the model isn't
+    // overwhelmed with hundreds of irrelevant names.
+    QString sql;
+    if (r.driver == QStringLiteral("QSQLITE")) {
+        sql = QStringLiteral(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'sqlite_%' ORDER BY name");
+    } else if (r.driver == QStringLiteral("QPSQL")) {
+        sql = QStringLiteral(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema NOT IN ('pg_catalog','information_schema') "
+            "ORDER BY table_name");
+    } else if (r.driver == QStringLiteral("QMYSQL")) {
+        sql = QStringLiteral(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema NOT IN ('mysql','information_schema',"
+            "'performance_schema','sys') AND table_schema = DATABASE() "
+            "ORDER BY table_name");
+    } else if (r.driver == QStringLiteral("QODBC")) {
+        // SQL Server-flavoured. sys.tables only lists user tables in the
+        // current DB (which the connection string's DATABASE= selects).
+        sql = QStringLiteral(
+            "SELECT name FROM sys.tables ORDER BY name");
+    } else {
+        return tables;  // DuckDB handled separately via runQuery if needed.
+    }
+
+    QueryResult q = runQuery(r, sql, 500, /*allowMutation=*/false);
+    if (!q.ok) return tables;
+    for (const auto &row : q.rows) {
+        if (!row.isEmpty()) tables.append(row.first());
+    }
+    if (outOk) *outOk = true;
+    return tables;
 }
 
 QueryResult runQuery(const Record &r,
@@ -391,6 +468,7 @@ DbConnectionsDialog::DbConnectionsDialog(QWidget *parent)
     resize(720, 460);
 
     m_records = DbConnections::loadAll();
+    m_originalCount = m_records.size();  // v0.1.70 — remembered for the delete-confirm gate
 
     auto *root = new QHBoxLayout(this);
 
@@ -419,6 +497,7 @@ DbConnectionsDialog::DbConnectionsDialog(QWidget *parent)
     m_preset->addItems({
         tr("(custom — pick a driver below)"),
         tr("SQL Server (localhost, ODBC)"),
+        tr("SQL Server (Notepatra local Docker, port 14330)"),
         tr("SQL Server Express (named instance, ODBC)"),
         tr("Azure SQL Database (ODBC)"),
         tr("PostgreSQL (localhost)"),
@@ -607,6 +686,42 @@ void DbConnectionsDialog::onAccept() {
     if (row >= 0 && row < m_records.size()) {
         m_records[row] = formToRecord();
     }
+
+    // v0.1.70 — confirm destructive saves. If the user has deleted
+    // connections (current count < original) — including the "delete
+    // everything" case — show an explicit warning. This was the source
+    // of silent data loss: open dialog with N connections, click Delete
+    // a few times to clean up, click OK without realising the empty
+    // list overwrites the file. Cancel keeps the dialog open so the
+    // user can recover (add the connection back, or click Cancel to
+    // abort entirely).
+    if (m_records.size() < m_originalCount) {
+        const int deleted = m_originalCount - m_records.size();
+        const QString detail = m_records.isEmpty()
+            ? tr("You are about to delete <b>all %1</b> saved database "
+                 "connection%2. The saved-connections file will be wiped.")
+                  .arg(m_originalCount)
+                  .arg(m_originalCount == 1 ? "" : "s")
+            : tr("You are about to remove <b>%1</b> saved database "
+                 "connection%2 (was %3, now %4). The change writes "
+                 "immediately to disk.")
+                  .arg(deleted)
+                  .arg(deleted == 1 ? "" : "s")
+                  .arg(m_originalCount)
+                  .arg(m_records.size());
+        const auto reply = QMessageBox::warning(this,
+            tr("Confirm deletion"),
+            detail + "<br><br>" +
+                tr("<b>This cannot be undone.</b> Continue?"),
+            QMessageBox::Yes | QMessageBox::Cancel,
+            QMessageBox::Cancel);
+        if (reply != QMessageBox::Yes) {
+            // Don't save, don't close. User can hit Cancel again to
+            // abort entirely or undo their deletes manually.
+            return;
+        }
+    }
+
     if (DbConnections::saveAll(m_records)) {
         accept();
     } else {
@@ -703,15 +818,36 @@ void DbConnectionsDialog::onPresetChanged(int idx) {
     QSignalBlocker bp(m_preset);
 
     switch (idx) {
-    case 1: // SQL Server (localhost, ODBC)
+    case 1: // SQL Server (localhost, ODBC) — generic 1433
         m_driver->setCurrentText("QODBC");
         m_host->setText("127.0.0.1");
         m_port->setValue(1433);
         m_database->setText("master");
         m_username->setText("sa");
+        m_password->setText("");  // user types their own SA password
         m_options->setText("DRIVER={ODBC Driver 18 for SQL Server};Encrypt=no");
         break;
-    case 2: // SQL Server Express (named instance, ODBC)
+    case 2: // SQL Server — Notepatra local Docker harness on port 14330
+        // Matches the bundled docker/sql-server-local.yml topology: port
+        // 14330 (not 1433) so this harness coexists with any other local
+        // SQL Server already on the default port. Pre-fills everything
+        // EXCEPT the password — embedding a secret in a shipping preset
+        // is a security smell, and v0.1.70 explicitly avoids it. The
+        // password lives in docker/sql-server-local.yml's
+        // MSSQL_SA_PASSWORD line; the user copies it once after they
+        // spin up the harness. Pre-reqs: libqt5sql5-odbc +
+        // msodbcsql18 on the host (see the in-dialog driver hint).
+        m_driver->setCurrentText("QODBC");
+        m_host->setText("127.0.0.1");
+        m_port->setValue(14330);
+        m_database->setText("NotepatraTest");
+        m_username->setText("sa");
+        m_password->setText("");
+        m_password->setPlaceholderText(
+            tr("paste from MSSQL_SA_PASSWORD in docker/sql-server-local.yml"));
+        m_options->setText("DRIVER={ODBC Driver 18 for SQL Server};Encrypt=no");
+        break;
+    case 3: // SQL Server Express (named instance, ODBC)
         m_driver->setCurrentText("QODBC");
         m_host->setText("localhost\\SQLEXPRESS");
         m_port->setValue(0);  // Named instances use Browser service, not 1433
@@ -719,7 +855,7 @@ void DbConnectionsDialog::onPresetChanged(int idx) {
         m_username->setText("");
         m_options->setText("DRIVER={ODBC Driver 18 for SQL Server};Trusted_Connection=yes;Encrypt=no");
         break;
-    case 3: // Azure SQL Database (ODBC)
+    case 4: // Azure SQL Database (ODBC)
         m_driver->setCurrentText("QODBC");
         m_host->setText("yourserver.database.windows.net");
         m_port->setValue(1433);
@@ -728,7 +864,7 @@ void DbConnectionsDialog::onPresetChanged(int idx) {
         m_options->setText(
             "DRIVER={ODBC Driver 18 for SQL Server};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30");
         break;
-    case 4: // PostgreSQL (localhost)
+    case 5: // PostgreSQL (localhost)
         m_driver->setCurrentText("QPSQL");
         m_host->setText("127.0.0.1");
         m_port->setValue(5432);
@@ -736,7 +872,7 @@ void DbConnectionsDialog::onPresetChanged(int idx) {
         m_username->setText("postgres");
         m_options->setText("connect_timeout=10");
         break;
-    case 5: // MySQL / MariaDB (localhost)
+    case 6: // MySQL / MariaDB (localhost)
         m_driver->setCurrentText("QMYSQL");
         m_host->setText("127.0.0.1");
         m_port->setValue(3306);
@@ -744,7 +880,7 @@ void DbConnectionsDialog::onPresetChanged(int idx) {
         m_username->setText("root");
         m_options->setText("MYSQL_OPT_CONNECT_TIMEOUT=10");
         break;
-    case 6: // SQLite (file on disk)
+    case 7: // SQLite (file on disk)
         m_driver->setCurrentText("QSQLITE");
         m_host->setText("");
         m_port->setValue(0);
@@ -753,7 +889,7 @@ void DbConnectionsDialog::onPresetChanged(int idx) {
         m_username->setText("");
         m_options->setText("");
         break;
-    case 7: // DuckDB (file or :memory:)
+    case 8: // DuckDB (file or :memory:)
         m_driver->setCurrentText("DUCKDB");
         m_host->setText("");
         m_port->setValue(0);

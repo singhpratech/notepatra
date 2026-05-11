@@ -1,0 +1,18 @@
+<!DOCTYPE RCC><RCC version="1.0">
+<qresource prefix="/icons">
+    <file alias="bot.svg">icons/bot.svg</file>
+    <file alias="git-branch.svg">icons/git-branch.svg</file>
+    <file alias="database.svg">icons/database.svg</file>
+    <file alias="image.svg">icons/image.svg</file>
+    <file alias="file.svg">icons/file.svg</file>
+    <file alias="file-text.svg">icons/file-text.svg</file>
+    <file alias="lock.svg">icons/lock.svg</file>
+    <file alias="unlock.svg">icons/unlock.svg</file>
+    <file alias="lightbulb.svg">icons/lightbulb.svg</file>
+    <file alias="wrench.svg">icons/wrench.svg</file>
+    <file alias="x.svg">icons/x.svg</file>
+    <file alias="check.svg">icons/check.svg</file>
+    <file alias="folder.svg">icons/folder.svg</file>
+    <file alias="alert-triangle.svg">icons/alert-triangle.svg</file>
+</qresource>
+</RCC>

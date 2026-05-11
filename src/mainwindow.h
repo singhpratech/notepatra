@@ -9,6 +9,7 @@
 #include "tabmanager.h"
 #include "statusbar.h"
 #include "fileexplorer.h"
+#include <QToolButton>
 #include "functionlist.h"
 #include "findreplace.h"
 #include "plugin.h"
@@ -43,6 +44,17 @@ public:
     // `gotoLine` in the first file if > 0, then raises + activates
     // the window so the user's double-click feels instant.
     void handleRemoteOpen(const QStringList &paths, int gotoLine);
+
+    // v0.1.70 — AI dock visibility public API. setAiDockVisible() is the
+    // single source of truth for whether the AI dock is on screen.
+    // showAiDockForInvocation() is the auto-open helper called by AI
+    // feature entry points (Ctrl+I, Composer triggers, etc.) so the user
+    // always sees AI output regardless of dock state. Config::aiDockVisible
+    // is written synchronously on every toggle so the layout survives
+    // quit/relaunch.
+    void setAiDockVisible(bool show);
+    bool isAiDockVisible() const;
+    void showAiDockForInvocation();
 
 signals:
     // Emitted after applyThemeToAll() has updated Config::theme +
@@ -88,6 +100,17 @@ private:
     FunctionList *m_funcList;
     FindReplaceDialog *m_findDialog = nullptr;
     QSplitter *m_splitter;
+    // v0.1.70 — internal horizontal splitter inside m_aiDockHost holding
+    // [m_explorer | m_aiDockPanel]. Lets the file tree live inside the
+    // AI dock surface rather than as a separate leftmost sidebar.
+    QSplitter *m_aiDockInternalSplit = nullptr;
+    // v0.1.70 — VS Code-style activity strip: thin vertical 32px bar on
+    // the left edge of m_aiDockHost. Currently holds a single 📁 toggle
+    // button for the file tree; designed for future icons (search-in-AI-
+    // context, git context, etc.). The toggle button is a member so the
+    // codingModeRequested signal handler can keep it in sync with the
+    // actual FileExplorer visibility state.
+    QToolButton *m_explorerToggleBtn = nullptr;
     QWidget *m_minimapContainer;
 
     void updateRecentMenu();
@@ -146,6 +169,9 @@ private:
     // The AI session itself is preserved — AIPanel widget is never destroyed,
     // only visually resized back to its docked width.
     void exitAiFullscreenIfActive();
+    // v0.1.70 — extracted from toggleAiDock so the constructor can reuse it
+    // on first-launch when Config::aiDockVisible is true.
+    void rebalanceAiDockSplit();
     // v0.1.68 — when a programmatic tab switch fires QTabWidget::currentChanged
     // we sometimes want to suppress the auto-exit-fullscreen side-effect.
     // Specifically: newFile() (Ctrl+N) and openFile() create a new tab AND
@@ -158,6 +184,11 @@ private:
     // (and resets) the flag. User-initiated tab switches (Ctrl+Tab, click
     // in the tab bar) never set this flag, so they correctly exit the dock.
     bool m_skipAiAutoExitOnNextTabChange = false;
+    // v0.1.70 — one-shot guard for the "Open Folder / Open File / Skip"
+    // picker that fires on first Coding-mode entry without a workspace.
+    // Resets on app restart; within one session, the picker shows once
+    // per Coding entry and then stays out of the way.
+    bool m_codingFolderPromptShown = false;
     // Push current workspace state (all open editor tabs, current file,
     // selection, workspace root) into an AIPanel so the model can reason
     // about cross-file questions like Cursor / Copilot.

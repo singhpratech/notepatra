@@ -84,7 +84,7 @@
         "Macro recording and playback",
         "Session persistence and crash recovery",
         "Plugin system (.so / .dll / .dylib)",
-        "Local AI — works with Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, KoboldCpp, text-generation-webui, or any OpenAI-compatible server. No cloud. No telemetry."
+        "Local-first AI — works with Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, KoboldCpp, text-generation-webui, or any OpenAI-compatible server. Six cloud backends optional (OpenRouter / OpenAI / Azure / Ollama Cloud). No telemetry."
       ]
     }
     </script>
@@ -129,7 +129,7 @@
           "name": "What is Notepatra?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra is a native C++/Rust code editor built from scratch for the AI era. It runs on Linux, macOS Apple Silicon, and Windows, has a ~9 MB bare native executable (stripped), supports 226 file types with 92 language lexers, and includes AI-powered formatters that fix broken JSON, HTML, and brackets via local Ollama, llama.cpp, LM Studio, or any OpenAI-compatible server — no cloud."
+            "text": "Notepatra is a native C++/Rust code editor built from scratch for the AI era. It runs on Linux, macOS Apple Silicon, and Windows, has a ~9 MB bare native executable (stripped), supports 226 file types with 92 language lexers, and includes AI-powered formatters that fix broken JSON, HTML, and brackets via local Ollama, llama.cpp, LM Studio, or any OpenAI-compatible server — local by default, with optional cloud backends (OpenRouter, OpenAI, Azure, Ollama Cloud)."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.69">
-        Download v0.1.69 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.70">
+        Download v0.1.70 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.69 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.70 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~9 MB bare, ~2 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. No cloud unless you opt in.</p>
 
@@ -1478,9 +1478,9 @@
     <div class="ai-section" id="ai">
         <div class="ai-grid">
             <div>
-                <div class="section-label">AI Powered · Local-first</div>
-                <div class="section-title">Your AI. Your machine. Zero cloud.</div>
-                <p style="color: var(--text-dim); margin-bottom: 16px;">Notepatra's AI runs on YOUR laptop. Pick <strong>Ollama</strong> (default) or <strong>llama.cpp</strong> (loads any GGUF) — or point the <code>llama.cpp</code> entry at any other OpenAI-compatible server (LM Studio, Jan, vLLM, KoboldCpp, llamafile, text-generation-webui). Nothing leaves your computer. No mandatory API key. No subscription. No telemetry.</p>
+                <div class="section-label">AI Powered · Local-first, cloud-optional</div>
+                <div class="section-title">Your AI. Your machine. Your choice.</div>
+                <p style="color: var(--text-dim); margin-bottom: 16px;">Notepatra's AI runs locally by default — pick <strong>Ollama</strong>, <strong>llama.cpp</strong> (loads any GGUF), or any OpenAI-compatible server (LM Studio, Jan, vLLM, KoboldCpp, llamafile, text-generation-webui). When you'd rather use a frontier model, six cloud backends are wired in too: <strong>Ollama Cloud</strong>, <strong>OpenRouter</strong>, <strong>OpenAI</strong>, <strong>Azure OpenAI</strong> (plus the local Ollama / llama.cpp entries). No mandatory API key. No subscription. No telemetry.</p>
                 <p style="color: var(--text-dim); margin-bottom: 24px;">When the regex fixer can't repair your broken JSON — the AI can. Hybrid approach: speed of regex, intelligence of AI.</p>
                 <div class="ai-actions">
                     <span class="ai-tag">Explain Code</span>
@@ -1850,123 +1850,93 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.69 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.70 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
-                        <span>2026-05-10</span>
-                        <span>· AI Coding / Data mode no longer locks the app — tool buttons work.</span>
+                        <span>2026-05-11</span>
+                        <span>· AI cleanup + Notepad++-style session persistence + Data Mode actually shows what's attached.</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>🐛 Critical fix — Coding / Data mode app lock-up</h5>
+                        <h5>📦 Notepad++-style session persistence</h5>
                         <ul>
-                            <li>Coding Mode and Data Mode <strong>auto-fullscreen</strong> the AI dock when activated (so chat / data-analyst gets the full window). They do this by emitting <code>fullscreenToggled(true)</code> directly — bypassing the <code>⛶</code> expand button.</li>
-                            <li>Pre-v0.1.69, clicking <strong>any tool button</strong> (Project Search, Terminal, REST Client, JSON / HTML / Bracket Tools, SQL Formatter, Compare, …) while in Coding / Data mode appeared to do nothing: the tab was added but <code>m_tabs</code> stayed hidden behind the splitter squashed to 100% AI dock. App felt locked up.</li>
-                            <li>Root cause: <code>AIPanel::forceExitFullscreen()</code> only un-checked the expand button; in Coding / Data the button was never checked, so the function was a no-op.</li>
-                            <li>Fix: <code>forceExitFullscreen()</code> now <code>emit fullscreenToggled(false)</code> directly when the button isn't checked, so MainWindow's restore handler runs in all paths.</li>
+                            <li>App close no longer prompts. Every open tab — file-backed and untitled, modified and pristine — is serialised to <code>~/.config/notepatra/session/session.json</code> with full unsaved content + cursor + name + modified flag. Relaunch silently restores everything.</li>
+                            <li>Individual tab close (the <code>X</code> on a tab) <strong>still</strong> shows the Save / Discard / Cancel dialog — that's the explicit-save decision point.</li>
+                            <li>Legacy <code>recovery_*.txt</code> "Restore recovered files?" prompt now only runs as a fallback when <code>session.json</code> is absent; recovery files are wiped on launch when a session restore succeeds, killing the double-restore bug.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🧪 Integration test — extended to catch this class of bug</h5>
+                        <h5>🧹 Removed hard-coded model capability gates</h5>
                         <ul>
-                            <li><code>test_ai_fullscreen_exit</code> grows from 14 to 23 checks across 6 scenarios. Two new scenarios (S5, S6) drive Coding / Data mode + Project Search / Terminal clicks under offscreen Qt, asserting <code>m_tabs->isVisible()</code> after the click. They <strong>FAIL on pre-v0.1.69 code</strong> and PASS on the fix.</li>
-                            <li>Future regressions in the auto-fullscreen path will fail CI before shipping. v0.1.67 + v0.1.68 shipped this gap because no test exercised the real UI state machine.</li>
+                            <li>"This model isn't strong enough for Data mode" + "doesn't support tool calls" error bubbles are gone. The substring allowlist they ran on rotted with every release (Gemma 4 26B got rejected as "too small" despite native tool calling).</li>
+                            <li>Amber dropdown row coloring + "⚠ too small" banner removed. Models read in the default colour; the user picks, the backend decides.</li>
+                            <li>Context gates kept: no folder open → Coding refuses; no DB connection → Data refuses. Those are workspace state, not model identity.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🗄 Data Mode shows what's attached + tells the model</h5>
+                        <ul>
+                            <li>New green chip below Manage Connections: <code>✓ Attached: &lt;conn&gt; (N tables) — visible to the model via query_sql</code>. Multiple connections render <code>·</code>-joined; broken ones go red; zero shows an amber nudge.</li>
+                            <li>Every Data-mode send embeds the saved connections + their first ~30 user tables into the system prompt with a hard "these are the ONLY data sources; do NOT speculate about the editor workspace" preamble. Fixes the "I see a variety of files in your workspace" hallucination.</li>
+                            <li>New <code>DbConnections::listTables(record)</code> helper — per-driver introspection (<code>sqlite_master</code>, <code>INFORMATION_SCHEMA.tables</code>, <code>sys.tables</code>) driving both the chip and the prompt.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>💬 Chat bubble breathing room + auto-fit</h5>
+                        <ul>
+                            <li>Inner padding bumped (assistant 14/16 → 22/24, user 10/16 → 14/20). Inter-bubble gap 14 → 26 px. Line-height 1.55 → 1.7. Tables + blockquotes get explicit CSS now.</li>
+                            <li><code>QTextDocument::setDocumentMargin(0)</code> kills Qt's hidden 4 px frame margin; removed the <code>+ 8 px</code> slop on height calculation. No more trailing whitespace under short replies.</li>
+                            <li>Viewport-resize event filter re-fits every bubble's height when the panel/splitter changes width, so bubbles refit on dock resize instead of freezing at first-render height.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.69">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.70">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.69">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.70">Commits</a>
                 </div>
             </div>
-            <div class="version-card">
-                <div class="version-header">
-                    <div class="version-tag">v0.1.68</div>
-                    <div class="version-meta">
-                        <span>2026-05-10</span>
-                        <span>· AI dock auto-exits fullscreen on editor tab switches too — closes v0.1.67 gap.</span>
-                        <span>· Linux · macOS · Windows</span>
-                    </div>
-                </div>
-                <div class="version-changes">
-                    <div class="version-section">
-                        <h5>🪟 Fixed — AI dock blocked editor tabs when fullscreen</h5>
-                        <ul>
-                            <li>v0.1.67 wired <code>exitAiFullscreenIfActive()</code> into 14 <strong>tool-tab</strong> open sites (Project Search, Terminal, Git, REST Client, SQL Formatter, JSON / HTML / Bracket Tools, Compare, Welcome). That fixed clicking a left-rail tool button while the AI dock was fullscreen — the new tab no longer got buried under the dock.</li>
-                            <li>But <strong>editor-tab switching</strong> (<code>Ctrl+Tab</code>, clicking a tab in the tab bar, double-clicking a Project Search result, <code>File &gt; Open</code>) still left the newly-focused tab hidden behind the fullscreen dock. The focus shift was real but invisible — so the editor felt frozen, and that's what the v0.1.67 user feedback was about.</li>
-                            <li>v0.1.68 instruments <code>QTabWidget::currentChanged</code> directly so <strong>every</strong> tab-focus change calls <code>exitAiFullscreenIfActive()</code>, gated by a one-shot <code>m_skipAiAutoExitOnNextTabChange</code> flag.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>🔒 v0.1.61 background-tab UX is preserved</h5>
-                        <ul>
-                            <li><code>newFile()</code> (Ctrl+N) sets the skip flag immediately before <code>setCurrentIndex(idx)</code>, so Ctrl+N while the AI dock is fullscreen still creates the new editor in the background — you don't lose AI flow.</li>
-                            <li><code>openFile()</code> deliberately does NOT set the flag, so user-initiated opens (File &gt; Open, double-clicks) correctly collapse the dock.</li>
-                            <li>The 14 explicit <code>exitAiFullscreenIfActive()</code> calls from v0.1.67 remain in place as belt-and-braces no-ops (the helper short-circuits when fullscreen isn't active).</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>🧪 Tests</h5>
-                        <ul>
-                            <li>All 26 deterministic regression tests still pass on the lite build (<code>build-lite/</code> with <code>BUILD_TESTING=ON</code>). Behavior is a UI state-machine the headless suite doesn't cover, so verification is by audit: every <code>setCurrentIndex</code> call site in <code>src/mainwindow.cpp</code> reviewed (50+ sites) — only <code>newFile()</code> needs the skip flag and has it; every other site correctly auto-exits.</li>
-                        </ul>
-                    </div>
-                </div>
-                <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.68">Release page</a>
-                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.68">Commits</a>
-                </div>
-            </div>
-            <div class="version-card">
-                <div class="version-header">
-                    <div class="version-tag">v0.1.67</div>
-                    <div class="version-meta">
-                        <span>2026-05-10</span>
-                        <span>· AI Assistant: three independent per-mode conversations.</span>
-                        <span>· Linux · macOS · Windows</span>
-                    </div>
-                </div>
-                <div class="version-changes">
-                    <div class="version-section">
-                        <h5>💬 Three independent conversations (Chat / Coding / Data)</h5>
-                        <ul>
-                            <li>Pre-v0.1.67 the AI Assistant shared <strong>one</strong> chat session across all three mode toggles. Flipping from Coding into Data left the previous bubbles on screen, but ran the next model turn under the data-analyst system prompt — producing erratic first replies that referenced the wrong mode's tools or topic.</li>
-                            <li>v0.1.67 replaces the single <code>m_messages</code> vector (32 references in <code>src/aipanel.cpp</code>) with <strong>three independent vectors</strong>: <code>m_chatMessages</code>, <code>m_codingMessages</code>, <code>m_dataMessages</code> — one per mode. A new <code>activeMessages()</code> private helper returns the right vector based on which mode button is checked. Every read and write to chat state now goes through it.</li>
-                            <li><strong>Mode toggle</strong> now cancels any in-flight stream, force-saves the outgoing mode's bubbles to disk, then re-renders the transcript from the new active vector. <strong>Reset</strong> clears only the active mode's vector — the other two retain their history.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>💾 On-disk schema: v1 → v2 (auto-migrating)</h5>
-                        <ul>
-                            <li>The per-workspace chat-history JSON file (<code>~/.config/notepatra/chat-history/&lt;sha1&gt;.json</code>) bumps <code>"version": 1</code> → <code>"version": 2</code> with three named keys: <code>chat</code>, <code>coding</code>, <code>data</code>.</li>
-                            <li>Old files <strong>migrate automatically</strong> on first load: <code>{version: 1, messages: [...]}</code> and bare top-level arrays both land in <code>m_chatMessages</code>; coding + data start empty. No user action required.</li>
-                            <li>Roll-off (1 MB per-workspace cap) rotates <code>chat → coding → data</code> when trimming so heavy use of one mode doesn't starve the others.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>⚡ Synchronous save at key transitions</h5>
-                        <ul>
-                            <li>New <code>saveChatHistoryNow()</code> cancels the pending 2-second debounce and writes immediately. Called at every key transition: user submit, assistant stream end, mode switch, Reset.</li>
-                            <li>The 2 s debounce stays wired as a backstop for the streaming-chunk flurry (token frames fire 20+ times / second; we don't want to write the JSON on every chunk). A crash mid-stream now loses at most the current streaming chunk.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>🧪 Regression test: <code>test_ai_chat_history.cpp</code></h5>
-                        <ul>
-                            <li><strong>61 sub-checks</strong> across four sections: cross-mode partitioning, <code>clearChat()</code> semantics, full save+reload round-trip, v1 migration paths. Total deterministic test count: 25 → 26. All pass on the lite build.</li>
-                            <li>Constructs a real <code>AIPanel</code> under <code>QT_QPA_PLATFORM=offscreen</code>. A new <code>AIPanelTestAccess</code> friend class lets the test drive the three private vectors and the mode buttons without leaking those internals into the production API.</li>
-                        </ul>
-                    </div>
-                </div>
-                <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.67">Release page</a>
-                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.67">Commits</a>
-                </div>
-            </div>
+            <!-- Older releases: slim link rows only. Full notes live on GitHub. -->
+            <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.69"
+               class="version-card-link"
+               style="display:flex; justify-content:space-between; align-items:center;
+                      padding:14px 20px; margin-top:6px;
+                      background:var(--c-surface); border:1px solid var(--c-border);
+                      border-radius:10px; text-decoration:none;
+                      color:var(--c-text-muted); font-size:13px;
+                      transition:border-color .15s, color .15s;"
+               onmouseover="this.style.borderColor='var(--green)';this.style.color='var(--c-text)';"
+               onmouseout="this.style.borderColor='var(--c-border)';this.style.color='var(--c-text-muted)';">
+                <span><strong style="color:var(--c-text);">v0.1.69</strong> · 2026-05-10 · Critical fix — AI Coding / Data mode no longer locks tool buttons.</span>
+                <span style="color:var(--green); font-weight:600;">View on GitHub →</span>
+            </a>
+            <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.68"
+               class="version-card-link"
+               style="display:flex; justify-content:space-between; align-items:center;
+                      padding:14px 20px; margin-top:6px;
+                      background:var(--c-surface); border:1px solid var(--c-border);
+                      border-radius:10px; text-decoration:none;
+                      color:var(--c-text-muted); font-size:13px;
+                      transition:border-color .15s, color .15s;"
+               onmouseover="this.style.borderColor='var(--green)';this.style.color='var(--c-text)';"
+               onmouseout="this.style.borderColor='var(--c-border)';this.style.color='var(--c-text-muted)';">
+                <span><strong style="color:var(--c-text);">v0.1.68</strong> · 2026-05-10 · AI dock auto-exits fullscreen on editor tab switches.</span>
+                <span style="color:var(--green); font-weight:600;">View on GitHub →</span>
+            </a>
+            <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.67"
+               class="version-card-link"
+               style="display:flex; justify-content:space-between; align-items:center;
+                      padding:14px 20px; margin-top:6px;
+                      background:var(--c-surface); border:1px solid var(--c-border);
+                      border-radius:10px; text-decoration:none;
+                      color:var(--c-text-muted); font-size:13px;
+                      transition:border-color .15s, color .15s;"
+               onmouseover="this.style.borderColor='var(--green)';this.style.color='var(--c-text)';"
+               onmouseout="this.style.borderColor='var(--c-border)';this.style.color='var(--c-text-muted)';">
+                <span><strong style="color:var(--c-text);">v0.1.67</strong> · 2026-05-10 · AI Assistant: three independent per-mode conversations.</span>
+                <span style="color:var(--green); font-weight:600;">View on GitHub →</span>
+            </a>
             <a href="https://github.com/singhpratech/notepatra/releases"
                class="version-card-link"
                style="display:block; padding:24px 28px; margin-top:8px;
@@ -2041,7 +2011,7 @@
         <p>I'm <strong>Prateek Singh</strong>. A developer who spent years on Linux wanting a small, fast, free native code editor — and finding only Wine hacks or bloated Electron editors eating 500 MB of RAM to show a text file.</p>
         <p>Every text editor told me to pick two of three: <strong>fast</strong>, <strong>powerful</strong>, <strong>native</strong>. Vim is fast and native but cryptic. Modern Electron editors are powerful but heavy. The truly tiny native ones either don't have AI or don't run cross-platform.</p>
         <p>So I built Notepatra. Not a port. Not a wrapper. Something new — for everyone. I asked: <em>what would a small native code editor look like if it was built today, in 2026, when AI is part of every developer's workflow, and ran natively on Linux + macOS + Windows from one codebase?</em></p>
-        <p>The answer: a tiny native binary (~9 MB bare) with a Rust-powered core, Scintilla editing engine, and local-first AI integration. No cloud. No telemetry. No subscription. Just you and your code — on Linux, macOS, and Windows.</p>
+        <p>The answer: a tiny native binary (~9 MB bare) with a Rust-powered core, Scintilla editing engine, and local-first AI integration (cloud backends optional). No telemetry. No subscription. No mandatory API key — on Linux, macOS, and Windows.</p>
     </div>
 
     <!-- CTA -->

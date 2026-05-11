@@ -347,44 +347,47 @@ QString messageTranscriptHtml(const QVector<AIPanel::ChatMessage> &messages,
             "<div style='background:rgba(78,201,176,0.12);color:#4EC9B0;"
             "font-size:10px;font-weight:bold;letter-spacing:1.5px;"
             "padding:4px 10px;border-radius:12px;display:inline-block;"
-            "margin-bottom:10px;font-family:%1;'>⌘ CODING MODE · code-only replies</div>")
+            "margin-bottom:10px;font-family:%1;'>CODING MODE · code-only replies</div>")
               .arg(notepatraCodeCssFamily())
         : QString();
     QString html = QString(
 "<html>\n"
 "<head>\n"
 "<style>\n"
-"body { font-family: %21; line-height: 1.55; color: %3; background: %4; margin: 0; padding: 14px 16px; }\n"
+"body { font-family: %21; line-height: 1.7; color: %3; background: %4; margin: 0; padding: 20px 22px; }\n"
 ".assistant-content { font-family: %21; }\n"
-"/* Each message is its own tight table. No vertical margins that\n"
-"   compound; we space with empty rows instead. */\n"
-"table.msg { width: 100%%; border-collapse: collapse; margin: 0 0 14px 0; }\n"
-"/* USER — right-aligned pill, accent fill, white text. Max 88 %% so long\n"
-"   paragraphs wrap. Asymmetric corner radius gives the speech-bubble\n"
-"   'point' towards the user's side. */\n"
-".bubble-user { display: inline-block; max-width: 88%%; text-align: left; border-radius: 18px 18px 4px 18px; padding: 10px 16px; background: %5; color: %6; font-size: 13px; font-weight: 500; }\n"
-"/* ASSISTANT — distinct card background (different from chat bg) so the\n"
-"   response stands out visually. Thin 3 px accent left stripe for brand\n"
-"   anchor. Generous padding for breathing room. Border subtle enough\n"
-"   that it reads as a card, not a box. */\n"
-".assistant-wrap { background: %8; color: %9; border-left: 3px solid %10; border-top: 1px solid %11; border-right: 1px solid %11; border-bottom: 1px solid %11; border-radius: 4px 12px 12px 4px; padding: 14px 16px; }\n"
-".assistant-head { margin: 0 0 10px 0; padding-bottom: 6px; border-bottom: 1px solid %11; }\n"
+"/* Each message gets a comfortable 24 px gap from the next so the eye can\n"
+"   parse where one turn ends and the next begins. Previously bubbles were\n"
+"   visually crowded with only 14 px breathing room. */\n"
+"table.msg { width: 100%%; border-collapse: collapse; margin: 0 0 26px 0; }\n"
+"/* USER — right-aligned pill, accent fill, white text. Roomier padding so\n"
+"   short replies don't read as cramped chips. */\n"
+".bubble-user { display: inline-block; max-width: 88%%; text-align: left; border-radius: 18px 18px 4px 18px; padding: 14px 20px; background: %5; color: %6; font-size: 13px; font-weight: 500; line-height: 1.6; }\n"
+"/* ASSISTANT — distinct card background, generous interior padding. The\n"
+"   bump from 14/16 → 22/24 buys the eye real space to land on prose and\n"
+"   especially helps when responses include lists or code blocks. */\n"
+".assistant-wrap { background: %8; color: %9; border-left: 3px solid %10; border-top: 1px solid %11; border-right: 1px solid %11; border-bottom: 1px solid %11; border-radius: 4px 12px 12px 4px; padding: 22px 24px; }\n"
+".assistant-head { margin: 0 0 16px 0; padding-bottom: 10px; border-bottom: 1px solid %11; }\n"
 ".assistant-model { color: %10; font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }\n"
 ".copy-btn { color: %16; font-size: 10px; font-weight: 600; padding: 2px 10px; border-radius: 10px; text-decoration: none; letter-spacing: 0.4px; background: transparent; border: 1px solid %11; }\n"
 ".copy-btn:hover { background: %16; color: #ffffff; }\n"
 "/* ERROR — red accent stripe + tinted background */\n"
-".error-wrap { background: %12; color: %13; border-left: 3px solid %14; border-top: 1px solid %14; border-right: 1px solid %14; border-bottom: 1px solid %14; border-radius: 4px 8px 8px 4px; padding: 10px 14px; }\n"
-".error-label { color: %14; font-size: 10px; font-weight: bold; letter-spacing: 1px; margin-bottom: 4px; }\n"
-".message-plain { white-space: pre-wrap; }\n"
-".assistant-content { color: %9; font-size: 13px; }\n"
-".assistant-content p { margin: 0 0 10px 0; }\n"
-".assistant-content ul, .assistant-content ol { margin: 6px 0 10px 22px; padding-left: 4px; }\n"
-".assistant-content li { margin: 3px 0; }\n"
-".assistant-content h1, .assistant-content h2, .assistant-content h3, .assistant-content h4 { color: %9; margin: 14px 0 8px 0; font-weight: 600; }\n"
+".error-wrap { background: %12; color: %13; border-left: 3px solid %14; border-top: 1px solid %14; border-right: 1px solid %14; border-bottom: 1px solid %14; border-radius: 4px 8px 8px 4px; padding: 14px 18px; }\n"
+".error-label { color: %14; font-size: 10px; font-weight: bold; letter-spacing: 1px; margin-bottom: 6px; }\n"
+".message-plain { white-space: pre-wrap; line-height: 1.6; }\n"
+".assistant-content { color: %9; font-size: 13px; line-height: 1.7; }\n"
+".assistant-content p { margin: 0 0 14px 0; }\n"
+".assistant-content ul, .assistant-content ol { margin: 10px 0 16px 24px; padding-left: 4px; }\n"
+".assistant-content li { margin: 6px 0; }\n"
+".assistant-content h1, .assistant-content h2, .assistant-content h3, .assistant-content h4 { color: %9; margin: 22px 0 12px 0; font-weight: 600; }\n"
 ".assistant-content a { color: %16; }\n"
-".assistant-content pre { background: %17; color: %18; border: 1px solid %11; border-radius: 8px; padding: 12px; overflow-x: auto; white-space: pre-wrap; font-size: 12px; margin: 8px 0; }\n"
-".assistant-content code { background: %19; color: %20; border-radius: 4px; padding: 1px 5px; font-family: %2; font-size: 12px; }\n"
+".assistant-content pre { background: %17; color: %18; border: 1px solid %11; border-radius: 8px; padding: 16px 18px; overflow-x: auto; white-space: pre-wrap; font-size: 12px; line-height: 1.55; margin: 16px 0; }\n"
+".assistant-content code { background: %19; color: %20; border-radius: 4px; padding: 2px 6px; font-family: %2; font-size: 12px; }\n"
 ".assistant-content pre code { background: transparent; padding: 0; color: inherit; font-size: 12px; }\n"
+".assistant-content table { border-collapse: collapse; margin: 14px 0; }\n"
+".assistant-content th, .assistant-content td { border: 1px solid %11; padding: 8px 12px; }\n"
+".assistant-content th { background: %19; font-weight: 600; }\n"
+".assistant-content blockquote { border-left: 3px solid %11; margin: 14px 0; padding: 4px 14px; color: %18; }\n"
 "</style>\n"
 "</head>\n"
 "<body>\n")
@@ -971,7 +974,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // glyph + colored state make the toggle's privacy posture obvious at
     // a glance (red lock = AI is blind, green key = AI can see). Tooltip
     // explains the surface so users know what it controls.
-    m_shareFileCheck = new QCheckBox(QStringLiteral("🔒 Share file"));
+    m_shareFileCheck = new QCheckBox(QStringLiteral("Auto-attach open file"));
     m_shareFileCheck->setChecked(Config::instance().aiShareOpenFile);
     m_shareFileCheck->setCursor(Qt::PointingHandCursor);
     auto applyShareCheckStyle = [this, pal]() {
@@ -982,8 +985,8 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             "border-radius: 4px; }")
             .arg(on ? (aiIsDark() ? "#9BD9A0" : "#1B5E20")    // green = AI can see
                     : (aiIsDark() ? "#F48771" : "#B92E1B"))); // red = AI blind
-        m_shareFileCheck->setText(on ? QStringLiteral("🔓 Sharing file")
-                                     : QStringLiteral("🔒 Share file"));
+        m_shareFileCheck->setText(on ? QStringLiteral("Auto-attaching open file")
+                                     : QStringLiteral("Auto-attach open file"));
         m_shareFileCheck->setToolTip(on
             ? "ON — the AI can see your currently-open file (path, language, "
               "and content) and any other open editor tabs. Click to revoke."
@@ -998,8 +1001,8 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             Config::instance().save();
             applyShareCheckStyle();
             setStatus(on
-                ? "📄 File access granted — AI can now see your open editor tab"
-                : "🔒 File access revoked — AI is blind to your open file",
+                ? "File access granted — AI can now see your open editor tab"
+                : "File access revoked — AI is blind to your open file",
                 false);
         });
     modeRow->addWidget(m_shareFileCheck);
@@ -1028,8 +1031,11 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         //     whether the open editor file ships with the prompt). In Chat
         //     and Data modes there's no current-file concept worth sharing,
         //     so the toggle disappears.
+        // v0.1.70 final — Expand button visible in EVERY mode (Chat / Coding
+        // / Data all stay at 50/50, no auto-fullscreen). The button is the
+        // sole way to enter fullscreen on demand.
         if (m_aiExpandBtn) {
-            m_aiExpandBtn->setVisible(!(coding || data));
+            m_aiExpandBtn->setVisible(true);
         }
         if (m_shareFileCheck) {
             m_shareFileCheck->setVisible(coding);
@@ -1083,51 +1089,29 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         } else {
             removeCodingWelcomeCard();
         }
-        // v0.1.54 — when the welcome card is up, it carries its OWN
-        // "Manage Connections…" button right next to the connection
-        // count. The standalone external button on the data row is
-        // duplicate chrome in that case — hide it. When the welcome
-        // card is hidden (chat in progress, or user clicked Hide), the
-        // external button is the only way to reach the dialog, so we
-        // show it.
-        if (m_manageConnsBtn) m_manageConnsBtn->setVisible(data && !showWelcome);
-        if (m_browseSchemasBtn) m_browseSchemasBtn->setVisible(data && !showWelcome);
+        // v0.1.70 — Manage Connections + Browse Schemas live in a
+        // persistent action bar visible the WHOLE time the user is in
+        // Data mode. Previously these hid when the welcome card was up
+        // (since the card duplicated the buttons) and when the user
+        // dismissed the welcome card they'd lose all DB-related
+        // affordances. User asked: "manage connections + browse
+        // schema should be persistent and not hidden — add it as a
+        // bar visible only in data mode."
+        if (m_manageConnsBtn) m_manageConnsBtn->setVisible(data);
+        if (m_browseSchemasBtn) m_browseSchemasBtn->setVisible(data);
+        if (data) refreshAttachedDbsChip();
+        else if (m_attachedDbsChip) m_attachedDbsChip->setVisible(false);
 
-        if (m_dataCapBanner) {
-            if (!data) {
-                m_dataCapBanner->setVisible(false);
-            } else {
-                const QString modelName = m_modelCombo ? m_modelCombo->currentText() : QString();
-                const bool capable = AiTools::modelCapableOfDataAnalysis(modelName);
-                if (capable) {
-                    m_dataCapBanner->setVisible(false);
-                } else {
-                    // v0.1.53 — single-line tight banner. The welcome card
-                    // below carries the rich version with examples + chips;
-                    // this banner just flags the model issue at a glance.
-                    // v0.1.54 — family names instead of version pins. Specific
-                    // model versions (Claude Sonnet 4.5, GPT-5, Qwen 2.5)
-                    // get retired/renamed every few months; Notepatra would
-                    // need an app update to refresh them. Family names
-                    // (Claude / GPT / Gemini / Qwen-Coder) are stable.
-                    m_dataCapBanner->setText(tr(
-                        "⚠ %1 is too small — try a strong local code model "
-                        "(<code>ollama pull qwen2.5-coder:14b</code> or any "
-                        "Qwen-Coder / DeepSeek-Coder / Llama 7B+) or a "
-                        "frontier cloud model (Claude / GPT / Gemini).")
-                            .arg(modelName.isEmpty() ? tr("(no model selected)") : modelName));
-                    m_dataCapBanner->setTextFormat(Qt::RichText);
-                    m_dataCapBanner->setWordWrap(true);
-                    m_dataCapBanner->setMaximumHeight(32);
-                    m_dataCapBanner->setVisible(true);
-                }
-            }
-        }
+        // Capability banner removed — Notepatra trusts the user's model
+        // pick and no longer flashes "this model is too small" warnings.
+        if (m_dataCapBanner) m_dataCapBanner->setVisible(false);
 
         if (m_headerLabel) {
             const AiPalette p = aiPalette();
-            const QString text = coding ? "  AI  ·  ⌘ CODING"
-                              : data   ? "  AI  ·  📊 DATA"
+            // v0.1.70 — plain-ASCII glyphs only. The previous ⌘ (U+2318) and
+            // 📊 (U+1F4CA) rendered as tofu on systems without their fonts.
+            const QString text = coding ? "  AI  ·  CODING"
+                              : data   ? "  AI  ·  DATA"
                                        : "  AI";
             const QString fg   = coding ? QStringLiteral("#4EC9B0")
                               : data   ? QStringLiteral("#FF9F43")
@@ -1143,11 +1127,9 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
                 .arg(p.chromeBg, fg, rule));
         }
 
-        // v0.1.61 (Item 8) — chat surface is now ONE conversation surface,
+        // v0.1.61 (Item 8) — chat surface is one conversation surface,
         // controlled by the bottom 3-segment toggle (Chat / Compose / Agent).
-        // Default segment by intent: Coding → Agent, Data → Chat,
-        // otherwise Chat. Switching ALSO refreshes the input placeholder
-        // via chatModeSelectorChanged.
+        // Default segment by intent: Coding → Agent, otherwise Chat.
         if (m_chatSegBtn && m_composeSegBtn && m_agentSegBtn) {
             QAbstractButton *target =
                   coding ? m_agentSegBtn
@@ -1156,6 +1138,16 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             if (target && !target->isChecked()) {
                 target->setChecked(true);
             }
+        }
+
+        // v0.1.70 — Chat/Compose/Agent strip only makes sense in Coding
+        // mode (where Compose = review-then-apply and Agent = autonomous
+        // edits are real workflows). In Chat top-level mode the inner
+        // Chat tab duplicates the top-level chat; in Data mode Compose +
+        // Agent don't apply (Data is query + chart, not file edits).
+        // Hide the strip in both — the prompt input takes the freed space.
+        if (m_chatModeSegFrame) {
+            m_chatModeSegFrame->setVisible(coding);
         }
 
         if (m_chatLayout) renderTranscript();
@@ -1191,20 +1183,52 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         applyMode();           // calls renderTranscript() which now reads activeMessages()
         decorateModelsByMode();
     };
+    // v0.1.70 — Force-uncheck siblings before applyMode reads them.
+    // QButtonGroup::setExclusive(true) ONLY enforces exclusivity on
+    // user clicks, not on programmatic `setChecked(true)`. Without
+    // explicit setChecked(false), applyMode (which polls
+    // m_codingMode->isChecked() / m_dataMode->isChecked()) sees an
+    // inconsistent state where two buttons are checked simultaneously.
+    // Reproducer: test_ai_fullscreen_exit S9.
+    //
+    // Coding/Data mode auto-fullscreen behaviour is preserved (per
+    // user request — the dedicated coding / data surface). Chat-mode
+    // entry restores. Tool-button clicks while fullscreened call
+    // exitAiFullscreenIfActive() which uses AIPanel::forceExitFullscreen
+    // (v0.1.69 handled the Coding/Data path where the expand button is
+    // hidden — emit fullscreenToggled(false) directly).
     connect(m_chatMode,   &QAbstractButton::toggled, this,
             [this, applyModeWithCancel](bool on) {
-                if (on) { applyModeWithCancel(); emit fullscreenToggled(false); }
+                if (on) {
+                    if (m_codingMode) m_codingMode->setChecked(false);
+                    if (m_dataMode)   m_dataMode->setChecked(false);
+                    applyModeWithCancel();
+                    emit fullscreenToggled(false);
+                }
             });
+    // v0.1.70 final — Chat / Coding / Data all stay at 50/50. No mode
+    // auto-fullscreens. The ⛶ expand button is the single way to enter
+    // fullscreen, visible in every mode. This kills the entire bug class
+    // produced by v0.1.67 → v0.1.69 (auto-fullscreen + sibling-hide +
+    // restore-on-mode-switch). Three orthogonal flags now: dock-visible,
+    // sub-mode, fullscreen.
     connect(m_codingMode, &QAbstractButton::toggled, this,
             [this, applyModeWithCancel](bool on) {
-                if (on) { applyModeWithCancel(); emit fullscreenToggled(true); }
+                if (on) {
+                    if (m_chatMode) m_chatMode->setChecked(false);
+                    if (m_dataMode) m_dataMode->setChecked(false);
+                    applyModeWithCancel();
+                    emit fullscreenToggled(false);
+                }
             });
-    // v0.1.61 — Data mode is AI-first and auto-fullscreens like Coding
-    // mode. Pre-fix Data mode stayed in split layout, which conflicted
-    // with the request to have a committed Data-mode workflow.
     connect(m_dataMode,   &QAbstractButton::toggled, this,
             [this, applyModeWithCancel](bool on) {
-                if (on) { applyModeWithCancel(); emit fullscreenToggled(true); }
+                if (on) {
+                    if (m_chatMode)   m_chatMode->setChecked(false);
+                    if (m_codingMode) m_codingMode->setChecked(false);
+                    applyModeWithCancel();
+                    emit fullscreenToggled(false);
+                }
             });
 
     // Refresh the data-mode capability banner when the user picks a
@@ -1240,22 +1264,11 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
 
     if (m_modelCombo) {
         connect(m_modelCombo, &QComboBox::currentTextChanged,
-                this, [this](const QString &modelName) {
-            if (!m_dataMode || !m_dataMode->isChecked() || !m_dataCapBanner) return;
-            const bool capable = AiTools::modelCapableOfDataAnalysis(modelName);
-            if (capable) {
-                m_dataCapBanner->setVisible(false);
-            } else {
-                m_dataCapBanner->setText(tr(
-                    "⚠ %1 is too small for reliable multi-table SQL and chart specs.<br>"
-                    "<b>Local (free)</b>: <code>ollama pull qwen2.5-coder:14b</code> "
-                    "(or any Qwen-Coder / DeepSeek-Coder / Llama 7B+)<br>"
-                    "<b>Cloud</b>: any frontier Claude · GPT · Gemini · DeepSeek")
-                        .arg(modelName.isEmpty() ? tr("(no model selected)") : modelName));
-                m_dataCapBanner->setTextFormat(Qt::RichText);
-                m_dataCapBanner->setVisible(true);
-            }
-            // v0.1.53 — refresh the welcome card to show the new model + capability.
+                this, [this](const QString &) {
+            if (!m_dataMode || !m_dataMode->isChecked()) return;
+            // Capability banner is gone — keep the welcome card refresh
+            // so the model name on the card stays in sync with the dropdown.
+            if (m_dataCapBanner) m_dataCapBanner->setVisible(false);
             if (m_dataWelcomeFrame && activeMessages().isEmpty()) {
                 removeDataWelcomeCard();
                 renderDataWelcomeCard();
@@ -1317,10 +1330,26 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
                     m_pendingSchemaPin = blob;
                 });
             dlg.exec();
+            refreshAttachedDbsChip();
         });
 
         dataRow->addStretch();
         layout->addLayout(dataRow);
+
+        // Attached-DB chip — visible confirmation of which saved
+        // connections will reach the model in Data mode. Refreshes
+        // whenever Manage Connections / Browse Schemas closes, and on
+        // mode entry. User asked: "show somewhere the list of db
+        // attached" + "why no confirmation showing the schema is
+        // attached and then I can start QA on the data."
+        m_attachedDbsChip = new QLabel;
+        m_attachedDbsChip->setTextFormat(Qt::RichText);
+        m_attachedDbsChip->setWordWrap(true);
+        m_attachedDbsChip->setStyleSheet(
+            "QLabel { color: #2c8c2c; font-size: 11px; padding: 2px 8px; "
+            "background: rgba(46,160,67,0.08); border-radius: 3px; }");
+        m_attachedDbsChip->setVisible(false);
+        layout->addWidget(m_attachedDbsChip);
 
         // v0.1.56: banner moved to its OWN row below the button row so it
         // gets the full panel width to wrap into. Previously it shared a
@@ -1357,6 +1386,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         connect(m_manageConnsBtn, &QPushButton::clicked, this, [this]() {
             DbConnectionsDialog dlg(this);
             dlg.exec();
+            refreshAttachedDbsChip();
         });
     }
 
@@ -1402,7 +1432,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     m_chatContent = new QWidget;
     m_chatContent->setStyleSheet(QString("background: %1;").arg(pal.chatBg));
     m_chatLayout = new QVBoxLayout(m_chatContent);
-    m_chatLayout->setContentsMargins(12, 12, 12, 12);
+    m_chatLayout->setContentsMargins(18, 18, 18, 18);
     m_chatLayout->setSpacing(0);
     m_chatLayout->addStretch(1);   // bubbles get inserted BEFORE this stretch
 
@@ -1535,7 +1565,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // text-dim palette colour so it's visible without competing with the
     // buttons. Wraps to two lines on narrow docks.
     auto *fixTip = new QLabel(
-        "💡 For larger or repeated fixes, open Tools → JSON Tools "
+        "Tip: For larger or repeated fixes, open Tools → JSON Tools "
         "(or HTML / SQL) — dedicated panel with side-by-side diff, "
         "regex-first repair, AI fallback.");
     fixTip->setWordWrap(true);
@@ -1623,7 +1653,11 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     m_customInput->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_customInput->setTabChangesFocus(true);
     m_customInput->setMinimumHeight(40);
-    m_customInput->setMaximumHeight(140);
+    // v0.1.70 — bumped from 140 → 320. At 140 the first line of a 3-line
+    // prompt scrolled out of view because the auto-grow path clamped at
+    // 140 and the scrollbar took over. 320 fits ~14 lines comfortably
+    // before the scrollbar kicks in.
+    m_customInput->setMaximumHeight(320);
     // Suppress Qt's default scroll-area corner widget. Without this, the
     // Windows native style paints a small grey dot in the bottom-right
     // intersection where a horizontal scrollbar would sit (even though
@@ -1646,7 +1680,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             m_customInput->viewport()->width());
         const int docH = qCeil(m_customInput->document()->size().height());
         const int padding = 18; // matches the 8px top/bottom padding + frame
-        const int h = qBound(40, docH + padding, 140);
+        const int h = qBound(40, docH + padding, 320);
         m_customInput->setFixedHeight(h);
     };
     connect(m_customInput->document(), &QTextDocument::contentsChanged, this, resizeInput);
@@ -1812,6 +1846,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         segWrap->setSpacing(0);
 
         auto *segFrame = new QFrame;
+        m_chatModeSegFrame = segFrame;
         segFrame->setStyleSheet(QString(
             "QFrame { background: %1; border: 1px solid %2; "
             "border-radius: 8px; }")
@@ -2938,36 +2973,16 @@ void AIPanel::sendPrompt(const QString &action) {
             return;
         }
 
-        if (codingNow && !currentModelSupportsTools()) {
-            appendErrorBubble(QString(
-                "The selected model '%1' doesn't support tool calls, "
-                "which Coding Mode needs to read your files and apply edits. "
-                "Switch to a tool-capable model:\n\n"
-                "  • Local (Ollama):  qwen2.5-coder:7b · qwen2.5-coder:14b · "
-                "llama3.1:8b · mistral-nemo\n"
-                "  • Cloud (OpenRouter / direct):  claude-sonnet-4-5 · "
-                "claude-opus-4-7 · gpt-5 · gpt-4o · gemini-2.5-flash\n\n"
-                "Tip: tool-capable models render in green in the dropdown; "
-                "the amber ones can't call tools. Or turn off Coding Mode if "
-                "you just want to chat.").arg(model));
-            return;
-        }
-        if (dataNow && !AiTools::modelCapableOfDataAnalysis(model)) {
-            appendErrorBubble(QString(
-                "The selected model '%1' isn't strong enough for the Data "
-                "Analyst mode — that workflow needs both tool calls (to run "
-                "SQL against your DB) AND structured reasoning (to plan "
-                "queries + summarise results). Switch to:\n\n"
-                "  • Local (Ollama):  qwen2.5-coder:14b (recommended) · "
-                "qwen2.5-coder:7b · deepseek-coder:33b\n"
-                "  • Cloud:  claude-sonnet-4-5 · claude-opus-4-7 · gpt-5 · "
-                "gpt-4o · gemini-2.5-pro · deepseek-r1\n\n"
-                "Tip: data-capable models render in green; amber ones won't "
-                "be reliable for SQL + charts. Or turn off Data Mode if you "
-                "just want to chat.").arg(model));
-            return;
-        }
+        // Model-capability gates removed — Notepatra no longer pre-judges
+        // whether the selected model "is strong enough" for Coding or Data
+        // mode. Hand-maintained substring allowlists rotted with every new
+        // release (gemma3 → gemma4 → ... user calling capable models too
+        // small), and the model itself / the backend will refuse if it
+        // genuinely can't comply. Trust the user's choice. Context gates
+        // (folder for Coding, connection for Data) above are kept because
+        // those are about workspace state, not model identity.
     }
+    (void)model;  // formerly used by the removed model-capability gate above.
 
     // Build the system prompt via the layered builder in ai_systemprompt.cpp.
     // The builder composes: identity + anti-tool-call + mode-specific +
@@ -3000,8 +3015,49 @@ void AIPanel::sendPrompt(const QString &action) {
     if (intent == AiSystemPrompt::Intent::DataAnalyst) {
         // Pull .notepatra/data-analyst.md (if present) so the model gets
         // project-specific instructions automatically.
-        const QString projectCtx =
+        QString projectCtx =
             AiSystemPrompt::readDataAnalystInstructions(m_workspaceRoot);
+
+        // Attached-data context: list every saved connection by name +
+        // first ~30 tables each. Without this, the model has no idea
+        // what `connection_name` to pass to query_sql and falls back to
+        // hallucinating about workspace files. The user explicitly asked:
+        // "show somewhere the list of db attached" + "Data section
+        // should strictly do data analysis, no nonsense from CSV files."
+        // We answer both by binding the prompt directly to the attached
+        // sources so the model has no excuse to talk about the editor tree.
+        const auto records = DbConnections::loadAll();
+        if (!records.isEmpty()) {
+            QString attached =
+                "\n\n## Attached database connections\n"
+                "These are the ONLY data sources available via `query_sql`. "
+                "Use the exact `name` as `connection_name`. Do NOT speculate "
+                "about other data sources or the editor workspace — your job "
+                "in Data Mode is to answer with SQL against these.\n\n";
+            for (const auto &r : records) {
+                QStringList tables = DbConnections::listTables(r);
+                attached += QStringLiteral("- **%1** (%2, db=`%3`)")
+                    .arg(r.name, r.driver, r.database.isEmpty()
+                            ? QStringLiteral("(default)") : r.database);
+                if (!tables.isEmpty()) {
+                    const int cap = qMin(30, tables.size());
+                    attached += QStringLiteral(" — tables: %1")
+                        .arg(QStringList(tables.mid(0, cap)).join(", "));
+                    if (tables.size() > cap) {
+                        attached += QStringLiteral(", … (+%1 more)")
+                            .arg(tables.size() - cap);
+                    }
+                }
+                attached += "\n";
+            }
+            attached +=
+                "\nRun `SELECT TOP 5 * FROM <table>` (or `LIMIT 5` for "
+                "Postgres/MySQL/SQLite) to peek at schema before drafting "
+                "the real query. Multi-DB joins are not supported — query "
+                "each connection separately and combine in prose.\n";
+            projectCtx = projectCtx.isEmpty() ? attached : projectCtx + attached;
+        }
+
         systemPrompt = AiSystemPrompt::buildWithProjectContext(
             intent, m_language, willUseTools, projectCtx, composerActive);
     } else {
@@ -3058,7 +3114,25 @@ void AIPanel::sendPrompt(const QString &action) {
     //     and switch to Coding mode. This is what makes "can you see
     //     this file?" → "no, but I can if you check 🔒 Share file in the
     //     AI panel and switch to Coding mode" — exactly the safety UX.
-    if (aiCanSeeFile && (!m_currentFilePath.isEmpty() || !m_currentFileText.isEmpty())) {
+    // v0.1.70 — distinguish three states: (a) sharing OFF → blind mode,
+    // (b) sharing ON + file open → AI sees file, (c) sharing ON but NO
+    // editor file open → AI must know this is the case, NOT that
+    // sharing is off (otherwise it tells the user to "enable sharing"
+    // when sharing is already on, which is the bug captured in
+    // kashot_20260511_002609.png).
+    if (aiCanSeeFile && m_currentFilePath.isEmpty() && m_currentFileText.isEmpty()) {
+        QString openLine =
+            "\n\nFile-access policy: Share-file toggle is ON (the user has "
+            "granted you visibility), BUT no editor file is currently open "
+            "in their workspace — the active tab is the Welcome tab or an "
+            "empty new buffer. Do NOT tell the user to enable sharing — it "
+            "is already enabled. If the user asks something that implies "
+            "reading a file (\"explain this code\", \"how about now\"), "
+            "respond: \"Sharing is on, but you don't have a file open in "
+            "the editor right now. Open a file (Ctrl+O or File > Open) and "
+            "I can read it.\"";
+        systemPrompt += openLine;
+    } else if (aiCanSeeFile && (!m_currentFilePath.isEmpty() || !m_currentFileText.isEmpty())) {
         QString openLine = "\n\nUser's currently-open editor tab: ";
         if (!m_currentFilePath.isEmpty()) {
             QFileInfo fi(m_currentFilePath);
@@ -3100,14 +3174,14 @@ void AIPanel::sendPrompt(const QString &action) {
             "name, path, or content. ";
         if (codingModeOn) {
             blindLine +=
-                "Coding mode IS active, but the safety toggle (🔒 Share "
-                "file) is OFF — the user must enable it for you to see "
-                "the file. ";
+                "Coding mode IS active, but the safety toggle "
+                "(Auto-attach open file) is OFF — the user must enable "
+                "it for you to see the file. ";
         } else {
             blindLine +=
                 "The user is in Chat mode or Data mode; only Coding mode "
-                "can access the open file, and only when the 🔒 Share "
-                "file toggle is enabled. ";
+                "can access the open file, and only when the "
+                "Auto-attach open file toggle is enabled. ";
         }
         blindLine +=
             "If the user asks something like \"can you see this file?\", "
@@ -3116,8 +3190,9 @@ void AIPanel::sendPrompt(const QString &action) {
             "buffer, do NOT guess or pretend. Answer plainly: \"I can't "
             "see your open file right now — your privacy toggle is on. "
             "To grant me access, switch the AI panel to Coding mode and "
-            "enable the 🔒 Share file toggle (it'll turn green and read "
-            "🔓 Sharing file).\" Keep that guidance short and friendly.";
+            "enable the Auto-attach open file toggle (it'll turn green and "
+            "read Auto-attaching open file).\" Keep that guidance short "
+            "and friendly.";
         systemPrompt += blindLine;
     }
 
@@ -3245,7 +3320,7 @@ void AIPanel::sendPrompt(const QString &action) {
             // Vision-model image attachment
             imagesBase64 << imageB64;
             QFileInfo fi(m_pendingFilePath);
-            userBubbleText = QString("[🖼 %1]\n%2").arg(fi.fileName()).arg(userBubbleText);
+            userBubbleText = QString("[image: %1]\n%2").arg(fi.fileName()).arg(userBubbleText);
         } else if (!fileText.isEmpty()) {
             // Text-extracted attachment — embed in the prompt as context.
             // Scrub credentials before forwarding (a user could attach a
@@ -3254,9 +3329,9 @@ void AIPanel::sendPrompt(const QString &action) {
             QFileInfo fi(m_pendingFilePath);
             QString header = QString("\n\n--- Attached file: %1 ---\n").arg(fi.fileName());
             prompt = prompt + header + safeFileText + "\n--- end file ---\n";
-            const QString icon = (dataMode && CsvAnalyst::looksLikeCsv(m_pendingFilePath))
-                                  ? QStringLiteral("📊") : QStringLiteral("📄");
-            userBubbleText = QString("[%1 %2]\n%3").arg(icon, fi.fileName(), userBubbleText);
+            const QString tag = (dataMode && CsvAnalyst::looksLikeCsv(m_pendingFilePath))
+                                  ? QStringLiteral("csv") : QStringLiteral("file");
+            userBubbleText = QString("[%1: %2]\n%3").arg(tag, fi.fileName(), userBubbleText);
         } else if (!reason.isEmpty()) {
             setStatus("✗ attachment error: " + reason, true);
         }
@@ -3334,6 +3409,43 @@ void AIPanel::sendPrompt(const QString &action) {
     }
 
     appendUserBubble(userBubbleText);
+
+    // v0.1.70 — state-injection for the no-file-open case. When the user
+    // is in Coding mode with Auto-attach ON but no editor file is open,
+    // earlier chat-history turns may still contain "turn on Share file"
+    // advice from when the toggle was OFF. Even a 26B-parameter model
+    // (gemma4:26b, qwen3:27b) will sometimes copy that pattern from
+    // history despite a corrected system prompt — models weight recent
+    // conversational context heavily.
+    //
+    // Pre-v0.1.70: I shipped a hard short-circuit that returned a fixed
+    // reply for any user message in this state. That was too aggressive
+    // — a casual "hi" got the file-open prompt as if it were a code
+    // question.
+    //
+    // Current fix: prepend a state marker DIRECTLY to the user prompt
+    // sent to the model. The user's visible chat bubble (already
+    // appended via appendUserBubble above) is untouched — only the API
+    // payload carries the prefix. The model sees state info in-turn,
+    // which it honours far more reliably than a system prompt that
+    // contradicts older chat history.
+    {
+        const bool codingNow = (m_codingMode && m_codingMode->isChecked());
+        const bool shareNow  = Config::instance().aiShareOpenFile;
+        const bool noFile    = m_currentFilePath.isEmpty() && m_currentFileText.isEmpty();
+        if (codingNow && shareNow && noFile) {
+            const QString stateMarker = QStringLiteral(
+                "[Current state: the Auto-attach-open-file toggle is "
+                "ALREADY ON. The user has NO editor file open right now "
+                "(the active tab is Welcome or an empty new buffer). "
+                "Do NOT advise enabling the toggle — it is already on. "
+                "If the user's question requires file content, tell them "
+                "to open a file with Ctrl+O or File > Open. Otherwise "
+                "respond normally to whatever they asked.]\n\n");
+            prompt = stateMarker + prompt;
+        }
+    }
+
     beginAssistantBubble();
     if (m_stopBtn) m_stopBtn->setEnabled(true);  // hardening: guard m_stopBtn
 
@@ -3362,8 +3474,30 @@ void AIPanel::sendPrompt(const QString &action) {
         }
     }
 
+    // v0.1.70 — build the prior-turns JSON array so the model actually
+    // sees conversation history. Pre-v0.1.70 each send() to ollama.cpp
+    // reset m_messages to [system, currentUser] — turn N landed as if it
+    // were turn 1, and the user reported "context lost" in Coding mode.
+    // Skip the last entry (= current user message just appended by
+    // appendUserBubble) and skip Error roles (those aren't real turns,
+    // just UI surface for stream/network failures).
+    QJsonArray priorJson;
+    {
+        const QVector<ChatMessage> &history = activeMessages();
+        const int historyTail = history.size() - 1;   // exclude current user msg
+        for (int i = 0; i < historyTail; ++i) {
+            const ChatMessage &m = history.at(i);
+            if (m.role == ChatMessage::Error) continue;
+            QJsonObject obj;
+            obj["role"] = (m.role == ChatMessage::User)
+                              ? QStringLiteral("user")
+                              : QStringLiteral("assistant");
+            obj["content"] = m.text;
+            priorJson.append(obj);
+        }
+    }
     m_ollama->generate(prompt, systemPrompt, m_thinkingCheck->isChecked(),
-                       imagesBase64, toolsForRequest);
+                       imagesBase64, toolsForRequest, priorJson);
 }
 
 // ───── Chat-bubble rendering ──────────────────────────────────────────
@@ -3546,16 +3680,45 @@ static QFrame *aiAddAssistantCard(QVBoxLayout *target,
         .arg(pal.assistBg, pal.assistBorder, pal.assistAccent));
 
     auto *outer = new QVBoxLayout(card);
-    outer->setContentsMargins(14, 12, 14, 12);
-    outer->setSpacing(8);
+    outer->setContentsMargins(20, 18, 20, 18);
+    outer->setSpacing(12);
 
     auto *headerRow = new QHBoxLayout;
-    headerRow->setContentsMargins(0, 0, 0, 0);
+    headerRow->setContentsMargins(0, 0, 0, 4);
+    headerRow->setSpacing(10);
     auto *modelLbl = new QLabel(msg.model.isEmpty() ? QStringLiteral("AI") : msg.model.toUpper());
     modelLbl->setStyleSheet(QString(
         "color: %1; font-size: 10px; font-weight: 700; letter-spacing: 1.2px;")
         .arg(pal.assistAccent));
     headerRow->addWidget(modelLbl);
+    // v0.1.70 — stats now sit INLINE in the header row right after the
+    // model name (saves a whole row of vertical chrome). User asked:
+    // "on the same level so this will give us enough space". Format
+    // matches the live streaming label: "⏱ N tok · X tok/s · Y s".
+    if (msg.elapsedMs >= 0 || msg.evalTokens > 0) {
+        const qint64 ms = msg.elapsedMs >= 0 ? msg.elapsedMs : 0;
+        const double secs = ms / 1000.0;
+        QString inlineStats;
+        if (msg.evalTokens > 0 && ms > 200) {
+            const double tps = msg.evalTokens * 1000.0 / ms;
+            inlineStats = QString("⏱ %1 tok · %2 tok/s · %3 s")
+                              .arg(msg.evalTokens)
+                              .arg(QString::number(tps, 'f', 1))
+                              .arg(QString::number(secs, 'f', 1));
+        } else if (msg.evalTokens > 0) {
+            inlineStats = QString("⏱ %1 tok · %2 s")
+                              .arg(msg.evalTokens)
+                              .arg(QString::number(secs, 'f', 1));
+        } else {
+            inlineStats = QString("⏱ %1 s").arg(QString::number(secs, 'f', 1));
+        }
+        auto *inlineStatsLbl = new QLabel(inlineStats);
+        inlineStatsLbl->setStyleSheet(QString(
+            "color: %1; font-size: 10px; font-weight: 500; "
+            "letter-spacing: 0.3px; padding: 0; opacity: 0.75;")
+            .arg(pal.linkFg));
+        headerRow->addWidget(inlineStatsLbl);
+    }
     headerRow->addStretch(1);
     auto *copyBtn = new QPushButton("⧉ copy");
     copyBtn->setCursor(Qt::PointingHandCursor);
@@ -3581,35 +3744,9 @@ static QFrame *aiAddAssistantCard(QVBoxLayout *target,
         .arg(pal.assistBorder));
     outer->addWidget(divider);
 
-    // Per-response stats line — same "⏱ N tok · X tok/s · Y s" format
-    // used by the live streaming label so the bubble keeps the same
-    // visual after the stream ends (instead of the stats vanishing).
-    // Hidden when no stats reported yet (placeholder card during stream
-    // start, before the first token).
-    if (msg.elapsedMs >= 0 || msg.evalTokens > 0) {
-        const qint64 ms = msg.elapsedMs >= 0 ? msg.elapsedMs : 0;
-        const double secs = ms / 1000.0;
-        QString text;
-        if (msg.evalTokens > 0 && ms > 200) {
-            const double tps = msg.evalTokens * 1000.0 / ms;
-            text = QString("⏱ %1 tok · %2 tok/s · %3 s")
-                       .arg(msg.evalTokens)
-                       .arg(QString::number(tps, 'f', 1))
-                       .arg(QString::number(secs, 'f', 1));
-        } else if (msg.evalTokens > 0) {
-            text = QString("⏱ %1 tok · %2 s")
-                       .arg(msg.evalTokens)
-                       .arg(QString::number(secs, 'f', 1));
-        } else {
-            text = QString("⏱ %1 s").arg(QString::number(secs, 'f', 1));
-        }
-        auto *statsLbl = new QLabel(text);
-        statsLbl->setStyleSheet(QString(
-            "color: %1; font-size: 10px; font-weight: 500; "
-            "letter-spacing: 0.3px; padding: 0; opacity: 0.8;")
-            .arg(pal.linkFg));
-        outer->addWidget(statsLbl);
-    }
+    // v0.1.70 — the standalone stats row below the divider was moved
+    // INTO the header row (next to the model name) for vertical density.
+    // See the headerRow construction above.
 
     auto *body = new QTextBrowser;
     body->setReadOnly(true);
@@ -3620,19 +3757,56 @@ static QFrame *aiAddAssistantCard(QVBoxLayout *target,
     body->setStyleSheet(QString(
         "QTextBrowser { background: transparent; color: %1; border: none; padding: 0; }")
         .arg(pal.assistFg));
+    // Kill QTextDocument's default 4 px frame margin so the rendered HTML
+    // sits flush with the QTextBrowser edges. Without this, the auto-sized
+    // height kept growing extra pixels per render and leaving white space
+    // under short replies.
+    body->document()->setDocumentMargin(0);
+
     // Render the message — markdown for assistant text.
     const QString bodyHtml = markdownBodyHtml(msg.text, messageIndex);
     body->setHtml(bodyHtml);
-    // Size the body to fit its content so the card grows with the text
-    // and the outer QScrollArea handles overflow.
-    QObject::connect(body->document(), &QTextDocument::contentsChanged, card,
-        [body]() {
-            body->document()->setTextWidth(body->viewport()->width());
-            const int h = int(body->document()->size().height()) + 8;
-            body->setFixedHeight(qMax(30, h));
-        });
-    body->document()->setTextWidth(400);
-    body->setFixedHeight(qMax(30, int(body->document()->size().height()) + 8));
+
+    // Auto-fit height to content. Re-runs on:
+    //   1. contentsChanged — every new token streams in
+    //   2. viewport resize — when the panel/splitter changes width, the
+    //      text reflows so document.size().height changes; without this
+    //      hook the body kept its old height and left a tall empty band.
+    auto refit = [body]() {
+        const int w = body->viewport()->width();
+        if (w <= 0) return;
+        body->document()->setTextWidth(w);
+        // No +N slop — the document's own size() is the exact content
+        // height with documentMargin(0). Anything extra shows as empty
+        // space at the bottom of the bubble, which is the bug the user
+        // flagged ("a lot of white space at the end").
+        const int h = int(body->document()->size().height());
+        body->setFixedHeight(qMax(20, h));
+    };
+    QObject::connect(body->document(), &QTextDocument::contentsChanged,
+                     card, refit);
+
+    // Install an event filter on the viewport so width changes (panel
+    // resize, splitter drag, fullscreen toggle) trigger an immediate
+    // re-fit instead of relying on a future content change.
+    class ResizeRefitter : public QObject {
+    public:
+        ResizeRefitter(QObject *parent, std::function<void()> fn)
+            : QObject(parent), m_fn(std::move(fn)) {}
+        bool eventFilter(QObject *, QEvent *e) override {
+            if (e->type() == QEvent::Resize && m_fn) m_fn();
+            return false;
+        }
+    private:
+        std::function<void()> m_fn;
+    };
+    body->viewport()->installEventFilter(new ResizeRefitter(body, refit));
+
+    // First-paint sizing. Use a reasonable initial width so the document
+    // wraps and we get a non-trivial first height; the viewport-resize
+    // hook above will tighten it once the real width is known.
+    body->document()->setTextWidth(420);
+    refit();
     outer->addWidget(body);
 
     // ── v0.1.43 — render any ```chart fenced JSON specs as real QCharts ──
@@ -3640,6 +3814,10 @@ static QFrame *aiAddAssistantCard(QVBoxLayout *target,
     // a fenced ```chart {...} block when a visualization helps. We parse
     // each one and append a QChartView widget under the prose body so the
     // user sees a real interactive chart alongside the explanation.
+    //
+    // Layout breathing room: outer->setContentsMargins(14) gives the chart
+    // visible padding inside the card. Each chart widget is wrapped in a
+    // small spacer so consecutive charts (or chart + prose) don't touch.
     {
         static const QRegularExpression kChartFence(
             QStringLiteral("```chart\\s*\\n([\\s\\S]*?)```"));
@@ -3650,21 +3828,33 @@ static QFrame *aiAddAssistantCard(QVBoxLayout *target,
             QString chartErr;
             QWidget *chart = ChartRender::renderFromSpec(json, card, &chartErr);
             if (chart) {
+                auto *spacer = new QWidget(card);
+                spacer->setFixedHeight(14);
+                spacer->setStyleSheet("background: transparent;");
+                outer->addWidget(spacer);
+                chart->setMinimumHeight(280);  // give charts real estate
                 outer->addWidget(chart);
+                auto *afterSpacer = new QWidget(card);
+                afterSpacer->setFixedHeight(10);
+                afterSpacer->setStyleSheet("background: transparent;");
+                outer->addWidget(afterSpacer);
             } else if (!chartErr.isEmpty()) {
                 auto *errLbl = new QLabel(QStringLiteral("⚠ Chart spec error: ") + chartErr);
-                errLbl->setStyleSheet("color: #c0392b; font-size: 10px; font-style: italic;");
+                errLbl->setStyleSheet(
+                    "color: #c0392b; font-size: 11px; font-style: italic; "
+                    "padding: 10px 0; margin: 6px 0;");
                 errLbl->setWordWrap(true);
                 outer->addWidget(errLbl);
             }
         }
     }
 
-    // Bottom margin between cards
+    // Bottom margin between cards — bumped 12 → 22 so successive assistant
+    // turns get clear breathing room instead of crowding into a wall of text.
     auto *row = new QWidget;
     row->setStyleSheet("background: transparent;");
     auto *rowLay = new QVBoxLayout(row);
-    rowLay->setContentsMargins(0, 0, 0, 12);
+    rowLay->setContentsMargins(0, 0, 0, 22);
     rowLay->setSpacing(0);
     rowLay->addWidget(card);
 
@@ -3968,7 +4158,7 @@ bool AIPanel::acceptAttachment(const QString &path, const QString &kind) {
     const QString fname = fi.fileName().isEmpty() ? path : fi.fileName();
 
     const QString message = tr(
-        "🖼 Can't attach <b>%1</b> — <b>%2</b> doesn't support image input.<br>"
+        "Can't attach <b>%1</b> — <b>%2</b> doesn't support image input.<br>"
         "<br>"
         "Switch to a vision-capable model, then drop the image again:<br>"
         "&nbsp;&nbsp;• <b>Local (Ollama)</b>: <code>ollama pull qwen2.5vl:7b</code> "
@@ -4047,12 +4237,14 @@ void AIPanel::dropEvent(QDropEvent *event) {
 
     const QString name   = fi.fileName();
     const qint64  sizeKb = fi.size() / 1024;
-    QString icon = QStringLiteral("📄");
-    if      (kind == QLatin1String("image")) icon = QStringLiteral("🖼");
-    else if (kind == QLatin1String("pdf"))   icon = QStringLiteral("📕");
-    else if (kind == QLatin1String("docx"))  icon = QStringLiteral("📘");
-    else if (kind == QLatin1String("pptx"))  icon = QStringLiteral("📙");
-    else if (kind == QLatin1String("xlsx"))  icon = QStringLiteral("📗");
+    // v0.1.70 — emoji file-type badges replaced with plain ASCII so
+    // attachment chips don't tofu on systems without color-emoji fonts.
+    QString icon = QStringLiteral("[file]");
+    if      (kind == QLatin1String("image")) icon = QStringLiteral("[img]");
+    else if (kind == QLatin1String("pdf"))   icon = QStringLiteral("[pdf]");
+    else if (kind == QLatin1String("docx"))  icon = QStringLiteral("[doc]");
+    else if (kind == QLatin1String("pptx"))  icon = QStringLiteral("[ppt]");
+    else if (kind == QLatin1String("xlsx"))  icon = QStringLiteral("[xls]");
 
     if (m_attachmentChip) {
         m_attachmentChip->setText(QString("%1 %2 (%3 KB) — will be included as context. Click chip to remove.")
@@ -4066,82 +4258,67 @@ void AIPanel::dropEvent(QDropEvent *event) {
     event->acceptProposedAction();
 }
 
-// v0.1.56 — mode-aware visual cue on each dropdown row. Same model name
-// rule as currentModelSupportsTools() / modelCapableOfDataAnalysis(): we
-// don't second-guess the user, we just colour and tooltip the rows so
-// "this won't really work for what you're doing" is obvious before they
-// pick. Capable rows render in the panel's normal foreground; not-capable
-// rows go amber (#FF9F43) and grow a tooltip that says why. Section
-// headers / disabled placeholders are skipped (not selectable → no point
-// decorating them). Cleared by passing through chat mode (any model OK).
+// Visible "Attached: X · Y" chip in Data mode. Walks the saved
+// db-connections.json, counts tables per connection (best-effort —
+// shows the count only when listTables succeeded), and renders a tight
+// one-line summary so the user can see at a glance which databases the
+// model will actually see. Without this chip the user had no way to
+// know whether the system prompt picked up their connection — the
+// failure mode was a silent "I see workspace files instead" answer.
+void AIPanel::refreshAttachedDbsChip() {
+    if (!m_attachedDbsChip) return;
+    if (!m_dataMode || !m_dataMode->isChecked()) {
+        m_attachedDbsChip->setVisible(false);
+        return;
+    }
+    const auto records = DbConnections::loadAll();
+    if (records.isEmpty()) {
+        m_attachedDbsChip->setText(
+            tr("No databases attached. Click <b>Manage Connections…</b> "
+               "to add one — the model only sees data sources listed here."));
+        m_attachedDbsChip->setStyleSheet(
+            "QLabel { color: #B07A1F; font-size: 11px; padding: 2px 8px; "
+            "background: rgba(255,159,67,0.10); border-radius: 3px; }");
+        m_attachedDbsChip->setVisible(true);
+        return;
+    }
+    QStringList parts;
+    for (const auto &r : records) {
+        bool ok = false;
+        const QStringList tables = DbConnections::listTables(r, &ok);
+        const QString safeName = r.name.toHtmlEscaped();
+        if (ok) {
+            parts << QStringLiteral("<b>%1</b> (%2 tables)")
+                .arg(safeName).arg(tables.size());
+        } else {
+            parts << QStringLiteral("<b>%1</b> <span style='color:#c0392b'>"
+                "(can't connect)</span>").arg(safeName);
+        }
+    }
+    m_attachedDbsChip->setText(
+        tr("✓ Attached: %1 — visible to the model via <code>query_sql</code>.")
+            .arg(parts.join(" · ")));
+    m_attachedDbsChip->setStyleSheet(
+        "QLabel { color: #2c8c2c; font-size: 11px; padding: 2px 8px; "
+        "background: rgba(46,160,67,0.08); border-radius: 3px; }");
+    m_attachedDbsChip->setVisible(true);
+}
+
+// Dropdown row decoration removed — Notepatra no longer paints models
+// amber/green based on hand-maintained "is this model strong enough"
+// substring lists. Every row reads in the default foreground colour,
+// no second-guessing tooltips. The user picks; the backend decides.
 void AIPanel::decorateModelsByMode() {
     if (!m_modelCombo) return;
     auto *m = qobject_cast<QStandardItemModel*>(m_modelCombo->model());
     if (!m) return;
-
-    const bool dataMode   = m_dataMode   && m_dataMode->isChecked();
-    const bool codingMode = m_codingMode && m_codingMode->isChecked();
-    const bool chatMode   = !dataMode && !codingMode;
-
-    const QColor amber("#FF9F43");
-    const QBrush defaultBrush;  // default = palette text colour
-
+    const QBrush defaultBrush;
     for (int i = 0; i < m_modelCombo->count(); ++i) {
         QStandardItem *item = m->item(i);
         if (!item) continue;
-        // Separators and the disabled "— pick one to download —" header
-        // are not selectable — leave them alone.
         if (!(item->flags() & Qt::ItemIsSelectable)) continue;
-
-        // Resolve the underlying model name. UserRole holds it for the
-        // llama.cpp catalog rows we set ourselves; for live /v1/models
-        // and Ollama lists the visible label IS the model name.
-        QString name = item->data(Qt::UserRole).toString();
-        if (name.isEmpty()) name = item->text();
-        // Strip any "↓ " download prefix we added for not-installed
-        // llama.cpp catalog items, so capability lookup hits the real id.
-        if (name.startsWith(QStringLiteral("↓ "))) name.remove(0, 2);
-
-        if (chatMode) {
-            // Wipe any earlier mode's decoration.
-            item->setForeground(defaultBrush);
-            item->setToolTip(QString());
-            continue;
-        }
-
-        bool capable = false;
-        QString reason;
-        if (dataMode) {
-            capable = AiTools::modelCapableOfDataAnalysis(name);
-            reason = capable
-                ? tr("✓ Capable for Data mode (multi-table SQL + chart specs)")
-                : tr("⚠ Too small for reliable Data mode. "
-                     "Need a frontier cloud model OR a local 7B+ from a "
-                     "strong family (qwen2.5-coder, deepseek-coder, "
-                     "llama3.x, mistral-large).");
-        } else { // codingMode
-            // Same logic as currentModelSupportsTools() but for an
-            // arbitrary model name, not the active one.
-            if (m_ollama && m_ollama->backend() != OllamaClient::Ollama) {
-                // Cloud / llama.cpp: server decides, treat as capable.
-                capable = true;
-            } else {
-                auto it = m_ollamaModelCaps.constFind(name);
-                if (it != m_ollamaModelCaps.constEnd() && !it.value().isEmpty()) {
-                    capable = it.value().contains(QStringLiteral("tools"), Qt::CaseInsensitive);
-                } else {
-                    capable = AiTools::modelLikelySupportsTools(name);
-                }
-            }
-            reason = capable
-                ? tr("✓ Supports function-calling tools — Coding mode will work")
-                : tr("⚠ No tool support known for this model. Coding mode "
-                     "needs function-calling. Try qwen2.5-coder, llama3.1+, "
-                     "qwen3, hermes3, command-r, or any frontier cloud model.");
-        }
-
-        item->setForeground(capable ? defaultBrush : QBrush(amber));
-        item->setToolTip(reason);
+        item->setForeground(defaultBrush);
+        item->setToolTip(QString());
     }
 }
 
@@ -4353,7 +4530,7 @@ void AIPanel::renderDataWelcomeCard() {
     // Title row
     auto *titleRow = new QHBoxLayout;
     titleRow->setSpacing(8);
-    auto *title = new QLabel(QStringLiteral("📊  Data Analyst Mode"));
+    auto *title = new QLabel(QStringLiteral("Data Analyst Mode"));
     {
         QFont f = title->font();
         f.setPointSize(f.pointSize() + 2);
@@ -4379,143 +4556,87 @@ void AIPanel::renderDataWelcomeCard() {
     titleRow->addWidget(hideBtn);
     cardLay->addLayout(titleRow);
 
-    // One-paragraph explainer
-    auto *blurb = new QLabel(QStringLiteral(
-        "Ask questions about CSVs and saved database connections. The AI "
-        "can run real SQL, summarise tables, and render charts inline."));
-    blurb->setWordWrap(true);
-    blurb->setStyleSheet(QString("color: %1; font-size: 12px;").arg(pal.chatFg));
-    cardLay->addWidget(blurb);
+    // v0.1.70 Medium cleanup — blurb + example chip rows + multi-row status
+    // block all removed. Data mode is a "drop in a DB / CSV, ask questions"
+    // workflow — the welcome card just needs to show: connection count,
+    // model capability, and a Manage Connections shortcut. Tips below.
 
-    // Example prompt chips — clicking fills the input + focuses it.
-    auto *chips = new QVBoxLayout;
-    chips->setSpacing(6);
-    static const char *EXAMPLES[] = {
-        "Top 10 customers by revenue last quarter",
-        "Plot monthly signups for 2024 as a line chart",
-        "Schema of users table — find duplicate emails",
-    };
-    for (const char *prompt : EXAMPLES) {
-        auto *chip = new QPushButton(QString::fromUtf8("›  ") + QString::fromUtf8(prompt));
-        chip->setCursor(Qt::PointingHandCursor);
-        chip->setStyleSheet(QString(
-            "QPushButton { background: %1; color: %2; border: 1px solid %3; "
-            "border-radius: 6px; padding: 6px 10px; text-align: left; font-size: 12px; }"
-            "QPushButton:hover { background: %4; border-color: #FF9F43; color: #FF9F43; }")
-            .arg(pal.codeBg, pal.chatFg, pal.assistBorder, pal.btnHover));
-        const QString text = QString::fromUtf8(prompt);
-        connect(chip, &QPushButton::clicked, this, [this, text]() {
-            if (m_customInput) {
-                m_customInput->setPlainText(text);
-                m_customInput->setFocus();
-                QTextCursor c = m_customInput->textCursor();
-                c.movePosition(QTextCursor::End);
-                m_customInput->setTextCursor(c);
-            }
-        });
-        chips->addWidget(chip);
-    }
-    cardLay->addLayout(chips);
+    // Compact horizontal status row: DB · Model ✓ · [Manage]
+    // v0.1.70 — emoji icons (🔌 🤖) replaced with plain-ASCII labels so the
+    // row renders on systems without a color-emoji font (Linux + some
+    // Windows). Cross-platform safe.
+    auto *statusRow = new QHBoxLayout;
+    statusRow->setSpacing(8);
 
-    // Status row — connection count + model capability.
-    auto *status = new QVBoxLayout;
-    status->setSpacing(4);
-
-    auto *connRow = new QHBoxLayout;
-    connRow->setSpacing(6);
     auto *connLabel = new QLabel(connCount == 0
-        ? QStringLiteral("🔌  <b>No connections saved.</b>")
-        : QString::fromUtf8("🔌  <b>%1 connection%2 saved.</b>")
+        ? QStringLiteral(
+            "<img src=':/icons/database.svg' width='13' height='13' style='vertical-align:middle;'>"
+            "  <i>no connections</i>")
+        : QString::fromUtf8(
+            "<img src=':/icons/database.svg' width='13' height='13' style='vertical-align:middle;'>"
+            "  <b>%1 conn%2</b>")
               .arg(connCount).arg(connCount == 1 ? "" : "s"));
     connLabel->setTextFormat(Qt::RichText);
-    connLabel->setWordWrap(true);
     connLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
-    connRow->addWidget(connLabel);
-    connRow->addStretch();
-    auto *manageBtn = new QPushButton(QStringLiteral("Manage Connections…"));
+    statusRow->addWidget(connLabel);
+
+    auto *sep1 = new QLabel(QStringLiteral("·"));
+    sep1->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
+    statusRow->addWidget(sep1);
+
+    auto *modelLabel = new QLabel(capable
+        ? QString::fromUtf8(
+            "<img src=':/icons/bot.svg' width='13' height='13' style='vertical-align:middle;'>"
+            "  <b>%1</b>  "
+            "<img src=':/icons/check.svg' width='13' height='13' style='vertical-align:middle;'>")
+              .arg(modelName.isEmpty() ? QStringLiteral("(no model)") : modelName)
+        : QString::fromUtf8(
+            "<img src=':/icons/bot.svg' width='13' height='13' style='vertical-align:middle;'>"
+            "  <b>%1</b>  "
+            "<img src=':/icons/alert-triangle.svg' width='13' height='13' style='vertical-align:middle;'>")
+              .arg(modelName.isEmpty() ? QStringLiteral("(no model)") : modelName));
+    modelLabel->setTextFormat(Qt::RichText);
+    modelLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
+    statusRow->addWidget(modelLabel);
+
+    statusRow->addStretch(1);
+
+    auto *manageBtn = new QPushButton(QStringLiteral("Manage…"));
     manageBtn->setCursor(Qt::PointingHandCursor);
     manageBtn->setStyleSheet(QString(
         "QPushButton { background: #FF9F43; color: white; border: none; "
-        "border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600; }"
+        "border-radius: 4px; padding: 3px 10px; font-size: 11px; font-weight: 600; }"
         "QPushButton:hover { background: #FFA94D; }"));
     connect(manageBtn, &QPushButton::clicked, this, [this]() {
         DbConnectionsDialog dlg(this);
         dlg.exec();
-        // Refresh the card so the connection count updates.
         if (m_dataWelcomeFrame) {
             removeDataWelcomeCard();
             renderDataWelcomeCard();
         }
     });
-    connRow->addWidget(manageBtn);
-    status->addLayout(connRow);
+    statusRow->addWidget(manageBtn);
+    cardLay->addLayout(statusRow);
 
-    auto *modelLabel = new QLabel(capable
-        ? QString::fromUtf8("🤖  <b>%1</b> &nbsp;·&nbsp; <span style='color:#3FB950'>capable for Data mode ✓</span>")
-              .arg(modelName.isEmpty() ? QStringLiteral("(no model selected)") : modelName)
-        : QString::fromUtf8("🤖  <b>%1</b> &nbsp;·&nbsp; <span style='color:#FF9F43'>too small for multi-table SQL ⚠</span>")
-              .arg(modelName.isEmpty() ? QStringLiteral("(no model selected)") : modelName));
-    modelLabel->setTextFormat(Qt::RichText);
-    modelLabel->setWordWrap(true);
-    modelLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
-    status->addWidget(modelLabel);
-
+    // Tools-incapable hint only when needed (rare).
     if (!capable) {
         auto *fix = new QLabel(QStringLiteral(
-            "&nbsp;&nbsp;&nbsp;<i>Pull a stronger local model:</i> "
-            "<code>ollama pull qwen2.5-coder:14b</code> &nbsp;(≈9 GB) "
-            "<br>&nbsp;&nbsp;&nbsp;<i>Or use a cloud model:</i> "
-            "Claude Sonnet 4.5 · GPT-5 · Gemini 2.5 Pro · DeepSeek-V3"));
+            "<i>Model too small for multi-table SQL. Try "
+            "<code>ollama pull qwen2.5-coder:14b</code> or a cloud model "
+            "(Claude Sonnet · GPT-5 · Gemini 2.5 Pro · DeepSeek-V3).</i>"));
         fix->setTextFormat(Qt::RichText);
         fix->setWordWrap(true);
         fix->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
-        status->addWidget(fix);
+        cardLay->addWidget(fix);
     }
 
-    // v0.1.55 — surface the loaded analyst-context files. Counts every file
-    // under .notepatra/data-analyst.md + .notepatra/data-analyst/* with one
-    // of the supported extensions. Lets users SEE that their data dictionary
-    // / business rules / KPIs are actually being attached to the prompt.
-    {
-        QStringList loadedFiles;
-        if (!m_workspaceRoot.isEmpty()) {
-            const QDir root(m_workspaceRoot);
-            QFileInfo legacy(root.filePath(".notepatra/data-analyst.md"));
-            if (legacy.exists() && legacy.isFile())
-                loadedFiles << "data-analyst.md";
-            const QString subdir = root.filePath(".notepatra/data-analyst");
-            QDir sd(subdir);
-            if (sd.exists()) {
-                const QStringList exts = {"*.md", "*.sql", "*.yaml", "*.yml", "*.json", "*.txt"};
-                for (const QString &fn : sd.entryList(exts, QDir::Files, QDir::Name))
-                    loadedFiles << fn;
-            }
-        }
-        if (loadedFiles.isEmpty()) {
-            auto *ctxHint = new QLabel(QStringLiteral(
-                "📚  <i>No analyst-context files yet. Drop a "
-                "<code>.notepatra/data-analyst/business-rules.md</code> or "
-                "<code>data-dictionary.md</code> into your workspace and the "
-                "AI will use them as ground truth.</i>"));
-            ctxHint->setTextFormat(Qt::RichText);
-            ctxHint->setWordWrap(true);
-            ctxHint->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
-            status->addWidget(ctxHint);
-        } else {
-            const QString joined = loadedFiles.join(" · ");
-            auto *ctxLine = new QLabel(QString::fromUtf8(
-                "📚  <b>%1 context file%2 loaded</b> &nbsp;·&nbsp; <span style='color:%3;'>%4</span>")
-                .arg(loadedFiles.size())
-                .arg(loadedFiles.size() == 1 ? "" : "s")
-                .arg(pal.muted, joined.left(160) + (joined.size() > 160 ? "…" : "")));
-            ctxLine->setTextFormat(Qt::RichText);
-            ctxLine->setWordWrap(true);
-            ctxLine->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
-            status->addWidget(ctxLine);
-        }
-    }
-
-    cardLay->addLayout(status);
+    // Tips footer — compact one-liner.
+    auto *tipsFooter = new QLabel(QStringLiteral(
+        "<i>Tips: drop a CSV in editor · ask about saved DBs · charts render inline</i>"));
+    tipsFooter->setTextFormat(Qt::RichText);
+    tipsFooter->setWordWrap(true);
+    tipsFooter->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
+    cardLay->addWidget(tipsFooter);
 
     // Insert at the top of m_chatLayout (above the trailing stretch).
     // m_chatLayout last item is the stretch (added in ctor at line ~979).
@@ -4559,7 +4680,7 @@ void AIPanel::renderCodingWelcomeCard() {
     // Title row + Hide button
     auto *titleRow = new QHBoxLayout;
     titleRow->setSpacing(8);
-    auto *title = new QLabel(QStringLiteral("💻  Coding Mode"));
+    auto *title = new QLabel(QStringLiteral("Coding Mode"));
     {
         QFont f = title->font();
         f.setPointSize(f.pointSize() + 2);
@@ -4585,90 +4706,41 @@ void AIPanel::renderCodingWelcomeCard() {
     titleRow->addWidget(hideBtn);
     cardLay->addLayout(titleRow);
 
-    // One-sentence blurb
-    auto *blurb = new QLabel(QStringLiteral(
-        "Ask questions, propose multi-file edits, run git, all without "
-        "leaving your editor."));
-    blurb->setWordWrap(true);
-    blurb->setStyleSheet(QString("color: %1; font-size: 12px;").arg(pal.chatFg));
-    cardLay->addWidget(blurb);
+    // v0.1.70 — blurb + Quick start chip rows removed for Medium cleanup
+    // (user preferred a compact single-status-row design). The remaining
+    // model + git status row + Tips footer below carry the essential info.
 
-    // Quick start row — three boxed example chips. The first fills the
-    // input + focuses; the other two are informational (Ctrl+I and @file
-    // are editor-side surfaces, not chat prompts).
-    {
-        auto *qsLabel = new QLabel(QStringLiteral("Quick start"));
-        QFont qsF = qsLabel->font();
-        qsF.setBold(true);
-        qsF.setPointSize(qsF.pointSize() - 1);
-        qsLabel->setFont(qsF);
-        qsLabel->setStyleSheet(QString("color: %1;").arg(pal.muted));
-        cardLay->addWidget(qsLabel);
-    }
-    auto *chips = new QVBoxLayout;
-    chips->setSpacing(6);
-    struct QuickStart {
-        const char *label;
-        const char *prompt;  // empty = informational (no autofill)
-    };
-    static const QuickStart QS[] = {
-        { "Show what changed since yesterday",
-          "Show what changed since yesterday" },
-        { "Refactor selection — Ctrl+I in editor",
-          "" },
-        { "Mention a file with @path/to/file.py",
-          "" },
-    };
-    for (const auto &qs : QS) {
-        auto *chip = new QPushButton(QString::fromUtf8("›  ") + QString::fromUtf8(qs.label));
-        chip->setCursor(Qt::PointingHandCursor);
-        chip->setStyleSheet(QString(
-            "QPushButton { background: %1; color: %2; border: 1px solid %3; "
-            "border-radius: 6px; padding: 6px 10px; text-align: left; font-size: 12px; }"
-            "QPushButton:hover { background: %4; border-color: #4EC9B0; color: #4EC9B0; }")
-            .arg(pal.codeBg, pal.chatFg, pal.assistBorder, pal.btnHover));
-        const QString prompt = QString::fromUtf8(qs.prompt);
-        connect(chip, &QPushButton::clicked, this, [this, prompt]() {
-            if (prompt.isEmpty() || !m_customInput) return;
-            m_customInput->setPlainText(prompt);
-            m_customInput->setFocus();
-            QTextCursor c = m_customInput->textCursor();
-            c.movePosition(QTextCursor::End);
-            m_customInput->setTextCursor(c);
-        });
-        chips->addWidget(chip);
-    }
-    cardLay->addLayout(chips);
+    // v0.1.70 Medium cleanup — model + git in a single horizontal status
+    // row. Title row + this row + Tips footer = three lines total, vs the
+    // pre-cleanup ~8 lines.
+    auto *statusRow = new QHBoxLayout;
+    statusRow->setSpacing(8);
 
-    // Status block — model tool-call capability + git status pill.
-    auto *status = new QVBoxLayout;
-    status->setSpacing(4);
-
+    // v0.1.70 — inline SVG icons via Qt resources. Replaces the previous
+    // ✓ / ⚠ Unicode glyphs with bundled icons that render identically on
+    // Linux / macOS / Windows (Qt's runtime SVG plugin decodes them).
     auto *modelLabel = new QLabel(toolsCapable
-        ? QString::fromUtf8("🤖  <b>%1</b> &nbsp;·&nbsp; <span style='color:#3FB950'>tool calls supported ✓</span>")
-              .arg(modelName.isEmpty() ? QStringLiteral("(no model selected)") : modelName)
-        : QString::fromUtf8("🤖  <b>%1</b> &nbsp;·&nbsp; <span style='color:#FF9F43'>tool calls unverified ⚠</span>")
-              .arg(modelName.isEmpty() ? QStringLiteral("(no model selected)") : modelName));
+        ? QString::fromUtf8(
+            "<img src=':/icons/bot.svg' width='13' height='13' style='vertical-align:middle;'>"
+            "  Model:  <b>%1</b>  "
+            "<img src=':/icons/check.svg' width='13' height='13' style='vertical-align:middle;'>")
+              .arg(modelName.isEmpty() ? QStringLiteral("(no model)") : modelName)
+        : QString::fromUtf8(
+            "<img src=':/icons/bot.svg' width='13' height='13' style='vertical-align:middle;'>"
+            "  Model:  <b>%1</b>  "
+            "<img src=':/icons/alert-triangle.svg' width='13' height='13' style='vertical-align:middle;'>")
+              .arg(modelName.isEmpty() ? QStringLiteral("(no model)") : modelName));
     modelLabel->setTextFormat(Qt::RichText);
     modelLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
-    status->addWidget(modelLabel);
+    statusRow->addWidget(modelLabel);
 
-    if (!toolsCapable) {
-        auto *toolsHint = new QLabel(QStringLiteral(
-            "&nbsp;&nbsp;&nbsp;<i>For agentic git / file edits, use a tool-"
-            "capable model: Claude Sonnet · GPT-4o / GPT-5 · Gemini 2.5 Pro · "
-            "qwen2.5-coder · DeepSeek-Coder.</i>"));
-        toolsHint->setTextFormat(Qt::RichText);
-        toolsHint->setWordWrap(true);
-        toolsHint->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
-        status->addWidget(toolsHint);
-    }
+    auto *statusSep = new QLabel(QStringLiteral("·"));
+    statusSep->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
+    statusRow->addWidget(statusSep);
 
     // Git status pill — uses QProcess with 1s timeout so render never blocks.
     // If the workspace is missing, not a git repo, or git times out, we fall
     // back to a friendly "not a repo / couldn't read state" line.
-    auto *gitRow = new QHBoxLayout;
-    gitRow->setSpacing(6);
     auto *gitLabel = new QLabel;
     gitLabel->setTextFormat(Qt::RichText);
     gitLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
@@ -4726,8 +4798,9 @@ void AIPanel::renderCodingWelcomeCard() {
     }
 
     if (!gitOk) {
-        gitLabel->setText(QStringLiteral("🌿  <i>(couldn't read git state)</i>"));
-        gitRow->addWidget(gitLabel, 1);
+        gitLabel->setText(QStringLiteral(
+            "<img src=':/icons/git-branch.svg' width='13' height='13' style='vertical-align:middle;'>"
+            "  <i>(couldn't read git)</i>"));
     } else if (isRepo) {
         QStringList parts;
         parts << QString("<b>%1</b>").arg(branch.toHtmlEscaped());
@@ -4739,21 +4812,30 @@ void AIPanel::renderCodingWelcomeCard() {
             parts << QString("%1 behind").arg(behindCount);
         if (modifiedCount == 0 && aheadCount == 0 && behindCount == 0)
             parts << "clean";
-        gitLabel->setText(QString::fromUtf8("🌿  ") + parts.join(" · "));
-        gitRow->addWidget(gitLabel, 1);
+        gitLabel->setText(QStringLiteral(
+            "<img src=':/icons/git-branch.svg' width='13' height='13' style='vertical-align:middle;'>  ")
+            + parts.join(" · "));
     } else if (m_workspaceRoot.isEmpty()) {
-        gitLabel->setText(QStringLiteral("🌿  <i>no workspace folder open</i>"));
-        gitRow->addWidget(gitLabel, 1);
+        gitLabel->setText(QStringLiteral(
+            "<img src=':/icons/git-branch.svg' width='13' height='13' style='vertical-align:middle;'>"
+            "  <i>no workspace</i>"));
     } else {
         gitLabel->setText(QStringLiteral(
-            "🌿  <i>not a git repo (init with: <code>git init</code>)</i>"));
-        gitRow->addWidget(gitLabel, 1);
+            "<img src=':/icons/git-branch.svg' width='13' height='13' style='vertical-align:middle;'>"
+            "  <i>not a repo</i>"));
+    }
+    gitLabel->setTextFormat(Qt::RichText);
+    gitLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
+    statusRow->addWidget(gitLabel);
 
+    // Initialize-repo button appears INLINE in the status row only when
+    // the workspace exists but is not a git repo.
+    if (gitOk && !isRepo && !m_workspaceRoot.isEmpty()) {
         auto *initBtn = new QPushButton(QStringLiteral("Initialize repo"));
         initBtn->setCursor(Qt::PointingHandCursor);
         initBtn->setStyleSheet(QString(
             "QPushButton { background: #4EC9B0; color: white; border: none; "
-            "border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600; }"
+            "border-radius: 4px; padding: 3px 9px; font-size: 11px; font-weight: 600; }"
             "QPushButton:hover { background: #6FD9C2; }"));
         connect(initBtn, &QPushButton::clicked, this, [this]() {
             if (m_workspaceRoot.isEmpty()) return;
@@ -4786,20 +4868,31 @@ void AIPanel::renderCodingWelcomeCard() {
                 renderCodingWelcomeCard();
             }
         });
-        gitRow->addWidget(initBtn);
+        statusRow->addWidget(initBtn);
     }
-    status->addLayout(gitRow);
+    statusRow->addStretch(1);
+    cardLay->addLayout(statusRow);
 
-    cardLay->addLayout(status);
+    // Tools-hint only appears when the current model isn't tool-capable
+    // (rare but important — the user needs to know AI tools won't work).
+    if (!toolsCapable) {
+        auto *toolsHint = new QLabel(QStringLiteral(
+            "<i>For agentic git / file edits, use a tool-capable model: "
+            "Claude Sonnet · GPT-4o / GPT-5 · Gemini 2.5 Pro · qwen2.5-coder.</i>"));
+        toolsHint->setTextFormat(Qt::RichText);
+        toolsHint->setWordWrap(true);
+        toolsHint->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
+        cardLay->addWidget(toolsHint);
+    }
 
-    // Composer tip — tiny one-liner pointing at the dedicated tab.
-    auto *composerTip = new QLabel(QStringLiteral(
-        "<i>Tip: switch to the <b>Composer</b> tab for multi-file edits with "
-        "diff preview.</i>"));
-    composerTip->setTextFormat(Qt::RichText);
-    composerTip->setWordWrap(true);
-    composerTip->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
-    cardLay->addWidget(composerTip);
+    // Tips footer — compact one-liner replacing the old Quick start chips.
+    auto *tipsFooter = new QLabel(QStringLiteral(
+        "<i>Tips: <b>Ctrl+I</b> in editor · <b>@path/to/file.py</b> · "
+        "<b>Composer</b> tab for multi-file edits</i>"));
+    tipsFooter->setTextFormat(Qt::RichText);
+    tipsFooter->setWordWrap(true);
+    tipsFooter->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
+    cardLay->addWidget(tipsFooter);
 
     // Insert at the top of m_chatLayout (above the trailing stretch).
     m_chatLayout->insertWidget(0, card);
@@ -5063,7 +5156,7 @@ QFrame *aiAddToolCallCard(QVBoxLayout *target,
     auto *outer = new QHBoxLayout(card);
     outer->setContentsMargins(10, 6, 10, 6);
     outer->setSpacing(8);
-    auto *icon = new QLabel(isError ? "✗" : "🔧");
+    auto *icon = new QLabel(isError ? "x" : "*");
     icon->setStyleSheet(QString("color: %1; font-weight: 600;").arg(accent));
     outer->addWidget(icon);
     auto *body = new QLabel(QString("<b>%1</b> %2 %3 <span style='color:%4;'>%5</span>")
@@ -5442,12 +5535,12 @@ void AIPanel::attachFile() {
     // Show a chip above the input bar with the file name + kind + a remove [×]
     QString name = fi.fileName();
     qint64 sizeKb = fi.size() / 1024;
-    QString icon = "📄";
-    if (kind == "image") icon = "🖼";
-    else if (kind == "pdf") icon = "📕";
-    else if (kind == "docx") icon = "📘";
-    else if (kind == "pptx") icon = "📙";
-    else if (kind == "xlsx") icon = "📗";
+    QString icon = "[file]";
+    if (kind == "image") icon = "[img]";
+    else if (kind == "pdf") icon = "[pdf]";
+    else if (kind == "docx") icon = "[doc]";
+    else if (kind == "pptx") icon = "[ppt]";
+    else if (kind == "xlsx") icon = "[xls]";
 
     if (m_attachmentChip) {  // hardening: guard m_attachmentChip
         m_attachmentChip->setText(QString("%1 %2 (%3 KB) — will be included as context. Click chip to remove.")
@@ -5487,6 +5580,16 @@ void AIPanel::forceExitFullscreen() {
         m_aiExpandBtn->setChecked(false);
     } else {
         emit fullscreenToggled(false);
+    }
+}
+
+// v0.1.70 — see header doc. Force Chat mode whenever the dock is freshly
+// opened from hidden. Sets m_chatMode checked, which fires its toggled
+// signal and runs applyModeWithCancel — the same path the user takes
+// clicking the Chat button themselves.
+void AIPanel::resetToChatMode() {
+    if (m_chatMode && !m_chatMode->isChecked()) {
+        m_chatMode->setChecked(true);
     }
 }
 

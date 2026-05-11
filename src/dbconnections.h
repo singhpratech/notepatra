@@ -82,6 +82,15 @@ QueryResult runQuery(const Record &r,
                      int maxRows,
                      bool allowMutation);
 
+// Open the record briefly and read back the list of user tables. Skips
+// system catalogues (sys.*, INFORMATION_SCHEMA.*, sqlite_internal_*).
+// Returns an empty list if the connection can't be opened. `outOk` is
+// set false on failure (useful to distinguish "no tables" from "couldn't
+// connect"). Used to drive the Data-mode attached-schema chip + system
+// prompt injection so the model knows what's available before it picks
+// a query.
+QStringList listTables(const Record &r, bool *outOk = nullptr);
+
 // Returns the list of QSqlDatabase driver IDs available at runtime
 // (after Qt has loaded its plugins). Used by the dialog to warn when a
 // user selects a driver whose plugin isn't installed.
@@ -130,6 +139,12 @@ private:
     void refreshDriverHint();
 
     QVector<DbConnections::Record> m_records;
+    // v0.1.70 — snapshot of the connection count at dialog construction.
+    // onAccept compares the current m_records.size() against this; if the
+    // user has deleted connections (count went down), a confirmation
+    // dialog prompts before overwriting the saved file. Prevents the
+    // "Delete + OK = silent wipe" data-loss bug.
+    int m_originalCount = 0;
 
     QListWidget *m_list = nullptr;
     QComboBox   *m_preset = nullptr;
