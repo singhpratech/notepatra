@@ -33,10 +33,13 @@
 #include <QDir>
 #include <QFile>
 #include <QPushButton>
+#include <QEventLoop>
+#include <QSplitter>
 #include <QStandardPaths>
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTextStream>
+#include <QTimer>
 
 #include <cstdio>
 #include <cstdlib>
@@ -463,6 +466,148 @@ int main(int argc, char *argv[]) {
         // Flip back to leave a clean state.
         ctrlQAction->trigger();
         QApplication::processEvents();
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // SCENARIO 16: full hide-then-show cycle leaves the AI dock with a
+    // non-zero splitter slot width.  User-reported regression in v0.1.72:
+    // "ai toggle space goes out but the actual AI assistant is not
+    // showing up at all".  Root cause was rebalanceAiDockSplit() bailing
+    // on m_aiDockSizedOnce ⇒ after a hide the splitter slot stayed at 0
+    // and the dock's setVisible(true) alone didn't restore the width.
+    // Fix: under m_aiDockSizedOnce, only bail if the current slot is
+    // wider than 40 px (deliberate user drag); below that we re-apply
+    // the 60/40 default.
+    // ───────────────────────────────────────────────────────────────
+    std::printf("\n-- Scenario 16: hide-show cycle restores dock width --\n");
+    QSplitter *mainSplit = mw.findChild<QSplitter *>();
+    // Find the splitter whose children include the AI dock host.  The
+    // window has several QSplitters; we want the one m_splitter points at.
+    QSplitter *aiHostSplitter = nullptr;
+    {
+        const auto allSplits = mw.findChildren<QSplitter *>();
+        for (auto *sp : allSplits) {
+            for (int i = 0; i < sp->count(); ++i) {
+                const QString name = sp->widget(i)->objectName();
+                if (name == QStringLiteral("aiDockHost") ||
+                    sp->widget(i)->inherits("QFrame") /* dock host wrapper */) {
+                    // Heuristic — final test is whether toggling the dock
+                    // changes the visible state of any child of this
+                    // splitter.  We'll find the right one by trying each.
+                    aiHostSplitter = sp;
+                    break;
+                }
+            }
+            if (aiHostSplitter) break;
+        }
+    }
+    (void)mainSplit;   // suppress unused-warning in non-debug builds
+
+    // Make sure dock is visible to start.
+    if (!mw.isAiDockVisible()) mw.setAiDockVisible(true);
+    QApplication::processEvents();
+    QApplication::processEvents();
+
+    // Find the dock slot index BEFORE we hide.
+    auto findAiDockSlotW = [&]() -> int {
+        const auto splits = mw.findChildren<QSplitter *>();
+        for (auto *sp : splits) {
+            const auto sizes = sp->sizes();
+            for (int i = 0; i < sp->count() && i < sizes.size(); ++i) {
+                if (sp->widget(i)->isVisible() && sp->widget(i)->maximumWidth() > 200) {
+                    // Look for the slot whose width drops to ~0 after hide.
+                }
+            }
+        }
+        // Simpler: read m_aiDockHost width directly via the panel's parent.
+        AIPanel *panel = mw.findChild<AIPanel *>();
+        QWidget *host = panel ? panel->parentWidget() : nullptr;
+        return host ? host->width() : 0;
+    };
+
+    const int wBeforeHide = findAiDockSlotW();
+    EXPECT_TRUE("S16: dock has nonzero width before hide", wBeforeHide > 50);
+
+    mw.setAiDockVisible(false);
+    QApplication::processEvents();
+    QApplication::processEvents();
+    EXPECT_TRUE("S16: dock isVisible == false after hide", !mw.isAiDockVisible());
+
+    mw.setAiDockVisible(true);
+    QApplication::processEvents();
+    QApplication::processEvents();
+    // Give the singleShot(0) timer inside rebalanceAiDockSplit() a chance
+    // to fire — the deferred apply() lambda is what actually sets sizes.
+    {
+        QEventLoop wait;
+        QTimer::singleShot(50, &wait, &QEventLoop::quit);
+        wait.exec();
+    }
+
+    EXPECT_TRUE("S16: dock isVisible == true after re-show", mw.isAiDockVisible());
+
+    const int wAfterShow = findAiDockSlotW();
+    // The key assertion: width must NOT be collapsed to 0/small.  Before
+    // the v0.1.72 fix this would be ~0 px → user sees a blank dock.
+    EXPECT_TRUE("S16: dock has nonzero width after hide-show cycle",
+                wAfterShow > 50);
+
+    // ───────────────────────────────────────────────────────────────
+    // SCENARIO 17: red ✕ close button → toolbar re-open round-trip.
+    // v0.1.73 fix.  Pre-v0.1.73 the close button called
+    // parentWidget()->setVisible(false) directly, leaving Config out of
+    // sync and the splitter slot at 0 → subsequent re-open showed a
+    // blank zero-width dock.  v0.1.73 routes the button through
+    // setAiDockVisible(false) via a new closeDockRequested signal.
+    // ───────────────────────────────────────────────────────────────
+    std::printf("\n-- Scenario 17: red ✕ close → toolbar re-open works --\n");
+
+    // Make sure dock is visible to start the scenario.
+    if (!mw.isAiDockVisible()) mw.setAiDockVisible(true);
+    QApplication::processEvents();
+    QApplication::processEvents();
+    EXPECT_TRUE("S17 setup: dock visible before ✕", mw.isAiDockVisible());
+
+    // Find the AI panel + its ✕ close button (set with toolTip
+    // containing "Close the AI dock"). Click it.
+    AIPanel *panel = mw.findChild<AIPanel *>();
+    QPushButton *closeBtn = nullptr;
+    if (panel) {
+        for (auto *btn : panel->findChildren<QPushButton *>()) {
+            if (btn->toolTip().contains(QStringLiteral("Close the AI dock"))) {
+                closeBtn = btn;
+                break;
+            }
+        }
+    }
+    EXPECT_TRUE("S17: found red ✕ close button by tooltip", closeBtn != nullptr);
+
+    if (closeBtn) {
+        closeBtn->click();
+        QApplication::processEvents();
+        QApplication::processEvents();
+        EXPECT_TRUE("S17: dock hidden after ✕ click", !mw.isAiDockVisible());
+        EXPECT_TRUE("S17: Config::aiDockVisible == false after ✕",
+                    !Config::instance().aiDockVisible);
+
+        // Re-open via the canonical handler (simulates the toolbar AI button).
+        mw.setAiDockVisible(true);
+        QApplication::processEvents();
+        QApplication::processEvents();
+        {
+            QEventLoop wait;
+            QTimer::singleShot(50, &wait, &QEventLoop::quit);
+            wait.exec();
+        }
+        EXPECT_TRUE("S17: dock visible after re-open", mw.isAiDockVisible());
+
+        // The whole point: the dock must NOT be 0-px wide after re-open
+        // following a ✕ close.  Walk to the dock host widget and check
+        // its rendered width.
+        QWidget *hostAfter = panel->parentWidget();
+        const int reopenedW = hostAfter ? hostAfter->width() : 0;
+        EXPECT_TRUE("S17: dock has nonzero width after ✕ → re-open cycle",
+                    reopenedW > 50);
     }
 
     // ───────────────────────────────────────────────────────────────

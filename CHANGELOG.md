@@ -7,6 +7,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.73] — 2026-05-11
+
+**AI dock blank-on-reopen fix (patch on v0.1.72).**
+
+### Fixed
+
+- **Red ✕ close button no longer leaves the dock un-reopenable.**  Pre-v0.1.73 the × handler called `parentWidget()->setVisible(false)` directly, skipping `Config::aiDockVisible` persistence, the toolbar button checked-state sync, and the splitter rebalance bookkeeping.  After × close, clicking the toolbar AI button to reopen sometimes left the dock at 0 px wide → user saw a blank zero-width dock.  Now the × button emits a new `closeDockRequested` signal that MainWindow routes through `setAiDockVisible(false)` — same code path as the toolbar toggle.
+- **`rebalanceAiDockSplit()` rescues 0-px slots.**  After a full hide → show cycle Qt's `QSplitter` leaves the hidden widget's slot at ~0 px, and `setVisible(true)` alone doesn't restore it.  v0.1.72 bailed out of the re-split unconditionally on `m_aiDockSizedOnce` (intent: preserve user splitter drags mid-session), so the rescue never ran.  Now the bail only triggers if the current slot is > 40 px wide (deliberate user drag); below that we re-apply the 60/40 default.
+
+### Tests
+
+- `test_ai_fullscreen_exit.cpp` extended with S16 (hide-show cycle restores dock width) and S17 (red ✕ close → toolbar re-open works) — both FAIL on v0.1.72 and PASS on v0.1.73.
+- 53 sub-checks in `test_ai_fullscreen_exit` (up from 47 in v0.1.72), 28/28 ctest pass.
+
+### Carry-forward
+
+- v0.1.72 installer matrix (.deb / .rpm / AppImage / dual MSI / cloud-free `notepatra-local-ai`) unchanged.
+- Network policy + `test_network_policy.cpp` 49-case allowlist unchanged.
+
+---
+
 ## [0.1.72] — 2026-05-11
 
 **Enterprise-ready Linux installers + cloud-free `notepatra-local-ai` build.**

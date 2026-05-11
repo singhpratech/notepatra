@@ -1066,6 +1066,18 @@ MainWindow::MainWindow() {
     // the whole window. Click again to restore. Splitter sizes + sibling
     // visibility are saved at expand-time so restore is exact. Useful for
     // heavy data-analyst sessions where the chat is the primary surface.
+    // v0.1.73 — red ✕ close button inside the dock now routes through the
+    // canonical hide handler.  Pre-v0.1.73 the button called
+    // parentWidget()->setVisible(false) directly, which left
+    // Config::aiDockVisible + toolbar button state out of sync AND
+    // sometimes squashed the splitter slot to 0 so subsequent re-shows
+    // (via the toolbar) opened a 0-width "blank" dock.  Now AIPanel
+    // emits closeDockRequested() and we drive the same path the toolbar
+    // does.
+    connect(m_aiDockPanel, &AIPanel::closeDockRequested, this, [this]() {
+        setAiDockVisible(false);
+    });
+
     connect(m_aiDockPanel, &AIPanel::fullscreenToggled, this, [this](bool on) {
         if (!m_splitter || !m_aiDockHost) return;
         if (on) {
@@ -4611,12 +4623,31 @@ void MainWindow::showAiDockForInvocation() {
 
 void MainWindow::rebalanceAiDockSplit() {
     if (!m_splitter) return;
-    // v0.1.70 — only force the 60/40 default on the FIRST open per session.
-    // After that, the user's splitter drag is the source of truth. App
-    // restart resets m_aiDockSizedOnce back to false so the default re-
-    // applies on next session's first open. Prevents the "every click
-    // resets my drag" annoyance.
-    if (m_aiDockSizedOnce) return;
+    // v0.1.70 — only force the 60/40 default on the FIRST open per session
+    // so the user's mid-session splitter drag survives subsequent opens.
+    //
+    // v0.1.72 — but ALSO force the split when the dock slot has collapsed
+    // to ~0 (after a full hide / show cycle).  Qt's QSplitter doesn't
+    // restore a slot's width on setVisible(true) — it stays at 0px and
+    // the user sees an empty-looking dock with no AI panel inside.
+    // Caught when @user reported "ai toggle space goes out but the actual
+    // AI assistant is not showing up at all".  After a hide-then-show the
+    // user's last drag intent no longer applies; we must reset to the
+    // 60/40 default.
+    int aiSlotW = 0;
+    if (m_aiDockHost) {
+        const QList<int> cur = m_splitter->sizes();
+        for (int i = 0; i < m_splitter->count() && i < cur.size(); ++i) {
+            if (m_splitter->widget(i) == m_aiDockHost) {
+                aiSlotW = cur.at(i);
+                break;
+            }
+        }
+    }
+    // Threshold of 40 px: anything below that is "collapsed" — too small
+    // to be a deliberate user drag (the AI dock has a 320 px minimum width
+    // when actually rendered, see line ~840).
+    if (m_aiDockSizedOnce && aiSlotW > 40) return;
     //
     // Apply via a lambda we can defer. Calling setSizes() before Qt's
     // layout pass has settled (e.g. right after setVisible(true) on the

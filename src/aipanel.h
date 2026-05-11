@@ -154,6 +154,15 @@ signals:
     // previous splitter sizes and visibility.
     void fullscreenToggled(bool on);
 
+    // v0.1.73 — fired when the user clicks the red ✕ close button in the
+    // panel header.  MainWindow hooks this into setAiDockVisible(false)
+    // so the close path goes through the canonical hide handler (Config
+    // persistence, toolbar button state, splitter rebalance setup, etc.)
+    // instead of the panel poking its grandparent's visibility directly,
+    // which left the toolbar button checked + Config out of sync and
+    // sometimes left the splitter slot at 0 px on subsequent re-show.
+    void closeDockRequested();
+
     // v0.1.61 — same payload as `codingModeRequested`, but with intent-
     // neutral wording. MainWindow listens to gate the file-explorer
     // sidebar visibility strictly to Coding mode. Kept separate so

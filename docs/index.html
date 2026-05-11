@@ -153,7 +153,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.72 download sizes: 3.2 MB Linux x64 tar.gz, 3.0 MB Linux ARM64 tar.gz, 26.6 MB macOS DMG (with bundled Qt), 39.9 MB Windows MSI / 32.0 MB NSIS / 36.5 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.73 download sizes: 3.2 MB Linux x64 tar.gz, 3.0 MB Linux ARM64 tar.gz, 26.6 MB macOS DMG (with bundled Qt), 39.9 MB Windows MSI / 32.0 MB NSIS / 36.5 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
           }
         },
         {
@@ -169,7 +169,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.72: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.73: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.72">
-        Download v0.1.72 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.73">
+        Download v0.1.73 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.72 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.73 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~9 MB bare, ~2 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints.</p>
 
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.72</div>
+        <div class="section-label">Download v0.1.73</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1467,7 +1467,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.72 →
+                Get Notepatra v0.1.73 →
               </a>
             </div>
 
@@ -1510,7 +1510,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.72 →
+                Get Notepatra Local AI v0.1.73 →
               </a>
             </div>
           </div>
@@ -1968,55 +1968,71 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.72 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.73 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-05-11</span>
-                        <span>· Enterprise installers + cloud-free <code>notepatra-local-ai</code> build.</span>
+                        <span>· AI dock blank-on-reopen fix (patch on v0.1.72).</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>📦 Fleet-grade installers for every Linux distro</h5>
+                        <h5>🐛 The bug — &quot;AI toggle space goes out but the AI assistant doesn't show up&quot;</h5>
                         <ul>
-                            <li><strong>.deb</strong> for Debian / Ubuntu / Mint / Pop!_OS (x64 + ARM64) — <code>sudo apt install ./notepatra_0.1.72_amd64.deb</code> drops the binary at <code>/opt/notepatra/</code> with a <code>/usr/bin/notepatra</code> symlink, full hicolor icon set, <code>.desktop</code> registration, GTK / desktop-database trigger hooks.</li>
-                            <li><strong>.rpm</strong> for Fedora / RHEL / CentOS Stream / Rocky / Alma (x64 + ARM64) — <code>sudo dnf install ./notepatra-0.1.72-1.x86_64.rpm</code>. Bundles QScintilla 2.14.1 alongside the binary because Fedora's <code>qscintilla-qt5</code> package exports a subtly different symbol set; the bundled copy means the same upstream binary runs uniformly across distros.</li>
-                            <li><strong>AppImage</strong> for Arch / openSUSE Tumbleweed / Manjaro / EndeavourOS / any glibc 2.38+ distro — <code>chmod +x Notepatra-0.1.72-x86_64.AppImage</code> and run. Linuxdeploy + linuxdeploy-plugin-qt bundle Qt5 + plugins; libGL stays a host dep (standard AppImage convention). Older glibc → use .deb / .rpm.</li>
-                            <li><strong>Windows MSI</strong> (already in v0.1.71) — <code>msiexec /i notepatra-0.1.72.msi /quiet</code> for SCCM / Intune push. <strong>macOS DMG</strong> — drag to <code>/Applications</code>; admins can <code>sudo cp -R</code> from a script.</li>
+                            <li>Reported within minutes of v0.1.72 going live: closing the AI dock via the red ✕ button in the panel header and then trying to re-open it from the toolbar AI button left the user looking at a blank, zero-width dock.</li>
+                            <li>Toolbar toggle alone worked fine. Toolbar toggle alone twice worked fine. <em>Only</em> the ✕ → toolbar combo hit it.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🔒 <code>notepatra-local-ai</code> — by-construction cloud-free build</h5>
+                        <h5>🔍 Root cause — two coupled regressions</h5>
                         <ul>
-                            <li>Compile-time flag <code>-DNOTEPATRA_NO_CLOUD=ON</code> produces a binary that <strong>physically refuses</strong> to talk to <code>api.openai.com</code>, <code>api.anthropic.com</code>, <code>api.mistral.ai</code>, <code>openrouter.ai</code>, <code>generativelanguage.googleapis.com</code>, <code>api.groq.com</code>, <code>api.together.xyz</code>, <code>api.deepseek.com</code>, <code>api.cohere.com</code>, <code>api.x.ai</code>, or any other public LLM endpoint. Three layers of defense: UI strips the cloud preset shortcuts + cloud-URL paste box, <code>QNetworkAccessManager</code> requests are gated by a 49-case unit-tested allowlist (<code>NotepatraNetworkPolicy::isPrivateNetworkHost</code>), <code>QNetworkRequest</code> refuses to fire if the host isn't loopback / RFC1918 / CGNAT-100.64/10 / IPv6-ULA fc00::/7 / <code>.local</code> / <code>.lan</code> / <code>.internal</code> / <code>.intranet</code> / <code>.corp</code> / <code>.home</code>.</li>
-                            <li><strong>Shipped as</strong> <code>notepatra-local-ai_0.1.72_amd64.deb</code> / <code>_arm64.deb</code> (Debian/Ubuntu) and <code>notepatra-local-ai-0.1.72.msi</code> (Windows, per-machine MSI to <code>C:\Program Files\Notepatra Local AI\</code> with its own UpgradeCode). Ollama / llama.cpp / LM Studio / Jan / vLLM / self-hosted Ollama on the LAN — all continue to work.</li>
-                            <li><strong>For regulated industries</strong> — finance, healthcare, legal, government — and data-sovereignty regions (EU GDPR, India RBI, China). Auditors confirm via <code>strings notepatra | grep -c openai.com</code> = zero hits, or <code>notepatra --version</code> = <code>Notepatra v0.1.72 (cloud-free / local-ai)</code>.</li>
+                            <li><strong>The red ✕ close button bypassed the canonical hide handler.</strong> Its click handler called <code>parentWidget()-&gt;setVisible(false)</code> directly, skipping <code>Config::aiDockVisible</code> persistence, toolbar button state sync, the file-explorer-gate-on-coding-mode sibling logic, and (critically) the splitter rebalance bookkeeping.</li>
+                            <li><strong><code>rebalanceAiDockSplit()</code> bailed unconditionally on <code>m_aiDockSizedOnce</code>.</strong> That flag was meant to preserve mid-session user splitter drags, but after a full hide → show cycle Qt's <code>QSplitter</code> leaves the hidden widget's slot at ~0 px. <code>setVisible(true)</code> alone doesn't restore the slot width — without an explicit <code>setSizes()</code> the user saw a 0-px-wide visually-empty dock.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🧪 Validation</h5>
+                        <h5>🔧 The fix</h5>
                         <ul>
-                            <li>New unit test <code>test_network_policy.cpp</code> — 49 cases (every loopback / RFC1918 / CGNAT / IPv6-ULA range + every cloud LLM endpoint we know about + adversarial look-alikes like <code>api.openai.com.evil.com</code> and <code>localhost.attacker.com</code>). 28/28 ctest pass on both the regular and cloud-free build flavors.</li>
-                            <li>Local Docker verification: <code>.deb</code> install on Ubuntu 24.04, <code>.rpm</code> install on Fedora 40, AppImage extract-and-run on bare Fedora — every artefact launches end-to-end with bundled QScintilla resolved via RPATH <code>$ORIGIN/lib</code>.</li>
+                            <li><strong>New <code>AIPanel::closeDockRequested()</code> signal</strong> — the ✕ button emits this instead of poking its grandparent. MainWindow hooks the signal into <code>setAiDockVisible(false)</code>, the single source of truth for hiding the dock.</li>
+                            <li><strong><code>rebalanceAiDockSplit()</code> now rescues 0-px slots</strong> — bail on <code>m_aiDockSizedOnce</code> <em>only</em> if the current slot width is &gt; 40 px (deliberate user drag). Below 40 px = collapsed by Qt's hide behavior → re-apply the 60/40 default.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🔌 How it's wired</h5>
+                        <h5>🧪 Regression tests</h5>
                         <ul>
-                            <li>New module <code>src/network_policy.{h,cpp}</code> — pure helper <code>isPrivateNetworkHost(QUrl)</code> with no DNS lookups (name-based, TOCTOU-safe).</li>
-                            <li>Gates inserted at every <code>m_nam-&gt;get()</code> / <code>m_nam-&gt;post()</code> call site in <code>ollama.cpp</code> via the <code>NOTEPATRA_NO_CLOUD_GATE</code> + <code>NOTEPATRA_NO_CLOUD_OK</code> macros (no-op in regular build, refuse-and-emit-error under <code>NOTEPATRA_NO_CLOUD</code>).</li>
-                            <li>New build scripts <code>installers/debian/build-deb.sh</code>, <code>installers/rpm/{notepatra.spec.in, build-rpm.sh}</code>, <code>installers/appimage/build-appimage.sh</code> — usable standalone for downstream packagers.</li>
-                            <li><code>installers/windows.wxs</code> parameterized via <code>&lt;?ifdef NoCloud ?&gt;</code> — passing <code>-dNoCloud</code> to <code>candle.exe</code> flips ProductName, UpgradeCode, install dir, Add/Remove Programs entry to the Local AI variant.</li>
+                            <li><code>test_ai_fullscreen_exit.cpp</code> extended with <strong>S16</strong> (hide-show cycle restores dock width — drives <code>setAiDockVisible(false)</code> then <code>setAiDockVisible(true)</code> and asserts the reopened dock has &gt; 50 px width).</li>
+                            <li><strong>S17</strong> (red ✕ close → toolbar re-open works — finds the × button by tooltip, clicks it, then re-opens via <code>setAiDockVisible(true)</code>, asserts &gt; 50 px width AND <code>Config::aiDockVisible</code> was updated by the click handler).</li>
+                            <li>53 sub-checks in <code>test_ai_fullscreen_exit</code> (up from 47 in v0.1.72), 28/28 ctest pass on the lite build.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>📦 Carry-forward from v0.1.72</h5>
+                        <ul>
+                            <li>Full installer matrix unchanged: <code>.deb</code> (Debian/Ubuntu x64+ARM64, regular + <code>notepatra-local-ai</code>), <code>.rpm</code> (Fedora/RHEL x64+ARM64), AppImage (universal Linux), DMG (macOS), and dual MSI (Windows regular + <code>notepatra-local-ai</code>).</li>
+                            <li><code>notepatra-local-ai</code> cloud-free build, 49-case <code>test_network_policy</code> allowlist, three-layer cloud refusal — all carry forward.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.72">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.73">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.72">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.73">Commits</a>
                 </div>
             </div>
             <!-- Older releases: slim link rows only. Full notes live on GitHub. -->
+            <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.72"
+               class="version-card-link"
+               style="display:flex; justify-content:space-between; align-items:center;
+                      padding:14px 20px; margin-top:6px;
+                      background:var(--c-surface); border:1px solid var(--c-border);
+                      border-radius:10px; text-decoration:none;
+                      color:var(--c-text-muted); font-size:13px;
+                      transition:border-color .15s, color .15s;"
+               onmouseover="this.style.borderColor='var(--green)';this.style.color='var(--c-text)';"
+               onmouseout="this.style.borderColor='var(--c-border)';this.style.color='var(--c-text-muted)';">
+                <span><strong style="color:var(--c-text);">v0.1.72</strong> · 2026-05-11 · Enterprise installers (.deb / .rpm / AppImage / dual MSI) + cloud-free <code>notepatra-local-ai</code> build.</span>
+                <span style="color:var(--green); font-weight:600;">View on GitHub →</span>
+            </a>
             <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.71"
                class="version-card-link"
                style="display:flex; justify-content:space-between; align-items:center;
@@ -2113,7 +2129,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.72: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
+                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.73: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2121,7 +2137,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.72 download sizes: <strong>3.2 MB</strong> Linux x64 tar.gz · <strong>3.0 MB</strong> Linux ARM64 tar.gz · <strong>26.6 MB</strong> macOS DMG · <strong>39.9 MB</strong> Windows MSI / <strong>32.0 MB</strong> NSIS / <strong>36.5 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.73 download sizes: <strong>3.2 MB</strong> Linux x64 tar.gz · <strong>3.0 MB</strong> Linux ARM64 tar.gz · <strong>26.6 MB</strong> macOS DMG · <strong>39.9 MB</strong> Windows MSI / <strong>32.0 MB</strong> NSIS / <strong>36.5 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>

@@ -611,12 +611,18 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         "QPushButton:hover { background: #E81123; color: white; } "
         "QPushButton:pressed { background: #C41019; color: white; }");
     connect(closeBtn, &QPushButton::clicked, this, [this]() {
-        // Hide by walking up to the enclosing dock host (m_aiDockHost
-        // in MainWindow is our grandparent via QVBoxLayout → QWidget).
-        QWidget *host = parentWidget();
-        if (host) host->setVisible(false);
-        // Do NOT clear the per-mode message vectors — the chat is preserved
-        // for when the user reopens via Ctrl+Shift+A or the menu.
+        // v0.1.73 — route through MainWindow's canonical hide handler
+        // via a signal.  Pre-v0.1.73 this called
+        // parentWidget()->setVisible(false) directly, which bypassed
+        // Config persistence + toolbar button state + the splitter
+        // rebalance bookkeeping in setAiDockVisible(false).  Net effect:
+        // after × the toolbar button stayed "checked" (out of sync with
+        // reality) AND a subsequent click sometimes left the dock at 0 px
+        // width — user saw a blank dock.  Now MainWindow owns the hide;
+        // we just ask for it.
+        emit closeDockRequested();
+        // Per-mode message vectors are NOT cleared — chat is preserved
+        // for when the user reopens via the toolbar / Ctrl+Q.
     });
     headerLay->addWidget(closeBtn, 0, Qt::AlignRight);
     layout->addWidget(headerRow);
