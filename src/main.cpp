@@ -15,6 +15,7 @@
 #include "editor.h"
 #include "config.h"
 #include "fonts.h"
+#include "fontpack.h"
 
 // NOTEPATRA_VERSION is injected at compile time from CMakeLists.txt's
 // project(Notepatra VERSION X.Y.Z ...) so a single bump in CMake propagates
@@ -133,6 +134,14 @@ int main(int argc, char *argv[]) {
     app.setApplicationName("Notepatra");
     app.setOrganizationName("Notepatra");
     app.setApplicationVersion(NOTEPATRA_VERSION);
+
+    // v0.1.75 — register every user-installed runtime font BEFORE we
+    // pick the default UI / code family. notepatraDefaultUiFamily() and
+    // notepatraDefaultCodeFamily() walk QFontDatabase().families() in
+    // priority order, so any TTF / OTF the user has downloaded into the
+    // font-pack directory becomes immediately available, no restart.
+    NotepatraFontPack::loadInstalledFonts();
+
     app.setFont(notepatraUiFont());
 
     // Parse remaining args

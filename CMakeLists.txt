@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.74 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.75 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -1032,6 +1032,26 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_network_policy.cpp
     add_test(NAME test_network_policy COMMAND $<TARGET_FILE:test_network_policy>)
     set_tests_properties(test_network_policy PROPERTIES LABELS "unit;security;network-policy;v0172")
     message(STATUS "Security test enabled — target: test_network_policy")
+endif()
+
+# v0.1.75 — font-pack manifest + scan-and-load regression test. Builds
+# only fontpack.cpp + its deps; no UI tree linkage.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_fontpack.cpp")
+    add_executable(test_fontpack
+        test_fontpack.cpp
+        src/fontpack.cpp
+    )
+    target_include_directories(test_fontpack PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_fontpack PRIVATE
+        Qt5::Core
+        Qt5::Gui
+        Qt5::Network
+    )
+    add_test(NAME test_fontpack COMMAND $<TARGET_FILE:test_fontpack>)
+    set_tests_properties(test_fontpack PROPERTIES LABELS "unit;fontpack;v0175")
+    message(STATUS "Font-pack test enabled — target: test_fontpack")
 endif()
 
 # v0.2 Coding-mode revamp — smoke test for EditPlanList + DiffView. Builds

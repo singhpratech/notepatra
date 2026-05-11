@@ -7,6 +7,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.75] — 2026-05-11
+
+**Runtime font-pack downloader — 27 premium open-source fonts available on demand. Binary stays at ~9 MB.**
+
+### Added
+
+- **`Settings → Manage Fonts…` dialog** — new menu entry that opens a curated catalogue of ~27 open-source fonts grouped into four categories: Code · Monospace (JetBrains Mono, Fira Code, Cascadia Code, Source Code Pro, IBM Plex Mono, Hack, Geist Mono, Inconsolata, Roboto Mono, Fira Mono, Noto Sans Mono, Space Mono, Anonymous Pro), UI · Sans-serif (Inter variable, Roboto, Manrope), Serif · Prose (Source Serif 4 variable, Merriweather), Display · Distinctive (Victor Mono Italic, Comic Mono). Per-row checkbox, install / remove / select-all buttons, progress bar. Each entry shows family · variant · size · license · origin · installed status.
+- **`src/fontpack.{h,cpp}`** — 27-entry manifest (every entry SIL OFL 1.1, Apache 2.0, or MIT), `NotepatraFontPack::Installer` queued downloader with progress + cancel signals, `loadInstalledFonts()` startup scanner that registers every `*.ttf` / `*.otf` in `~/.local/share/notepatra/fonts/` with `QFontDatabase` immediately, no restart. Files are pulled from pinned upstream HTTPS URLs on each project's GitHub repo — Notepatra hosts no bytes itself.
+- **`src/fontpack_dialog.{h,cpp}`** — Qt5 `QDialog` with grouped `QTreeWidget`, category headers, license + size display, async network install via `QNetworkAccessManager`. ~250-line dialog.
+- **Startup hook in `src/main.cpp`** — `NotepatraFontPack::loadInstalledFonts()` runs right after `QApplication` construction so `notepatraDefaultCodeFamily()` / `notepatraDefaultUiFamily()` in `src/fonts.h` can resolve to user-installed fonts on first paint.
+- **`test_fontpack.cpp`** — 23 sub-checks. Manifest validity (no duplicate filenames, all-HTTPS URLs, every entry has a license + origin + category, six industry-standard families present by name), path helpers, plus an end-to-end load test that copies a system TTF into `fontsDir()` and asserts `loadInstalledFonts()` registers it.
+- **`docs/regression-log.md`** — new v0.1.75 entry catalogues the test's coverage.
+
+### Architecture rationale
+
+- **Bare binary stays lite** — no bytes bundled. Fonts download to `AppDataLocation/fonts` only when the user opens the dialog and ticks selections. Honours the project's `"Bare binary stays small — heavy features on-demand"` rule (same pattern as the Charts Pack runtime download).
+- **HTTPS-only** — every URL in the manifest is enforced HTTPS by `test_fontpack.cpp`. Network attackers can't substitute alternate bytes mid-stream.
+- **Air-gapped friendly** — for `notepatra-local-ai` or any environment where `github.com` is blocked, users can drop TTFs into the font-pack directory manually; the startup hook picks them up regardless of how they got there.
+
+### Tests
+
+- 29/29 ctest pass (up from 28 — `test_fontpack` adds cleanly).
+
+---
+
 ## [0.1.74] — 2026-05-11
 
 **`notepatra-local-ai` MSI upgrade fix + website cleanup. No editor / AI / core changes.**

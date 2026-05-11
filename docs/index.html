@@ -153,7 +153,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.74 download sizes: 3.2 MB Linux x64 tar.gz, 3.0 MB Linux ARM64 tar.gz, 26.6 MB macOS DMG (with bundled Qt), 39.9 MB Windows MSI / 32.0 MB NSIS / 36.5 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.75 download sizes: 3.2 MB Linux x64 tar.gz, 3.0 MB Linux ARM64 tar.gz, 26.6 MB macOS DMG (with bundled Qt), 39.9 MB Windows MSI / 32.0 MB NSIS / 36.5 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
           }
         },
         {
@@ -169,7 +169,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.74: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.75: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.74">
-        Download v0.1.74 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.75">
+        Download v0.1.75 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.74 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.75 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~9 MB bare, ~2 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints.</p>
 
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.74</div>
+        <div class="section-label">Download v0.1.75</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1467,7 +1467,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.74 →
+                Get Notepatra v0.1.75 →
               </a>
             </div>
 
@@ -1510,7 +1510,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.74 →
+                Get Notepatra Local AI v0.1.75 →
               </a>
             </div>
           </div>
@@ -1968,66 +1968,59 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.74 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.75 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-05-11</span>
-                        <span>· <code>notepatra-local-ai</code> MSI upgrade fix + website cleanup.</span>
+                        <span>· Runtime font-pack downloader — 27 premium open-source fonts on demand.</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>🐛 The bug — &quot;MSI update is not happening properly for notepatra-local-ai&quot;</h5>
+                        <h5>✨ New — <code>Settings → Manage Fonts…</code></h5>
                         <ul>
-                            <li>When a user had <strong>both</strong> the regular Notepatra MSI and the cloud-free <code>notepatra-local-ai</code> MSI installed side-by-side (the v0.1.72 &quot;parallel install&quot; model), upgrading the local-ai MSI from v0.1.72 → v0.1.73 dropped into Windows Installer's <em>Repair / Remove</em> maintenance UI instead of running a clean major upgrade.</li>
-                            <li>The regular MSI was unaffected — most users only install one flavor, so the bug never surfaced there.</li>
+                            <li>Curated catalogue of <strong>27 premium open-source fonts</strong> — JetBrains Mono · Fira Code · Cascadia Code · Source Code Pro · IBM Plex Mono · Hack · Geist Mono · Inconsolata · Roboto Mono · Fira Mono · Noto Sans Mono · Space Mono · Anonymous Pro · Victor Mono · Comic Mono · Inter (variable) · Roboto · Manrope · Source Serif 4 (variable) · Merriweather. Every entry is SIL OFL 1.1, Apache 2.0, or MIT.</li>
+                            <li>Pick any, click <strong>Install selected</strong>, dialog downloads each TTF / OTF from its pinned upstream HTTPS URL to <code>~/.local/share/notepatra/fonts/</code> and registers it with <code>QFontDatabase</code> immediately — <strong>no restart needed</strong>. Use the new family as your editor font via <em>Settings → Preferences → Editor → Font</em>.</li>
+                            <li>Grouped UI: Code · Monospace / UI · Sans-serif / Serif · Prose / Display · Distinctive. Each row shows family, variant, size, license, origin, installed status. Remove button deletes from disk.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🔍 Root cause — hardcoded Component GUIDs shared across flavors</h5>
+                        <h5>📦 Why the binary stays lite</h5>
                         <ul>
-                            <li>All three <code>&lt;Component&gt;</code> elements in <code>installers/windows.wxs</code> (<code>MainExecutable</code>, <code>ApplicationShortcut</code>, <code>DesktopShortcut</code>) used hardcoded Component GUIDs that were identical across both flavors. Windows Installer treats a Component GUID as a system-wide unique identifier — two products registering the same GUID get reference-counted as the <em>same component</em>.</li>
-                            <li>When both flavors were installed, the shared components had refcount = 2. The local-ai upgrade's MajorUpgrade tried to release v0.1.72 components, but the regular install's reference held them — so MSI bailed into maintenance mode.</li>
-                            <li>Diagnosed by extracting <code>ProductCode</code> / <code>UpgradeCode</code> / Component GUIDs from the v0.1.72, v0.1.73 regular, and v0.1.73 local-ai MSIs with <code>strings -e s</code> — all three flavors carried the same hardcoded <code>A2F3B641…</code>, <code>C3D4E5F6…</code>, <code>D4E5F6A7…</code> Component GUIDs.</li>
+                            <li><strong>Zero bytes bundled.</strong> The bare Notepatra binary is still ~9 MB stripped. Fonts ship via the same on-demand pattern as the Charts Pack and DuckDB extensions: manifest in <code>src/fontpack.cpp</code> points at pinned upstream GitHub URLs; downloads happen only when the user opens the dialog and ticks selections.</li>
+                            <li>Honours the project rule: <em>&quot;Bare binary stays small — heavy features on-demand.&quot;</em> If we'd bundled all 27 fonts, the binary would have grown ~10 MB for users who never wanted them.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🔧 The fix</h5>
+                        <h5>🔐 Security &amp; air-gapped friendliness</h5>
                         <ul>
-                            <li><strong>All three Components switched to <code>Guid=&quot;*&quot;</code></strong> — WiX auto-generates a deterministic GUID from each component's KeyPath. The KeyPath includes <code>INSTALLFOLDER</code>, which differs between flavors (<code>Notepatra</code> vs <code>Notepatra Local AI</code>). → Different KeyPath → Different auto-generated GUID → Windows treats them as genuinely separate components and the refcount conflict disappears.</li>
-                            <li><strong><code>AllowSameVersionUpgrades=&quot;yes&quot;</code></strong> added to <code>&lt;MajorUpgrade&gt;</code> so re-running the same-version MSI runs the install flow instead of dropping into maintenance UI.</li>
-                            <li>Both flavors carry the fix in the v0.1.74 MSIs. Regular users see a no-op upgrade; local-ai users on v0.1.72/v0.1.73 see clean MajorUpgrade behavior.</li>
+                            <li><strong>HTTPS-only manifest</strong> — every URL in <code>src/fontpack.cpp</code> is enforced HTTPS by <code>test_fontpack.cpp</code>. Network attackers can't substitute alternate bytes mid-stream.</li>
+                            <li><strong>Air-gapped path</strong> — for <code>notepatra-local-ai</code> deployments where <code>github.com</code> is blocked, drop TTFs into <code>~/.local/share/notepatra/fonts/</code> manually. Notepatra's startup hook scans that directory on every launch and registers every <code>*.ttf</code> / <code>*.otf</code> it finds, regardless of how they got there.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🧹 Website cleanup</h5>
+                        <h5>🧪 Regression coverage</h5>
                         <ul>
-                            <li><code>docs/index.html</code> no longer shows the slim &quot;horizontal line&quot; rows for older releases. Previous policy demoted each past release to a one-line link row; v0.1.74 strips them entirely. The site now carries <strong>only the latest release detail card</strong> plus the &quot;See every release on GitHub&quot; link. v0.1.0–v0.1.73 live exclusively at <code>github.com/singhpratech/notepatra/releases</code>.</li>
-                            <li>82-line deletion. Reason: even the slim rows felt like clutter between the hero and the FAQ.</li>
+                            <li>New <code>test_fontpack.cpp</code> — <strong>23 sub-checks</strong>: manifest sanity (no duplicate filenames, all-HTTPS URLs, every entry has license + origin + category, six industry-standard families present by name), path helpers (<code>fontsDir()</code>, <code>localPath()</code>), and an end-to-end load test that copies <code>/usr/share/fonts/truetype/ubuntu/UbuntuMono-RI.ttf</code> into <code>fontsDir()</code> and asserts <code>loadInstalledFonts()</code> registers it.</li>
+                            <li><strong>29/29 ctest pass</strong> on the lite build (up from 28). All v0.1.74 tests carry forward unchanged.</li>
+                            <li><code>docs/regression-log.md</code> appended with the new entry.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>📦 Carry-forward from v0.1.73</h5>
+                        <h5>📦 Carry-forward from v0.1.74</h5>
                         <ul>
-                            <li>AI dock fixes (S16 / S17 regression tests) carry forward — 53 sub-checks in <code>test_ai_fullscreen_exit</code>, 28/28 ctest pass on the lite build.</li>
-                            <li>Full installer matrix unchanged: <code>.deb</code> (Debian/Ubuntu x64+ARM64, regular + <code>notepatra-local-ai</code>), <code>.rpm</code> (Fedora/RHEL x64+ARM64), AppImage (universal Linux), DMG (macOS), and dual MSI (Windows regular + <code>notepatra-local-ai</code>) — but Windows MSIs now upgrade cleanly with auto-generated Component GUIDs.</li>
-                            <li><code>notepatra-local-ai</code> cloud-free build, 49-case <code>test_network_policy</code> allowlist, three-layer cloud refusal — all carry forward.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>🗓️ Deferred to v0.1.75</h5>
-                        <ul>
-                            <li>Runtime font-pack downloader (Settings → Manage Fonts… with ~25 premium open-source fonts — JetBrains Mono, Fira Code, Cascadia Code, IBM Plex, Geist, Monaspace, Inter, Source Serif, … — fetched on demand to <code>~/.local/share/notepatra/fonts/</code>). Binary stays lite (~9 MB); fonts download only when the user wants them and register with <code>QFontDatabase</code> immediately, no restart. Held back from v0.1.74 until the dialog is end-to-end verified on Linux + Windows + macOS.</li>
+                            <li>MSI Component-GUID fix (<code>Guid=&quot;*&quot;</code> + <code>AllowSameVersionUpgrades=&quot;yes&quot;</code>) for <code>notepatra-local-ai</code> upgrades carries forward — installs from v0.1.74 onward upgrade cleanly.</li>
+                            <li>AI dock fixes (S16 / S17), 49-case <code>test_network_policy</code> allowlist, dual-flavor installer matrix (regular + cloud-free <code>notepatra-local-ai</code>) — all unchanged.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.74">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.75">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.74">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.75">Commits</a>
                 </div>
             </div>
-            <!-- v0.1.74 policy: only the LATEST release detail card is shown
+            <!-- v0.1.75 policy: only the LATEST release detail card is shown
                  on the website.  Every older release lives on GitHub —
                  single link below, no slim version rows. -->
             <a href="https://github.com/singhpratech/notepatra/releases"
@@ -2061,7 +2054,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.74: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
+                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.75: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2069,7 +2062,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.74 download sizes: <strong>3.2 MB</strong> Linux x64 tar.gz · <strong>3.0 MB</strong> Linux ARM64 tar.gz · <strong>26.6 MB</strong> macOS DMG · <strong>39.9 MB</strong> Windows MSI / <strong>32.0 MB</strong> NSIS / <strong>36.5 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.75 download sizes: <strong>3.2 MB</strong> Linux x64 tar.gz · <strong>3.0 MB</strong> Linux ARM64 tar.gz · <strong>26.6 MB</strong> macOS DMG · <strong>39.9 MB</strong> Windows MSI / <strong>32.0 MB</strong> NSIS / <strong>36.5 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>

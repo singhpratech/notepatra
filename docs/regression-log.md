@@ -14,6 +14,30 @@ the discipline is on us to keep it current.
 
 ---
 
+## v0.1.75 — Runtime font-pack downloader
+
+### Manifest validity + scan-and-load
+
+- **Test**: `test_fontpack.cpp`
+- **Guards against**:
+  - A font entry losing its required fields (family / fileName / url) → install dialog would render blank rows or write a 0-byte file.
+  - A duplicate `fileName` in the manifest → the second entry overwrites the first on disk, breaking the dedupe key.
+  - A non-HTTPS URL sneaking in → an attacker on the network could swap in arbitrary bytes mid-stream and Notepatra would happily register the resulting "font" with `QFontDatabase`.
+  - `loadInstalledFonts()` failing to register an on-disk TTF → the user installs a font but it never appears as a usable family.
+- **Coverage**: 23 sub-checks across (a) manifest sanity (size bounds, no dup filenames, all-HTTPS URLs, every entry has license + origin, all four categories present, six industry-standard families by name), (b) path helpers (`fontsDir()`, `localPath()` composition), (c) a real-world load test that copies `/usr/share/fonts/truetype/ubuntu/UbuntuMono-RI.ttf` into `fontsDir()` and asserts `loadInstalledFonts()` returns ≥1.
+- **When adding a new font to the manifest**: just append the row in `src/fontpack.cpp`; the test will fail if you accidentally collide a filename or skip a required field.
+
+---
+
+## v0.1.74 — `notepatra-local-ai` MSI upgrade
+
+### Diagnostic — Component GUIDs no longer shared across flavors
+
+- **Test**: none ✗ — requires a Windows VM with both regular and local-ai MSIs pre-installed to validate. Diagnosed by `strings -e s notepatra-*-0.1.7?.msi` showing identical `A2F3B641` / `C3D4E5F6` / `D4E5F6A7` hardcoded Component GUIDs across all flavors; fix switches them to `Guid="*"` so WiX auto-generates a deterministic GUID per flavor (different `INSTALLFOLDER` → different KeyPath → different GUID).
+- **Validation**: post-release manual install/upgrade on Windows by anyone hitting the bug. If the upgrade dialog drops into Repair/Remove again on a v0.1.74→v0.1.75 local-ai upgrade, the fix isn't sufficient and we'd look at KeyPath / Feature membership differences next.
+
+---
+
 ## v0.1.73 — AI dock blank-on-reopen
 
 ### S16: hide-show cycle restores dock width

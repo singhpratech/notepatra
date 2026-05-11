@@ -8,6 +8,7 @@
 #include "updater.h"
 #include "ai_log_dialog.h"
 #include "ai_interaction_log.h"
+#include "fontpack_dialog.h"
 #include <numeric>
 #include <algorithm>
 #include <QDir>
@@ -2441,6 +2442,19 @@ void MainWindow::buildMenus() {
         QObject::connect(&dlg, &PreferencesDialog::settingsApplied,
                          this, &MainWindow::applyConfigEverywhere);
         dlg.exec();
+    });
+    // v0.1.75 — runtime font-pack installer. Lite binary stays lite;
+    // ~27 premium fonts (JetBrains Mono / Fira Code / Cascadia / IBM
+    // Plex / Geist / Inter / Source Serif …) are fetched on demand to
+    // ~/.local/share/notepatra/fonts and picked up by Qt immediately.
+    auto *manageFontsAct = settings->addAction(tr("Manage &Fonts..."));
+    manageFontsAct->setStatusTip(tr("Download premium open-source fonts (JetBrains Mono, Fira Code, Cascadia Code, IBM Plex, Inter, Source Serif, …) to use as the editor or UI font."));
+    connect(manageFontsAct, &QAction::triggered, this, [this]() {
+        FontPackDialog dlg(this);
+        dlg.exec();
+        // After the dialog closes, refresh the editor font in case the
+        // user installed the family their config points at.
+        applyConfigEverywhere();
     });
     settings->addSeparator();
 
