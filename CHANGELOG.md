@@ -7,6 +7,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.77] — 2026-05-12
+
+**MSI hotfix — finishes the v0.1.74 work so notepatra and notepatra-local-ai install side-by-side cleanly.**
+
+### Fixed
+
+- **`installers/windows.wxs`** — variant-scoped ProgId and shell-verb names. v0.1.74 made Component GUIDs unique per flavor, but both flavors still wrote to the same `HKCR\Notepatra.Document`, `HKCR\*\shell\Edit with Notepatra`, and `HKCR\Directory\shell\Open in Notepatra` registry trees. Windows refused to refcount these across two distinct products (different ProductCode / UpgradeCode) and surfaced the Repair/Remove maintenance UI for whichever MSI was installed second. v0.1.77 routes the local-ai variant to `Notepatra.LocalAI.Document` / `Edit with Notepatra Local AI` / `Open in Notepatra Local AI` — non-overlapping HKCR subtrees, no maintenance prompt.
+
+### Recovery for users on v0.1.72 – v0.1.76
+
+Legacy installs registered the shared HKCR keys with now-orphaned component GUIDs. Before installing v0.1.77, force-uninstall by UpgradeCode:
+
+```
+msiexec /x {B7C8D9E0-1F2A-3B4C-5D6E-7F8A9B0C1D2E} /qb
+msiexec /x {8D5E3C42-1F9A-4B7E-9D6C-1A2B3C4D5E6F} /qb
+```
+
+then install `notepatra-0.1.77.msi` and (optionally) `notepatra-local-ai-0.1.77.msi`. v0.1.77+ upgrades cleanly forward.
+
+---
+
 ## [0.1.76] — 2026-05-11
 
 **Expanded chart catalogue (4 → 12 types), hover tooltips, modal viewer with PNG export, AI picks the right chart for the data.**

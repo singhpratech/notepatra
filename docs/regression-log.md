@@ -14,6 +14,24 @@ the discipline is on us to keep it current.
 
 ---
 
+## v0.1.77 — Windows MSI cross-flavor registry collision
+
+### `notepatra` and `notepatra-local-ai` no longer share HKCR keys
+
+- **Inspection**: extract Registry table strings from both built MSIs.
+- **Guards against**: a future wxs edit re-introducing a shared `HKCR\Notepatra.Document` ProgId, or shared `Edit with Notepatra` / `Open in Notepatra` shell verbs, between the two flavors.
+- **Why it matters**: even with unique Component GUIDs (the v0.1.74 fix), two MSIs writing the same HKCR keys cause Windows to refuse refcounting across products and surface the Repair/Remove maintenance UI on the second install.
+- **Manual check before release**:
+  ```
+  for f in notepatra-X.Y.Z.msi notepatra-local-ai-X.Y.Z.msi; do
+    strings -e s "$f" | grep -iE 'Notepatra\.Document|Edit with Notepatra|Open in Notepatra' | sort -u
+  done
+  ```
+  Output must show variant-scoped strings: `Notepatra.LocalAI.Document` (not `Notepatra.Document`) and `Edit with Notepatra Local AI` (not `Edit with Notepatra`) in the local-ai MSI.
+- **TODO**: wire this check into `scripts/release-check.sh` so a future wxs regression fails CI rather than shipping.
+
+---
+
 ## v0.1.76 — Expanded chart-type catalogue
 
 ### Every type in the dispatcher renders

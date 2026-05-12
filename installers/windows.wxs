@@ -32,12 +32,31 @@
     <?define ProductDescription = "Notepatra Local AI" ?>
     <?define ProductComments = "Cloud-free Notepatra — local and private-network LLM endpoints only. The binary physically refuses to talk to api.openai.com / api.anthropic.com / api.mistral.ai / openrouter.ai / generativelanguage.googleapis.com / any public LLM endpoint. Ollama, llama.cpp, LM Studio, Jan, self-hosted Ollama on the LAN continue to work. GPL-3.0 licensed." ?>
     <?define LaunchText = "Launch Notepatra Local AI" ?>
+    <!-- v0.1.77 — per-variant ProgId + shell-verb names so the two MSIs
+         write to NON-OVERLAPPING HKCR registry trees. Before this, both
+         flavors wrote HKCR\Notepatra.Document and HKCR\*\shell\Edit with
+         Notepatra, which Windows refused to refcount across products
+         and surfaced as the Repair/Remove maintenance UI. -->
+    <?define ProgIdName     = "Notepatra.LocalAI.Document" ?>
+    <?define ProgIdDescr    = "Notepatra Local AI Document" ?>
+    <?define ShellOpenVerb  = "NotepatraLocalAIOpen" ?>
+    <?define ShellOpenTitle = "Open with Notepatra Local AI" ?>
+    <?define ShellEditKey   = "Edit with Notepatra Local AI" ?>
+    <?define ShellDirKey    = "Open in Notepatra Local AI" ?>
+    <?define ShellDirTitle  = "Open folder in Notepatra Local AI" ?>
   <?else ?>
     <?define ProductName = "Notepatra" ?>
     <?define UpgradeCode = "8D5E3C42-1F9A-4B7E-9D6C-1A2B3C4D5E6F" ?>
     <?define ProductDescription = "Notepatra" ?>
     <?define ProductComments = "Native C++/Rust code editor for the AI era. Local AI formatters (Ollama/llama.cpp). GPL-3.0 licensed." ?>
     <?define LaunchText = "Launch Notepatra" ?>
+    <?define ProgIdName     = "Notepatra.Document" ?>
+    <?define ProgIdDescr    = "Notepatra Document" ?>
+    <?define ShellOpenVerb  = "NotepatraOpen" ?>
+    <?define ShellOpenTitle = "Open with Notepatra" ?>
+    <?define ShellEditKey   = "Edit with Notepatra" ?>
+    <?define ShellDirKey    = "Open in Notepatra" ?>
+    <?define ShellDirTitle  = "Open folder in Notepatra" ?>
   <?endif ?>
   <?define Publisher = "Prateek Singh" ?>
   <?define HelpUrl = "https://github.com/singhpratech/notepatra" ?>
@@ -113,14 +132,22 @@
                   KeyPath="yes" />
 
             <!-- File-type associations. One ProgId for everything; a
-                 single shared <Verb> under the first Extension, with
-                 Id="NotepatraOpen" so its registry hash is unique. The
+                 single shared <Verb> under the first Extension. The
                  rest of the extensions inherit the ProgId by Advertise
-                 so they all open with Notepatra without re-declaring
-                 Verbs (which caused LGHT0130 Registry-key collisions). -->
-            <ProgId Id="Notepatra.Document" Description="Notepatra Document">
+                 so they all open with the right binary without
+                 re-declaring Verbs (which caused LGHT0130 Registry-key
+                 collisions).
+
+                 v0.1.77 — ProgId Id and Verb Id are variant-scoped
+                 (`Notepatra.Document` vs `Notepatra.LocalAI.Document`,
+                 `NotepatraOpen` vs `NotepatraLocalAIOpen`) so installing
+                 both flavors side-by-side no longer collides on
+                 HKCR\Notepatra.Document — each flavor owns its own
+                 ProgId tree and Windows doesn't surface the Repair/Remove
+                 maintenance UI. -->
+            <ProgId Id="$(var.ProgIdName)" Description="$(var.ProgIdDescr)">
               <Extension Id="txt" ContentType="text/plain">
-                <Verb Id="NotepatraOpen" Command="Open with Notepatra"
+                <Verb Id="$(var.ShellOpenVerb)" Command="$(var.ShellOpenTitle)"
                       TargetFile="NotepatraExe" Argument='"%1"' />
               </Extension>
               <Extension Id="log"  />
@@ -159,25 +186,25 @@
                  ─ unknown extensions not listed in the ProgId block above
                  ─ folders (the ProgId block only binds to file types)
                  ─ background right-click inside a folder ("Open here in Notepatra") -->
-            <RegistryValue Root="HKCR" Key="*\shell\Edit with Notepatra"
-                           Value="Edit with Notepatra" Type="string" />
-            <RegistryValue Root="HKCR" Key="*\shell\Edit with Notepatra"
+            <RegistryValue Root="HKCR" Key="*\shell\$(var.ShellEditKey)"
+                           Value="$(var.ShellEditKey)" Type="string" />
+            <RegistryValue Root="HKCR" Key="*\shell\$(var.ShellEditKey)"
                            Name="Icon" Value='"[#NotepatraExe]"' Type="string" />
-            <RegistryValue Root="HKCR" Key="*\shell\Edit with Notepatra\command"
+            <RegistryValue Root="HKCR" Key="*\shell\$(var.ShellEditKey)\command"
                            Value='"[#NotepatraExe]" "%1"' Type="string" />
 
-            <RegistryValue Root="HKCR" Key="Directory\shell\Open in Notepatra"
-                           Value="Open folder in Notepatra" Type="string" />
-            <RegistryValue Root="HKCR" Key="Directory\shell\Open in Notepatra"
+            <RegistryValue Root="HKCR" Key="Directory\shell\$(var.ShellDirKey)"
+                           Value="$(var.ShellDirTitle)" Type="string" />
+            <RegistryValue Root="HKCR" Key="Directory\shell\$(var.ShellDirKey)"
                            Name="Icon" Value='"[#NotepatraExe]"' Type="string" />
-            <RegistryValue Root="HKCR" Key="Directory\shell\Open in Notepatra\command"
+            <RegistryValue Root="HKCR" Key="Directory\shell\$(var.ShellDirKey)\command"
                            Value='"[#NotepatraExe]" "%1"' Type="string" />
 
-            <RegistryValue Root="HKCR" Key="Directory\Background\shell\Open in Notepatra"
-                           Value="Open folder in Notepatra" Type="string" />
-            <RegistryValue Root="HKCR" Key="Directory\Background\shell\Open in Notepatra"
+            <RegistryValue Root="HKCR" Key="Directory\Background\shell\$(var.ShellDirKey)"
+                           Value="$(var.ShellDirTitle)" Type="string" />
+            <RegistryValue Root="HKCR" Key="Directory\Background\shell\$(var.ShellDirKey)"
                            Name="Icon" Value='"[#NotepatraExe]"' Type="string" />
-            <RegistryValue Root="HKCR" Key="Directory\Background\shell\Open in Notepatra\command"
+            <RegistryValue Root="HKCR" Key="Directory\Background\shell\$(var.ShellDirKey)\command"
                            Value='"[#NotepatraExe]" "%V"' Type="string" />
 
             <!-- Add Notepatra to the Windows PATH (system-wide) -->
