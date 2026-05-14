@@ -47,7 +47,7 @@ Not a port. Not a wrapper. Something new — **for everyone**.
 
 I asked: **what would a small native code editor look like if it was built today, in 2026, when AI is part of every developer's workflow, and ran natively on Linux + macOS + Windows from one codebase?**
 
-The answer: a tiny native executable — roughly 9 MB bare (stripped) on every platform — with a Rust-powered core, Scintilla editing engine, and local-first AI integration (cloud backends optional). v0.1.78 downloads: 3.4 MB Linux x64 (tarball, Qt from the system), 26.8 MB on macOS (DMG with bundled Qt), 32.1–40.4 MB on Windows (MSI/zip/setup.exe with bundled Qt DLLs). An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your AI to figure it out — local by default, six cloud backends one click away when you want a frontier model. No telemetry. No subscription. No mandatory API key.
+The answer: a tiny native executable — roughly 9 MB bare (stripped) on every platform — with a Rust-powered core, Scintilla editing engine, and local-first AI integration (cloud backends optional). v0.1.80 downloads: 3.6 MB Linux x64 (tarball, Qt from the system), 28.7 MB on macOS (DMG with bundled Qt), 33.7–42.5 MB on Windows (MSI/zip/setup.exe with bundled Qt DLLs). An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your AI to figure it out — local by default, six cloud backends one click away when you want a frontier model. No telemetry. No subscription. No mandatory API key.
 
 Notepatra started on Linux — because that's where the gap was. But great tools shouldn't have borders. **Notepatra runs on Linux, Windows, and macOS.** Same codebase. Same features. No one gets left behind.
 
@@ -235,7 +235,7 @@ Notepatra auto-detects the running Ollama and picks the most CPU-friendly model 
 **Why this hybrid?**
 - **C++** because Qt and QScintilla are C++ — zero friction for UI
 - **Rust** because file I/O, text processing, and parsing must never crash — Rust's ownership system guarantees memory safety
-- **Result**: the speed of C++, the safety of Rust. The bare stripped executable is **~9 MB** on every platform (8.9 MB Linux x64, similar on macOS / Windows after stripping). Latest v0.1.78 download sizes: **3.4 MB** Linux x64 tar.gz · **3.2 MB** Linux ARM64 tar.gz · **26.8 MB** macOS DMG (with bundled Qt) · **40.4 MB** Windows MSI · **32.1 MB** Windows NSIS · **36.6 MB** Windows portable zip. _Installed footprint on Windows is ~75-85 MB after the MSI extracts bundled Qt + QScintilla DLLs — normal for any Qt-based installer._
+- **Result**: the speed of C++, the safety of Rust. The bare stripped executable is **~9 MB** on every platform (8.9 MB Linux x64, similar on macOS / Windows after stripping). Latest v0.1.80 download sizes: **3.6 MB** Linux x64 tar.gz · **3.4 MB** Linux ARM64 tar.gz · **28.7 MB** macOS DMG (with bundled Qt) · **42.5 MB** Windows MSI · **33.7 MB** Windows NSIS · **38.4 MB** Windows portable zip. _Installed footprint on Windows is ~75-85 MB after the MSI extracts bundled Qt + QScintilla DLLs — normal for any Qt-based installer._
 
 ---
 
@@ -255,7 +255,7 @@ irm https://notepatra.org/install.ps1 | iex
 
 That's it. Auto-detects your OS, downloads the right binary, installs it, adds to PATH, creates shortcuts.
 
-### Or download manually — [Latest release: v0.1.78](https://github.com/singhpratech/notepatra/releases/latest)
+### Or download manually — [Latest release: v0.1.80](https://github.com/singhpratech/notepatra/releases/latest)
 
 | Platform | Download | Size | What's inside |
 |---|---|---|---|
@@ -306,7 +306,7 @@ For teams that **can't or won't send code to public LLM endpoints** — regulate
 
 Ollama, llama.cpp, LM Studio, Jan, vLLM, text-generation-webui, self-hosted Ollama on the LAN — **all continue to work**. Only public LLM endpoints are blocked. The cloud-URL paste box is stripped from the UI as well, so users can't even type a public host. Auditors can confirm by running `strings notepatra | grep -c openai.com` — zero hits.
 
-On Linux the two flavors share the same `notepatra` binary name on disk; `apt` Conflicts ensures only one of `notepatra` / `notepatra-local-ai` is installed at a time, swap transactionally with `sudo apt install ./notepatra-local-ai_0.1.78_amd64.deb`. On Windows the two MSIs are independent products (different UpgradeCode + ProductName + install dir) so they can coexist if needed; admins typically push one or the other based on policy. `notepatra --version` self-identifies the build: `Notepatra v0.1.78 (cloud-free / local-ai)` for the local-ai flavor, `Notepatra v0.1.78` for the regular flavor.
+On Linux the two flavors share the same `notepatra` binary name on disk; `apt` Conflicts ensures only one of `notepatra` / `notepatra-local-ai` is installed at a time, swap transactionally with `sudo apt install ./notepatra-local-ai_0.1.80_amd64.deb`. On Windows the two MSIs are independent products (different UpgradeCode + ProductName + install dir) so they can coexist if needed; admins typically push one or the other based on policy. `notepatra --version` self-identifies the build: `Notepatra v0.1.80 (cloud-free / local-ai)` for the local-ai flavor, `Notepatra v0.1.80` for the regular flavor.
 
 ### Verify your download
 
@@ -529,9 +529,9 @@ cl /LD myplugin.cpp /Fe:myplugin.dll
 | **Vim / Neovim** | ~3 MB | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Sublime Text** | ~30 MB | ✓ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | $99 |
 | **Kate / Gedit** | ~30 MB | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✓ |
-| **Notepatra** | **2.8 / 25.5 / 43.5 MB** | ✓ C++/Rust | ✓ Ollama | ✓ regex + AI | ✓ Rust mmap | ✓ | ✓ | ✓ | ✓ GPL-3 |
+| **Notepatra** | **3.6 / 28.7 / 42.5 MB** | ✓ C++/Rust | ✓ Ollama | ✓ regex + AI | ✓ Rust mmap | ✓ | ✓ | ✓ | ✓ GPL-3 |
 
-> *Notepatra download sizes are Linux x64 tar.gz / macOS DMG / Windows MSI from v0.1.78. Linux is just the binary (Qt is system-installed). macOS and Windows include bundled Qt. The bare `notepatra` executable inside is ~9 MB stripped on every platform (Linux 8.8 MB, similar on macOS / Windows after stripping). Compressed download is much smaller because tar.gz / DMG / MSI all compress the binary plus shared libraries.*
+> *Notepatra download sizes are Linux x64 tar.gz / macOS DMG / Windows MSI from v0.1.80. Linux is just the binary (Qt is system-installed). macOS and Windows include bundled Qt. The bare `notepatra` executable inside is ~9 MB stripped on every platform (Linux 8.8 MB, similar on macOS / Windows after stripping). Compressed download is much smaller because tar.gz / DMG / MSI all compress the binary plus shared libraries.*
 
 ---
 
