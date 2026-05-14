@@ -7,6 +7,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.81] — 2026-05-14
+
+**Polish + housekeeping release. Linux updater dialog fix + GitHub Actions / RustCrypto / sqlformat dependency refresh. No new features, no UX changes.**
+
+### Fixed
+
+- **`src/updater.cpp::installReleaseInteractive()`** — Linux confirm dialog is now file-suffix-aware. Pre-v0.1.81 it hard-coded *"move the new AppImage into place"* regardless of what was downloaded; since we ship `.tar.gz` on Linux (no AppImage since v0.1.18), tarball users got the wrong instructions for ~60 releases. Now `.appimage` gets the original wording (plus a `chmod +x` reminder for file managers that strip the executable bit); `.tar.gz` / `.tgz` / `.tar.xz` gets a copy-paste-ready `tar xzf … && mv notepatra ~/.local/bin/` example; anything else gets a generic fallback. Closes #12 (finding 2). Note: the dialog is rendered by the *currently-running* binary, so v0.1.80 → v0.1.81 still shows the old text; the fix kicks in from v0.1.81 → v0.1.82 onward.
+
+### Changed (dependency refresh)
+
+- **GitHub Actions matrix bumped past the Node 20 cliff.** `actions/checkout` v4 → v6 (#5), `actions/download-artifact` v4 → v8 (#4), `github/codeql-action` v3 → v4 (#8). Same release pipeline, same 51 signed artifacts, same cosign + SLSA guarantees. `actions/upload-artifact` v4 → v7 (PR #2) is still queued — rolls in with v0.1.82.
+- **RustCrypto family to 0.11.** `md-5` 0.10 → 0.11 (#6), `sha1` 0.10 → 0.11 (#7), `sha2` 0.10 → 0.11 (#11). The 0.10 → 0.11 release moved the digest output type from `generic-array::GenericArray` to `hybrid-array::Array`, which no longer implements `LowerHex`. Updated `rust-core/src/hash.rs::compute_hash()` to call `.as_slice()` and run a small `hex_encode()` helper instead of `format!("{:x}", …)`. **MD5 / SHA-1 / SHA-256 / SHA-512 hex output is byte-identical to v0.1.80** — the wire format hasn't changed.
+- **`sqlformat` 0.3.5 → 0.5.0** (#9). The upstream `FormatOptions` struct grew six new fields (`dialect`, `inline`, `joins_as_top_level`, …); switched the struct literal in `rust-core/src/sql_fmt.rs` to use `..FormatOptions::default()` so future field additions don't keep breaking this site. The three fields we drive from user prefs (`indent`, `uppercase`, `lines_between_queries`) stay explicit.
+- **`libc` 0.2.183 → 0.2.184** (#10). Routine patch bump.
+
+### Internal
+
+- **`cargo fmt` sweep** across `rust-core/` — `bracket_fix.rs`, `file_io.rs`, `json_fmt.rs`, `lib.rs`, `sql_fmt.rs` had pre-existing formatting drift (191 LoC reformatted, zero behaviour changes). Surfaced by the `rust-quality` CI gate on the dep-upgrade PR.
+- **`cargo clippy -- -D warnings` clean-up.** Four pre-existing lints fixed: `explicit_auto_deref` in `file_io.rs`, `if_same_then_else` and `redundant_closure` in `sql_fmt.rs`, two `collapsible_match` instances in `json_fmt.rs`. All discovered via the CI gate; no new lints from this release.
+
+---
+
 ## [0.1.80] — 2026-05-14
 
 **Two paper-cut fixes: Windows `.txt` icons stay as Notepad's after install + Search panel Clear button hides the ✕ along with the results.**
