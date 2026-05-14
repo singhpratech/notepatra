@@ -67,7 +67,7 @@ jobs:
           QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-linux-x64
           path: build/notepatra
@@ -92,7 +92,7 @@ jobs:
           QT_QPA_PLATFORM=offscreen ./notepatra --version
 
       - name: Upload artifact (full flavor)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-linux-x64-full
           path: build-full/notepatra
@@ -140,25 +140,25 @@ jobs:
           ls -lh Notepatra-*x86_64.AppImage
 
       - name: Upload artifact (.deb regular)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-linux-x64-deb
           path: notepatra_*_amd64.deb
 
       - name: Upload artifact (.deb local-ai cloud-free)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-linux-x64-deb-local-ai
           path: notepatra-local-ai_*_amd64.deb
 
       - name: Upload artifact (.rpm)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-linux-x64-rpm
           path: notepatra-*x86_64.rpm
 
       - name: Upload artifact (AppImage)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-linux-x64-appimage
           path: Notepatra-*x86_64.AppImage
@@ -211,7 +211,7 @@ jobs:
           QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-linux-arm64
           path: build/notepatra
@@ -228,7 +228,7 @@ jobs:
           QT_QPA_PLATFORM=offscreen ./notepatra --version
 
       - name: Upload artifact (full flavor)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-linux-arm64-full
           path: build-full/notepatra
@@ -263,19 +263,19 @@ jobs:
           ls -lh notepatra-*aarch64.rpm
 
       - name: Upload artifact (.deb regular ARM)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-linux-arm64-deb
           path: notepatra_*_arm64.deb
 
       - name: Upload artifact (.deb local-ai ARM)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-linux-arm64-deb-local-ai
           path: notepatra-local-ai_*_arm64.deb
 
       - name: Upload artifact (.rpm ARM)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-linux-arm64-rpm
           path: notepatra-*aarch64.rpm
@@ -567,7 +567,7 @@ jobs:
           done
 
       - name: Upload DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-macos-arm64
           path: build/Notepatra.dmg
@@ -1398,27 +1398,27 @@ jobs:
           Write-Host "✓ Built notepatra-local-ai-$version.msi ($msiSize MB)"
 
       - name: Upload artifact (portable zip)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-windows-x64
           path: notepatra-win/
 
       - name: Upload artifact (installer exe)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-windows-installer
           path: notepatra-setup-*.exe
           if-no-files-found: ignore
 
       - name: Upload artifact (MSI)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-windows-msi
           path: notepatra-0.*.msi
           if-no-files-found: ignore
 
       - name: Upload artifact (MSI cloud-free / local-ai)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: notepatra-windows-msi-local-ai
           path: notepatra-local-ai-*.msi
@@ -1427,7 +1427,7 @@ jobs:
       # ─── Failure diagnostics — must be LAST so it sees failures from any prior step ───
       - name: Upload build logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-build-logs
           path: |
