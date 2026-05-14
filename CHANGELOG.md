@@ -7,6 +7,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.80] — 2026-05-14
+
+**Two paper-cut fixes: Windows `.txt` icons stay as Notepad's after install + Search panel Clear button hides the ✕ along with the results.**
+
+### Fixed
+
+- **`installers/windows.wxs`** — `<ProgId>` now sets `Icon="NotepatraExe" IconIndex="0"`, which generates the missing `HKCR\Notepatra.Document\DefaultIcon\(Default) = "...\notepatra.exe,0"` registry value. Pre-v0.1.80 the MSI registered the ProgId tree for `.txt` (and every other extension) but without `DefaultIcon`. For most extensions Windows synthesised a fallback icon from the verb target; for `.txt` specifically Windows has a special-cased fallback to the cached `txtfile`/Notepad icon, so `.txt` files kept the old Notepad icon after Notepatra was set as default. Fix matches what the sideloaded `installers/register-associations.bat` already wrote (`reg add "...\Notepatra.Document\DefaultIcon" /ve /d "\"%EXE%\",0" /f`).
+- **`src/searchresults.cpp::clear()`** — clicking **Clear** in the Project-Search results header no longer hides the ✕ close button. Pre-v0.1.80 `clear()` hid both Clear and ✕, on the (v0.1.46-era) assumption that "empty results panel + floating ✕" was UI noise; in practice that collapsed two distinct user actions (Clear = wipe, ✕ = dismiss) into one state with no way back. Only the Clear button hides itself now (nothing left to clear); the ✕ stays visible so the user can dismiss the empty panel themselves.
+
+---
+
 ## [0.1.79] — 2026-05-14
 
 **Double-click-from-file-manager focus handoff fix — Linux X11 and Windows.**

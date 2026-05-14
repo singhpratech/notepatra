@@ -145,7 +145,16 @@
                  HKCR\Notepatra.Document — each flavor owns its own
                  ProgId tree and Windows doesn't surface the Repair/Remove
                  maintenance UI. -->
-            <ProgId Id="$(var.ProgIdName)" Description="$(var.ProgIdDescr)">
+            <!-- Icon="NotepatraExe" IconIndex="0" generates the
+                 HKCR\<ProgId>\DefaultIcon\(Default) = "...\notepatra.exe,0"
+                 registry value. Without it, the shell has no DefaultIcon
+                 for our ProgId and Windows falls back to per-extension
+                 cached icons — which for .txt means the leftover Notepad
+                 icon stays visible even after the user sets Notepatra as
+                 the default app. Explicit DefaultIcon kills this ambiguity
+                 across all registered extensions. -->
+            <ProgId Id="$(var.ProgIdName)" Description="$(var.ProgIdDescr)"
+                    Icon="NotepatraExe" IconIndex="0">
               <Extension Id="txt" ContentType="text/plain">
                 <Verb Id="$(var.ShellOpenVerb)" Command="$(var.ShellOpenTitle)"
                       TargetFile="NotepatraExe" Argument='"%1"' />

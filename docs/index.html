@@ -51,7 +51,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~9 MB stripped across platforms; full downloads are 3.4 MB (Linux x64 tar.gz), 26.8 MB (macOS DMG with bundled Qt), 40.4 MB (Windows MSI with bundled Qt DLLs). 226 file types. 92 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.79",
+      "softwareVersion": "0.1.80",
       "fileSize": "9 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -153,7 +153,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.79 download sizes: 3.4 MB Linux x64 tar.gz, 3.2 MB Linux ARM64 tar.gz, 26.8 MB macOS DMG (with bundled Qt), 40.4 MB Windows MSI / 32.1 MB NSIS / 36.6 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.80 download sizes: 3.4 MB Linux x64 tar.gz, 3.2 MB Linux ARM64 tar.gz, 26.8 MB macOS DMG (with bundled Qt), 40.4 MB Windows MSI / 32.1 MB NSIS / 36.6 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
           }
         },
         {
@@ -169,7 +169,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.79: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.80: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.79">
-        Download v0.1.79 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.80">
+        Download v0.1.80 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.79 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.80 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~9 MB bare, ~3 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints.</p>
 
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.79</div>
+        <div class="section-label">Download v0.1.80</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1467,7 +1467,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.79 →
+                Get Notepatra v0.1.80 →
               </a>
             </div>
 
@@ -1510,7 +1510,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.79 →
+                Get Notepatra Local AI v0.1.80 →
               </a>
             </div>
           </div>
@@ -1968,56 +1968,35 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.79 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.80 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-05-14</span>
-                        <span>· Double-click-from-file-manager focus handoff fix — Linux X11 (Cinnamon/Muffin focus-stealing prevention) and Windows (Explorer foreground-rights handover). Double-clicking a file in Nemo / Files / Explorer now brings Notepatra forward instead of leaving the new tab in the background with a flashing taskbar or infinite busy-cursor spinner.</span>
+                        <span>· Two paper-cut fixes: Windows <code>.txt</code> file icons stay as the old Notepad icon after MSI install (missing <code>HKCR\Notepatra.Document\DefaultIcon</code>) + Search-results panel's Clear button used to hide the ✕ close button along with the results, locking the user into an empty undismissable panel.</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>🐛 The bug</h5>
+                        <h5>🪟 Fix 1 — Windows: <code>.txt</code> icon kept Notepad's after install</h5>
                         <ul>
-                            <li>Notepatra is single-instance: when you double-click a <code>.sql</code> / <code>.md</code> / any text file with Notepatra already running, the second process forwards the path to the running instance over a local IPC socket and exits without ever mapping a window.</li>
-                            <li><strong>Linux X11</strong>: the tab opened in the background, focus stayed on the file manager, a busy-cursor spinner ticked until the WM's 15 s timeout. Users had to alt-tab away from Nemo to find their just-opened file.</li>
-                            <li><strong>Windows</strong>: the tab opened, the taskbar button flashed orange — and that was it. No activation, no z-order change. Click the flashing icon manually to bring Notepatra forward.</li>
+                            <li><strong>The bug.</strong> After installing the MSI and setting Notepatra as the default handler for <code>.txt</code>, the file-explorer icon for <code>.txt</code> files stayed as the old Notepad icon. Every other extension (<code>.md</code>, <code>.sql</code>, <code>.json</code>, <code>.py</code>, ...) flipped correctly — only <code>.txt</code> was stuck.</li>
+                            <li><strong>Root cause.</strong> The MSI registered the <code>Notepatra.Document</code> ProgId tree but <em>without</em> an explicit <code>DefaultIcon</code> registry value. For most extensions Windows synthesises a default from the verb target executable. For <code>.txt</code> specifically, the shell has a special-cased fallback to the cached <code>txtfile</code>/Notepad icon — so when our ProgId was missing <code>DefaultIcon</code>, the shell silently kept serving the leftover Notepad icon.</li>
+                            <li><strong>The fix.</strong> <code>installers/windows.wxs</code> — <code>&lt;ProgId&gt;</code> now carries <code>Icon="NotepatraExe" IconIndex="0"</code>. WiX expands this to <code>HKCR\Notepatra.Document\DefaultIcon\(Default) = "...\notepatra.exe,0"</code>, matching what the sideloaded <code>installers/register-associations.bat</code> already wrote, and killing the <code>.txt</code>-specific fallback path.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🔧 The fix — Linux X11</h5>
+                        <h5>🔎 Fix 2 — Search Clear button took the ✕ with it</h5>
                         <ul>
-                            <li><strong><code>src/mainwindow.cpp::handleRemoteOpen</code></strong> now ports wmctrl's three-part <code>activate_window</code> sequence. <strong>(a)</strong> <code>_NET_ACTIVE_WINDOW</code> ClientMessage with source=2 (pager / user-blessed) + timestamp parsed from <code>DESKTOP_STARTUP_ID</code>'s <code>_TIME&lt;N&gt;</code> suffix. <strong>(b)</strong> <code>xcb_map_window</code> + <code>xcb_configure_window(STACK_MODE_ABOVE)</code> — this is wmctrl's <code>XMapRaised</code>, which goes to the WM as a <em>ConfigureRequest</em> (a different code path from activation ClientMessages) and is <strong>not gated by FSP</strong>. <strong>(c)</strong> Round-trip fence (<code>xcb_get_input_focus_reply</code>) before disconnect so queued async requests aren't dropped on connection close.</li>
-                            <li><strong>Why all three are required</strong>: Adding (a) alone gets demoted by Cinnamon/Muffin to <code>_NET_WM_STATE_DEMANDS_ATTENTION</code>. Adding (b) alone doesn't give input focus. Adding both, with the fence, wins consistently against Cinnamon, GNOME, and KDE.</li>
-                            <li><strong><code>install.sh</code> / <code>docs/install.sh</code></strong> — <code>StartupNotify=false</code> in the generated <code>.desktop</code> stops the infinite spinner. Spec-compliant <code>remove: ID="&lt;id&gt;"</code> startup-notify message sequence also wired in <code>src/main.cpp::sendStartupNotifyComplete</code> (quoted format per the freedesktop spec, with a round-trip fence) for other DEs that respect the protocol. Cinnamon's launch tracker ignores REMOVE messages in practice, so the <code>.desktop</code> flag is what fixes it for the most affected user base.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>🪟 The fix — Windows</h5>
-                        <ul>
-                            <li><strong><code>src/main.cpp</code></strong> (second-instance code path) — calls <code>AllowSetForegroundWindow(ASFW_ANY)</code> right before exiting. Explorer hands foreground-activation rights to the <em>newly spawned</em> notepatra process, not the running one, so we explicitly surrender them so the running instance can call <code>SetForegroundWindow()</code> without Windows blocking it.</li>
-                            <li><strong><code>src/mainwindow.cpp::handleRemoteOpen</code></strong> — belt-and-braces TOPMOST flip (<code>HWND_TOPMOST</code> → <code>HWND_NOTOPMOST</code> with <code>SWP_NOACTIVATE</code>) for z-order, then <code>SetForegroundWindow</code>.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>🔗 Plumbing</h5>
-                        <ul>
-                            <li><strong><code>src/mainwindow.h</code></strong> — <code>handleRemoteOpen</code> signature extended to take an optional <code>startupId</code> <code>QByteArray</code>. Captured at <code>main()</code> entry before <code>QApplication</code>'s constructor strips <code>DESKTOP_STARTUP_ID</code> from the env, forwarded over the IPC payload, then applied as <code>_NET_STARTUP_ID</code> property on the running instance's window for compliant DEs to match against their launch trackers.</li>
-                            <li><strong><code>CMakeLists.txt</code></strong> — <code>libxcb</code> linked explicitly on Linux (it was a transitive Qt5 GUI dep before).</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>✅ Tests</h5>
-                        <ul>
-                            <li>31/31 ctest pass on the lite build. Programmatic regression test confirms focus transfers correctly (terminal → notepatra), <code>_NET_WM_STATE_DEMANDS_ATTENTION</code> cleared, <code>_NET_WM_STATE_FOCUSED</code> set on the target window after the activate sequence.</li>
-                            <li>All v0.1.78 encoding fixes carry forward unchanged.</li>
+                            <li><strong>The bug.</strong> Open Project Search → run any search → click <strong>Clear</strong> in the results header. The results wiped (correct) but the <strong>✕ close button also disappeared</strong>, leaving an empty panel pinned open with no way to dismiss. The user had to rerun a search just to get the ✕ back.</li>
+                            <li><strong>Root cause.</strong> <code>src/searchresults.cpp::clear()</code> was hiding <em>both</em> the Clear button and the ✕ on the v0.1.46-era assumption that an empty panel with a floating ✕ was UI noise. That conflated two distinct user actions — <em>Clear = wipe the contents</em> vs <em>✕ = dismiss the panel</em> — into one state with no recovery path.</li>
+                            <li><strong>The fix.</strong> <code>clear()</code> no longer hides <code>m_closeBtn</code>. The Clear button still hides itself (nothing left to clear), but the ✕ stays available so the user can dismiss the empty panel on their own terms.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.79">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.80">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.79">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.80">Commits</a>
                 </div>
             </div>
             <!-- v0.1.76 policy: only the LATEST release detail card is shown
@@ -2054,7 +2033,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.79: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
+                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.80: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2062,7 +2041,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.79 download sizes: <strong>3.4 MB</strong> Linux x64 tar.gz · <strong>3.2 MB</strong> Linux ARM64 tar.gz · <strong>26.8 MB</strong> macOS DMG · <strong>40.4 MB</strong> Windows MSI / <strong>32.1 MB</strong> NSIS / <strong>36.6 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.80 download sizes: <strong>3.4 MB</strong> Linux x64 tar.gz · <strong>3.2 MB</strong> Linux ARM64 tar.gz · <strong>26.8 MB</strong> macOS DMG · <strong>40.4 MB</strong> Windows MSI / <strong>32.1 MB</strong> NSIS / <strong>36.6 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -2070,7 +2049,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.79 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.80 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>How do I verify a download is genuine?</h3>

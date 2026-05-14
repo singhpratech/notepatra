@@ -349,7 +349,11 @@ void SearchResultsPanel::clear() {
     m_sessions.clear();
     m_currentFileItem = nullptr;
     m_currentFile.clear();
-    if (m_closeBtn) m_closeBtn->setVisible(false);
+    // v0.1.80 — keep the ✕ visible after Clear so the user can dismiss
+    // the now-empty panel themselves. Previously clear() also hid the
+    // close button (left over from v0.1.46's "empty panel + ✕ is UI
+    // noise" rule), but that left the user with an empty panel they
+    // couldn't close. Hide only the Clear button (nothing to clear).
     if (m_clearBtn) m_clearBtn->setVisible(false);
     // v0.1.46 — Reset wipes the on-disk file too so the next launch
     // doesn't restore the just-cleared sessions.
