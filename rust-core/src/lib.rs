@@ -404,12 +404,8 @@ pub unsafe extern "C" fn npc_format_sql_compact(
             .to_str()
             .unwrap_or("ansi")
     };
-    let result = sql_fmt::format_sql_compact(
-        input,
-        indent_width as usize,
-        uppercase != 0,
-        dialect_str,
-    );
+    let result =
+        sql_fmt::format_sql_compact(input, indent_width as usize, uppercase != 0, dialect_str);
     text_to_result(result)
 }
 

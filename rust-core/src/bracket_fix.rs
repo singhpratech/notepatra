@@ -337,7 +337,11 @@ mod tests {
         assert!(!is_balanced("def greet(name\n    print(f'Hello {name}')"));
         // After fix, brackets balanced.
         let fixed = fix_brackets("def greet(name\n    print(f'Hello {name}')");
-        assert!(is_balanced(&fixed), "after fix should be balanced:\n{}", fixed);
+        assert!(
+            is_balanced(&fixed),
+            "after fix should be balanced:\n{}",
+            fixed
+        );
     }
 
     #[test]
@@ -433,8 +437,11 @@ mod tests {
         let s = "for i=1,10 do\n    print(i)";
         let r = check_brackets(s);
         // do/done word-boundary triggers — expect mismatch report.
-        assert!(r.contains("Keyword mismatch") || r.contains("issue"),
-                "Lua missing 'end' not flagged:\n{}", r);
+        assert!(
+            r.contains("Keyword mismatch") || r.contains("issue"),
+            "Lua missing 'end' not flagged:\n{}",
+            r
+        );
     }
 
     #[test]
@@ -505,7 +512,11 @@ mod tests {
         // Critical: pre-v0.1.48 `"don't"` mis-toggled the shared in_string
         // flag, causing brackets after this to be miscounted.
         let s = "let s = \"don't\";\nlet t = 'world';\nfn x() { return 1; }";
-        assert!(is_balanced(s), "string apostrophe broke counter:\n{}", check_brackets(s));
+        assert!(
+            is_balanced(s),
+            "string apostrophe broke counter:\n{}",
+            check_brackets(s)
+        );
     }
 
     #[test]
@@ -518,7 +529,11 @@ mod tests {
     fn rw_emoji_in_strings() {
         // Emojis inside string literals should not affect bracket counting.
         let s = "fn main() { let s = \"hello 👋 world 🎉\"; println!(\"{}\", s); }";
-        assert!(is_balanced(s), "emoji broke counter:\n{}", check_brackets(s));
+        assert!(
+            is_balanced(s),
+            "emoji broke counter:\n{}",
+            check_brackets(s)
+        );
     }
 
     #[test]
