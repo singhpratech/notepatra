@@ -270,15 +270,11 @@ pub fn fix_json_with_report(input: &str) -> (String, String) {
         if !in_str {
             match ch {
                 '{' | '[' => stack.push(ch),
-                '}' => {
-                    if stack.last() == Some(&'{') {
-                        stack.pop();
-                    }
+                '}' if stack.last() == Some(&'{') => {
+                    stack.pop();
                 }
-                ']' => {
-                    if stack.last() == Some(&'[') {
-                        stack.pop();
-                    }
+                ']' if stack.last() == Some(&'[') => {
+                    stack.pop();
                 }
                 _ => {}
             }
