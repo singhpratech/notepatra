@@ -489,13 +489,44 @@ bool installReleaseInteractive(QWidget *parent,
             "new one in.")
               .arg(tagName);
     } else {
+        // Linux ships either an AppImage (drop-in replace) or a .tar.gz
+        // (extract + replace the bare `notepatra` binary). Tailor the
+        // instructions to what was actually downloaded — telling a user to
+        // "move the new AppImage into place" when they downloaded a tarball
+        // is the bug fixed by https://github.com/singhpratech/notepatra/issues/12.
+        const QString lowerName = picked.name.toLower();
+        const bool isAppImage = lowerName.endsWith(".appimage");
+        const bool isTarball = lowerName.endsWith(".tar.gz")
+                            || lowerName.endsWith(".tgz")
+                            || lowerName.endsWith(".tar.xz");
+        QString action;
+        if (isAppImage) {
+            action = QObject::tr(
+                "move the new AppImage into place (e.g. replace your existing "
+                "<code>~/.local/bin/notepatra</code> or wherever you keep it). "
+                "Don't forget <code>chmod +x</code> if your file manager strips "
+                "the executable bit.");
+        } else if (isTarball) {
+            action = QObject::tr(
+                "extract the tarball and replace the existing "
+                "<code>notepatra</code> binary "
+                "(typically <code>~/.local/bin/notepatra</code> if you used "
+                "the install script, or <code>/usr/local/bin/notepatra</code> "
+                "for a system-wide install). Example: "
+                "<code>tar xzf %1 &amp;&amp; mv notepatra ~/.local/bin/</code>.")
+                .arg(picked.name);
+        } else {
+            action = QObject::tr(
+                "open the downloaded file and replace your current Notepatra "
+                "installation with its contents.");
+        }
         msg = QObject::tr(
             "<b>Download verified.</b><br><br>"
             "Notepatra %1 has been saved to your Downloads folder:<br>"
             "<code>%2</code><br><br>"
-            "We'll open the folder so you can move the new AppImage into "
-            "place. Your current installation is untouched.")
-              .arg(tagName, QDir::toNativeSeparators(finalPath));
+            "We'll open the folder so you can %3 Your current installation "
+            "is untouched.")
+              .arg(tagName, QDir::toNativeSeparators(finalPath), action);
     }
 
     QMessageBox confirm(parent);
