@@ -127,6 +127,44 @@ else
 fi
 
 echo
+echo "── rust quality + audit ──"
+if [ -d rust-core ]; then
+    # cargo clippy --all-features -D warnings  (matches the rust-quality CI gate)
+    # Catches lints locally before CI does — see feedback_ci_clippy_newer_than_local.md
+    if (cd rust-core && cargo clippy --all-targets --all-features -- -D warnings) >/dev/null 2>&1; then
+        echo "  ✓ cargo clippy clean (rust-core)"
+        PASSED=$((PASSED + 1))
+    else
+        echo "  ✗ cargo clippy: warnings present (re-run inside rust-core/ to see them)"
+        FAILED+=("cargo clippy")
+    fi
+    if (cd rust-core && cargo fmt --check) >/dev/null 2>&1; then
+        echo "  ✓ cargo fmt clean"
+        PASSED=$((PASSED + 1))
+    else
+        echo "  ✗ cargo fmt: drift present (run \`cd rust-core && cargo fmt\`)"
+        FAILED+=("cargo fmt")
+    fi
+    # cargo audit — flags CVEs in resolved transitive deps. We install on demand
+    # so the script remains usable on machines without cargo-audit pre-installed.
+    if ! command -v cargo-audit >/dev/null 2>&1; then
+        echo "  ⚠ cargo-audit not installed; attempting one-off install..."
+        cargo install --quiet --locked cargo-audit 2>/dev/null || true
+    fi
+    if command -v cargo-audit >/dev/null 2>&1; then
+        if (cd rust-core && cargo audit --deny warnings) >/dev/null 2>&1; then
+            echo "  ✓ cargo audit clean (no advisories in resolved deps)"
+            PASSED=$((PASSED + 1))
+        else
+            echo "  ✗ cargo audit: advisories present (re-run inside rust-core/ to see them)"
+            FAILED+=("cargo audit")
+        fi
+    else
+        echo "  ⚠ cargo-audit unavailable — skipping CVE check"
+    fi
+fi
+
+echo
 echo "── tag ──"
 if git rev-parse "$TAG" >/dev/null 2>&1; then
     echo "  ⚠ tag $TAG already exists locally"

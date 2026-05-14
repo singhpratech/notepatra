@@ -1,5 +1,6 @@
 #include "preferences.h"
 #include "config.h"
+#include "network_policy.h"
 
 #include <QButtonGroup>
 #include <QCheckBox>
@@ -10,10 +11,12 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSpinBox>
 #include <QTabWidget>
+#include <QUrl>
 #include <QVBoxLayout>
 
 // v0.1.42 rewrite — every control on every tab is wired to Config.
@@ -294,10 +297,68 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent) {
         QDialogButtonBox::Ok | QDialogButtonBox::Apply | QDialogButtonBox::Cancel);
     layout->addWidget(btnRow);
 
-    // Single save lambda — used by both OK and Apply.
+    // Single save lambda — used by both OK and Apply. Returns true on success,
+    // false if validation rejected the input (dialog stays open so the user can fix it).
     // (Capture by value implicitly includes `this` in C++17; MSVC rejects
     // the explicit `[=, this]` form when -std=c++17 — keep just `[=]`.)
-    auto save = [=]() {
+    auto save = [=]() -> bool {
+        // ── AI Base URL validation ──
+        // Free-form URL that the AI client sends the API key + prompts to.
+        // Hard-reject malformed input and plain-http public hosts; warn-and-confirm
+        // for any host outside the vendor allowlist (an attacker-controlled "faster mirror"
+        // would otherwise harvest API keys silently).
+        const QString proposedBaseUrl = urlEdit->text().trimmed();
+        if (!proposedBaseUrl.isEmpty()) {
+            const QUrl probe = QUrl::fromUserInput(proposedBaseUrl);
+            if (!probe.isValid() || probe.host().isEmpty() ||
+                (probe.scheme() != "http" && probe.scheme() != "https")) {
+                QMessageBox::warning(this, tr("Invalid Base URL"),
+                    tr("The Base URL does not look like a valid http(s) URL.\n\n"
+                       "Example: https://api.openai.com/v1\n"
+                       "Or leave empty to use the default for the chosen backend."));
+                return false;
+            }
+            if (probe.scheme().compare("http", Qt::CaseInsensitive) == 0 &&
+                !NotepatraNetworkPolicy::isPrivateNetworkHost(probe)) {
+                QMessageBox::warning(this, tr("Insecure Base URL"),
+                    tr("The Base URL uses http:// to a public host. Your API key would "
+                       "be sent in plaintext and visible to anyone on the network path.\n\n"
+                       "Use https:// or leave the Base URL empty."));
+                return false;
+            }
+            static const QStringList kVendorSuffixes = {
+                QStringLiteral("openai.com"),
+                QStringLiteral("openai.azure.com"),
+                QStringLiteral("openrouter.ai"),
+                QStringLiteral("anthropic.com"),
+                QStringLiteral("googleapis.com"),
+                QStringLiteral("ollama.com"),
+                QStringLiteral("mistral.ai"),
+                QStringLiteral("groq.com"),
+                QStringLiteral("cohere.ai"),
+            };
+            const QString host = probe.host().toLower();
+            bool isVendor = false;
+            for (const QString &suffix : kVendorSuffixes) {
+                if (host == suffix || host.endsWith(QStringLiteral(".") + suffix)) {
+                    isVendor = true;
+                    break;
+                }
+            }
+            if (!isVendor && !NotepatraNetworkPolicy::isPrivateNetworkHost(probe)) {
+                const auto reply = QMessageBox::question(
+                    this, tr("Non-vendor Base URL"),
+                    tr("You are about to send your API key and chat prompts to a "
+                       "non-vendor host:\n\n    %1\n\n"
+                       "Only continue if you explicitly trust this host. A malicious "
+                       "\"faster mirror\" URL is a known way to harvest API keys.\n\n"
+                       "Continue?").arg(host),
+                    QMessageBox::Yes | QMessageBox::No,
+                    QMessageBox::No);
+                if (reply != QMessageBox::Yes) return false;
+            }
+        }
+
         auto &cfg2 = Config::instance();
 
         // General
@@ -347,12 +408,12 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent) {
 
         cfg2.save();
         emit settingsApplied();
+        return true;
     };
 
     QObject::connect(btnRow, &QDialogButtonBox::accepted, this, [this, save]() {
-        save();
-        accept();
+        if (save()) accept();
     });
     QObject::connect(btnRow, &QDialogButtonBox::rejected, this, &PreferencesDialog::reject);
-    QObject::connect(btnRow->button(QDialogButtonBox::Apply), &QPushButton::clicked, this, save);
+    QObject::connect(btnRow->button(QDialogButtonBox::Apply), &QPushButton::clicked, this, [save]() { save(); });
 }

@@ -66,6 +66,30 @@ static const QVector<Rule> &rules() {
         // Google API key — AIza + 35 alnum-ish
         add(QStringLiteral("\\bAIza[A-Za-z0-9_-]{35}\\b"),
             QStringLiteral("[REDACTED-GOOGLE-API-KEY]"));
+        // GCP service-account JSON (catches the `"type":"service_account"` head
+        // — the body redaction is handled by the generic key=value pass below
+        // for `private_key`, but flagging the JSON tag at least signals presence)
+        add(QStringLiteral("\"type\"\\s*:\\s*\"service_account\""),
+            QStringLiteral("[REDACTED-GCP-SERVICE-ACCOUNT]"));
+        // Cloudflare API tokens
+        add(QStringLiteral("\\bCFPAT-[A-Za-z0-9_-]{20,}\\b"),
+            QStringLiteral("[REDACTED-CLOUDFLARE-TOKEN]"));
+        // DigitalOcean personal access tokens
+        add(QStringLiteral("\\bdop_v1_[a-f0-9]{60,}\\b"),
+            QStringLiteral("[REDACTED-DIGITALOCEAN-TOKEN]"));
+        // npm authentication tokens
+        add(QStringLiteral("\\bnpm_[A-Za-z0-9]{36}\\b"),
+            QStringLiteral("[REDACTED-NPM-TOKEN]"));
+        // Twilio account/secret SIDs — SK<32 hex>, AC<32 hex>
+        add(QStringLiteral("\\b(?:SK|AC)[a-f0-9]{32}\\b"),
+            QStringLiteral("[REDACTED-TWILIO-SID]"));
+        // Azure Storage connection string AccountKey= component
+        add(QStringLiteral("AccountKey=[A-Za-z0-9+/]{40,}={0,2}"),
+            QStringLiteral("AccountKey=[REDACTED-AZURE-KEY]"));
+        // HTTP header form — X-API-Key: <value>, Authorization: Bearer <value>
+        // (the colon form isn't caught by the key=value rule below)
+        add(QStringLiteral("(?i)(X-(?:API-?Key|Auth(?:-?Token)?)|Authorization)\\s*:\\s*(?:Bearer\\s+)?[\"']?([A-Za-z0-9+/_=.\\-]{16,})[\"']?"),
+            QStringLiteral("[REDACTED-AUTH-HEADER]"));
         // JWT — three base64url segments separated by dots
         add(QStringLiteral("\\beyJ[A-Za-z0-9_-]{8,}\\.eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\b"),
             QStringLiteral("[REDACTED-JWT]"));

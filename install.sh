@@ -115,6 +115,7 @@ mkdir -p "$INSTALL_DIR"
 
 if [ "$OS" = "darwin" ]; then
     # macOS — download and mount DMG or extract app
+    umask 077
     TMPDIR=$(mktemp -d)
     case "$RELEASE_URL" in
         *.tar.gz) PKG_PATH="$TMPDIR/notepatra.tar.gz" ;;
@@ -122,15 +123,24 @@ if [ "$OS" = "darwin" ]; then
         *) PKG_PATH="$TMPDIR/notepatra.pkg" ;;
     esac
     MOUNT_POINT=""
-    curl -sL "$RELEASE_URL" -o "$PKG_PATH"
-    # Verify SHA-256 if checksums file is available
-    if curl -fsSL "$SHA_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null \
-       || curl -fsSL "$SHA_FALLBACK_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null; then
-        EXPECTED=$(grep "$ARTIFACT" "$TMPDIR/SHA256SUMS" | awk '{print $1}' | head -1)
-        if [ -n "$EXPECTED" ]; then
-            verify_sha256 "$PKG_PATH" "$EXPECTED"
-        fi
+    curl --proto '=https' --tlsv1.2 -fsSL "$RELEASE_URL" -o "$PKG_PATH"
+    # SHA-256 verification — HARD REQUIRED. (Mirrored from docs/install.sh.)
+    if ! curl --proto '=https' --tlsv1.2 -fsSL "$SHA_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null \
+       && ! curl --proto '=https' --tlsv1.2 -fsSL "$SHA_FALLBACK_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null; then
+        echo ""
+        echo "  ❌ Could not fetch SHA256SUMS for release $RELEASE_TAG"
+        echo "  Refusing to install an unverified binary."
+        rm -rf "$TMPDIR"
+        exit 1
     fi
+    EXPECTED=$(grep "$ARTIFACT" "$TMPDIR/SHA256SUMS" | awk '{print $1}' | head -1)
+    if [ -z "$EXPECTED" ]; then
+        echo ""
+        echo "  ❌ Artifact '$ARTIFACT' is not listed in SHA256SUMS for $RELEASE_TAG"
+        rm -rf "$TMPDIR"
+        exit 1
+    fi
+    verify_sha256 "$PKG_PATH" "$EXPECTED"
     cleanup_macos_installer() {
         if [ -n "$MOUNT_POINT" ] && [ -d "$MOUNT_POINT" ]; then
             hdiutil detach "$MOUNT_POINT" -quiet >/dev/null 2>&1 || true
@@ -295,16 +305,26 @@ if [ "$OS" = "darwin" ]; then
     echo "     install."
 else
     # Linux — download binary
+    umask 077
     TMPDIR=$(mktemp -d)
-    curl -sL "$RELEASE_URL" -o "$TMPDIR/notepatra.tar.gz"
-    # Verify SHA-256 if checksums file is available
-    if curl -fsSL "$SHA_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null \
-       || curl -fsSL "$SHA_FALLBACK_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null; then
-        EXPECTED=$(grep "$ARTIFACT" "$TMPDIR/SHA256SUMS" | awk '{print $1}' | head -1)
-        if [ -n "$EXPECTED" ]; then
-            verify_sha256 "$TMPDIR/notepatra.tar.gz" "$EXPECTED"
-        fi
+    curl --proto '=https' --tlsv1.2 -fsSL "$RELEASE_URL" -o "$TMPDIR/notepatra.tar.gz"
+    # SHA-256 verification — HARD REQUIRED. (Mirrored from docs/install.sh.)
+    if ! curl --proto '=https' --tlsv1.2 -fsSL "$SHA_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null \
+       && ! curl --proto '=https' --tlsv1.2 -fsSL "$SHA_FALLBACK_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null; then
+        echo ""
+        echo "  ❌ Could not fetch SHA256SUMS for release $RELEASE_TAG"
+        echo "  Refusing to install an unverified binary."
+        rm -rf "$TMPDIR"
+        exit 1
     fi
+    EXPECTED=$(grep "$ARTIFACT" "$TMPDIR/SHA256SUMS" | awk '{print $1}' | head -1)
+    if [ -z "$EXPECTED" ]; then
+        echo ""
+        echo "  ❌ Artifact '$ARTIFACT' is not listed in SHA256SUMS for $RELEASE_TAG"
+        rm -rf "$TMPDIR"
+        exit 1
+    fi
+    verify_sha256 "$TMPDIR/notepatra.tar.gz" "$EXPECTED"
     cd "$TMPDIR"
     tar xzf notepatra.tar.gz
     chmod +x notepatra

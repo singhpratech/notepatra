@@ -450,6 +450,84 @@ bool installReleaseInteractive(QWidget *parent,
         return false;
     }
 
+    // ─── Step 5.5: optional cosign signature verification ────────
+    // If cosign is installed locally, additionally verify the Sigstore
+    // signature for this artifact. SHA-256 proves the file matches what
+    // GitHub Releases lists — but if an attacker compromised the release
+    // (rogue token, GH support takeover) they can recompute SHA256SUMS to
+    // match the malicious binary. cosign verifies that the artifact was
+    // signed by the keyless OIDC token of this repo's release workflow at
+    // this tag, which a compromised release token cannot forge without
+    // also compromising Sigstore + the Rekor transparency log.
+    //
+    // Behaviour:
+    //  - cosign not on PATH → silently skip (most users don't have cosign)
+    //  - cosign present but .sig/.pem assets missing from release → warn-skip
+    //    (old releases pre-v0.1.60 didn't ship sigs)
+    //  - cosign present AND sig/pem present → HARD-FAIL on mismatch
+    const QString cosignPath = QStandardPaths::findExecutable("cosign");
+    if (!cosignPath.isEmpty()) {
+        QString sigUrl, pemUrl;
+        for (const QJsonValue &v : assets) {
+            if (!v.isObject()) continue;
+            const QString n = v.toObject().value("name").toString();
+            if (n == picked.name + ".sig") {
+                sigUrl = v.toObject().value("browser_download_url").toString();
+            } else if (n == picked.name + ".pem") {
+                pemUrl = v.toObject().value("browser_download_url").toString();
+            }
+        }
+        if (!sigUrl.isEmpty() && !pemUrl.isEmpty()) {
+            progress.setLabelText(QObject::tr("Verifying signature…"));
+            QApplication::processEvents();
+            const QString sigPath = dlDir + "/" + picked.name + ".sig";
+            const QString pemPath = dlDir + "/" + picked.name + ".pem";
+            const auto sigErr = downloadTo(nam, QUrl(sigUrl), sigPath, nullptr, 0);
+            const auto pemErr = downloadTo(nam, QUrl(pemUrl), pemPath, nullptr, 0);
+            if (sigErr == QNetworkReply::NoError && pemErr == QNetworkReply::NoError) {
+                QProcess proc;
+                const QString identityRegex = QString(
+                    "^https://github.com/singhpratech/notepatra/"
+                    "\\.github/workflows/.+@refs/tags/%1$").arg(tagName);
+                const QStringList args = {
+                    QStringLiteral("verify-blob"),
+                    QStringLiteral("--certificate"), pemPath,
+                    QStringLiteral("--signature"), sigPath,
+                    QStringLiteral("--certificate-identity-regexp"), identityRegex,
+                    QStringLiteral("--certificate-oidc-issuer"),
+                    QStringLiteral("https://token.actions.githubusercontent.com"),
+                    partPath
+                };
+                proc.start(cosignPath, args);
+                const bool finished = proc.waitForFinished(60000);  // 60s timeout
+                const int rc = finished ? proc.exitCode() : -1;
+                const QString stderrText = QString::fromUtf8(proc.readAllStandardError());
+                QFile(sigPath).remove();
+                QFile(pemPath).remove();
+                if (rc != 0) {
+                    progress.cancel();
+                    cleanupPart(partPath);
+                    QMessageBox::critical(parent, QObject::tr("Signature Verification Failed"),
+                        QObject::tr("<b>Cosign signature verification failed.</b><br><br>"
+                                    "The downloaded file (<code>%1</code>) does not appear "
+                                    "to be a legitimate signed build of Notepatra %2. "
+                                    "Refusing to install.<br><br>"
+                                    "The download has been deleted. Your current "
+                                    "installation is untouched.<br><br>"
+                                    "<small>cosign stderr: %3</small>")
+                            .arg(picked.name, tagName, stderrText.toHtmlEscaped()));
+                    return false;
+                }
+                // cosign verified — proceed to atomic rename
+            } else {
+                QFile(sigPath).remove();
+                QFile(pemPath).remove();
+                // Could not fetch sig/pem — SHA still verified, proceed
+            }
+        }
+        // sigUrl or pemUrl missing from release → SHA-only path (silent)
+    }
+
     // ─── Step 6: atomic rename .part → final name ────────────────
     // POSIX rename is atomic on the same filesystem. If we crash
     // between this point and handoffToInstaller, we leave a fully

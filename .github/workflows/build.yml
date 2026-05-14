@@ -15,7 +15,7 @@ jobs:
   build-linux:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Install dependencies
         run: |
@@ -26,7 +26,7 @@ jobs:
             qtwebengine5-dev libqt5webenginewidgets5
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable @ 2026-05-14
 
       - name: Audit Rust dependencies (cargo-audit)
         run: |
@@ -67,7 +67,7 @@ jobs:
           QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-linux-x64
           path: build/notepatra
@@ -92,7 +92,7 @@ jobs:
           QT_QPA_PLATFORM=offscreen ./notepatra --version
 
       - name: Upload artifact (full flavor)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-linux-x64-full
           path: build-full/notepatra
@@ -140,25 +140,25 @@ jobs:
           ls -lh Notepatra-*x86_64.AppImage
 
       - name: Upload artifact (.deb regular)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-linux-x64-deb
           path: notepatra_*_amd64.deb
 
       - name: Upload artifact (.deb local-ai cloud-free)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-linux-x64-deb-local-ai
           path: notepatra-local-ai_*_amd64.deb
 
       - name: Upload artifact (.rpm)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-linux-x64-rpm
           path: notepatra-*x86_64.rpm
 
       - name: Upload artifact (AppImage)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-linux-x64-appimage
           path: Notepatra-*x86_64.AppImage
@@ -166,7 +166,7 @@ jobs:
   build-linux-arm:
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install dependencies
         run: |
@@ -177,7 +177,7 @@ jobs:
             qtwebengine5-dev libqt5webenginewidgets5
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable @ 2026-05-14
 
       - name: Audit Rust dependencies (cargo-audit)
         run: |
@@ -211,7 +211,7 @@ jobs:
           QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-linux-arm64
           path: build/notepatra
@@ -228,7 +228,7 @@ jobs:
           QT_QPA_PLATFORM=offscreen ./notepatra --version
 
       - name: Upload artifact (full flavor)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-linux-arm64-full
           path: build-full/notepatra
@@ -263,19 +263,19 @@ jobs:
           ls -lh notepatra-*aarch64.rpm
 
       - name: Upload artifact (.deb regular ARM)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-linux-arm64-deb
           path: notepatra_*_arm64.deb
 
       - name: Upload artifact (.deb local-ai ARM)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-linux-arm64-deb-local-ai
           path: notepatra-local-ai_*_arm64.deb
 
       - name: Upload artifact (.rpm ARM)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-linux-arm64-rpm
           path: notepatra-*aarch64.rpm
@@ -287,7 +287,7 @@ jobs:
   build-macos-arm:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Install dependencies
         run: |
@@ -307,7 +307,7 @@ jobs:
           ls -la "$QT_PATH/include/Qsci/" 2>/dev/null | head -5 || true
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable @ 2026-05-14
 
       - name: Build Rust core
         run: cd rust-core && cargo build --release
@@ -567,7 +567,7 @@ jobs:
           done
 
       - name: Upload DMG
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-macos-arm64
           path: build/Notepatra.dmg
@@ -578,10 +578,10 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Install Qt5
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
           version: '5.15.2'
           host: 'windows'
@@ -638,7 +638,7 @@ jobs:
           Write-Host "  ✓ libcrypto-1_1-x64.dll    at $($libcrypto.FullName)"
 
       - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         with:
           arch: x64
 
@@ -756,7 +756,7 @@ jobs:
           "QSC_INSTALL=$qtRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable @ 2026-05-14
 
       - name: Build Rust core
         shell: cmd
@@ -1398,27 +1398,27 @@ jobs:
           Write-Host "✓ Built notepatra-local-ai-$version.msi ($msiSize MB)"
 
       - name: Upload artifact (portable zip)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-windows-x64
           path: notepatra-win/
 
       - name: Upload artifact (installer exe)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-windows-installer
           path: notepatra-setup-*.exe
           if-no-files-found: ignore
 
       - name: Upload artifact (MSI)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-windows-msi
           path: notepatra-0.*.msi
           if-no-files-found: ignore
 
       - name: Upload artifact (MSI cloud-free / local-ai)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-windows-msi-local-ai
           path: notepatra-local-ai-*.msi
@@ -1427,7 +1427,7 @@ jobs:
       # ─── Failure diagnostics — must be LAST so it sees failures from any prior step ───
       - name: Upload build logs on failure
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: windows-build-logs
           path: |
@@ -1539,7 +1539,7 @@ jobs:
       attestations: write  # SLSA build provenance
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
 
       - name: Package
         run: |
@@ -1616,7 +1616,7 @@ jobs:
           ls -la *.deb *.rpm *.AppImage 2>/dev/null || true
 
       - name: Checkout source for release notes
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           path: src
 
@@ -1669,7 +1669,7 @@ jobs:
           fi
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@f713795cb21599bc4e5c4b58cbad1da852d7eeb9 # v3.10.0
         with:
           cosign-release: 'v2.4.1'
 
@@ -1699,7 +1699,7 @@ jobs:
           ls -la *.sig *.pem
 
       - name: Generate SLSA build provenance attestation
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2.6.2
         with:
           subject-path: |
             notepatra-linux-x64.tar.gz
@@ -1719,7 +1719,7 @@ jobs:
             Notepatra-*x86_64.AppImage
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.2.4
         with:
           files: |
             notepatra-linux-x64.tar.gz

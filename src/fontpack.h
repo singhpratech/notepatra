@@ -48,14 +48,18 @@ enum class Category {
 };
 
 struct Entry {
-    QString family;      // canonical Qt family ("JetBrains Mono")
-    QString variant;     // "Regular" / "Bold" / "Italic" — display only
-    QString fileName;    // local file basename (must be unique in manifest)
-    QString url;         // pinned HTTPS upstream
-    qint64  approxSize;  // bytes — for dialog progress + size display
-    QString license;     // "OFL 1.1" / "Apache 2.0"
-    QString origin;      // "JetBrains" / "Mozilla" / "Microsoft" / …
+    QString family;        // canonical Qt family ("JetBrains Mono")
+    QString variant;       // "Regular" / "Bold" / "Italic" — display only
+    QString fileName;      // local file basename (must be unique in manifest)
+    QString url;           // pinned HTTPS upstream
+    qint64  approxSize;    // bytes — for dialog progress + size display
+    QString license;       // "OFL 1.1" / "Apache 2.0"
+    QString origin;        // "JetBrains" / "Mozilla" / "Microsoft" / …
     Category category;
+    QString expectedSha256; // OPTIONAL — lowercase hex; when set the installer
+                           // verifies the download and rejects mismatches. Empty
+                           // means SHA-pinning hasn't been recorded yet (legacy
+                           // entries; entries will be SHA-pinned incrementally).
 };
 
 // Curated catalogue. ~25 premium fonts used industry-wide.

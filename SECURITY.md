@@ -55,9 +55,9 @@ $actual   = (Get-FileHash notepatra-windows-x64.zip -Algorithm SHA256).Hash.ToLo
 if ($expected -ne $actual) { Write-Error 'CHECKSUM MISMATCH — DO NOT RUN' } else { 'OK' }
 ```
 
-The `install.sh` and `install.ps1` scripts on `notepatra.org` perform this check automatically and refuse to install if the checksum doesn't match.
+The `install.sh` and `install.ps1` scripts on `notepatra.org` perform this check automatically and **refuse to install if SHA256SUMS is unreachable** or the checksum doesn't match. (This was tightened to hard-fail in v0.1.82 — prior versions silently skipped the check when SHA256SUMS returned a network error, which has been fixed.)
 
-For convenience, the v0.1.0 checksums are also pinned at <https://notepatra.org/SHA256SUMS.v0.1.0.txt>.
+Per-release `SHA256SUMS` files live with the release artifacts at `https://github.com/singhpratech/notepatra/releases/download/<tag>/SHA256SUMS`. The legacy pinned copy at <https://notepatra.org/SHA256SUMS.v0.1.0.txt> is preserved for v0.1.0 only; all other tags are served from the GitHub Releases asset.
 
 ### 2. Cosign signatures (Sigstore, keyless)
 
@@ -66,14 +66,17 @@ Every release artifact is signed via [Sigstore cosign](https://www.sigstore.dev)
 ```sh
 # Install cosign: https://docs.sigstore.dev/cosign/installation/
 # Replace `linux-x64` with `linux-arm64` if that is the artifact you downloaded.
+# Replace v0.1.82 with the actual tag you downloaded.
 cosign verify-blob \
-  --certificate-identity-regexp '^https://github.com/singhpratech/notepatra/' \
+  --certificate-identity-regexp '^https://github.com/singhpratech/notepatra/\.github/workflows/.+@refs/tags/v0\.1\.82$' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
   --certificate notepatra-linux-x64.tar.gz.pem \
   --signature  notepatra-linux-x64.tar.gz.sig \
   notepatra-linux-x64.tar.gz
 # expected: Verified OK
 ```
+
+The `cert-identity-regexp` is **pinned to a workflow path and tag**. An unrelated workflow (or a workflow added by a compromised maintainer) would be rejected even if it ran in this repo. The Notepatra `install.sh` and `install.ps1` perform this verification automatically when `cosign` is on PATH.
 
 If `cosign verify-blob` says **Verified OK**, you have cryptographic proof that the binary was built by the official `singhpratech/notepatra` GitHub Actions workflow on a specific git commit, and the signature is recorded in a public append-only log.
 
@@ -124,24 +127,30 @@ Notepatra is a local-first editor. Key choices that bound the attack surface:
 
 What the project does today:
 
-- ✅ Reproducible release pipeline via GitHub Actions (open source workflow file in this repo)
+- ✅ Open-source release pipeline via GitHub Actions (workflow files in `.github/workflows/`)
 - ✅ SHA-256 checksums published with every release
 - ✅ Cosign keyless signing of every artifact (Sigstore + Rekor transparency log)
-- ✅ SLSA build provenance attestation for every artifact
-- ✅ `cargo audit` step in CI to flag vulnerable Rust dependencies
-- ✅ `install.sh` and `install.ps1` verify SHA-256 before extraction
-- ✅ Minimum-permission `GITHUB_TOKEN` per job
-- ✅ Branch protection on `main` (required reviews, no force-push)
-- ✅ Dependabot enabled for security updates
-- ✅ Public vulnerability disclosure path (this file + GitHub Security tab)
-- ✅ Website enforces HTTPS (GitHub Pages), Content-Security-Policy via meta tag
+- ✅ SLSA build provenance attestation (`actions/attest-build-provenance`) for every artifact
+- ✅ `install.sh` and `install.ps1` hard-fail if `SHA256SUMS` is unreachable or the artifact is not listed (no silent-skip)
+- ✅ `install.sh` and `install.ps1` run `cosign verify-blob` automatically when `cosign` is on `PATH`, with the cert-identity pinned to the release workflow + tag
+- ✅ Minimum-permission `GITHUB_TOKEN` (`default_workflow_permissions: read`); release job uses `id-token: write` only while gated by `startsWith(github.ref, 'refs/tags/v')`
+- ✅ Repository ruleset on `main`: no deletion, no force-push, required linear history, required signed commits, CodeQL (high-or-higher) required, Copilot review on push
+- ✅ Tag protection ruleset on `refs/tags/v*`: no deletion, no force-push, signed-tag required
+- ✅ Dependabot security updates enabled (alerts route to maintainer)
+- ✅ Secret-scanning + push-protection enabled
+- ✅ Public vulnerability disclosure path (this file + GitHub Security tab + RFC 9116 `security.txt`)
+- ✅ Website (notepatra.org / GitHub Pages) enforces HTTPS, ships Content-Security-Policy + X-Content-Type-Options + Referrer-Policy + Permissions-Policy meta tags, loads zero third-party JS / analytics / CDN
 
 What the project does **not** do yet (honest about it):
 
 - ❌ Code signing on Windows (requires a paid EV certificate ~$300/year)
 - ❌ Apple notarization on macOS (requires an Apple Developer account, $99/year)
-- ❌ Pinning every GitHub Action by commit SHA (vs floating tags) — work in progress
+- ❌ Pinning **every** GitHub Action by commit SHA — the highest-risk three (`attest-build-provenance`, `softprops/action-gh-release`, `cosign-installer`) are pinned; the remaining ~35 use floating major-version tags and are being swept in batches
 - ❌ Reproducible builds (bit-for-bit) — would need a deterministic build environment
+- ❌ Required PR reviews on `main` — Notepatra is currently a solo-maintainer project; the ruleset blocks force-push / deletion and requires signed commits, but the `pull_request` rule's `required_approving_review_count` is `0`. The maintainer also retains ruleset bypass; account compromise = direct write to `main`. Hardware-key 2FA on the maintainer account is the mitigation
+- ❌ `cargo audit` gate in `release-check.sh` — planned; today the version pinning in `rust-core/Cargo.toml` is the only signal
+- ❌ DNSSEC + CAA records on `notepatra.org` — work in progress with the registrar
+- ❌ Per-page Subresource Integrity for images — currently low priority because no third-party JS is loaded
 
 If any of these matter to you and you'd like to help fund or contribute the work, reach out via [@singhpratech](https://github.com/singhpratech).
 

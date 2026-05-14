@@ -1,0 +1,95 @@
+name: Install Canary
+
+# Sanity-check that the install scripts being served from notepatra.org
+# byte-match the scripts checked into the repo. If they don't, somebody
+# (or something — DNS hijack, Pages compromise, registrar takeover) has
+# replaced the served script and we want a loud alert.
+#
+# Triggers:
+#  - Daily at 13:00 UTC
+#  - On release publish (in case a release-time deploy didn't propagate)
+#  - Manual via workflow_dispatch
+#
+# Action on divergence: open / update issue with the diff.
+
+on:
+  schedule:
+    - cron: '0 13 * * *'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  diff-served-scripts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repo at default branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.0
+
+      - name: Fetch served install scripts from notepatra.org
+        run: |
+          set -euo pipefail
+          mkdir -p served
+          curl --proto '=https' --tlsv1.2 -fsSL \
+            https://notepatra.org/install.sh -o served/install.sh
+          curl --proto '=https' --tlsv1.2 -fsSL \
+            https://notepatra.org/install.ps1 -o served/install.ps1
+
+      - name: Compare served scripts vs repo's docs/ copies
+        id: diff
+        run: |
+          set -uo pipefail
+          drift=""
+          if ! diff -u docs/install.sh served/install.sh > sh.diff; then
+            drift="${drift} install.sh"
+          fi
+          if ! diff -u docs/install.ps1 served/install.ps1 > ps1.diff; then
+            drift="${drift} install.ps1"
+          fi
+          drift="${drift# }"
+          echo "drift=${drift}" >> "$GITHUB_OUTPUT"
+          if [ -n "$drift" ]; then
+            {
+              echo "## Drift detected"
+              echo
+              echo "**Drifted files:** ${drift}"
+              echo
+              if [ -s sh.diff ]; then
+                echo '### install.sh diff (repo → served)'
+                echo '```diff'
+                head -200 sh.diff
+                echo '```'
+              fi
+              if [ -s ps1.diff ]; then
+                echo '### install.ps1 diff (repo → served)'
+                echo '```diff'
+                head -200 ps1.diff
+                echo '```'
+              fi
+            } > issue-body.md
+          fi
+
+      - name: Open or update drift issue
+        if: steps.diff.outputs.drift != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          title="🚨 Install-script canary: served scripts on notepatra.org diverge from repo"
+          body=$(cat issue-body.md)
+          # Find an existing open canary issue (label-free for portability)
+          existing=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number')
+          if [ -n "${existing:-}" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
+
+      - name: All canaries green
+        if: steps.diff.outputs.drift == ''
+        run: echo "✓ Served install scripts match repo. No drift."

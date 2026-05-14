@@ -1,5 +1,6 @@
 #include "fontpack.h"
 
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -259,7 +260,20 @@ void Installer::onFinished() {
             // writing garbage to disk.
             err = QStringLiteral("payload too small (%1 bytes) — upstream may have returned an error page")
                   .arg(m_buffer.size());
-        } else {
+        } else if (!done.expectedSha256.isEmpty()) {
+            // SHA-256 verification — when the manifest pins a hash, refuse to
+            // install anything that doesn't match. Protects against upstream
+            // org-compromise + tag-rewrite scenarios (e.g. JetBrains GitHub
+            // takeover serving a malicious TTF with the same URL).
+            QCryptographicHash h(QCryptographicHash::Sha256);
+            h.addData(m_buffer);
+            const QString actual = QString::fromUtf8(h.result().toHex());
+            if (actual.compare(done.expectedSha256, Qt::CaseInsensitive) != 0) {
+                err = QStringLiteral("SHA-256 mismatch — expected %1, got %2")
+                      .arg(done.expectedSha256.left(16) + "…", actual.left(16) + "…");
+            }
+        }
+        if (err.isEmpty() && m_buffer.size() >= 1024) {
             QFile f(localPath(done));
             if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
                 err = QStringLiteral("could not write %1: %2")

@@ -60,7 +60,9 @@ $zipPath = "$env:TEMP\notepatra-download.zip"
 # Download the artifact
 Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -UseBasicParsing
 
-# SHA-256 verification — download SHA256SUMS for this release tag
+# SHA-256 verification — HARD REQUIRED. Refuse install if SHA256SUMS unreachable
+# or the artifact is not listed. (Previously soft-fail: MITM could swap binary
+# while blocking SHA256SUMS and bypass verification.)
 $tag = $release.tag_name
 $shaUrl = "https://github.com/$repo/releases/download/$tag/SHA256SUMS"
 $shaFallback = "https://notepatra.org/SHA256SUMS.$tag.txt"
@@ -74,26 +76,73 @@ try {
         Invoke-WebRequest -Uri $shaFallback -OutFile $shaFile -UseBasicParsing -ErrorAction Stop
         $shaOk = $true
     } catch {
-        Write-Host "  WARN: SHA256SUMS not available — skipping checksum verification" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  ERROR: Could not fetch SHA256SUMS for release $tag" -ForegroundColor Red
+        Write-Host "    Tried: $shaUrl" -ForegroundColor Red
+        Write-Host "    Tried: $shaFallback" -ForegroundColor Red
+        Write-Host "  Refusing to install an unverified binary." -ForegroundColor Red
+        Write-Host ""
+        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+        exit 1
     }
 }
-if ($shaOk) {
-    $expected = (Get-Content $shaFile | Select-String -Pattern $fileName -SimpleMatch | Select-Object -First 1) -replace '^([a-f0-9]+).*','$1'
-    if ($expected) {
-        $actual = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLower()
-        if ($actual -ne $expected.ToLower()) {
+$expected = (Get-Content $shaFile | Select-String -Pattern $fileName -SimpleMatch | Select-Object -First 1) -replace '^([a-f0-9]+).*','$1'
+if (-not $expected) {
+    Write-Host ""
+    Write-Host "  ERROR: Artifact '$fileName' is not listed in SHA256SUMS for $tag" -ForegroundColor Red
+    Write-Host "  Refusing to install an unverified binary." -ForegroundColor Red
+    Write-Host ""
+    Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+    exit 1
+}
+$actual = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLower()
+if ($actual -ne $expected.ToLower()) {
+    Write-Host ""
+    Write-Host "  ERROR: SHA-256 mismatch — refusing to install." -ForegroundColor Red
+    Write-Host "    expected: $expected" -ForegroundColor Red
+    Write-Host "    actual:   $actual" -ForegroundColor Red
+    Write-Host "    file:     $fileName" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  This means the download was corrupted, MITM'd, or the release was tampered with." -ForegroundColor Red
+    Write-Host "  Report at: https://github.com/$repo/issues/new" -ForegroundColor Red
+    Remove-Item $zipPath -Force
+    exit 1
+}
+Write-Host "  SHA-256 verified" -ForegroundColor Green
+
+# Optional cosign verification — strong gate if cosign is on PATH
+$cosign = Get-Command cosign -ErrorAction SilentlyContinue
+if ($cosign) {
+    $sigUrl = "$downloadUrl.sig"
+    $pemUrl = "$downloadUrl.pem"
+    $sigPath = "$zipPath.sig"
+    $pemPath = "$zipPath.pem"
+    $sigOk = $false
+    try {
+        Invoke-WebRequest -Uri $sigUrl -OutFile $sigPath -UseBasicParsing -ErrorAction Stop
+        Invoke-WebRequest -Uri $pemUrl -OutFile $pemPath -UseBasicParsing -ErrorAction Stop
+        $sigOk = $true
+    } catch {
+        Write-Host "  WARN: Cosign present but signature files unavailable — falling back to SHA-only" -ForegroundColor Yellow
+    }
+    if ($sigOk) {
+        $certIdRegex = "^https://github.com/$repo/\.github/workflows/.+@refs/tags/$tag$"
+        & cosign verify-blob `
+            --certificate $pemPath `
+            --signature $sigPath `
+            --certificate-identity-regexp $certIdRegex `
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" `
+            $zipPath 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
             Write-Host ""
-            Write-Host "  ERROR: SHA-256 mismatch — refusing to install." -ForegroundColor Red
-            Write-Host "    expected: $expected" -ForegroundColor Red
-            Write-Host "    actual:   $actual" -ForegroundColor Red
-            Write-Host "    file:     $fileName" -ForegroundColor Red
+            Write-Host "  ERROR: Cosign signature verification failed for $tag" -ForegroundColor Red
+            Write-Host "  Refusing to install." -ForegroundColor Red
             Write-Host ""
-            Write-Host "  This means the download was corrupted, MITM'd, or the release was tampered with." -ForegroundColor Red
-            Write-Host "  Report at: https://github.com/$repo/issues/new" -ForegroundColor Red
-            Remove-Item $zipPath -Force
+            Remove-Item $zipPath, $sigPath, $pemPath -Force -ErrorAction SilentlyContinue
             exit 1
         }
-        Write-Host "  SHA-256 verified" -ForegroundColor Green
+        Write-Host "  Cosign signature verified" -ForegroundColor Green
+        Remove-Item $sigPath, $pemPath -Force -ErrorAction SilentlyContinue
     }
 }
 

@@ -115,6 +115,7 @@ mkdir -p "$INSTALL_DIR"
 
 if [ "$OS" = "darwin" ]; then
     # macOS — download and mount DMG or extract app
+    umask 077
     TMPDIR=$(mktemp -d)
     case "$RELEASE_URL" in
         *.tar.gz) PKG_PATH="$TMPDIR/notepatra.tar.gz" ;;
@@ -122,13 +123,52 @@ if [ "$OS" = "darwin" ]; then
         *) PKG_PATH="$TMPDIR/notepatra.pkg" ;;
     esac
     MOUNT_POINT=""
-    curl -sL "$RELEASE_URL" -o "$PKG_PATH"
-    # Verify SHA-256 if checksums file is available
-    if curl -fsSL "$SHA_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null \
-       || curl -fsSL "$SHA_FALLBACK_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null; then
-        EXPECTED=$(grep "$ARTIFACT" "$TMPDIR/SHA256SUMS" | awk '{print $1}' | head -1)
-        if [ -n "$EXPECTED" ]; then
-            verify_sha256 "$PKG_PATH" "$EXPECTED"
+    curl --proto '=https' --tlsv1.2 -fsSL "$RELEASE_URL" -o "$PKG_PATH"
+    # SHA-256 verification — HARD REQUIRED. Refuse install if checksums unreachable
+    # or the artifact is not listed in them. (Previously soft-fail: an attacker who
+    # could MITM SHA256SUMS while letting the binary through bypassed verification.)
+    if ! curl --proto '=https' --tlsv1.2 -fsSL "$SHA_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null \
+       && ! curl --proto '=https' --tlsv1.2 -fsSL "$SHA_FALLBACK_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null; then
+        echo ""
+        echo "  ❌ Could not fetch SHA256SUMS for release $RELEASE_TAG"
+        echo "     Tried: $SHA_URL"
+        echo "     Tried: $SHA_FALLBACK_URL"
+        echo "  Refusing to install an unverified binary."
+        echo ""
+        rm -rf "$TMPDIR"
+        exit 1
+    fi
+    EXPECTED=$(grep "$ARTIFACT" "$TMPDIR/SHA256SUMS" | awk '{print $1}' | head -1)
+    if [ -z "$EXPECTED" ]; then
+        echo ""
+        echo "  ❌ Artifact '$ARTIFACT' is not listed in SHA256SUMS for $RELEASE_TAG"
+        echo "  Refusing to install an unverified binary."
+        echo ""
+        rm -rf "$TMPDIR"
+        exit 1
+    fi
+    verify_sha256 "$PKG_PATH" "$EXPECTED"
+    # Optional cosign verification — strong gate if cosign is on PATH
+    if command -v cosign >/dev/null 2>&1; then
+        if curl --proto '=https' --tlsv1.2 -fsSL "${RELEASE_URL}.sig" -o "$PKG_PATH.sig" 2>/dev/null \
+           && curl --proto '=https' --tlsv1.2 -fsSL "${RELEASE_URL}.pem" -o "$PKG_PATH.pem" 2>/dev/null; then
+            if cosign verify-blob \
+                --certificate "$PKG_PATH.pem" \
+                --signature "$PKG_PATH.sig" \
+                --certificate-identity-regexp "^https://github.com/$REPO/\\.github/workflows/.+@refs/tags/$RELEASE_TAG$" \
+                --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+                "$PKG_PATH" >/dev/null 2>&1; then
+                echo "  ✓ Cosign signature verified"
+            else
+                echo ""
+                echo "  ❌ Cosign signature verification failed for $RELEASE_TAG"
+                echo "  Refusing to install."
+                echo ""
+                rm -rf "$TMPDIR"
+                exit 1
+            fi
+        else
+            echo "  ⚠ Cosign present but signature files unavailable — falling back to SHA-only"
         fi
     fi
     cleanup_macos_installer() {
@@ -295,14 +335,52 @@ if [ "$OS" = "darwin" ]; then
     echo "     install."
 else
     # Linux — download binary
+    umask 077
     TMPDIR=$(mktemp -d)
-    curl -sL "$RELEASE_URL" -o "$TMPDIR/notepatra.tar.gz"
-    # Verify SHA-256 if checksums file is available
-    if curl -fsSL "$SHA_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null \
-       || curl -fsSL "$SHA_FALLBACK_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null; then
-        EXPECTED=$(grep "$ARTIFACT" "$TMPDIR/SHA256SUMS" | awk '{print $1}' | head -1)
-        if [ -n "$EXPECTED" ]; then
-            verify_sha256 "$TMPDIR/notepatra.tar.gz" "$EXPECTED"
+    curl --proto '=https' --tlsv1.2 -fsSL "$RELEASE_URL" -o "$TMPDIR/notepatra.tar.gz"
+    # SHA-256 verification — HARD REQUIRED. (See macOS block above for rationale.)
+    if ! curl --proto '=https' --tlsv1.2 -fsSL "$SHA_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null \
+       && ! curl --proto '=https' --tlsv1.2 -fsSL "$SHA_FALLBACK_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null; then
+        echo ""
+        echo "  ❌ Could not fetch SHA256SUMS for release $RELEASE_TAG"
+        echo "     Tried: $SHA_URL"
+        echo "     Tried: $SHA_FALLBACK_URL"
+        echo "  Refusing to install an unverified binary."
+        echo ""
+        rm -rf "$TMPDIR"
+        exit 1
+    fi
+    EXPECTED=$(grep "$ARTIFACT" "$TMPDIR/SHA256SUMS" | awk '{print $1}' | head -1)
+    if [ -z "$EXPECTED" ]; then
+        echo ""
+        echo "  ❌ Artifact '$ARTIFACT' is not listed in SHA256SUMS for $RELEASE_TAG"
+        echo "  Refusing to install an unverified binary."
+        echo ""
+        rm -rf "$TMPDIR"
+        exit 1
+    fi
+    verify_sha256 "$TMPDIR/notepatra.tar.gz" "$EXPECTED"
+    # Optional cosign verification — strong gate if cosign is on PATH
+    if command -v cosign >/dev/null 2>&1; then
+        if curl --proto '=https' --tlsv1.2 -fsSL "${RELEASE_URL}.sig" -o "$TMPDIR/notepatra.tar.gz.sig" 2>/dev/null \
+           && curl --proto '=https' --tlsv1.2 -fsSL "${RELEASE_URL}.pem" -o "$TMPDIR/notepatra.tar.gz.pem" 2>/dev/null; then
+            if cosign verify-blob \
+                --certificate "$TMPDIR/notepatra.tar.gz.pem" \
+                --signature "$TMPDIR/notepatra.tar.gz.sig" \
+                --certificate-identity-regexp "^https://github.com/$REPO/\\.github/workflows/.+@refs/tags/$RELEASE_TAG$" \
+                --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+                "$TMPDIR/notepatra.tar.gz" >/dev/null 2>&1; then
+                echo "  ✓ Cosign signature verified"
+            else
+                echo ""
+                echo "  ❌ Cosign signature verification failed for $RELEASE_TAG"
+                echo "  Refusing to install."
+                echo ""
+                rm -rf "$TMPDIR"
+                exit 1
+            fi
+        else
+            echo "  ⚠ Cosign present but signature files unavailable — falling back to SHA-only"
         fi
     fi
     cd "$TMPDIR"
