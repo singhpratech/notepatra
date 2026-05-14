@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.78 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.79 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -380,7 +380,11 @@ elseif(APPLE)
     target_link_libraries(${EXE_NAME} PRIVATE pthread dl m
         "-framework Security" "-framework CoreFoundation")
 else()
-    target_link_libraries(${EXE_NAME} PRIVATE pthread dl m)
+    # libxcb is a transitive Qt5 GUI dep on Linux X11. We use it directly
+    # in main.cpp (startup-notify completion) and mainwindow.cpp
+    # (_NET_ACTIVE_WINDOW with source=2 to bypass Cinnamon/Muffin's
+    # focus-stealing prevention on IPC file-open), so link explicitly.
+    target_link_libraries(${EXE_NAME} PRIVATE pthread dl m xcb)
 endif()
 
 # ── DuckDB (optional, vendored) ──
@@ -763,7 +767,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_chat_history.cp
         target_link_libraries(test_ai_chat_history PRIVATE pthread dl m
             "-framework Security" "-framework CoreFoundation")
     else()
-        target_link_libraries(test_ai_chat_history PRIVATE pthread dl m)
+        target_link_libraries(test_ai_chat_history PRIVATE pthread dl m xcb)
     endif()
     if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
         target_compile_definitions(test_ai_chat_history PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
@@ -825,7 +829,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_fullscreen_exit
         target_link_libraries(test_ai_fullscreen_exit PRIVATE pthread dl m
             "-framework Security" "-framework CoreFoundation")
     else()
-        target_link_libraries(test_ai_fullscreen_exit PRIVATE pthread dl m)
+        target_link_libraries(test_ai_fullscreen_exit PRIVATE pthread dl m xcb)
     endif()
     if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
         target_compile_definitions(test_ai_fullscreen_exit PRIVATE NOTEPATRA_HAVE_DUCKDB=1)

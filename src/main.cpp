@@ -11,6 +11,15 @@
 #include <cstdio>
 #include <csignal>
 #include <exception>
+#ifdef Q_OS_WIN
+#  include <windows.h>
+#endif
+#ifdef Q_OS_LINUX
+#  include <xcb/xcb.h>
+#  include <cstring>
+#  include <cstdlib>
+#  include <string>
+#endif
 #include "mainwindow.h"
 #include "editor.h"
 #include "config.h"
@@ -50,6 +59,81 @@ static QString singleInstanceServerName() {
     return QStringLiteral("notepatra-") + QString::fromLatin1(h.left(16));
 }
 
+#ifdef Q_OS_LINUX
+// When Nemo / Files / gtk-launch fires our .desktop entry, it stamps
+// DESKTOP_STARTUP_ID in the env and the WM starts a launch-feedback spinner
+// waiting for a window with that ID to map. In the single-instance case we
+// forward the file path to the already-running Notepatra and exit without
+// ever creating a window, so the spinner ticks until the WM's 15 s timeout.
+// Send a freedesktop startup-notify "remove" ClientMessage on the root
+// window to cancel the spinner explicitly. See
+// https://specifications.freedesktop.org/startup-notification-spec/
+static void sendStartupNotifyComplete(const char *startupId) {
+    if (!startupId || !*startupId) return;
+    xcb_connection_t *conn = xcb_connect(nullptr, nullptr);
+    if (!conn || xcb_connection_has_error(conn)) {
+        if (conn) xcb_disconnect(conn);
+        return;
+    }
+    auto intern = [&](const char *name) -> xcb_atom_t {
+        xcb_intern_atom_cookie_t c = xcb_intern_atom(conn, 0, std::strlen(name), name);
+        xcb_intern_atom_reply_t *r = xcb_intern_atom_reply(conn, c, nullptr);
+        xcb_atom_t a = r ? r->atom : XCB_ATOM_NONE;
+        free(r);
+        return a;
+    };
+    const xcb_atom_t aBegin = intern("_NET_STARTUP_INFO_BEGIN");
+    const xcb_atom_t aInfo  = intern("_NET_STARTUP_INFO");
+    const xcb_screen_t *screen = xcb_setup_roots_iterator(xcb_get_setup(conn)).data;
+    if (aBegin == XCB_ATOM_NONE || aInfo == XCB_ATOM_NONE || !screen) {
+        xcb_disconnect(conn);
+        return;
+    }
+    xcb_window_t src = xcb_generate_id(conn);
+    xcb_create_window(conn, 0, src, screen->root, -100, -100, 1, 1, 0,
+                      XCB_WINDOW_CLASS_INPUT_ONLY, screen->root_visual, 0, nullptr);
+    // Per freedesktop startup-notification spec, string values in
+    // messages must be quoted with double-quotes, with `"` and `\` in
+    // the value escaped as `\"` and `\\`. libstartup-notification does
+    // this; an unquoted `ID=<id>` is silently ignored by Cinnamon's
+    // launch-feedback tracker (and the spinner ticks until the WM's
+    // 15 s timeout). Build the message the spec-compliant way.
+    std::string msg = "remove: ID=\"";
+    for (const char *p = startupId; *p; ++p) {
+        if (*p == '"' || *p == '\\') msg.push_back('\\');
+        msg.push_back(*p);
+    }
+    msg.push_back('"');
+    msg.push_back('\0');
+    size_t offset = 0;
+    bool first = true;
+    while (offset < msg.size()) {
+        xcb_client_message_event_t ev{};
+        ev.response_type = XCB_CLIENT_MESSAGE;
+        ev.format = 8;
+        ev.window = src;
+        ev.type = first ? aBegin : aInfo;
+        const size_t take = std::min<size_t>(20, msg.size() - offset);
+        std::memcpy(ev.data.data8, msg.data() + offset, take);
+        xcb_send_event(conn, false, screen->root,
+                       XCB_EVENT_MASK_PROPERTY_CHANGE,
+                       reinterpret_cast<const char *>(&ev));
+        offset += take;
+        first = false;
+    }
+    xcb_destroy_window(conn, src);
+    xcb_flush(conn);
+    // Round-trip fence: ensure the X server has actually processed our
+    // SendEvent + DestroyWindow before we tear down the connection.
+    // Without this, the events can be dropped on disconnect and the
+    // spinner ticks until timeout. (Same bug class as the focus path.)
+    xcb_get_input_focus_reply_t *fr =
+        xcb_get_input_focus_reply(conn, xcb_get_input_focus(conn), nullptr);
+    free(fr);
+    xcb_disconnect(conn);
+}
+#endif // Q_OS_LINUX
+
 int main(int argc, char *argv[]) {
     // Handle --version and --help before creating QApplication
     for (int i = 1; i < argc; i++) {
@@ -84,6 +168,18 @@ int main(int argc, char *argv[]) {
             return 0;
         }
     }
+
+    // Capture DESKTOP_STARTUP_ID BEFORE constructing QApplication. Qt's
+    // xcb platform plugin unsets the env var inside QApplication's
+    // constructor so child processes don't inherit it — but our
+    // single-instance bridge needs it to forward to the running instance
+    // for proper _NET_STARTUP_ID handoff. Snapshot once, use later.
+#ifdef Q_OS_LINUX
+    QByteArray capturedStartupId;
+    if (const char *sid = std::getenv("DESKTOP_STARTUP_ID"); sid && *sid) {
+        capturedStartupId = QByteArray(sid);
+    }
+#endif
 
     // Install crash handlers
     signal(SIGSEGV, crashHandler);
@@ -181,11 +277,41 @@ int main(int argc, char *argv[]) {
             for (const QString &p : filesToOpen) arr.append(p);
             payload.insert("files", arr);
             payload.insert("gotoLine", gotoLine);
+            // Forward DESKTOP_STARTUP_ID (captured at main() entry before
+            // Qt could unset it) so the running instance can set
+            // _NET_STARTUP_ID on its window — that's what Cinnamon's panel
+            // matches to stop the spinner, and what Muffin uses to treat
+            // the activate request as user-initiated.
+#ifdef Q_OS_LINUX
+            if (!capturedStartupId.isEmpty()) {
+                payload.insert("startupId",
+                               QString::fromUtf8(capturedStartupId));
+            }
+#endif
             const QByteArray body = QJsonDocument(payload).toJson(QJsonDocument::Compact);
             probe.write(body);
             probe.flush();
             probe.waitForBytesWritten(500);
             probe.disconnectFromServer();
+#ifdef Q_OS_WIN
+            // Windows blocks SetForegroundWindow() in the running instance
+            // unless a process with foreground rights grants permission.
+            // Explorer hands those rights to *this* (newly spawned) process,
+            // not to the running one — so we surrender them to anyone
+            // (ASFW_ANY = -1) before exiting. Without this, the running
+            // instance opens the file but only flashes its taskbar button.
+            ::AllowSetForegroundWindow(ASFW_ANY);
+#endif
+#ifdef Q_OS_LINUX
+            // Cancel the desktop-environment launch-feedback spinner so the
+            // user isn't stuck staring at a busy cursor after we forwarded
+            // the file path. No-op when DESKTOP_STARTUP_ID isn't set (CLI
+            // invocations, terminal launches, Wayland-only sessions).
+            // Use captured value since Qt already cleared the env var.
+            sendStartupNotifyComplete(
+                capturedStartupId.isEmpty() ? nullptr
+                                            : capturedStartupId.constData());
+#endif
             return 0;
         }
     }
@@ -235,7 +361,9 @@ int main(int argc, char *argv[]) {
                         for (const QJsonValue &v : o.value("files").toArray())
                             paths.append(v.toString());
                         const int line = o.value("gotoLine").toInt(-1);
-                        window.handleRemoteOpen(paths, line);
+                        const QByteArray sid =
+                            o.value("startupId").toString().toUtf8();
+                        window.handleRemoteOpen(paths, line, sid);
                     }
                     client->disconnectFromServer();
                 }

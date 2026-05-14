@@ -43,7 +43,8 @@ public:
     // already-running process. Opens each file as a tab, jumps to
     // `gotoLine` in the first file if > 0, then raises + activates
     // the window so the user's double-click feels instant.
-    void handleRemoteOpen(const QStringList &paths, int gotoLine);
+    void handleRemoteOpen(const QStringList &paths, int gotoLine,
+                          const QByteArray &startupId = QByteArray());
 
     // v0.1.70 — AI dock visibility public API. setAiDockVisible() is the
     // single source of truth for whether the AI dock is on screen.

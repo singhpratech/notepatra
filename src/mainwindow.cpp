@@ -11,6 +11,13 @@
 #include "fontpack_dialog.h"
 #include <numeric>
 #include <algorithm>
+#ifdef Q_OS_WIN
+#  include <windows.h>
+#endif
+#ifdef Q_OS_LINUX
+#  include <xcb/xcb.h>
+#  include <cstring>
+#endif
 #include <QDir>
 #include <QDirIterator>
 
@@ -1463,17 +1470,142 @@ void MainWindow::openFile(const QString &path) {
     updateRecentMenu();
 }
 
-void MainWindow::handleRemoteOpen(const QStringList &paths, int gotoLine) {
+void MainWindow::handleRemoteOpen(const QStringList &paths, int gotoLine,
+                                  const QByteArray &startupId) {
     for (const QString &p : paths) openFile(p);
     if (gotoLine > 0) {
         if (auto *e = currentEditor()) e->gotoLine(gotoLine);
     }
-    // Un-minimize if needed, then bring to front. On Windows this is the
-    // only reliable way to steal focus from the shell that just launched us.
+    // Un-minimize if needed, then bring to front. The second-instance
+    // process called AllowSetForegroundWindow(ASFW_ANY) before exiting,
+    // so SetForegroundWindow now succeeds instead of flashing the taskbar.
     if (isMinimized()) showNormal();
     else show();
     raise();
     activateWindow();
+#ifdef Q_OS_WIN
+    // Belt-and-braces: Qt's activateWindow() maps to SetForegroundWindow,
+    // but a brief TOPMOST flip is the documented workaround when an app
+    // wants to guarantee z-order on Windows even after focus succeeds.
+    const HWND hwnd = reinterpret_cast<HWND>(winId());
+    if (hwnd) {
+        ::SetWindowPos(hwnd, HWND_TOPMOST,   0, 0, 0, 0,
+                       SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        ::SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                       SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        ::SetForegroundWindow(hwnd);
+    }
+#endif
+#ifdef Q_OS_LINUX
+    // X11 focus handoff. Faithful port of wmctrl's `activate_window`
+    // sequence (verified by reading wmctrl source + ltrace), which is
+    // the only pattern that consistently wins against Cinnamon/Muffin's
+    // focus-stealing-prevention when the requesting client is not the
+    // currently focused window — i.e. exactly our case (Nemo dispatches
+    // the open, Notepatra is background, we want to come forward).
+    //
+    // The sequence has THREE parts and ALL THREE are required:
+    //   (a) _NET_ACTIVE_WINDOW ClientMessage, source=2 (pager/user) +
+    //       timestamp from the DESKTOP_STARTUP_ID's "_TIME<N>" suffix
+    //       (or 0 when absent, which Muffin reads as CurrentTime).
+    //   (b) xcb_map_window + xcb_configure_window STACK_MODE_ABOVE.
+    //       This is wmctrl's XMapRaised. It goes to the WM as a
+    //       ConfigureRequest, which is a DIFFERENT code path from
+    //       activation ClientMessages and is NOT gated by FSP. Without
+    //       (b), Muffin demotes (a) to _NET_WM_STATE_DEMANDS_ATTENTION
+    //       and the window stays in the background. Adding (b) alone
+    //       (no ClientMessage) also doesn't work because the WM won't
+    //       give input focus without a corresponding activation hint.
+    //   (c) Round-trip fence (xcb_get_input_focus + reply) before
+    //       xcb_disconnect, otherwise queued async requests can be
+    //       dropped on connection close.
+    //
+    // Earlier attempts also tried xcb_set_input_focus + _NET_WM_USER_TIME
+    // updates; both are harmful: set_input_focus bypasses the WM which
+    // then "corrects" by reverting focus, and aggressively bumping
+    // user_time triggered FSP comparison failures.
+    const xcb_window_t xwin = static_cast<xcb_window_t>(winId());
+    if (xwin) {
+        xcb_connection_t *conn = xcb_connect(nullptr, nullptr);
+        if (conn && !xcb_connection_has_error(conn)) {
+            auto intern = [&](const char *name) -> xcb_atom_t {
+                xcb_intern_atom_cookie_t c =
+                    xcb_intern_atom(conn, 0, std::strlen(name), name);
+                xcb_intern_atom_reply_t *r =
+                    xcb_intern_atom_reply(conn, c, nullptr);
+                const xcb_atom_t a = r ? r->atom : XCB_ATOM_NONE;
+                free(r);
+                return a;
+            };
+            const xcb_atom_t aActiveWin = intern("_NET_ACTIVE_WINDOW");
+            const xcb_atom_t aStartupId = intern("_NET_STARTUP_ID");
+            const xcb_atom_t aUtf8      = intern("UTF8_STRING");
+            const xcb_screen_t *screen =
+                xcb_setup_roots_iterator(xcb_get_setup(conn)).data;
+
+            uint32_t reqTimestamp = 0;
+            if (!startupId.isEmpty()) {
+                const int idx = startupId.lastIndexOf("_TIME");
+                if (idx >= 0) {
+                    bool ok = false;
+                    const uint v =
+                        startupId.mid(idx + 5).toUInt(&ok);
+                    if (ok) reqTimestamp = static_cast<uint32_t>(v);
+                }
+                // Set _NET_STARTUP_ID on our window. Cinnamon's launch-
+                // feedback tracker (and other compliant WMs) stops the
+                // spinner when a window mapped with the matching ID
+                // appears — REMOVE messages alone are not enough for
+                // Cinnamon in practice. Setting the property after the
+                // window is already mapped still works: the WM watches
+                // PropertyNotify on managed windows and updates its
+                // internal startup-id → window mapping.
+                if (aStartupId != XCB_ATOM_NONE) {
+                    xcb_change_property(
+                        conn, XCB_PROP_MODE_REPLACE, xwin,
+                        aStartupId,
+                        aUtf8 != XCB_ATOM_NONE ? aUtf8 : XCB_ATOM_STRING,
+                        8, startupId.size(), startupId.constData());
+                }
+            }
+
+            if (aActiveWin != XCB_ATOM_NONE && screen) {
+                // (a) _NET_ACTIVE_WINDOW ClientMessage
+                xcb_client_message_event_t ev{};
+                ev.response_type = XCB_CLIENT_MESSAGE;
+                ev.format = 32;
+                ev.window = xwin;
+                ev.type = aActiveWin;
+                ev.data.data32[0] = 2;  // source = pager/user
+                ev.data.data32[1] = reqTimestamp;
+                ev.data.data32[2] = 0;
+                ev.data.data32[3] = 0;
+                ev.data.data32[4] = 0;
+                xcb_send_event(conn, false, screen->root,
+                               XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
+                               XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY,
+                               reinterpret_cast<const char *>(&ev));
+
+                // (b) Map + raise. This is the part that bypasses FSP.
+                xcb_map_window(conn, xwin);
+                const uint32_t stackVals[] = { XCB_STACK_MODE_ABOVE };
+                xcb_configure_window(conn, xwin,
+                                     XCB_CONFIG_WINDOW_STACK_MODE,
+                                     stackVals);
+
+                xcb_flush(conn);
+
+                // (c) Round-trip fence before disconnect so the X
+                // server processes everything before we close.
+                xcb_get_input_focus_reply_t *fr =
+                    xcb_get_input_focus_reply(
+                        conn, xcb_get_input_focus(conn), nullptr);
+                free(fr);
+            }
+        }
+        if (conn) xcb_disconnect(conn);
+    }
+#endif
 }
 
 void MainWindow::saveFile() {

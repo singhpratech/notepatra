@@ -74,3 +74,8 @@ tests/comprehensive/run.log
 # checked in alongside the comprehensive harness.
 tests/comprehensive/run_ui_smoke.sh
 tests/comprehensive/run_duckdb_tests.py
+
+# User-pasted test artifacts. Per memory rule: never commit (PII risk).
+test-files/
+# Local planning scratch — agent-only, not for the repo.
+planning/

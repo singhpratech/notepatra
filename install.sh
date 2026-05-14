@@ -337,7 +337,11 @@ Exec=$INSTALL_DIR/notepatra %F
 Icon=notepatra
 Terminal=false
 Type=Application
-StartupNotify=true
+# StartupNotify=false because Notepatra is a single-instance app: when a
+# second invocation forwards its file path via IPC and exits, no new window
+# is mapped, so the WM's launch-feedback spinner would tick until timeout.
+# Spawn-and-IPC is fast (<150ms) so users don't miss the spinner.
+StartupNotify=false
 StartupWMClass=Notepatra
 Categories=Development;TextEditor;Utility;
 MimeType=text/plain;text/x-c;text/x-c++;text/x-python;application/json;text/markdown;text/x-shellscript;

@@ -7,6 +7,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.79] — 2026-05-14
+
+**Double-click-from-file-manager focus handoff fix — Linux X11 and Windows.**
+
+### Fixed
+
+- **`src/mainwindow.cpp::handleRemoteOpen` (Linux X11)** — double-clicking a file in Nemo / Files / any X11 file manager now transfers focus to the running Notepatra reliably. Pre-v0.1.79 the new tab opened in the background while the file manager stayed focused. Faithful port of wmctrl's `activate_window` sequence: `_NET_ACTIVE_WINDOW` ClientMessage (source=2 / pager) + `xcb_map_window` + `xcb_configure_window(STACK_MODE_ABOVE)` + round-trip fence (`xcb_get_input_focus_reply`) before disconnect. The `xcb_configure_window` ConfigureRequest path is what bypasses Cinnamon/Muffin's focus-stealing prevention — plain activate ClientMessages alone get demoted to `_NET_WM_STATE_DEMANDS_ATTENTION`.
+- **`install.sh` / `docs/install.sh`** — `StartupNotify=false` in the generated `.desktop` stops the infinite busy-cursor spinner that ticked until the WM's 15 s timeout when the single-instance bridge forwarded the path and exited without mapping a window. Spec-compliant `remove: ID="<id>"` startup-notify message sequence also wired in `src/main.cpp::sendStartupNotifyComplete` (with quoted format per the freedesktop spec and a round-trip fence) for other DEs that respect the protocol — Cinnamon ignores it in practice, so the `.desktop` flag is what fixes it for the most affected user base.
+- **`src/main.cpp` + `src/mainwindow.cpp` (Windows)** — second-instance process calls `AllowSetForegroundWindow(ASFW_ANY)` before exiting so the running instance's `SetForegroundWindow()` succeeds instead of just flashing the taskbar (Explorer hands foreground rights to the newly spawned process, not the running one). Belt-and-braces TOPMOST flip (`HWND_TOPMOST` → `HWND_NOTOPMOST` with `SWP_NOACTIVATE`) guarantees z-order, then `SetForegroundWindow`.
+- **`src/mainwindow.h`** — `handleRemoteOpen` signature extended to take an optional `startupId` `QByteArray`. Captured at `main()` entry before `QApplication`'s constructor strips `DESKTOP_STARTUP_ID` from the env, forwarded over the IPC payload, then applied as `_NET_STARTUP_ID` property on the running instance's window for compliant DEs to match against their launch trackers.
+
+### Changed
+
+- **`CMakeLists.txt`** — `libxcb` linked explicitly on Linux (it was a transitive Qt5 GUI dep before). Notepatra's main.cpp + mainwindow.cpp now use xcb directly for the X11 activate sequence and startup-notify completion.
+
+---
+
 ## [0.1.78] — 2026-05-13
 
 **Encoding & file-open fixes — UTF-16 / UTF-32 BOM parity with Notepad++.**
