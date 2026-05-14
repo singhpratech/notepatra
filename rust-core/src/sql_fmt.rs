@@ -152,12 +152,7 @@ fn compress_whitespace(input: &str) -> String {
         } else if in_str {
             out.push(ch);
             last_was_space = false;
-        } else if ch == '\n' || ch == '\t' || ch == '\r' {
-            if !last_was_space {
-                out.push(' ');
-                last_was_space = true;
-            }
-        } else if ch == ' ' {
+        } else if ch == '\n' || ch == '\t' || ch == '\r' || ch == ' ' {
             if !last_was_space {
                 out.push(' ');
                 last_was_space = true;
@@ -959,7 +954,7 @@ fn fmt_object_name(n: &ObjectName) -> String {
 fn group_by_items(gb: &GroupByExpr) -> Vec<String> {
     match gb {
         GroupByExpr::All(_) => vec!["ALL".to_string()],
-        GroupByExpr::Expressions(exprs, _) => exprs.iter().map(|e| fmt_expr(e)).collect(),
+        GroupByExpr::Expressions(exprs, _) => exprs.iter().map(fmt_expr).collect(),
     }
 }
 

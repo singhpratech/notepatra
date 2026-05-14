@@ -247,7 +247,7 @@ fn detect_encoding(sample: &[u8]) -> DetectedEnc {
     for enc in &[WINDOWS_1252, SHIFT_JIS, EUC_JP, GB18030] {
         let (_, _, had_errors) = enc.decode(sample);
         if !had_errors {
-            return DetectedEnc::Other(*enc);
+            return DetectedEnc::Other(enc);
         }
     }
 
