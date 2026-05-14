@@ -100,11 +100,15 @@ fn format_sql_inner(
         }
         _ => {
             // Graceful fallback — parser failed, use sqlformat and leave a note.
+            // sqlformat 0.5 added several fields (dialect, inline,
+            // joins_as_top_level, etc.) — use Default + override the ones
+            // we actually drive from user prefs so future bumps don't keep
+            // breaking this site.
             let options = FormatOptions {
                 indent: Indent::Spaces(indent_width as u8),
                 uppercase: Some(uppercase),
                 lines_between_queries: if compact { 1 } else { 2 },
-                ignore_case_convert: None,
+                ..FormatOptions::default()
             };
             let legacy = legacy_format(input, &QueryParams::None, &options);
             format!(
