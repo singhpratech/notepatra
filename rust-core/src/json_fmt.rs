@@ -33,10 +33,8 @@ fn re_missing_brace() -> Option<&'static Regex> {
 
 fn re_key() -> Option<&'static Regex> {
     static R: OnceLock<Option<Regex>> = OnceLock::new();
-    R.get_or_init(|| {
-        Regex::new(r#"(?m)([\{\[,]\s*|\n\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:"#).ok()
-    })
-    .as_ref()
+    R.get_or_init(|| Regex::new(r#"(?m)([\{\[,]\s*|\n\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:"#).ok())
+        .as_ref()
 }
 
 fn re_trailing_array() -> Option<&'static Regex> {
@@ -272,15 +270,11 @@ pub fn fix_json_with_report(input: &str) -> (String, String) {
         if !in_str {
             match ch {
                 '{' | '[' => stack.push(ch),
-                '}' => {
-                    if stack.last() == Some(&'{') {
-                        stack.pop();
-                    }
+                '}' if stack.last() == Some(&'{') => {
+                    stack.pop();
                 }
-                ']' => {
-                    if stack.last() == Some(&'[') {
-                        stack.pop();
-                    }
+                ']' if stack.last() == Some(&'[') => {
+                    stack.pop();
                 }
                 _ => {}
             }
@@ -310,8 +304,7 @@ pub fn fix_json_with_report(input: &str) -> (String, String) {
         let mut total_trail = 0;
         for _ in 0..10 {
             let before = pass3.clone();
-            total_trail +=
-                re_arr.find_iter(&before).count() + re_obj.find_iter(&before).count();
+            total_trail += re_arr.find_iter(&before).count() + re_obj.find_iter(&before).count();
             pass3 = re_arr.replace_all(&pass3, "]").to_string();
             pass3 = re_obj.replace_all(&pass3, "}").to_string();
             if pass3 == before {
@@ -507,7 +500,11 @@ mod tests {
     fn rw_single_primitive_passes() {
         for s in &["null", "42", "true", "false", "\"hello\"", "3.14"] {
             let pretty = format_json(s, 2);
-            assert!(!pretty.is_empty(), "primitive '{}' produced empty output", s);
+            assert!(
+                !pretty.is_empty(),
+                "primitive '{}' produced empty output",
+                s
+            );
         }
     }
 
@@ -517,7 +514,11 @@ mod tests {
         let s = r#"{"name":"Alice 👋","emoji":"🎉🚀","flag":"🇺🇸"}"#;
         let pretty = format_json(s, 2);
         assert!(pretty.contains("👋"), "lost wave emoji in:\n{}", pretty);
-        assert!(pretty.contains("🇺🇸"), "lost flag (regional indicator pair) in:\n{}", pretty);
+        assert!(
+            pretty.contains("🇺🇸"),
+            "lost flag (regional indicator pair) in:\n{}",
+            pretty
+        );
         // Round-trip
         let parsed: serde_json::Value = serde_json::from_str(&pretty).expect("valid JSON");
         assert_eq!(parsed["name"], "Alice 👋");
@@ -549,24 +550,38 @@ mod tests {
         let (fixed, _) = fix_json_with_report(s);
         // Should fix at least the quotes; True/False/None aren't normalized
         // by our fixer but the structural fix is the priority.
-        assert!(fixed.contains("\"name\""), "unquoted key not fixed:\n{}", fixed);
-        assert!(fixed.contains("\"Alice\""), "single→double quote conversion failed:\n{}", fixed);
+        assert!(
+            fixed.contains("\"name\""),
+            "unquoted key not fixed:\n{}",
+            fixed
+        );
+        assert!(
+            fixed.contains("\"Alice\""),
+            "single→double quote conversion failed:\n{}",
+            fixed
+        );
     }
 
     #[test]
     fn rw_fix_trailing_commas_at_every_level() {
         let s = r#"{"a":[1,2,3,],"b":{"x":1,},"c":[{"k":"v",},],}"#;
         let (fixed, _) = fix_json_with_report(s);
-        assert!(serde_json::from_str::<serde_json::Value>(&fixed).is_ok(),
-                "trailing commas not all fixed:\n{}", fixed);
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&fixed).is_ok(),
+            "trailing commas not all fixed:\n{}",
+            fixed
+        );
     }
 
     #[test]
     fn rw_fix_unquoted_keys_nested() {
         let s = r#"{a: 1, b: {c: 2, d: [{e: 3}]}}"#;
         let (fixed, _) = fix_json_with_report(s);
-        assert!(serde_json::from_str::<serde_json::Value>(&fixed).is_ok(),
-                "nested unquoted keys not fixed:\n{}", fixed);
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&fixed).is_ok(),
+            "nested unquoted keys not fixed:\n{}",
+            fixed
+        );
     }
 
     #[test]

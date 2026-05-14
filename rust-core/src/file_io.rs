@@ -142,7 +142,14 @@ pub fn load_file(path: &str) -> FileLoadResult {
         0 // LF
     };
 
-    make_result(&result_text, detected.label(), eol_mode, file_size, 0, truncated)
+    make_result(
+        &result_text,
+        detected.label(),
+        eol_mode,
+        file_size,
+        0,
+        truncated,
+    )
 }
 
 pub fn save_file(path: &str, text: &[u8], enc_name: &str) -> c_int {
@@ -210,7 +217,11 @@ fn detect_encoding(sample: &[u8]) -> DetectedEnc {
         let (mut even_nulls, mut odd_nulls) = (0usize, 0usize);
         for (i, &b) in sample.iter().enumerate() {
             if b == 0 {
-                if i % 2 == 0 { even_nulls += 1; } else { odd_nulls += 1; }
+                if i % 2 == 0 {
+                    even_nulls += 1;
+                } else {
+                    odd_nulls += 1;
+                }
             }
         }
         let half = sample.len() / 2;
@@ -236,7 +247,7 @@ fn detect_encoding(sample: &[u8]) -> DetectedEnc {
     for enc in &[WINDOWS_1252, SHIFT_JIS, EUC_JP, GB18030] {
         let (_, _, had_errors) = enc.decode(sample);
         if !had_errors {
-            return DetectedEnc::Other(*enc);
+            return DetectedEnc::Other(enc);
         }
     }
 
@@ -447,13 +458,14 @@ mod tests {
     fn real_binary_still_refused() {
         // PNG magic + IHDR-style bytes — well above 10% nulls, no text BOM.
         let png_sig = [
-            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-            0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-            0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00,
-            0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x08, 0x06, 0x00, 0x00,
+            0x00, 0x1F, 0x15, 0xC4,
         ];
         let mut bytes = Vec::new();
-        for _ in 0..40 { bytes.extend_from_slice(&png_sig); }
+        for _ in 0..40 {
+            bytes.extend_from_slice(&png_sig);
+        }
         assert_eq!(status_of(&bytes), 1, "real binary must still be flagged");
         assert_eq!(label_of(&bytes), "BINARY");
     }
@@ -472,7 +484,8 @@ mod tests {
         let label = label_of(bytes);
         assert!(
             label == "windows-1252" || label == "Windows-1252",
-            "got {}", label
+            "got {}",
+            label
         );
     }
 }

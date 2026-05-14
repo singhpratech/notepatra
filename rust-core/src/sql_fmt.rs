@@ -43,7 +43,13 @@ pub fn format_sql_dialect(
     uppercase: bool,
     dialect_name: &str,
 ) -> String {
-    format_sql_inner(input, indent_width, uppercase, dialect_name, /*compact*/ false)
+    format_sql_inner(
+        input,
+        indent_width,
+        uppercase,
+        dialect_name,
+        /*compact*/ false,
+    )
 }
 
 /// v0.1.49 — Compact / one-line-where-possible variant. Same dialect support
@@ -56,7 +62,13 @@ pub fn format_sql_compact(
     uppercase: bool,
     dialect_name: &str,
 ) -> String {
-    format_sql_inner(input, indent_width, uppercase, dialect_name, /*compact*/ true)
+    format_sql_inner(
+        input,
+        indent_width,
+        uppercase,
+        dialect_name,
+        /*compact*/ true,
+    )
 }
 
 fn format_sql_inner(
@@ -100,16 +112,24 @@ fn format_sql_inner(
         }
         _ => {
             // Graceful fallback — parser failed, use sqlformat and leave a note.
+            // sqlformat 0.5 added several fields (dialect, inline,
+            // joins_as_top_level, etc.) — use Default + override the ones
+            // we actually drive from user prefs so future bumps don't keep
+            // breaking this site.
             let options = FormatOptions {
                 indent: Indent::Spaces(indent_width as u8),
                 uppercase: Some(uppercase),
                 lines_between_queries: if compact { 1 } else { 2 },
-                ignore_case_convert: None,
+                ..FormatOptions::default()
             };
             let legacy = legacy_format(input, &QueryParams::None, &options);
             format!(
                 "-- (parser fallback: syntax unsupported by our parser)\n{}",
-                if compact { compress_whitespace(&legacy) } else { legacy }
+                if compact {
+                    compress_whitespace(&legacy)
+                } else {
+                    legacy
+                }
             )
         }
     }
@@ -132,12 +152,7 @@ fn compress_whitespace(input: &str) -> String {
         } else if in_str {
             out.push(ch);
             last_was_space = false;
-        } else if ch == '\n' || ch == '\t' || ch == '\r' {
-            if !last_was_space {
-                out.push(' ');
-                last_was_space = true;
-            }
-        } else if ch == ' ' {
+        } else if ch == '\n' || ch == '\t' || ch == '\r' || ch == ' ' {
             if !last_was_space {
                 out.push(' ');
                 last_was_space = true;
@@ -153,10 +168,23 @@ fn compress_whitespace(input: &str) -> String {
     //   SELECT a, b FROM t WHERE x = 1 GROUP BY a ORDER BY b
     // stays on one line. Long ones break only at major clause boundaries.
     let break_before = [
-        " WITH ", " SELECT ", " UPDATE ", " DELETE ", " INSERT ",
-        " FROM ", " WHERE ", " GROUP BY ", " HAVING ",
-        " ORDER BY ", " LIMIT ", " OFFSET ", " RETURNING ",
-        " UNION ", " UNION ALL ", " INTERSECT ", " EXCEPT ",
+        " WITH ",
+        " SELECT ",
+        " UPDATE ",
+        " DELETE ",
+        " INSERT ",
+        " FROM ",
+        " WHERE ",
+        " GROUP BY ",
+        " HAVING ",
+        " ORDER BY ",
+        " LIMIT ",
+        " OFFSET ",
+        " RETURNING ",
+        " UNION ",
+        " UNION ALL ",
+        " INTERSECT ",
+        " EXCEPT ",
     ];
     if out.len() > 120 {
         let mut buf = out.clone();
@@ -269,7 +297,13 @@ impl Writer {
                 from,
                 selection,
                 returning,
-            } => self.write_update(table, assignments, from.as_ref(), selection.as_ref(), returning.as_deref()),
+            } => self.write_update(
+                table,
+                assignments,
+                from.as_ref(),
+                selection.as_ref(),
+                returning.as_deref(),
+            ),
             Statement::Delete(d) => self.write_delete(d),
             Statement::Insert(ins) => self.write_insert(ins),
             other => {
@@ -305,7 +339,11 @@ impl Writer {
                     self.push(",\n");
                     self.push(&self.sub_indent(1));
                 }
-                self.push(&format!("{} = {}", a.target, self.fmt_expr_pretty(&a.value, 1)));
+                self.push(&format!(
+                    "{} = {}",
+                    a.target,
+                    self.fmt_expr_pretty(&a.value, 1)
+                ));
             }
         }
 
@@ -417,7 +455,12 @@ impl Writer {
         }
         head.push(' ');
         let table = if let Some(alias) = &ins.table_alias {
-            format!("{} {} {}", fmt_object_name(&ins.table_name), self.kw("AS"), alias.value)
+            format!(
+                "{} {} {}",
+                fmt_object_name(&ins.table_name),
+                self.kw("AS"),
+                alias.value
+            )
         } else {
             fmt_object_name(&ins.table_name)
         };
@@ -719,9 +762,7 @@ impl Writer {
                 conditions,
                 results,
                 else_result,
-            } if one_line.chars().count() > CASE_WRAP_THRESHOLD
-                || one_line.contains('\n') =>
-            {
+            } if one_line.chars().count() > CASE_WRAP_THRESHOLD || one_line.contains('\n') => {
                 let mut out = String::new();
                 out.push_str(&self.kw("CASE"));
                 if let Some(op) = operand {
@@ -757,8 +798,7 @@ impl Writer {
                 expr,
                 list,
                 negated,
-            } if one_line.chars().count() > IN_WRAP_THRESHOLD =>
-            {
+            } if one_line.chars().count() > IN_WRAP_THRESHOLD => {
                 let mut out = String::new();
                 out.push_str(&fmt_expr(expr));
                 if *negated {
@@ -914,7 +954,7 @@ fn fmt_object_name(n: &ObjectName) -> String {
 fn group_by_items(gb: &GroupByExpr) -> Vec<String> {
     match gb {
         GroupByExpr::All(_) => vec!["ALL".to_string()],
-        GroupByExpr::Expressions(exprs, _) => exprs.iter().map(|e| fmt_expr(e)).collect(),
+        GroupByExpr::Expressions(exprs, _) => exprs.iter().map(fmt_expr).collect(),
     }
 }
 
@@ -1099,7 +1139,11 @@ mod tests {
         let sql = "SELECT id::text FROM users";
         let out = format_sql_dialect(sql, 4, true, "postgres");
         // Should preserve ::text or use CAST — either is acceptable.
-        assert!(out.to_lowercase().contains("text"), "missing cast target in:\n{}", out);
+        assert!(
+            out.to_lowercase().contains("text"),
+            "missing cast target in:\n{}",
+            out
+        );
     }
 
     #[test]
@@ -1107,14 +1151,22 @@ mod tests {
         let sql =
             "SELECT u.id, posts.title FROM users u, LATERAL (SELECT title FROM posts WHERE posts.user_id = u.id LIMIT 1) posts";
         let out = format_sql_dialect(sql, 4, true, "postgres");
-        assert!(out.to_uppercase().contains("LATERAL"), "missing LATERAL in:\n{}", out);
+        assert!(
+            out.to_uppercase().contains("LATERAL"),
+            "missing LATERAL in:\n{}",
+            out
+        );
     }
 
     #[test]
     fn cte_with_multiple_ctes() {
         let sql = "WITH a AS (SELECT 1 AS x), b AS (SELECT 2 AS y) SELECT * FROM a JOIN b ON 1=1";
         let out = format_sql_dialect(sql, 4, true, "ansi");
-        assert!(out.to_uppercase().contains("WITH"), "missing WITH in:\n{}", out);
+        assert!(
+            out.to_uppercase().contains("WITH"),
+            "missing WITH in:\n{}",
+            out
+        );
         // Both CTE names should appear.
         assert!(out.to_lowercase().contains(" a ") || out.contains("a AS"));
     }
@@ -1125,7 +1177,11 @@ mod tests {
         let sql = "select id, name from users where active = true";
         let once = format_sql_dialect(sql, 4, true, "ansi");
         let twice = format_sql_dialect(&once, 4, true, "ansi");
-        assert_eq!(once, twice, "format_sql is not idempotent:\nonce={}\ntwice={}", once, twice);
+        assert_eq!(
+            once, twice,
+            "format_sql is not idempotent:\nonce={}\ntwice={}",
+            once, twice
+        );
     }
 
     #[test]
@@ -1136,11 +1192,7 @@ mod tests {
         assert!(out.contains("CASE"));
         let lines: Vec<&str> = out.lines().collect();
         let when_count = lines.iter().filter(|l| l.contains("WHEN")).count();
-        assert!(
-            when_count >= 3,
-            "expected ≥3 WHEN lines, got:\n{}",
-            out
-        );
+        assert!(when_count >= 3, "expected ≥3 WHEN lines, got:\n{}", out);
         assert!(out.contains("ELSE"));
         assert!(out.contains("END"));
     }
@@ -1215,9 +1267,21 @@ mod tests {
     fn pg_with_recursive() {
         let sql = "WITH RECURSIVE descendants AS (SELECT id, parent_id, name FROM categories WHERE id = 1 UNION ALL SELECT c.id, c.parent_id, c.name FROM categories c INNER JOIN descendants d ON d.id = c.parent_id) SELECT * FROM descendants ORDER BY id";
         let out = format_sql_dialect(sql, 4, true, "postgres");
-        assert!(out.to_uppercase().contains("WITH"), "missing WITH:\n{}", out);
-        assert!(out.to_uppercase().contains("RECURSIVE"), "missing RECURSIVE:\n{}", out);
-        assert!(out.to_uppercase().contains("UNION ALL"), "missing UNION ALL:\n{}", out);
+        assert!(
+            out.to_uppercase().contains("WITH"),
+            "missing WITH:\n{}",
+            out
+        );
+        assert!(
+            out.to_uppercase().contains("RECURSIVE"),
+            "missing RECURSIVE:\n{}",
+            out
+        );
+        assert!(
+            out.to_uppercase().contains("UNION ALL"),
+            "missing UNION ALL:\n{}",
+            out
+        );
     }
 
     #[test]
@@ -1309,7 +1373,10 @@ mod tests {
         assert!(out.to_uppercase().contains("CASE"));
         assert!(out.to_uppercase().contains("ORDER BY"));
         // Verify CASE expanded across multiple lines.
-        let case_lines = out.lines().filter(|l| l.to_uppercase().contains("WHEN")).count();
+        let case_lines = out
+            .lines()
+            .filter(|l| l.to_uppercase().contains("WHEN"))
+            .count();
         assert!(case_lines >= 2, "CASE not expanded:\n{}", out);
     }
 
@@ -1343,7 +1410,11 @@ mod tests {
         let out = format_sql_dialect(sql, 4, true, "postgres");
         // sqlparser may convert to a regular quoted string or fall back —
         // either way, must not crash and must contain the literal "test".
-        assert!(out.to_lowercase().contains("test"), "lost dollar-quoted body in:\n{}", out);
+        assert!(
+            out.to_lowercase().contains("test"),
+            "lost dollar-quoted body in:\n{}",
+            out
+        );
     }
 
     #[test]
@@ -1351,7 +1422,11 @@ mod tests {
         let sql = "select id, name from users where id = 1";
         let out = format_sql_compact(sql, 4, true, "ansi");
         // Short query — should fit on one line (no break-before keywords).
-        assert!(!out.contains("\nFROM"), "compact short query has line break:\n{}", out);
+        assert!(
+            !out.contains("\nFROM"),
+            "compact short query has line break:\n{}",
+            out
+        );
         assert!(out.to_uppercase().contains("SELECT"));
         assert!(out.to_uppercase().contains("FROM"));
     }
@@ -1362,7 +1437,12 @@ mod tests {
         let out = format_sql_compact(sql, 4, true, "ansi");
         // Long query — should break at major clause boundaries (FROM/WHERE/GROUP BY/ORDER BY).
         let breaks = out.lines().count();
-        assert!(breaks >= 4, "long compact query did not break at clauses (got {} lines):\n{}", breaks, out);
+        assert!(
+            breaks >= 4,
+            "long compact query did not break at clauses (got {} lines):\n{}",
+            breaks,
+            out
+        );
     }
 
     #[test]
@@ -1370,7 +1450,9 @@ mod tests {
         let sql = "insert into t (id, name) values (1, 'a') on conflict (id) do update set name = excluded.name";
         let out = format_sql_compact(sql, 4, true, "postgres");
         assert!(out.to_uppercase().contains("INSERT"));
-        assert!(out.to_uppercase().contains("ON CONFLICT") || out.to_lowercase().contains("excluded"));
+        assert!(
+            out.to_uppercase().contains("ON CONFLICT") || out.to_lowercase().contains("excluded")
+        );
     }
 
     #[test]
