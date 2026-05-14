@@ -50,7 +50,7 @@
       "operatingSystem": ["Linux", "Windows", "macOS"],
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
-      "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~9 MB stripped across platforms; full downloads are 3.4 MB (Linux x64 tar.gz), 26.8 MB (macOS DMG with bundled Qt), 40.4 MB (Windows MSI with bundled Qt DLLs). 226 file types. 92 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
+      "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~9 MB stripped across platforms; full downloads are 3.6 MB (Linux x64 tar.gz), 28.7 MB (macOS DMG with bundled Qt), 42.5 MB (Windows MSI with bundled Qt DLLs). 226 file types. 92 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
       "softwareVersion": "0.1.80",
       "fileSize": "9 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
@@ -84,7 +84,7 @@
         "Macro recording and playback",
         "Session persistence and crash recovery",
         "Plugin system (.so / .dll / .dylib)",
-        "Local-first AI — works with Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, KoboldCpp, text-generation-webui, or any OpenAI-compatible server. Six cloud backends optional (OpenRouter / OpenAI / Azure / Ollama Cloud). No telemetry."
+        "Local-first AI — works with Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, KoboldCpp, text-generation-webui, or any OpenAI-compatible server. Six AI backends total — two local (Ollama, llama.cpp/GGUF) and four cloud (Ollama Cloud, OpenRouter, OpenAI, Azure OpenAI). No telemetry."
       ]
     }
     </script>
@@ -153,7 +153,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.80 download sizes: 3.4 MB Linux x64 tar.gz, 3.2 MB Linux ARM64 tar.gz, 26.8 MB macOS DMG (with bundled Qt), 40.4 MB Windows MSI / 32.1 MB NSIS / 36.6 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.80 download sizes: 3.6 MB Linux x64 tar.gz, 3.4 MB Linux ARM64 tar.gz, 28.7 MB macOS DMG (with bundled Qt), 42.5 MB Windows MSI / 33.7 MB NSIS / 38.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
           }
         },
         {
@@ -1393,7 +1393,7 @@
         <div class="stat"><div class="stat-number"><span>226</span></div><div class="stat-label">File Types</div></div>
         <div class="stat"><div class="stat-number"><span>92</span></div><div class="stat-label">Language Lexers</div></div>
         <div class="stat"><div class="stat-number"><span>2</span> GB</div><div class="stat-label">Max File Size</div></div>
-        <div class="stat"><div class="stat-number"><span>25</span></div><div class="stat-label">Regression Suites</div></div>
+        <div class="stat"><div class="stat-number"><span>22</span></div><div class="stat-label">Regression Suites</div></div>
         <div class="stat"><div class="stat-number"><span>0</span></div><div class="stat-label">Electron</div></div>
     </div>
 
@@ -1525,25 +1525,25 @@
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🐧</div>
                 <h4>Linux x64</h4>
-                <p>Binary · 3.4 MB .tar.gz</p>
+                <p>Binary · 3.6 MB .tar.gz</p>
                 <span class="download-btn">.tar.gz</span>
             </a>
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🐧</div>
                 <h4>Linux ARM64</h4>
-                <p>aarch64 · Raspberry Pi 5 · 3.2 MB .tar.gz</p>
+                <p>aarch64 · Raspberry Pi 5 · 3.4 MB .tar.gz</p>
                 <span class="download-btn">.tar.gz</span>
             </a>
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🍎</div>
                 <h4>macOS Apple Silicon</h4>
-                <p>M1 / M2 / M3 / M4 · 26.8 MB .dmg</p>
+                <p>M1 / M2 / M3 / M4 · 28.7 MB .dmg</p>
                 <span class="download-btn">.dmg</span>
             </a>
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🪟</div>
                 <h4>Windows x64</h4>
-                <p>36.6 MB zip · 40.4 MB MSI · 32.1 MB setup.exe</p>
+                <p>38.4 MB zip · 42.5 MB MSI · 33.7 MB setup.exe</p>
                 <span class="download-btn">.zip / .msi / .exe</span>
             </a>
         </div>
@@ -1559,7 +1559,7 @@
             Extract anywhere — USB stick, locked-down work laptop, cloud sync folder.
             Zero registry, zero admin. Ships with two one-click helpers:
             <code style="color:var(--green); font-size: 12px;">register-associations.bat</code>
-            adds Notepatra to Windows "Open with" for 28 file extensions
+            adds Notepatra to Windows "Open with" for 27 file extensions
             (<code>.txt .md .json .py .cpp .js .rs .go .sql .html .css</code> and more),
             <code style="color:var(--green); font-size: 12px;">unregister-associations.bat</code> undoes it.
             HKCU-only — never asks for admin.
@@ -1598,7 +1598,7 @@
             <div>
                 <div class="section-label">AI Powered · Local-first, cloud-optional</div>
                 <div class="section-title">Your AI. Your machine. Your choice.</div>
-                <p style="color: var(--text-dim); margin-bottom: 16px;">Notepatra's AI runs locally by default — pick <strong>Ollama</strong>, <strong>llama.cpp</strong> (loads any GGUF), or any OpenAI-compatible server (LM Studio, Jan, vLLM, KoboldCpp, llamafile, text-generation-webui). When you'd rather use a frontier model, six cloud backends are wired in too: <strong>Ollama Cloud</strong>, <strong>OpenRouter</strong>, <strong>OpenAI</strong>, <strong>Azure OpenAI</strong> (plus the local Ollama / llama.cpp entries). No mandatory API key. No subscription. No telemetry.</p>
+                <p style="color: var(--text-dim); margin-bottom: 16px;">Notepatra's AI runs locally by default — pick <strong>Ollama</strong>, <strong>llama.cpp</strong> (loads any GGUF), or any OpenAI-compatible server (LM Studio, Jan, vLLM, KoboldCpp, llamafile, text-generation-webui). When you'd rather use a frontier model, four cloud backends are wired in too: <strong>Ollama Cloud</strong>, <strong>OpenRouter</strong>, <strong>OpenAI</strong>, <strong>Azure OpenAI</strong> — six total backends in the dropdown alongside the local Ollama + llama.cpp entries. No mandatory API key. No subscription. No telemetry.</p>
                 <p style="color: var(--text-dim); margin-bottom: 24px;">When the regex fixer can't repair your broken JSON — the AI can. Hybrid approach: speed of regex, intelligence of AI.</p>
                 <div class="ai-actions">
                     <span class="ai-tag">Explain Code</span>
@@ -2041,7 +2041,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.80 download sizes: <strong>3.4 MB</strong> Linux x64 tar.gz · <strong>3.2 MB</strong> Linux ARM64 tar.gz · <strong>26.8 MB</strong> macOS DMG · <strong>40.4 MB</strong> Windows MSI / <strong>32.1 MB</strong> NSIS / <strong>36.6 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.80 download sizes: <strong>3.6 MB</strong> Linux x64 tar.gz · <strong>3.4 MB</strong> Linux ARM64 tar.gz · <strong>28.7 MB</strong> macOS DMG · <strong>42.5 MB</strong> Windows MSI / <strong>33.7 MB</strong> NSIS / <strong>38.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>

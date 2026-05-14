@@ -393,7 +393,7 @@
   <!-- ══════════════ Getting started ══════════════ -->
 
   <h2 id="introduction" class="anchor-target">Introduction</h2>
-  <p>Notepatra is a <strong>native</strong> code editor written in C++17 with a Rust core for the heavy-lifting (memory-mapped file I/O, Aho-Corasick search, Myers diff, formatters). It targets <strong>Linux x64 / ARM64, macOS Apple Silicon, and Windows x64</strong>. The bare executable is ~9 MB stripped on each platform; downloads range 3.0 MB (Linux ARM64) to ~39.9 MB (Windows MSI with Qt DLLs bundled).</p>
+  <p>Notepatra is a <strong>native</strong> code editor written in C++17 with a Rust core for the heavy-lifting (memory-mapped file I/O, Aho-Corasick search, Myers diff, formatters). It targets <strong>Linux x64 / ARM64, macOS Apple Silicon, and Windows x64</strong>. The bare executable is ~9 MB stripped on each platform; downloads range 3.4 MB (Linux ARM64) to ~42.5 MB (Windows MSI with Qt DLLs bundled).</p>
   <p>Unlike Electron-based editors, Notepatra does not ship a browser runtime. It uses Qt5 + QScintilla — a battle-tested Scintilla-based editor engine — so 226 file types, 92 language lexers, brace matching, folding, and code completion are built in.</p>
   <p>Unlike cloud-first editors, Notepatra's AI is <strong>local-first</strong>. The AI dock dropdown ships <strong>six backends</strong> as of v0.1.55: <a href="https://ollama.com">Ollama</a> (default · <code>localhost:11434</code>), <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>'s llama-server (loads any GGUF directly · <code>localhost:8080</code>), <a href="https://openrouter.ai">OpenRouter</a> (cloud · 100+ models — Claude, GPT, Gemini, Grok, Kimi, …), <a href="https://ollama.com/cloud">Ollama Cloud</a> (cloud · gpt-oss:120b, qwen3-coder:480b, deepseek-v3.1:671b), <a href="https://openai.com">OpenAI</a> direct, and <a href="https://azure.microsoft.com/en-us/products/ai-services/openai-service">Azure OpenAI</a> (enterprise). To use any other OpenAI-compatible server (<a href="https://lmstudio.ai">LM Studio</a>, <a href="https://jan.ai">Jan</a>, <a href="https://docs.vllm.ai">vLLM</a>, KoboldCpp, llamafile, text-generation-webui), pick the <code>llama.cpp</code> entry and set the base URL in Settings → Preferences → AI. Nothing leaves your computer unless you pick a cloud backend. No mandatory API keys, no subscription, no telemetry.</p>
   <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock and the model gets 5 native tools — <code>read_file</code>, <code>list_dir</code>, <code>search</code>, <code>write_file</code>, <code>apply_diff</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
@@ -407,11 +407,11 @@
   <h3>Quick install (recommended)</h3>
 
   <h4>Linux</h4>
-  <pre><code>curl -sL https://notepatra.org/install.sh | bash</code></pre>
+  <pre><code>curl -fsSL https://notepatra.org/install.sh | sh</code></pre>
   <p>Downloads the latest release for your architecture (x64 or ARM64), verifies SHA-256, installs to <code>~/.local/bin/notepatra</code>, creates a <code>.desktop</code> entry, and registers the hicolor icon theme. Rerun to upgrade.</p>
 
   <h4>macOS (Apple Silicon only)</h4>
-  <pre><code>curl -sL https://notepatra.org/install.sh | bash</code></pre>
+  <pre><code>curl -fsSL https://notepatra.org/install.sh | sh</code></pre>
   <p>Same script. Downloads <code>.dmg</code>, mounts it, copies <code>Notepatra.app</code> to <code>/Applications</code>, unmounts. Intel Macs are not shipped pre-built — build from source.</p>
 
   <h4>Windows (PowerShell)</h4>
@@ -423,12 +423,12 @@
   <table>
     <thead><tr><th>Platform</th><th>Asset</th><th>Size</th></tr></thead>
     <tbody>
-      <tr><td>🐧 Linux x64</td><td><code>notepatra-linux-x64.tar.gz</code></td><td>~3.2 MB</td></tr>
-      <tr><td>🐧 Linux ARM64</td><td><code>notepatra-linux-arm64.tar.gz</code></td><td>~3.0 MB</td></tr>
-      <tr><td>🍎 macOS Apple Silicon</td><td><code>notepatra-macos-arm64.dmg</code></td><td>~26.6 MB</td></tr>
-      <tr><td>🪟 Windows x64 (MSI)</td><td><code>notepatra-&lt;version&gt;.msi</code></td><td>~39.9 MB</td></tr>
-      <tr><td>🪟 Windows x64 (installer)</td><td><code>notepatra-setup-&lt;version&gt;.exe</code></td><td>~32.0 MB</td></tr>
-      <tr><td>🪟 Windows x64 (portable)</td><td><code>notepatra-windows-x64.zip</code></td><td>~36.5 MB</td></tr>
+      <tr><td>🐧 Linux x64</td><td><code>notepatra-linux-x64.tar.gz</code></td><td>~3.6 MB</td></tr>
+      <tr><td>🐧 Linux ARM64</td><td><code>notepatra-linux-arm64.tar.gz</code></td><td>~3.4 MB</td></tr>
+      <tr><td>🍎 macOS Apple Silicon</td><td><code>notepatra-macos-arm64.dmg</code></td><td>~28.7 MB</td></tr>
+      <tr><td>🪟 Windows x64 (MSI)</td><td><code>notepatra-&lt;version&gt;.msi</code></td><td>~42.5 MB</td></tr>
+      <tr><td>🪟 Windows x64 (installer)</td><td><code>notepatra-setup-&lt;version&gt;.exe</code></td><td>~33.7 MB</td></tr>
+      <tr><td>🪟 Windows x64 (portable)</td><td><code>notepatra-windows-x64.zip</code></td><td>~38.4 MB</td></tr>
     </tbody>
   </table>
 
@@ -582,7 +582,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
   <!-- ══════════════ Lite vs Full + packs (v0.1.64+) ══════════════ -->
 
   <h2 id="lite-vs-full" class="anchor-target">Lite mode vs Full mode (v0.1.64+)</h2>
-  <p>Starting in v0.1.64, Notepatra ships two build flavors per release. <strong>Lite</strong> is the default download — a bare ~9 MB binary with no heavy dependencies bundled. <strong>Full</strong> is the opt-in flavor that includes QtWebEngine for inline Vega-Lite chart rendering (≈ 95 MB extra). Heavy features go through <strong>packs</strong> that you install on demand, the way DuckDB ships a tiny core plus optional extensions (<code>httpfs</code>, <code>parquet</code>, <code>spatial</code>, etc.).</p>
+  <p>Starting in v0.1.64, Notepatra ships two build flavors per release. <strong>Lite</strong> is the default download — a bare ~9 MB binary with no heavy dependencies bundled. <strong>Full</strong> is the opt-in flavor that includes QtWebEngine for inline Vega-Lite chart rendering. On macOS and Windows the Full installer is ≈ 95 MB larger than Lite because Qt + QtWebEngine are bundled. On Linux the <code>-full</code> tarball is essentially the same size as the regular tarball — it's still just the bare binary, but linked against <code>libQt5WebEngineWidgets</code> from your distro (install <code>qtwebengine5-dev</code> / <code>qt5-qtwebengine</code> alongside the regular Qt5 deps). Heavy features go through <strong>packs</strong> that you install on demand, the way DuckDB ships a tiny core plus optional extensions (<code>httpfs</code>, <code>parquet</code>, <code>spatial</code>, etc.).</p>
 
   <h3>Why this split?</h3>
   <p>v0.1.63 bundled QtWebEngine into every release for one specific feature — the AI Data Analyst's inline chart card. Most users will never trigger a chart, but every install paid the disk + download cost. v0.1.64 flipped the default: lite by default, charts move to an optional pack. Same architecture mirrors how Cursor / VS Code / Sublime add language servers and renderers — small core, install what you need.</p>
@@ -1268,7 +1268,7 @@ cmake --build build --config Release -j</code></pre>
 Content-Type: application/json
 
 {
-  "model": "qwen3.5:9b",
+  "model": "qwen2.5:7b",
   "prompt": "Fix ONLY the broken parts of this JSON. Make MINIMAL
              changes. PRESERVE the original line order, key order, and
              formatting. Do NOT reorder keys. Do NOT reformat. Return
@@ -1337,7 +1337,7 @@ Content-Type: application/json
     <li><code>teach me json</code></li>
     <li><code>fix my code</code> (too generic — chat handles it normally)</li>
   </ul>
-  <p>Implementation lives in <code>src/ai_intent.{h,cpp}</code>. 49 assertions in <code>test_ai_intent</code> cover positive intents (case-insensitive, mixed phrasing), negatives (explain / describe / teach / show / list / find / grep), and edge cases (multi-line, <code>@file</code> mention, generic "fix my code").</p>
+  <p>Implementation lives in <code>src/ai_intent.{h,cpp}</code>. 51 assertions in <code>test_ai_intent</code> cover positive intents (case-insensitive, mixed phrasing), negatives (explain / describe / teach / show / list / find / grep), and edge cases (multi-line, <code>@file</code> mention, generic "fix my code").</p>
 
   <h2 id="ai-coding-mode" class="anchor-target">Coding Mode — agentic tool-using AI (v0.1.35+)</h2>
   <p>Tick <strong>Coding Mode</strong> in the AI dock and Notepatra becomes an <strong>agent</strong>: the model can read your files, list directories, search, write files, and apply line-level edits — all on its own. The dock flips into a 3-pane layout (file tree · editor · AI chat).</p>
@@ -1444,7 +1444,7 @@ Content-Type: application/json
 
   <h3>Live charts inline in the chat</h3>
   <p><strong>v0.1.64+ note:</strong> charts now ship behind the optional <a href="#packs"><code>charts</code> pack</a>. On a default (lite) install, the AI's <code>generate_chart</code> tool result paints as a <strong>📊 Chart rendering requires the Charts Pack</strong> card with two buttons — <strong>[Install charts pack]</strong> (opens GitHub Releases with the matching <code>-full</code> asset for your OS) and <strong>[View JSON instead]</strong> (shows the raw Vega-Lite spec in a fenced code block). See <a href="#lite-vs-full">Lite vs Full</a> for the upgrade paths. The flow described below is what you see once you're on the Full flavor.</p>
-  <p>When a visualization clarifies the answer, the model emits a fenced <code>```chart</code> block with a small JSON spec. Notepatra parses each one and embeds a <strong>real interactive QChartView</strong> under the assistant's prose:</p>
+  <p>When a visualization clarifies the answer, the model emits a fenced <code>```chart</code> block with a small JSON spec. Notepatra parses each one, translates it to a <strong>Vega-Lite</strong> specification, and renders it inline through an embedded <strong>QtWebEngine</strong> view (using <code>vega-embed</code>) under the assistant's prose:</p>
   <pre><code>```chart
 {
   "type": "bar",
@@ -1607,7 +1607,7 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
     <li><strong>PPT / image data extraction.</strong> Attaching a <code>.pptx</code> currently falls back to the existing text extractor; chart images aren't OCR'd into structured data. v0.1.44+ candidate.</li>
     <li><strong>Real OS-keychain integration</strong> for connection passwords. The XOR obscuration is a placeholder. v0.1.44+ candidate.</li>
     <li><strong>Multi-series charts.</strong> Current spec supports a single <code>x</code> / <code>y</code> per chart; multi-line / stacked-bar in v0.1.44+.</li>
-    <li><strong>Chart export</strong> to PNG / SVG. The QChartView is interactive; right-click → save image as a workaround.</li>
+    <li><strong>Chart export</strong> to PNG / SVG. The Vega-Lite QtWebEngine view is interactive; right-click → save image as a workaround.</li>
   </ul>
 
   <h2 id="thinking-models" class="anchor-target">Thinking models</h2>
