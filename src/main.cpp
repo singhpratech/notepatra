@@ -12,6 +12,10 @@
 #include <csignal>
 #include <exception>
 #ifdef Q_OS_WIN
+// NOMINMAX: windows.h defines min/max as preprocessor macros that collide
+// with std::min/std::max calls elsewhere in this translation unit (and in
+// indirect Qt includes). Define before windows.h is pulled in.
+#  define NOMINMAX
 #  include <windows.h>
 #endif
 #ifdef Q_OS_LINUX
