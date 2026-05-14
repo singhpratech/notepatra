@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.77 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.78 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -466,6 +466,19 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_terminal_ansi.cpp"
     notepatra_add_qt_test(test_terminal_ansi)
     set_tests_properties(test_terminal_ansi PROPERTIES LABELS "smoke;terminal;v0125")
     message(STATUS "Regression test enabled — target: test_terminal_ansi")
+endif()
+
+# v0.1.78 — wire rust-core's cargo unit tests into ctest so the encoding /
+# binary-detection regression tests run as part of release-check.sh.
+# Includes the file_io UTF-16/32 BOM coverage added to fix the "UTF-16 LE
+# .sql files flagged as binary" bug. cargo test in release mode mirrors what
+# the production build links against, so we don't get a debug/release skew.
+if(NOTEPATRA_BUILD_TESTS)
+    add_test(NAME rust_core_tests
+             COMMAND cargo test --release
+             WORKING_DIRECTORY ${RUST_CORE_DIR})
+    set_tests_properties(rust_core_tests PROPERTIES LABELS "unit;rust;encoding;v0178")
+    message(STATUS "Regression test enabled — rust-core cargo test")
 endif()
 
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexers_v0125.cpp")

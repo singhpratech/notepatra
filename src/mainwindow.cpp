@@ -2317,7 +2317,10 @@ void MainWindow::buildMenus() {
     // Section 1 — "Reinterpret as ..." (re-decode from disk)
     auto *encReinterpretMenu = enc->addMenu("Reinterpret bytes as");
     const QStringList reinterpretEncs = {
-        "UTF-8", "UTF-8 BOM", "UTF-16 LE", "UTF-16 BE",
+        "UTF-8", "UTF-8 BOM",
+        "UTF-16 LE", "UTF-16 LE BOM",
+        "UTF-16 BE", "UTF-16 BE BOM",
+        "UTF-32 LE BOM", "UTF-32 BE BOM",
         "ANSI (Windows-1252)", "ISO-8859-1"
     };
     for (const QString &encName : reinterpretEncs) {
@@ -2345,7 +2348,10 @@ void MainWindow::buildMenus() {
     // Section 2 — "Convert to ..." (keep current text, change save format)
     auto *encConvertMenu = enc->addMenu("Convert to");
     const QStringList convertEncs = {
-        "UTF-8", "UTF-8 BOM", "UTF-16 LE", "UTF-16 BE",
+        "UTF-8", "UTF-8 BOM",
+        "UTF-16 LE", "UTF-16 LE BOM",
+        "UTF-16 BE", "UTF-16 BE BOM",
+        "UTF-32 LE BOM", "UTF-32 BE BOM",
         "ANSI (Windows-1252)", "ISO-8859-1"
     };
     for (const QString &encName : convertEncs) {

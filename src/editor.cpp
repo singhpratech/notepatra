@@ -506,22 +506,56 @@ bool Editor::reloadWithEncoding(const QString &name, bool force) {
     f.close();
 
     QString decoded;
-    bool addBom = false;
+    QString finalLabel = name;
     if (name.compare("UTF-8 BOM", Qt::CaseInsensitive) == 0 ||
         name.compare("UTF-8-BOM", Qt::CaseInsensitive) == 0) {
-        // Strip BOM if present, decode the rest as UTF-8.
         if (bytes.startsWith(QByteArray::fromHex("EFBBBF")))
             bytes.remove(0, 3);
         decoded = QString::fromUtf8(bytes);
-        addBom = true;
+        finalLabel = QStringLiteral("UTF-8 BOM");
     } else if (name.compare("UTF-8", Qt::CaseInsensitive) == 0) {
         if (bytes.startsWith(QByteArray::fromHex("EFBBBF")))
             bytes.remove(0, 3);
         decoded = QString::fromUtf8(bytes);
+    } else if (name.compare("UTF-16 LE BOM", Qt::CaseInsensitive) == 0) {
+        if (bytes.startsWith(QByteArray::fromHex("FFFE")))
+            bytes.remove(0, 2);
+        QTextCodec *codec = QTextCodec::codecForName("UTF-16LE");
+        if (!codec) return false;
+        decoded = codec->toUnicode(bytes);
+    } else if (name.compare("UTF-16 BE BOM", Qt::CaseInsensitive) == 0) {
+        if (bytes.startsWith(QByteArray::fromHex("FEFF")))
+            bytes.remove(0, 2);
+        QTextCodec *codec = QTextCodec::codecForName("UTF-16BE");
+        if (!codec) return false;
+        decoded = codec->toUnicode(bytes);
+    } else if (name.compare("UTF-32 LE BOM", Qt::CaseInsensitive) == 0) {
+        if (bytes.startsWith(QByteArray::fromHex("FFFE0000")))
+            bytes.remove(0, 4);
+        const int n = bytes.size() / 4;
+        decoded.reserve(n);
+        const uchar *p = reinterpret_cast<const uchar*>(bytes.constData());
+        for (int i = 0; i < n; ++i) {
+            const uchar *q = p + i * 4;
+            const quint32 cp = quint32(q[0]) | (quint32(q[1]) << 8) |
+                               (quint32(q[2]) << 16) | (quint32(q[3]) << 24);
+            decoded.append(QChar(static_cast<int>(cp)));
+        }
+    } else if (name.compare("UTF-32 BE BOM", Qt::CaseInsensitive) == 0) {
+        if (bytes.startsWith(QByteArray::fromHex("0000FEFF")))
+            bytes.remove(0, 4);
+        const int n = bytes.size() / 4;
+        decoded.reserve(n);
+        const uchar *p = reinterpret_cast<const uchar*>(bytes.constData());
+        for (int i = 0; i < n; ++i) {
+            const uchar *q = p + i * 4;
+            const quint32 cp = (quint32(q[0]) << 24) | (quint32(q[1]) << 16) |
+                               (quint32(q[2]) << 8) | quint32(q[3]);
+            decoded.append(QChar(static_cast<int>(cp)));
+        }
     } else {
         QTextCodec *codec = QTextCodec::codecForName(name.toUtf8());
         if (!codec) {
-            // Common-name aliases to canonical Qt codec names.
             const QString lower = name.toLower();
             if (lower.contains("utf-16 le") || lower == "utf-16le")
                 codec = QTextCodec::codecForName("UTF-16LE");
@@ -538,7 +572,7 @@ bool Editor::reloadWithEncoding(const QString &name, bool force) {
 
     setText(decoded);
     setModified(false);
-    m_encoding = addBom ? QStringLiteral("UTF-8 BOM") : name;
+    m_encoding = finalLabel;
     emit encodingChanged(m_encoding);
     return true;
 }
@@ -726,17 +760,48 @@ bool Editor::saveFile(const QString &path) {
     QByteArray bytes;
     const QString enc = m_encoding;
 
+    // v0.1.78 — full BOM round-trip. Pre-v0.1.78, opening a UTF-16 LE BOM
+    // file (e.g. SQL Server Generate-Scripts output) and saving it would
+    // silently drop the BOM because QTextCodec("UTF-16LE") emits no BOM.
+    // Now we prepend the BOM manually when the label says BOM, so the
+    // file round-trips byte-for-byte the way Notepad++ does.
+    const QString lower = enc.toLower();
     if (enc.compare("UTF-8 BOM", Qt::CaseInsensitive) == 0 ||
         enc.compare("UTF-8-BOM", Qt::CaseInsensitive) == 0) {
         bytes = QByteArray::fromHex("EFBBBF");
         bytes += textOut.toUtf8();
+    } else if (enc.compare("UTF-16 LE BOM", Qt::CaseInsensitive) == 0) {
+        QTextCodec *codec = QTextCodec::codecForName("UTF-16LE");
+        bytes = QByteArray::fromHex("FFFE");
+        if (codec) bytes += codec->fromUnicode(textOut);
+    } else if (enc.compare("UTF-16 BE BOM", Qt::CaseInsensitive) == 0) {
+        QTextCodec *codec = QTextCodec::codecForName("UTF-16BE");
+        bytes = QByteArray::fromHex("FEFF");
+        if (codec) bytes += codec->fromUnicode(textOut);
+    } else if (enc.compare("UTF-32 LE BOM", Qt::CaseInsensitive) == 0) {
+        bytes = QByteArray::fromHex("FFFE0000");
+        for (const QChar c : textOut) {
+            const quint32 cp = c.unicode();
+            bytes.append(char(cp & 0xFF));
+            bytes.append(char((cp >> 8) & 0xFF));
+            bytes.append(char((cp >> 16) & 0xFF));
+            bytes.append(char((cp >> 24) & 0xFF));
+        }
+    } else if (enc.compare("UTF-32 BE BOM", Qt::CaseInsensitive) == 0) {
+        bytes = QByteArray::fromHex("0000FEFF");
+        for (const QChar c : textOut) {
+            const quint32 cp = c.unicode();
+            bytes.append(char((cp >> 24) & 0xFF));
+            bytes.append(char((cp >> 16) & 0xFF));
+            bytes.append(char((cp >> 8) & 0xFF));
+            bytes.append(char(cp & 0xFF));
+        }
     } else if (enc.compare("UTF-8", Qt::CaseInsensitive) == 0 || enc.isEmpty()) {
         bytes = textOut.toUtf8();
     } else {
         // Pick the right codec by name, with friendly aliases.
         QTextCodec *codec = QTextCodec::codecForName(enc.toUtf8());
         if (!codec) {
-            const QString lower = enc.toLower();
             if (lower.contains("utf-16 le") || lower == "utf-16le")
                 codec = QTextCodec::codecForName("UTF-16LE");
             else if (lower.contains("utf-16 be") || lower == "utf-16be")
@@ -753,7 +818,6 @@ bool Editor::saveFile(const QString &path) {
                 QString("Could not find a codec for %1. Falling back to UTF-8.").arg(enc));
             bytes = textOut.toUtf8();
         } else {
-            // QTextCodec::fromUnicode emits a BOM for UTF-16 by default.
             bytes = codec->fromUnicode(textOut);
         }
     }

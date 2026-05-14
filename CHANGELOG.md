@@ -7,6 +7,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.78] — 2026-05-13
+
+**Encoding & file-open fixes — UTF-16 / UTF-32 BOM parity with Notepad++.**
+
+### Fixed
+
+- **`rust-core/src/file_io.rs`** — BOM detection now runs before the null-byte binary heuristic, so UTF-16 LE text (50 % nulls by design, e.g. SQL Server `Generate Scripts` exports, `sqlcmd -o`, PowerShell `Out-File`, Java `-Dfile.encoding=UTF-16`) is no longer mis-flagged as binary. UTF-32 LE/BE BOMs are detected before UTF-16 LE so the shared `FF FE` prefix isn't claimed by the wrong codec. No-BOM UTF-16 is sniffed via even/odd null-column ratio for BOM-less PowerShell / Java output.
+- **`rust-core/src/file_io.rs`** — manual UTF-32 LE/BE decoder added because `encoding_rs` intentionally doesn't support UTF-32. Notepatra now opens UTF-32 files that previously rendered as garbled UTF-16.
+- **`src/editor.cpp`** — `saveFile()` and `reloadWithEncoding()` preserve UTF-16 / UTF-32 BOMs on round-trip. Pre-v0.1.78 the BOM was silently stripped on save because `QTextCodec("UTF-16LE")` emits no BOM. Files now round-trip byte-for-byte the way Notepad++ does.
+
+### Added
+
+- **`src/mainwindow.cpp`** — Encoding menu now lists the new BOM variants: `UTF-16 LE BOM`, `UTF-16 BE BOM`, `UTF-32 LE BOM`, `UTF-32 BE BOM`.
+- **`rust-core/src/file_io.rs`** — 11 new unit tests covering UTF-8, UTF-8 BOM, UTF-16 LE/BE with and without BOM, UTF-32 LE/BE BOM, real binary refusal, empty files, and Windows-1252 fallback.
+- **`CMakeLists.txt`** — `rust_core_tests` ctest target wires `cargo test --release` into `scripts/release-check.sh`, so the encoding suite runs before every future tag.
+
+---
+
 ## [0.1.77] — 2026-05-12
 
 **MSI hotfix — finishes the v0.1.74 work so notepatra and notepatra-local-ai install side-by-side cleanly.**
