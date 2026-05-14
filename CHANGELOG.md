@@ -7,6 +7,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.82] — 2026-05-14
+
+**Security hardening sweep (6 attack surfaces audited) + tab-numbering fix. No UX changes beyond the AI Base URL warn-confirm dialog. Safe drop-in upgrade.**
+
+### Fixed
+
+- **`src/mainwindow.cpp::newFile()` + `updateTabTitle()`** — untitled tab names no longer "go back" when a lower-indexed tab is closed, and no longer collide with names restored from session. Two cooperating bugs: (1) `updateTabTitle()` re-derived the displayed name from `index + 1` on every modification event, so closing "new 1" made the next keystroke in the existing "new 2" rename it to "new 1"; (2) `m_newCount` was a plain `int = 0` that didn't survive restart, so session restore brought back "new 5" then Ctrl+N created "new 2" — lower than the visible saved tab. `newFile()` now scans visible labels and assigns `max(existing N) + 1`; `updateTabTitle()` preserves the assigned label for untitled tabs (only toggles the `*` modification marker).
+
+### Changed (security)
+
+- **`docs/install.sh` + `docs/install.ps1` + top-level `install.sh`** — SHA-256 verification is now hard-fail. Previously the script soft-failed (silently skipped verification) if the `SHA256SUMS` fetch returned a network error or 404. An attacker on a hostile network who could block just the sums file while letting the binary through would bypass verification entirely. Both scripts now refuse to install if sums are unreachable or the artifact is not listed. `curl --proto '=https' --tlsv1.2` on every fetch, `umask 077` before `mktemp -d`.
+- **`docs/install.sh` + `docs/install.ps1` + `src/updater.cpp`** — when `cosign` is on `PATH`, the install scripts and auto-updater now run `cosign verify-blob` with the cert-identity pinned to a literal workflow + tag (was: a regex matching any workflow in the repo). Releases pre-v0.1.60 without `.sig`/`.pem` assets gracefully fall back to SHA-only.
+- **`src/preferences.cpp`** — AI Base URL validation. Rejects malformed URLs, rejects plain `http://` to public hosts (API key would be sent in plaintext), and pops a warn-confirm dialog for any host outside the vendor allowlist (OpenAI, OpenRouter, Anthropic, Google AI, Ollama, Mistral, Groq, Cohere, Azure OpenAI). Closes a known API-key-exfiltration phishing vector ("use this faster mirror" URLs).
+- **`src/credscrub.cpp`** — seven new credential patterns redacted before prompts leave the app: Cloudflare `CFPAT-`, DigitalOcean `dop_v1_`, npm `npm_`, Twilio `SK…`/`AC…`, Azure Storage `AccountKey=`, GCP service-account JSON, HTTP `X-API-Key` / `Authorization` headers.
+- **`.github/workflows/build.yml` + `codeql.yml` + `quality.yml`** — all 38 of 38 `uses:` lines are now SHA-pinned (was 0/38). Highest-risk three (`actions/attest-build-provenance`, `softprops/action-gh-release`, `sigstore/cosign-installer`) pinned first. Six `dtolnay/rust-toolchain@stable` (a *branch* ref) also pinned by SHA.
+- **`.github/workflows/install-canary.yml`** — new daily + on-release workflow that diffs the live `notepatra.org/install.sh`/`.ps1` against the repo's `docs/` copies. Opens an issue on drift (catches Pages / DNS / registrar compromise).
+- **`SECURITY.md`** — reconciled with the live repo ruleset. Previously claimed "branch protection: required reviews" — the ruleset has `required_approving_review_count: 0` (solo-maintainer pattern). The documented cosign verify command is also tightened from a permissive regex to a literal workflow + tag pin.
+- **`scripts/release-check.sh`** — three new required gates: `cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --check`, `cargo audit --deny warnings` (auto-installs `cargo-audit` if missing).
+- **Repo settings (via `gh api`)** — Dependabot security updates enabled (was disabled). Tag protection ruleset added for `refs/tags/v*` (no deletion, no force-push, signed-tag required).
+- **`src/fontpack.h` + `fontpack.cpp`** — added `expectedSha256` field to `Entry`; the installer verifies downloads against the pinned hash when set. SHAs themselves will be populated per font in follow-up commits.
+
+### Internal
+
+- **`docs/index.html`** — removed the stale `YOUR_BING_VERIFICATION_TOKEN_HERE` Bing Webmaster placeholder meta tag.
+
+### What still needs the maintainer
+
+Five external actions can't be done from CI and are tracked in
+`SECURITY.md`: hardware-key (FIDO2) 2FA on the GitHub account, CAA DNS
+record on `notepatra.org`, DNSSEC + registrar-lock at the registrar,
+CT-log monitoring.
+
+---
+
 ## [0.1.81] — 2026-05-14
 
 **Polish + housekeeping release. Linux updater dialog fix + GitHub Actions / RustCrypto / sqlformat dependency refresh. No new features, no UX changes.**

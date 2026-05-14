@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.81 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.82 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -1262,6 +1262,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_options_actually_w
         src/gutter_hunk_popup.cpp
         src/diff_view.cpp
         src/lexerutils.cpp
+        src/network_policy.cpp
         src/npp_palette.cpp
         src/rustbridge.cpp
         src/lexer_go.cpp
@@ -1282,6 +1283,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_options_actually_w
         Qt5::Core
         Qt5::Gui
         Qt5::Widgets
+        Qt5::Network
         Qt5::PrintSupport
         ${QSCINTILLA_LIB}
         ${RUST_LIB}

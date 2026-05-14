@@ -1392,10 +1392,30 @@ Editor *MainWindow::currentEditor() {
 // ── File operations ──
 
 Editor *MainWindow::newFile() {
-    m_newCount++;
+    // Dynamically pick the next "new N" by scanning visible untitled tabs.
+    // Replaces a plain `m_newCount++` that had two failure modes:
+    //   (a) After session restore brought back "new 5", the fresh counter
+    //       started at 1, so the next new tab would be "new 2" — lower than
+    //       the visible saved tab.
+    //   (b) See updateTabTitle below — closing a lower-indexed tab used to
+    //       renumber every higher untitled tab from its current index.
+    // The visible-tab scan is monotonic over what's on screen and self-heals
+    // after close / restore / rename, without needing the counter persisted.
+    int nextN = 1;
+    static const QRegularExpression kNewNameRe(QStringLiteral("^new (\\d+)$"));
+    for (int i = 0; i < m_tabs->count(); i++) {
+        QString existing = m_tabs->tabText(i);
+        existing.remove(QStringLiteral(" *"));
+        existing.remove(QStringLiteral(" [recovered]"));
+        const auto m = kNewNameRe.match(existing);
+        if (m.hasMatch()) {
+            nextN = qMax(nextN, m.captured(1).toInt() + 1);
+        }
+    }
+    m_newCount = nextN;
     auto *editor = new Editor(this);
     editor->applyTheme(Config::instance().theme);
-    int idx = m_tabs->addTab(editor, QString("new %1").arg(m_newCount));
+    int idx = m_tabs->addTab(editor, QString("new %1").arg(nextN));
     // v0.1.68 — preserve v0.1.61 background-tab UX: Ctrl+N while the AI dock
     // is fullscreen creates the new tab in the background (focus shifts but
     // the dock stays fullscreen so the user can keep using AI). The flag is
@@ -1708,9 +1728,17 @@ void MainWindow::updateTabTitle(int index) {
     if (index < 0) return;
     auto *e = m_tabs->editorAt(index);
     if (!e) return;
-    QString name = e->filePath().isEmpty()
-                       ? QString("new %1").arg(index + 1)
-                       : QFileInfo(e->filePath()).fileName();
+    QString name;
+    if (!e->filePath().isEmpty()) {
+        name = QFileInfo(e->filePath()).fileName();
+    } else {
+        // Untitled tab — preserve the assigned name across tab close/reorder.
+        // Previously this re-derived from `index + 1`, which made tabs appear
+        // to "rename themselves" lower when a lower-indexed tab was closed
+        // (e.g. close "new 1" → existing "new 2" became "new 1").
+        name = m_tabs->tabText(index);
+        name.remove(QStringLiteral(" *"));
+    }
     if (e->isModified()) name += " *";
     m_tabs->setTabText(index, name);
     updateTitle();

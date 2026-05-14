@@ -49,7 +49,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~9 MB stripped across platforms; full downloads are 3.6 MB (Linux x64 tar.gz), 28.7 MB (macOS DMG with bundled Qt), 42.5 MB (Windows MSI with bundled Qt DLLs). 226 file types. 92 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.81",
+      "softwareVersion": "0.1.82",
       "fileSize": "9 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -1968,50 +1968,64 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.81 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.82 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-05-14</span>
-                        <span>· Polish + housekeeping. Linux in-app updater confirm dialog is now file-suffix-aware (no more "move the new AppImage into place" when a <code>.tar.gz</code> was actually downloaded). Plus a deep dependency refresh: GitHub Actions matrix past the Node 20 cliff, RustCrypto family to 0.11, sqlformat to 0.5, full <code>cargo fmt</code> + <code>cargo clippy -- -D warnings</code> sweep across <code>rust-core/</code>.</span>
+                        <span>· Deep security hardening sweep across 6 attack surfaces (install scripts, release pipeline, supply chain, binary network, website, repo settings) + a long-standing tab-numbering fix. Hard-fail SHA verify on install. Cosign verification on install scripts and in-app updater. All 38 of 38 GitHub Actions SHA-pinned. AI Base URL guarded against phishing. Tab names no longer "go back" when you close a sibling.</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>🐧 Fix — Linux updater dialog now matches the downloaded file type</h5>
+                        <h5>🔒 Security — install scripts hard-fail SHA verification</h5>
                         <ul>
-                            <li><strong>The bug.</strong> When the in-app updater prompted you to install a new release on Linux, the confirmation dialog said <em>"We'll open the folder so you can move the new AppImage into place"</em> regardless of what was downloaded. We ship the <code>.AppImage</code> for Linux x86_64 only — on <strong>Linux ARM64</strong> the picker falls back to the <code>.tar.gz</code> at priority 30, so ARM64 users were told to move an AppImage they didn't have. (The original symptom in <a href="https://github.com/singhpratech/notepatra/issues/12">issue #12</a> was reported against v0.1.17, which shipped no AppImage at all — same fallback path.)</li>
-                            <li><strong>The fix.</strong> <code>src/updater.cpp::installReleaseInteractive()</code> now branches on the actual downloaded filename: <code>.appimage</code> → original AppImage instructions + <code>chmod +x</code> reminder; <code>.tar.gz</code>/<code>.tgz</code>/<code>.tar.xz</code> → copy-paste-ready <code>tar xzf … &amp;&amp; mv notepatra ~/.local/bin/</code> example; anything else → generic fallback. Closes <a href="https://github.com/singhpratech/notepatra/issues/12">issue #12</a> finding 2.</li>
-                            <li><strong>Subtle note.</strong> The dialog is rendered by the <em>currently-running</em> binary. Linux ARM64 users still see the old "AppImage" text when upgrading v0.1.80 → v0.1.81; the fix kicks in from v0.1.81 → v0.1.82 onward. Linux x86_64 users get the AppImage path (text was correct both before and after).</li>
+                            <li><strong>The bug.</strong> Pre-v0.1.82 <code>docs/install.sh</code> and <code>docs/install.ps1</code> soft-failed: <code>if curl ... 2&gt;/dev/null; then verify; fi</code> proceeded to install if the <code>SHA256SUMS</code> fetch returned a network error or 404. An attacker on a hostile network who could MITM just the sums file (while letting the binary through) would bypass verification entirely. The stale <code>SHA256SUMS.v0.1.0.txt</code> fallback URL ensured every release ≥ v0.1.1 fell through to the silent-skip path.</li>
+                            <li><strong>The fix.</strong> Both scripts now hard-fail if sums are unreachable or the artifact is not listed in them. Every <code>curl</code> uses <code>--proto '=https' --tlsv1.2</code>. <code>umask 077</code> set before <code>mktemp -d</code>.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🤖 Housekeeping — GitHub Actions matrix past the Node 20 cliff</h5>
+                        <h5>🔏 Security — cosign verification on install + auto-updater</h5>
                         <ul>
-                            <li><strong><code>actions/checkout</code> v4 → v6</strong> (#5), <strong><code>actions/download-artifact</code> v4 → v8</strong> (#4), <strong><code>github/codeql-action</code> v3 → v4</strong> (#8). Removes the Node 20 deprecation warnings that printed on every build; clears the June 2026 hard-deprecation cliff. Same release pipeline, same 51 signed artifacts, same cosign keyless OIDC + SLSA build provenance.</li>
-                            <li><code>actions/upload-artifact</code> v4 → v7 (PR #2) is still queued for dependabot rebase — rolls in with v0.1.82.</li>
+                            <li><strong>Install scripts.</strong> When <code>cosign</code> is on <code>PATH</code>, <code>install.sh</code> and <code>install.ps1</code> now fetch <code>&lt;artifact&gt;.sig</code> + <code>&lt;artifact&gt;.pem</code> and run <code>cosign verify-blob</code> automatically. The <code>cert-identity-regexp</code> is pinned to <code>^https://github.com/singhpratech/notepatra/.github/workflows/.+@refs/tags/&lt;tag&gt;$</code> — was a permissive regex matching any workflow in the repo.</li>
+                            <li><strong>Auto-updater (<code>src/updater.cpp</code>).</strong> Same verification, same literal cert-identity pin. Hard-fails on mismatch; releases pre-v0.1.60 without <code>.sig</code>/<code>.pem</code> assets gracefully fall back to SHA-only.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🦀 Housekeeping — Rust dependency refresh</h5>
+                        <h5>📌 Security — all 38 GitHub Actions SHA-pinned</h5>
                         <ul>
-                            <li><strong>RustCrypto family to 0.11</strong>: <code>md-5</code>, <code>sha1</code>, <code>sha2</code> all 0.10 → 0.11 (closes dependabot #6 / #7 / #11). The 0.10 → 0.11 release moved the digest output from <code>generic-array::GenericArray</code> to <code>hybrid-array::Array</code>, which no longer impls <code>LowerHex</code>. Updated <code>rust-core/src/hash.rs::compute_hash()</code> to use a small <code>hex_encode()</code> helper. <strong>MD5/SHA-1/SHA-256/SHA-512 hex output is byte-identical to v0.1.80.</strong></li>
-                            <li><strong><code>sqlformat</code> 0.3.5 → 0.5.0</strong> (closes #9). <code>FormatOptions</code> grew six new fields; switched to <code>..FormatOptions::default()</code> so future bumps don't keep breaking this site.</li>
-                            <li><strong><code>libc</code> 0.2.183 → 0.2.184</strong> (closes #10). Routine patch bump.</li>
+                            <li><strong>0/38 → 38/38.</strong> Every <code>uses:</code> line in <code>build.yml</code>, <code>codeql.yml</code>, <code>quality.yml</code> is now 40-char SHA-pinned with a <code># v&lt;major&gt;</code> trailing comment. Highest-risk three first: <code>actions/attest-build-provenance</code>, <code>softprops/action-gh-release</code>, <code>sigstore/cosign-installer</code>. Six <code>dtolnay/rust-toolchain@stable</code> (a <em>branch</em> ref the action owner could fast-forward) are also pinned.</li>
+                            <li><strong>New <code>.github/workflows/install-canary.yml</code></strong> — daily + on-release diff of the served <code>notepatra.org/install.{sh,ps1}</code> vs the repo's <code>docs/</code> copies. Opens an issue on drift (catches GitHub Pages / DNS / registrar compromise).</li>
+                            <li><strong>Tag protection ruleset</strong> added for <code>refs/tags/v*</code> (no deletion / no force-push / signed-tag required). <strong>Dependabot security updates</strong> enabled.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🧹 Housekeeping — <code>rust-core/</code> code-quality sweep</h5>
+                        <h5>🔑 Security — AI Base URL validation</h5>
                         <ul>
-                            <li><strong><code>cargo fmt</code></strong> across <code>bracket_fix.rs</code>, <code>file_io.rs</code>, <code>json_fmt.rs</code>, <code>lib.rs</code>, <code>sql_fmt.rs</code> — 191 LoC reformatted, zero behaviour changes. Pre-existing drift surfaced by the <code>rust-quality</code> CI gate.</li>
-                            <li><strong><code>cargo clippy -- -D warnings</code></strong> cleared four pre-existing lints: <code>explicit_auto_deref</code> in <code>file_io.rs</code>, <code>if_same_then_else</code> + <code>redundant_closure</code> in <code>sql_fmt.rs</code>, two <code>collapsible_match</code> in <code>json_fmt.rs</code>.</li>
-                            <li>130/130 <code>cargo test</code> + 31/31 <code>ctest</code> still pass.</li>
+                            <li><strong>The risk.</strong> <code>Preferences → AI → Base URL</code> used to accept any string with no validation. A "blog post recommends faster mirror at https://faster-openai.example/v1" social-engineering attack → user pastes URL → next chat sends <code>Authorization: Bearer sk-…</code> to the attacker. API key stolen.</li>
+                            <li><strong>The fix.</strong> <code>src/preferences.cpp</code> validates on save: malformed URLs rejected, plain <code>http://</code> to public hosts rejected (API key would travel in plaintext), and any host outside the vendor allowlist (OpenAI / OpenRouter / Anthropic / Google AI / Ollama / Mistral / Groq / Cohere / Azure OpenAI) pops a warn-confirm dialog.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧪 Fix — tab-numbering no longer "goes back"</h5>
+                        <ul>
+                            <li><strong>The bug.</strong> Two cooperating bugs in <code>src/mainwindow.cpp</code>: (a) <code>updateTabTitle()</code> re-derived the displayed name from <code>index + 1</code> on every modification event — closing "new 1" made the next keystroke in the surviving "new 2" rename it to "new 1"; (b) <code>m_newCount</code> was a plain <code>int = 0</code> reset on every launch — session restore brought back "new 5" but the next <code>Ctrl+N</code> created "new 2" (lower than visible).</li>
+                            <li><strong>The fix.</strong> <code>newFile()</code> now scans visible tab labels and assigns <code>max(existing N) + 1</code> (defaults to 1 when no untitled tabs are visible). <code>updateTabTitle()</code> for untitled tabs preserves the assigned label instead of re-deriving from index.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧹 Security — credential scrubber + release gate</h5>
+                        <ul>
+                            <li><strong><code>src/credscrub.cpp</code></strong> — seven new patterns redacted before prompts leave the app: Cloudflare <code>CFPAT-</code>, DigitalOcean <code>dop_v1_</code>, npm <code>npm_</code>, Twilio <code>SK…</code>/<code>AC…</code>, Azure Storage <code>AccountKey=</code>, GCP service-account JSON, HTTP <code>X-API-Key</code> / <code>Authorization</code> header values.</li>
+                            <li><strong><code>scripts/release-check.sh</code></strong> — three new required gates: <code>cargo clippy --all-targets --all-features -- -D warnings</code>, <code>cargo fmt --check</code>, <code>cargo audit --deny warnings</code> (auto-installs <code>cargo-audit</code> when missing).</li>
+                            <li><strong><code>src/fontpack.h</code> / <code>.cpp</code></strong> — added <code>expectedSha256</code> field to <code>Entry</code>; installer verifies downloads when set. Groundwork for upstream-org-compromise protection (font SHAs populated incrementally).</li>
+                            <li><strong><code>SECURITY.md</code></strong> reconciled with the live repo ruleset; cosign verify recipe updated to the literal cert-identity pin.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.81">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.82">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.81">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.82">Commits</a>
                 </div>
             </div>
             <!-- v0.1.76 policy: only the LATEST release detail card is shown
