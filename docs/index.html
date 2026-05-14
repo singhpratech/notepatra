@@ -910,7 +910,9 @@
             gap: 16px;
             flex-wrap: wrap;
         }
-        .version-meta span { white-space: nowrap; }
+        .version-meta span:first-child,
+        .version-meta span:last-child { white-space: nowrap; }
+        .version-meta span:not(:first-child):not(:last-child) { white-space: normal; min-width: 0; }
         .version-changes {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
