@@ -1,0 +1,79 @@
+# Notepatra palette preview — synthetic; no real data
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app
+  namespace: demo
+  labels: &common-labels
+    app: web
+    tier: frontend
+    env: staging
+spec:
+  replicas: 3
+  selector:
+    matchLabels: *common-labels
+  template:
+    metadata:
+      labels: *common-labels
+    spec:
+      containers:
+        - name: web
+          image: "registry.example.com/web:1.4.2"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          env:
+            - name: GREETING
+              value: "hello"
+            - name: TIMEOUT_SECONDS
+              value: '30'
+            - name: PI
+              value: "3.14159"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "starting"
+              exec /usr/local/bin/server
+          lifecycle:
+            postStart:
+              exec:
+                command: >
+                  /bin/sh -c
+                  "echo ready"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: false
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      nodeSelector:
+        disktype: ssd
+      tolerations: []
+      enableServiceLinks: ~
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-app
+  namespace: demo
+spec:
+  type: ClusterIP
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

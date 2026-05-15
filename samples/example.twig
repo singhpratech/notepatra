@@ -1,0 +1,49 @@
+{# Notepatra palette preview — synthetic; no real data #}
+{% extends "base.html.twig" %}
+
+{% set site_name   = "Notepatra Demo" %}
+{% set admin_email = "alice@example.com" %}
+
+{% block title %}{{ site_name }} — Users{% endblock %}
+
+{% macro user_row(user, highlight = false) %}
+  <tr class="{{ highlight ? 'highlight' : '' }}">
+    <td>{{ user.id }}</td>
+    <td>{{ user.name|upper }}</td>
+    <td>{{ user.email|default('none@example.com') }}</td>
+    <td>{{ user.role|capitalize }}</td>
+  </tr>
+{% endmacro %}
+
+{% block content %}
+  <h1>{{ site_name }}</h1>
+
+  {% if users is defined and users is not empty %}
+    <p>Total: {{ users|length }} user{{ users|length != 1 ? 's' : '' }}.</p>
+
+    <table>
+      <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th></tr></thead>
+      <tbody>
+        {% for u in users %}
+          {% set is_admin = u.role == 'admin' %}
+          {{ _self.user_row(u, is_admin) }}
+        {% else %}
+          <tr><td colspan="4">empty</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <ul>
+      {% for u in users if u.active %}
+        <li>{{ loop.index }}. {{ u.name }} &lt;{{ u.email }}&gt;</li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>No users — contact {{ admin_email }}.</p>
+  {% endif %}
+
+  {# Tests + filters chained #}
+  <p>{{ 'hello'|upper|reverse }}</p>
+  <p>Today: {{ "now"|date("Y-m-d") }}</p>
+  <p>{{ 42 is odd ? 'odd' : 'even' }}</p>
+{% endblock %}

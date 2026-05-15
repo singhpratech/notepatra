@@ -1,0 +1,48 @@
+{% comment %} Notepatra palette preview — synthetic; no real data {% endcomment %}
+
+{% assign site_name   = "Notepatra Demo" %}
+{% assign admin_email = "alice@example.com" %}
+{% assign users       = site.users | default: empty %}
+
+<h1>{{ site_name }}</h1>
+
+{% if users.size == 0 %}
+  <p>No users yet. Contact {{ admin_email }}.</p>
+{% else %}
+  <p>Total: {{ users.size }} user{% if users.size != 1 %}s{% endif %}.</p>
+
+  <ul>
+    {% for user in users %}
+      {% if user.active %}
+        <li>
+          {{ forloop.index }}.
+          <strong>{{ user.name | upcase }}</strong>
+          &lt;{{ user.email | default: "none@example.com" }}&gt;
+          {% case user.role %}
+            {% when "admin" %}
+              <span class="badge admin">admin</span>
+            {% when "editor" %}
+              <span class="badge editor">editor</span>
+            {% else %}
+              <span class="badge viewer">viewer</span>
+          {% endcase %}
+        </li>
+      {% endif %}
+    {% else %}
+      <li>No active users.</li>
+    {% endfor %}
+  </ul>
+{% endif %}
+
+{% capture greeting %}
+  Hello, {{ users.first.name | default: "stranger" }}!
+{% endcapture %}
+<p>{{ greeting | strip }}</p>
+
+{% assign numbers = "1,2,3,4,5" | split: "," %}
+<p>Sum-friendly list: {{ numbers | join: " + " }}</p>
+
+<p>Created: {{ "now" | date: "%Y-%m-%d" }}</p>
+<p>Truncated bio: {{ "Long bio text goes here." | truncate: 12 }}</p>
+
+{% include "_footer.liquid" %}

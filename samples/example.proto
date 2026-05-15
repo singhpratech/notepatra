@@ -1,0 +1,60 @@
+// Notepatra palette preview — synthetic; no real data
+syntax = "proto3";
+
+package notepatra.demo.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+option java_package = "com.example.notepatra.demo.v1";
+option go_package   = "example.com/notepatra/demo/v1;demopb";
+
+// User describes a single account.
+message User {
+  string id              = 1;
+  string display_name    = 2;
+  string email           = 3;
+  Role   role            = 4;
+  bool   active          = 5;
+  int32  login_count     = 6;
+  int64  bytes_uploaded  = 7;
+  float  score           = 8;
+  double rating          = 9;
+  bytes  avatar          = 10;
+  repeated string tags   = 11;
+  map<string, string> attributes = 12;
+  google.protobuf.Timestamp created_at = 13;
+
+  reserved 100, 101, 200 to 210;
+  reserved "legacy_field";
+
+  oneof contact {
+    string phone     = 20;
+    string telegram  = 21;
+    string matrix_id = 22;
+  }
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_VIEWER      = 1;
+  ROLE_EDITOR      = 2;
+  ROLE_ADMIN       = 3;
+}
+
+message ListUsersRequest {
+  int32  page_size  = 1;
+  string page_token = 2;
+}
+
+message ListUsersResponse {
+  repeated User  users           = 1;
+  string         next_page_token = 2;
+}
+
+service UserService {
+  rpc GetUser   (User)              returns (User);
+  rpc ListUsers (ListUsersRequest)  returns (ListUsersResponse);
+  rpc DeleteUser(User)              returns (google.protobuf.Empty);
+  rpc StreamUsers(google.protobuf.Empty) returns (stream User);
+}

@@ -7,6 +7,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.84] — 2026-05-15
+
+**Biggest syntax-highlighting refresh since v0.1.31.** Every supported language got reserved-word coverage updated from primary vendor sources, two brand-new lexers (Plain Text + CSV) replace previous monochrome fallbacks, and the Markdown / YAML / CSS palettes got long-overdue contrast and tint work across Light + Dark + Monokai themes.
+
+### Added
+
+- **`src/sql_keywords.h`** — comprehensive SQL keyword union synthesised from six primary vendor sources: T-SQL (learn.microsoft.com), PostgreSQL (Appendix C), MySQL (dev.mysql.com), **DuckDB** (duckdb.org/docs/sql/keywords_and_identifiers — first release with full DuckDB SQL coverage incl. SUMMARIZE, EXCLUDE, ASOF, POSITIONAL, BERNOULLI, HUGEINT family, read_csv/read_parquet table funcs), SQLite, Oracle. Three union strings (RESERVED / BUILTIN_FUNCTIONS / BUILTIN_TYPES) feed `SCI_SETKEYWORDS` slots 0/1/4.
+- **`src/lang_keywords.h`** — primary-source keyword constants for ~50 languages. Mainstream compiled (Rust, Go, C23, C++23, C#, Java 21, Kotlin, Swift, Zig, D); dynamic / scripting (Python 3.12 incl. `type` soft keyword, JavaScript ES2024, TypeScript, Ruby, PHP 8, Perl, Lua 5.4, Bash, PowerShell PascalCase cmdlets, CoffeeScript, Tcl); niche / modern (Dart, Solidity, Vala, Hack, Julia, R, Protobuf proto3, F#, Scala 3, Groovy, Apex, GDScript Godot 4, Nim, Crystal, Elixir, Cython, Mojo, HCL, Thrift, GraphQL); markup / data / config (HTML5 — 113 elements + standard attrs, XML, CSS — ~370 properties + at-rules + pseudo-classes/elements, Markdown, YAML 1.2, TOML, JSON, JSON5, Dockerfile, Makefile, Diff, Fish, Nushell, Gitconfig, BibTeX, LaTeX, PostScript, Pascal, Fortran 2018, MATLAB/Octave, SystemVerilog IEEE 1800-2017, VHDL, NASM/MASM).
+- **`src/lexerutils.{h,cpp}::populateExtraKeywords(QsciScintilla*, const QString& lang)`** — sends `SCI_SETKEYWORDS` to the editor right after `setLexer()` for every primary-source-researched language. Called from `Editor::applyLexer()` between `setLexer()` and `applyNotepadPlusPalette()`.
+- **`src/lexer_plaintext.{h,cpp}`** — `LexerPlainText` (NEW) custom `QsciLexerCustom` subclass. Regex-paints URLs (http/https/www), email addresses, numbers + currency, ALL-CAPS heading lines (3+ uppercase words on their own line), double-quoted / single-quoted / backtick-fenced strings. Replaces the v0.1.83 monochrome `.txt` fallback. Hard-cap `paint()` closure routes every `setStyling` call through a `wantBytes` counter to guarantee cumulative bytes never exceed `(end - start)`.
+- **`src/lexer_csv.{h,cpp}`** — `LexerCsv` (NEW) custom Scintilla lexer for `.csv` / `.tsv`. Header row painted bold, data cells alternate Column A / Column B colours for striped-table visual, separators distinct (operator colour), quoted fields including `""` escapes as strings, numeric cells distinct from text cells, `#`-prefixed comment lines styled separately. Same hard-cap pattern as Plain Text.
+- **`samples/`** — 74 rich exemplar files (one per supported lexer) totalling ~128 KB. All synthetic — `alice@example.com` / Alice/Bob/Carol placeholders / RFC-5737 doc IPs only. Acts as eyeball-verification corpus and palette regression fixture.
+
+### Fixed
+
+- **`src/lexer_extras.cpp`** — 9 confirmed keyword bugs from primary-source audit. Dart adds `augment` + `Record` (Dart 3); Solidity adds `blockhash` + `blobhash` (EIP-4844, Solidity 0.8.24+); Julia adds `outer` + `public` (1.11) + `Float16`; Protobuf adds WKT siblings (`BytesValue`, `UInt32Value`, `UInt64Value`); F# adds `ValueOption` + `ValueTuple` (4.5+); HCL adds template directives `if` / `else` / `endfor` / `endif`; GDScript adds `@rpc` + `@tool` + `@warning_ignore` + `namespace` + `Rect2i` + `Vector4i`; Mojo adds `ref` (24.x reference binding); Groovy fixes typo `yields`→`yield` and adds `volatile`. R and Crystal verified already correct.
+- **`src/npp_palette.cpp` Markdown branch** — H1–H6 contrast gradient. Previously all six header levels shared a single `npKeyword` colour via the generic `d.contains("header")` matcher. Now H1 strongest bold, H6 lightest italic; uses existing per-theme palette variables so Light / Dark / Monokai inherit automatically.
+- **`src/npp_palette.cpp` Markdown branch** — inline `code` and ```code blocks``` get a paper-tint chip (`#F4F4F4` Light / `#2A2A2A` Dark / `#3E3D32` Monokai) so they visually read as code chips, not just coloured text.
+- **`src/npp_palette.cpp` YAML branch** — unquoted values (style 0 / Default) recoloured to a desaturated value-tint (`#5A5A5A` Light / `#B8B89F` Dark / `#E6DB74` Monokai). Previously values rendered as pure black/sand because QsciLexerYAML doesn't tokenize them as strings; they now pop visually distinct from keys (still JSON-blue) and prose.
+- **`src/npp_palette.cpp` Markdown Default-style** — body prose recoloured to a softer tint (`#2D2D2D` Light / `#C8C8B8` Dark) so structural tokens stand out from prose without competing.
+- **`src/npp_palette.cpp` CSS matcher chain** — new branch for `d.contains("pseudo")` → `npClassName`. `:hover` / `:focus-within` / `:has` / `::before` / `::after` etc. previously fell through to identifier-default; now distinct.
+- **`CMakeLists.txt` test infrastructure** — three previously-stale "Not Run" tests (`test_network_policy`, `test_chart_types`, `test_fontpack`) switched from bare `add_test()` to `notepatra_add_qt_test()` so they auto-build in the `notepatra_all_tests` meta-target and get `QT_QPA_PLATFORM=offscreen` for free. Four dependent test executables (`test_options_actually_work`, `test_lexers_v0125`, `test_lexer_smoke`, `test_compare_widget`) updated to link `src/lexer_plaintext.cpp` + `src/lexer_csv.cpp` for the new constructors. `test_lexers_v0125.cpp` Plain Text assertion inverted to match v0.1.84 behaviour. **31/31 ctest pass** (was 28/31).
+- **`CMakeLists.txt` HEADERS list** — `src/lexer_plaintext.h` + `src/lexer_csv.h` added so AUTOMOC generates their `Q_OBJECT` vtables (the project uses an explicit HEADERS list rather than GLOB, so new Q_OBJECT classes must be registered).
+
+### Changed
+
+- **`src/editor.cpp::applyLexer`** — calls `populateExtraKeywords(this, language)` between `setLexer(lexer)` and `::applyNotepadPlusPalette(lexer, font, themeName)` so curated keyword lists are loaded before palette colours are applied.
+- **Extension map** — `.txt` → `Plain Text` (now triggers `LexerPlainText`), `.csv` / `.tsv` → `CSV` (triggers `LexerCsv`), `.svg` → `XML`, `.html5` → `HTML`.
+
+---
+
 ## [0.1.83] — 2026-05-14
 
 **Docs-only release. Same binary as v0.1.82. Sweeps eleven user-facing v0.1.81 strings on the website that v0.1.82 left stale, and wires a stale-version-ref scanner into `release-check.sh` so the same drift can't ship silently again.**

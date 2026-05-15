@@ -22,12 +22,16 @@ const char *LexerDart::keywords(int set) const {
         "get hide if implements import in interface is late library "
         "mixin new null of on operator part required rethrow "
         "return sealed set show static super switch sync this throw true "
-        "try type typedef var void when while with yield";
+        "try type typedef var void when while with yield "
+        // Dart 3 macros preview — dart.dev/language/keywords
+        "augment";
     if (set == 2) return
         "BigInt bool Comparable DateTime double Duration dynamic Error "
         "Exception Function Future int Iterable Iterator List Map Null num "
         "Object Pattern RegExp Runes Set Stream String StringBuffer Symbol "
-        "Type Uri void Completer FutureOr Never";
+        "Type Uri void Completer FutureOr Never "
+        // Dart 3 records type — dart.dev/language/keywords
+        "Record";
     return nullptr;
 }
 
@@ -72,7 +76,9 @@ const char *LexerSolidity::keywords(int set) const {
         "uint208 uint216 uint224 uint232 uint240 uint248 uint256 "
         // Globals + builtins
         "msg block tx now self abi keccak256 sha256 sha3 ripemd160 "
-        "ecrecover addmod mulmod gasleft selfdestruct suicide";
+        "ecrecover addmod mulmod gasleft selfdestruct suicide "
+        // EIP-4844 / block globals — docs.soliditylang.org/en/latest/units-and-global-variables.html
+        "blockhash blobhash";
     return nullptr;
 }
 
@@ -166,9 +172,13 @@ const char *LexerJulia::keywords(int set) const {
         "abstract baremodule begin break catch const continue do "
         "else elseif end export false finally for function global if "
         "import in isa let local macro module mutable nothing primitive "
-        "quote return struct true try type using where while";
+        "quote return struct true try type using where while "
+        // Loop modifier + Julia 1.11 — docs.julialang.org/en/v1/base/base/#Keywords
+        "outer public";
     if (set == 2) return
         "AbstractFloat AbstractString Any Array Bool Char Complex Dict "
+        // Float16 — docs.julialang.org/en/v1/base/base/#Keywords
+        "Float16 "
         "Float32 Float64 Function Int Int8 Int16 Int32 Int64 Int128 "
         "Integer Matrix Missing Nothing Number Pair Range Real Ref Set "
         "String Symbol Tuple UInt UInt8 UInt16 UInt32 UInt64 UInt128 Vector "
@@ -216,7 +226,9 @@ const char *LexerProtobuf::keywords(int set) const {
         "sfixed64 sint32 sint64 string uint32 uint64 "
         // Well-Known Types
         "Any Empty Timestamp Duration FieldMask Struct Value ListValue "
-        "BoolValue StringValue Int32Value Int64Value FloatValue DoubleValue";
+        "BoolValue StringValue Int32Value Int64Value FloatValue DoubleValue "
+        // Additional wrapper WKTs — protobuf.dev/programming-guides/proto3/
+        "BytesValue UInt32Value UInt64Value";
     return nullptr;
 }
 
@@ -246,7 +258,9 @@ const char *LexerFSharp::keywords(int set) const {
         "int64 list nativeint obj option sbyte seq single string uint "
         "uint16 uint32 uint64 unativeint unit "
         "Async Choice Error IDisposable IEnumerable Lazy List Map None Ok "
-        "Option Result Seq Set Some Tuple";
+        "Option Result Seq Set Some Tuple "
+        // F# 4.5+ struct variants — learn.microsoft.com/.../fsharp/.../keyword-reference
+        "ValueOption ValueTuple";
     return nullptr;
 }
 
@@ -261,7 +275,9 @@ const char *LexerHCL::keywords(int set) const {
         "required_providers required_version resource source terraform "
         "true variable version "
         // Terraform-meta references
-        "var local each path self";
+        "var local each path self "
+        // Template directives — developer.hashicorp.com/terraform/language/syntax/configuration
+        "if else endfor endif";
     if (set == 2) return
         "string number bool list map set tuple object any "
         // Built-in functions (full Terraform stdlib)
@@ -333,7 +349,10 @@ const char *LexerGDScript::keywords(int set) const {
         "not null or pass preload return self signal static super true "
         "var void when while yield "
         // Godot 4.x decorators
-        "@export @icon @onready";
+        "@export @icon @onready "
+        // Additional Godot 4 annotations + namespace
+        // docs.godotengine.org/en/stable/tutorials/scripting/gdscript/gdscript_basics.html
+        "@rpc @tool @warning_ignore namespace";
     if (set == 2) return
         "AABB Array Basis bool Callable Color Dictionary float "
         // Constants
@@ -342,6 +361,8 @@ const char *LexerGDScript::keywords(int set) const {
         "PackedFloat32Array PackedFloat64Array PackedInt32Array "
         "PackedInt64Array PackedStringArray PackedVector2Array "
         "PackedVector3Array PackedVector4Array Plane Quaternion Rect2 "
+        // Integer-coord variants — docs.godotengine.org/en/stable/tutorials/scripting/gdscript/gdscript_basics.html
+        "Rect2i Vector4i "
         "RID Signal String StringName TAU Transform2D Transform3D "
         "Vector2 Vector2i Vector3 Vector3i Vector4 "
         // Common Node hierarchy
@@ -399,6 +420,8 @@ const char *LexerMojo::keywords(int set) const {
         "class continue def del elif else except finally fn for from global "
         "if import in inout is lambda let mut nonlocal not or out owned pass "
         "raise raises return struct trait try var while with yield "
+        // Mojo 24.x reference-binding — docs.modular.com/mojo/manual/
+        "ref "
         // Common decorators (highlighted as keywords in user perception)
         "@parameter @register_passable @value @always_inline @adaptive "
         "@fieldwise_init @staticmethod";
@@ -494,8 +517,10 @@ const char *LexerGroovy::keywords(int set) const {
         "instanceof interface native new non-sealed null package private "
         "protected public return static strictfp super switch synchronized "
         "this threadsafe throw throws transient try while "
-        // Contextual / soft
-        "as in permits record sealed trait var yields";
+        // JVM reserved — groovy-lang.org/syntax.html#_keywords
+        "volatile "
+        // Contextual / soft — fix typo: yield (switch-expression value)
+        "as in permits record sealed trait var yield";
     if (set == 2) return
         "boolean byte char double false float int long short true "
         // Common JDK / GDK

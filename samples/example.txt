@@ -1,0 +1,62 @@
+Notepatra palette preview — synthetic; no real data
+=====================================================
+
+PROJECT OVERVIEW
+================
+
+Notepatra is a fast, native notepad for Linux written in C++/Qt.
+This file demonstrates plain-text rendering in the editor.
+
+CONTACT
+-------
+
+Maintainer:  Alice <alice@example.com>
+Co-author:   Bob <bob@example.com>
+Reviewer:    Carol <carol@example.com>
+Website:     https://example.com/notepatra
+Mirror:      https://mirror.example.org/notepatra/
+
+INSTALLATION
+============
+
+System packages:
+  - libqt6core6
+  - libqt6gui6
+  - libqt6widgets6
+
+Standard install path:  /usr/local/bin/notepatra
+Per-user install path:  /home/alice/.local/bin/notepatra
+Config file location:   /home/alice/.config/notepatra/settings.ini
+
+QUICK NUMBERS
+-------------
+
+  Version  ............  0.1.84
+  Build    ............  42
+  Pi       ............  3.14159
+  Tax rate ............  19.99%
+  Price    ............  $19.99
+  Bytes    ............  1,048,576
+
+DAILY TASKS
+===========
+
+  - Sweep release notes
+  - Verify checksums
+  - Tag the release
+  - Push to GitHub
+  - Announce on the mailing list
+
+QUOTED REMINDER
+---------------
+
+"Premature optimization is the root of all evil."
+
+ENDPOINTS
+=========
+
+  Health:   https://api.example.com/v1/health
+  Metrics:  http://198.51.100.7:9100/metrics
+  Admin:    https://admin.example.net:8443/
+
+End of demo file. No real data above.

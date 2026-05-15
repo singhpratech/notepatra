@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<!-- Notepatra palette preview — synthetic; no real data -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Demo HTML for Notepatra palette" />
+  <title>Notepatra HTML Demo</title>
+  <link rel="stylesheet" href="example.css" />
+  <link rel="icon" href="data:," />
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; }
+    .badge { background: #eef; padding: 0.2em 0.5em; border-radius: 4px; }
+  </style>
+  <script src="https://example.com/analytics.js" async></script>
+  <script defer>
+    document.addEventListener("DOMContentLoaded", () => {
+      const el = document.querySelector("[data-greeting]");
+      if (el) el.textContent = "Hello, " + el.dataset.greeting + "!";
+    });
+  </script>
+</head>
+<body>
+  <header role="banner">
+    <h1>Notepatra Demo</h1>
+    <nav aria-label="Primary">
+      <ul>
+        <li><a href="#about">About</a></li>
+        <li><a href="#contact">Contact</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="content">
+    <article id="about">
+      <h2>About</h2>
+      <p data-greeting="Alice">Loading&hellip;</p>
+      <img src="logo.png" alt="Notepatra logo" width="120" height="40" />
+      <p>Status: <span class="badge">stable</span></p>
+    </article>
+
+    <aside aria-labelledby="tips-title">
+      <h2 id="tips-title">Tips</h2>
+      <table>
+        <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td>Ctrl+S</td><td>Save</td></tr>
+          <tr><td>Ctrl+O</td><td>Open</td></tr>
+        </tbody>
+      </table>
+    </aside>
+
+    <section id="contact">
+      <h2>Contact</h2>
+      <form action="/submit" method="post">
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name" required />
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" placeholder="alice@example.com" />
+        <button type="submit" aria-label="Send message">Send</button>
+      </form>
+    </section>
+  </main>
+
+  <footer role="contentinfo">
+    <p>&copy; 2026 Example Org &mdash; synthetic placeholder.</p>
+  </footer>
+</body>
+</html>

@@ -869,6 +869,14 @@ void Editor::applyLexer(const QString &lang) {
         lexer->setDefaultPaper(editorPaper);
         lexer->setDefaultColor(editorFg);
         setLexer(lexer);
+        // v0.1.84 — push curated SCI_SETKEYWORDS strings (sql_keywords.h /
+        // lang_keywords.h) into Scintilla for this language. Closes the gap
+        // where MERGE, RETURNING, LATERAL, JSONB, ... rendered as plain
+        // identifier text because the lexer-bundled keyword set was stale.
+        // Must run BEFORE applyNotepadPlusPalette so the palette paints the
+        // freshly registered keyword tokens.
+        populateExtraKeywords(this, QString::fromLatin1(
+            lexer->language() ? lexer->language() : ""));
         // Apply Notepad++ default palette — Windows default QScintilla styles
         // sometimes render with no visible keyword color, so paint them ourselves.
         ::applyNotepadPlusPalette(lexer, font, themeName);

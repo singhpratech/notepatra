@@ -1,0 +1,66 @@
+# Notepatra palette preview — synthetic; no real data
+
+title       = "Notepatra TOML Demo"
+version     = "0.1.84"
+maintainer  = "Alice"
+email       = 'alice@example.com'
+multiline   = """
+This is a
+multi-line
+basic string.
+"""
+literal     = 'C:\Users\alice\path'
+multiLiteral = '''
+no escapes
+inside triple-literal
+'''
+
+# Numeric types
+positive_int = 42
+negative_int = -17
+big_int      = 1_000_000
+hex_int      = 0xDEADBEEF
+oct_int      = 0o755
+bin_int      = 0b1010_0101
+pi           = 3.14159
+exp          = 6.022e23
+small        = -2.5e-4
+
+# Booleans + dates
+enabled        = true
+deprecated     = false
+created        = 2026-05-15T10:30:00Z
+local_date     = 2026-05-15
+local_time     = 10:30:00
+
+# Inline tables and arrays
+authors = ["Alice", "Bob", "Carol"]
+mixed   = [1, 2, 3]
+nested  = [[1, 2], [3, 4]]
+point   = { x = 1.0, y = 2.5 }
+
+[server]
+host = "192.0.2.10"
+port = 8080
+ssl  = true
+
+[server.tls]
+cert = "/etc/ssl/server.crt"
+key  = "/etc/ssl/server.key"
+
+[database]
+url        = "postgres://example.com/db"
+pool_size  = 16
+timeout_ms = 5_000
+
+# Dotted keys
+site.name    = "Example"
+site.url     = "https://example.com"
+
+[[plugins]]
+name    = "markdown"
+enabled = true
+
+[[plugins]]
+name    = "latex"
+enabled = false

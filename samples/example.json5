@@ -1,0 +1,52 @@
+// Notepatra palette preview — synthetic; no real data
+/*
+ * JSON5 showcase — exercises every relaxed-JSON feature
+ * supported by typical JSON5 lexers.
+ */
+{
+  // Unquoted keys
+  name: 'notepatra-demo',
+  version: '0.1.84',
+
+  /* Hex and special numeric literals */
+  flags:    0xFF,
+  mask:     0xCAFEBABE,
+  positive: +42,
+  negative: -3.14,
+  big:      1e10,
+  tiny:     2.5e-4,
+  infinity: Infinity,
+  negInf:   -Infinity,
+  notANum:  NaN,
+
+  // Single-quoted strings
+  greeting: 'hello, world',
+  // Escaped quotes inside double-quoted strings
+  quoted:   "she said \"hi\"",
+
+  // Multi-line string via line continuations
+  longText: 'line one \
+line two \
+line three',
+
+  // Trailing commas allowed
+  contributors: [
+    'Alice',
+    'Bob',
+    'Carol',
+  ],
+
+  // Nested object with trailing comma
+  author: {
+    name:  'Alice',
+    email: 'alice@example.com',
+  },
+
+  // Mixed-type array
+  mixed: [1, 'two', 3.0, true, false, null,],
+
+  // Booleans + null
+  active:     true,
+  deprecated: false,
+  optional:   null,
+}

@@ -49,7 +49,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~9 MB stripped across platforms; full downloads are 3.6 MB (Linux x64 tar.gz), 28.7 MB (macOS DMG with bundled Qt), 42.5 MB (Windows MSI with bundled Qt DLLs). 226 file types. 92 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.83",
+      "softwareVersion": "0.1.84",
       "fileSize": "9 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -151,7 +151,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.83 download sizes: 3.6 MB Linux x64 tar.gz, 3.4 MB Linux ARM64 tar.gz, 28.7 MB macOS DMG (with bundled Qt), 42.5 MB Windows MSI / 33.7 MB NSIS / 38.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.84 download sizes: 3.6 MB Linux x64 tar.gz, 3.4 MB Linux ARM64 tar.gz, 28.7 MB macOS DMG (with bundled Qt), 42.5 MB Windows MSI / 33.7 MB NSIS / 38.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
           }
         },
         {
@@ -167,7 +167,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.83: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.84: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.83">
-        Download v0.1.83 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.84">
+        Download v0.1.84 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.83 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.84 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~9 MB bare, ~3 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints.</p>
 
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.83</div>
+        <div class="section-label">Download v0.1.84</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1467,7 +1467,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.83 →
+                Get Notepatra v0.1.84 →
               </a>
             </div>
 
@@ -1510,7 +1510,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.83 →
+                Get Notepatra Local AI v0.1.84 →
               </a>
             </div>
           </div>
@@ -1968,42 +1968,59 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.83 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.84 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
-                        <span>2026-05-14</span>
-                        <span>· Stale-version-ref sweep on the website + new release-check gate. v0.1.82 shipped the security hardening sweep cleanly, but eleven user-facing v0.1.81 strings on <code>docs/index.html</code> (hero badge, sticky CTA, download section, FAQ JSON-LD, "as of v0.1.81" prose) were not bumped in the same commit. This release sweeps those, swaps the on-page latest card, AND wires a gate into <code>scripts/stale-text-check.sh</code> so a release with mismatched user-facing version strings can no longer pass <code>release-check.sh</code>. The website-policy memory existed since v0.1.76 — it failed because the check was advice, not a gate. Same binary, same 51 signed artifacts.</span>
+                        <span>2026-05-15</span>
+                        <span>· Biggest syntax-highlighting refresh since v0.1.31. Every supported language got reserved-word coverage updated from primary vendor sources (postgresql.org, learn.microsoft.com, tc39.es, cppreference, dart.dev, …). Two brand-new lexers — Plain Text and CSV — replace previous monochrome fallbacks. Markdown / YAML / CSS palettes refreshed across Light + Dark + Monokai. SQL keyword union now spans six dialects including DuckDB. 11 concrete keyword-coverage bugs fixed across R / Groovy / Crystal / Dart / GDScript / Solidity / Mojo / Julia / F# / Protobuf / HCL.</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>🧹 Docs — stale v0.1.81 user-facing string sweep</h5>
+                        <h5>🎨 Palette — Markdown / YAML / CSS / SQL deep refresh</h5>
                         <ul>
-                            <li><strong>The drift.</strong> v0.1.82 swapped the "latest" release card to v0.1.82 but left eleven older user-facing references stuck on v0.1.81: hero badge (<code>v0.1.81 · Now Available</code>), sticky download CTA (<code>aria-label</code> + visible text), main download section label, both "Get Notepatra v…" buttons, JSON-LD FAQ <code>Latest v0.1.81 download sizes</code> + <code>as of v0.1.81</code> entries, page-body "As of v0.1.81: 226 file types" lead, and <code>as of v0.1.81 — Python, JavaScript, …</code> lexer paragraph.</li>
-                            <li><strong>Why it leaked.</strong> The release flow had a memory entry that said "sweep stale version refs every release" but no mechanical gate — relied on the operator remembering to grep. The pre-existing <code>stale-text-check.sh</code> only validated canonical feature counts (lexer / file-type / backend totals), never user-facing version strings.</li>
-                            <li><strong>The fix.</strong> Bumped all eleven phrases to v0.1.83. Demoted the v0.1.82 latest card to its slot in the GitHub Releases list (per the v0.1.76 policy: only latest detail on the website).</li>
+                            <li><strong>Markdown</strong> H1–H6 contrast gradient (was a single colour for all six). Inline <code>code</code> + fenced <code>```code blocks```</code> get a paper-tint chip (<code>#F4F4F4</code> Light / <code>#2A2A2A</code> Dark / <code>#3E3D32</code> Monokai). Body prose softer tint so structural tokens stand out.</li>
+                            <li><strong>YAML</strong> unquoted values get a desaturated value-tint (Light grey / Dark muted-sand / Monokai string-yellow) — distinct from keys (still JSON-blue) and prose. Previously all values rendered pure black/sand because QsciLexerYAML doesn't tokenize them as strings.</li>
+                            <li><strong>CSS</strong> pseudo-classes (<code>:hover</code> / <code>:focus-within</code> / <code>:has</code>) and pseudo-elements (<code>::before</code> / <code>::after</code>) routed to class-name colour — previously fell through to identifier-default.</li>
+                            <li><strong>Theme parity</strong> mandatory: every colour change touches all three theme ternary arms (Light / Dark / Monokai). 76 sample files × 3 themes verified pre-tag.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🔬 Tooling — stale-version-ref gate in release-check</h5>
+                        <h5>🔑 SQL — six-dialect keyword union (incl. DuckDB)</h5>
                         <ul>
-                            <li><strong>New section</strong> in <code>scripts/stale-text-check.sh</code>: an explicit list of user-facing phrases (hero badge / sticky CTA / download buttons / FAQ / docs.html tag header / README latest-release lines / JSON-LD <code>softwareVersion</code>) that <em>must</em> contain the current <code>$VERSION</code> after every bump. Any occurrence of an older version in those phrases fails the release.</li>
-                            <li><strong>Templating</strong> uses a <code>__V__</code> placeholder substituted twice — once with the current version (literal), once with the any-version regex <code>0\.1\.[0-9]+</code> — and compares match counts. Older versions in CHANGELOG entries / release-notes archives / past release-card descriptions are untouched (only the enumerated phrases are scanned).</li>
-                            <li><strong>Memory rule</strong> updated: this is now the canonical example of the "memory → gate" promotion pattern. A repeated mechanical check belongs in <code>release-check.sh</code>, not in the operator's head.</li>
+                            <li><strong>New file</strong> <code>src/sql_keywords.h</code> — comprehensive RESERVED / FUNCTIONS / TYPES strings synthesised from <em>primary vendor sources</em> for T-SQL (learn.microsoft.com), PostgreSQL (Appendix C), MySQL, <strong>DuckDB</strong> (SUMMARIZE / EXCLUDE / ASOF / POSITIONAL / BERNOULLI / HUGEINT family / read_csv / read_parquet / read_json), SQLite, Oracle.</li>
+                            <li><strong>Wired</strong> via <code>SCI_SETKEYWORDS</code> slots 0/1/4 in <code>lexerutils.cpp::populateExtraKeywords()</code> immediately after every <code>setLexer(QsciLexerSQL)</code>. MERGE / RETURNING / LATERAL / JSONB / OVER PARTITION BY / WITHIN GROUP / OPENROWSET / ASOF JOIN now paint as keyword in every <code>.sql</code> tab — previously fell through to identifier-default.</li>
+                            <li><strong>Why it mattered</strong>: SQL Format Panel had populated rich keywords since v0.1.21 but the main editor used Scintilla's bundled Set 0 (frozen years ago) — the same <code>.sql</code> rendered differently in the two surfaces.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>📦 Same binary as v0.1.82</h5>
+                        <h5>📚 ~50-language keyword research from primary vendor sources</h5>
                         <ul>
-                            <li><strong>No C++ / Rust changes.</strong> All v0.1.82 security hardening (install-script hard-fail SHA, cosign verification, 38/38 actions SHA-pinned, AI Base URL validation, credscrub patterns) carries forward unchanged. 31/31 ctest pass. Same 51 signed artifacts shipped per platform.</li>
-                            <li><strong>Why bump the version</strong> for a docs-only change? Because the user-facing website was misrepresenting the latest release for ~25 minutes after v0.1.82 shipped. The cleanest way to make the website honest is to make v0.1.83 the version the website actually points at, AND ship the gate that prevents recurrence in the same commit.</li>
+                            <li><strong>New file</strong> <code>src/lang_keywords.h</code> — per-language constants harvested by five parallel research agents across vendor documentation: Python 3.12 (incl. <code>type</code> soft keyword), JavaScript ES2024, TypeScript, C23, C++23, C#, Java 21 (sealed/permits/record), Kotlin (hard/soft/modifier triple), Swift, Rust, Go, Ruby, PHP 8, Perl, Lua 5.4, Bash, PowerShell (PascalCase cmdlets), Dart, Solidity, Vala, Hack, Julia, R, Protobuf proto3, F#, Scala 3, Groovy, Apex, GDScript Godot 4, Nim, Crystal, Elixir, Cython, Mojo, HCL, Thrift, GraphQL, HTML5 (113 elements), XML, CSS (~370 properties), YAML 1.2, TOML, JSON5, Dockerfile, Makefile, Fish, Nushell, BibTeX, LaTeX, PostScript, Pascal, Fortran 2018, MATLAB, SystemVerilog IEEE 1800-2017, VHDL, NASM/MASM.</li>
+                            <li><strong>11 concrete bugs fixed</strong> in <code>lexer_extras.cpp</code> from the audit: R was missing <code>repeat</code>+<code>return</code> (loop primitive!), Groovy typo <code>yields</code>→<code>yield</code>, Crystal missing <code>next</code>+<code>until</code>, Dart missing <code>Record</code>+<code>augment</code> (Dart 3), GDScript missing <code>@rpc</code>+<code>@tool</code>+<code>@warning_ignore</code>, Solidity missing <code>blockhash</code>+<code>blobhash</code> (EIP-4844), Mojo missing <code>ref</code>, Julia missing <code>outer</code>+<code>public</code> (1.11)+<code>Float16</code>, F# missing <code>ValueOption</code>+<code>ValueTuple</code>, Protobuf missing WKT siblings, HCL missing template directives.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>📄 NEW Plain Text + CSV lexers (.txt / .csv / .tsv)</h5>
+                        <ul>
+                            <li><strong><code>LexerPlainText</code></strong> for <code>.txt</code> — regex-paints URLs, emails, numbers + currency, ALL-CAPS heading lines, double/single-quoted strings, backtick-fenced code. Replaces v0.1.83 monochrome fallback. Hard-cap <code>paint()</code> closure guarantees cumulative <code>setStyling</code> bytes never exceed <code>(end - start)</code> — avoids Scintilla's <code>CellBuffer.cpp:635</code> assertion that first-cut development hit.</li>
+                            <li><strong><code>LexerCsv</code></strong> for <code>.csv</code> / <code>.tsv</code> — header row bold, data cells alternate Column A / Column B colours for striped-table visual, separators distinct, quoted fields with <code>""</code> escapes, numeric vs text cells coloured separately, <code>#</code>-prefixed comment lines.</li>
+                            <li><strong>Both lexers</strong> use the same hard-cap pattern. New memory rule codifies: every <code>QsciLexerCustom::styleText</code> override MUST route <code>setStyling</code> through a <code>paint()</code> closure with a <code>wantBytes</code> counter.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧪 Test infrastructure — 31/31 ctest pass (was 28/31)</h5>
+                        <ul>
+                            <li><strong>Three previously-stale tests</strong> (<code>test_network_policy</code>, <code>test_chart_types</code>, <code>test_fontpack</code>) switched from bare <code>add_test()</code> to <code>notepatra_add_qt_test()</code> so they auto-build in the <code>notepatra_all_tests</code> meta-target — were "Not Run" since v0.1.72/v0.1.75/v0.1.76 respectively because their executables never landed in <code>build-lite/</code>.</li>
+                            <li><strong>Four dependent tests</strong> updated to link <code>src/lexer_plaintext.cpp</code> + <code>src/lexer_csv.cpp</code> so the new constructors resolve. <code>test_lexers_v0125.cpp</code> Plain Text assertion inverted to match v0.1.84 behaviour.</li>
+                            <li><strong>74 sample files</strong> (samples/) added — one rich exemplar per supported lexer, fully synthetic (no PII). Acts as eyeball-verification corpus and palette regression fixture for future releases.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.83">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.84">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.83">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.84">Commits</a>
                 </div>
             </div>
             <!-- v0.1.76 policy: only the LATEST release detail card is shown
@@ -2040,7 +2057,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.83: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
+                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.84: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2048,7 +2065,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.83 download sizes: <strong>3.6 MB</strong> Linux x64 tar.gz · <strong>3.4 MB</strong> Linux ARM64 tar.gz · <strong>28.7 MB</strong> macOS DMG · <strong>42.5 MB</strong> Windows MSI / <strong>33.7 MB</strong> NSIS / <strong>38.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.84 download sizes: <strong>3.6 MB</strong> Linux x64 tar.gz · <strong>3.4 MB</strong> Linux ARM64 tar.gz · <strong>28.7 MB</strong> macOS DMG · <strong>42.5 MB</strong> Windows MSI / <strong>33.7 MB</strong> NSIS / <strong>38.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -2056,7 +2073,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.83 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.84 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>How do I verify a download is genuine?</h3>

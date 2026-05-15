@@ -1,0 +1,62 @@
+# Notepatra palette preview — synthetic; no real data
+# .gitignore sample exercising every common pattern type.
+
+# Comment lines start with '#'.
+
+# Absolute-from-repo-root match
+/build/
+/dist/
+
+# Recursive match (anywhere in tree)
+**/node_modules/
+**/__pycache__/
+**/.DS_Store
+
+# Extension globs
+*.log
+*.tmp
+*.bak
+*.swp
+*.o
+*.so
+*.exe
+
+# Character class
+[Tt]humbs.db
+*.[oa]
+
+# Single-character wildcard
+core.?
+
+# Negation — keep this file even if its parent is ignored
+!/build/.gitkeep
+!docs/build/output/keep.txt
+
+# Directory-only (trailing slash)
+target/
+coverage/
+
+# Specific files
+secrets.env
+.env.local
+.env.*.local
+
+# Editor noise
+.vscode/
+.idea/
+*.iml
+.sublime-workspace
+
+# OS noise
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Build outputs
+*.pyc
+*.pyo
+*.class
+
+# Test artifacts
+/tests/output/
+/tests/**/*.actual

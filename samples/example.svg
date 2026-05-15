@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Notepatra palette preview — synthetic; no real data.
+     Exercises: SVG elements (rect/circle/ellipse/line/polyline/polygon/path/
+     text/tspan/g/use/defs/symbol/linearGradient/radialGradient/stop/filter/
+     feGaussianBlur/clipPath/mask/animate/animateTransform), SVG-specific
+     attributes (viewBox, d, transform, fill, stroke, stroke-width, opacity,
+     gradientUnits, offset, stop-color, clip-path, filter), entities,
+     comments, CDATA inline style, namespaces. -->
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     viewBox="0 0 400 300"
+     width="400" height="300"
+     role="img"
+     aria-labelledby="title desc">
+
+  <title id="title">Notepatra palette sample SVG</title>
+  <desc id="desc">A synthetic SVG exercising every major SVG element + attribute the lexer should colorize.</desc>
+
+  <!-- Reusable definitions -->
+  <defs>
+    <linearGradient id="skyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"   stop-color="#87CEEB" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#E0F6FF" stop-opacity="0.6"/>
+    </linearGradient>
+
+    <radialGradient id="sunGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#FFE680"/>
+      <stop offset="80%"  stop-color="#FFB347"/>
+      <stop offset="100%" stop-color="#FF8C42" stop-opacity="0"/>
+    </radialGradient>
+
+    <filter id="soft" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="1.5"/>
+    </filter>
+
+    <clipPath id="frame">
+      <rect x="10" y="10" width="380" height="280" rx="12" ry="12"/>
+    </clipPath>
+
+    <symbol id="star" viewBox="-10 -10 20 20">
+      <polygon points="0,-9 2.6,-2.8 9,-2.8 3.7,1.1 5.7,7.6 0,3.5 -5.7,7.6 -3.7,1.1 -9,-2.8 -2.6,-2.8"
+               fill="#FFD700" stroke="#996515" stroke-width="0.6"/>
+    </symbol>
+
+    <style><![CDATA[
+      .label { font: 600 13px sans-serif; fill: #1f2937; }
+      .grid  { stroke: #cbd5e1; stroke-width: 0.5; stroke-dasharray: 2 2; }
+    ]]></style>
+  </defs>
+
+  <!-- Background -->
+  <rect x="0" y="0" width="400" height="300" fill="url(#skyGrad)" clip-path="url(#frame)"/>
+
+  <!-- Decorative grid -->
+  <g class="grid" clip-path="url(#frame)">
+    <line x1="0" y1="100" x2="400" y2="100"/>
+    <line x1="0" y1="200" x2="400" y2="200"/>
+    <line x1="100" y1="0" x2="100" y2="300"/>
+    <line x1="200" y1="0" x2="200" y2="300"/>
+    <line x1="300" y1="0" x2="300" y2="300"/>
+  </g>
+
+  <!-- Sun -->
+  <circle cx="320" cy="80" r="36" fill="url(#sunGrad)" filter="url(#soft)"/>
+
+  <!-- Ground curve via path -->
+  <path d="M 0 260 Q 100 220, 200 250 T 400 245 L 400 300 L 0 300 Z"
+        fill="#86efac" stroke="#15803d" stroke-width="1.2"
+        stroke-linejoin="round"/>
+
+  <!-- Tree -->
+  <g transform="translate(80, 230)">
+    <rect x="-4" y="0" width="8" height="22" fill="#7c2d12"/>
+    <ellipse cx="0" cy="-6" rx="22" ry="20" fill="#16a34a"/>
+  </g>
+
+  <!-- Star cluster via &lt;use&gt; -->
+  <use href="#star" x="60"  y="50" transform="scale(0.7)"/>
+  <use href="#star" x="140" y="40" transform="scale(0.9)"/>
+  <use href="#star" x="210" y="55" transform="scale(0.6)"/>
+
+  <!-- Animated cloud -->
+  <g opacity="0.9">
+    <ellipse cx="50" cy="90" rx="26" ry="10" fill="#fafafa"/>
+    <ellipse cx="68" cy="80" rx="18" ry="10" fill="#fafafa"/>
+    <ellipse cx="78" cy="90" rx="24" ry="9"  fill="#fafafa"/>
+    <animateTransform attributeName="transform" type="translate"
+                      from="0 0" to="240 0" dur="14s" repeatCount="indefinite"/>
+  </g>
+
+  <!-- Title text — entities exercise: &amp; &lt; &gt; -->
+  <text x="200" y="32" text-anchor="middle" class="label" fill="#0f172a">
+    <tspan font-weight="700">Notepatra</tspan> · SVG palette sample
+  </text>
+  <text x="200" y="288" text-anchor="middle" class="label" fill="#334155">
+    rect &amp; circle &amp; path &amp; text — colored distinctly
+  </text>
+
+</svg>

@@ -1,0 +1,53 @@
+{# Notepatra palette preview — synthetic; no real data #}
+{% extends "base.html.j2" %}
+
+{% set site_name   = "Notepatra Demo" %}
+{% set users       = users | default([]) %}
+{% set admin_email = "alice@example.com" %}
+
+{% block title %}{{ site_name }} — Users{% endblock %}
+
+{% macro user_row(user, highlight=false) -%}
+  <tr class="{% if highlight %}highlight{% endif %}">
+    <td>{{ user.id }}</td>
+    <td>{{ user.name | upper }}</td>
+    <td>{{ user.email | default("none@example.com") }}</td>
+    <td>{{ user.role | capitalize }}</td>
+  </tr>
+{%- endmacro %}
+
+{% block content %}
+  <h1>{{ site_name }}</h1>
+
+  {% include "partials/_flash.html.j2" ignore missing %}
+
+  {% if users | length == 0 %}
+    <p>No users yet. Invite some from <code>{{ admin_email }}</code>.</p>
+  {% else %}
+    <p>Total: {{ users | length }} user{{ "s" if users | length != 1 else "" }}.</p>
+
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th></tr>
+      </thead>
+      <tbody>
+        {% for user in users %}
+          {% set is_admin = user.role == "admin" %}
+          {{ user_row(user, highlight=is_admin) }}
+        {% else %}
+          <tr><td colspan="4">empty</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <ul>
+    {% for u in users if u.active %}
+      <li>{{ loop.index }}. {{ u.name }} &lt;{{ u.email }}&gt;</li>
+    {% endfor %}
+    </ul>
+  {% endif %}
+
+  {# Filter chaining demo #}
+  <p>Today: {{ now() | date("%Y-%m-%d") }}</p>
+  <p>{{ "hello"|upper|reverse }}</p>
+{% endblock %}

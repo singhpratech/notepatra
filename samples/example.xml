@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Notepatra palette preview — synthetic; no real data -->
+<!DOCTYPE config SYSTEM "config.dtd">
+<config xmlns="https://example.com/ns/config"
+        xmlns:meta="https://example.com/ns/meta"
+        version="1.0">
+
+  <!-- Top-level metadata -->
+  <meta:info>
+    <meta:author>Alice</meta:author>
+    <meta:email>alice@example.com</meta:email>
+    <meta:created>2026-05-15</meta:created>
+  </meta:info>
+
+  <application name="notepatra" debug=true>
+    <window title="Editor &amp; Viewer" width="1024" height="768">
+      <panel id="left" visible="true">
+        <items>
+          <item key="open"  label="Open &lt;file&gt;" />
+          <item key="save"  label="Save" accel="Ctrl+S" />
+          <item key="quit"  label="Quit" accel="Ctrl+Q" />
+        </items>
+      </panel>
+      <panel id="main">
+        <editor wrap="soft" font="monospace">
+          <![CDATA[
+            <html><body>raw &amp; unescaped content
+            with <tags> and "quotes" lives here verbatim</body></html>
+          ]]>
+        </editor>
+      </panel>
+    </window>
+
+    <theme name="dark">
+      <color role="background">#1e1e1e</color>
+      <color role="foreground">#d4d4d4</color>
+      <color role="accent">#3794ff</color>
+    </theme>
+
+    <!-- Plugin list -->
+    <plugins>
+      <plugin enabled="true">markdown</plugin>
+      <plugin enabled="false">latex</plugin>
+      <plugin enabled="true">json</plugin>
+    </plugins>
+  </application>
+</config>

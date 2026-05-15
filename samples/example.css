@@ -1,0 +1,71 @@
+/* Notepatra palette preview — synthetic; no real data */
+
+@charset "UTF-8";
+@import url("https://example.com/fonts/inter.css");
+
+@layer reset, base, components;
+
+:root {
+  --bg:        #1e1e1e;
+  --fg:        #d4d4d4;
+  --accent:    #3794ff;
+  --gap:       clamp(0.5rem, 1vw, 1.25rem);
+  --radius:    calc(4px + 0.1rem);
+  --easing:    cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  body {
+    font-family: "Inter", system-ui, sans-serif;
+    background: linear-gradient(135deg, #111 0%, #222 100%);
+    color: var(--fg);
+    margin: 0;
+    padding: var(--gap);
+  }
+}
+
+@layer components {
+  .card {
+    background: var(--bg);
+    border-radius: var(--radius);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+
+    &:hover { transform: translateY(-2px); }
+    &:focus-within { outline: 2px solid var(--accent); }
+
+    & > h2 { margin: 0; color: var(--accent); }
+    & .meta::before { content: "» "; color: var(--accent); }
+    & .meta::after  { content: " «"; color: var(--accent); }
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--gap);
+  }
+
+  a:where(:link, :visited) { color: var(--accent); }
+  a:is(:hover, :focus)     { text-decoration: underline; }
+  form:has(input:invalid) button { opacity: 0.5; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-color-scheme: light) {
+  :root { --bg: #fff; --fg: #111; }
+}
+
+@supports (container-type: inline-size) {
+  .card { container-type: inline-size; }
+  @container (min-width: 400px) {
+    .card { padding: 2rem; }
+  }
+}

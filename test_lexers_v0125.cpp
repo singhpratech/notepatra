@@ -224,8 +224,21 @@ int main(int argc, char *argv[]) {
         delete l;
     }
     {
+        // v0.1.84 — was null in v0.1.83 (raw default-text fallback); now
+        // returns LexerPlainText which paints URLs / emails / numbers /
+        // ALL-CAPS heading lines / quoted strings / backtick code chunks.
         QsciLexer *l = createLexerForLanguage("Plain Text", nullptr);
-        check("createLexerForLanguage(Plain Text) is null", l == nullptr);
+        check("createLexerForLanguage(Plain Text) is non-null", l != nullptr);
+        if (l) check("LexerPlainText language() == 'Plain Text'",
+                     QString::fromLatin1(l->language()) == QStringLiteral("Plain Text"));
+        delete l;
+    }
+    {
+        // v0.1.84 — CSV gets a dedicated column-aware lexer.
+        QsciLexer *l = createLexerForLanguage("CSV", nullptr);
+        check("createLexerForLanguage(CSV) is non-null", l != nullptr);
+        if (l) check("LexerCsv language() == 'CSV'",
+                     QString::fromLatin1(l->language()) == QStringLiteral("CSV"));
         delete l;
     }
 

@@ -1,0 +1,54 @@
+# Notepatra palette preview — synthetic; no real data
+diff --git a/src/greet.py b/src/greet.py
+index 1a2b3c4..5d6e7f8 100644
+--- a/src/greet.py
++++ b/src/greet.py
+@@ -1,8 +1,11 @@
+-def greet(name):
+-    print("Hello, " + name)
++def greet(name: str) -> str:
++    """Return a friendly greeting."""
++    return f"Hello, {name}!"
+
+
+ if __name__ == "__main__":
+-    greet("world")
++    msg = greet("Alice")
++    print(msg)
++    print(greet("Bob"))
+@@ -20,5 +23,6 @@ def farewell(name):
+     return "Goodbye, " + name
+
+
+-print(farewell("world"))
++print(farewell("Alice"))
++print(farewell("Carol"))
+diff --git a/README.md b/README.md
+index aaaaaaa..bbbbbbb 100644
+--- a/README.md
++++ b/README.md
+@@ -1,5 +1,7 @@
+ # Notepatra Demo
+
+-A small example project.
++A small example project showing palette previews.
++
++See `samples/` for syntax samples across many languages.
+
+ ## Build
+@@ -10,4 +12,5 @@
+ make
+ ```
+
++Run `make test` to execute the test suite.
+ End of file.
+diff --git a/config/app.toml b/config/app.toml
+new file mode 100644
+index 0000000..ccccccc
+--- /dev/null
++++ b/config/app.toml
+@@ -0,0 +1,4 @@
++title   = "Notepatra"
++version = "0.1.84"
++author  = "Alice"
++email   = "alice@example.com"

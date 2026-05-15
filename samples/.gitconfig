@@ -1,0 +1,65 @@
+# Notepatra palette preview — synthetic; no real data
+
+[user]
+    name  = Alice Example
+    email = alice@example.com
+    signingkey = AAAAAAAA00000000
+
+[core]
+    editor       = notepatra
+    autocrlf     = input
+    pager        = less -FRX
+    excludesfile = ~/.gitignore_global
+    fileMode     = true
+
+[init]
+    defaultBranch = main
+
+[color]
+    ui = auto
+
+[color "diff"]
+    meta = yellow
+    frag = magenta bold
+    old  = red bold
+    new  = green bold
+
+[alias]
+    st   = status -sb
+    co   = checkout
+    br   = branch
+    cm   = commit -m
+    last = log -1 HEAD
+    lg   = log --oneline --graph --decorate --all
+    unstage = reset HEAD --
+    amend   = commit --amend --no-edit
+
+[remote "origin"]
+    url    = git@example.com:alice/notepatra-demo.git
+    fetch  = +refs/heads/*:refs/remotes/origin/*
+
+[branch "main"]
+    remote = origin
+    merge  = refs/heads/main
+    rebase = true
+
+[diff]
+    algorithm = histogram
+    colorMoved = default
+
+[merge]
+    conflictStyle = zdiff3
+    tool = vimdiff
+
+[pull]
+    rebase = true
+
+[push]
+    default = current
+    autoSetupRemote = true
+
+[credential]
+    helper = cache --timeout=3600
+
+[commit]
+    gpgsign = false

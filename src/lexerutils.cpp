@@ -3,6 +3,7 @@
 #include <QFileInfo>
 #include <QHash>
 
+#include <Qsci/qsciscintilla.h>
 #include <Qsci/qscilexerbatch.h>
 #include <Qsci/qscilexerbash.h>
 #include <Qsci/qscilexercmake.h>
@@ -34,6 +35,18 @@
 #include "lexer_swift.h"
 #include "lexer_typescript.h"
 #include "lexer_extras.h"
+
+// v0.1.84 — Plain-text and CSV lexers (no-op syntax / column-aware) shipped
+// alongside the curated keyword tables. Headers are provided by parallel
+// agents; the class names follow the existing global-namespace pattern of
+// LexerDart / LexerToml / etc.
+#include "lexer_plaintext.h"
+#include "lexer_csv.h"
+
+// v0.1.84 — curated SCI_SETKEYWORDS strings for every supported language.
+// Pushed into the editor in populateExtraKeywords() right after setLexer().
+#include "sql_keywords.h"
+#include "lang_keywords.h"
 
 #if __has_include(<Qsci/qscilexeravs.h>)
 #include <Qsci/qscilexeravs.h>
@@ -138,7 +151,7 @@ QString detectLanguageFromPath(const QString &path, const QString &text) {
         {"go", "Go"},
         {"swift", "Swift"},
         {"kt", "Kotlin"}, {"kts", "Kotlin"}, {"ktm", "Kotlin"},
-        {"html", "HTML"}, {"htm", "HTML"}, {"xhtml", "HTML"},
+        {"html", "HTML"}, {"htm", "HTML"}, {"xhtml", "HTML"}, {"html5", "HTML"},
         {"vue", "HTML"}, {"svelte", "HTML"}, {"jsp", "HTML"},
         {"erb", "HTML"}, {"ejs", "HTML"}, {"hbs", "HTML"},
         {"twig", "HTML"}, {"jinja", "HTML"}, {"jinja2", "HTML"},
@@ -199,7 +212,8 @@ QString detectLanguageFromPath(const QString &path, const QString &text) {
         {"hex", "IntelHex"}, {"ihex", "IntelHex"},
         {"srec", "SRecord"}, {"s19", "SRecord"}, {"s28", "SRecord"},
         {"log", "Plain Text"}, {"out", "Plain Text"}, {"txt", "Plain Text"},
-        {"csv", "Plain Text"}, {"tsv", "Plain Text"},
+        // v0.1.84 — dedicated column-aware CSV lexer (was Plain Text fallback)
+        {"csv", "CSV"}, {"tsv", "CSV"},
         {"dockerignore", "Gitignore"}, {"gitignore", "Gitignore"},
         // v0.1.55 — dedicated lexers for ~31 languages that previously
         // fell back to closest-fit. Each is a small QsciLexer* subclass
@@ -274,6 +288,12 @@ QString detectLanguageFromPath(const QString &path, const QString &text) {
 }
 
 QsciLexer *createLexerForLanguage(const QString &lang, QObject *parent) {
+    // v0.1.84 — explicit Plain Text and CSV lexers (previously the function
+    // returned nullptr for "Plain Text" and let the caller paint default
+    // styles). The new lexers give us consistent paper/font and a CSV-aware
+    // column-coloured renderer for delimited files.
+    if (lang == "Plain Text") return new LexerPlainText(parent);
+    if (lang == "CSV")        return new LexerCsv(parent);
     if (lang == "Python") return new QsciLexerPython(parent);
     if (lang == "JavaScript") return new QsciLexerJavaScript(parent);
 #ifdef HAS_LEXER_COFFEESCRIPT
@@ -412,4 +432,164 @@ QsciLexer *createLexerForLanguage(const QString &lang, QObject *parent) {
     if (lang == "BibTeX")     return new LexerBibTeX(parent);
 
     return nullptr;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// populateExtraKeywords — v0.1.84 palette overhaul
+//
+// Pushes the curated keyword strings from sql_keywords.h / lang_keywords.h
+// into the live editor via SCI_SETKEYWORDS. The QScintilla lexers ship
+// small built-in keyword sets that lag modern language additions; this
+// fills the gaps without subclassing every lexer.
+//
+// Slot semantics differ per lexer (verified against the QScintilla
+// keywords(int set) headers under /usr/include/.../Qsci/):
+//   QsciLexerSQL    : 0=reserved, 1=extra (functions), 4=user-defined 1 (types)
+//   QsciLexerPython : 0=primary, 1=highlighted identifiers (builtins)
+//   QsciLexerJavaScript / QsciLexerCPP : 0=primary, 1=secondary (types)
+//   QsciLexerRuby   : 0=primary
+//   QsciLexerHTML   : 0=HTML tags, 1=JavaScript, 2=VBScript, 3=Python,
+//                     4=PHP, 5=SGML
+//   QsciLexerCSS    : 0=CSS1 properties, 1=pseudo-classes, 2=CSS2/3 props
+//   QsciLexerBash   : 0=primary
+//   QsciLexerLua    : 0=primary, 1=basic functions, 2..7=specialised libs
+//   QsciLexerYAML   : 0=boolean-ish words
+//   QsciLexerJSON   : not keyword-driven; skip
+//
+// The first arg is cast to uintptr_t (not unsigned long) to match the
+// SendScintilla(uint, uintptr_t, const char*) overload — same trick as
+// sqlfmtpanel.cpp:399.
+// ─────────────────────────────────────────────────────────────────────────
+void populateExtraKeywords(QsciScintilla *editor, const QString &lang) {
+    if (!editor) return;
+    auto send = [editor](int slot, const char *s) {
+        if (!s) return;
+        editor->SendScintilla(QsciScintilla::SCI_SETKEYWORDS,
+                              (uintptr_t)slot, s);
+    };
+
+    if (lang == "SQL") {
+        send(0, notepatra::kSqlReserved);
+        send(1, notepatra::kSqlFunctions);
+        send(4, notepatra::kSqlTypes);
+    }
+    else if (lang == "Python") {
+        send(0, notepatra::langkw::kPythonKW);
+        // QsciLexerPython slot 1 = "Highlighted identifiers" — perfect for
+        // builtins (print, len, ...). Typing names route to slot 1 too as
+        // a single space-separated concat would dilute styling — keep them
+        // routed via the future "user-defined" hook instead.
+        send(1, notepatra::langkw::kPythonBuiltins);
+    }
+    else if (lang == "JavaScript") {
+        send(0, notepatra::langkw::kJavaScriptKW);
+        send(1, notepatra::langkw::kJavaScriptBuiltins);
+    }
+    else if (lang == "TypeScript") {
+        // TS uses our LexerTypeScript subclass which inherits QsciLexerCPP.
+        // CPP lexer: slot 0 = primary keywords, slot 1 = secondary keywords.
+        // Concatenate JS + TS extras in slot 0 isn't possible at runtime
+        // without an allocation owned by the editor — instead push TS extras
+        // into slot 0 and types into slot 1. (LexerTypeScript already merges
+        // JS+TS in its keywords() override; this overlays the curated list.)
+        send(0, notepatra::langkw::kTypeScriptExtraKW);
+        send(1, notepatra::langkw::kTypeScriptTypes);
+    }
+    else if (lang == "Ruby") {
+        send(0, notepatra::langkw::kRubyKW);
+        // QsciLexerRuby doesn't expose a useful secondary slot; builtins
+        // would dilute the keyword colour if forced into slot 0. Skip.
+    }
+    else if (lang == "PHP") {
+        // PHP files are tokenised by QsciLexerHTML. Slot 4 = PHP keywords.
+        // Also keep HTML slots 0/1 populated for embedded markup.
+        send(0, notepatra::langkw::kHtmlTags);
+        send(1, notepatra::langkw::kJavaScriptKW);
+        send(4, notepatra::langkw::kPhpKW);
+    }
+    else if (lang == "Lua") {
+        send(0, notepatra::langkw::kLuaKW);
+        send(1, notepatra::langkw::kLuaBuiltins);
+    }
+    else if (lang == "Bash") {
+        send(0, notepatra::langkw::kBashKW);
+        // QsciLexerBash doesn't really use a secondary slot; builtins
+        // mixed with keywords paints them all the same colour, which is
+        // closer to what users expect for shell.
+    }
+    else if (lang == "C") {
+        send(0, notepatra::langkw::kCKW);
+        send(1, notepatra::langkw::kCTypes);
+        // Preprocessor and builtins are tokenised separately by Scintilla;
+        // slots 2/3 aren't reliably wired in QsciLexerCPP for plain C.
+    }
+    else if (lang == "C++") {
+        send(0, notepatra::langkw::kCppKW);
+        send(1, notepatra::langkw::kCppTypes);
+    }
+    else if (lang == "C#") {
+        send(0, notepatra::langkw::kCSharpKW);
+        send(1, notepatra::langkw::kCSharpTypes);
+    }
+    else if (lang == "Java") {
+        send(0, notepatra::langkw::kJavaKW);
+        send(1, notepatra::langkw::kJavaTypes);
+    }
+    else if (lang == "HTML") {
+        send(0, notepatra::langkw::kHtmlTags);
+        send(1, notepatra::langkw::kJavaScriptKW);
+    }
+    else if (lang == "XML") {
+        // Defensive: XML lexer is structural (tags/attrs are styled by
+        // position, not by keyword set). Leave default behaviour alone.
+    }
+    else if (lang == "CSS") {
+        send(0, notepatra::langkw::kCssProperties);
+        send(1, notepatra::langkw::kCssPseudoClasses);
+        // Slot 2 (CSS2/3 props) defensively skipped — the QsciLexerCSS
+        // implementation in QScintilla 2.14 routes slot 0 to colour ALL
+        // recognised properties uniformly. Putting at-rules here would
+        // double-stain. At-rules render via @-prefix style in the lexer.
+    }
+    else if (lang == "YAML") {
+        send(0, notepatra::langkw::kYamlKW);
+    }
+    else if (lang == "JSON") {
+        // QsciLexerJSON is not keyword-driven (true/false/null are painted
+        // by the lexer's own constant style, not slot 0). Skip — sending
+        // the string is a no-op but adds confusion.
+    }
+    else if (lang == "JSON5") {
+        // LexerJson5 is a QsciLexerJSON subclass — same no-op semantics.
+    }
+    else if (lang == "TOML") {
+        send(0, notepatra::langkw::kTomlKW);
+    }
+    else if (lang == "PowerShell") {
+        send(0, notepatra::langkw::kPowerShellKW);
+        send(1, notepatra::langkw::kPowerShellCmdlets);
+    }
+    else if (lang == "Rust") {
+        send(0, notepatra::langkw::kRustKW);
+        send(1, notepatra::langkw::kRustTypes);
+    }
+    else if (lang == "Go") {
+        send(0, notepatra::langkw::kGoKW);
+        send(1, notepatra::langkw::kGoTypes);
+    }
+    else if (lang == "Kotlin") {
+        send(0, notepatra::langkw::kKotlinKW);
+        send(1, notepatra::langkw::kKotlinTypes);
+    }
+    else if (lang == "Swift") {
+        send(0, notepatra::langkw::kSwiftKW);
+        send(1, notepatra::langkw::kSwiftTypes);
+    }
+    else if (lang == "Dockerfile") {
+        send(0, notepatra::langkw::kDockerfileKW);
+    }
+    else if (lang == "Makefile") {
+        send(0, notepatra::langkw::kMakefileKW);
+    }
+    // Default: nothing extra to send — language uses lexer-bundled keywords.
 }

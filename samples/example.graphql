@@ -1,0 +1,78 @@
+# Notepatra palette preview — synthetic; no real data
+
+"""Custom scalar for ISO-8601 timestamps."""
+scalar DateTime
+
+"""Top-level schema entry points."""
+schema {
+  query:        Query
+  mutation:     Mutation
+  subscription: Subscription
+}
+
+directive @auth(role: Role = VIEWER) on FIELD_DEFINITION | OBJECT
+
+enum Role {
+  VIEWER
+  EDITOR
+  ADMIN
+}
+
+interface Node {
+  id: ID!
+}
+
+union SearchResult = User | Note | Tag
+
+type User implements Node {
+  id:           ID!
+  displayName:  String!
+  email:        String!
+  role:         Role!
+  active:       Boolean!
+  createdAt:    DateTime!
+  notes(first: Int = 10, after: String): [Note!]!
+}
+
+type Note implements Node {
+  id:        ID!
+  title:     String!
+  body:      String
+  author:    User!
+  tags:      [Tag!]!
+  createdAt: DateTime!
+}
+
+type Tag implements Node {
+  id:   ID!
+  name: String!
+}
+
+input CreateNoteInput {
+  title: String!
+  body:  String
+  tagIds: [ID!] = []
+}
+
+type Query {
+  me: User @auth
+  user(id: ID!): User
+  notes(first: Int = 20, after: String): [Note!]!
+  search(query: String!): [SearchResult!]!
+}
+
+type Mutation {
+  createNote(input: CreateNoteInput!): Note! @auth(role: EDITOR)
+  deleteNote(id: ID!): Boolean! @auth(role: EDITOR)
+}
+
+type Subscription {
+  noteCreated(authorId: ID): Note!
+}
+
+fragment UserFields on User {
+  id
+  displayName
+  email
+  role
+}

@@ -1,0 +1,52 @@
+{
+  "_comment": "Notepatra palette preview — synthetic; no real data",
+  "name": "notepatra-demo",
+  "version": "0.1.84",
+  "private": true,
+  "active": false,
+  "deprecated": null,
+  "unicodeName": "Café Brûlée",
+  "scientific": 1.5e10,
+  "tinyFraction": 2.5e-4,
+  "negative": -42,
+  "counts": [1, 2, 3, 5, 8, 13, 21],
+  "mixedArray": [1, "two", 3.0, true, false, null, "five"],
+  "tags": ["editor", "qt", "linux", "native"],
+  "author": {
+    "name": "Alice",
+    "email": "alice@example.com",
+    "address": {
+      "street": "1 Example Way",
+      "city": "Sampleton",
+      "zip": "00000",
+      "country": "Exampleland"
+    }
+  },
+  "features": {
+    "ui": {
+      "theme": "dark",
+      "fontSize": 13,
+      "lineNumbers": true
+    },
+    "editor": {
+      "tabWidth": 4,
+      "insertSpaces": true,
+      "rulers": [80, 120]
+    }
+  },
+  "contributors": [
+    { "name": "Bob",   "role": "reviewer" },
+    { "name": "Carol", "role": "editor"   }
+  ],
+  "endpoints": {
+    "_comment": "RFC-5737 documentation addresses only",
+    "primary":   "https://api.example.com/v1",
+    "metrics":   "http://192.0.2.10:9100/metrics",
+    "mirror":    "https://203.0.113.55/mirror"
+  },
+  "thresholds": {
+    "warn":  0.75,
+    "error": 0.95,
+    "fatal": 1.0
+  }
+}

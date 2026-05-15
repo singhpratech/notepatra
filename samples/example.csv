@@ -1,0 +1,23 @@
+"# Notepatra palette preview — synthetic; no real data"
+id,name,email,role,score,active,joined,notes
+1,Alice,alice@example.com,admin,9.50,true,2025-01-15,"Loves Markdown, prefers dark theme"
+2,Bob,bob@example.com,editor,8.00,true,2025-02-01,
+3,Carol,carol@example.com,viewer,7.25,false,2025-03-10,"On leave"
+4,"Dave, Jr.",dave@example.com,editor,6.10,true,2025-04-22,"Name has a comma"
+5,Eve,eve@example.com,admin,9.80,true,2025-05-05,"She said ""hi"" earlier"
+6,Frank,frank@example.com,viewer,5.50,false,2025-06-18,"Multiple
+line note"
+7,Grace,grace@example.com,editor,7.90,true,2025-07-30,
+8,Heidi,heidi@example.com,viewer,4.40,true,2025-08-09,"Trial account"
+9,Ivan,ivan@example.com,admin,9.20,true,2025-09-14,
+10,Judy,judy@example.com,editor,8.50,true,2025-10-02,"Power user"
+11,Mallory,mallory@example.com,viewer,2.10,false,2025-10-20,"Suspended"
+12,Niaj,niaj@example.com,editor,7.00,true,2025-11-01,
+13,Olivia,olivia@example.com,admin,9.95,true,2025-11-15,"Top reviewer"
+14,Peggy,peggy@example.com,viewer,6.30,true,2025-12-01,
+15,Rupert,rupert@example.com,editor,7.75,true,2025-12-12,"Joined late"
+16,Sybil,sybil@example.com,admin,8.85,true,2026-01-03,
+17,Trent,trent@example.com,viewer,5.05,false,2026-01-22,"Inactive"
+18,Victor,victor@example.com,editor,7.60,true,2026-02-14,
+19,Walter,walter@example.com,viewer,4.95,true,2026-03-08,
+20,Yvonne,yvonne@example.com,admin,9.40,true,2026-04-01,"New hire"

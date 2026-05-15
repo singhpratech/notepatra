@@ -357,6 +357,18 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QStr
         else if (d.contains("regex") || d.contains("regular expression")) {
             fg = npRegex;
         }
+        else if (d.contains("code") &&
+                 (lang == QLatin1String("Markdown"))) {
+            // v0.1.84 — Markdown inline `code` / ``code`` gets a paper tint
+            // so it visually reads as a code chip, not just coloured text.
+            // Foreground stays the string colour; paper is a subtle off-paper.
+            // Must come BEFORE the generic "string"/"literal" matchers.
+            fg = npString;
+            QColor chipPaper = monokai ? QColor("#3E3D32")
+                                       : (dark ? QColor("#2A2A2A")
+                                               : QColor("#F4F4F4"));
+            lexer->setPaper(chipPaper, i);
+        }
         else if (d.contains("string") || d.contains("char") ||
                  d.contains("literal") || d.contains("heredoc") ||
                  d.contains("backtick") || d.contains("verbatim")) {
@@ -390,8 +402,44 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QStr
         else if (d.contains("entity")) {
             fg = npNumber;
         }
-        else if (d.contains("header") || d.contains("header1") ||
+        else if (d.contains("header 1") || d.endsWith("header1") ||
+                 d == "header 1") {
+            // Markdown H1 — strongest hue, bold. Top of the gradient.
+            fg = npKeyword;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("header 2") || d.endsWith("header2") ||
+                 d == "header 2") {
+            // Markdown H2 — same family as H1, bold.
+            fg = npKeyword;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("header 3") || d.endsWith("header3") ||
+                 d == "header 3") {
+            // Markdown H3 — still bold keyword, mid gradient.
+            fg = npKeyword;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("header 4") || d.endsWith("header4") ||
+                 d == "header 4") {
+            // Markdown H4 — shift to cooler keyword2 (still bold).
+            fg = npKeyword2;
+            lexer->setFont(bold, i);
+        }
+        else if (d.contains("header 5") || d.endsWith("header5") ||
+                 d == "header 5") {
+            // Markdown H5 — keyword2, lighter (no bold).
+            fg = npKeyword2;
+        }
+        else if (d.contains("header 6") || d.endsWith("header6") ||
+                 d == "header 6") {
+            // Markdown H6 — smallest visual weight, italic className.
+            fg = npClassName;
+            lexer->setFont(italic, i);
+        }
+        else if (d.contains("header") ||
                  d.contains("strong") || d.contains("bold")) {
+            // Fallback header (lexers that don't number headers).
             fg = npKeyword;
             lexer->setFont(bold, i);
         }
@@ -606,6 +654,13 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QStr
             fg = npClassName;
             lexer->setFont(bold, i);
         }
+        else if (d.contains("pseudo")) {
+            // v0.1.84 — CSS pseudo-classes (:hover, :focus, :nth-child) and
+            // pseudo-elements (::before, ::after). Without this they fell
+            // through to "identifier" / default text. Use className so they
+            // pop distinctly from properties (keyword2) and selectors.
+            fg = npClassName;
+        }
         else if (d == "hash" || d.contains(" hash") ||
                  d.contains("hex color")) {
             // CSS color hash #FF0000.
@@ -687,4 +742,27 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QStr
     lexer->setPaper(npPaper, 0);
     lexer->setColor(npText, 0);
     lexer->setFont(regular, 0);
+
+    // v0.1.84 — Default-style soft tints for languages whose body text is
+    // mostly Default-styled (style 0). Plain npText (pure black / pure sand)
+    // makes Markdown prose + YAML values look "sad" — the user complaint.
+    // Tint them so they read as soft body text without competing with
+    // higher-saturation tokens (keywords, comments, strings).
+    if (lang == QLatin1String("YAML")) {
+        // YAML unquoted values fall into style 0 (Default) — QsciLexerYAML
+        // doesn't tokenize them as strings. Give them a desaturated value-
+        // tint distinct from keys (blue keyword2) and prose.
+        QColor yamlValueTint = monokai ? QColor("#E6DB74")        // Monokai string-yellow
+                                       : (dark ? QColor("#B8B89F")  // Zenburn muted sand
+                                               : QColor("#5A5A5A")); // light desaturated grey
+        lexer->setColor(yamlValueTint, 0);
+    }
+    else if (lang == QLatin1String("Markdown")) {
+        // Markdown body prose paragraphs render as Default. Tint slightly
+        // so prose has a "soft text" feel instead of pure black/sand.
+        QColor mdProse = monokai ? QColor("#F8F8F2")            // keep Monokai default
+                                 : (dark ? QColor("#C8C8B8")     // softer sand
+                                         : QColor("#2D2D2D"));   // slightly off-black
+        lexer->setColor(mdProse, 0);
+    }
 }

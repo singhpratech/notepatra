@@ -1,0 +1,75 @@
+% Notepatra palette preview — synthetic; no real data
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage[backend=biber]{biblatex}
+\addbibresource{example.bib}
+
+\title{Notepatra Palette Preview}
+\author{Alice Example \and Bob Sample}
+\date{2026-05-15}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+A synthetic LaTeX document demonstrating the breadth of constructs
+the Notepatra editor must highlight: sections, lists, math, tables,
+figures, citations, and code listings.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}\label{sec:intro}
+Notepatra is a fast, native Linux text editor. See
+Section~\ref{sec:results} for results; Equation~\eqref{eq:euler}
+gives a famous identity.
+
+\subsection{Notation}\label{sec:notation}
+Inline math like \( e^{i\pi} + 1 = 0 \) lives next to display math:
+\begin{equation}\label{eq:euler}
+  e^{i\pi} + 1 = 0
+\end{equation}
+
+\subsubsection{Sums}
+\[
+  \sum_{k=1}^{n} k = \frac{n(n+1)}{2}
+\]
+
+\section{Method}\label{sec:method}
+\begin{itemize}
+  \item Collect samples from authors \cite{alice2025demo, bob2026palette}.
+  \item Render in Notepatra.
+  \item Compare against reference.
+\end{itemize}
+
+\begin{enumerate}
+  \item Load file.
+  \item Tokenise.
+  \item Apply palette.
+\end{enumerate}
+
+\section{Results}\label{sec:results}
+Carol's book \cite{carol2024editors} confirms our findings.
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{lcr}
+    \hline
+    Name  & Role     & Score \\
+    \hline
+    Alice & Author   & 9.5   \\
+    Bob   & Reviewer & 8.0   \\
+    Carol & Editor   & 7.2   \\
+    \hline
+  \end{tabular}
+  \caption{Synthetic scores.}\label{tab:scores}
+\end{table}
+
+\printbibliography
+\end{document}

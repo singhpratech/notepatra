@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.83 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.84 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -222,6 +222,8 @@ set(HEADERS
     src/lexer_rust.h
     src/lexer_swift.h
     src/lexer_typescript.h
+    src/lexer_plaintext.h
+    src/lexer_csv.h
     src/npp_palette.h
     src/tabmanager.h
     src/statusbar.h
@@ -496,6 +498,8 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexers_v0125.cpp")
         src/lexer_swift.cpp
         src/lexer_typescript.cpp
         src/lexer_extras.cpp
+        src/lexer_plaintext.cpp
+        src/lexer_csv.cpp
     )
     target_include_directories(test_lexers_v0125 PRIVATE
         ${CMAKE_SOURCE_DIR}/src
@@ -529,6 +533,8 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/tests/comprehensive/lex
         src/lexer_swift.cpp
         src/lexer_typescript.cpp
         src/lexer_extras.cpp
+        src/lexer_plaintext.cpp
+        src/lexer_csv.cpp
     )
     target_include_directories(test_lexer_smoke PRIVATE
         ${CMAKE_SOURCE_DIR}/src
@@ -1047,7 +1053,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_network_policy.cpp
         Qt5::Core
         Qt5::Network
     )
-    add_test(NAME test_network_policy COMMAND $<TARGET_FILE:test_network_policy>)
+    notepatra_add_qt_test(test_network_policy)
     set_tests_properties(test_network_policy PROPERTIES LABELS "unit;security;network-policy;v0172")
     message(STATUS "Security test enabled — target: test_network_policy")
 endif()
@@ -1071,7 +1077,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_chart_types.cpp")
         Qt5::Widgets
         Qt5::Charts
     )
-    add_test(NAME test_chart_types COMMAND $<TARGET_FILE:test_chart_types>)
+    notepatra_add_qt_test(test_chart_types)
     set_tests_properties(test_chart_types PROPERTIES LABELS "unit;charts;v0176")
     message(STATUS "Chart-types test enabled — target: test_chart_types")
 endif()
@@ -1091,7 +1097,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_fontpack.cpp")
         Qt5::Gui
         Qt5::Network
     )
-    add_test(NAME test_fontpack COMMAND $<TARGET_FILE:test_fontpack>)
+    notepatra_add_qt_test(test_fontpack)
     set_tests_properties(test_fontpack PROPERTIES LABELS "unit;fontpack;v0175")
     message(STATUS "Font-pack test enabled — target: test_fontpack")
 endif()
@@ -1215,6 +1221,8 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_compare_widget.cpp
         src/lexer_swift.cpp
         src/lexer_typescript.cpp
         src/lexer_extras.cpp
+        src/lexer_plaintext.cpp
+        src/lexer_csv.cpp
     )
     add_dependencies(test_compare_widget rust_core)
     target_include_directories(test_compare_widget PRIVATE
@@ -1272,6 +1280,8 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_options_actually_w
         src/lexer_swift.cpp
         src/lexer_typescript.cpp
         src/lexer_extras.cpp
+        src/lexer_plaintext.cpp
+        src/lexer_csv.cpp
     )
     add_dependencies(test_options_actually_work rust_core)
     target_include_directories(test_options_actually_work PRIVATE
