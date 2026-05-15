@@ -35,7 +35,9 @@ LEXER_COUNT=92
 FILE_EXT_COUNT=226
 BACKEND_COUNT=6
 BACKEND_LIST="Ollama / llama.cpp / OpenRouter / Ollama Cloud / OpenAI / Azure OpenAI"
-BARE_BIN_MB="~9 MB"
+# BARE_BIN_MB removed v0.1.86 — verify-download-sizes.sh now downloads the
+# actual artifact and asserts byte count + stripped-vs-not, which is strictly
+# more rigorous than a string-compare against a manually-edited constant.
 
 cmake_version="$(grep -oE 'project\(Notepatra VERSION [0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
 VERSION="${VERSION:-$cmake_version}"
@@ -253,6 +255,35 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     fi
 else
     echo "  ⚠ skipping — gh CLI not authenticated (run 'gh auth login')"
+fi
+
+echo
+echo "── installer-filename pinning (README admin/fleet install commands) ──"
+# Bug class caught in v0.1.86 follow-up: README:281-297 had install commands
+# like `notepatra-0.1.78.msi` that didn't get bumped during the version sweep
+# because they're inside table cells / code spans, not in the patterns the
+# np-sweep-versions skill mentally scans. Anyone copy-pasting the silent-
+# install command got a 404.
+#
+# Scope: only check LIVE install commands. Skip historical release-table rows
+# (lines containing `releases/tag/v0.1.X` are release-row narrative, not
+# install commands meant for the current user). Skip lines inside the
+# CHANGELOG-style release history that document old versions.
+stale_installers=$(grep -vE 'releases/tag/v0\.1\.' README.md \
+    | grep -hoE 'notepatra(-local-ai)?[-_][^"`]*?0\.1\.[0-9]+(_amd64|_arm64|-1\.x86_64|-1\.aarch64|-x86_64|-aarch64)?\.(msi|deb|rpm|AppImage|tar\.gz|zip|dmg|exe)' \
+    | grep -oE "0\.1\.[0-9]+" \
+    | sort -u \
+    | grep -v "^$VERSION$" || true)
+if [[ -z "$stale_installers" ]]; then
+    printf "  ✓ every versioned installer filename in README install commands matches $VERSION\n"
+    PASS=$((PASS + 1))
+else
+    echo "  ✗ stale installer filename versions found in README.md install commands:"
+    for v in $stale_installers; do
+        echo "      $v — bump to $VERSION"
+        grep -vE 'releases/tag/v0\.1\.' README.md | grep -nE "notepatra(-local-ai)?[-_][^\"\`]*?$v" | head -2 | sed 's/^/        /'
+    done
+    FAIL=$((FAIL + 1))
 fi
 
 echo
