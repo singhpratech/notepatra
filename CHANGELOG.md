@@ -7,6 +7,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.83] — 2026-05-14
+
+**Docs-only release. Same binary as v0.1.82. Sweeps eleven user-facing v0.1.81 strings on the website that v0.1.82 left stale, and wires a stale-version-ref scanner into `release-check.sh` so the same drift can't ship silently again.**
+
+### Fixed (docs)
+
+- **`docs/index.html`** — eleven user-facing v0.1.81 strings swept to v0.1.83 (hero badge, sticky download CTA `aria-label` + visible text, main download section label, both "Get Notepatra v…" buttons, JSON-LD FAQ entries "Latest v0.1.81 download sizes" + "as of v0.1.81", page-body lead "As of v0.1.81: 226 file types · 92 language lexers", "Latest v0.1.81 download sizes" body prose, "as of v0.1.81 — Python, JavaScript, …" lexer paragraph).
+- **`docs/index.html`** — JSON-LD `softwareVersion` 0.1.82 → 0.1.83.
+- **`docs/index.html`** — latest version-card swapped from v0.1.82 → v0.1.83 (per the v0.1.76 single-card website policy).
+- **`docs/docs.html`** — six v0.1.82 references swept to v0.1.83 (page tag header "v0.1.82 docs", "Latest release is v0.1.82", four "as of v0.1.82" prose lines).
+- **`README.md`** — v0.1.82 references swept to v0.1.83 in download sizes / `.deb` filename / `--version` self-id / hero introduction. New v0.1.83 row added at the top of the releases table.
+
+### Added (gate)
+
+- **`scripts/stale-text-check.sh`** — new "stale version-ref sweep" section. Enumerates the user-facing phrases that must always contain the current `$VERSION` and fails the release if any contains an older version. Templates use a `__V__` placeholder substituted twice: once with the dot-escaped current version literal, once with the any-version regex `0\.1\.[0-9]+`. Match counts are compared per phrase. CHANGELOG entries / release-notes / past release-card descriptions are out of scope (only the enumerated user-facing phrases are scanned).
+
+### Unchanged from v0.1.82
+
+- All security hardening from v0.1.82 carries forward unchanged: install-script hard-fail SHA, cosign verification on install + updater, 38/38 actions SHA-pinned, `install-canary.yml`, AI Base URL validation, credential scrubber patterns, tag protection ruleset, Dependabot security updates, `cargo clippy -D warnings` + `cargo fmt --check` + `cargo audit --deny warnings` release gates, tab-numbering fix.
+- 31/31 ctest pass. Same 51 signed artifacts shipped per platform.
+
+---
+
 ## [0.1.82] — 2026-05-14
 
 **Security hardening sweep (6 attack surfaces audited) + tab-numbering fix. No UX changes beyond the AI Base URL warn-confirm dialog. Safe drop-in upgrade.**

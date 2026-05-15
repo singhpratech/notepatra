@@ -49,7 +49,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is ~9 MB stripped across platforms; full downloads are 3.6 MB (Linux x64 tar.gz), 28.7 MB (macOS DMG with bundled Qt), 42.5 MB (Windows MSI with bundled Qt DLLs). 226 file types. 92 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.82",
+      "softwareVersion": "0.1.83",
       "fileSize": "9 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -151,7 +151,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.81 download sizes: 3.6 MB Linux x64 tar.gz, 3.4 MB Linux ARM64 tar.gz, 28.7 MB macOS DMG (with bundled Qt), 42.5 MB Windows MSI / 33.7 MB NSIS / 38.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~9 MB stripped across every platform. Latest v0.1.83 download sizes: 3.6 MB Linux x64 tar.gz, 3.4 MB Linux ARM64 tar.gz, 28.7 MB macOS DMG (with bundled Qt), 42.5 MB Windows MSI / 33.7 MB NSIS / 38.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
           }
         },
         {
@@ -167,7 +167,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.81: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.83: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.81">
-        Download v0.1.81 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.83">
+        Download v0.1.83 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.81 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.83 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~9 MB bare, ~3 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints.</p>
 
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.81</div>
+        <div class="section-label">Download v0.1.83</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1467,7 +1467,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.81 →
+                Get Notepatra v0.1.83 →
               </a>
             </div>
 
@@ -1510,7 +1510,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.81 →
+                Get Notepatra Local AI v0.1.83 →
               </a>
             </div>
           </div>
@@ -1968,64 +1968,42 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.82 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.83 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-05-14</span>
-                        <span>· Deep security hardening sweep across 6 attack surfaces (install scripts, release pipeline, supply chain, binary network, website, repo settings) + a long-standing tab-numbering fix. Hard-fail SHA verify on install. Cosign verification on install scripts and in-app updater. All 38 of 38 GitHub Actions SHA-pinned. AI Base URL guarded against phishing. Tab names no longer "go back" when you close a sibling.</span>
+                        <span>· Stale-version-ref sweep on the website + new release-check gate. v0.1.82 shipped the security hardening sweep cleanly, but eleven user-facing v0.1.81 strings on <code>docs/index.html</code> (hero badge, sticky CTA, download section, FAQ JSON-LD, "as of v0.1.81" prose) were not bumped in the same commit. This release sweeps those, swaps the on-page latest card, AND wires a gate into <code>scripts/stale-text-check.sh</code> so a release with mismatched user-facing version strings can no longer pass <code>release-check.sh</code>. The website-policy memory existed since v0.1.76 — it failed because the check was advice, not a gate. Same binary, same 51 signed artifacts.</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>🔒 Security — install scripts hard-fail SHA verification</h5>
+                        <h5>🧹 Docs — stale v0.1.81 user-facing string sweep</h5>
                         <ul>
-                            <li><strong>The bug.</strong> Pre-v0.1.82 <code>docs/install.sh</code> and <code>docs/install.ps1</code> soft-failed: <code>if curl ... 2&gt;/dev/null; then verify; fi</code> proceeded to install if the <code>SHA256SUMS</code> fetch returned a network error or 404. An attacker on a hostile network who could MITM just the sums file (while letting the binary through) would bypass verification entirely. The stale <code>SHA256SUMS.v0.1.0.txt</code> fallback URL ensured every release ≥ v0.1.1 fell through to the silent-skip path.</li>
-                            <li><strong>The fix.</strong> Both scripts now hard-fail if sums are unreachable or the artifact is not listed in them. Every <code>curl</code> uses <code>--proto '=https' --tlsv1.2</code>. <code>umask 077</code> set before <code>mktemp -d</code>.</li>
+                            <li><strong>The drift.</strong> v0.1.82 swapped the "latest" release card to v0.1.82 but left eleven older user-facing references stuck on v0.1.81: hero badge (<code>v0.1.81 · Now Available</code>), sticky download CTA (<code>aria-label</code> + visible text), main download section label, both "Get Notepatra v…" buttons, JSON-LD FAQ <code>Latest v0.1.81 download sizes</code> + <code>as of v0.1.81</code> entries, page-body "As of v0.1.81: 226 file types" lead, and <code>as of v0.1.81 — Python, JavaScript, …</code> lexer paragraph.</li>
+                            <li><strong>Why it leaked.</strong> The release flow had a memory entry that said "sweep stale version refs every release" but no mechanical gate — relied on the operator remembering to grep. The pre-existing <code>stale-text-check.sh</code> only validated canonical feature counts (lexer / file-type / backend totals), never user-facing version strings.</li>
+                            <li><strong>The fix.</strong> Bumped all eleven phrases to v0.1.83. Demoted the v0.1.82 latest card to its slot in the GitHub Releases list (per the v0.1.76 policy: only latest detail on the website).</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🔏 Security — cosign verification on install + auto-updater</h5>
+                        <h5>🔬 Tooling — stale-version-ref gate in release-check</h5>
                         <ul>
-                            <li><strong>Install scripts.</strong> When <code>cosign</code> is on <code>PATH</code>, <code>install.sh</code> and <code>install.ps1</code> now fetch <code>&lt;artifact&gt;.sig</code> + <code>&lt;artifact&gt;.pem</code> and run <code>cosign verify-blob</code> automatically. The <code>cert-identity-regexp</code> is pinned to <code>^https://github.com/singhpratech/notepatra/.github/workflows/.+@refs/tags/&lt;tag&gt;$</code> — was a permissive regex matching any workflow in the repo.</li>
-                            <li><strong>Auto-updater (<code>src/updater.cpp</code>).</strong> Same verification, same literal cert-identity pin. Hard-fails on mismatch; releases pre-v0.1.60 without <code>.sig</code>/<code>.pem</code> assets gracefully fall back to SHA-only.</li>
+                            <li><strong>New section</strong> in <code>scripts/stale-text-check.sh</code>: an explicit list of user-facing phrases (hero badge / sticky CTA / download buttons / FAQ / docs.html tag header / README latest-release lines / JSON-LD <code>softwareVersion</code>) that <em>must</em> contain the current <code>$VERSION</code> after every bump. Any occurrence of an older version in those phrases fails the release.</li>
+                            <li><strong>Templating</strong> uses a <code>__V__</code> placeholder substituted twice — once with the current version (literal), once with the any-version regex <code>0\.1\.[0-9]+</code> — and compares match counts. Older versions in CHANGELOG entries / release-notes archives / past release-card descriptions are untouched (only the enumerated phrases are scanned).</li>
+                            <li><strong>Memory rule</strong> updated: this is now the canonical example of the "memory → gate" promotion pattern. A repeated mechanical check belongs in <code>release-check.sh</code>, not in the operator's head.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>📌 Security — all 38 GitHub Actions SHA-pinned</h5>
+                        <h5>📦 Same binary as v0.1.82</h5>
                         <ul>
-                            <li><strong>0/38 → 38/38.</strong> Every <code>uses:</code> line in <code>build.yml</code>, <code>codeql.yml</code>, <code>quality.yml</code> is now 40-char SHA-pinned with a <code># v&lt;major&gt;</code> trailing comment. Highest-risk three first: <code>actions/attest-build-provenance</code>, <code>softprops/action-gh-release</code>, <code>sigstore/cosign-installer</code>. Six <code>dtolnay/rust-toolchain@stable</code> (a <em>branch</em> ref the action owner could fast-forward) are also pinned.</li>
-                            <li><strong>New <code>.github/workflows/install-canary.yml</code></strong> — daily + on-release diff of the served <code>notepatra.org/install.{sh,ps1}</code> vs the repo's <code>docs/</code> copies. Opens an issue on drift (catches GitHub Pages / DNS / registrar compromise).</li>
-                            <li><strong>Tag protection ruleset</strong> added for <code>refs/tags/v*</code> (no deletion / no force-push / signed-tag required). <strong>Dependabot security updates</strong> enabled.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>🔑 Security — AI Base URL validation</h5>
-                        <ul>
-                            <li><strong>The risk.</strong> <code>Preferences → AI → Base URL</code> used to accept any string with no validation. A "blog post recommends faster mirror at https://faster-openai.example/v1" social-engineering attack → user pastes URL → next chat sends <code>Authorization: Bearer sk-…</code> to the attacker. API key stolen.</li>
-                            <li><strong>The fix.</strong> <code>src/preferences.cpp</code> validates on save: malformed URLs rejected, plain <code>http://</code> to public hosts rejected (API key would travel in plaintext), and any host outside the vendor allowlist (OpenAI / OpenRouter / Anthropic / Google AI / Ollama / Mistral / Groq / Cohere / Azure OpenAI) pops a warn-confirm dialog.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>🧪 Fix — tab-numbering no longer "goes back"</h5>
-                        <ul>
-                            <li><strong>The bug.</strong> Two cooperating bugs in <code>src/mainwindow.cpp</code>: (a) <code>updateTabTitle()</code> re-derived the displayed name from <code>index + 1</code> on every modification event — closing "new 1" made the next keystroke in the surviving "new 2" rename it to "new 1"; (b) <code>m_newCount</code> was a plain <code>int = 0</code> reset on every launch — session restore brought back "new 5" but the next <code>Ctrl+N</code> created "new 2" (lower than visible).</li>
-                            <li><strong>The fix.</strong> <code>newFile()</code> now scans visible tab labels and assigns <code>max(existing N) + 1</code> (defaults to 1 when no untitled tabs are visible). <code>updateTabTitle()</code> for untitled tabs preserves the assigned label instead of re-deriving from index.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>🧹 Security — credential scrubber + release gate</h5>
-                        <ul>
-                            <li><strong><code>src/credscrub.cpp</code></strong> — seven new patterns redacted before prompts leave the app: Cloudflare <code>CFPAT-</code>, DigitalOcean <code>dop_v1_</code>, npm <code>npm_</code>, Twilio <code>SK…</code>/<code>AC…</code>, Azure Storage <code>AccountKey=</code>, GCP service-account JSON, HTTP <code>X-API-Key</code> / <code>Authorization</code> header values.</li>
-                            <li><strong><code>scripts/release-check.sh</code></strong> — three new required gates: <code>cargo clippy --all-targets --all-features -- -D warnings</code>, <code>cargo fmt --check</code>, <code>cargo audit --deny warnings</code> (auto-installs <code>cargo-audit</code> when missing).</li>
-                            <li><strong><code>src/fontpack.h</code> / <code>.cpp</code></strong> — added <code>expectedSha256</code> field to <code>Entry</code>; installer verifies downloads when set. Groundwork for upstream-org-compromise protection (font SHAs populated incrementally).</li>
-                            <li><strong><code>SECURITY.md</code></strong> reconciled with the live repo ruleset; cosign verify recipe updated to the literal cert-identity pin.</li>
+                            <li><strong>No C++ / Rust changes.</strong> All v0.1.82 security hardening (install-script hard-fail SHA, cosign verification, 38/38 actions SHA-pinned, AI Base URL validation, credscrub patterns) carries forward unchanged. 31/31 ctest pass. Same 51 signed artifacts shipped per platform.</li>
+                            <li><strong>Why bump the version</strong> for a docs-only change? Because the user-facing website was misrepresenting the latest release for ~25 minutes after v0.1.82 shipped. The cleanest way to make the website honest is to make v0.1.83 the version the website actually points at, AND ship the gate that prevents recurrence in the same commit.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.82">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.83">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.82">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.83">Commits</a>
                 </div>
             </div>
             <!-- v0.1.76 policy: only the LATEST release detail card is shown
@@ -2062,7 +2040,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.81: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
+                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~9 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.83: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2070,7 +2048,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.81 download sizes: <strong>3.6 MB</strong> Linux x64 tar.gz · <strong>3.4 MB</strong> Linux ARM64 tar.gz · <strong>28.7 MB</strong> macOS DMG · <strong>42.5 MB</strong> Windows MSI / <strong>33.7 MB</strong> NSIS / <strong>38.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~9 MB stripped</strong> across every platform. Latest v0.1.83 download sizes: <strong>3.6 MB</strong> Linux x64 tar.gz · <strong>3.4 MB</strong> Linux ARM64 tar.gz · <strong>28.7 MB</strong> macOS DMG · <strong>42.5 MB</strong> Windows MSI / <strong>33.7 MB</strong> NSIS / <strong>38.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~9 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -2078,7 +2056,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.81 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.83 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>How do I verify a download is genuine?</h3>

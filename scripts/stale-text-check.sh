@@ -115,6 +115,93 @@ assert_contains "docs.html: latest release line says v$VERSION" \
     docs/docs.html "Latest release is v$VERSION"
 
 echo
+echo "── stale version-ref sweep (user-facing phrases must point at v$VERSION) ──"
+# This section catches the v0.1.82 → v0.1.83 drift: when a release bumps the
+# version, every user-facing phrase listed below must contain the NEW version.
+# A stale reference (e.g. hero badge stuck on the previous release) fails the
+# release.
+#
+# Out of scope: CHANGELOG entries, release_notes/* archives, past version-card
+# descriptions on the website. Those legitimately reference older versions.
+#
+# Template syntax: __V__ is a placeholder substituted twice — once with the
+# current version's literal (dot-escaped for grep -E), once with the
+# any-version regex `0\.1\.[0-9]+`. Match counts are compared per phrase.
+v_lit_dot_escaped="${VERSION//./\\.}"
+
+check_phrase() {
+    local label="$1" file="$2" template="$3"
+    local current_re="${template//__V__/$v_lit_dot_escaped}"
+    local any_re="${template//__V__/0\\.1\\.[0-9]+}"
+    if [[ ! -f "$file" ]]; then
+        printf "  ⚠ %s — file missing: %s\n" "$label" "$file"
+        return 0
+    fi
+    local all_count current_count
+    all_count=$(grep -oE "$any_re" "$file" 2>/dev/null | wc -l)
+    current_count=$(grep -oE "$current_re" "$file" 2>/dev/null | wc -l)
+    if (( all_count == 0 )); then
+        printf "  ⚠ %s — phrase template not found in %s\n      template: %s\n" \
+               "$label" "$file" "$template"
+        return 0
+    fi
+    if (( current_count == all_count )); then
+        printf "  ✓ %s (%d/%d at v%s)\n" "$label" "$current_count" "$all_count" "$VERSION"
+        PASS=$((PASS + 1))
+    else
+        local stales
+        stales=$(grep -oE "$any_re" "$file" 2>/dev/null | grep -vE "^${current_re}$" | sort -u | head -5 | tr '\n' ' ')
+        printf "  ✗ %s — %d stale ref(s) in %s\n      stale: %s\n      expected all to match: %s (with v%s)\n" \
+               "$label" "$((all_count - current_count))" "$file" "$stales" "$template" "$VERSION"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# IMPORTANT: patterns must be anchored to the live user-facing position
+# (HTML attribute / element / specific colon-terminated phrase), NOT to
+# generic prose snippets like "as of v…" or "v… · Now Available" that
+# legitimately appear inside <code>...</code> quotes in past release-card
+# descriptions or CHANGELOG entries. The anchors below avoid those.
+
+# docs/index.html — hero, FAQ JSON-LD, download CTAs, page-body prose
+check_phrase "index.html JSON-LD softwareVersion" \
+    docs/index.html '"softwareVersion": "__V__"'
+check_phrase "index.html sticky-CTA aria-label" \
+    docs/index.html 'aria-label="Download Notepatra v__V__"'
+check_phrase "index.html sticky-CTA visible text" \
+    docs/index.html 'Download v__V__ ↓'
+check_phrase "index.html hero-badge div" \
+    docs/index.html 'hero-badge">v__V__ · Now Available'
+check_phrase "index.html download section label" \
+    docs/index.html 'section-label">Download v__V__</'
+check_phrase "index.html 'Get Notepatra v…' download button" \
+    docs/index.html 'Get Notepatra v__V__ →'
+check_phrase "index.html 'Get Notepatra Local AI v…' download button" \
+    docs/index.html 'Get Notepatra Local AI v__V__ →'
+check_phrase "index.html 'Latest v… download sizes:' (FAQ + body, colon-anchored)" \
+    docs/index.html 'Latest v__V__ download sizes:'
+check_phrase "index.html JSON-LD 'as of v…:' (FAQ)" \
+    docs/index.html '92 language lexers as of v__V__:'
+check_phrase "index.html body lead 'As of v…: 226 file types · 92'" \
+    docs/index.html 'As of v__V__: 226 file types · 92'
+check_phrase "index.html lexer paragraph 'as of v… —'" \
+    docs/index.html 'language lexers</strong> as of v__V__ —'
+
+# docs/docs.html — tag header + latest-release statement
+check_phrase "docs.html tag header" \
+    docs/docs.html 'class="tag">v__V__ docs<'
+check_phrase "docs.html 'Latest release is v…'" \
+    docs/docs.html 'Latest release is v__V__'
+
+# README.md
+check_phrase "README 'v… downloads:'" \
+    README.md 'v__V__ downloads:'
+check_phrase "README 'Latest v… download sizes:' (colon-anchored)" \
+    README.md 'Latest v__V__ download sizes:'
+check_phrase "README 'Latest release: v…'" \
+    README.md 'Latest release: v__V__'
+
+echo
 echo "── repo metadata ──"
 if [[ -f release_notes/v$VERSION.md ]]; then
     printf "  ✓ release_notes/v%s.md exists\n" "$VERSION"
