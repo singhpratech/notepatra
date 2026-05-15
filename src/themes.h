@@ -23,7 +23,7 @@ inline Theme lightTheme() {
     Theme t;
     t.name = "Light";
     t.editorBg = QColor("#FFFFFF"); t.editorFg = QColor("#000000");
-    t.caretLine = QColor("#E8F5E9"); t.selection = QColor("#ADD6FF"); t.caret = QColor("#000000");
+    t.caretLine = QColor("#E8F5E9"); t.selection = QColor("#5BC8FA"); t.caret = QColor("#000000");
     t.marginBg = QColor("#E4E4E4"); t.marginFg = QColor("#2B91AF"); t.foldBg = QColor("#F0F0F0");
     t.matchedBraceBg = QColor("#FFCCCC"); t.matchedBraceFg = QColor("#CC0000");
     t.windowBg = QColor("#F0F0F0"); t.windowFg = QColor("#000000"); t.toolbarBg = QColor("#F0F0F0");

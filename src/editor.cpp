@@ -661,11 +661,20 @@ void Editor::setupMargins() {
     markerDefine(QsciScintilla::Background, 3);
     setMarkerBackgroundColor(QColor("#F44336"), 3);
 
-    // Setup indicator 9 for double-click word highlight (light orange)
+    // Setup indicator 9 for double-click word highlight — NEON orange
+    // (#FF5500) with high alpha so matches pop. Pure-saturation orange
+    // reads as a true highlight, not a wash.
+    //
+    // Scintilla's SCI_INDICSETFORE expects a Win32 COLORREF (0x00BBGGRR),
+    // NOT Qt's RGB packing. Always BGR-pack.
     SendScintilla(SCI_INDICSETSTYLE, 9, INDIC_ROUNDBOX);
-    SendScintilla(SCI_INDICSETFORE, 9, QColor("#E8A848").rgb() & 0xFFFFFF);
-    SendScintilla(SCI_INDICSETALPHA, 9, 70);
-    SendScintilla(SCI_INDICSETOUTLINEALPHA, 9, 140);
+    {
+        QColor hi("#FF5500");
+        long bgr = (long(hi.blue()) << 16) | (long(hi.green()) << 8) | long(hi.red());
+        SendScintilla(SCI_INDICSETFORE, 9, bgr);
+    }
+    SendScintilla(SCI_INDICSETALPHA, 9, 160);
+    SendScintilla(SCI_INDICSETOUTLINEALPHA, 9, 255);
 }
 
 void Editor::mouseDoubleClickEvent(QMouseEvent *event) {

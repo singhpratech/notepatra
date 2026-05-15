@@ -7,6 +7,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.85] — 2026-05-15
+
+**Markdown Light palette overhaul, Claude-Code-blue text selection, neon-orange match highlight, and a real Scintilla byte-order bug fix.**
+
+### Changed
+
+- **`src/npp_palette.cpp` Markdown Light theme** — full palette replacement. After landing Solarized in v0.1.84 (then iterating through jewel-tone purple/magenta/blue on the user's couch), settled on the SSMS / Notepatra-SQL canonical palette. H1 magenta `#FF00FF`, H2 blue `#0000FF`, H3 maroon `#7F0000`, H4 navy `#000080`, H5 orange `#FF8000`, H6 green `#008000`. Body `#1f1f1f`, bold `#000000`, blockquote `#808080` italic. Reusing the SQL palette gives MD the same hue-family vocabulary the user already knows. Dark + Monokai MD palettes unchanged.
+- **`src/npp_palette.cpp` Markdown inline code** — chip foreground `#1E293B` (Tailwind slate-800) on paper `#CBD5E1` (slate-300). Denser, more present "code pill" feel than the v0.1.84 red-on-cream pass.
+- **`src/themes.h` Light theme selection** — `#ADD6FF` (VS Code Light+ pale wash) → `#5BC8FA` (Claude Code prompt-blue / Tailwind sky-300 cyan-tinted). Vivid enough to read as actual selection while keeping body text legible on top.
+
+### Fixed
+
+- **`src/editor.cpp:664-679` Scintilla indicator byte-order bug (real)** — `SCI_INDICSETFORE` expects a Win32 COLORREF (`0x00BBGGRR`), but the prior code passed `QColor::rgb() & 0xFFFFFF` directly, which is Qt's RGB order. The double-click word-match indicator had been rendering the wrong color since the feature was added — `#E8A848` clay-orange was painting as a light blue. Now BGR-packed correctly via `(blue << 16) | (green << 8) | red`. Indicator 9 also bumped to neon-orange `#FF5500` (alpha 160 fill / 255 outline) so matches pop on the page.
+
+### Out of scope
+
+- Dark + Monokai Markdown palettes — verified unchanged in this release.
+- Selection colors for Dark + Monokai themes — Light was the one flagged as feeling pale.
+- A unified BGR helper for indicator setters across editor / findreplace / compare — fix scoped to editor.cpp for now; can refactor later.
+
+---
+
 ## [0.1.84] — 2026-05-15
 
 **Biggest syntax-highlighting refresh since v0.1.31.** Every supported language got reserved-word coverage updated from primary vendor sources, two brand-new lexers (Plain Text + CSV) replace previous monochrome fallbacks, and the Markdown / YAML / CSS palettes got long-overdue contrast and tint work across Light + Dark + Monokai themes.

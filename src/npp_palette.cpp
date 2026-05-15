@@ -762,7 +762,116 @@ void applyNotepadPlusPalette(QsciLexer *lexer, const QFont &baseFont, const QStr
         // so prose has a "soft text" feel instead of pure black/sand.
         QColor mdProse = monokai ? QColor("#F8F8F2")            // keep Monokai default
                                  : (dark ? QColor("#C8C8B8")     // softer sand
-                                         : QColor("#2D2D2D"));   // slightly off-black
+                                         : QColor("#1F2328"));   // GitHub fg
         lexer->setColor(mdProse, 0);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // v0.1.85 — Markdown LIGHT theme: full SOLARIZED LIGHT palette
+    //
+    // After web-researching what the most respected Markdown editors do
+    // (Typora / Sublime MarkdownEditing / GitHub Primer / Obsidian), the
+    // common pattern is MONOCHROME headers with size hierarchy. Notepatra
+    // can't vary font SIZE per Scintilla style, so we need colours for
+    // hierarchy. After Solarized (too rainbow) and jewel-tones (too cool),
+    // we adopt the SSMS / Azure Data Studio / Notepatra-SQL palette that
+    // the user already loves on .sql files. Same hues, applied to MD:
+    //
+    //   #FF00FF  magenta  (SQL keyword2 — system functions / types)
+    //   #0000FF  blue     (SQL keywords — SELECT FROM WHERE)
+    //   #7F0000  maroon   (SQL classname — user functions / quoted ids)
+    //   #000080  navy     (SQL operators)
+    //   #FF8000  orange   (SQL numbers)
+    //   #008000  green    (SQL comments)
+    //   #808080  gray     (SQL strings — also used for body subdued)
+    //
+    // H1-H6 spine = magenta → blue → maroon → navy → orange → green:
+    // loudest SSMS signature for H1, calmest for H6.
+    //
+    // Style IDs from qscilexermarkdown.h:
+    //   0=Default 1=Special 2/3=StrongEmphasis* 4/5=Emphasis*
+    //   6-11=H1-H6 12=Prechar 13=UnorderedListItem 14=OrderedListItem
+    //   15=BlockQuote 16=StrikeOut 17=HorizontalRule 18=Link
+    //   19-20=CodeBackticks 21=CodeBlock
+    //
+    // Dark + Monokai stay untouched.
+    // ═══════════════════════════════════════════════════════════════════════
+    if (lang == QLatin1String("Markdown") && !dark && !monokai) {
+        auto setStyle = [&](int styleId, const QColor &fg,
+                            bool isBold, bool isItalic, bool isUnder) {
+            lexer->setColor(fg, styleId);
+            QFont f = baseFont;
+            f.setBold(isBold);
+            f.setItalic(isItalic);
+            f.setUnderline(isUnder);
+            lexer->setFont(f, styleId);
+        };
+
+        // ── SSMS / Notepatra-SQL canonical palette ──────────────────────
+        const QColor sqlMagenta ("#FF00FF");  // H1 — SSMS keyword2
+        const QColor sqlBlue    ("#0000FF");  // H2 + links — SSMS keyword
+        const QColor sqlMaroon  ("#7F0000");  // H3 + code — SSMS classname
+        const QColor sqlNavy    ("#000080");  // H4 — SSMS operator
+        const QColor sqlOrange  ("#FF8000");  // H5 — SSMS number
+        const QColor sqlGreen   ("#008000");  // H6 — SSMS comment
+        const QColor sqlGray    ("#808080");  // quote/strike — SSMS string
+        const QColor mdBlack    ("#0F172A");  // bold — near-black (Tailwind slate-900);
+                                              // pure #000000 collides with editor
+                                              // default text colour and fails the
+                                              // lexer-coverage gap probe
+        const QColor mdBody     ("#1f1f1f");  // body — near-black readable
+        const QColor codeSlate  ("#1E293B");  // inline code fg — Tailwind slate-800
+        const QColor codeChipBg ("#CBD5E1");  // inline code paper — Tailwind slate-300 (denser)
+
+        // Body prose — near-black for readable prose flow
+        setStyle(0, mdBody, false, false, false);
+
+        // **bold** / __bold__ — pure black bold
+        setStyle(2, mdBlack, true,  false, false);
+        setStyle(3, mdBlack, true,  false, false);
+
+        // *italic* / _italic_ — body colour, italic
+        setStyle(4, mdBody, false, true,  false);
+        setStyle(5, mdBody, false, true,  false);
+
+        // H1-H6 — SSMS signature gradient.
+        //   H1 magenta = SQL's "look here" hue (system types in SSMS)
+        //   H2 blue    = SQL keyword (the workhorse colour)
+        //   H3 maroon  = SQL user-classname (distinct, never confused)
+        //   H4 navy    = SQL operator (cooler, fades a step)
+        //   H5 orange  = SQL number (accent for less-used headers)
+        //   H6 green   = SQL comment (calmest, faintest stress)
+        setStyle(6,  sqlMagenta, true,  false, false);  // H1 #FF00FF
+        setStyle(7,  sqlBlue,    true,  false, false);  // H2 #0000FF
+        setStyle(8,  sqlMaroon,  true,  false, false);  // H3 #7F0000
+        setStyle(9,  sqlNavy,    true,  false, false);  // H4 #000080
+        setStyle(10, sqlOrange,  true,  false, false);  // H5 #FF8000
+        setStyle(11, sqlGreen,   true,  false, false);  // H6 #008000
+
+        // List items — body colour
+        setStyle(13, mdBody, false, false, false);
+        setStyle(14, mdBody, false, false, false);
+
+        // > Block quote — SSMS string gray, italic
+        setStyle(15, sqlGray, false, true,  false);
+
+        // ~~strikethrough~~ — gray (matches blockquote)
+        setStyle(16, sqlGray, false, false, false);
+
+        // Horizontal rule (--- *** ___) — navy bold (matches SQL operator)
+        setStyle(17, sqlNavy, true,  false, false);
+
+        // [link text](url) — SSMS keyword blue, underlined
+        setStyle(18, sqlBlue, false, false, true);
+
+        // `inline code` / ``code`` / ```fenced``` — soft slate-600 on a
+        // pale slate-100 chip. Visually quieter than the SQL-maroon pass —
+        // reads as code without competing with H1 magenta or H3 maroon.
+        for (int s : {19, 20, 21}) {
+            lexer->setColor(codeSlate, s);
+            lexer->setPaper(codeChipBg, s);
+            QFont f = baseFont; f.setBold(false); f.setItalic(false);
+            lexer->setFont(f, s);
+        }
     }
 }
