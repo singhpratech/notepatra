@@ -35,7 +35,11 @@ LoadResult loadFile(const QString &path) {
     result.errorMsg = fromRust(r.error_msg);
     result.truncated = r.truncated != 0;
 
-    npc_free_string(r.text);
+    // v0.1.87 — text is now a Box<[u8]> on the Rust side (no CString
+    // round-trip). Must free with npc_free_file_text which reclaims the
+    // boxed slice by length, NOT with npc_free_string which would try to
+    // reconstruct a CString and miscompute the size.
+    if (r.text) npc_free_file_text(r.text, r.text_len);
     return result;
 }
 

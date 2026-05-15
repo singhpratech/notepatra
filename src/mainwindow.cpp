@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "editor.h"
+#include "lexerutils.h"
 #include "inlineedit.h"
 #include "npp_palette.h"
 #include "preferences.h"
@@ -1652,13 +1653,38 @@ void MainWindow::saveFile() {
 void MainWindow::saveFileAs() {
     auto *e = currentEditor();
     if (!e) return;
-    QString path = QFileDialog::getSaveFileName(this, "Save As", QDir::homePath(), "All Files (*)");
-    if (!path.isEmpty()) {
-        e->saveFile(path);
-        m_tabs->setTabText(m_tabs->currentIndex(), QFileInfo(path).fileName());
-        m_tabs->setTabToolTip(m_tabs->currentIndex(), path);
-        updateTitle();
-    }
+
+    // v0.1.87 — populate Save As file-type dropdown with ~72 language entries
+    // (was a single "All Files (*)" pre-fix, which made the dropdown dead).
+    // Pre-select the filter matching the current tab's language so the user's
+    // intent ("save this Python file") is the default.
+    QString preselected;
+    const QString filters = buildSaveAsFilters(e->language(), &preselected);
+
+    // Start in the directory of the current file if there is one, else home.
+    const QString startDir = e->filePath().isEmpty()
+        ? QDir::homePath()
+        : QFileInfo(e->filePath()).absolutePath();
+    const QString startName = QFileInfo(e->filePath().isEmpty()
+        ? m_tabs->tabText(m_tabs->currentIndex()).remove(" *")
+        : e->filePath()).fileName();
+    const QString startPath = startDir + QLatin1Char('/') + startName;
+
+    QFileDialog dialog(this, QStringLiteral("Save As"), startPath);
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setNameFilter(filters);
+    if (!preselected.isEmpty()) dialog.selectNameFilter(preselected);
+
+    if (dialog.exec() != QDialog::Accepted) return;
+    const QStringList chosen = dialog.selectedFiles();
+    if (chosen.isEmpty()) return;
+    const QString path = chosen.first();
+    if (path.isEmpty()) return;
+
+    e->saveFile(path);
+    m_tabs->setTabText(m_tabs->currentIndex(), QFileInfo(path).fileName());
+    m_tabs->setTabToolTip(m_tabs->currentIndex(), path);
+    updateTitle();
 }
 
 void MainWindow::closeTab(int index) {
@@ -1677,9 +1703,17 @@ void MainWindow::closeTab(int index) {
             if (!editor->filePath().isEmpty())
                 editor->saveFile();
             else {
-                QString path = QFileDialog::getSaveFileName(this, "Save File");
-                if (!path.isEmpty()) editor->saveFile(path);
-                else return;
+                // v0.1.87 — same filter-list treatment as saveFileAs().
+                QString preselected;
+                const QString filters = buildSaveAsFilters(editor->language(), &preselected);
+                QFileDialog d(this, QStringLiteral("Save File"), QDir::homePath());
+                d.setAcceptMode(QFileDialog::AcceptSave);
+                d.setNameFilter(filters);
+                if (!preselected.isEmpty()) d.selectNameFilter(preselected);
+                if (d.exec() != QDialog::Accepted) return;
+                const QStringList chosen = d.selectedFiles();
+                if (chosen.isEmpty() || chosen.first().isEmpty()) return;
+                editor->saveFile(chosen.first());
             }
         } else if (result == QMessageBox::Cancel) {
             return;

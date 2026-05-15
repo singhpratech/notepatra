@@ -19,6 +19,7 @@
 #include <QTextStream>
 #include <QRegularExpression>
 #include <QSplitter>
+#include <algorithm>
 
 // Helper: get text from QComboBox reliably
 static QString comboText(QComboBox *cb) {
@@ -792,11 +793,28 @@ void FindReplaceDialog::doMarkAll() {
     QByteArray utf8 = e->text().toUtf8();
     int needleLen = needle.toUtf8().size();
 
-    for (auto pos : positions) {
-        e->SendScintilla(QsciScintilla::SCI_INDICATORFILLRANGE, (int)pos, needleLen);
+    // v0.1.87 — cap Mark All to 10000 indicators on very large files.
+    // SCI_INDICATORFILLRANGE issues a paint invalidation per call; on a
+    // 118 MB file with 100k matches the redraw stalls the UI for seconds.
+    // 10000 highlights still gives a strong "many matches" signal without
+    // freezing the editor. The result label reports the truncation so
+    // users understand the count.
+    const bool largeFile = utf8.size() > 50 * 1024 * 1024;
+    const size_t cap = largeFile ? size_t{10000} : positions.size();
+    const size_t drawCount = std::min<size_t>(cap, positions.size());
+
+    for (size_t i = 0; i < drawCount; ++i) {
+        e->SendScintilla(QsciScintilla::SCI_INDICATORFILLRANGE,
+                         (int)positions[i], needleLen);
     }
 
-    m_resultLabel->setText(QString("Marked %1 occurrence(s)").arg(positions.size()));
+    if (largeFile && positions.size() > cap) {
+        m_resultLabel->setText(
+            QString("Marked first %1 of %2 occurrence(s) — capped for performance on large files")
+                .arg(drawCount).arg(positions.size()));
+    } else {
+        m_resultLabel->setText(QString("Marked %1 occurrence(s)").arg(positions.size()));
+    }
 }
 
 // ═══════════════════════════════════════

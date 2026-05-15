@@ -2,7 +2,7 @@
 
 use crate::FileLoadResult;
 use encoding_rs::*;
-use libc::c_int;
+use libc::{c_char, c_int};
 use memmap2::Mmap;
 use std::ffi::CString;
 use std::fs::{self, File};
@@ -117,39 +117,116 @@ pub fn load_file(path: &str) -> FileLoadResult {
         }
     }
 
-    let result_text = decode_with(detected, data);
+    // v0.1.87 — UTF-8 fast path. The hot case (default Linux/macOS encoding,
+    // most modern files) is BOM-less UTF-8 that's already valid as-is in the
+    // mmap. Pre-v0.1.87 we always called `UTF_8.decode(data)` even for already-
+    // valid UTF-8, which allocates a fresh 118 MB String for a 118 MB file.
+    // Now we validate via `std::str::from_utf8` (cheap, SIMD-accelerated in
+    // libcore) and pass the mmap bytes directly to make_result_bytes — one
+    // copy instead of two. For UTF-8 BOM we strip the 3-byte BOM up front.
+    //
+    // EOL detection: bounded to first 64 KB. Two scans of 118 MB pre-fix
+    // (`contains("\r\n")` then `contains('\r')`) cost ~300 ms. Real files
+    // have consistent line endings; 64 KB is enough to classify.
+    const EOL_SAMPLE_BYTES: usize = 65536;
 
-    let mut result_text = result_text;
+    let (text_bytes, eol_mode) = match detected {
+        DetectedEnc::Utf8 if std::str::from_utf8(data).is_ok() => {
+            let sample_end = data.len().min(EOL_SAMPLE_BYTES);
+            let sample = &data[..sample_end];
+            let eol = detect_eol_in_bytes(sample);
+            (data.to_vec(), eol)
+        }
+        DetectedEnc::Utf8Bom if data.len() >= 3 && std::str::from_utf8(&data[3..]).is_ok() => {
+            // Strip BOM up front and pass the rest verbatim.
+            let body = &data[3..];
+            let sample_end = body.len().min(EOL_SAMPLE_BYTES);
+            let eol = detect_eol_in_bytes(&body[..sample_end]);
+            (body.to_vec(), eol)
+        }
+        _ => {
+            // Fall back to full decode for UTF-16 / UTF-32 / Windows-1252 /
+            // mis-detected UTF-8. EOL detection here works on the decoded
+            // text because the byte-level sniff doesn't apply to UTF-16 etc.
+            let mut result_text = decode_with(detected, data);
+            if truncated != 0 {
+                result_text.push_str(&format!(
+                    "\n\n{}\n[TRUNCATED — showing first {} MB of {:.0} MB]\n{}\n",
+                    "=".repeat(60),
+                    MAX_EDITOR_BUFFER / (1024 * 1024),
+                    file_size as f64 / (1024.0 * 1024.0),
+                    "=".repeat(60),
+                ));
+            }
+            let sample: &str = if result_text.len() <= EOL_SAMPLE_BYTES {
+                &result_text
+            } else {
+                // Slice at a char boundary near 64 KB to keep is_char_boundary safe.
+                let mut cutoff = EOL_SAMPLE_BYTES;
+                while cutoff > 0 && !result_text.is_char_boundary(cutoff) {
+                    cutoff -= 1;
+                }
+                &result_text[..cutoff]
+            };
+            let eol = if sample.contains("\r\n") {
+                1
+            } else if sample.contains('\r') {
+                2
+            } else {
+                0
+            };
+            return make_result_bytes(
+                result_text.into_bytes(),
+                detected.label(),
+                eol,
+                file_size,
+                0,
+                truncated,
+            );
+        }
+    };
 
-    // Add truncation notice
+    // UTF-8 / UTF-8 BOM fast path: append truncation notice if needed and ship.
+    let mut text_bytes = text_bytes;
     if truncated != 0 {
-        result_text.push_str(&format!(
+        let notice = format!(
             "\n\n{}\n[TRUNCATED — showing first {} MB of {:.0} MB]\n{}\n",
             "=".repeat(60),
             MAX_EDITOR_BUFFER / (1024 * 1024),
             file_size as f64 / (1024.0 * 1024.0),
             "=".repeat(60),
-        ));
+        );
+        text_bytes.extend_from_slice(notice.as_bytes());
     }
 
-    // Detect EOL — on UTF-16/32 the sample has interleaved nulls so naive
-    // byte-windowing wouldn't match; check the decoded text instead.
-    let eol_mode = if result_text.contains("\r\n") {
-        1 // CRLF
-    } else if result_text.contains('\r') {
-        2 // CR
-    } else {
-        0 // LF
-    };
-
-    make_result(
-        &result_text,
+    make_result_bytes(
+        text_bytes,
         detected.label(),
         eol_mode,
         file_size,
         0,
         truncated,
     )
+}
+
+/// Byte-level EOL detection — fast scan for CRLF / CR / LF over an ASCII-ish
+/// sample. Safe to call on UTF-8 bytes; matches the previous String-level
+/// detection for any reasonable input.
+fn detect_eol_in_bytes(sample: &[u8]) -> c_int {
+    let mut had_cr = false;
+    for (i, &b) in sample.iter().enumerate() {
+        if b == b'\r' {
+            if sample.get(i + 1) == Some(&b'\n') {
+                return 1; // CRLF
+            }
+            had_cr = true;
+        }
+    }
+    if had_cr {
+        2 // CR (lone, no LF follower)
+    } else {
+        0 // LF or no EOL in sample
+    }
 }
 
 pub fn save_file(path: &str, text: &[u8], enc_name: &str) -> c_int {
@@ -304,9 +381,28 @@ fn make_result(
     status: c_int,
     truncated: c_int,
 ) -> FileLoadResult {
-    let text_len = text.len();
+    make_result_bytes(text.as_bytes().to_vec(), enc, eol, size, status, truncated)
+}
+
+// v0.1.87 — fast path for the common case where the file IS valid UTF-8 and
+// we can hand its bytes directly through FFI without round-tripping through
+// a String. Caller supplies an owned Vec<u8> so make_result_bytes can convert
+// to a Box<[u8]> with no extra copy. For a 118 MB UTF-8 file this saves the
+// `String::from_utf8_lossy` / `Utf8.decode` allocation entirely (was: mmap →
+// String → CString → QString = 3 copies; now: mmap → Vec → QString = 2).
+fn make_result_bytes(
+    text: Vec<u8>,
+    enc: &str,
+    eol: c_int,
+    size: u64,
+    status: c_int,
+    truncated: c_int,
+) -> FileLoadResult {
+    let text_bytes = text.into_boxed_slice();
+    let text_len = text_bytes.len();
+    let text_ptr = Box::into_raw(text_bytes) as *mut c_char;
     FileLoadResult {
-        text: CString::new(text).unwrap_or_default().into_raw(),
+        text: text_ptr,
         text_len,
         encoding: CString::new(enc).unwrap_or_default().into_raw(),
         eol_mode: eol,
@@ -356,10 +452,14 @@ mod tests {
     fn text_of(text_bytes: &[u8]) -> String {
         let f = write_tmp(text_bytes);
         let r = load_file(f.path().to_str().unwrap());
+        // v0.1.87 — FileLoadResult.text is now a length-prefixed Box<[u8]>
+        // (NOT a CString). Read via (ptr, len) like the C++ side does.
+        if r.text.is_null() || r.text_len == 0 {
+            return String::new();
+        }
         unsafe {
-            std::ffi::CStr::from_ptr(r.text)
-                .to_string_lossy()
-                .into_owned()
+            let slice = std::slice::from_raw_parts(r.text as *const u8, r.text_len);
+            String::from_utf8_lossy(slice).into_owned()
         }
     }
 

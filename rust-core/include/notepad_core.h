@@ -138,6 +138,11 @@ void npc_free_string(char *s);
 void npc_free_matches(SearchResult result);
 void npc_free_text_result(TextResult result);
 
+/* v0.1.87 — file-text buffer free (NOT a CString — boxed byte slice).
+ * Use this for FileLoadResult.text. Other char* fields (encoding,
+ * error_msg) remain CStrings and use npc_free_string. */
+void npc_free_file_text(char *text, size_t text_len);
+
 #ifdef __cplusplus
 }
 #endif

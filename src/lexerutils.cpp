@@ -2,6 +2,7 @@
 
 #include <QFileInfo>
 #include <QHash>
+#include <QStringList>
 
 #include <Qsci/qsciscintilla.h>
 #include <Qsci/qscilexerbatch.h>
@@ -126,6 +127,116 @@
 #include <Qsci/qscilexersrec.h>
 #define HAS_LEXER_SREC
 #endif
+
+QString buildSaveAsFilters(const QString &currentLanguage,
+                           QString *selectedFilter) {
+    // Curated language → glob-list table for the Save As dropdown. Separate
+    // from the extension-detection extMap in detectLanguageFromPath because
+    // save-time grouping is by intent ("save as Python") not by detection
+    // disambiguation. Ordered roughly by popularity then alphabetically.
+    //
+    // Adding a language: append below + (recommended) add a matching entry
+    // to extMap so reading the file back picks the right lexer.
+    static const struct { const char *name; const char *exts; } entries[] = {
+        {"Plain Text",          "*.txt *.log *.out *.text"},
+        {"Markdown",            "*.md *.markdown *.mkd *.rmd *.rst"},
+        {"Python",              "*.py *.pyw *.pyx *.pyi *.pxd"},
+        {"JavaScript",          "*.js *.mjs *.cjs *.jsx"},
+        {"TypeScript",          "*.ts *.tsx *.mts *.cts"},
+        {"C",                   "*.c *.h"},
+        {"C++",                 "*.cpp *.cxx *.cc *.hpp *.hxx *.hh *.ino"},
+        {"C#",                  "*.cs"},
+        {"Java",                "*.java"},
+        {"Rust",                "*.rs"},
+        {"Go",                  "*.go"},
+        {"Ruby",                "*.rb *.rake *.gemspec *.rbw"},
+        {"PHP",                 "*.php *.phtml"},
+        {"Swift",               "*.swift"},
+        {"Kotlin",              "*.kt *.kts *.ktm"},
+        {"Scala",               "*.scala *.sc"},
+        {"Dart",                "*.dart"},
+        {"Solidity",            "*.sol"},
+        {"Zig",                 "*.zig *.zon"},
+        {"Julia",               "*.jl"},
+        {"R",                   "*.r *.R"},
+        {"F#",                  "*.fs *.fsx *.fsi"},
+        {"HTML",                "*.html *.htm *.xhtml *.html5 *.vue *.svelte"},
+        {"CSS",                 "*.css *.scss *.sass *.less"},
+        {"XML",                 "*.xml *.svg *.xsl *.xsd *.plist *.rss *.xaml"},
+        {"JSON",                "*.json *.jsonc *.geojson *.webmanifest *.har"},
+        {"JSON Lines",          "*.jsonl *.ndjson"},
+        {"JSON5",               "*.json5"},
+        {"YAML",                "*.yaml *.yml"},
+        {"TOML",                "*.toml"},
+        {"CSV / TSV",           "*.csv *.tsv"},
+        {"SQL",                 "*.sql *.ddl *.dml *.pgsql *.plsql *.tsql *.mysql *.sqlite"},
+        {"Bash / Shell",        "*.sh *.bash *.zsh *.fish *.ksh *.csh"},
+        {"PowerShell",          "*.ps1 *.psm1 *.psd1"},
+        {"Batch",               "*.bat *.cmd"},
+        {"Perl",                "*.pl *.pm *.pod *.t"},
+        {"Lua",                 "*.lua *.luau *.wlua"},
+        {"Fortran",             "*.f *.f90 *.f95 *.f03 *.for *.fpp *.f77"},
+        {"MATLAB / Octave",     "*.m *.mat *.oct"},
+        {"Pascal",              "*.pas *.pp *.dpr *.dpk"},
+        {"Verilog",             "*.v *.sv *.svh"},
+        {"VHDL",                "*.vhd *.vhdl"},
+        {"LaTeX",               "*.tex *.latex *.bib *.sty"},
+        {"Protobuf",            "*.proto"},
+        {"GraphQL",             "*.graphql *.gql"},
+        {"HCL / Terraform",     "*.tf *.tfvars *.hcl"},
+        {"Thrift",              "*.thrift"},
+        {"GDScript",            "*.gd *.tres *.tscn"},
+        {"Nim",                 "*.nim *.nims"},
+        {"Cython",              "*.pyx *.pxd"},
+        {"Mojo",                "*.mojo"},
+        {"Crystal",             "*.cr"},
+        {"Elixir",              "*.ex *.exs"},
+        {"Groovy",              "*.groovy *.gradle"},
+        {"Apex",                "*.cls *.trigger"},
+        {"Vala",                "*.vala *.vapi"},
+        {"Hack",                "*.hack"},
+        {"D",                   "*.d *.di"},
+        {"Jinja",               "*.jinja *.jinja2 *.j2"},
+        {"Liquid",              "*.liquid"},
+        {"Twig",                "*.twig"},
+        {"Dockerfile",          "Dockerfile Containerfile *.dockerfile"},
+        {"Fish",                "*.fish"},
+        {"Nushell",             "*.nu"},
+        {"CMake",               "CMakeLists.txt *.cmake"},
+        {"Makefile",            "Makefile makefile GNUmakefile"},
+        {"Diff / Patch",        "*.diff *.patch"},
+        {"Properties / INI",    "*.ini *.cfg *.conf *.properties *.env *.editorconfig"},
+        {"TeX BibTeX",          "*.bib *.bibtex"},
+        {"PostScript",          "*.ps *.eps"},
+        {"Assembly",            "*.asm *.s *.S *.nasm *.masm"},
+        {"Intel HEX",           "*.hex *.ihex"},
+        {"Motorola S-Record",   "*.srec *.s19 *.s28"},
+        {"Gitignore",           ".gitignore .dockerignore"},
+    };
+
+    QStringList filters;
+    filters.reserve(static_cast<int>(sizeof(entries) / sizeof(entries[0])) + 1);
+    filters << QStringLiteral("All Files (*)");
+
+    QString preselect;
+    const QString cur = currentLanguage.trimmed();
+    for (const auto &e : entries) {
+        const QString name = QString::fromLatin1(e.name);
+        const QString filter = QStringLiteral("%1 (%2)")
+                                   .arg(name, QString::fromLatin1(e.exts));
+        filters << filter;
+        // Try exact match first, then case-insensitive fallback.
+        if (!cur.isEmpty() && preselect.isEmpty() &&
+            (cur.compare(name, Qt::CaseInsensitive) == 0 ||
+             (cur == QLatin1String("CSV") && name == QLatin1String("CSV / TSV")) ||
+             (cur == QLatin1String("Bash") && name == QLatin1String("Bash / Shell")))) {
+            preselect = filter;
+        }
+    }
+
+    if (selectedFilter) *selectedFilter = preselect;
+    return filters.join(QStringLiteral(";;"));
+}
 
 QString detectLanguageFromPath(const QString &path, const QString &text) {
     const QFileInfo fi(path);

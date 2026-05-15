@@ -748,6 +748,17 @@ bool Editor::loadFile(const QString &path) {
         applyLexer("Plain Text");
         setAutoCompletionSource(QsciScintilla::AcsNone);
         setBraceMatching(QsciScintilla::NoBraceMatch);
+        // v0.1.87 — extra UX gates for large files. Word wrap recalculates
+        // line layout on every edit; on a 118 MB file this stutters the
+        // typing cursor. Disabling it brings editing back to instant. User
+        // can re-enable from View menu if they need it. Tracked as part of
+        // the "Up to 2 GB" file-size guarantee — without these gates, big
+        // files technically opened but were sluggish to edit.
+        setWrapMode(QsciScintilla::WrapNone);
+        // Indent guides + edge column don't add value on plain-text dumps
+        // and they trigger a paint per line on resize.
+        setIndentationGuides(false);
+        setEdgeMode(QsciScintilla::EdgeNone);
     } else {
         applyLexer(detectLanguageFromPath(path, result.text));
     }

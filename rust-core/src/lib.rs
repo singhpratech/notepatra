@@ -487,6 +487,21 @@ pub unsafe extern "C" fn npc_free_string(s: *mut c_char) {
     }
 }
 
+/// Free a buffer allocated by `npc_load_file` for the FileLoadResult.text
+/// field. v0.1.87 — file_io.rs no longer round-trips through CString
+/// (saves 118 MB heap allocation + O(N) NUL-scan on a 118 MB file). The
+/// text buffer is a `Box<[u8]>` so we must reclaim it as such, not via
+/// CString::from_raw which assumes NUL-termination and would mis-compute
+/// the size.
+#[no_mangle]
+pub unsafe extern "C" fn npc_free_file_text(text: *mut c_char, text_len: size_t) {
+    if !text.is_null() && text_len > 0 {
+        unsafe {
+            let _ = Box::from_raw(ptr::slice_from_raw_parts_mut(text as *mut u8, text_len));
+        }
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn npc_free_matches(result: SearchResult) {
     if !result.positions.is_null() && result.count > 0 {

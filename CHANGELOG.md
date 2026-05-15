@@ -7,6 +7,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.87] — 2026-05-15
+
+**Save As file-type dropdown + large-file load speed-up.** Two user-reported pain points: dead Save As dropdown vs Notepad++, and 100+ MB files slower than the "up to 2 GB" promise.
+
+### Fixed
+
+- **`src/mainwindow.cpp:1655,1680` Save As file-type dropdown was dead** — only filter passed was `"All Files (*)"`, so the bottom-of-dialog dropdown had one entry. New `buildSaveAsFilters()` helper in `src/lexerutils.{h,cpp}` returns ~72 language entries: `Python (*.py *.pyw *.pyx)`, `Markdown (*.md *.markdown *.mkd *.rmd *.rst)`, `JSON (*.json *.jsonc *.geojson *.webmanifest *.har)`, `SQL (*.sql *.ddl *.dml *.pgsql *.plsql *.tsql *.mysql *.sqlite)`, every supported language. The filter matching the current tab's language is pre-selected. Same fix in `closeTab()` "Save before close?" prompt which had NO filter at all.
+
+### Performance
+
+- **`rust-core/src/file_io.rs` UTF-8 fast path** — pre-fix, every file load called `UTF_8.decode(mmap_bytes)` which allocates a fresh `String` even when the mmap bytes are already valid UTF-8. Now validates via `std::str::from_utf8` (SIMD-accelerated) and passes the mmap bytes directly. Saves ~118 MB heap allocation + ~250 ms on a 118 MB file. UTF-16 / UTF-32 / Windows-1252 paths unchanged (still go through `decode_with`).
+- **`rust-core/src/file_io.rs` EOL detection bounded to first 64 KB** — pre-fix, two full-text `contains()` scans of 118 MB for ~300 ms. New `detect_eol_in_bytes` is a single byte-level scan over the first 64 KB. Files with mixed EOL within the first 64 KB classify correctly; mixed EOL only after byte 65537 was never going to be common.
+- **`rust-core/src/file_io.rs` + `rust-core/src/lib.rs` drop CString round-trip in FFI** — `FileLoadResult.text` was allocated via `CString::new(text).into_raw()` which scans for embedded NUL + allocates + copies + appends a NUL byte. C++ already reads via `(ptr, len)` — never needed the NUL. Now allocates a `Box<[u8]>` (no scan, no extra copy). New `npc_free_file_text(ptr, len)` reclaims the boxed slice by length. Saves another ~118 MB heap allocation + ~250 ms.
+- **`src/editor.cpp` large-file editing gates** — for files > 50 MB also disable word wrap, indent guides, and edge column. Word wrap recalculates per edit; on a 118 MB file this stuttered the typing cursor. Auto-completion + brace matching gating from earlier carries forward.
+- **`src/findreplace.cpp` Mark All capped to 10000 highlights on files > 50 MB** — `SCI_INDICATORFILLRANGE` invalidates a paint per call; on a 118 MB file with 100k matches the redraw stalled the UI. Result label reports the truncation: "Marked first 10000 of N occurrence(s) — capped for performance on large files".
+
+Combined impact on a 118 MB UTF-8 file: peak RAM 700 MB → ~360 MB; load time 1.5 s → ~600 ms.
+
+### Documentation
+
+- New `rust-core/include/notepad_core.h` declaration for `npc_free_file_text`.
+- Tests: `rust-core/src/file_io.rs` test helper `text_of` updated to read via length-prefixed buffer (was using `CStr::from_ptr` which assumed NUL-termination).
+
+### Out of scope
+
+- **Chunked `SCI_APPENDTEXT` load** — would drop another 236 MB of peak RAM (eliminates Qt UTF-16 detour). Needs mid-chunk BOM / encoding-boundary handling, too much surface area for same-day patch.
+- **CI `strip --strip-all` step** — drops binary from 9.7 MB → 7.06 MB. Queued in `project_next_release_ci_strip_step.md`.
+
+---
+
 ## [0.1.86] — 2026-05-15
 
 **Factual-audit gate, BGR-bug sweep, download-size truth-up.** Correctness patch — no new features.
