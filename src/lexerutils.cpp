@@ -238,6 +238,83 @@ QString buildSaveAsFilters(const QString &currentLanguage,
     return filters.join(QStringLiteral(";;"));
 }
 
+// v0.1.87 follow-up — extract first "*.ext" pattern from a filter entry.
+// "Python (*.py *.pyw *.pyx)"        → "py"
+// "Dockerfile (Dockerfile *.docker)" → "" (first pattern is bare filename)
+// "All Files (*)"                    → ""
+// "CMake (CMakeLists.txt *.cmake)"   → ""  (first pattern is bare filename)
+// Returns the extension WITHOUT the leading dot to match
+// QFileDialog::setDefaultSuffix's API.
+QString firstExtensionFromFilter(const QString &filter) {
+    const int openParen = filter.indexOf(QLatin1Char('('));
+    const int closeParen = filter.lastIndexOf(QLatin1Char(')'));
+    if (openParen < 0 || closeParen <= openParen + 1) return {};
+    const QString patterns = filter.mid(openParen + 1, closeParen - openParen - 1);
+    // Walk patterns left-to-right; first "*.ext" wins (the curated table puts
+    // the canonical extension first — e.g. "*.py" before "*.pyw").
+    for (const QString &pRaw :
+         patterns.split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
+        const QString p = pRaw.trimmed();
+        if (p == QLatin1String("*")) return {};       // All Files (*)
+        if (p.startsWith(QLatin1String("*."))) {
+            return p.mid(2);                          // "py", not ".py"
+        }
+        // First pattern is a bare filename (Dockerfile / CMakeLists.txt /
+        // .gitignore) — auto-suffixing makes no sense, bail.
+        return {};
+    }
+    return {};
+}
+
+// v0.1.87 follow-up — post-Accept safety net for QFileDialog::setDefaultSuffix.
+// Some platform file dialogs (notably the Linux GTK theme on certain distros,
+// and the macOS native dialog when the suffix changes mid-session) silently
+// drop setDefaultSuffix. This walks the filter's "*.ext" patterns and ensures
+// the returned path ends with at least one of them, appending the first if
+// not. Filter-only with bare filenames OR the "All Files" filter return path
+// unchanged.
+QString applySaveAsFilterSuffix(const QString &path, const QString &filter) {
+    if (path.isEmpty()) return path;
+    const int openParen = filter.indexOf(QLatin1Char('('));
+    const int closeParen = filter.lastIndexOf(QLatin1Char(')'));
+    if (openParen < 0 || closeParen <= openParen + 1) return path;
+    const QString patterns = filter.mid(openParen + 1, closeParen - openParen - 1);
+
+    QStringList exts;
+    bool sawBareName = false;
+    for (const QString &pRaw :
+         patterns.split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
+        const QString p = pRaw.trimmed();
+        if (p == QLatin1String("*")) return path;          // All Files (*)
+        if (p.startsWith(QLatin1String("*."))) {
+            exts << QStringLiteral(".") + p.mid(2);        // ".py"
+        } else {
+            sawBareName = true;
+        }
+    }
+    if (exts.isEmpty()) return path;                       // Dockerfile-only
+
+    // If the filename matches one of the bare-name patterns exactly, accept.
+    if (sawBareName) {
+        const QString basename = QFileInfo(path).fileName();
+        for (const QString &pRaw :
+             patterns.split(QLatin1Char(' '), Qt::SkipEmptyParts)) {
+            const QString p = pRaw.trimmed();
+            if (!p.startsWith(QLatin1String("*.")) && p != QLatin1String("*") &&
+                p.compare(basename, Qt::CaseInsensitive) == 0) {
+                return path;
+            }
+        }
+    }
+
+    // Does path already end with one of the filter's extensions?
+    for (const QString &ext : exts) {
+        if (path.endsWith(ext, Qt::CaseInsensitive)) return path;
+    }
+
+    return path + exts.first();
+}
+
 QString detectLanguageFromPath(const QString &path, const QString &text) {
     const QFileInfo fi(path);
     const QString ext = fi.suffix().toLower();

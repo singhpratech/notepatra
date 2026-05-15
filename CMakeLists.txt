@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.87 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.88 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -485,6 +485,39 @@ if(NOTEPATRA_BUILD_TESTS)
              WORKING_DIRECTORY ${RUST_CORE_DIR})
     set_tests_properties(rust_core_tests PROPERTIES LABELS "unit;rust;encoding;v0178")
     message(STATUS "Regression test enabled — rust-core cargo test")
+endif()
+
+# ── Save As filter contract test (v0.1.87 follow-up) ──
+# Asserts the user-visible end-to-end contract — picking Python in the Save As
+# dropdown auto-suffixes the saved file with .py — through the same helpers
+# the dialog uses. Pure-functional, no Qt event loop.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_save_as_filters.cpp")
+    add_executable(test_save_as_filters
+        test_save_as_filters.cpp
+        src/lexerutils.cpp
+        src/lexer_go.cpp
+        src/lexer_kotlin.cpp
+        src/lexer_powershell.cpp
+        src/lexer_rust.cpp
+        src/lexer_swift.cpp
+        src/lexer_typescript.cpp
+        src/lexer_extras.cpp
+        src/lexer_plaintext.cpp
+        src/lexer_csv.cpp
+    )
+    target_include_directories(test_save_as_filters PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_save_as_filters PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::PrintSupport ${QSCINTILLA_LIB}
+    )
+    if(WIN32)
+        target_compile_definitions(test_save_as_filters PRIVATE QSCINTILLA_DLL)
+    endif()
+    notepatra_add_qt_test(test_save_as_filters)
+    set_tests_properties(test_save_as_filters PROPERTIES LABELS "smoke;saveas")
+    message(STATUS "Regression test enabled — target: test_save_as_filters")
 endif()
 
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexers_v0125.cpp")

@@ -27,6 +27,20 @@ QsciLexer *createLexerForLanguage(const QString &language, QObject *parent);
 QString buildSaveAsFilters(const QString &currentLanguage,
                            QString *selectedFilter = nullptr);
 
+// v0.1.87 follow-up — extract the first `*.ext` pattern's extension from a
+// Save As filter entry like "Python (*.py *.pyw *.pyx)" → "py" (NO leading
+// dot, matches QFileDialog::setDefaultSuffix's expected format). Returns an
+// empty string for "All Files (*)" or filename-only filters like
+// "Dockerfile (Dockerfile Containerfile)" — neither should auto-append.
+QString firstExtensionFromFilter(const QString &filter);
+
+// v0.1.87 follow-up — post-Accept safety net: if the selected filter has at
+// least one `*.ext` pattern AND the path ends with NONE of them, append the
+// first extension. Used as a backstop in case the platform file dialog
+// ignores setDefaultSuffix (some Linux GTK builds do). Returns path unchanged
+// when filter is "All Files (*)" or already-matching.
+QString applySaveAsFilterSuffix(const QString &path, const QString &filter);
+
 // v0.1.84 — push curated SCI_SETKEYWORDS strings (from sql_keywords.h /
 // lang_keywords.h) into the Scintilla editor for the given language string.
 // The QScintilla lexers ship small built-in keyword sets that lag modern

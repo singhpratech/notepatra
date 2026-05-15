@@ -1672,19 +1672,39 @@ void MainWindow::saveFileAs() {
 
     QFileDialog dialog(this, QStringLiteral("Save As"), startPath);
     dialog.setAcceptMode(QFileDialog::AcceptSave);
+    // v0.1.88.1 — FORCE Qt's non-native dialog. The GTK / KDE / native Windows
+    // dialogs silently DROP the `filterSelected` signal AND return a stale
+    // `selectedNameFilter()` value after Accept. End result: user picks
+    // "JavaScript", types "foo", file lands as "foo.txt" because the dialog
+    // never told us they changed filters. Qt's own QFileDialog fires the
+    // signals reliably across every platform and has the same dropdown UX.
+    dialog.setOption(QFileDialog::DontUseNativeDialog, true);
     dialog.setNameFilter(filters);
-    if (!preselected.isEmpty()) dialog.selectNameFilter(preselected);
+    if (!preselected.isEmpty()) {
+        dialog.selectNameFilter(preselected);
+        const QString ext = firstExtensionFromFilter(preselected);
+        if (!ext.isEmpty()) dialog.setDefaultSuffix(ext);
+    }
+    QObject::connect(&dialog, &QFileDialog::filterSelected,
+                     [&dialog](const QString &f) {
+                         dialog.setDefaultSuffix(firstExtensionFromFilter(f));
+                     });
 
     if (dialog.exec() != QDialog::Accepted) return;
     const QStringList chosen = dialog.selectedFiles();
     if (chosen.isEmpty()) return;
-    const QString path = chosen.first();
+    QString path = chosen.first();
     if (path.isEmpty()) return;
 
-    e->saveFile(path);
+    // Post-Accept safety net — some Linux GTK builds and certain macOS
+    // states silently drop setDefaultSuffix. Belt-and-braces.
+    path = applySaveAsFilterSuffix(path, dialog.selectedNameFilter());
+
+    e->saveFile(path);  // also re-applies lexer if extension changed (v0.1.88.1)
     m_tabs->setTabText(m_tabs->currentIndex(), QFileInfo(path).fileName());
     m_tabs->setTabToolTip(m_tabs->currentIndex(), path);
     updateTitle();
+    updateStatusBar();
 }
 
 void MainWindow::closeTab(int index) {
@@ -1708,12 +1728,24 @@ void MainWindow::closeTab(int index) {
                 const QString filters = buildSaveAsFilters(editor->language(), &preselected);
                 QFileDialog d(this, QStringLiteral("Save File"), QDir::homePath());
                 d.setAcceptMode(QFileDialog::AcceptSave);
+                // v0.1.88.1 — see saveFileAs() for why native dialog is bypassed.
+                d.setOption(QFileDialog::DontUseNativeDialog, true);
                 d.setNameFilter(filters);
-                if (!preselected.isEmpty()) d.selectNameFilter(preselected);
+                if (!preselected.isEmpty()) {
+                    d.selectNameFilter(preselected);
+                    const QString ext = firstExtensionFromFilter(preselected);
+                    if (!ext.isEmpty()) d.setDefaultSuffix(ext);
+                }
+                QObject::connect(&d, &QFileDialog::filterSelected,
+                                 [&d](const QString &f) {
+                                     d.setDefaultSuffix(firstExtensionFromFilter(f));
+                                 });
                 if (d.exec() != QDialog::Accepted) return;
                 const QStringList chosen = d.selectedFiles();
                 if (chosen.isEmpty() || chosen.first().isEmpty()) return;
-                editor->saveFile(chosen.first());
+                const QString finalPath =
+                    applySaveAsFilterSuffix(chosen.first(), d.selectedNameFilter());
+                editor->saveFile(finalPath);
             }
         } else if (result == QMessageBox::Cancel) {
             return;

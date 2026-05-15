@@ -850,7 +850,20 @@ bool Editor::saveFile(const QString &path) {
     f.close();
     if (wrote != bytes.size()) return false;
 
+    // v0.1.88.1 — if the save target's extension implies a different
+    // language than the editor's current one (Save As from .txt → .cpp,
+    // or from .py → .rs), re-apply the lexer so syntax highlighting +
+    // status bar language indicator reflect the new file type live.
+    // Pre-fix: post-Save-As the editor kept the old language indefinitely
+    // until the user re-opened the file. User-reported.
+    const bool pathChanged = (m_filePath != savePath);
     m_filePath = savePath;
+    if (pathChanged) {
+        const QString newLang = detectLanguageFromPath(savePath, textOut);
+        if (!newLang.isEmpty() && newLang != m_language) {
+            applyLexer(newLang);
+        }
+    }
     setModified(false);
     return true;
 }

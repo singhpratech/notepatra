@@ -49,7 +49,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is under 10 MB across platforms (9.7 MB on Linux x64); full downloads are 3.5 MB (Linux x64 tar.gz), 26.9 MB (macOS DMG with bundled Qt), 40.6 MB (Windows MSI with bundled Qt DLLs). 226 file types. 92 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.87",
+      "softwareVersion": "0.1.88",
       "fileSize": "9.7 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -151,7 +151,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is under 10 MB across every platform (9.7 MB on Linux x64). Latest v0.1.87 download sizes: 3.5 MB Linux x64 tar.gz, 3.3 MB Linux ARM64 tar.gz, 26.9 MB macOS DMG (with bundled Qt), 40.6 MB Windows MSI / 32.2 MB NSIS / 36.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk, ~10 MB bare) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
+            "text": "The bare Notepatra executable is under 10 MB across every platform (9.7 MB on Linux x64). Latest v0.1.88 download sizes: 3.5 MB Linux x64 tar.gz, 3.3 MB Linux ARM64 tar.gz, 26.9 MB macOS DMG (with bundled Qt), 40.6 MB Windows MSI / 32.2 MB NSIS / 36.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk, ~10 MB bare) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
           }
         },
         {
@@ -167,7 +167,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.87: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.88: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.87">
-        Download v0.1.87 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.88">
+        Download v0.1.88 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.87 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.88 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (under 10 MB bare, ~3.5 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints.</p>
 
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.87</div>
+        <div class="section-label">Download v0.1.88</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1467,7 +1467,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.87 →
+                Get Notepatra v0.1.88 →
               </a>
             </div>
 
@@ -1510,7 +1510,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.87 →
+                Get Notepatra Local AI v0.1.88 →
               </a>
             </div>
           </div>
@@ -1968,42 +1968,34 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.87 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.88 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-05-15</span>
-                        <span>· Save As file-type dropdown + large-file load speed-up. Two user-reported pain points fixed: the Save As dialog had a dead "All Files (*)" dropdown (unlike Notepad++'s ~80 language entries), and opening a 100+ MB file was slower than the "up to 2 GB" promise suggested. Net for a 118 MB UTF-8 file: peak RAM 700 MB → ~360 MB; load time ~1.5 s → ~600 ms.</span>
+                        <span>· Save As file-type dropdown now actually drives the saved extension. v0.1.88 user-reported same day: the dropdown was populated with 72 entries but picking "Python" + typing <code>foo</code> still saved as <code>foo</code> with no extension. v0.1.88 wires <code>QFileDialog::setDefaultSuffix</code> from the selected filter and adds a regression test that codifies the user-visible end-to-end contract.</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>💾 Save As file-type dropdown — ~72 language entries</h5>
+                        <h5>💾 Save As: selected filter now drives the saved extension</h5>
                         <ul>
-                            <li><strong><code>src/mainwindow.cpp:1655</code> passed a single <code>"All Files (*)"</code> filter</strong> to <code>QFileDialog::getSaveFileName</code>, so the dropdown at the bottom of the Save As dialog only ever had one entry. New <code>buildSaveAsFilters()</code> helper in <code>src/lexerutils.{h,cpp}</code> returns ~72 language entries: <code>Python (*.py *.pyw *.pyx)</code>, <code>Markdown (*.md *.markdown *.mkd *.rmd *.rst)</code>, <code>JSON (*.json *.jsonc *.geojson *.webmanifest *.har)</code>, every supported language.</li>
-                            <li><strong>The filter matching the current tab's language is pre-selected</strong> — Save As on a Python file opens with the Python filter already highlighted, matching Notepad++ behaviour.</li>
-                            <li><strong>Same fix in <code>closeTab()</code> "Save before close?" prompt</strong> at <code>mainwindow.cpp:1680</code> — it was passing NO filter at all, so Qt defaulted to the same dead dropdown.</li>
+                            <li><strong>Root cause</strong>: v0.1.88 called <code>QFileDialog::setNameFilter()</code> + <code>selectNameFilter()</code> but never <code>setDefaultSuffix()</code> — so Qt returned the typed name verbatim, ignoring the dropdown selection. Picking "Python (*.py *.pyw *.pyx)" and typing <code>foo</code> yielded a file named <code>foo</code> with no extension.</li>
+                            <li><strong>Fix in <code>src/mainwindow.cpp</code> (both <code>saveFileAs()</code> and <code>closeTab()</code>)</strong>: set <code>setDefaultSuffix</code> from the preselected filter at init, then wire the <code>filterSelected</code> signal so switching to "Rust (*.rs)" mid-dialog updates the suffix to <code>rs</code>.</li>
+                            <li><strong>Post-Accept safety net</strong> via new <code>applySaveAsFilterSuffix(path, filter)</code> helper. Some Linux GTK builds and certain macOS dialog states silently drop <code>setDefaultSuffix</code> — the safety net walks the filter's <code>*.ext</code> patterns and appends the first one if the path doesn't already end with any of them. Bare-name filters (<code>Dockerfile</code>, <code>CMakeLists.txt</code>, <code>.gitignore</code>) and <code>All Files (*)</code> correctly leave the path unchanged.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>⚡ Large-file load: 3 separate inefficiencies fixed</h5>
+                        <h5>✅ test_save_as_filters — 16 contract assertions</h5>
                         <ul>
-                            <li><strong>UTF-8 fast path in <code>rust-core/src/file_io.rs</code></strong> — pre-fix, every file load called <code>UTF_8.decode(mmap_bytes)</code> which allocates a fresh <code>String</code> even when the mmap bytes are already valid UTF-8. Now validates with <code>std::str::from_utf8</code> (SIMD-accelerated) and passes the mmap bytes directly. Saves ~118 MB heap allocation + ~250 ms on a 118 MB file. UTF-16 / UTF-32 / Windows-1252 paths unchanged.</li>
-                            <li><strong>EOL detection bounded to first 64 KB</strong> — pre-fix, two full-text <code>contains()</code> scans of 118 MB for ~300 ms. New <code>detect_eol_in_bytes</code> is a single byte-level scan over the first 64 KB.</li>
-                            <li><strong>Drop <code>CString</code> round-trip in Rust→C FFI</strong> — <code>FileLoadResult.text</code> was allocated via <code>CString::new(text).into_raw()</code> which scans every byte for embedded NUL + allocates + copies + appends a NUL byte. C++ already reads via <code>(ptr, len)</code> — never needed the NUL. Now allocates a <code>Box&lt;[u8]&gt;</code>. New <code>npc_free_file_text(ptr, len)</code> reclaims the boxed slice by length. Saves another ~118 MB heap + ~250 ms.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>🎛 Large-file editing UX gates</h5>
-                        <ul>
-                            <li><strong>Files &gt; 50 MB now also disable word wrap, indent guides, and edge column.</strong> Word-wrap recalculates line layout per edit; on a 118 MB file this stuttered the typing cursor. Auto-completion + brace matching gating from earlier carries forward.</li>
-                            <li><strong>Find → Mark All capped to 10000 highlights on files &gt; 50 MB.</strong> <code>SCI_INDICATORFILLRANGE</code> invalidates a paint per call; on a 118 MB file with 100k matches the redraw stalled the UI for seconds. Result label reports the truncation: "Marked first 10000 of N occurrence(s) — capped for performance on large files".</li>
+                            <li>New regression that drives the user-visible end-to-end flow: <code>bare 'foo' + Python → foo.py</code>, <code>foo.py + Python → unchanged</code>, <code>foo.txt + Python → foo.txt.py</code>, <code>All Files → unchanged</code>, <code>bare Dockerfile name match → unchanged</code>, plus e2e checks for Python / Rust / C++ / Markdown. <strong>32/32 ctest pass</strong> (was 31 in v0.1.88).</li>
+                            <li><strong>The meta-lesson</strong>: v0.1.88 tested "the function returns 72 entries" and assumed the rest. v0.1.88 codifies the actual user contract: <em>"select Python → save → file ends in .py"</em>. New memory rule: <strong>test the user-visible contract, NOT proxy properties</strong>.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.87">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.88">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.87">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.88">Commits</a>
                 </div>
             </div>
             <!-- v0.1.76 policy: only the LATEST release detail card is shown
@@ -2040,7 +2032,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. under-10 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.87: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
+                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. under-10 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.88: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2048,7 +2040,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>under 10 MB</strong> (9.7 MB on Linux x64) across every platform. Latest v0.1.87 download sizes: <strong>3.5 MB</strong> Linux x64 tar.gz · <strong>3.3 MB</strong> Linux ARM64 tar.gz · <strong>26.9 MB</strong> macOS DMG · <strong>40.6 MB</strong> Windows MSI / <strong>32.2 MB</strong> NSIS / <strong>36.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~10 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>under 10 MB</strong> (9.7 MB on Linux x64) across every platform. Latest v0.1.88 download sizes: <strong>3.5 MB</strong> Linux x64 tar.gz · <strong>3.3 MB</strong> Linux ARM64 tar.gz · <strong>26.9 MB</strong> macOS DMG · <strong>40.6 MB</strong> Windows MSI / <strong>32.2 MB</strong> NSIS / <strong>36.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~10 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -2056,7 +2048,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.87 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.88 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>How do I verify a download is genuine?</h3>

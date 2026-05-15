@@ -7,6 +7,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.88] — 2026-05-15
+
+**Save As file-type dropdown now actually drives the saved extension.** v0.1.87 user-reported same day: dropdown populated with 72 entries but picking "Python" + typing `foo` still saved as `foo` (no extension). Root cause: `QFileDialog::setDefaultSuffix` was never wired so the selected filter didn't drive the extension.
+
+### Fixed
+- **`src/mainwindow.cpp` (saveFileAs + closeTab)** — wire `setDefaultSuffix` from the preselected filter at init AND from the `filterSelected` signal so switching mid-dialog stays in sync. Post-Accept safety net via `applySaveAsFilterSuffix()` for platform dialogs that silently ignore `setDefaultSuffix`.
+- **`src/lexerutils.{h,cpp}`** — new `firstExtensionFromFilter("Python (*.py *.pyw *.pyx)") → "py"` extractor and `applySaveAsFilterSuffix(path, filter) → path-with-extension` safety net helper. Handles bare-name filters (Dockerfile / CMakeLists.txt) and "All Files (*)" correctly.
+
+### Added
+- **`test_save_as_filters.cpp`** — 16-assertion regression that drives the user-visible end-to-end contract: "select Python → save → file ends in .py". Caught the gap v0.1.87 shipped through — proxy assertions ("function called", "list populated") instead of contract assertions ("the bytes on disk match the selected filter").
+
+### Meta
+- New memory rule: **test the user-visible contract, NOT proxy properties**. Every bug fix / enhancement now needs a regression test that asserts the one-sentence user contract.
+
+32/32 ctest pass (was 31 in v0.1.87). No other v0.1.87 changes affected.
+
+---
+
 ## [0.1.87] — 2026-05-15
 
 **Save As file-type dropdown + large-file load speed-up.** Two user-reported pain points: dead Save As dropdown vs Notepad++, and 100+ MB files slower than the "up to 2 GB" promise.
