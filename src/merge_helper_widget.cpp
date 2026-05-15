@@ -174,10 +174,15 @@ void MergeHelperWidget::applyAnnotations() {
     // editable content.
     m_editor->SendScintilla(QsciScintillaBase::SCI_ANNOTATIONSETVISIBLE,
                             (long)QsciScintillaBase::ANNOTATION_BOXED);
+    // Scintilla COLORREF is 0x00BBGGRR (BGR). The pale-gold paper below
+    // is correctly BGR-packed (#FAE6C8 displayed → 0x00C8E6FA). The dark
+    // blue foreground used to be 0x00204050 (intended #204050 dark blue)
+    // but that's an RGB packing — Scintilla rendered it as olive-brown.
+    // Now BGR-packed to actually render dark blue.
     m_editor->SendScintilla(QsciScintillaBase::SCI_STYLESETBACK, 200,
-                            (long)0x00C8E6FA);  // pale gold (BGR)
+                            (long)0x00C8E6FA);  // pale gold paper (#FAE6C8 displayed, BGR-packed)
     m_editor->SendScintilla(QsciScintillaBase::SCI_STYLESETFORE, 200,
-                            (long)0x00204050);  // dark blue text
+                            (long)0x00504020);  // dark blue text (#204050 displayed, BGR-packed)
 
     for (int i = 0; i < m_regions.size(); ++i) {
         const auto &r = m_regions[i];

@@ -299,7 +299,7 @@
   <div class="topbar-left">
     <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">v0.1.85 docs</span>
+    <span class="tag">v0.1.86 docs</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
@@ -393,13 +393,13 @@
   <!-- ══════════════ Getting started ══════════════ -->
 
   <h2 id="introduction" class="anchor-target">Introduction</h2>
-  <p>Notepatra is a <strong>native</strong> code editor written in C++17 with a Rust core for the heavy-lifting (memory-mapped file I/O, Aho-Corasick search, Myers diff, formatters). It targets <strong>Linux x64 / ARM64, macOS Apple Silicon, and Windows x64</strong>. The bare executable is ~9 MB stripped on each platform; downloads range 3.4 MB (Linux ARM64) to ~42.5 MB (Windows MSI with Qt DLLs bundled).</p>
+  <p>Notepatra is a <strong>native</strong> code editor written in C++17 with a Rust core for the heavy-lifting (memory-mapped file I/O, Aho-Corasick search, Myers diff, formatters). It targets <strong>Linux x64 / ARM64, macOS Apple Silicon, and Windows x64</strong>. The bare executable is under 10 MB (9.7 MB on Linux x64) on each platform; downloads range 3.3 MB (Linux ARM64) to ~40.6 MB (Windows MSI with Qt DLLs bundled).</p>
   <p>Unlike Electron-based editors, Notepatra does not ship a browser runtime. It uses Qt5 + QScintilla — a battle-tested Scintilla-based editor engine — so 226 file types, 92 language lexers, brace matching, folding, and code completion are built in.</p>
   <p>Unlike cloud-first editors, Notepatra's AI is <strong>local-first</strong>. The AI dock dropdown ships <strong>six backends</strong> as of v0.1.55: <a href="https://ollama.com">Ollama</a> (default · <code>localhost:11434</code>), <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>'s llama-server (loads any GGUF directly · <code>localhost:8080</code>), <a href="https://openrouter.ai">OpenRouter</a> (cloud · 100+ models — Claude, GPT, Gemini, Grok, Kimi, …), <a href="https://ollama.com/cloud">Ollama Cloud</a> (cloud · gpt-oss:120b, qwen3-coder:480b, deepseek-v3.1:671b), <a href="https://openai.com">OpenAI</a> direct, and <a href="https://azure.microsoft.com/en-us/products/ai-services/openai-service">Azure OpenAI</a> (enterprise). To use any other OpenAI-compatible server (<a href="https://lmstudio.ai">LM Studio</a>, <a href="https://jan.ai">Jan</a>, <a href="https://docs.vllm.ai">vLLM</a>, KoboldCpp, llamafile, text-generation-webui), pick the <code>llama.cpp</code> entry and set the base URL in Settings → Preferences → AI. Nothing leaves your computer unless you pick a cloud backend. No mandatory API keys, no subscription, no telemetry.</p>
   <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock and the model gets 5 native tools — <code>read_file</code>, <code>list_dir</code>, <code>search</code>, <code>write_file</code>, <code>apply_diff</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
 
   <div class="callout info">
-    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.85 (May 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
+    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.86 (May 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
   </div>
 
   <h2 id="install" class="anchor-target">Install</h2>
@@ -423,12 +423,12 @@
   <table>
     <thead><tr><th>Platform</th><th>Asset</th><th>Size</th></tr></thead>
     <tbody>
-      <tr><td>🐧 Linux x64</td><td><code>notepatra-linux-x64.tar.gz</code></td><td>~3.6 MB</td></tr>
-      <tr><td>🐧 Linux ARM64</td><td><code>notepatra-linux-arm64.tar.gz</code></td><td>~3.4 MB</td></tr>
-      <tr><td>🍎 macOS Apple Silicon</td><td><code>notepatra-macos-arm64.dmg</code></td><td>~28.7 MB</td></tr>
-      <tr><td>🪟 Windows x64 (MSI)</td><td><code>notepatra-&lt;version&gt;.msi</code></td><td>~42.5 MB</td></tr>
-      <tr><td>🪟 Windows x64 (installer)</td><td><code>notepatra-setup-&lt;version&gt;.exe</code></td><td>~33.7 MB</td></tr>
-      <tr><td>🪟 Windows x64 (portable)</td><td><code>notepatra-windows-x64.zip</code></td><td>~38.4 MB</td></tr>
+      <tr><td>🐧 Linux x64</td><td><code>notepatra-linux-x64.tar.gz</code></td><td>~3.5 MB</td></tr>
+      <tr><td>🐧 Linux ARM64</td><td><code>notepatra-linux-arm64.tar.gz</code></td><td>~3.3 MB</td></tr>
+      <tr><td>🍎 macOS Apple Silicon</td><td><code>notepatra-macos-arm64.dmg</code></td><td>~26.9 MB</td></tr>
+      <tr><td>🪟 Windows x64 (MSI)</td><td><code>notepatra-&lt;version&gt;.msi</code></td><td>~40.6 MB</td></tr>
+      <tr><td>🪟 Windows x64 (installer)</td><td><code>notepatra-setup-&lt;version&gt;.exe</code></td><td>~32.2 MB</td></tr>
+      <tr><td>🪟 Windows x64 (portable)</td><td><code>notepatra-windows-x64.zip</code></td><td>~36.7 MB</td></tr>
     </tbody>
   </table>
 
@@ -594,7 +594,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
     <tbody>
       <tr>
         <td><strong>Lite</strong> (default)</td>
-        <td>~9 MB stripped</td>
+        <td>under 10 MB</td>
         <td>Everything: editor, lexers, AI Assistant, Coding Mode, Data Analyst tool calls, Git, REST client, hex editor, plugins, themes.</td>
         <td>Inline Vega-Lite chart rendering. The Data Analyst can still generate chart specs — they show as a "Charts Pack required" card with [View JSON] to copy the spec out.</td>
       </tr>
@@ -614,7 +614,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
     <li><strong>macOS:</strong> <code>~/Library/Application Support/notepatra/plugins/&lt;pack&gt;/</code></li>
     <li><strong>Windows:</strong> <code>%APPDATA%/notepatra/plugins/&lt;pack&gt;/</code></li>
   </ul>
-  <p>As of v0.1.85, the Full flavor ships the <em>charts</em> pack bundled (it's the same binary — the pack is "installed" if WebEngine was linked at compile time). v0.1.66+ adds in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation so packs can be added without swapping binaries.</p>
+  <p>As of v0.1.86, the Full flavor ships the <em>charts</em> pack bundled (it's the same binary — the pack is "installed" if WebEngine was linked at compile time). v0.1.66+ adds in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation so packs can be added without swapping binaries.</p>
 
   <table>
     <thead>
@@ -631,7 +631,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
         <td><code>pdf</code></td>
         <td>≈ 12 MB</td>
         <td>Rasterises PDFs to PNG pages so vision-capable AI models can read them. Powered by Poppler-Qt5.</td>
-        <td>Still queued (not shipped as of v0.1.85). Until then, dragging a PDF into the AI dock shows the "use a vision-capable model" error bubble.</td>
+        <td>Still queued (not shipped as of v0.1.86). Until then, dragging a PDF into the AI dock shows the "use a vision-capable model" error bubble.</td>
       </tr>
     </tbody>
   </table>
@@ -676,7 +676,7 @@ make -j$(nproc)
     <li><strong>Do I lose anything by staying on Lite?</strong> No — every editor / lexer / AI / Git / data / plugin feature works identically. The only difference is that <code>generate_chart</code> tool results paint as a "Charts Pack required" card instead of as an inline rendered chart. You can still see the spec via [View JSON instead] and copy it elsewhere.</li>
     <li><strong>Can I downgrade Full → Lite?</strong> Yes. Just download the Lite tarball and replace the binary. Your config / chat history / connections are preserved (they live under <code>~/.config/notepatra</code>, not inside the binary).</li>
     <li><strong>Will the chart spec data be lost if I'm on Lite?</strong> No — the AI's tool result is preserved in your chat history just like any other tool result. If you upgrade to Full later, opening the same chat shows the rendered chart for those past results.</li>
-    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.85. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
+    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.86. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
   </ul>
 
   <h2 id="ui-overview" class="anchor-target">UI overview</h2>
@@ -714,7 +714,7 @@ make -j$(nproc)
   </ul>
 
   <h2 id="languages-lexers" class="anchor-target">Languages &amp; lexers</h2>
-  <p>Notepatra ships <strong>92 language lexers</strong> as of v0.1.85 (covering 226 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
+  <p>Notepatra ships <strong>92 language lexers</strong> as of v0.1.86 (covering 226 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
   <p><strong>Core (Qt-bundled):</strong> Python, JavaScript/TypeScript/JSX, CoffeeScript, C/C++, C#, D, Java/Kotlin, HTML/PHP, CSS/SCSS/LESS, XML, JSON, SQL (ANSI / T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite), Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Matlab, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile.</p>
   <p><strong>v0.1.55 additions (32 dedicated lexers, keyword tables verified against official specs):</strong> Dart · Solidity · Zig · Vala · Hack · Julia · R · Protobuf · F# · HCL/Terraform · Thrift · GraphQL · GDScript · Nim · Cython · Mojo · Crystal · Elixir · Scala · Groovy · Apex · Jinja · Liquid · Twig · Dockerfile · Fish · Nushell · TOML · DotEnv · Gitignore · JSON5 · BibTeX. Each ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing — <code>.dart</code>, <code>.zig</code>, <code>.jl</code>, <code>.toml</code>, <code>.ex</code>, <code>Cargo.toml</code>, <code>Dockerfile</code>, <code>.gitignore</code>, <code>.env</code>, <code>.fish</code>, <code>.json5</code>, <code>.tf</code>, etc. now point at their dedicated lexers instead of falling back to the closest-fit generic.</p>
 
@@ -1827,7 +1827,7 @@ sha256sum -c SHA256SUMS --ignore-missing</code></pre>
   <p>No. Notepatra is its own editor — written from scratch in C++17 with a Rust core for hot paths (mmap I/O, Aho-Corasick search, Myers diff, formatters). It runs natively on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase.</p>
 
   <h4>How big is the binary?</h4>
-  <p>The bare executable is ~9 MB stripped on each platform. Installed footprint ranges 5 MB on Linux (Qt comes from your distro) to ~85 MB on Windows (Qt5 DLLs + QScintilla DLL bundled in the MSI). Truly tiny — and zero browser runtime.</p>
+  <p>The bare executable is under 10 MB on each platform. Installed footprint ranges 5 MB on Linux (Qt comes from your distro) to ~85 MB on Windows (Qt5 DLLs + QScintilla DLL bundled in the MSI). Truly tiny — and zero browser runtime.</p>
 
   <h4>Does my code go to the cloud?</h4>
   <p>By default, no — Notepatra is local-first. The outbound connections are: (1) your selected local AI backend (Ollama on <code>localhost:11434</code>, llama-server, LM Studio, etc.) when you use AI features, (2) <code>git push/pull</code> when you click the Git panel buttons, (3) the REST client when you send a request, (4) a single GitHub-API call on launch when the auto-updater checks for new releases. Cloud AI backends (OpenAI / OpenRouter / Anthropic via OpenRouter / Gemini via OpenRouter) are <strong>opt-in</strong> via the AI dock backend dropdown — your code only leaves the machine when you explicitly point Notepatra at one. No analytics, no telemetry. Verifiable with <code>strace</code>.</p>

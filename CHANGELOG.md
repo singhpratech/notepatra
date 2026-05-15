@@ -7,6 +7,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.86] — 2026-05-15
+
+**Factual-audit gate, BGR-bug sweep, download-size truth-up.** Correctness patch — no new features.
+
+### Fixed
+
+- **`src/findreplace.cpp:770` Find→Mark All indicator color** — passed raw `0x0000FF` to `SCI_INDICSETFORE` (intended blue, byte-swapped to render as red). Now BGR-packed for Tailwind blue-500 `#3B82F6`. Same root cause as v0.1.85's editor.cpp double-click highlight fix.
+- **`src/merge_helper_widget.cpp:185` Merge-conflict annotation text color** — passed raw `0x00204050` (intended `#204050` dark blue, byte-swapped to render as olive-brown). Now `0x00504020` (BGR-packed for `#204050`). Pale-gold paper at line 183 was already correctly BGR-packed.
+- **Download-size claims on `docs/index.html` / `docs/docs.html` / `README.md`** — 6 marketing-copy locations carried inflated sizes (3.6 / 28.7 / 42.5 / 33.7 / 38.4 MB) that didn't match actual GitHub-release-asset bytes. Reconciled to actual (3.5 / 26.9 / 40.6 / 32.2 / 36.7 MB — within ±0.05 MB of `gh release view` output). README install-table at lines 262-267 was already correct and used as the cross-check reference.
+- **"~9 MB stripped" claim in live marketing** — bare binary is actually 9.71 MB AND not stripped (CI has no `strip` step). Live copy now reads "under 10 MB (~9.7 MB on Linux x64)" without the misleading "stripped" word. Forensic release-notes rows preserved unchanged.
+
+### Added
+
+- **`scripts/verify-download-sizes.sh`** — new gate that calls `gh release view "v$VERSION" --json assets`, then for each artifact finds the closest "X.Y MB" claim across the three docs and asserts drift ≤ ±0.15 MB. Also verifies the "stripped" claim by downloading the Linux x64 tarball and running `file ... | grep ", stripped$"`. Wired into `scripts/release-check.sh` as a Phase 2 step.
+
+### Documentation
+
+- **New memory `feedback_factual_audit_must_be_a_gate.md`** — post-mortem of the v0.1.85 audit miss. `feedback_release_factual_audit.md` existed since v0.1.80, but the operator skipped the audit at release time. Lesson: any memory that asks "remember to run check X every release" where X is mechanical (grep / API call / file inspection) MUST also exist as a script under `release-check.sh`. Same pattern as `feedback_memory_must_be_a_gate_not_a_post_it`.
+- **New memory `project_next_release_ci_strip_step.md`** — TODO to add `strip --strip-all` to the Linux x64 CI workflow. Drops bare binary from 9.71 MB → 7.06 MB.
+
+### Out of scope
+
+- CI strip step itself — separate release where the change can be verified against live artifacts.
+- Other 5 audit categories from `feedback_release_factual_audit.md` (architecture claims, install one-liner style, etc.) — spot-checked manually, no drift found.
+
+---
+
 ## [0.1.85] — 2026-05-15
 
 **Markdown Light palette overhaul, Claude-Code-blue text selection, neon-orange match highlight, and a real Scintilla byte-order bug fix.**

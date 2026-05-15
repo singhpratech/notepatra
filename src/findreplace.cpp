@@ -765,9 +765,17 @@ void FindReplaceDialog::doMarkAll() {
     QString needle = comboText(m_markFindInput);
     if (needle.isEmpty()) return;
 
-    // Setup indicator
+    // Setup indicator. Scintilla SCI_INDICSETFORE wants Win32 COLORREF
+    // (0x00BBGGRR), NOT Qt RGB. Previously passed 0x0000FF expecting blue
+    // but byte-swap actually rendered pure RED. Now BGR-packed properly
+    // for Tailwind blue-500 (#3B82F6) — a "find/search" blue that's
+    // visually distinct from the neon-orange double-click match indicator.
     e->SendScintilla(QsciScintilla::SCI_INDICSETSTYLE, 8, QsciScintilla::INDIC_ROUNDBOX);
-    e->SendScintilla(QsciScintilla::SCI_INDICSETFORE, 8, 0x0000FF);
+    {
+        QColor markFg("#3B82F6");
+        long bgr = (long(markFg.blue()) << 16) | (long(markFg.green()) << 8) | long(markFg.red());
+        e->SendScintilla(QsciScintilla::SCI_INDICSETFORE, 8, bgr);
+    }
     e->SendScintilla(QsciScintilla::SCI_INDICSETALPHA, 8, 80);
     e->SendScintilla(QsciScintilla::SCI_SETINDICATORCURRENT, 8);
 

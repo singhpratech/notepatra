@@ -67,6 +67,16 @@ else
 fi
 
 echo
+echo "── download-size byte cross-check (vs GitHub release artifacts) ──"
+if bash scripts/verify-download-sizes.sh >/tmp/dl-size-check.log 2>&1; then
+    check "verify-download-sizes.sh: docs match actual artifact bytes (±0.15 MB)" "true"
+    sed 's/^/    /' /tmp/dl-size-check.log | head -12 || true
+else
+    check "verify-download-sizes.sh: docs match actual artifact bytes (±0.15 MB)" "false"
+    sed 's/^/    /' /tmp/dl-size-check.log || true
+fi
+
+echo
 echo "── working tree ──"
 check "git working tree clean (no uncommitted changes)" \
     "[[ -z \$(git status --porcelain) ]]"
