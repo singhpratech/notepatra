@@ -699,6 +699,7 @@ make -j$(nproc)
     <li><strong>New</strong> <span class="kbd">Ctrl+N</span> — empty untitled tab</li>
     <li><strong>Open</strong> <span class="kbd">Ctrl+O</span> — multi-select file dialog, opens each as a tab</li>
     <li><strong>Save</strong> <span class="kbd">Ctrl+S</span> — save current tab (prompts for path if untitled)</li>
+    <li><strong>Save As</strong> (right-click tab → Save As, or File menu) — opens the platform Save dialog with a <strong>~72-entry file-type dropdown</strong> covering every supported language (Plain Text, Markdown, Python, JavaScript, TypeScript, C/C++, Rust, Go, SQL, JSON, YAML, TOML, HTML/CSS, Bash, Dockerfile, …). The filter matching the current tab's language is pre-selected, matching Notepad++ behaviour. Filter helper lives in <code>src/lexerutils.cpp::buildSaveAsFilters()</code>. <span class="muted">Added v0.1.87 — pre-fix the dropdown only ever offered "All Files (*)".</span></li>
     <li><strong>Save All</strong> <span class="kbd">Ctrl+Shift+S</span> — saves every modified tab with a known path</li>
     <li><strong>Close</strong> <span class="kbd">Ctrl+W</span> — close current tab (prompts to save if modified)</li>
     <li><strong>Drag &amp; drop</strong> files from the OS file manager into the editor — they open as tabs</li>
@@ -707,11 +708,12 @@ make -j$(nproc)
   <h3>File-size limits</h3>
   <p>Notepatra uses the Rust core's memory-mapped file I/O for large files. Limits:</p>
   <ul>
-    <li><strong>Up to 50 MB</strong> — full syntax highlighting, auto-completion, all features enabled</li>
-    <li><strong>50 MB – 500 MB</strong> — syntax highlighting and auto-completion disabled for performance, still fully editable</li>
+    <li><strong>Up to 50 MB</strong> — full syntax highlighting, auto-completion, word wrap, indent guides, all features enabled</li>
+    <li><strong>50 MB – 500 MB</strong> (v0.1.87 hardened) — syntax highlighting, auto-completion, undo history, word wrap, indent guides, and edge column all disabled for performance; still fully editable. Find &rarr; Mark All caps the indicator fills at 10,000 highlights to keep paint cycles bounded.</li>
     <li><strong>500 MB – 2 GB</strong> — minimal features, read-mostly mode</li>
     <li><strong>&gt; 2 GB</strong> — refused; use a streaming tool like <code>less</code></li>
   </ul>
+  <p><strong>Load-path optimisations (v0.1.87).</strong> Opening a 118 MB UTF-8 file used to take ~1.5 s and peak ~700 MB RAM; v0.1.87 brings it to ~600 ms and ~360 MB. Three fixes in <code>rust-core/src/file_io.rs</code>: a UTF-8 fast path validates with <code>std::str::from_utf8</code> (SIMD-accelerated) and skips the <code>UTF_8.decode()</code> allocation entirely when the mmap bytes are already valid UTF-8; EOL detection is bounded to the first 64 KB instead of two full-text scans; and the Rust&rarr;C FFI handoff now delivers a length-prefixed <code>Box&lt;[u8]&gt;</code> through a new <code>npc_free_file_text(ptr, len)</code> entry-point instead of the old NUL-terminated <code>CString</code> round-trip — saves ~118 MB of heap on a 118 MB file. UTF-16 / UTF-32 / Windows-1252 paths unchanged.</p>
 
   <h2 id="languages-lexers" class="anchor-target">Languages &amp; lexers</h2>
   <p>Notepatra ships <strong>92 language lexers</strong> as of v0.1.87 (covering 226 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
@@ -739,7 +741,7 @@ make -j$(nproc)
     <li><strong>Normal / Extended / Regex</strong> modes — extended supports <code>\n</code>, <code>\t</code>, <code>\xNN</code> escapes; regex uses PCRE2.</li>
     <li><strong>Match case, Whole word, Wrap around, In selection</strong> checkboxes.</li>
     <li><strong>Find in Files</strong> walks a directory recursively (respects glob patterns), results land in the Search Results panel — double-click to jump to line.</li>
-    <li><strong>Mark</strong> highlights every occurrence of a pattern without moving the caret.</li>
+    <li><strong>Mark</strong> highlights every occurrence of a pattern without moving the caret. On files larger than 50 MB the indicator fill is <strong>capped at 10,000 highlights</strong> (v0.1.87) so the redraw doesn't stall the UI — the result label reports e.g. "Marked first 10000 of 124312 occurrence(s) — capped for performance on large files".</li>
     <li><strong>Find / Replace All across all open tabs</strong> — one click.</li>
   </ul>
 
