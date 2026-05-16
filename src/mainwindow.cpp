@@ -244,6 +244,7 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include "fmtpanel.h"
 #include "ollama.h"
 #include "ollamastatus.h"
+#include "savedialogfsmodel.h"
 #include <QRegularExpression>
 #include <QFileDialog>
 #include <QFileSystemModel>
@@ -1637,32 +1638,37 @@ void MainWindow::handleRemoteOpen(const QStringList &paths, int gotoLine,
 #endif
 }
 
-// v0.1.88 — Save As dialog UX baseline:
+// v0.1.88/v0.1.89 — Save As dialog UX baseline:
 //   * bigger geometry (960×640 vs Qt default 640×480)
-//   * Detail view as default (Name / Size / Type / Date Modified visible)
+//   * Detail view default (Name / Size / Type / Date Modified / Date Created)
 //   * sort by Date Modified descending (newest files first)
-//
-// A user-asked "Date Created" column was scoped for v0.1.89 — QFileDialog's
-// setProxyModel API surface for ADDING columns (not just filtering/sorting
-// existing ones) is fragile: tree views ask for index(row, extraCol) and
-// crash if the proxy doesn't preserve the source mapping cleanly. Worth
-// doing right with a proper QFileSystemModel subclass + custom view setup,
-// not bolted in mid-release.
+//   * Date Created column at the end via SaveDialogFileSystemModel (subclass,
+//     NOT a proxy — proxy approach crashed in v0.1.88 because Qt's tree view
+//     dereferences index(row, extraCol) and a proxy can't fabricate that
+//     mapping safely). birthTime() with ctime fallback for non-ext4.
 namespace {
 void configureSaveDialogUx(QFileDialog &dialog) {
     dialog.resize(QSize(960, 640));
     dialog.setViewMode(QFileDialog::Detail);
+
+    // v0.1.89 — wrap dialog's internal QFileSystemModel with our identity
+    // proxy that adds a "Date Created" column at the end. Must call
+    // setProxyModel BEFORE inspecting the tree view, so the view shows the
+    // proxy's column count.
+    auto *proxy = new SaveDialogDateCreatedProxy(&dialog);
+    dialog.setProxyModel(proxy);
+
+    auto applyView = [&dialog]() {
+        if (auto *tv = dialog.findChild<QTreeView *>()) {
+            tv->setSortingEnabled(true);
+            tv->sortByColumn(3, Qt::DescendingOrder);  // 3 = Date Modified
+            tv->header()->setSectionResizeMode(QHeaderView::Interactive);
+            tv->header()->setStretchLastSection(false);
+        }
+    };
     QObject::connect(&dialog, &QFileDialog::directoryEntered,
-                     [&dialog](const QString &) {
-                         if (auto *tv = dialog.findChild<QTreeView *>()) {
-                             tv->sortByColumn(3, Qt::DescendingOrder);
-                         }
-                     });
-    if (auto *tv = dialog.findChild<QTreeView *>()) {
-        tv->setSortingEnabled(true);
-        tv->sortByColumn(3, Qt::DescendingOrder);  // 3 = Date Modified
-        tv->header()->setSectionResizeMode(QHeaderView::Interactive);
-    }
+                     [applyView](const QString &) { applyView(); });
+    applyView();
 }
 }  // namespace
 

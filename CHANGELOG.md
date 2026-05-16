@@ -7,6 +7,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.89] — 2026-05-16
+
+**Save As detail view now shows a "Date Created" column** — the last piece of the v0.1.88 dialog UX request. v0.1.88 first attempt crashed Qt's tree view on Ctrl+S; v0.1.89 ships the column via the supported `QIdentityProxyModel` pattern with proper index mapping.
+
+### Added
+- **`src/savedialogfsmodel.h/cpp` (NEW)** — `SaveDialogDateCreatedProxy`, an identity proxy that adds one extra column with `QFileInfo::birthTime()` + ctime fallback + em-dash for non-ext4 filesystems.
+- **`src/mainwindow.cpp` `configureSaveDialogUx()`** — installs the proxy on both `saveFileAs()` and close-tab Save dialogs.
+
+### Why a proxy and not a `QFileSystemModel` subclass
+`QFileDialog` builds its own `QFileSystemModel` internally; the supported extension point is `setProxyModel()`. Subclassing the model and `tv->setModel()` would break the dialog's path-bar, name-editing, and selection wiring that's hard-coded to the d-pointer's model.
+
+---
+
 ## [0.1.88] — 2026-05-15
 
 **Save As file-type dropdown now actually drives the saved extension.** v0.1.87 user-reported same day: dropdown populated with 72 entries but picking "Python" + typing `foo` still saved as `foo` (no extension). Root cause: `QFileDialog::setDefaultSuffix` was never wired so the selected filter didn't drive the extension.
