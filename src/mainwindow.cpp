@@ -246,6 +246,11 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include "ollamastatus.h"
 #include <QRegularExpression>
 #include <QFileDialog>
+#include <QFileSystemModel>
+#include <QSortFilterProxyModel>
+#include <QTreeView>
+#include <QHeaderView>
+#include <QDateTime>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -1632,6 +1637,35 @@ void MainWindow::handleRemoteOpen(const QStringList &paths, int gotoLine,
 #endif
 }
 
+// v0.1.88 — Save As dialog UX baseline:
+//   * bigger geometry (960×640 vs Qt default 640×480)
+//   * Detail view as default (Name / Size / Type / Date Modified visible)
+//   * sort by Date Modified descending (newest files first)
+//
+// A user-asked "Date Created" column was scoped for v0.1.89 — QFileDialog's
+// setProxyModel API surface for ADDING columns (not just filtering/sorting
+// existing ones) is fragile: tree views ask for index(row, extraCol) and
+// crash if the proxy doesn't preserve the source mapping cleanly. Worth
+// doing right with a proper QFileSystemModel subclass + custom view setup,
+// not bolted in mid-release.
+namespace {
+void configureSaveDialogUx(QFileDialog &dialog) {
+    dialog.resize(QSize(960, 640));
+    dialog.setViewMode(QFileDialog::Detail);
+    QObject::connect(&dialog, &QFileDialog::directoryEntered,
+                     [&dialog](const QString &) {
+                         if (auto *tv = dialog.findChild<QTreeView *>()) {
+                             tv->sortByColumn(3, Qt::DescendingOrder);
+                         }
+                     });
+    if (auto *tv = dialog.findChild<QTreeView *>()) {
+        tv->setSortingEnabled(true);
+        tv->sortByColumn(3, Qt::DescendingOrder);  // 3 = Date Modified
+        tv->header()->setSectionResizeMode(QHeaderView::Interactive);
+    }
+}
+}  // namespace
+
 void MainWindow::saveFile() {
     auto *e = currentEditor();
     if (!e) return;
@@ -1690,6 +1724,9 @@ void MainWindow::saveFileAs() {
                          dialog.setDefaultSuffix(firstExtensionFromFilter(f));
                      });
 
+    // v0.1.88 UX — bigger geometry, sort by date modified desc, Date Created column.
+    configureSaveDialogUx(dialog);
+
     if (dialog.exec() != QDialog::Accepted) return;
     const QStringList chosen = dialog.selectedFiles();
     if (chosen.isEmpty()) return;
@@ -1740,6 +1777,7 @@ void MainWindow::closeTab(int index) {
                                  [&d](const QString &f) {
                                      d.setDefaultSuffix(firstExtensionFromFilter(f));
                                  });
+                configureSaveDialogUx(d);  // v0.1.88 UX
                 if (d.exec() != QDialog::Accepted) return;
                 const QStringList chosen = d.selectedFiles();
                 if (chosen.isEmpty() || chosen.first().isEmpty()) return;
