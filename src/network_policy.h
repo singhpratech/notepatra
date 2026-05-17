@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // network_policy.h — by-construction allowlist for "private network" hosts.
 //
 // Used by the cloud-free build flavor (NOTEPATRA_NO_CLOUD).  The two

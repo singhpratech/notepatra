@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #ifndef NOTEPATRA_VEGA_CHART_RENDERER_H
 #define NOTEPATRA_VEGA_CHART_RENDERER_H
 

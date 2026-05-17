@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Search engine — literal and regex search, parallel for large texts.
 
 use crate::SearchResult;

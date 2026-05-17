@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // v0.1.74 — Runtime font-pack downloader.
 //
 // Bundles a curated catalogue of ~25 premium open-source fonts that

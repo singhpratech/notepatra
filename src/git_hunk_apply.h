@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #ifndef NOTEPATRA_GIT_HUNK_APPLY_H
 #define NOTEPATRA_GIT_HUNK_APPLY_H
 

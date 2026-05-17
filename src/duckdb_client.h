@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #ifndef DUCKDB_CLIENT_H
 #define DUCKDB_CLIENT_H
 

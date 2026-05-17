@@ -1,0 +1,10 @@
+# Revisions listed here are skipped by `git blame` and by GitHub's blame UI.
+# Use for mass mechanical rewrites (formatting, license-header sweeps) so the
+# real authors aren't hidden behind a wall of one-liner edits.
+#
+# Configure your local git with:
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# v0.1.90 — add SPDX-License-Identifier: GPL-3.0-or-later header to every
+# C++ and Rust source file in src/, src/charts/, and rust-core/src/
+# (147 files, no functional change).

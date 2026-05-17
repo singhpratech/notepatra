@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // v0.1.74 — Settings → Manage Fonts… dialog.
 //
 // Lists every entry from NotepatraFontPack::manifest() grouped by

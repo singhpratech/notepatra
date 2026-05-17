@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "projectsearch.h"
 #include "config.h"
 #include "fonts.h"

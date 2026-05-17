@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "restclient.h"
 #include "fonts.h"
 #include "theme_detect.h"

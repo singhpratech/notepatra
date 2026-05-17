@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "fmtpanel.h"
 #include "npp_palette.h"
 #include "theme_detect.h"   // npIsDarkTheme / npResolvedThemeName

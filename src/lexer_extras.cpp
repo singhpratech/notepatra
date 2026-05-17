@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "lexer_extras.h"
 
 // v0.1.55 — keyword tables for the bulk lexer additions. Each function

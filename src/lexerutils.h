@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #ifndef LEXERUTILS_H
 #define LEXERUTILS_H
 

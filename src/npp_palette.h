@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #ifndef NPP_PALETTE_H
 #define NPP_PALETTE_H
 

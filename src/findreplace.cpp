@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "findreplace.h"
 #include "editor.h"
 #include "fonts.h"

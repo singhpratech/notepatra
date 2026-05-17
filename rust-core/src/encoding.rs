@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Encoding utilities — base64, URL encode/decode.
 
 use base64::{engine::general_purpose::STANDARD, Engine};

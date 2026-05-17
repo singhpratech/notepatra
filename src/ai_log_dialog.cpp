@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "ai_log_dialog.h"
 #include "ai_interaction_log.h"
 #include "config.h"

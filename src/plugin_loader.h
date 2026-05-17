@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #ifndef NOTEPATRA_PLUGIN_LOADER_H
 #define NOTEPATRA_PLUGIN_LOADER_H
 

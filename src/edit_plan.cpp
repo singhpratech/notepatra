@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "edit_plan.h"
 
 #include "diff_view.h"

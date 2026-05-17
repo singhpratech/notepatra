@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // ─────────────────────────────────────────────────────────────────────
 // inlineedit.cpp — implementation of the Ctrl+I rewrite dialog.
 //

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "hexeditor.h"
 #include "fonts.h"
 #include "config.h"

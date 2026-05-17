@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #ifndef GITGUTTER_H
 #define GITGUTTER_H
 

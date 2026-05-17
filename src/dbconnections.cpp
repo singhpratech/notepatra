@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "dbconnections.h"
 #ifdef NOTEPATRA_HAVE_DUCKDB
 #include "duckdb_client.h"

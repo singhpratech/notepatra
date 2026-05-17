@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "chartrender.h"
 #include "chart_modal.h"
 #include "chart_spec_to_vega.h"

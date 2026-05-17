@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "gitpanel.h"
 #include "theme_detect.h"
 

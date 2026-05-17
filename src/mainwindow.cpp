@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "mainwindow.h"
 #include "editor.h"
 #include "lexerutils.h"

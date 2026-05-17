@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #ifndef NOTEPATRA_UPDATER_H
 #define NOTEPATRA_UPDATER_H
 

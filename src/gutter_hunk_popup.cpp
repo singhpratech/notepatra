@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "gutter_hunk_popup.h"
 #include "diff_view.h"
 

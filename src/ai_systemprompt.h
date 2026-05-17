@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #ifndef AI_SYSTEMPROMPT_H
 #define AI_SYSTEMPROMPT_H
 

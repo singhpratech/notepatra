@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Bracket/Parenthesis Fixer — detects and fixes unmatched brackets.
 //! Fixes: (), [], {}, <>, begin/end, if/endif, do/done
 //!

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Notepatra Compare panel — inspired by ComparePlus by Pavel Nedev.
 //
 // Original ComparePlus repo: https://github.com/pnedev/comparePlus

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Merge-marker scanner. See merge_helper.h for the full contract.
 //
 // The scanner is deliberately string-only (no Qt regex). Marker lines

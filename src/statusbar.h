@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #ifndef STATUSBAR_H
 #define STATUSBAR_H
 

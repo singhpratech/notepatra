@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! File I/O — memory-mapped loading, encoding detection, safe saving.
 
 use crate::FileLoadResult;

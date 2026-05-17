@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // v0.1.89 — proxy model that adds a "Date Created" column to QFileDialog's
 // internal QFileSystemModel via QFileDialog::setProxyModel().
 //

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! File compare — line-by-line diff using the Myers diff algorithm.
 
 use libc::c_char;

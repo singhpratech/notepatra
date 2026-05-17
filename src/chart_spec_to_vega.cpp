@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // v0.1.90 — Notepatra simplified-chart-spec → Vega-Lite v5 translator.
 //
 // Why this exists: the QtCharts dispatcher in chartrender.cpp has

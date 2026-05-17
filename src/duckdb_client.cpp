@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "duckdb_client.h"
 
 #include <QFileInfo>

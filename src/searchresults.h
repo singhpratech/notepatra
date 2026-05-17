@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #ifndef SEARCHRESULTS_H
 #define SEARCHRESULTS_H
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "sqlfmtpanel.h"
 #include "rustbridge.h"
 #include "npp_palette.h"

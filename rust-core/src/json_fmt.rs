@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! JSON Formatter + Fixer — pretty-print, minify, and auto-fix broken JSON.
 //! Handles: missing braces, trailing commas, single quotes, unquoted keys,
 //! deeply nested structures, preserves all data.

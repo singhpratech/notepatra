@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // v0.1.76 — Chart modal viewer.
 // v0.1.90 — extended to drive Vega-Lite exports (PNG, SVG, HTML, spec).
 //

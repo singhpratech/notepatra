@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Notepad++ Linux — Rust core library
 //!
 //! Memory-safe backend for file I/O, text processing, encoding, search, hashing.

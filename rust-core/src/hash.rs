@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Cryptographic hashing — MD5, SHA-1, SHA-256, SHA-512.
 
 use md5::Md5;

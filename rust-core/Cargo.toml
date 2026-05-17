@@ -2,6 +2,10 @@
 name = "notepad-core"
 version = "0.1.0"
 edition = "2021"
+license = "GPL-3.0-or-later"
+authors = ["Prateek Singh"]
+description = "Rust core for Notepatra — memory-mapped file I/O, encoding detection, search, hashing, formatters."
+repository = "https://github.com/singhpratech/notepatra"
 
 [lib]
 name = "notepad_core"

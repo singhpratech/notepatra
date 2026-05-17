@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #ifndef GITPANEL_H
 #define GITPANEL_H
 

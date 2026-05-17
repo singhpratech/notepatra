@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // ─────────────────────────────────────────────────────────────────────────
 //  lang_keywords.h — comprehensive primary-source keyword lists for every
 //  language Notepatra supports beyond SQL (which lives in sql_keywords.h).

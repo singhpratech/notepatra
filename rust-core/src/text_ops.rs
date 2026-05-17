@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Text operations — sort, dedupe, trim, reverse, case conversion.
 //! All operations are allocation-safe and handle huge inputs via iterators.
 

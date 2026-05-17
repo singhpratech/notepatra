@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #ifndef NOTEPATRA_MERGE_HELPER_WIDGET_H
 #define NOTEPATRA_MERGE_HELPER_WIDGET_H
 

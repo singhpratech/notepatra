@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "lexer_swift.h"
 
 const char *LexerSwift::keywords(int set) const {

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #ifndef LEXER_KOTLIN_H
 #define LEXER_KOTLIN_H
 

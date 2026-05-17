@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // v0.1.40 — detects "fix my json/html/sql" intents in chat input so the
 // AIPanel can swap in a strict-patcher system prompt for that turn.
 // Header-only-ish: declarations live here, regex engines + tests go in the

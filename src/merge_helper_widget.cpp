@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // MergeHelperWidget — see merge_helper_widget.h for the design.
 
 #include "merge_helper_widget.h"

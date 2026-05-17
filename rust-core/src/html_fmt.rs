@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! HTML Formatter — indent HTML tags properly.
 //!
 //! v0.1.48: hard 50 MB cap to prevent OOM on pathological inputs.
