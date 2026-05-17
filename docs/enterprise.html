@@ -245,11 +245,15 @@
 
         <span class="hero-tag">For IT · Legal · Procurement</span>
         <h1>Notepatra for Enterprise</h1>
-        <p class="lead">A short, plain-English brief for the IT, legal, or procurement reviewer evaluating whether a developer in your organization can install Notepatra. Bookmark this page, paste it into a software-acceptance request, or forward it to your OSS-license review board. <em>Nothing on this page is legal advice — your legal team is.</em></p>
+        <p class="lead">A plain-English brief for the IT, legal, or procurement reviewer evaluating whether a developer in your organization can install Notepatra. Bookmark this page, paste it into a software-acceptance request, or forward it to your OSS-license review board.</p>
+
+        <div class="callout callout-warn">
+            <strong>Not legal advice.</strong> This page is an informational summary written by the Notepatra maintainer — an independent open-source author, not a law firm. The descriptions below of how GPL-3.0 applies to various scenarios are good-faith summaries of the license text and of widely-held interpretations published by the Free Software Foundation (the GPL's author) at <a href="https://www.gnu.org/licenses/gpl-faq.html">gnu.org/licenses/gpl-faq.html</a>. Your in-house counsel is the only authoritative voice on how GPL-3.0 applies to your organization. Information on this page reflects the project state at the time the page was last updated and may not reflect future releases — the canonical statement of what each Notepatra release does or does not include is the <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">CHANGELOG</a> and the release notes for that release. Nothing on this page modifies, expands, or limits the warranty disclaimers in the <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE">LICENSE</a> file (GPL-3.0 §15 and §16) — Notepatra is provided "as is".
+        </div>
 
         <div class="tldr">
             <h3>The 30-second answer</h3>
-            <p><strong>Notepatra is a standalone end-user code editor</strong> — like Notepad++, GIMP, vim, or VS&nbsp;Code from a license-review perspective. It is licensed under the GNU General Public License v3.0 (GPL-3.0-or-later). Running, installing, and using Notepatra inside your organization <strong>does not require you to release any of your source code</strong>, does not "infect" the files your developers edit with it, does not phone home, and does not require an account or commercial contract. Notepad++ — same license family — is installed on millions of corporate workstations worldwide. Notepatra is no different.</p>
+            <p><strong>Notepatra is a standalone end-user code editor</strong>, similar in license posture and use case to Notepad++, vim, or GIMP. It is licensed under the GNU General Public License v3.0 or later. In the Free Software Foundation's published interpretation of GPL-3.0, running and installing a GPL program inside an organization does not require the organization to release any of its own source code, does not create a derivative work of the editor from files the editor is used to edit, and does not require a paid account or commercial contract. The current Notepatra release does not include telemetry or background network calls; AI features default to local backends and any cloud backend is opt-in. (Statements about "current release" reflect the release identified at the bottom of this page and are not warranties for future releases.)</p>
         </div>
 
         <section id="snapshot">
@@ -260,15 +264,15 @@
                 <tr><td>Vendor / Author</td><td>Prateek Singh (individual open-source maintainer)</td></tr>
                 <tr><td>License</td><td>GNU General Public License v3.0 or later (<a href="https://www.gnu.org/licenses/gpl-3.0.html">SPDX: GPL-3.0-or-later</a>)</td></tr>
                 <tr><td>Source code</td><td><a href="https://github.com/singhpratech/notepatra">github.com/singhpratech/notepatra</a> — fully open, every release tagged</td></tr>
-                <tr><td>Cost</td><td>Free. No paid tier. No subscription. No account required.</td></tr>
-                <tr><td>Telemetry / analytics</td><td><span class="ok">None.</span> No call-home. No usage pings. No crash reports unless the user explicitly enables them.</td></tr>
-                <tr><td>Mandatory network calls</td><td><span class="ok">None.</span> The editor runs fully offline. Update checks and AI features are opt-in.</td></tr>
-                <tr><td>Data collection</td><td>None. No PII collected. No files leave the machine unless the user explicitly enables a cloud AI backend.</td></tr>
-                <tr><td>Local-first AI</td><td>Default. Ollama / llama.cpp / LM Studio / Jan run on the user's machine. Cloud backends (OpenAI, Azure OpenAI, OpenRouter, Ollama Cloud) are opt-in from a dropdown.</td></tr>
-                <tr><td>Supply chain</td><td>SHA-256 checksums, cosign signatures (Sigstore + Rekor transparency log), SLSA build provenance. Reproducible from public source.</td></tr>
-                <tr><td>Code signing</td><td>SHA-256 + cosign on every artifact today. Authenticode/notarization on roadmap; current builds are unsigned at OS level but cryptographically verifiable via cosign.</td></tr>
+                <tr><td>Cost</td><td>The current release is distributed at no charge under GPL-3.0. There is no paid tier today.</td></tr>
+                <tr><td>Telemetry / analytics<br><em style="font-size:12.5px;color:var(--c-text-muted);">(current release)</em></td><td><span class="ok">None.</span> The current release does not include call-home behavior, usage pings, or automatic crash reports. The canonical statement of what each release collects lives in that release's CHANGELOG.</td></tr>
+                <tr><td>Mandatory network calls<br><em style="font-size:12.5px;color:var(--c-text-muted);">(current release)</em></td><td><span class="ok">None.</span> The editor starts offline. Update checks and AI features are opt-in by the user.</td></tr>
+                <tr><td>Data collection<br><em style="font-size:12.5px;color:var(--c-text-muted);">(current release)</em></td><td>The current release does not transmit data from the user's machine by default. If the user configures and enables an external (cloud) AI backend, content the user sends to that backend is governed by that backend's terms of service.</td></tr>
+                <tr><td>Local-first AI</td><td>Default behavior. Ollama / llama.cpp / LM Studio / Jan are separate programs that the user installs and runs on their own machine; Notepatra communicates with them over the user's local network only when the user enables an AI feature. Cloud backends (OpenAI, Azure OpenAI, OpenRouter, Ollama Cloud) are opt-in from a dropdown and use the user's own API credentials.</td></tr>
+                <tr><td>Supply chain</td><td>Each release page on GitHub publishes SHA-256 checksums, cosign signatures (recorded in the Sigstore Rekor transparency log), and SLSA build-provenance attestations. The releases are built from public source on GitHub Actions; bit-for-bit reproducible-build work is on the roadmap and is partially in place today.</td></tr>
+                <tr><td>Code signing</td><td>SHA-256 + cosign on every release artifact at the time of writing. Operating-system code signing (Authenticode on Windows, Apple notarization on macOS) is on the roadmap; current builds are unsigned at the OS level but are cryptographically verifiable via cosign.</td></tr>
                 <tr><td>Platforms</td><td>Linux x64 / ARM64, macOS Apple Silicon, Windows x64</td></tr>
-                <tr><td>Footprint</td><td>Bare executable under 10 MB. Downloads 3.5 MB (Linux), ~27 MB (macOS DMG), ~40 MB (Windows MSI).</td></tr>
+                <tr><td>Footprint</td><td>Bare executable under 10 MB. Latest release downloads: 3.5 MB (Linux x64 tar.gz), ~27 MB (macOS DMG), ~40 MB (Windows MSI). Exact sizes vary release-to-release; the GitHub release page is canonical.</td></tr>
                 <tr><td>Updates</td><td>Manual. No auto-update daemon. No background service.</td></tr>
                 <tr><td>Plugins</td><td>Drop a <code>.so</code>/<code>.dylib</code>/<code>.dll</code> in <code>~/.config/notepatra/plugins/</code>. No remote plugin registry. No auto-install.</td></tr>
             </table>
@@ -277,58 +281,58 @@
         <section id="what-gpl-actually-means">
             <h2>What GPL-3.0 actually means for your organization</h2>
 
-            <p>The corporate fear of GPL is real but is almost always about a different scenario than yours. The fear is about <strong>linking GPL code into a closed-source product your company ships to customers</strong>. That's not what's happening when an employee installs Notepatra to edit files.</p>
+            <p>The most common concerns about GPL in a corporate setting are about a specific scenario: <strong>linking GPL code into a closed-source product your company ships to customers</strong>. The questions below summarize how the Free Software Foundation — the author of the GPL — describes those concerns. The authoritative source is the FSF's <a href="https://www.gnu.org/licenses/gpl-faq.html">GPL FAQ</a>; your in-house counsel can advise on your specific situation.</p>
 
             <table>
-                <tr><th>Common concern</th><th>Does it apply when using Notepatra?</th></tr>
+                <tr><th>Common concern</th><th>What the FSF GPL FAQ says (paraphrased)</th></tr>
                 <tr>
                     <td>"If we install GPL software, we'll have to release our source code."</td>
-                    <td><span class="ok">No.</span> The GPL is triggered only when you <em>distribute</em> the GPL software or a derivative of it. Running it doesn't trigger anything. Same as running <code>gcc</code>, <code>vim</code>, or Linux itself.</td>
+                    <td>The FSF's interpretation is that GPL obligations are triggered by <em>distribution</em> of the GPL software or a derivative work — not by running it. (See FSF GPL FAQ: <a href="https://www.gnu.org/licenses/gpl-faq.html#GPLRequireSourcePostedPublic">"Does the GPL require source code of modified versions to be posted to the public?"</a>) Running a GPL program inside your organization is the same posture as running <code>gcc</code>, <code>vim</code>, or Linux.</td>
                 </tr>
                 <tr>
-                    <td>"If our developers edit our proprietary source code in Notepatra, will that code become GPL?"</td>
-                    <td><span class="ok">No.</span> The editor and the file you edit are separate works. Editing a file in a GPL editor does not create a derivative work of the editor. Same principle as: writing a document in LibreOffice doesn't make the document fall under LibreOffice's license.</td>
+                    <td>"If our developers edit our proprietary source code in Notepatra, does that code become GPL?"</td>
+                    <td>The FSF's interpretation is that the editor and the file edited with it are separate works; editing a file in a GPL editor does not by itself make the file a derivative work of the editor. (FSF GPL FAQ: <a href="https://www.gnu.org/licenses/gpl-faq.html#CanIUseGPLToolsForNF">"Can I use GPL-covered editors to develop nonfree programs?"</a>) An analogous principle: writing a document in LibreOffice does not place the document under LibreOffice's license.</td>
                 </tr>
                 <tr>
                     <td>"What if a developer accidentally pastes Notepatra source into our codebase?"</td>
-                    <td>That would be a normal copyright concern, the same as if they pasted code from Stack Overflow or any other source. The license discipline you apply to all third-party code applies here too.</td>
+                    <td>That would be a normal copyright matter, the same as if they pasted code from any other source. The license discipline your organization applies to all third-party code applies here too.</td>
                 </tr>
                 <tr>
                     <td>"What if we want to modify Notepatra for internal use?"</td>
-                    <td><span class="ok">Allowed.</span> The GPL only requires source disclosure if you <em>distribute</em> your modified version (e.g. ship binaries to customers or a wider audience). Internal use, even modified, does not require disclosure.</td>
+                    <td>The FSF's interpretation is that GPL source-disclosure obligations attach to <em>distribution</em> of modified versions, not to internal use. (FSF GPL FAQ: <a href="https://www.gnu.org/licenses/gpl-faq.html#GPLRequireSourcePostedPublic">same entry as above</a>.) If your modified version is later distributed outside your organization, GPL-3.0 source-disclosure obligations would apply at that point.</td>
                 </tr>
                 <tr>
                     <td>"What about AGPL? Some of our software policies block AGPL."</td>
-                    <td>Notepatra is <strong>not</strong> AGPL. It's GPL-3.0. The AGPL network clause does not apply.</td>
+                    <td>Notepatra is licensed under GPL-3.0-or-later, <strong>not</strong> AGPL. The AGPL network-clause does not apply to Notepatra.</td>
                 </tr>
                 <tr>
                     <td>"Patent retaliation clause?"</td>
-                    <td>GPL-3.0 includes a clause that ends your patent rights from contributors if you sue someone for patent infringement based on the software. It applies to <em>contributors</em> — the people writing the code — not to end-users.</td>
+                    <td>GPL-3.0 §11 grants users an express patent license from each contributor and includes a defensive termination provision for patent litigation initiated against the software. (Full text in the LICENSE file.) Consult your in-house counsel for application to your organization's patent posture.</td>
                 </tr>
                 <tr>
                     <td>"Anti-tivoization clause?"</td>
-                    <td>GPL-3.0 prevents distributing hardware that runs the GPL software but blocks the user from modifying it. Doesn't apply when a developer installs Notepatra on their own workstation.</td>
+                    <td>GPL-3.0 §6 ("Conveying Non-Source Forms") addresses the situation of distributing GPL software inside a device whose firmware prevents user modification. It applies to manufacturers who distribute GPL binaries inside such devices, not to end-user installations on general-purpose workstations.</td>
                 </tr>
             </table>
 
-            <div class="callout callout-ok">
-                <strong>Bottom line:</strong> the GPL "copyleft" obligations attach to whoever <em>distributes</em> the software. As an end-user organization that installs and runs Notepatra, you have no source-disclosure obligation, no license-grant obligation, and no patent-grant obligation.
+            <div class="callout">
+                <strong>Summary, per the FSF interpretation:</strong> GPL copyleft obligations attach to whoever <em>distributes</em> the software. An end-user organization that installs and runs Notepatra on its workstations is, in the FSF's described interpretation of GPL-3.0, not subject to source-disclosure or license-grant obligations from such use. The authoritative source for these interpretations is the <a href="https://www.gnu.org/licenses/gpl-faq.html">FSF GPL FAQ</a>. Your counsel is the authoritative voice for your specific situation.
             </div>
         </section>
 
         <section id="peers">
-            <h2>GPL software already on your network</h2>
-            <p>If your organization permits any of the following, it has already accepted GPL-3.0 (or its predecessor GPL-2.0) software:</p>
+            <h2>GPL software widely used in enterprise environments</h2>
+            <p>Many widely-deployed enterprise tools are distributed under GPL-2.0 or GPL-3.0. Examples include:</p>
             <ul>
-                <li><strong>Notepad++</strong> (GPL-2.0/3.0) — installed at virtually every Fortune 500 company.</li>
-                <li><strong>Linux kernel</strong> (GPL-2.0) — server fleets at every major bank, healthcare provider, and government.</li>
-                <li><strong>GCC, GDB, GNU binutils</strong> (GPL-3.0) — the compiler toolchain almost every C/C++ team uses.</li>
-                <li><strong>vim, emacs</strong> (Vim license, GPL-3.0) — developer mainstays.</li>
-                <li><strong>GIMP, Inkscape</strong> (GPL-3.0) — image editors on graphic-design teams.</li>
-                <li><strong>Git</strong> (GPL-2.0) — the version control system underpinning almost every codebase.</li>
-                <li><strong>Wireshark</strong> (GPL-2.0) — used by security and network teams.</li>
+                <li><strong>Notepad++</strong> (GPL-2.0/3.0) — code editor.</li>
+                <li><strong>Linux kernel</strong> (GPL-2.0) — operating system kernel running on much of the world's server infrastructure.</li>
+                <li><strong>GCC, GDB, GNU binutils</strong> (GPL-3.0) — C/C++ compiler toolchain.</li>
+                <li><strong>vim, emacs</strong> (Vim license, GPL-3.0) — text editors.</li>
+                <li><strong>GIMP, Inkscape</strong> (GPL-3.0) — image-editing tools.</li>
+                <li><strong>Git</strong> (GPL-2.0) — version-control system.</li>
+                <li><strong>Wireshark</strong> (GPL-2.0) — network-protocol analyzer.</li>
             </ul>
-            <p>Notepatra's license posture is in the exact same category as these.</p>
+            <p>If your organization's OSS policy already permits standalone GPL-2.0 or GPL-3.0 end-user tools of this category, Notepatra's license posture is in the same category.</p>
         </section>
 
         <section id="supply-chain">
@@ -361,27 +365,101 @@
             <table>
                 <tr><th>Dependency</th><th>License</th><th>Compatible with GPL-3.0?</th></tr>
                 <tr><td>Qt 5/6 (UI framework)</td><td>LGPL-3.0 (dynamic linking)</td><td><span class="ok">Yes.</span> Standard Qt-app posture.</td></tr>
-                <tr><td>QScintilla (editor widget)</td><td>GPL-3.0 (or commercial)</td><td><span class="ok">Yes.</span> Riverbank Computing dual-licenses this — Notepatra uses the free GPL-3.0 path.</td></tr>
+                <tr><td>QScintilla (editor widget)</td><td>GPL-3.0 (or commercial)</td><td><span class="ok">Yes.</span> Riverbank Computing dual-licenses this; Notepatra uses the free GPL-3.0 path.</td></tr>
                 <tr><td>Scintilla (editor engine)</td><td>HPND (BSD-like, permissive)</td><td><span class="ok">Yes.</span></td></tr>
                 <tr><td>DuckDB (Data Analyst mode)</td><td>MIT</td><td><span class="ok">Yes.</span></td></tr>
                 <tr><td>Rust crates (memmap2, regex, aho-corasick, encoding_rs, etc.)</td><td>MIT / Apache-2.0 dual</td><td><span class="ok">Yes.</span></td></tr>
                 <tr><td>Vega + Vega-Lite + vega-embed (chart rendering — Full flavor only)</td><td>BSD-3-Clause</td><td><span class="ok">Yes.</span></td></tr>
             </table>
-            <p>No GPL-incompatible dependencies. No dependencies with field-of-use restrictions. No "free for non-commercial use" components.</p>
+            <p>To the maintainer's knowledge at the time of writing, Notepatra does not include GPL-incompatible dependencies, dependencies with field-of-use restrictions, or "free for non-commercial use" components. The canonical license list for the current release is the LICENSE file in the release tag and the dependency manifests (<code>CMakeLists.txt</code>, <code>rust-core/Cargo.toml</code>) in the same tag.</p>
+        </section>
+
+        <section id="ai-backends">
+            <h2>AI backends — separate programs Notepatra talks to</h2>
+            <p>Notepatra's AI features (autocomplete, chat, inline edit, data-analyst mode) are powered by an external <strong>backend</strong> that the user chooses and configures. The backend is <em>not bundled inside</em> the Notepatra binary; it is a separate program (for local backends) or a separate online service (for cloud backends) that the user installs, runs, or signs up for independently. Notepatra communicates with the chosen backend over its public network or local-loopback API.</p>
+
+            <p>This separation has two consequences worth noting for your review:</p>
+            <ol>
+                <li>The license of a backend program (e.g. llama.cpp, Ollama) does <strong>not</strong> attach to or "infect" Notepatra. They are separate works connected by a network or local-IPC API call, not by static or dynamic linking.</li>
+                <li>Any data your developers send to a backend is governed by that backend's own terms — Notepatra is the API client, not the data processor. For local backends this is typically a non-issue (data stays on the developer's machine); for cloud backends, the cloud provider's privacy and DPA terms apply.</li>
+            </ol>
+
+            <table>
+                <tr><th>Backend</th><th>Type</th><th>License / Terms</th><th>What Notepatra does</th></tr>
+                <tr>
+                    <td><strong>Ollama</strong></td>
+                    <td>Local (separate process)</td>
+                    <td><a href="https://github.com/ollama/ollama/blob/main/LICENSE">MIT</a> — permissive open-source</td>
+                    <td>Issues HTTP requests to <code>localhost:11434</code> when the user enables it. Ollama is not bundled.</td>
+                </tr>
+                <tr>
+                    <td><strong>llama.cpp</strong> (llama-server)</td>
+                    <td>Local (separate process)</td>
+                    <td><a href="https://github.com/ggerganov/llama.cpp/blob/master/LICENSE">MIT</a> — permissive open-source</td>
+                    <td>HTTP client to a user-run llama-server endpoint. llama.cpp is not bundled.</td>
+                </tr>
+                <tr>
+                    <td><strong>LM Studio</strong></td>
+                    <td>Local (separate program)</td>
+                    <td>Closed-source; check LM Studio's own terms</td>
+                    <td>HTTP client to LM Studio's OpenAI-compatible local server. LM Studio is not bundled.</td>
+                </tr>
+                <tr>
+                    <td><strong>Jan</strong></td>
+                    <td>Local (separate program)</td>
+                    <td>AGPL-3.0 — applies to Jan, not to Notepatra</td>
+                    <td>HTTP client to Jan's local API. Jan is not bundled. Because Notepatra communicates with Jan as a separate-process API client, the AGPL network-clause obligations remain with Jan's distributor (the Jan project), not with Notepatra.</td>
+                </tr>
+                <tr>
+                    <td><strong>vLLM, KoboldCpp, text-generation-webui, any OpenAI-compatible server</strong></td>
+                    <td>Local (separate process)</td>
+                    <td>Each has its own license; check the project</td>
+                    <td>HTTP client to a user-run endpoint. None bundled.</td>
+                </tr>
+                <tr>
+                    <td><strong>OpenAI</strong></td>
+                    <td>Cloud</td>
+                    <td>OpenAI's API Terms of Service</td>
+                    <td>HTTPS client. User supplies own API key. Opt-in.</td>
+                </tr>
+                <tr>
+                    <td><strong>Azure OpenAI</strong></td>
+                    <td>Cloud</td>
+                    <td>Microsoft Azure OpenAI Service terms (the enterprise option for many regulated organizations)</td>
+                    <td>HTTPS client. User supplies own deployment URL + API key. Opt-in.</td>
+                </tr>
+                <tr>
+                    <td><strong>OpenRouter</strong></td>
+                    <td>Cloud</td>
+                    <td>OpenRouter's terms</td>
+                    <td>HTTPS client. User supplies own API key. Opt-in.</td>
+                </tr>
+                <tr>
+                    <td><strong>Ollama Cloud</strong></td>
+                    <td>Cloud</td>
+                    <td>Ollama's hosted-service terms</td>
+                    <td>HTTPS client. Opt-in.</td>
+                </tr>
+            </table>
+
+            <div class="callout">
+                <strong>On nominative use of third-party names:</strong> the names "Ollama", "llama.cpp", "LM Studio", "Jan", "OpenAI", "Azure OpenAI", "OpenRouter", "vLLM", "KoboldCpp" appear on this page solely to identify the corresponding programs or services so that users can choose which one to configure. No affiliation, endorsement, or sponsorship is implied. All trademarks belong to their respective owners.
+            </div>
         </section>
 
         <section id="copy-paste">
             <h2>Copy-paste this into your software-acceptance request</h2>
+            <p style="font-size:14.5px;color:var(--c-text-muted);"><em>You may copy the block below verbatim and submit it to your organization's OSS review process. The statements describe the current Notepatra release; consult the GitHub release page and CHANGELOG for the canonical statement on any specific release.</em></p>
             <div class="callout">
                 <p style="margin-bottom:8px;"><strong>Software:</strong> Notepatra — open-source code editor with optional local-first AI integration</p>
                 <p style="margin-bottom:8px;"><strong>Maintainer:</strong> Prateek Singh (independent open-source author)</p>
                 <p style="margin-bottom:8px;"><strong>License:</strong> GNU General Public License v3.0 or later (SPDX: GPL-3.0-or-later)</p>
                 <p style="margin-bottom:8px;"><strong>Source:</strong> <a href="https://github.com/singhpratech/notepatra">github.com/singhpratech/notepatra</a></p>
-                <p style="margin-bottom:8px;"><strong>Use case:</strong> standalone code editor running on developer workstation. No service, no daemon, no auto-update. Files edited remain the property of the organization; no GPL obligation attaches to edited files.</p>
-                <p style="margin-bottom:8px;"><strong>Data flow:</strong> the editor runs fully offline by default. Optional local-AI backends run on the user's machine (Ollama, llama.cpp, LM Studio). Cloud AI backends (OpenAI, Azure OpenAI, OpenRouter, Ollama Cloud) are opt-in and clearly labelled; the editor will not contact any external service without an explicit user action.</p>
-                <p style="margin-bottom:8px;"><strong>Telemetry:</strong> none.</p>
-                <p style="margin-bottom:8px;"><strong>Equivalent already approved:</strong> Notepad++ (GPL-2.0/3.0). Notepatra has the same license posture and the same end-user-tool category.</p>
-                <p style="margin:0;"><strong>Supply-chain evidence:</strong> SHA-256 checksums, cosign signatures via Sigstore (publicly recorded in Rekor), SLSA Level 3 build provenance, reproducible from public source.</p>
+                <p style="margin-bottom:8px;"><strong>Use case:</strong> standalone code editor running on developer workstation. No service, no daemon, no auto-update. Files edited remain the property of the organization; per the FSF's published interpretation of GPL-3.0, no GPL obligation attaches to files edited with a GPL editor.</p>
+                <p style="margin-bottom:8px;"><strong>Data flow (current release):</strong> the editor runs offline by default. Optional local AI backends (Ollama, llama.cpp, LM Studio, Jan, vLLM, KoboldCpp) are separate programs the user installs; Notepatra is the API client. Cloud AI backends (OpenAI, Azure OpenAI, OpenRouter, Ollama Cloud) are opt-in and use the user's own credentials; the editor does not contact any external service without explicit user configuration and action.</p>
+                <p style="margin-bottom:8px;"><strong>Telemetry (current release):</strong> none.</p>
+                <p style="margin-bottom:8px;"><strong>Equivalent already approved:</strong> Notepad++ (GPL-2.0/3.0) is a comparable standalone GPL code editor that many organizations have already evaluated.</p>
+                <p style="margin:0;"><strong>Supply-chain evidence (current release):</strong> SHA-256 checksums, cosign signatures via Sigstore (publicly recorded in the Rekor transparency log), and SLSA build-provenance attestations; built from public source on GitHub Actions.</p>
             </div>
         </section>
 
@@ -398,10 +476,10 @@
             <p>No. The editor boots offline. Update-check is manual. AI features default to a local backend; cloud backends are opt-in and require the user to enter credentials.</p>
 
             <h3>Is there a commercial / paid version that drops the copyleft requirement?</h3>
-            <p>Not today. Notepatra is GPL-3.0 across the board. If your situation requires a permissive-license version — e.g. you want to embed Notepatra into a closed-source product you ship to customers — open an issue or reach out via <a href="https://github.com/singhpratech">@singhpratech</a> on GitHub and we can discuss.</p>
+            <p>No commercial offering exists today. Notepatra is distributed solely under GPL-3.0-or-later at the time of writing. Statements on this page are not an offer to license under different terms, and no representation is made that alternative licensing will be available in the future.</p>
 
             <h3>Will Notepatra add telemetry or "phone home" in a future version?</h3>
-            <p>No. "No telemetry, no analytics, no mandatory account" is part of the project's stated commitment. The website's FAQ and every release page repeats it. If that ever changed it would be a major version event documented in the changelog — not a silent flip.</p>
+            <p>The current release does not include telemetry, analytics, or call-home behavior, and the project's stated direction is to remain that way. However, statements on this page describe the release in effect when this page was last updated and do not bind future releases. The canonical statement of what each release does or does not collect is the CHANGELOG entry and the release notes for that specific release; review those before deploying any new version in a sensitive environment.</p>
 
             <h3>Where do I report a security issue?</h3>
             <p>See <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">SECURITY.md</a> in the repo for the disclosure policy.</p>
@@ -417,6 +495,28 @@
 
             <h3>Can we run Notepatra in an air-gapped environment?</h3>
             <p>Yes. The Lite flavor is fully self-contained (~10 MB on disk). The Full flavor bundles the chart-rendering JS as a Qt resource and works offline. AI features can be configured for a local Ollama or llama.cpp running on the air-gapped machine — no external network required.</p>
+        </section>
+
+        <section id="warranty">
+            <h2>Warranty &amp; liability</h2>
+            <p>Notepatra is distributed "as is", without warranty of any kind. The complete and authoritative warranty disclaimer is in sections 15 and 16 of the GNU General Public License v3.0, which forms part of every Notepatra release and is reproduced in full in the <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE">LICENSE</a> file. To the maximum extent permitted by applicable law, the maintainer disclaims all warranties, express or implied, including without limitation any implied warranties of merchantability, fitness for a particular purpose, non-infringement, accuracy, completeness, or uninterrupted availability.</p>
+            <p>Nothing on this page is a representation, guarantee, or warranty regarding any specific deployment, environment, or use case. Statements on this page describing what a current release does or does not include are descriptive — not contractual — and do not modify, expand, or limit the warranty disclaimer in the LICENSE file or the disclaimers in GPL-3.0 §15 and §16.</p>
+            <p>To the maximum extent permitted by applicable law, in no event will the maintainer be liable to any party for any direct, indirect, incidental, consequential, special, exemplary, or punitive damages arising out of or relating to the use or inability to use Notepatra, even if advised of the possibility of such damages. The liability ceiling stated in GPL-3.0 §16 governs.</p>
+        </section>
+
+        <section id="trademarks">
+            <h2>Trademarks</h2>
+            <p>"Notepad++" is a trademark of Don Ho. "GitHub", "Microsoft", "Azure", and "VS Code" are trademarks of Microsoft Corporation. "Apple" and "macOS" are trademarks of Apple Inc. "OpenAI" is a trademark of OpenAI, OpCo, LLC. "Ollama" is the project name and a trademark of Ollama, Inc. (where registered). "llama.cpp" is the project name of the open-source project of the same name. "Linux" is a registered trademark of Linus Torvalds. "Wireshark" is a registered trademark of the Wireshark Foundation. "GIMP" and "Inkscape" are project names of their respective projects. "Qt" is a registered trademark of The Qt Company. "Scintilla" and "QScintilla" are project names of the respective open-source projects, and QScintilla is also a trademark of Riverbank Computing Limited. "Sigstore" and the "Sigstore" mark belong to the Sigstore project / The Linux Foundation. "SLSA" is a mark of OpenSSF / The Linux Foundation. Other product or service names referenced on this page may be trademarks of their respective owners.</p>
+            <p>All references on this page to third-party products, projects, services, or organizations are <em>nominative</em> — used solely to identify the corresponding product or service so that readers can understand what Notepatra does or what Notepatra is compatible with. No affiliation, endorsement, sponsorship, partnership, or business relationship between Notepatra and any such third party is implied or claimed.</p>
+        </section>
+
+        <section id="page-disclaimer">
+            <h2>About this page</h2>
+            <p>This page is informational and is not legal advice. It is a good-faith summary written by the Notepatra maintainer to assist organizations in evaluating Notepatra for use in their environments. The maintainer is an independent open-source author and not a law firm. The page may be updated from time to time; the version of this page in effect at any given moment is the version published at <code>https://notepatra.org/enterprise.html</code> at that moment.</p>
+            <p>Where this page describes how GPL-3.0 applies to particular scenarios, those descriptions are paraphrases of interpretations published by the Free Software Foundation in the official GPL FAQ at <a href="https://www.gnu.org/licenses/gpl-faq.html">gnu.org/licenses/gpl-faq.html</a>. The FSF's own statements are the authoritative source for those interpretations; your in-house counsel is the authoritative source for how the GPL applies to your specific situation.</p>
+            <p>Where this page describes the behavior of Notepatra (e.g., "does not include telemetry", "starts offline", "AI backends are opt-in"), those descriptions describe the release in effect at the time the page was last updated and do not bind future releases. Always cross-reference the CHANGELOG and release notes for the specific Notepatra release you are evaluating.</p>
+            <p>The maintainer reserves the right to revise this page without prior notice. Mirroring or quoting this page elsewhere is permitted; please cite the canonical URL above so readers can confirm the current version.</p>
+            <p style="font-size:14px;color:var(--c-text-muted);"><em>Page last updated: 2026-05-17. Current release at time of writing: v0.1.90.</em></p>
         </section>
 
         <section id="contact">
