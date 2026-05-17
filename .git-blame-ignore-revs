@@ -5,6 +5,7 @@
 # Configure your local git with:
 #     git config blame.ignoreRevsFile .git-blame-ignore-revs
 
-# v0.1.90 — add SPDX-License-Identifier: GPL-3.0-or-later header to every
-# C++ and Rust source file in src/, src/charts/, and rust-core/src/
+# v0.1.90 follow-up — add SPDX-License-Identifier: GPL-3.0-or-later header
+# to every C++ and Rust source file in src/, src/charts/, and rust-core/src/
 # (147 files, no functional change).
+872f05ef6b4030826870ee88ed192f32f19f890b
