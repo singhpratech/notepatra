@@ -2059,6 +2059,10 @@
                 <p>No catch. GPL-3.0, no telemetry, no analytics, no API key, no enterprise tier, no subscription. Source on GitHub. The "catch" is that it's a one-person open-source project — no SLA, no warranty, no support contract. See the disclaimer in the footer.</p>
             </div>
             <div class="feature-card">
+                <h3>Can I install Notepatra at my company?</h3>
+                <p>Yes — same license posture as Notepad++, GIMP, vim, and Linux (all GPL). Notepatra is a standalone end-user editor: installing it doesn't oblige your organization to release any of your own code, doesn't "infect" the files your developers edit, and doesn't phone home. For IT, legal, or procurement teams reviewing the install: see the <a href="/enterprise.html" style="color:var(--green);">For Enterprise</a> page — plain-English explainer, supply-chain provenance (SHA-256 + cosign + SLSA), and a copy-paste block for your software-acceptance request.</p>
+            </div>
+            <div class="feature-card">
                 <h3>How big is the binary?</h3>
                 <p>The bare executable is <strong>under 10 MB</strong> (9.7 MB on Linux x64) across every platform. Latest v0.1.90 download sizes: <strong>3.5 MB</strong> Linux x64 tar.gz · <strong>3.3 MB</strong> Linux ARM64 tar.gz · <strong>26.9 MB</strong> macOS DMG · <strong>40.6 MB</strong> Windows MSI / <strong>32.2 MB</strong> NSIS / <strong>36.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~10 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
@@ -2135,7 +2139,7 @@
 
         <p><strong>Notepatra</strong></p>
         <p>Envisioned by <a href="https://theaivibe.org/about">Prateek Singh</a>. Built with Claude.</p>
-        <p>Free forever · GPL-3.0 · <a href="https://github.com/singhpratech/notepatra">Source on GitHub</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Changelog</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">Security</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE">License</a></p>
+        <p>Free forever · GPL-3.0 · <a href="https://github.com/singhpratech/notepatra">Source on GitHub</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Changelog</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">Security</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE">License</a> · <a href="/enterprise.html">For Enterprise</a></p>
         <p class="quote">"I didn't build Notepatra because the world needed another text editor.<br>I built it because every developer deserves one that's fast, free, and AI-friendly."</p>
 
         <div style="max-width: 720px; margin: 32px auto 0; padding: 20px 24px; background: var(--c-accent-soft); border: 1px solid var(--c-accent); border-radius: 12px; text-align: left;">

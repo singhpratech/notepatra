@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notepatra for Enterprise — License, Supply Chain, IT/Legal Review</title>
+    <meta name="description" content="Plain-English explainer for IT, legal, and procurement teams reviewing Notepatra. GPL-3.0 standalone application — no telemetry, no network calls by default, no enterprise tier required. SHA-256 checksums, cosign signatures, SLSA build provenance. Same license posture as Notepad++, GIMP, vim, Linux.">
+    <meta name="keywords" content="notepatra enterprise, GPL-3.0 enterprise, code editor enterprise approval, OSS license review, software bill of materials, SBOM, supply chain provenance, cosign, SLSA, notepad++ enterprise alternative">
+    <meta name="author" content="Prateek Singh">
+    <link rel="canonical" href="https://notepatra.org/enterprise.html">
+    <meta property="og:title" content="Notepatra for Enterprise — License, Supply Chain, IT/Legal Review">
+    <meta property="og:description" content="Plain-English explainer for IT, legal, and procurement teams reviewing Notepatra. GPL-3.0 standalone app — used by every Notepad++ deployment everywhere — no telemetry, no mandatory network calls, signed releases.">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://notepatra.org/enterprise.html">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --c-bone:        #F5F4EE;
+            --c-surface:     #FAF9F5;
+            --c-elevated:    #FFFFFF;
+            --c-code:        #F0EEE6;
+            --c-text:        #141413;
+            --c-text-2:      #3D3D3A;
+            --c-text-muted:  #6B6A65;
+            --c-accent:      #CC785C;
+            --c-accent-hover:#B8684F;
+            --c-accent-soft: #F5E6DE;
+            --c-border:      #E8E6DC;
+            --c-border-2:    #D4D1C4;
+            --c-good:        #2E7D32;
+            --c-warn:        #B26A00;
+            --c-bad:         #B71C1C;
+        }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: "Söhne", "Inter", -apple-system, BlinkMacSystemFont,
+                         ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif,
+                         "Apple Color Emoji", "Segoe UI Emoji",
+                         "Noto Color Emoji", emoji;
+            background: var(--c-bone);
+            color: var(--c-text);
+            line-height: 1.65;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* Nav */
+        nav {
+            padding: 18px 32px;
+            border-bottom: 1px solid var(--c-border);
+            background: var(--c-bone);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(8px);
+        }
+        .nav-inner {
+            max-width: 960px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .nav-logo {
+            font-weight: 700;
+            font-size: 18px;
+            color: var(--c-text);
+            text-decoration: none;
+            letter-spacing: -0.01em;
+        }
+        .nav-logo span { color: var(--c-accent); }
+        .nav-links a {
+            color: var(--c-text-muted);
+            text-decoration: none;
+            margin-left: 22px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .nav-links a:hover { color: var(--c-text); }
+
+        /* Page container */
+        .page {
+            max-width: 880px;
+            margin: 0 auto;
+            padding: 56px 32px 96px;
+        }
+
+        /* Hero */
+        .hero-tag {
+            display: inline-block;
+            background: var(--c-accent-soft);
+            color: var(--c-accent-hover);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 18px;
+        }
+        h1 {
+            font-size: 42px;
+            line-height: 1.15;
+            letter-spacing: -0.02em;
+            margin-bottom: 18px;
+            font-weight: 700;
+        }
+        h1 + p.lead {
+            font-size: 19px;
+            color: var(--c-text-2);
+            margin-bottom: 36px;
+            max-width: 720px;
+        }
+
+        /* Section */
+        section {
+            margin-top: 56px;
+            padding-top: 24px;
+            border-top: 1px solid var(--c-border);
+        }
+        section:first-of-type { border-top: none; padding-top: 0; }
+
+        h2 {
+            font-size: 28px;
+            letter-spacing: -0.01em;
+            margin-bottom: 16px;
+            font-weight: 700;
+        }
+        h3 {
+            font-size: 19px;
+            margin: 28px 0 10px;
+            font-weight: 600;
+        }
+        p, ul, ol { margin-bottom: 14px; color: var(--c-text-2); font-size: 16px; }
+        ul, ol { padding-left: 24px; }
+        li { margin-bottom: 6px; }
+        a { color: var(--c-accent-hover); }
+        a:hover { color: var(--c-accent); }
+
+        code, pre {
+            font-family: "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+            font-size: 13.5px;
+            background: var(--c-code);
+            border-radius: 6px;
+            color: var(--c-text);
+        }
+        code { padding: 2px 6px; }
+        pre {
+            padding: 16px 18px;
+            overflow-x: auto;
+            border: 1px solid var(--c-border);
+            margin: 14px 0;
+            line-height: 1.55;
+        }
+        pre code { background: transparent; padding: 0; }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 18px 0 22px;
+            font-size: 15px;
+            background: var(--c-surface);
+            border: 1px solid var(--c-border);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        th, td {
+            text-align: left;
+            padding: 11px 14px;
+            border-bottom: 1px solid var(--c-border);
+            vertical-align: top;
+        }
+        th {
+            background: var(--c-code);
+            font-weight: 600;
+            font-size: 13.5px;
+            color: var(--c-text);
+            letter-spacing: 0.02em;
+        }
+        tr:last-child td { border-bottom: none; }
+        td .ok   { color: var(--c-good); font-weight: 600; }
+        td .warn { color: var(--c-warn); font-weight: 600; }
+        td .bad  { color: var(--c-bad);  font-weight: 600; }
+
+        /* Callouts */
+        .callout {
+            background: var(--c-surface);
+            border: 1px solid var(--c-border);
+            border-left: 4px solid var(--c-accent);
+            border-radius: 10px;
+            padding: 18px 22px;
+            margin: 22px 0;
+        }
+        .callout strong { color: var(--c-text); }
+
+        .callout-ok    { border-left-color: var(--c-good); }
+        .callout-warn  { border-left-color: var(--c-warn); }
+
+        /* TL;DR card */
+        .tldr {
+            background: var(--c-elevated);
+            border: 1px solid var(--c-border-2);
+            border-radius: 14px;
+            padding: 26px 28px;
+            margin: 14px 0 32px;
+        }
+        .tldr h3 { margin-top: 0; }
+        .tldr p { font-size: 16.5px; }
+
+        /* Footer */
+        footer {
+            margin-top: 72px;
+            padding: 36px 32px;
+            border-top: 1px solid var(--c-border);
+            text-align: center;
+            font-size: 13.5px;
+            color: var(--c-text-muted);
+        }
+        footer a { color: var(--c-text-muted); }
+        footer a:hover { color: var(--c-text); }
+
+        @media (max-width: 720px) {
+            h1 { font-size: 32px; }
+            .page { padding: 36px 22px 64px; }
+            table { font-size: 13.5px; }
+            th, td { padding: 9px 10px; }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <a href="/" class="nav-logo">Notepatra<span>.</span></a>
+            <div class="nav-links">
+                <a href="/">Home</a>
+                <a href="/docs.html">Docs</a>
+                <a href="https://github.com/singhpratech/notepatra">GitHub</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="page">
+
+        <span class="hero-tag">For IT · Legal · Procurement</span>
+        <h1>Notepatra for Enterprise</h1>
+        <p class="lead">A short, plain-English brief for the IT, legal, or procurement reviewer evaluating whether a developer in your organization can install Notepatra. Bookmark this page, paste it into a software-acceptance request, or forward it to your OSS-license review board. <em>Nothing on this page is legal advice — your legal team is.</em></p>
+
+        <div class="tldr">
+            <h3>The 30-second answer</h3>
+            <p><strong>Notepatra is a standalone end-user code editor</strong> — like Notepad++, GIMP, vim, or VS&nbsp;Code from a license-review perspective. It is licensed under the GNU General Public License v3.0 (GPL-3.0-or-later). Running, installing, and using Notepatra inside your organization <strong>does not require you to release any of your source code</strong>, does not "infect" the files your developers edit with it, does not phone home, and does not require an account or commercial contract. Notepad++ — same license family — is installed on millions of corporate workstations worldwide. Notepatra is no different.</p>
+        </div>
+
+        <section id="snapshot">
+            <h2>Snapshot for your software-acceptance form</h2>
+            <table>
+                <tr><th>Field</th><th>Value</th></tr>
+                <tr><td>Product</td><td>Notepatra</td></tr>
+                <tr><td>Vendor / Author</td><td>Prateek Singh (individual open-source maintainer)</td></tr>
+                <tr><td>License</td><td>GNU General Public License v3.0 or later (<a href="https://www.gnu.org/licenses/gpl-3.0.html">SPDX: GPL-3.0-or-later</a>)</td></tr>
+                <tr><td>Source code</td><td><a href="https://github.com/singhpratech/notepatra">github.com/singhpratech/notepatra</a> — fully open, every release tagged</td></tr>
+                <tr><td>Cost</td><td>Free. No paid tier. No subscription. No account required.</td></tr>
+                <tr><td>Telemetry / analytics</td><td><span class="ok">None.</span> No call-home. No usage pings. No crash reports unless the user explicitly enables them.</td></tr>
+                <tr><td>Mandatory network calls</td><td><span class="ok">None.</span> The editor runs fully offline. Update checks and AI features are opt-in.</td></tr>
+                <tr><td>Data collection</td><td>None. No PII collected. No files leave the machine unless the user explicitly enables a cloud AI backend.</td></tr>
+                <tr><td>Local-first AI</td><td>Default. Ollama / llama.cpp / LM Studio / Jan run on the user's machine. Cloud backends (OpenAI, Azure OpenAI, OpenRouter, Ollama Cloud) are opt-in from a dropdown.</td></tr>
+                <tr><td>Supply chain</td><td>SHA-256 checksums, cosign signatures (Sigstore + Rekor transparency log), SLSA build provenance. Reproducible from public source.</td></tr>
+                <tr><td>Code signing</td><td>SHA-256 + cosign on every artifact today. Authenticode/notarization on roadmap; current builds are unsigned at OS level but cryptographically verifiable via cosign.</td></tr>
+                <tr><td>Platforms</td><td>Linux x64 / ARM64, macOS Apple Silicon, Windows x64</td></tr>
+                <tr><td>Footprint</td><td>Bare executable under 10 MB. Downloads 3.5 MB (Linux), ~27 MB (macOS DMG), ~40 MB (Windows MSI).</td></tr>
+                <tr><td>Updates</td><td>Manual. No auto-update daemon. No background service.</td></tr>
+                <tr><td>Plugins</td><td>Drop a <code>.so</code>/<code>.dylib</code>/<code>.dll</code> in <code>~/.config/notepatra/plugins/</code>. No remote plugin registry. No auto-install.</td></tr>
+            </table>
+        </section>
+
+        <section id="what-gpl-actually-means">
+            <h2>What GPL-3.0 actually means for your organization</h2>
+
+            <p>The corporate fear of GPL is real but is almost always about a different scenario than yours. The fear is about <strong>linking GPL code into a closed-source product your company ships to customers</strong>. That's not what's happening when an employee installs Notepatra to edit files.</p>
+
+            <table>
+                <tr><th>Common concern</th><th>Does it apply when using Notepatra?</th></tr>
+                <tr>
+                    <td>"If we install GPL software, we'll have to release our source code."</td>
+                    <td><span class="ok">No.</span> The GPL is triggered only when you <em>distribute</em> the GPL software or a derivative of it. Running it doesn't trigger anything. Same as running <code>gcc</code>, <code>vim</code>, or Linux itself.</td>
+                </tr>
+                <tr>
+                    <td>"If our developers edit our proprietary source code in Notepatra, will that code become GPL?"</td>
+                    <td><span class="ok">No.</span> The editor and the file you edit are separate works. Editing a file in a GPL editor does not create a derivative work of the editor. Same principle as: writing a document in LibreOffice doesn't make the document fall under LibreOffice's license.</td>
+                </tr>
+                <tr>
+                    <td>"What if a developer accidentally pastes Notepatra source into our codebase?"</td>
+                    <td>That would be a normal copyright concern, the same as if they pasted code from Stack Overflow or any other source. The license discipline you apply to all third-party code applies here too.</td>
+                </tr>
+                <tr>
+                    <td>"What if we want to modify Notepatra for internal use?"</td>
+                    <td><span class="ok">Allowed.</span> The GPL only requires source disclosure if you <em>distribute</em> your modified version (e.g. ship binaries to customers or a wider audience). Internal use, even modified, does not require disclosure.</td>
+                </tr>
+                <tr>
+                    <td>"What about AGPL? Some of our software policies block AGPL."</td>
+                    <td>Notepatra is <strong>not</strong> AGPL. It's GPL-3.0. The AGPL network clause does not apply.</td>
+                </tr>
+                <tr>
+                    <td>"Patent retaliation clause?"</td>
+                    <td>GPL-3.0 includes a clause that ends your patent rights from contributors if you sue someone for patent infringement based on the software. It applies to <em>contributors</em> — the people writing the code — not to end-users.</td>
+                </tr>
+                <tr>
+                    <td>"Anti-tivoization clause?"</td>
+                    <td>GPL-3.0 prevents distributing hardware that runs the GPL software but blocks the user from modifying it. Doesn't apply when a developer installs Notepatra on their own workstation.</td>
+                </tr>
+            </table>
+
+            <div class="callout callout-ok">
+                <strong>Bottom line:</strong> the GPL "copyleft" obligations attach to whoever <em>distributes</em> the software. As an end-user organization that installs and runs Notepatra, you have no source-disclosure obligation, no license-grant obligation, and no patent-grant obligation.
+            </div>
+        </section>
+
+        <section id="peers">
+            <h2>GPL software already on your network</h2>
+            <p>If your organization permits any of the following, it has already accepted GPL-3.0 (or its predecessor GPL-2.0) software:</p>
+            <ul>
+                <li><strong>Notepad++</strong> (GPL-2.0/3.0) — installed at virtually every Fortune 500 company.</li>
+                <li><strong>Linux kernel</strong> (GPL-2.0) — server fleets at every major bank, healthcare provider, and government.</li>
+                <li><strong>GCC, GDB, GNU binutils</strong> (GPL-3.0) — the compiler toolchain almost every C/C++ team uses.</li>
+                <li><strong>vim, emacs</strong> (Vim license, GPL-3.0) — developer mainstays.</li>
+                <li><strong>GIMP, Inkscape</strong> (GPL-3.0) — image editors on graphic-design teams.</li>
+                <li><strong>Git</strong> (GPL-2.0) — the version control system underpinning almost every codebase.</li>
+                <li><strong>Wireshark</strong> (GPL-2.0) — used by security and network teams.</li>
+            </ul>
+            <p>Notepatra's license posture is in the exact same category as these.</p>
+        </section>
+
+        <section id="supply-chain">
+            <h2>Supply chain &amp; provenance</h2>
+            <p>Every Notepatra release ships with cryptographic provenance suitable for an internal SBOM or software-acceptance package.</p>
+
+            <h3>SHA-256 checksums</h3>
+            <p>Every release page contains a <code>SHA256SUMS</code> file listing every binary artifact. Your IT team can verify the bytes match what was published:</p>
+            <pre><code>curl -sL https://github.com/singhpratech/notepatra/releases/latest/download/SHA256SUMS \
+  | sha256sum --check --ignore-missing</code></pre>
+
+            <h3>cosign signatures (Sigstore + Rekor)</h3>
+            <p>Every artifact is keylessly signed via <a href="https://www.sigstore.dev/">Sigstore cosign</a>. The signature is recorded in the public <a href="https://docs.sigstore.dev/logging/overview/">Rekor transparency log</a>, so any tampering with the release page is detectable from outside. Verify a download:</p>
+            <pre><code>cosign verify-blob \
+  --certificate notepatra-linux-x64.tar.gz.pem \
+  --certificate-identity-regexp "^https://github.com/singhpratech/notepatra" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --signature notepatra-linux-x64.tar.gz.sig \
+  notepatra-linux-x64.tar.gz</code></pre>
+
+            <h3>SLSA build provenance</h3>
+            <p>GitHub Actions emits SLSA Level 3 provenance attestations alongside each release. The attestation cryptographically ties each binary back to a specific commit SHA and workflow run, so your security team can independently confirm that a release was built from the exact public source in <code>github.com/singhpratech/notepatra</code> and not from an attacker-controlled fork.</p>
+
+            <h3>Reproducible from source</h3>
+            <p>Every commit is public. Tags are immutable. There is no closed-source binary blob anywhere in the build pipeline. A determined security team can clone the repo at a given tag, run the documented build, and reproduce a functionally equivalent binary.</p>
+        </section>
+
+        <section id="dependencies">
+            <h2>Dependency licenses (what's inside the binary)</h2>
+            <table>
+                <tr><th>Dependency</th><th>License</th><th>Compatible with GPL-3.0?</th></tr>
+                <tr><td>Qt 5/6 (UI framework)</td><td>LGPL-3.0 (dynamic linking)</td><td><span class="ok">Yes.</span> Standard Qt-app posture.</td></tr>
+                <tr><td>QScintilla (editor widget)</td><td>GPL-3.0 (or commercial)</td><td><span class="ok">Yes.</span> Riverbank Computing dual-licenses this — Notepatra uses the free GPL-3.0 path.</td></tr>
+                <tr><td>Scintilla (editor engine)</td><td>HPND (BSD-like, permissive)</td><td><span class="ok">Yes.</span></td></tr>
+                <tr><td>DuckDB (Data Analyst mode)</td><td>MIT</td><td><span class="ok">Yes.</span></td></tr>
+                <tr><td>Rust crates (memmap2, regex, aho-corasick, encoding_rs, etc.)</td><td>MIT / Apache-2.0 dual</td><td><span class="ok">Yes.</span></td></tr>
+                <tr><td>Vega + Vega-Lite + vega-embed (chart rendering — Full flavor only)</td><td>BSD-3-Clause</td><td><span class="ok">Yes.</span></td></tr>
+            </table>
+            <p>No GPL-incompatible dependencies. No dependencies with field-of-use restrictions. No "free for non-commercial use" components.</p>
+        </section>
+
+        <section id="copy-paste">
+            <h2>Copy-paste this into your software-acceptance request</h2>
+            <div class="callout">
+                <p style="margin-bottom:8px;"><strong>Software:</strong> Notepatra — open-source code editor with optional local-first AI integration</p>
+                <p style="margin-bottom:8px;"><strong>Maintainer:</strong> Prateek Singh (independent open-source author)</p>
+                <p style="margin-bottom:8px;"><strong>License:</strong> GNU General Public License v3.0 or later (SPDX: GPL-3.0-or-later)</p>
+                <p style="margin-bottom:8px;"><strong>Source:</strong> <a href="https://github.com/singhpratech/notepatra">github.com/singhpratech/notepatra</a></p>
+                <p style="margin-bottom:8px;"><strong>Use case:</strong> standalone code editor running on developer workstation. No service, no daemon, no auto-update. Files edited remain the property of the organization; no GPL obligation attaches to edited files.</p>
+                <p style="margin-bottom:8px;"><strong>Data flow:</strong> the editor runs fully offline by default. Optional local-AI backends run on the user's machine (Ollama, llama.cpp, LM Studio). Cloud AI backends (OpenAI, Azure OpenAI, OpenRouter, Ollama Cloud) are opt-in and clearly labelled; the editor will not contact any external service without an explicit user action.</p>
+                <p style="margin-bottom:8px;"><strong>Telemetry:</strong> none.</p>
+                <p style="margin-bottom:8px;"><strong>Equivalent already approved:</strong> Notepad++ (GPL-2.0/3.0). Notepatra has the same license posture and the same end-user-tool category.</p>
+                <p style="margin:0;"><strong>Supply-chain evidence:</strong> SHA-256 checksums, cosign signatures via Sigstore (publicly recorded in Rekor), SLSA Level 3 build provenance, reproducible from public source.</p>
+            </div>
+        </section>
+
+        <section id="faq">
+            <h2>FAQ — questions procurement actually asks</h2>
+
+            <h3>Will GPL-3.0 obligate us to release our internal tools or our code?</h3>
+            <p>No. GPL obligations attach to distribution of the GPL software or its derivatives. Running, installing, and using Notepatra does not distribute anything and does not create a derivative work.</p>
+
+            <h3>What if our developer modifies Notepatra to add a feature we use internally?</h3>
+            <p>Allowed. As long as the modified version is not distributed outside your organization, no source-disclosure obligation arises. (If you do distribute it — e.g. to customers, contractors outside your org, or the public — you must offer the source under GPL-3.0.)</p>
+
+            <h3>Does Notepatra connect to any external service by default?</h3>
+            <p>No. The editor boots offline. Update-check is manual. AI features default to a local backend; cloud backends are opt-in and require the user to enter credentials.</p>
+
+            <h3>Is there a commercial / paid version that drops the copyleft requirement?</h3>
+            <p>Not today. Notepatra is GPL-3.0 across the board. If your situation requires a permissive-license version — e.g. you want to embed Notepatra into a closed-source product you ship to customers — open an issue or reach out via <a href="https://github.com/singhpratech">@singhpratech</a> on GitHub and we can discuss.</p>
+
+            <h3>Will Notepatra add telemetry or "phone home" in a future version?</h3>
+            <p>No. "No telemetry, no analytics, no mandatory account" is part of the project's stated commitment. The website's FAQ and every release page repeats it. If that ever changed it would be a major version event documented in the changelog — not a silent flip.</p>
+
+            <h3>Where do I report a security issue?</h3>
+            <p>See <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">SECURITY.md</a> in the repo for the disclosure policy.</p>
+
+            <h3>Who is responsible for support / liability?</h3>
+            <p>Notepatra is provided as-is under the GPL-3.0 disclaimer of warranty (sections 15 and 16). There is no SLA, no support contract, and no warranty. Your organization assumes risk the same way it does for every other GPL tool it uses (gcc, gdb, git, vim, Linux kernel).</p>
+
+            <h3>Is the binary I download the same as what's in the source repo?</h3>
+            <p>Yes, and you can cryptographically verify it. Every release is built by GitHub Actions from a tagged commit in the public repo. The SLSA provenance attestation and cosign signature both bind the binary to that commit. A reproducible build pass is on the roadmap and is partially in place today.</p>
+
+            <h3>Can we host an internal mirror of Notepatra binaries?</h3>
+            <p>Yes — GPL-3.0 explicitly allows this. You may redistribute the binaries inside your organization (or publicly) as long as you also offer the source code under GPL-3.0. Pointing users at <code>github.com/singhpratech/notepatra</code> satisfies the source-availability requirement.</p>
+
+            <h3>Can we run Notepatra in an air-gapped environment?</h3>
+            <p>Yes. The Lite flavor is fully self-contained (~10 MB on disk). The Full flavor bundles the chart-rendering JS as a Qt resource and works offline. AI features can be configured for a local Ollama or llama.cpp running on the air-gapped machine — no external network required.</p>
+        </section>
+
+        <section id="contact">
+            <h2>Contact</h2>
+            <p>Questions from a legal / IT / procurement reviewer: open an <a href="https://github.com/singhpratech/notepatra/issues">issue</a> tagged <code>enterprise</code>, or reach out via the GitHub profile of <a href="https://github.com/singhpratech">@singhpratech</a> (the contact email is listed there). This matches the project's standing contact pattern — see <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+            <p>Security disclosures: see <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+            <p>General issues and feature requests: <a href="https://github.com/singhpratech/notepatra/issues">GitHub Issues</a>.</p>
+        </section>
+
+    </div>
+
+    <footer>
+        <p>© 2026 Prateek Singh. Source code licensed under <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE">GNU General Public License v3.0</a>.</p>
+        <p style="margin-top:10px;">
+            <a href="/">Home</a> ·
+            <a href="/docs.html">Docs</a> ·
+            <a href="https://github.com/singhpratech/notepatra">GitHub</a> ·
+            <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">Security</a>
+        </p>
+    </footer>
+</body>
+</html>
