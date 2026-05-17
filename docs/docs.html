@@ -354,7 +354,7 @@
       <li><a href="#ai-setup">Ollama setup</a></li>
       <li><a href="#ai-llamacpp">llama.cpp setup (GGUF)</a></li>
       <li><a href="#ai-setup-full">Full setup guide (per OS)</a></li>
-      <li><a href="#ai-openai-compat">OpenAI-compat (LM Studio, Jan, vLLM)</a></li>
+      <li><a href="#ai-openai-compat">OpenAI-compatible servers (user-configured)</a></li>
       <li><a href="#ai-fix">AI Fix pipeline</a></li>
       <li><a href="#ai-assistant">AI Assistant dock</a></li>
       <li><a href="#ai-workspace-context">Workspace awareness</a></li>
@@ -388,14 +388,14 @@
   <main class="content">
 
   <h1>Notepatra Documentation</h1>
-  <p class="lead">A native C++/Rust code editor with local-first AI — six backends in the dropdown (Ollama, llama.cpp, Ollama Cloud, OpenRouter, OpenAI, Azure OpenAI), plus any OpenAI-compatible server (LM Studio, Jan, vLLM, KoboldCpp, llamafile, text-generation-webui) reachable via the llama.cpp entry. Fast, portable, free forever under GPL-3.0. This is the complete reference for installing, using, customizing, and extending Notepatra.</p>
+  <p class="lead">A native C++/Rust code editor with local-first AI — six backends in the dropdown (Ollama, llama.cpp, Ollama Cloud, OpenRouter, OpenAI, Azure OpenAI), plus any OpenAI-compatible server (any OpenAI-compatible server) reachable via the llama.cpp entry. Fast, portable, free forever under GPL-3.0. This is the complete reference for installing, using, customizing, and extending Notepatra.</p>
 
   <!-- ══════════════ Getting started ══════════════ -->
 
   <h2 id="introduction" class="anchor-target">Introduction</h2>
   <p>Notepatra is a <strong>native</strong> code editor written in C++17 with a Rust core for the heavy-lifting (memory-mapped file I/O, Aho-Corasick search, Myers diff, formatters). It targets <strong>Linux x64 / ARM64, macOS Apple Silicon, and Windows x64</strong>. The bare executable is under 10 MB (9.7 MB on Linux x64) on each platform; downloads range 3.3 MB (Linux ARM64) to ~40.6 MB (Windows MSI with Qt DLLs bundled).</p>
   <p>Unlike Electron-based editors, Notepatra does not ship a browser runtime. It uses Qt5 + QScintilla — a battle-tested Scintilla-based editor engine — so 226 file types, 92 language lexers, brace matching, folding, and code completion are built in.</p>
-  <p>Unlike cloud-first editors, Notepatra's AI is <strong>local-first</strong>. The AI dock dropdown ships <strong>six backends</strong> as of v0.1.55: <a href="https://ollama.com">Ollama</a> (default · <code>localhost:11434</code>), <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>'s llama-server (loads any GGUF directly · <code>localhost:8080</code>), <a href="https://openrouter.ai">OpenRouter</a> (cloud · 100+ models — Claude, GPT, Gemini, Grok, Kimi, …), <a href="https://ollama.com/cloud">Ollama Cloud</a> (cloud · gpt-oss:120b, qwen3-coder:480b, deepseek-v3.1:671b), <a href="https://openai.com">OpenAI</a> direct, and <a href="https://azure.microsoft.com/en-us/products/ai-services/openai-service">Azure OpenAI</a> (enterprise). To use any other OpenAI-compatible server (<a href="https://lmstudio.ai">LM Studio</a>, <a href="https://jan.ai">Jan</a>, <a href="https://docs.vllm.ai">vLLM</a>, KoboldCpp, llamafile, text-generation-webui), pick the <code>llama.cpp</code> entry and set the base URL in Settings → Preferences → AI. Nothing leaves your computer unless you pick a cloud backend. No mandatory API keys, no subscription, no telemetry.</p>
+  <p>Unlike cloud-first editors, Notepatra's AI is <strong>local-first</strong>. The AI dock dropdown ships <strong>six backends</strong>: <a href="https://ollama.com">Ollama</a> (default · <code>localhost:11434</code>), <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>'s llama-server (loads any GGUF directly · <code>localhost:8080</code>), <a href="https://openrouter.ai">OpenRouter</a> (cloud · 100+ models — Claude, GPT, Gemini, Grok, Kimi, …), <a href="https://ollama.com/cloud">Ollama Cloud</a> (cloud · gpt-oss:120b, qwen3-coder:480b, deepseek-v3.1:671b), <a href="https://openai.com">OpenAI</a> direct, and <a href="https://azure.microsoft.com/en-us/products/ai-services/openai-service">Azure OpenAI</a> (enterprise). The <code>llama.cpp</code> entry also accepts a user-configured base URL via Settings → Preferences → AI, so it can reach any OpenAI-compatible HTTP server you've installed. Nothing leaves your computer unless you pick a cloud backend. No mandatory API keys, no subscription, no telemetry.</p>
   <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock and the model gets 5 native tools — <code>read_file</code>, <code>list_dir</code>, <code>search</code>, <code>write_file</code>, <code>apply_diff</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
 
   <div class="callout info">
@@ -1177,7 +1177,7 @@ cmake --build build --config Release -j</code></pre>
   <p>The Think checkbox in the AI dock toggles reasoning mode. Notepatra normalises the protocol per provider:</p>
   <ul>
     <li><strong>OpenRouter</strong> — sends a unified <code>reasoning</code> field; works across Claude, o-series, Gemini, DeepSeek-R1, Qwen-QwQ.</li>
-    <li><strong>Anthropic / Claude (via OpenRouter or direct)</strong> — extended thinking with <code>thinking: { type: "enabled", budget_tokens: ... }</code>.</li>
+    <li><strong>Anthropic / Claude (via OpenRouter)</strong> — extended thinking with <code>thinking: { type: "enabled", budget_tokens: ... }</code>. There is no direct Anthropic dropdown entry; Claude is reached through OpenRouter.</li>
     <li><strong>OpenAI o-series</strong> — <code>reasoning_effort</code> field. Note: o1/o3 don't accept <code>temperature</code> overrides.</li>
     <li><strong>Local (Ollama, llama.cpp)</strong> — models that emit <code>&lt;think&gt;...&lt;/think&gt;</code> blocks (Qwen-QwQ, DeepSeek-R1) are auto-detected; Notepatra renders the thinking in a collapsed disclosure.</li>
   </ul>
@@ -1247,20 +1247,8 @@ cmake --build build --config Release -j</code></pre>
     <li><strong>Reset</strong> — close Notepatra, delete <code>preferences.json</code>, click <em>Forget</em> in each provider section to clear keychain entries. Restart for a clean slate.</li>
   </ul>
 
-  <h2 id="ai-openai-compat" class="anchor-target">OpenAI-compat (LM Studio, Jan, vLLM, KoboldCpp, llamafile, OpenRouter)</h2>
-  <p>Any local server speaking the OpenAI <code>/v1/chat/completions</code> API works. Paste its URL in Settings → Preferences → AI → OpenAI-compat → Base URL. If the server requires an API key (e.g. OpenRouter, OpenAI itself), paste it in the API Key field — it's sent as a <code>Authorization: Bearer</code> header. Ollama and llama-server ignore it.</p>
-  <table>
-    <thead><tr><th>Server</th><th>Typical URL</th><th>Notes</th></tr></thead>
-    <tbody>
-      <tr><td><a href="https://lmstudio.ai">LM Studio</a></td><td><code>http://localhost:1234</code></td><td>GUI for GGUF — download models with one click.</td></tr>
-      <tr><td><a href="https://jan.ai">Jan</a></td><td><code>http://localhost:1337</code></td><td>Cross-platform, open source, great UX.</td></tr>
-      <tr><td><a href="https://docs.vllm.ai">vLLM</a></td><td><code>http://localhost:8000</code></td><td>Fastest for batch inference on GPUs.</td></tr>
-      <tr><td><a href="https://github.com/LostRuins/koboldcpp">KoboldCpp</a></td><td><code>http://localhost:5001</code></td><td>GGUF loader with roleplay features.</td></tr>
-      <tr><td><a href="https://github.com/Mozilla-Ocho/llamafile">llamafile</a></td><td><code>http://localhost:8080</code></td><td>Single-file self-contained GGUF executable.</td></tr>
-      <tr><td><a href="https://github.com/oobabooga/text-generation-webui">text-generation-webui</a></td><td><code>http://localhost:5000</code></td><td>Power-user web UI for local models.</td></tr>
-      <tr><td><a href="https://openrouter.ai">OpenRouter</a></td><td><code>https://openrouter.ai/api</code></td><td>Cloud proxy — requires API key.</td></tr>
-    </tbody>
-  </table>
+  <h2 id="ai-openai-compat" class="anchor-target">OpenAI-compatible servers (user-configured)</h2>
+  <p>The <code>llama.cpp (GGUF)</code> dropdown entry accepts a user-configured base URL. If you have installed any OpenAI-compatible HTTP server on your machine — anything that speaks the standard <code>/v1/chat/completions</code> protocol — paste its URL in Settings → Preferences → AI and Notepatra will use it through the <code>llama.cpp</code> dropdown entry. If the server requires an API key, paste it in the API Key field; it's sent as an <code>Authorization: Bearer</code> header. Such third-party servers are separate programs that you install, license, and operate independently of Notepatra — they are not bundled with Notepatra and Notepatra makes no representation about them.</p>
 
   <h2 id="ai-fix" class="anchor-target">AI Fix pipeline</h2>
   <p>The AI Fix button in JSON Tools / HTML Tools / Bracket Tools sends the broken content to Ollama with a strict prompt. Here's exactly what happens:</p>
@@ -1296,7 +1284,7 @@ Content-Type: application/json
   <h2 id="ai-assistant" class="anchor-target">AI Assistant dock</h2>
   <p>Open: <code>Ctrl+Shift+A</code>, <code>View → AI Assistant</code>, or from the status bar. The panel is a persistent right-side dock (not an editor tab) — one conversation, preserved across tab switches. Layout:</p>
   <ul>
-    <li><strong>Backend dropdown</strong> — pick Ollama / llama.cpp (GGUF) / OpenRouter / LM Studio / Jan / OpenAI / Custom (any OpenAI-compatible URL). API key edits inline.</li>
+    <li><strong>Backend dropdown</strong> — six entries in the standard build: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI. The <code>notepatra-local-ai</code> cloud-free build ships only Ollama + llama.cpp. The llama.cpp entry accepts a user-configured base URL (Settings → Preferences → AI) so it can reach any OpenAI-compatible server you've installed (any OpenAI-compatible server — separate programs the user installs). API key edits inline.</li>
     <li><strong>Model dropdown</strong> — populated live from the backend's tags / models endpoint with a ↻ refresh button.</li>
     <li><strong>Coding Mode</strong> toggle — flips the panel into 3-pane layout (file tree · editor · AI chat) and turns on agentic tools (see below).</li>
     <li><strong>Show thinking</strong> checkbox — toggle reasoning for Qwen3 / DeepSeek-R1 / GPT-OSS / Hermes-3.</li>
@@ -1408,7 +1396,7 @@ Content-Type: application/json
   <ul>
     <li><strong>Ollama</strong> — <code>/api/chat</code> with the <code>tools</code> array. Some open-weight models also need <code>--jinja</code> (we surface a friendly warning when the response shape suggests this).</li>
     <li><strong>llama.cpp</strong> — <code>llama-server</code> with <code>--jinja</code> required. OpenAI-compatible <code>tool_calls</code> in the response.</li>
-    <li><strong>OpenAI-compat</strong> (OpenRouter, OpenAI, LM Studio, vLLM, Anthropic via OpenRouter, Gemini via OpenRouter, Jan, etc.) — standard SSE streaming with <code>finish_reason: tool_calls</code>.</li>
+    <li><strong>OpenAI-compat</strong> (OpenRouter, OpenAI, Azure OpenAI, or any user-configured OpenAI-compatible server) — standard SSE streaming with <code>finish_reason: tool_calls</code>.</li>
   </ul>
   <p>v0.1.40 surfaces <strong>malformed tool-call JSON</strong> as a structured <code>error_kind: malformed_args</code> result back to the model — so a model that emits unescaped quotes in <code>arguments</code> gets a clear "re-emit with valid JSON" message + raw-args preview, instead of silently passing empty args downstream.</p>
 
@@ -1832,7 +1820,7 @@ sha256sum -c SHA256SUMS --ignore-missing</code></pre>
   <p>The bare executable is under 10 MB on each platform. Installed footprint ranges 5 MB on Linux (Qt comes from your distro) to ~85 MB on Windows (Qt5 DLLs + QScintilla DLL bundled in the MSI). Truly tiny — and zero browser runtime.</p>
 
   <h4>Does my code go to the cloud?</h4>
-  <p>By default, no — Notepatra is local-first. The outbound connections are: (1) your selected local AI backend (Ollama on <code>localhost:11434</code>, llama-server, LM Studio, etc.) when you use AI features, (2) <code>git push/pull</code> when you click the Git panel buttons, (3) the REST client when you send a request, (4) a single GitHub-API call on launch when the auto-updater checks for new releases. Cloud AI backends (OpenAI / OpenRouter / Anthropic via OpenRouter / Gemini via OpenRouter) are <strong>opt-in</strong> via the AI dock backend dropdown — your code only leaves the machine when you explicitly point Notepatra at one. No analytics, no telemetry. Verifiable with <code>strace</code>.</p>
+  <p>By default, no — Notepatra is local-first. The outbound connections are: (1) your selected AI backend (the local Ollama at <code>localhost:11434</code> or llama-server at <code>localhost:8080</code>, or whichever URL you've configured in the llama.cpp entry) when you use AI features, (2) <code>git push/pull</code> when you click the Git panel buttons, (3) the REST client when you send a request, (4) a single GitHub-API call on launch when the auto-updater checks for new releases. Cloud AI backends (Ollama Cloud / OpenRouter / OpenAI / Azure OpenAI) are <strong>opt-in</strong> via the AI dock backend dropdown — your code only leaves the machine when you explicitly pick one. No analytics, no telemetry. Verifiable with <code>strace</code>.</p>
 
   <h4>Why GPL-3.0?</h4>
   <p>Because the source is open, modifications should stay open. If you embed Notepatra in a product, the product has to be GPL-compatible. If that's a problem, reach out — alternative licensing can be discussed.</p>

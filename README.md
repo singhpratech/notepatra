@@ -141,7 +141,7 @@ Every plugin opens in its own tab. Real UI, not just a menu click.
 
 ### AI Powered — local-first, cloud-optional
 
-Backend dropdown ships **6 entries** as of v0.1.55 — **Ollama** (local default · `localhost:11434`), **llama.cpp (GGUF)** (local · `localhost:8080`), **OpenRouter** (cloud · 100+ models), **Ollama Cloud** (cloud · gpt-oss:120b / qwen3-coder:480b / deepseek-v3.1:671b), **OpenAI** (cloud · GPT-4o / GPT-5 / o-series), **Azure OpenAI** (enterprise). Per-provider key slots — no cross-provider bleed. To use **LM Studio**, **Jan**, **vLLM**, **KoboldCpp**, **llamafile**, or **text-generation-webui**, pick the `llama.cpp` entry and set the base URL in Settings → Preferences → AI (they all speak OpenAI-compat). Local backends keep code on your machine; cloud backends are opt-in. No telemetry. No subscription. No mandatory API key.
+Backend dropdown ships **6 entries** — **Ollama** (local default · `localhost:11434`), **llama.cpp (GGUF)** (local · `localhost:8080`), **OpenRouter** (cloud · 100+ models), **Ollama Cloud** (cloud · gpt-oss:120b / qwen3-coder:480b / deepseek-v3.1:671b), **OpenAI** (cloud · GPT-4o / GPT-5 / o-series), **Azure OpenAI** (enterprise). Per-provider key slots — no cross-provider bleed. The `llama.cpp` entry also accepts a user-configured base URL via Settings → Preferences → AI, so you can route it to any OpenAI-compatible HTTP server you have installed separately. Local backends keep code on your machine; cloud backends are opt-in. No telemetry. No subscription. No mandatory API key.
 
 #### AI Assistant — side-dock (`Ctrl+Shift+A`)
 The AI chat lives in a **persistent right-side dock**, not an editor tab. One conversation, preserved across tab switches. Tick **Coding Mode** to open the 3-column coding layout (file tree · editor · AI chat) 3-pane layout.
@@ -166,7 +166,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 ollama pull qwen2.5-coder:3b   # 2 GB, best for code on CPU-only / 16 GB RAM
 ollama serve
 ```
-Notepatra auto-detects the running Ollama and picks the most CPU-friendly model installed. For **llama.cpp / OpenRouter / Ollama Cloud / OpenAI / Azure OpenAI**, pick the backend from the dropdown at the top of the AI panel; base URL and API key are editable inline. To use LM Studio / Jan / vLLM / KoboldCpp / llamafile / text-generation-webui, pick `llama.cpp` and set the base URL in Settings → Preferences → AI.
+Notepatra auto-detects the running Ollama and picks the most CPU-friendly model installed. For **llama.cpp / OpenRouter / Ollama Cloud / OpenAI / Azure OpenAI**, pick the backend from the dropdown at the top of the AI panel; base URL and API key are editable inline. The `llama.cpp` entry also accepts a user-configured base URL via Settings → Preferences → AI, so you can route it to any OpenAI-compatible HTTP server you have installed separately.
 
 ### More Features
 
@@ -304,7 +304,7 @@ For teams that **can't or won't send code to public LLM endpoints** — regulate
 - IPv6 unique-local (`fc00::/7`)
 - DNS suffixes `.local`, `.lan`, `.internal`, `.intranet`, `.corp`, `.home`
 
-Ollama, llama.cpp, LM Studio, Jan, vLLM, text-generation-webui, self-hosted Ollama on the LAN — **all continue to work**. Only public LLM endpoints are blocked. The cloud-URL paste box is stripped from the UI as well, so users can't even type a public host. Auditors can confirm by running `strings notepatra | grep -c openai.com` — zero hits.
+Local Ollama, local llama.cpp, self-hosted Ollama on the LAN, and any other OpenAI-compatible server you have installed locally or on your private network — **all continue to work** in the cloud-free build. Only public-cloud LLM endpoints are blocked. The cloud-URL paste box is stripped from the UI as well, so users can't even type a public host. Auditors can confirm by running `strings notepatra | grep -c openai.com` — zero hits.
 
 On Linux the two flavors share the same `notepatra` binary name on disk; `apt` Conflicts ensures only one of `notepatra` / `notepatra-local-ai` is installed at a time, swap transactionally with `sudo apt install ./notepatra-local-ai_0.1.90_amd64.deb`. On Windows the two MSIs are independent products (different UpgradeCode + ProductName + install dir) so they can coexist if needed; admins typically push one or the other based on policy. `notepatra --version` self-identifies the build: `Notepatra v0.1.90 (cloud-free / local-ai)` for the local-ai flavor, `Notepatra v0.1.90` for the regular flavor.
 
@@ -669,7 +669,7 @@ Notepatra is an original product. This section names the open-source libraries a
 - **[Rust](https://www.rust-lang.org/) + [Cargo](https://doc.rust-lang.org/cargo/)** — the language and toolchain for the Rust core (search, diff, formatters, hashing, encoding).
 - **[aho-corasick](https://crates.io/crates/aho-corasick)** (BurntSushi) — the literal-search engine behind Project Search.
 - **[regex](https://crates.io/crates/regex)**, **[sqlformat](https://crates.io/crates/sqlformat)**, **[sqlparser](https://crates.io/crates/sqlparser)** — regex and SQL dialect handling.
-- **[Ollama](https://ollama.com/), [llama.cpp](https://github.com/ggerganov/llama.cpp), [LM Studio](https://lmstudio.ai/), [Jan](https://jan.ai/), [vLLM](https://github.com/vllm-project/vllm), [OpenRouter](https://openrouter.ai/)** — local / OpenAI-compatible inference backends Notepatra can talk to.
+- **[Ollama](https://ollama.com/), [llama.cpp](https://github.com/ggerganov/llama.cpp), [OpenRouter](https://openrouter.ai/), [OpenAI](https://openai.com), [Azure OpenAI](https://azure.microsoft.com/en-us/products/ai-services/openai-service)** — AI inference backends Notepatra speaks to over standard HTTP APIs.
 - **[Sigstore](https://www.sigstore.dev/) / [Cosign](https://www.sigstore.dev/) / [SLSA](https://slsa.dev/)** — keyless signing and build provenance for every release.
 - **[Claude](https://claude.ai/)** (Anthropic) — co-authored the implementation inside Claude Code.
 
