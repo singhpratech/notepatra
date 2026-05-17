@@ -268,7 +268,7 @@
                 <tr><td>Telemetry / analytics<br><em style="font-size:12.5px;color:var(--c-text-muted);">(current release)</em></td><td><span class="ok">None.</span> The current release does not include call-home behavior, usage pings, or automatic crash reports. The canonical statement of what each release collects lives in that release's CHANGELOG.</td></tr>
                 <tr><td>Mandatory network calls<br><em style="font-size:12.5px;color:var(--c-text-muted);">(current release)</em></td><td><span class="ok">None.</span> The editor starts offline. Update checks and AI features are opt-in by the user.</td></tr>
                 <tr><td>Data collection<br><em style="font-size:12.5px;color:var(--c-text-muted);">(current release)</em></td><td>The current release does not transmit data from the user's machine by default. If the user configures and enables an external (cloud) AI backend, content the user sends to that backend is governed by that backend's terms of service.</td></tr>
-                <tr><td>Local-first AI</td><td>Default behavior. Ollama / llama.cpp / LM Studio / Jan are separate programs that the user installs and runs on their own machine; Notepatra communicates with them over the user's local network only when the user enables an AI feature. Cloud backends (OpenAI, Azure OpenAI, OpenRouter, Ollama Cloud) are opt-in from a dropdown and use the user's own API credentials.</td></tr>
+                <tr><td>Local-first AI</td><td>Default behavior. The standard build's AI panel ships six dropdown entries: <strong>Ollama</strong> + <strong>llama.cpp (GGUF)</strong> (local, separate processes the user installs), <strong>Ollama Cloud</strong> / <strong>OpenRouter</strong> / <strong>OpenAI</strong> / <strong>Azure OpenAI</strong> (cloud, opt-in, the user supplies their own API credentials). The <code>notepatra-local-ai</code> cloud-free build flavor ships only the two local entries — cloud backends are physically absent from that binary. Other OpenAI-compatible servers (e.g. LM Studio, Jan, vLLM, KoboldCpp) can be reached only by the user manually pointing the <code>llama.cpp</code> entry at a custom URL — they are not first-class Notepatra backends, are not bundled, and the user is responsible for installing and licensing them per each program's own terms. See the <a href="#ai-backends">AI backends</a> and <a href="#data-flow">Data flow &amp; responsibility</a> sections below.</td></tr>
                 <tr><td>Supply chain</td><td>Each release page on GitHub publishes SHA-256 checksums, cosign signatures (recorded in the Sigstore Rekor transparency log), and SLSA build-provenance attestations. The releases are built from public source on GitHub Actions; bit-for-bit reproducible-build work is on the roadmap and is partially in place today.</td></tr>
                 <tr><td>Code signing</td><td>SHA-256 + cosign on every release artifact at the time of writing. Operating-system code signing (Authenticode on Windows, Apple notarization on macOS) is on the roadmap; current builds are unsigned at the OS level but are cryptographically verifiable via cosign.</td></tr>
                 <tr><td>Platforms</td><td>Linux x64 / ARM64, macOS Apple Silicon, Windows x64</td></tr>
@@ -376,75 +376,122 @@
 
         <section id="ai-backends">
             <h2>AI backends — separate programs Notepatra talks to</h2>
-            <p>Notepatra's AI features (autocomplete, chat, inline edit, data-analyst mode) are powered by an external <strong>backend</strong> that the user chooses and configures. The backend is <em>not bundled inside</em> the Notepatra binary; it is a separate program (for local backends) or a separate online service (for cloud backends) that the user installs, runs, or signs up for independently. Notepatra communicates with the chosen backend over its public network or local-loopback API.</p>
+            <p>Notepatra's AI features (chat, inline edit, agentic Coding mode, Data Analyst mode) are powered by an external <strong>backend</strong> that the user chooses and configures. The backend is <em>not bundled inside</em> the Notepatra binary; it is a separate program (for local backends) or a separate online service (for cloud backends) that the user installs, runs, or signs up for independently. Notepatra is purely an HTTP/HTTPS client to whichever backend the user has configured.</p>
 
-            <p>This separation has two consequences worth noting for your review:</p>
+            <p>Two consequences worth noting for your review:</p>
             <ol>
-                <li>The license of a backend program (e.g. llama.cpp, Ollama) does <strong>not</strong> attach to or "infect" Notepatra. They are separate works connected by a network or local-IPC API call, not by static or dynamic linking.</li>
-                <li>Any data your developers send to a backend is governed by that backend's own terms — Notepatra is the API client, not the data processor. For local backends this is typically a non-issue (data stays on the developer's machine); for cloud backends, the cloud provider's privacy and DPA terms apply.</li>
+                <li><strong>License independence.</strong> The license of any backend program does not attach to or "infect" Notepatra. Notepatra and the backend are separate works connected by a network API call, not by static or dynamic linking, not by source inclusion, not by binary bundling.</li>
+                <li><strong>Data-handling independence.</strong> Notepatra is an API client, not a data processor. Content that a user sends to a backend is governed by that backend's own privacy policy and terms of service. See the <a href="#data-flow">Data flow &amp; responsibility</a> section below.</li>
             </ol>
 
+            <h3>Backends shipped in the Notepatra UI dropdown</h3>
+            <p>The AI panel's backend dropdown ships <strong>six entries</strong> in the standard build (the <code>notepatra-local-ai</code> "cloud-free" build flavor ships only the two local entries — cloud backends are absent from that build at the binary level):</p>
+
             <table>
-                <tr><th>Backend</th><th>Type</th><th>License / Terms</th><th>What Notepatra does</th></tr>
+                <tr><th>Dropdown entry</th><th>Type</th><th>Backend's own license / terms</th><th>What Notepatra does</th></tr>
                 <tr>
                     <td><strong>Ollama</strong></td>
                     <td>Local (separate process)</td>
-                    <td><a href="https://github.com/ollama/ollama/blob/main/LICENSE">MIT</a> — permissive open-source</td>
-                    <td>Issues HTTP requests to <code>localhost:11434</code> when the user enables it. Ollama is not bundled.</td>
+                    <td><a href="https://github.com/ollama/ollama/blob/main/LICENSE">MIT</a> — permissive open source</td>
+                    <td>HTTP client to <code>localhost:11434</code>. Ollama is not bundled; users install it separately.</td>
                 </tr>
                 <tr>
-                    <td><strong>llama.cpp</strong> (llama-server)</td>
+                    <td><strong>llama.cpp (GGUF)</strong></td>
                     <td>Local (separate process)</td>
-                    <td><a href="https://github.com/ggerganov/llama.cpp/blob/master/LICENSE">MIT</a> — permissive open-source</td>
-                    <td>HTTP client to a user-run llama-server endpoint. llama.cpp is not bundled.</td>
+                    <td><a href="https://github.com/ggerganov/llama.cpp/blob/master/LICENSE">MIT</a> — permissive open source</td>
+                    <td>HTTP client to a user-run llama-server endpoint (default <code>localhost:8080</code>). llama.cpp is not bundled. <em>This entry also accepts a custom base URL, so users can route it to any OpenAI-compatible server they choose (see next section).</em></td>
                 </tr>
                 <tr>
-                    <td><strong>LM Studio</strong></td>
-                    <td>Local (separate program)</td>
-                    <td>Closed-source; check LM Studio's own terms</td>
-                    <td>HTTP client to LM Studio's OpenAI-compatible local server. LM Studio is not bundled.</td>
+                    <td><strong>OpenRouter</strong></td>
+                    <td>Cloud (cloud-free build: not present)</td>
+                    <td>OpenRouter's terms — see <a href="https://openrouter.ai/terms">openrouter.ai/terms</a></td>
+                    <td>HTTPS client. User supplies own OpenRouter API key. Opt-in.</td>
                 </tr>
                 <tr>
-                    <td><strong>Jan</strong></td>
-                    <td>Local (separate program)</td>
-                    <td>AGPL-3.0 — applies to Jan, not to Notepatra</td>
-                    <td>HTTP client to Jan's local API. Jan is not bundled. Because Notepatra communicates with Jan as a separate-process API client, the AGPL network-clause obligations remain with Jan's distributor (the Jan project), not with Notepatra.</td>
-                </tr>
-                <tr>
-                    <td><strong>vLLM, KoboldCpp, text-generation-webui, any OpenAI-compatible server</strong></td>
-                    <td>Local (separate process)</td>
-                    <td>Each has its own license; check the project</td>
-                    <td>HTTP client to a user-run endpoint. None bundled.</td>
+                    <td><strong>Ollama Cloud</strong></td>
+                    <td>Cloud (cloud-free build: not present)</td>
+                    <td>Ollama hosted-service terms — see <a href="https://ollama.com">ollama.com</a></td>
+                    <td>HTTPS client. Opt-in.</td>
                 </tr>
                 <tr>
                     <td><strong>OpenAI</strong></td>
-                    <td>Cloud</td>
-                    <td>OpenAI's API Terms of Service</td>
+                    <td>Cloud (cloud-free build: not present)</td>
+                    <td>OpenAI's API terms — see <a href="https://openai.com/policies">openai.com/policies</a></td>
                     <td>HTTPS client. User supplies own API key. Opt-in.</td>
                 </tr>
                 <tr>
                     <td><strong>Azure OpenAI</strong></td>
-                    <td>Cloud</td>
-                    <td>Microsoft Azure OpenAI Service terms (the enterprise option for many regulated organizations)</td>
+                    <td>Cloud (cloud-free build: not present) — typical enterprise option for regulated industries with a Microsoft DPA in place</td>
+                    <td>Microsoft Azure OpenAI Service terms — see <a href="https://azure.microsoft.com/en-us/products/ai-services/openai-service">azure.microsoft.com</a></td>
                     <td>HTTPS client. User supplies own deployment URL + API key. Opt-in.</td>
-                </tr>
-                <tr>
-                    <td><strong>OpenRouter</strong></td>
-                    <td>Cloud</td>
-                    <td>OpenRouter's terms</td>
-                    <td>HTTPS client. User supplies own API key. Opt-in.</td>
-                </tr>
-                <tr>
-                    <td><strong>Ollama Cloud</strong></td>
-                    <td>Cloud</td>
-                    <td>Ollama's hosted-service terms</td>
-                    <td>HTTPS client. Opt-in.</td>
                 </tr>
             </table>
 
+            <h3>Other OpenAI-compatible servers (user-configured passthrough)</h3>
+            <p>The <code>llama.cpp (GGUF)</code> entry accepts a user-configured base URL. Because many third-party programs expose an OpenAI-compatible HTTP API on a port of the user's choice, a user can point this entry at any such program — for example LM Studio (typically <code>localhost:1234</code>), Jan (typically <code>localhost:1337</code>), vLLM (typically <code>localhost:8000</code>), KoboldCpp (typically <code>localhost:5001</code>), llamafile, or text-generation-webui. <strong>These programs are not "Notepatra backends" in the sense of being a first-class dropdown entry, are not bundled with Notepatra, and are not endorsed by Notepatra.</strong> They are user-configured passthroughs over a standard HTTP protocol. The user is responsible for installing, licensing, and operating any such program in accordance with that program's own license and terms.</p>
+
+            <p>Because Notepatra communicates with all such programs purely as an HTTP client over the OpenAI-compatible REST protocol — without including, modifying, statically or dynamically linking, or redistributing any of their code or binaries — the licenses of those programs (whether MIT, AGPL, closed-source, or otherwise) do not attach to Notepatra. Any obligations under those licenses (including AGPL §13 network obligations, if the user has chosen an AGPL program) remain with whoever distributes the program in question, not with Notepatra.</p>
+
             <div class="callout">
-                <strong>On nominative use of third-party names:</strong> the names "Ollama", "llama.cpp", "LM Studio", "Jan", "OpenAI", "Azure OpenAI", "OpenRouter", "vLLM", "KoboldCpp" appear on this page solely to identify the corresponding programs or services so that users can choose which one to configure. No affiliation, endorsement, or sponsorship is implied. All trademarks belong to their respective owners.
+                <strong>On nominative use of third-party names:</strong> all third-party product, project, and service names referenced in this section appear solely to identify the corresponding program or service so a reader can understand what Notepatra is HTTP-compatible with. No affiliation, endorsement, sponsorship, or partnership is implied. All trademarks belong to their respective owners — see the <a href="#trademarks">Trademarks</a> section below.
             </div>
+        </section>
+
+        <section id="data-flow">
+            <h2>Data flow &amp; responsibility</h2>
+            <p>This section clarifies who is responsible for what when content flows from a developer's machine through Notepatra to an external AI backend. The summary is straightforward: <strong>Notepatra is a conduit, not a data processor or controller.</strong> Notepatra forwards the content the user asks it to forward, to the backend the user has configured, using the credentials the user has supplied — and otherwise stores nothing externally.</p>
+
+            <div class="callout">
+                <strong>Plainly:</strong> when a user is configured to use a <em>local</em> backend (Ollama / llama.cpp / any OpenAI-compatible local server the user has installed), content stays on the user's own machine and is processed locally; nothing leaves the device. When a user is configured to use a <em>cloud</em> backend (Ollama Cloud / OpenRouter / OpenAI / Azure OpenAI, or any cloud OpenAI-compatible endpoint the user has pointed Notepatra at), the content the user sends in the AI panel is transmitted by Notepatra over HTTPS to that cloud service, where it is governed by <strong>that service's own privacy policy, terms of service, and data processing agreement</strong> — not by Notepatra and not by the Notepatra maintainer.
+            </div>
+
+            <h3>Who is responsible for what</h3>
+            <table>
+                <tr><th>Activity</th><th>Responsibility</th></tr>
+                <tr>
+                    <td>Choosing which backend to use (local vs cloud, which specific provider)</td>
+                    <td>The end user / their organization.</td>
+                </tr>
+                <tr>
+                    <td>Installing and operating the chosen local backend (Ollama, llama.cpp, etc.) in accordance with its license and terms</td>
+                    <td>The end user / their organization.</td>
+                </tr>
+                <tr>
+                    <td>Signing up for, and supplying API credentials to, the chosen cloud backend (OpenAI, Azure OpenAI, OpenRouter, Ollama Cloud, etc.)</td>
+                    <td>The end user / their organization.</td>
+                </tr>
+                <tr>
+                    <td>Deciding what file contents, prompts, or workspace context to send to a backend</td>
+                    <td>The end user / their organization. Notepatra exposes user-facing toggles for "Share file with AI" and similar context options; the default for these toggles is to <em>limit</em>, not expand, what the AI sees.</td>
+                </tr>
+                <tr>
+                    <td>Complying with the cloud provider's terms of service, data processing agreement, privacy policy, residency / sovereignty rules, and any export-control or sectoral regulation (e.g. HIPAA BAA, PCI-DSS, GDPR / CCPA controller-processor terms, FINRA, ITAR, etc.)</td>
+                    <td>The end user / their organization, in conjunction with the cloud provider. Notepatra is not a party to any such agreement.</td>
+                </tr>
+                <tr>
+                    <td>The cloud provider's processing of received content (storage duration, training-data inclusion, regional routing, etc.)</td>
+                    <td>The cloud provider, per its own terms.</td>
+                </tr>
+                <tr>
+                    <td>Forwarding the user's content from the editor to the user-chosen backend over HTTPS</td>
+                    <td>Notepatra (as an API client). Notepatra does not retain, mirror, copy, or transmit the user's content to any party other than the backend the user has configured.</td>
+                </tr>
+                <tr>
+                    <td>Local logging of AI interactions on the user's own machine (for the user's own audit purposes)</td>
+                    <td>An optional Notepatra feature stored in a local SQLite file (<code>~/.config/notepatra/ai-logs/interactions.db</code>) on the user's machine. Pruned to a 7-day window, capped at 50 MB, masked of credentials by a built-in credential scrubber, and toggleable by the user. The log file never leaves the user's machine; Notepatra does not transmit it anywhere.</td>
+                </tr>
+            </table>
+
+            <h3>Privacy-protective defaults in the current release</h3>
+            <ul>
+                <li>The editor starts <strong>offline</strong>; no AI backend is invoked until the user explicitly opens the AI panel or presses an AI shortcut.</li>
+                <li>The default backend is a <strong>local</strong> Ollama instance on <code>localhost:11434</code>; cloud backends are opt-in from the dropdown.</li>
+                <li>"Share file with AI" defaults to <strong>off</strong> on first launch in current releases — meaning the active editor file is not even visible to the configured AI until the user toggles it on.</li>
+                <li>A built-in <strong>credential scrubber</strong> strips API keys, tokens, and PEM private-key blocks from outbound AI requests, defensively, before any HTTP body is sent.</li>
+                <li>A <code>notepatra-local-ai</code> cloud-free build flavor exists for organizations that want a binary that <strong>physically cannot reach</strong> public-cloud LLM endpoints. In that flavor, every <code>QNetworkAccessManager</code> request is filtered through a unit-tested network-policy allowlist that admits only loopback, RFC 1918 private addresses, CGNAT 100.64/10, IPv6 ULA <code>fc00::/7</code>, and the <code>.local</code>/<code>.lan</code>/<code>.internal</code>/<code>.intranet</code>/<code>.corp</code>/<code>.home</code> suffixes. Public-cloud LLM endpoints are blocked at the binary level.</li>
+            </ul>
+
+            <p>None of the statements in this section modify, expand, or limit the warranty disclaimer in GPL-3.0 §15 and §16 or the warranty/liability discussion in the <a href="#warranty">Warranty &amp; liability</a> section below. They describe the design intent and current-release behavior; they are not contractual representations or guarantees for future releases.</p>
         </section>
 
         <section id="copy-paste">
@@ -456,7 +503,7 @@
                 <p style="margin-bottom:8px;"><strong>License:</strong> GNU General Public License v3.0 or later (SPDX: GPL-3.0-or-later)</p>
                 <p style="margin-bottom:8px;"><strong>Source:</strong> <a href="https://github.com/singhpratech/notepatra">github.com/singhpratech/notepatra</a></p>
                 <p style="margin-bottom:8px;"><strong>Use case:</strong> standalone code editor running on developer workstation. No service, no daemon, no auto-update. Files edited remain the property of the organization; per the FSF's published interpretation of GPL-3.0, no GPL obligation attaches to files edited with a GPL editor.</p>
-                <p style="margin-bottom:8px;"><strong>Data flow (current release):</strong> the editor runs offline by default. Optional local AI backends (Ollama, llama.cpp, LM Studio, Jan, vLLM, KoboldCpp) are separate programs the user installs; Notepatra is the API client. Cloud AI backends (OpenAI, Azure OpenAI, OpenRouter, Ollama Cloud) are opt-in and use the user's own credentials; the editor does not contact any external service without explicit user configuration and action.</p>
+                <p style="margin-bottom:8px;"><strong>Data flow (current release):</strong> the editor runs offline by default. The AI panel in the standard build offers six dropdown entries: Ollama and llama.cpp (local, separate processes the user installs); Ollama Cloud, OpenRouter, OpenAI, and Azure OpenAI (cloud, opt-in, user supplies own API credentials). A <code>notepatra-local-ai</code> cloud-free build flavor exists for organizations that require a binary that cannot reach public-cloud LLM endpoints. Notepatra is purely an HTTP/HTTPS API client; it forwards content the user explicitly sends, to the backend the user has configured, and otherwise transmits nothing. Content sent to a cloud backend is governed by that backend's own terms of service and privacy policy. Notepatra is not a data processor or controller in respect of such content; the cloud provider is.</p>
                 <p style="margin-bottom:8px;"><strong>Telemetry (current release):</strong> none.</p>
                 <p style="margin-bottom:8px;"><strong>Equivalent already approved:</strong> Notepad++ (GPL-2.0/3.0) is a comparable standalone GPL code editor that many organizations have already evaluated.</p>
                 <p style="margin:0;"><strong>Supply-chain evidence (current release):</strong> SHA-256 checksums, cosign signatures via Sigstore (publicly recorded in the Rekor transparency log), and SLSA build-provenance attestations; built from public source on GitHub Actions.</p>
