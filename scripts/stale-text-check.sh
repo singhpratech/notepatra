@@ -287,6 +287,84 @@ else
 fi
 
 echo
+echo "── stale-backend mention sweep (current-tense docs must NOT list removed UI dropdown entries) ──"
+# History: in v0.1.54, src/aipanel.cpp:644 removed LM Studio / Jan / Custom from
+# the AI panel backend dropdown. Subsequent releases also did NOT add vLLM /
+# KoboldCpp / llamafile / text-generation-webui as first-class dropdown entries.
+# Current-tense docs that name those programs as Notepatra backends are stale
+# and have to be fixed BEFORE release. Historical CHANGELOG / release-table
+# rows in README.md are NOT a concern — those describe what past releases
+# shipped and stay as-is.
+#
+# Files scanned: docs/index.html, docs/docs.html, docs/enterprise.html, and
+# README.md sections OUTSIDE the historical release-table block (line 580–650
+# is the historical changelog area; we skip it).
+# Narrow regex — only the third-party server-program names that were removed
+# from the AI panel dropdown. We do NOT regex on "Anthropic.*direct" /
+# "Claude.*direct" because those produce false positives on legitimate
+# nearby uses ("OpenAI direct" is correct; "no direct Anthropic" is the
+# fix wording itself). The Anthropic-direct bug class is rare enough to
+# leave to the pre-launch agent audit.
+stale_backend_pat='LM Studio|vLLM|KoboldCpp|llamafile|text-generation-webui'
+# 'Jan' word-boundary version is too noisy ('Jan-Mar' SQL example etc.).
+# Run a SEPARATE check that requires Jan in a backend-list context (preceded
+# or followed by another backend program name).
+jan_context_pat='(Ollama|llama\.cpp|LM Studio|vLLM|KoboldCpp)[^<>]{0,80}\bJan\b|\bJan\b[^<>]{0,80}(Ollama|llama\.cpp|LM Studio|vLLM|KoboldCpp)'
+
+# README historical-changelog block (release-history table rows). Skip
+# lines 580–650 — those describe past releases factually and should not
+# be rewritten.
+readme_filtered=$(awk 'NR < 580 || NR > 650 { print NR":"$0 }' README.md)
+
+stale_hits=$(
+    grep -nE "$stale_backend_pat" docs/index.html docs/docs.html docs/enterprise.html 2>/dev/null || true
+    grep -nE "$jan_context_pat" docs/index.html docs/docs.html docs/enterprise.html 2>/dev/null || true
+    echo "$readme_filtered" | grep -E "$stale_backend_pat" | sed 's|^|README.md:|' || true
+    echo "$readme_filtered" | grep -E "$jan_context_pat" | sed 's|^|README.md:|' || true
+)
+stale_hits=$(echo "$stale_hits" | grep -v '^$' || true)
+
+if [ -z "$stale_hits" ]; then
+    echo "  ✓ no stale third-party-backend names listed as Notepatra backends in current-tense docs"
+    PASS=$((PASS + 1))
+else
+    echo "  ✗ stale third-party-backend names listed as Notepatra backends:"
+    echo "$stale_hits" | sed 's/^/      /'
+    echo "    Notepatra ships 6 dropdown entries (Ollama, llama.cpp, OpenRouter,"
+    echo "    Ollama Cloud, OpenAI, Azure OpenAI). LM Studio / Jan / vLLM /"
+    echo "    KoboldCpp / llamafile / text-generation-webui are user-configured"
+    echo "    passthroughs via the llama.cpp entry's custom URL, NOT first-class"
+    echo "    backends. Anthropic / Claude are reached only via OpenRouter; no"
+    echo "    direct entry. Strip these references from current-tense docs."
+    FAIL=$((FAIL + 1))
+fi
+
+echo
+echo "── point-in-time qualifier sweep on legal-defensibility privacy claims ──"
+# Per docs/enterprise.html legal-hardening pass: every "no telemetry / no
+# data collection / no network calls" claim that's published on the
+# public website needs an "as of this release" / "current release" /
+# point-in-time qualifier near it, or it creates FTC §5 / CCPA / GDPR
+# strict-liability exposure if a future release ever ships any of that.
+# Acceptable: "current release does not include telemetry".
+# Risky: "Notepatra will never have telemetry."
+# This gate runs only against docs/enterprise.html (the legal-defensibility
+# page); other pages are marketing copy and can speak more freely.
+risky_perpetual_claims=$(
+    grep -nE 'Notepatra will never|will never (have|add|include) telemetry|never collects' docs/enterprise.html 2>/dev/null || true
+)
+if [ -z "$risky_perpetual_claims" ]; then
+    echo "  ✓ enterprise.html — no perpetual privacy claims (all qualified with 'current release')"
+    PASS=$((PASS + 1))
+else
+    echo "  ✗ enterprise.html contains perpetual (un-qualified) privacy claims:"
+    echo "$risky_perpetual_claims" | sed 's/^/      /'
+    echo "    Replace with a point-in-time form: 'The current release does not"
+    echo "    include X' instead of 'Notepatra will never include X'."
+    FAIL=$((FAIL + 1))
+fi
+
+echo
 if (( FAIL == 0 )); then
     echo "=== ALL SURFACES MATCH ($PASS passed) ==="
     exit 0
