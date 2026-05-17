@@ -1,0 +1,7 @@
+<!DOCTYPE RCC><RCC version="1.0">
+<qresource prefix="/vega">
+    <file alias="vega.min.js">vega/vega.min.js</file>
+    <file alias="vega-lite.min.js">vega/vega-lite.min.js</file>
+    <file alias="vega-embed.min.js">vega/vega-embed.min.js</file>
+</qresource>
+</RCC>

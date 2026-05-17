@@ -7,6 +7,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.90] — 2026-05-17
+
+**Chart UX revamp — Vega-Lite v5 path for every chart type in Full flavor**, multi-metric overlay, dual-axis, universal facet, PNG/SVG/HTML/Spec export, offline (no JSDelivr in the loop), and a beefed-up Data Analyst playbook so the AI does real multi-step analysis.
+
+### Added
+- **`src/chart_spec_to_vega.{h,cpp}` (NEW)** — pure-function translator mapping Notepatra's simplified chart spec to Vega-Lite v5. No Qt widget deps — fully unit-testable.
+- **Five new chart types** — `heatmap`, `density`, `regression-line`, `faceted-bar`, `error-bar`. Vega-only in Full; Lite shows "Install Charts Pack" stub.
+- **Multi-metric overlay** — `"y": ["a", "b", "c"]` overlays metrics via Vega fold transform.
+- **Dual-axis** — `"y2": "secondary_col"` produces a layered spec with independent right-axis Y scale.
+- **Universal facet** — `"facet"` / `"row"` + `"column"` keys wrap any chart type in `{facet, spec}` via `applyFacetIfRequested()`. Composes with multi-metric overlay.
+- **Export menu** — Export… dropdown replaces Save-as-PNG: PNG 1x/2x/4x, SVG, self-contained HTML, Spec JSON.
+- **Offline vega-embed bundle** — `resources/vega.qrc` ships `vega.min.js` + `vega-lite.min.js` + `vega-embed.min.js` (828 KB, Full flavor only). Loaded via `qrc:///vega/*.js` — air-gapped renders, no CDN beacon.
+- **DataAnalyst ANALYTICAL DEPTH** — system prompt section pushing the model through Discover → Aggregate → Decompose → Compare → Surface anomalies, plus a SQL cookbook (time bucketing, rolling windows, percent-of-total, YoY via LAG, cohort fixing, NTILE, percentile-fenced outliers) and a MULTI-DIMENSIONAL QUESTIONS section.
+
+### Changed
+- **`src/chartrender.{h,cpp}`** — dispatcher prefers Vega path when WebEngine + type supported; falls back to QtCharts otherwise. Theme bridge reads `QPalette::Window` lightness directly (no Config dep so tests stay headless-friendly).
+- **`src/chart_modal.{h,cpp}`** — Export… menu wired into Vega async-export pipeline via per-call window-slot polling. QMenu QSS scoped locally to the spawning widget.
+- **`src/charts/vega_chart_renderer.{h,cpp}`** — added async export API (`exportPngAsync`/`exportSvgAsync`/`exportHtmlAsync`/`exportSpecAsync`) using unique `window._notepatra_export_<slot>` polled via `runJavaScript`. Unified `m_lastSpec` field across Lite stub and Full renderer.
+
+### Tests
+- **`test_chart_spec_to_vega.cpp` (NEW)** — 50 assertions on the translator's user-visible contract: every supported type produces valid Vega-Lite v5; multi-metric overlay emits fold transform; dual-axis produces layered spec with independent y scale; universal facet wraps `{facet, spec}`; theme bridge flips colours; auto-routing `type:"bar"` + array-y to grouped-bar variant. **All 50/50 pass.**
+- **`test_ai_dataanalyst.cpp`** — prompt-size cap bumped 12 KB → 18 KB to accommodate the expanded DataAnalyst playbook.
+- **`ctest`** — 33/33 pass.
+
+### Meta
+- New memory rules: pure-function translator pattern · qrc-bundled WebEngine assets · async-export window-slot pattern · universal facet wrapper.
+
+---
+
 ## [0.1.89] — 2026-05-16
 
 **Save As detail view now shows a "Date Created" column** — the last piece of the v0.1.88 dialog UX request. v0.1.88 first attempt crashed Qt's tree view on Ctrl+S; v0.1.89 ships the column via the supported `QIdentityProxyModel` pattern with proper index mapping.

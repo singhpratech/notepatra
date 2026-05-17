@@ -1,9 +1,16 @@
 #include "chartrender.h"
 #include "chart_modal.h"
+#include "chart_spec_to_vega.h"
+
+#ifdef NOTEPATRA_WITH_WEBENGINE
+#include "charts/vega_chart_renderer.h"
+#endif
 
 #include <QApplication>
+#include <QPalette>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QLabel>
 #include <QPushButton>
 #include <QStyle>
 #include <QVBoxLayout>
@@ -51,7 +58,11 @@ bool looksLikeChartSpec(const QJsonObject &spec) {
     static const QStringList kTypes = {
         "line", "bar", "pie", "scatter",
         "area", "horizontal-bar", "stacked-bar", "stacked-horizontal-bar",
-        "grouped-bar", "donut", "histogram", "boxplot"
+        "grouped-bar", "donut", "histogram", "boxplot",
+        // v0.1.90 — Vega-Lite-only types. Lite mode shows a friendly
+        // "Install Charts Pack" stub via renderFromObject's fallback
+        // arm instead of silently dropping.
+        "heatmap", "density", "regression-line", "faceted-bar", "error-bar",
     };
     if (!kTypes.contains(t)) return false;
     if (!spec.contains("data") || !spec.value("data").isArray()) return false;
@@ -77,6 +88,30 @@ static QString toLabel(const QJsonValue &v) {
     if (v.isBool())   return v.toBool() ? "true" : "false";
     if (v.isNull())   return QString();
     return QJsonDocument(QJsonObject{{"v", v}}).toJson(QJsonDocument::Compact);
+}
+
+// v0.1.90 — categorical palette for top-N bar rankings. Tableau 20 plus
+// a couple of extras so 3–20 colours cover the common ranking sizes.
+// Picked for legibility on both light and dark chart backgrounds.
+static const QStringList &chartPalette() {
+    static const QStringList kPalette = {
+        "#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#59A14F",
+        "#EDC948", "#B07AA1", "#FF9DA7", "#9C755F", "#BAB0AC",
+        "#86BCB6", "#D37295", "#A0CBE8", "#FFBE7D", "#8CD17D",
+        "#B6992D", "#499894", "#FABFD2", "#79706E", "#D7B5A6",
+    };
+    return kPalette;
+}
+
+// v0.1.90 — auto-tilt rule for categorical x-axes. Vertical labels look
+// fine when there are few short categories ("Q1 Q2 Q3 Q4"); they overlap
+// or truncate as soon as you cross either threshold.
+static bool shouldTiltLabels(const QStringList &cats) {
+    if (cats.size() > 5) return true;
+    for (const QString &c : cats) {
+        if (c.size() > 8) return true;
+    }
+    return false;
 }
 
 // Default theme — dark-ish but readable on light too. We pick the
@@ -205,21 +240,48 @@ static QChart *renderBar(const QJsonObject &spec, QString *outError) {
         return nullptr;
     }
 
-    auto *set = new QBarSet(yCol);
     QStringList categories;
+    QVector<double> values;
     for (const QJsonValue &row : data) {
         const QJsonObject ro = row.toObject();
         double y;
         if (!toDouble(ro.value(yCol), &y)) continue;
         categories.append(toLabel(ro.value(xCol)));
-        *set << y;
+        values.append(y);
+    }
+    const int N = categories.size();
+    if (N == 0) {
+        if (outError) *outError = "no usable rows for bar chart.";
+        return nullptr;
     }
 
-    auto *series = new QBarSeries;
-    series->append(set);
+    // v0.1.90 — keep vertical-bar layout (don't silently switch
+    // chart type, that hides the user's title and disorients them).
+    // Long labels are handled below via -90° rotation + an explicit
+    // bottom-margin reservation so the rotated labels have room
+    // to read in full.
+    bool labelsTooLong = false;
+    int maxLabelLen = 0;
+    for (const QString &c : categories) {
+        if (c.size() > maxLabelLen) maxLabelLen = c.size();
+        if (c.size() > 10) labelsTooLong = true;
+    }
+
+    // v0.1.90 — multi-colour rule for ranking bar charts. When a single-
+    // metric `bar` has 3–20 categories, paint each bar in its own palette
+    // colour so the visual scans as a ranking comparison rather than a
+    // uniform-blue uniform-blue. Implementation: N independent QBarSeries
+    // each containing one QBarSet with values [0,…,v_i,…,0]; only the
+    // i-th bar at category i is visible. Each series gets its own
+    // palette colour. Legend is hidden — the x-axis labels already
+    // identify the bars.
+    const bool inRange = (N >= 3 && N <= 20);
+    const bool optedOut = spec.contains("multiColor")
+                          && spec.value("multiColor").isBool()
+                          && !spec.value("multiColor").toBool();
+    const bool useMultiColor = inRange && !optedOut;
 
     auto *chart = new QChart;
-    chart->addSeries(series);
     chart->setAnimationOptions(QChart::SeriesAnimations);
     if (spec.contains("title"))
         chart->setTitle(spec.value("title").toString());
@@ -227,16 +289,60 @@ static QChart *renderBar(const QJsonObject &spec, QString *outError) {
     auto *xAxis = new QBarCategoryAxis;
     xAxis->append(categories);
     xAxis->setTitleText(xCol);
+
+    // v0.1.90 — long-label vertical-bar polish. Three coordinated
+    // adjustments so 30+ char names don't get clipped:
+    //   1. -90° rotation (truly vertical labels — budget is bottom
+    //      margin height, not slot width).
+    //   2. 9 pt label font (~6 px per char vs. ~8 px at default 11 pt).
+    //   3. Explicit bottom margin that scales with the longest label.
+    if (labelsTooLong) {
+        xAxis->setLabelsAngle(-90);
+        QFont labelFont = xAxis->labelsFont();
+        labelFont.setPointSize(9);
+        xAxis->setLabelsFont(labelFont);
+        const int charW = 6;
+        const int needed = 60 + maxLabelLen * charW;
+        chart->setMargins(QMargins(20, 20, 20, qMin(260, needed)));
+    } else if (shouldTiltLabels(categories)) {
+        xAxis->setLabelsAngle(-45);
+    }
     chart->addAxis(xAxis, Qt::AlignBottom);
-    series->attachAxis(xAxis);
 
     auto *yAxis = new QValueAxis;
     yAxis->setTitleText(yCol);
+    // Comma-grouped integer ticks for readability — "308,602"
+    // instead of "308602.0". POSIX apostrophe flag enables locale
+    // thousand-separators; falls back to plain integers on systems
+    // whose printf doesn't honour the flag.
+    yAxis->setLabelFormat("%'.0f");
     chart->addAxis(yAxis, Qt::AlignLeft);
-    series->attachAxis(yAxis);
 
-    chart->legend()->setVisible(true);
-    chart->legend()->setAlignment(Qt::AlignBottom);
+    if (useMultiColor) {
+        const QStringList &palette = chartPalette();
+        for (int i = 0; i < N; ++i) {
+            auto *set = new QBarSet(categories[i]);
+            for (int j = 0; j < N; ++j) *set << (j == i ? values[i] : 0.0);
+            set->setColor(QColor(palette[i % palette.size()]));
+            auto *series = new QBarSeries;
+            series->append(set);
+            series->setBarWidth(0.9);
+            chart->addSeries(series);
+            series->attachAxis(xAxis);
+            series->attachAxis(yAxis);
+        }
+        chart->legend()->setVisible(false);
+    } else {
+        auto *set = new QBarSet(yCol);
+        for (double v : values) *set << v;
+        auto *series = new QBarSeries;
+        series->append(set);
+        chart->addSeries(series);
+        series->attachAxis(xAxis);
+        series->attachAxis(yAxis);
+        chart->legend()->setVisible(true);
+        chart->legend()->setAlignment(Qt::AlignBottom);
+    }
     return chart;
 }
 
@@ -367,35 +473,63 @@ static QChart *renderHorizontalBar(const QJsonObject &spec, QString *outError) {
     const QJsonArray data = spec.value("data").toArray();
     if (data.isEmpty()) { if (outError) *outError = "data array is empty."; return nullptr; }
 
-    auto *set = new QBarSet(yCol);
     QStringList categories;
+    QVector<double> values;
     for (const QJsonValue &row : data) {
         const QJsonObject ro = row.toObject();
         double y;
         if (!toDouble(ro.value(yCol), &y)) continue;
         categories.append(toLabel(ro.value(xCol)));
-        *set << y;
+        values.append(y);
     }
-    auto *series = new QHorizontalBarSeries;
-    series->append(set);
+    const int N = categories.size();
+    if (N == 0) {
+        if (outError) *outError = "no usable rows for horizontal-bar chart.";
+        return nullptr;
+    }
+    const bool inRange = (N >= 3 && N <= 20);
+    const bool optedOut = spec.contains("multiColor")
+                          && spec.value("multiColor").isBool()
+                          && !spec.value("multiColor").toBool();
+    const bool useMultiColor = inRange && !optedOut;
 
     auto *chart = new QChart;
-    chart->addSeries(series);
     chart->setAnimationOptions(QChart::SeriesAnimations);
     if (spec.contains("title")) chart->setTitle(spec.value("title").toString());
 
-    // The category axis becomes vertical, the value axis horizontal.
     auto *yAxis = new QBarCategoryAxis;
     yAxis->append(categories);
     yAxis->setTitleText(xCol);
     chart->addAxis(yAxis, Qt::AlignLeft);
-    series->attachAxis(yAxis);
     auto *xAxis = new QValueAxis;
     xAxis->setTitleText(yCol);
     chart->addAxis(xAxis, Qt::AlignBottom);
-    series->attachAxis(xAxis);
-    chart->legend()->setVisible(true);
-    chart->legend()->setAlignment(Qt::AlignBottom);
+
+    if (useMultiColor) {
+        const QStringList &palette = chartPalette();
+        for (int i = 0; i < N; ++i) {
+            auto *set = new QBarSet(categories[i]);
+            for (int j = 0; j < N; ++j) *set << (j == i ? values[i] : 0.0);
+            set->setColor(QColor(palette[i % palette.size()]));
+            auto *series = new QHorizontalBarSeries;
+            series->append(set);
+            series->setBarWidth(0.9);
+            chart->addSeries(series);
+            series->attachAxis(yAxis);
+            series->attachAxis(xAxis);
+        }
+        chart->legend()->setVisible(false);
+    } else {
+        auto *set = new QBarSet(yCol);
+        for (double v : values) *set << v;
+        auto *series = new QHorizontalBarSeries;
+        series->append(set);
+        chart->addSeries(series);
+        series->attachAxis(yAxis);
+        series->attachAxis(xAxis);
+        chart->legend()->setVisible(true);
+        chart->legend()->setAlignment(Qt::AlignBottom);
+    }
     return chart;
 }
 
@@ -472,6 +606,7 @@ static QChart *renderMultiBar(const QJsonObject &spec,
     } else {
         chart->addAxis(catAxis, Qt::AlignBottom);
         chart->addAxis(valAxis, Qt::AlignLeft);
+        if (shouldTiltLabels(categories)) catAxis->setLabelsAngle(-45);
     }
     series->attachAxis(catAxis);
     series->attachAxis(valAxis);
@@ -640,73 +775,144 @@ static QChart *renderBoxplot(const QJsonObject &spec, QString *outError) {
     auto *xAxis = new QBarCategoryAxis;
     xAxis->append(categories);
     xAxis->setTitleText(xCol);
+    if (shouldTiltLabels(categories)) xAxis->setLabelsAngle(-45);
     chart->addAxis(xAxis, Qt::AlignBottom);
     series->attachAxis(xAxis);
     auto *yAxis = new QValueAxis;
     yAxis->setTitleText(yCol);
     chart->addAxis(yAxis, Qt::AlignLeft);
     series->attachAxis(yAxis);
-    chart->legend()->setVisible(false);
+    chart->legend()->setVisible(true);
+    chart->legend()->setAlignment(Qt::AlignBottom);
     return chart;
 }
 
-// v0.1.76 — hover tooltips. QtCharts emits hover signals out of the
-// box but doesn't display anything; the user just sees the cursor
-// change. This helper walks every series on the chart and wires the
-// appropriate hover signal to a QToolTip::showText() call so hovering
-// over a bar / line point / scatter point / pie slice / box / area
-// point pops up "name · index/x : value" near the cursor.
+// v0.1.90 — in-chart hover callout. Previously we used QToolTip
+// (the OS popup); user feedback was that the OS-style popup feels
+// detached from the chart. This version drives a styled QLabel
+// parented to the QChartView so the readout lives inside the chart
+// frame, follows the cursor, and matches the panel's dark/light
+// theme.
 //
-// Categorical x charts (bar / horizontal-bar / stacked / grouped) emit
-// `hovered(bool status, int index, QBarSet *barset)` — we resolve the
-// category label by index out of the chart's QBarCategoryAxis. Numeric
-// x charts (line / area / scatter) emit `hovered(QPointF p, bool s)`
-// where p holds the data coordinates directly. Pie / donut emit
-// `hovered(QPieSlice*, bool)`. Boxplot emits `hovered(bool, QBoxSet*)`.
-static void wireSeriesTooltips(QChart *chart) {
+// Layout: callout is positioned at cursor + (14, 14), clamped so it
+// never spills past the view edges. Hidden when hover ends or on any
+// series's hover-off.
+static void wireSeriesTooltips(QChart *chart, QChartView *view,
+                                QLabel *callout) {
     auto formatNum = [](double v) {
-        // 4 significant figures, locale-aware thousands separators.
-        return QLocale().toString(v, 'g', 4);
+        // v0.1.90 — user-flagged: 'g' format flips to scientific
+        // ("6.801e+04") for anything past 4 significant digits.
+        // Switch to thousands-separated decimal: integer-shaped
+        // numbers as "68,010" and fractions as "1.5" / "0.001".
+        QLocale loc;
+        const double absv = std::abs(v);
+        // Whole-number-shaped values (within float rounding tolerance)
+        // render as integers — e.g. 68010.0 → "68,010".
+        const double tol = std::max(1.0, absv) * 1e-9;
+        if (absv >= 1.0 && std::abs(v - std::round(v)) <= tol
+            && absv < 1e15) {
+            return loc.toString(qint64(std::round(v)));
+        }
+        // Fractional values — print 'f' with up to 4 decimals, then
+        // trim trailing zeros so "1.5000" becomes "1.5" but "1.5025"
+        // stays full.
+        QString s = loc.toString(v, 'f', 4);
+        if (s.contains(loc.decimalPoint())) {
+            while (s.endsWith('0')) s.chop(1);
+            if (s.endsWith(loc.decimalPoint())) s.chop(1);
+        }
+        return s;
     };
 
-    // Pre-resolve the category labels (if any) so categorical-x bar
-    // hover can map index → label without re-walking the axis each event.
-    QStringList catLabels;
-    for (auto *ax : chart->axes(Qt::Horizontal)) {
-        if (auto *bca = qobject_cast<QBarCategoryAxis*>(ax)) {
-            catLabels = bca->categories();
-            break;
+    auto showCallout = [view, callout](const QString &text) {
+        callout->setText(text);
+        callout->adjustSize();
+        QPoint p = view->mapFromGlobal(QCursor::pos()) + QPoint(14, 14);
+        // Keep the callout inside the view; flip to the left of the
+        // cursor when we'd otherwise overflow the right edge.
+        if (p.x() + callout->width() > view->width()) {
+            p.setX(view->width() - callout->width() - 4);
         }
-    }
-    if (catLabels.isEmpty()) {
-        for (auto *ax : chart->axes(Qt::Vertical)) {
-            if (auto *bca = qobject_cast<QBarCategoryAxis*>(ax)) {
-                catLabels = bca->categories();
-                break;
+        if (p.y() + callout->height() > view->height()) {
+            p.setY(view->height() - callout->height() - 4);
+        }
+        p.setX(qMax(2, p.x()));
+        p.setY(qMax(2, p.y()));
+        callout->move(p);
+        callout->show();
+        callout->raise();
+    };
+    auto hideCallout = [callout]() { callout->hide(); };
+
+    // Pre-resolve category labels from either axis type. QBarCategoryAxis
+    // is used by bar / horizontal-bar / stacked / grouped / histogram /
+    // boxplot. QCategoryAxis is used by line / area / scatter when x is
+    // a string column.
+    auto collectCategories = [](QChart *c) -> QStringList {
+        for (auto orient : {Qt::Horizontal, Qt::Vertical}) {
+            for (auto *ax : c->axes(orient)) {
+                if (auto *bca = qobject_cast<QBarCategoryAxis*>(ax)) {
+                    return bca->categories();
+                }
+                if (auto *ca = qobject_cast<QCategoryAxis*>(ax)) {
+                    return ca->categoriesLabels();
+                }
             }
         }
+        return {};
+    };
+    const QStringList catLabels = collectCategories(chart);
+
+    // Pre-compute per-category totals when a series has ≥ 2 bar sets
+    // (stacked / grouped). Lets every bar tooltip show share-of-total.
+    QVector<double> catTotals;
+    for (auto *s : chart->series()) {
+        auto *bars = qobject_cast<QAbstractBarSeries*>(s);
+        if (!bars || bars->barSets().size() < 2) continue;
+        for (auto *bset : bars->barSets()) {
+            for (int i = 0; i < bset->count(); ++i) {
+                if (i >= catTotals.size()) catTotals.resize(i + 1);
+                catTotals[i] += bset->at(i);
+            }
+        }
+        break;
     }
 
     for (QAbstractSeries *s : chart->series()) {
         if (auto *bars = qobject_cast<QAbstractBarSeries*>(s)) {
+            const bool multiSet = bars->barSets().size() >= 2;
             QObject::connect(bars, &QAbstractBarSeries::hovered, chart,
-                [bars, catLabels, formatNum](bool status, int index, QBarSet *barset) {
-                    if (!status || !barset) { QToolTip::hideText(); return; }
+                [bars, catLabels, formatNum, catTotals, multiSet,
+                 showCallout, hideCallout](
+                    bool status, int index, QBarSet *barset) {
+                    if (!status || !barset) { hideCallout(); return; }
+                    const double v = barset->at(index);
+                    // Skip the zero-height ghost bars that the multi-
+                    // colour ranking layout produces. They emit hover
+                    // events but have no visual under the cursor.
+                    if (qFuzzyIsNull(v)) { hideCallout(); return; }
                     const QString cat = (index >= 0 && index < catLabels.size())
                                           ? catLabels.at(index)
                                           : QString::number(index);
-                    QToolTip::showText(QCursor::pos(),
-                        QString("%1\n%2: %3")
-                            .arg(barset->label().isEmpty() ? bars->name() : barset->label())
-                            .arg(cat)
-                            .arg(formatNum(barset->at(index))));
+                    QString text = QString("<b>%1</b><br>%2: %3")
+                        .arg(barset->label().isEmpty() ? bars->name() : barset->label())
+                        .arg(cat)
+                        .arg(formatNum(v));
+                    if (multiSet && index >= 0 && index < catTotals.size()
+                        && catTotals[index] > 0.0) {
+                        text += QString("<br>%1% of %2 total")
+                                  .arg(QString::number(100.0 * v / catTotals[index],
+                                                       'f', 1))
+                                  .arg(formatNum(catTotals[index]));
+                    }
+                    showCallout(text);
                 });
         } else if (auto *box = qobject_cast<QBoxPlotSeries*>(s)) {
             QObject::connect(box, &QBoxPlotSeries::hovered, chart,
-                [box, formatNum](bool status, QBoxSet *bs) {
-                    if (!status || !bs) { QToolTip::hideText(); return; }
-                    QToolTip::showText(QCursor::pos(),
-                        QString("%1\nmin %2 · Q1 %3\nmed %4\nQ3 %5 · max %6")
+                [box, formatNum, showCallout, hideCallout](bool status, QBoxSet *bs) {
+                    if (!status || !bs) { hideCallout(); return; }
+                    showCallout(
+                        QString("<b>%1</b><br>min %2 · Q1 %3<br>med %4<br>Q3 %5 · max %6")
                             .arg(bs->label())
                             .arg(formatNum(bs->at(QBoxSet::LowerExtreme)))
                             .arg(formatNum(bs->at(QBoxSet::LowerQuartile)))
@@ -716,40 +922,142 @@ static void wireSeriesTooltips(QChart *chart) {
                 });
         } else if (auto *pie = qobject_cast<QPieSeries*>(s)) {
             QObject::connect(pie, &QPieSeries::hovered, chart,
-                [pie, formatNum](QPieSlice *slice, bool state) {
-                    if (!state || !slice) { QToolTip::hideText(); return; }
-                    QToolTip::showText(QCursor::pos(),
-                        QString("%1\n%2 (%3%)")
+                [pie, formatNum, showCallout, hideCallout](QPieSlice *slice, bool state) {
+                    if (!state || !slice) { hideCallout(); return; }
+                    showCallout(
+                        QString("<b>%1</b><br>%2 (%3%)")
                             .arg(slice->label())
                             .arg(formatNum(slice->value()))
                             .arg(QString::number(slice->percentage() * 100.0, 'f', 1)));
                 });
+        } else if (auto *area = qobject_cast<QAreaSeries*>(s)) {
+            // QAreaSeries is not a QXYSeries; its upperSeries() is. Make
+            // the upper-line's points visible so hover targets are easy
+            // to hit, then wire the QXYSeries hover signal.
+            if (auto *up = area->upperSeries()) {
+                up->setPointsVisible(true);
+                QObject::connect(up, &QXYSeries::hovered, chart,
+                    [area, catLabels, formatNum, showCallout, hideCallout](
+                        QPointF p, bool state) {
+                        if (!state) { hideCallout(); return; }
+                        const int idx = int(std::round(p.x()));
+                        const QString xLabel = (!catLabels.isEmpty()
+                                                 && idx >= 0
+                                                 && idx < catLabels.size())
+                                                ? catLabels.at(idx)
+                                                : formatNum(p.x());
+                        showCallout(
+                            QString("<b>%1</b><br>x %2 · y %3")
+                                .arg(area->name())
+                                .arg(xLabel)
+                                .arg(formatNum(p.y())));
+                    });
+            }
         } else if (auto *xy = qobject_cast<QXYSeries*>(s)) {
-            // QLineSeries, QScatterSeries, and the upper-line of
-            // QAreaSeries all inherit from QXYSeries. Make point
-            // markers visible so the hover target is easy to hit.
+            // QLineSeries + QScatterSeries inherit from QXYSeries.
             xy->setPointsVisible(true);
             QObject::connect(xy, &QXYSeries::hovered, chart,
-                [xy, formatNum](QPointF p, bool state) {
-                    if (!state) { QToolTip::hideText(); return; }
-                    QToolTip::showText(QCursor::pos(),
-                        QString("%1\nx %2 · y %3")
+                [xy, catLabels, formatNum, showCallout, hideCallout](
+                    QPointF p, bool state) {
+                    if (!state) { hideCallout(); return; }
+                    const int idx = int(std::round(p.x()));
+                    const QString xLabel = (!catLabels.isEmpty()
+                                             && idx >= 0
+                                             && idx < catLabels.size())
+                                            ? catLabels.at(idx)
+                                            : formatNum(p.x());
+                    showCallout(
+                        QString("<b>%1</b><br>x %2 · y %3")
                             .arg(xy->name())
-                            .arg(formatNum(p.x()))
+                            .arg(xLabel)
                             .arg(formatNum(p.y())));
                 });
         }
-        // QAreaSeries itself is not a QXYSeries — its upperSeries() is.
-        // We wired the upperSeries above when we walked the chart's
-        // direct series list (the area's upper line is added to the
-        // chart implicitly).
     }
 }
 
+// v0.1.90 — current Notepatra theme, in the shape the translator wants.
+// Source of truth: the active QApplication palette. We don't include
+// config.h here on purpose — chartrender.cpp is linked into the
+// chart-renderer regression tests, which don't pull in Config.
+static ChartSpecToVega::Theme currentChartTheme() {
+    const QPalette pal = QApplication::palette();
+    const bool dark = pal.color(QPalette::Window).lightness() < 128;
+    return ChartSpecToVega::Theme{dark, dark ? QStringLiteral("Dark")
+                                             : QStringLiteral("Light")};
+}
+
+#ifdef NOTEPATRA_WITH_WEBENGINE
+// v0.1.90 — Vega-Lite path. Wraps a VegaChartRenderer in the same kind
+// of frame the QtCharts path uses (transparent background + optional
+// expand button) so callers don't care which renderer they got.
+static QWidget *buildVegaWrap(const QJsonObject &vegaSpec,
+                              const QJsonObject &originalSpec,
+                              QWidget *parent,
+                              bool withExpandButton) {
+    auto *wrap = new QFrame(parent);
+    wrap->setStyleSheet("background: transparent;");
+    wrap->setProperty("notepatra-chart-kind", "vega");
+    auto *wrapLay = new QVBoxLayout(wrap);
+    wrapLay->setContentsMargins(0, 0, 0, 0);
+    wrapLay->setSpacing(2);
+
+    if (withExpandButton) {
+        auto *toolbar = new QHBoxLayout();
+        toolbar->setContentsMargins(0, 0, 2, 0);
+        toolbar->addStretch();
+        auto *expandBtn = new QPushButton(wrap);
+        expandBtn->setIcon(qApp->style()->standardIcon(QStyle::SP_TitleBarMaxButton));
+        expandBtn->setToolTip(QObject::tr("View larger · export PNG/SVG/HTML/Spec"));
+        expandBtn->setFixedSize(22, 22);
+        expandBtn->setFlat(true);
+        expandBtn->setCursor(Qt::PointingHandCursor);
+        toolbar->addWidget(expandBtn);
+        wrapLay->addLayout(toolbar);
+
+        QJsonObject capturedSpec = originalSpec;
+        QObject::connect(expandBtn, &QPushButton::clicked, wrap,
+            [wrap, capturedSpec]() {
+                auto *dlg = new ChartModalDialog(capturedSpec, wrap);
+                dlg->setAttribute(Qt::WA_DeleteOnClose);
+                dlg->show();
+                dlg->raise();
+                dlg->activateWindow();
+            });
+    }
+
+    auto *renderer = new VegaChartRenderer(wrap);
+    renderer->setMinimumHeight(320);
+    renderer->setSpec(vegaSpec);
+    wrap->setProperty("notepatra-vega-renderer-ptr",
+                      QVariant::fromValue<QObject *>(renderer));
+    wrapLay->addWidget(renderer);
+    return wrap;
+}
+#endif  // NOTEPATRA_WITH_WEBENGINE
+
 QWidget *renderFromObject(const QJsonObject &spec,
                           QWidget *parent,
-                          QString *outError) {
+                          QString *outError,
+                          bool withExpandButton) {
     const QString type = spec.value("type").toString().toLower();
+
+#ifdef NOTEPATRA_WITH_WEBENGINE
+    // Vega path is the preferred renderer when WebEngine is bundled.
+    if (ChartSpecToVega::supported(type)) {
+        QString translateErr;
+        QJsonObject vega = ChartSpecToVega::translate(
+            spec, currentChartTheme(), &translateErr);
+        if (!vega.isEmpty()) {
+            return buildVegaWrap(vega, spec, parent, withExpandButton);
+        }
+        // Translator declined this spec (data-shape error). Fall through
+        // to QtCharts so the user still sees something — QtCharts will
+        // surface its own error message if it also fails.
+        if (outError && !translateErr.isEmpty()) *outError = translateErr;
+    }
+#endif
+
     QChart *chart = nullptr;
     if (type == "line")                          chart = renderLineOrScatter(spec, false, outError);
     else if (type == "scatter")                  chart = renderLineOrScatter(spec, true,  outError);
@@ -768,17 +1076,23 @@ QWidget *renderFromObject(const QJsonObject &spec,
     else if (type == "donut")                    chart = renderDonut(spec, outError);
     else if (type == "histogram")                chart = renderHistogram(spec, outError);
     else if (type == "boxplot")                  chart = renderBoxplot(spec, outError);
+    else if (type == "heatmap" || type == "density" ||
+             type == "regression-line" || type == "faceted-bar" ||
+             type == "error-bar") {
+        // v0.1.90 — these are Vega-Lite-only chart types. They reach
+        // this branch only on lite builds (no WebEngine), so the user
+        // needs the Charts Pack to render them.
+        if (outError) {
+            *outError = QString("%1 charts need the Charts Pack — install "
+                                "via Tools → Install Charts Pack.").arg(type);
+        }
+        return nullptr;
+    }
     else {
         if (outError) *outError = QString("Unsupported chart type: %1").arg(type);
         return nullptr;
     }
     if (!chart) return nullptr;
-
-    // v0.1.76 — wire hover tooltips onto every series after the chart is
-    // built. Categorical-x bars resolve the index → label via the
-    // chart's QBarCategoryAxis, so the call must happen after axes are
-    // attached (which all the renderXxx helpers do before returning).
-    wireSeriesTooltips(chart);
 
     // v0.1.76 — wrap the QChartView in a small frame with a top-right
     // "view larger" button. Click opens ChartModalDialog with the same
@@ -787,21 +1101,25 @@ QWidget *renderFromObject(const QJsonObject &spec,
     // addWidget() it into a chat bubble layout don't need any change.
     auto *wrap = new QFrame(parent);
     wrap->setStyleSheet("background: transparent;");
+    wrap->setProperty("notepatra-chart-kind", "qtcharts");
     auto *wrapLay = new QVBoxLayout(wrap);
     wrapLay->setContentsMargins(0, 0, 0, 0);
     wrapLay->setSpacing(2);
 
-    auto *toolbar = new QHBoxLayout();
-    toolbar->setContentsMargins(0, 0, 2, 0);
-    toolbar->addStretch();
-    auto *expandBtn = new QPushButton(wrap);
-    expandBtn->setIcon(qApp->style()->standardIcon(QStyle::SP_TitleBarMaxButton));
-    expandBtn->setToolTip(QObject::tr("View larger · save as PNG · copy"));
-    expandBtn->setFixedSize(22, 22);
-    expandBtn->setFlat(true);
-    expandBtn->setCursor(Qt::PointingHandCursor);
-    toolbar->addWidget(expandBtn);
-    wrapLay->addLayout(toolbar);
+    QPushButton *expandBtn = nullptr;
+    if (withExpandButton) {
+        auto *toolbar = new QHBoxLayout();
+        toolbar->setContentsMargins(0, 0, 2, 0);
+        toolbar->addStretch();
+        expandBtn = new QPushButton(wrap);
+        expandBtn->setIcon(qApp->style()->standardIcon(QStyle::SP_TitleBarMaxButton));
+        expandBtn->setToolTip(QObject::tr("View larger · save as PNG · copy"));
+        expandBtn->setFixedSize(22, 22);
+        expandBtn->setFlat(true);
+        expandBtn->setCursor(Qt::PointingHandCursor);
+        toolbar->addWidget(expandBtn);
+        wrapLay->addLayout(toolbar);
+    }
 
     auto *view = new QChartView(chart, wrap);
     view->setRenderHint(QPainter::Antialiasing);
@@ -809,19 +1127,46 @@ QWidget *renderFromObject(const QJsonObject &spec,
     view->setMinimumWidth(360);
     wrapLay->addWidget(view);
 
+    // v0.1.90 — in-chart hover callout. Parented to the QChartView so
+    // it floats over the chart canvas. Theme-aware: dark mode is the
+    // dominant Notepatra theme for the chat panel, so the defaults
+    // here are tuned for dark; on light themes the callout still
+    // reads well thanks to the explicit foreground colour.
+    auto *callout = new QLabel(view);
+    callout->setObjectName("chartCallout");
+    callout->setTextFormat(Qt::RichText);
+    callout->setAttribute(Qt::WA_TransparentForMouseEvents);
+    callout->setStyleSheet(
+        "QLabel#chartCallout {"
+        "  background: rgba(36, 36, 38, 235);"
+        "  color: #F0F0F0;"
+        "  border: 1px solid #4EC9B0;"
+        "  border-radius: 6px;"
+        "  padding: 6px 10px;"
+        "  font-size: 11px;"
+        "}");
+    callout->setWordWrap(false);
+    callout->hide();
+
+    // v0.1.76 — wire hover tooltips onto every series after the chart is
+    // built. Categorical-x bars resolve the index → label via the
+    // chart's QBarCategoryAxis, so the call must happen after axes are
+    // attached (which all the renderXxx helpers do before returning).
+    wireSeriesTooltips(chart, view, callout);
+
     // Capture the spec by value so the modal can re-render even after
     // the original aipanel transcript is cleared / scrolled away.
-    QJsonObject capturedSpec = spec;
-    QObject::connect(expandBtn, &QPushButton::clicked, wrap,
-        [wrap, capturedSpec]() {
-            // WA_DeleteOnClose so the dialog is freed when the user
-            // hits Close; parent on wrap so it tracks the chat bubble.
-            auto *dlg = new ChartModalDialog(capturedSpec, wrap);
-            dlg->setAttribute(Qt::WA_DeleteOnClose);
-            dlg->show();
-            dlg->raise();
-            dlg->activateWindow();
-        });
+    if (expandBtn) {
+        QJsonObject capturedSpec = spec;
+        QObject::connect(expandBtn, &QPushButton::clicked, wrap,
+            [wrap, capturedSpec]() {
+                auto *dlg = new ChartModalDialog(capturedSpec, wrap);
+                dlg->setAttribute(Qt::WA_DeleteOnClose);
+                dlg->show();
+                dlg->raise();
+                dlg->activateWindow();
+            });
+    }
 
     return wrap;
 }

@@ -145,8 +145,8 @@ static void testBuildWithProjectContext() {
     QString spHuge = buildWithProjectContext(Intent::DataAnalyst, "", false, huge);
     EXPECT_TRUE("8KB cap on project ctx (truncated marker present)",
                 spHuge.contains("[...truncated]"));
-    EXPECT_TRUE("8KB cap keeps prompt under 12KB (safe margin)",
-                spHuge.toUtf8().size() < 12 * 1024);
+    EXPECT_TRUE("8KB cap keeps prompt under 18KB (safe margin)",
+                spHuge.toUtf8().size() < 18 * 1024);
 }
 
 static void testReadInstructions(const QTemporaryDir &fixDir) {

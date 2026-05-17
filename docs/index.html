@@ -49,7 +49,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is under 10 MB across platforms (9.7 MB on Linux x64); full downloads are 3.5 MB (Linux x64 tar.gz), 26.9 MB (macOS DMG with bundled Qt), 40.6 MB (Windows MSI with bundled Qt DLLs). 226 file types. 92 language lexers. JSON / HTML / SQL fixers. Local AI via Ollama, llama.cpp (GGUF), LM Studio, Jan, vLLM, text-generation-webui, KoboldCpp, or any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.89",
+      "softwareVersion": "0.1.90",
       "fileSize": "9.7 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -151,7 +151,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is under 10 MB across every platform (9.7 MB on Linux x64). Latest v0.1.89 download sizes: 3.5 MB Linux x64 tar.gz, 3.3 MB Linux ARM64 tar.gz, 26.9 MB macOS DMG (with bundled Qt), 40.6 MB Windows MSI / 32.2 MB NSIS / 36.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk, ~10 MB bare) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
+            "text": "The bare Notepatra executable is under 10 MB across every platform (9.7 MB on Linux x64). Latest v0.1.90 download sizes: 3.5 MB Linux x64 tar.gz, 3.3 MB Linux ARM64 tar.gz, 26.9 MB macOS DMG (with bundled Qt), 40.6 MB Windows MSI / 32.2 MB NSIS / 36.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk, ~10 MB bare) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
           }
         },
         {
@@ -167,7 +167,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.89: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.90: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.89">
-        Download v0.1.89 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.90">
+        Download v0.1.90 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.89 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.90 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (under 10 MB bare, ~3.5 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints.</p>
 
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.89</div>
+        <div class="section-label">Download v0.1.90</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1467,7 +1467,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.89 →
+                Get Notepatra v0.1.90 →
               </a>
             </div>
 
@@ -1510,7 +1510,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.89 →
+                Get Notepatra Local AI v0.1.90 →
               </a>
             </div>
           </div>
@@ -1968,34 +1968,54 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.89 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.90 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
-                        <span>2026-05-16</span>
-                        <span>· Save As detail view now shows a "Date Created" column — the last piece of the v0.1.88 dialog UX request. v0.1.88's first attempt used a hand-rolled <code>QSortFilterProxyModel</code> that crashed Qt's tree view on Ctrl+S because <code>index(row, extraCol)</code> returned a <code>createIndex()</code> with no source mapping. v0.1.89 ships the column via the supported <code>QIdentityProxyModel</code> pattern with <code>QFileInfo::birthTime()</code> + ctime fallback for non-ext4 filesystems.</span>
+                        <span>2026-05-17</span>
+                        <span>· Chart UX revamp — Vega-Lite v5 path for every chart type in the Full flavor, multi-metric overlay, dual-axis, universal facet (small-multiples on any chart type), PNG / SVG / HTML / Spec export, offline (no JSDelivr in the loop), and a beefed-up Data Analyst playbook so the AI does real multi-step analysis.</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>📅 Date Created column in Save As detail view</h5>
+                        <h5>📊 New chart pipeline — Vega-Lite v5 in the Full flavor</h5>
                         <ul>
-                            <li><strong>New <code>src/savedialogfsmodel.h/cpp</code></strong> — <code>SaveDialogDateCreatedProxy</code>, an identity proxy installed via <code>QFileDialog::setProxyModel()</code> that wraps the dialog's internal QFileSystemModel with one extra column. Overrides <code>columnCount</code>, <code>index</code>, <code>mapToSource</code>, <code>data</code>, and <code>headerData</code> for the extra column only — base columns pass through 1:1.</li>
-                            <li><strong>Linux ext4 gotcha handled</strong>: <code>QFileInfo::birthTime()</code> uses <code>statx</code> and needs ext4 with kernel ≥ 4.11. Falls back to <code>metadataChangeTime()</code> (ctime) when birth time is invalid; renders an em-dash <code>—</code> when both are invalid so the cell never crashes the row layout. On modern ext4 you see real dates; on FAT-mounted USB / ext3 you see ctime; otherwise em-dash.</li>
-                            <li><strong>Why a proxy and not a <code>QFileSystemModel</code> subclass</strong>: QFileDialog builds its own QFileSystemModel internally; the supported extension point is <code>setProxyModel()</code> which wraps that model. Subclassing the model and <code>tv->setModel()</code> would break the path-bar, name-edit, and selection wiring that's hard-coded to the d-pointer's model.</li>
+                            <li><strong>Pure-function translator</strong> — new <code>src/chart_spec_to_vega.{h,cpp}</code> maps Notepatra's simplified chart spec to a Vega-Lite v5 spec with no Qt widget dependencies; renderer and translator ship independently and the translator is unit-testable without a display server.</li>
+                            <li><strong>Five new chart types</strong>: <code>heatmap</code>, <code>density</code>, <code>regression-line</code>, <code>faceted-bar</code>, <code>error-bar</code>. Available in the Full flavor; the Lite flavor shows a friendly "Install Charts Pack" placeholder for these types and keeps the existing chart types on QtCharts.</li>
+                            <li><strong>Multi-metric overlay</strong> — <code>"y": ["a", "b", "c"]</code> overlays multiple series with one colour per metric via a Vega fold transform. Works on <code>line</code>, <code>area</code>, <code>scatter</code>, and <code>bar</code> (bar with array-y auto-routes to grouped bar).</li>
+                            <li><strong>Dual-axis</strong> — <code>"y2": "secondary_col"</code> produces a layered spec with two independent Y scales (e.g. revenue in USD on the left, traffic count on the right).</li>
+                            <li><strong>Universal facet</strong> — <code>"facet": "col"</code> or <code>"row": "a", "column": "b"</code> wraps <em>any</em> chart type in a Vega-Lite facet structure via <code>applyFacetIfRequested()</code>. Composes with multi-metric overlay: <code>{type:"bar", x:"hcp", y:["calls","sales"], facet:"class"}</code> answers a multi-dimensional analyst question in one go.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🐛 Fixes the v0.1.88 Ctrl+S crash</h5>
+                        <h5>📤 Export… menu — PNG / SVG / HTML / Spec JSON</h5>
                         <ul>
-                            <li>v0.1.88 attempted the column via <code>QSortFilterProxyModel</code>; the proxy's <code>index(row, extraCol)</code> returned a <code>createIndex()</code> with no source mapping, so when the tree view dereferenced the index on the next paint cycle it walked into garbage memory and crashed on Ctrl+S. v0.1.89 routes through <code>QIdentityProxyModel</code> which gives 1:1 source mapping for free, then maps the extra column to source column 0 (same row, same <code>internalPointer</code>).</li>
-                            <li><strong>32/32 ctest pass</strong>. UI verified end-to-end before tag per the verify-UI-before-claiming-done rule.</li>
+                            <li><strong>PNG 1× / 2× / 4×</strong> — paste into Slack or a doc. Vega's <code>view.toImageURL("png")</code> Promise → C++ <code>QByteArray</code> via a per-call <code>window._notepatra_export_&lt;slot&gt;</code> polled with <code>runJavaScript</code>.</li>
+                            <li><strong>SVG</strong> — crisp vector with hover-tooltips preserved when opened in a browser.</li>
+                            <li><strong>HTML</strong> — fully self-contained, inlines vega-embed so the exported file is interactive (hover, zoom, pan, brush) when a teammate opens it.</li>
+                            <li><strong>Spec JSON</strong> — paste into vega-editor to fork the chart.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>📦 Offline vega-embed bundle (Full flavor)</h5>
+                        <ul>
+                            <li>vega + vega-lite + vega-embed (~828 KB total) ship as a Qt resource (<code>resources/vega.qrc</code>) and load via <code>qrc:///vega/*.js</code>. Air-gapped boxes render charts, CDN outages don't break anything, no per-chart beacon to JSDelivr. Standalone HTML exports still link the CDN copies so a recipient with internet just opens them.</li>
+                            <li>Lite flavor is unaffected — 828 KB cost lands only on the Full binary.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🧠 Data Analyst playbook — analytical depth, not single-query bail-outs</h5>
+                        <ul>
+                            <li><strong>ANALYTICAL DEPTH</strong> — system-prompt section pushes the LLM through Discover → Aggregate → Decompose → Compare → Surface anomalies for every analyst question.</li>
+                            <li><strong>SQL PATTERNS THAT EARN THEIR KEEP</strong> — cookbook covering time bucketing (<code>STRFTIME</code>), rolling windows (<code>AVG OVER ROWS BETWEEN</code>), percent of total, YoY via <code>LAG</code>, cohort fix via window-<code>MIN</code>, <code>NTILE</code> quartiles, and percentile-fenced outlier filters.</li>
+                            <li><strong>MULTI-DIMENSIONAL QUESTIONS</strong> — explicit steering toward the y-array / y2 / facet combo when an analyst question crosses two or more dimensions.</li>
+                            <li><strong>33/33 ctest pass</strong>; new <code>test_chart_spec_to_vega.cpp</code> ships 50 assertions on the translator's user-visible contract.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.89">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.90">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.89">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.90">Commits</a>
                 </div>
             </div>
             <!-- v0.1.76 policy: only the LATEST release detail card is shown
@@ -2032,7 +2052,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. under-10 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.89: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
+                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. under-10 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.90: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2040,7 +2060,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>under 10 MB</strong> (9.7 MB on Linux x64) across every platform. Latest v0.1.89 download sizes: <strong>3.5 MB</strong> Linux x64 tar.gz · <strong>3.3 MB</strong> Linux ARM64 tar.gz · <strong>26.9 MB</strong> macOS DMG · <strong>40.6 MB</strong> Windows MSI / <strong>32.2 MB</strong> NSIS / <strong>36.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~10 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>under 10 MB</strong> (9.7 MB on Linux x64) across every platform. Latest v0.1.90 download sizes: <strong>3.5 MB</strong> Linux x64 tar.gz · <strong>3.3 MB</strong> Linux ARM64 tar.gz · <strong>26.9 MB</strong> macOS DMG · <strong>40.6 MB</strong> Windows MSI / <strong>32.2 MB</strong> NSIS / <strong>36.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~10 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -2048,7 +2068,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.89 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.90 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>How do I verify a download is genuine?</h3>

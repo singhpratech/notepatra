@@ -3810,9 +3810,17 @@ static QFrame *aiAddAssistantCard(QVBoxLayout *target,
     body->setFrameShape(QFrame::NoFrame);
     body->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     body->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    // v0.1.90 — explicit QMenu rules so the right-click context menu
+    // (Copy / Select All / etc.) renders with proper bg/fg contrast.
+    // Without these, the menu inherits a dark cascade with no foreground
+    // colour set and items look like an all-black rectangle.
     body->setStyleSheet(QString(
-        "QTextBrowser { background: transparent; color: %1; border: none; padding: 0; }")
-        .arg(pal.assistFg));
+        "QTextBrowser { background: transparent; color: %1; border: none; padding: 0; }"
+        "QMenu { background-color: %2; color: %1; border: 1px solid %3; }"
+        "QMenu::item { padding: 5px 22px 5px 22px; }"
+        "QMenu::item:selected { background-color: %3; color: %1; }"
+        "QMenu::separator { height: 1px; background: %3; margin: 4px 8px; }")
+        .arg(pal.assistFg, pal.assistBg, pal.assistBorder));
     // Kill QTextDocument's default 4 px frame margin so the rendered HTML
     // sits flush with the QTextBrowser edges. Without this, the auto-sized
     // height kept growing extra pixels per render and leaving white space

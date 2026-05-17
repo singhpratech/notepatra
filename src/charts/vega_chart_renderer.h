@@ -26,6 +26,7 @@
 #include <QJsonObject>
 #include <QString>
 #include <QWidget>
+#include <functional>
 
 QT_BEGIN_NAMESPACE
 class QVBoxLayout;
@@ -60,6 +61,26 @@ public:
     // surrounding chartCard title row.
     bool isLiteStub() const;
 
+    // v0.1.90 — async exports. Each completion callback fires on the
+    // main thread once vega-embed has produced the data; cb receives an
+    // empty QByteArray on failure (renderError is emitted with detail).
+    //  • PNG: rasterized at `scaleFactor` (1=1x, 2=2x, 4=4x).
+    //  • SVG: vector. Tooltips work when opened in a browser (Vega
+    //    embeds <title> elements + listens for hover).
+    //  • HTML: self-contained doc, full Vega interactivity (hover,
+    //    zoom, pan, brush). Vega libraries served from local CDN.
+    //  • Spec JSON: pretty-printed Vega-Lite v5 spec — paste into
+    //    vega-editor.netlify.app to fork the chart.
+    using ExportCallback = std::function<void(const QByteArray &)>;
+    void exportPngAsync(int scaleFactor, ExportCallback cb);
+    void exportSvgAsync(ExportCallback cb);
+    void exportHtmlAsync(ExportCallback cb);
+    void exportSpecAsync(ExportCallback cb);
+
+    // The Vega-Lite spec last fed to setSpec(). Used by the HTML export
+    // path and as a fallback for spec download.
+    QJsonObject currentSpec() const;
+
 signals:
     // Fires once the chart has painted. UI layers use this to size the
     // surrounding card or fade out a loading shimmer.
@@ -83,6 +104,7 @@ signals:
 
 private:
     QString m_chartId;
+    QJsonObject m_lastSpec;  // both paths track this for currentSpec()
 #ifdef NOTEPATRA_WITH_WEBENGINE
     QWebEngineView *m_view = nullptr;
     QJsonObject m_pendingSpec;
@@ -91,7 +113,6 @@ private:
 #else
     // Lite-mode stub state. The card is built once; setSpec() just
     // stashes the spec for [View JSON instead].
-    QJsonObject m_stashedSpec;
     QPushButton *m_viewJsonBtn = nullptr;
     void buildLiteStubCard();
 #endif

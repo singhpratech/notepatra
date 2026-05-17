@@ -14,17 +14,21 @@
 #include "charts/vega_chart_renderer.h"
 #include "plugin_loader.h"
 
+#include <QDateTime>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QRandomGenerator>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLocale>
 #include <QPushButton>
+#include <QTimer>
 #include <QUuid>
 #include <QVBoxLayout>
 
 #ifdef NOTEPATRA_WITH_WEBENGINE
+#include <QFile>
 #include <QWebEngineView>
 #include <QWebEnginePage>
 #include <QWebEngineSettings>
@@ -43,26 +47,43 @@ QString synthChartId() {
 }
 
 #ifdef NOTEPATRA_WITH_WEBENGINE
-// Inline HTML+JS shell. Loads vega-embed from JSDelivr (BSD-3 — compatible
-// with our GPLv3). v0.1.65 polish: bundle these as a Qt resource so charts
-// work offline. The body { margin:0 } reset prevents the default WebEngine
-// 8px margin from clipping the chart against the card border.
+// v0.1.90 — load vega/vega-lite/vega-embed from a bundled Qt resource
+// instead of JSDelivr. Charts now render offline / on air-gapped boxes
+// / during CDN outages. The qrc URL is served via WebEngine's
+// qrc-scheme handler (built in since Qt 5.6).
 //
 // renderSpec(specStr) is called from C++ via runJavaScript(). It JSON-
 // parses the string, then vegaEmbed's the result into #chart. On success
-// it sets window._notepatra_chartReady = true; on failure it sets
-// window._notepatra_chartError to the message.
+// it stashes the resulting view object on window so the export API can
+// invoke .toImageURL() on it; on failure sets _notepatra_chartError.
+//
+// v0.1.90 — `{actions: {reset: true, source: false, export: false,
+// editor: true}}`: a tiny Vega-embed overlay menu sits in the corner
+// with "Reset view" + "Open in Vega Editor" — useful debug shortcuts
+// for analysts; PNG/SVG export is driven by the C++ side via toImageURL
+// to keep the file-dialog flow native.
 const char *kVegaShellHtml = R"HTML(<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
-<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
-<script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
-<script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+<script src="qrc:///vega/vega.min.js"></script>
+<script src="qrc:///vega/vega-lite.min.js"></script>
+<script src="qrc:///vega/vega-embed.min.js"></script>
 <style>
   html, body { margin: 0; padding: 0; background: transparent; }
-  body { padding: 8px; font-family: -apple-system, "Segoe UI", sans-serif; }
+  body { padding: 6px; font-family: -apple-system, "Segoe UI", sans-serif; }
   #chart { width: 100%; }
+  /* Tooltip styling — matches the Notepatra dark chat-panel theme.    */
+  /* When light theme is on, the spec.config override wins.            */
+  #vg-tooltip-element.vg-tooltip {
+    background: rgba(36, 36, 38, 240) !important;
+    color: #F0F0F0 !important;
+    border: 1px solid #4EC9B0 !important;
+    border-radius: 6px !important;
+    padding: 6px 10px !important;
+    font-size: 11px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+  }
 </style>
 </head>
 <body>
@@ -70,16 +91,23 @@ const char *kVegaShellHtml = R"HTML(<!DOCTYPE html>
 <script>
   window._notepatra_chartReady = false;
   window._notepatra_chartError = null;
+  window._notepatra_view = null;
   window.renderSpec = function(specStr) {
     window._notepatra_chartReady = false;
     window._notepatra_chartError = null;
+    window._notepatra_view = null;
     try {
       const spec = JSON.parse(specStr);
       if (typeof vegaEmbed === "undefined") {
-        window._notepatra_chartError = "vega-embed failed to load (offline?)";
+        window._notepatra_chartError = "vega-embed failed to load";
         return;
       }
-      vegaEmbed('#chart', spec, {actions: false}).then(function() {
+      vegaEmbed('#chart', spec, {
+        actions: { reset: true, source: false, export: false, editor: true },
+        renderer: 'canvas',
+        tooltip: { theme: 'dark' }
+      }).then(function(res) {
+        window._notepatra_view = res.view;
         window._notepatra_chartReady = true;
       }).catch(function(e) {
         window._notepatra_chartError = String(e);
@@ -87,6 +115,18 @@ const char *kVegaShellHtml = R"HTML(<!DOCTYPE html>
     } catch (e) {
       window._notepatra_chartError = "JSON parse: " + String(e);
     }
+  };
+  // Returns a promise-resolving image URL via toImageURL().
+  window.exportImage = function(fmt, scale, slot) {
+    if (!window._notepatra_view) {
+      window['_notepatra_export_' + slot] = '__nover__';
+      return;
+    }
+    window._notepatra_view.toImageURL(fmt, scale || 1).then(function(url) {
+      window['_notepatra_export_' + slot] = url;
+    }).catch(function(e) {
+      window['_notepatra_export_' + slot] = '__err__:' + String(e);
+    });
   };
 </script>
 </body>
@@ -132,13 +172,18 @@ VegaChartRenderer::VegaChartRenderer(QWidget *parent)
         }
     });
 
+    // The base URL governs how `qrc:///vega/...` resolves. Setting it
+    // to "qrc:///" rather than "https://localhost/" makes the script
+    // tags load from the bundled resource — JSDelivr is no longer in
+    // the loop.
     m_view->setHtml(QString::fromUtf8(kVegaShellHtml),
-                    QUrl(QStringLiteral("https://localhost/")));
+                    QUrl(QStringLiteral("qrc:///")));
 }
 
 VegaChartRenderer::~VegaChartRenderer() = default;
 
 void VegaChartRenderer::setSpec(const QJsonObject &vegaLiteSpec) {
+    m_lastSpec = vegaLiteSpec;
     if (!m_pageReady) {
         // Stash the spec — the loadFinished slot replays it.
         m_pendingSpec = vegaLiteSpec;
@@ -195,11 +240,107 @@ void VegaChartRenderer::emitWhenReady() {
 }
 
 QString VegaChartRenderer::exportPng(int /*scaleFactor*/) {
-    // v0.1.65 — wire vega-embed.toImageURL() through here.
+    // Legacy sync API — deprecated in v0.1.90. Use exportPngAsync().
     return QString();
 }
 
 bool VegaChartRenderer::isLiteStub() const { return false; }
+
+QJsonObject VegaChartRenderer::currentSpec() const { return m_lastSpec; }
+
+// v0.1.90 — async PNG / SVG export. vega-embed's toImageURL() returns a
+// JS Promise; we poll a per-call window slot until it resolves.
+namespace {
+QString uniqueSlot() {
+    return QStringLiteral("s") + QString::number(QDateTime::currentMSecsSinceEpoch())
+           + QStringLiteral("_") + QString::number(QRandomGenerator::global()->generate());
+}
+}
+
+static void pollForExport(QWebEnginePage *page, const QString &slot,
+                          int attempts,
+                          VegaChartRenderer::ExportCallback cb) {
+    if (attempts <= 0) {
+        cb(QByteArray());
+        return;
+    }
+    page->runJavaScript(
+        QStringLiteral("window['_notepatra_export_%1'] || ''").arg(slot),
+        [page, slot, attempts, cb](const QVariant &v) {
+            const QString s = v.toString();
+            if (s.isEmpty()) {
+                QTimer::singleShot(120, page, [page, slot, attempts, cb]() {
+                    pollForExport(page, slot, attempts - 1, cb);
+                });
+                return;
+            }
+            if (s == QStringLiteral("__nover__") || s.startsWith(QStringLiteral("__err__"))) {
+                cb(QByteArray());
+                return;
+            }
+            // Strip "data:image/...;base64,"
+            const int comma = s.indexOf(',');
+            const QString b64 = (comma > 0) ? s.mid(comma + 1) : s;
+            cb(QByteArray::fromBase64(b64.toLatin1()));
+            // Clean up the slot to avoid leaking strings in the JS scope.
+            page->runJavaScript(QStringLiteral("delete window['_notepatra_export_%1'];").arg(slot));
+        });
+}
+
+void VegaChartRenderer::exportPngAsync(int scaleFactor, ExportCallback cb) {
+    if (!m_view || !m_pageReady) { cb(QByteArray()); return; }
+    const QString slot = uniqueSlot();
+    const QString js = QStringLiteral("window.exportImage('png', %1, '%2');")
+                           .arg(qBound(1, scaleFactor, 6)).arg(slot);
+    m_view->page()->runJavaScript(js, [page = m_view->page(), slot, cb](const QVariant &) {
+        pollForExport(page, slot, 80, cb);
+    });
+}
+
+void VegaChartRenderer::exportSvgAsync(ExportCallback cb) {
+    if (!m_view || !m_pageReady) { cb(QByteArray()); return; }
+    const QString slot = uniqueSlot();
+    // Vega's toImageURL("svg") returns a "data:image/svg+xml;..." URL;
+    // we decode and unwrap to get raw <svg>...</svg> XML.
+    const QString js = QStringLiteral("window.exportImage('svg', 1, '%1');").arg(slot);
+    m_view->page()->runJavaScript(js, [page = m_view->page(), slot, cb](const QVariant &) {
+        pollForExport(page, slot, 80, [cb](const QByteArray &raw) {
+            // Vega's SVG result is URL-encoded; decode percent-escapes first.
+            if (raw.isEmpty()) { cb(raw); return; }
+            cb(QByteArray::fromPercentEncoding(raw));
+        });
+    });
+}
+
+void VegaChartRenderer::exportHtmlAsync(ExportCallback cb) {
+    // Self-contained HTML: embeds vega@5 / vega-lite@5 / vega-embed@6
+    // from JSDelivr (works when the user re-opens the saved file in
+    // a browser; the saved file is portable). The original page used
+    // the qrc:// bundle — that path won't resolve in a file:// context,
+    // so the export uses the public CDN for the exported file.
+    const QByteArray specJson =
+        QJsonDocument(m_lastSpec).toJson(QJsonDocument::Indented);
+    QByteArray html;
+    html += "<!DOCTYPE html>\n<html><head>\n";
+    html += "<meta charset=\"utf-8\">\n";
+    html += "<title>Notepatra chart</title>\n";
+    html += "<script src=\"https://cdn.jsdelivr.net/npm/vega@5\"></script>\n";
+    html += "<script src=\"https://cdn.jsdelivr.net/npm/vega-lite@5\"></script>\n";
+    html += "<script src=\"https://cdn.jsdelivr.net/npm/vega-embed@6\"></script>\n";
+    html += "<style>body{margin:24px;font-family:system-ui,sans-serif;background:#fafafa;}";
+    html += "#chart{max-width:1100px;margin:0 auto;}h1{font-size:18px;font-weight:600;}</style>\n";
+    html += "</head><body>\n";
+    html += "<div id=\"chart\"></div>\n";
+    html += "<script>\nconst spec = ";
+    html += specJson;
+    html += ";\nvegaEmbed('#chart', spec, {actions: true, renderer: 'canvas'});\n</script>\n";
+    html += "</body></html>\n";
+    cb(html);
+}
+
+void VegaChartRenderer::exportSpecAsync(ExportCallback cb) {
+    cb(QJsonDocument(m_lastSpec).toJson(QJsonDocument::Indented));
+}
 
 #else // NOTEPATRA_WITH_WEBENGINE
 
@@ -305,8 +446,8 @@ void VegaChartRenderer::buildLiteStubCard() {
         .arg(text.name(), border.name(), text.name(), muted.name()));
     m_viewJsonBtn->setEnabled(false);  // enabled once setSpec() fires
     connect(m_viewJsonBtn, &QPushButton::clicked, this, [this]() {
-        if (!m_stashedSpec.isEmpty()) {
-            emit viewJsonRequested(m_stashedSpec);
+        if (!m_lastSpec.isEmpty()) {
+            emit viewJsonRequested(m_lastSpec);
             m_viewJsonBtn->setEnabled(false);  // one-shot
             m_viewJsonBtn->setText(QStringLiteral("JSON shown below"));
         }
@@ -321,7 +462,7 @@ void VegaChartRenderer::buildLiteStubCard() {
 }
 
 void VegaChartRenderer::setSpec(const QJsonObject &vegaLiteSpec) {
-    m_stashedSpec = vegaLiteSpec;
+    m_lastSpec = vegaLiteSpec;
     if (m_viewJsonBtn && !vegaLiteSpec.isEmpty()) {
         m_viewJsonBtn->setEnabled(true);
     }
@@ -333,5 +474,34 @@ void VegaChartRenderer::setSpec(const QJsonObject &vegaLiteSpec) {
 QString VegaChartRenderer::exportPng(int /*scaleFactor*/) { return QString(); }
 
 bool VegaChartRenderer::isLiteStub() const { return true; }
+
+QJsonObject VegaChartRenderer::currentSpec() const { return m_lastSpec; }
+
+// Lite-mode stubs — the chart never rendered, so PNG/SVG are unavailable.
+// Spec / HTML still work (they're driven by the stashed spec).
+void VegaChartRenderer::exportPngAsync(int /*scaleFactor*/, ExportCallback cb) {
+    cb(QByteArray());
+}
+void VegaChartRenderer::exportSvgAsync(ExportCallback cb) {
+    cb(QByteArray());
+}
+void VegaChartRenderer::exportHtmlAsync(ExportCallback cb) {
+    const QByteArray specJson =
+        QJsonDocument(m_lastSpec).toJson(QJsonDocument::Indented);
+    QByteArray html;
+    html += "<!DOCTYPE html>\n<html><head>\n";
+    html += "<meta charset=\"utf-8\"><title>Notepatra chart</title>\n";
+    html += "<script src=\"https://cdn.jsdelivr.net/npm/vega@5\"></script>\n";
+    html += "<script src=\"https://cdn.jsdelivr.net/npm/vega-lite@5\"></script>\n";
+    html += "<script src=\"https://cdn.jsdelivr.net/npm/vega-embed@6\"></script>\n";
+    html += "</head><body><div id=\"chart\"></div>\n";
+    html += "<script>vegaEmbed('#chart', ";
+    html += specJson;
+    html += ", {actions: true});</script></body></html>\n";
+    cb(html);
+}
+void VegaChartRenderer::exportSpecAsync(ExportCallback cb) {
+    cb(QJsonDocument(m_lastSpec).toJson(QJsonDocument::Indented));
+}
 
 #endif // NOTEPATRA_WITH_WEBENGINE

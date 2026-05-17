@@ -41,9 +41,21 @@ QWidget *renderFromSpec(const QString &jsonText,
 
 // Same as renderFromSpec but takes an already-parsed object (saves
 // re-parsing JSON when the caller already did it for validation).
+//
+// v0.1.90 — `withExpandButton` controls whether the returned wrap
+// includes the "view larger" toolbar button. Inline chat bubbles want
+// it (true, the default); the ChartModalDialog uses false so the
+// modal-rendered chart doesn't recursively offer another modal.
+//
+// v0.1.90 — when built with NOTEPATRA_WITH_WEBENGINE=ON and the type
+// is supported by the Vega-Lite translator, the returned widget has
+// `setProperty("notepatra-chart-kind", "vega")`; QtCharts fallback
+// widgets are tagged "qtcharts". Lets the modal pick the right export
+// pipeline.
 QWidget *renderFromObject(const QJsonObject &spec,
                           QWidget *parent,
-                          QString *outError = nullptr);
+                          QString *outError = nullptr,
+                          bool withExpandButton = true);
 
 // Quick sanity check — does this look like a chart spec at all? Used by
 // AIPanel to decide whether a ```chart fenced block is worth attempting

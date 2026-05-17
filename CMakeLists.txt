@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.89 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.90 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -361,6 +361,13 @@ target_include_directories(${EXE_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src/charts)
 if(NOTEPATRA_WITH_WEBENGINE)
     target_compile_definitions(${EXE_NAME} PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
     target_link_libraries(${EXE_NAME} PRIVATE Qt5::WebEngineWidgets)
+    # v0.1.90 — offline vega-embed bundle. ~828 KB of JS shipped as a
+    # Qt resource so charts render without JSDelivr in the loop (works
+    # air-gapped + survives CDN outages). Full flavor only — the lite
+    # build doesn't include the WebEngine renderer at all.
+    if(EXISTS "${CMAKE_SOURCE_DIR}/resources/vega.qrc")
+        target_sources(${EXE_NAME} PRIVATE resources/vega.qrc)
+    endif()
 endif()
 
 if(WIN32)
@@ -729,6 +736,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_dataanalyst.cpp
         src/git_tools.cpp
         src/chartrender.cpp
         src/chart_modal.cpp
+        src/chart_spec_to_vega.cpp
         src/csvanalyst.cpp
         src/dbconnections.cpp
     )
@@ -1091,6 +1099,26 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_network_policy.cpp
     message(STATUS "Security test enabled — target: test_network_policy")
 endif()
 
+# v0.1.90 — Vega-Lite translator regression test. Pure-logic: builds
+# the chart_spec_to_vega.cpp translator on its own and asserts that
+# every supported chart type emits a well-formed Vega-Lite v5 spec,
+# multi-metric overlay emits a fold transform, dual-axis emits a 2-
+# layer spec with independent y scales, and the facet wrapper composes
+# with all of the above.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_chart_spec_to_vega.cpp")
+    add_executable(test_chart_spec_to_vega
+        test_chart_spec_to_vega.cpp
+        src/chart_spec_to_vega.cpp
+    )
+    target_include_directories(test_chart_spec_to_vega PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_chart_spec_to_vega PRIVATE Qt5::Core)
+    add_test(NAME test_chart_spec_to_vega COMMAND $<TARGET_FILE:test_chart_spec_to_vega>)
+    set_tests_properties(test_chart_spec_to_vega PROPERTIES LABELS "unit;charts;v0190")
+    message(STATUS "Vega translator test enabled — target: test_chart_spec_to_vega")
+endif()
+
 # v0.1.76 — expanded chart-type catalogue regression test. Validates
 # that every new type in src/chartrender.cpp (area, horizontal-bar,
 # stacked-bar, stacked-horizontal-bar, grouped-bar, donut, histogram,
@@ -1100,6 +1128,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_chart_types.cpp")
         test_chart_types.cpp
         src/chartrender.cpp
         src/chart_modal.cpp
+        src/chart_spec_to_vega.cpp
     )
     target_include_directories(test_chart_types PRIVATE
         ${CMAKE_SOURCE_DIR}/src
