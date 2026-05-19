@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.90 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.91 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -888,6 +888,284 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_fullscreen_exit
         LABELS "integration;ai;fullscreen;v0168"
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     message(STATUS "Regression test enabled — target: test_ai_fullscreen_exit")
+endif()
+
+# ─── Change-history strip (v0.1.91) ─────────────────────────────────────
+# Asserts Notepad++-style orange-on-edit / green-on-save behaviour against
+# Notepatra's actual Editor class. Reuses the same source set as the
+# fullscreen test (it needs everything Editor links to).
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_change_history.cpp")
+    set(CHANGE_HISTORY_SOURCES ${SOURCES})
+    list(FILTER CHANGE_HISTORY_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_change_history
+        test_change_history.cpp
+        ${CHANGE_HISTORY_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_change_history rust_core)
+    target_compile_definitions(test_change_history PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_change_history PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_change_history PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_change_history PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_change_history PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_change_history PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_change_history PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_change_history PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_change_history PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_change_history PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_change_history PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_change_history PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_change_history COMMAND $<TARGET_FILE:test_change_history>)
+    set_tests_properties(test_change_history PROPERTIES
+        LABELS "integration;editor;changehistory;v0191"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_change_history")
+endif()
+
+# Same flow but through MainWindow + TabManager — catches issues where the
+# real UI path resets markers that the bare Editor test doesn't see.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_change_history_mainwindow.cpp")
+    set(CHANGE_HISTORY_MW_SOURCES ${SOURCES})
+    list(FILTER CHANGE_HISTORY_MW_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_change_history_mainwindow
+        test_change_history_mainwindow.cpp
+        ${CHANGE_HISTORY_MW_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_change_history_mainwindow rust_core)
+    target_compile_definitions(test_change_history_mainwindow PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_change_history_mainwindow PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_change_history_mainwindow PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_change_history_mainwindow PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_change_history_mainwindow PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_change_history_mainwindow PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_change_history_mainwindow PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_change_history_mainwindow PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_change_history_mainwindow PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_change_history_mainwindow PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_change_history_mainwindow PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_change_history_mainwindow PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_change_history_mainwindow COMMAND $<TARGET_FILE:test_change_history_mainwindow>)
+    set_tests_properties(test_change_history_mainwindow PROPERTIES
+        LABELS "integration;mainwindow;changehistory;v0191"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_change_history_mainwindow")
+endif()
+
+# Same as test_change_history_mainwindow but pumps events between saves
+# so any QFileSystemWatcher race fires inside the test window.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_change_history_watcher.cpp")
+    set(CH_WATCHER_SOURCES ${SOURCES})
+    list(FILTER CH_WATCHER_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_change_history_watcher
+        test_change_history_watcher.cpp
+        ${CH_WATCHER_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_change_history_watcher rust_core)
+    target_compile_definitions(test_change_history_watcher PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_change_history_watcher PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_change_history_watcher PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_change_history_watcher PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_change_history_watcher PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_change_history_watcher PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_change_history_watcher PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_change_history_watcher PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_change_history_watcher PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_change_history_watcher PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_change_history_watcher PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_change_history_watcher PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_change_history_watcher COMMAND $<TARGET_FILE:test_change_history_watcher>)
+    set_tests_properties(test_change_history_watcher PROPERTIES
+        LABELS "integration;mainwindow;changehistory;watcher;v0191"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_change_history_watcher")
+endif()
+
+# Stress test — many edit-save cycles to expose state corruption
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_change_history_stress.cpp")
+    set(CH_STRESS_SOURCES ${SOURCES})
+    list(FILTER CH_STRESS_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_change_history_stress
+        test_change_history_stress.cpp ${CH_STRESS_SOURCES} ${HEADERS})
+    add_dependencies(test_change_history_stress rust_core)
+    target_compile_definitions(test_change_history_stress PRIVATE NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_include_directories(test_change_history_stress PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include ${QSCINTILLA_INCLUDE})
+    target_link_libraries(test_change_history_stress PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB})
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_change_history_stress PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_change_history_stress PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_change_history_stress PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_change_history_stress PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_change_history_stress PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_change_history_stress PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_change_history_stress PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_change_history_stress PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_change_history_stress PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_change_history_stress COMMAND $<TARGET_FILE:test_change_history_stress>)
+    set_tests_properties(test_change_history_stress PROPERTIES
+        LABELS "integration;mainwindow;changehistory;stress;v0191"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_change_history_stress")
+endif()
+
+# ─── v0.1.92 status-bar change-history counter regression ──────────────
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_changehistory_statusbar.cpp")
+    set(CH_SB_SOURCES ${SOURCES})
+    list(FILTER CH_SB_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_changehistory_statusbar
+        test_changehistory_statusbar.cpp ${CH_SB_SOURCES} ${HEADERS})
+    add_dependencies(test_changehistory_statusbar rust_core)
+    target_compile_definitions(test_changehistory_statusbar PRIVATE NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_include_directories(test_changehistory_statusbar PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include ${QSCINTILLA_INCLUDE})
+    target_link_libraries(test_changehistory_statusbar PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB})
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_changehistory_statusbar PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_changehistory_statusbar PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_changehistory_statusbar PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_changehistory_statusbar PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_changehistory_statusbar PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_changehistory_statusbar PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_changehistory_statusbar PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_changehistory_statusbar PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_changehistory_statusbar PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_changehistory_statusbar COMMAND $<TARGET_FILE:test_changehistory_statusbar>)
+    set_tests_properties(test_changehistory_statusbar PROPERTIES
+        LABELS "integration;statusbar;changehistory;v0192"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_changehistory_statusbar")
+endif()
+
+# ─── v0.1.92 Find→Replace carry-forward regression ──────────────────────
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_findreplace_carry_forward.cpp")
+    set(FR_CARRY_SOURCES ${SOURCES})
+    list(FILTER FR_CARRY_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_findreplace_carry_forward
+        test_findreplace_carry_forward.cpp ${FR_CARRY_SOURCES} ${HEADERS})
+    add_dependencies(test_findreplace_carry_forward rust_core)
+    target_compile_definitions(test_findreplace_carry_forward PRIVATE NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_include_directories(test_findreplace_carry_forward PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include ${QSCINTILLA_INCLUDE})
+    target_link_libraries(test_findreplace_carry_forward PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB})
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_findreplace_carry_forward PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_findreplace_carry_forward PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_findreplace_carry_forward PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_findreplace_carry_forward PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_findreplace_carry_forward PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_findreplace_carry_forward PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_findreplace_carry_forward PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_findreplace_carry_forward PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_findreplace_carry_forward PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_findreplace_carry_forward COMMAND $<TARGET_FILE:test_findreplace_carry_forward>)
+    set_tests_properties(test_findreplace_carry_forward PROPERTIES
+        LABELS "integration;findreplace;v0192"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_findreplace_carry_forward")
 endif()
 
 # ─── Project Search deep regression test ────────────────────────────────

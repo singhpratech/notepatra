@@ -36,6 +36,11 @@ private:
     void buildMarkTab(QWidget *tab);
     void buildGotoTab(QWidget *tab);
 
+    // v0.1.92 — Notepad++-style dialog-level status line. Shows the result
+    // of the last action (find, replace, count, find-in-files) at the
+    // bottom of the dialog, always visible regardless of active tab.
+    void setDialogStatus(const QString &msg, bool isError = false);
+
     MainWindow *mainWindow();
     Editor *getEditor();
 
@@ -80,6 +85,18 @@ private:
 
     // Results
     QTextEdit *m_resultsOutput;
+
+    // v0.1.92 — bottom-of-dialog status line (Notepad++ style).
+    QLabel *m_dialogStatus = nullptr;
+
+    // v0.1.92 — Find-cycle state. When the user iterates Find Next and
+    // hits the end of the document, we STOP there (with a "Reached end —
+    // press again to wrap" message) instead of silently wrapping. The
+    // SECOND consecutive Find Next at that point actually wraps. Reset
+    // when the search text, direction, or editor changes.
+    bool m_atFindCycleEnd = false;
+    QString m_lastFindText;
+    bool m_lastFindForward = true;
 
     QString processExtended(const QString &text);
 };

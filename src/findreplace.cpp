@@ -21,6 +21,7 @@
 #include <QTextStream>
 #include <QRegularExpression>
 #include <QSplitter>
+#include <QFrame>
 #include <algorithm>
 
 // Helper: get text from QComboBox reliably
@@ -29,18 +30,60 @@ static QString comboText(QComboBox *cb) {
     return cb->currentText();
 }
 
+void FindReplaceDialog::setDialogStatus(const QString &msg, bool isError) {
+    // The bottom dialog status bar is the SINGLE source of truth — visible
+    // regardless of active tab. The Find-tab inline m_resultLabel is kept
+    // alive as a hidden widget so existing layout slots don't shift.
+    const NpPalette pal = npPalette();
+    const QString col = isError ? pal.errorFg : pal.accent;
+    if (m_dialogStatus) {
+        m_dialogStatus->setStyleSheet(QString("color: %1;").arg(col));
+        m_dialogStatus->setText(msg);
+    }
+}
+
 FindReplaceDialog::FindReplaceDialog(QWidget *parent) : QDialog(parent) {
     setWindowTitle("Find / Replace");
     // 580 was enough on Linux/GTK; Windows wider buttons + bold font need
-    // more room or the right column ate into the input fields.
-    setMinimumWidth(660);
-    setMinimumHeight(400);
+    // more room or the right column ate into the input fields. v0.1.92
+    // bumped to 720 + 440 so the bottom status bar fits the longest
+    // message ("Reached end — press Find Next again to wrap to top") on
+    // a single line at the default size.
+    setMinimumWidth(720);
+    setMinimumHeight(440);
     setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
 
     auto *mainLayout = new QVBoxLayout(this);
 
     m_tabs = new QTabWidget;
     mainLayout->addWidget(m_tabs);
+
+    // v0.1.92 — Notepad++-style status bar at the BOTTOM of the dialog,
+    // outside the tab widget. Always visible, single source of truth for
+    // result messages from Find / Replace / Count / Find in Files / Mark.
+    // Previously the Find tab's m_resultLabel was the only display, so
+    // results from Replace All / Replace tab silently dropped on the
+    // floor (m_resultsOutput was set to nullptr by v0.1.48 cleanup).
+    auto *statusFrame = new QFrame;
+    statusFrame->setFrameShape(QFrame::StyledPanel);
+    statusFrame->setFrameShadow(QFrame::Sunken);
+    auto *statusLay = new QHBoxLayout(statusFrame);
+    statusLay->setContentsMargins(8, 4, 8, 4);
+    m_dialogStatus = new QLabel("");
+    QFont sf = m_dialogStatus->font();
+    sf.setItalic(true);
+    m_dialogStatus->setFont(sf);
+    m_dialogStatus->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    // Word-wrap + expand horizontally so long messages
+    // ("Reached end of document — press Find Next again to wrap to top")
+    // wrap to a 2nd line instead of truncating. setMinimumWidth(0) lets
+    // the bar shrink with the dialog; setSizePolicy(Expanding, Preferred)
+    // lets it eat all available horizontal space.
+    m_dialogStatus->setWordWrap(true);
+    m_dialogStatus->setMinimumWidth(0);
+    m_dialogStatus->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    statusLay->addWidget(m_dialogStatus, 1);
+    mainLayout->addWidget(statusFrame);
 
     auto *findTab = new QWidget;    buildFindTab(findTab);      m_tabs->addTab(findTab, "Find");
     auto *replTab = new QWidget;    buildReplaceTab(replTab);    m_tabs->addTab(replTab, "Replace");
@@ -56,6 +99,20 @@ FindReplaceDialog::FindReplaceDialog(QWidget *parent) : QDialog(parent) {
     // is kept as a nullptr field so the few remaining writers stay null-
     // safe without needing call-site changes elsewhere.
     m_resultsOutput = nullptr;
+
+    // v0.1.92 — carry the Find string forward when the user switches tabs
+    // so they don't have to retype "foo" after pressing Replace. Only fills
+    // the destination if it's currently empty — never clobbers a value
+    // the user has already typed into the other tab.
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this](int idx) {
+        const QString findText = comboText(m_findInput);
+        const QString replFindText = comboText(m_replFindInput);
+        if (idx == 1 && replFindText.isEmpty() && !findText.isEmpty()) {
+            m_replFindInput->setCurrentText(findText);
+        } else if (idx == 0 && findText.isEmpty() && !replFindText.isEmpty()) {
+            m_findInput->setCurrentText(replFindText);
+        }
+    });
 }
 
 // ═══════════════════════════════════════
@@ -118,10 +175,12 @@ void FindReplaceDialog::buildFindTab(QWidget *tab) {
     m_inSelection = new QCheckBox("In se&lection");
     layout->addWidget(m_inSelection, 3, 0, 1, 2);
 
+    // v0.1.92 — m_resultLabel is now hidden. All status text routes
+    // through the dialog-level bottom bar (m_dialogStatus). Kept as a
+    // hidden widget so the grid layout indices below don't have to be
+    // renumbered.
     m_resultLabel = new QLabel("");
-    const NpPalette pal = npPalette();
-    m_resultLabel->setStyleSheet(QString("color: %1; font-weight: bold;").arg(pal.accent));
-    layout->addWidget(m_resultLabel, 3, 2, 1, 2);
+    m_resultLabel->setVisible(false);
 
     // Buttons
     auto *btnLay = new QVBoxLayout;
@@ -261,7 +320,7 @@ void FindReplaceDialog::buildFindInFilesTab(QWidget *tab) {
     m_fifDirectory = new QComboBox;
     m_fifDirectory->setEditable(true);
     m_fifDirectory->setMaxCount(10);
-    m_fifDirectory->addItem(QDir::homePath());
+    m_fifDirectory->addItem(QDir::toNativeSeparators(QDir::homePath()));
     m_fifDirectory->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     layout->addWidget(m_fifDirectory, 1, 1);
 
@@ -305,7 +364,7 @@ void FindReplaceDialog::buildFindInFilesTab(QWidget *tab) {
 
     connect(browseBtn, &QPushButton::clicked, this, [this]() {
         QString dir = QFileDialog::getExistingDirectory(this, "Select Directory", comboText(m_fifDirectory));
-        if (!dir.isEmpty()) m_fifDirectory->setCurrentText(dir);
+        if (!dir.isEmpty()) m_fifDirectory->setCurrentText(QDir::toNativeSeparators(dir));
     });
     connect(findAllBtn, &QPushButton::clicked, this, &FindReplaceDialog::doFindInFiles);
     connect(closeBtn, &QPushButton::clicked, this, &QDialog::close);
@@ -356,7 +415,7 @@ void FindReplaceDialog::buildMarkTab(QWidget *tab) {
         auto *e = getEditor(); if (!e) return;
         e->SendScintilla(QsciScintilla::SCI_SETINDICATORCURRENT, 8);
         e->SendScintilla(QsciScintilla::SCI_INDICATORCLEARRANGE, 0, e->text().toUtf8().size());
-        m_resultLabel->setText("Marks cleared");
+        setDialogStatus("All marks cleared");
     });
     connect(closeBtn, &QPushButton::clicked, this, &QDialog::close);
 }
@@ -460,28 +519,78 @@ QString FindReplaceDialog::processExtended(const QString &text) {
 void FindReplaceDialog::doFindNext(bool forward) {
     auto *e = getEditor();
     if (!e) {
-        m_resultLabel->setText("No editor tab active");
+        setDialogStatus("No editor tab active", true);
         return;
     }
     QString text = comboText(m_findInput);
     if (text.isEmpty()) {
-        m_resultLabel->setText("Type something to find");
+        setDialogStatus("Type something to find", true);
+        return;
+    }
+    if (m_findInput->findText(text) < 0) m_findInput->insertItem(0, text);
+
+    // Reset the end-of-cycle flag whenever the search context changes —
+    // new needle, flipped direction, or first Find Next in this session.
+    if (text != m_lastFindText || forward != m_lastFindForward) {
+        m_atFindCycleEnd = false;
+        m_lastFindText = text;
+        m_lastFindForward = forward;
+    }
+
+    bool isRegex = m_modeRegex->isChecked();
+    QString needle = text;
+    if (m_modeExtended->isChecked()) needle = processExtended(needle);
+
+    // First attempt: search from cursor forward (or backward) WITHOUT
+    // wrap-around. If we find a match we're still mid-cycle; if not, we
+    // hit the end of this iteration.
+    bool found = e->findFirst(needle, isRegex, m_matchCase->isChecked(),
+                              m_wholeWord->isChecked(), /*wrap=*/false, forward);
+    if (found) {
+        m_atFindCycleEnd = false;
+        setDialogStatus(QString("Found: \"%1\"").arg(text));
         return;
     }
 
-    // Add to history
-    if (m_findInput->findText(text) < 0) m_findInput->insertItem(0, text);
+    // Reached end of remaining range. If wrap-around is OFF, just report
+    // "not found in remaining document" — never silently jump.
+    if (!m_wrapAround->isChecked()) {
+        setDialogStatus(QString("Reached %1 of document — \"%2\" not found further")
+                            .arg(forward ? "end" : "start").arg(text), true);
+        return;
+    }
 
-    bool isRegex = m_modeRegex->isChecked();
-    if (m_modeExtended->isChecked()) text = processExtended(text);
+    if (!m_atFindCycleEnd) {
+        // First Find Next at the end of the cycle — STOP with a notice.
+        // Cursor stays at its current position. Second Find Next will
+        // actually wrap.
+        m_atFindCycleEnd = true;
+        setDialogStatus(QString("Reached %1 of document — press Find %2 again to wrap to %3")
+                            .arg(forward ? "end" : "start")
+                            .arg(forward ? "Next" : "Previous")
+                            .arg(forward ? "top" : "bottom"), true);
+        return;
+    }
 
-    bool found = e->findFirst(text, isRegex, m_matchCase->isChecked(),
-                               m_wholeWord->isChecked(), m_wrapAround->isChecked(),
-                               forward);
-    if (!found) {
-        m_resultLabel->setText("Not found");
+    // Second consecutive Find Next at the end — wrap to the start (or end
+    // for backward search) and search again. This RESTARTS the cycle.
+    if (forward) {
+        e->setCursorPosition(0, 0);
     } else {
-        m_resultLabel->setText("Found");
+        int lastLine = e->lines() - 1;
+        if (lastLine < 0) lastLine = 0;
+        e->setCursorPosition(lastLine, e->text(lastLine).length());
+    }
+    found = e->findFirst(needle, isRegex, m_matchCase->isChecked(),
+                         m_wholeWord->isChecked(), /*wrap=*/false, forward);
+    if (found) {
+        m_atFindCycleEnd = false;
+        setDialogStatus(QString("Search wrapped — resumed from %1: \"%2\"")
+                            .arg(forward ? "top" : "bottom").arg(text));
+    } else {
+        // Zero matches in the document at all (rare — only if every prior
+        // "Found" was on stale text).
+        setDialogStatus(QString("Not found anywhere: \"%1\"").arg(text), true);
     }
 }
 
@@ -498,7 +607,7 @@ void FindReplaceDialog::doCount() {
     size_t count = RustCore::countMatches(e->text(), needle,
                                            m_modeRegex->isChecked(),
                                            m_matchCase->isChecked());
-    m_resultLabel->setText(QString("Count: %1 match(es)").arg(count));
+    setDialogStatus(QString("Count: %1 match(es) for \"%2\"").arg(count).arg(needle));
 }
 
 void FindReplaceDialog::doFindAllCurrent() {
@@ -550,7 +659,7 @@ void FindReplaceDialog::doFindAllCurrent() {
     sr->setVisible(true);
     mw->vertSplitter()->setSizes({500, 200});
 
-    m_resultLabel->setText(QString("%1 hits").arg(positions.size()));
+    setDialogStatus(QString("Find All in Current Document: %1 hit(s)").arg(positions.size()));
 }
 
 void FindReplaceDialog::doFindAllOpened() {
@@ -602,22 +711,33 @@ void FindReplaceDialog::doFindAllOpened() {
     sr->setHeader(needle, totalHits, fileCount);
     sr->setVisible(true);
     mw->vertSplitter()->setSizes({500, 200});
-    m_resultLabel->setText(QString("%1 hits in %2 files").arg(totalHits).arg(fileCount));
+    setDialogStatus(QString("Find All in All Opened: %1 hit(s) in %2 file(s)").arg(totalHits).arg(fileCount));
 }
 
 void FindReplaceDialog::doReplace() {
-    auto *e = getEditor(); if (!e) return;
+    auto *e = getEditor();
+    if (!e) { setDialogStatus("No editor tab active", true); return; }
     QString repl = comboText(m_replInput);
     if (m_rModeExtended->isChecked()) repl = processExtended(repl);
 
+    bool didReplace = false;
     if (e->hasSelectedText()) {
         e->replace(repl);
+        didReplace = true;
     }
     // Find next
     QString text = comboText(m_replFindInput);
     if (m_rModeExtended->isChecked()) text = processExtended(text);
-    e->findFirst(text, m_rModeRegex->isChecked(), m_rMatchCase->isChecked(),
-                 m_rWholeWord->isChecked(), m_rWrapAround->isChecked(), true);
+    bool found = e->findFirst(text, m_rModeRegex->isChecked(), m_rMatchCase->isChecked(),
+                              m_rWholeWord->isChecked(), m_rWrapAround->isChecked(), true);
+    if (didReplace && found)
+        setDialogStatus(QString("Replaced 1 occurrence — next match selected"));
+    else if (didReplace)
+        setDialogStatus(QString("Replaced 1 occurrence — no further matches"));
+    else if (found)
+        setDialogStatus(QString("Next match selected — press Replace again to replace it"));
+    else
+        setDialogStatus(QString("Not found: \"%1\"").arg(text), true);
 }
 
 void FindReplaceDialog::doReplaceAll() {
@@ -644,8 +764,8 @@ void FindReplaceDialog::doReplaceAll() {
                                            m_rMatchCase->isChecked());
     e->selectAll();
     e->replaceSelectedText(result);
-    if (m_resultsOutput) m_resultsOutput->clear();
-    if (m_resultsOutput) m_resultsOutput->append(QString("Replaced %1 occurrence(s)").arg(count));
+    setDialogStatus(QString("Replace All: %1 occurrence%2 replaced")
+                        .arg(count).arg(count == 1 ? "" : "s"));
 }
 
 void FindReplaceDialog::doReplaceAllOpened() {
@@ -663,7 +783,7 @@ void FindReplaceDialog::doReplaceAllOpened() {
     if (!tabs) return;
 
     int totalReplaced = 0;
-    if (m_resultsOutput) m_resultsOutput->clear();
+    int filesTouched = 0;
 
     for (int t = 0; t < tabs->count(); t++) {
         auto *ed = qobject_cast<Editor *>(tabs->widget(t));
@@ -680,12 +800,11 @@ void FindReplaceDialog::doReplaceAllOpened() {
         ed->selectAll();
         ed->replaceSelectedText(result);
         totalReplaced += count;
-
-        QString name = ed->filePath().isEmpty() ? tabs->tabText(t) : QFileInfo(ed->filePath()).fileName();
-        if (m_resultsOutput) m_resultsOutput->append(QString("  %1: %2 replacement(s)").arg(name).arg(count));
+        ++filesTouched;
     }
 
-    if (m_resultsOutput) m_resultsOutput->insertPlainText(QString("Replace All in All Opened: %1 total replacement(s)\n\n").arg(totalReplaced));
+    setDialogStatus(QString("Replace All in Opened: %1 occurrence(s) across %2 file(s)")
+                        .arg(totalReplaced).arg(filesTouched));
 }
 
 void FindReplaceDialog::doFindInFiles() {
@@ -760,7 +879,10 @@ void FindReplaceDialog::doFindInFiles() {
         }
     }
 
-    if (m_resultsOutput) m_resultsOutput->insertPlainText(QString("\nSearch complete: %1 hits in %2 files\n").arg(totalHits).arg(fileCount));
+    if (totalHits == 0)
+        setDialogStatus(QString("Find in Files: 0 hits for \"%1\"").arg(needle), true);
+    else
+        setDialogStatus(QString("Find in Files: %1 hit(s) in %2 file(s)").arg(totalHits).arg(fileCount));
 }
 
 void FindReplaceDialog::doMarkAll() {
@@ -811,11 +933,11 @@ void FindReplaceDialog::doMarkAll() {
     }
 
     if (largeFile && positions.size() > cap) {
-        m_resultLabel->setText(
+        setDialogStatus(
             QString("Marked first %1 of %2 occurrence(s) — capped for performance on large files")
                 .arg(drawCount).arg(positions.size()));
     } else {
-        m_resultLabel->setText(QString("Marked %1 occurrence(s)").arg(positions.size()));
+        setDialogStatus(QString("Marked %1 occurrence(s)").arg(positions.size()));
     }
 }
 

@@ -39,28 +39,39 @@ QVector<GitLineStatus> GitGutter::getChangedLines(const QString &filePath, const
     proc.waitForFinished(5000);
 
     if (proc.exitCode() != 0) {
-        // New file (not in git yet) — all lines are "added"
-        int lineCount = currentText.count('\n') + 1;
-        for (int i = 1; i <= lineCount; i++)
-            result.append({i, 1});
+        // File isn't in HEAD yet (untracked or staged-only). Notepad++ does
+        // NOT paint a strip on every line of an unstaged file — the gutter
+        // is meant to flag what you've changed since the last commit. With
+        // no baseline to diff against, there's nothing to flag. Return
+        // empty so the editor stays clean; once the file is committed,
+        // subsequent edits will diff against HEAD as normal.
         return result;
     }
 
     QString gitText = QString::fromUtf8(proc.readAllStandardOutput());
 
-    // Write current text to temp file for diff
-    QTemporaryFile tmpFile;
-    tmpFile.setAutoRemove(true);
-    if (!tmpFile.open()) return result;
-    tmpFile.write(currentText.toUtf8());
-    tmpFile.flush();
+    // v0.1.91 — previous version invoked GNU `diff -u --no-index - <buf>`
+    // and piped HEAD content through stdin. GNU diff has no `--no-index`
+    // flag (that's a git-diff option), so the command exit-coded out and
+    // produced empty output, which left the gutter blank for every
+    // tracked-and-modified file. Switching to `git diff --no-index` with
+    // two real temp files (HEAD body + buffer body) gives us the unified
+    // diff format the parser below already expects.
+    QTemporaryFile headFile;
+    QTemporaryFile bufFile;
+    headFile.setAutoRemove(true);
+    bufFile.setAutoRemove(true);
+    if (!headFile.open() || !bufFile.open()) return result;
+    headFile.write(gitText.toUtf8());
+    headFile.flush();
+    bufFile.write(currentText.toUtf8());
+    bufFile.flush();
 
-    // Run diff
     QProcess diffProc;
     diffProc.setWorkingDirectory(QFileInfo(filePath).path());
-    diffProc.start("diff", {"-u", "--no-index", "-", tmpFile.fileName()});
-    diffProc.write(gitText.toUtf8());
-    diffProc.closeWriteChannel();
+    diffProc.start("git", {"-c", "core.autocrlf=false",
+                           "diff", "--no-color", "--no-index", "--",
+                           headFile.fileName(), bufFile.fileName()});
     diffProc.waitForFinished(5000);
 
     QString diffOutput = QString::fromUtf8(diffProc.readAllStandardOutput());

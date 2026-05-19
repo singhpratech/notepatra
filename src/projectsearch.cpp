@@ -613,7 +613,10 @@ void ProjectSearch::buildUi() {
     m_folderLabel = new QLabel("Folder:");
     folderRow->addWidget(m_folderLabel);
 
-    m_folderInput = new QLineEdit(QDir::homePath());
+    // v0.1.91 — native separators so Windows users see C:\Users\… not
+    // C:/Users/… in the folder field. Qt's QDir / QFileInfo accept both
+    // styles on Windows, so the worker doesn't need any matching change.
+    m_folderInput = new QLineEdit(QDir::toNativeSeparators(QDir::homePath()));
     m_folderInput->setStyleSheet(QString(
         "QLineEdit { background: %1; color: %2; border: 1px solid %3; "
         "border-radius: 6px; padding: 6px 10px; }"
@@ -633,7 +636,7 @@ void ProjectSearch::buildUi() {
     connect(m_browseBtn, &QPushButton::clicked, this, [this]() {
         QString d = QFileDialog::getExistingDirectory(this, "Search in folder",
                                                       m_folderInput->text());
-        if (!d.isEmpty()) m_folderInput->setText(d);
+        if (!d.isEmpty()) m_folderInput->setText(QDir::toNativeSeparators(d));
     });
 
     // ── Options row ──────────────────────────────────────────────────
@@ -846,11 +849,12 @@ void ProjectSearch::buildUi() {
         if (!picked) return;
         QClipboard *cb = QApplication::clipboard();
         if (picked == actLoc) {
+            const QString nativePath = QDir::toNativeSeparators(path);
             cb->setText(col > 0
-                ? QString("%1:%2:%3").arg(path).arg(line).arg(col)
-                : path);
+                ? QString("%1:%2:%3").arg(nativePath).arg(line).arg(col)
+                : nativePath);
         } else if (picked == actPath) {
-            cb->setText(path);
+            cb->setText(QDir::toNativeSeparators(path));
         } else if (picked == actLine) {
             cb->setText(item->text(0).trimmed());
         }
@@ -986,7 +990,7 @@ int ProjectSearch::currentProgressValue() const {
 }
 
 void ProjectSearch::setFolder(const QString &folder) {
-    if (!folder.isEmpty()) m_folderInput->setText(folder);
+    if (!folder.isEmpty()) m_folderInput->setText(QDir::toNativeSeparators(folder));
 }
 void ProjectSearch::setQuery(const QString &query) {
     m_queryInput->setText(query);
@@ -1133,8 +1137,8 @@ static QTreeWidgetItem *fileParent(QTreeWidgetItem *session,
     auto it = index.find(path);
     if (it != index.end()) return it.value();
     auto *root = new QTreeWidgetItem(session);
-    root->setText(0, QString("  %1").arg(path));
-    root->setToolTip(0, path);
+    root->setText(0, QString("  %1").arg(QDir::toNativeSeparators(path)));
+    root->setToolTip(0, QDir::toNativeSeparators(path));
     root->setData(0, Qt::UserRole, path);
     root->setData(0, Qt::UserRole + 1, 1);
     QFont f = session->treeWidget() ? session->treeWidget()->font() : QFont();
@@ -1175,7 +1179,8 @@ void ProjectSearch::onMatches(const QVector<ProjectSearchMatch> &matches) {
         auto *child = new QTreeWidgetItem(parent);
         child->setText(0, rendered);
         child->setToolTip(0, QString("%1:%2:%3\n%4")
-                              .arg(m.filePath).arg(m.lineNumber).arg(col1).arg(m.lineContent));
+                              .arg(QDir::toNativeSeparators(m.filePath))
+                              .arg(m.lineNumber).arg(col1).arg(m.lineContent));
         child->setData(0, Qt::UserRole, m.filePath);
         child->setData(0, Qt::UserRole + 1, m.lineNumber);
         child->setData(0, Qt::UserRole + 2, col1);

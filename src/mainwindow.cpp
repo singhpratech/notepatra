@@ -1215,7 +1215,7 @@ MainWindow::MainWindow() {
             QFile::rename(ed->filePath(), newPath);
             ed->saveFile(newPath);
             m_tabs->setTabText(idx, name);
-            m_tabs->setTabToolTip(idx, newPath);
+            m_tabs->setTabToolTip(idx, QDir::toNativeSeparators(newPath));
             updateTitle();
         }
     });
@@ -1445,6 +1445,10 @@ Editor *MainWindow::newFile() {
             m_statusBar->updateWords(e->text().split(QRegularExpression("\\s+"), Qt::SkipEmptyParts).size());
         }
     });
+    connect(editor, &Editor::changeHistoryUpdated, this, [this, editor]() {
+        if (currentEditor() == editor)
+            m_statusBar->updateChangeHistory(editor->modifiedLineCount(), editor->savedLineCount());
+    });
 
     return editor;
 }
@@ -1469,7 +1473,7 @@ void MainWindow::openFile(const QString &path) {
     editor->applyTheme(Config::instance().theme);
 
     int idx = m_tabs->addTab(editor, QFileInfo(path).fileName());
-    m_tabs->setTabToolTip(idx, path);
+    m_tabs->setTabToolTip(idx, QDir::toNativeSeparators(path));
     m_tabs->setCurrentIndex(idx);
 
     connect(editor, &QsciScintilla::modificationChanged, this, [this, editor](bool) {
@@ -1484,6 +1488,10 @@ void MainWindow::openFile(const QString &path) {
             m_statusBar->updateLength(e->text().length());
             m_statusBar->updateWords(e->text().split(QRegularExpression("\\s+"), Qt::SkipEmptyParts).size());
         }
+    });
+    connect(editor, &Editor::changeHistoryUpdated, this, [this, editor]() {
+        if (currentEditor() == editor)
+            m_statusBar->updateChangeHistory(editor->modifiedLineCount(), editor->savedLineCount());
     });
 
     updateTitle();
@@ -1747,7 +1755,7 @@ void MainWindow::saveFileAs() {
 
     e->saveFile(path);  // also re-applies lexer if extension changed (v0.1.88.1)
     m_tabs->setTabText(m_tabs->currentIndex(), QFileInfo(path).fileName());
-    m_tabs->setTabToolTip(m_tabs->currentIndex(), path);
+    m_tabs->setTabToolTip(m_tabs->currentIndex(), QDir::toNativeSeparators(path));
     updateTitle();
     updateStatusBar();
 }
@@ -1814,7 +1822,7 @@ void MainWindow::closeTab(int index) {
 void MainWindow::updateTitle() {
     auto *e = currentEditor();
     if (e && !e->filePath().isEmpty())
-        setWindowTitle(e->filePath() + " - Notepatra");
+        setWindowTitle(QDir::toNativeSeparators(e->filePath()) + " - Notepatra");
     else if (e)
         setWindowTitle(m_tabs->tabText(m_tabs->currentIndex()) + " - Notepatra");
     else
@@ -1834,6 +1842,7 @@ void MainWindow::updateStatusBar() {
     m_statusBar->updateLines(e->lines());
     m_statusBar->updateLength(e->text().length());
             m_statusBar->updateWords(e->text().split(QRegularExpression("\\s+"), Qt::SkipEmptyParts).size());
+    m_statusBar->updateChangeHistory(e->modifiedLineCount(), e->savedLineCount());
 }
 
 void MainWindow::updateTabTitle(int index) {
@@ -1957,13 +1966,13 @@ void MainWindow::buildMenus() {
 
     auto *copyClip = edit->addMenu("Copy to Clipboard");
     copyClip->addAction("Copy Full Path", this, [E]() {
-        if (auto *e = E(); e && !e->filePath().isEmpty()) QApplication::clipboard()->setText(e->filePath());
+        if (auto *e = E(); e && !e->filePath().isEmpty()) QApplication::clipboard()->setText(QDir::toNativeSeparators(e->filePath()));
     });
     copyClip->addAction("Copy Filename", this, [E]() {
         if (auto *e = E(); e && !e->filePath().isEmpty()) QApplication::clipboard()->setText(QFileInfo(e->filePath()).fileName());
     });
     copyClip->addAction("Copy Directory", this, [E]() {
-        if (auto *e = E(); e && !e->filePath().isEmpty()) QApplication::clipboard()->setText(QFileInfo(e->filePath()).path());
+        if (auto *e = E(); e && !e->filePath().isEmpty()) QApplication::clipboard()->setText(QDir::toNativeSeparators(QFileInfo(e->filePath()).path()));
     });
     edit->addSeparator();
 
@@ -4423,7 +4432,7 @@ void MainWindow::checkCrashRecovery() {
             int idx = m_tabs->indexOf(editor);
             m_tabs->setTabText(idx, tabName + " [recovered]");
             if (!originalPath.isEmpty()) {
-                m_tabs->setTabToolTip(idx, "Recovered from: " + originalPath);
+                m_tabs->setTabToolTip(idx, "Recovered from: " + QDir::toNativeSeparators(originalPath));
             }
         }
     }
@@ -4561,7 +4570,7 @@ void MainWindow::updateRecentMenu() {
     auto &cfg = Config::instance();
     for (int i = 0; i < cfg.recentFiles.size(); i++) {
         const QString &path = cfg.recentFiles[i];
-        m_recentMenu->addAction(QString("&%1: %2").arg(i + 1).arg(path), this, [this, path]() {
+        m_recentMenu->addAction(QString("&%1: %2").arg(i + 1).arg(QDir::toNativeSeparators(path)), this, [this, path]() {
             openFile(path);
         });
     }

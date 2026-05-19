@@ -7,6 +7,49 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.91] — 2026-05-19
+
+**Notepad++-style per-line change-history strip + holistic path-separator sweep + status-bar change counter + Find/Replace UX upgrade.** Editor-and-UX iteration release; no new file types / lexers / backends / installer changes. All v0.1.90 fixes carry forward unchanged.
+
+### Added
+- **Per-line change-history strip in margin 3** (`src/editor.{h,cpp}`) — orange while edited, green after save. Notepad++ behaviour exactly. Manual implementation via `SCN_MODIFIED` / `SCN_SAVEPOINTREACHED` / `SCN_SAVEPOINTLEFT` because Ubuntu 24.04's QScintilla 2.14.1 ships Scintilla compiled without `SCI_SETCHANGEHISTORY` support (the message round-trips as a no-op; confirmed via PyQt5 round-trip).
+- **Status bar change-line counter** — new `N modified · M saved` label in `src/statusbar.{h,cpp}`; hidden when both counts are zero. Editor maintains parallel `QSet<int>` members + `changeHistoryUpdated()` signal so the counter is O(1) (no buffer walking).
+- **Find/Replace dialog bottom status bar** (`src/findreplace.{h,cpp}`) — Notepad++-style italic line under the tabs; reports every action's result (Find Next, Count, Replace All, Find in Files, Mark All, etc.); blue for success, red for failure; word-wraps long messages.
+- **Find ↔ Replace carry-forward** — switching from Find to Replace (or vice-versa) copies the search string forward when the destination is empty (never clobbers a value already typed there). Hooked into `QTabWidget::currentChanged`.
+- **Find Next two-step wrap at cycle end** — reaching the last match STOPS with `"Reached end of document — press Find Next again to wrap to top"`; second consecutive press actually wraps. Replaces silent wrap-around. Honours the existing wrap-around checkbox.
+
+### Changed
+- **`src/gitgutter.cpp`** — `updateGitGutter()` is now a no-op. Git diff still drives the stage-from-gutter popup (`hunksForFile()` on margin click), but the per-line visual strip is now Change-History (editor state) rather than VCS-diff (file state). Three compounding bugs eliminated at once: marker shape was `Background` (whole-line paint), untracked files marked every line as "added", and `diff -u --no-index` invoked the wrong tool (GNU diff has no `--no-index` flag).
+- **Holistic `QDir::toNativeSeparators` sweep** — 16 new path-display sites wrapped across `src/findreplace.cpp`, `src/fileexplorer.cpp`, `src/mainwindow.cpp`, `src/tabmanager.cpp`, `src/gitpanel.cpp`, `src/welcome.cpp`. No-op on Linux/macOS; converts to `\` on Windows. Includes window title, tab tooltips, recovered-tab tooltips, recent-files menu, clipboard Copy Full Path / Copy Directory, file-explorer breadcrumb combo, git-panel file-row tooltip, Welcome-screen Recent Files panel.
+- **Find/Replace dialog minimum size** bumped 660×400 → 720×440 so the longest status message fits one line at default size; the bottom status bar uses `setWordWrap(true)` so longer messages wrap to a 2nd line rather than truncate.
+
+### Fixed
+- **Stale margin-3 paint after save** — added full-widget `update()` in `onSavePointReached()` because some X11 compositors don't synthesise a margin repaint purely from marker state changes (buffer correct, pixels stale until next scroll).
+- **SCN_MODIFIED line param unreliable** — QScintilla 2.14.1 only fills `line` for fold events; `onScintillaModified()` now recomputes line from `position` via `SCI_LINEFROMPOSITION` when `line <= 0`.
+- **markerAdd/Delete recursion guard** — `SC_MOD_CHANGEMARKER` (0x10000) is filtered out so painting markers doesn't re-fire our handler and mark every line we just changed.
+- **Wholesale `setText()` paints everything orange** — `m_loadingFile` flag wraps every wholesale buffer replacement (loadFile, session restore's modified-tab branch) so the file-open path doesn't mark every line.
+
+### Tests
+- **`test_change_history.cpp` (NEW)** — 16 assertions on bare Editor: insert/delete fire markers; save flips orange to green; load clears state; recompute-from-position fallback works.
+- **`test_change_history_mainwindow.cpp` (NEW)** — 12 assertions through MainWindow + TabManager + Ctrl+S `QAction`. Catches signal-wiring regressions that the bare-Editor test would miss.
+- **`test_change_history_watcher.cpp` (NEW)** — 6 assertions covering the cross-line edit/save scenario with `QFileSystemWatcher` active. Disproved the race-condition hypothesis during debugging.
+- **`test_change_history_stress.cpp` (NEW)** — 10 edit-save cycles across 10 different lines, 20 verifications. No cumulative state corruption.
+- **`test_changehistory_statusbar.cpp` (NEW)** — 14 assertions on the new status-bar counter: hidden on fresh load, fires on every edit and save, decrements green count when a saved line is re-edited.
+- **`test_findreplace_carry_forward.cpp` (NEW)** — 20 assertions across carry-forward (Find↔Replace), non-clobber guard, dialog status bar on Find Next + Replace All, and the full Find Next cycle (3 matches → "Reached end" → wrap → match 1).
+- **39 / 39 ctest pass** (was 33 / 33 in v0.1.90).
+
+### Memory
+- `feedback_path_display_native_separators` — expanded to list all 16 newly-wrapped sites.
+- `feedback_editor_signal_for_status_bar_counters` (NEW) — parallel-set + signal pattern for per-line UI counters.
+- `feedback_tabwidget_carry_forward_non_clobber` (NEW) — QTabWidget input-share pattern with destination-empty guard.
+- `feedback_find_next_two_step_wrap` (NEW) — stop-then-wrap pattern via `findFirst(wrap=false)` + cycle-end flag.
+- `gitgutter-strip-marker-shape` — updated with the v0.1.91 stabilisation caveat (Ubuntu's missing `SCI_SETCHANGEHISTORY`) and 5 implementation rules.
+
+### Carry-forward
+All v0.1.90 fixes carry forward unchanged: Vega-Lite v5 chart pipeline (5 new chart types, multi-metric overlay, dual-axis, universal facet, PNG/SVG/HTML/Spec export, offline vega-embed bundle), DataAnalyst analytical-depth system prompt, Save As "Date Created" column via `QIdentityProxyModel`, all earlier security hardening, factual-audit / download-size / stale-version gates, install-script hard-fail SHA + cosign verify, all 38 GitHub Actions SHA-pinned.
+
+---
+
 ## [0.1.90] — 2026-05-17
 
 **Chart UX revamp — Vega-Lite v5 path for every chart type in Full flavor**, multi-metric overlay, dual-axis, universal facet, PNG/SVG/HTML/Spec export, offline (no JSDelivr in the loop), and a beefed-up Data Analyst playbook so the AI does real multi-step analysis.

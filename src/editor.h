@@ -6,6 +6,7 @@
 #include <Qsci/qsciscintilla.h>
 #include <Qsci/qscilexer.h>
 #include <QString>
+#include <QSet>
 
 class QContextMenuEvent;
 
@@ -98,6 +99,9 @@ signals:
     void cursorPositionUpdated(int line, int col, int pos);
     void encodingChanged(const QString &name);
     void eolModeChanged(const QString &name);
+    // v0.1.92 — emitted whenever m_modifiedLines / m_savedLines changes so
+    // the status bar can refresh its "N unsaved · M saved" counter.
+    void changeHistoryUpdated();
 
 protected:
     void mouseDoubleClickEvent(QMouseEvent *event) override;
@@ -108,6 +112,17 @@ protected:
 private slots:
     void onCursorMoved(int line, int col);
     void onMarginClicked(int margin, int line, Qt::KeyboardModifiers state);
+    // v0.1.91 — manual change-history (Notepad++ style strip in margin 3).
+    // The Ubuntu QScintilla 2.14.1 build has Scintilla compiled without
+    // SCI_SETCHANGEHISTORY support (the message round-trips as a no-op), so
+    // we track per-line modification state ourselves via Scintilla's raw
+    // SCN_MODIFIED / SCN_SAVEPOINTREACHED / SCN_SAVEPOINTLEFT signals.
+    void onScintillaModified(int position, int modificationType,
+                              const char *text, int length, int linesAdded,
+                              int line, int foldLevelNow, int foldLevelPrev,
+                              int token, int annotationLinesAdded);
+    void onSavePointReached();
+    void onSavePointLeft();
 
 private:
     void setupEditor();
@@ -125,6 +140,22 @@ private:
     QString m_encoding = "UTF-8";
     QString m_eolName = "Unix (LF)";
     QString m_themeName;
+    // Change-history bookkeeping. m_loadingFile gates SCN_MODIFIED so the
+    // wholesale setText() during loadFile() doesn't mark every line orange.
+    bool m_loadingFile = false;
+    // Lines edited since the last save point. Used to flip marker 23 →
+    // marker 22 on SCN_SAVEPOINTREACHED.
+    QSet<int> m_modifiedLines;
+    // Lines that have a green (saved-after-edit) marker. Kept parallel to
+    // marker 22 so the status bar can report the saved-line count in O(1)
+    // instead of walking the buffer. Cleared on loadFile/setText reload.
+    QSet<int> m_savedLines;
+
+public:
+    int modifiedLineCount() const { return m_modifiedLines.size(); }
+    int savedLineCount() const { return m_savedLines.size(); }
+
+private:
     bool m_showDocumentRulers = false;
     bool m_showCrosshair = false;
     class EditorRulerBand *m_horizontalRuler = nullptr;

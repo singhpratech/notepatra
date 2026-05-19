@@ -45,6 +45,14 @@ NppStatusBar::NppStatusBar(QWidget *parent) : QWidget(parent) {
     lay->addWidget(m_pos);
     lay->addWidget(makeSep());
 
+    // v0.1.92 — change-history counter. Hidden when no lines have been
+    // edited (avoids visual noise on freshly-loaded files / pure-readers).
+    m_changes = makeLabel("", 160);
+    m_changes->setToolTip("Modified (unsaved) lines · saved-this-session lines");
+    m_changes->setVisible(false);
+    lay->addWidget(m_changes);
+    lay->addWidget(makeSep());
+
     m_eol = makeLabel("Unix (LF)", 90);
     m_eol->setCursor(Qt::PointingHandCursor);
     m_eol->setToolTip("Click to change line endings");
@@ -92,6 +100,16 @@ void NppStatusBar::updateWords(int count) {
     int wIdx = t.indexOf("words");
     if (wIdx >= 0) t = t.left(wIdx).trimmed();
     m_size->setText(t + QString("   words : %1").arg(count));
+}
+
+void NppStatusBar::updateChangeHistory(int modified, int saved) {
+    if (modified == 0 && saved == 0) {
+        m_changes->setText("");
+        m_changes->setVisible(false);
+        return;
+    }
+    m_changes->setVisible(true);
+    m_changes->setText(QString("%1 modified  ·  %2 saved").arg(modified).arg(saved));
 }
 
 void NppStatusBar::updateLanguage(const QString &lang) { m_lang->setText(" " + lang); }

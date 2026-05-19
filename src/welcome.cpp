@@ -317,7 +317,7 @@ void WelcomeWidget::buildRecentFiles(QVBoxLayout *parent) {
         QFileInfo fi(path);
         if (!fi.exists()) continue;
 
-        auto *btn = new QPushButton(QString("  %1  ·  %2").arg(fi.fileName(), fi.absolutePath()));
+        auto *btn = new QPushButton(QString("  %1  ·  %2").arg(fi.fileName(), QDir::toNativeSeparators(fi.absolutePath())));
         btn->setStyleSheet(QString(
             "QPushButton { background: transparent; color: %1; border: none; "
             "padding: 6px 8px; text-align: left; font-size: 13px; border-radius: 4px; }"

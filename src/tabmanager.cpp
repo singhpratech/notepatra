@@ -9,6 +9,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QClipboard>
+#include <QDir>
 #include <QFileInfo>
 #include <QInputDialog>
 #include <QColorDialog>
@@ -89,13 +90,13 @@ void TabManager::showTabContextMenu(int index, const QPoint &globalPos) {
     if (editor && !editor->filePath().isEmpty()) {
         // ── Copy to Clipboard — flat, not submenu ──
         menu.addAction("Copy Full Path", this, [editor]() {
-            QApplication::clipboard()->setText(editor->filePath());
+            QApplication::clipboard()->setText(QDir::toNativeSeparators(editor->filePath()));
         });
         menu.addAction("Copy Filename", this, [editor]() {
             QApplication::clipboard()->setText(QFileInfo(editor->filePath()).fileName());
         });
         menu.addAction("Copy Directory Path", this, [editor]() {
-            QApplication::clipboard()->setText(QFileInfo(editor->filePath()).path());
+            QApplication::clipboard()->setText(QDir::toNativeSeparators(QFileInfo(editor->filePath()).path()));
         });
 
         menu.addSeparator();

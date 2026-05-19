@@ -20,6 +20,11 @@ public:
     void updateEncoding(const QString &enc);
     void updateEol(const QString &eol);
     void updateInsertMode(bool overwrite);
+    // v0.1.92 — per-tab line-level change history counter shown after the
+    // cursor position. modified = lines edited but not saved yet; saved =
+    // lines that have been edited at some point during the session and
+    // already persisted to disk.
+    void updateChangeHistory(int modified, int saved);
     void applyColors(const QString &bg, const QString &fg, const QString &sep);
 
 signals:
@@ -35,7 +40,7 @@ protected:
     void mousePressEvent(QMouseEvent *event) override;
 
 private:
-    QLabel *m_lang, *m_size, *m_pos, *m_eol, *m_enc, *m_ins;
+    QLabel *m_lang, *m_size, *m_pos, *m_changes, *m_eol, *m_enc, *m_ins;
 };
 
 #endif

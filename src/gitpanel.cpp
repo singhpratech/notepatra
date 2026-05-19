@@ -713,7 +713,7 @@ void GitPanel::addFileRow(QTreeWidgetItem *parent, const GitFileEntry &entry, bo
     item->setData(0, KindRole, KindFile);
     item->setData(0, PathRole, entry.path);
     item->setData(0, StagedRole, staged);
-    item->setToolTip(0, entry.path);  // full path on hover (narrow panel fix)
+    item->setToolTip(0, QDir::toNativeSeparators(entry.path));  // full path on hover (narrow panel fix)
 
     // Color by status code — aligns with the palette's accent/success/error
     // conventions so Light and Dark both read correctly.

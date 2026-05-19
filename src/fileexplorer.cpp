@@ -110,8 +110,8 @@ FileExplorer::FileExplorer(QWidget *parent) : QWidget(parent) {
 
     m_pathCombo = new QComboBox;
     m_pathCombo->setEditable(true);
-    m_pathCombo->addItem(QDir::homePath());
-    m_pathCombo->addItem("/");
+    m_pathCombo->addItem(QDir::toNativeSeparators(QDir::homePath()));
+    m_pathCombo->addItem(QDir::toNativeSeparators("/"));
     header->addWidget(m_pathCombo, 1);
 
     auto *upBtn = new QPushButton("↑");
@@ -154,7 +154,7 @@ FileExplorer::FileExplorer(QWidget *parent) : QWidget(parent) {
     connect(upBtn, &QPushButton::clicked, this, [this]() {
         QDir dir(m_rootPath);
         if (dir.cdUp())
-            m_pathCombo->setCurrentText(dir.absolutePath());
+            m_pathCombo->setCurrentText(QDir::toNativeSeparators(dir.absolutePath()));
     });
 
     connect(m_tree, &QTreeView::doubleClicked, this, [this](const QModelIndex &proxyIdx) {
@@ -163,7 +163,7 @@ FileExplorer::FileExplorer(QWidget *parent) : QWidget(parent) {
         if (QFileInfo(path).isFile())
             emit fileOpenRequested(path);
         else if (QFileInfo(path).isDir())
-            m_pathCombo->setCurrentText(path);
+            m_pathCombo->setCurrentText(QDir::toNativeSeparators(path));
     });
 
     // v0.1.61 — right-click menu: Hide adds the clicked node's absolute
@@ -204,7 +204,7 @@ FileExplorer::FileExplorer(QWidget *parent) : QWidget(parent) {
 void FileExplorer::setRoot(const QString &path) {
     if (QFileInfo(path).isDir()) {
         m_rootPath = path;
-        m_pathCombo->setCurrentText(path);
+        m_pathCombo->setCurrentText(QDir::toNativeSeparators(path));
     }
 }
 

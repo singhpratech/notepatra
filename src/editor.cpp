@@ -337,6 +337,16 @@ Editor::Editor(QWidget *parent) : QsciScintilla(parent) {
 
     connect(this, &QsciScintilla::cursorPositionChanged, this, &Editor::onCursorMoved);
     connect(this, &QsciScintilla::marginClicked, this, &Editor::onMarginClicked);
+
+    // v0.1.91 — manual change-history tracking. SCN_MODIFIED tells us which
+    // lines changed; SCN_SAVEPOINTREACHED tells us the user just saved (or
+    // we just loaded — guarded by m_loadingFile).
+    connect(this, &QsciScintillaBase::SCN_MODIFIED,
+            this, &Editor::onScintillaModified);
+    connect(this, &QsciScintillaBase::SCN_SAVEPOINTREACHED,
+            this, &Editor::onSavePointReached);
+    connect(this, &QsciScintillaBase::SCN_SAVEPOINTLEFT,
+            this, &Editor::onSavePointLeft);
     connect(horizontalScrollBar(), &QScrollBar::valueChanged, this, [this]() { syncMeasurementUi(); });
     connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this]() { syncMeasurementUi(); });
 
@@ -645,23 +655,56 @@ void Editor::setupMargins() {
     setMarkerForegroundColor(QColor("#FF0000"), 0);
     setMarkerBackgroundColor(QColor("#FF0000"), 0);
 
-    // Git gutter markers (margin 3)
+    // ─── Change-history gutter (margin 3) ────────────────────────────────
+    // v0.1.91 — switched from per-file git-diff painting to Scintilla's
+    // built-in Change History. Behaves like Notepad++'s Change History:
+    //   • Edit a line → orange strip on the margin (unsaved change).
+    //   • Save the file → strip turns green (saved change since file open).
+    //   • Works for ANY file, in git or not — no git dependency for visuals.
+    //
+    // Margin click is still sensitive: onMarginClicked() falls back to
+    // GitGutter::hunksForFile() to pop the stage-from-gutter dialog when
+    // the file IS in a repo. The two features now coexist cleanly — the
+    // visual strip tracks editor state; the click tracks repo state.
     setMarginType(3, QsciScintilla::SymbolMargin);
     setMarginWidth(3, 4);
-    // v0.1.62 — margin is now sensitive so QScintilla emits marginClicked
-    // for the green / yellow / red bars. The handler in onMarginClicked
-    // looks up the containing hunk via GitGutter::hunksForFile and pops
-    // the GutterHunkPopup at the clicked line.
     setMarginSensitivity(3, true);
-    // Marker 1 = git added (green bar)
-    markerDefine(QsciScintilla::Background, 1);
-    setMarkerBackgroundColor(QColor("#4CAF50"), 1);
-    // Marker 2 = git modified (yellow bar)
-    markerDefine(QsciScintilla::Background, 2);
-    setMarkerBackgroundColor(QColor("#FFC107"), 2);
-    // Marker 3 = git deleted (red bar)
-    markerDefine(QsciScintilla::Background, 3);
-    setMarkerBackgroundColor(QColor("#F44336"), 3);
+
+    // Scintilla marker numbers reserved for change history (SC_MARKNUM_*):
+    //   21 REVERTED_TO_ORIGIN          — edited, then reverted (no diff vs disk)
+    //   22 SAVED                       — modified and saved → GREEN
+    //   23 MODIFIED                    — modified, unsaved   → ORANGE
+    //   24 REVERTED_TO_MODIFIED        — modified, then reverted back to saved-modified
+    constexpr int kHistRevertOrigin   = 21;
+    constexpr int kHistSaved          = 22;
+    constexpr int kHistModified       = 23;
+    constexpr int kHistRevertModified = 24;
+
+    auto defineHistMarker = [this](int id, const QColor &c) {
+        markerDefine(QsciScintilla::FullRectangle, id);
+        setMarkerBackgroundColor(c, id);
+        setMarkerForegroundColor(c, id);
+    };
+    defineHistMarker(kHistSaved,          QColor("#4CAF50")); // green
+    defineHistMarker(kHistModified,       QColor("#FF9800")); // orange
+    defineHistMarker(kHistRevertOrigin,   QColor("#9E9E9E")); // gray
+    defineHistMarker(kHistRevertModified, QColor("#FFC107")); // amber
+
+    // NOTE: Scintilla's SCI_SETCHANGEHISTORY (msg 2780) is silently dropped
+    // by the QScintilla 2.14.1 build that ships on Ubuntu 24.04 — the
+    // bundled Scintilla was compiled without the feature. We implement the
+    // same UX manually via SCN_MODIFIED / SCN_SAVEPOINT* signals connected
+    // in the constructor. See onScintillaModified() / onSavePointReached().
+
+    // Constrain margin 3 to render ONLY change-history markers (21..24),
+    // not bookmark (0) or any other future markers added in other margins.
+    const long histMask = (1L << kHistRevertOrigin) |
+                          (1L << kHistSaved) |
+                          (1L << kHistModified) |
+                          (1L << kHistRevertModified);
+    SendScintilla(SCI_SETMARGINMASKN, 3, histMask);
+    // Bookmark margin (margin 1) should ONLY show marker 0 (the red dot).
+    SendScintilla(SCI_SETMARGINMASKN, 1, (long)(1L << 0));
 
     // Setup indicator 9 for double-click word highlight — NEON orange
     // (#FF5500) with high alpha so matches pop. Pure-saturation orange
@@ -716,6 +759,16 @@ bool Editor::loadFile(const QString &path) {
         return false;
     }
 
+    // Guard the wholesale setText() below: SCN_MODIFIED will fire with
+    // INSERTTEXT for every byte loaded, which would mark every line as
+    // "user-modified" and paint an orange strip across the whole file.
+    // onScintillaModified() skips its work while m_loadingFile is true.
+    m_loadingFile = true;
+    m_modifiedLines.clear();
+    m_savedLines.clear();
+    markerDeleteAll(22);
+    markerDeleteAll(23);
+
     if (result.status == 1 || result.status == 2) {
         // Binary or too large — show info text
         setText(result.text);
@@ -725,6 +778,7 @@ bool Editor::loadFile(const QString &path) {
         m_eolName = "N/A";
         m_filePath = path;
         setModified(false);
+        m_loadingFile = false;
         return true;
     }
 
@@ -739,6 +793,7 @@ bool Editor::loadFile(const QString &path) {
 
     setText(result.text);
     setModified(false);
+    m_loadingFile = false;
 
     if (result.truncated) {
         setReadOnly(true);
@@ -1722,17 +1777,105 @@ void Editor::goToMatchingBrace() {
 }
 
 void Editor::updateGitGutter() {
-    // Clear existing git markers
-    markerDeleteAll(1);
-    markerDeleteAll(2);
-    markerDeleteAll(3);
+    // v0.1.91 — Visual painting moved to manual change-history tracking
+    // (onScintillaModified / onSavePointReached / onSavePointLeft below).
+    // Behaves like Notepad++'s Change History — orange strip on the margin
+    // for modified-since-open lines, green strip after save.
+    //
+    // The function is kept as a no-op because several call sites
+    // (mainwindow save/load hooks, edit-event hooks) still call it. The
+    // stage-from-gutter popup remains wired through onMarginClicked →
+    // GitGutter::hunksForFile, so the repo-aware click action is unchanged.
+}
 
-    if (m_filePath.isEmpty()) return;
+// ─── Manual change-history (Notepad++ style margin-3 strip) ──────────────
+//
+// Why manual: Scintilla v5.3+ has SCI_SETCHANGEHISTORY but the QScintilla
+// 2.14.1 build distributed by Ubuntu 24.04 was compiled without the feature
+// (verified via SCI_GETCHANGEHISTORY round-tripping 0 for any input). We
+// reproduce the same UX by listening to Scintilla's raw SCN_MODIFIED and
+// SCN_SAVEPOINT* notifications and toggling marker 22 (saved-since-open,
+// green) / marker 23 (modified-since-save, orange) per line ourselves.
+//
+// Marker IDs match what setupEditor() defined and what the margin-3 mask
+// permits. m_loadingFile gates the wholesale setText() in loadFile() so we
+// don't paint every line orange on file open.
 
-    auto changes = GitGutter::getChangedLines(m_filePath, text());
-    for (const auto &change : changes) {
-        if (change.line > 0 && change.line <= lines()) {
-            markerAdd(change.line - 1, change.status); // 1=added, 2=modified, 3=deleted
-        }
+void Editor::onScintillaModified(int position, int modificationType,
+                                  const char *text, int length, int linesAdded,
+                                  int line, int /*foldLevelNow*/,
+                                  int /*foldLevelPrev*/, int /*token*/,
+                                  int /*annotationLinesAdded*/) {
+    Q_UNUSED(text);
+    Q_UNUSED(length);
+    if (m_loadingFile) return;
+
+    // Bits we care about: SC_MOD_INSERTTEXT (0x01) and SC_MOD_DELETETEXT
+    // (0x02). Skip pure style / margin / fold / line-state events.
+    constexpr int kInsert = 0x01;
+    constexpr int kDelete = 0x02;
+    if ((modificationType & (kInsert | kDelete)) == 0) return;
+
+    // Compute the first line affected. SCN_MODIFIED supplies `line` but
+    // some bindings forward 0 for single-line edits — fall back to
+    // recomputing from position.
+    int startLine = line;
+    if (startLine <= 0) {
+        startLine = static_cast<int>(SendScintilla(SCI_LINEFROMPOSITION,
+                                                   (unsigned long)position,
+                                                   (long)0));
     }
+
+    // Affected line span: startLine .. startLine + max(0, linesAdded).
+    // For a single-line edit linesAdded == 0 → just startLine.
+    const int spanEnd = startLine + (linesAdded > 0 ? linesAdded : 0);
+
+    for (int ln = startLine; ln <= spanEnd; ++ln) {
+        if (ln < 0 || ln >= lines()) continue;
+        m_modifiedLines.insert(ln);
+        m_savedLines.remove(ln);
+        // Promote: line was previously "saved" (green) but is now edited
+        // again — remove green, add orange.
+        markerDelete(ln, 22);
+        markerAdd(ln, 23);
+    }
+    emit changeHistoryUpdated();
+}
+
+void Editor::onSavePointReached() {
+    // File-on-disk matches the buffer. Flip every orange-marked line to
+    // green to indicate "this line WAS edited, and that edit is now saved".
+    if (m_loadingFile) {
+        // Save-point during load is the post-setText() setModified(false)
+        // call — not a user save. Don't flip anything, just clear state.
+        m_modifiedLines.clear();
+        m_savedLines.clear();
+        markerDeleteAll(22);
+        markerDeleteAll(23);
+        emit changeHistoryUpdated();
+        return;
+    }
+    // BELT: every orange marker becomes green on save, regardless of
+    // whether m_modifiedLines is in sync (which it might not be if a
+    // modification arrived through a code path that bypassed our
+    // SCN_MODIFIED handler — e.g. setText() outside loadFile()).
+    markerDeleteAll(23);
+    // BRACES: paint green on every line we know was edited.
+    for (int ln : m_modifiedLines) {
+        if (ln < 0 || ln >= lines()) continue;
+        markerAdd(ln, 22);
+        m_savedLines.insert(ln);
+    }
+    m_modifiedLines.clear();
+    emit changeHistoryUpdated();
+    // Force a margin repaint. Some X11 / compositor combinations don't
+    // synthesise a paint event purely from markerDelete/markerAdd state
+    // changes — the buffer is correct, but the user keeps seeing the
+    // stale pixel until the next scroll or click.
+    update();
+}
+
+void Editor::onSavePointLeft() {
+    // Buffer diverged from disk again. Nothing to do — subsequent
+    // onScintillaModified() calls will paint orange on the edited lines.
 }
