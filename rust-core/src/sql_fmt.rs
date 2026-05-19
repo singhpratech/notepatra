@@ -17,8 +17,10 @@
 
 use sqlformat::{format as legacy_format, FormatOptions, Indent, QueryParams};
 use sqlparser::ast::{
-    Cte, Expr, GroupByExpr, Join, JoinConstraint, JoinOperator, ObjectName, OrderByExpr, Query,
-    Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins, With,
+    Cte, Distinct, Expr, Fetch, GroupByExpr, Join, JoinConstraint, JoinOperator, MergeAction,
+    MergeClause, MergeClauseKind, ObjectName, ObjectNamePart, OrderBy, OrderByExpr, OrderByKind,
+    Query, Select, SelectItem, SelectItemQualifiedWildcardKind, SetExpr, Statement, TableFactor,
+    TableObject, TableWithJoins, UpdateTableFromKind, With,
 };
 use sqlparser::dialect::{
     AnsiDialect, Dialect, GenericDialect, MsSqlDialect, MySqlDialect, PostgreSqlDialect,
@@ -73,6 +75,448 @@ pub fn format_sql_compact(
     )
 }
 
+/// v0.1.92 — Protect T-SQL bracket-quoted identifiers (`[onelook-db-1]`,
+/// `[Order Details]`, `[my-db].[dbo].[my-table]`) so neither the primary
+/// parser nor the legacy sqlformat fallback can mangle them. Everything
+/// between `[` and the matching `]` is opaque per T-SQL semantics —
+/// hyphens, spaces, punctuation included. T-SQL escapes a literal `]`
+/// inside the identifier as `]]`.
+///
+/// Returns (masked_input, originals). Caller restores by replacing the
+/// placeholders in the formatted output.
+fn protect_bracket_identifiers(input: &str) -> (String, Vec<String>) {
+    let bytes = input.as_bytes();
+    let mut out = String::with_capacity(input.len());
+    let mut originals: Vec<String> = Vec::new();
+    let mut i = 0;
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+
+    while i < bytes.len() {
+        let c = bytes[i];
+
+        if in_line_comment {
+            out.push(c as char);
+            if c == b'\n' {
+                in_line_comment = false;
+            }
+            i += 1;
+            continue;
+        }
+        if in_block_comment {
+            out.push(c as char);
+            if c == b'*' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+                out.push('/');
+                in_block_comment = false;
+                i += 2;
+                continue;
+            }
+            i += 1;
+            continue;
+        }
+        if in_single {
+            out.push(c as char);
+            if c == b'\'' {
+                // Handle SQL '' escape — stays inside string.
+                if i + 1 < bytes.len() && bytes[i + 1] == b'\'' {
+                    out.push('\'');
+                    i += 2;
+                    continue;
+                }
+                in_single = false;
+            }
+            i += 1;
+            continue;
+        }
+        if in_double {
+            out.push(c as char);
+            if c == b'"' {
+                in_double = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        // Not inside any quote/comment — check for new state entry.
+        if c == b'\'' {
+            in_single = true;
+            out.push('\'');
+            i += 1;
+            continue;
+        }
+        if c == b'"' {
+            in_double = true;
+            out.push('"');
+            i += 1;
+            continue;
+        }
+        if c == b'-' && i + 1 < bytes.len() && bytes[i + 1] == b'-' {
+            in_line_comment = true;
+            out.push_str("--");
+            i += 2;
+            continue;
+        }
+        if c == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+            in_block_comment = true;
+            out.push_str("/*");
+            i += 2;
+            continue;
+        }
+
+        // Bracket-identifier: capture from `[` through matching unescaped `]`.
+        // T-SQL escapes a literal `]` inside the identifier as `]]`.
+        if c == b'[' {
+            let start = i;
+            let mut j = i + 1;
+            let mut found_end = false;
+            while j < bytes.len() {
+                if bytes[j] == b']' {
+                    if j + 1 < bytes.len() && bytes[j + 1] == b']' {
+                        j += 2; // escaped ]] — keep scanning
+                        continue;
+                    }
+                    found_end = true;
+                    break;
+                }
+                j += 1;
+            }
+            if found_end {
+                let original = std::str::from_utf8(&bytes[start..=j])
+                    .unwrap_or("")
+                    .to_string();
+                let placeholder = format!("__NP_BR_{}__", originals.len());
+                originals.push(original);
+                out.push_str(&placeholder);
+                i = j + 1;
+                continue;
+            }
+            // Unmatched `[` — leave as-is so the parser can flag the issue.
+        }
+
+        out.push(c as char);
+        i += 1;
+    }
+    (out, originals)
+}
+
+/// Restore protected bracket identifiers in the formatted output. Walks
+/// every `__NP_BR_N__` placeholder and substitutes the original literal
+/// (including the surrounding `[...]`). Trailing whitespace inside the
+/// placeholder region — added by the formatter around what it thought was
+/// an operator — is collapsed.
+fn restore_bracket_identifiers(output: &str, originals: &[String]) -> String {
+    if originals.is_empty() {
+        return output.to_string();
+    }
+    let mut result = output.to_string();
+    for (i, original) in originals.iter().enumerate() {
+        let placeholder = format!("__NP_BR_{}__", i);
+        result = result.replace(&placeholder, original);
+    }
+    result
+}
+
+/// v0.1.92 — Split a T-SQL input on `GO` batch separators. `GO` must be on
+/// its own line (whitespace allowed before/after) and outside any string or
+/// comment. Returns the list of batches in order. Single-batch input (no
+/// `GO` anywhere) returns one element. Same string/comment state tracking as
+/// `protect_bracket_identifiers`.
+fn split_tsql_go_batches(input: &str) -> Vec<String> {
+    let bytes = input.as_bytes();
+    let mut batches: Vec<String> = Vec::new();
+    let mut cur = String::with_capacity(input.len());
+    let mut i = 0;
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+
+    while i < bytes.len() {
+        let c = bytes[i];
+        if in_line_comment {
+            cur.push(c as char);
+            if c == b'\n' {
+                in_line_comment = false;
+            }
+            i += 1;
+            continue;
+        }
+        if in_block_comment {
+            cur.push(c as char);
+            if c == b'*' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+                cur.push('/');
+                in_block_comment = false;
+                i += 2;
+                continue;
+            }
+            i += 1;
+            continue;
+        }
+        if in_single {
+            cur.push(c as char);
+            if c == b'\'' {
+                if i + 1 < bytes.len() && bytes[i + 1] == b'\'' {
+                    cur.push('\'');
+                    i += 2;
+                    continue;
+                }
+                in_single = false;
+            }
+            i += 1;
+            continue;
+        }
+        if in_double {
+            cur.push(c as char);
+            if c == b'"' {
+                in_double = false;
+            }
+            i += 1;
+            continue;
+        }
+        if c == b'\'' {
+            in_single = true;
+            cur.push('\'');
+            i += 1;
+            continue;
+        }
+        if c == b'"' {
+            in_double = true;
+            cur.push('"');
+            i += 1;
+            continue;
+        }
+        if c == b'-' && i + 1 < bytes.len() && bytes[i + 1] == b'-' {
+            in_line_comment = true;
+            cur.push_str("--");
+            i += 2;
+            continue;
+        }
+        if c == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+            in_block_comment = true;
+            cur.push_str("/*");
+            i += 2;
+            continue;
+        }
+
+        // Detect `GO` on its own line outside any quote/comment. Match the
+        // beginning of a line (i==0 OR previous char is '\n'), optional
+        // whitespace, the literal `GO` (case-insensitive), optional whitespace,
+        // then end-of-line or end-of-input.
+        let at_line_start = i == 0 || bytes[i - 1] == b'\n';
+        if at_line_start {
+            let mut j = i;
+            while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
+                j += 1;
+            }
+            if j + 1 < bytes.len()
+                && (bytes[j] == b'G' || bytes[j] == b'g')
+                && (bytes[j + 1] == b'O' || bytes[j + 1] == b'o')
+            {
+                let after_go = j + 2;
+                // Verify what follows: only whitespace then \n or EOF.
+                let mut k = after_go;
+                while k < bytes.len()
+                    && (bytes[k] == b' ' || bytes[k] == b'\t' || bytes[k] == b'\r')
+                {
+                    k += 1;
+                }
+                if k == bytes.len() || bytes[k] == b'\n' {
+                    // Commit current batch, advance past the line.
+                    let trimmed = cur.trim_end_matches(['\n', '\r']).to_string();
+                    if !trimmed.trim().is_empty() {
+                        batches.push(trimmed);
+                    }
+                    cur = String::new();
+                    i = if k < bytes.len() { k + 1 } else { k };
+                    continue;
+                }
+            }
+        }
+
+        cur.push(c as char);
+        i += 1;
+    }
+    let trimmed = cur.trim_end_matches(['\n', '\r']).to_string();
+    if !trimmed.trim().is_empty() {
+        batches.push(trimmed);
+    }
+    if batches.is_empty() {
+        batches.push(String::new());
+    }
+    batches
+}
+
+/// v0.1.92 — Protect T-SQL `PRINT '...'` statements. sqlparser 0.55 doesn't
+/// recognize PRINT as a statement type. We capture `PRINT <expr>` from a
+/// statement boundary (start-of-input or after `;`) through the next
+/// semicolon-or-EOL and replace it with an inline SELECT placeholder that
+/// parses cleanly. The original PRINT is restored verbatim after format.
+fn protect_print_statements(input: &str) -> (String, Vec<String>) {
+    let bytes = input.as_bytes();
+    let mut out = String::with_capacity(input.len());
+    let mut originals: Vec<String> = Vec::new();
+    let mut i = 0;
+    let mut at_stmt_start = true; // true at file start; true after `;` + ws
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+
+    while i < bytes.len() {
+        let c = bytes[i];
+        if in_line_comment {
+            out.push(c as char);
+            if c == b'\n' {
+                in_line_comment = false;
+            }
+            i += 1;
+            continue;
+        }
+        if in_block_comment {
+            out.push(c as char);
+            if c == b'*' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+                out.push('/');
+                in_block_comment = false;
+                i += 2;
+                continue;
+            }
+            i += 1;
+            continue;
+        }
+        if in_single {
+            out.push(c as char);
+            if c == b'\'' {
+                if i + 1 < bytes.len() && bytes[i + 1] == b'\'' {
+                    out.push('\'');
+                    i += 2;
+                    continue;
+                }
+                in_single = false;
+            }
+            i += 1;
+            continue;
+        }
+        if in_double {
+            out.push(c as char);
+            if c == b'"' {
+                in_double = false;
+            }
+            i += 1;
+            continue;
+        }
+        if c == b'\'' {
+            in_single = true;
+            out.push('\'');
+            at_stmt_start = false;
+            i += 1;
+            continue;
+        }
+        if c == b'"' {
+            in_double = true;
+            out.push('"');
+            at_stmt_start = false;
+            i += 1;
+            continue;
+        }
+        if c == b'-' && i + 1 < bytes.len() && bytes[i + 1] == b'-' {
+            in_line_comment = true;
+            out.push_str("--");
+            i += 2;
+            continue;
+        }
+        if c == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+            in_block_comment = true;
+            out.push_str("/*");
+            i += 2;
+            continue;
+        }
+        if c == b';' {
+            out.push(';');
+            i += 1;
+            at_stmt_start = true;
+            continue;
+        }
+        if c == b' ' || c == b'\t' || c == b'\n' || c == b'\r' {
+            out.push(c as char);
+            i += 1;
+            continue;
+        }
+
+        if at_stmt_start {
+            // Look ahead for PRINT (case-insensitive) followed by whitespace.
+            let remaining = &bytes[i..];
+            if remaining.len() >= 6
+                && remaining[..5].eq_ignore_ascii_case(b"PRINT")
+                && (remaining[5] == b' ' || remaining[5] == b'\t' || remaining[5] == b'\n')
+            {
+                // Capture through the next `;` or newline (whichever comes
+                // first), respecting string state so an embedded `;` in a
+                // literal doesn't terminate the PRINT.
+                let start = i;
+                let mut j = i + 5;
+                let mut in_sq = false;
+                while j < bytes.len() {
+                    let b = bytes[j];
+                    if in_sq {
+                        if b == b'\'' {
+                            if j + 1 < bytes.len() && bytes[j + 1] == b'\'' {
+                                j += 2;
+                                continue;
+                            }
+                            in_sq = false;
+                        }
+                        j += 1;
+                        continue;
+                    }
+                    if b == b'\'' {
+                        in_sq = true;
+                        j += 1;
+                        continue;
+                    }
+                    if b == b';' || b == b'\n' {
+                        break;
+                    }
+                    j += 1;
+                }
+                let original = std::str::from_utf8(&bytes[start..j])
+                    .unwrap_or("")
+                    .to_string();
+                let placeholder = format!("SELECT '__NP_PR_{}__'", originals.len());
+                originals.push(original);
+                out.push_str(&placeholder);
+                i = j;
+                at_stmt_start = false;
+                continue;
+            }
+            at_stmt_start = false;
+        }
+
+        out.push(c as char);
+        i += 1;
+    }
+    (out, originals)
+}
+
+fn restore_print_statements(output: &str, originals: &[String]) -> String {
+    if originals.is_empty() {
+        return output.to_string();
+    }
+    let mut result = output.to_string();
+    for (idx, original) in originals.iter().enumerate() {
+        // The placeholder was emitted as `SELECT '__NP_PR_N__'` and the
+        // pretty-printer may have appended `;` and surrounding whitespace.
+        // Replace both the bare placeholder body and the wrapping SELECT
+        // form so PRINT replaces the whole synthetic statement.
+        let wrapped = format!("SELECT '__NP_PR_{}__'", idx);
+        let wrapped_lower = format!("select '__NP_PR_{}__'", idx);
+        result = result.replace(&wrapped, original);
+        result = result.replace(&wrapped_lower, original);
+    }
+    result
+}
+
 fn format_sql_inner(
     input: &str,
     indent_width: usize,
@@ -88,10 +532,77 @@ fn format_sql_inner(
             input
         );
     }
-    let dialect = pick_dialect(dialect_name);
     let indent_width = indent_width.clamp(1, 8);
 
-    match Parser::parse_sql(&*dialect, input) {
+    // v0.1.92 — for T-SQL inputs, split on GO batch separators and format each
+    // batch independently. Non-T-SQL (or T-SQL without any GO) reduces to a
+    // single batch. Re-emit the GO line between formatted batches.
+    let is_tsql = matches!(
+        dialect_name.to_lowercase().as_str(),
+        "mssql" | "tsql" | "sqlserver" | "t-sql"
+    );
+    let batches = if is_tsql {
+        split_tsql_go_batches(input)
+    } else {
+        vec![input.to_string()]
+    };
+
+    if batches.len() == 1 {
+        return format_one_batch(
+            &batches[0],
+            indent_width,
+            uppercase,
+            dialect_name,
+            compact,
+            is_tsql,
+        );
+    }
+
+    let go_sep = if uppercase { "\nGO\n" } else { "\ngo\n" };
+    let mut out = String::new();
+    for (i, batch) in batches.iter().enumerate() {
+        if i > 0 {
+            out.push_str(go_sep);
+        }
+        out.push_str(&format_one_batch(
+            batch,
+            indent_width,
+            uppercase,
+            dialect_name,
+            compact,
+            is_tsql,
+        ));
+    }
+    out
+}
+
+fn format_one_batch(
+    input: &str,
+    indent_width: usize,
+    uppercase: bool,
+    dialect_name: &str,
+    compact: bool,
+    is_tsql: bool,
+) -> String {
+    let dialect = pick_dialect(dialect_name);
+
+    // v0.1.92 — for T-SQL, mask PRINT statements before parsing.
+    let (input_after_print, print_originals) = if is_tsql {
+        protect_print_statements(input)
+    } else {
+        (input.to_string(), Vec::new())
+    };
+
+    // v0.1.92 — mask T-SQL bracket-quoted identifiers so neither parser
+    // mangles them. Restored verbatim before returning.
+    let (masked_input, bracket_originals) = protect_bracket_identifiers(&input_after_print);
+    let parse_target = if bracket_originals.is_empty() {
+        input_after_print.as_str()
+    } else {
+        masked_input.as_str()
+    };
+
+    let raw = match Parser::parse_sql(&*dialect, parse_target) {
         Ok(stmts) if !stmts.is_empty() => {
             let mut out = String::new();
             for (i, stmt) in stmts.iter().enumerate() {
@@ -124,7 +635,7 @@ fn format_sql_inner(
                 lines_between_queries: if compact { 1 } else { 2 },
                 ..FormatOptions::default()
             };
-            let legacy = legacy_format(input, &QueryParams::None, &options);
+            let legacy = legacy_format(parse_target, &QueryParams::None, &options);
             format!(
                 "-- (parser fallback: syntax unsupported by our parser)\n{}",
                 if compact {
@@ -134,7 +645,10 @@ fn format_sql_inner(
                 }
             )
         }
-    }
+    };
+
+    let with_brackets = restore_bracket_identifiers(&raw, &bracket_originals);
+    restore_print_statements(&with_brackets, &print_originals)
 }
 
 // Collapse the writer's expanded form into a tight one-line-where-possible
@@ -299,6 +813,7 @@ impl Writer {
                 from,
                 selection,
                 returning,
+                ..
             } => self.write_update(
                 table,
                 assignments,
@@ -308,6 +823,16 @@ impl Writer {
             ),
             Statement::Delete(d) => self.write_delete(d),
             Statement::Insert(ins) => self.write_insert(ins),
+            // v0.1.92 — MERGE statement (T-SQL, Oracle, ANSI, BigQuery).
+            // Previously fell through to Display, which collapsed the entire
+            // statement onto one line.
+            Statement::Merge {
+                into,
+                table,
+                source,
+                on,
+                clauses,
+            } => self.write_merge(*into, table, source, on, clauses),
             other => {
                 // DDL and other niche statements — sqlparser's Display.
                 let s = format!("{}", other);
@@ -320,14 +845,30 @@ impl Writer {
         &mut self,
         table: &TableWithJoins,
         assignments: &[sqlparser::ast::Assignment],
-        from: Option<&TableWithJoins>,
+        from: Option<&UpdateTableFromKind>,
         selection: Option<&Expr>,
         returning: Option<&[SelectItem]>,
     ) {
+        // T-SQL / Snowflake `UPDATE FROM t SET ...` puts FROM before SET.
+        let (from_tables, from_before_set) = match from {
+            Some(UpdateTableFromKind::BeforeSet(items)) => (Some(items), true),
+            Some(UpdateTableFromKind::AfterSet(items)) => (Some(items), false),
+            None => (None, false),
+        };
+
         // UPDATE <table>
         self.push_line(&self.kw("UPDATE"));
         self.push(" ");
         self.write_table_with_joins(table);
+
+        if from_before_set {
+            if let Some(items) = from_tables {
+                self.push("\n");
+                self.push_line(&self.kw("FROM"));
+                self.push(" ");
+                self.write_table_with_joins_list(items);
+            }
+        }
 
         // SET col1 = val1,
         //     col2 = val2
@@ -349,12 +890,14 @@ impl Writer {
             }
         }
 
-        // FROM (PostgreSQL: UPDATE ... FROM other)
-        if let Some(f) = from {
-            self.push("\n");
-            self.push_line(&self.kw("FROM"));
-            self.push(" ");
-            self.write_table_with_joins(f);
+        // FROM (PostgreSQL: UPDATE ... FROM other), only if AfterSet variant.
+        if !from_before_set {
+            if let Some(items) = from_tables {
+                self.push("\n");
+                self.push_line(&self.kw("FROM"));
+                self.push(" ");
+                self.write_table_with_joins_list(items);
+            }
         }
 
         if let Some(w) = selection {
@@ -456,15 +999,14 @@ impl Writer {
             head.push_str(&format!(" {}", self.kw("INTO")));
         }
         head.push(' ');
+        let table_str = match &ins.table {
+            TableObject::TableName(name) => fmt_object_name(name),
+            other => format!("{}", other),
+        };
         let table = if let Some(alias) = &ins.table_alias {
-            format!(
-                "{} {} {}",
-                fmt_object_name(&ins.table_name),
-                self.kw("AS"),
-                alias.value
-            )
+            format!("{} {} {}", table_str, self.kw("AS"), alias.value)
         } else {
-            fmt_object_name(&ins.table_name)
+            table_str
         };
         head.push_str(&table);
         if !ins.columns.is_empty() {
@@ -502,26 +1044,111 @@ impl Writer {
         // silently dropped this clause (same bug pattern as the T-SQL TOP
         // clause). Use Display impl since OnInsert variants are dialect-
         // specific and complex; emit on its own line for readability.
+        //
+        // v0.1.92 — switched from `to_lowercase()` whole-string to keyword-
+        // only case conversion via `apply_keyword_case`. Previously
+        // `INSERT … VALUES (1) ON DUPLICATE KEY UPDATE c=VALUES(a)` would
+        // mangle to `… values(a)` AND mangle identifiers like `Email` to
+        // `email` if the user picked lowercase keywords.
         if let Some(on) = &ins.on {
             self.push("\n");
             let s = format!("{}", on);
-            // Display starts with " ON CONFLICT..." or " ON DUPLICATE...";
-            // strip leading whitespace and emit on its own line.
             let trimmed = s.trim_start();
-            if self.uppercase {
-                self.push_line(trimmed);
-            } else {
-                // Lowercase ON / CONFLICT / DO / UPDATE / NOTHING keywords;
-                // identifiers and string literals stay as written. We do a
-                // narrow keyword-only lower-case to avoid mangling user
-                // identifiers — simplest: lowercase the whole thing if the
-                // user's project asked for lowercase output.
-                self.push_line(&trimmed.to_lowercase());
-            }
+            self.push_line(&apply_keyword_case(trimmed, self.uppercase));
         }
 
         if let Some(r) = &ins.returning {
             self.write_returning(r);
+        }
+    }
+
+    /// v0.1.92 — MERGE statement pretty-print.
+    ///
+    /// Layout:
+    /// ```text
+    /// MERGE INTO <target> AS t
+    /// USING <source> AS s
+    ///     ON <predicate>
+    /// WHEN MATCHED [AND <pred>] THEN
+    ///     UPDATE SET ... | DELETE | INSERT ...
+    /// WHEN NOT MATCHED [BY {TARGET|SOURCE}] [AND <pred>] THEN
+    ///     INSERT ...
+    /// ```
+    ///
+    /// Each WHEN clause goes on its own line; the action body (UPDATE / INSERT
+    /// / DELETE) goes on the next line indented one level. We use the
+    /// MergeAction Display impl for the action body since it already handles
+    /// the action keyword + payload correctly — we only control the line
+    /// breaks and indentation.
+    fn write_merge(
+        &mut self,
+        into: bool,
+        table: &TableFactor,
+        source: &TableFactor,
+        on: &Expr,
+        clauses: &[MergeClause],
+    ) {
+        let head = if into {
+            format!("{} {}", self.kw("MERGE"), self.kw("INTO"))
+        } else {
+            self.kw("MERGE")
+        };
+        self.push_line(&head);
+        self.push(" ");
+        self.write_table_factor(table);
+
+        self.push("\n");
+        self.push_line(&self.kw("USING"));
+        self.push(" ");
+        self.write_table_factor(source);
+
+        self.push("\n");
+        self.push(&self.sub_indent(1));
+        self.push(&format!("{} {}", self.kw("ON"), fmt_expr(on)));
+
+        for cl in clauses {
+            self.push("\n");
+            let kind = match cl.clause_kind {
+                MergeClauseKind::Matched => self.kw("WHEN MATCHED"),
+                MergeClauseKind::NotMatched => self.kw("WHEN NOT MATCHED"),
+                MergeClauseKind::NotMatchedByTarget => self.kw("WHEN NOT MATCHED BY TARGET"),
+                MergeClauseKind::NotMatchedBySource => self.kw("WHEN NOT MATCHED BY SOURCE"),
+            };
+            let predicate = match &cl.predicate {
+                Some(p) => format!(" {} {}", self.kw("AND"), fmt_expr(p)),
+                None => String::new(),
+            };
+            self.push_line(&format!("{}{} {}", kind, predicate, self.kw("THEN")));
+            self.push("\n");
+            self.push(&self.sub_indent(1));
+            // Action body — keep Display for INSERT/UPDATE/DELETE since
+            // assignments + values lists are dialect-shaped.
+            let action_str = match &cl.action {
+                MergeAction::Update { assignments } => {
+                    let mut s = self.kw("UPDATE SET ");
+                    let parts: Vec<String> = assignments
+                        .iter()
+                        .map(|a| format!("{} = {}", a.target, fmt_expr(&a.value)))
+                        .collect();
+                    s.push_str(&parts.join(", "));
+                    if self.uppercase {
+                        s
+                    } else {
+                        // Only the leading UPDATE SET portion was uppercased
+                        // via kw(); assignments stay verbatim.
+                        s
+                    }
+                }
+                MergeAction::Delete => self.kw("DELETE"),
+                MergeAction::Insert(ins) => {
+                    // Fall back to Display for the INSERT body. Case applied
+                    // via `apply_keyword_case` so identifiers don't get
+                    // mangled — same fix as ON CONFLICT.
+                    let raw = format!("{}", ins);
+                    apply_keyword_case(&raw, self.uppercase)
+                }
+            };
+            self.push(&action_str);
         }
     }
 
@@ -551,12 +1178,7 @@ impl Writer {
         }
         self.write_set_expr(&q.body);
         if let Some(ob) = &q.order_by {
-            if !ob.exprs.is_empty() {
-                self.push("\n");
-                self.push_line(&self.kw("ORDER BY"));
-                self.push("\n");
-                self.write_order_by(&ob.exprs);
-            }
+            self.write_order_by_clause(ob);
         }
         if let Some(limit) = &q.limit {
             self.push("\n");
@@ -569,6 +1191,80 @@ impl Writer {
                 self.kw("OFFSET"),
                 fmt_expr(&offset.value)
             ));
+        }
+        // v0.1.92 — FETCH FIRST N ROWS [PERCENT] [WITH TIES | ONLY]
+        // Previously the writer ignored q.fetch entirely; PostgreSQL + ANSI
+        // users relying on the WITH TIES form lost the entire clause.
+        if let Some(fetch) = &q.fetch {
+            self.push("\n");
+            self.push_line(&self.fmt_fetch(fetch));
+        }
+    }
+
+    fn fmt_fetch(&self, fetch: &Fetch) -> String {
+        // `FETCH FIRST <N> ROWS [WITH TIES | ONLY]` — `quantity` may be None
+        // for the bare `FETCH FIRST ROWS ONLY` form, in which case we drop
+        // the count to match SQL:2008.
+        let head = self.kw("FETCH FIRST");
+        let qty = match &fetch.quantity {
+            Some(e) => format!(" {}", fmt_expr(e)),
+            None => String::new(),
+        };
+        let percent = if fetch.percent {
+            format!(" {}", self.kw("PERCENT"))
+        } else {
+            String::new()
+        };
+        let tail = if fetch.with_ties {
+            self.kw("ROWS WITH TIES")
+        } else {
+            self.kw("ROWS ONLY")
+        };
+        format!("{}{}{} {}", head, qty, percent, tail)
+    }
+
+    fn write_order_by_clause(&mut self, ob: &OrderBy) {
+        match &ob.kind {
+            OrderByKind::Expressions(exprs) => {
+                if !exprs.is_empty() {
+                    self.push("\n");
+                    self.push_line(&self.kw("ORDER BY"));
+                    self.push("\n");
+                    self.write_order_by(exprs);
+                }
+            }
+            OrderByKind::All(opts) => {
+                self.push("\n");
+                let dir = match opts.asc {
+                    Some(true) => format!(" {}", self.kw("ASC")),
+                    Some(false) => format!(" {}", self.kw("DESC")),
+                    None => String::new(),
+                };
+                let nulls = match opts.nulls_first {
+                    Some(true) => format!(" {}", self.kw("NULLS FIRST")),
+                    Some(false) => format!(" {}", self.kw("NULLS LAST")),
+                    None => String::new(),
+                };
+                self.push_line(&format!(
+                    "{} {}{}{}",
+                    self.kw("ORDER BY"),
+                    self.kw("ALL"),
+                    dir,
+                    nulls
+                ));
+            }
+        }
+    }
+
+    // Helper used by UPDATE FROM / DELETE FROM USING — writes a list of
+    // TableWithJoins separated by ", " with continuation indent.
+    fn write_table_with_joins_list(&mut self, items: &[TableWithJoins]) {
+        for (i, twj) in items.iter().enumerate() {
+            if i > 0 {
+                self.push(",\n");
+                self.push(&self.sub_indent(1));
+            }
+            self.write_table_with_joins(twj);
         }
     }
 
@@ -643,17 +1339,24 @@ impl Writer {
         // v0.1.48 — emit T-SQL `TOP N [PERCENT] [WITH TIES]` if present.
         // The previous writer silently dropped this field, so a query like
         // `SELECT TOP 10 * FROM t` lost the TOP after formatting.
-        let select_kw = match (&sel.top, &sel.distinct) {
-            (Some(top), Some(_)) => format!(
-                "{} {} {}",
-                self.kw("SELECT"),
-                self.kw_format_top(top),
-                self.kw("DISTINCT")
-            ),
+        // v0.1.92 — render PostgreSQL `DISTINCT ON (cols)` properly. Pre-0.1.92
+        // bare `DISTINCT` was emitted for both DISTINCT and DISTINCT ON, silently
+        // dropping the ON column list.
+        let distinct_str = sel.distinct.as_ref().map(|d| match d {
+            Distinct::Distinct => self.kw("DISTINCT"),
+            Distinct::On(exprs) => {
+                let cols = exprs.iter().map(fmt_expr).collect::<Vec<_>>().join(", ");
+                format!("{} {} ({})", self.kw("DISTINCT"), self.kw("ON"), cols)
+            }
+        });
+        let select_kw = match (&sel.top, distinct_str.as_deref()) {
+            (Some(top), Some(d)) => {
+                format!("{} {} {}", self.kw("SELECT"), self.kw_format_top(top), d)
+            }
             (Some(top), None) => {
                 format!("{} {}", self.kw("SELECT"), self.kw_format_top(top))
             }
-            (None, Some(_)) => format!("{} {}", self.kw("SELECT"), self.kw("DISTINCT")),
+            (None, Some(d)) => format!("{} {}", self.kw("SELECT"), d),
             (None, None) => self.kw("SELECT"),
         };
 
@@ -740,7 +1443,12 @@ impl Writer {
                     alias.value
                 )
             }
-            SelectItem::QualifiedWildcard(obj, _) => format!("{}.*", fmt_object_name(obj)),
+            SelectItem::QualifiedWildcard(kind, _) => match kind {
+                SelectItemQualifiedWildcardKind::ObjectName(name) => {
+                    format!("{}.*", fmt_object_name(name))
+                }
+                SelectItemQualifiedWildcardKind::Expr(e) => format!("({}).*", fmt_expr(e)),
+            },
             SelectItem::Wildcard(_) => "*".to_string(),
         }
     }
@@ -762,8 +1470,8 @@ impl Writer {
             Expr::Case {
                 operand,
                 conditions,
-                results,
                 else_result,
+                ..
             } if one_line.chars().count() > CASE_WRAP_THRESHOLD || one_line.contains('\n') => {
                 let mut out = String::new();
                 out.push_str(&self.kw("CASE"));
@@ -771,17 +1479,17 @@ impl Writer {
                     out.push(' ');
                     out.push_str(&fmt_expr(op));
                 }
-                for (cond, res) in conditions.iter().zip(results.iter()) {
+                for cw in conditions.iter() {
                     out.push('\n');
                     out.push_str(&base_pad);
                     out.push_str(&self.indent_str(1));
                     out.push_str(&self.kw("WHEN"));
                     out.push(' ');
-                    out.push_str(&fmt_expr(cond));
+                    out.push_str(&fmt_expr(&cw.condition));
                     out.push(' ');
                     out.push_str(&self.kw("THEN"));
                     out.push(' ');
-                    out.push_str(&fmt_expr(res));
+                    out.push_str(&fmt_expr(&cw.result));
                 }
                 if let Some(er) = else_result {
                     out.push('\n');
@@ -893,7 +1601,7 @@ impl Writer {
                 self.kw("USING"),
                 using
                     .iter()
-                    .map(|i| i.value.clone())
+                    .map(fmt_object_name)
                     .collect::<Vec<_>>()
                     .join(", ")
             ));
@@ -923,12 +1631,12 @@ impl Writer {
                 self.push(",\n");
             }
             self.push(&self.sub_indent(1));
-            let dir = match ob.asc {
+            let dir = match ob.options.asc {
                 Some(true) => format!(" {}", self.kw("ASC")),
                 Some(false) => format!(" {}", self.kw("DESC")),
                 None => String::new(),
             };
-            let nulls = match ob.nulls_first {
+            let nulls = match ob.options.nulls_first {
                 Some(true) => format!(" {}", self.kw("NULLS FIRST")),
                 Some(false) => format!(" {}", self.kw("NULLS LAST")),
                 None => String::new(),
@@ -946,9 +1654,176 @@ fn fmt_expr(e: &Expr) -> String {
     format!("{}", e)
 }
 
+/// v0.1.92 — Apply the user-selected keyword case to a string that may
+/// contain identifiers, string literals, and quoted identifiers. Previously
+/// the writer called `to_lowercase()` on whole-Display strings (e.g. ON
+/// CONFLICT body, MERGE INSERT body), which mangled identifiers like `Email`
+/// → `email` and function-name occurrences like `VALUES(name)` →
+/// `values(name)`.
+///
+/// This walker:
+/// - Preserves single-quoted string literals verbatim (`'...'` with `''` escape)
+/// - Preserves double-quoted, backtick-quoted, and bracket-quoted identifiers
+/// - Recognizes a small set of SQL reserved words and applies the case
+/// - Leaves all other word-shaped tokens (identifiers, function names not in
+///   the keyword list) untouched
+///
+/// The keyword list is intentionally narrow — only the words that show up in
+/// the Display-emitted fragments we route through here. False-negatives (a
+/// real keyword left as-mixed-case) are harmless; false-positives (an
+/// identifier accidentally listed) would silently mangle user data.
+fn apply_keyword_case(input: &str, uppercase: bool) -> String {
+    const KEYWORDS: &[&str] = &[
+        "ABORT",
+        "ACTION",
+        "AND",
+        "ANY",
+        "AS",
+        "BETWEEN",
+        "BY",
+        "CASE",
+        "CONFLICT",
+        "CONSTRAINT",
+        "CROSS",
+        "CURRENT_TIMESTAMP",
+        "DEFAULT",
+        "DELETE",
+        "DISTINCT",
+        "DO",
+        "DUPLICATE",
+        "ELSE",
+        "END",
+        "EXCLUDED",
+        "EXISTS",
+        "FAIL",
+        "FALSE",
+        "FOR",
+        "FROM",
+        "GROUP",
+        "HAVING",
+        "IGNORE",
+        "ILIKE",
+        "IN",
+        "INNER",
+        "INSERT",
+        "INTERSECT",
+        "INTO",
+        "IS",
+        "JOIN",
+        "KEY",
+        "LATERAL",
+        "LEFT",
+        "LIKE",
+        "LIMIT",
+        "MATCHED",
+        "NOT",
+        "NOTHING",
+        "NULL",
+        "OFFSET",
+        "ON",
+        "OR",
+        "ORDER",
+        "OUTER",
+        "OVER",
+        "PARTITION",
+        "PRIMARY",
+        "RECURSIVE",
+        "REFERENCES",
+        "REPLACE",
+        "RETURNING",
+        "RIGHT",
+        "ROLLBACK",
+        "ROW",
+        "ROWS",
+        "SELECT",
+        "SET",
+        "SOURCE",
+        "TABLE",
+        "TARGET",
+        "THEN",
+        "TRUE",
+        "UNION",
+        "UNIQUE",
+        "UPDATE",
+        "USING",
+        "VALUES",
+        "WHEN",
+        "WHERE",
+        "WITH",
+    ];
+
+    let mut out = String::with_capacity(input.len());
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        // Single-quoted string literal — copy verbatim including the SQL ''
+        // escape for embedded single-quote.
+        if c == b'\'' {
+            out.push('\'');
+            i += 1;
+            while i < bytes.len() {
+                let b = bytes[i];
+                out.push(b as char);
+                if b == b'\'' {
+                    if i + 1 < bytes.len() && bytes[i + 1] == b'\'' {
+                        out.push('\'');
+                        i += 2;
+                        continue;
+                    }
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        // Quoted identifier — `"…"`, `` `…` ``, or `[…]`. Each preserved.
+        if c == b'"' || c == b'`' || c == b'[' {
+            let close = if c == b'[' { b']' } else { c };
+            out.push(c as char);
+            i += 1;
+            while i < bytes.len() {
+                let b = bytes[i];
+                out.push(b as char);
+                if b == close {
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        // Identifier-like word: alpha or underscore followed by alphanumerics.
+        if c.is_ascii_alphabetic() || c == b'_' {
+            let start = i;
+            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                i += 1;
+            }
+            let word = &input[start..i];
+            let upper = word.to_uppercase();
+            if KEYWORDS.binary_search(&upper.as_str()).is_ok() {
+                if uppercase {
+                    out.push_str(&upper);
+                } else {
+                    out.push_str(&word.to_lowercase());
+                }
+            } else {
+                out.push_str(word);
+            }
+            continue;
+        }
+        out.push(c as char);
+        i += 1;
+    }
+    out
+}
+
 fn fmt_object_name(n: &ObjectName) -> String {
     n.0.iter()
-        .map(|p| p.value.clone())
+        .map(|p| match p {
+            ObjectNamePart::Identifier(ident) => ident.value.clone(),
+        })
         .collect::<Vec<_>>()
         .join(".")
 }
@@ -969,13 +1844,18 @@ fn join_keyword(op: &JoinOperator, uppercase: bool) -> (String, String) {
         }
     };
     let word = match op {
+        JoinOperator::Join(_) => "JOIN",
         JoinOperator::Inner(_) => "INNER JOIN",
+        JoinOperator::Left(_) => "LEFT JOIN",
         JoinOperator::LeftOuter(_) => "LEFT JOIN",
+        JoinOperator::Right(_) => "RIGHT JOIN",
         JoinOperator::RightOuter(_) => "RIGHT JOIN",
         JoinOperator::FullOuter(_) => "FULL OUTER JOIN",
         JoinOperator::CrossJoin => "CROSS JOIN",
+        JoinOperator::Semi(_) => "SEMI JOIN",
         JoinOperator::LeftSemi(_) => "LEFT SEMI JOIN",
         JoinOperator::RightSemi(_) => "RIGHT SEMI JOIN",
+        JoinOperator::Anti(_) => "ANTI JOIN",
         JoinOperator::LeftAnti(_) => "LEFT ANTI JOIN",
         JoinOperator::RightAnti(_) => "RIGHT ANTI JOIN",
         JoinOperator::CrossApply => "CROSS APPLY",
@@ -985,36 +1865,35 @@ fn join_keyword(op: &JoinOperator, uppercase: bool) -> (String, String) {
     (kw(word), kw("ON"))
 }
 
-fn join_on_expr(op: &JoinOperator) -> Option<&Expr> {
+fn join_constraint(op: &JoinOperator) -> Option<&JoinConstraint> {
     match op {
-        JoinOperator::Inner(c)
+        JoinOperator::Join(c)
+        | JoinOperator::Inner(c)
+        | JoinOperator::Left(c)
         | JoinOperator::LeftOuter(c)
+        | JoinOperator::Right(c)
         | JoinOperator::RightOuter(c)
         | JoinOperator::FullOuter(c)
+        | JoinOperator::Semi(c)
         | JoinOperator::LeftSemi(c)
         | JoinOperator::RightSemi(c)
+        | JoinOperator::Anti(c)
         | JoinOperator::LeftAnti(c)
-        | JoinOperator::RightAnti(c) => match c {
-            JoinConstraint::On(e) => Some(e),
-            _ => None,
-        },
+        | JoinOperator::RightAnti(c) => Some(c),
         _ => None,
     }
 }
 
-fn join_using(op: &JoinOperator) -> Option<&Vec<sqlparser::ast::Ident>> {
-    match op {
-        JoinOperator::Inner(c)
-        | JoinOperator::LeftOuter(c)
-        | JoinOperator::RightOuter(c)
-        | JoinOperator::FullOuter(c)
-        | JoinOperator::LeftSemi(c)
-        | JoinOperator::RightSemi(c)
-        | JoinOperator::LeftAnti(c)
-        | JoinOperator::RightAnti(c) => match c {
-            JoinConstraint::Using(v) => Some(v),
-            _ => None,
-        },
+fn join_on_expr(op: &JoinOperator) -> Option<&Expr> {
+    match join_constraint(op)? {
+        JoinConstraint::On(e) => Some(e),
+        _ => None,
+    }
+}
+
+fn join_using(op: &JoinOperator) -> Option<&Vec<ObjectName>> {
+    match join_constraint(op)? {
+        JoinConstraint::Using(v) => Some(v),
         _ => None,
     }
 }
@@ -1128,12 +2007,217 @@ mod tests {
 
     #[test]
     fn tsql_bracketed_identifiers() {
-        // T-SQL allows [Order Details] as an identifier — should round-trip.
+        // v0.1.92 — hardened to positional assertions per audit. Both bracket
+        // tokens must round-trip exactly (no whitespace mangling, no case
+        // change, correct order). Previously only checked `!out.is_empty()`,
+        // which masked the `[onelook-db-1]` → `[ onelook - db - 1 ]` bug.
         let sql = "SELECT [Order ID], [Customer Name] FROM [Order Details]";
         let out = format_sql_dialect(sql, 4, true, "mssql");
-        // Either bracketed form is preserved, OR fallback note is present —
-        // we accept both, just don't crash.
-        assert!(!out.is_empty());
+        assert!(
+            out.contains("[Order ID]"),
+            "[Order ID] not preserved verbatim:\n{}",
+            out
+        );
+        assert!(
+            out.contains("[Customer Name]"),
+            "[Customer Name] not preserved verbatim:\n{}",
+            out
+        );
+        assert!(
+            out.contains("[Order Details]"),
+            "[Order Details] not preserved verbatim:\n{}",
+            out
+        );
+        // Order: the projection brackets must precede the FROM bracket.
+        let id_pos = out.find("[Order ID]").unwrap();
+        let name_pos = out.find("[Customer Name]").unwrap();
+        let details_pos = out.find("[Order Details]").unwrap();
+        assert!(id_pos < name_pos, "ordering wrong:\n{}", out);
+        assert!(name_pos < details_pos, "ordering wrong:\n{}", out);
+    }
+
+    // v0.1.92 — user-reported regression: hyphenated database name
+    // `[onelook-db-1]` got mangled to `[ onelook - db - 1 ]` because the
+    // T-SQL parser fell through to sqlformat which treats hyphens as the
+    // subtraction operator. Bracket-mask must preserve hyphens.
+    #[test]
+    fn tsql_bracket_with_hyphens_preserved_verbatim() {
+        let sql = "SELECT * FROM [onelook-db-1].[dbo].[my-table]";
+        let out = format_sql_dialect(sql, 4, true, "mssql");
+        assert!(
+            out.contains("[onelook-db-1]"),
+            "hyphen-bracketed db name mangled:\n{}",
+            out
+        );
+        assert!(
+            out.contains("[my-table]"),
+            "hyphen-bracketed table name mangled:\n{}",
+            out
+        );
+        assert!(out.contains("[dbo]"), "dbo bracket missing:\n{}", out);
+        // Three-part name must keep the dots and the order.
+        let prefix = "[onelook-db-1].[dbo].[my-table]";
+        assert!(
+            out.contains(prefix),
+            "three-part name not preserved:\n{}",
+            out
+        );
+    }
+
+    // v0.1.92 — bracket escapes (`]]` inside `[…]` means a literal `]`).
+    #[test]
+    fn tsql_bracket_escaped_close_bracket() {
+        let sql = "SELECT [col]]name] FROM t";
+        let out = format_sql_dialect(sql, 4, true, "mssql");
+        assert!(
+            out.contains("[col]]name]"),
+            "bracket escape `]]` not preserved:\n{}",
+            out
+        );
+    }
+
+    // v0.1.92 — DISTINCT ON (cols) PostgreSQL syntax.
+    #[test]
+    fn pg_distinct_on_renders_full_clause() {
+        let sql = "SELECT DISTINCT ON (user_id) user_id, created_at FROM events ORDER BY user_id, created_at DESC";
+        let out = format_sql_dialect(sql, 4, true, "postgres");
+        // Audit finding #4 — `DISTINCT ON (cols)` was previously rendered as
+        // bare `DISTINCT`, silently dropping the column list.
+        assert!(
+            out.contains("DISTINCT ON"),
+            "DISTINCT ON keyword sequence missing:\n{}",
+            out
+        );
+        assert!(
+            out.contains("(user_id)"),
+            "DISTINCT ON column list missing:\n{}",
+            out
+        );
+    }
+
+    // v0.1.92 — FETCH FIRST N ROWS WITH TIES (PostgreSQL / ANSI).
+    #[test]
+    fn pg_fetch_first_with_ties_renders() {
+        let sql = "SELECT id FROM users ORDER BY score DESC FETCH FIRST 10 ROWS WITH TIES";
+        let out = format_sql_dialect(sql, 4, true, "postgres");
+        // Audit finding #6 — q.fetch was ignored entirely pre-v0.1.92.
+        assert!(out.contains("FETCH FIRST"), "FETCH FIRST missing:\n{}", out);
+        assert!(out.contains("WITH TIES"), "WITH TIES missing:\n{}", out);
+        assert!(out.contains("10"), "fetch count missing:\n{}", out);
+    }
+
+    #[test]
+    fn pg_fetch_first_only_renders() {
+        let sql = "SELECT id FROM users FETCH FIRST 5 ROWS ONLY";
+        let out = format_sql_dialect(sql, 4, true, "postgres");
+        assert!(out.contains("FETCH FIRST"), "FETCH FIRST missing:\n{}", out);
+        assert!(out.contains("ROWS ONLY"), "ROWS ONLY missing:\n{}", out);
+    }
+
+    // v0.1.92 — MERGE statement (T-SQL / Oracle / ANSI).
+    #[test]
+    fn tsql_merge_expands_when_clauses() {
+        let sql = "MERGE INTO Target AS t USING Source AS s ON t.id = s.id WHEN MATCHED THEN UPDATE SET t.name = s.name WHEN NOT MATCHED THEN INSERT (id, name) VALUES (s.id, s.name)";
+        let out = format_sql_dialect(sql, 4, true, "mssql");
+        // Audit finding #2 — Statement::Merge previously collapsed to one line.
+        assert!(out.contains("MERGE"), "MERGE keyword missing:\n{}", out);
+        assert!(out.contains("USING"), "USING keyword missing:\n{}", out);
+        assert!(
+            out.contains("WHEN MATCHED"),
+            "WHEN MATCHED missing:\n{}",
+            out
+        );
+        assert!(
+            out.contains("WHEN NOT MATCHED"),
+            "WHEN NOT MATCHED missing:\n{}",
+            out
+        );
+        // Multi-line: at least 4 separate clauses on separate lines.
+        let line_count = out.lines().count();
+        assert!(
+            line_count >= 5,
+            "MERGE not multi-line (only {} lines):\n{}",
+            line_count,
+            out
+        );
+    }
+
+    // v0.1.92 — T-SQL GO batch separator.
+    #[test]
+    fn tsql_go_batch_separator_preserved() {
+        let sql = "SELECT 1\nGO\nSELECT 2";
+        let out = format_sql_dialect(sql, 4, true, "mssql");
+        // Audit finding (T-SQL high): GO previously caused fallback for the
+        // whole input. Now pre-split into batches, each formatted, rejoined.
+        assert!(out.contains("GO"), "GO batch separator dropped:\n{}", out);
+        let go_pos = out.find("GO").unwrap();
+        assert!(
+            out[..go_pos].to_uppercase().contains("SELECT 1"),
+            "first batch missing:\n{}",
+            out
+        );
+        assert!(
+            out[go_pos..].to_uppercase().contains("SELECT 2"),
+            "second batch missing:\n{}",
+            out
+        );
+    }
+
+    // v0.1.92 — T-SQL PRINT statement preserved verbatim.
+    #[test]
+    fn tsql_print_statement_preserved() {
+        let sql = "PRINT 'hello world'; SELECT 1";
+        let out = format_sql_dialect(sql, 4, true, "mssql");
+        assert!(
+            out.contains("PRINT 'hello world'"),
+            "PRINT statement mangled:\n{}",
+            out
+        );
+        assert!(
+            out.to_uppercase().contains("SELECT"),
+            "SELECT after PRINT lost:\n{}",
+            out
+        );
+    }
+
+    // v0.1.92 — ON CONFLICT body must not lowercase identifiers.
+    #[test]
+    fn pg_on_conflict_preserves_identifier_case_in_lowercase_mode() {
+        let sql = "INSERT INTO Users (Email, Name) VALUES ('a@x.com', 'Alice') ON CONFLICT (Email) DO UPDATE SET Name = EXCLUDED.Name";
+        let out = format_sql_dialect(sql, 4, false, "postgres");
+        // Identifiers `Email`, `Name` must keep their original case even in
+        // lowercase-keyword mode. Audit finding #5 — to_lowercase() pre-fix
+        // mangled `Email` → `email`.
+        assert!(
+            out.contains("Email"),
+            "identifier 'Email' lowercased:\n{}",
+            out
+        );
+        assert!(
+            out.contains("Name"),
+            "identifier 'Name' lowercased:\n{}",
+            out
+        );
+        // Keywords on the other hand must be lowercased.
+        assert!(
+            out.contains("on conflict"),
+            "ON CONFLICT keywords not lowercased:\n{}",
+            out
+        );
+    }
+
+    // v0.1.92 — MySQL ON DUPLICATE KEY UPDATE keyword case fix.
+    #[test]
+    fn mysql_on_duplicate_key_preserves_function_case() {
+        let sql =
+            "INSERT INTO t (a, b) VALUES (1, 2) ON DUPLICATE KEY UPDATE c = VALUES(a) + VALUES(b)";
+        let out = format_sql_dialect(sql, 4, true, "mysql");
+        // VALUES function call: case preserved because we asked for uppercase.
+        assert!(
+            out.contains("VALUES(a)") || out.contains("VALUES(`a`)"),
+            "VALUES function call mangled in uppercase mode:\n{}",
+            out
+        );
     }
 
     #[test]

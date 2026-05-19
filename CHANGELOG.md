@@ -7,6 +7,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.92] — 2026-05-19
+
+**SQL formatter deep-dive against each dialect's official documentation.** Local-iteration release: every change is in `rust-core/src/sql_fmt.rs`. No new file types / lexers / backends / installer changes. Same install commands, same artifact names, same flavor split. Fixes the user-reported `[onelook-db-1]` → `[ onelook - db - 1 ]` regression plus 9 other latent bugs found in the same audit.
+
+### Added
+- **`Statement::Merge` Writer arm** — `MERGE INTO target USING source ON pred WHEN MATCHED THEN ... WHEN NOT MATCHED THEN ...` now pretty-prints with each WHEN clause on its own line and the action body (UPDATE SET / DELETE / INSERT) indented one level. Previously fell through to `Display` which collapsed the entire statement to one line. Covers T-SQL, Oracle, ANSI, BigQuery forms. Predicates on `WHEN MATCHED AND <expr>` preserved.
+- **`DISTINCT ON (cols)` rendering** — PostgreSQL `Distinct::On(exprs)` variant now expands to `SELECT DISTINCT ON (col1, col2)` instead of silently dropping the column list to bare `DISTINCT`.
+- **`FETCH FIRST N ROWS [PERCENT] [WITH TIES | ONLY]`** — SQL:2008 form on its own line after OFFSET. Supports `ROWS ONLY` (default), `ROWS WITH TIES` (PG, ANSI), and `PERCENT` modifier. `q.fetch` field was being ignored entirely pre-v0.1.92.
+- **T-SQL `GO` batch separator pre-split** — new `split_tsql_go_batches()` walks input with full string/comment-state tracking, splits on lines containing only `GO` (case-insensitive, optional whitespace), formats each batch independently, rejoins with `GO`. Previously the parser hit-and-faded on the first `GO` and the whole input dropped to legacy-format fallback.
+- **T-SQL `PRINT` pre-mask** — `protect_print_statements()` / `restore_print_statements()` capture `PRINT <expr>` at statement boundaries, replace with a parseable placeholder, restore verbatim after format. sqlparser-rs doesn't recognize PRINT as a statement.
+- **`apply_keyword_case()` token-aware case helper** — walks Display-emitted strings token-by-token: preserves single-quoted literals, preserves `"..."` / `` `...` `` / `[...]` quoted identifiers, applies user-selected case only to a sorted list of 78 SQL reserved words, leaves everything else untouched.
+- **10 new regression tests** — `tsql_bracket_with_hyphens_preserved_verbatim`, `tsql_bracket_escaped_close_bracket`, `tsql_merge_expands_when_clauses`, `tsql_go_batch_separator_preserved`, `tsql_print_statement_preserved`, `pg_distinct_on_renders_full_clause`, `pg_fetch_first_with_ties_renders`, `pg_fetch_first_only_renders`, `pg_on_conflict_preserves_identifier_case_in_lowercase_mode`, `mysql_on_duplicate_key_preserves_function_case`. Existing `tsql_bracketed_identifiers` test hardened from `!out.is_empty()` to positional + verbatim assertions on three bracket tokens.
+
+### Changed
+- **`sqlparser-rs` bump 0.52 → 0.55** — brings ~3 years of upstream fixes. Migrated 13 distinct breaking changes: `Statement::Update` new `or` field, `from` now `UpdateTableFromKind` enum; `Statement::Insert.table` now `TableObject` enum (`TableName(name)` / `TableFunction(fn)`); `OrderBy` restructured with `kind: OrderByKind` (All/Expressions); `OrderByExpr.asc`/`nulls_first` moved into `.options`; `ObjectName` parts now `ObjectNamePart::Identifier(Ident)`; `Expr::Case` `conditions`+`results` arrays merged into `Vec<CaseWhen>`; `SelectItem::QualifiedWildcard` now wraps a `SelectItemQualifiedWildcardKind` enum; `JoinOperator` 5 new variants (`Join`, `Left`, `Right`, `Semi`, `Anti` — unqualified forms without OUTER); `JoinConstraint::Using` now `Vec<ObjectName>` not `Vec<Ident>`.
+
+### Fixed
+- **`[onelook-db-1]` mangled to `[ onelook - db - 1 ]`** (user-reported regression) — T-SQL bracket-quoted identifiers with hyphens / spaces / punctuation now round-trip verbatim through both the primary `sqlparser` path and the legacy `sqlformat` fallback. The bracket-mask added in v0.1.91 is now also tested with a 3-part name `[a].[b].[c]` and the T-SQL `]]` escape (`[col]]name]`).
+- **`ON CONFLICT (Email) DO UPDATE SET Name = EXCLUDED.Name` mangled identifiers** — pre-v0.1.92 `to_lowercase()` on the whole Display-emitted string lowercased `Email`/`Name` along with the keywords in lowercase-keyword mode. Now only keywords convert; identifier case preserved.
+- **MySQL `VALUES(a)` function call mangled to `values(a)`** — same `to_lowercase()` root cause; same fix.
+- **`MERGE` ... `INSERT ...` action body case-mangled** — same fix applied to the MERGE INSERT Display fragment.
+
+### Known still-fallback (deferred)
+- T-SQL `OUTPUT INSERTED.* INTO @v` clause (sqlparser 0.55 parses; Writer arm not yet built — v0.1.93 candidate).
+- MySQL 8.0.19+ `INSERT … AS new(m,n,p) ON DUPLICATE KEY UPDATE c=new.a+new.b` (sqlparser parses; ins.on Writer path uses Display — v0.1.93 candidate).
+- Oracle `CONNECT BY PRIOR ... START WITH`, `(+)` outer-join (no real OracleDialect in sqlparser-rs).
+- DDL / EXPLAIN / DCL — fall through to `Display`. Output is correct, just not multi-line.
+
+### Wiring touched
+
+No C++ files changed. Same FFI surface (`npc_format_sql` / `npc_format_sql_compact` in `rust-core/src/lib.rs`). C++ side (`src/rustbridge.cpp:213/222`, `src/sqlfmtpanel.cpp`) binary-compatible with the new `librust_core.a`. Test count: 34 → 44 in `sql_fmt` module; full ctest still 39/39.
+
+---
+
 ## [0.1.91] — 2026-05-19
 
 **Notepad++-style per-line change-history strip + holistic path-separator sweep + status-bar change counter + Find/Replace UX upgrade.** Editor-and-UX iteration release; no new file types / lexers / backends / installer changes. All v0.1.90 fixes carry forward unchanged.

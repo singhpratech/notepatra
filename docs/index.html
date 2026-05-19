@@ -49,7 +49,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is under 10 MB across platforms (9.7 MB on Linux x64); full downloads are 3.5 MB (Linux x64 tar.gz), 26.9 MB (macOS DMG with bundled Qt), 40.6 MB (Windows MSI with bundled Qt DLLs). 226 file types. 92 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server (examples redacted). Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.91",
+      "softwareVersion": "0.1.92",
       "fileSize": "9.7 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -151,7 +151,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is under 10 MB across every platform (9.7 MB on Linux x64). Latest v0.1.91 download sizes: 3.5 MB Linux x64 tar.gz, 3.3 MB Linux ARM64 tar.gz, 26.9 MB macOS DMG (with bundled Qt), 40.6 MB Windows MSI / 32.2 MB NSIS / 36.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk, ~10 MB bare) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
+            "text": "The bare Notepatra executable is under 10 MB across every platform (9.7 MB on Linux x64). Latest v0.1.92 download sizes: 3.5 MB Linux x64 tar.gz, 3.3 MB Linux ARM64 tar.gz, 26.9 MB macOS DMG (with bundled Qt), 40.6 MB Windows MSI / 32.2 MB NSIS / 36.7 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk, ~10 MB bare) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
           }
         },
         {
@@ -167,7 +167,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.91: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.92: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.91">
-        Download v0.1.91 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.92">
+        Download v0.1.92 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.91 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.92 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (under 10 MB bare, ~3.5 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints.</p>
 
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.91</div>
+        <div class="section-label">Download v0.1.92</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1467,7 +1467,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.91 →
+                Get Notepatra v0.1.92 →
               </a>
             </div>
 
@@ -1510,7 +1510,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.91 →
+                Get Notepatra Local AI v0.1.92 →
               </a>
             </div>
           </div>
@@ -1968,60 +1968,63 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.91 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.92 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-05-19</span>
-                        <span>· Notepad++-style per-line change-history strip in margin 3, holistic path-separator sweep (Windows shows `\` everywhere paths display), new status-bar change-line counter, and a Find/Replace UX upgrade (bottom status bar, Find↔Replace carry-forward, two-step wrap at cycle end).</span>
+                        <span>· SQL formatter deep-dive against each dialect's official docs. User-reported `[onelook-db-1]` regression fixed + 9 other latent bugs found in the same audit. <code>sqlparser-rs</code> bump 0.52→0.55. New MERGE arm, DISTINCT ON, FETCH FIRST WITH TIES, T-SQL GO + PRINT pre-mask, token-aware case helper.</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>🟧🟩 Per-line change-history strip (Notepad++ style)</h5>
+                        <h5>🩹 The user-reported regression — fixed</h5>
                         <ul>
-                            <li>Margin 3 now paints a thin per-line strip: <strong>orange</strong> on lines edited since the last save, <strong>green</strong> on lines edited at some point this session and persisted to disk. Notepad++ users will recognise the behaviour exactly.</li>
-                            <li><strong>Why manual implementation, not <code>SCI_SETCHANGEHISTORY</code>:</strong> Ubuntu 24.04's <code>libqscintilla2-qt5-15</code> 2.14.1+dfsg-1build3 ships Scintilla compiled WITHOUT change-history support (confirmed via PyQt5 round-trip — <code>SCI_GETCHANGEHISTORY</code> always reads 0 regardless of input). Notepatra now tracks state itself via <code>SCN_MODIFIED</code> / <code>SCN_SAVEPOINTREACHED</code> / <code>SCN_SAVEPOINTLEFT</code> notifications, which every QScintilla build exposes.</li>
-                            <li><strong>Visual:</strong> <code>QsciScintilla::FullRectangle</code> marker shape so only the 4 px margin column paints — never the whole line (the v0.1.90 git-gutter painted whole-line green on untracked markdown drafts because the shape was <code>Background</code>). Margin mask constrained to bits 21–24 so the bookmark margin stays clean.</li>
-                            <li><strong>Safety nets:</strong> <code>m_loadingFile</code> flag stops wholesale <code>setText()</code> from marking every line orange on file open; <code>SCN_MODIFIED.line</code> recomputed from <code>position</code> when zero (QScintilla 2.14.1 only fills <code>line</code> for fold events); <code>onSavePointReached()</code> does <code>markerDeleteAll(23)</code> as belt-and-braces, then a full widget <code>update()</code> because some X11 compositors don't synthesise margin repaints from marker state changes alone.</li>
-                            <li><strong>4 new test executables, 44+ assertions:</strong> <code>test_change_history</code> (bare Editor, 16), <code>test_change_history_mainwindow</code> (through MainWindow + Ctrl+S QAction, 12), <code>test_change_history_watcher</code> (with QFileSystemWatcher race, 6), <code>test_change_history_stress</code> (10 edit-save cycles across 10 lines, 20 verifications).</li>
+                            <li><code>SELECT * FROM [onelook-db-1].[dbo].[my-table]</code> was being mangled to <code>SELECT * FROM [ onelook - db - 1 ].[dbo].[my-table]</code> because <code>sqlparser-rs 0.52</code>'s T-SQL dialect couldn't fully parse bracket-quoted identifiers with hyphens, and our fallback path (the legacy <code>sqlformat</code> crate) treats <code>-</code> as the subtraction operator with whitespace padding.</li>
+                            <li>Fixed via <code>protect_bracket_identifiers()</code> in <code>rust-core/src/sql_fmt.rs</code> — walks input with full string/comment-state tracking, masks every <code>[…]</code> run (including the T-SQL <code>]]</code> escape) as a <code>__NP_BR_N__</code> placeholder before parsing, restores verbatim after format. Bracket contents are now opaque to BOTH parsers.</li>
+                            <li><strong>Test hardened</strong>: <code>tsql_bracketed_identifiers</code> was checking <code>!out.is_empty()</code> — now asserts each bracket token is preserved verbatim AND in the correct position. Plus two new tests: <code>tsql_bracket_with_hyphens_preserved_verbatim</code> (the user-reported pattern, 3-part name) and <code>tsql_bracket_escaped_close_bracket</code> (T-SQL <code>[col]]name]</code> escape).</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>📊 Status bar — per-tab change-line counter</h5>
+                        <h5>🔬 Then we audited every dialect against its official docs — and found 9 more bugs</h5>
                         <ul>
-                            <li>New <code>N modified · M saved</code> label between the cursor-position field and the EOL/encoding fields. Visible when either count is non-zero, hidden otherwise (no visual noise on fresh files).</li>
-                            <li><strong>Implementation pattern:</strong> Editor keeps two parallel <code>QSet&lt;int&gt;</code> members (<code>m_modifiedLines</code>, <code>m_savedLines</code>) in lockstep with the markers, emits a single <code>changeHistoryUpdated()</code> signal at the end of every mutating handler. MainWindow connects the signal to a tab-aware lambda that updates the status bar only if the affected editor is the current tab. Counters are O(1) — no buffer-walking, no marker iteration on cursor moves.</li>
-                            <li><code>test_changehistory_statusbar</code> — 14 assertions across 6 scenarios (fresh load → hidden; edit → 1 modified · 0 saved; save → 0 modified · 1 saved; re-edit a saved line → green count drops; save again → 0 modified · 2 saved).</li>
+                            <li>An audit agent cross-checked the formatter against <a href="https://learn.microsoft.com/sql/t-sql/">Microsoft Learn (T-SQL)</a>, <a href="https://postgresql.org/docs/">postgresql.org</a>, <a href="https://dev.mysql.com/doc/refman/8.0/en/">dev.mysql.com</a>, <a href="https://sqlite.org/lang.html">sqlite.org</a>, <a href="https://docs.oracle.com/en/database/oracle/oracle-database/19/sqlrf/">docs.oracle.com</a>, and ANSI SQL:2016. 10 distinct bugs found total (including the bracket regression above). All fixed in one pass.</li>
+                            <li><strong>MERGE statement collapsed to one line</strong> (T-SQL / Oracle / ANSI / BigQuery) — <code>Statement::Merge</code> Writer arm added. Each <code>WHEN MATCHED</code> / <code>WHEN NOT MATCHED [BY {TARGET|SOURCE}]</code> goes on its own line, action body indented one level. Predicates like <code>WHEN MATCHED AND &lt;expr&gt; THEN ...</code> preserved.</li>
+                            <li><strong><code>DISTINCT ON (cols)</code> dropped the column list</strong> (PostgreSQL) — match arm only checked <code>Some(d)</code> opaquely, emitting bare <code>DISTINCT</code>. Now <code>Distinct::On(exprs)</code> renders as <code>SELECT DISTINCT ON (col1, col2) ...</code>.</li>
+                            <li><strong><code>FETCH FIRST N ROWS [WITH TIES | ONLY]</code> ignored entirely</strong> (PostgreSQL / ANSI / SQL:2008) — <code>q.fetch</code> field was never read by the Writer. New <code>fmt_fetch()</code> helper handles all variants (ROWS ONLY default, ROWS WITH TIES, PERCENT modifier).</li>
+                            <li><strong>T-SQL <code>GO</code> batch separator caused parser-fallback for the whole input</strong> — sqlparser-rs has no <code>GO</code> concept. New <code>split_tsql_go_batches()</code> walks input with string/comment-state tracking, splits on lines containing only <code>GO</code> (case-insensitive, optional whitespace), formats each batch independently, rejoins with <code>GO</code>.</li>
+                            <li><strong>T-SQL <code>PRINT</code> statements dropped to legacy formatter</strong> — sqlparser-rs doesn't recognize PRINT as a statement. New <code>protect_print_statements()</code> masks PRINT lines at statement boundaries (file start or post-<code>;</code>) with a parseable placeholder, restores verbatim after format.</li>
+                            <li><strong>Identifiers mangled in lowercase-keyword mode</strong> — pre-v0.1.92 <code>to_lowercase()</code> on the whole <code>Display</code>-emitted string lowercased <code>Email</code>/<code>Name</code> AND broke MySQL <code>VALUES(a)</code> → <code>values(a)</code>. New <code>apply_keyword_case()</code> walker handles single-quoted literals, <code>"…"</code> / <code>`…`</code> / <code>[…]</code> quoted identifiers, and applies user-selected case only to a sorted list of 78 SQL reserved words.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🪟 Holistic <code>QDir::toNativeSeparators</code> sweep</h5>
+                        <h5>⬆️ <code>sqlparser-rs</code> bump 0.52 → 0.55 (3 years of upstream fixes)</h5>
                         <ul>
-                            <li>Every UI surface that displays a filesystem path now wraps the value in <code>QDir::toNativeSeparators(...)</code>. No-op on Linux/macOS; converts to <code>\</code> on Windows so users see <code>C:\Users\name\file.txt</code> instead of Qt's internal <code>C:/Users/name/file.txt</code>.</li>
-                            <li><strong>16 new sites wrapped across 6 files</strong>: Find-in-Files Directory init + Browse, file-explorer breadcrumb combo (4 spots), window title, 3× tab tooltip setters (rename / openFile / save-as), recovered-tab tooltip, recent-files menu labels, clipboard Copy Full Path / Copy Directory in BOTH the Edit menu and the tab context menu, git-panel file-row tooltip, Welcome-screen Recent Files panel labels. Adds to the 8 sites already wrapped in <code>projectsearch.cpp</code> from earlier work — total 24 sites across 9 files now native-separator-safe.</li>
+                            <li>13 distinct breaking AST shape changes migrated in one pass: <code>Statement::Update</code> new <code>or</code> field + <code>from</code> now <code>UpdateTableFromKind</code> enum (BeforeSet/AfterSet variants for Snowflake); <code>Statement::Insert.table</code> now <code>TableObject</code> enum (TableName / TableFunction); <code>OrderBy</code> restructured to <code>{ kind: OrderByKind, interpolate }</code>; <code>OrderByExpr.{asc,nulls_first}</code> moved into <code>.options</code>; <code>ObjectName</code> parts now <code>ObjectNamePart::Identifier(Ident)</code>; <code>Expr::Case.{conditions,results}</code> arrays merged into <code>Vec&lt;CaseWhen&gt;</code>; <code>SelectItem::QualifiedWildcard</code> now wraps <code>SelectItemQualifiedWildcardKind</code>; <code>JoinOperator</code> 5 new variants for unqualified forms (<code>Join</code>, <code>Left</code>, <code>Right</code>, <code>Semi</code>, <code>Anti</code> without OUTER); <code>JoinConstraint::Using</code> now <code>Vec&lt;ObjectName&gt;</code>.</li>
+                            <li>All 34 pre-existing tests carry forward green. 10 new regression tests added (one per audit finding). <strong>44 / 44 in <code>sql_fmt</code> module, 39 / 39 ctest</strong> still green.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🔍 Find / Replace dialog — bottom status bar, carry-forward, two-step wrap</h5>
+                        <h5>🚧 Known still-fallback (deferred to future release)</h5>
                         <ul>
-                            <li><strong>Notepad++-style bottom status bar</strong> — single italic line under the tabs reports every action's result (Find Next, Count, Replace All, Find in Files, Mark All, etc.); blue (theme accent) for success, red (theme errorFg) for failure; word-wraps long messages. Pre-v0.1.91, Replace tab results targeted a <code>m_resultsOutput</code> that had been set to <code>nullptr</code> in v0.1.48 cleanup — Replace All / Replace All in Opened / Find in Files results silently dropped on the floor. Now the bottom bar is the single source of truth for every tab.</li>
-                            <li><strong>Find ↔ Replace carry-forward</strong> — switching from Find to Replace (or vice-versa) copies the search string into the destination tab's "Find what" field when the destination is empty. Never clobbers a value the user has already typed there. Hooked into <code>QTabWidget::currentChanged</code>; the non-clobber guard is the critical bit.</li>
-                            <li><strong>Two-step wrap at cycle end</strong> — Find Next reaching the last match STOPS with <code>"Reached end of document — press Find Next again to wrap to top"</code> (red). Cursor stays put. SECOND consecutive Find Next press actually wraps to the top and resumes. No more silent wrap. State resets on text-change or direction-flip; honours the existing wrap-around checkbox.</li>
-                            <li>Dialog minimum size bumped 660×400 → 720×440 so the longest status message fits one line at default size.</li>
-                            <li><code>test_findreplace_carry_forward</code> — 20 assertions across 5 scenarios (carry-forward both directions, non-clobber on re-switch, status bar fires on Find Next + Replace All, full Find Next cycle 3 → "Reached end" → wrap → back to match 1).</li>
+                            <li><strong>T-SQL <code>OUTPUT INSERTED.* INTO @v</code></strong> — sqlparser 0.55 parses it, but the Writer arm for the output clause isn't built yet. v0.1.93 candidate.</li>
+                            <li><strong>MySQL 8.0.19+ <code>INSERT ... AS new(m,n,p) ON DUPLICATE KEY UPDATE c=new.a+new.b</code></strong> — sqlparser parses, but our <code>ins.on</code> path falls back to Display. v0.1.93 candidate.</li>
+                            <li><strong>Oracle <code>CONNECT BY PRIOR ... START WITH</code>, <code>(+)</code> outer-join</strong> — no real <code>OracleDialect</code> in sqlparser-rs yet; we use <code>GenericDialect</code>. Would need pre-rewrite.</li>
+                            <li><strong>DDL / EXPLAIN / DCL</strong> — fall through to <code>Display</code>. Output is correct, just not multi-line.</li>
                         </ul>
                     </div>
                     <div class="version-section">
                         <h5>🧪 Tests</h5>
                         <ul>
-                            <li><strong>39 / 39 ctest pass</strong> (was 33 / 33 in v0.1.90). Six new test executables this release, all listed above.</li>
+                            <li><strong>44 / 44 in <code>sql_fmt</code> module</strong> (was 34). 10 new tests, one per audit finding.</li>
+                            <li><strong>39 / 39 ctest pass</strong> (unchanged; SQL formatter is Rust-only so no new C++ tests).</li>
+                            <li>Zero C++ files changed. Same FFI surface (<code>npc_format_sql</code> / <code>npc_format_sql_compact</code>). C++ side binary-compatible with new <code>librust_core.a</code>.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.91">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.92">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.91">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.92">Commits</a>
                 </div>
             </div>
             <!-- v0.1.76 policy: only the LATEST release detail card is shown
@@ -2058,7 +2061,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. under-10 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.91: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
+                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. under-10 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.92: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2070,7 +2073,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>under 10 MB</strong> (9.7 MB on Linux x64) across every platform. Latest v0.1.91 download sizes: <strong>3.5 MB</strong> Linux x64 tar.gz · <strong>3.3 MB</strong> Linux ARM64 tar.gz · <strong>26.9 MB</strong> macOS DMG · <strong>40.6 MB</strong> Windows MSI / <strong>32.2 MB</strong> NSIS / <strong>36.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~10 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>under 10 MB</strong> (9.7 MB on Linux x64) across every platform. Latest v0.1.92 download sizes: <strong>3.5 MB</strong> Linux x64 tar.gz · <strong>3.3 MB</strong> Linux ARM64 tar.gz · <strong>26.9 MB</strong> macOS DMG · <strong>40.6 MB</strong> Windows MSI / <strong>32.2 MB</strong> NSIS / <strong>36.7 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~10 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -2078,7 +2081,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.91 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.92 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>How do I verify a download is genuine?</h3>
