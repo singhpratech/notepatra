@@ -36,11 +36,13 @@ static int s_matchVecId   = qRegisterMetaType<QVector<ProjectSearchMatch>>("QVec
 #include <QLineEdit>
 #include <QLocale>
 #include <QMenu>
+#include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSystemTrayIcon>
 #include <QTextStream>
 #include <QTimer>
 #include <QTreeWidget>
@@ -57,6 +59,26 @@ ProjectSearchWorker::ProjectSearchWorker(QObject *parent) : QObject(parent) {}
 
 void ProjectSearchWorker::cancel() {
     m_cancel.store(true);
+    // v0.1.93 — also clear pause so any sleeping worker threads see
+    // m_cancel and exit cleanly instead of sleeping forever.
+    m_paused.store(false);
+}
+
+// v0.1.93 — B-with-tweaks checkpoint replies. Called from the UI's modal
+// dialog handler, queued via Qt::QueuedConnection across thread boundary.
+void ProjectSearchWorker::resumePastCheckpoint() {
+    // m_skipCheckpoints stays true for the rest of THIS search so we
+    // don't ask again. Cleared on the next search() call.
+    m_skipCheckpoints.store(true);
+    m_paused.store(false);
+}
+
+void ProjectSearchWorker::stopButShowResults() {
+    // Same effect as cancel() — sets m_cancel + clears pause. The UI
+    // distinguishes via m_stoppedAtCheckpoint to keep the partial
+    // results instead of discarding them.
+    m_cancel.store(true);
+    m_paused.store(false);
 }
 
 static bool matchesAnyGlob(const QString &fileName, const QStringList &globs) {
@@ -139,6 +161,14 @@ static bool looksBinary(const QString &path) {
 
 void ProjectSearchWorker::search(const Params &p) {
     m_cancel.store(false);
+    // v0.1.93 — reset B-with-tweaks per-search state. m_skipCheckpoints
+    // intentionally clears too — last search's "Continue past 50k" choice
+    // does NOT carry into the next search; user must re-confirm if they
+    // hit the checkpoint again.
+    m_paused.store(false);
+    m_softWarned.store(false);
+    m_checkpointFired.store(false);
+    m_skipCheckpoints.store(false);
     QElapsedTimer timer;
     timer.start();
 
@@ -168,6 +198,22 @@ void ProjectSearchWorker::search(const Params &p) {
     }
     const QString literal = p.caseSensitive ? p.query : p.query.toLower();
 
+    // v0.1.93 — Match-all-words tokens. Activated when the user has the
+    // "Match all words" checkbox on, Regex is off, and the query actually
+    // contains whitespace (single-word queries reduce to plain literal
+    // search). Each token is matched independently; a file passes when
+    // EVERY token appears somewhere in it.
+    QStringList allWordsTokens;
+    bool useAllWords = false;
+    if (p.allWords && !useRegex) {
+        const auto parts = p.query.split(QRegularExpression("\\s+"),
+                                          Qt::SkipEmptyParts);
+        for (const QString &t : parts) {
+            if (!t.isEmpty()) allWordsTokens << t;
+        }
+        useAllWords = allWordsTokens.size() > 1;
+    }
+
     // Walk the tree, pruning heavy dirs (.git / node_modules / target / …)
     // up-front instead of visiting them just to filter later. Emit
     // walkProgress every 500 files so a slow walk (eg $HOME with millions
@@ -191,9 +237,64 @@ void ProjectSearchWorker::search(const Params &p) {
     // signal stays coherent when several workers finish at the same time.
     std::atomic<int> filesDoneAtomic{0};
     std::atomic<int> totalMatchesAtomic{0};
+    std::atomic<int> totalFilesWithMatchesAtomic{0};
+    // v0.1.93 — B-with-tweaks: two-stage user-confirming flood protection.
+    //   • At kSoftWarnThreshold (10k matches): emit softWarningHit ONCE.
+    //     UI paints the progress bar amber + appends a count to status.
+    //     No interruption.
+    //   • At kHardWarnThreshold (50k matches): emit pauseAtCheckpoint and
+    //     set m_paused. All worker threads busy-wait at file boundaries
+    //     until UI dispatches one of three replies:
+    //        – resumePastCheckpoint()  → keep going to natural end
+    //        – stopButShowResults()    → set m_cancel, exit with partial
+    //        – cancel()                → same as stop, but UI discards
+    //     Once resumePastCheckpoint() fires, m_skipCheckpoints stays true
+    //     for the rest of this search so the user isn't asked twice.
+    constexpr int kSoftWarnThreshold = 10000;
+    constexpr int kHardWarnThreshold = 50000;
     std::atomic<qint64> totalLinesAtomic{0};
 
+    // Threshold checker called from BOTH search paths after each file's
+    // matchesFound emit. compare_exchange_strong ensures only one thread
+    // fires each signal exactly once per search even under parallel
+    // QtConcurrent::blockingMap. totalFiles is the captured-by-reference
+    // outer scope variable — gives the UI "X done of Y" context in the
+    // checkpoint popup.
+    auto checkThresholds = [&]() {
+        const int curMatches = totalMatchesAtomic.load();
+        if (!m_softWarned.load() && curMatches >= kSoftWarnThreshold) {
+            bool expected = false;
+            if (m_softWarned.compare_exchange_strong(expected, true)) {
+                emit softWarningHit(curMatches);
+            }
+        }
+        if (!m_skipCheckpoints.load() &&
+            !m_checkpointFired.load() &&
+            curMatches >= kHardWarnThreshold) {
+            bool expected = false;
+            if (m_checkpointFired.compare_exchange_strong(expected, true)) {
+                m_paused.store(true);
+                emit pauseAtCheckpoint(curMatches,
+                                       totalFilesWithMatchesAtomic.load(),
+                                       filesDoneAtomic.load(),
+                                       totalFiles);
+            }
+        }
+    };
+
+    // Pause gate — all worker threads call this at file boundaries. While
+    // m_paused is true and no cancel has fired, threads sleep 50ms in a
+    // loop. UI dispatches resumePastCheckpoint() / stopButShowResults() /
+    // cancel() to clear m_paused (and optionally m_cancel).
+    auto waitIfPaused = [this]() {
+        while (m_paused.load() && !m_cancel.load()) {
+            QThread::msleep(50);
+        }
+    };
+
     auto searchOne = [&, this](const QString &path) {
+        if (m_cancel.load()) return;
+        waitIfPaused();
         if (m_cancel.load()) return;
         QFileInfo fi(path);
 
@@ -205,15 +306,24 @@ void ProjectSearchWorker::search(const Params &p) {
         emit fileStarted(path);
 
         // File-name match — fires once per file if the file's name
-        // itself contains the query.
+        // itself contains the query. v0.1.93: also honours allWords mode.
         if (p.searchNames) {
-            bool nameHit;
-            if (useRegex)
+            bool nameHit = false;
+            if (useRegex) {
                 nameHit = regex.match(fi.fileName()).hasMatch();
-            else if (p.caseSensitive)
+            } else if (useAllWords) {
+                const QString hayName = p.caseSensitive
+                    ? fi.fileName() : fi.fileName().toLower();
+                nameHit = true;
+                for (const QString &tok : allWordsTokens) {
+                    const QString needle = p.caseSensitive ? tok : tok.toLower();
+                    if (!hayName.contains(needle)) { nameHit = false; break; }
+                }
+            } else if (p.caseSensitive) {
                 nameHit = fi.fileName().contains(literal);
-            else
+            } else {
                 nameHit = fi.fileName().toLower().contains(literal);
+            }
             if (nameHit) emit fileNameMatch(path);
         }
 
@@ -307,18 +417,56 @@ void ProjectSearchWorker::search(const Params &p) {
 
             // Hand the bytes to Rust aho-corasick for literal search.
             const QString body = QString::fromUtf8(raw);
-            const QVector<size_t> posBytes =
-                RustCore::findAll(body, p.query, /*isRegex*/ false,
-                                  p.caseSensitive, /*wholeWord*/ false);
-            if (!posBytes.isEmpty()) {
+
+            // (bytePos, byteLen) pairs to materialize into matches. For
+            // single-token / regex this is just one token's positions; for
+            // all-words this is the merged + sorted positions across all
+            // tokens (only if every token had at least one hit).
+            struct HitPair { size_t bytePos; int byteLen; };
+            QVector<HitPair> hits;
+
+            if (useAllWords) {
+                // v0.1.93 — match-all-words: file passes only if EVERY token
+                // appears at least once. Early exit on first miss saves
+                // running aho-corasick for tokens 2..N on most files.
+                bool allPresent = true;
+                QVector<QVector<size_t>> perTokenHits;
+                perTokenHits.reserve(allWordsTokens.size());
+                for (const QString &tok : allWordsTokens) {
+                    QVector<size_t> tokHits =
+                        RustCore::findAll(body, tok, /*isRegex*/ false,
+                                          p.caseSensitive, /*wholeWord*/ false);
+                    if (tokHits.isEmpty()) { allPresent = false; break; }
+                    perTokenHits.append(std::move(tokHits));
+                }
+                if (allPresent) {
+                    for (int ti = 0; ti < allWordsTokens.size(); ++ti) {
+                        const int tokBytes = allWordsTokens[ti].toUtf8().size();
+                        for (size_t bp : perTokenHits[ti]) {
+                            hits.append({bp, tokBytes});
+                        }
+                    }
+                    std::sort(hits.begin(), hits.end(),
+                              [](const HitPair &a, const HitPair &b) {
+                                  return a.bytePos < b.bytePos;
+                              });
+                }
+            } else {
+                const QVector<size_t> posBytes =
+                    RustCore::findAll(body, p.query, /*isRegex*/ false,
+                                      p.caseSensitive, /*wholeWord*/ false);
                 const int queryBytes = p.query.toUtf8().size();
+                for (size_t bp : posBytes) hits.append({bp, queryBytes});
+            }
+
+            if (!hits.isEmpty()) {
                 int lastLineNum = -1;
                 QString cachedLineContent;
                 int cachedLineStart = 0;
-                for (size_t bytePos : posBytes) {
+                for (const HitPair &h : hits) {
                     if (m_cancel.load()) break;
                     auto it = std::upper_bound(lineStarts.begin(), lineStarts.end(),
-                                               static_cast<int>(bytePos));
+                                               static_cast<int>(h.bytePos));
                     int lineNum = int(it - lineStarts.begin());
                     int lineStart = lineStarts[lineNum - 1];
                     // Cache the decoded line text across consecutive matches
@@ -333,28 +481,41 @@ void ProjectSearchWorker::search(const Params &p) {
                         lastLineNum = lineNum;
                     }
                     int col = QString::fromUtf8(
-                        raw.mid(cachedLineStart, bytePos - cachedLineStart)).size();
+                        raw.mid(cachedLineStart, h.bytePos - cachedLineStart)).size();
                     ProjectSearchMatch pm;
                     pm.filePath    = path;
                     pm.lineNumber  = lineNum;
                     pm.lineContent = cachedLineContent;
                     pm.matchStart  = col;
-                    pm.matchLength = QString::fromUtf8(raw.mid(bytePos, queryBytes)).size();
+                    pm.matchLength = QString::fromUtf8(raw.mid(h.bytePos, h.byteLen)).size();
                     fileHits.append(std::move(pm));
                     ++totalMatchesAtomic;
                     if (fileHits.size() >= maxMatchesPerFile) break;
                 }
             }
-            if (!fileHits.isEmpty()) emit matchesFound(fileHits);
+            if (!fileHits.isEmpty()) {
+                ++totalFilesWithMatchesAtomic;
+                emit matchesFound(fileHits);
+                checkThresholds();
+            }
             tick();
             return;
         }
 
         // Streaming path — regex searches + very large files. Reads one line
         // at a time so a 2 GB log doesn't blow RAM.
+        // v0.1.93 — all-words mode in streaming path: buffer candidate hits
+        // per token while scanning, and only emit them at EOF if every
+        // token was seen at least once. Bounded memory because each
+        // bucket caps at maxMatchesPerFile/N.
         QTextStream ts(&f);
         ts.setCodec("UTF-8");
         int lineNum = 0;
+        // For all-words streaming: one hit bucket per token; final emit
+        // happens once we've confirmed every bucket is non-empty.
+        QVector<QVector<ProjectSearchMatch>> awBuckets;
+        if (useAllWords) awBuckets.resize(allWordsTokens.size());
+        const int awPerBucketCap = qMax(1, maxMatchesPerFile / qMax(1, allWordsTokens.size()));
         while (!ts.atEnd()) {
             if (m_cancel.load()) break;
             // Per-file watchdog — bail on a file that's eating too much
@@ -377,6 +538,29 @@ void ProjectSearchWorker::search(const Params &p) {
                     ++totalMatchesAtomic;
                     if (fileHits.size() >= maxMatchesPerFile) break;
                 }
+            } else if (useAllWords) {
+                // Multi-token: scan the line for each token's positions and
+                // route the hits into per-token buckets. The buckets get
+                // merged into fileHits at EOF, but only if every bucket has
+                // ≥ 1 entry (i.e. every token appeared somewhere in the file).
+                const QString &hayLine = p.caseSensitive ? line : line.toLower();
+                for (int ti = 0; ti < allWordsTokens.size(); ++ti) {
+                    const QString needle = p.caseSensitive
+                        ? allWordsTokens[ti] : allWordsTokens[ti].toLower();
+                    int from = 0;
+                    while (awBuckets[ti].size() < awPerBucketCap) {
+                        int idx = hayLine.indexOf(needle, from);
+                        if (idx < 0) break;
+                        ProjectSearchMatch pm;
+                        pm.filePath = path;
+                        pm.lineNumber = lineNum;
+                        pm.lineContent = line;
+                        pm.matchStart = idx;
+                        pm.matchLength = needle.length();
+                        awBuckets[ti].append(std::move(pm));
+                        from = idx + needle.length();
+                    }
+                }
             } else {
                 int from = 0;
                 const QString &hayLine = p.caseSensitive ? line : line.toLower();
@@ -397,10 +581,41 @@ void ProjectSearchWorker::search(const Params &p) {
             }
             if (fileHits.size() >= maxMatchesPerFile) break;
         }
+        // v0.1.93 — all-words streaming finalize: only merge buckets into
+        // fileHits if EVERY token had at least one hit. Otherwise discard
+        // (this file does not satisfy the all-words AND constraint).
+        if (useAllWords) {
+            bool allBucketsFilled = true;
+            for (const auto &bucket : awBuckets) {
+                if (bucket.isEmpty()) { allBucketsFilled = false; break; }
+            }
+            if (allBucketsFilled) {
+                QVector<ProjectSearchMatch> merged;
+                for (auto &bucket : awBuckets) {
+                    for (auto &m : bucket) merged.append(std::move(m));
+                }
+                // Sort by (lineNumber, matchStart) so results read top-to-bottom.
+                std::sort(merged.begin(), merged.end(),
+                          [](const ProjectSearchMatch &a, const ProjectSearchMatch &b) {
+                              if (a.lineNumber != b.lineNumber)
+                                  return a.lineNumber < b.lineNumber;
+                              return a.matchStart < b.matchStart;
+                          });
+                for (auto &m : merged) {
+                    fileHits.append(std::move(m));
+                    ++totalMatchesAtomic;
+                    if (fileHits.size() >= maxMatchesPerFile) break;
+                }
+            }
+        }
         // In the streaming path, lineNum is the total lines we read
         // (regardless of match count). Feed into the running total.
         totalLinesAtomic += qint64(lineNum);
-        if (!fileHits.isEmpty()) emit matchesFound(fileHits);
+        if (!fileHits.isEmpty()) {
+            ++totalFilesWithMatchesAtomic;
+            emit matchesFound(fileHits);
+            checkThresholds();
+        }
         tick();
     };
 
@@ -474,6 +689,16 @@ ProjectSearch::ProjectSearch(QWidget *parent) : QWidget(parent) {
             this, &ProjectSearch::onProgress, Qt::QueuedConnection);
     connect(m_worker, &ProjectSearchWorker::finishedSearch,
             this, &ProjectSearch::onFinished, Qt::QueuedConnection);
+    // v0.1.93 — B-with-tweaks signal wiring.
+    //   • softWarningHit (10k matches): UI paints progress bar amber +
+    //     adds a count to the status line. One-shot per search.
+    //   • pauseAtCheckpoint (50k matches): UI pops a modal dialog with
+    //     Continue / Show me these / Cancel. Worker is paused; one of
+    //     three slot calls back into worker resumes or stops it.
+    connect(m_worker, &ProjectSearchWorker::softWarningHit,
+            this, &ProjectSearch::onSoftWarning, Qt::QueuedConnection);
+    connect(m_worker, &ProjectSearchWorker::pauseAtCheckpoint,
+            this, &ProjectSearch::onPauseAtCheckpoint, Qt::QueuedConnection);
     // Live walk progress — walk phase maps to 0 % … 25 % of the bar so the
     // user sees it crawling up even before we know the total file count.
     // ~100 files discovered per 1 %, capped at 25 %.
@@ -565,6 +790,22 @@ void ProjectSearch::buildUi() {
     QFont tf = notepatraUiFont();
     tf.setPointSize(18);
     tf.setWeight(QFont::DemiBold);
+    // Same Linux-only color-emoji fallback the results tree uses at L1029.
+    // Without it the magnifying-glass codepoint renders as a tofu box (or as
+    // an outline-only mono glyph) on most stock Linux fonts, making the
+    // panel header look different from Windows/macOS. User reported the
+    // visual drift in v0.1.93 testing.
+#ifdef Q_OS_LINUX
+    {
+        QStringList fams = tf.families();
+        if (fams.isEmpty()) fams << tf.family();
+        for (const QString &e : QStringList{
+                "Noto Color Emoji", "Twemoji Mozilla", "Symbola", "Joypixels"}) {
+            if (!fams.contains(e, Qt::CaseInsensitive)) fams << e;
+        }
+        tf.setFamilies(fams);
+    }
+#endif
     m_title->setFont(tf);
     titleRow->addWidget(m_title, /*stretch*/ 1);
 
@@ -595,6 +836,22 @@ void ProjectSearch::buildUi() {
     m_hint = new QLabel("Stream search across file names + contents. Double-click a match to jump to that line.");
     m_hint->setWordWrap(true);
     root->addWidget(m_hint);
+
+    // Hint reflects Match-all-words state. When it's ON, the results gain a
+    // [N%] relevance badge on every match line — explain what the number
+    // means inline so users don't have to guess. The lambda is also called
+    // once below after the checkbox is constructed to seed initial text.
+    auto refreshHint = [this]() {
+        if (m_allWordsChk && m_allWordsChk->isChecked()) {
+            m_hint->setText(
+                "Stream search across file names + contents. Double-click a match to jump to that line."
+                "  ·  Each row shows match=N% — 100% means your full phrase is on that line; "
+                "lower % means some of your words are missing.");
+        } else {
+            m_hint->setText(
+                "Stream search across file names + contents. Double-click a match to jump to that line.");
+        }
+    };
 
     // ── Query input (big, prominent) ─────────────────────────────────
     m_queryInput = new QLineEdit;
@@ -656,14 +913,61 @@ void ProjectSearch::buildUi() {
     optRow->addWidget(m_globInput);
 
     m_caseChk  = new QCheckBox("Match case");
+    m_caseChk->setToolTip(
+        "Tick to make the search case-sensitive (Apple ≠ apple).\n"
+        "Default OFF — most casual searches don't care about case.");
     m_wordChk  = new QCheckBox("Whole word");
+    m_wordChk->setToolTip(
+        "Match the query only when it appears as a whole word — surrounded\n"
+        "by non-word characters (or start/end of line).\n\n"
+        "Example: 'log' will match 'log(x)' but NOT 'logger' or 'catalog'.");
     m_regexChk = new QCheckBox("Regex");
+    m_regexChk->setToolTip(
+        "Interpret the query as a regular expression (PCRE-style).\n\n"
+        "Examples:\n"
+        "   \\bclass\\s+\\w+   — class keyword followed by identifier\n"
+        "   TODO|FIXME|XXX    — any of three markers\n"
+        "   ^\\s*import\\s     — import statement at line start\n\n"
+        "When Regex is on, Whole word and Match all words are ignored —\n"
+        "the regex pattern is used verbatim.");
+    // v0.1.93 — multi-token AND search for users who don't want to learn
+    // regex. Splits the query on whitespace; matches files containing every
+    // token (any order, any distance). Default OFF so a 2-word query like
+    // "import os" runs as an exact-phrase search and stays predictable;
+    // power users tick it explicitly when they want any-order any-line AND
+    // semantics. The B-with-tweaks safeguards (amber bar at 10k matches +
+    // checkpoint popup at 50k) protect the UI from floods if the user does
+    // turn it on against a large folder.
+    m_allWordsChk = new QCheckBox("Match all words");
+    m_allWordsChk->setChecked(false);
+    m_allWordsChk->setToolTip(
+        "Default OFF — your query is searched as an exact phrase.\n\n"
+        "Tick this to split your query on whitespace and match files that\n"
+        "contain EVERY word, in any order, on any line.\n\n"
+        "Example: with this on, 'Create abcd' matches 'CREATE OR ALTER\n"
+        "PROCEDURE sp_abcd'.\n\n"
+        "Files containing the literal phrase you typed surface at the TOP\n"
+        "of the results; files with the words scattered separately appear\n"
+        "lower.\n\n"
+        "Ignored when Regex is on.");
+    connect(m_allWordsChk, &QCheckBox::toggled, this, [refreshHint](bool){ refreshHint(); });
+    refreshHint();   // seed initial text now that the checkbox exists
     m_namesChk = new QCheckBox("Also match file names");
     m_namesChk->setChecked(true);
+    m_namesChk->setToolTip(
+        "A file appears in the results if EITHER its name OR its contents\n"
+        "match the query. Tick this when you're not sure whether to search\n"
+        "by filename or by file body.\n\n"
+        "Example: 'utils' will find utils.py (name match) AND any file that\n"
+        "mentions the word 'utils' inside (content match).");
     m_binaryChk = new QCheckBox("Include binary files");
     m_binaryChk->setChecked(false);
-    m_binaryChk->setToolTip("By default binary files (images, archives, compiled objects) are skipped for speed. Tick to force-search them too.");
-    for (QCheckBox *cb : {m_caseChk, m_wordChk, m_regexChk, m_namesChk, m_binaryChk}) {
+    m_binaryChk->setToolTip(
+        "By default binary files (images, archives, compiled objects,\n"
+        "PDFs) are skipped for speed — they contain bytes that aren't\n"
+        "human-readable text. Tick to force-search them too (slow on\n"
+        "large media folders).");
+    for (QCheckBox *cb : {m_caseChk, m_wordChk, m_regexChk, m_allWordsChk, m_namesChk, m_binaryChk}) {
         cb->setStyleSheet(QString("color: %1; font-size: 12px;").arg(p.textSecondary));
         optRow->addWidget(cb);
     }
@@ -770,12 +1074,14 @@ void ProjectSearch::buildUi() {
     }
     m_results->setUniformRowHeights(true);
     m_results->setAlternatingRowColors(false);
-    // NO internal scrollbars — the tree grows with its content and the
-    // outer page scroll handles overflow. This is the "one scroll, not
-    // two" UX the user asked for.
-    m_results->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    m_results->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    m_results->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+    // v0.1.93 — reverse the v0.1.44 "one scroll" design. User asked for the
+    // Notepad++ pattern: results panel has its OWN scrollbar that appears
+    // automatically when content overflows. Internal scrollbars now on
+    // AsNeeded (Qt default); tree gets a sensible expanding height inside
+    // its slot of the outer QScrollArea + splitter.
+    m_results->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_results->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_results->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     m_results->setStyleSheet(QString(
         "QTreeWidget { background: %1; color: %2; border: 1px solid %3; "
         "border-radius: 10px; padding: 6px; } "
@@ -783,30 +1089,16 @@ void ProjectSearch::buildUi() {
         "QTreeWidget::item:selected { background: %4; color: #FFFFFF; }"
     ).arg(p.cardBg, p.textPrimary, p.inputBorder, p.accent));
     m_results->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
-    root->addWidget(m_results);   // no stretch — size-to-content
+    // v0.1.93 — give the tree a fair share of vertical space and let it
+    // expand. Outer QScrollArea still scrolls the WHOLE page if needed; the
+    // tree's own scrollbar handles result-list overflow (Notepad++ pattern).
+    m_results->setMinimumHeight(400);
+    root->addWidget(m_results, /*stretch*/ 1);
 
-    // Whenever rows are added/removed/expanded/collapsed, recompute the
-    // tree's preferred height so it grows to fit every visible row and
-    // the outer QScrollArea takes over from there. Without this Qt
-    // gives the tree its default ~200 px and everything below clips.
-    auto resizeTree = [this]() {
-        const int rowH = qMax(20, m_results->sizeHintForRow(0));
-        int visible = 0;
-        for (int i = 0; i < m_results->topLevelItemCount(); ++i) {
-            visible++;   // parent row
-            QTreeWidgetItem *top = m_results->topLevelItem(i);
-            if (top->isExpanded()) visible += top->childCount();
-        }
-        if (visible < 1) visible = 1;
-        // Add padding for the border/margins we applied via stylesheet.
-        const int h = rowH * visible + 16;
-        m_results->setFixedHeight(h);
-    };
-    m_resizeTree = resizeTree;
-    connect(m_results, &QTreeWidget::itemExpanded,  this, [this]() { m_resizeTree(); });
-    connect(m_results, &QTreeWidget::itemCollapsed, this, [this]() { m_resizeTree(); });
-    // Initial compact height so the widget has a reasonable starting look
-    m_results->setFixedHeight(240);
+    // v0.1.93 — m_resizeTree retained as a no-op so the existing call sites
+    // (onMatches, onFileNameMatch, item expand/collapse) don't need to be
+    // refactored. The tree now manages its own height via QSizePolicy.
+    m_resizeTree = []() {};
 
     connect(m_results, &QTreeWidget::itemDoubleClicked, this,
             [this](QTreeWidgetItem *item, int) {
@@ -1010,6 +1302,30 @@ void ProjectSearch::startSearch() {
         m_statusLabel->setText("⚠ Folder does not exist: " + m_folderInput->text());
         return;
     }
+    // v0.1.93 — B-with-tweaks: reset per-search UI state so the previous
+    // search's amber bar / checkpoint-stop styling doesn't bleed into
+    // the new search.
+    m_softWarnActive = false;
+    m_stoppedAtCheckpoint = false;
+    // Reset progress bar style — last search may have left it amber.
+    {
+        const auto resetPal = psearchPalette();
+        m_progressBar->setStyleSheet(QString(
+            "QProgressBar { background: %1; border: none; border-radius: 3px; }"
+            "QProgressBar::chunk { background: %2; border-radius: 3px; }"
+        ).arg(resetPal.inputBorder, resetPal.accent));
+    }
+    // Stash params for the relevance ranker in onMatches/onFinished and
+    // the per-line % badge.
+    m_currentQuery          = m_queryInput->text().trimmed();
+    m_currentSearchAllWords = m_allWordsChk->isChecked();
+    m_currentCaseSensitive  = m_caseChk->isChecked();
+    m_currentTokens.clear();
+    const auto rawTokens = m_currentQuery.split(QRegularExpression("\\s+"),
+                                                 Qt::SkipEmptyParts);
+    for (const QString &t : rawTokens) {
+        if (!t.isEmpty()) m_currentTokens << t;
+    }
 
     // v0.1.44 — DON'T clear the tree any more. Each search becomes a
     // new top-level "session" row stacked at the top, with prior
@@ -1098,6 +1414,7 @@ void ProjectSearch::startSearch() {
     p.caseSensitive = m_caseChk->isChecked();
     p.wholeWord = m_wordChk->isChecked();
     p.regex = m_regexChk->isChecked();
+    p.allWords = m_allWordsChk->isChecked();
     p.skipBinary = !m_binaryChk->isChecked();
 
     // Queue the search onto the worker thread via a lambda — bypasses
@@ -1122,9 +1439,102 @@ void ProjectSearch::cancelSearch() {
     // 3. Immediate user feedback — no wait.
     m_statusLabel->setText("Cancelling… (stopping worker threads)");
     m_cancelBtn->setEnabled(false);
-    // Search button stays disabled until finishedSearch confirms the
-    // worker has fully stopped — prevents kicking off a second search on
-    // top of one that's still unwinding.
+    // Re-enable Search immediately. The worker may still be unwinding in
+    // the background, but its m_cancel flag is set so it'll bail at the
+    // next file boundary. A new startSearch() call would queue behind
+    // (Qt::QueuedConnection) the unwinding slot and resets every atomic
+    // fresh, so the user doesn't have to wait to start a new query.
+    m_searchBtn->setEnabled(true);
+}
+
+// v0.1.93 — B-with-tweaks UI handlers.
+//
+// onSoftWarning paints the progress bar amber and adds a "10k+ matches"
+// hint to the status line so the user can SEE the search has crossed the
+// soft threshold. No interruption, no popup — just a colour shift.
+void ProjectSearch::onSoftWarning(int totalMatches) {
+    if (m_softWarnActive) return;
+    m_softWarnActive = true;
+    const auto p = psearchPalette();
+    // Amber chunk on top of the existing progress-bar styling. We keep
+    // the original background + radius and override just the chunk colour.
+    m_progressBar->setStyleSheet(QString(
+        "QProgressBar { background: %1; border: none; border-radius: 3px; }"
+        "QProgressBar::chunk { background: #FFA94D; border-radius: 3px; }"
+    ).arg(p.inputBorder));
+    m_statusLabel->setText(
+        QString("⚠ Found %1+ matches — scan is wide. Hit Cancel anytime "
+                "or narrow your query.")
+            .arg(totalMatches));
+}
+
+// onPauseAtCheckpoint shows the modal dialog at the 50k threshold. The
+// worker is already paused. Each button maps to one slot on the worker:
+//   • Continue (keep going) → resumePastCheckpoint()
+//   • Show me these       → stopButShowResults() (keep partial results)
+//   • Cancel              → cancel() (will discard via cancelSearch path)
+void ProjectSearch::onPauseAtCheckpoint(int totalMatches, int filesWithMatches,
+                                        int filesDone, int filesTotal) {
+    const int pct = filesTotal > 0
+        ? int((qint64(filesDone) * 100) / qint64(filesTotal)) : 0;
+    const qint64 remaining = qint64(filesTotal) - qint64(filesDone);
+
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Warning);
+    box.setWindowTitle("Project Search — large result set");
+    box.setText(
+        QString("<b>Found %1 matches across %2 file(s).</b>")
+            .arg(totalMatches).arg(filesWithMatches));
+    box.setInformativeText(
+        QString("Scanned %1 of %2 files (%3%). %4 file(s) still to go.<br><br>"
+                "Continuing may use 500&nbsp;MB+ of RAM and take longer. "
+                "What do you want to do?")
+            .arg(filesDone).arg(filesTotal).arg(pct).arg(remaining));
+
+    // QMessageBox button labels — text only; the role decides which is
+    // default and which is the close-button outcome.
+    auto *contBtn  = box.addButton("Continue (find more)", QMessageBox::AcceptRole);
+    auto *showBtn  = box.addButton("Show me these",        QMessageBox::DestructiveRole);
+    auto *cancelBtn = box.addButton("Cancel",               QMessageBox::RejectRole);
+    box.setDefaultButton(contBtn);
+    box.exec();
+
+    QAbstractButton *clicked = box.clickedButton();
+    if (clicked == contBtn) {
+        // Resume past checkpoint — worker won't ask again this search.
+        if (m_worker) {
+            QMetaObject::invokeMethod(m_worker, "resumePastCheckpoint",
+                                       Qt::QueuedConnection);
+        }
+        m_statusLabel->setText(
+            QString("▶ Continuing past %1 matches — full scan in progress.")
+                .arg(totalMatches));
+    } else if (clicked == showBtn) {
+        // Keep partial results, stop the scan. Critical: update UI phase
+        // IMMEDIATELY so the live status refresher stops painting
+        // "Searching — N files (X%)…" while worker threads wind down.
+        // Without this, user reported a 47s "still scanning" lag after
+        // clicking Show me these because blockingMap takes time to
+        // unwind across many already-queued files.
+        m_stoppedAtCheckpoint = true;
+        m_phase = Phase::Idle;
+        if (m_liveTimer && m_liveTimer->isActive()) m_liveTimer->stop();
+        m_statusLabel->setText(
+            QString("⏸ Stopping at your request — wrapping up worker "
+                    "threads… (%1 matches kept)").arg(totalMatches));
+        m_cancelBtn->setEnabled(false);
+        // Re-enable Search immediately — same reasoning as cancelSearch():
+        // worker unwind is bounded by m_cancel, and a new search queues
+        // safely behind via Qt::QueuedConnection.
+        m_searchBtn->setEnabled(true);
+        if (m_worker) {
+            QMetaObject::invokeMethod(m_worker, "stopButShowResults",
+                                       Qt::QueuedConnection);
+        }
+    } else {
+        // Full cancel — same path as the Cancel button.
+        cancelSearch();
+    }
 }
 
 // v0.1.44 — per-session file-row factory. Files are children of the
@@ -1164,28 +1574,129 @@ void ProjectSearch::onFileNameMatch(const QString &filePath) {
     if (m_resizeTree) m_resizeTree();
 }
 
+// Forward declaration — helper lives below the format-elapsed/format-count
+// helpers (those are reused by the live-status refresher above and the
+// onFinished slot below). Defining the per-line-relevance helper alongside
+// them keeps the helper cluster together; this forward decl just makes
+// it visible to onMatches.
+static int psearchPerLineRelevance(const QString &line, const QString &phrase,
+                                   const QStringList &tokens, bool caseSensitive);
+
 void ProjectSearch::onMatches(const QVector<ProjectSearchMatch> &matches) {
     if (matches.isEmpty()) return;
     if (!m_currentSession) return;
     const auto p = psearchPalette();
     auto &fileMap = m_perSessionFiles[m_currentSession];
     auto *parent = fileParent(m_currentSession, fileMap, matches.first().filePath, p.accent);
+
+    // v0.1.93 — show per-line relevance % only in match-all-words mode
+    // with 2+ tokens. Phrase / regex / single-word searches don't need
+    // the badge — every match is by definition a "full" hit.
+    const bool showRelevance = m_currentSearchAllWords &&
+                               m_currentTokens.size() > 1;
+
+    // Per-batch tracking for the file-level best-line %. After adding
+    // matches we may promote this file in the session ordering based
+    // on its new best.
+    int batchMaxPct = 0;
+
     for (const ProjectSearchMatch &m : matches) {
         QString line = m.lineContent;
         if (line.length() > 240) line = line.left(240) + "…";
         const int col1 = m.matchStart + 1;
         const QString coord = QString("%1:%2").arg(m.lineNumber, 5).arg(col1, -3);
-        const QString rendered = QString("      %1  │  %2").arg(coord, line);
+
+        int pct = 100;
+        if (showRelevance) {
+            pct = psearchPerLineRelevance(
+                m.lineContent, m_currentQuery, m_currentTokens,
+                m_currentCaseSensitive);
+            batchMaxPct = qMax(batchMaxPct, pct);
+        }
+
+        // key=value form so the badge is self-describing — earlier [100%]
+        // form needed a tooltip to explain what the number was. Shown on
+        // EVERY row regardless of mode (user feedback: phrase / regex /
+        // single-word searches all naturally land at match=100%, and
+        // having the badge always present is more consistent than hiding
+        // it for some modes). Right-aligned in a fixed 3-char numeric
+        // field so columns line up visually regardless of 1/2/3-digit %.
+        const QString prefix = QString("match=%1%  ")
+                                   .arg(pct, 3, 10, QChar(' '));
+        const QString rendered = QString("      %1%2  │  %3")
+                                     .arg(prefix, coord, line);
         auto *child = new QTreeWidgetItem(parent);
         child->setText(0, rendered);
+        // Hover tooltip = native path + line:col + raw line content. The
+        // match=N% label on the row is now self-describing, so we don't
+        // append a separate relevance explainer here (user feedback:
+        // tooltip clutter wasn't helping).
         child->setToolTip(0, QString("%1:%2:%3\n%4")
                               .arg(QDir::toNativeSeparators(m.filePath))
                               .arg(m.lineNumber).arg(col1).arg(m.lineContent));
-        child->setData(0, Qt::UserRole, m.filePath);
+        child->setData(0, Qt::UserRole,     m.filePath);
         child->setData(0, Qt::UserRole + 1, m.lineNumber);
         child->setData(0, Qt::UserRole + 2, col1);
+        // UserRole + 5 — per-line relevance % for the within-file sort.
+        child->setData(0, Qt::UserRole + 5, pct);
         ++m_matchesSoFar;
     }
+
+    // v0.1.93 — descending sort WITHIN file: lines with [100%] first,
+    // then [99%], then partial-token lines lower. User explicitly asked
+    // for descending order: "100% 99% like that — match all words [i.e.
+    // partial-line files] comes later".
+    if (showRelevance && parent->childCount() > 1) {
+        QList<QTreeWidgetItem*> kids = parent->takeChildren();
+        std::stable_sort(kids.begin(), kids.end(),
+                         [](QTreeWidgetItem *a, QTreeWidgetItem *b) {
+                             return a->data(0, Qt::UserRole + 5).toInt() >
+                                    b->data(0, Qt::UserRole + 5).toInt();
+                         });
+        parent->addChildren(kids);
+    }
+
+    // v0.1.93 — file-level score driven by BEST line %.
+    //   Score = bestLinePct * 1,000,000 + totalMatchCount
+    //   100% bestLine  → 100,000,000 + matchCount
+    //    99% bestLine  →  99,000,000 + matchCount
+    //    50% bestLine  →  50,000,000 + matchCount
+    // Sort is descending. Files with any 100% line ALWAYS rank above
+    // files whose best is 99%, which rank above 50%, etc. Among same
+    // bestPct, more matches wins (matchCount tiebreaker).
+    if (showRelevance) {
+        const int existingBest = parent->data(0, Qt::UserRole + 4).toInt();
+        const int newBest = qMax(existingBest, batchMaxPct);
+        parent->setData(0, Qt::UserRole + 4, newBest);
+        const int totalMatchesForFile = parent->childCount();
+        const int newScore = newBest * 1000000 + totalMatchesForFile;
+        parent->setData(0, Qt::UserRole + 3, newScore);
+
+        // LIVE FILE REPOSITION: if best-line % improved (or the file
+        // just appeared with a non-zero best), re-position it in the
+        // session by linear scan. Linear is O(N) per move but each
+        // file moves at most twice (initial insert + one promotion when
+        // a higher-% line later arrives), so total is O(N²) worst case
+        // — fine for typical searches (≤2,000 files with matches before
+        // the 50k checkpoint kicks in).
+        const bool needsReposition =
+            (newBest > existingBest) || (existingBest == 0 && batchMaxPct > 0);
+        if (needsReposition && m_currentSession) {
+            const int currentIdx = m_currentSession->indexOfChild(parent);
+            if (currentIdx >= 0) {
+                m_currentSession->takeChild(currentIdx);
+                int insertIdx = m_currentSession->childCount();
+                for (int i = 0; i < m_currentSession->childCount(); ++i) {
+                    const int sibScore =
+                        m_currentSession->child(i)->data(0, Qt::UserRole + 3).toInt();
+                    if (sibScore < newScore) { insertIdx = i; break; }
+                }
+                m_currentSession->insertChild(insertIdx, parent);
+                parent->setExpanded(true);
+            }
+        }
+    }
+
     if (m_resizeTree) m_resizeTree();
 }
 
@@ -1214,6 +1725,29 @@ static QString psearchFormatElapsed(qint64 ms) {
                .arg(hours)
                .arg(minutes, 2, 10, QChar('0'))
                .arg(seconds, 2, 10, QChar('0'));
+}
+
+// v0.1.93 — per-line relevance %. Used by onMatches to prepend a small
+// "[100%] " badge to each match row when Match-all-words is on. Rules:
+//   • Single-token query → always 100 % (every match is a full match)
+//   • Line contains the literal phrase → 100 %
+//   • Line contains every query token (scattered) → 99 %
+//   • Line contains N of M tokens (N < M) → round((N/M) * 99)
+// Capped at 99 % for scattered matches so phrase-line matches are always
+// visibly distinct from "all tokens just happen to be on this line".
+static int psearchPerLineRelevance(const QString &line, const QString &phrase,
+                                   const QStringList &tokens, bool caseSensitive) {
+    if (tokens.size() <= 1) return 100;
+    const QString cmpLine = caseSensitive ? line : line.toLower();
+    const QString cmpPhrase = caseSensitive ? phrase : phrase.toLower();
+    if (cmpLine.contains(cmpPhrase)) return 100;
+    int found = 0;
+    for (const QString &tok : tokens) {
+        const QString cmpTok = caseSensitive ? tok : tok.toLower();
+        if (cmpLine.contains(cmpTok)) ++found;
+    }
+    if (found == 0) return 0;
+    return qBound(1, int(qRound(double(found) / double(tokens.size()) * 99.0)), 99);
 }
 
 // Group-separated integer for big line counts — "28340" → "28,340"
@@ -1262,6 +1796,16 @@ void ProjectSearch::onFinished(int totalMatches, int totalFiles,
     if (totalMatches == 0) {
         m_statusLabel->setText(QString("No matches — scanned %1 files, %2 lines in %3.")
                                    .arg(totalFiles).arg(lines).arg(elapsed));
+    } else if (m_stoppedAtCheckpoint) {
+        // v0.1.93 — user clicked "Show me these" at the 50k checkpoint.
+        // Different status text so they know they're looking at a partial
+        // (but their own choice).
+        m_statusLabel->setText(
+            QString("⏸ Stopped at user request — showing %1 matches across "
+                    "%2 file(s) · %3 lines scanned · %4. Search again to "
+                    "see more results.")
+                .arg(totalMatches).arg(filesWithMatches)
+                .arg(lines).arg(elapsed));
     } else {
         m_statusLabel->setText(
             QString("✓ %1 matches across %2 file(s) · scanned %3 files, %4 lines in %5.")
@@ -1270,6 +1814,71 @@ void ProjectSearch::onFinished(int totalMatches, int totalFiles,
                 .arg(totalFiles)
                 .arg(lines)
                 .arg(elapsed));
+    }
+
+    // v0.1.93 — desktop notification when a long search completes while
+    // the user has tabbed away. Gated on three rules so we don't spam:
+    //   1. Search took ≥ 3 seconds (short searches finish before the
+    //      user even reads the popup — pure friction otherwise).
+    //   2. The top-level window is NOT the active window (user is in
+    //      another app — they need the heads-up). If they're staring at
+    //      the panel, the status line above already tells them.
+    //   3. The host OS exposes a notification daemon — Qt abstracts
+    //      libnotify / WinToast / NSUserNotificationCenter behind one
+    //      QSystemTrayIcon::showMessage call, so the same code works on
+    //      Linux, Windows, and macOS. We don't create a visible tray
+    //      icon — the static instance only exists to carry the message.
+    if (elapsedMs >= 3000 &&
+        window() && !window()->isActiveWindow() &&
+        QSystemTrayIcon::isSystemTrayAvailable() &&
+        QSystemTrayIcon::supportsMessages()) {
+        static QSystemTrayIcon *s_notifyTray = nullptr;
+        if (!s_notifyTray) {
+            QIcon appIcon = QApplication::windowIcon();
+            if (appIcon.isNull()) appIcon = QIcon(":/icons/notepatra.png");
+            s_notifyTray = new QSystemTrayIcon(appIcon, qApp);
+        }
+        QString title, body;
+        if (totalMatches == 0) {
+            title = "Notepatra — Project Search";
+            body = QString("No matches · scanned %1 files in %2.")
+                       .arg(totalFiles).arg(elapsed);
+        } else if (m_stoppedAtCheckpoint) {
+            title = "Notepatra — Project Search (partial)";
+            body = QString("Stopped at your request · kept %1 matches across "
+                           "%2 files · %3.")
+                       .arg(totalMatches).arg(filesWithMatches).arg(elapsed);
+        } else {
+            title = "Notepatra — Project Search done";
+            body = QString("Found %1 matches across %2 files in %3.")
+                       .arg(totalMatches).arg(filesWithMatches).arg(elapsed);
+        }
+        s_notifyTray->showMessage(title, body, QSystemTrayIcon::Information,
+                                  /*timeoutMs*/ 6000);
+    }
+
+    // v0.1.93 — relevance ranking finale. When match-all-words was on,
+    // re-order this session's file rows so phrase-matching files surface
+    // at the top. Score was accumulated in onMatches via UserRole+3.
+    // Files with no score (default 0) fall to the bottom; among same-score
+    // files we preserve insertion order via stable_sort.
+    if (m_currentSearchAllWords && m_currentSession &&
+        m_currentSession->childCount() > 1) {
+        QList<QTreeWidgetItem*> children;
+        children.reserve(m_currentSession->childCount());
+        // takeChildren() returns ALL children in one go; safer than
+        // removeChild() in a loop that mutates the child list.
+        children = m_currentSession->takeChildren();
+        std::stable_sort(children.begin(), children.end(),
+                         [](QTreeWidgetItem *a, QTreeWidgetItem *b) {
+                             const int sa = a->data(0, Qt::UserRole + 3).toInt();
+                             const int sb = b->data(0, Qt::UserRole + 3).toInt();
+                             return sa > sb;   // higher score first
+                         });
+        m_currentSession->addChildren(children);
+        // Re-expand all file rows (expanded state is preserved by Qt
+        // across take/add, but re-stating is defensive).
+        for (QTreeWidgetItem *c : children) c->setExpanded(true);
     }
 
     // v0.1.44 — stamp the session header with the final result so the
@@ -1339,7 +1948,7 @@ void ProjectSearch::refreshLiveStatus() {
             QString shortPath = m_lastFileInFlight;
             if (shortPath.length() > 80)
                 shortPath = "…" + shortPath.right(79);
-            base += QString("\n⏳ stalled on: %1").arg(shortPath);
+            base += QString("\n· current: %1").arg(shortPath);
         }
         m_statusLabel->setText(base);
     }

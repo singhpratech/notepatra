@@ -7,6 +7,44 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.93] — 2026-05-19
+
+**Project Search: intelligent flood protection + live relevance ranking + `match=N%` badges + cross-platform completion notifications.** Reliability + ergonomics iteration. Replaces the v0.1.92 unbounded-emit model with informed warnings (amber bar at 10k matches, modal checkpoint at 50k with user choice), ranks phrase matches above scattered-token matches *live during the scan*, surfaces a self-describing `match=N%` badge on every result row, and fires a native desktop notification when a long search completes with the window unfocused. No new file types / lexers / backends / installer changes.
+
+### Added
+- **Soft warning at 10,000 matches** (`src/projectsearch.{h,cpp}`) — `softWarningHit` signal fires once when running totalMatches first crosses 10k; UI paints the progress-bar chunk amber (`#FFA94D`) and appends *"⚠ Found 10,000+ matches — scan is wide. Hit Cancel anytime or narrow your query."* to the status line. No interruption.
+- **Hard checkpoint popup at 50,000 matches** — `pauseAtCheckpoint(totalMatches, filesWithMatches, filesDone, filesTotal)` signal pauses all worker threads at file boundaries and pops a `QMessageBox` modal with three buttons: **Continue (find more)** → `resumePastCheckpoint()` (sets `m_skipCheckpoints` so we don't ask again this search, unpauses workers), **Show me these** → `stopButShowResults()` (sets `m_cancel` + keeps partial results; the UI phase flips to Idle and the live timer stops *immediately* with status `⏸ Stopping at your request…`, then onFinished writes `⏸ Stopped at user request — showing N matches`), **Cancel** → standard `cancelSearch()` path (discard). Popup shows scan progress so the user sees "Scanned 12,000 of 38,400 files (31%)" before deciding.
+- **`match=N%` relevance badge on every result row** — every match line is now prefixed with a self-describing right-aligned badge: `match=100%` (your full phrase is on that line), `match= 99%` (every query word is on the line but not contiguous), `match= 50%` (only half the query words on this line). Shown in *every* mode — exact phrase / regex / single-word searches all land at 100%, so the column is visually consistent across modes. Replaces the v0.1.93 first-cut `[100%]` form which needed a tooltip to decode. Hint under the title also dynamically updates when Match-all-words is ticked to spell out what `match=N%` means.
+- **Live phrase-relevance ranking, descending on both axes** — when Match-all-words is ON with 2+ tokens, per-line score lives at `Qt::UserRole+5` (100 phrase / 99 all-tokens / `round(found/total*99)` partial / 0 none) and per-file best-line score at `Qt::UserRole+4`. Within a file, `onMatches` ends with a `std::stable_sort` descending by per-line %. Across files in the session, when a new batch *improves* a file's best-line %, the file is *live-repositioned* in the tree (take + insert at the correct sorted slot) so 100%-matching files surface to the top during the scan — not just at the end. File score is `bestPct × 1,000,000 + matchCount` so phrase hits always beat scattered-token volume.
+- **Desktop notification when a long search completes unfocused** — when a search takes ≥ 3 seconds AND the top-level window is not the active window AND the OS exposes a notification daemon, fires a native notification via `QSystemTrayIcon::showMessage`. One code path, three platforms — Qt routes to libnotify/D-Bus on Linux, toast on Windows, NSUserNotificationCenter on macOS. No visible tray icon is added; we lazy-create a `QSystemTrayIcon` instance solely to carry the message. Three message variants: normal (`Found N matches across M files in T`), zero-match (`No matches · scanned N files in T`), partial after Show-me-these (`Stopped at your request · kept N matches across M files · T`).
+- **Hover tooltips on every Project Search checkbox** — Match case, Whole word, Regex, Match all words, Also match file names, Include binary files. Previously only Include-binary had one.
+- **Worker pause/resume primitives** — `std::atomic<bool> m_paused{false}` + `m_softWarned`, `m_checkpointFired`, `m_skipCheckpoints`. `waitIfPaused()` lambda in `searchOne` busy-waits (50 ms sleep) while `m_paused && !m_cancel`. `cancel()` / `stopButShowResults()` / `resumePastCheckpoint()` all clear `m_paused` so sleeping threads wake. `compare_exchange_strong` on the warning flags so each signal fires exactly once even under parallel `QtConcurrent::blockingMap`.
+
+### Changed
+- **Match all words — default OFF** — flood-protection direction reversed after user-reported "import os" crash on `$HOME`. Phrase search is safer and predictable; Match-all-words is opt-in. Tooltip explicitly labels Default OFF and explains the trade-off.
+- **Search button re-enables immediately on Cancel / Show me these** — pre-fix, the button stayed disabled for several seconds while worker threads unwound from `QtConcurrent::blockingMap`. Now the button re-enables instantly because `startSearch()` resets every worker atomic from scratch and the new `search()` slot queues behind via `Qt::QueuedConnection`, so a fresh query can start the moment the user wants.
+
+### Fixed
+- **`import os` search on `$HOME` flooded UI thread and OOM-killed the app** (user-reported regression in v0.1.93 first cut) — pre-fix, no global match cap + Match-all-words=ON default + `$HOME` default folder → millions of queued `matchesFound` events. Fixed by the B-with-tweaks design above plus the default-OFF flip.
+- **Modal dialog showed *"Scanned X of Y files (4%%)"* with a double-percent** — literal `%%` in the QString template; Qt's `arg()` doesn't process `%%` like printf. Replaced with a single `%` (e.g. `(%3%)`) which Qt leaves alone because the next placeholder is `%4`, not `%.`.
+- **Status line said *"⏳ stalled on: <path>"* even when the scan was making progress** — the wording from the 20-tick stall-detection branch was alarming for users whose scan was just slow on a big file. Renamed to *"· current: <path>"* — neutral, matches the header-file comment.
+- **Project Search title 🔍 rendered as tofu / bare mono glyph on Linux** — the title `QLabel` font didn't carry the same color-emoji fallback that the results tree uses. Applied the existing `#ifdef Q_OS_LINUX` fallback (Noto Color Emoji → Twemoji → Symbola → Joypixels) to `m_title`'s font. Windows / macOS untouched.
+- **"Show me these" left the live status saying *"Searching…"* for ~47 seconds while threads wound down** — UI phase wasn't reset until the worker fully returned. Now the UI phase flips to Idle and the 10 Hz live refresher stops the *instant* the button is clicked, with status updated to `⏸ Stopping at your request…`.
+- **Phrase-matching files weren't surfacing to the top of results during the scan (only after finish)** — original implementation only re-sorted in `onFinished`. Live re-position in `onMatches` via take + insert at the correct sorted slot whenever a file's best-line % improves.
+
+### Wiring touched
+
+- `src/projectsearch.h` — new signals (`softWarningHit`, `pauseAtCheckpoint`), new slots (`resumePastCheckpoint`, `stopButShowResults`), four new atomics on the worker, three new UI-side flags (`m_softWarnActive`, `m_stoppedAtCheckpoint`) plus relevance-state (`m_currentQuery`, `m_currentTokens`, `m_currentSearchAllWords`, `m_currentCaseSensitive`).
+- `src/projectsearch.cpp` — `checkThresholds()` + `waitIfPaused()` lambdas in `search()`, dead `kMaxTotalMatches`/`limitReached` capping path removed, threshold detection wired into BOTH fast-path and streaming-path emit sites, `psearchPerLineRelevance()` helper (100 phrase / 99 all-tokens / partial proportional / 0 none), live within-file `stable_sort` + live cross-file take+insert promotion in `onMatches`, desktop-notification block in `onFinished` gated on (elapsed ≥ 3s, window not active, system tray + messages supported), `QSystemTrayIcon` include added.
+- Test count: 39 → 39 (the new threshold/ranking code paths are integration-tested by `test_projectsearch` and `test_projectsearch_ui`; both passing). Dedicated tests for the checkpoint modal deferred until v0.1.94 (needs a `QTest` modal-interaction shim).
+
+### Deferred to v0.1.94
+- Smart folder default chain (current file's dir → workspace → cwd → home, with `Config::lastProjectSearchFolder` persistence).
+- "Don't ask again this session" checkbox in the 50k popup.
+- Progressive-collapse of the advanced inputs row after first search.
+
+---
+
 ## [0.1.92] — 2026-05-19
 
 **SQL formatter deep-dive against each dialect's official documentation.** Local-iteration release: every change is in `rust-core/src/sql_fmt.rs`. No new file types / lexers / backends / installer changes. Same install commands, same artifact names, same flavor split. Fixes the user-reported `[onelook-db-1]` → `[ onelook - db - 1 ]` regression plus 9 other latent bugs found in the same audit.

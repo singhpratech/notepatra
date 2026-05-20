@@ -61,6 +61,12 @@ public:
         bool    caseSensitive;
         bool    wholeWord;
         bool    regex;
+        // v0.1.93 — "Match all words" mode. Splits `query` on whitespace into
+        // tokens; a file matches when EVERY token appears somewhere in it
+        // (any order, any distance, any line). Implements GitHub-code-search
+        // semantics for users who don't want to learn regex. Mutually
+        // ignored when `regex` is true (regex pattern wins).
+        bool    allWords = false;
         bool    skipBinary = true;   // skip files that look binary (fast check)
         qint64  maxFileSizeBytes = 2LL * 1024 * 1024 * 1024;  // 2 GB — effectively no cap
     };
@@ -68,6 +74,12 @@ public:
 public slots:
     void search(const Params &p);
     void cancel();
+    // v0.1.93 — B-with-tweaks checkpoint replies. UI calls one of these
+    // from the modal dialog when pauseAtCheckpoint fires:
+    //   • resumePastCheckpoint(): unpause, never ask again this search
+    //   • stopButShowResults(): cancel scan, keep the partial results
+    void resumePastCheckpoint();
+    void stopButShowResults();
 
 signals:
     // Fired periodically during the filesystem walk phase so the UI shows
@@ -85,10 +97,26 @@ signals:
                   qint64 elapsedMs, qint64 linesScanned);
     void finishedSearch(int totalMatches, int totalFiles,
                         qint64 elapsedMs, qint64 linesScanned);
+    // v0.1.93 — B-with-tweaks soft/hard threshold signals. softWarningHit
+    // fires ONCE per search when totalMatches first crosses 10k — UI paints
+    // the progress bar amber + adds a count to status, no interruption.
+    // pauseAtCheckpoint fires ONCE at 50k matches — worker is paused, UI
+    // shows a modal asking Continue / Show me these / Cancel.
+    void softWarningHit(int totalMatches);
+    void pauseAtCheckpoint(int totalMatches, int filesWithMatches,
+                           int filesDone, int filesTotal);
     void errorOccurred(const QString &msg);
 
 private:
     std::atomic<bool> m_cancel{false};
+    // v0.1.93 — B-with-tweaks state. m_paused gates all worker threads at
+    // file boundaries during checkpoint; m_softWarned / m_checkpointFired
+    // ensure each signal fires once per search; m_skipCheckpoints stays
+    // true after the user clicks Continue so we don't ask again.
+    std::atomic<bool> m_paused{false};
+    std::atomic<bool> m_softWarned{false};
+    std::atomic<bool> m_checkpointFired{false};
+    std::atomic<bool> m_skipCheckpoints{false};
 };
 
 class QScrollArea;
@@ -139,6 +167,12 @@ private:
                     qint64 elapsedMs, qint64 linesScanned);
     void onFinished(int totalMatches, int totalFiles,
                     qint64 elapsedMs, qint64 linesScanned);
+    // v0.1.93 — B-with-tweaks UI handlers. onSoftWarning paints the amber
+    // progress bar and shows a count. onPauseAtCheckpoint opens the modal
+    // dialog asking what to do at the 50k threshold.
+    void onSoftWarning(int totalMatches);
+    void onPauseAtCheckpoint(int totalMatches, int filesWithMatches,
+                             int filesDone, int filesTotal);
 
     // Theme-aware chrome retained for applyPalette() — these widgets have
     // stylesheets that interpolate from psearchPalette() and need to
@@ -154,7 +188,7 @@ private:
     QLineEdit  *m_folderInput;
     QPushButton *m_browseBtn;
     QLineEdit  *m_globInput;
-    QCheckBox  *m_caseChk, *m_wordChk, *m_regexChk, *m_namesChk, *m_binaryChk;
+    QCheckBox  *m_caseChk, *m_wordChk, *m_regexChk, *m_allWordsChk, *m_namesChk, *m_binaryChk;
     QPushButton *m_searchBtn, *m_cancelBtn;
     QLabel     *m_statusLabel;
     QProgressBar *m_progressBar;
@@ -183,6 +217,27 @@ private:
     QPushButton *m_clearHistoryBtn = nullptr;
     int m_matchesSoFar = 0;
     int m_filesWithMatches = 0;
+
+    // v0.1.93 — B-with-tweaks UI state. m_softWarnActive is true once the
+    // 10k amber bar is shown so we don't keep restyling. m_stoppedAtCheckpoint
+    // is true if the user clicked "Show me these" — onFinished uses it to
+    // pick the partial-results status text instead of the green ✓ line.
+    bool m_softWarnActive = false;
+    bool m_stoppedAtCheckpoint = false;
+
+    // v0.1.93 — relevance state. When Match all words is ON the UI computes:
+    //   • Per-FILE score in onMatches (UserRole + 3 on the file row). Phrase
+    //     match = +1,000,000 boost, every match = +1. onFinished re-orders
+    //     session children by this score descending.
+    //   • Per-LINE relevance % in each match row's render: how many of the
+    //     query tokens appear on that line. Line containing the literal
+    //     phrase = 100 %; line with all tokens but not adjacent = 100 %;
+    //     line with 1 of 2 tokens = 50 %; etc. Prepended to the rendered
+    //     row text so users can scan relevance at a glance.
+    QString     m_currentQuery;          // full query string (for phrase test)
+    QStringList m_currentTokens;         // pre-split tokens (whitespace)
+    bool        m_currentSearchAllWords = false;
+    bool        m_currentCaseSensitive = false;
 
     // Called every time the match tree gains/loses rows — resizes
     // the tree to fit all visible rows so the outer page scroll
