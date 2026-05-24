@@ -246,7 +246,8 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include "fmtpanel.h"
 #include "ollama.h"
 #include "ollamastatus.h"
-#include "savedialogfsmodel.h"
+#include "notes.h"
+#include "tool_colors.h"
 #include <QRegularExpression>
 #include <QFileDialog>
 #include <QFileSystemModel>
@@ -495,6 +496,47 @@ static void drawRestFeatureGlyph(QPainter &painter, const QRectF &rect) {
     painter.drawEllipse(QPointF(rect.right() - 7.0, rect.bottom() - 10.0), 2.1, 2.1);
 }
 
+// Noter — pad with folded corner + 3 ruled lines + accent action-bullet.
+// Reads as "meeting notes with a todo" without resorting to emoji.
+static void drawNoterFeatureGlyph(QPainter &painter, const QRectF &rect) {
+    painter.setPen(QPen(Qt::white, 1.7, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(Qt::NoBrush);
+
+    const qreal pad = 7.0;
+    const qreal foldSize = 5.0;
+
+    // Page outline with folded top-right corner.
+    QPainterPath page;
+    page.moveTo(rect.left() + pad, rect.top() + pad);
+    page.lineTo(rect.right() - pad - foldSize, rect.top() + pad);
+    page.lineTo(rect.right() - pad, rect.top() + pad + foldSize);
+    page.lineTo(rect.right() - pad, rect.bottom() - pad);
+    page.lineTo(rect.left() + pad, rect.bottom() - pad);
+    page.closeSubpath();
+    painter.drawPath(page);
+
+    // Folded-corner notch.
+    painter.drawLine(QPointF(rect.right() - pad - foldSize, rect.top() + pad),
+                     QPointF(rect.right() - pad - foldSize, rect.top() + pad + foldSize));
+    painter.drawLine(QPointF(rect.right() - pad - foldSize, rect.top() + pad + foldSize),
+                     QPointF(rect.right() - pad, rect.top() + pad + foldSize));
+
+    // Three ruled lines suggesting note content.
+    const qreal lineX1 = rect.left() + pad + 4.0;
+    const qreal lineX2 = rect.right() - pad - 3.0;
+    const qreal y0 = rect.top() + pad + foldSize + 4.0;
+    const qreal step = 4.5;
+
+    painter.drawLine(QPointF(lineX1, y0),            QPointF(lineX2 - 5, y0));
+    painter.drawLine(QPointF(lineX1, y0 + step),     QPointF(lineX2,     y0 + step));
+    painter.drawLine(QPointF(lineX1, y0 + 2 * step), QPointF(lineX2 - 9, y0 + 2 * step));
+
+    // Action-item bullet — small peach dot at the start of one line.
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor("#FFE4D6"));
+    painter.drawEllipse(QPointF(rect.left() + pad + 1.8, y0 + 2 * step), 1.6, 1.6);
+}
+
 static void drawGitFeatureGlyph(QPainter &painter, const QRectF &rect) {
     painter.setPen(QPen(Qt::white, 1.7, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     painter.setBrush(Qt::NoBrush);
@@ -577,6 +619,8 @@ static QIcon makeFeatureIcon(const QColor &base, const QString &iconKind, const 
         drawBracketsFeatureGlyph(painter, rect);
     } else if (iconKind == "rest") {
         drawRestFeatureGlyph(painter, rect);
+    } else if (iconKind == "noter") {
+        drawNoterFeatureGlyph(painter, rect);
     } else if (iconKind == "git") {
         drawGitFeatureGlyph(painter, rect);
     } else {
@@ -757,6 +801,37 @@ static void showRichHelpDialog(QWidget *parent, const QString &title, const QStr
     dialog->show();
     dialog->raise();
     dialog->activateWindow();
+}
+
+// v0.1.94 — clamp a desired window rect to the union of currently-connected
+// monitors. Pre-fix bug: a previous session on a now-disconnected secondary
+// monitor would persist e.g. windowX=2500,windowY=200 in config; on relaunch
+// move(2500,200) put the window off-screen. User saw "Notepatra invisible",
+// then double-clicked the launcher repeatedly accumulating PIDs while the
+// orphaned first instance kept running off-screen — fed the multi-PID bug.
+//
+// Strategy: if `want` intersects ANY available screen by at least 100 px in
+// each axis, accept it. Else recenter on the primary screen at the requested
+// size (capped at 90 % of primary's available area so we never overflow).
+static QRect clampWindowToScreens(const QRect &want) {
+    const auto screens = QGuiApplication::screens();
+    if (screens.isEmpty()) return want;  // headless test; trust caller
+    for (QScreen *s : screens) {
+        const QRect inter = s->availableGeometry().intersected(want);
+        if (inter.width() >= 100 && inter.height() >= 100) {
+            return want;  // Visible enough on at least one monitor.
+        }
+    }
+    const QRect avail = (QGuiApplication::primaryScreen()
+                             ? QGuiApplication::primaryScreen()->availableGeometry()
+                             : screens.first()->availableGeometry());
+    int w = std::min(want.width(),  (avail.width()  * 9) / 10);
+    int h = std::min(want.height(), (avail.height() * 9) / 10);
+    if (w < 400) w = 400;
+    if (h < 300) h = 300;
+    return QRect(avail.x() + (avail.width()  - w) / 2,
+                 avail.y() + (avail.height() - h) / 2,
+                 w, h);
 }
 
 MainWindow::MainWindow() {
@@ -1200,8 +1275,17 @@ MainWindow::MainWindow() {
     });
     connect(m_tabs, &TabManager::tabContextSave, this, [this](int idx) {
         auto *ed = m_tabs->editorAt(idx);
-        if (ed && !ed->filePath().isEmpty()) { ed->saveFile(); updateTabTitle(idx); }
-        else saveFileAs();
+        if (ed && !ed->filePath().isEmpty()) {
+            if (!ed->saveFile()) {
+                QMessageBox::warning(this, QStringLiteral("Save failed"),
+                    QStringLiteral("Could not write to:\n\n%1")
+                        .arg(QDir::toNativeSeparators(ed->filePath())));
+                return;
+            }
+            updateTabTitle(idx);
+        } else {
+            saveFileAs();
+        }
     });
     connect(m_tabs, &TabManager::tabContextSaveAs, this, [this](int) { saveFileAs(); });
     connect(m_tabs, &TabManager::tabContextRename, this, [this](int idx) {
@@ -1312,22 +1396,25 @@ MainWindow::MainWindow() {
         newFile();
     }
 
-    // Restore window geometry from config
+    // Restore window geometry from config. v0.1.94 — every restore path
+    // goes through clampWindowToScreens() so a previous session on a now-
+    // disconnected monitor cannot leave us invisible.
     {
         auto &cfg = Config::instance();
         if (cfg.maximized) {
             showMaximized();
         } else if (cfg.windowW > 100 && cfg.windowH > 100) {
-            resize(cfg.windowW, cfg.windowH);
-            if (cfg.windowX >= 0) move(cfg.windowX, cfg.windowY);
-        } else {
-            if (auto *screen = QApplication::primaryScreen()) {
-                QRect avail = screen->availableGeometry();
-                int w = avail.width() * 80 / 100;
-                int h = avail.height() * 80 / 100;
-                resize(w, h);
-                move((avail.width() - w) / 2, (avail.height() - h) / 2);
-            }
+            const QRect want(cfg.windowX >= 0 ? cfg.windowX : 100,
+                             cfg.windowY >= 0 ? cfg.windowY : 100,
+                             cfg.windowW, cfg.windowH);
+            setGeometry(clampWindowToScreens(want));
+        } else if (auto *screen = QApplication::primaryScreen()) {
+            QRect avail = screen->availableGeometry();
+            int w = avail.width() * 80 / 100;
+            int h = avail.height() * 80 / 100;
+            setGeometry(avail.x() + (avail.width()  - w) / 2,
+                        avail.y() + (avail.height() - h) / 2,
+                        w, h);
         }
     }
 
@@ -1388,7 +1475,7 @@ MainWindow::MainWindow() {
         cfg.maximized = isMaximized();
         cfg.save();
     });
-    m_autoSaveTimer->start(10000);  // every 10 seconds
+    m_autoSaveTimer->start(qBound(1, Config::instance().autoSaveIntervalSec, 300) * 1000);
 
     // File change watcher — detects external modifications
     setupFileWatcher();
@@ -1648,25 +1735,23 @@ void MainWindow::handleRemoteOpen(const QStringList &paths, int gotoLine,
 #endif
 }
 
-// v0.1.88/v0.1.89 — Save As dialog UX baseline:
+// Save As dialog UX baseline:
 //   * bigger geometry (960×640 vs Qt default 640×480)
-//   * Detail view default (Name / Size / Type / Date Modified / Date Created)
+//   * Detail view default (Name / Size / Type / Date Modified)
 //   * sort by Date Modified descending (newest files first)
-//   * Date Created column at the end via SaveDialogFileSystemModel (subclass,
-//     NOT a proxy — proxy approach crashed in v0.1.88 because Qt's tree view
-//     dereferences index(row, extraCol) and a proxy can't fabricate that
-//     mapping safely). birthTime() with ctime fallback for non-ext4.
+//
+// v0.1.94 — Date Created column DROPPED. The v0.1.89 attempt shipped a
+// QIdentityProxyModel that fabricated a synthetic column via direct
+// createIndex(), which on Windows crashed File→Save / Save As / right-
+// click Save reliably. The QFileSystemModel's async QFileInfoGatherer
+// races the proxy's index/parent traversal, and setProxyModel called
+// after setNameFilter leaks dangling QPersistentModelIndex into the
+// completer. Saving the user's file is more important than a Date
+// Created column — column gone, dialog is stable again.
 namespace {
 void configureSaveDialogUx(QFileDialog &dialog) {
     dialog.resize(QSize(960, 640));
     dialog.setViewMode(QFileDialog::Detail);
-
-    // v0.1.89 — wrap dialog's internal QFileSystemModel with our identity
-    // proxy that adds a "Date Created" column at the end. Must call
-    // setProxyModel BEFORE inspecting the tree view, so the view shows the
-    // proxy's column count.
-    auto *proxy = new SaveDialogDateCreatedProxy(&dialog);
-    dialog.setProxyModel(proxy);
 
     auto applyView = [&dialog]() {
         if (auto *tv = dialog.findChild<QTreeView *>()) {
@@ -1686,11 +1771,20 @@ void MainWindow::saveFile() {
     auto *e = currentEditor();
     if (!e) return;
     if (!e->filePath().isEmpty()) {
-        e->saveFile();
+        // v0.1.94 — surface failures. Pre-fix the bool return was ignored,
+        // so a read-only / AV-locked / perms-denied file silently dropped
+        // the user's edits while updateGitGutter + watcher timestamps ran
+        // on stale data ("looked saved, wasn't").
+        if (!e->saveFile()) {
+            QMessageBox::warning(this, QStringLiteral("Save failed"),
+                QStringLiteral("Could not write to:\n\n%1\n\n"
+                               "The file may be read-only, locked by another "
+                               "application, or you may lack write permission.")
+                    .arg(QDir::toNativeSeparators(e->filePath())));
+            return;
+        }
         updateTabTitle(m_tabs->currentIndex());
-        // Auto-refresh git gutter on save
         e->updateGitGutter();
-        // Update file timestamp so watcher doesn't trigger
         if (m_fileWatcher) {
             QString path = e->filePath();
             m_fileTimestamps[path] = QFileInfo(path).lastModified();
@@ -1740,7 +1834,7 @@ void MainWindow::saveFileAs() {
                          dialog.setDefaultSuffix(firstExtensionFromFilter(f));
                      });
 
-    // v0.1.88 UX — bigger geometry, sort by date modified desc, Date Created column.
+    // v0.1.88 UX — bigger geometry, sort by date modified desc.
     configureSaveDialogUx(dialog);
 
     if (dialog.exec() != QDialog::Accepted) return;
@@ -1753,7 +1847,16 @@ void MainWindow::saveFileAs() {
     // states silently drop setDefaultSuffix. Belt-and-braces.
     path = applySaveAsFilterSuffix(path, dialog.selectedNameFilter());
 
-    e->saveFile(path);  // also re-applies lexer if extension changed (v0.1.88.1)
+    // v0.1.94 — surface failures. saveFile returns false on write/permission
+    // errors and the user was previously left believing the file had saved.
+    if (!e->saveFile(path)) {
+        QMessageBox::warning(this, QStringLiteral("Save failed"),
+            QStringLiteral("Could not write to:\n\n%1\n\n"
+                           "The path may be invalid, the target drive read-only, "
+                           "or you may lack write permission.")
+                .arg(QDir::toNativeSeparators(path)));
+        return;
+    }
     m_tabs->setTabText(m_tabs->currentIndex(), QFileInfo(path).fileName());
     m_tabs->setTabToolTip(m_tabs->currentIndex(), QDir::toNativeSeparators(path));
     updateTitle();
@@ -1773,8 +1876,15 @@ void MainWindow::closeTab(int index) {
             QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
 
         if (result == QMessageBox::Save) {
-            if (!editor->filePath().isEmpty())
-                editor->saveFile();
+            if (!editor->filePath().isEmpty()) {
+                if (!editor->saveFile()) {
+                    QMessageBox::warning(this, QStringLiteral("Save failed"),
+                        QStringLiteral("Could not write to:\n\n%1\n\n"
+                                       "Close cancelled — your edits are still in the tab.")
+                            .arg(QDir::toNativeSeparators(editor->filePath())));
+                    return;
+                }
+            }
             else {
                 // v0.1.87 — same filter-list treatment as saveFileAs().
                 QString preselected;
@@ -1799,7 +1909,13 @@ void MainWindow::closeTab(int index) {
                 if (chosen.isEmpty() || chosen.first().isEmpty()) return;
                 const QString finalPath =
                     applySaveAsFilterSuffix(chosen.first(), d.selectedNameFilter());
-                editor->saveFile(finalPath);
+                if (!editor->saveFile(finalPath)) {
+                    QMessageBox::warning(this, QStringLiteral("Save failed"),
+                        QStringLiteral("Could not write to:\n\n%1\n\n"
+                                       "Close cancelled.")
+                            .arg(QDir::toNativeSeparators(finalPath)));
+                    return;
+                }
             }
         } else if (result == QMessageBox::Cancel) {
             return;
@@ -2527,6 +2643,35 @@ void MainWindow::buildMenus() {
         exitAiFullscreenIfActive();
         int idx = m_tabs->addTab(rest, "REST Client");
         m_tabs->setCurrentIndex(idx);
+    });
+
+    // --- Noter (meeting thinkpad) ---
+    auto *noterAct = feat->addAction("Noter — Meeting Thinkpad        Ctrl+Alt+N");
+    noterAct->setCheckable(true);
+    noterAct->setShortcut(QKeySequence("Ctrl+Alt+N"));
+    noterAct->setStatusTip("Open Noter — meeting notes that turn into todos that nag you.");
+    connect(noterAct, &QAction::triggered, this, [this]() {
+        // Open the Noter tab + show the empty-state page (with recent
+        // meetings list). The user clicks "+ New meeting" or picks a
+        // recent note from the list — never auto-create on every click.
+        // Ctrl+Alt+N (the keyboard binding on this same action) still
+        // surfaces the tab.
+        NotesPanel *noter = nullptr;
+        int existingIdx = -1;
+        for (int i = 0; i < m_tabs->count(); ++i) {
+            if (auto *np = qobject_cast<NotesPanel*>(m_tabs->widget(i))) {
+                noter = np;
+                existingIdx = i;
+                break;
+            }
+        }
+        if (!noter) {
+            noter = new NotesPanel;
+            exitAiFullscreenIfActive();
+            existingIdx = m_tabs->addTab(noter, "Noter");
+        }
+        m_tabs->setCurrentIndex(existingIdx);
+        // No auto-create. The empty-state page surfaces the recent list.
     });
 
     // --- Hex Editor ---
@@ -4116,36 +4261,41 @@ void MainWindow::buildToolbar() {
         "  border-radius: 6px; "
         "}");
 
-    // Project Search at slot 1 — most-used feature after AI. Clay-orange
-    // accent matches its Welcome-tab card. Shortcut: Ctrl+Shift+G.
+    // v0.1.94 — every accent here sources from notepatraToolAccent() in
+    // tool_colors.cpp so the toolbar button, the tab strip, and the
+    // Welcome card all paint the same colour for any given tool. To
+    // shift a tool's brand colour, edit ONLY tool_colors.cpp.
     addFeatureShortcut(featureTb, findActionByPrefix(this, "Project Search"),
-                       QColor("#D47A1E"), "search", "Search",
+                       notepatraToolAccent("ProjectSearch"), "search", "Search",
                        "Recursively search file names + contents (Ctrl+Shift+G)");
     addFeatureShortcut(featureTb, findActionByPrefix(this, "AI Assistant"),
-                       QColor("#0E639C"), "ai", "AI",
+                       notepatraToolAccent("AI"), "ai", "AI",
                        "Toggle AI Assistant dock (Ctrl+Q) — ON / OFF",
                        /*showCheckedState=*/true);
     addFeatureShortcut(featureTb, findActionByPrefix(this, "Terminal"),
-                       QColor("#2D7D46"), "terminal", "Terminal",
+                       notepatraToolAccent("Terminal"), "terminal", "Terminal",
                        "Open the built-in terminal");
     addFeatureShortcut(featureTb, findActionByPrefix(this, "Compare (inbuilt)"),
-                       QColor("#C27A13"), "compare", "Compare",
+                       notepatraToolAccent("Compare"), "compare", "Compare",
                        "Open Compare");
     addFeatureShortcut(featureTb, findActionByPrefix(this, "JSON Tools"),
-                       QColor("#1769AA"), "json", "JSON",
+                       notepatraToolAccent("JSON"), "json", "JSON",
                        "Open JSON Tools");
     addFeatureShortcut(featureTb, findActionByPrefix(this, "HTML Tools"),
-                       QColor("#C84F2B"), "html", "HTML",
+                       notepatraToolAccent("HTML"), "html", "HTML",
                        "Open HTML Tools");
     addFeatureShortcut(featureTb, findActionByPrefix(this, "SQL Formatter"),
-                       QColor("#6A4FBF"), "sql", "SQL",
+                       notepatraToolAccent("SQL"), "sql", "SQL",
                        "Open SQL Formatter");
     addFeatureShortcut(featureTb, findActionByPrefix(this, "Bracket Tools"),
-                       QColor("#8A5A17"), "brackets", "Brackets",
+                       notepatraToolAccent("Bracket"), "brackets", "Brackets",
                        "Open Bracket Tools");
     addFeatureShortcut(featureTb, findActionByPrefix(this, "REST Client"),
-                       QColor("#00838F"), "rest", "REST",
+                       notepatraToolAccent("REST"), "rest", "REST",
                        "Open REST Client");
+    addFeatureShortcut(featureTb, findActionByPrefix(this, "Noter"),
+                       notepatraToolAccent("Noter"), "noter", "Noter",
+                       "Open Noter — meeting thinkpad (Ctrl+Alt+N)");
     // v0.1.61 — dropped the standalone Git Integration toolbar shortcut.
     // Full VS Code-parity Source Control integration inside Coding mode
     // lands in v0.1.62 (agent-A roadmap: per-hunk gutter popup, stage/
@@ -4266,13 +4416,17 @@ void MainWindow::restoreSession() {
     if (doc.isNull()) return;
     QJsonObject session = doc.object();
 
-    // Restore window geometry
+    // Restore window geometry. v0.1.94 — clamp to currently-connected
+    // screens so a session captured on a disconnected monitor doesn't
+    // restore the window off-screen.
     if (session.contains("windowW")) {
         int sw = session["windowW"].toInt();
         int sh = session["windowH"].toInt();
         if (sw > 100 && sh > 100) {
-            resize(sw, sh);
-            move(session["windowX"].toInt(), session["windowY"].toInt());
+            const QRect want(session["windowX"].toInt(),
+                             session["windowY"].toInt(),
+                             sw, sh);
+            setGeometry(clampWindowToScreens(want));
         }
     }
     if (session["maximized"].toBool()) {
@@ -5053,7 +5207,7 @@ void MainWindow::triggerMenuAction(const QString &actionId) {
         {"SQLFormatter",  "SQL Formatter"},
         {"BracketTools",  "Bracket Tools"},
         {"RESTClient",    "REST Client"},
-        {"Git",           "Git Integration"},
+        {"Noter",         "Noter — Meeting Thinkpad"},
     };
     QString prefix = idToPrefix.value(actionId);
     if (prefix.isEmpty()) return;

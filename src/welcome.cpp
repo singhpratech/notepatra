@@ -3,6 +3,7 @@
 #include "welcome.h"
 #include "config.h"
 #include "fonts.h"
+#include "tool_colors.h"
 
 #include <QCheckBox>
 #include <QCoreApplication>
@@ -427,39 +428,45 @@ void WelcomeWidget::buildFeatureCards(QVBoxLayout *parent) {
     struct Feat {
         QString icon, title, desc, actionId, accent;
     };
+    // v0.1.94 — accent hex sourced from notepatraToolAccent() so the
+    // Welcome card matches the tab strip AND the feature-toolbar icon
+    // for the same tool. Edit colours ONLY in tool_colors.cpp.
+    auto hex = [](const char *key) {
+        return notepatraToolAccent(QString::fromLatin1(key)).name();
+    };
     const QList<Feat> features = {
         // Project Search promoted to slot 1 — the single most-used
         // productivity feature. AI Assistant follows, then the rest.
         {"🔎", "Project Search (Ctrl+Shift+G)",
          "Lightning-fast recursive search across file names AND contents. Any size, any language. Exact line:col coordinates — double-click a match to jump the caret to the exact character.",
-         "ProjectSearch", "#D47A1E"},
+         "ProjectSearch", hex("ProjectSearch")},
         {"🤖", "AI Assistant",
          "Local-first AI — Ollama · llama.cpp (GGUF) · LM Studio · any OpenAI-compatible server. Cloud backends optional: OpenRouter, OpenAI, Azure, Ollama Cloud. Explain · Find Bugs · Refactor · Tests. Zero telemetry.",
-         "AIAssistant", "#0E639C"},
+         "AIAssistant", hex("AI")},
         {"⌨", "Terminal",
          "Built-in shell tab. Run git, npm, make, cargo — without leaving the editor.",
-         "Terminal", "#2D7D46"},
+         "Terminal", hex("Terminal")},
         {"🔀", "Compare",
          "Word-level diff with red/green intra-line highlighting. Pick any two tabs or any file on disk.",
-         "Compare", "#C27A13"},
+         "Compare", hex("Compare")},
         {"{ }", "JSON Tools",
          "Format · Minify · Fix+Format · AI Fix. Tolerant parser fixes missing commas, unquoted keys, single quotes.",
-         "JSONTools", "#1769AA"},
+         "JSONTools", hex("JSON")},
         {"</>", "HTML Tools",
          "Format with configurable indent, minify, auto-close unclosed tags, AI Fix suggestions.",
-         "HTMLTools", "#C84F2B"},
+         "HTMLTools", hex("HTML")},
         {"SQL", "SQL Formatter",
          "T-SQL · PL/SQL · MySQL · PostgreSQL · SQLite. UPPERCASE/lowercase keywords, custom indent.",
-         "SQLFormatter", "#6A4FBF"},
+         "SQLFormatter", hex("SQL")},
         {"{ }", "Bracket Tools",
          "Checks for mismatched brackets / braces / parens. Auto-fix + AI Fix for anything the parser can't repair.",
-         "BracketTools", "#8A5A17"},
+         "BracketTools", hex("Bracket")},
         {"🌐", "REST Client",
          "Built-in HTTP request tester. Pretty-prints JSON responses. Import curl commands.",
-         "RESTClient", "#00838F"},
-        {"Git", "Git Integration",
-         "Branch panel, push/pull/refresh, open on GitHub. Gutter markers in every editor.",
-         "Git", "#B23A48"},
+         "RESTClient", hex("REST")},
+        {"📝", "Noter",
+         "Meeting thinkpad. Slash-commands for decisions and actions, AI extracts your todos, desktop reminders fire at due time. Local-first, no bots.",
+         "Noter", hex("Noter")},
     };
 
     int col = 0, row = 0;

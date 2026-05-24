@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.93 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.95 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -83,7 +83,7 @@ message(STATUS "Building for platform: ${PLATFORM_NAME}")
 #   `brew install qt@5` ships them all on macOS).
 # - Charts: rendered inline in the AI chat transcript when the model emits
 #   a ```chart fenced spec.
-find_package(Qt5 REQUIRED COMPONENTS Widgets PrintSupport Network Concurrent Sql Charts)
+find_package(Qt5 REQUIRED COMPONENTS Widgets PrintSupport Network Concurrent Sql Charts Test)
 # v0.1.70 — Qt5Svg is OPTIONAL: probe quietly, link if available. Without
 # the dev package, QImageReader still decodes SVG via the runtime plugin
 # (libqt5svg5) that ships with most distros. If neither is present the
@@ -97,16 +97,16 @@ find_package(Qt5 QUIET COMPONENTS Svg)
 # NOTEPATRA_WITH_WEBENGINE to OFF with a warning rather than failing the
 # configure outright.
 if(NOTEPATRA_WITH_WEBENGINE)
-    find_package(Qt5 QUIET COMPONENTS WebEngineWidgets)
-    if(Qt5WebEngineWidgets_FOUND)
-        message(STATUS "Vega-Lite renderer: Qt5WebEngineWidgets ${Qt5WebEngineWidgets_VERSION}")
+    find_package(Qt5 QUIET COMPONENTS WebEngineWidgets WebChannel)
+    if(Qt5WebEngineWidgets_FOUND AND Qt5WebChannel_FOUND)
+        message(STATUS "Vega-Lite renderer + Noter bridge: Qt5WebEngineWidgets ${Qt5WebEngineWidgets_VERSION} + Qt5WebChannel ${Qt5WebChannel_VERSION}")
     else()
         message(WARNING
-            "Qt5WebEngineWidgets not found — Vega-Lite renderer will compile "
-            "a stub. Install libqt5webengine5-dev (Debian/Ubuntu) / "
-            "qt5-webengine (Arch) / qt@5 includes it on macOS, then "
-            "reconfigure. To silence this warning configure with "
-            "-DNOTEPATRA_WITH_WEBENGINE=OFF.")
+            "Qt5WebEngineWidgets / Qt5WebChannel not found — Vega-Lite + Noter "
+            "rich-editor will compile a stub. Install libqt5webengine5-dev + "
+            "libqt5webchannel5-dev (Debian/Ubuntu), qt5-webengine + qt5-webchannel "
+            "(Arch), qt@5 includes both on macOS. To silence this warning "
+            "configure with -DNOTEPATRA_WITH_WEBENGINE=OFF.")
         set(NOTEPATRA_WITH_WEBENGINE OFF)
     endif()
 endif()
@@ -360,7 +360,7 @@ endif()
 target_include_directories(${EXE_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src/charts)
 if(NOTEPATRA_WITH_WEBENGINE)
     target_compile_definitions(${EXE_NAME} PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
-    target_link_libraries(${EXE_NAME} PRIVATE Qt5::WebEngineWidgets)
+    target_link_libraries(${EXE_NAME} PRIVATE Qt5::WebEngineWidgets Qt5::WebChannel)
     # v0.1.90 — offline vega-embed bundle. ~828 KB of JS shipped as a
     # Qt resource so charts render without JSDelivr in the loop (works
     # air-gapped + survives CDN outages). Full flavor only — the lite
@@ -368,6 +368,10 @@ if(NOTEPATRA_WITH_WEBENGINE)
     if(EXISTS "${CMAKE_SOURCE_DIR}/resources/vega.qrc")
         target_sources(${EXE_NAME} PRIVATE resources/vega.qrc)
     endif()
+    # v0.1.95 — Noter WebChannel JS resource removed alongside the
+    # WebEngine path (notes_bridge / notes_editor) when the feature was
+    # rewritten to use a vanilla QTextEdit. Leaving the EXISTS guard
+    # here as historical breadcrumb in case a future WebEngine path comes back.
 endif()
 
 if(WIN32)
@@ -610,6 +614,153 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexers.cpp")
     notepatra_add_qt_test(test_lexers)
     set_tests_properties(test_lexers PROPERTIES LABELS "smoke;lexer")
     message(STATUS "Regression test enabled — target: test_lexers")
+endif()
+
+# ── Noter — HTML storage layer test (27 cases) ──
+# Validates atomic write, backup ring, XSS sanitizer, lock file,
+# filename safety, validate-before-write, and the 12 reliability
+# defenses documented in design/notes-ux/index.html SURFACE 13.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_storage.cpp")
+    add_executable(test_notes_storage
+        test_notes_storage.cpp
+        src/notes_storage.cpp
+        src/notes_template.cpp
+    )
+    target_include_directories(test_notes_storage PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_notes_storage PRIVATE Qt5::Core Qt5::Network Qt5::Test)
+    add_test(NAME test_notes_storage COMMAND $<TARGET_FILE:test_notes_storage>)
+    set_tests_properties(test_notes_storage PROPERTIES LABELS "unit;noter;storage")
+    message(STATUS "Regression test enabled — target: test_notes_storage")
+endif()
+
+# ── Noter — SQLite todos + reminder engine test (83 cases) ──
+# Validates schema migration, HTML action-block reindex round-trip,
+# due-group classification across time boundaries, snooze + reminder
+# state transitions, and quick-todo creation.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_todos.cpp")
+    add_executable(test_notes_todos
+        test_notes_todos.cpp
+        src/notes_todos.cpp
+        src/notes_reminder.cpp
+    )
+    target_include_directories(test_notes_todos PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_notes_todos PRIVATE Qt5::Core Qt5::Sql Qt5::Test)
+    add_test(NAME test_notes_todos COMMAND $<TARGET_FILE:test_notes_todos>)
+    set_tests_properties(test_notes_todos PROPERTIES LABELS "unit;noter;todos")
+    message(STATUS "Regression test enabled — target: test_notes_todos")
+endif()
+
+# ── Noter — bridge (slash + embed URL classifier) test (35 cases) ──
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_bridge.cpp")
+    add_executable(test_notes_bridge
+        test_notes_bridge.cpp
+        src/notes_bridge.cpp
+        src/notes_template.cpp
+    )
+    target_include_directories(test_notes_bridge PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_notes_bridge PRIVATE Qt5::Core Qt5::Test)
+    add_test(NAME test_notes_bridge COMMAND $<TARGET_FILE:test_notes_bridge>)
+    set_tests_properties(test_notes_bridge PROPERTIES LABELS "unit;noter;bridge")
+endif()
+
+# ── Noter — slash-menu popover keyboard nav test (21 cases) ──
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_slashmenu.cpp")
+    add_executable(test_notes_slashmenu
+        test_notes_slashmenu.cpp
+        src/notes_slashmenu.cpp
+    )
+    target_include_directories(test_notes_slashmenu PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_notes_slashmenu PRIVATE Qt5::Core Qt5::Widgets Qt5::Test)
+    add_test(NAME test_notes_slashmenu COMMAND $<TARGET_FILE:test_notes_slashmenu>)
+    set_tests_properties(test_notes_slashmenu PROPERTIES LABELS "unit;noter;slashmenu")
+endif()
+
+# ── Noter — sweep prompt builder + parser test (36 cases) ──
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_sweep_prompt.cpp")
+    add_executable(test_notes_sweep_prompt
+        test_notes_sweep_prompt.cpp
+        src/notes_sweep_prompt.cpp
+    )
+    target_include_directories(test_notes_sweep_prompt PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_notes_sweep_prompt PRIVATE Qt5::Core Qt5::Test)
+    add_test(NAME test_notes_sweep_prompt COMMAND $<TARGET_FILE:test_notes_sweep_prompt>)
+    set_tests_properties(test_notes_sweep_prompt PROPERTIES LABELS "unit;noter;sweep")
+endif()
+
+# ── Noter — slide-over panels test (18 cases) ──
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_panels.cpp")
+    add_executable(test_notes_panels
+        test_notes_panels.cpp
+        src/notes_panels.cpp
+    )
+    target_include_directories(test_notes_panels PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_notes_panels PRIVATE Qt5::Core Qt5::Widgets Qt5::Test)
+    add_test(NAME test_notes_panels COMMAND $<TARGET_FILE:test_notes_panels>)
+    set_tests_properties(test_notes_panels PROPERTIES LABELS "unit;noter;panels")
+endif()
+
+# ── Noter — NotesPanel widget integration test (v0.1.95) ──
+# Heavy linkage: exercises the actual two-pane widget end-to-end via QTest
+# keystrokes. Drives newMeetingNote / openNoteFile / markdown shortcuts /
+# F4 toggle / Enter-on-checkbox behaviors that the unit tests can't reach.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_panel_widget.cpp")
+    add_executable(test_notes_panel_widget
+        test_notes_panel_widget.cpp
+        src/notes.cpp
+        src/notes_storage.cpp
+        src/notes_template.cpp
+        src/notes_todos.cpp
+        src/notes_reminder.cpp
+        src/notes_panels.cpp
+        src/notes_popout.cpp
+        src/notes_context_menus.cpp
+        src/notes_sweep_dialog.cpp
+        src/notes_sweep_prompt.cpp
+        src/notes_export.cpp
+        src/ollama.cpp
+        src/ai_interaction_log.cpp
+        src/credscrub.cpp
+    )
+    target_include_directories(test_notes_panel_widget PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_notes_panel_widget PRIVATE
+        Qt5::Core Qt5::Widgets Qt5::Sql Qt5::Network Qt5::Test
+        Qt5::PrintSupport)
+    add_test(NAME test_notes_panel_widget COMMAND $<TARGET_FILE:test_notes_panel_widget>)
+    set_tests_properties(test_notes_panel_widget PROPERTIES
+        LABELS "integration;noter;widget"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_notes_panel_widget")
+endif()
+
+# ── Noter — right-click context menus test (37 cases) ──
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_context_menus.cpp")
+    add_executable(test_notes_context_menus
+        test_notes_context_menus.cpp
+        src/notes_context_menus.cpp
+    )
+    target_include_directories(test_notes_context_menus PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_notes_context_menus PRIVATE Qt5::Core Qt5::Widgets Qt5::Test)
+    add_test(NAME test_notes_context_menus COMMAND $<TARGET_FILE:test_notes_context_menus>)
+    set_tests_properties(test_notes_context_menus PROPERTIES LABELS "unit;noter;menus")
+endif()
+
+# ── Noter — PDF + Markdown export test (25 cases, Full edition only) ──
+if(NOTEPATRA_BUILD_TESTS AND NOTEPATRA_WITH_WEBENGINE
+   AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_export.cpp")
+    add_executable(test_notes_export
+        test_notes_export.cpp
+        src/notes_export.cpp
+    )
+    target_include_directories(test_notes_export PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_notes_export PRIVATE
+        Qt5::Core Qt5::Widgets Qt5::WebEngineWidgets Qt5::Test)
+    target_compile_definitions(test_notes_export PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+    add_test(NAME test_notes_export COMMAND $<TARGET_FILE:test_notes_export>)
+    set_tests_properties(test_notes_export PROPERTIES LABELS "unit;noter;export")
 endif()
 
 # ── Palette verification test ──

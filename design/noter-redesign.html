@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Noter — Redesign Mockup (v0.1.95 proposal)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+    background: #1f2937;
+    color: #e5e7eb;
+    padding: 32px;
+    line-height: 1.5;
+  }
+  .page-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: #fafafa;
+  }
+  .page-sub {
+    font-size: 13px;
+    color: #94a3b8;
+    margin-bottom: 28px;
+  }
+  .scene-title {
+    font-size: 14px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin: 36px 0 12px;
+  }
+  .scene-title:first-of-type { margin-top: 0; }
+  .annotation {
+    font-size: 12px;
+    color: #94a3b8;
+    margin-top: 8px;
+    margin-bottom: 4px;
+    font-style: italic;
+  }
+
+  /* The mock app frame — mimics a Notepatra tab content area */
+  .app {
+    width: 1100px;
+    height: 640px;
+    background: #fafaf6;
+    color: #0a0d12;
+    border-radius: 8px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    display: flex;
+    overflow: hidden;
+    border: 1px solid #2a2a2a;
+    margin-top: 8px;
+  }
+  /* tab-strip simulation (3px accent) */
+  .tab-strip {
+    height: 3px;
+    width: 100%;
+    background: #DC2626;  /* Noter red */
+  }
+  .app-inner {
+    display: flex;
+    flex: 1;
+    height: calc(100% - 0px);
+  }
+
+  /* ─── SIDEBAR ─── */
+  .sidebar {
+    width: 240px;
+    background: #f3f1ea;
+    border-right: 1px solid #e5e1d6;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  .sidebar-search {
+    padding: 12px 14px;
+    border-bottom: 1px solid #e5e1d6;
+  }
+  .sidebar-search input {
+    width: 100%;
+    border: 1px solid #d5d0c0;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    background: #ffffff;
+    color: #525252;
+    font-family: inherit;
+  }
+  .sidebar-new {
+    margin: 12px 14px 8px;
+    padding: 7px 10px;
+    background: #DC2626;
+    color: white;
+    border-radius: 6px;
+    font-size: 13px;
+    text-align: center;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .sidebar-group {
+    padding: 4px 14px;
+    font-size: 11px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-top: 10px;
+    margin-bottom: 2px;
+  }
+  .sidebar-item {
+    padding: 6px 14px 6px 22px;
+    font-size: 13px;
+    color: #525252;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .sidebar-item:hover { background: #ede9dc; }
+  .sidebar-item.active {
+    background: #fef3c7;
+    color: #0a0d12;
+    font-weight: 500;
+    border-left: 3px solid #DC2626;
+    padding-left: 19px;
+  }
+  .sidebar-item .meta {
+    font-size: 10px;
+    color: #94a3b8;
+  }
+  .sidebar-spacer { flex: 1; }
+  .sidebar-todos {
+    border-top: 1px solid #e5e1d6;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: #525252;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .sidebar-todos:hover { background: #ede9dc; }
+  .todos-badge {
+    background: #DC2626;
+    color: white;
+    border-radius: 10px;
+    padding: 1px 7px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  /* ─── EDITOR ─── */
+  .editor {
+    flex: 1;
+    background: #fafaf6;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+  .editor-meta {
+    font-size: 11px;
+    color: #a0a0a0;
+    padding: 14px 56px 0;
+  }
+  .editor-body {
+    flex: 1;
+    padding: 6px 56px 80px;
+    overflow-y: auto;
+    color: #0a0d12;
+    font-size: 15px;
+    line-height: 1.65;
+  }
+  .editor-body h1 {
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 14px;
+    margin-top: 4px;
+    color: #0a0d12;
+    border-bottom: 1px solid #e5e1d6;
+    padding-bottom: 8px;
+  }
+  .editor-body p { margin-bottom: 6px; }
+  .editor-body .todo {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .editor-body .todo .box {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 1.5px solid #94a3b8;
+    border-radius: 3px;
+    margin-top: 4px;
+    flex-shrink: 0;
+  }
+  .editor-body .todo .box.done {
+    background: #16a34a;
+    border-color: #16a34a;
+    position: relative;
+  }
+  .editor-body .todo .box.done::after {
+    content: '✓';
+    color: white;
+    font-size: 11px;
+    position: absolute;
+    top: -3px;
+    left: 2px;
+  }
+  .editor-body .todo.done { text-decoration: line-through; color: #94a3b8; }
+  .editor-body .date-chip {
+    display: inline-block;
+    background: #fef3c7;
+    color: #92400e;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid #fde68a;
+    cursor: pointer;
+  }
+  .editor-body .placeholder {
+    color: #a0a0a0;
+    font-style: italic;
+    margin-top: 14px;
+    font-size: 14px;
+  }
+
+  /* Extract AI button — bottom right corner */
+  .extract-btn {
+    position: absolute;
+    bottom: 18px;
+    right: 28px;
+    background: #DC2626;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 24px;
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+    cursor: pointer;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .extract-btn:hover { background: #b91c1c; }
+
+  /* ─── TODOS PANEL (third pane, optional) ─── */
+  .todos-panel {
+    width: 320px;
+    background: #ffffff;
+    border-left: 1px solid #e5e1d6;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  .todos-header {
+    padding: 14px 16px 8px;
+    border-bottom: 1px solid #e5e1d6;
+    font-size: 13px;
+    font-weight: 600;
+    color: #0a0d12;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .todos-header .close { color: #a0a0a0; cursor: pointer; }
+  .todos-section {
+    padding: 10px 16px 4px;
+    font-size: 11px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+  .todos-row {
+    padding: 8px 16px;
+    border-bottom: 1px solid #f5f1e6;
+    cursor: pointer;
+  }
+  .todos-row:hover { background: #faf9f4; }
+  .todos-row-line { font-size: 13px; color: #0a0d12; display: flex; align-items: flex-start; gap: 6px; }
+  .todos-row-meta { font-size: 10px; color: #94a3b8; margin-top: 3px; margin-left: 22px; }
+  .due-overdue { color: #dc2626; font-weight: 500; }
+
+  /* ─── EXTRACT DIALOG (modal mockup) ─── */
+  .extract-dialog {
+    position: absolute;
+    bottom: 60px;
+    right: 28px;
+    width: 360px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 12px 36px rgba(0,0,0,0.18);
+    padding: 14px 18px;
+    border: 1px solid #e5e1d6;
+  }
+  .extract-dialog h4 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .extract-dialog .row {
+    font-size: 13px;
+    color: #525252;
+    padding: 4px 0;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .extract-dialog .row .box {
+    width: 12px;
+    height: 12px;
+    border: 1.5px solid #94a3b8;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .extract-dialog .row .chip {
+    background: #fef3c7;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: 10px;
+    color: #92400e;
+    margin-left: auto;
+  }
+  .extract-dialog .actions {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+  .extract-dialog button {
+    padding: 5px 12px;
+    border-radius: 4px;
+    border: none;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .btn-primary { background: #DC2626; color: white; }
+  .btn-secondary { background: #e5e1d6; color: #525252; }
+
+  /* ─── EMPTY STATE ─── */
+  .empty-state {
+    text-align: center;
+    padding-top: 140px;
+  }
+  .empty-state .title {
+    font-size: 28px;
+    color: #c8c4b8;
+    margin-bottom: 4px;
+    font-weight: 300;
+  }
+  .empty-state .sub {
+    color: #a0a0a0;
+    font-size: 14px;
+    margin-bottom: 32px;
+  }
+  .empty-state .hint {
+    color: #525252;
+    font-size: 13px;
+    margin-top: 26px;
+    padding: 12px 16px;
+    border: 1px dashed #d5d0c0;
+    border-radius: 8px;
+    display: inline-block;
+    background: #ffffff;
+  }
+  .empty-state .negatives {
+    color: #94a3b8;
+    font-size: 12px;
+    margin-top: 28px;
+    line-height: 1.8;
+  }
+
+  /* Shortcuts table */
+  .shortcuts-table {
+    background: #2a3441;
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin-top: 12px;
+    width: 1100px;
+  }
+  .shortcuts-table table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .shortcuts-table th, .shortcuts-table td { text-align: left; padding: 5px 8px; }
+  .shortcuts-table th { color: #94a3b8; font-weight: 500; text-transform: uppercase; font-size: 10px; letter-spacing: 0.8px; }
+  .shortcuts-table td { color: #e5e7eb; border-top: 1px solid #1f2937; }
+  .shortcuts-table .kbd {
+    background: #1f2937;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #fde68a;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-title">Noter — Redesign Mockup</div>
+<div class="page-sub">v0.1.95 proposal · two-pane, markdown-only, single AI button. <strong>No slash menu. No insert bar. No header buttons.</strong></div>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<div class="scene-title">Scene 1 — main view (writing a meeting)</div>
+<div class="annotation">Sidebar groups meetings by recency. Editor is pure markdown. The only AI affordance is the ✨ Extract pill bottom-right.</div>
+<div class="app">
+  <div style="position: absolute; height: 3px; width: 1100px; background: #DC2626;"></div>
+  <div class="app-inner" style="margin-top: 3px;">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-search">
+        <input type="text" placeholder="🔍 Search meetings & todos…">
+      </div>
+      <div class="sidebar-new">+ New meeting</div>
+      <div class="sidebar-group">Today</div>
+      <div class="sidebar-item active">
+        <span>Standup</span><span class="meta">10:14</span>
+      </div>
+      <div class="sidebar-item">
+        <span>Roadmap call</span><span class="meta">14:30</span>
+      </div>
+      <div class="sidebar-group">Yesterday</div>
+      <div class="sidebar-item">
+        <span>Sprint retro</span><span class="meta">16:00</span>
+      </div>
+      <div class="sidebar-group">This week</div>
+      <div class="sidebar-item">
+        <span>Sara 1:1 (3)</span><span class="meta">Wed</span>
+      </div>
+      <div class="sidebar-item">
+        <span>Eng planning</span><span class="meta">Mon</span>
+      </div>
+      <div class="sidebar-group">Older</div>
+      <div class="sidebar-item">
+        <span>Q1 board</span><span class="meta">Apr 12</span>
+      </div>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-todos">
+        <span>📋 All Todos</span>
+        <span class="todos-badge">5</span>
+      </div>
+    </div>
+
+    <!-- Editor -->
+    <div class="editor">
+      <div class="editor-meta">Edited just now · auto-saved</div>
+      <div class="editor-body">
+        <h1>Standup — May 24</h1>
+        <p>Topics: v0.1.93 release follow-up, perf regression in CSV lexer.</p>
+        <div class="todo"><span class="box"></span><span>review PR #142 by <span class="date-chip">Fri May 29</span></span></div>
+        <div class="todo"><span class="box"></span><span>email Sara about onboarding doc <span class="date-chip">Mon Jun 2</span></span></div>
+        <div class="todo done"><span class="box done"></span><span>cancel old CI runners</span></div>
+        <p style="margin-top: 8px;">Decided: roll back release X — DB migration not ready.</p>
+        <div class="todo"><span class="box"></span><span>spike on new caching layer</span></div>
+        <p class="placeholder">Type. AI helps after, not during.</p>
+      </div>
+      <div class="extract-btn">✨ Extract</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<div class="scene-title">Scene 2 — after pressing ✨ Extract</div>
+<div class="annotation">Single button → preview dialog. User reviews extracted todos + suggested dates → Apply or Cancel. Never auto-runs. Never replaces user text.</div>
+<div class="app">
+  <div style="position: absolute; height: 3px; width: 1100px; background: #DC2626;"></div>
+  <div class="app-inner" style="margin-top: 3px;">
+    <div class="sidebar">
+      <div class="sidebar-search"><input type="text" placeholder="🔍 Search meetings & todos…"></div>
+      <div class="sidebar-new">+ New meeting</div>
+      <div class="sidebar-group">Today</div>
+      <div class="sidebar-item active"><span>Standup</span><span class="meta">10:14</span></div>
+      <div class="sidebar-item"><span>Roadmap call</span><span class="meta">14:30</span></div>
+      <div class="sidebar-group">Yesterday</div>
+      <div class="sidebar-item"><span>Sprint retro</span><span class="meta">16:00</span></div>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-todos"><span>📋 All Todos</span><span class="todos-badge">5</span></div>
+    </div>
+    <div class="editor">
+      <div class="editor-meta">Edited just now · auto-saved</div>
+      <div class="editor-body">
+        <h1>Standup — May 24</h1>
+        <p>Topics: v0.1.93 release follow-up, perf regression in CSV lexer.</p>
+        <div class="todo"><span class="box"></span><span>review PR #142 by <span class="date-chip">Fri May 29</span></span></div>
+        <p style="margin-top: 6px;">Decided: roll back release X.</p>
+        <p>Need to think about caching strategy.</p>
+        <p>Marketing wants the demo by next week, told them realistic.</p>
+      </div>
+
+      <div class="extract-dialog">
+        <h4>✨ Found 4 actions to track</h4>
+        <div class="row"><span class="box"></span><span>review PR #142</span><span class="chip">Fri</span></div>
+        <div class="row"><span class="box"></span><span>spike on caching layer</span><span class="chip">no date</span></div>
+        <div class="row"><span class="box"></span><span>email Sara onboarding doc</span><span class="chip">Mon</span></div>
+        <div class="row"><span class="box"></span><span>demo for marketing</span><span class="chip">next week</span></div>
+        <div class="actions">
+          <button class="btn-secondary">Cancel</button>
+          <button class="btn-primary">Insert at bottom</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<div class="scene-title">Scene 3 — Todos pane open (Ctrl+Alt+T)</div>
+<div class="annotation">Optional third pane. All todos across all meetings, grouped by due. Click a row → editor jumps to the source line. Default OFF.</div>
+<div class="app">
+  <div style="position: absolute; height: 3px; width: 1100px; background: #DC2626;"></div>
+  <div class="app-inner" style="margin-top: 3px;">
+    <div class="sidebar" style="width: 200px;">
+      <div class="sidebar-search"><input type="text" placeholder="🔍 Search…"></div>
+      <div class="sidebar-new">+ New meeting</div>
+      <div class="sidebar-group">Today</div>
+      <div class="sidebar-item active"><span>Standup</span><span class="meta">10:14</span></div>
+      <div class="sidebar-item"><span>Roadmap</span><span class="meta">14:30</span></div>
+      <div class="sidebar-group">Yesterday</div>
+      <div class="sidebar-item"><span>Sprint retro</span><span class="meta">16:00</span></div>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-todos"><span>📋 All Todos</span><span class="todos-badge">5</span></div>
+    </div>
+    <div class="editor" style="padding-right: 0;">
+      <div class="editor-meta">Edited just now · auto-saved</div>
+      <div class="editor-body">
+        <h1>Standup — May 24</h1>
+        <p>v0.1.93 release follow-up, perf regression in CSV lexer.</p>
+        <div class="todo"><span class="box"></span><span>review PR #142 by <span class="date-chip">Fri May 29</span></span></div>
+        <div class="todo"><span class="box"></span><span>email Sara about onboarding doc <span class="date-chip">Mon Jun 2</span></span></div>
+        <div class="todo done"><span class="box done"></span><span>cancel old CI runners</span></div>
+        <p>Decided: roll back release X.</p>
+      </div>
+      <div class="extract-btn">✨ Extract</div>
+    </div>
+    <div class="todos-panel">
+      <div class="todos-header">
+        Todos · 5 open
+        <span class="close">✕</span>
+      </div>
+      <div class="todos-section">Overdue</div>
+      <div class="todos-row">
+        <div class="todos-row-line"><span class="box" style="display: inline-block; width: 12px; height: 12px; border: 1.5px solid #94a3b8; border-radius: 2px; margin-top: 3px;"></span><span>finalize launch copy</span></div>
+        <div class="todos-row-meta due-overdue">@me · Roadmap call · was due May 22</div>
+      </div>
+      <div class="todos-section">Today</div>
+      <div class="todos-row">
+        <div class="todos-row-line"><span class="box" style="display: inline-block; width: 12px; height: 12px; border: 1.5px solid #94a3b8; border-radius: 2px; margin-top: 3px;"></span><span>review PR #142</span></div>
+        <div class="todos-row-meta">@me · Standup · May 29</div>
+      </div>
+      <div class="todos-row">
+        <div class="todos-row-line"><span class="box" style="display: inline-block; width: 12px; height: 12px; border: 1.5px solid #94a3b8; border-radius: 2px; margin-top: 3px;"></span><span>email Sara onboarding doc</span></div>
+        <div class="todos-row-meta">@me · Standup · Jun 2</div>
+      </div>
+      <div class="todos-section">This week</div>
+      <div class="todos-row">
+        <div class="todos-row-line"><span class="box" style="display: inline-block; width: 12px; height: 12px; border: 1.5px solid #94a3b8; border-radius: 2px; margin-top: 3px;"></span><span>spike on new caching layer</span></div>
+        <div class="todos-row-meta">@me · Standup · no date</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<div class="scene-title">Scene 4 — empty state (first open / brand-new tab)</div>
+<div class="annotation">No tutorial, no modal. One declarative sentence + the keyboard shortcut. Frames what Noter IS and what it ISN'T.</div>
+<div class="app">
+  <div style="position: absolute; height: 3px; width: 1100px; background: #DC2626;"></div>
+  <div class="app-inner" style="margin-top: 3px;">
+    <div class="sidebar">
+      <div class="sidebar-search"><input type="text" placeholder="🔍 Search meetings & todos…"></div>
+      <div class="sidebar-new">+ New meeting</div>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-todos"><span>📋 All Todos</span><span class="todos-badge" style="background: #d5d0c0; color: #525252;">0</span></div>
+    </div>
+    <div class="editor">
+      <div class="empty-state">
+        <div class="title">Noter</div>
+        <div class="sub">Your meetings, your typing. AI helps after — not during.</div>
+        <div class="hint">Press <strong style="color: #DC2626;">Ctrl+Alt+M</strong> to start a new meeting note.</div>
+        <div class="negatives">
+          Noter does not record audio.<br>
+          Noter does not join calls.<br>
+          Noter does not need the internet.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<div class="scene-title">Keyboard shortcuts — Noter-scope only (no global overlap)</div>
+<div class="shortcuts-table">
+  <table>
+    <thead>
+      <tr><th>Action</th><th>Shortcut</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Open / focus the Noter tab</td><td><span class="kbd">Ctrl+Alt+N</span></td><td>existing, KEEP</td></tr>
+      <tr><td>New meeting (inside Noter)</td><td><span class="kbd">Ctrl+Alt+M</span></td><td>NEW — M for meeting</td></tr>
+      <tr><td>Jump to meeting (fuzzy)</td><td><span class="kbd">Ctrl+Alt+J</span></td><td>NEW — J for jump</td></tr>
+      <tr><td>Toggle Todos pane</td><td><span class="kbd">Ctrl+Alt+T</span></td><td>existing</td></tr>
+      <tr><td>AI Extract (the ✨ button)</td><td><span class="kbd">Ctrl+Alt+E</span></td><td>repurposed</td></tr>
+      <tr><td>Toggle sidebar</td><td><span class="kbd">Ctrl+Alt+B</span></td><td>NEW — B for blinds</td></tr>
+      <tr><td>Pop out current meeting</td><td><span class="kbd">Ctrl+Alt+P</span></td><td>existing, power-user</td></tr>
+      <tr><td>Toggle checkbox under cursor</td><td><span class="kbd">F4</span></td><td>NEW — F-key avoids all Ctrl conflicts</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="scene-title">What gets DELETED from current Noter</div>
+<div class="shortcuts-table" style="background: #3a2424;">
+  <table>
+    <thead>
+      <tr><th>Removed</th><th>Why</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Slash menu (<span class="kbd">/decision</span>, <span class="kbd">/action</span>, etc.)</td><td>user said "fully confusing, non-usable"</td></tr>
+      <tr><td>6-button insert bar (Action / Checklist / Decision / Question / Risk / Quote)</td><td>user said "in the way"</td></tr>
+      <tr><td>Header row (Recent / Quick Todo / Todos / Pop / + New / model picker)</td><td>too many buttons; sidebar carries the load</td></tr>
+      <tr><td>Timer + auto-stamped meta line</td><td>clutter, no real use</td></tr>
+      <tr><td>Edge-strip icons (Notebooks / Reminders / Outline)</td><td>already half-gone; finishing the deletion</td></tr>
+      <tr><td>WebEngine path (notes_bridge / notes_editor)</td><td>force-disabled already; deleting dead code</td></tr>
+      <tr><td>Slide-over "Reminders" panel</td><td>folded into the Todos panel — overdue/today/etc. groups</td></tr>
+      <tr><td>"DECISION:" / "QUESTION:" / "RISK:" auto-prefix templates</td><td>plain markdown is enough; the AI Extract pass identifies them</td></tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>

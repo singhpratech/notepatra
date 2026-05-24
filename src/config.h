@@ -42,6 +42,10 @@ public:
     bool autoComplete = true;
     int autoCompleteThreshold = 3;
 
+    // Auto-save (global) — session.json + window geometry tick. Applies to
+    // every tab type (code files, Notes, etc.). Bounded [1s, 300s].
+    int autoSaveIntervalSec = 5;
+
     // v0.1.42 — fields added so the Preferences dialog stops being theatre.
     // Every control on every Preferences tab now reads from these on init
     // and writes back on OK. Editor::setupEditor() consults each one
@@ -64,6 +68,10 @@ public:
     // OpenAI /v1/chat/completions API). See OllamaClient::Backend for
     // the full list.
     QString aiBackend = "Ollama";
+
+    // Noter — user's picked AI model for end-meeting sweep. Empty =
+    // use whatever the OllamaClient defaults to.
+    QString aiNoterModel;
     // Base URL for the selected backend. Empty = use the default for
     // the backend (11434 for Ollama, 8080 for llama.cpp). Users paste
     // custom URLs here when self-hosting.
@@ -231,6 +239,7 @@ public:
         showCrosshair = o.value("showCrosshair").toBool(showCrosshair);
         autoComplete = o.value("autoComplete").toBool(autoComplete);
         autoCompleteThreshold = o.value("autoCompleteThreshold").toInt(autoCompleteThreshold);
+        autoSaveIntervalSec = qBound(1, o.value("autoSaveIntervalSec").toInt(autoSaveIntervalSec), 300);
         hideToolbar = o.value("hideToolbar").toBool(hideToolbar);
         tabsClosable = o.value("tabsClosable").toBool(tabsClosable);
         doubleClickToCloseTab = o.value("doubleClickToCloseTab").toBool(doubleClickToCloseTab);
@@ -240,6 +249,7 @@ public:
         defaultEol = o.value("defaultEol").toString(defaultEol);
         showWelcomeOnStartup = o.value("showWelcomeOnStartup").toBool(showWelcomeOnStartup);
         aiBackend = o.value("aiBackend").toString(aiBackend);
+        aiNoterModel = o.value("aiNoterModel").toString(aiNoterModel);
         aiBaseUrl = o.value("aiBaseUrl").toString(aiBaseUrl);
         aiApiKey  = o.value("aiApiKey").toString(aiApiKey);
         aiOpenRouterKey  = o.value("aiOpenRouterKey").toString(aiOpenRouterKey);
@@ -308,6 +318,7 @@ public:
         o["showCrosshair"] = showCrosshair;
         o["autoComplete"] = autoComplete;
         o["autoCompleteThreshold"] = autoCompleteThreshold;
+        o["autoSaveIntervalSec"] = autoSaveIntervalSec;
         o["hideToolbar"] = hideToolbar;
         o["tabsClosable"] = tabsClosable;
         o["doubleClickToCloseTab"] = doubleClickToCloseTab;
@@ -317,6 +328,7 @@ public:
         o["defaultEol"] = defaultEol;
         o["showWelcomeOnStartup"] = showWelcomeOnStartup;
         o["aiBackend"] = aiBackend;
+        o["aiNoterModel"] = aiNoterModel;
         o["aiBaseUrl"] = aiBaseUrl;
         o["aiApiKey"]  = aiApiKey;
         o["aiOpenRouterKey"]  = aiOpenRouterKey;

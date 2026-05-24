@@ -3,7 +3,58 @@
 All notable changes to Notepatra will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Versioning](https://semver.org/).
 
-> **Gaps in the version number timeline:** v0.1.4 and v0.1.6 were tagged but never published a GitHub Release (CI failures — NSIS macro bug and Windows MSVC C2666 respectively); their content shipped in v0.1.5 and v0.1.7. v0.1.11 was prepared with a macOS dylib install_name hotfix but was rolled forward into v0.1.12 to reduce release churn — the v0.1.11 changes (install_name rewriting, QtPrintSupport force-copy, otool Homebrew-path audit, ad-hoc re-sign) ship as part of v0.1.12.
+> **Gaps in the version number timeline:** v0.1.4 and v0.1.6 were tagged but never published a GitHub Release (CI failures — NSIS macro bug and Windows MSVC C2666 respectively); their content shipped in v0.1.5 and v0.1.7. v0.1.11 was prepared with a macOS dylib install_name hotfix but was rolled forward into v0.1.12 to reduce release churn — the v0.1.11 changes ship as part of v0.1.12. v0.1.94 was prepared locally as a crash-hardening release but rolled forward into v0.1.95 alongside the Noter redesign to reduce churn.
+
+---
+
+## [0.1.95] — 2026-05-24
+
+**Windows crash hardening + Noter full redesign.** Three independent Windows crash / hang classes resolved (Save / Save As / right-click-Save reliable crash; double-click launcher spawning multiple PIDs; main window invisible at unreachable coordinates after a monitor change). Noter rewritten from scratch into a two-pane sidebar+editor shape after the v0.1.94 placeholder UX proved unusable. Same install commands, same artifact names, same flavor split.
+
+### Added
+- **`clampWindowToScreens(QRect)` helper** in `src/mainwindow.cpp` — intersect-tests persisted window coords against `QGuiApplication::screens()` availableGeometry, recenters on primary when no monitor contains the requested rect. Applied to both startup geometry restore AND `restoreSession()` paths.
+- **Silent-save-failure warning dialogs** at three call sites in `src/mainwindow.cpp` (File→Save, right-click Save, closeTab unsaved prompt). `Editor::saveFile()`'s bool return was previously ignored; a read-only / AV-locked file silently dropped edits while `updateGitGutter` ran on stale data.
+- **`src/tool_colors.{h,cpp}`** — single canonical brand-color lookup for every Notepatra tool. `notepatraToolAccent(toolKey)` is now sourced by tab accent strips, feature-toolbar icons, and Welcome cards. Edit one file to retint a tool everywhere.
+- **Noter two-pane redesign** in `src/notes.{cpp,h}` — `QSplitter [sidebar | QStackedWidget[empty | editor] | optional Todos pane]`. Sidebar groups meetings by Today / Yesterday / This week / This month / Older + Trash. Editor is a vanilla `QTextEdit` with markdown shortcuts. Single ✨ Extract button in the editor footer runs the AI sweep.
+- **Markdown shortcuts in Noter editor** — type `- [ ]` + Space → ☐; click ☐ → toggle ✓; Enter on ☐ line → new ☐; empty ☐ + Enter breaks out of list; F4 toggles checkbox on current line.
+- **Inline ✕ delete button on every meeting row and every todo row** — one-click move to Trash, no right-click required. Trashed items render ↺ Restore in the same slot.
+- **Trash + restore for meetings** — `~/Documents/Notepatra/Noter/Trash/.trashed-<timestamp>-<name>.html`. Sidebar shows a TRASH group at bottom only when non-empty. Right-click → ↺ Restore / ⚠ Delete permanently (with confirm).
+- **Trash + restore for todos** — `NotesTodos::trashRow(id)` sets `status='trashed'` (not SQL DELETE); `restoreRow(id)` brings it back to `status='open'`; `deleteRow(id)` is now permanent-only. New `dueGroupTrashed(int limit)` query.
+- **Inline-editable todo titles** — double-click any todo's title swaps it to a `QLineEdit` (`QStackedWidget [QLabel, QLineEdit]` pattern); Enter commits via `NotesTodos::setText()`, Esc cancels. Edit propagates back into the meeting body via text find-and-replace so the next `reindexNote()` doesn't clobber the change.
+- **Calendar pickers everywhere** — Add-todo dialog has Text + Due (with today/tomorrow/clear quick-picks) + Remind (with in 1h / tomorrow / 1h-before-due / clear). Right-click Set due / Set reminder opens `QDateTimeEdit` with `setCalendarPopup(true)` plus Clear button.
+- **AI model selector** in the editor footer — auto-populates from `OllamaClient::listModels()`, persists choice to `Config::aiNoterModel`. Graceful fallback when backend unreachable.
+- **`design/noter-redesign.html`** — annotated 4-scene wireframe mockup of the new two-pane shape.
+- **`test_notes_panel_widget.cpp`** — NEW 24-case integration test for the rewritten `NotesPanel`. Heavy-link approach (15 sources) drives `QTest::keyClicks` for markdown shortcuts + F4 toggle + Enter-on-checkbox.
+- **`test_notes_panels.cpp` +14 cases** — inline-edit roundtrip, double-click swap, Esc cancel, no-op suppression, addTodoRequested.
+- **`test_notes_todos.cpp` +22 cases** — setText trim/empty rejection, trash → restore → permanent-delete lifecycle, edge cases.
+
+### Changed
+- **Save As dialog — Date Created column removed** (`src/mainwindow.cpp::configureSaveDialogUx`). Deleted `src/savedialogfsmodel.{cpp,h}` entirely. The proxy model fabricated a synthetic column via direct `createIndex()` and reliably crashed Windows on every Save / Save As / right-click Save. Comment-vs-code drift hid the regression for 4 releases. Dialog keeps its 960×640 default geometry, Detail view, Date-Modified-descending sort.
+- **`QLocalServer::listen()` now runs BEFORE `MainWindow` construction** (`src/main.cpp:269-378`). Pre-fix ordering ran slow session-restore inside the constructor while the pipe wasn't bound; concurrent launches during that window failed and spawned fresh PIDs.
+- **Single-instance probe is two-stage**: 500 ms initial connect + 1500 ms retry. Pre-fix 300 ms timeout was too short for cold-start Windows where Defender scan can stall pipe-open.
+- **`QLocalServer::removeServer(serverName)` only called after `listen()` failure** — pre-fix unconditional call wiped a still-alive previous instance's named-pipe registration whenever any probe missed for any reason.
+- **Tab accent palette overhauled** — 12 visibly distinct hues spread ~30° apart on the wheel. Resolved 5 prior collisions (AI / JSON both medium blue → AI royal blue 222°, JSON cyan 191°; HTML / Project Search both warm orange → HTML hot pink 330°; Noter / Git both red → Git lime 74°; Brackets / Project Search same hue → Brackets pushed to dark brown lightness 26%). Project Search `#D47A1E` kept exactly as user pinned. Hex unchanged at slate gray.
+- **Noter slash menu deleted** — `src/notes_slashmenu.{cpp,h}` + `test_notes_slashmenu.cpp`. "Fully confusing, non-usable" per user feedback. Markdown shortcuts replace it.
+- **Noter WebEngine path deleted** — `src/notes_bridge.{cpp,h}`, `src/notes_editor.{cpp,h}`, `test_notes_bridge.cpp`. Force-disabled since v0.1.94 via `#define NOTER_FORCE_FALLBACK_EDITOR`; finally removed entirely.
+- **Noter 6-button insert bar deleted** — "in the way of typing" per user feedback. Markdown shortcuts (`- [ ]` + Space) cover the checkbox case; AI Extract handles structured-block extraction post-meeting.
+- **Noter header button row deleted** — "too many buttons" per user feedback. Sidebar carries the load (search, + New meeting, date-grouped list, All Todos toggle).
+- **Noter slide-over Reminders panel folded into Todos pane** — Todos pane now has Overdue / Today / This week / Someday / Done / Trash groups; reminders surface in the same view via due-date metadata.
+- **Light QMenu styling applied per-instance** to every context menu in Noter (`src/notes.cpp` meeting list, `src/notes_panels.cpp` TodoRowWidget). Qt's QSS cascade doesn't carry QMenu rules through widgets that set their own stylesheet, so the rules must be set on each `QMenu` instance directly. Fixes the dark-on-dark right-click menu the user reported.
+
+### Fixed
+- **Save / Save As / right-click Save reliable crash on Windows** — see above. Three independent crash modes in the v0.1.89 `SaveDialogDateCreatedProxy`: direct `createIndex()` bypassing `QIdentityProxyModel`'s internal registration; `QFileInfoGatherer` race with the proxy's `mapToSource`; dangling `QPersistentModelIndex` in the dialog's `QCompleter` from `setProxyModel` ordering.
+- **Notepatra invisible after monitor change** — see above. Pre-fix guard of `cfg.windowX >= 0` was insufficient (large positive coords pass the check and still land off-screen). New helper intersect-tests against all currently-connected monitors.
+- **Double-click Notepatra launcher spawns multiple PIDs on Windows** — see above. Three causes: listen-after-MainWindow-construction, 300 ms probe too short, unconditional removeServer orphaning the running instance. All three fixed.
+- **Slashmenu test entry-count mismatch** — `test_notes_slashmenu.cpp` was asserting an 8-entry baseline that had grown to 9 in code (checklist entry added). Test now deleted alongside the slashmenu module.
+
+### Memory rules established
+- `feedback_qfiledialog_proxy_windows_crash` — never use `setProxyModel` to add a synthetic column to `QFileSystemModel`.
+- `feedback_window_geometry_must_clamp_to_screens` — always intersect-test persisted coords against connected monitors.
+- `feedback_single_instance_bind_before_mainwindow` — `QLocalServer::listen()` MUST precede the slow window constructor; never `removeServer()` unconditionally on probe miss.
+- `feedback_comment_vs_code_drift` — when a comment claims a fix while the code still does the broken thing, trust the code.
+- `feedback_inline_editable_label_pattern` — `QStackedWidget [QLabel, QLineEdit]` pattern for inline-editable list rows with anonymous-namespace row widgets.
+- `feedback_qt_widget_integration_test_pattern` — heavy-link sources + `QTest::keyClicks` + `$HOME` redirect for end-to-end Qt widget testing.
+- `project_noter_v95_redesign` — the redesign decisions + 10-app UX research summary.
 
 ---
 

@@ -273,11 +273,33 @@ int main(int argc, char *argv[]) {
     // shell verb invokes notepatra.exe with the file path, we hand it to
     // the running instance, and the user sees a new tab instead of a new
     // window.
+    //
+    // v0.1.94 hardening — three changes versus the pre-fix path:
+    //   1. Two-stage probe (500 ms + 1500 ms retry). On Windows cold-start
+    //      with Defender scanning the new EXE, the first connect can stall
+    //      past the legacy 300 ms cutoff. We retry once on a longer timer
+    //      before declaring "no server" — eliminates the spurious miss
+    //      that produced the multi-PID symptom users reported.
+    //   2. Don't unconditionally `removeServer()` before listen(). The
+    //      pre-fix code wiped the running instance's named-pipe binding
+    //      whenever a probe missed — orphaning the original window. Now
+    //      we only call removeServer after listen() itself fails (stale
+    //      socket from a previous crash), and only on that single retry.
+    //   3. listen() happens BEFORE MainWindow construction. The pre-fix
+    //      ordering ran the slow session-restore inside MainWindow's
+    //      constructor while the pipe wasn't bound yet; concurrent
+    //      launches during that window all spawned fresh PIDs. With the
+    //      server bound first, probes from rapid double-clicks succeed.
     const QString serverName = singleInstanceServerName();
     if (!newWindow) {
         QLocalSocket probe;
         probe.connectToServer(serverName);
-        if (probe.waitForConnected(300)) {
+        if (!probe.waitForConnected(500)) {
+            probe.abort();
+            probe.connectToServer(serverName);
+            probe.waitForConnected(1500);
+        }
+        if (probe.state() == QLocalSocket::ConnectedState) {
             QJsonObject payload;
             QJsonArray arr;
             for (const QString &p : filesToOpen) arr.append(p);
@@ -327,7 +349,31 @@ int main(int argc, char *argv[]) {
         Config::instance().theme = themeOverride;
     }
 
+    // v0.1.94 — bind the named-pipe/socket BEFORE constructing MainWindow.
+    // MainWindow's constructor restores the session (potentially many tabs,
+    // many seconds on a large session); without an early bind, any double-
+    // click during that window failed every probe and accumulated PIDs.
+    QLocalServer *server = nullptr;
+    if (!newWindow) {
+        server = new QLocalServer();
+        server->setSocketOptions(QLocalServer::UserAccessOption);
+        if (!server->listen(serverName)) {
+            // Stale socket from a crashed previous instance — clean up and
+            // retry once. Only on listen-failure do we call removeServer,
+            // so a still-alive previous instance is never orphaned.
+            QLocalServer::removeServer(serverName);
+            if (!server->listen(serverName)) {
+                fprintf(stderr,
+                        "Notepatra: single-instance server bind failed: %s\n",
+                        qPrintable(server->errorString()));
+                delete server;
+                server = nullptr;
+            }
+        }
+    }
+
     MainWindow window;
+    if (server) server->setParent(&window);
 
     // Open files from command line
     for (const auto &path : filesToOpen)
@@ -339,42 +385,33 @@ int main(int argc, char *argv[]) {
             e->gotoLine(gotoLine);
     }
 
-    // Start the local server that future invocations will connect to.
-    // removeServer() clears a stale socket file from a previous crash —
-    // without it, listen() fails with AddressInUseError on Linux.
-    QLocalServer *server = nullptr;
-    if (!newWindow) {
-        QLocalServer::removeServer(serverName);
-        server = new QLocalServer(&window);
-        // SocketOption::UserAccessOption keeps the socket readable only by
-        // the current user on platforms that honour it.
-        server->setSocketOptions(QLocalServer::UserAccessOption);
-        if (server->listen(serverName)) {
-            QObject::connect(server, &QLocalServer::newConnection, &window, [server, &window]() {
-                while (QLocalSocket *client = server->nextPendingConnection()) {
-                    QObject::connect(client, &QLocalSocket::disconnected,
-                                     client, &QLocalSocket::deleteLater);
-                    // Wait briefly for the peer to send its JSON — the
-                    // caller in the if(waitForConnected) branch above is
-                    // synchronous so this is usually available on first
-                    // read.
-                    client->waitForReadyRead(500);
-                    const QByteArray body = client->readAll();
-                    const QJsonDocument doc = QJsonDocument::fromJson(body);
-                    if (doc.isObject()) {
-                        const QJsonObject o = doc.object();
-                        QStringList paths;
-                        for (const QJsonValue &v : o.value("files").toArray())
-                            paths.append(v.toString());
-                        const int line = o.value("gotoLine").toInt(-1);
-                        const QByteArray sid =
-                            o.value("startupId").toString().toUtf8();
-                        window.handleRemoteOpen(paths, line, sid);
-                    }
-                    client->disconnectFromServer();
+    if (server) {
+        auto drainConnections = [server, &window]() {
+            while (QLocalSocket *client = server->nextPendingConnection()) {
+                QObject::connect(client, &QLocalSocket::disconnected,
+                                 client, &QLocalSocket::deleteLater);
+                client->waitForReadyRead(500);
+                const QByteArray body = client->readAll();
+                const QJsonDocument doc = QJsonDocument::fromJson(body);
+                if (doc.isObject()) {
+                    const QJsonObject o = doc.object();
+                    QStringList paths;
+                    for (const QJsonValue &v : o.value("files").toArray())
+                        paths.append(v.toString());
+                    const int line = o.value("gotoLine").toInt(-1);
+                    const QByteArray sid =
+                        o.value("startupId").toString().toUtf8();
+                    window.handleRemoteOpen(paths, line, sid);
                 }
-            });
-        }
+                client->disconnectFromServer();
+            }
+        };
+        QObject::connect(server, &QLocalServer::newConnection, &window, drainConnections);
+        // Drain any connections that arrived between listen() and the
+        // newConnection slot wire-up above. Qt buffers pending sockets
+        // until we ask, so nothing is lost — but the signal won't re-fire
+        // for them on its own.
+        drainConnections();
     }
 
     window.show();
