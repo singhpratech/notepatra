@@ -1981,7 +1981,7 @@
                         <ul>
                             <li><strong>Crash-safe session restore.</strong> <code>MainWindow::restoreSession()</code> now writes a <code>session.json.restoring</code> marker before opening files and deletes it on successful completion. On next launch, if the marker still exists, the previous restore was interrupted (kill / hang) — session.json is moved aside to <code>session.json.failed-&lt;timestamp&gt;</code> and the user sees a deferred dialog explaining where to find the saved tab list. No more "reopen the same bad file on every launch" loop.</li>
                             <li><strong>EOL-OpenSSL update-check gate.</strong> Notepatra now detects <code>QSslSocket::sslLibraryVersionString()</code> at runtime and hard-skips the GitHub update check if it sees OpenSSL 1.0.x / 1.1.x (EOL since Sept 2023). Modern endpoints negotiate TLS in ways that can stall the UI thread on a broken SSL stack — bypassing the check eliminates that path. Manually-triggered checks show a "open Releases page in browser" dialog instead.</li>
-                            <li><strong>Bundled OpenSSL 3.x on Windows queued for v0.1.97.</strong> The CI workflow change to bundle libssl-3 / libcrypto-3 instead of the 2023-vintage 1.1 DLLs lands in the next release; the v0.1.96 gate stops the hang in the meantime.</li>
+                            <li><strong>Bundled OpenSSL 3.x on Windows is a CI workflow change for the next release.</strong> The v0.1.96 gate stops the hang in the meantime.</li>
                         </ul>
                     </div>
                     <div class="version-section">
@@ -1989,7 +1989,7 @@
                         <ul>
                             <li>Pre-v0.1.96, Notepatra wrote to <code>~/.config/notepatra/</code> on EVERY OS — fine on Linux, wrong on macOS, wrong on Windows. The Windows side bit a user hard: their <code>%APPDATA%\\Notepatra\\</code> appeared empty while session state sat in <code>C:\\Users\\&lt;u&gt;\\.config\\notepatra\\</code>, invisible to IT tooling / backup tools / group policy.</li>
                             <li>New <code>Config::appConfigDir()</code> returns the platform-conventional path: Windows <code>%APPDATA%\\Notepatra</code>, macOS <code>~/Library/Application Support/Notepatra</code>, Linux unchanged at <code>$XDG_CONFIG_HOME/notepatra</code>.</li>
-                            <li>One-time copy migration on first launch — if the new path is empty AND the legacy path has data, contents are copied across. We don't delete the legacy data, so you can roll back if anything goes wrong. Legacy-dir cleanup is queued for v0.1.97.</li>
+                            <li>One-time copy migration on first launch — if the new path is empty AND the legacy path has data, contents are copied across. We don't delete the legacy data, so you can roll back if anything goes wrong. Cleanup of the legacy directory will land in a future release.</li>
                             <li>All ~6 hard-coded config-path call sites migrated: <code>config.json</code>, <code>session.json</code>, <code>recovery/</code>, <code>ai-logs/interactions.db</code>, <code>db-connections.json</code>, <code>plugins/</code>.</li>
                         </ul>
                     </div>
