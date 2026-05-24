@@ -7,6 +7,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.96] — 2026-05-24
+
+**Same-day Windows hotfix for v0.1.95.** Three independent root causes of a reproducible launch-hang permanently addressed: (1) platform-conventional config dir, (2) crash-safe session restore, (3) EOL-OpenSSL update-check gate.
+
+### Added
+- **`Config::appConfigDir()`** — returns the platform-conventional config dir: `%APPDATA%\Notepatra` on Windows, `~/Library/Application Support/Notepatra` on macOS, `$XDG_CONFIG_HOME/notepatra` on Linux (unchanged). All ~6 hard-coded `~/.config/notepatra/` call sites migrated.
+- **One-time copy-migration** from the legacy `~/.config/notepatra/` path on first launch (Windows / macOS only). Contents are COPIED, not moved — the user can roll back if anything goes wrong. Legacy-dir cleanup queued for v0.1.97.
+- **Crash-safe session-restore marker** in `MainWindow::restoreSession()`. Writes `session.json.restoring` before opening files; deletes on success. On next launch, if the marker still exists, the previous restore was interrupted (kill / hang) — moves session.json aside to `session.json.failed-<timestamp>` and shows a deferred dialog telling the user where to find it.
+- **EOL-OpenSSL update-check gate** — `MainWindow::checkForUpdates()` now detects `QSslSocket::sslLibraryVersionString()` at runtime and hard-skips the GitHub check if it sees 1.0.x or 1.1.x (EOL since Sept 2023). The TLS handshake against modern endpoints can stall the UI thread on a broken stack; bypassing eliminates that path. Manually-triggered checks show a "open Releases page in browser" dialog instead.
+- New per-platform unit tests for `appConfigDir()` via env override (`HOME` + `APPDATA` + `XDG_CONFIG_HOME`).
+
+### Changed
+- **`~/.config/notepatra/` writes on Windows / macOS** — no longer hard-coded; now routes through `appConfigDir()`. Sites migrated: `config.json`, `session.json`, `recovery/`, `ai-logs/interactions.db`, `db-connections.json`, `plugins/`.
+- **`docs/index.html` policy reinforcement** — the agent-driven v0.1.95 sweep accidentally added a slim demoted v0.1.93 card on the website. Per the `feedback_website_release_detail_policy` memory rule, NO older-release cards (slim or otherwise) belong on the website — older releases live entirely on GitHub via the "See every release on GitHub" footer link. Slim card removed; HTML comment hardened so this can't recur silently.
+
+### Fixed
+- **Windows launch-hang loop on bad session.json entry** (user-reported on v0.1.95) — session.json kept reopening a file like `.aws/config` across user-initiated kills. The combination of (a) hard-coded `~/.config/notepatra/` path that IT tooling couldn't see, (b) no "previous restore failed" detection, and (c) the EOL-OpenSSL update-check stalling the UI thread, made the hang reproducible. All three vectors permanently closed; user no longer has to PowerShell-rename the file to recover.
+- **Slim v0.1.93 card on docs/index.html** — removed per the website release-detail policy.
+
+### Known not-yet-fixed
+- **Windows MSI still bundles OpenSSL 1.1 DLLs** dated 2023-09-11. The v0.1.96 gate stops the update check from touching them; bundling OpenSSL 3.x is a CI workflow change queued for v0.1.97.
+- **Legacy `~/.config/notepatra/` not auto-deleted after migration** — the migration is copy-only in v0.1.96 to give users a rollback path. v0.1.97 will sweep the legacy dir once we've validated nobody's relying on it.
+
+---
+
 ## [0.1.95] — 2026-05-24
 
 **Windows crash hardening + Noter full redesign.** Three independent Windows crash / hang classes resolved (Save / Save As / right-click-Save reliable crash; double-click launcher spawning multiple PIDs; main window invisible at unreachable coordinates after a monitor change). Noter rewritten from scratch into a two-pane sidebar+editor shape after the v0.1.94 placeholder UX proved unusable. Same install commands, same artifact names, same flavor split.

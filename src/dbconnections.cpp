@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "dbconnections.h"
+#include "config.h"
 #ifdef NOTEPATRA_HAVE_DUCKDB
 #include "duckdb_client.h"
 #endif
@@ -34,7 +35,8 @@
 namespace DbConnections {
 
 QString configPath() {
-    return QDir::homePath() + QStringLiteral("/.config/notepatra/db-connections.json");
+    // v0.1.96 — platform-conventional config dir.
+    return Config::appConfigDir() + QStringLiteral("/db-connections.json");
 }
 
 // ── Password obfuscation ────────────────────────────────────────────────

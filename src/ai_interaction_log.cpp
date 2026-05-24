@@ -29,7 +29,10 @@ bool    g_initialised = false;
 bool    g_initFailed = false;
 
 QString dbPathInternal() {
-    const QString dir = QDir::homePath() + "/.config/notepatra/ai-logs";
+    // v0.1.96 — platform-conventional config dir. Avoids the Windows
+    // %APPDATA%-vs-~/.config/notepatra inconsistency that left users
+    // looking for the SQLite log in the wrong place.
+    const QString dir = Config::appConfigDir() + QStringLiteral("/ai-logs");
     QDir().mkpath(dir);
     return dir + "/interactions.db";
 }

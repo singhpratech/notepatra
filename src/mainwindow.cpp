@@ -3075,7 +3075,8 @@ void MainWindow::buildMenus() {
     // extensions and the "How to write a plugin" documentation entry.
     feat->addSeparator();
     sectionHeader("Formatters");
-    QString pluginDir = QDir::homePath() + "/.config/notepatra/plugins";
+    // v0.1.96 — platform-conventional config dir.
+    QString pluginDir = Config::appConfigDir() + QStringLiteral("/plugins");
     m_pluginManager.loadPlugins(pluginDir);
     QMenu *pluginsMenu = feat;  // "inbuilt plugin" actions append to Tools
 
@@ -4353,11 +4354,15 @@ void MainWindow::setupShortcuts() {
 // ═══════════════════════════════════════
 
 QString MainWindow::sessionFilePath() {
-    return QDir::homePath() + "/.config/notepatra/session.json";
+    // v0.1.96 — use the platform-conventional config dir from Config.
+    // Linux: ~/.config/notepatra/session.json
+    // macOS: ~/Library/Application Support/Notepatra/session.json
+    // Windows: %APPDATA%\Notepatra\session.json
+    return Config::appConfigDir() + QStringLiteral("/session.json");
 }
 
 QString MainWindow::recoveryDir() {
-    return QDir::homePath() + "/.config/notepatra/recovery";
+    return Config::appConfigDir() + QStringLiteral("/recovery");
 }
 
 void MainWindow::saveSession() {
@@ -4409,12 +4414,67 @@ void MainWindow::saveSession() {
 }
 
 void MainWindow::restoreSession() {
-    QFile f(sessionFilePath());
+    // v0.1.96 — crash-safe restore.
+    //
+    // Pre-fix: a stale `.aws/config` entry in session.json caused a
+    // Windows user's Notepatra to hang on every launch. session.json
+    // never got rewritten — so the bad entry persisted across the
+    // user killing the process via Task Manager, looping the hang.
+    // Only a manual rename of session.json fixed it.
+    //
+    // Fix: write a `session.json.restoring` marker BEFORE doing any
+    // restore work; delete it on success. On next launch, if the
+    // marker still exists, the previous restore hung — move
+    // session.json aside (preserving the data) and bail out without
+    // restoring. User sees a deferred dialog ("Previous session
+    // couldn't restore — your tabs are saved at …") AFTER the empty
+    // editor is up, NOT during construction.
+    const QString sessionPath = sessionFilePath();
+    const QString marker = sessionPath + QStringLiteral(".restoring");
+
+    if (QFileInfo::exists(marker)) {
+        // Previous restore was interrupted (likely a hang). Move
+        // session.json aside so the next launch starts clean.
+        const QString failedAside = sessionPath + QStringLiteral(".failed-%1")
+                                        .arg(QDateTime::currentMSecsSinceEpoch());
+        QFile::rename(sessionPath, failedAside);
+        QFile::remove(marker);
+        // Defer the dialog so the user sees an empty editor first.
+        QTimer::singleShot(800, this, [this, failedAside]() {
+            QMessageBox box(this);
+            box.setWindowTitle(tr("Previous session restore was interrupted"));
+            box.setIcon(QMessageBox::Information);
+            box.setText(tr(
+                "<b>The previous Notepatra session didn't finish restoring "
+                "— likely a file in your tab list hung on open.</b><br><br>"
+                "Your tab list has been preserved at:<br><code>%1</code><br><br>"
+                "If you want to recover it, rename that file back to "
+                "<code>session.json</code> — but expect the same hang. Better "
+                "to open the file and remove the problematic entry first."
+            ).arg(QDir::toNativeSeparators(failedAside)));
+            box.addButton(QMessageBox::Ok);
+            box.exec();
+        });
+        return;
+    }
+
+    QFile f(sessionPath);
     if (!f.open(QIODevice::ReadOnly)) return;
 
     QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+    f.close();
     if (doc.isNull()) return;
     QJsonObject session = doc.object();
+
+    // Drop the marker — if the restore loop below hangs, this file
+    // persists and the next launch will hit the bail-out path above.
+    {
+        QFile m(marker);
+        if (m.open(QIODevice::WriteOnly)) {
+            m.write(QByteArray::number(QDateTime::currentMSecsSinceEpoch()));
+            m.close();
+        }
+    }
 
     // Restore window geometry. v0.1.94 — clamp to currently-connected
     // screens so a session captured on a disconnected monitor doesn't
@@ -4492,6 +4552,10 @@ void MainWindow::restoreSession() {
     }
 
     m_tabs->setCurrentIndex(activeIdx);
+
+    // v0.1.96 — restore completed without hanging. Drop the marker so
+    // the next launch doesn't trigger the bail-out path.
+    QFile::remove(sessionPath + QStringLiteral(".restoring"));
 }
 
 void MainWindow::autoSaveRecovery() {
@@ -5273,6 +5337,46 @@ static int compareSemver(const QString &a, const QString &b) {
 }
 
 void MainWindow::checkForUpdates(bool silent) {
+    // v0.1.96 — Early guard: skip update check on end-of-life OpenSSL.
+    //
+    // Pre-fix a user on Windows v0.1.95 hit a hang on every launch:
+    // the bundled libssl-1_1-x64.dll was dated 2023-09-11 (OpenSSL 1.1
+    // went EOL in September 2023). The TLS handshake against GitHub's
+    // modern endpoint stalled the network thread, and even though our
+    // update check is async via QNetworkAccessManager, some sync work
+    // during nam->get() touched the broken SSL stack and froze the UI.
+    //
+    // Fix: detect OpenSSL major version at runtime and hard-skip if it
+    // looks like 1.0.x or 1.1.x. Modern Notepatra builds bundle
+    // OpenSSL 3.x; older installs see this branch and silently no-op.
+    const QString sslVer = QSslSocket::sslLibraryVersionString();
+    const bool eolOpenSSL = sslVer.contains(QStringLiteral("1.0."))
+                        || sslVer.contains(QStringLiteral("1.1."));
+    if (eolOpenSSL) {
+        if (silent) return;
+        QMessageBox box(this);
+        box.setWindowTitle("Check for Updates");
+        box.setIcon(QMessageBox::Information);
+        box.setTextFormat(Qt::RichText);
+        box.setText(QString(
+            "<b>In-app update check disabled.</b><br><br>"
+            "This Notepatra build ships an end-of-life OpenSSL runtime "
+            "(detected: <code>%1</code>). Connecting to GitHub's modern "
+            "TLS endpoint can stall the UI on this stack, so the update "
+            "check is hard-disabled.<br><br>"
+            "Open the release page in your browser to download the "
+            "latest version manually."
+        ).arg(sslVer.toHtmlEscaped()));
+        QPushButton *open = box.addButton("Open Releases Page", QMessageBox::AcceptRole);
+        box.addButton("Close", QMessageBox::RejectRole);
+        box.exec();
+        if (box.clickedButton() == open) {
+            QDesktopServices::openUrl(QUrl(
+                "https://github.com/singhpratech/notepatra/releases/latest"));
+        }
+        return;
+    }
+
     // ─── Early guard: SSL must be available. ─────────────────────────
     // Windows and macOS bundles without the OpenSSL DLLs / dylibs will
     // otherwise fail every https:// call with a cryptic "TLS

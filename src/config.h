@@ -8,7 +8,9 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QFile>
+#include <QFileInfo>
 #include <QDir>
+#include <QDirIterator>
 
 /**
  * Persistent config — saves ALL settings to ~/.config/notepatra/config.json
@@ -370,10 +372,89 @@ public:
     }
 
     static QString configPath() {
-        return QDir::homePath() + "/.config/notepatra/config.json";
+        return appConfigDir() + QStringLiteral("/config.json");
+    }
+
+    // v0.1.96 — platform-conventional config dir.
+    //
+    // Pre-fix all Notepatra builds wrote to `~/.config/notepatra/` on
+    // EVERY OS — fine on Linux (matches XDG), wrong on macOS, wrong on
+    // Windows. The Windows side bit a user hard: their %APPDATA%
+    // appeared empty while session.json sat at `C:\Users\<u>\.config\
+    // notepatra\`, and a stale entry there made the app hang on every
+    // launch trying to reopen a file. IT tooling, backup tools, group
+    // policy — all look in APPDATA on Windows. So this helper now
+    // returns the platform-conventional location.
+    //
+    // Migration: if the new path is empty AND the legacy
+    // `~/.config/notepatra/` has content, the contents are COPIED
+    // (not moved) into the new path on first call. We don't delete
+    // the legacy data so the user can roll back if something goes
+    // wrong — that cleanup is a v0.1.97 follow-up.
+    static QString appConfigDir() {
+#ifdef Q_OS_WIN
+        // %APPDATA%\Notepatra  — e.g. C:\Users\<u>\AppData\Roaming\Notepatra
+        QString dir = qEnvironmentVariable("APPDATA");
+        if (dir.isEmpty()) {
+            // Fallback in the rare case APPDATA isn't set.
+            dir = QDir::homePath() + QStringLiteral("/AppData/Roaming/Notepatra");
+        } else {
+            dir = QDir::fromNativeSeparators(dir) + QStringLiteral("/Notepatra");
+        }
+#elif defined(Q_OS_MAC)
+        // ~/Library/Application Support/Notepatra
+        QString dir = QDir::homePath() +
+                      QStringLiteral("/Library/Application Support/Notepatra");
+#else
+        // Linux / BSD: $XDG_CONFIG_HOME/notepatra (default ~/.config/notepatra)
+        QString xdg = qEnvironmentVariable("XDG_CONFIG_HOME");
+        QString dir = xdg.isEmpty()
+                          ? QDir::homePath() + QStringLiteral("/.config/notepatra")
+                          : xdg + QStringLiteral("/notepatra");
+#endif
+        QDir().mkpath(dir);
+        migrateLegacyConfigDirOnce(dir);
+        return dir;
+    }
+
+    // Source of truth pre-v0.1.96 — always ~/.config/notepatra. We
+    // still read from here as a migration source on Windows / macOS.
+    static QString legacyLinuxConfigDir() {
+        return QDir::homePath() + QStringLiteral("/.config/notepatra");
     }
 
 private:
+    // One-time migration: if the new platform-conventional dir is empty
+    // and the legacy `~/.config/notepatra/` has content, recursively
+    // copy. Runs at most once per launch — guard by static bool.
+    // Skipped entirely on Linux because legacy == new there.
+    static void migrateLegacyConfigDirOnce(const QString &newDir) {
+        static bool done = false;
+        if (done) return;
+        done = true;
+#if defined(Q_OS_WIN) || defined(Q_OS_MAC)
+        const QString legacy = legacyLinuxConfigDir();
+        if (legacy == newDir) return;
+        // Both paths exist?
+        if (!QFileInfo::exists(legacy)) return;
+        // New path already has a config.json — don't overwrite.
+        if (QFileInfo::exists(newDir + QStringLiteral("/config.json"))) return;
+        // Walk the legacy tree and copy each file across.
+        QDir().mkpath(newDir);
+        QDirIterator it(legacy, QDir::Files | QDir::NoDotAndDotDot,
+                        QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            const QString src = it.next();
+            const QString rel = QDir(legacy).relativeFilePath(src);
+            const QString dst = newDir + QLatin1Char('/') + rel;
+            QDir().mkpath(QFileInfo(dst).path());
+            if (!QFileInfo::exists(dst)) QFile::copy(src, dst);
+        }
+#else
+        Q_UNUSED(newDir);
+#endif
+    }
+
     Config() { load(); }
 };
 

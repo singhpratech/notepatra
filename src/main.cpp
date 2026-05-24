@@ -45,7 +45,9 @@ static void crashHandler(int sig) {
     // Try to save recovery info
     fprintf(stderr, "Notepatra: caught signal %d, attempting recovery save...\n", sig);
     // Write crash flag
-    QString dir = QDir::homePath() + "/.config/notepatra/recovery";
+    // v0.1.96 — use platform-conventional config dir. Avoids %APPDATA% being
+    // empty on Windows while session state lived in ~/.config/notepatra/.
+    QString dir = Config::appConfigDir() + QStringLiteral("/recovery");
     QDir().mkpath(dir);
     QFile flag(dir + "/.crash_flag");
     if (flag.open(QIODevice::WriteOnly)) flag.write("crashed");
