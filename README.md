@@ -548,7 +548,7 @@ cl /LD myplugin.cpp /Fe:myplugin.dll
 
 ## Tests
 
-Focused automated regression tests are wired through CMake + CTest and run in CI. The current suite is **12 tests**:
+Focused automated regression tests are wired through CMake + CTest and run in CI — **47 test suites** (`ctest`, 47/47 green), each with many assertions. A representative sample:
 
 - `test_lexers` — verifies every shipped QScintilla lexer produces real styling
 - `test_palette` — verifies the canonical 9-hue palette colors and bold/italic styles

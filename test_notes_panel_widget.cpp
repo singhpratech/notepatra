@@ -696,8 +696,21 @@ int main(int argc, char *argv[]) {
             const QString first = mc->count() ? mc->itemText(0) : QString();
             EXPECT("combo is not stuck on (loading…)",
                    first != QStringLiteral("(loading…)"));
-            EXPECT("combo populated with at least one real model",
-                   mc->count() >= 1 && !first.startsWith(QStringLiteral("(")));
+            // Backend reachability is environment-dependent — CI has no Ollama /
+            // OpenRouter, so the combo correctly resolves to the explicit
+            // "(no models — check AI panel backend)" placeholder. Accept EITHER
+            // real models (backend up) OR that placeholder (offline); the only
+            // real failure is being stuck on "(loading…)" or empty (the
+            // "dropdown not working" bug). Don't hard-require a live backend or
+            // this test fails every CI run. (v0.1.97 — was red in CI.)
+            const bool hasRealModel =
+                mc->count() >= 1 && !first.startsWith(QStringLiteral("("));
+            const bool noBackend = first.startsWith(QStringLiteral("(no models"));
+            EXPECT("combo resolved to real models, or '(no models)' when offline",
+                   hasRealModel || noBackend);
+            std::printf(hasRealModel ? "  → backend reachable: %d model(s)\n"
+                                     : "  → no backend in this env (placeholder shown)\n",
+                        mc->count());
             // v0.1.98 — type-to-filter + refresh.
             EXPECT("model combo is editable (type-to-filter)", mc->isEditable());
             EXPECT("model combo has a contains-match completer",

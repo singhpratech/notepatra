@@ -365,6 +365,30 @@ else
 fi
 
 echo
+echo "── test-suite count (Regression Suites stat) ──"
+# v0.1.97 — the "N Regression Suites" stat (docs/index.html) + the README
+# test-suite count drifted twice (25→22→actual 47) because nothing gated them.
+# Source of truth is the CTest-registered count (NOT `ls test_*.cpp` — some
+# tests are conditionally registered, so the file glob over-counts). That needs
+# a configured build/, so we derive it when build/ is present and skip
+# otherwise. release-check.sh always builds notepatra_all_tests first, so this
+# gate fires in the real release path. See feedback_release_factual_audit.md.
+if command -v ctest >/dev/null 2>&1 && [ -d build ]; then
+    suite_count="$(ctest --test-dir build -N 2>/dev/null | grep -cE '^[[:space:]]*Test[[:space:]]+#')"
+    if [ "${suite_count:-0}" -gt 0 ]; then
+        echo "  ⓘ ctest reports $suite_count registered test suites"
+        assert_contains "index.html: Regression Suites stat = $suite_count" \
+            docs/index.html "<span>$suite_count</span></div><div class=\"stat-label\">Regression Suites"
+        assert_contains "README: test-suite count = $suite_count" \
+            README.md "**$suite_count test suites**"
+    else
+        echo "  ⓘ ctest -N returned no tests (build not configured?) — skipping suite-count gate"
+    fi
+else
+    echo "  ⓘ no build/ dir or ctest unavailable — skipping suite-count gate (release-check builds first)"
+fi
+
+echo
 if (( FAIL == 0 )); then
     echo "=== ALL SURFACES MATCH ($PASS passed) ==="
     exit 0
