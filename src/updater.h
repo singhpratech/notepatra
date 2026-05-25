@@ -59,6 +59,12 @@ PickedAsset pickAssetForPlatform(const QJsonArray &assets);
 // comment lines starting with `#`. Pure function, unit-testable.
 QString parseSha256For(const QString &sha256SumsBody, const QString &filename);
 
+// Pick a free download path: returns `desired` if nothing is there, else a
+// browser-style "<base> (n).<suffix>" sibling. Pure, unit-testable; used by
+// the finalize step so a locked/mounted same-named prior download (the macOS
+// "could not finalize" bug) no longer aborts the update.
+QString uniqueDestPath(const QString &desired);
+
 /**
  * Top-level entry point. Blocks (modally) on a progress dialog the
  * entire time; returns when the user confirms install / cancels / the

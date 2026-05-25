@@ -530,17 +530,27 @@ bool installReleaseInteractive(QWidget *parent,
         // sigUrl or pemUrl missing from release → SHA-only path (silent)
     }
 
-    // ─── Step 6: atomic rename .part → final name ────────────────
-    // POSIX rename is atomic on the same filesystem. If we crash
-    // between this point and handoffToInstaller, we leave a fully
-    // verified file in ~/Downloads — not a half-baked anything.
-    if (QFile::exists(finalPath)) QFile::remove(finalPath);
-    if (!QFile::rename(partPath, finalPath)) {
-        cleanupPart(partPath);
-        QMessageBox::warning(parent, QObject::tr("Rename Failed"),
-            QObject::tr("Could not finalize the download file. Your current "
-                        "installation is untouched."));
-        return false;
+    // ─── Step 6: move .part → a final file in Downloads ──────────
+    // Normally that's `<name>`. But if a same-named file from a prior
+    // attempt is still there and we can't remove it, fall back to a
+    // deduplicated name so the move ALWAYS lands — instead of failing with
+    // "Could not finalize." This is the macOS bug: a .dmg the updater
+    // previously `open`ed stays MOUNTED in Finder, and macOS refuses to
+    // delete a mounted image's backing file, so the old remove()+rename()
+    // wedged on every retry. POSIX rename is atomic within the same dir.
+    QString dest = finalPath;
+    if (QFile::exists(dest) && !QFile::remove(dest))
+        dest = uniqueDestPath(finalPath);
+    if (!QFile::rename(partPath, dest)) {
+        // Last resort: copy + remove (covers odd filesystems / a busy
+        // source handle). `dest` is guaranteed not to pre-exist here.
+        if (!(QFile::copy(partPath, dest) && QFile::remove(partPath))) {
+            cleanupPart(partPath);
+            QMessageBox::warning(parent, QObject::tr("Rename Failed"),
+                QObject::tr("Could not finalize the download file. Your current "
+                            "installation is untouched."));
+            return false;
+        }
     }
 
     progress.setValue(progress.maximum());
@@ -606,7 +616,7 @@ bool installReleaseInteractive(QWidget *parent,
             "<code>%2</code><br><br>"
             "We'll open the folder so you can %3 Your current installation "
             "is untouched.")
-              .arg(tagName, QDir::toNativeSeparators(finalPath), action);
+              .arg(tagName, QDir::toNativeSeparators(dest), action);
     }
 
     QMessageBox confirm(parent);
@@ -629,7 +639,7 @@ bool installReleaseInteractive(QWidget *parent,
         return false;
     }
 
-    const bool handedOff = handoffToInstaller(parent, finalPath, platform);
+    const bool handedOff = handoffToInstaller(parent, dest, platform);
 
     // On Windows the MSI / NSIS installer cannot overwrite a file that's
     // still mapped by the running Notepatra.exe — it errors with "app
@@ -645,6 +655,56 @@ bool installReleaseInteractive(QWidget *parent,
     }
 
     return handedOff;
+}
+
+// Return `desired` if nothing is there, else the first free browser-style
+// "<stem> (n)<ext>" sibling — e.g. notepatra-macos-arm64.dmg →
+// notepatra-macos-arm64 (1).dmg. v0.1.101: the finalize step used to fail
+// outright ("Could not finalize the download file") when a same-named file
+// from a prior update attempt was still in Downloads and couldn't be
+// removed — on macOS that happens when the earlier .dmg is still MOUNTED in
+// Finder (macOS won't delete a mounted image's backing file). Landing on a
+// fresh name instead of overwriting sidesteps that entirely.
+//
+// Split on the LAST dot so version-dotted names keep the version in the stem
+// (notepatra-0.1.101.msi → "notepatra-0.1.101" + ".msi" → "… (1).msi"). Do
+// NOT use QFileInfo::baseName()/completeSuffix(): those split on the FIRST
+// dot and would mangle it to "notepatra-0 (1).1.101.msi". Compound archive
+// suffixes (.tar.gz etc.) are kept whole so " (n)" never lands mid-suffix.
+// Exposed in the header for unit testing (same pattern as
+// pickAssetForPlatform / parseSha256For).
+QString uniqueDestPath(const QString &desired) {
+    if (!QFile::exists(desired)) return desired;
+    const QFileInfo fi(desired);
+    const QString dir  = fi.absolutePath();
+    const QString name = fi.fileName();
+
+    QString stem = name, ext;
+    static const QStringList compound = {
+        QStringLiteral(".tar.gz"),  QStringLiteral(".tar.xz"),
+        QStringLiteral(".tar.bz2"), QStringLiteral(".tar.zst")
+    };
+    bool matched = false;
+    for (const QString &c : compound) {
+        if (name.endsWith(c, Qt::CaseInsensitive)) {
+            stem = name.left(name.size() - c.size());
+            ext  = name.right(c.size());
+            matched = true;
+            break;
+        }
+    }
+    if (!matched) {
+        const int dot = name.lastIndexOf(QLatin1Char('.'));
+        if (dot > 0) { stem = name.left(dot); ext = name.mid(dot); }
+    }
+
+    for (int n = 1; n < 1000; ++n) {
+        const QString cand = dir + QStringLiteral("/") + stem
+                           + QStringLiteral(" (") + QString::number(n)
+                           + QStringLiteral(")") + ext;
+        if (!QFile::exists(cand)) return cand;
+    }
+    return desired;  // give up after 1000 — the move will then fail loudly
 }
 
 } // namespace Updater

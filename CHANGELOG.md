@@ -7,6 +7,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.101] — 2026-05-25
+
+**In-app updater finalizes even when a prior download is locked.** On macOS the update downloaded + verified, then failed with "Could not finalize the download file."
+
+### Fixed
+- **macOS updater "Could not finalize the download file"** — `Updater::runUpdate()` moved the verified `~/Downloads/<name>.part` to `~/Downloads/<name>` with `if (exists) remove(); rename();` but ignored the remove result. On macOS a `.dmg` the updater previously `open`ed stays MOUNTED in Finder, and macOS won't delete a mounted image's backing file, so the stale file couldn't be removed and `QFile::rename` then refused to overwrite it — every retry re-wedged. Fix: new `uniqueDestPath()` — if the destination can't be removed, the move falls back to a browser-style `<name> (1).dmg` so it always lands; plus a copy+remove fallback if the rename syscall itself fails. Success message + installer/Finder handoff use the actual landed path. Net improvement on all platforms (any unremovable same-named file used to abort the update).
+
+### Tests
+- 47/47 ctest. Change localized to the updater finalize/handoff path; macOS mounted-DMG case isn't reproducible on Linux CI, so the fallbacks are deterministic and confirmed on the published macOS build.
+
+---
+
 ## [0.1.100] — 2026-05-25
 
 **Window opens centred on Windows — title bar always reachable.** On cold start / file-double-click the window could open with its title bar above the top of the screen, hiding the min/max/close buttons.

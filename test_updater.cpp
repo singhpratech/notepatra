@@ -17,11 +17,14 @@
 #include "src/updater.h"
 
 #include <QCoreApplication>
+#include <QDir>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QString>
 #include <QSysInfo>
+#include <QTemporaryDir>
 
 #include <cstdio>
 
@@ -238,6 +241,68 @@ int main(int argc, char **argv) {
         garbage.append(QJsonValue(42));         // wrong type, ignored
         auto p = Updater::pickAssetForPlatform(garbage);
         check("malformed assets → found=false", !p.found);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Part C — uniqueDestPath (the v0.1.101 finalize de-dup). Pure path
+    // logic, so it runs identically on all three platforms' CI runners —
+    // the macOS "could not finalize" bug was a same-named, unremovable
+    // prior download; landing on a fresh sibling name is the fix.
+    // ═══════════════════════════════════════════════════════════════
+    std::printf("\n— uniqueDestPath (finalize de-dup) ───────────────\n");
+    {
+        QTemporaryDir tmp;
+        check("temp dir created", tmp.isValid());
+        const QString dl = tmp.path();
+        auto touch = [](const QString &p) {
+            QFile f(p);
+            if (f.open(QIODevice::WriteOnly)) { f.write("x", 1); f.close(); }
+        };
+
+        // 1. Nothing there → desired returned unchanged.
+        const QString dmg = dl + "/notepatra-macos-arm64.dmg";
+        check("free path → returned unchanged",
+              Updater::uniqueDestPath(dmg) == dmg);
+
+        // 2. Destination exists (macOS: a still-mounted prior .dmg) → " (1)".
+        touch(dmg);
+        check("existing .dmg → ' (1).dmg'",
+              Updater::uniqueDestPath(dmg) == dl + "/notepatra-macos-arm64 (1).dmg",
+              Updater::uniqueDestPath(dmg));
+
+        // 3. base + (1) both exist → " (2)".
+        touch(dl + "/notepatra-macos-arm64 (1).dmg");
+        check("existing base + (1) → ' (2).dmg'",
+              Updater::uniqueDestPath(dmg) == dl + "/notepatra-macos-arm64 (2).dmg",
+              Updater::uniqueDestPath(dmg));
+
+        // 4. Linux multi-dot suffix dedupes before the FULL suffix.
+        const QString tgz = dl + "/notepatra-linux-x64.tar.gz";
+        touch(tgz);
+        check("existing .tar.gz → ' (1).tar.gz' (not '.tar (1).gz')",
+              Updater::uniqueDestPath(tgz) == dl + "/notepatra-linux-x64 (1).tar.gz",
+              Updater::uniqueDestPath(tgz));
+
+        // 5. Windows .msi — version dots must stay in the stem (regression:
+        //    a first-dot split produced "notepatra-0 (1).1.101.msi").
+        const QString msi = dl + "/notepatra-0.1.101.msi";
+        touch(msi);
+        check("existing .msi (version dots) → ' (1).msi'",
+              Updater::uniqueDestPath(msi) == dl + "/notepatra-0.1.101 (1).msi",
+              Updater::uniqueDestPath(msi));
+
+        // 6. Linux .deb (underscore-versioned) and .AppImage (version dots).
+        const QString deb = dl + "/notepatra_0.1.101_amd64.deb";
+        touch(deb);
+        check("existing .deb → ' (1).deb'",
+              Updater::uniqueDestPath(deb) == dl + "/notepatra_0.1.101_amd64 (1).deb",
+              Updater::uniqueDestPath(deb));
+
+        const QString appimg = dl + "/Notepatra-0.1.101-x86_64.AppImage";
+        touch(appimg);
+        check("existing .AppImage → ' (1).AppImage'",
+              Updater::uniqueDestPath(appimg) == dl + "/Notepatra-0.1.101-x86_64 (1).AppImage",
+              Updater::uniqueDestPath(appimg));
     }
 
     std::printf("\n=== Summary: %d passed, %d failed ===\n", g_pass, g_fail);
