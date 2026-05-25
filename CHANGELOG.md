@@ -7,6 +7,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.98] — 2026-05-25
+
+**Windows in-app updater fixed.** The v0.1.96 EOL-OpenSSL gate was a misdiagnosis — it disabled Check for Updates for every Windows user even though the bundled OpenSSL 1.1.1w talks to GitHub's TLS fine. Removed.
+
+### Fixed
+- **Windows "In-app update check disabled" dialog** — `MainWindow::checkForUpdates()` drops the v0.1.96 `eolOpenSSL` hard-disable that blocked the update check on any OpenSSL 1.0.x/1.1.x runtime. "EOL" (no more upstream security patches) ≠ "broken": 1.1.1w speaks the TLS `api.github.com` requires. The real v0.1.96 launch-hang was the session-restore loop (fixed separately in v0.1.96), not SSL. The remaining guards are sufficient — the check is async (`QNetworkAccessManager`), bounded by an 8-second abort timer, and gated by `QSslSocket::supportsSsl()` with a browser fallback on genuine TLS failure. **One-time:** current v0.1.96/v0.1.97 Windows builds still carry the gate, so download v0.1.98 manually once; in-app updates work from then on.
+
+### Notes
+- Bundling OpenSSL 3 on Windows (the Qt 5.15.2 ABI targets OpenSSL 1.1) remains queued as separate security hygiene — not required for the updater to work.
+
+---
+
 ## [0.1.97] — 2026-05-25
 
 **Noter reminders grow up: one central list, an Extract that schedules real reminders from natural-language times, and three cloud-AI fixes.**

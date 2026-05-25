@@ -5359,46 +5359,6 @@ static int compareSemver(const QString &a, const QString &b) {
 }
 
 void MainWindow::checkForUpdates(bool silent) {
-    // v0.1.96 — Early guard: skip update check on end-of-life OpenSSL.
-    //
-    // Pre-fix a user on Windows v0.1.95 hit a hang on every launch:
-    // the bundled libssl-1_1-x64.dll was dated 2023-09-11 (OpenSSL 1.1
-    // went EOL in September 2023). The TLS handshake against GitHub's
-    // modern endpoint stalled the network thread, and even though our
-    // update check is async via QNetworkAccessManager, some sync work
-    // during nam->get() touched the broken SSL stack and froze the UI.
-    //
-    // Fix: detect OpenSSL major version at runtime and hard-skip if it
-    // looks like 1.0.x or 1.1.x. Modern Notepatra builds bundle
-    // OpenSSL 3.x; older installs see this branch and silently no-op.
-    const QString sslVer = QSslSocket::sslLibraryVersionString();
-    const bool eolOpenSSL = sslVer.contains(QStringLiteral("1.0."))
-                        || sslVer.contains(QStringLiteral("1.1."));
-    if (eolOpenSSL) {
-        if (silent) return;
-        QMessageBox box(this);
-        box.setWindowTitle("Check for Updates");
-        box.setIcon(QMessageBox::Information);
-        box.setTextFormat(Qt::RichText);
-        box.setText(QString(
-            "<b>In-app update check disabled.</b><br><br>"
-            "This Notepatra build ships an end-of-life OpenSSL runtime "
-            "(detected: <code>%1</code>). Connecting to GitHub's modern "
-            "TLS endpoint can stall the UI on this stack, so the update "
-            "check is hard-disabled.<br><br>"
-            "Open the release page in your browser to download the "
-            "latest version manually."
-        ).arg(sslVer.toHtmlEscaped()));
-        QPushButton *open = box.addButton("Open Releases Page", QMessageBox::AcceptRole);
-        box.addButton("Close", QMessageBox::RejectRole);
-        box.exec();
-        if (box.clickedButton() == open) {
-            QDesktopServices::openUrl(QUrl(
-                "https://github.com/singhpratech/notepatra/releases/latest"));
-        }
-        return;
-    }
-
     // ─── Early guard: SSL must be available. ─────────────────────────
     // Windows and macOS bundles without the OpenSSL DLLs / dylibs will
     // otherwise fail every https:// call with a cryptic "TLS
