@@ -843,6 +843,32 @@ static QRect clampWindowToScreens(const QRect &want) {
                  w, h);
 }
 
+// v0.1.100 — produce a CENTERED window rect of the requested size that always
+// keeps the native title bar on-screen.
+//
+// Why center instead of restoring the saved x/y: the save side records x()/y()
+// (Qt FRAME coords — top-left INCLUDING the title bar) but the restore side
+// calls setGeometry() (Qt CLIENT coords — excludes the frame). On Windows that
+// mismatch set the client top to the old frame top, so the title bar climbed
+// up by one title-bar height on every cold start until the min/max/close
+// buttons walked off the top of the screen and became unreachable. Centering
+// on the saved SIZE sidesteps the frame/client mismatch entirely.
+//
+// The client top is kept at least kTitleAllow below the work-area top, so the
+// frame's title bar (which sits ABOVE the client rect setGeometry positions)
+// is never clipped — even at large sizes or 150 % display scaling.
+static QRect centeredWindowRect(int wWant, int hWant) {
+    const QRect avail = (QGuiApplication::primaryScreen()
+                             ? QGuiApplication::primaryScreen()->availableGeometry()
+                             : QRect(0, 0, 1280, 800));
+    const int kTitleAllow = 48;  // worst-case Windows title bar incl. scaling
+    int w = qBound(400, wWant, qMax(400, avail.width()  - 40));
+    int h = qBound(300, hWant, qMax(300, avail.height() - kTitleAllow));
+    int x = avail.x() + (avail.width() - w) / 2;
+    int y = qMax(avail.y() + kTitleAllow, avail.y() + (avail.height() - h) / 2);
+    return clampWindowToScreens(QRect(x, y, w, h));
+}
+
 MainWindow::MainWindow() {
     setWindowTitle("new 1 - Notepatra");
     setMinimumSize(640, 480);
@@ -1413,21 +1439,15 @@ MainWindow::MainWindow() {
         if (cfg.maximized) {
             showMaximized();
         } else if (cfg.windowW > 100 && cfg.windowH > 100) {
-            const QRect want(cfg.windowX >= 0 ? cfg.windowX : 100,
-                             cfg.windowY >= 0 ? cfg.windowY : 100,
-                             cfg.windowW, cfg.windowH);
-            setGeometry(clampWindowToScreens(want));
-        } else if (auto *screen = QApplication::primaryScreen()) {
-            // v0.1.97 — modest, clearly-NOT-maximized default window the
-            // user can maximize themselves. The previous 80%-of-screen
-            // default looked like an auto-maximize on Windows (esp. with
-            // display scaling). Cap to fit small screens.
-            QRect avail = screen->availableGeometry();
-            int w = qMin(1100, avail.width()  * 85 / 100);
-            int h = qMin(760,  avail.height() * 85 / 100);
-            setGeometry(avail.x() + (avail.width()  - w) / 2,
-                        avail.y() + (avail.height() - h) / 2,
-                        w, h);
+            // v0.1.100 — center on the saved SIZE rather than restoring the
+            // saved x/y. See centeredWindowRect(): the saved x()/y() are FRAME
+            // coords but setGeometry() takes CLIENT coords, so restoring them
+            // walked the title bar off the top of the screen on Windows.
+            setGeometry(centeredWindowRect(cfg.windowW, cfg.windowH));
+        } else {
+            // First launch / no saved size — a modest, clearly-NOT-maximized
+            // centered default the user can maximize themselves.
+            setGeometry(centeredWindowRect(1100, 760));
         }
     }
 
@@ -4505,10 +4525,10 @@ void MainWindow::restoreSession() {
         int sw = session["windowW"].toInt();
         int sh = session["windowH"].toInt();
         if (sw > 100 && sh > 100) {
-            const QRect want(session["windowX"].toInt(),
-                             session["windowY"].toInt(),
-                             sw, sh);
-            setGeometry(clampWindowToScreens(want));
+            // v0.1.100 — center on the saved SIZE (see centeredWindowRect):
+            // restoring frame-coord x/y via setGeometry walked the title bar
+            // off the top of the screen on Windows on every launch.
+            setGeometry(centeredWindowRect(sw, sh));
         }
     }
     if (session["maximized"].toBool()) {

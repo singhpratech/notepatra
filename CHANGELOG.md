@@ -7,6 +7,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.100] — 2026-05-25
+
+**Window opens centred on Windows — title bar always reachable.** On cold start / file-double-click the window could open with its title bar above the top of the screen, hiding the min/max/close buttons.
+
+### Fixed
+- **Windows title bar climbing off the top of the screen** — the window position was saved with `QWidget::x()`/`y()` (Qt FRAME coords, incl. the title bar) but restored with `setGeometry()` (CLIENT coords, excl. the frame). Each launch set the client top to the old frame top, so on Windows the title bar walked up by its own height every cold start until the window controls left the screen; the existing ≥100 px on-screen clamp didn't catch a body-on-screen / title-bar-off-top window. Fix: new `centeredWindowRect()` helper; both restore sites (initial config + session restore) now centre on the **saved size** with a title-bar-height top margin instead of restoring the saved x/y. Maximized state and window size are preserved; only on-screen position is no longer restored (always centred, so controls can't end up off-screen).
+
+### Notes
+- **AI Interaction Log persistence confirmed (no change).** The log is `%APPDATA%\Notepatra\ai-logs\interactions.db` (Roaming); installers only manage program files + the Start-Menu shortcut, so neither upgrade nor uninstall touches it — it persists across upgrades and survives uninstall. Entries still auto-prune after 7 days by design; Export JSON is available in the viewer.
+
+### Tests
+- 47/47 ctest (incl. MainWindow-constructing tests exercising the new restore path).
+
+---
+
 ## [0.1.99] — 2026-05-25
 
 **Noter sidebar renders light on macOS.** The Notes/Reminders/Trash tree was dark-on-macOS while the rest of the panel was light — a stale stylesheet selector after the list→tree migration.
