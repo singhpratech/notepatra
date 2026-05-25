@@ -5,6 +5,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QDateTime>
+#include <QDateTimeEdit>
 #include <QDialogButtonBox>
 #include <QFrame>
 #include <QGridLayout>
@@ -14,11 +15,23 @@
 #include <QLineEdit>
 #include <QPalette>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QScreen>
 #include <QScrollArea>
 #include <QStyle>
 #include <QToolButton>
 #include <QVBoxLayout>
+
+// Normalise an action / reminder title for fuzzy duplicate detection:
+// lowercase, drop @owner handles + punctuation, collapse whitespace. Used to
+// recognise "ship the build tomorrow" ≈ "Ship the build" across Extract runs.
+static QString normalizeForMatch(const QString &s) {
+    QString n = s.toLower();
+    n.remove(QRegularExpression(QStringLiteral("@\\S+")));
+    n.remove(QRegularExpression(QStringLiteral("[^a-z0-9 ]")));
+    n.replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral(" "));
+    return n.trimmed();
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 // Construction
@@ -27,7 +40,7 @@
 NoterSweepDialog::NoterSweepDialog(const NoterSweepPrompt::SweepResult &result,
                                    QWidget *parent)
     : QDialog(parent), m_result(result) {
-    setWindowTitle(tr("End-meeting AI sweep"));
+    setWindowTitle(tr("Extract — action items"));
     setModal(true);
     setMinimumWidth(780);
     resize(780, 640);
@@ -64,7 +77,7 @@ void NoterSweepDialog::setEyebrow(const QString &modelName, qint64 durationMs) {
     m_modelName  = modelName;
     m_durationMs = durationMs;
     if (m_eyebrowLabel) {
-        QString s = QStringLiteral("AI sweep");
+        QString s = QStringLiteral("AI extract");
         if (!modelName.isEmpty()) s += QStringLiteral(" · ") + modelName;
         if (durationMs > 0) {
             const double secs = durationMs / 1000.0;
@@ -78,7 +91,7 @@ void NoterSweepDialog::setSweepTitle(const QString &title) {
     m_sweepTitle = title;
     if (m_titleLabel) {
         m_titleLabel->setText(title.isEmpty()
-                                  ? tr("End-meeting sweep")
+                                  ? tr("Extract")
                                   : title);
     }
 }
@@ -98,7 +111,7 @@ void NoterSweepDialog::buildHeader() {
     hv->setContentsMargins(0, 0, 0, 0);
     hv->setSpacing(4);
 
-    m_eyebrowLabel = new QLabel(QStringLiteral("AI sweep"), header);
+    m_eyebrowLabel = new QLabel(QStringLiteral("AI extract"), header);
     {
         QFont f = m_eyebrowLabel->font();
         f.setCapitalization(QFont::AllUppercase);
@@ -113,7 +126,7 @@ void NoterSweepDialog::buildHeader() {
         m_eyebrowLabel->setPalette(p);
     }
 
-    m_titleLabel = new QLabel(tr("End-meeting sweep"), header);
+    m_titleLabel = new QLabel(tr("Extract"), header);
     {
         QFont f = m_titleLabel->font();
         f.setPointSizeF(f.pointSizeF() * 1.45);
@@ -131,6 +144,37 @@ void NoterSweepDialog::buildHeader() {
     hv->addWidget(m_eyebrowLabel);
     hv->addWidget(m_titleLabel);
     hv->addWidget(m_countsLabel);
+
+    // v0.1.98 — the model's plain-English summary ("summarize your
+    // understanding"). Shown only when present; italic + dimmed so it reads as
+    // a recap, not a section.
+    if (!m_result.summary.isEmpty()) {
+        auto *summaryLabel = new QLabel(m_result.summary, header);
+        summaryLabel->setWordWrap(true);
+        QFont sf = summaryLabel->font();
+        sf.setItalic(true);
+        summaryLabel->setFont(sf);
+        QPalette sp = summaryLabel->palette();
+        QColor sc = sp.color(QPalette::WindowText);
+        sc.setAlpha(190);
+        sp.setColor(QPalette::WindowText, sc);
+        summaryLabel->setPalette(sp);
+        hv->addWidget(summaryLabel);
+    }
+
+    // v0.1.98 — "Already scheduled for this note: …" line. Empty + hidden until
+    // setExistingReminders() fills it. Amber to match the reminder clock icon.
+    m_existingLabel = new QLabel(header);
+    m_existingLabel->setWordWrap(true);
+    m_existingLabel->setVisible(false);
+    {
+        QFont ef = m_existingLabel->font();
+        ef.setPointSizeF(ef.pointSizeF() * 0.9);
+        m_existingLabel->setFont(ef);
+        m_existingLabel->setStyleSheet(QStringLiteral("color: #B45309;"));
+    }
+    hv->addWidget(m_existingLabel);
+
     m_outerLayout->addWidget(header);
 
     // Divider hairline under the header.
@@ -162,18 +206,27 @@ void NoterSweepDialog::buildSections() {
     // applied via QSS, so dark mode's automatic luminance contrast
     // (Qt::darken/lighten on the palette) takes over only if the
     // palette overrides them; standard system themes leave them as-is.
-    bv->addWidget(buildSection(tr("Decisions"),  "#1E88E5",
-                               m_result.decisions, &m_decisionRows,
-                               /*isActions=*/false));
-    bv->addWidget(buildSection(tr("Actions"),    "#43A047",
-                               m_result.actions,   &m_actionRows,
-                               /*isActions=*/true));
-    bv->addWidget(buildSection(tr("Questions"),  "#8E24AA",
-                               m_result.questions, &m_questionRows,
-                               /*isActions=*/false));
-    bv->addWidget(buildSection(tr("Risks"),      "#E53935",
-                               m_result.risks,     &m_riskRows,
-                               /*isActions=*/false));
+    // v0.1.98 — Action Items first (the common case), and render a section
+    // ONLY when the AI actually found items: no empty "(none)" preset buckets
+    // (user: "keep all, basically action items most of the time"). The all-
+    // empty case never reaches here — the caller shows "nothing found" and
+    // skips opening the dialog.
+    if (!m_result.actions.isEmpty())
+        bv->addWidget(buildSection(tr("Action Items"), "#43A047",
+                                   m_result.actions, &m_actionRows,
+                                   /*isActions=*/true));
+    if (!m_result.decisions.isEmpty())
+        bv->addWidget(buildSection(tr("Decisions"), "#1E88E5",
+                                   m_result.decisions, &m_decisionRows,
+                                   /*isActions=*/false));
+    if (!m_result.questions.isEmpty())
+        bv->addWidget(buildSection(tr("Questions"), "#8E24AA",
+                                   m_result.questions, &m_questionRows,
+                                   /*isActions=*/false));
+    if (!m_result.risks.isEmpty())
+        bv->addWidget(buildSection(tr("Risks"), "#E53935",
+                                   m_result.risks, &m_riskRows,
+                                   /*isActions=*/false));
     bv->addStretch(1);
 
     scroll->setWidget(body);
@@ -252,7 +305,11 @@ QWidget *NoterSweepDialog::buildSection(
             // For actions: prepend the remind toggle. ON by default.
             if (isActions) {
                 rw.remind = new QCheckBox(tr("Remind"), row);
-                rw.remind->setChecked(true);
+                // v0.1.98 — default ON only when the model extracted a concrete
+                // time; actions with no stated time stay OFF so we don't
+                // auto-schedule a guessed "tomorrow 9am" for every task. Intent:
+                // remind me for the things I actually gave a time for.
+                rw.remind->setChecked(item.dueAt.isValid());
                 rw.remind->setToolTip(
                     tr("Schedule a reminder for this action item. "
                        "Uses cross-platform notifications (v0.1.93+)."));
@@ -273,13 +330,22 @@ QWidget *NoterSweepDialog::buildSection(
                 rw.owner->setMaximumWidth(110);
                 grid->addWidget(rw.owner, 0, col++);
 
-                rw.due = new QLineEdit(row);
-                if (item.dueAt.isValid()) {
-                    rw.due->setText(item.dueAt.toString(Qt::ISODate));
-                }
-                rw.due->setPlaceholderText(tr("YYYY-MM-DDTHH:MM"));
-                rw.due->setMaximumWidth(180);
-                grid->addWidget(rw.due, 0, col++);
+                // v0.1.98 — real calendar+time picker (was a free-text
+                // "YYYY-MM-DDTHH:MM" line edit). This is both the displayed
+                // due date AND, when "Remind" is checked, the reminder time
+                // the central Reminders root schedules. Defaults to tomorrow
+                // 9am when the AI didn't extract a concrete due.
+                const QDateTime initDue = item.dueAt.isValid()
+                    ? item.dueAt.toLocalTime()
+                    : QDateTime(QDate::currentDate().addDays(1), QTime(9, 0));
+                rw.remindAt = new QDateTimeEdit(initDue, row);
+                rw.remindAt->setCalendarPopup(true);
+                rw.remindAt->setDisplayFormat(QStringLiteral("MMM d  HH:mm"));
+                rw.remindAt->setToolTip(
+                    tr("Date + time for this action — used as the reminder "
+                       "when “Remind” is checked."));
+                rw.remindAt->setMaximumWidth(150);
+                grid->addWidget(rw.remindAt, 0, col++);
             }
 
             rv->addWidget(row);
@@ -399,13 +465,9 @@ QVector<NoterSweepPrompt::SweepResult::Item> NoterSweepDialog::reminderItems() c
         const RowWidgets &rw = m_actionRows[i];
         if (!rw.remind || !rw.remind->isChecked()) continue;
         NoterSweepPrompt::SweepResult::Item it = m_result.actions[i];
-        if (rw.text)  it.text  = rw.text->text().trimmed();
-        if (rw.owner) it.owner = rw.owner->text().trimmed();
-        if (rw.due) {
-            const QString s = rw.due->text().trimmed();
-            it.dueAt = s.isEmpty() ? QDateTime()
-                                   : QDateTime::fromString(s, Qt::ISODate);
-        }
+        if (rw.text)     it.text  = rw.text->text().trimmed();
+        if (rw.owner)    it.owner = rw.owner->text().trimmed();
+        if (rw.remindAt) it.dueAt = rw.remindAt->dateTime();
         if (!it.text.isEmpty()) out.push_back(it);
     }
     return out;
@@ -421,13 +483,8 @@ NoterSweepPrompt::SweepResult NoterSweepDialog::finalResult() const {
             const RowWidgets &rw = rows[i];
             if (rw.text) dst[i].text = rw.text->text().trimmed();
             if (isActions) {
-                if (rw.owner) dst[i].owner = rw.owner->text().trimmed();
-                if (rw.due) {
-                    const QString s = rw.due->text().trimmed();
-                    dst[i].dueAt = s.isEmpty()
-                                       ? QDateTime()
-                                       : QDateTime::fromString(s, Qt::ISODate);
-                }
+                if (rw.owner)    dst[i].owner = rw.owner->text().trimmed();
+                if (rw.remindAt) dst[i].dueAt = rw.remindAt->dateTime();
             }
         }
         // Drop rows the user blanked out.
@@ -443,4 +500,48 @@ NoterSweepPrompt::SweepResult NoterSweepDialog::finalResult() const {
     pullSection(out.questions, m_questionRows, /*isActions=*/false);
     pullSection(out.risks,     m_riskRows,     /*isActions=*/false);
     return out;
+}
+
+void NoterSweepDialog::setExistingReminders(
+        const QVector<QPair<QString, QDateTime>> &existing) {
+    m_existing = existing;
+
+    // Header line: what's already scheduled for this note.
+    if (m_existingLabel) {
+        if (existing.isEmpty()) {
+            m_existingLabel->setVisible(false);
+        } else {
+            QStringList lines;
+            for (const auto &e : existing)
+                lines << QStringLiteral("• %1 — %2").arg(
+                    e.first,
+                    e.second.toLocalTime().toString(QStringLiteral("MMM d HH:mm")));
+            m_existingLabel->setText(
+                tr("Already scheduled for this note:") + QStringLiteral("\n") +
+                lines.join(QLatin1Char('\n')));
+            m_existingLabel->setVisible(true);
+        }
+    }
+
+    // Default-uncheck any action row that fuzzy-matches an existing reminder so
+    // re-running Extract doesn't duplicate. The user can re-check deliberately.
+    for (int i = 0; i < m_actionRows.size() && i < m_result.actions.size(); ++i) {
+        if (!m_actionRows[i].remind) continue;
+        const QString aNorm = normalizeForMatch(m_result.actions[i].text);
+        if (aNorm.size() < 4) continue;
+        bool matched = false;
+        for (const auto &e : existing) {
+            const QString eNorm = normalizeForMatch(e.first);
+            if (eNorm.isEmpty()) continue;
+            if (eNorm.contains(aNorm) || aNorm.contains(eNorm)) { matched = true; break; }
+        }
+        if (matched) {
+            m_actionRows[i].remind->setChecked(false);
+            m_actionRows[i].remind->setText(tr("Remind (already scheduled)"));
+            m_actionRows[i].remind->setToolTip(
+                tr("This action looks already scheduled for this note. "
+                   "Check it to add another reminder anyway."));
+        }
+    }
+    refreshFooterStatus();
 }

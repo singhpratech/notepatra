@@ -36,6 +36,9 @@ const char *const kStatusCancelled = "cancelled";
 
 const char *const kReminderNone      = "none";
 const char *const kReminderScheduled = "scheduled";
+// v0.1.98 — source_block_id sentinel for a note-level reminder row (a
+// reminder bound to a whole note file, not an HTML action block).
+const char *const kNoteReminderBlock = "__note_reminder__";
 const char *const kReminderFired     = "fired";
 const char *const kReminderSnoozed   = "snoozed";
 const char *const kReminderDismissed = "dismissed";
@@ -377,8 +380,16 @@ void NotesTodos::reindexNote(const QString &absolutePath, const QString &html) {
     QSet<QString> existingIds;
     {
         QSqlQuery q(m_db);
+        // v0.1.98 — exclude ALL synthetic reminder rows (block ids that start
+        // with "__": the note-level "__note_reminder__" sentinel AND the
+        // per-action "__reminder__:{uuid}" rows from Extract). They have no
+        // HTML action block, so the orphan sweep below must never flag them
+        // source_file_missing / delete them (which would otherwise happen on
+        // every save of a note that carries one or more reminders). HTML
+        // action data-ids are bare UUIDs, never "__"-prefixed.
         q.prepare(QStringLiteral(
-            "SELECT id FROM todos WHERE source_file = ?"));
+            "SELECT id FROM todos WHERE source_file = ?"
+            " AND source_block_id NOT LIKE '\\_\\_%' ESCAPE '\\'"));
         q.addBindValue(absolutePath);
         if (q.exec()) {
             while (q.next()) existingIds.insert(q.value(0).toString());
@@ -771,6 +782,130 @@ bool NotesTodos::setReminder(const QString &id, const QDateTime &remindAt) {
     if (!q.exec()) return false;
     emit todoChanged(id);
     return true;
+}
+
+QString NotesTodos::setNoteReminder(const QString &sourceFile,
+                                    const QString &title,
+                                    const QDateTime &remindAt) {
+    if (!ensureOpen() || sourceFile.isEmpty()) return QString();
+
+    // Is there already a note-reminder row for this file?
+    QString id;
+    {
+        QSqlQuery q(m_db);
+        q.prepare(QStringLiteral(
+            "SELECT id FROM todos WHERE source_file = ?"
+            " AND source_block_id = ? LIMIT 1"));
+        q.addBindValue(sourceFile);
+        q.addBindValue(QLatin1String(kNoteReminderBlock));
+        if (q.exec() && q.next()) id = q.value(0).toString();
+    }
+
+    // Clear → drop the row (a note with no reminder needs no row).
+    if (!remindAt.isValid()) {
+        if (!id.isEmpty()) {
+            QSqlQuery q(m_db);
+            q.prepare(QStringLiteral("DELETE FROM todos WHERE id = ?"));
+            q.addBindValue(id);
+            q.exec();
+            emit todoChanged(id);
+        }
+        return id;
+    }
+
+    const QString iso = toIso(remindAt);
+    const QString safeTitle = title.isEmpty() ? sourceFile : title;
+    if (id.isEmpty()) {
+        id = QUuid::createUuid().toString(QUuid::WithoutBraces).toLower();
+        QSqlQuery q(m_db);
+        q.prepare(QStringLiteral(
+            "INSERT INTO todos("
+            " id, source_file, source_block_id, text, status,"
+            " reminder_at, reminder_status, meeting_title, created_at,"
+            " source_file_missing)"
+            " VALUES(?,?,?,?,'open',?,'scheduled',?,?,0)"));
+        q.addBindValue(id);
+        q.addBindValue(sourceFile);
+        q.addBindValue(QLatin1String(kNoteReminderBlock));
+        q.addBindValue(safeTitle);
+        q.addBindValue(iso);
+        q.addBindValue(safeTitle);
+        q.addBindValue(toIso(QDateTime::currentDateTimeUtc()));
+        if (!q.exec()) return QString();
+    } else {
+        QSqlQuery q(m_db);
+        q.prepare(QStringLiteral(
+            "UPDATE todos SET text = ?, meeting_title = ?, reminder_at = ?,"
+            " reminder_status = 'scheduled', status = 'open',"
+            " source_file_missing = 0 WHERE id = ?"));
+        q.addBindValue(safeTitle);
+        q.addBindValue(safeTitle);
+        q.addBindValue(iso);
+        q.addBindValue(id);
+        if (!q.exec()) return QString();
+    }
+    emit todoChanged(id);
+    return id;
+}
+
+QDateTime NotesTodos::noteReminderAt(const QString &sourceFile) const {
+    if (!ensureOpen() || sourceFile.isEmpty()) return QDateTime();
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral(
+        "SELECT reminder_at FROM todos WHERE source_file = ?"
+        " AND source_block_id = ? AND reminder_status = ? LIMIT 1"));
+    q.addBindValue(sourceFile);
+    q.addBindValue(QLatin1String(kNoteReminderBlock));
+    q.addBindValue(QLatin1String(kReminderScheduled));
+    if (q.exec() && q.next()) return fromIso(q.value(0).toString());
+    return QDateTime();
+}
+
+QString NotesTodos::addReminder(const QString &sourceFile, const QString &title,
+                                const QDateTime &remindAt) {
+    if (!ensureOpen() || sourceFile.isEmpty() || !remindAt.isValid())
+        return QString();
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces).toLower();
+    // "__"-prefixed so reindexNote's orphan sweep skips it; suffixed with the
+    // row id so multiple action reminders can coexist on one note file.
+    const QString blockId = QStringLiteral("__reminder__:") + id;
+    const QString iso = toIso(remindAt);
+    const QString safeTitle = title.isEmpty() ? sourceFile : title;
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral(
+        "INSERT INTO todos("
+        " id, source_file, source_block_id, text, status,"
+        " due_at, reminder_at, reminder_status, meeting_title, created_at,"
+        " source_file_missing)"
+        " VALUES(?,?,?,?,'open',?,?,'scheduled',?,?,0)"));
+    q.addBindValue(id);
+    q.addBindValue(sourceFile);
+    q.addBindValue(blockId);
+    q.addBindValue(safeTitle);
+    q.addBindValue(iso);   // due_at
+    q.addBindValue(iso);   // reminder_at
+    q.addBindValue(safeTitle);
+    q.addBindValue(toIso(QDateTime::currentDateTimeUtc()));
+    if (!q.exec()) return QString();
+    emit todoChanged(id);
+    return id;
+}
+
+QVector<TodoRow> NotesTodos::allScheduledReminders() const {
+    QVector<TodoRow> out;
+    if (!ensureOpen()) return out;
+    QSqlQuery q(m_db);
+    // Includes overdue (reminder_at in the past) so a missed reminder still
+    // shows in the central view until the user acts on it. Dismissed / fired /
+    // snoozed rows are intentionally excluded — only "scheduled" is live.
+    q.prepare(QString::fromLatin1(kSelectAll)
+        + QStringLiteral(" WHERE reminder_status = 'scheduled'"
+                          " AND reminder_at IS NOT NULL"
+                          " AND status = 'open'"
+                          " ORDER BY reminder_at ASC"));
+    if (!q.exec()) return out;
+    while (q.next()) out.append(rowFromQuery(q));
+    return out;
 }
 
 bool NotesTodos::snooze(const QString &id, const QDateTime &until) {

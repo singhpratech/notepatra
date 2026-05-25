@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.96 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.97 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -734,6 +734,32 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_panel_widget
         LABELS "integration;noter;widget"
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     message(STATUS "Regression test enabled — target: test_notes_panel_widget")
+endif()
+
+# ── Noter — render-dump harness (writes PNGs for visual inspection) ──
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_noter_render.cpp")
+    add_executable(test_noter_render
+        test_noter_render.cpp
+        src/notes.cpp
+        src/notes_storage.cpp
+        src/notes_template.cpp
+        src/notes_todos.cpp
+        src/notes_reminder.cpp
+        src/notes_panels.cpp
+        src/notes_popout.cpp
+        src/notes_context_menus.cpp
+        src/notes_sweep_dialog.cpp
+        src/notes_sweep_prompt.cpp
+        src/notes_export.cpp
+        src/ollama.cpp
+        src/ai_interaction_log.cpp
+        src/credscrub.cpp
+    )
+    target_include_directories(test_noter_render PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_noter_render PRIVATE
+        Qt5::Core Qt5::Widgets Qt5::Sql Qt5::Network Qt5::Test
+        Qt5::PrintSupport)
+    # NOT registered as a ctest — it's a manual visual-dump tool.
 endif()
 
 # ── Noter — right-click context menus test (37 cases) ──
@@ -1485,6 +1511,33 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_aifix.cpp")
     add_test(NAME test_aifix COMMAND $<TARGET_FILE:test_aifix>)
     set_tests_properties(test_aifix PROPERTIES LABELS "integration;ollama;aifix")
     message(STATUS "Regression test enabled — target: test_aifix")
+endif()
+
+# v0.1.98 — guards the streaming-error fix: a bad cloud API key must surface a
+# prompt error(), not hang until the caller's timeout. Network integration
+# test; SKIPs (return 0) when offline. See onFinishedOpenAI in src/ollama.cpp.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_stream_error.cpp")
+    add_executable(test_stream_error
+        test_stream_error.cpp
+        src/ollama.cpp
+        src/ai_interaction_log.cpp
+        src/network_policy.cpp   # v0.1.72 — gated in ollama.cpp under NOTEPATRA_NO_CLOUD
+    )
+    target_include_directories(test_stream_error PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    target_link_libraries(test_stream_error PRIVATE
+        Qt5::Core
+        Qt5::Network
+        Qt5::Sql
+    )
+    add_test(NAME test_stream_error COMMAND $<TARGET_FILE:test_stream_error>)
+    set_tests_properties(test_stream_error PROPERTIES
+        LABELS "integration;ollama;openrouter;streaming"
+        TIMEOUT 40
+    )
+    set_property(GLOBAL APPEND PROPERTY notepatra_test_targets test_stream_error)
+    message(STATUS "Regression test enabled — target: test_stream_error")
 endif()
 
 # v0.1.55 — credential scrubber test. Validates that the redactor catches

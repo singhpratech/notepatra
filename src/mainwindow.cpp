@@ -711,6 +711,7 @@ ul { margin-top: 4px; }
 <li>The paperclip button attaches text files, images, PDFs, and Office documents as extra prompt context.</li>
 <li>The microphone button supports speech-to-text when local recording and <code>whisper</code> CLI are available.</li>
 <li>The <code>Reset</code> button clears the visible chat and the assistant session state.</li>
+<li><b>AI Interaction Log:</b> every request and response to any AI backend — local or cloud, including Noter's Extract — is recorded for 7 days in <b>Features &gt; AI Interaction Log…</b>, a browsable, credential-scrubbed audit table. It is on by default and can be turned off in <b>Settings &gt; AI</b>.</li>
 </ul>
 
 <h3>Terminal</h3>
@@ -741,6 +742,14 @@ ul { margin-top: 4px; }
 <li><b>REST Client:</b> run selected HTTP requests from editor content, especially <code>.http</code> style request blocks.</li>
 <li><b>Git Integration:</b> inspect repository status, changed files, and work with repository context without leaving the editor.</li>
 <li><b>Git gutter:</b> modified files show changed-line markers directly in the editor margin.</li>
+</ul>
+
+<h3>Noter — Meeting Notes</h3>
+<ul>
+<li>Open Noter from the icon row or <code>Ctrl+Alt+N</code>: a two-pane meeting workspace (notes list on the left, editor on the right). Fully local — notes live under <code>~/Documents/Notepatra/Noter/</code>, with no accounts and no bots.</li>
+<li><b>+ Noter</b> creates a note. A small top toolbar inserts <b>Action Items</b> / <b>What I plan</b> / <b>To-dos</b> section headers and checkbox bullets; click a checkbox to mark it done and strike the line through.</li>
+<li><b>Extract</b> (footer button or <code>Ctrl+Alt+E</code>) runs your configured AI backend over the note and returns a short <b>summary</b> plus <b>action items, decisions, questions and risks</b>. An action that mentions a time ("ship the build 10am tomorrow") comes back with that date/time pre-filled.</li>
+<li><b>Reminders:</b> right-click a note to set a reminder, or schedule action items straight from Extract (each with a calendar + time picker). Every reminder appears in the central <b>Reminders</b> section of the sidebar, grouped <i>Overdue / Today / This week / Later</i> — click to open the note, the pencil to change the time, the ✕ to delete. Desktop notifications fire at the due time. Re-running Extract flags items already scheduled so you don't get duplicates.</li>
 </ul>
 
 <h2>Tools, Utilities, and Panels</h2>
@@ -1409,9 +1418,13 @@ MainWindow::MainWindow() {
                              cfg.windowW, cfg.windowH);
             setGeometry(clampWindowToScreens(want));
         } else if (auto *screen = QApplication::primaryScreen()) {
+            // v0.1.97 — modest, clearly-NOT-maximized default window the
+            // user can maximize themselves. The previous 80%-of-screen
+            // default looked like an auto-maximize on Windows (esp. with
+            // display scaling). Cap to fit small screens.
             QRect avail = screen->availableGeometry();
-            int w = avail.width() * 80 / 100;
-            int h = avail.height() * 80 / 100;
+            int w = qMin(1100, avail.width()  * 85 / 100);
+            int h = qMin(760,  avail.height() * 85 / 100);
             setGeometry(avail.x() + (avail.width()  - w) / 2,
                         avail.y() + (avail.height() - h) / 2,
                         w, h);
@@ -2649,13 +2662,14 @@ void MainWindow::buildMenus() {
     auto *noterAct = feat->addAction("Noter — Meeting Thinkpad        Ctrl+Alt+N");
     noterAct->setCheckable(true);
     noterAct->setShortcut(QKeySequence("Ctrl+Alt+N"));
-    noterAct->setStatusTip("Open Noter — meeting notes that turn into todos that nag you.");
-    connect(noterAct, &QAction::triggered, this, [this]() {
-        // Open the Noter tab + show the empty-state page (with recent
-        // meetings list). The user clicks "+ New meeting" or picks a
-        // recent note from the list — never auto-create on every click.
-        // Ctrl+Alt+N (the keyboard binding on this same action) still
-        // surfaces the tab.
+    noterAct->setStatusTip("Open Noter — meeting notes with AI Extract (summary + action items) and desktop reminders.");
+    connect(noterAct, &QAction::triggered, this, [this, noterAct]() {
+        // v0.1.97 — toggle behavior, matches the AI dock pattern (Ctrl+Q).
+        // Three states:
+        //   - Tab doesn't exist  → create + focus
+        //   - Tab exists, NOT current → focus
+        //   - Tab exists, IS current → close
+        // This makes the toolbar/keybind a true on/off switch.
         NotesPanel *noter = nullptr;
         int existingIdx = -1;
         for (int i = 0; i < m_tabs->count(); ++i) {
@@ -2665,13 +2679,20 @@ void MainWindow::buildMenus() {
                 break;
             }
         }
+        if (noter && existingIdx == m_tabs->currentIndex()) {
+            // Currently focused → close.
+            m_tabs->removeTab(existingIdx);
+            delete noter;
+            noterAct->setChecked(false);
+            return;
+        }
         if (!noter) {
             noter = new NotesPanel;
             exitAiFullscreenIfActive();
             existingIdx = m_tabs->addTab(noter, "Noter");
         }
         m_tabs->setCurrentIndex(existingIdx);
-        // No auto-create. The empty-state page surfaces the recent list.
+        noterAct->setChecked(true);
     });
 
     // --- Hex Editor ---
@@ -4296,7 +4317,8 @@ void MainWindow::buildToolbar() {
                        "Open REST Client");
     addFeatureShortcut(featureTb, findActionByPrefix(this, "Noter"),
                        notepatraToolAccent("Noter"), "noter", "Noter",
-                       "Open Noter — meeting thinkpad (Ctrl+Alt+N)");
+                       "Toggle Noter — meeting thinkpad (Ctrl+Alt+N) — ON / OFF",
+                       /*showCheckedState=*/true);
     // v0.1.61 — dropped the standalone Git Integration toolbar shortcut.
     // Full VS Code-parity Source Control integration inside Coding mode
     // lands in v0.1.62 (agent-A roadmap: per-hunk gutter popup, stage/

@@ -51,6 +51,10 @@ struct SweepResult {
     QVector<Item> actions;
     QVector<Item> questions;
     QVector<Item> risks;
+    // v0.1.98 — one-to-three sentence plain-English summary of the model's
+    // understanding of the note ("summarize as well about your understanding").
+    // Empty when the model didn't emit one.
+    QString summary;
     // Always populated — the raw model reply (post-fence-strip). Useful
     // for debugging / "Show raw response" in the dialog.
     QString rawResponse;

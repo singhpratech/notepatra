@@ -20,11 +20,14 @@
 
 #include "notes_sweep_prompt.h"
 
+#include <QDateTime>
 #include <QDialog>
+#include <QPair>
 #include <QString>
 #include <QVector>
 
 class QCheckBox;
+class QDateTimeEdit;
 class QLabel;
 class QLineEdit;
 class QPushButton;
@@ -53,6 +56,14 @@ public:
     // owner, due). Mirrors the original on Discard.
     NoterSweepPrompt::SweepResult finalResult() const;
 
+    // v0.1.98 — tell the dialog which reminders are ALREADY scheduled for this
+    // note (title + time). Call AFTER construction, before exec(). The dialog
+    // lists them in the header ("Already scheduled: …") and default-UNCHECKS the
+    // "Remind" toggle on any action row that fuzzy-matches one, so re-running
+    // Extract doesn't silently create duplicate reminders. The user can still
+    // re-check a row deliberately.
+    void setExistingReminders(const QVector<QPair<QString, QDateTime>> &existing);
+
 signals:
     void saveRequested();
     void discardRequested();
@@ -62,10 +73,10 @@ private:
     // so save-time we can rebuild the result with edits applied. The
     // reminder toggle only exists for the actions section.
     struct RowWidgets {
-        QLineEdit *text   = nullptr;
-        QLineEdit *owner  = nullptr;   // actions only — null otherwise
-        QLineEdit *due    = nullptr;   // actions only — null otherwise
-        QCheckBox *remind = nullptr;   // actions only — null otherwise
+        QLineEdit     *text     = nullptr;
+        QLineEdit     *owner    = nullptr;   // actions only — null otherwise
+        QDateTimeEdit *remindAt = nullptr;   // actions only — calendar+time picker
+        QCheckBox     *remind   = nullptr;   // actions only — schedule toggle
     };
 
     void buildHeader();
@@ -91,7 +102,9 @@ private:
     QLabel      *m_eyebrowLabel = nullptr;
     QLabel      *m_titleLabel   = nullptr;
     QLabel      *m_countsLabel  = nullptr;
+    QLabel      *m_existingLabel = nullptr;   // "Already scheduled: …" (v0.1.98)
     QLabel      *m_footerStatus = nullptr;
+    QVector<QPair<QString, QDateTime>> m_existing;   // reminders already on this note
     QPushButton *m_discardBtn   = nullptr;
     QPushButton *m_saveBtn      = nullptr;
 

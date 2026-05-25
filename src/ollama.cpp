@@ -148,12 +148,83 @@ OllamaClient::OllamaClient(QObject *parent) : QObject(parent) {
         : cfg.aiBaseUrl;
 }
 
+// v0.1.98 — OpenAI-compat base normaliser. The AI panel stores cloud base
+// URLs WITH a "/v1" suffix (https://openrouter.ai/api/v1, https://api.openai.com/v1,
+// https://ollama.com/v1), but every OpenAI endpoint we build appends
+// "/v1/<path>". Without stripping the existing "/v1" we'd request
+// ".../api/v1/v1/models" → 404, surfaced as "OpenRouter API unreachable"
+// (user-reported 2026-05-24). Strip a trailing "/v1" + slashes so the result
+// is always single-/v1, whether or not the stored base already had it.
+static QString openAiV1Base(QString base) {
+    while (base.endsWith(QLatin1Char('/'))) base.chop(1);
+    if (base.endsWith(QStringLiteral("/v1"))) base.chop(3);
+    while (base.endsWith(QLatin1Char('/'))) base.chop(1);
+    return base;
+}
+
+// ─── httpErrorMessage ──────────────────────────────────────────────────
+// Turn an HTTP failure (status + raw body) into one human-readable line for
+// the UI. A streaming chat request that fails auth (bad/expired key → 401
+// "User not found"), runs out of credit (402) or gets rate-limited (429)
+// returns a plain JSON error body, NOT an SSE "data:" frame — so the stream
+// parser never sees it. We surface it from onFinishedOpenAI instead.
+// (user-reported 2026-05-24: a bad OpenRouter key made Extract spin ~60 s
+// with no feedback because neither finished() nor error() ever fired.)
+static QString httpErrorMessage(int status, const QByteArray &body,
+                                const QString &fallback) {
+    QString providerMsg;
+    QJsonParseError perr{};
+    QJsonDocument doc = QJsonDocument::fromJson(body.trimmed(), &perr);
+    if (perr.error == QJsonParseError::NoError && doc.isObject()) {
+        const QJsonValue ev = doc.object().value("error");
+        if (ev.isObject())      providerMsg = ev.toObject().value("message").toString();
+        else if (ev.isString()) providerMsg = ev.toString();
+        if (providerMsg.isEmpty())
+            providerMsg = doc.object().value("message").toString();
+    }
+
+    QString head;
+    switch (status) {
+        case 401:
+        case 403:
+            head = QStringLiteral("Authentication failed (HTTP %1) — your API key is "
+                                  "invalid, expired, or lacks access to this model. "
+                                  "Open the AI panel ⚙ and paste a valid key.").arg(status);
+            break;
+        case 402:
+            head = QStringLiteral("Payment required (HTTP 402) — your account is out of "
+                                  "credits. Top up at your provider, or pick a free model.");
+            break;
+        case 404:
+            head = QStringLiteral("Not found (HTTP 404) — check the model name and backend "
+                                  "URL in the AI panel.");
+            break;
+        case 429:
+            head = QStringLiteral("Rate limited (HTTP 429) — too many requests; wait a "
+                                  "moment and try again.");
+            break;
+        default:
+            if (status >= 500)
+                head = QStringLiteral("Provider server error (HTTP %1) — the AI service "
+                                      "failed; try again shortly.").arg(status);
+            else if (status > 0)
+                head = QStringLiteral("Request failed (HTTP %1).").arg(status);
+            else
+                head = fallback.isEmpty() ? QStringLiteral("Request failed.") : fallback;
+            break;
+    }
+    if (!providerMsg.isEmpty())
+        head += QStringLiteral("  [%1]").arg(providerMsg.trimmed());
+    return head;
+}
+
 // ─── isAvailable ───────────────────────────────────────────────────────
 // Synchronous probe, 3 s timeout. Endpoint varies by backend.
 bool OllamaClient::isAvailable() {
     if (!m_nam) return false;  // hardening: guard NAM (defensive even though ctor always sets it)
-    const QString probePath = (m_backend == Ollama) ? "/api/tags" : "/v1/models";
-    QUrl url(m_baseUrl + probePath);
+    QUrl url = (m_backend == Ollama)
+                   ? QUrl(m_baseUrl + "/api/tags")
+                   : QUrl(openAiV1Base(m_baseUrl) + "/v1/models");
     if (!url.isValid()) return false;  // hardening: malformed base URL guard
     if (!NOTEPATRA_NO_CLOUD_OK(url)) return false;  // cloud-free probe refusal — silent (sync caller)
     QNetworkRequest req(url);
@@ -188,7 +259,7 @@ void OllamaClient::listModels() {
     } else if (isAzureBackend()) {
         url = azureUrl("models");
     } else {
-        url = QUrl(m_baseUrl + "/v1/models");
+        url = QUrl(openAiV1Base(m_baseUrl) + "/v1/models");
     }
     if (!url.isValid()) {  // hardening: bad base-url short-circuits with explicit error
         emit modelsError(QStringLiteral("Invalid backend URL: ") + m_baseUrl);
@@ -615,7 +686,7 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
 
         QUrl url = isAzureBackend()
                      ? azureUrl("chat/completions")
-                     : QUrl(m_baseUrl + "/v1/chat/completions");
+                     : QUrl(openAiV1Base(m_baseUrl) + "/v1/chat/completions");
         if (!url.isValid()) {  // hardening: invalid url short-circuit
             emit error(QStringLiteral("Invalid backend URL: ") + url.toString());
             return;
@@ -756,7 +827,7 @@ void OllamaClient::continueWithToolResults(const QJsonArray &toolResults,
 
         QUrl url = isAzureBackend()
                      ? azureUrl("chat/completions")
-                     : QUrl(m_baseUrl + "/v1/chat/completions");
+                     : QUrl(openAiV1Base(m_baseUrl) + "/v1/chat/completions");
         if (!url.isValid()) {  // hardening: invalid url short-circuit
             emit error(QStringLiteral("Invalid backend URL: ") + url.toString());
             return;
@@ -1124,8 +1195,34 @@ void OllamaClient::onFinishedOllama() {
 
 void OllamaClient::onFinishedOpenAI() {
     if (!m_reply) return;
-    // Flush any trailing SSE data
+    // Capture trailing bytes + HTTP status once, before parsing/cleanup.
     m_sseBuffer += m_reply->readAll();
+    const int httpStatus =
+        m_reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+
+    // ── HTTP / transport error short-circuit (v0.1.98) ──────────────────
+    // When a chat stream fails before any token arrives — bad/expired key
+    // (401 "User not found"), out of credit (402), rate limit (429), or a
+    // transport timeout — the body is a plain JSON error, not an SSE "data:"
+    // frame, so onReadyReadOpenAI() silently skips it. And since we null
+    // m_reply below, the safety-net lambda in generate() short-circuits too.
+    // Without this block neither finished() nor error() fires and the caller
+    // spins to its own timeout. Gated on m_fullResponse.isEmpty() so a
+    // mid-stream drop still flushes whatever partial text already arrived.
+    if (!m_done && m_fullResponse.isEmpty() &&
+        (m_reply->error() != QNetworkReply::NoError || httpStatus >= 400)) {
+        const int sc = (httpStatus >= 400) ? httpStatus : 0;
+        const QString msg =
+            httpErrorMessage(sc, m_sseBuffer, m_reply->errorString());
+        m_done = true;
+        m_sseBuffer.clear();
+        m_reply->deleteLater();
+        m_reply = nullptr;
+        emit error(msg);
+        return;
+    }
+
+    // Flush any trailing SSE data (success path).
     if (!m_sseBuffer.isEmpty()) {
         m_sseBuffer += "\n\n";  // force a final frame boundary
         onReadyReadOpenAI();

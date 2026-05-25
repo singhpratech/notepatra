@@ -7,6 +7,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.97] — 2026-05-25
+
+**Noter reminders grow up: one central list, an Extract that schedules real reminders from natural-language times, and three cloud-AI fixes.**
+
+### Added
+- **Central Reminders sidebar root** — a third Noter root between Notes and Trash listing every scheduled reminder, grouped collapsibly into Overdue / Today / This week / Later (overdue rows render red). Click a leaf → open the note, pencil → change the time (calendar picker), ✕ → delete. `NotesTodos::allScheduledReminders()` drives it; painter-drawn amber clock icon (no emoji).
+- **Extract now schedules reminders** — previously the "Remind" checkboxes were cosmetic. Each checked action becomes a reminder via new `NotesTodos::addReminder()` (a `__reminder__:{uuid}` row, many per note). Remind defaults ON only when a concrete time was extracted.
+- **Extract summary + duplicate flagging** — the sweep prompt returns a plain-English `summary` (shown in the dialog header + saved above the action items); re-running Extract lists already-scheduled reminders and default-unchecks fuzzy-matching action rows so you don't pile up duplicates.
+- **Natural-language due times** — the sweep prompt resolves "10am tomorrow" / "Fri 5pm" to a concrete LOCAL wall-clock time (was UTC, which shifted the displayed hour). The action's due field is a calendar `QDateTimeEdit`.
+- **AI Interaction Log surfaced as a first-class privacy feature** (Features → AI Interaction Log…): every local + cloud AI request/response logged 7 days, credential-scrubbed, browsable, opt-out — now documented in the in-app Help, README, and website.
+
+### Fixed
+- **Double-`/v1` URL** — OpenAI-compatible backends built `…/api/v1/v1/models` (HTTP 404, "unreachable", empty model dropdown). `openAiV1Base()` normalizes the stored base URL before appending.
+- **Streaming 401 hang** — a bad/expired cloud key made chat/Extract spin ~60s with no feedback (the 401 body isn't an SSE frame, so neither `finished` nor `error` fired). Now surfaces a prompt, actionable auth error from `onFinishedOpenAI`.
+- **Extract-cancel crash (SIGSEGV)** — the review dialog opened inside the network signal while the reply was mid-teardown; a trailing `downloadProgress` hit freed memory. The dialog now opens on a clean event-loop tick after the client is fully severed (`cancel()` + deferred `singleShot`).
+- Widened `reindexNote`'s orphan-sweep guard to skip all `__`-prefixed synthetic reminder rows so per-action reminders survive note saves.
+
+### Tests
+- 47/47 ctest. New: `test_stream_error` (bad key → prompt error, no hang); `test_notes_todos` §13 (addReminder / allScheduledReminders / reindex-survival); `test_notes_panel_widget` §21–23 (Reminders root, Extract cancel no-crash, already-scheduled flagging); `test_notes_sweep_prompt` local-time + summary parse.
+
+---
+
 ## [0.1.96] — 2026-05-24
 
 **Same-day Windows hotfix for v0.1.95.** Three independent root causes of a reproducible launch-hang permanently addressed: (1) platform-conventional config dir, (2) crash-safe session restore, (3) EOL-OpenSSL update-check gate.

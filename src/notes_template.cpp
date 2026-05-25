@@ -143,7 +143,8 @@ QString shellHtml(const QString &title,
     html += QStringLiteral("    <article class=\"mock\" data-theme=\"light\">\n");
     html += QStringLiteral("      <div class=\"notes-tab\" style=\"grid-template-columns: 1fr;\">\n");
     html += QStringLiteral("        <div class=\"canvas\">\n");
-    html += QStringLiteral("          <div class=\"timer\"><span class=\"dot\"></span>00:00</div>\n");
+    // v0.1.98 — removed the legacy meeting "timer" (00:00) div; Noter notes
+    // aren't timed meetings (user flagged it as noise on every note).
     html += QStringLiteral("          <div class=\"meet-head\">\n");
     html += QStringLiteral("            <h1 class=\"meet-title\">") + escapeText(title) + QStringLiteral("</h1>\n");
     html += QStringLiteral("            <div class=\"meet-meta\">\n");

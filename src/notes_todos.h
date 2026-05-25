@@ -116,6 +116,35 @@ public:
     bool markOpen(const QString &id);
     bool setDue(const QString &id, const QDateTime &dueAt);
     bool setReminder(const QString &id, const QDateTime &remindAt);
+
+    // v0.1.98 — note-level reminder bound to a FILE (todos were dropped from
+    // the UI; a reminder now lives on the note itself via right-click → Set
+    // reminder). Stored as a todos row whose source_block_id is the sentinel
+    // "__note_reminder__" so reindexNote never reconciles it against HTML
+    // action blocks. The reminder engine fires it like any scheduled
+    // reminder, and the banner's "Open" button opens source_file (the note).
+    //   remindAt invalid → clears (deletes) the note's reminder row.
+    // Returns the row id (empty string on failure / on clear-with-no-row).
+    QString setNoteReminder(const QString &sourceFile, const QString &title,
+                            const QDateTime &remindAt);
+    // The currently-scheduled reminder time for a note (invalid if none).
+    QDateTime noteReminderAt(const QString &sourceFile) const;
+
+    // v0.1.98 — a standalone reminder bound to a note FILE but NOT unique
+    // per file (unlike setNoteReminder). Used by Extract: each action item
+    // the user chose to be reminded about becomes its own row. Stored with a
+    // synthetic "__reminder__:{uuid}" source_block_id so reindexNote's orphan
+    // sweep skips it (it has no HTML action block). Always INSERTs a new
+    // scheduled row; returns its id ("" on failure). due_at is set too so the
+    // central Reminders view and any due grouping line up.
+    QString addReminder(const QString &sourceFile, const QString &title,
+                        const QDateTime &remindAt);
+
+    // v0.1.98 — every scheduled reminder (note-level + per-action), ordered by
+    // reminder_at ASC. Drives the central "Reminders" sidebar root. Includes
+    // overdue ones (reminder_at in the past) so nothing silently disappears.
+    QVector<TodoRow> allScheduledReminders() const;
+
     bool snooze(const QString &id, const QDateTime &until);
     bool dismissReminder(const QString &id);
 

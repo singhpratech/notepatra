@@ -261,7 +261,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent) {
 
     auto *rbOllama = new QRadioButton("Ollama — ollama serve (default, auto-detect)");
     auto *rbLlama  = new QRadioButton("llama.cpp — llama-server --port 8080 (loads GGUF directly)");
-    auto *rbOpen   = new QRadioButton("OpenAI-compat — LM Studio / Jan / vLLM / KoboldCpp / custom");
+    auto *rbOpen   = new QRadioButton("Custom OpenAI-compatible endpoint — set Base URL + key below");
     auto *aiBg = new QButtonGroup(this);
     aiBg->addButton(rbOllama);
     aiBg->addButton(rbLlama);
@@ -290,6 +290,26 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent) {
     keyEdit->setPlaceholderText("Optional — only needed for OpenAI / OpenRouter / authed endpoints");
     keyRow->addWidget(keyEdit, 1);
     aiLay->addLayout(keyRow);
+
+    // v0.1.98 — signal that cloud providers exist but are configured in the
+    // AI panel (one place for keys), rather than duplicating key fields here.
+    // (User: "for OpenRouter, say set it in the AI panel — keep it integrated.")
+    auto *cloudNote = new QLabel(
+        "Looking for OpenRouter, OpenAI, Azure, or Ollama Cloud? Add those in "
+        "the AI panel — open it and use its Settings (gear) button to enter the "
+        "API key. Cloud backends are configured there so your keys stay in one place.");
+    cloudNote->setWordWrap(true);
+    {
+        QFont nf = cloudNote->font();
+        nf.setItalic(true);
+        cloudNote->setFont(nf);
+        QPalette pal = cloudNote->palette();           // theme-safe muted text
+        QColor c = pal.color(QPalette::WindowText);
+        c.setAlpha(160);
+        pal.setColor(QPalette::WindowText, c);
+        cloudNote->setPalette(pal);
+    }
+    aiLay->addWidget(cloudNote);
 
     aiLay->addStretch();
     tabs->addTab(aiTab, "AI");

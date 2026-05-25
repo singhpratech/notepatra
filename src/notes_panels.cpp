@@ -10,6 +10,7 @@
 
 #include <QAbstractItemModel>
 #include <QApplication>
+#include <QCalendarWidget>
 #include <QCheckBox>
 #include <QDate>
 #include <QDateTime>
@@ -22,6 +23,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QGridLayout>
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QKeyEvent>
@@ -40,6 +42,8 @@
 #include <QTreeView>
 #include <QVBoxLayout>
 #include <QVariant>
+#include <QVector>
+#include <functional>
 
 // ─── small shared style helpers ─────────────────────────────────────
 // Kept local rather than reaching into npp_palette because the slide-
@@ -402,9 +406,16 @@ public:
         xBtn->setCursor(Qt::PointingHandCursor);
         xBtn->setFlat(true);
         xBtn->setFixedSize(22, 22);
-        xBtn->setText(row.trashed ? QStringLiteral("↺") : QStringLiteral("✕"));
-        xBtn->setToolTip(row.trashed ? tr("Restore")
-                                     : tr("Move to Trash"));
+        // v0.1.97 — ↺ (U+21BA) tofu'd on Linux without an emoji font; use a
+        // painted QStyle reload icon for restore. ✕ renders fine everywhere.
+        if (row.trashed) {
+            xBtn->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
+            xBtn->setIconSize(QSize(13, 13));
+            xBtn->setToolTip(tr("Restore"));
+        } else {
+            xBtn->setText(QStringLiteral("✕"));
+            xBtn->setToolTip(tr("Move to Trash"));
+        }
         xBtn->setStyleSheet(QStringLiteral(
             "QPushButton#todoRowX { color: #94a3b8; background: transparent;"
             "  border: none; font-size: 13px; padding: 0; }"
@@ -508,24 +519,62 @@ static void applyLightMenuStyle(QMenu &menu) {
     ));
 }
 
+// A quick-pick chip for the date/time picker: a label plus a function
+// that resolves to an absolute QDateTime. Clicking the chip fills the
+// QDateTimeEdit so the user still sees — and can fine-tune to the
+// minute — the resolved date+time. (User-requested 2026-05-24: reminders
+// should be "time and date both, I can have in minute as well".)
+struct DateTimeQuickPick {
+    QString label;
+    std::function<QDateTime()> compute;
+};
+
 // v0.1.95+ — right-click context menu on a todo row.
-// Set due / Set reminder open a popup with QDateTimeEdit + calendar popup.
+// Set due / Set reminder open a popup with a real date+time editor
+// (calendar popup + HH:mm spinner) PLUS a grid of quick-pick chips so a
+// reminder can be set "in 15 min" without hand-typing a timestamp.
 // Mark done / Delete are one-shot actions confirmed via the row's panel.
 static QDateTime promptForDateTime(QWidget *parent, const QString &title,
                                    const QDateTime &initial,
+                                   const QVector<DateTimeQuickPick> &quickPicks,
                                    bool *cleared = nullptr) {
     if (cleared) *cleared = false;
     QDialog dlg(parent);
     dlg.setWindowTitle(title);
+    dlg.setMinimumWidth(330);
     auto *outer = new QVBoxLayout(&dlg);
     auto *form = new QFormLayout;
-    auto *edit = new QDateTimeEdit(initial.isValid() ? initial
-                                                     : QDateTime::currentDateTime().addDays(1),
+    auto *edit = new QDateTimeEdit(initial.isValid()
+                                       ? initial
+                                       : QDateTime::currentDateTime().addSecs(15 * 60),
                                    &dlg);
     edit->setCalendarPopup(true);
-    edit->setDisplayFormat(QStringLiteral("yyyy-MM-dd  HH:mm"));
+    // Weekday + date + time so the user can confirm BOTH date and time at
+    // a glance; the spinner edits down to the minute.
+    edit->setDisplayFormat(QStringLiteral("ddd  yyyy-MM-dd   HH:mm"));
     form->addRow(QStringLiteral("Date / time:"), edit);
     outer->addLayout(form);
+
+    // Quick-pick chips, three per row. Each fills the editor above.
+    if (!quickPicks.isEmpty()) {
+        auto *grid = new QGridLayout;
+        grid->setHorizontalSpacing(6);
+        grid->setVerticalSpacing(6);
+        int n = 0;
+        for (const DateTimeQuickPick &qp : quickPicks) {
+            auto *b = new QPushButton(qp.label, &dlg);
+            b->setCursor(Qt::PointingHandCursor);
+            b->setStyleSheet(QStringLiteral(
+                "QPushButton { padding: 5px 10px; font-size: 11px; }"));
+            const auto compute = qp.compute;
+            QObject::connect(b, &QPushButton::clicked, [edit, compute]() {
+                edit->setDateTime(compute());
+            });
+            grid->addWidget(b, n / 3, n % 3);
+            ++n;
+        }
+        outer->addLayout(grid);
+    }
 
     auto *bb = new QDialogButtonBox(&dlg);
     bb->addButton(QDialogButtonBox::Ok);
@@ -548,6 +597,28 @@ static QDateTime promptForDateTime(QWidget *parent, const QString &title,
     return edit->dateTime();
 }
 
+// Quick-picks for a reminder — minute/hour granularity the user asked for.
+static QVector<DateTimeQuickPick> reminderQuickPicks() {
+    return {
+        { QObject::tr("in 5 min"),   [] { return QDateTime::currentDateTime().addSecs(5 * 60); } },
+        { QObject::tr("in 15 min"),  [] { return QDateTime::currentDateTime().addSecs(15 * 60); } },
+        { QObject::tr("in 30 min"),  [] { return QDateTime::currentDateTime().addSecs(30 * 60); } },
+        { QObject::tr("in 1 hour"),  [] { return QDateTime::currentDateTime().addSecs(60 * 60); } },
+        { QObject::tr("in 2 hours"), [] { return QDateTime::currentDateTime().addSecs(120 * 60); } },
+        { QObject::tr("tomorrow 9 AM"), [] {
+              return QDateTime(QDate::currentDate().addDays(1), QTime(9, 0)); } },
+    };
+}
+
+// Quick-picks for a due date — day-granularity is the common case here.
+static QVector<DateTimeQuickPick> dueQuickPicks() {
+    return {
+        { QObject::tr("today 5 PM"),   [] { return QDateTime(QDate::currentDate(), QTime(17, 0)); } },
+        { QObject::tr("tomorrow 9 AM"),[] { return QDateTime(QDate::currentDate().addDays(1), QTime(9, 0)); } },
+        { QObject::tr("in 1 week"),    [] { return QDateTime(QDate::currentDate().addDays(7), QTime(9, 0)); } },
+    };
+}
+
 void TodoRowWidget::contextMenuEvent(QContextMenuEvent *ev) {
     QWidget *p = parentWidget();
     NoterTodosPanel *panel = nullptr;
@@ -561,9 +632,11 @@ void TodoRowWidget::contextMenuEvent(QContextMenuEvent *ev) {
     applyLightMenuStyle(menu);
     if (m_row.trashed) {
         // Trashed-row menu: Restore or Delete permanently.
-        QAction *aRestore = menu.addAction(tr("↺ Restore"));
+        QAction *aRestore = menu.addAction(
+            style()->standardIcon(QStyle::SP_BrowserReload), tr("Restore"));
         menu.addSeparator();
-        QAction *aDelete  = menu.addAction(tr("⚠ Delete permanently"));
+        QAction *aDelete  = menu.addAction(
+            style()->standardIcon(QStyle::SP_TrashIcon), tr("Delete permanently"));
         QAction *picked = menu.exec(ev->globalPos());
         if (!picked) return;
         if (picked == aRestore) {
@@ -584,13 +657,14 @@ void TodoRowWidget::contextMenuEvent(QContextMenuEvent *ev) {
     }
 
     // Live-row menu: due / reminder / done / move-to-trash.
-    QAction *aDue    = menu.addAction(tr("📅 Set due date…"));
-    QAction *aRemind = menu.addAction(tr("⏰ Set reminder…"));
+    QAction *aDue    = menu.addAction(tr("Set due date…"));
+    QAction *aRemind = menu.addAction(tr("Set reminder…"));
     menu.addSeparator();
     QAction *aDone   = menu.addAction(m_row.done ? tr("Mark open")
                                                  : tr("Mark done"));
     menu.addSeparator();
-    QAction *aTrash  = menu.addAction(tr("🗑  Delete"));
+    QAction *aTrash  = menu.addAction(
+        style()->standardIcon(QStyle::SP_TrashIcon), tr("Delete"));
 
     QAction *picked = menu.exec(ev->globalPos());
     if (!picked) return;
@@ -598,16 +672,17 @@ void TodoRowWidget::contextMenuEvent(QContextMenuEvent *ev) {
     if (picked == aDue) {
         bool cleared = false;
         QDateTime dt = promptForDateTime(panel, tr("Set due date"),
-                                         m_row.due, &cleared);
+                                         m_row.due, dueQuickPicks(), &cleared);
         if (cleared) emit panel->setDueRequested(m_row.todoId, QDateTime());
         else if (dt.isValid()) emit panel->setDueRequested(m_row.todoId, dt);
     } else if (picked == aRemind) {
         bool cleared = false;
+        // Default the editor to "in 15 min" so the common quick reminder is
+        // one OK away; the chips + spinner cover everything else.
         QDateTime dt = promptForDateTime(
             panel, tr("Set reminder"),
-            m_row.due.isValid() ? m_row.due.addSecs(-3600)
-                                : QDateTime::currentDateTime().addDays(1),
-            &cleared);
+            QDateTime::currentDateTime().addSecs(15 * 60),
+            reminderQuickPicks(), &cleared);
         if (cleared) emit panel->setReminderRequested(m_row.todoId, QDateTime());
         else if (dt.isValid()) emit panel->setReminderRequested(m_row.todoId, dt);
     } else if (picked == aDone) {
@@ -723,12 +798,16 @@ void NoterTodosPanel::buildUi() {
         textEdit->setPlaceholderText(tr("What needs doing?"));
         form->addRow(tr("Text:"), textEdit);
 
-        const QDateTime placeholder(QDate(1900, 1, 1), QTime(0, 0));
+        // Sentinel for "no date": TODAY at midnight so the calendar popup
+        // opens on the current month, not January 1900.
+        const QDateTime placeholder(QDate::currentDate(), QTime(0, 0));
         auto *dueEdit = new QDateTimeEdit(placeholder, &dlg);
         dueEdit->setCalendarPopup(true);
-        dueEdit->setDisplayFormat(QStringLiteral("yyyy-MM-dd  HH:mm"));
+        dueEdit->setDisplayFormat(QStringLiteral("ddd  yyyy-MM-dd   HH:mm"));
         dueEdit->setMinimumDateTime(placeholder);
         dueEdit->setSpecialValueText(tr("(no due date)"));
+        if (auto *cal = dueEdit->calendarWidget())
+            cal->setSelectedDate(QDate::currentDate());
         auto *dueRow = new QWidget;
         auto *dueRowL = new QHBoxLayout(dueRow);
         dueRowL->setContentsMargins(0, 0, 0, 0);
@@ -754,31 +833,42 @@ void NoterTodosPanel::buildUi() {
 
         auto *remindEdit = new QDateTimeEdit(placeholder, &dlg);
         remindEdit->setCalendarPopup(true);
-        remindEdit->setDisplayFormat(QStringLiteral("yyyy-MM-dd  HH:mm"));
+        remindEdit->setDisplayFormat(QStringLiteral("ddd  yyyy-MM-dd   HH:mm"));
         remindEdit->setMinimumDateTime(placeholder);
         remindEdit->setSpecialValueText(tr("(no reminder)"));
+        if (auto *cal = remindEdit->calendarWidget())
+            cal->setSelectedDate(QDate::currentDate());
+        // Stack the editor over a row of quick-pick chips so reminders can
+        // be set "in 15 min" — minute granularity the user asked for — and
+        // still fine-tuned to an exact date+time in the spinner above.
         auto *remRow = new QWidget;
-        auto *remRowL = new QHBoxLayout(remRow);
-        remRowL->setContentsMargins(0, 0, 0, 0);
-        remRowL->addWidget(remindEdit, 1);
-        // Match the Due row's quick-pick affordances.
-        auto *remIn1h    = new QPushButton(tr("in 1h"),   remRow);
-        auto *remTomMorn = new QPushButton(tr("tomorrow"), remRow);
-        auto *remBefore  = new QPushButton(tr("1h before due"), remRow);
-        auto *remClear   = new QPushButton(tr("clear"),    remRow);
-        for (auto *b : {remIn1h, remTomMorn, remBefore, remClear})
-            b->setStyleSheet(QStringLiteral("QPushButton { padding: 2px 8px; font-size: 11px; }"));
-        remRowL->addWidget(remIn1h);
-        remRowL->addWidget(remTomMorn);
-        remRowL->addWidget(remBefore);
-        remRowL->addWidget(remClear);
-        QObject::connect(remIn1h, &QPushButton::clicked, [remindEdit]() {
-            remindEdit->setDateTime(QDateTime::currentDateTime().addSecs(3600));
-        });
-        QObject::connect(remTomMorn, &QPushButton::clicked, [remindEdit]() {
-            remindEdit->setDateTime(QDateTime(QDate::currentDate().addDays(1),
-                                              QTime(9, 0)));
-        });
+        auto *remRowV = new QVBoxLayout(remRow);
+        remRowV->setContentsMargins(0, 0, 0, 0);
+        remRowV->setSpacing(4);
+        remRowV->addWidget(remindEdit);
+        auto *remChips = new QWidget(remRow);
+        auto *remChipsL = new QHBoxLayout(remChips);
+        remChipsL->setContentsMargins(0, 0, 0, 0);
+        remChipsL->setSpacing(4);
+        auto *remIn5m   = new QPushButton(tr("5m"),  remChips);
+        auto *remIn15m  = new QPushButton(tr("15m"), remChips);
+        auto *remIn30m  = new QPushButton(tr("30m"), remChips);
+        auto *remIn1h   = new QPushButton(tr("1h"),  remChips);
+        auto *remBefore = new QPushButton(tr("before due"), remChips);
+        auto *remClear  = new QPushButton(tr("clear"), remChips);
+        for (auto *b : {remIn5m, remIn15m, remIn30m, remIn1h, remBefore, remClear}) {
+            b->setStyleSheet(QStringLiteral("QPushButton { padding: 3px 8px; font-size: 11px; }"));
+            b->setCursor(Qt::PointingHandCursor);
+            remChipsL->addWidget(b);
+        }
+        remRowV->addWidget(remChips);
+        auto setRemMins = [remindEdit](int mins) {
+            remindEdit->setDateTime(QDateTime::currentDateTime().addSecs(mins * 60));
+        };
+        QObject::connect(remIn5m,  &QPushButton::clicked, [setRemMins]() { setRemMins(5); });
+        QObject::connect(remIn15m, &QPushButton::clicked, [setRemMins]() { setRemMins(15); });
+        QObject::connect(remIn30m, &QPushButton::clicked, [setRemMins]() { setRemMins(30); });
+        QObject::connect(remIn1h,  &QPushButton::clicked, [setRemMins]() { setRemMins(60); });
         QObject::connect(remBefore, &QPushButton::clicked, [remindEdit, dueEdit, placeholder]() {
             if (dueEdit->dateTime() > placeholder)
                 remindEdit->setDateTime(dueEdit->dateTime().addSecs(-3600));

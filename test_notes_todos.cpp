@@ -597,6 +597,116 @@ int main(int argc, char *argv[]) {
         EXPECT("restoreRow on empty id rejected", !n.restoreRow(QString()));
     }
 
+    // ─── 12) note-level reminders (v0.1.98 — todos dropped, reminder
+    //         binds to a note FILE via right-click → Set reminder) ─────
+    std::printf("\n[note_reminder]\n");
+    {
+        const QString notesRoot = root + "/note_rem_root";
+        QDir().mkpath(notesRoot);
+        NotesTodos n(notesRoot + "/todos.db");
+        EXPECT("open()", n.open(nullptr));
+
+        const QString notePath =
+            notesRoot + "/Inbox/2026-05-24-160000-noter-01.html";
+
+        // Future reminder → stored + queryable.
+        const QDateTime future = QDateTime::currentDateTimeUtc().addSecs(3600);
+        const QString id = n.setNoteReminder(notePath, "Noter 01", future);
+        EXPECT("setNoteReminder returns an id", !id.isEmpty());
+        EXPECT("noteReminderAt returns the scheduled time",
+               qAbs(n.noteReminderAt(notePath).toUTC().secsTo(future)) <= 1);
+
+        // A reminder whose time has passed is returned by remindersReadyAt
+        // — i.e. the engine WILL fire it. This is the user-visible contract.
+        const QDateTime past = QDateTime::currentDateTimeUtc().addSecs(-60);
+        n.setNoteReminder(notePath, "Noter 01", past);
+        bool fires = false;
+        for (const TodoRow &r :
+             n.remindersReadyAt(QDateTime::currentDateTimeUtc()))
+            if (r.sourceFile == notePath) fires = true;
+        EXPECT("a due note reminder fires (remindersReadyAt returns it)", fires);
+
+        // Reschedule must reuse the row, not create a second.
+        const QDateTime future2 = QDateTime::currentDateTimeUtc().addSecs(7200);
+        const QString id2 = n.setNoteReminder(notePath, "Noter 01", future2);
+        EXPECT("reschedule reuses the same row", id2 == id);
+
+        // reindexNote of the note (a freeform note has no action blocks)
+        // must NOT clobber the note-reminder row.
+        n.reindexNote(notePath, QStringLiteral(
+            "<html><body><h1 class=\"meet-title\">Noter 01</h1></body></html>"));
+        EXPECT("note reminder survives reindexNote of its note",
+               n.noteReminderAt(notePath).isValid());
+
+        // Clear → gone.
+        n.setNoteReminder(notePath, "Noter 01", QDateTime());
+        EXPECT("noteReminderAt invalid after clear",
+               !n.noteReminderAt(notePath).isValid());
+    }
+
+    // ─── 13) per-action reminders (v0.1.98 — Extract schedules these;
+    //         central Reminders root lists them via allScheduledReminders) ──
+    std::printf("\n[action_reminders]\n");
+    {
+        const QString notesRoot = root + "/action_rem_root";
+        QDir().mkpath(notesRoot);
+        NotesTodos n(notesRoot + "/todos.db");
+        EXPECT("open()", n.open(nullptr));
+
+        const QString notePath = notesRoot + "/Inbox/2026-05-24-noter-02.html";
+        const QDateTime t1 = QDateTime::currentDateTimeUtc().addSecs(3600);
+        const QDateTime t2 = QDateTime::currentDateTimeUtc().addSecs(7200);
+
+        // addReminder always INSERTs — multiple reminders coexist on ONE note
+        // (unlike setNoteReminder which is one-per-file).
+        const QString r1 = n.addReminder(notePath, "Ship build  @prateek", t1);
+        const QString r2 = n.addReminder(notePath, "Email Priya", t2);
+        EXPECT("addReminder #1 returns id", !r1.isEmpty());
+        EXPECT("addReminder #2 returns id", !r2.isEmpty());
+        EXPECT("the two reminders are distinct rows", r1 != r2);
+
+        // allScheduledReminders lists BOTH, globally ordered by reminder_at ASC.
+        QVector<TodoRow> all = n.allScheduledReminders();
+        int onThisNote = 0, posR1 = -1, posR2 = -1;
+        for (int i = 0; i < all.size(); ++i) {
+            if (all[i].sourceFile == notePath) ++onThisNote;
+            if (all[i].id == r1) posR1 = i;
+            if (all[i].id == r2) posR2 = i;
+        }
+        EXPECT_EQ("allScheduledReminders lists both action reminders", onThisNote, 2);
+        EXPECT("reminders ordered by time (earlier first)",
+               posR1 >= 0 && posR2 >= 0 && posR1 < posR2);
+
+        // CRITICAL: saving the note (reindexNote) must NOT delete or orphan the
+        // action-reminder rows — that's the v0.1.98 guard widening. The note
+        // also gains a REAL action block that must NOT appear in the reminders
+        // list (it has no scheduled reminder).
+        n.reindexNote(notePath, QStringLiteral(
+            "<html><body><h1 class=\"meet-title\">Noter 02</h1>"
+            "<div class=\"b b-act\" data-id=\"real-action-1\" data-status=\"open\">do a thing</div>"
+            "</body></html>"));
+        int afterReindex = 0;
+        for (const TodoRow &r : n.allScheduledReminders())
+            if (r.sourceFile == notePath) ++afterReindex;
+        EXPECT_EQ("action reminders survive reindexNote", afterReindex, 2);
+        EXPECT("action reminder #1 not flagged source_file_missing",
+               !n.find(r1).sourceFileMissing);
+
+        // setReminder changes the time; deleteRow removes it.
+        const QDateTime t3 = QDateTime::currentDateTimeUtc().addSecs(10800);
+        EXPECT("setReminder(r1, t3) returns true", n.setReminder(r1, t3));
+        EXPECT("r1 reminder_at updated",
+               qAbs(n.find(r1).reminderAt.toUTC().secsTo(t3)) <= 1);
+        EXPECT_EQ("r1 still scheduled after change",
+                  n.find(r1).reminderStatus, QStringLiteral("scheduled"));
+
+        EXPECT("deleteRow(r2) returns true", n.deleteRow(r2));
+        int afterDelete = 0;
+        for (const TodoRow &r : n.allScheduledReminders())
+            if (r.sourceFile == notePath) ++afterDelete;
+        EXPECT_EQ("one reminder left after delete", afterDelete, 1);
+    }
+
     std::printf("\n────────────────────────\n");
     std::printf("PASS: %d   FAIL: %d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

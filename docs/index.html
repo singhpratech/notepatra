@@ -49,7 +49,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is under 10 MB across platforms (9.7 MB on Linux x64); full downloads are 3.8 MB (Linux x64 tar.gz), 27.2 MB (macOS DMG with bundled Qt), 41.5 MB (Windows MSI with bundled Qt DLLs). 226 file types. 92 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server (examples redacted). Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.96",
+      "softwareVersion": "0.1.97",
       "fileSize": "9.7 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -151,7 +151,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is under 10 MB across every platform (9.7 MB on Linux x64). Latest v0.1.96 download sizes: 3.8 MB Linux x64 tar.gz, 3.6 MB Linux ARM64 tar.gz, 27.2 MB macOS DMG (with bundled Qt), 41.5 MB Windows MSI / 32.4 MB NSIS / 37.0 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk, ~10 MB bare) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
+            "text": "The bare Notepatra executable is under 10 MB across every platform (9.7 MB on Linux x64). Latest v0.1.97 download sizes: 3.8 MB Linux x64 tar.gz, 3.6 MB Linux ARM64 tar.gz, 27.2 MB macOS DMG (with bundled Qt), 41.5 MB Windows MSI / 32.4 MB NSIS / 37.0 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~9 MB on disk, ~10 MB bare) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
           }
         },
         {
@@ -167,7 +167,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.96: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.97: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.96">
-        Download v0.1.96 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.97">
+        Download v0.1.97 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.96 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.97 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (under 10 MB bare, ~3.8 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints.</p>
 
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.96</div>
+        <div class="section-label">Download v0.1.97</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1467,7 +1467,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.96 →
+                Get Notepatra v0.1.97 →
               </a>
             </div>
 
@@ -1510,7 +1510,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.96 →
+                Get Notepatra Local AI v0.1.97 →
               </a>
             </div>
           </div>
@@ -1677,6 +1677,21 @@
                 <div class="feature-icon fi-orange">🔎</div>
                 <h3>Project Search (Ctrl+Shift+G) <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
                 <p>Recursive search across file <em>names</em> AND file <em>contents</em>, project-wide. Streams line by line so memory use stays flat regardless of file size — tested on 2 GB logs. Exact <code>line:col</code> coordinates, double-click a match to jump the caret to the exact character. Any text-based language. Skips binary files with a NUL-byte heuristic.</p>
+            </div>
+            <!-- Noter — local-first meeting-notes workspace. Highlighted
+                 with the same Clay-orange halo as the two star features
+                 above, since Reminders + Extract are the v0.1.97 headline. -->
+            <div class="feature-card" style="border-color: rgba(204,120,92,0.35); box-shadow: 0 10px 30px rgba(204,120,92,0.10);">
+                <div class="feature-icon fi-orange">🗒️</div>
+                <h3>Noter — meeting notes <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
+                <p>A local-first, two-pane notes workspace — notes list on the left, editor on the right. <strong>No accounts, no bots</strong>; notes live in plain files under <code>~/Documents/Notepatra/Noter/</code>. AI <strong>Extract</strong> (<code>Ctrl+Alt+E</code>) pulls a summary plus action items, decisions, questions, and risks. Set reminders on any note — or straight from Extract — and they're all collected in a central <strong>Reminders</strong> list (Overdue · Today · This week · Later) with desktop notifications at the due time.</p>
+            </div>
+            <!-- AI Interaction Log — promoted to a prominent privacy /
+                 transparency selling point in v0.1.97. Same halo treatment. -->
+            <div class="feature-card" style="border-color: rgba(204,120,92,0.35); box-shadow: 0 10px 30px rgba(204,120,92,0.10);">
+                <div class="feature-icon fi-orange">🔍</div>
+                <h3>AI Interaction Log <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
+                <p><strong>Audit exactly what your AI did — transparency, not just a promise.</strong> Every request <em>and</em> response to any backend — local (Ollama / llama.cpp) or cloud (OpenRouter / OpenAI / Azure / Ollama Cloud), including Noter's Extract — is recorded to a <strong>local SQLite log</strong> you can open and read: timestamp, backend, model, full prompt + response, tokens, latency. Entries auto-prune after 7 days; a credential scrubber masks API keys / tokens / PEM keys before writing. The viewer has filters, Export JSON, and Prune-now. On by default with one-click opt-out in Settings. <strong>Zero network egress — purely local.</strong> Open from <strong>Features → AI Interaction Log…</strong></p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon fi-blue">⚡</div>
@@ -1968,52 +1983,60 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.96 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.97 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
-                        <span>2026-05-24</span>
-                        <span>· Same-day Windows hotfix for v0.1.95. Fixes a reproducible launch-hang where session.json kept reopening a problem file across kills, with the bundled OpenSSL 1.1 (EOL since Sept 2023) blocking the UI thread during the startup update check. Adds <strong>platform-conventional config dirs</strong> (Windows: <code>%APPDATA%\\Notepatra</code>; macOS: <code>~/Library/Application Support/Notepatra</code>; Linux unchanged at <code>~/.config/notepatra</code>) with a one-time copy-migration from the legacy path. Adds a <strong>crash-safe session-restore marker</strong> so a hung restore can't loop on the same bad file. Adds a runtime <strong>EOL OpenSSL gate</strong> on the update check.</span>
+                        <span>2026-05-25</span>
+                        <span>· <strong>Noter</strong> gains a central <strong>Reminders</strong> sidebar list and a smarter AI <strong>Extract</strong> that schedules real reminders from natural-language times. The <strong>AI Interaction Log</strong> — a local, readable record of every request and response to any AI backend — is promoted to a first-class privacy feature. Plus three cloud-AI fixes: a doubled <code>/v1</code> in the base URL, a streaming-401 that used to hang the dock, and a crash when cancelling an Extract mid-stream.</span>
                         <span>· Linux · macOS · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>🛡️ Windows launch-hang permanently fixed</h5>
+                        <h5>📝 Noter — central Reminders list</h5>
                         <ul>
-                            <li><strong>Crash-safe session restore.</strong> <code>MainWindow::restoreSession()</code> now writes a <code>session.json.restoring</code> marker before opening files and deletes it on successful completion. On next launch, if the marker still exists, the previous restore was interrupted (kill / hang) — session.json is moved aside to <code>session.json.failed-&lt;timestamp&gt;</code> and the user sees a deferred dialog explaining where to find the saved tab list. No more "reopen the same bad file on every launch" loop.</li>
-                            <li><strong>EOL-OpenSSL update-check gate.</strong> Notepatra now detects <code>QSslSocket::sslLibraryVersionString()</code> at runtime and hard-skips the GitHub update check if it sees OpenSSL 1.0.x / 1.1.x (EOL since Sept 2023). Modern endpoints negotiate TLS in ways that can stall the UI thread on a broken SSL stack — bypassing the check eliminates that path. Manually-triggered checks show a "open Releases page in browser" dialog instead.</li>
-                            <li><strong>Bundled OpenSSL 3.x on Windows is a CI workflow change for the next release.</strong> The v0.1.96 gate stops the hang in the meantime.</li>
+                            <li>A new <strong>Reminders</strong> list in the Noter sidebar collects every reminder you've set across all notes, grouped into <strong>Overdue</strong>, <strong>Today</strong>, <strong>This week</strong>, and <strong>Later</strong>.</li>
+                            <li>Click a reminder to open the note it's bound to. Right-click to <strong>reschedule</strong> or <strong>delete</strong> — no need to hunt down the originating note first.</li>
+                            <li>Desktop notifications still fire at the due time; the list is the at-a-glance view of what's coming up.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>📁 Platform-conventional config locations</h5>
+                        <h5>🤖 Noter — smarter AI Extract</h5>
                         <ul>
-                            <li>Pre-v0.1.96, Notepatra wrote to <code>~/.config/notepatra/</code> on EVERY OS — fine on Linux, wrong on macOS, wrong on Windows. The Windows side bit a user hard: their <code>%APPDATA%\\Notepatra\\</code> appeared empty while session state sat in <code>C:\\Users\\&lt;u&gt;\\.config\\notepatra\\</code>, invisible to IT tooling / backup tools / group policy.</li>
-                            <li>New <code>Config::appConfigDir()</code> returns the platform-conventional path: Windows <code>%APPDATA%\\Notepatra</code>, macOS <code>~/Library/Application Support/Notepatra</code>, Linux unchanged at <code>$XDG_CONFIG_HOME/notepatra</code>.</li>
-                            <li>One-time copy migration on first launch — if the new path is empty AND the legacy path has data, contents are copied across. We don't delete the legacy data, so you can roll back if anything goes wrong. Cleanup of the legacy directory will land in a future release.</li>
-                            <li>All ~6 hard-coded config-path call sites migrated: <code>config.json</code>, <code>session.json</code>, <code>recovery/</code>, <code>ai-logs/interactions.db</code>, <code>db-connections.json</code>, <code>plugins/</code>.</li>
+                            <li><strong>Extract</strong> (<code>Ctrl+Alt+E</code>) now schedules <strong>real reminders</strong>, parsing natural-language times like "10am tomorrow" or "next Monday at 3pm" into actual due dates.</li>
+                            <li>It writes a short <strong>summary</strong> back into the note alongside the extracted action items, decisions, questions, and risks.</li>
+                            <li>If a reminder it's about to create already exists, it <strong>flags the duplicate</strong> instead of scheduling it twice.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>🧪 Tests</h5>
+                        <h5>🔍 AI Interaction Log — featured</h5>
                         <ul>
-                            <li>New unit tests for <code>Config::appConfigDir()</code> per-platform via env override.</li>
-                            <li>All v0.1.95 tests carry forward green (~1325 total, 0 failing).</li>
+                            <li>Every request <em>and</em> response to any AI backend — local (Ollama / llama.cpp) or cloud (OpenRouter / OpenAI / Azure / Ollama Cloud), including Noter's Extract — is recorded to a <strong>local SQLite log</strong> you can open and read: timestamp, backend, model, full prompt + response, tokens, latency.</li>
+                            <li>Entries auto-prune after 7 days. A <strong>credential scrubber</strong> masks API keys / tokens / PEM keys before anything is written.</li>
+                            <li>The viewer has filters, <strong>Export JSON</strong>, and <strong>Prune now</strong>. On by default with one-click opt-out in Settings. <strong>Zero network egress</strong> — it's purely local. Audit exactly what your AI did. Open from <strong>Features → AI Interaction Log…</strong></li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>🐛 Cloud-AI fixes</h5>
+                        <ul>
+                            <li><strong>Doubled <code>/v1</code> in the base URL</strong> — a base URL already ending in <code>/v1</code> no longer produces a <code>/v1/v1/…</code> request path.</li>
+                            <li><strong>Streaming 401 no longer hangs</strong> — an authentication failure on a streaming response now surfaces an error bubble instead of leaving the dock spinning forever.</li>
+                            <li><strong>Extract-cancel crash fixed</strong> — cancelling Noter's Extract mid-stream no longer crashes.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.96">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.97">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.96">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.97">Commits</a>
                 </div>
             </div>
             <!-- v0.1.76 policy: only the LATEST release detail card is shown
                  on the website.  Every older release lives on GitHub —
-                 single link below, no slim version rows. -->
-            <!-- v0.1.96 reinforcement: the agent that bumped 0.1.93 → 0.1.95
-                 added a slim v0.1.93 card here — VIOLATES the policy. Removed.
+                 single link below, no slim version rows. The previous
+                 latest card (v0.1.96) was DELETED — not demoted to a slim
+                 row — when v0.1.97 shipped, per feedback_website_release_detail_policy.
                  If you're tempted to add a "previous release" card again, read
-                 feedback_website_release_detail_policy in memory first. -->
+                 that memory first. -->
 
             <a href="https://github.com/singhpratech/notepatra/releases"
                class="version-card-link"
@@ -2046,7 +2069,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. under-10 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.96: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
+                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. under-10 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.97: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2058,7 +2081,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>under 10 MB</strong> (9.7 MB on Linux x64) across every platform. Latest v0.1.96 download sizes: <strong>3.8 MB</strong> Linux x64 tar.gz · <strong>3.6 MB</strong> Linux ARM64 tar.gz · <strong>27.2 MB</strong> macOS DMG · <strong>41.5 MB</strong> Windows MSI / <strong>32.4 MB</strong> NSIS / <strong>37.0 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~10 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>under 10 MB</strong> (9.7 MB on Linux x64) across every platform. Latest v0.1.97 download sizes: <strong>3.8 MB</strong> Linux x64 tar.gz · <strong>3.6 MB</strong> Linux ARM64 tar.gz · <strong>27.2 MB</strong> macOS DMG · <strong>41.5 MB</strong> Windows MSI / <strong>32.4 MB</strong> NSIS / <strong>37.0 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~10 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -2066,7 +2089,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.96 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.97 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>How do I verify a download is genuine?</h3>

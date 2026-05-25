@@ -116,8 +116,15 @@ QString htmlToPlainContext(const QString &html) {
 // models with 4K windows are still common on Linux dev boxes).
 
 QString build(const QString &meetingHtml, const QString &meetingTitle) {
-    const QString nowIso =
-        QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    // LOCAL wall-clock anchors. The model is asked to emit `due` as plain local
+    // time (no timezone suffix) so "10am tomorrow" round-trips to the picker as
+    // 10:00 — parse() keeps it local and storage converts to UTC. A concrete
+    // today/tomorrow pair removes the model's guesswork on relative dates.
+    const QDateTime nowLocal = QDateTime::currentDateTime();
+    const QString nowIso   = nowLocal.toString(QStringLiteral("yyyy-MM-ddTHH:mm"));
+    const QString todayStr = nowLocal.date().toString(QStringLiteral("yyyy-MM-dd"));
+    const QString tomwStr  = nowLocal.date().addDays(1).toString(QStringLiteral("yyyy-MM-dd"));
+    const QString dowToday = nowLocal.date().toString(QStringLiteral("dddd"));
 
     const QString plain = htmlToPlainContext(meetingHtml);
 
@@ -126,19 +133,32 @@ QString build(const QString &meetingHtml, const QString &meetingTitle) {
     sys += "Output VALID JSON only — no markdown fences, no prose, no <think> blocks.\n";
     sys += "Schema:\n";
     sys += "{\n";
+    sys += "  \"summary\":   \"1-3 sentence plain-English summary of the note\",\n";
     sys += "  \"decisions\": [{\"text\": \"...\"}],\n";
-    sys += "  \"actions\":   [{\"text\": \"...\", \"owner\": \"@name\" | null, \"due\": \"ISO-8601 UTC\" | null}],\n";
+    sys += "  \"actions\":   [{\"text\": \"...\", \"owner\": \"@name\" | null, \"due\": \"YYYY-MM-DDTHH:MM\" | null}],\n";
     sys += "  \"questions\": [{\"text\": \"...\"}],\n";
     sys += "  \"risks\":     [{\"text\": \"...\"}]\n";
     sys += "}\n";
     sys += "Rules:\n";
-    sys += "1. Parse natural English dates ('Fri 5pm', 'tomorrow 9am', 'next Wed') "
-           "into ISO-8601 UTC timestamps relative to NOW=" + nowIso + ".\n";
+    sys += "1. DATES: NOW is " + nowIso + " (" + dowToday + "). Today=" + todayStr +
+           ", tomorrow=" + tomwStr + ". Resolve every natural time phrase "
+           "('10am tomorrow', 'Fri 5pm', 'next Wed', 'EOD', 'in 2 hours') to a "
+           "concrete LOCAL timestamp \"YYYY-MM-DDTHH:MM\" — 24-hour, NO timezone "
+           "suffix, NO 'Z'. Example: if today is " + todayStr + ", then "
+           "'ship the build 10am tomorrow' → due \"" + tomwStr + "T10:00\".\n";
     sys += "2. Owner format: '@name' if a name or handle is mentioned, else null.\n";
     sys += "3. Be conservative — only emit a decision/action/question/risk if the "
            "note clearly indicates one. Empty arrays are fine.\n";
-    sys += "4. Never invent owners, dates, or text not present in the note.\n";
+    sys += "4. Never invent owners, dates, or text not present in the note. If no "
+           "time is stated for an action, set due to null (do NOT guess a time).\n";
     sys += "5. Each text field is one short sentence (<= 140 chars).\n";
+    sys += "6. Action items are the PRIORITY: capture every concrete task, "
+           "commitment, assignment, or 'I will / we should / let's / need to' "
+           "as an action, with owner + due whenever stated. ALWAYS attach a due "
+           "when the note mentions any time for that task. Decisions, questions "
+           "and risks are secondary — include them only when clearly present.\n";
+    sys += "7. ALWAYS fill \"summary\": a short, neutral recap of what the note is "
+           "about and its key outcomes — your understanding of it.\n";
 
     QString user;
     user += "MEETING: " + (meetingTitle.isEmpty()
@@ -208,19 +228,21 @@ QString repairTrailingCommas(const QString &json) {
 
 QDateTime parseLooseIso(const QString &s) {
     if (s.trimmed().isEmpty()) return QDateTime();
-    // Accept "2026-05-21T17:00:00Z" / "2026-05-21T17:00:00+00:00" /
-    // "2026-05-21 17:00:00" / "2026-05-21T17:00".
+    // Accept "2026-05-21T17:00" / "2026-05-21 17:00:00" / "2026-05-21T17:00:00Z"
+    // / "2026-05-21T17:00:00+05:30".
+    //
+    // v0.1.98 — the build() prompt asks for LOCAL wall-clock with NO suffix, so
+    // a no-offset string MUST stay local (the old code force-set UTC, which
+    // shifted "10am tomorrow" by the user's offset — it showed/fired at the
+    // wrong hour). Strings that DO carry Z / an offset parse to a real instant;
+    // normalise those to local so the picker and storage agree on wall-clock.
     QString v = s.trimmed();
     v.replace(' ', 'T');
     QDateTime dt = QDateTime::fromString(v, Qt::ISODate);
-    if (dt.isValid()) {
-        if (dt.timeSpec() == Qt::LocalTime) dt.setTimeSpec(Qt::UTC);
-        return dt;
-    }
-    // Final fallback — date-only.
-    dt = QDateTime::fromString(v.left(10), "yyyy-MM-dd");
-    if (dt.isValid()) dt.setTimeSpec(Qt::UTC);
-    return dt;
+    if (dt.isValid())
+        return dt.timeSpec() == Qt::LocalTime ? dt : dt.toLocalTime();
+    // Final fallback — date-only (local midnight).
+    return QDateTime::fromString(v.left(10), QStringLiteral("yyyy-MM-dd"));
 }
 
 SweepResult::Item makeItem(const QJsonValue &v, const char *defaultGlyph) {
@@ -285,6 +307,8 @@ SweepResult parse(const QString &llmReplyJson) {
         return r;
     }
     const QJsonObject root = doc.object();
+
+    r.summary = root.value("summary").toString().trimmed();
 
     appendSection(r.decisions, root.value("decisions"), "*");
     appendSection(r.actions,   root.value("actions"),   "[]");

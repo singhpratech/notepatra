@@ -299,7 +299,7 @@
   <div class="topbar-left">
     <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">v0.1.96 docs</span>
+    <span class="tag">v0.1.97 docs</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
@@ -364,6 +364,8 @@
       <li><a href="#ai-data-analyst">Data Analyst Mode (v0.1.43)</a></li>
       <li><a href="#thinking-models">Thinking models</a></li>
       <li><a href="#vision-models">Vision models &amp; attachments</a></li>
+      <li><a href="#ai-interaction-log">AI Interaction Log</a></li>
+      <li><a href="#noter">Noter — meeting notes</a></li>
     </ul>
 
     <div class="section-label">Reference</div>
@@ -399,7 +401,7 @@
   <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock and the model gets 5 native tools — <code>read_file</code>, <code>list_dir</code>, <code>search</code>, <code>write_file</code>, <code>apply_diff</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
 
   <div class="callout info">
-    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.96 (May 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
+    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.97 (May 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
   </div>
 
   <h2 id="install" class="anchor-target">Install</h2>
@@ -614,7 +616,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
     <li><strong>macOS:</strong> <code>~/Library/Application Support/notepatra/plugins/&lt;pack&gt;/</code></li>
     <li><strong>Windows:</strong> <code>%APPDATA%/notepatra/plugins/&lt;pack&gt;/</code></li>
   </ul>
-  <p>As of v0.1.96, the Full flavor ships the <em>charts</em> pack bundled (it's the same binary — the pack is "installed" if WebEngine was linked at compile time). v0.1.66+ adds in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation so packs can be added without swapping binaries.</p>
+  <p>As of v0.1.97, the Full flavor ships the <em>charts</em> pack bundled (it's the same binary — the pack is "installed" if WebEngine was linked at compile time). v0.1.66+ adds in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation so packs can be added without swapping binaries.</p>
 
   <table>
     <thead>
@@ -631,7 +633,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
         <td><code>pdf</code></td>
         <td>≈ 12 MB</td>
         <td>Rasterises PDFs to PNG pages so vision-capable AI models can read them. Powered by Poppler-Qt5.</td>
-        <td>Still queued (not shipped as of v0.1.96). Until then, dragging a PDF into the AI dock shows the "use a vision-capable model" error bubble.</td>
+        <td>Still queued (not shipped as of v0.1.97). Until then, dragging a PDF into the AI dock shows the "use a vision-capable model" error bubble.</td>
       </tr>
     </tbody>
   </table>
@@ -676,7 +678,7 @@ make -j$(nproc)
     <li><strong>Do I lose anything by staying on Lite?</strong> No — every editor / lexer / AI / Git / data / plugin feature works identically. The only difference is that <code>generate_chart</code> tool results paint as a "Charts Pack required" card instead of as an inline rendered chart. You can still see the spec via [View JSON instead] and copy it elsewhere.</li>
     <li><strong>Can I downgrade Full → Lite?</strong> Yes. Just download the Lite tarball and replace the binary. Your config / chat history / connections are preserved (they live under <code>~/.config/notepatra</code>, not inside the binary).</li>
     <li><strong>Will the chart spec data be lost if I'm on Lite?</strong> No — the AI's tool result is preserved in your chat history just like any other tool result. If you upgrade to Full later, opening the same chat shows the rendered chart for those past results.</li>
-    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.96. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
+    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.97. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
   </ul>
 
   <h2 id="ui-overview" class="anchor-target">UI overview</h2>
@@ -716,7 +718,7 @@ make -j$(nproc)
   <p><strong>Load-path optimisations (v0.1.88).</strong> Opening a 118 MB UTF-8 file used to take ~1.5 s and peak ~700 MB RAM; v0.1.88 brings it to ~600 ms and ~360 MB. Three fixes in <code>rust-core/src/file_io.rs</code>: a UTF-8 fast path validates with <code>std::str::from_utf8</code> (SIMD-accelerated) and skips the <code>UTF_8.decode()</code> allocation entirely when the mmap bytes are already valid UTF-8; EOL detection is bounded to the first 64 KB instead of two full-text scans; and the Rust&rarr;C FFI handoff now delivers a length-prefixed <code>Box&lt;[u8]&gt;</code> through a new <code>npc_free_file_text(ptr, len)</code> entry-point instead of the old NUL-terminated <code>CString</code> round-trip — saves ~118 MB of heap on a 118 MB file. UTF-16 / UTF-32 / Windows-1252 paths unchanged.</p>
 
   <h2 id="languages-lexers" class="anchor-target">Languages &amp; lexers</h2>
-  <p>Notepatra ships <strong>92 language lexers</strong> as of v0.1.96 (covering 226 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
+  <p>Notepatra ships <strong>92 language lexers</strong> as of v0.1.97 (covering 226 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
   <p><strong>Core (Qt-bundled):</strong> Python, JavaScript/TypeScript/JSX, CoffeeScript, C/C++, C#, D, Java/Kotlin, HTML/PHP, CSS/SCSS/LESS, XML, JSON, SQL (ANSI / T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite), Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Matlab, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile.</p>
   <p><strong>v0.1.55 additions (32 dedicated lexers, keyword tables verified against official specs):</strong> Dart · Solidity · Zig · Vala · Hack · Julia · R · Protobuf · F# · HCL/Terraform · Thrift · GraphQL · GDScript · Nim · Cython · Mojo · Crystal · Elixir · Scala · Groovy · Apex · Jinja · Liquid · Twig · Dockerfile · Fish · Nushell · TOML · DotEnv · Gitignore · JSON5 · BibTeX. Each ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing — <code>.dart</code>, <code>.zig</code>, <code>.jl</code>, <code>.toml</code>, <code>.ex</code>, <code>Cargo.toml</code>, <code>Dockerfile</code>, <code>.gitignore</code>, <code>.env</code>, <code>.fish</code>, <code>.json5</code>, <code>.tf</code>, etc. now point at their dedicated lexers instead of falling back to the closest-fit generic.</p>
 
@@ -1623,6 +1625,31 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
       <tr><td>Anything else</td><td>Attempted as text (UTF-8).</td></tr>
     </tbody>
   </table>
+
+  <h2 id="ai-interaction-log" class="anchor-target">AI Interaction Log</h2>
+  <p><strong>Audit exactly what your AI did — transparency, not just a promise.</strong> Every request <em>and</em> response to any AI backend is recorded to a <strong>local SQLite log</strong> you can open and read. That covers both local backends (Ollama, llama.cpp) and cloud backends (OpenRouter, OpenAI, Azure OpenAI, Ollama Cloud), as well as Noter's AI <strong>Extract</strong>.</p>
+  <p>Each entry stores the <strong>timestamp</strong>, <strong>backend</strong>, <strong>model</strong>, the <strong>full prompt and response</strong>, <strong>token counts</strong>, and <strong>latency</strong>. Open it from <strong>Features → AI Interaction Log…</strong></p>
+
+  <div class="callout success">
+    <strong>🛡 Privacy by design.</strong> The log lives entirely on your machine — there is <strong>zero network egress</strong>. Before anything is written, a <strong>credential scrubber</strong> masks API keys, bearer tokens, and PEM private keys. Entries <strong>auto-prune after 7 days</strong>. The feature is <strong>on by default</strong> with a <strong>one-click opt-out</strong> in Settings.
+  </div>
+
+  <h3>What the viewer gives you</h3>
+  <ul>
+    <li><strong>Filters</strong> — narrow the list by backend, model, or text.</li>
+    <li><strong>Export JSON</strong> — dump the (scrubbed) entries for your own records or review.</li>
+    <li><strong>Prune now</strong> — clear the log immediately rather than waiting for the 7-day window.</li>
+  </ul>
+  <p>The underlying database is a plain SQLite file under your per-user config directory (<code>ai-logs/interactions.db</code>) — nothing proprietary, nothing remote. You can audit it with any SQLite tool, not just the in-app viewer.</p>
+
+  <h2 id="noter" class="anchor-target">Noter — meeting notes</h2>
+  <p><strong>Noter</strong> is a local-first meeting-notes workspace built into Notepatra. It uses a simple two-pane layout — a <strong>notes list</strong> on the left and an <strong>editor</strong> on the right. There are <strong>no accounts and no bots</strong>: your notes are saved as plain files under <code>~/Documents/Notepatra/Noter/</code>, so they're yours to read, back up, or sync however you like.</p>
+
+  <h3>AI Extract</h3>
+  <p>Press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>E</kbd> to run <strong>Extract</strong> on the current note. It pulls a concise <strong>summary</strong> plus four structured lists — <strong>action items</strong>, <strong>decisions</strong>, <strong>questions</strong>, and <strong>risks</strong> — and writes the summary back into the note. Extract also <strong>schedules real reminders</strong>, parsing natural-language times such as "10am tomorrow" or "next Monday at 3pm" into actual due dates. If a reminder it's about to create already exists, it <strong>flags the duplicate</strong> rather than scheduling it twice. (Like every AI action in Notepatra, an Extract run is recorded in the <a href="#ai-interaction-log">AI Interaction Log</a>.)</p>
+
+  <h3>Reminders</h3>
+  <p>Set a reminder on any note — or straight from an Extract run — and it appears in a central <strong>Reminders</strong> list in the Noter sidebar, grouped into <strong>Overdue</strong>, <strong>Today</strong>, <strong>This week</strong>, and <strong>Later</strong>. Click a reminder to open the note it's bound to; right-click to <strong>reschedule</strong> or <strong>delete</strong> it. A <strong>desktop notification</strong> fires at the due time.</p>
 
   <!-- ══════════════ Reference ══════════════ -->
 

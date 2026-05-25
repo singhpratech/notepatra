@@ -56,9 +56,43 @@ static void test_build_prompt() {
     const QString prompt = NoterSweepPrompt::build(html, "Roadmap sync");
     EXPECT("prompt is non-empty", !prompt.isEmpty());
     EXPECT("prompt has schema",   prompt.contains("\"decisions\""));
-    EXPECT("prompt has NOW iso",  prompt.contains("NOW=20"));   // "20XX-..."
+    EXPECT("prompt has NOW iso",  prompt.contains("NOW is 20"));   // "NOW is 20XX-..."
+    EXPECT("prompt asks for a summary field", prompt.contains("\"summary\""));
+    EXPECT("prompt gives a concrete due example", prompt.contains("T10:00"));
     EXPECT("prompt has meeting title", prompt.contains("Roadmap sync"));
     EXPECT("prompt has split sentinel (U+001F)", prompt.contains(QChar(0x1F)));
+}
+
+// v0.1.98 — summary field + LOCAL wall-clock due handling. The old parser
+// force-set no-offset times to UTC, which shifted "10am tomorrow" by the
+// user's offset (showed/fired at the wrong hour). Local must stay local; a
+// Z/offset instant must convert to the right local wall-clock.
+static void test_parse_summary_and_local_date() {
+    std::printf("test_parse_summary_and_local_date\n");
+    const QString reply = R"({
+        "summary": "Team agreed to ship the build and follow up with Priya.",
+        "actions": [{"text": "Ship the build", "owner": "@prateek", "due": "2026-05-25T10:00"}],
+        "decisions": [], "questions": [], "risks": []
+    })";
+    auto r = NoterSweepPrompt::parse(reply);
+    EXPECT("summary parsed", r.summary.startsWith("Team agreed"));
+    EXPECT("local-date: 1 action", r.actions.size() == 1);
+    const QDateTime due = r.actions.value(0).dueAt;
+    EXPECT("local-date: due valid", due.isValid());
+    EXPECT("local-date: kept LOCAL (not forced UTC)", due.timeSpec() == Qt::LocalTime);
+    EXPECT("local-date: wall-clock hour stays 10", due.time().hour() == 10);
+    EXPECT("local-date: day is 25", due.date().day() == 25);
+
+    const QString replyZ =
+        R"({"actions":[{"text":"x","due":"2026-05-25T08:00:00Z"}],)"
+        R"("decisions":[],"questions":[],"risks":[]})";
+    auto rz = NoterSweepPrompt::parse(replyZ);
+    EXPECT("z-date: 1 action", rz.actions.size() == 1);
+    const QDateTime expected =
+        QDateTime::fromString(QStringLiteral("2026-05-25T08:00:00Z"), Qt::ISODate)
+            .toLocalTime();
+    EXPECT("z-date: converted to correct local instant",
+           rz.actions.value(0).dueAt == expected);
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -161,6 +195,7 @@ int main(int argc, char *argv[]) {
     test_parse_missing_fields();
     test_parse_malformed();
     test_parse_with_think_block();
+    test_parse_summary_and_local_date();
 
     std::printf("\n[%d passed, %d failed]\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
