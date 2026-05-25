@@ -55,6 +55,7 @@
 #include <QTreeWidgetItem>
 #include <QMessageBox>
 #include <QMouseEvent>
+#include <QPalette>
 #include <QShowEvent>
 #include <QRegExp>
 #include <QRegularExpression>
@@ -101,12 +102,19 @@ QString sidebarStyle() {
         "  text-align: left; padding: 9px 14px; font-size: 13px; color: #525252;"
         "  border-top: 1px solid %3; }"
         "QPushButton#noterTodosBtn:hover { background: #ede9dc; }"
-        "QListWidget#noterMeetingList { background: %1; border: none;"
-        "  font-size: 13px; outline: none; }"
-        "QListWidget#noterMeetingList::item { padding: 5px 14px 5px 22px; color: #525252; }"
-        "QListWidget#noterMeetingList::item:hover { background: #ede9dc; }"
-        "QListWidget#noterMeetingList::item:selected { background: %4;"
-        "  color: #0a0d12; border-left: 3px solid %2; padding-left: 19px; }"
+        // The sidebar is a QTreeWidget#noterSidebarTree (the old
+        // QListWidget#noterMeetingList shape is gone). An item-view paints
+        // its viewport from its OWN palette Base role — the parent
+        // QWidget#noterSidebar background does NOT reach it — so without an
+        // explicit background here the tree fell through to the system Base
+        // and rendered dark-on-macOS while the rest of the panel stayed
+        // light. palette Base is also pinned in code (buildSidebar) as a
+        // belt-and-braces fallback for styles that bypass this selector.
+        "QTreeWidget#noterSidebarTree, QTreeView#noterSidebarTree { background: %1;"
+        "  border: none; font-size: 13px; outline: none; color: #525252; }"
+        "QTreeWidget#noterSidebarTree::item { padding: 5px 6px; color: #525252; }"
+        "QTreeWidget#noterSidebarTree::item:hover { background: #ede9dc; }"
+        "QTreeWidget#noterSidebarTree::item:selected { background: %4; color: #0a0d12; }"
         // v0.1.95+ — QMenu must be styled inside the panel's QSS so the
         // right-click context menus aren't dark-on-dark (per the memory
         // rule feedback_qmenu_cascade_through_widget_qss).
@@ -805,6 +813,17 @@ QWidget *NotesPanel::buildSidebar() {
     m_sidebarTree->setSelectionMode(QAbstractItemView::SingleSelection);
     m_sidebarTree->setContextMenuPolicy(Qt::CustomContextMenu);
     m_sidebarTree->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    // Pin the viewport palette to the light sidebar colour. The QSS rule in
+    // sidebarStyle() is the primary fix; this guarantees a light Base even if
+    // a platform style bypasses the stylesheet selector (the macOS dark
+    // item-view-viewport bug). Exactly one mechanism is ever active and both
+    // resolve to the same light colour.
+    {
+        QPalette tp = m_sidebarTree->palette();
+        tp.setColor(QPalette::Base, QColor(kSidebarBg));
+        tp.setColor(QPalette::Text, QColor(QStringLiteral("#525252")));
+        m_sidebarTree->setPalette(tp);
+    }
     v->addWidget(m_sidebarTree, 1);
     // v0.1.97 fix — single click SELECTS (native), double click / Enter
     // OPENS. The previous build wired itemClicked (single click) to open,

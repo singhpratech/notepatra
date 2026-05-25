@@ -7,6 +7,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.99] — 2026-05-25
+
+**Noter sidebar renders light on macOS.** The Notes/Reminders/Trash tree was dark-on-macOS while the rest of the panel was light — a stale stylesheet selector after the list→tree migration.
+
+### Fixed
+- **Noter sidebar dark background on macOS** — `sidebarStyle()` still carried the old `QListWidget#noterMeetingList` rules and had none for the migrated `QTreeWidget#noterSidebarTree`. A Qt item-view paints its viewport from its own `QPalette::Base`, which the parent panel's QSS `background` doesn't reach, so the unstyled tree fell through to the dark system base on macOS (Linux/Windows default to a light base, so the bug never showed there). Fix: `QTreeWidget#noterSidebarTree` QSS rules (light `#f3f1ea` background, dark text, hover, amber selection) **plus** a `QPalette::Base`/`Text` pin in `buildSidebar()` as a belt-and-braces fallback. `::branch` left unstyled so the native disclosure arrows survive.
+
+### Tests
+- 47/47 ctest. `test_notes_panel_widget` green; stylesheet parses without warnings.
+
+---
+
 ## [0.1.98] — 2026-05-25
 
 **Windows in-app updater fixed.** The v0.1.96 EOL-OpenSSL gate was a misdiagnosis — it disabled Check for Updates for every Windows user even though the bundled OpenSSL 1.1.1w talks to GitHub's TLS fine. Removed.
