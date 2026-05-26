@@ -1,0 +1,19 @@
+<!DOCTYPE RCC><RCC version="1.0">
+<qresource prefix="/diagram">
+    <file alias="diagram.html">diagram.html</file>
+    <file alias="render.js">render.js</file>
+    <file alias="lib/dagre.min.js">lib/dagre.min.js</file>
+    <file alias="icons/chart.svg">icons/chart.svg</file>
+    <file alias="icons/cloud.svg">icons/cloud.svg</file>
+    <file alias="icons/database.svg">icons/database.svg</file>
+    <file alias="icons/decision.svg">icons/decision.svg</file>
+    <file alias="icons/document.svg">icons/document.svg</file>
+    <file alias="icons/gear.svg">icons/gear.svg</file>
+    <file alias="icons/hospital.svg">icons/hospital.svg</file>
+    <file alias="icons/patient.svg">icons/patient.svg</file>
+    <file alias="icons/process.svg">icons/process.svg</file>
+    <file alias="icons/server.svg">icons/server.svg</file>
+    <file alias="icons/table.svg">icons/table.svg</file>
+    <file alias="icons/user.svg">icons/user.svg</file>
+</qresource>
+</RCC>

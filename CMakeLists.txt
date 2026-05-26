@@ -1,9 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.101 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.102 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)   # compile .qrc in target SOURCES (icons/vega/diagram render layer)
 option(BUILD_TESTING "Build Notepatra regression tests" OFF)
 option(BUILD_LEXER_TEST "Backward-compatible alias for BUILD_TESTING" OFF)
 # v0.1.64 — Lite mode by default. The bare binary stays ~9 MB and the
@@ -204,6 +205,12 @@ file(GLOB SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/*.cpp")
 file(GLOB CHART_SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/charts/*.cpp")
 list(APPEND SOURCES ${CHART_SOURCES})
 
+# .npd diagram subsystem. npd_parser.cpp is pure C++ (Qt Core only);
+# diagram_view.cpp is #ifdef'd on NOTEPATRA_WITH_WEBENGINE with a QLabel
+# stub for the lite binary — same glob pattern as the charts subsystem above.
+file(GLOB DIAGRAM_SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/diagram/*.cpp")
+list(APPEND SOURCES ${DIAGRAM_SOURCES})
+
 # v0.1.70 — bundle 14 monochrome SVG icons used by AIPanel welcome cards,
 # attachment chips, lock toggles, etc. Replaces the previous emoji glyphs
 # (🤖 🌿 🔌 🖼 …) which rendered as tofu on Linux systems without color-
@@ -264,6 +271,8 @@ set(HEADERS
     src/gutter_hunk_popup.h
     # v0.1.63 — Vega-Lite chart renderer (Data Analyst slice).
     src/charts/vega_chart_renderer.h
+    # .npd diagram view host (Q_OBJECT — WebEngine in Full, QLabel stub in Lite).
+    src/diagram/diagram_view.h
     # v0.1.64 — Lite-mode plugin discovery.
     src/plugin_loader.h
 )
@@ -357,7 +366,7 @@ endif()
 # WebEngine header, so the link skip is required as well as the
 # compile define (see src/charts/vega_chart_renderer.cpp), so the stub
 # build neither links nor includes any WebEngine header.
-target_include_directories(${EXE_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src/charts)
+target_include_directories(${EXE_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src/charts ${CMAKE_SOURCE_DIR}/src/diagram)
 if(NOTEPATRA_WITH_WEBENGINE)
     target_compile_definitions(${EXE_NAME} PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
     target_link_libraries(${EXE_NAME} PRIVATE Qt5::WebEngineWidgets Qt5::WebChannel)
@@ -367,6 +376,12 @@ if(NOTEPATRA_WITH_WEBENGINE)
     # build doesn't include the WebEngine renderer at all.
     if(EXISTS "${CMAKE_SOURCE_DIR}/resources/vega.qrc")
         target_sources(${EXE_NAME} PRIVATE resources/vega.qrc)
+    endif()
+    # .npd diagram render layer — dagre + render.js + diagram.html + icons,
+    # served from qrc:///diagram/. Full flavor only (DiagramView's stub arm
+    # never touches the qrc), same offline-bundle rationale as vega.qrc.
+    if(EXISTS "${CMAKE_SOURCE_DIR}/resources/diagram/diagram.qrc")
+        target_sources(${EXE_NAME} PRIVATE resources/diagram/diagram.qrc)
     endif()
     # v0.1.95 — Noter WebChannel JS resource removed alongside the
     # WebEngine path (notes_bridge / notes_editor) when the feature was
@@ -483,6 +498,30 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_terminal_ansi.cpp"
     notepatra_add_qt_test(test_terminal_ansi)
     set_tests_properties(test_terminal_ansi PROPERTIES LABELS "smoke;terminal;v0125")
     message(STATUS "Regression test enabled — target: test_terminal_ansi")
+endif()
+
+# ── .npd diagram parser (diagram subsystem; pure C++, no WebEngine) ──
+# The parser is the source-of-truth engine the diagram canvas projects from,
+# so it's covered here independently of the Full-flavor WebEngine renderer.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_npd_parser.cpp")
+    add_executable(test_npd_parser test_npd_parser.cpp src/diagram/npd_parser.cpp)
+    target_include_directories(test_npd_parser PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/diagram)
+    target_link_libraries(test_npd_parser PRIVATE Qt5::Core)
+    notepatra_add_qt_test(test_npd_parser)
+    set_tests_properties(test_npd_parser PROPERTIES LABELS "unit;diagram")
+    message(STATUS "Regression test enabled — target: test_npd_parser")
+endif()
+
+# ── Mermaid → .npd importer test (pure; round-trips through Npd::parse) ──
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mermaid_import.cpp")
+    add_executable(test_mermaid_import test_mermaid_import.cpp
+        src/diagram/mermaid_import.cpp src/diagram/npd_parser.cpp)
+    target_include_directories(test_mermaid_import PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/diagram)
+    target_link_libraries(test_mermaid_import PRIVATE Qt5::Core)
+    notepatra_add_qt_test(test_mermaid_import)
+    set_tests_properties(test_mermaid_import PROPERTIES LABELS "unit;diagram")
 endif()
 
 # v0.1.78 — wire rust-core's cargo unit tests into ctest so the encoding /
@@ -787,6 +826,42 @@ if(NOTEPATRA_BUILD_TESTS AND NOTEPATRA_WITH_WEBENGINE
     target_compile_definitions(test_notes_export PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
     add_test(NAME test_notes_export COMMAND $<TARGET_FILE:test_notes_export>)
     set_tests_properties(test_notes_export PROPERTIES LABELS "unit;noter;export")
+endif()
+
+# ── Diagram — WebEngine render + export test (Full edition only) ──
+# Brings up the real diagram canvas (qrc:///diagram/diagram.html + render.js +
+# dagre) offscreen, pushes known .npd, and proves the SVG render + PNG export.
+if(NOTEPATRA_BUILD_TESTS AND NOTEPATRA_WITH_WEBENGINE
+   AND EXISTS "${CMAKE_SOURCE_DIR}/test_diagram_view.cpp")
+    add_executable(test_diagram_view
+        test_diagram_view.cpp
+        src/diagram/diagram_view.cpp
+        src/diagram/npd_parser.cpp
+        resources/diagram/diagram.qrc
+    )
+    target_include_directories(test_diagram_view PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/diagram)
+    target_link_libraries(test_diagram_view PRIVATE
+        Qt5::Core Qt5::Widgets Qt5::WebEngineWidgets Qt5::Test)
+    target_compile_definitions(test_diagram_view PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+    add_test(NAME test_diagram_view COMMAND $<TARGET_FILE:test_diagram_view>)
+    set_tests_properties(test_diagram_view PROPERTIES LABELS "integration;diagram;webengine")
+endif()
+
+# ── npd_render — offscreen .npd → image CLI (Full edition; dev/docs utility) ──
+if(NOTEPATRA_BUILD_TESTS AND NOTEPATRA_WITH_WEBENGINE
+   AND EXISTS "${CMAKE_SOURCE_DIR}/npd_render.cpp")
+    add_executable(npd_render
+        npd_render.cpp
+        src/diagram/diagram_view.cpp
+        src/diagram/npd_parser.cpp
+        resources/diagram/diagram.qrc
+    )
+    target_include_directories(npd_render PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/diagram)
+    target_link_libraries(npd_render PRIVATE
+        Qt5::Core Qt5::Widgets Qt5::WebEngineWidgets Qt5::Test)
+    target_compile_definitions(npd_render PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
 endif()
 
 # ── Palette verification test ──

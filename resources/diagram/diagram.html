@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!--
+  Notepatra Diagram shell.
+
+  Loads the vendored dagre layout lib + render.js from the Qt resource
+  bundle (qrc:///diagram/...), presents a full-viewport SVG canvas with a
+  light "paper" look, and waits for the C++ side to call window.npdRender().
+
+  The base URL is set to qrc:///  by the host QWebEngineView (see how the
+  vega shell mounts in src/charts/vega_chart_renderer.cpp) so the relative
+  <script src> tags below resolve against the bundle.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Notepatra Diagram</title>
+  <style>
+    :root {
+      --paper: #fbfaf7;
+      --paper-line: #ece7dd;
+      --ink: #1f2733;
+      --muted: #8b8678;
+    }
+    html, body {
+      margin: 0; padding: 0; height: 100%; width: 100%;
+      overflow: hidden;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    /* Subtle paper grid behind the SVG — the SVG's own #npd-bg paints over
+       this in the palette colour, then the diagram floats on top. The grid
+       only peeks through at the edges, giving a drafting-paper feel. */
+    #npd-canvas {
+      position: absolute; inset: 0;
+      background-color: var(--paper);
+      background-image:
+        linear-gradient(var(--paper-line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--paper-line) 1px, transparent 1px);
+      background-size: 24px 24px;
+      background-position: -1px -1px;
+    }
+    #npd-svg { display: block; width: 100%; height: 100%; }
+
+    /* Empty-state hint, hidden once a diagram renders. */
+    #npd-empty {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--muted); font-size: 14px; pointer-events: none;
+      text-align: center; padding: 24px;
+    }
+    #npd-empty.hidden { display: none; }
+
+    /* Toolbar hint (fit / zoom) — minimal, paper-toned. */
+    #npd-hint {
+      position: fixed; right: 12px; bottom: 10px;
+      font-size: 11px; color: var(--muted);
+      background: rgba(255,255,255,0.7);
+      border: 1px solid var(--paper-line);
+      border-radius: 6px; padding: 4px 8px;
+      pointer-events: none; user-select: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="npd-canvas"></div>
+  <div id="npd-empty">Diagram canvas ready — waiting for content…</div>
+  <div id="npd-hint">drag to pan · scroll to zoom · double-click to fit</div>
+
+  <!-- Vendored layout engine (no runtime CDN). -->
+  <script src="qrc:///diagram/lib/dagre.min.js"></script>
+  <!-- The renderer (defines window.npdRender / npdFit / _npd_export_*). -->
+  <script src="qrc:///diagram/render.js"></script>
+
+  <script>
+    // Wrap npdRender so the empty-state hint disappears on first render and
+    // a render that arrived *before* this script ran is replayed.
+    (function () {
+      var realRender = window.npdRender;
+      function hideEmpty() {
+        var e = document.getElementById("npd-empty");
+        if (e) e.classList.add("hidden");
+      }
+      if (typeof realRender === "function") {
+        window.npdRender = function (payload) {
+          hideEmpty();
+          return realRender.call(window, payload);
+        };
+      }
+      // If the C++ side stashed a payload before render.js finished loading
+      // (window._npd_pending), render it now.
+      if (window._npd_pending != null && typeof window.npdRender === "function") {
+        try { window.npdRender(window._npd_pending); } catch (e) {}
+        window._npd_pending = null;
+      }
+      // Signal readiness so the host can poll a single flag before driving
+      // npdRender() — mirrors the vega shell's _notepatra_chartReady pattern.
+      window._npd_ready = (typeof window.npdRender === "function" &&
+                           typeof window.dagre !== "undefined");
+    })();
+  </script>
+</body>
+</html>

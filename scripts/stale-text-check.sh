@@ -311,10 +311,12 @@ stale_backend_pat='LM Studio|vLLM|KoboldCpp|llamafile|text-generation-webui'
 # or followed by another backend program name).
 jan_context_pat='(Ollama|llama\.cpp|LM Studio|vLLM|KoboldCpp)[^<>]{0,80}\bJan\b|\bJan\b[^<>]{0,80}(Ollama|llama\.cpp|LM Studio|vLLM|KoboldCpp)'
 
-# README historical-changelog block (release-history table rows). Skip
-# lines 580–650 — those describe past releases factually and should not
-# be rewritten.
-readme_filtered=$(awk 'NR < 580 || NR > 650 { print NR":"$0 }' README.md)
+# README historical-changelog block (release-history table rows). Skip every
+# release-table row (any line linking releases/tag/v0.1.X) — those describe
+# past releases factually and stay as-is. Pattern-based (not a hardcoded line
+# range) so adding a new release row can't silently un-skip an older one — the
+# v0.1.35 row drifted past a hardcoded 650 bound when the v0.1.102 row landed.
+readme_filtered=$(grep -nvE 'releases/tag/v0\.1\.' README.md)
 
 stale_hits=$(
     grep -nE "$stale_backend_pat" docs/index.html docs/docs.html docs/enterprise.html 2>/dev/null || true

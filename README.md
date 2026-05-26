@@ -3,7 +3,7 @@
   <h1 align="center"><a href="https://notepatra.org" style="text-decoration:none;color:inherit;">Notepatra</a></h1>
   <p align="center"><em>The first code editor built for the AI era.</em></p>
   <p align="center">
-    <strong>C++ + Rust</strong> · <strong>under-10 MB bare native executable</strong> · <strong>Zero Electron</strong> · <strong>226 file types</strong> · <strong>92 language lexers</strong> · <strong>Local AI formatters</strong>
+    <strong>C++ + Rust</strong> · <strong>under-12 MB bare native executable</strong> · <strong>Zero Electron</strong> · <strong>226 file types</strong> · <strong>92 language lexers</strong> · <strong>Local AI formatters</strong>
   </p>
   <p align="center">
     <a href="https://notepatra.org">Website</a> ·
@@ -47,7 +47,7 @@ Not a port. Not a wrapper. Something new — **for everyone**.
 
 I asked: **what would a small native code editor look like if it was built today, in 2026, when AI is part of every developer's workflow, and ran natively on Linux + macOS + Windows from one codebase?**
 
-The answer: a tiny native executable — under 10 MB bare (~9.7 MB on Linux x64) on every platform — with a Rust-powered core, Scintilla editing engine, and local-first AI integration (cloud backends optional). v0.1.101 downloads: 4.1 MB Linux x64 (tarball, Qt from the system), 27.5 MB on macOS (DMG with bundled Qt), 32.7–42.2 MB on Windows (MSI/zip/setup.exe with bundled Qt DLLs). An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your AI to figure it out — local by default, six cloud backends one click away when you want a frontier model. No telemetry. No subscription. No mandatory API key.
+The answer: a tiny native executable — under 12 MB bare (~11.5 MB on Linux x64) on every platform — with a Rust-powered core, Scintilla editing engine, and local-first AI integration (cloud backends optional). v0.1.102 downloads: 4.1 MB Linux x64 (tarball, Qt from the system), 27.5 MB on macOS (DMG with bundled Qt), 32.7–42.2 MB on Windows (MSI/zip/setup.exe with bundled Qt DLLs). An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your AI to figure it out — local by default, six cloud backends one click away when you want a frontier model. No telemetry. No subscription. No mandatory API key.
 
 Notepatra started on Linux — because that's where the gap was. But great tools shouldn't have borders. **Notepatra runs on Linux, Windows, and macOS.** Same codebase. Same features. No one gets left behind.
 
@@ -179,6 +179,13 @@ A local-first, two-pane meeting workspace (notes list · editor) — no accounts
 - **Extract** (`Ctrl+Alt+E`) runs your AI backend over the note and returns a **summary** plus **action items / decisions / questions / risks**. A task that mentions a time ("ship the build 10am tomorrow") comes back with that date/time pre-filled.
 - **Reminders** — set one on a note (right-click) or schedule action items straight from Extract; they all collect in a central **Reminders** list grouped *Overdue / Today / This week / Later*, with desktop notifications at the due time. Click to open the note, pencil to reschedule, ✕ to delete. Re-running Extract flags what's already scheduled so you never pile up duplicates.
 
+#### 📐 Diagram tool — flow / ER / system diagrams from text (`.npd`)
+
+A first-class diagramming surface (Full flavor), opened from the toolbar next to Noter. The tiny `.npd` text DSL is the **source of truth**; the canvas is a live projection of it (so undo/redo and version control just work).
+- **Create three ways** — **AI Generate** describes it in plain English and a local model writes the `.npd`, shown in a **review pane** before it touches the canvas (undo/redo after); or start from a Flow / ER / System **template**; or write `.npd` directly. **Import Mermaid** converts an existing flowchart.
+- **Rich visuals** — 5 shapes (pill / box / decision diamond / database cylinder / icon), 12 icons, directed + labelled + bidirectional arrows, label-overflow→hover, 5 palettes, infinite pan/zoom canvas.
+- **Export** — browser-native **PNG / WebP / JPEG / SVG / PDF / HTML**. A **Help** button has the full cheat-sheet; `samples/diagram_showcase.npd` shows every element; the `npd_render` CLI renders any `.npd` to an image headless.
+
 ### More Features
 
 | Feature | Shortcut |
@@ -246,7 +253,7 @@ A local-first, two-pane meeting workspace (notes list · editor) — no accounts
 **Why this hybrid?**
 - **C++** because Qt and QScintilla are C++ — zero friction for UI
 - **Rust** because file I/O, text processing, and parsing must never crash — Rust's ownership system guarantees memory safety
-- **Result**: the speed of C++, the safety of Rust. The bare executable is **under 10 MB** on every platform (~9.7 MB Linux x64, similar on macOS / Windows). Latest v0.1.101 download sizes: **4.1 MB** Linux x64 tar.gz · **3.9 MB** Linux ARM64 tar.gz · **27.5 MB** macOS DMG (with bundled Qt) · **42.2 MB** Windows MSI · **32.7 MB** Windows NSIS · **37.3 MB** Windows portable zip. _Installed footprint on Windows is ~75-85 MB after the MSI extracts bundled Qt + QScintilla DLLs — normal for any Qt-based installer._
+- **Result**: the speed of C++, the safety of Rust. The bare executable is **under 12 MB** on every platform (~11.5 MB Linux x64, similar on macOS / Windows). Latest v0.1.102 download sizes: **4.1 MB** Linux x64 tar.gz · **3.9 MB** Linux ARM64 tar.gz · **27.5 MB** macOS DMG (with bundled Qt) · **42.2 MB** Windows MSI · **32.7 MB** Windows NSIS · **37.3 MB** Windows portable zip. _Installed footprint on Windows is ~75-85 MB after the MSI extracts bundled Qt + QScintilla DLLs — normal for any Qt-based installer._
 
 ---
 
@@ -266,7 +273,7 @@ irm https://notepatra.org/install.ps1 | iex
 
 That's it. Auto-detects your OS, downloads the right binary, installs it, adds to PATH, creates shortcuts.
 
-### Or download manually — [Latest release: v0.1.101](https://github.com/singhpratech/notepatra/releases/latest)
+### Or download manually — [Latest release: v0.1.102](https://github.com/singhpratech/notepatra/releases/latest)
 
 | Platform | Download | Size | What's inside |
 |---|---|---|---|
@@ -279,7 +286,7 @@ That's it. Auto-detects your OS, downloads the right binary, installs it, adds t
 
 > ⚠ **Download size vs. installed size are different.** The numbers above are **download sizes** — the `.msi` / `.dmg` / `.tar.gz` files you grab from GitHub Releases. After install, the on-disk footprint is larger because the installer extracts the bundled Qt DLLs, QScintilla DLL, and Rust core library out of the compressed payload. **Typical installed size on Windows: ~75-85 MB.** Linux installs are still tiny (~10 MB on disk) because Qt5 comes from your distro repo, not the tarball. macOS Notepatra.app on disk is ~50-60 MB after `xattr` removal.
 
-**Why are the download sizes different?** Bare `notepatra` executable is **under 10 MB** on each platform (~9.7 MB Linux x64 — slightly smaller on Windows/macOS than on Linux because clang + MSVC emit denser code than gcc). On Linux, Qt5 is a standard system package (`apt install qtbase5-dev libqscintilla2-qt5-dev`), so the download is just the binary (~4.1 MB compressed). On macOS and Windows, Qt isn't pre-installed, so we bundle the Qt frameworks / DLLs alongside the executable for portability — same approach Krita, Kdenlive, and every cross-platform Qt app uses. Even with Qt bundled, Notepatra installs at 5–85 MB depending on platform vs 300+ MB for VS Code.
+**Why are the download sizes different?** Bare `notepatra` executable is **under 12 MB** on each platform (~11.5 MB Linux x64 — slightly smaller on Windows/macOS than on Linux because clang + MSVC emit denser code than gcc). On Linux, Qt5 is a standard system package (`apt install qtbase5-dev libqscintilla2-qt5-dev`), so the download is just the binary (~4.1 MB compressed). On macOS and Windows, Qt isn't pre-installed, so we bundle the Qt frameworks / DLLs alongside the executable for portability — same approach Krita, Kdenlive, and every cross-platform Qt app uses. Even with Qt bundled, Notepatra installs at 5–85 MB depending on platform vs 300+ MB for VS Code.
 
 > macOS Intel: not shipped pre-built. Apple stopped selling Intel Macs in 2023 and the GitHub Actions `macos-13` runner has been unreliable. Intel Mac users — `git clone` and run `./build.sh`. Builds in ~3 minutes.
 
@@ -289,11 +296,11 @@ For one-time-install-then-every-user-sees-it on a shared machine, or silent push
 
 | OS | Artefact | Silent admin install |
 |---|---|---|
-| 🪟 **Windows** | [`notepatra-x.x.x.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-0.1.101.msi /quiet` — installs to `C:\Program Files\Notepatra\`, adds system PATH, registers HKCR file associations, all-users Start Menu. WiX-built, MajorUpgrade-aware, SCCM-friendly. |
+| 🪟 **Windows** | [`notepatra-x.x.x.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-0.1.102.msi /quiet` — installs to `C:\Program Files\Notepatra\`, adds system PATH, registers HKCR file associations, all-users Start Menu. WiX-built, MajorUpgrade-aware, SCCM-friendly. |
 | 🍎 **macOS** | [`Notepatra.dmg`](https://github.com/singhpratech/notepatra/releases/latest) | Mount + `sudo cp -R "/Volumes/Notepatra/Notepatra.app" /Applications/` from a deployment script. Or open the DMG manually and drag to `/Applications` (admin password). Notarised + stapled. |
-| 🐧 **Debian / Ubuntu / Mint / Pop!_OS** (x64 + ARM64) | [`notepatra_0.1.101_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra_0.1.101_amd64.deb` — installs to `/opt/notepatra/` + symlink at `/usr/bin/notepatra`, hicolor icons, `.desktop` registration. ARM64: replace `amd64` → `arm64`. |
-| 🐧 **Fedora / RHEL / CentOS Stream / Rocky / Alma** (x64 + ARM64) | [`notepatra-0.1.101-1.x86_64.rpm`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo dnf install ./notepatra-0.1.101-1.x86_64.rpm` — same layout as the .deb. ARM64: replace `x86_64` → `aarch64`. Bundles QScintilla 2.14.1 alongside the binary because Fedora ships an incompatible packaging. |
-| 🐧 **Arch / openSUSE Tumbleweed / Manjaro / EndeavourOS / other glibc 2.38+** | [`Notepatra-0.1.101-x86_64.AppImage`](https://github.com/singhpratech/notepatra/releases/latest) | `chmod +x Notepatra-0.1.101-x86_64.AppImage && sudo cp Notepatra-0.1.101-x86_64.AppImage /opt/notepatra.AppImage && sudo ln -s /opt/notepatra.AppImage /usr/local/bin/notepatra`. Requires glibc 2.38+ (Ubuntu 24.04+, Fedora 40+, Arch, Tumbleweed). Older distros: use the .deb / .rpm. |
+| 🐧 **Debian / Ubuntu / Mint / Pop!_OS** (x64 + ARM64) | [`notepatra_0.1.102_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra_0.1.102_amd64.deb` — installs to `/opt/notepatra/` + symlink at `/usr/bin/notepatra`, hicolor icons, `.desktop` registration. ARM64: replace `amd64` → `arm64`. |
+| 🐧 **Fedora / RHEL / CentOS Stream / Rocky / Alma** (x64 + ARM64) | [`notepatra-0.1.102-1.x86_64.rpm`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo dnf install ./notepatra-0.1.102-1.x86_64.rpm` — same layout as the .deb. ARM64: replace `x86_64` → `aarch64`. Bundles QScintilla 2.14.1 alongside the binary because Fedora ships an incompatible packaging. |
+| 🐧 **Arch / openSUSE Tumbleweed / Manjaro / EndeavourOS / other glibc 2.38+** | [`Notepatra-0.1.102-x86_64.AppImage`](https://github.com/singhpratech/notepatra/releases/latest) | `chmod +x Notepatra-0.1.102-x86_64.AppImage && sudo cp Notepatra-0.1.102-x86_64.AppImage /opt/notepatra.AppImage && sudo ln -s /opt/notepatra.AppImage /usr/local/bin/notepatra`. Requires glibc 2.38+ (Ubuntu 24.04+, Fedora 40+, Arch, Tumbleweed). Older distros: use the .deb / .rpm. |
 
 > All artefacts ship with cosign `.sig` + `.pem` for keyless Sigstore verification and SLSA build provenance. See **[Verify your download](#verify-your-download)** below.
 
@@ -303,9 +310,9 @@ For teams that **can't or won't send code to public LLM endpoints** — regulate
 
 | OS | Artefact | Silent admin install |
 |---|---|---|
-| 🪟 **Windows** | [`notepatra-local-ai-0.1.101.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-local-ai-0.1.101.msi /quiet` — installs to `C:\Program Files\Notepatra Local AI\`, distinct UpgradeCode so SCCM treats it as its own product. Add/Remove Programs shows "Notepatra Local AI". |
-| 🐧 **Debian/Ubuntu x64** | [`notepatra-local-ai_0.1.101_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.101_amd64.deb` |
-| 🐧 **Debian/Ubuntu ARM64** | [`notepatra-local-ai_0.1.101_arm64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.101_arm64.deb` |
+| 🪟 **Windows** | [`notepatra-local-ai-0.1.102.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-local-ai-0.1.102.msi /quiet` — installs to `C:\Program Files\Notepatra Local AI\`, distinct UpgradeCode so SCCM treats it as its own product. Add/Remove Programs shows "Notepatra Local AI". |
+| 🐧 **Debian/Ubuntu x64** | [`notepatra-local-ai_0.1.102_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.102_amd64.deb` |
+| 🐧 **Debian/Ubuntu ARM64** | [`notepatra-local-ai_0.1.102_arm64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.102_arm64.deb` |
 
 **The binary physically cannot reach `api.openai.com`, `api.anthropic.com`, `openrouter.ai`, `api.mistral.ai`, `generativelanguage.googleapis.com`, or any other public LLM endpoint.** Every `QNetworkAccessManager` request goes through an allowlist that only accepts:
 
@@ -317,7 +324,7 @@ For teams that **can't or won't send code to public LLM endpoints** — regulate
 
 Local Ollama, local llama.cpp, self-hosted Ollama on the LAN, and any other OpenAI-compatible server you have installed locally or on your private network — **all continue to work** in the cloud-free build. Only public-cloud LLM endpoints are blocked. The cloud-URL paste box is stripped from the UI as well, so users can't even type a public host. Auditors can confirm by running `strings notepatra | grep -c openai.com` — zero hits.
 
-On Linux the two flavors share the same `notepatra` binary name on disk; `apt` Conflicts ensures only one of `notepatra` / `notepatra-local-ai` is installed at a time, swap transactionally with `sudo apt install ./notepatra-local-ai_0.1.101_amd64.deb`. On Windows the two MSIs are independent products (different UpgradeCode + ProductName + install dir) so they can coexist if needed; admins typically push one or the other based on policy. `notepatra --version` self-identifies the build: `Notepatra v0.1.101 (cloud-free / local-ai)` for the local-ai flavor, `Notepatra v0.1.101` for the regular flavor.
+On Linux the two flavors share the same `notepatra` binary name on disk; `apt` Conflicts ensures only one of `notepatra` / `notepatra-local-ai` is installed at a time, swap transactionally with `sudo apt install ./notepatra-local-ai_0.1.102_amd64.deb`. On Windows the two MSIs are independent products (different UpgradeCode + ProductName + install dir) so they can coexist if needed; admins typically push one or the other based on policy. `notepatra --version` self-identifies the build: `Notepatra v0.1.102 (cloud-free / local-ai)` for the local-ai flavor, `Notepatra v0.1.102` for the regular flavor.
 
 ### Verify your download
 
@@ -542,13 +549,13 @@ cl /LD myplugin.cpp /Fe:myplugin.dll
 | **Kate / Gedit** | ~30 MB | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✓ |
 | **Notepatra** | **4.1 / 27.5 / 42.2 MB** | ✓ C++/Rust | ✓ Ollama | ✓ regex + AI | ✓ Rust mmap | ✓ | ✓ | ✓ | ✓ GPL-3 |
 
-> *Notepatra download sizes are Linux x64 tar.gz / macOS DMG / Windows MSI from v0.1.101. Linux is just the binary (Qt is system-installed). macOS and Windows include bundled Qt. The bare `notepatra` executable inside is under 10 MB on every platform (Linux 9.7 MB, similar on macOS / Windows). Compressed download is much smaller because tar.gz / DMG / MSI all compress the binary plus shared libraries.*
+> *Notepatra download sizes are Linux x64 tar.gz / macOS DMG / Windows MSI from v0.1.102. Linux is just the binary (Qt is system-installed). macOS and Windows include bundled Qt. The bare `notepatra` executable inside is under 12 MB on every platform (Linux 11.5 MB, similar on macOS / Windows). Compressed download is much smaller because tar.gz / DMG / MSI all compress the binary plus shared libraries.*
 
 ---
 
 ## Tests
 
-Focused automated regression tests are wired through CMake + CTest and run in CI — **47 test suites** (`ctest`, 47/47 green), each with many assertions. A representative sample:
+Focused automated regression tests are wired through CMake + CTest and run in CI — **50 test suites** (`ctest`, 50/50 green), each with many assertions. A representative sample:
 
 - `test_lexers` — verifies every shipped QScintilla lexer produces real styling
 - `test_palette` — verifies the canonical 9-hue palette colors and bold/italic styles
@@ -579,6 +586,7 @@ Notepatra follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic 
 
 | Version | Date | Highlights |
 |---|---|---|
+| [**v0.1.102**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.102) | 2026-05-25 | **Diagrams — flow / ER / system from a text DSL, with AI generation, a live canvas, and PNG/SVG/PDF/HTML export.** New first-class diagram tool (Full flavor): the text-first `.npd` DSL is the source of truth and the canvas is a live projection. Create three ways — **AI Generate** (describe it → review the generated `.npd` → Insert), templates, or write `.npd` directly (plus **Import Mermaid**). 5 shapes, 12 icons, directed/labelled/bidirectional arrows, label-overflow→hover, 5 palettes, infinite pan/zoom. Toolbar button next to Noter + in-tool Help cheat-sheet + `samples/diagram_showcase.npd` + `npd_render` CLI. **Also fixed:** `CMAKE_AUTORCC` was never enabled, so `.qrc` resources (`vega.qrc` inline charts, `icons.qrc`, the diagram render layer) weren't bundling in Full builds — now corrected. 53/53 ctest pass. |
 | [**v0.1.101**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.101) | 2026-05-25 | **In-app updater finalizes even when a prior download is locked.** On macOS the update downloaded + verified, then failed with "Could not finalize the download file." `Updater::runUpdate()` moved the verified `~/Downloads/<name>.part` to `<name>` with `if (exists) remove(); rename();` but ignored the remove result — and on macOS a `.dmg` the updater previously `open`ed stays MOUNTED in Finder, which macOS won't let you delete, so `QFile::rename` then refused to overwrite it and every retry re-wedged. Fix: new `uniqueDestPath()` lands the file under a browser-style `<name> (1).dmg` when the destination can't be removed, plus a copy+remove fallback. Net improvement on all platforms. New `test_updater` cases cover the dedup for `.dmg`/`.tar.gz`/`.msi`/`.deb`/`.AppImage` (a version-dot edge case was caught + fixed pre-release). 47/47 ctest pass. |
 | [**v0.1.100**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.100) | 2026-05-25 | **🎉 100th release — window opens centred on Windows.** On a cold start / file-double-click the window could open with its title bar above the top of the screen, hiding the min/max/close buttons. Root cause: position was saved with `QWidget::x()`/`y()` (Qt FRAME coords, incl. the title bar) but restored with `setGeometry()` (CLIENT coords), so on Windows the title bar climbed up by its own height each launch until the controls left the screen; the ≥100 px on-screen clamp didn't catch a body-on-screen / title-bar-off-top window. Fix: new `centeredWindowRect()` helper — both restore sites (config + session) now centre on the **saved size** with a title-bar-height top margin instead of restoring the saved x/y. Maximized state + window size preserved; only on-screen position is dropped (always centred). Also confirmed (no change): the AI Interaction Log at `%APPDATA%\Notepatra\ai-logs\` persists across upgrades and survives uninstall (installers never touch `%APPDATA%`). 47/47 ctest pass. |
 | [**v0.1.99**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.99) | 2026-05-25 | **Noter sidebar renders light on macOS.** The Notes/Reminders/Trash tree drew on a dark background while the rest of the Noter panel stayed light — a stale stylesheet selector after the list→tree migration. `sidebarStyle()` still carried the old `QListWidget#noterMeetingList` rules and had none for the migrated `QTreeWidget#noterSidebarTree`; a Qt item-view paints its viewport from its own `QPalette::Base`, which the parent panel's QSS `background` doesn't reach, so the unstyled tree fell through to the dark system base on macOS (Linux/Windows default to a light base, so it never showed there). Fix: explicit `QTreeWidget#noterSidebarTree` light-background rules **plus** a `QPalette::Base`/`Text` pin in `buildSidebar()` as a belt-and-braces fallback; `::branch` left native so disclosure arrows survive. Cosmetic-only — Noter worked throughout. 47/47 ctest pass. |
