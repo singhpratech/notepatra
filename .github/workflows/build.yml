@@ -572,6 +572,251 @@ jobs:
           name: notepatra-macos-arm64
           path: build/Notepatra.dmg
 
+  # ─── v0.1.103: macOS Intel "Full" flavor (bundles QtWebEngine) ──────
+  # A NEW job (the arm64 job above stays untouched and Lite). Runs on the
+  # Intel macos-13 runner so everything — Rust core, QScintilla, Qt — is
+  # native x86_64 (no cross-compile). Qt5 + QtWebEngine come from aqt
+  # (install-qt-action); QScintilla comes from `brew install qscintilla2`
+  # which gives an x86_64 dylib on macos-13. macdeployqt bundles
+  # QtWebEngineCore.framework + Helpers/QtWebEngineProcess.app + the
+  # WebEngine Resources (.pak / icudtl.dat) when the binary links
+  # WebEngine, so the diagram tool + inline Vega-Lite charts render
+  # natively instead of the "preview needs the Full build" stub.
+  build-macos-full:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Install Qt5 + WebEngine (aqt)
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
+        with:
+          version: '5.15.2'
+          host: 'mac'
+          target: 'desktop'
+          arch: 'clang_64'
+          modules: 'qtcharts qtwebengine'
+          dir: '${{ runner.temp }}/Qt'
+
+      - name: Install QScintilla (brew, x86_64 on macos-13)
+        run: |
+          # macos-13 is an Intel runner, so brew's bottle is x86_64 — which
+          # matches the aqt clang_64 Qt and the native cargo build. aqt does
+          # not ship QScintilla, so we take brew's. (On Apple-silicon runners
+          # this would be arm64; that's why the arm job builds from source.)
+          brew install qscintilla2
+          echo "=== QScintilla brew artifacts ==="
+          find "$(brew --prefix)" -name "libqscintilla2_qt5*.dylib" 2>/dev/null
+          find "$(brew --prefix)" -name "qsciscintilla.h" 2>/dev/null
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable @ 2026-05-14
+
+      - name: Build Rust core
+        run: cd rust-core && cargo build --release
+
+      - name: Build C++ Full (WebEngine)
+        run: |
+          # Qt root = parent of the bin dir that holds qmake from aqt.
+          QMAKE=$(find "$RUNNER_TEMP/Qt" -name "qmake" -type f 2>/dev/null | grep -v Tools | head -1)
+          QT_PATH=$(dirname "$(dirname "$QMAKE")")
+          echo "Qt root (aqt): $QT_PATH"
+          export PATH="$QT_PATH/bin:$PATH"
+
+          BREW=$(brew --prefix)
+          QSC_LIB=$(find "$BREW" -name "libqscintilla2_qt5*.dylib" -type f 2>/dev/null | head -1)
+          QSC_HDR=$(find "$BREW" -name "qsciscintilla.h" 2>/dev/null | head -1)
+          QSC_INC=$(dirname "$(dirname "$QSC_HDR")")
+          [ -z "$QSC_LIB" ] && { echo "::error::libqscintilla2_qt5 dylib not found"; exit 1; }
+          [ -z "$QSC_HDR" ] && { echo "::error::qsciscintilla.h not found"; exit 1; }
+          echo "QScintilla lib: $QSC_LIB"
+          echo "QScintilla inc: $QSC_INC"
+
+          mkdir -p build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release \
+            -DNOTEPATRA_WITH_WEBENGINE=ON \
+            -DCMAKE_PREFIX_PATH="$QT_PATH;$QSC_INC" \
+            -DQSCINTILLA_INCLUDE="$QSC_INC" \
+            -DQSCINTILLA_LIB="$QSC_LIB"
+          make VERBOSE=1 -j"$(sysctl -n hw.ncpu)" 2>&1 | tail -200
+          ls -lh Notepatra.app/Contents/MacOS/notepatra
+          otool -L Notepatra.app/Contents/MacOS/notepatra | grep -i webengine | head -3 \
+            || echo "WARN: full build did not link WebEngine"
+
+      - name: Create DMG (full)
+        run: |
+          QMAKE=$(find "$RUNNER_TEMP/Qt" -name "qmake" -type f 2>/dev/null | grep -v Tools | head -1)
+          QT_PATH=$(dirname "$(dirname "$QMAKE")")
+          export PATH="$QT_PATH/bin:$PATH"
+          BREW=$(brew --prefix)
+
+          APP=build/Notepatra.app
+          FW="$APP/Contents/Frameworks"
+          mkdir -p "$FW"
+
+          # ─── Step 1: macdeployqt bundles Qt frameworks for the main binary.
+          # Because notepatra links WebEngine here, this ALSO bundles
+          # QtWebEngineCore.framework + Helpers/QtWebEngineProcess.app +
+          # the WebEngine Resources (.pak / icudtl.dat).
+          echo "=== macdeployqt ==="
+          macdeployqt "$APP"
+
+          # ─── Step 1b: Bundle OpenSSL 3 dylibs — REQUIRED for HTTPS.
+          # aqt's Qt5 on mac links system Secure Transport for TLS in some
+          # builds, but to match the arm job's portability guarantee we
+          # bundle Homebrew openssl@3 and rewrite refs to @rpath. If
+          # openssl@3 isn't present we warn rather than hard-fail (Full
+          # bundle's headline feature is chart rendering, not networking).
+          OPENSSL_PREFIX=$(brew --prefix openssl@3 2>/dev/null || echo "$BREW/opt/openssl@3")
+          echo "=== OpenSSL source: $OPENSSL_PREFIX ==="
+          for lib in libssl.3.dylib libcrypto.3.dylib; do
+            SRC="$OPENSSL_PREFIX/lib/$lib"
+            if [ ! -f "$SRC" ]; then
+              echo "::warning::$SRC missing — bundling skipped, HTTPS may use system TLS"
+              continue
+            fi
+            cp "$SRC" "$FW/$lib"
+            chmod u+w "$FW/$lib"
+            install_name_tool -id "@rpath/$lib" "$FW/$lib"
+            echo "  ✓ bundled $lib"
+          done
+          install_name_tool -change "$OPENSSL_PREFIX/lib/libcrypto.3.dylib" \
+            "@rpath/libcrypto.3.dylib" "$FW/libssl.3.dylib" 2>/dev/null || true
+          QTNET_BIN="$APP/Contents/Frameworks/QtNetwork.framework/Versions/5/QtNetwork"
+          if [ -f "$QTNET_BIN" ]; then
+            chmod u+w "$QTNET_BIN"
+            install_name_tool -change "$OPENSSL_PREFIX/lib/libssl.3.dylib" \
+              "@rpath/libssl.3.dylib" "$QTNET_BIN" 2>/dev/null || true
+            install_name_tool -change "$OPENSSL_PREFIX/lib/libcrypto.3.dylib" \
+              "@rpath/libcrypto.3.dylib" "$QTNET_BIN" 2>/dev/null || true
+            echo "  ✓ rewrote QtNetwork OpenSSL refs → @rpath"
+          fi
+
+          # ─── Step 2: Copy QScintilla dylib into the bundle + rewrite its
+          # load commands (macdeployqt doesn't know about it). Adapted for the
+          # brew x86_64 layout under $(brew --prefix).
+          QSC_SRC=$(find "$BREW" -name "libqscintilla2_qt5*.dylib" -type f 2>/dev/null | head -1)
+          if [ -z "$QSC_SRC" ]; then
+            echo "::error::QScintilla dylib not found — bundle would be unusable"
+            exit 1
+          fi
+          echo "QScintilla source: $QSC_SRC"
+          cp "$QSC_SRC" "$FW/libqscintilla2_qt5.15.dylib"
+          chmod u+w "$FW/libqscintilla2_qt5.15.dylib"
+          QSC_BUNDLED="$FW/libqscintilla2_qt5.15.dylib"
+          install_name_tool -id "@rpath/libqscintilla2_qt5.15.dylib" "$QSC_BUNDLED"
+
+          echo "=== Before rewrite ==="
+          otool -L "$QSC_BUNDLED"
+          otool -L "$QSC_BUNDLED" | tail -n +2 | awk '{print $1}' | while read -r DEP; do
+            case "$DEP" in
+              /opt/homebrew*|/usr/local*)
+                if echo "$DEP" | grep -q "\.framework/"; then
+                  FW_NAME=$(echo "$DEP" | sed -E 's|.*/([^/]+)\.framework/Versions/([^/]+)/.*|\1|')
+                  FW_VER=$(echo "$DEP"  | sed -E 's|.*/([^/]+)\.framework/Versions/([^/]+)/.*|\2|')
+                  NEW="@rpath/${FW_NAME}.framework/Versions/${FW_VER}/${FW_NAME}"
+                else
+                  NEW="@rpath/$(basename "$DEP")"
+                fi
+                echo "  rewrite: $DEP -> $NEW"
+                install_name_tool -change "$DEP" "$NEW" "$QSC_BUNDLED"
+                ;;
+            esac
+          done
+          echo "=== After rewrite ==="
+          otool -L "$QSC_BUNDLED"
+          codesign --force --sign - "$QSC_BUNDLED"
+
+          # ─── Step 2b: Force-copy QtPrintSupport.framework if macdeployqt
+          # skipped it (only libqscintilla2 links it). brew x86_64 layout.
+          if [ ! -d "$FW/QtPrintSupport.framework" ]; then
+            QTPS_SRC=$(find "$QT_PATH/lib" -maxdepth 1 -name "QtPrintSupport.framework" -type d 2>/dev/null | head -1)
+            if [ -n "$QTPS_SRC" ]; then
+              echo "=== Copying QtPrintSupport.framework (macdeployqt skipped it) ==="
+              cp -R "$QTPS_SRC" "$FW/"
+              QTPS_BIN="$FW/QtPrintSupport.framework/Versions/5/QtPrintSupport"
+              chmod u+w "$QTPS_BIN"
+              install_name_tool -id "@rpath/QtPrintSupport.framework/Versions/5/QtPrintSupport" "$QTPS_BIN"
+              otool -L "$QTPS_BIN" | tail -n +2 | awk '{print $1}' | while read -r DEP; do
+                case "$DEP" in
+                  /opt/homebrew*|/usr/local*)
+                    if echo "$DEP" | grep -q "\.framework/"; then
+                      FW_NAME=$(echo "$DEP" | sed -E 's|.*/([^/]+)\.framework/Versions/([^/]+)/.*|\1|')
+                      FW_VER=$(echo "$DEP"  | sed -E 's|.*/([^/]+)\.framework/Versions/([^/]+)/.*|\2|')
+                      NEW="@rpath/${FW_NAME}.framework/Versions/${FW_VER}/${FW_NAME}"
+                    else
+                      NEW="@rpath/$(basename "$DEP")"
+                    fi
+                    install_name_tool -change "$DEP" "$NEW" "$QTPS_BIN"
+                    ;;
+                esac
+              done
+              codesign --force --sign - "$QTPS_BIN"
+            fi
+          fi
+
+          # ─── Step 3: WebEngine verification — the whole point of the Full
+          # bundle. If macdeployqt didn't bundle QtWebEngineCore.framework,
+          # charts would show the stub on the user's Mac, so fail loudly.
+          if [ ! -d "$FW/QtWebEngineCore.framework" ]; then
+            echo "::error::QtWebEngineCore.framework missing from bundle — Full build would still show the chart stub"
+            echo "=== Frameworks dir ==="
+            ls -la "$FW"
+            exit 1
+          fi
+          echo "✓ QtWebEngineCore.framework present in bundle"
+
+          # ─── Step 4: Sign inner libs/frameworks/plugins, then the bundle
+          # last with entitlements + hardened runtime (Tahoe requirement).
+          ENTITLEMENTS="$GITHUB_WORKSPACE/resources/entitlements.plist"
+          if [ ! -f "$ENTITLEMENTS" ]; then
+            echo "::error::entitlements.plist missing — Tahoe launch will fail"
+            exit 1
+          fi
+          find "$APP/Contents/Frameworks" -type f \( -name "*.dylib" -o -name "*.so" \) 2>/dev/null | \
+            while read -r lib; do
+              codesign --force --sign - --options runtime --timestamp=none "$lib" 2>/dev/null || true
+            done
+          find "$APP/Contents/Frameworks" -type d -name "*.framework" 2>/dev/null | \
+            while read -r fw; do
+              codesign --force --sign - --options runtime --timestamp=none "$fw" 2>/dev/null || true
+            done
+          find "$APP/Contents/PlugIns" -type f -name "*.dylib" 2>/dev/null | \
+            while read -r plug; do
+              codesign --force --sign - --options runtime --timestamp=none "$plug" 2>/dev/null || true
+            done
+          codesign --force --deep --sign - \
+            --options runtime \
+            --entitlements "$ENTITLEMENTS" \
+            --timestamp=none \
+            "$APP"
+          codesign -v --verbose=4 "$APP" || {
+            echo "::error::codesign verification failed — Tahoe will reject this bundle"
+            exit 1
+          }
+          echo "✓ Bundle signed with hardened runtime + entitlements"
+
+          # ─── Step 5: Create the DMG (retry on hdiutil "Resource busy").
+          rm -f notepatra-macos-x64-full.dmg
+          for attempt in 1 2 3; do
+            if hdiutil create -volname "Notepatra" -srcfolder "$APP" -ov \
+                              -format UDZO -nospotlight notepatra-macos-x64-full.dmg; then
+              echo "✓ DMG built on attempt $attempt"
+              break
+            fi
+            echo "hdiutil create failed (attempt $attempt) — detaching stale volumes and retrying"
+            hdiutil detach "/Volumes/Notepatra" -force 2>/dev/null || true
+            sleep $((attempt * 3))
+            if [ "$attempt" = "3" ]; then
+              echo "::error::hdiutil create failed after 3 attempts"; exit 1
+            fi
+          done
+
+      - name: Upload DMG (full)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: notepatra-macos-x64-full
+          path: notepatra-macos-x64-full.dmg
+
   build-windows:
     runs-on: windows-latest
     permissions:
@@ -1397,6 +1642,223 @@ jobs:
           $msiSize = [math]::Round((Get-Item "notepatra-local-ai-$version.msi").Length / 1MB, 2)
           Write-Host "✓ Built notepatra-local-ai-$version.msi ($msiSize MB)"
 
+      # ─── v0.1.103: Windows "Full" flavor (bundles QtWebEngine) ───────
+      # The lite bundle above is the default download; the Full bundle adds
+      # QtWebEngine so the diagram tool + inline Vega-Lite charts render
+      # natively on Windows instead of the "preview needs the Full build"
+      # stub. QtWebEngine is ALREADY installed by the Install Qt5 step
+      # (modules: qtwebengine), so this just flips NOTEPATRA_WITH_WEBENGINE=ON
+      # and runs windeployqt WITHOUT --no-translations (WebEngine needs the
+      # qtwebengine_locales/ .pak files).
+      - name: Build C++ Full (WebEngine)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path build-full -Force | Out-Null
+          Set-Location build-full
+          $qtRoot = "${{ steps.qscintilla.outputs.QT_ROOT }}"
+          # Same VS-generator detection as the lite configure step.
+          $vsMajor = 0
+          if ($env:VisualStudioVersion) {
+              $vsMajor = [int]($env:VisualStudioVersion.Split('.')[0])
+          }
+          switch ($vsMajor) {
+              18 { $vsGen = "Visual Studio 18 2026" }
+              17 { $vsGen = "Visual Studio 17 2022" }
+              default {
+                  Write-Host "::warning::Unrecognised VisualStudioVersion='$($env:VisualStudioVersion)'; falling back to VS 17 2022."
+                  $vsGen = "Visual Studio 17 2022"
+              }
+          }
+          Write-Host "Using CMake generator: $vsGen  (from VisualStudioVersion=$($env:VisualStudioVersion))"
+          cmake .. -G "$vsGen" -A x64 `
+            "-DCMAKE_PREFIX_PATH=$qtRoot" `
+            "-DQSCINTILLA_INCLUDE=${{ steps.qscintilla.outputs.QSC_INC }}" `
+            "-DQSCINTILLA_LIB=${{ steps.qscintilla.outputs.QSC_LIB }}" `
+            -DNOTEPATRA_WITH_WEBENGINE=ON 2>&1 | Tee-Object -FilePath ../cmake-configure-full.log
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::cmake configure (full) failed"; exit 1 }
+          cmake --build . --config Release 2>&1 | Tee-Object -FilePath ../cmake-build-full.log
+          $buildExit = $LASTEXITCODE
+          Write-Host "=== Errors and warnings only (full) ==="
+          Get-Content ../cmake-build-full.log | Select-String -Pattern "error|fatal" | Select-Object -First 50 | ForEach-Object { Write-Host $_ }
+          Write-Host "=== Last 60 lines of cmake build output (full) ==="
+          Get-Content ../cmake-build-full.log -Tail 60 | ForEach-Object { Write-Host $_ }
+          if ($buildExit -ne 0) { Write-Host "::error::cmake build (full) failed (exit $buildExit)"; exit 1 }
+          Write-Host "=== Searching for notepatra.exe (full) ==="
+          Get-ChildItem -Path . -Recurse -Filter "notepatra.exe" | ForEach-Object { Write-Host $_.FullName }
+
+      - name: Bundle Windows Full
+        shell: pwsh
+        run: |
+          # Mirror the lite "Verify exe, embed icon, bundle Qt + QScintilla
+          # DLLs" step, with two differences:
+          #   1. windeployqt runs WITHOUT --no-translations so the
+          #      qtwebengine_locales/ .pak files come along.
+          #   2. A WebEngine-specific critical-files assertion at the end.
+          $exe = Get-ChildItem -Path build-full -Recurse -Filter "notepatra.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) {
+            Write-Host "::error::notepatra.exe (full) not found anywhere under build-full/"
+            Get-ChildItem -Path build-full -Recurse | Select-Object FullName
+            exit 1
+          }
+          Write-Host "Found: $($exe.FullName) ($([math]::Round($exe.Length / 1MB, 2)) MB)"
+
+          $outDir = "notepatra-win-full"
+          New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+          Copy-Item $exe.FullName "$outDir\"
+
+          $qtRoot = "${{ steps.qscintilla.outputs.QT_ROOT }}"
+          $qtBin = "$qtRoot\bin"
+          $qtPlugins = "$qtRoot\plugins"
+
+          # Bundle the QScintilla DLL (windeployqt doesn't know about it)
+          $qsciDll = "${{ steps.qscintilla.outputs.QSC_DLL }}"
+          if ($qsciDll -and (Test-Path $qsciDll)) {
+            Copy-Item $qsciDll "$outDir\"
+            Write-Host "Bundled QScintilla DLL: $qsciDll"
+          } else {
+            $found = Get-ChildItem -Path $qtRoot -Recurse -Filter "qscintilla2_qt5.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) {
+              Copy-Item $found.FullName "$outDir\"
+              Write-Host "Bundled QScintilla DLL (found via search): $($found.FullName)"
+            } else {
+              Write-Host "::error::qscintilla2_qt5.dll not found anywhere — exe will fail at startup"
+              exit 1
+            }
+          }
+
+          # ── windeployqt — NOTE: no --no-translations so WebEngine locales ship ──
+          $windeployqt = "$qtRoot\bin\windeployqt.exe"
+          if (Test-Path $windeployqt) {
+            Write-Host ""
+            Write-Host "════════════ windeployqt pass 1: notepatra.exe (full) ════════════"
+            & $windeployqt --release --compiler-runtime --no-opengl-sw `
+              --dir "$outDir" "$outDir\notepatra.exe" 2>&1
+            Write-Host "windeployqt pass 1 exit: $LASTEXITCODE"
+
+            Write-Host ""
+            Write-Host "════════════ windeployqt pass 2: qscintilla2_qt5.dll (full) ════════════"
+            & $windeployqt --release --no-opengl-sw `
+              --dir "$outDir" "$outDir\qscintilla2_qt5.dll" 2>&1
+            Write-Host "windeployqt pass 2 exit: $LASTEXITCODE"
+          } else {
+            Write-Host "::warning::windeployqt not at $windeployqt — skipping, manual copy will handle it"
+          }
+
+          # ── Manual core Qt DLL copy (same set as the lite step) ──
+          Write-Host ""
+          Write-Host "════════════ Manual DLL copy (deterministic fallback) ════════════"
+          $coreDlls = @("Qt5Core.dll", "Qt5Gui.dll", "Qt5Widgets.dll", "Qt5Network.dll", "Qt5PrintSupport.dll")
+          foreach ($dll in $coreDlls) {
+            $src = Join-Path $qtBin $dll
+            if (Test-Path $src) {
+              Copy-Item $src "$outDir\" -Force
+              Write-Host "  ✓ $dll"
+            } else {
+              Write-Host "  ✗ MISSING: $src"
+            }
+          }
+
+          # ── OpenSSL 1.1 DLLs (same search-dir logic as the lite step) ──
+          $opensslDlls = @("libcrypto-1_1-x64.dll", "libssl-1_1-x64.dll")
+          $sslSearchDirs = @(
+            "C:\Program Files\OpenSSL-Win64\bin",
+            "C:\Program Files\OpenSSL\bin",
+            "C:\tools\OpenSSL-Win64\bin",
+            "${{ runner.temp }}/OpenSSL"
+          )
+          foreach ($dll in $opensslDlls) {
+            $found = $null
+            foreach ($d in $sslSearchDirs) {
+              if (Test-Path "$d\$dll") { $found = "$d\$dll"; break }
+            }
+            if (-not $found) {
+              foreach ($d in $sslSearchDirs) {
+                if (Test-Path $d) {
+                  $hit = Get-ChildItem -Path $d -Recurse -Filter $dll -ErrorAction SilentlyContinue | Select-Object -First 1
+                  if ($hit) { $found = $hit.FullName; break }
+                }
+              }
+            }
+            if ($found) {
+              Copy-Item $found "$outDir\" -Force
+              Write-Host "  ✓ $dll (from $found)"
+            } else {
+              Write-Host "::error::$dll NOT FOUND — HTTPS will fail at runtime"
+              exit 1
+            }
+          }
+
+          # Qt plugins — same set as the lite step
+          $plugins = @(
+            @{src="platforms\qwindows.dll"; dest="platforms"},
+            @{src="styles\qwindowsvistastyle.dll"; dest="styles"},
+            @{src="imageformats\qico.dll"; dest="imageformats"},
+            @{src="imageformats\qjpeg.dll"; dest="imageformats"},
+            @{src="imageformats\qsvg.dll"; dest="imageformats"},
+            @{src="iconengines\qsvgicon.dll"; dest="iconengines"},
+            @{src="printsupport\windowsprintersupport.dll"; dest="printsupport"},
+            @{src="bearer\qgenericbearer.dll"; dest="bearer"}
+          )
+          foreach ($p in $plugins) {
+            $src = Join-Path $qtPlugins $p.src
+            $destDir = Join-Path $outDir $p.dest
+            New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+            if (Test-Path $src) {
+              Copy-Item $src $destDir -Force
+              Write-Host "  ✓ $($p.src)"
+            } else {
+              Write-Host "  ✗ MISSING: $src"
+            }
+          }
+
+          Write-Host ""
+          Write-Host "════════════ Final full bundle contents ════════════"
+          Get-ChildItem $outDir -Recurse | Select-Object FullName, Length | Format-Table -AutoSize
+          $totalSize = (Get-ChildItem $outDir -Recurse | Measure-Object Length -Sum).Sum / 1MB
+          Write-Host "Total package size: $([math]::Round($totalSize, 1)) MB"
+
+          # ── Critical-files assertion: lite essentials + WebEngine bits ──
+          $critical = @(
+            "$outDir\notepatra.exe",
+            "$outDir\Qt5Core.dll",
+            "$outDir\Qt5Gui.dll",
+            "$outDir\Qt5Widgets.dll",
+            "$outDir\qscintilla2_qt5.dll",
+            "$outDir\platforms\qwindows.dll",
+            "$outDir\QtWebEngineProcess.exe",
+            "$outDir\resources\icudtl.dat",
+            "$outDir\Qt5WebEngineCore.dll",
+            "$outDir\Qt5WebEngineWidgets.dll"
+          )
+          $missing = @()
+          foreach ($f in $critical) {
+            if (-not (Test-Path $f)) { $missing += $f }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Host "::error::Critical files missing from Full bundle:"
+            foreach ($f in $missing) { Write-Host "  - $f" }
+            exit 1
+          }
+          Write-Host "✓ All critical files present (incl. WebEngine) — Full bundle should render charts"
+
+          # File-association helper scripts (HKCU-only), same as lite.
+          if (Test-Path "installers\register-associations.bat") {
+            Copy-Item "installers\register-associations.bat" ".\notepatra-win-full\" -Force
+          }
+          if (Test-Path "installers\unregister-associations.bat") {
+            Copy-Item "installers\unregister-associations.bat" ".\notepatra-win-full\" -Force
+          }
+
+          # ── Portable zip ──
+          Compress-Archive -Path "$outDir\*" -DestinationPath "notepatra-windows-x64-full.zip" -Force
+          Write-Host "✓ Created notepatra-windows-x64-full.zip ($([math]::Round((Get-Item notepatra-windows-x64-full.zip).Length / 1MB, 1)) MB)"
+
+      - name: Upload artifact (portable zip — full)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: notepatra-windows-x64-full
+          path: notepatra-windows-x64-full.zip
+
       - name: Upload artifact (portable zip)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1527,7 +1989,7 @@ jobs:
           }
 
   release:
-    needs: [build-linux, build-linux-arm, build-macos-arm, build-windows]
+    needs: [build-linux, build-linux-arm, build-macos-arm, build-macos-full, build-windows]
     # Pinned to ubuntu-24.04 to match every other Linux job in this file.
     # Was previously ubuntu-latest, which would silently roll forward and
     # could shift cosign / SLSA action runtime expectations under our feet.
@@ -1564,8 +2026,16 @@ jobs:
             tar czf notepatra-linux-arm64-full.tar.gz -C notepatra-linux-arm64-full notepatra
           fi
           cp notepatra-macos-arm64/Notepatra.dmg notepatra-macos-arm64.dmg
+          # v0.1.103 — macOS Intel "Full" flavor DMG (bundles QtWebEngine).
+          if [ -d notepatra-macos-x64-full ]; then
+            cp notepatra-macos-x64-full/notepatra-macos-x64-full.dmg notepatra-macos-x64-full.dmg
+          fi
           if [ -d notepatra-windows-x64 ]; then
             cd notepatra-windows-x64 && zip -r ../notepatra-windows-x64.zip . && cd ..
+          fi
+          # v0.1.103 — Windows "Full" flavor portable zip (bundles QtWebEngine).
+          if [ -d notepatra-windows-x64-full ]; then
+            cp notepatra-windows-x64-full/notepatra-windows-x64-full.zip notepatra-windows-x64-full.zip
           fi
           # Rename Windows installer to the canonical name used in release assets
           TAG="${GITHUB_REF##*/}"
@@ -1627,8 +2097,9 @@ jobs:
           #   sha256sum -c SHA256SUMS
           for f in notepatra-linux-x64.tar.gz notepatra-linux-arm64.tar.gz \
                    notepatra-linux-x64-full.tar.gz notepatra-linux-arm64-full.tar.gz \
-                   notepatra-macos-arm64.dmg \
-                   notepatra-windows-x64.zip notepatra-setup-*.exe notepatra-*.msi \
+                   notepatra-macos-arm64.dmg notepatra-macos-x64-full.dmg \
+                   notepatra-windows-x64.zip notepatra-windows-x64-full.zip \
+                   notepatra-setup-*.exe notepatra-*.msi \
                    notepatra_*_amd64.deb notepatra_*_arm64.deb \
                    notepatra-local-ai_*_amd64.deb notepatra-local-ai_*_arm64.deb \
                    notepatra-*x86_64.rpm notepatra-*aarch64.rpm \
@@ -1683,8 +2154,9 @@ jobs:
           # ties the signature to this repo + workflow + commit SHA.
           for f in notepatra-linux-x64.tar.gz notepatra-linux-arm64.tar.gz \
                    notepatra-linux-x64-full.tar.gz notepatra-linux-arm64-full.tar.gz \
-                   notepatra-macos-arm64.dmg \
-                   notepatra-windows-x64.zip notepatra-setup-*.exe notepatra-*.msi \
+                   notepatra-macos-arm64.dmg notepatra-macos-x64-full.dmg \
+                   notepatra-windows-x64.zip notepatra-windows-x64-full.zip \
+                   notepatra-setup-*.exe notepatra-*.msi \
                    notepatra_*_amd64.deb notepatra_*_arm64.deb \
                    notepatra-local-ai_*_amd64.deb notepatra-local-ai_*_arm64.deb \
                    notepatra-*x86_64.rpm notepatra-*aarch64.rpm \
@@ -1707,7 +2179,9 @@ jobs:
             notepatra-linux-x64-full.tar.gz
             notepatra-linux-arm64-full.tar.gz
             notepatra-macos-arm64.dmg
+            notepatra-macos-x64-full.dmg
             notepatra-windows-x64.zip
+            notepatra-windows-x64-full.zip
             notepatra-setup-*.exe
             notepatra-*.msi
             notepatra_*_amd64.deb
@@ -1727,7 +2201,9 @@ jobs:
             notepatra-linux-x64-full.tar.gz
             notepatra-linux-arm64-full.tar.gz
             notepatra-macos-arm64.dmg
+            notepatra-macos-x64-full.dmg
             notepatra-windows-x64.zip
+            notepatra-windows-x64-full.zip
             notepatra-setup-*.exe
             notepatra-*.msi
             notepatra_*_amd64.deb
@@ -1748,8 +2224,12 @@ jobs:
             notepatra-linux-arm64-full.tar.gz.pem
             notepatra-macos-arm64.dmg.sig
             notepatra-macos-arm64.dmg.pem
+            notepatra-macos-x64-full.dmg.sig
+            notepatra-macos-x64-full.dmg.pem
             notepatra-windows-x64.zip.sig
             notepatra-windows-x64.zip.pem
+            notepatra-windows-x64-full.zip.sig
+            notepatra-windows-x64-full.zip.pem
             notepatra-setup-*.exe.sig
             notepatra-setup-*.exe.pem
             notepatra-*.msi.sig

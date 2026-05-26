@@ -7,6 +7,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.103] — 2026-05-26
+
+**Diagrams + inline charts now render on macOS and Windows — new "Full" (WebEngine) download variants.** v0.1.102 shipped the diagram tool, but the macOS `.dmg` and Windows installers were Lite-only (no WebEngine), so the diagram canvas (and inline Vega-Lite charts) fell back to the "preview needs the Full build" stub on those platforms. Linux already had a `-full` variant; now macOS and Windows do too.
+
+### Added
+- **`notepatra-windows-x64-full.zip`** — Windows Full portable build. The CI Qt install already bundled the `qtwebengine` module, so the Full variant adds a `-DNOTEPATRA_WITH_WEBENGINE=ON` build + `windeployqt` (QtWebEngineProcess.exe, `resources/*.pak`, `icudtl.dat`, WebEngine locales) with a critical-files assertion.
+- **`notepatra-macos-x64-full.dmg`** — macOS Full build via a new `build-macos-full` CI job on an Intel (`macos-13`) runner: Qt 5.15.2 + `qtwebengine` from aqtinstall, `macdeployqt`-bundled `QtWebEngineCore.framework` + `QtWebEngineProcess.app`, code-signed DMG. **Intel/x86_64 — runs under Rosetta 2 on Apple Silicon** (Qt 5.15.2 has no arm64 WebEngine; Homebrew dropped it). The default arm64 Lite DMG is unchanged.
+- Both new artifacts are SHA256-summed, cosign-signed, SLSA-attested, and attached to the GitHub Release.
+
+### Notes
+- **Packaging / CI-only release** — no app code changed. The diagram tool, parser, and renderer are unchanged from v0.1.102; the `#ifdef NOTEPATRA_WITH_WEBENGINE` path already existed — macOS/Windows just never got a Full build until now.
+- Queued: a native-Qt (QGraphicsView) diagram renderer would let the diagram render in the Lite binary on every platform, removing the WebEngine dependency.
+
+---
+
 ## [0.1.102] — 2026-05-25
 
 **Diagrams — author flow charts, ER diagrams and system designs from a text DSL, with AI generation, a live canvas, and browser-native export.** A new first-class diagramming tool (Full flavor), opened from the toolbar ("Diagram", next to Noter) or Features → Diagram.
