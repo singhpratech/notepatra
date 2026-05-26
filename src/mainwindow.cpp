@@ -247,6 +247,7 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include "ollama.h"
 #include "ollamastatus.h"
 #include "notes.h"
+#include "diagram/diagram_editor.h"
 #include "tool_colors.h"
 #include <QRegularExpression>
 #include <QFileDialog>
@@ -270,6 +271,7 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QPainter>
+#include <QLineF>
 #include <QPainterPath>
 #include <QLinearGradient>
 #include <QMimeData>
@@ -558,6 +560,37 @@ static void drawGitFeatureGlyph(QPainter &painter, const QRectF &rect) {
     painter.drawEllipse(right, 2.2, 2.2);
 }
 
+static void drawDiagramFeatureGlyph(QPainter &painter, const QRectF &rect) {
+    // Two nodes joined by an arrow — a mini flowchart for the .npd diagram tool.
+    QRectF nodeA(rect.left() + 3.5, rect.top() + 4.5, 12.0, 8.5);
+    QRectF nodeB(rect.right() - 15.5, rect.bottom() - 13.0, 12.0, 8.5);
+
+    painter.setPen(QPen(Qt::white, 1.3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(QColor(255, 255, 255, 32));
+    painter.drawRoundedRect(nodeA, 2.4, 2.4);
+    painter.drawRoundedRect(nodeB, 2.4, 2.4);
+
+    const QPointF from(nodeA.center().x() + 2.0, nodeA.bottom());
+    const QPointF to(nodeB.center().x() - 2.0, nodeB.top());
+    painter.setPen(QPen(Qt::white, 1.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.drawLine(from, to);
+
+    // Arrowhead at the target end (unit vector via QLineF — no <cmath> needed).
+    const QLineF u = QLineF(from, to).unitVector();
+    const qreal ux = u.dx(), uy = u.dy();
+    const qreal nx = -uy, ny = ux;
+    const qreal a = 4.0, w = 2.6;
+    const QPointF base(to.x() - ux * a, to.y() - uy * a);
+    QPainterPath head;
+    head.moveTo(to);
+    head.lineTo(base.x() + nx * w, base.y() + ny * w);
+    head.lineTo(base.x() - nx * w, base.y() - ny * w);
+    head.closeSubpath();
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(Qt::white);
+    painter.drawPath(head);
+}
+
 static QIcon makeFeatureIcon(const QColor &base, const QString &iconKind, const QString &glyph = QString()) {
     // v0.1.51 — paint at native device-pixel resolution so the toolbar
     // icons stay crisp on Windows 150 % display zoom and other fractional
@@ -623,6 +656,8 @@ static QIcon makeFeatureIcon(const QColor &base, const QString &iconKind, const 
         drawNoterFeatureGlyph(painter, rect);
     } else if (iconKind == "git") {
         drawGitFeatureGlyph(painter, rect);
+    } else if (iconKind == "diagram") {
+        drawDiagramFeatureGlyph(painter, rect);
     } else {
         QFont font = notepatraCodeFont(glyph.size() > 2 ? 8 : 10, QFont::Bold);
         painter.setFont(font);
@@ -2715,6 +2750,42 @@ void MainWindow::buildMenus() {
         noterAct->setChecked(true);
     });
 
+    // --- Diagram (flow / ER / system, .npd) ---
+    auto *diagAct = feat->addAction("Diagram — Flow / ER / System (.npd)");
+    diagAct->setCheckable(true);
+    diagAct->setStatusTip("Author flow charts, ER diagrams and system designs in .npd text with a "
+                          "live canvas preview, AI generation, and PNG/SVG/PDF/HTML export.");
+    connect(diagAct, &QAction::triggered, this, [this, diagAct]() {
+        // Same on/off toggle as Noter: absent → create+focus; present-not-current
+        // → focus; present-and-current → close.
+        DiagramEditor *diag = nullptr;
+        int existingIdx = -1;
+        for (int i = 0; i < m_tabs->count(); ++i) {
+            if (auto *de = qobject_cast<DiagramEditor*>(m_tabs->widget(i))) {
+                diag = de;
+                existingIdx = i;
+                break;
+            }
+        }
+        if (diag && existingIdx == m_tabs->currentIndex()) {
+            m_tabs->removeTab(existingIdx);
+            delete diag;
+            diagAct->setChecked(false);
+            return;
+        }
+        if (!diag) {
+            diag = new DiagramEditor;
+            exitAiFullscreenIfActive();
+            existingIdx = m_tabs->addTab(diag, "Diagram");
+            connect(diag, &DiagramEditor::titleChanged, this, [this, diag](const QString &t) {
+                const int idx = m_tabs->indexOf(diag);
+                if (idx >= 0) m_tabs->setTabText(idx, t);
+            });
+        }
+        m_tabs->setCurrentIndex(existingIdx);
+        diagAct->setChecked(true);
+    });
+
     // --- Hex Editor ---
     feat->addAction("Hex Editor — View Binary", this, [this, E]() {
         auto *e = E();
@@ -4338,6 +4409,10 @@ void MainWindow::buildToolbar() {
     addFeatureShortcut(featureTb, findActionByPrefix(this, "Noter"),
                        notepatraToolAccent("Noter"), "noter", "Noter",
                        "Toggle Noter — meeting thinkpad (Ctrl+Alt+N) — ON / OFF",
+                       /*showCheckedState=*/true);
+    addFeatureShortcut(featureTb, findActionByPrefix(this, "Diagram"),
+                       notepatraToolAccent("Diagram"), "diagram", "Diagram",
+                       "Toggle Diagram — flow / ER / system (.npd) — ON / OFF",
                        /*showCheckedState=*/true);
     // v0.1.61 — dropped the standalone Git Integration toolbar shortcut.
     // Full VS Code-parity Source Control integration inside Coding mode

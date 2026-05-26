@@ -79,3 +79,16 @@ tests/comprehensive/run_duckdb_tests.py
 test-files/
 # Local planning scratch — agent-only, not for the repo.
 planning/
+
+# Local scratch build dir for Lite-flavor verification.
+build-lite-verify/
+
+# Data-Analyst eval artifacts — large binaries + generated reports stay local.
+# (The harness code, grounding, questions, schema + ground_truth ARE committed.)
+eval/data-analyst/datasets/synthea.duckdb
+eval/data-analyst/datasets/synthea.sqlite
+eval/data-analyst/datasets/bin/
+eval/data-analyst/.eval_checkpoint.jsonl
+eval/data-analyst/report.html
+eval/data-analyst/report.json
+eval/**/__pycache__/

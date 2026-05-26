@@ -1,0 +1,44 @@
+# Notepatra diagram showcase — open this in Features → Diagram to see
+# every shape, icon and arrow type rendered on the canvas.
+diagram system
+title "Diagram Showcase — shapes, icons & arrows"
+palette ocean
+
+# ── shapes ──
+node start (Start)
+node check {Authorized?}
+node deny [Access denied] :: "Increment the failed-attempt counter; lock after 5 tries"
+node done (Done)
+node store ([Object store])
+
+# ── icons (rich glyphs) ──
+icon user :user "Browser"
+icon cdn :cloud "CDN" :: "Edge cache + static assets"
+icon gw :server "API Gateway" :: "Auth, rate-limiting, routing"
+icon cache :database "Cache" :: "Redis — sessions + hot rows"
+icon db :database "Primary DB" :: "Postgres — source of truth"
+icon docs :document "Docs"
+icon chart :chart "Dashboard"
+icon dev :gear "Worker"
+icon hosp :hospital "Clinic"
+icon pat :patient "Patient"
+icon tbl :table "Audit log"
+
+# ── arrows: directed, labelled, and bidirectional ──
+start -> user
+user -> cdn
+user -> gw : request
+gw -> check
+check -> cache : yes
+check -> deny : no
+deny -> done
+cache <-> db : warm
+db -> chart
+db -> store
+dev -> db : nightly ETL
+hosp -> pat : admits
+pat -> docs
+gw -> tbl : write
+chart -> done
+
+textbox "Pills, a box, a decision diamond, a database cylinder, 11 icons, plus labelled and bidirectional arrows — all from this text."

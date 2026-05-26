@@ -7,6 +7,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.102] — 2026-05-25
+
+**Diagrams — author flow charts, ER diagrams and system designs from a text DSL, with AI generation, a live canvas, and browser-native export.** A new first-class diagramming tool (Full flavor), opened from the toolbar ("Diagram", next to Noter) or Features → Diagram.
+
+### Added
+- **Diagram tool (`.npd`)** — text-first DSL is the source of truth; the canvas is a live projection. Split tab: `.npd` source + live preview.
+- **Create three ways** — **AI Generate** (describe it in English → review the generated `.npd` → Insert; undo/redo), **New** templates (Flow / ER / System), or write `.npd` directly. Plus **Import Mermaid**.
+- **Visual vocabulary** — 5 shapes (pill / box / decision diamond / database cylinder / icon), 12 icons, directed + labelled + bidirectional arrows, label-overflow→hover, 5 palettes, title + textbox; infinite pan/zoom canvas.
+- **Export** — browser-native PNG / WebP / JPEG / SVG / PDF / HTML.
+- **Help** button (in-tool cheat-sheet) + `samples/diagram_showcase.npd` + `npd_render` CLI (offscreen `.npd` → image).
+- Modules: `src/diagram/{npd_parser,mermaid_import,diagram_view,diagram_editor,diagram_ai_dialog}` + `resources/diagram/` (dagre render layer + icons). Lite build links a WebEngine-free stub.
+
+### Fixed
+- **`CMAKE_AUTORCC` was never enabled** — `.qrc` files in target sources (`vega.qrc`, `icons.qrc`, and the new `diagram.qrc`) were not compiled into the binary. In Full builds this meant inline Vega-Lite charts (`qrc:///vega/*.js`) and AIPanel SVG icons did not bundle. Now set — charts, icons, and the diagram render layer all bundle correctly.
+
+### Tests
+- 53/53 ctest (adds `test_npd_parser` 61, `test_mermaid_import` 25, `test_diagram_view` 10 — offscreen WebEngine render + PNG/SVG export). Green in both flavors; full no-regression run clean.
+
+---
+
 ## [0.1.101] — 2026-05-25
 
 **In-app updater finalizes even when a prior download is locked.** On macOS the update downloaded + verified, then failed with "Could not finalize the download file."

@@ -24,6 +24,7 @@ QColor notepatraToolAccent(const QString &toolKey) {
     if (k.startsWith(QStringLiteral("bracket")))         return QColor("#78350F"); // saddle brown 28°
     if (k.startsWith(QStringLiteral("rest")))            return QColor("#0D9488"); // teal 173°
     if (k.startsWith(QStringLiteral("noter")))           return QColor("#DC2626"); // red 0°
+    if (k.startsWith(QStringLiteral("diagram")))         return QColor("#4F46E5"); // indigo 244°
     if (k.startsWith(QStringLiteral("git")))             return QColor("#65A30D"); // lime green 74°
     if (k.startsWith(QStringLiteral("hex")))             return QColor("#475569"); // slate gray
     return QColor();
