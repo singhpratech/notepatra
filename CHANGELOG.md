@@ -7,6 +7,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.103] — 2026-05-27
+
+**Diagrams now render natively in the default binary on every platform — including macOS Apple Silicon and the Windows `.msi` — with no WebEngine, no Chromium, and no separate "Full" download.** The v0.1.102 diagram tool drew inside an embedded Chromium (QtWebEngine + dagre.js), so the picture never appeared on the default lite binary, on macOS Apple Silicon, or anywhere WebEngine wasn't bundled. v0.1.103 replaces that whole pipeline with a native `QPainter` renderer.
+
+### Changed
+- **Native Qt diagram renderer** — `.npd` now lays out, draws, zooms, pans and exports entirely in C++ (`QPainter`); no embedded browser, no JS bridge, no 95 MB Chromium dependency. There is no longer a "Full vs Lite" split for diagrams — the default binary renders them everywhere, including macOS Apple Silicon and Windows.
+- **Export menu is now dynamic** — built from what the running Qt actually supports. PNG / JPEG / PDF on every build; SVG + HTML where the Qt Svg module is present; WebP where the Qt WebP image plugin is present. Unavailable formats are hidden and refuse cleanly instead of writing a broken file.
+
+### Added
+- `src/diagram/diagram_render.{h,cpp}` — Qt-widget-free rendering module: longest-path layering + 10 barycenter crossing-reduction sweeps, border-anchored bezier edges with anchor fan-out + sideways bow, ~55 `QPainter`-drawn icons (~150 aliases) for system/ER/flowchart, 5 palettes.
+- CI installs `libqt5svg5-dev` + `qt5-image-formats-plugins` (x64 + arm) so shipped binaries export SVG/HTML/WebP.
+
+### Removed
+- QtWebEngine + dagre.js from the diagram path; `npd_render.cpp` replaced by `npd_render_qt.cpp` (offscreen CLI routed through `DiagramView::exportTo`).
+
+### Tests
+- `test_diagram_view` rewritten for the native path (builds in **both** flavors, no WebEngine): layout/paint/hit-test plus `export_all_formats` which drives every format through the real export path and asserts valid magic bytes. Full no-regression ctest green in both flavors.
+
+---
+
 ## [0.1.102] — 2026-05-25
 
 **Diagrams — author flow charts, ER diagrams and system designs from a text DSL, with AI generation, a live canvas, and browser-native export.** A new first-class diagramming tool (Full flavor), opened from the toolbar ("Diagram", next to Noter) or Features → Diagram.
