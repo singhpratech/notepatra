@@ -49,7 +49,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is under 12 MB across platforms (11.5 MB on Linux x64); full downloads are 4.1 MB (Linux x64 tar.gz), 27.5 MB (macOS DMG with bundled Qt), 42.2 MB (Windows MSI with bundled Qt DLLs). 226 file types. 92 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server (examples redacted). Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.102",
+      "softwareVersion": "0.1.103",
       "fileSize": "11.5 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -151,7 +151,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is under 12 MB across every platform (11.5 MB on Linux x64). Latest v0.1.102 download sizes: 4.1 MB Linux x64 tar.gz, 3.9 MB Linux ARM64 tar.gz, 27.5 MB macOS DMG (with bundled Qt), 42.2 MB Windows MSI / 32.7 MB NSIS / 37.3 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~11.5 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
+            "text": "The bare Notepatra executable is under 12 MB across every platform (11.5 MB on Linux x64). Latest v0.1.103 download sizes: 4.1 MB Linux x64 tar.gz, 3.9 MB Linux ARM64 tar.gz, 27.5 MB macOS DMG (with bundled Qt), 42.2 MB Windows MSI / 32.7 MB NSIS / 37.3 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~11.5 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at 9–85 MB depending on platform."
           }
         },
         {
@@ -167,7 +167,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.102: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.103: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.102">
-        Download v0.1.102 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.103">
+        Download v0.1.103 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.102 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.103 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (under 12 MB bare, ~4.1 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints.</p>
 
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.102</div>
+        <div class="section-label">Download v0.1.103</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1467,7 +1467,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.102 →
+                Get Notepatra v0.1.103 →
               </a>
             </div>
 
@@ -1510,7 +1510,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.102 →
+                Get Notepatra Local AI v0.1.103 →
               </a>
             </div>
           </div>
@@ -1691,7 +1691,7 @@
             <div class="feature-card" style="border-color: rgba(204,120,92,0.35); box-shadow: 0 10px 30px rgba(204,120,92,0.10);">
                 <div class="feature-icon fi-purple">📐</div>
                 <h3>Diagram tool (.npd) <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
-                <p>Flow charts, ER diagrams and system designs from a tiny text DSL — the <code>.npd</code> source is the truth, the canvas is a live projection. <strong>Describe it in plain English and a local model writes it</strong> (review before it touches the canvas), start from a template, or type it yourself — <strong>Import Mermaid</strong> too. 5 shapes, 12 icons, labelled + bidirectional arrows, 5 palettes, infinite pan/zoom. Export to <strong>PNG / WebP / JPEG / SVG / PDF / HTML</strong>. Opens from the toolbar next to Noter. <em>Full flavor.</em></p>
+                <p>Flow charts, ER diagrams and system designs from a tiny text DSL — the <code>.npd</code> source is the truth, the canvas is a live projection. <strong>Describe it in plain English and a local model writes it</strong> (review before it touches the canvas), start from a template, or type it yourself — <strong>Import Mermaid</strong> too. 5 shapes, ~55 hand-drawn icons, labelled + bidirectional arrows, 5 palettes, infinite pan/zoom. Export to <strong>PNG / JPEG / PDF</strong> on every build (plus SVG / HTML / WebP where your Qt supports them). Opens from the toolbar next to Noter. <em>Renders natively in the default binary — every platform, no WebEngine.</em></p>
             </div>
             <!-- AI Interaction Log — promoted to a prominent privacy /
                  transparency selling point in v0.1.97. Same halo treatment. -->
@@ -2004,27 +2004,27 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.102 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.103 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
-                        <span>2026-05-25</span>
-                        <span>· <strong>Diagrams — flow charts, ER diagrams and system designs from a text DSL, with AI generation, a live canvas, and browser-native export.</strong> Describe a diagram in plain English and a local model writes it, or author it in the tiny <code>.npd</code> language with a live preview — then export to PNG / SVG / PDF / HTML.</span>
-                        <span>· Full flavor · Linux · macOS · Windows</span>
+                        <span>2026-05-27</span>
+                        <span>· <strong>Diagrams now render natively in the default binary — on every platform, including macOS Apple Silicon and the Windows installer — with no embedded browser.</strong> The diagram tool no longer needs WebEngine or a separate "Full" download: the same <code>.npd</code> text lays out, draws, zooms, pans and exports entirely in C++.</span>
+                        <span>· Default binary · Linux · macOS (incl. Apple Silicon) · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>Diagram tool (.npd) — text-first, AI-assisted</h5>
+                        <h5>Native Qt diagram renderer — runs everywhere, no Chromium</h5>
                         <ul>
-                            <li><strong>Three ways to create:</strong> <strong>AI Generate</strong> (describe it → review the generated <code>.npd</code> → Insert; undo/redo), Flow / ER / System templates, or write <code>.npd</code> directly — plus <strong>Import Mermaid</strong>. The text is the source of truth; the canvas is a live projection.</li>
-                            <li><strong>Rich visuals:</strong> 5 shapes (pill / box / decision diamond / database cylinder / icon), 12 icons, directed + labelled + bidirectional arrows, label-overflow→hover, 5 palettes, infinite pan/zoom canvas. Export to <strong>PNG / WebP / JPEG / SVG / PDF / HTML</strong>. Opens from a toolbar button next to Noter; a Help button has the full cheat-sheet.</li>
-                            <li><strong>Also fixed:</strong> a latent build issue (<code>CMAKE_AUTORCC</code> was never enabled) meant <code>.qrc</code> resources — inline Vega-Lite charts, AIPanel icons, and the new diagram layer — weren't bundling in Full builds. Now corrected.</li>
+                            <li><strong>Renders in the default binary, on every platform.</strong> v0.1.102 drew diagrams inside an embedded Chromium (QtWebEngine), so the picture never appeared on the default lite binary, on macOS Apple Silicon, or anywhere WebEngine wasn't bundled. v0.1.103 replaces that whole pipeline with a native <code>QPainter</code> renderer — no 95 MB Chromium dependency, no Full vs Lite split for diagrams.</li>
+                            <li><strong>Same authoring, richer drawing:</strong> longest-path layering with barycenter crossing-reduction, border-anchored bezier connectors that fan out instead of overlapping, ~55 hand-drawn icons (system / ER / flowchart) with ~150 aliases, 5 palettes, scroll-to-zoom / drag-to-pan / double-click-to-fit. AI Generate, templates, Import Mermaid all unchanged.</li>
+                            <li><strong>Export</strong> to PNG / JPEG / PDF on every build, plus SVG / HTML where your Qt has the Svg module and WebP where it has the WebP image plugin — the export menu shows exactly what your build supports.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.102">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.103">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.102">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.103">Commits</a>
             </div>
             <!-- v0.1.76 policy: only the LATEST release detail card is shown
                  on the website.  Every older release lives on GitHub —
@@ -2080,7 +2080,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. under-12 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.102: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
+                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. under-12 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.103: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2092,7 +2092,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>under 12 MB</strong> (11.5 MB on Linux x64) across every platform. Latest v0.1.102 download sizes: <strong>4.1 MB</strong> Linux x64 tar.gz · <strong>3.9 MB</strong> Linux ARM64 tar.gz · <strong>27.5 MB</strong> macOS DMG · <strong>42.2 MB</strong> Windows MSI / <strong>32.7 MB</strong> NSIS / <strong>37.3 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~10 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>under 12 MB</strong> (11.5 MB on Linux x64) across every platform. Latest v0.1.103 download sizes: <strong>4.1 MB</strong> Linux x64 tar.gz · <strong>3.9 MB</strong> Linux ARM64 tar.gz · <strong>27.5 MB</strong> macOS DMG · <strong>42.2 MB</strong> Windows MSI / <strong>32.7 MB</strong> NSIS / <strong>37.3 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~10 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -2100,7 +2100,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.102 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.103 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>How do I verify a download is genuine?</h3>

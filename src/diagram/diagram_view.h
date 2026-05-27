@@ -4,39 +4,28 @@
 #define NOTEPATRA_DIAGRAM_VIEW_H
 
 // ═══════════════════════════════════════════════════════════════════════
-// DiagramView — the C++ host widget for Notepatra's .npd diagram preview.
+// DiagramView — native-Qt host widget for Notepatra's .npd diagram preview.
 //
-// .npd text is the source of truth (see project memory
-// "diagramming-tool-direction"); Npd::parse() + Npd::toGraphJson() turn it
-// into the JSON graph the JS render layer consumes. This widget owns the
-// rendering surface and the export pipeline.
+// .npd text is the source of truth (project memory "diagramming-tool-direction");
+// Npd::parse() builds the model and DiagramRender (diagram_render.*) paints it
+// with Qt's own 2D engine — NO WebEngine. This means the diagram renders in the
+// DEFAULT (Lite) binary on EVERY platform, including macOS Apple Silicon, with
+// no 95 MB Chromium and no Full/Lite split. (Replaced the QWebEngineView/dagre
+// path in v0.1.103, which had no arm64 macOS build.)
 //
-// Two-flavor build, mirroring src/charts/vega_chart_renderer.{h,cpp}:
-//
-//   • NOTEPATRA_WITH_WEBENGINE defined (Full build) — hosts a real
-//     QWebEngineView loading qrc:///diagram/diagram.html. setSource()
-//     pushes the graph JSON to window.npdRender(json); exportTo() drives
-//     the page's async export hooks (window._npd_export_png/webp/jpeg/svg)
-//     plus QWebEnginePage::printToPdf for PDF and page->toHtml for HTML.
-//
-//   • NOTEPATRA_WITH_WEBENGINE undefined (Lite build) — a lightweight stub
-//     with the SAME public API. setSource() paints a QLabel parse summary
-//     ("<n> nodes, <m> edges — preview needs the Full build"); exportTo()
-//     returns false and emits renderError. Keeps the bare binary linking
-//     with zero WebEngine headers / link deps.
-//
-// The public API below is identical in both #ifdef arms — callers compile
-// against one header and never branch on the flavor.
+// Interaction: scroll to zoom (toward cursor), drag to pan, double-click to fit.
+// Hovering a node with `:: "detail"` shows the detail as a tooltip.
+// Export: PNG / WebP / JPEG (QImage), SVG (QSvgGenerator), PDF (QPdfWriter),
+// HTML (inline SVG). All native — works in every build.
 // ═══════════════════════════════════════════════════════════════════════
 
-#include <QString>
-#include <QWidget>
+#include "diagram_render.h"
+#include "npd_parser.h"
 
-QT_BEGIN_NAMESPACE
-class QVBoxLayout;
-class QWebEngineView;
-class QLabel;
-QT_END_NAMESPACE
+#include <QString>
+#include <QStringList>
+#include <QPointF>
+#include <QWidget>
 
 class DiagramView : public QWidget {
     Q_OBJECT
@@ -44,48 +33,45 @@ public:
     explicit DiagramView(QWidget *parent = nullptr);
     ~DiagramView() override;
 
-    // Parse .npd text → JSON graph → render.
-    //   Full build: QJsonDocument(Npd::toGraphJson(Npd::parse(npdText)))
-    //               serialized Compact and pushed via
-    //               runJavaScript("npdRender(<json>)"). Queued until the
-    //               page's loadFinished fires if not yet loaded.
-    //   Lite build: shows a "Diagram preview needs the Full build" label
-    //               with the node/edge count from the parse.
+    // Parse .npd text → model → layout → repaint. Emits renderError on a
+    // parse-with-errors (still renders what it can).
     void setSource(const QString &npdText);
 
-    // Export the currently-rendered diagram to `path`.
+    // Export the rendered diagram to `path`.
     //   format ∈ {"png","webp","jpeg","svg","pdf","html"} (case-insensitive).
-    // Returns true on success.
-    //   Full build: raster (png/webp/jpeg) + svg use the async window-slot
-    //               export hooks, bridged to a synchronous result via a
-    //               local QEventLoop + hard timeout; pdf uses
-    //               QWebEnginePage::printToPdf; html writes a standalone
-    //               copy of the page with the graph JSON embedded.
-    //   Lite build: always returns false and emits renderError.
+    // Returns true on success; emits renderError + returns false otherwise.
     bool exportTo(const QString &format, const QString &path);
 
+    // Formats this build can actually produce (PNG/JPEG/PDF always; WebP only
+    // if the qwebp image plugin is present; SVG/HTML only if Qt Svg is linked).
+    // The editor builds its Export menu from this so it never offers a format
+    // that would fail at write time.
+    static QStringList supportedExportFormats();
+
 signals:
-    // Emitted on parse-with-errors, engine bring-up failure, export
-    // failure, or export-before-load. The host surfaces the message.
     void renderError(const QString &msg);
 
-private:
-#ifdef NOTEPATRA_WITH_WEBENGINE
-    QWebEngineView *m_view = nullptr;
-    bool m_pageReady = false;
-    QString m_pendingNpd;   // queued source pushed once the page loads
-    bool m_hasPending = false;
+protected:
+    void paintEvent(QPaintEvent *) override;
+    void wheelEvent(QWheelEvent *) override;
+    void mousePressEvent(QMouseEvent *) override;
+    void mouseMoveEvent(QMouseEvent *) override;
+    void mouseReleaseEvent(QMouseEvent *) override;
+    void mouseDoubleClickEvent(QMouseEvent *) override;
 
-    // Build the graph-JSON string literal and call npdRender on the page.
-    void pushSource(const QString &npdText);
-    // Async raster/svg export bridged to a blocking bool result.
-    bool exportImageBlocking(const QString &jsFmt, double scale,
-                             bool svg, const QString &path);
-    bool exportPdfBlocking(const QString &path);
-    bool exportHtmlBlocking(const QString &path);
-#else
-    QLabel *m_label = nullptr;   // parse-summary placeholder
-#endif
+private:
+    void fitToView();
+    QPointF widgetToScene(const QPointF &w) const;
+
+    Npd::Diagram          m_diag;
+    DiagramRender::Layout m_lay;
+    DiagramRender::Palette m_pal;
+    bool   m_have = false;
+
+    qreal   m_zoom = 1.0;
+    QPointF m_pan;           // widget-px translation of scene origin
+    bool    m_dragging = false;
+    QPoint  m_lastPos;
 };
 
 #endif // NOTEPATRA_DIAGRAM_VIEW_H

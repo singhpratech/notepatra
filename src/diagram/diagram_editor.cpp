@@ -143,9 +143,9 @@ DiagramEditor::DiagramEditor(QWidget *parent) : QWidget(parent) {
 
     auto *exportBtn = makeMenuButton("Export", "Export the rendered diagram");
     auto *exportMenu = new QMenu(exportBtn);
-    for (const QString &fmt : {QStringLiteral("PNG"), QStringLiteral("WebP"),
-                               QStringLiteral("JPEG"), QStringLiteral("SVG"),
-                               QStringLiteral("PDF"), QStringLiteral("HTML")}) {
+    // Only list formats this build can actually produce (native Qt: PNG/JPEG/PDF
+    // always; WebP only with the qwebp plugin; SVG/HTML only with Qt Svg).
+    for (const QString &fmt : DiagramView::supportedExportFormats()) {
         exportMenu->addAction(fmt, this, [this, fmt] { m_pendingExportFmt = fmt.toLower(); exportAs(); });
     }
     exportBtn->setMenu(exportMenu);
@@ -388,7 +388,9 @@ textbox "A caption shown under the diagram."</pre>
 
 <h3>Canvas &amp; export</h3>
 <p>Drag to pan, scroll to zoom, double-click to fit. Export the rendered diagram
-to PNG / WebP / JPEG / SVG / PDF / HTML with the <b>Export</b> button.</p>
+with the <b>Export</b> button — <b>PNG, JPEG and PDF</b> on every build, plus
+<b>SVG, HTML and WebP</b> where your Qt has the Svg module / WebP image plugin.
+The menu only lists formats this build can actually write.</p>
 
 <h3>A complete example</h3>
 <pre>diagram flow

@@ -1,104 +1,131 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Offscreen render + export verification for the .npd diagram canvas (Full /
-// WebEngine build only). This is the "does it actually render" gate that the
-// pure parser test (test_npd_parser) can't cover: it brings up a real
-// QWebEngineView on qrc:///diagram/diagram.html, pushes a known .npd source,
-// and proves the JS render layer produced an SVG containing our node labels +
-// that the browser-native PNG export round-trips to a valid image.
-//
-// Requires the diagram.qrc resource compiled in (added to this target in
-// CMakeLists) so qrc:///diagram/diagram.html + render.js + dagre resolve.
+// test_diagram_view — native-Qt diagram renderer + export (NO WebEngine).
+// Builds in BOTH flavors. Validates layout, non-empty paint, hit-test, and
+// PNG/SVG/PDF export through the public DiagramView API + DiagramRender module.
 
+#include "diagram/diagram_render.h"
 #include "diagram/diagram_view.h"
+#include "diagram/npd_parser.h"
 
 #include <QApplication>
-#include <QDir>
-#include <QFile>
 #include <QImage>
-#include <QTest>
+#include <QPainter>
+#include <QTemporaryDir>
+#include <QFileInfo>
+#include <QtTest>
 
-#include <cstdio>
+static const char *kNpd =
+    "diagram system\n"
+    "title \"Test\"\n"
+    "palette ocean\n"
+    "node a (Start)\n"
+    "node b {Valid?}\n"
+    "node c [Process] :: \"hover detail\"\n"
+    "node d ([Store])\n"
+    "icon e :database \"DB\"\n"
+    "a -> b\n"
+    "b -> c : yes\n"
+    "b -> d : no\n"
+    "c -> e\n"
+    "d <-> e : sync\n";
 
-static int g_pass = 0, g_fail = 0;
-static void check(const char *what, bool ok, const QString &detail = {}) {
-    if (ok) { std::printf("  [PASS] %s\n", what); ++g_pass; }
-    else    { std::printf("  [FAIL] %s%s%s\n", what, detail.isEmpty() ? "" : " — ",
-                          detail.toUtf8().constData()); ++g_fail; }
-}
-
-static QString readAll(const QString &path) {
-    QFile f(path);
-    if (!f.open(QIODevice::ReadOnly)) return {};
-    return QString::fromUtf8(f.readAll());
-}
-
-int main(int argc, char **argv) {
-    // Headless WebEngine: offscreen platform + sandbox/GPU off so Chromium
-    // brings up in CI / a no-display agent. SVG generation is pure DOM/JS.
-    qputenv("QT_QPA_PLATFORM", "offscreen");
-    qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
-    qputenv("QTWEBENGINE_CHROMIUM_FLAGS",
-            "--disable-gpu --no-sandbox --disable-software-rasterizer --single-process");
-    QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
-    QApplication app(argc, argv);
-
-    std::printf("=== DiagramView render + export (WebEngine) ===\n\n");
-
-    DiagramView view;
-    view.resize(960, 680);
-    view.show();
-
-    const QString npd =
-        "diagram flow\n"
-        "title \"Render Test\"\n"
-        "palette ocean\n"
-        "node a [Alpha]\n"
-        "node b [Beta]\n"
-        "node c {Gamma}\n"
-        "icon d :database \"Delta\"\n"
-        "a -> b : go\n"
-        "b -> c\n"
-        "c -> d : store\n";
-    view.setSource(npd);
-
-    const QString svgPath = QDir::tempPath() + "/npd_render_test.svg";
-    QFile::remove(svgPath);
-
-    // Poll: exportTo guards export-before-load (returns false until the page
-    // has loaded + npdRender ran), so this naturally waits for the render.
-    bool svgOk = false;
-    for (int i = 0; i < 100 && !svgOk; ++i) {
-        QTest::qWait(150);
-        svgOk = view.exportTo("svg", svgPath);
-    }
-    check("SVG export succeeded (page loaded + render.js ran)", svgOk);
-
-    const QString svg = readAll(svgPath);
-    check("SVG file is non-trivial", svg.size() > 300, QString("size=%1").arg(svg.size()));
-    check("SVG root present", svg.contains("<svg"));
-    check("rendered node label 'Alpha'", svg.contains("Alpha"));
-    check("rendered node label 'Beta'", svg.contains("Beta"));
-    check("rendered node label 'Gamma'", svg.contains("Gamma"));
-    check("rendered icon label 'Delta'", svg.contains("Delta"));
-    check("edge label 'go' embedded", svg.contains("go"));
-
-    // Browser-native raster export. Canvas rasterization can be flaky in a
-    // pure-offscreen Chromium; treat a valid decoded image as the win and only
-    // soft-note a failure (it works on a real display).
-    const QString pngPath = QDir::tempPath() + "/npd_render_test.png";
-    QFile::remove(pngPath);
-    const bool pngOk = view.exportTo("png", pngPath);
-    if (pngOk) {
-        const QImage img(pngPath);
-        check("PNG export decodes to a valid image", !img.isNull(),
-              QString("%1x%2").arg(img.width()).arg(img.height()));
-        check("PNG has real dimensions", !img.isNull() && img.width() > 50 && img.height() > 50);
-    } else {
-        std::printf("  [NOTE] PNG export returned false under offscreen Chromium "
-                    "(raster path needs a display); SVG render is the binding proof.\n");
+class TestDiagramView : public QObject {
+    Q_OBJECT
+private slots:
+    void layout_has_geometry() {
+        const Npd::Diagram d = Npd::parse(QString::fromUtf8(kNpd));
+        QVERIFY(d.ok());
+        QCOMPARE(d.nodes.size(), 5);
+        const auto lay = DiagramRender::computeLayout(d);
+        QVERIFY(lay.canvasW > 100);
+        QVERIFY(lay.canvasH > 100);
+        QCOMPARE(lay.nodeRects.size(), 5);
+        for (const auto &n : d.nodes) {
+            QVERIFY(lay.nodeRects.contains(n.id));
+            QVERIFY(lay.nodeRects[n.id].width() > 0);
+        }
+        QVERIFY(lay.nodeRects["a"].center().y() < lay.nodeRects["b"].center().y());
+        QVERIFY(lay.nodeRects["b"].center().y() < lay.nodeRects["c"].center().y());
     }
 
-    std::printf("\n=== Summary: %d passed, %d failed ===\n", g_pass, g_fail);
-    return g_fail == 0 ? 0 : 1;
-}
+    void paint_is_nonempty() {
+        const Npd::Diagram d = Npd::parse(QString::fromUtf8(kNpd));
+        const auto lay = DiagramRender::computeLayout(d);
+        const auto pal = DiagramRender::palette(d.palette);
+        QImage img(int(lay.canvasW), int(lay.canvasH), QImage::Format_ARGB32);
+        img.fill(Qt::transparent);
+        QPainter p(&img);
+        DiagramRender::paint(p, d, lay, pal);
+        p.end();
+        int painted = 0;
+        for (int y = 0; y < img.height(); y += 3)
+            for (int x = 0; x < img.width(); x += 3)
+                if (qAlpha(img.pixel(x, y)) > 0) ++painted;
+        QVERIFY(painted > 100);
+    }
+
+    void hittest_finds_node() {
+        const Npd::Diagram d = Npd::parse(QString::fromUtf8(kNpd));
+        const auto lay = DiagramRender::computeLayout(d);
+        const QString id = DiagramRender::nodeAt(d, lay, lay.nodeRects["c"].center());
+        QCOMPARE(id, QStringLiteral("c"));
+        QVERIFY(DiagramRender::nodeAt(d, lay, QPointF(-50, -50)).isEmpty());
+    }
+
+    void export_all_formats() {
+        QTemporaryDir tmp; QVERIFY(tmp.isValid());
+        DiagramView view;
+        view.resize(800, 600);
+        view.setSource(QString::fromUtf8(kNpd));
+
+        // first 4 bytes that prove the file is really that format
+        auto magicOk = [](const QString &path, const QByteArray &magic) {
+            QFile f(path); if (!f.open(QIODevice::ReadOnly)) return false;
+            return f.read(magic.size()) == magic;
+        };
+
+        const QStringList supported = DiagramView::supportedExportFormats(); // PNG/JPEG/PDF[/WebP/SVG/HTML]
+        qInfo() << "Supported on this build:" << supported.join(", ");
+
+        struct Case { const char *fmt; QByteArray magic; };
+        const QVector<Case> cases = {
+            {"png",  QByteArray::fromHex("89504e47")},   // ‰PNG
+            {"jpeg", QByteArray::fromHex("ffd8ff")},     // JPEG SOI
+            {"pdf",  QByteArray("%PDF")},
+            {"webp", QByteArray("RIFF")},                // RIFF....WEBP
+            {"svg",  QByteArray("<?xml")},
+            {"html", QByteArray("<!doc")},
+        };
+        for (const Case &c : cases) {
+            const bool wantSupported =
+                supported.contains(QString(c.fmt), Qt::CaseInsensitive);
+            const QString path = tmp.filePath(QString("d.") + c.fmt);
+            const bool ok = view.exportTo(c.fmt, path);
+            if (wantSupported) {
+                QVERIFY2(ok, c.fmt);
+                QVERIFY2(QFileInfo(path).size() > 200, c.fmt);
+                QVERIFY2(magicOk(path, c.magic), c.fmt);
+                qInfo("  %-5s -> OK   %lld bytes  (valid)", c.fmt, QFileInfo(path).size());
+            } else {
+                QVERIFY2(!ok, c.fmt);   // must fail cleanly, not silently write garbage
+                qInfo("  %-5s -> n/a  (not in this build; export refused)", c.fmt);
+            }
+        }
+        QVERIFY(!view.exportTo("xyz", tmp.filePath("d.xyz")));  // unknown format
+    }
+
+    void icon_aliases_render() {
+        QImage img(64, 64, QImage::Format_ARGB32); img.fill(Qt::transparent);
+        QPainter p(&img);
+        DiagramRender::drawIcon(p, "postgres", QRectF(8,8,48,48), QColor("#7cc4ff")); // -> database
+        DiagramRender::drawIcon(p, "k8s", QRectF(8,8,48,48), QColor("#7cc4ff"));      // -> kubernetes
+        p.end();
+        int painted = 0;
+        for (int y = 0; y < 64; ++y) for (int x = 0; x < 64; ++x) if (qAlpha(img.pixel(x,y))>0) ++painted;
+        QVERIFY(painted > 20);
+    }
+};
+
+QTEST_MAIN(TestDiagramView)
+#include "test_diagram_view.moc"
