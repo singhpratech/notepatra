@@ -5372,7 +5372,13 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
         // list so the user can review + click Apply per file.
         if (body.value("dry_run").toBool() && m_editPlan) {
             const QJsonObject proposed = body.value("proposed").toObject();
-            const QString absPath = proposed.value("path").toString();
+            // v0.1.104 fix: queue the ABSOLUTE target path, not the
+            // workspace-relative `proposed.path`. applyComposerEdits writes
+            // this string directly, and a relative path resolves against the
+            // process CWD ($HOME on a normal launch) — misplacing edits and
+            // clobbering $HOME files. The executor sets `abs_path` at the
+            // result top level for exactly this purpose.
+            const QString absPath = body.value("abs_path").toString();
             const QString before  = proposed.value("before").toString();
             const QString after   = proposed.value("after").toString();
             if (!absPath.isEmpty()) {
@@ -5408,7 +5414,10 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
         // EditPlan side doesn't need to know about hunks.
         if (body.value("dry_run").toBool() && m_editPlan) {
             const QJsonObject proposed = body.value("proposed").toObject();
-            const QString absPath = proposed.value("path").toString();
+            // v0.1.104 fix: queue the ABSOLUTE target path (see write_file
+            // branch above). `proposed.path` is workspace-relative and would
+            // resolve against the process CWD at Apply time.
+            const QString absPath = body.value("abs_path").toString();
             const QString before  = proposed.value("before").toString();
             const QString after   = proposed.value("after").toString();
             if (!absPath.isEmpty()) {
@@ -5529,11 +5538,27 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
                       result.isError, pal);
 
     // Queue for flush when the stream finishes.
+    //
+    // v0.1.104 SECURITY fix: the tool-result channel was the one path that
+    // bypassed the v0.1.55 CredScrub. read_file(".env") / search / git_diff /
+    // git_show bodies were forwarded VERBATIM to the (possibly cloud) backend
+    // in continueWithToolResults. Run the SAME CredScrub::redact() the
+    // prompt-build path uses over the content-bearing read tools before the
+    // result is queued / forwarded. Write tools (write_file / apply_diff /
+    // generate_chart) return structured JSON the next round must parse exactly,
+    // and they don't echo arbitrary user bytes, so they are left untouched.
+    QString content = result.content;
+    if (!result.isError
+        && (name == "read_file" || name == "search"
+            || name == "git_diff" || name == "git_show")) {
+        content = CredScrub::redact(content);
+    }
+
     QJsonObject payload;
     payload["id"] = id;
     payload["name"] = name;
     payload["args"] = args;
-    payload["content"] = result.content;
+    payload["content"] = content;
     m_pendingToolResults.append(payload);
 }
 
@@ -6421,11 +6446,29 @@ void AIPanel::applyComposerEdits(const QList<QPair<QString, QString>> &edits) {
     QStringList failures;
     int wrote = 0;
     for (const auto &pair : edits) {
-        const QString &absPath = pair.first;
-        const QString &after   = pair.second;
+        QString absPath      = pair.first;
+        const QString &after = pair.second;
         if (absPath.isEmpty()) {
             failures << "(empty path)";
             continue;
+        }
+
+        // v0.1.104 defense-in-depth: NEVER write a non-absolute path. A
+        // relative string would resolve against the process CWD ($HOME on a
+        // normal launch) and clobber e.g. $HOME/README.md. If we somehow
+        // received a relative path, re-anchor it under the workspace using
+        // the same canonical + deny-list safety as the write tools; refuse
+        // the edit outright if it can't be resolved safely.
+        if (!QDir::isAbsolutePath(absPath)) {
+            QString resolved, errorKind;
+            if (AiTools::resolveSafeWritePath(absPath, m_workspaceRoot,
+                                              &resolved, &errorKind)) {
+                absPath = resolved;
+            } else {
+                failures << pair.first + " (refused: non-absolute path, "
+                            + errorKind + ")";
+                continue;
+            }
         }
 
         // Ensure parent directory exists. The AI tool layer already

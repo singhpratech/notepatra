@@ -48,6 +48,14 @@ public:
     // every tab type (code files, Notes, etc.). Bounded [1s, 300s].
     int autoSaveIntervalSec = 5;
 
+    // Memory budget (MB) for opening a single file fully into the editor.
+    // Default 2048 (2 GB). This is a SOFT ceiling: a larger file is still
+    // openable — it just triggers a one-time confirm dialog warning that the
+    // load needs that much free RAM. Raise it only if your machine has the
+    // memory. Bounded [128 MB, 65536 MB (64 GB)]. Stored in MB; the
+    // Preferences control edits it in whole GB.
+    int fileMemoryLimitMb = 2048;
+
     // v0.1.42 — fields added so the Preferences dialog stops being theatre.
     // Every control on every Preferences tab now reads from these on init
     // and writes back on OK. Editor::setupEditor() consults each one
@@ -242,6 +250,7 @@ public:
         autoComplete = o.value("autoComplete").toBool(autoComplete);
         autoCompleteThreshold = o.value("autoCompleteThreshold").toInt(autoCompleteThreshold);
         autoSaveIntervalSec = qBound(1, o.value("autoSaveIntervalSec").toInt(autoSaveIntervalSec), 300);
+        fileMemoryLimitMb = qBound(128, o.value("fileMemoryLimitMb").toInt(fileMemoryLimitMb), 65536);
         hideToolbar = o.value("hideToolbar").toBool(hideToolbar);
         tabsClosable = o.value("tabsClosable").toBool(tabsClosable);
         doubleClickToCloseTab = o.value("doubleClickToCloseTab").toBool(doubleClickToCloseTab);
@@ -321,6 +330,7 @@ public:
         o["autoComplete"] = autoComplete;
         o["autoCompleteThreshold"] = autoCompleteThreshold;
         o["autoSaveIntervalSec"] = autoSaveIntervalSec;
+        o["fileMemoryLimitMb"] = fileMemoryLimitMb;
         o["hideToolbar"] = hideToolbar;
         o["tabsClosable"] = tabsClosable;
         o["doubleClickToCloseTab"] = doubleClickToCloseTab;

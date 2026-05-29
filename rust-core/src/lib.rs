@@ -513,9 +513,20 @@ pub unsafe extern "C" fn npc_free_matches(result: SearchResult) {
     }
 }
 
+/// Free a TextResult. v0.1.104 — text_to_result now boxes the raw UTF-8
+/// bytes (Box<[u8]>) instead of a CString so interior NULs survive, so we
+/// must reclaim the boxed slice by length, NOT via npc_free_string which
+/// would reconstruct a CString and mis-compute the size.
 #[no_mangle]
 pub unsafe extern "C" fn npc_free_text_result(result: TextResult) {
-    npc_free_string(result.text);
+    if !result.text.is_null() && result.text_len > 0 {
+        unsafe {
+            let _ = Box::from_raw(ptr::slice_from_raw_parts_mut(
+                result.text as *mut u8,
+                result.text_len,
+            ));
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -528,12 +539,17 @@ unsafe fn str_from_raw<'a>(ptr: *const c_char, len: size_t) -> &'a str {
 }
 
 fn text_to_result(s: String) -> TextResult {
-    let len = s.len();
-    let cstr = CString::new(s).unwrap_or_default();
-    TextResult {
-        text: cstr.into_raw(),
-        text_len: len,
-    }
+    // v0.1.104 — hand back the raw UTF-8 bytes as a Box<[u8]> + explicit
+    // length, NOT a CString. A CString stops at the first interior NUL, so
+    // a payload that legitimately contains a NUL (e.g. Base64 Decode of
+    // "QUJDAEVGRw==" → b"ABC\0EFG") would have its buffer truncated while
+    // text_len still reported the original length — making the C++ side
+    // read past the allocation. Same fix as npc_load_file (npc_free_file_text).
+    // Caller MUST free with npc_free_text_result, which reclaims the slice.
+    let bytes = s.into_bytes().into_boxed_slice();
+    let text_len = bytes.len();
+    let text = Box::into_raw(bytes) as *mut c_char;
+    TextResult { text, text_len }
 }
 
 fn error_result(msg: &str) -> FileLoadResult {
@@ -546,5 +562,55 @@ fn error_result(msg: &str) -> FileLoadResult {
         status: 3,
         error_msg: CString::new(msg).unwrap_or_default().into_raw(),
         truncated: 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Reconstruct the exact bytes a C++ caller would read via
+    /// `QString::fromUtf8(r.text, r.text_len)`, then free the result the same
+    /// way `rustbridge.cpp` does (`npc_free_text_result`).
+    fn bytes_of(r: TextResult) -> Vec<u8> {
+        assert!(!r.text.is_null());
+        let bytes = unsafe { slice::from_raw_parts(r.text as *const u8, r.text_len) }.to_vec();
+        unsafe { npc_free_text_result(r) };
+        bytes
+    }
+
+    /// Regression for the interior-NUL heap over-read (v0.1.104 ship-blocker):
+    /// Tools > Base64 Decode of "QUJDAEVGRw==" decodes to b"ABC\0EFG" (7 bytes,
+    /// one interior NUL). The C++ side reads exactly `text_len` bytes, so
+    /// `text_len` MUST be the full 7 — a CString round-trip would truncate the
+    /// buffer at the NUL while still reporting 7, reading past the allocation.
+    #[test]
+    fn base64_decode_interior_nul_reports_full_length() {
+        let input = b"QUJDAEVGRw==";
+        let r = unsafe { npc_base64_decode(input.as_ptr() as *const c_char, input.len()) };
+        assert_eq!(r.text_len, 7, "decoded length must be the full 7 bytes");
+        let bytes = bytes_of(r);
+        assert_eq!(
+            bytes, b"ABC\0EFG",
+            "all 7 bytes incl. the interior NUL survive"
+        );
+    }
+
+    /// The reported length must match the buffer the caller reads for any
+    /// text op routed through `text_to_result` — exercise one with an interior
+    /// NUL to lock in that `text_len` equals the byte length, not a NUL-scan.
+    #[test]
+    fn text_to_result_length_matches_buffer() {
+        let r = text_to_result("ab\0cd".to_string());
+        assert_eq!(r.text_len, 5);
+        assert_eq!(bytes_of(r), b"ab\0cd");
+    }
+
+    /// Empty results must be safe to read (0 bytes) and free.
+    #[test]
+    fn text_to_result_empty_is_safe() {
+        let r = text_to_result(String::new());
+        assert_eq!(r.text_len, 0);
+        unsafe { npc_free_text_result(r) };
     }
 }

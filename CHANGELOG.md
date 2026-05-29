@@ -7,6 +7,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.106] — 2026-05-29
+
+**A reliability + security hardening release. Every change hardens a code path that already shipped — no new features.** Battle-readiness ship-blockers, shipped ahead of the still-deferred Data-Analyst work.
+
+### Fixed
+- **Session restore could clobber the wrong file** — `restoreSession()` assumed `openFile()` always appended a tab. When a restored tab pointed at a file that exists-but-is-unreadable (perms / replaced by a directory) or was already open, `openFile()` early-returned without adding a tab, so `editorAt(count()-1)` aliased the *previous* restored editor; the unsaved content overwrote that prior tab's buffer and a later Save wrote the wrong file. Now the count is checked before reuse and orphaned unsaved content lands in a fresh untitled tab.
+- **Edit-apply could write outside the workspace** — the dry-run `write_file`/`apply_diff` preview queued a workspace-relative path that resolved against the process CWD (`$HOME`) at Apply time; it now queues the absolute path, and `applyComposerEdits()` refuses any non-absolute path.
+
+### Security
+- **Credential-scrubbing on the AI tool-result channel** — `read_file(".env")` / `search` / `git_diff` / `git_show` bodies were forwarded verbatim to the (possibly cloud) backend, bypassing CredScrub. `CredScrub::redact()` now runs over those content-bearing tool results before they are queued.
+- **Wider secret-file deny-list** — `isHardDenied()` now also blocks the agent from reading the dotenv family (`.env`, `.env.local`, `.env.production`, and the `<name>.env`/`*.env.*` convention like `app.env`/`database.env`), `secrets.json`, and Terraform `*.tfvars`/`*.tfstate`.
+- **Stored-XSS in chart HTML export** — a model-emitted spec value containing `</script><script>…` could break out of the embedded `<script>` block when the exported `.html` was opened via `file://`. The serialized spec is now `\uXXXX`-escaped (`<`, `>`, `&`, U+2028, U+2029) before embedding, on both the WebEngine and the default (lite) export paths. The in-app render path was never affected.
+
+### Memory safety
+- **Interior-NUL heap over-read in the Rust core** — `text_to_result` returned a `CString` (truncates at the first interior NUL while reporting full length), so a text op whose output contains a NUL (e.g. Base64-decoding `QUJDAEVGRw==` → `b"ABC\0EFG"`) made the C++ side read past the allocation. Now returns a `Box<[u8]>` + explicit length, freed via `npc_free_text_result`.
+
+### Added
+- **Large-file memory guard** — Preferences → Editing → Large files sets a soft memory budget (default 2 GB); opening a larger file asks for confirmation first instead of risking an OOM stall. Soft ceiling — you can always proceed.
+
+### Tests
+- New `test_restore_session_unreadable` (session-restore integration); `test_ai_tools` +9 deny-list assertions (incl. `app.env`/`database.env`); `test_vega_chart` +HTML-export XSS escape; rust-core +3 interior-NUL tests. Full no-regression ctest green.
+
+### Held (deferred)
+- A token-aware rewrite of the `query_sql` read-only SQL gate was prepared but held — an adversarial audit found a string/token gate can't catch side-effecting functions (`setval`, `read_csv('/etc/passwd')`, `OPENROWSET`, `dblink`), MySQL executable comments (`/*! … */`), or `EXPLAIN ANALYZE`, and over-rejected legit reads (`SELECT REPLACE(...)`, a `comment` column, T-SQL `[set]`). The correct fix is connection/transaction-level read-only enforcement; deferred to a dedicated follow-up. The shipped prefix check is unchanged.
+
+---
+
 ## [0.1.105] — 2026-05-29
 
 **The per-symbol diagram colours from v0.1.104 now appear by default in the ER and System starter templates, not just the flow chart.** Colour was never gated on diagram type — it has always worked on database cylinders and icon nodes — but only the flow starter demonstrated it, so it looked unavailable on ER/System. No engine change; this closes the discoverability gap.

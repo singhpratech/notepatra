@@ -134,6 +134,37 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent) {
     edgeLay->addStretch();
     eLay->addWidget(edgeGroup);
 
+    // ─── Large files (memory budget) ─────────────────────────────────
+    auto *memGroup = new QGroupBox("Large files");
+    auto *memLay = new QVBoxLayout(memGroup);
+    auto *memRow = new QHBoxLayout;
+    memRow->addWidget(new QLabel("Memory limit for opening a file:"));
+    auto *memSpin = new QSpinBox;
+    memSpin->setRange(1, 64);
+    memSpin->setSuffix(" GB");
+    // Config stores MB; round-trip to whole GB for the control.
+    memSpin->setValue(qBound(1, (cfg.fileMemoryLimitMb + 512) / 1024, 64));
+    memRow->addWidget(memSpin);
+    memRow->addStretch();
+    memLay->addLayout(memRow);
+    auto *memNote = new QLabel(
+        "Default is 2 GB. Notepatra can still open files larger than this — it "
+        "just asks you to confirm first, because the load needs that much free "
+        "RAM. Raise the limit if your machine has the memory to spare.");
+    memNote->setWordWrap(true);
+    {
+        QFont nf = memNote->font();
+        nf.setItalic(true);
+        memNote->setFont(nf);
+        QPalette pal = memNote->palette();           // theme-safe muted text
+        QColor c = pal.color(QPalette::WindowText);
+        c.setAlpha(160);
+        pal.setColor(QPalette::WindowText, c);
+        memNote->setPalette(pal);
+    }
+    memLay->addWidget(memNote);
+    eLay->addWidget(memGroup);
+
     eLay->addStretch();
     tabs->addTab(editing, "Editing");
 
@@ -399,6 +430,7 @@ PreferencesDialog::PreferencesDialog(QWidget *parent) : QDialog(parent) {
         cfg2.autoIndent            = cbAutoIndent->isChecked();
         cfg2.showEdge              = cbShowEdge->isChecked();
         cfg2.edgeColumn            = edgeColumnSpin->value();
+        cfg2.fileMemoryLimitMb     = memSpin->value() * 1024;   // GB → MB
 
         // Margins
         cfg2.foldStyle             = foldCombo->currentData().toString();

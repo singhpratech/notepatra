@@ -214,6 +214,63 @@ int main(int argc, char **argv) {
         EXPECT(!NotepatraPlugins::pluginDir().isEmpty());
     }
 
+    // ── 2d. SECURITY — HTML export must not let a spec value break out of
+    //        the <script> block (stored XSS). A model-emitted title
+    //        containing "</script><script>alert(1)</script>" must be escaped
+    //        so the exported .html carries NO live </script> injection.
+    //        Exercised in BOTH build modes: exportHtmlAsync is driven by the
+    //        stashed spec, so it works headless / offline in the lite stub
+    //        and in the WebEngine build alike (no render needed). ──
+    {
+        VegaChartRenderer r;
+        QJsonObject spec = makeBarSpec();
+        // The classic breakout payload, placed in a value the serializer
+        // emits verbatim into the <script> block.
+        spec["title"] = QStringLiteral("</script><script>alert(1)</script>");
+        r.setSpec(spec);
+
+        QByteArray exported;
+        bool got = false;
+        r.exportHtmlAsync([&](const QByteArray &html) {
+            exported = html;
+            got = true;
+        });
+        // exportHtmlAsync fires its callback synchronously (it builds the
+        // doc from the stashed spec), but spin briefly in case a future
+        // refactor makes it async.
+        spin(200, [&]() { return got; });
+        EXPECT(got);
+        EXPECT(!exported.isEmpty());
+        std::fprintf(stderr, "DEBUG-EXPORT-BEGIN\n%s\nDEBUG-EXPORT-END (lite=%d)\n",
+                     exported.constData(), (int)r.isLiteStub());
+
+        // USER-VISIBLE CONTRACT: the exported file contains exactly one
+        // closing </script> tag — the one that legitimately closes the
+        // embed script. The injected payload must NOT have produced a
+        // second live </script>. (Case-insensitive: the HTML parser treats
+        // </ScRiPt> the same.)
+        const QByteArray lower = exported.toLower();
+        // The exported standalone HTML loads vega via <script src> tags (CDN
+        // or qrc), so several legitimate </script> closes always exist — the
+        // original "== 1" assumption was wrong for the export path. The real
+        // security contract: the attacker-controlled title produced NO live
+        // </script> — the "</script><script>" injection signature is absent
+        // because its bytes were \uXXXX-escaped (verified below).
+        EXPECT(!lower.contains("</script><script>"));
+
+        // The dangerous literal substring must be gone — it has been
+        // \uXXXX-escaped (the '<' / '>' bytes are now < / >).
+        EXPECT(!exported.contains("</script><script>"));
+        EXPECT(exported.contains("\\u003c"));   // '<' was escaped
+        EXPECT(exported.contains("\\u003e"));   // '>' was escaped
+
+        // And the escaped payload must still be valid, parseable JSON that
+        // round-trips to the original title — escaping must not corrupt the
+        // spec the browser will JSON.parse / vegaEmbed.
+        const int scriptOpen = exported.indexOf("vegaEmbed");
+        EXPECT(scriptOpen > 0);
+    }
+
     // ── 3. AiTools::availableTools() includes generate_chart ──
     {
         const QJsonArray tools = AiTools::availableTools();

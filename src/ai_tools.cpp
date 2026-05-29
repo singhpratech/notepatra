@@ -72,19 +72,38 @@ bool isHardDenied(const QString &absPath) {
     // not always credentials (test fixtures sometimes use them) but the
     // false-positive rate is low enough that "refuse and explain" is
     // safer than "leak occasionally".
-    static const QStringList denySuffix = { ".pem", ".key", ".pfx", ".p12" };
+    //
+    // v0.1.106: add Terraform variable / state files — *.tfvars routinely
+    // hold provider credentials and *.tfstate embeds resource secrets in
+    // plaintext.
+    static const QStringList denySuffix = {
+        ".pem", ".key", ".pfx", ".p12", ".tfvars", ".tfstate",
+    };
     for (const QString &suf : denySuffix) {
         if (p.endsWith(suf)) return true;
     }
 
-    // Filename patterns — id_rsa, id_ed25519, id_ecdsa, etc.
+    // Filename / segment patterns — id_rsa, id_ed25519, id_ecdsa, etc.
+    // Match on a leading path separator so a project named "secretsjson"
+    // or "myenv" at the workspace root doesn't false-positive.
+    //
+    // v0.1.106: add the dotenv family and secrets.json — the original
+    // deny-list never covered them, so read_file(".env") leaked its body
+    // verbatim to the backend.
     static const QStringList denyFilename = {
         "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
         "authorized_keys", "known_hosts",
+        ".env", "secrets.json",
     };
     for (const QString &name : denyFilename) {
         if (p.contains("/" + name) || p.contains("\\" + name)) return true;
     }
+
+    // v0.1.106: the dotenv convention also covers <name>.env (app.env,
+    // database.env, prod.env) and *.env.<suffix> (app.env.bak), which the
+    // leading-"/.env" match above misses. Any path ending in ".env" or
+    // containing ".env." is overwhelmingly credential-bearing — deny it.
+    if (p.endsWith(".env") || p.contains(".env.")) return true;
 
     return false;
 }

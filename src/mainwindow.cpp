@@ -4623,19 +4623,45 @@ void MainWindow::restoreSession() {
         const QString tabName = tab["tabName"].toString();
 
         Editor *e = nullptr;
+        // v0.1.104 — openFile() does NOT always append a tab: it early-returns
+        // without adding one when the file is unreadable (perms/replaced-by-dir
+        // → loadFile fails) or is already open in an earlier-restored tab. In
+        // those cases editorAt(count()-1) would alias the PREVIOUS restored
+        // editor; the modified branch then overwrote that prior tab's buffer
+        // and a later Save clobbered the wrong file. Capture the count before
+        // the call and only reuse the appended editor if the count grew.
         if (!path.isEmpty() && QFileInfo(path).exists() && !wasModified) {
             // Pristine file-backed tab — re-read from disk.
+            const int before = m_tabs->count();
             openFile(path);
-            e = m_tabs->editorAt(m_tabs->count() - 1);
+            if (m_tabs->count() > before)
+                e = m_tabs->editorAt(m_tabs->count() - 1);
         } else if (!path.isEmpty() && QFileInfo(path).exists() && wasModified && hasUnsaved) {
             // Modified file-backed tab — open the file first (for path
             // association + watcher + syntax), then overlay the unsaved
             // buffer content and mark as modified.
+            const int before = m_tabs->count();
             openFile(path);
-            e = m_tabs->editorAt(m_tabs->count() - 1);
-            if (e) {
-                e->setText(unsavedContent);
-                e->setModified(true);
+            if (m_tabs->count() > before) {
+                e = m_tabs->editorAt(m_tabs->count() - 1);
+                if (e) {
+                    e->setText(unsavedContent);
+                    e->setModified(true);
+                }
+            } else {
+                // openFile() appended nothing (unreadable file, or already
+                // open). Do NOT touch any existing tab — preserve the unsaved
+                // buffer in a fresh untitled tab instead so a later Save can't
+                // clobber the wrong file.
+                e = newFile();
+                if (e) {
+                    e->setText(unsavedContent);
+                    e->setModified(true);
+                    if (!tabName.isEmpty()) {
+                        int idx = m_tabs->indexOf(e);
+                        if (idx >= 0) m_tabs->setTabText(idx, tabName);
+                    }
+                }
             }
         } else if (hasUnsaved) {
             // Untitled tab or file-no-longer-exists — recreate as new buffer.
@@ -4655,7 +4681,13 @@ void MainWindow::restoreSession() {
         if (e) {
             e->setCursorPosition(tab["line"].toInt(), tab["col"].toInt());
         }
-        if (tab["active"].toBool()) activeIdx = m_tabs->count() - 1;
+        // Only honour this entry's "active" flag if we actually materialised a
+        // tab for it — otherwise (skipped unreadable pristine tab) leave the
+        // active index pointing at a real, correctly-mapped tab.
+        if (e && tab["active"].toBool()) {
+            int idx = m_tabs->indexOf(e);
+            if (idx >= 0) activeIdx = idx;
+        }
     }
 
     if (m_tabs->count() > 1) {

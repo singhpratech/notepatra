@@ -48,6 +48,53 @@ QString synthChartId() {
     return QStringLiteral("chart-") + uuid.left(12);
 }
 
+// SECURITY — escape a serialized JSON blob for safe embedding inside an
+// HTML <script> block (the HTML-export sink). A model-emitted spec can
+// carry a datum/field/title containing "</script><script>alert(1)</script>";
+// concatenated raw into the exported .html it would close the script tag and
+// execute on open via file://. The in-app render path is NOT affected — there
+// the spec is passed as a JS string argument, not concatenated into markup.
+//
+// We replace the three HTML-significant bytes ('<', '>', '&') plus the line/
+// paragraph separators U+2028 (0xE2 0x80 0xA8) and U+2029 (0xE2 0x80 0xA9)
+// with their \uXXXX JSON escapes. These remain valid JSON (JSON.parse decodes
+// \uXXXX back to the original characters) but no longer contain a literal
+// "</script" token or a raw separator that could break the embedding. Note
+// Qt5's QJsonDocument::toJson() emits non-ASCII as RAW UTF-8 bytes (a U+2028
+// stays as the bytes E2 80 A8, NOT  ), so the 0xE2 branch below is
+// LOAD-BEARING — do not remove it. A literal '<' / '>' / '&' can only appear
+// inside a string value, which is exactly where the injection lives.
+QByteArray escapeJsonForHtmlScript(const QByteArray &json) {
+    QByteArray out;
+    out.reserve(json.size());
+    for (int i = 0; i < json.size(); ++i) {
+        const unsigned char c = static_cast<unsigned char>(json.at(i));
+        switch (c) {
+        case '<': out += "\\u003c"; break;
+        case '>': out += "\\u003e"; break;
+        case '&': out += "\\u0026"; break;
+        case 0xE2:
+            // U+2028 / U+2029 are 3-byte UTF-8 sequences (E2 80 A8 / E2 80 A9).
+            if (i + 2 < json.size()
+                && static_cast<unsigned char>(json.at(i + 1)) == 0x80
+                && (static_cast<unsigned char>(json.at(i + 2)) == 0xA8
+                    || static_cast<unsigned char>(json.at(i + 2)) == 0xA9)) {
+                out += (static_cast<unsigned char>(json.at(i + 2)) == 0xA8)
+                           ? "\\u2028"
+                           : "\\u2029";
+                i += 2;
+            } else {
+                out += static_cast<char>(c);
+            }
+            break;
+        default:
+            out += static_cast<char>(c);
+            break;
+        }
+    }
+    return out;
+}
+
 #ifdef NOTEPATRA_WITH_WEBENGINE
 // v0.1.90 — load vega/vega-lite/vega-embed from a bundled Qt resource
 // instead of JSDelivr. Charts now render offline / on air-gapped boxes
@@ -320,8 +367,12 @@ void VegaChartRenderer::exportHtmlAsync(ExportCallback cb) {
     // a browser; the saved file is portable). The original page used
     // the qrc:// bundle — that path won't resolve in a file:// context,
     // so the export uses the public CDN for the exported file.
-    const QByteArray specJson =
-        QJsonDocument(m_lastSpec).toJson(QJsonDocument::Indented);
+    // SECURITY — escape the serialized spec before embedding it in the
+    // <script> block, else a spec value containing "</script><script>…"
+    // breaks out and executes on file:// open (stored XSS). escapeJsonForHtmlScript
+    // keeps the output valid JSON. See its definition for the threat model.
+    const QByteArray specJson = escapeJsonForHtmlScript(
+        QJsonDocument(m_lastSpec).toJson(QJsonDocument::Indented));
     QByteArray html;
     html += "<!DOCTYPE html>\n<html><head>\n";
     html += "<meta charset=\"utf-8\">\n";
@@ -488,8 +539,11 @@ void VegaChartRenderer::exportSvgAsync(ExportCallback cb) {
     cb(QByteArray());
 }
 void VegaChartRenderer::exportHtmlAsync(ExportCallback cb) {
-    const QByteArray specJson =
-        QJsonDocument(m_lastSpec).toJson(QJsonDocument::Indented);
+    // SECURITY — same XSS escaping as the WebEngine export path above: a spec
+    // value containing "</script><script>…" must not break out of the embed
+    // <script> block when the exported .html is opened via file://.
+    const QByteArray specJson = escapeJsonForHtmlScript(
+        QJsonDocument(m_lastSpec).toJson(QJsonDocument::Indented));
     QByteArray html;
     html += "<!DOCTYPE html>\n<html><head>\n";
     html += "<meta charset=\"utf-8\"><title>Notepatra chart</title>\n";

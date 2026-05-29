@@ -751,6 +751,30 @@ void Editor::highlightAllOccurrences(const QString &word) {
 }
 
 bool Editor::loadFile(const QString &path) {
+    // Soft memory-budget gate (Preferences → Editing → Large files). Opening a
+    // file pulls it fully into RAM; warn once before committing to a load that
+    // exceeds the user's configured budget (default 2 GB). This is NOT a hard
+    // refusal — the user can proceed if their machine has the memory.
+    const qint64 memLimitBytes =
+        (qint64)Config::instance().fileMemoryLimitMb * 1024 * 1024;
+    const qint64 onDiskSize = QFileInfo(path).size();
+    if (memLimitBytes > 0 && onDiskSize > memLimitBytes) {
+        const double fileGb  = onDiskSize / (1024.0 * 1024.0 * 1024.0);
+        const double limitGb = Config::instance().fileMemoryLimitMb / 1024.0;
+        const auto reply = QMessageBox::question(this, tr("Large file"),
+            tr("\"%1\" is %2 GB, larger than your %3 GB memory limit.\n\n"
+               "Notepatra can open it, but loading needs roughly that much free "
+               "RAM and may be slow or fail on a low-memory system. You can raise "
+               "the limit in Preferences → Editing → Large files.\n\n"
+               "Open it anyway?")
+                .arg(QFileInfo(path).fileName())
+                .arg(fileGb, 0, 'f', 2)
+                .arg(limitGb, 0, 'f', 1),
+            QMessageBox::Open | QMessageBox::Cancel, QMessageBox::Cancel);
+        if (reply != QMessageBox::Open)
+            return false;
+    }
+
     // Use Rust core for memory-safe file loading
     auto result = RustCore::loadFile(path);
 

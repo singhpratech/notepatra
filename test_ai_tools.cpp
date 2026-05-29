@@ -57,6 +57,18 @@ int main(int argc, char *argv[]) {
         check("denies known_hosts",         AiTools::isHardDenied("/home/u/.ssh/known_hosts"));
         check("denies .npmrc",              AiTools::isHardDenied("/home/u/.npmrc"));
         check("denies docker config.json",  AiTools::isHardDenied("/home/u/.docker/config.json"));
+        // v0.1.106 SECURITY — dotenv / secrets / Terraform credential files.
+        // isHardDenied gates read_file BEFORE it reads, so these never leak.
+        check("denies .env",                AiTools::isHardDenied("/home/u/myproj/.env"));
+        check("denies .env.local",          AiTools::isHardDenied("/home/u/myproj/.env.local"));
+        check("denies .env.production",     AiTools::isHardDenied("/home/u/myproj/.env.production"));
+        // <name>.env convention — the leading-"/.env" match misses these.
+        check("denies app.env",             AiTools::isHardDenied("/home/u/myproj/app.env"));
+        check("denies database.env",        AiTools::isHardDenied("/home/u/myproj/config/database.env"));
+        check("denies app.env.bak",         AiTools::isHardDenied("/home/u/myproj/app.env.bak"));
+        check("denies secrets.json",        AiTools::isHardDenied("/home/u/myproj/secrets.json"));
+        check("denies *.tfvars",            AiTools::isHardDenied("/home/u/myproj/prod.tfvars"));
+        check("denies *.tfstate",           AiTools::isHardDenied("/home/u/myproj/terraform.tfstate"));
 
         // Negatives — these should NOT be denied
         check("allows project README.md",   !AiTools::isHardDenied("/home/u/myproj/README.md"));
