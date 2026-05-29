@@ -396,6 +396,36 @@ private slots:
             QCOMPARE(d.textboxes.first(), QStringLiteral("x -> y flow"));
         }
     }
+
+    // Colour is not gated on diagram type or shape: it works on database
+    // cylinders (ER) and icon nodes (system) exactly as on flow boxes.
+    void color_on_er_and_system_nodes() {
+        const Npd::Diagram er = Npd::parse(QStringLiteral(
+            "diagram er\n"
+            "node customers ([Customers]) #2e7d32 :: \"id, name\"\n"
+            "node orders ([Orders]) #1565c0\n"
+            "customers -> orders : places\n"));
+        QVERIFY2(er.ok(), qPrintable(er.errors.join("; ")));
+        auto eid=[&](const QString&id){ for(const auto&n:er.nodes) if(n.id==id) return n; return Npd::Node{}; };
+        QCOMPARE(eid("customers").color, QStringLiteral("#2e7d32"));  // colour before :: hover
+        QCOMPARE(eid("customers").shape, Npd::Shape::Database);
+        QCOMPARE(eid("customers").hover, QStringLiteral("id, name"));
+        QCOMPARE(eid("orders").color, QStringLiteral("#1565c0"));
+        QCOMPARE(eid("orders").shape, Npd::Shape::Database);
+
+        const Npd::Diagram sys = Npd::parse(QStringLiteral(
+            "diagram system\n"
+            "icon user :user \"Browser\" #00838f :: \"client\"\n"
+            "icon db :database \"DB\" #6a1b9a\n"
+            "user -> db\n"));
+        QVERIFY2(sys.ok(), qPrintable(sys.errors.join("; ")));
+        auto sid=[&](const QString&id){ for(const auto&n:sys.nodes) if(n.id==id) return n; return Npd::Node{}; };
+        QCOMPARE(sid("user").color, QStringLiteral("#00838f"));
+        QCOMPARE(sid("user").shape, Npd::Shape::Icon);
+        QCOMPARE(sid("user").icon, QStringLiteral("user"));
+        QCOMPARE(sid("user").hover, QStringLiteral("client"));
+        QCOMPARE(sid("db").color, QStringLiteral("#6a1b9a"));
+    }
 };
 
 QTEST_MAIN(TestDiagramView)

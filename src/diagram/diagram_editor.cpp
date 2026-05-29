@@ -56,28 +56,28 @@ const char *kErTemplate =
     "title \"Orders schema\"\n"
     "palette forest\n"
     "\n"
-    "node customers ([Customers]) :: \"id, name, email, created_at\"\n"
-    "node orders ([Orders]) :: \"id, customer_id, total, placed_at\"\n"
-    "node items ([Order items]) :: \"id, order_id, product_id, qty, unit_price\"\n"
-    "node products ([Products]) :: \"id, sku, name, unit_price\"\n"
+    "node customers ([Customers]) #2e7d32 :: \"id, name, email, created_at\"\n"
+    "node products ([Products]) #2e7d32 :: \"id, sku, name, unit_price\"\n"
+    "node orders ([Orders]) #1565c0 :: \"id, customer_id, total, placed_at\"\n"
+    "node items ([Order items]) #1565c0 :: \"id, order_id, product_id, qty, unit_price\"\n"
     "\n"
     "customers -> orders : places\n"
     "orders -> items : contains\n"
     "products -> items : referenced by\n"
     "\n"
-    "textbox \"One customer has many orders; each order has many line items.\"\n";
+    "textbox \"Colour groups the entities — green = master data, blue = transactional. Colour is optional.\"\n";
 
 const char *kSystemTemplate =
     "diagram system\n"
     "title \"Web app architecture\"\n"
     "palette clay\n"
     "\n"
-    "icon user :user \"Browser\" :: \"End-user web client\"\n"
-    "icon cdn :cloud \"CDN\" :: \"Static assets + edge cache\"\n"
-    "node api [API gateway] :: \"Auth, rate-limiting, routing\"\n"
-    "icon svc :server \"App service\" :: \"Stateless; horizontally autoscaled\"\n"
-    "icon cache :database \"Cache\" :: \"Redis — sessions + hot rows\"\n"
-    "icon db :database \"Primary DB\" :: \"Source of truth\"\n"
+    "icon user :user \"Browser\" #00838f :: \"End-user web client\"\n"
+    "icon cdn :cloud \"CDN\" #00838f :: \"Static assets + edge cache\"\n"
+    "node api [API gateway] #1565c0 :: \"Auth, rate-limiting, routing\"\n"
+    "icon svc :server \"App service\" #1565c0 :: \"Stateless; horizontally autoscaled\"\n"
+    "icon cache :database \"Cache\" #6a1b9a :: \"Redis — sessions + hot rows\"\n"
+    "icon db :database \"Primary DB\" #6a1b9a :: \"Source of truth\"\n"
     "\n"
     "user -> cdn\n"
     "user -> api\n"
@@ -86,7 +86,7 @@ const char *kSystemTemplate =
     "svc -> db\n"
     "cache <-> db : warm\n"
     "\n"
-    "textbox \"Requests hit the gateway; the service reads through cache to the DB.\"\n";
+    "textbox \"Colour marks the tier — teal = edge, blue = app, purple = data. Colour is optional.\"\n";
 
 }  // namespace
 
@@ -391,6 +391,10 @@ node err   [Error] red</pre>
 or a common name (green, blue, orange, red, teal, purple…). The border and text
 auto-contrast so it stays readable on any theme. Nodes with no colour keep the
 diagram <b>palette</b>, so leaving them all uncoloured gives the clean monochrome look.</p>
+<p>Colour works on <b>every node type and every diagram</b> — boxes, pills, decisions,
+database cylinders (<code>node t ([Table]) green</code>) and icons
+(<code>icon db :database "DB" #1565c0</code>) in flow, ER <em>and</em> system diagrams alike.
+The colour goes after the shape and before any <code>::</code> hover.</p>
 
 <h3>Title, palette, caption</h3>
 <pre>diagram flow            flow | er | system

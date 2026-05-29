@@ -7,6 +7,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.105] — 2026-05-29
+
+**The per-symbol diagram colours from v0.1.104 now appear by default in the ER and System starter templates, not just the flow chart.** Colour was never gated on diagram type — it has always worked on database cylinders and icon nodes — but only the flow starter demonstrated it, so it looked unavailable on ER/System. No engine change; this closes the discoverability gap.
+
+### Changed
+- **ER starter template** now colour-groups entities (green master data: Customers/Products; blue transactional: Orders/Order items), demonstrating colour on `([…])` database-cylinder nodes.
+- **System starter template** now colour-groups by tier (teal edge: Browser/CDN; blue app: API gateway/App service; purple data: Cache/Primary DB), demonstrating colour on `icon` nodes.
+- **Help** "Colour individual symbols" section now states colour works on every node type and every diagram (boxes, pills, decisions, database cylinders, icons — flow/ER/system), with examples. Colour stays opt-in: uncoloured nodes keep the palette.
+
+### Tests
+- `test_diagram_view` adds `color_on_er_and_system_nodes` — colour parses + survives alongside shape and `::` hover on both a database-cylinder (`([…]) #hex`) and an icon (`:name "…" #hex`) node. Full no-regression ctest green (50/50); ER + System coloured templates verified by rendering to PNG.
+
+---
+
 ## [0.1.104] — 2026-05-29
 
 **Diagrams gain optional per-symbol colours and chained arrows — both opt-in, both native, both staying monochrome by default.** Build on the v0.1.103 `QPainter` renderer; nothing changes for an uncoloured, single-edge diagram.
