@@ -44,6 +44,58 @@ void decodeShape(const QString &specIn, Shape &shape, QString &label) {
     }
 }
 
+// A "#rgb" / "#rgba" / "#rrggbb" / "#rrggbbaa" hex colour token.
+bool isHexColor(const QString &t) {
+    if (!t.startsWith(QLatin1Char('#'))) return false;
+    const QString h = t.mid(1);
+    if (!(h.size() == 3 || h.size() == 4 || h.size() == 6 || h.size() == 8)) return false;
+    for (const QChar c : h) {
+        const QChar lc = c.toLower();
+        const bool hex = (lc >= QLatin1Char('0') && lc <= QLatin1Char('9'))
+                      || (lc >= QLatin1Char('a') && lc <= QLatin1Char('f'));
+        if (!hex) return false;
+    }
+    return true;
+}
+
+// Common colour NAMES the pure-Core parser recognises as a trailing token. The
+// renderer accepts any QColor-valid string; this curated set only exists to
+// disambiguate a trailing colour word from ordinary label text without QColor.
+bool isNamedColor(const QString &t) {
+    static const QStringList names = {
+        QStringLiteral("red"), QStringLiteral("green"), QStringLiteral("blue"),
+        QStringLiteral("orange"), QStringLiteral("yellow"), QStringLiteral("purple"),
+        QStringLiteral("violet"), QStringLiteral("teal"), QStringLiteral("cyan"),
+        QStringLiteral("magenta"), QStringLiteral("pink"), QStringLiteral("brown"),
+        QStringLiteral("gray"), QStringLiteral("grey"), QStringLiteral("black"),
+        QStringLiteral("white"), QStringLiteral("gold"), QStringLiteral("indigo"),
+        QStringLiteral("lime"), QStringLiteral("navy"), QStringLiteral("maroon"),
+        QStringLiteral("olive"), QStringLiteral("coral"), QStringLiteral("salmon"),
+        QStringLiteral("crimson"), QStringLiteral("turquoise"), QStringLiteral("tan"),
+        QStringLiteral("silver"), QStringLiteral("aqua"), QStringLiteral("fuchsia"),
+        QStringLiteral("steelblue"), QStringLiteral("seagreen"), QStringLiteral("tomato"),
+        QStringLiteral("slategray"), QStringLiteral("darkcyan"), QStringLiteral("goldenrod") };
+    return names.contains(t.toLower());
+}
+
+// Strip a trailing colour token off `spec` (in place) and return it, or "" if
+// none. A hex token is always taken; a colour NAME is taken only when what
+// precedes it ends at a shape/quote boundary ( ) ] } " ), so a bare word like
+// "red" inside an unbracketed label is left untouched.
+QString takeTrailingColor(QString &spec) {
+    const QString s = spec.trimmed();
+    int i = s.size();
+    while (i > 0 && !s.at(i - 1).isSpace()) --i;
+    const QString tok  = s.mid(i).trimmed();
+    const QString head = s.left(i).trimmed();
+    if (tok.isEmpty() || head.isEmpty()) return QString();
+    if (isHexColor(tok)) { spec = head; return tok; }
+    const bool boundary = head.endsWith(QLatin1Char(')')) || head.endsWith(QLatin1Char(']'))
+                       || head.endsWith(QLatin1Char('}')) || head.endsWith(QLatin1Char('"'));
+    if (boundary && isNamedColor(tok)) { spec = head; return tok.toLower(); }
+    return QString();
+}
+
 } // namespace
 
 QString shapeName(Shape s) {
@@ -79,29 +131,72 @@ Diagram parse(const QString &src) {
         QString line = lines.at(i).trimmed();
         if (line.isEmpty() || line.startsWith(QLatin1Char('#'))) continue;
 
-        // ── edges first: a line containing an arrow is an edge ──
-        const bool bidir = line.contains(QLatin1String("<->"));
-        const int arrowPos = bidir ? line.indexOf(QLatin1String("<->"))
-                                   : line.indexOf(QLatin1String("->"));
-        if (arrowPos >= 0) {
-            const int arrowLen = bidir ? 3 : 2;
-            const QString from = line.left(arrowPos).trimmed();
-            QString rhs = line.mid(arrowPos + arrowLen).trimmed();
-            QString label;
-            const int colon = rhs.indexOf(QLatin1Char(':'));
-            if (colon >= 0) { label = rhs.mid(colon + 1).trimmed(); rhs = rhs.left(colon).trimmed(); }
-            const QString to = rhs;
-            if (from.isEmpty() || to.isEmpty()) { err(lineNo, QStringLiteral("edge needs both endpoints")); continue; }
-            nodeRef(from); nodeRef(to);
-            Edge e; e.from = from; e.to = to; e.label = unquote(label); e.bidirectional = bidir;
-            d.edges.append(e);
+        // First token decides the statement kind. A leading keyword always wins,
+        // so a `node`/`title`/`textbox`/`icon` line whose LABEL happens to contain
+        // "->" (e.g. `node x [Maps A -> B]`) is NOT mistaken for an edge.
+        QString kw, rest;
+        splitFirstToken(line, kw, rest);
+        const bool isKeyword =
+            kw == QLatin1String("diagram") || kw == QLatin1String("title") ||
+            kw == QLatin1String("palette") || kw == QLatin1String("textbox") ||
+            kw == QLatin1String("node")    || kw == QLatin1String("icon");
+
+        // ── edges: a non-keyword line with an arrow is an edge — or a CHAIN ──
+        // `a -> b -> c` expands to a→b and b→c (it must NOT create one node named
+        // literally "b -> c"). Each arrow keeps its own direction, so
+        // `m -> n <-> o` mixes a directed and a bidirectional hop on one line.
+        //
+        // A trailing ": label" decorates the LAST hop (so `check -> dash : yes`
+        // keeps labelling that single edge; put distinct per-hop labels on their
+        // own lines). The label separator is the first ':' / '::' that lies AFTER
+        // the first arrow AND is preceded by whitespace: that keeps a written
+        // " : label" working — and lets a label itself contain "->" — while colons
+        // INSIDE a node id (http://x, ns:b, b:state) stay part of the id.
+        if (!isKeyword && line.contains(QLatin1String("->"))) {
+            const int firstArrow = line.indexOf(QLatin1String("->"));  // ≥0 by the guard above
+            QString chain = line, edgeLabel;
+            for (int i = qMax(firstArrow, 1); i < line.size(); ++i) {
+                if (line.at(i) == QLatin1Char(':') && line.at(i - 1).isSpace()) {
+                    const int skip = (i + 1 < line.size() && line.at(i + 1) == QLatin1Char(':')) ? 2 : 1;
+                    edgeLabel = line.mid(i + skip).trimmed();
+                    chain     = line.left(i);
+                    break;
+                }
+            }
+
+            QStringList nodes;        // node refs, in source order
+            QVector<bool> bidirOps;   // bidirOps[k] joins nodes[k] → nodes[k+1]
+            int pos = 0, last = 0;
+            while (pos < chain.size()) {
+                if (chain.mid(pos, 3) == QLatin1String("<->")) {
+                    nodes.append(chain.mid(last, pos - last).trimmed()); bidirOps.append(true);
+                    pos += 3; last = pos;
+                } else if (chain.mid(pos, 2) == QLatin1String("->")) {
+                    nodes.append(chain.mid(last, pos - last).trimmed()); bidirOps.append(false);
+                    pos += 2; last = pos;
+                } else {
+                    ++pos;
+                }
+            }
+            nodes.append(chain.mid(last).trimmed());
+
+            bool valid = nodes.size() >= 2;
+            for (const QString &n : nodes) if (n.isEmpty()) valid = false;
+            if (!valid) { err(lineNo, QStringLiteral("edge needs both endpoints")); continue; }
+
+            for (const QString &n : nodes) nodeRef(n);
+            for (int k = 1; k < nodes.size(); ++k) {
+                Edge e;
+                e.from = nodes.at(k - 1);
+                e.to   = nodes.at(k);
+                e.bidirectional = bidirOps.at(k - 1);
+                if (k == nodes.size() - 1) e.label = unquote(edgeLabel);  // label rides the last hop
+                d.edges.append(e);
+            }
             continue;
         }
 
-        // ── keyword statements ──
-        QString kw, rest;
-        splitFirstToken(line, kw, rest);
-
+        // ── keyword statements (kw / rest already split above) ──
         if (kw == QLatin1String("diagram")) {
             QString t; splitFirstToken(rest, t, rest);
             if (t == QLatin1String("flow") || t == QLatin1String("er") || t == QLatin1String("system"))
@@ -122,12 +217,14 @@ Diagram parse(const QString &src) {
             QString spec = rest, hover;
             const int hv = rest.indexOf(QLatin1String("::"));
             if (hv >= 0) { spec = rest.left(hv).trimmed(); hover = unquote(rest.mid(hv + 2)); }
+            const QString color = takeTrailingColor(spec);   // after the shape, before ::
             Shape shape; QString label;
             decodeShape(spec, shape, label);
             Node &n = nodeRef(id);
             n.shape = shape;
             if (!label.isEmpty()) n.label = label;
             n.hover = hover;
+            if (!color.isEmpty()) n.color = color;
         } else if (kw == QLatin1String("icon")) {
             // icon <id> :name "Label"  [:: "hover"]
             QString id; splitFirstToken(rest, id, rest);
@@ -139,12 +236,14 @@ Diagram parse(const QString &src) {
             QString iconName; QString after;
             splitFirstToken(rest.mid(1), iconName, after);
             if (iconName.isEmpty()) { err(lineNo, QStringLiteral("icon name is empty")); continue; }
+            const QString color = takeTrailingColor(after);  // trailing colour after the quoted label
             Node &n = nodeRef(id);
             n.shape = Shape::Icon;
             n.icon  = iconName;
             const QString label = unquote(after);
             if (!label.isEmpty()) n.label = label;
             n.hover = hover;
+            if (!color.isEmpty()) n.color = color;
         } else {
             err(lineNo, QStringLiteral("unrecognized statement '%1'").arg(kw));
         }
@@ -166,6 +265,7 @@ QJsonObject toGraphJson(const Diagram &d) {
         o[QStringLiteral("shape")] = shapeName(n.shape);
         if (!n.hover.isEmpty()) o[QStringLiteral("hover")] = n.hover;
         if (!n.icon.isEmpty())  o[QStringLiteral("icon")]  = n.icon;
+        if (!n.color.isEmpty()) o[QStringLiteral("color")] = n.color;
         nodes.append(o);
     }
     root[QStringLiteral("nodes")] = nodes;

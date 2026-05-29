@@ -35,11 +35,11 @@ const char *kFlowTemplate =
     "title \"User Login\"\n"
     "palette ocean\n"
     "\n"
-    "node start (Start)\n"
-    "node creds [Enter credentials] :: \"Username + password form\"\n"
-    "node check {Valid?}\n"
-    "node dash [Dashboard] :: \"Loads the saved session and open tabs\"\n"
-    "node err [Show error] :: \"Increment failed-attempt counter; lock after 5 tries\"\n"
+    "node start (Start) green\n"
+    "node creds [Enter credentials] #1565c0 :: \"Username + password form\"\n"
+    "node check {Valid?} orange\n"
+    "node dash [Dashboard] green :: \"Loads the saved session and open tabs\"\n"
+    "node err [Show error] red :: \"Increment failed-attempt counter; lock after 5 tries\"\n"
     "icon db :database \"Users\" :: \"Primary auth store\"\n"
     "\n"
     "start -> creds\n"
@@ -373,12 +373,24 @@ cloud, gear, table, process, decision, chart</code>.</p>
 
 <h3>Arrows &amp; connections</h3>
 <pre>a -&gt; b                  arrow a to b
-a -&gt; b : yes            arrow with a label
-a &lt;-&gt; b                 bidirectional</pre>
+a -&gt; b : yes            arrow with a label (space before the colon)
+a &lt;-&gt; b : sync          bidirectional (label optional)
+a -&gt; b -&gt; c : ok        chain — a to b, then b to c; label rides the last hop</pre>
+<p>Colours go on <b>node</b> lines (see below), not on connection lines.</p>
 
 <h3>Keep shapes clean — detail on hover</h3>
 <pre>node dash [Dashboard] :: "Loads the saved session and open tabs"</pre>
 <p>Short text stays in the shape; the full text shows when you hover the node.</p>
+
+<h3>Colour individual symbols (optional)</h3>
+<pre>node start (Start) green
+node proc  [Process] #1565c0
+node check {Valid?} orange
+node err   [Error] red</pre>
+<p>Add a colour <b>after the shape</b> — a <code>#hex</code> value (<code>#1565c0</code>)
+or a common name (green, blue, orange, red, teal, purple…). The border and text
+auto-contrast so it stays readable on any theme. Nodes with no colour keep the
+diagram <b>palette</b>, so leaving them all uncoloured gives the clean monochrome look.</p>
 
 <h3>Title, palette, caption</h3>
 <pre>diagram flow            flow | er | system
@@ -396,9 +408,9 @@ The menu only lists formats this build can actually write.</p>
 <pre>diagram flow
 title "User Login"
 palette ocean
-node start (Start)
-node check {Valid?}
-node dash [Dashboard] :: "Loads saved session + tabs"
+node start (Start) green
+node check {Valid?} orange
+node dash [Dashboard] #1565c0 :: "Loads saved session + tabs"
 icon db :database "Users"
 start -&gt; check
 check -&gt; dash : yes

@@ -17,17 +17,31 @@
 //   node <id> {Label}               # {} decision (diamond)
 //   node <id> ([Label])             # ([]) database (cylinder)
 //   node <id> [Short] :: "Full detail shown on hover, kept out of the shape"
+//   node <id> [Label] #1565c0       # optional per-node colour (after the shape)
+//   node <id> (Label) green         # ...as #hex OR a common colour name
 //   icon <id> :name "Label"         # rich-icon node; ':: "hover"' also allowed
+//
+// Colour is OPT-IN flavour: a node with no colour keeps the diagram palette
+// (monochrome). The trailing colour token, when present, sits AFTER the shape
+// (and before any ':: "hover"'). The parser stays pure Qt-Core, so it stores
+// the raw colour string and the renderer (which has QColor) validates it and
+// derives a readable border + auto-contrast text; an unrecognised string is
+// ignored and the node falls back to the palette.
 //
 //   <a> -> <b>                       # directed edge a→b
 //   <a> -> <b> : label               # edge with a label drawn on the arrow
-//   <a> <-> <b> : label              # bidirectional
+//   <a> <-> <b> : label              # bidirectional (label optional)
+//   <a> -> <b> -> <c> : label        # chain — expands to a→b, b→c; label on
+//                                    #   the LAST hop (per-hop labels: own lines)
 //
 //   textbox "A caption / figure note"
 //
 // Endpoints referenced by an edge but never declared with `node` are
 // auto-created as default boxes (Mermaid-style leniency), so `a -> b` alone
-// is a valid diagram.
+// is a valid diagram. A line whose first token is a keyword (node/icon/diagram/
+// title/palette/textbox) is always that statement, so a label may contain "->".
+// Node ids may contain colons (http://x, ns:b) — the edge-label ':' is only the
+// one written with a leading space (" : label"); colour goes on `node` lines.
 
 #pragma once
 
@@ -45,6 +59,7 @@ struct Node {
     QString label;            // short text shown INSIDE the shape
     QString hover;            // full detail shown on hover (may be empty)
     QString icon;             // icon name (Shape::Icon, or decorative); may be empty
+    QString color;            // optional per-node colour token ("#1565c0" / "green"); empty ⇒ use palette
     Shape   shape = Shape::Box;
 };
 

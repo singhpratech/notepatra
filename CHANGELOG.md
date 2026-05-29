@@ -7,6 +7,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.104] — 2026-05-29
+
+**Diagrams gain optional per-symbol colours and chained arrows — both opt-in, both native, both staying monochrome by default.** Build on the v0.1.103 `QPainter` renderer; nothing changes for an uncoloured, single-edge diagram.
+
+### Added
+- **Per-symbol colour** — a `#hex` or named colour token *after the shape* on a `node`/`icon` line (`node proc [Process] #1565c0`, `node start (Start) green`). The renderer derives a readable border and auto-contrast label text (light/dark) so coloured nodes stay legible on every palette and theme. Uncoloured nodes keep the diagram palette — the clean monochrome default is unchanged.
+- **Chained arrows** — `a -> b -> c` expands to the individual edges `a→b`, `b→c`; per-hop direction (`->` vs `<->`) is preserved and a trailing `: label` rides the last hop. Previously `a -> b -> c` produced a single broken node literally named `"b -> c"`.
+
+### Fixed
+- **`.npd` parser hardening** (surfaced by an adversarial parse audit): node ids may now contain colons (`http://x -> y`, `a:start -> b`, `a -> b:state -> c` no longer drop/collapse); a `node`/`title`/`textbox` line whose label contains `->` (e.g. `node x [Maps A -> B]`) is no longer hijacked into the edge branch; `::` on an edge line now yields a clean label instead of a literal leading colon. The edge-label separator is the first space-prefixed `:` written after the first arrow.
+- **Diagram export XSS** — an untrusted `.npd` `title` containing `</title><script>…` is HTML-escaped at the HTML/SVG export write site, so it can never inject a live tag.
+
+### Tests
+- `test_diagram_view` adds `chain_arrows_parse`, `edge_colon_keyword_robustness`, `inline_color_parses`, `colored_node_changes_pixels`, `html_export_escapes_title_xss`. Full no-regression ctest green (50/50); colour + chain features also verified by rendering real diagrams to PNG.
+
+---
+
 ## [0.1.103] — 2026-05-27
 
 **Diagrams now render natively in the default binary on every platform — including macOS Apple Silicon and the Windows `.msi` — with no WebEngine, no Chromium, and no separate "Full" download.** The v0.1.102 diagram tool drew inside an embedded Chromium (QtWebEngine + dagre.js), so the picture never appeared on the default lite binary, on macOS Apple Silicon, or anywhere WebEngine wasn't bundled. v0.1.103 replaces that whole pipeline with a native `QPainter` renderer.

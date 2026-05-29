@@ -145,7 +145,11 @@ bool DiagramView::exportTo(const QString &format, const QString &path) {
         { QBuffer buf(&svg);
           QSvgGenerator gen; gen.setOutputDevice(&buf);
           gen.setSize(QSize(W,H)); gen.setViewBox(QRect(0,0,W,H));
-          gen.setTitle(m_diag.title); gen.setDescription(QStringLiteral("Notepatra .npd diagram"));
+          // v0.1.104 SECURITY (#5): QSvgGenerator::setTitle() writes the text into
+          // the SVG <title> WITHOUT escaping, and this SVG is embedded inline into
+          // the HTML export below — so an untrusted .npd title would inject a live
+          // <script> into BOTH the .svg and the .html. Escape before handing it over.
+          gen.setTitle(m_diag.title.toHtmlEscaped()); gen.setDescription(QStringLiteral("Notepatra .npd diagram"));
           QPainter p(&gen); paintInto(p); p.end();
         }
         if (fmt=="svg") {
@@ -155,8 +159,10 @@ bool DiagramView::exportTo(const QString &format, const QString &path) {
         // html: embed the SVG inline (scalable, self-contained, browser-native)
         QFile f(path); if (!f.open(QIODevice::WriteOnly)) { emit renderError(QStringLiteral("Could not write %1").arg(path)); return false; }
         const QString title = m_diag.title.isEmpty() ? QStringLiteral("Notepatra Diagram") : m_diag.title;
+        // Escape <, >, &, " — the .npd title is untrusted (AI-generated / pasted /
+        // opened from a .npd file) and is hand-concatenated into raw HTML here.
         QByteArray html = "<!doctype html>\n<html><head><meta charset=\"utf-8\">\n<title>"
-            + title.toUtf8() + "</title>\n<style>body{margin:0;background:"
+            + title.toHtmlEscaped().toUtf8() + "</title>\n<style>body{margin:0;background:"
             + m_pal.bg.name().toUtf8() + ";display:flex;justify-content:center}svg{max-width:100%;height:auto}</style>\n"
             "</head>\n<body>\n" + svg + "\n</body></html>\n";
         f.write(html); return true;

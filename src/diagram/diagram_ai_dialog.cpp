@@ -30,15 +30,21 @@ const char *kNpdSystemPrompt =
     "  node <id> {Label}               # decision — diamond\n"
     "  node <id> ([Label])             # database — cylinder\n"
     "  node <id> [Short] :: \"Full detail shown on hover\"\n"
+    "  node <id> [Label] #1565c0       # optional per-node colour (#hex or a name)\n"
     "  icon <id> :name \"Label\"         # rich-icon node\n"
     "  <a> -> <b>                       # directed edge\n"
-    "  <a> -> <b> : label               # labelled edge\n"
-    "  <a> <-> <b>                      # bidirectional\n"
+    "  <a> -> <b> : label               # labelled edge (write the colon with a leading space)\n"
+    "  <a> <-> <b> : label              # bidirectional (label optional)\n"
+    "  <a> -> <b> -> <c> : label        # chain — same as a->b, b->c; label rides the LAST hop\n"
     "  textbox \"caption\"\n\n"
     "icon names: database, server, user, patient, hospital, document, cloud, gear, "
     "table, process, decision, chart.\n"
     "Use short ids (a, b, db). Keep shape text concise; put detail after :: for hover. "
-    "Choose correct shapes — decisions as {..}, datastores as ([..]) or :database icons.";
+    "Choose correct shapes — decisions as {..}, datastores as ([..]) or :database icons.\n"
+    "Colour is OPTIONAL flavour: leave nodes uncoloured for a clean monochrome look, OR add a "
+    "trailing colour (#hex like #2e7d32, or a name like green/blue/orange) AFTER the shape to "
+    "give related steps distinct colours (e.g. green start, amber/yellow decisions, red errors). "
+    "The colour goes after the shape and before any :: hover. Text/border auto-contrast.";
 
 // Strip <think> blocks + any ``` fences so we keep clean .npd.
 QString cleanNpd(QString s) {

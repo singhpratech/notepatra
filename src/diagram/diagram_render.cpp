@@ -283,12 +283,24 @@ void paint(QPainter &p, const Npd::Diagram &d, const Layout &lay, const Palette 
     }
 
     for(const auto&n:d.nodes){ if(!geo.contains(n.id)) continue; QRectF r=geo[n.id];
+        // Per-node colour (opt-in): a valid n.color overrides the palette for THIS
+        // node, with a darker border and auto-contrast text/icon so it stays
+        // readable on any theme. An empty/invalid colour falls back to the palette.
+        QColor cTop=pal.card, cBot=pal.card2, cBorder=pal.border, cText=pal.text, cAccent=pal.accent;
+        if(!n.color.isEmpty()){ QColor c(n.color); if(c.isValid()){
+            cTop=c.lighter(113); cBot=c.darker(104);
+            const qreal lum=0.299*c.redF()+0.587*c.greenF()+0.114*c.blueF();
+            // dark fills blend into the dark canvas → outline them with a LIGHTER
+            // border; light fills get a darker border for definition.
+            cBorder=(lum<0.22)?c.lighter(165):c.darker(150);
+            cText=(lum>0.62)?QColor(0x15,0x20,0x2b):QColor(0xff,0xff,0xff); cAccent=cText; } }
+
         p.setPen(Qt::NoPen); p.setBrush(QColor(0,0,0,70));
         if(n.shape==Npd::Shape::Pill) p.drawRoundedRect(r.translated(0,3),r.height()/2,r.height()/2);
         else if(n.shape!=Npd::Shape::Decision) p.drawRoundedRect(r.translated(0,3),10,10);
 
-        QLinearGradient g(r.topLeft(),r.bottomLeft()); g.setColorAt(0,pal.card); g.setColorAt(1,pal.card2);
-        p.setBrush(g); p.setPen(QPen(pal.border,2));
+        QLinearGradient g(r.topLeft(),r.bottomLeft()); g.setColorAt(0,cTop); g.setColorAt(1,cBot);
+        p.setBrush(g); p.setPen(QPen(cBorder,2));
         switch(n.shape){
         case Npd::Shape::Pill: p.drawRoundedRect(r,r.height()/2,r.height()/2); break;
         case Npd::Shape::Decision:{ QPolygonF dia; dia<<QPointF(r.center().x(),r.top())<<QPointF(r.right(),r.center().y())
@@ -296,7 +308,7 @@ void paint(QPainter &p, const Npd::Diagram &d, const Layout &lay, const Palette 
         case Npd::Shape::Database:{ qreal e=15;
             p.drawEllipse(QRectF(r.left(),r.bottom()-e,r.width(),e));
             p.setPen(Qt::NoPen); p.drawRect(QRectF(r.left(),r.top()+e/2,r.width(),r.height()-e));
-            p.setPen(QPen(pal.border,2));
+            p.setPen(QPen(cBorder,2));
             p.drawLine(QPointF(r.left(),r.top()+e/2),QPointF(r.left(),r.bottom()-e/2));
             p.drawLine(QPointF(r.right(),r.top()+e/2),QPointF(r.right(),r.bottom()-e/2));
             p.setBrush(g); p.drawEllipse(QRectF(r.left(),r.top(),r.width(),e));
@@ -304,17 +316,17 @@ void paint(QPainter &p, const Npd::Diagram &d, const Layout &lay, const Palette 
         case Npd::Shape::Icon: p.drawRoundedRect(r,12,12); break;
         default: p.drawRoundedRect(r,10,10); break;
         }
-        p.setPen(pal.text);
+        p.setPen(cText);
         if(n.shape==Npd::Shape::Icon){
             QString ic=n.icon.isEmpty()?QStringLiteral("process"):n.icon;
-            drawIcon(p,ic,QRectF(r.center().x()-17,r.top()+12,34,34),pal.accent);
-            p.setFont(uiFont(13,true)); p.setPen(pal.text);
+            drawIcon(p,ic,QRectF(r.center().x()-17,r.top()+12,34,34),cAccent);
+            p.setFont(uiFont(13,true)); p.setPen(cText);
             p.drawText(QRectF(r.left()+4,r.bottom()-30,r.width()-8,26),Qt::AlignCenter,n.label.isEmpty()?n.id:n.label);
         } else {
             p.setFont(uiFont(15,true));
             p.drawText(r.adjusted(8,0,-8,0),Qt::AlignCenter|Qt::TextWordWrap,n.label.isEmpty()?n.id:n.label);
         }
-        if(!n.hover.isEmpty()){ p.setBrush(pal.accent); p.setPen(Qt::NoPen);
+        if(!n.hover.isEmpty()){ p.setBrush(cAccent); p.setPen(Qt::NoPen);
             p.drawEllipse(QPointF(r.right()-8,r.top()+8),3.2,3.2); }
     }
 
