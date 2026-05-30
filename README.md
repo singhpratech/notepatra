@@ -3,7 +3,7 @@
   <h1 align="center"><a href="https://notepatra.org" style="text-decoration:none;color:inherit;">Notepatra</a></h1>
   <p align="center"><em>The first code editor built for the AI era.</em></p>
   <p align="center">
-    <strong>C++ + Rust</strong> · <strong>under-12 MB bare native executable</strong> · <strong>Zero Electron</strong> · <strong>226 file types</strong> · <strong>82 language lexers</strong> · <strong>Local AI formatters</strong>
+    <strong>C++ + Rust</strong> · <strong>under-12 MB bare native executable</strong> · <strong>Zero Electron</strong> · <strong>238 file types</strong> · <strong>82 language lexers</strong> · <strong>Local AI formatters</strong>
   </p>
   <p align="center">
     <a href="https://notepatra.org">Website</a> ·
@@ -58,14 +58,14 @@ Notepatra started on Linux — because that's where the gap was. But great tools
 ## Features
 
 ### Editor — Battle-tested basics done right
-- **226 file extensions** mapped to **82 language lexers** — Python, C/C++, C#, Java, Kotlin, JavaScript, TypeScript, Rust, Go, Swift, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, SQL (5 dialects), HTML, CSS, JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Fortran, VHDL, Verilog, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and more. Rust / Go / Swift / Kotlin / TypeScript / PowerShell ship as Notepatra-local lexers (not just C-family fallbacks)
+- **238 file extensions** mapped to **82 language lexers** — Python, C/C++, C#, Java, Kotlin, JavaScript, TypeScript, Rust, Go, Swift, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, SQL (6 dialect presets), HTML, CSS, JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Fortran, VHDL, Verilog, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and more. Rust / Go / Swift / Kotlin / TypeScript / PowerShell ship as Notepatra-local lexers (not just C-family fallbacks)
 - **Tabbed editing** — drag, reorder, middle-click close, double-click empty area for new tab
 - **Tab right-click menu** — Close, Close All BUT This, Close All to the Left/Right, Close All, Save, Save As, Rename, Copy Full Path, Copy Filename, Copy Directory Path, Open Containing Folder, Open Terminal Here, Read-Only toggle, **Color Tag** (7 named colors + custom + Remove)
 - **3 themes** — Light, Dark, Monokai (Settings > Theme)
 - **Session persistence** — close Notepatra, reopen tomorrow, same files, same cursor positions, same window size
 - **Crash recovery** — if Notepatra crashes (it shouldn't, but life happens), your unsaved work is recovered on next launch
 - **File change detection** — someone else edits your file? Notepatra asks: reload or keep yours?
-- **2 GB file support** — memory-mapped I/O via Rust, opens massive files without truncation
+- **2 GB file support** — memory-mapped I/O via Rust; files up to ~1.86 GB load fully, larger open truncated + read-only
 - **Double-click word highlight** — double-click any word, all occurrences light up in orange
 - **Ctrl+B brace matching** — jump between matching `{}` `[]` `()`, highlights both braces + selects everything between
 - **Macro recording** — Start Recording (Ctrl+Shift+M), Stop, Playback (Ctrl+Shift+P), Run Multiple Times, Save/Load macros
@@ -183,7 +183,7 @@ A local-first, two-pane meeting workspace (notes list · editor) — no accounts
 
 A first-class diagramming surface that **renders in the default binary on every platform** (incl. macOS Apple Silicon and the Windows installer — native Qt renderer, no WebEngine), opened from the toolbar next to Noter. The tiny `.npd` text DSL is the **source of truth**; the canvas is a live projection of it (so undo/redo and version control just work).
 - **Create three ways** — **AI Generate** describes it in plain English and a local model writes the `.npd`, shown in a **review pane** before it touches the canvas (undo/redo after); or start from a Flow / ER / System **template**; or write `.npd` directly. **Import Mermaid** converts an existing flowchart.
-- **Rich visuals** — 5 shapes (pill / box / decision diamond / database cylinder / icon), ~55 hand-drawn icons (~150 aliases) for system / ER / flowchart, directed + labelled + bidirectional arrows, label-overflow→hover, 5 palettes, infinite pan/zoom canvas.
+- **Rich visuals** — 5 shapes (pill / box / decision diamond / database cylinder / icon), ~55 hand-drawn icons (~150 aliases) for system / ER / flowchart, directed + labelled + bidirectional arrows, label-overflow→hover, 4 palettes (+ default fallback), infinite pan/zoom canvas.
 - **Export** — **PNG / JPEG / PDF** on every build, plus **SVG / HTML** where the Qt Svg module is present and **WebP** where the Qt WebP image plugin is present (the menu shows exactly what your build supports). A **Help** button has the full cheat-sheet; `samples/diagram_showcase.npd` shows every element; the `npd_render` CLI renders any `.npd` to an image headless.
 
 ### More Features
@@ -555,7 +555,7 @@ cl /LD myplugin.cpp /Fe:myplugin.dll
 
 ## Tests
 
-Focused automated regression tests are wired through CMake + CTest and run in CI — **51 test suites** (`ctest`, 50/50 green), each with many assertions. A representative sample:
+Focused automated regression tests are wired through CMake + CTest and run in CI — **51 test suites** on the Full build (50 on Lite, which omits the WebEngine chart suite); all green, each with many assertions. A representative sample:
 
 - `test_lexers` — verifies every shipped QScintilla lexer produces real styling
 - `test_palette` — verifies the canonical 9-hue palette colors and bold/italic styles

@@ -354,9 +354,9 @@
   notepatra-linux-x64.tar.gz</code></pre>
 
             <h3>SLSA build provenance</h3>
-            <p>GitHub Actions emits SLSA Level 3 provenance attestations alongside each release. The attestation cryptographically ties each binary back to a specific commit SHA and workflow run, so your security team can independently confirm that a release was built from the exact public source in <code>github.com/singhpratech/notepatra</code> and not from an attacker-controlled fork.</p>
+            <p>GitHub Actions emits signed SLSA v1.0 build-provenance attestations (SLSA Build Level 2 — signed provenance from a hosted build platform) alongside each release. The attestation cryptographically ties each binary back to a specific commit SHA and workflow run, so your security team can independently confirm that a release was built from the exact public source in <code>github.com/singhpratech/notepatra</code> and not from an attacker-controlled fork.</p>
 
-            <h3>Reproducible from source</h3>
+            <h3>Buildable from source</h3>
             <p>Every commit is public. Tags are immutable. There is no closed-source binary blob anywhere in the build pipeline. A determined security team can clone the repo at a given tag, run the documented build, and reproduce a functionally equivalent binary.</p>
         </section>
 
@@ -488,7 +488,7 @@
                 <li>The default backend is a <strong>local</strong> Ollama instance on <code>localhost:11434</code>; cloud backends are opt-in from the dropdown.</li>
                 <li>"Share file with AI" defaults to <strong>off</strong> on first launch in current releases — meaning the active editor file is not even visible to the configured AI until the user toggles it on.</li>
                 <li>A built-in <strong>credential scrubber</strong> strips API keys, tokens, and PEM private-key blocks from outbound AI requests, defensively, before any HTTP body is sent.</li>
-                <li>A <code>notepatra-local-ai</code> cloud-free build flavor exists for organizations that want a binary that <strong>physically cannot reach</strong> public-cloud LLM endpoints. In that flavor, every <code>QNetworkAccessManager</code> request is filtered through a unit-tested network-policy allowlist that admits only loopback, RFC 1918 private addresses, CGNAT 100.64/10, IPv6 ULA <code>fc00::/7</code>, and the <code>.local</code>/<code>.lan</code>/<code>.internal</code>/<code>.intranet</code>/<code>.corp</code>/<code>.home</code> suffixes. Public-cloud LLM endpoints are blocked at the binary level.</li>
+                <li>A <code>notepatra-local-ai</code> cloud-free build flavor exists for organizations that want a binary that <strong>physically cannot reach</strong> public-cloud LLM endpoints. In that flavor, every AI-backend (LLM-endpoint) network request is filtered to a unit-tested network-policy allowlist that admits only loopback, RFC 1918 private addresses, CGNAT 100.64/10, IPv6 ULA <code>fc00::/7</code>, and the <code>.local</code>/<code>.lan</code>/<code>.internal</code>/<code>.intranet</code>/<code>.corp</code>/<code>.home</code> suffixes. Public-cloud LLM endpoints are blocked at the binary level.</li>
             </ul>
 
             <p>None of the statements in this section modify, expand, or limit the warranty disclaimer in GPL-3.0 §15 and §16 or the warranty/liability discussion in the <a href="#warranty">Warranty &amp; liability</a> section below. They describe the design intent and current-release behavior; they are not contractual representations or guarantees for future releases.</p>

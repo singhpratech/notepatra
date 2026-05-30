@@ -32,7 +32,7 @@ cd "$(dirname "$0")/.."
 # constant here AND every surface that mentions it. The script will
 # fail loudly if any surface drifts from these values.
 LEXER_COUNT=82
-FILE_EXT_COUNT=226
+FILE_EXT_COUNT=238
 BACKEND_COUNT=6
 BACKEND_LIST="Ollama / llama.cpp / OpenRouter / Ollama Cloud / OpenAI / Azure OpenAI"
 # BARE_BIN_MB removed v0.1.86 — verify-download-sizes.sh now downloads the
@@ -95,6 +95,27 @@ if [[ "$derived_lexer_count" == "$LEXER_COUNT" ]]; then
 else
     printf "  ✗ src/lexerutils.cpp registers %s lexers but LEXER_COUNT=%s\n      bump LEXER_COUNT and every docs surface to match the code\n" \
            "$derived_lexer_count" "$LEXER_COUNT"
+    FAIL=$((FAIL + 1))
+fi
+
+echo
+echo "── file-extension count derived from source (src/lexerutils.cpp extMap) ──"
+# Mirror of the lexer derive-gate above for file extensions. Count the DISTINCT
+# keys in the detectLanguageFromPath extMap so FILE_EXT_COUNT (and every docs
+# surface that quotes it) can never silently drift from what the binary maps.
+# The block is delimited from `extMap = {` to its first closing `    };` so the
+# count excludes the separate nameMap below it (counting the whole file would
+# over-count by the nameMap pairs). Pairs may repeat a key (e.g. several exts
+# pointing at one lexer); `sort -u` collapses to distinct keys.
+derived_ext_count=$(awk '/static const QHash<QString, QString> extMap = \{/{f=1} f{print} f&&/^    \};/{exit}' \
+        src/lexerutils.cpp 2>/dev/null \
+    | grep -oE '\{ *"[^"]+" *,' | grep -oE '"[^"]+"' | sort -u | wc -l)
+if [[ "$derived_ext_count" == "$FILE_EXT_COUNT" ]]; then
+    printf "  ✓ src/lexerutils.cpp extMap has %s distinct extensions (matches FILE_EXT_COUNT)\n" "$derived_ext_count"
+    PASS=$((PASS + 1))
+else
+    printf "  ✗ src/lexerutils.cpp extMap has %s distinct extensions but FILE_EXT_COUNT=%s\n      bump FILE_EXT_COUNT and every docs surface to match the code\n" \
+           "$derived_ext_count" "$FILE_EXT_COUNT"
     FAIL=$((FAIL + 1))
 fi
 
@@ -199,8 +220,8 @@ check_phrase "index.html 'Latest v… download sizes:' (FAQ + body, colon-anchor
     docs/index.html 'Latest v__V__ download sizes:'
 check_phrase "index.html JSON-LD 'as of v…:' (FAQ)" \
     docs/index.html '82 language lexers as of v__V__:'
-check_phrase "index.html body lead 'As of v…: 226 file types · 82'" \
-    docs/index.html 'As of v__V__: 226 file types · 82'
+check_phrase "index.html body lead 'As of v…: 238 file types · 82'" \
+    docs/index.html 'As of v__V__: 238 file types · 82'
 check_phrase "index.html lexer paragraph 'as of v… —'" \
     docs/index.html 'language lexers</strong> as of v__V__ —'
 

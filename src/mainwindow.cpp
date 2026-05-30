@@ -2910,7 +2910,7 @@ void MainWindow::buildMenus() {
         m_statusBar->updateEncoding("UTF-8");
     });
 
-    // ═══ LANGUAGE — narrow two-tier layout, 92 lexers / 226 file extensions ═══
+    // ═══ LANGUAGE — narrow two-tier layout, 82 lexers / 238 file extensions ═══
     // v0.1.55 — keeps the original simple structure (Normal Text + Common
     // + SQL Dialects + More Languages submenu) the user is used to. The
     // 31 newly-added languages are folded into "More Languages" in one
@@ -4343,7 +4343,7 @@ void MainWindow::buildMenus() {
             "<p style='color:#888; margin:0 0 14px 0;'>The first editor built for the AI era.</p>"
             "<p>A blazing-fast native code editor for Linux, macOS, and Windows.<br>"
             "Native C++ + Rust. No Electron.<br>"
-            "226 file extensions · 82 language lexers. Plugin system. 2 GB files.<br>"
+            "238 file extensions · 82 language lexers. Plugin system. 2 GB files.<br>"
             "6 AI backends — Ollama / llama.cpp / OpenRouter / Ollama Cloud / OpenAI / Azure OpenAI. Zero telemetry.</p>"
             "<p>"
             "🌐 Website: <a href='https://notepatra.org'>notepatra.org</a><br>"

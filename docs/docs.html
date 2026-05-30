@@ -397,7 +397,7 @@
 
   <h2 id="introduction" class="anchor-target">Introduction</h2>
   <p>Notepatra is a <strong>native</strong> code editor written in C++17 with a Rust core for the heavy-lifting (memory-mapped file I/O, Aho-Corasick search, Myers diff, formatters). It targets <strong>Linux x64 / ARM64, macOS Apple Silicon, and Windows x64</strong>. The bare executable is under 12 MB (11.5 MB on Linux x64) on each platform; downloads range 3.9 MB (Linux ARM64) to ~42.4 MB (Windows MSI with Qt DLLs bundled).</p>
-  <p>Unlike Electron-based editors, Notepatra does not ship a browser runtime. It uses Qt5 + QScintilla — a battle-tested Scintilla-based editor engine — so 226 file types, 82 language lexers, brace matching, folding, and code completion are built in.</p>
+  <p>Unlike Electron-based editors, Notepatra does not ship a browser runtime. It uses Qt5 + QScintilla — a battle-tested Scintilla-based editor engine — so 238 file types, 82 language lexers, brace matching, folding, and code completion are built in.</p>
   <p>Unlike cloud-first editors, Notepatra's AI is <strong>local-first</strong>. The AI dock dropdown ships <strong>six backends</strong>: <a href="https://ollama.com">Ollama</a> (default · <code>localhost:11434</code>), <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>'s llama-server (loads any GGUF directly · <code>localhost:8080</code>), <a href="https://openrouter.ai">OpenRouter</a> (cloud · 100+ models — Claude, GPT, Gemini, Grok, Kimi, …), <a href="https://ollama.com/cloud">Ollama Cloud</a> (cloud · gpt-oss:120b, qwen3-coder:480b, deepseek-v3.1:671b), <a href="https://openai.com">OpenAI</a> direct, and <a href="https://azure.microsoft.com/en-us/products/ai-services/openai-service">Azure OpenAI</a> (enterprise). The <code>llama.cpp</code> entry also accepts a user-configured base URL via Settings → Preferences → AI, so it can reach any OpenAI-compatible HTTP server you've installed. Nothing leaves your computer unless you pick a cloud backend. No mandatory API keys, no subscription, no telemetry.</p>
   <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock and the model gets 5 native tools — <code>read_file</code>, <code>list_dir</code>, <code>search</code>, <code>write_file</code>, <code>apply_diff</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
 
@@ -709,16 +709,16 @@ make -j$(nproc)
   </ul>
 
   <h3>File-size limits</h3>
-  <p>Notepatra uses the Rust core's memory-mapped file loading to avoid a double read on open; the file is then held in the editor buffer (roughly 3x file size in RAM). Limits:</p>
+  <p>Notepatra uses the Rust core's memory-mapped file loading to avoid a double read on open; the file is then held in the editor buffer (peaks at roughly 3x file size in RAM during load (~1-2x once loaded)). Limits:</p>
   <ul>
     <li><strong>Up to 50 MB</strong> — full syntax highlighting, auto-completion, word wrap, indent guides, all features enabled</li>
-    <li><strong>50 MB – ~1.86 GB</strong> (v0.1.88 hardened) — syntax highlighting, auto-completion, undo history, word wrap, indent guides, and edge column all disabled for performance; still fully editable. Find &rarr; Mark All caps the indicator fills at 10,000 highlights to keep paint cycles bounded.</li>
+    <li><strong>50 MB – ~1.86 GB</strong> (v0.1.88 hardened) — syntax highlighting, auto-completion, word wrap, indent guides, and edge column all disabled for performance; still fully editable. Find &rarr; Mark All caps the indicator fills at 10,000 highlights to keep paint cycles bounded.</li>
     <li><strong>Above ~1.86 GB</strong> — the file opens truncated and read-only; use a streaming tool like <code>less</code> for the full content.</li>
   </ul>
   <p><strong>Load-path optimisations (v0.1.88).</strong> Opening a 118 MB UTF-8 file used to take ~1.5 s and peak ~700 MB RAM; v0.1.88 brings it to ~600 ms and ~360 MB. Three fixes in <code>rust-core/src/file_io.rs</code>: a UTF-8 fast path validates with <code>std::str::from_utf8</code> (SIMD-accelerated) and skips the <code>UTF_8.decode()</code> allocation entirely when the mmap bytes are already valid UTF-8; EOL detection is bounded to the first 64 KB instead of two full-text scans; and the Rust&rarr;C FFI handoff now delivers a length-prefixed <code>Box&lt;[u8]&gt;</code> through a new <code>npc_free_file_text(ptr, len)</code> entry-point instead of the old NUL-terminated <code>CString</code> round-trip — saves ~118 MB of heap on a 118 MB file. UTF-16 / UTF-32 / Windows-1252 paths unchanged.</p>
 
   <h2 id="languages-lexers" class="anchor-target">Languages &amp; lexers</h2>
-  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.106 (covering 226 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
+  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.106 (covering 238 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
   <p><strong>Core (Qt-bundled):</strong> Python, JavaScript/TypeScript/JSX, CoffeeScript, C/C++, C#, D, Java/Kotlin, HTML/PHP, CSS/SCSS/LESS, XML, JSON, SQL (ANSI / T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite), Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Matlab, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile.</p>
   <p><strong>v0.1.55 additions (32 dedicated lexers, keyword tables verified against official specs):</strong> Dart · Solidity · Zig · Vala · Hack · Julia · R · Protobuf · F# · HCL/Terraform · Thrift · GraphQL · GDScript · Nim · Cython · Mojo · Crystal · Elixir · Scala · Groovy · Apex · Jinja · Liquid · Twig · Dockerfile · Fish · Nushell · TOML · DotEnv · Gitignore · JSON5 · BibTeX. Each ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing — <code>.dart</code>, <code>.zig</code>, <code>.jl</code>, <code>.toml</code>, <code>.ex</code>, <code>Cargo.toml</code>, <code>Dockerfile</code>, <code>.gitignore</code>, <code>.env</code>, <code>.fish</code>, <code>.json5</code>, <code>.tf</code>, etc. now point at their dedicated lexers instead of falling back to the closest-fit generic.</p>
 
@@ -736,7 +736,7 @@ make -j$(nproc)
   <h2 id="find-replace" class="anchor-target">Find &amp; replace</h2>
   <p>5-tab dialog: <strong>Find</strong>, <strong>Replace</strong>, <strong>Find in Files</strong>, <strong>Mark</strong>, <strong>Go to</strong>.</p>
   <ul>
-    <li><strong>Normal / Extended / Regex</strong> modes — extended supports <code>\n</code>, <code>\t</code>, <code>\xNN</code> escapes; in-document Find/Replace uses Scintilla's built-in regex (recursive Find-in-Files uses a separate Rust regex engine).</li>
+    <li><strong>Normal / Extended / Regex</strong> modes — extended supports <code>\n</code>, <code>\t</code>, <code>\xNN</code> escapes; in-document Find/Replace uses Scintilla's built-in regex; recursive Find in Files counts matches via a Rust regex engine.</li>
     <li><strong>Match case, Whole word, Wrap around, In selection</strong> checkboxes.</li>
     <li><strong>Find in Files</strong> walks a directory recursively (respects glob patterns), results land in the Search Results panel — double-click to jump to line.</li>
     <li><strong>Mark</strong> highlights every occurrence of a pattern without moving the caret. On files larger than 50 MB the indicator fill is <strong>capped at 10,000 highlights</strong> (v0.1.88) so the redraw doesn't stall the UI — the result label reports e.g. "Marked first 10000 of 124312 occurrence(s) — capped for performance on large files".</li>
@@ -1240,7 +1240,7 @@ cmake --build build --config Release -j</code></pre>
   <h5>Where Notepatra stores AI config</h5>
   <ul>
     <li><strong>Backend selection, model id, base URL, options</strong> — <code>~/.config/notepatra/preferences.json</code> on Linux, <code>%APPDATA%\notepatra\preferences.json</code> on Windows, <code>~/Library/Application Support/notepatra/preferences.json</code> on macOS.</li>
-    <li><strong>API keys</strong> — stored in your local Notepatra config file on your machine; they are never transmitted anywhere except to the AI backend you select. OS-keychain integration is a future candidate.</li>
+    <li><strong>API keys</strong> — stored in plaintext in your local config file (no encryption; OS-keychain integration is a future candidate); they are never transmitted anywhere except to the AI backend you select.</li>
     <li><strong>Chat history</strong> — <code>~/.config/notepatra/ai_history/</code> (or platform equivalent), one JSON file per session.</li>
     <li><strong>Reset</strong> — close Notepatra, delete <code>preferences.json</code>, click <em>Forget</em> in each provider section to clear stored keys. Restart for a clean slate.</li>
   </ul>
@@ -1432,6 +1432,7 @@ Content-Type: application/json
 
   <h3>Live charts inline in the chat</h3>
   <p><strong>v0.1.64+ note:</strong> charts now ship behind the optional <a href="#packs"><code>charts</code> pack</a>. On a default (lite) install, the AI's <code>generate_chart</code> tool result paints as a <strong>📊 Chart rendering requires the Charts Pack</strong> card with two buttons — <strong>[Install charts pack]</strong> (opens GitHub Releases with the matching <code>-full</code> asset for your OS) and <strong>[View JSON instead]</strong> (shows the raw Vega-Lite spec in a fenced code block). See <a href="#lite-vs-full">Lite vs Full</a> for the upgrade paths. The flow described below is what you see once you're on the Full flavor.</p>
+  <p>Charts the model emits as a fenced <code>```chart</code> block render inline on Lite via QtCharts; only <code>generate_chart</code> tool results (Vega-Lite) need the Charts Pack (Full / WebEngine).</p>
   <p>When a visualization clarifies the answer, the model emits a fenced <code>```chart</code> block with a small JSON spec. Notepatra parses each one, translates it to a <strong>Vega-Lite</strong> specification, and renders it inline through an embedded <strong>QtWebEngine</strong> view (using <code>vega-embed</code>) under the assistant's prose:</p>
   <pre><code>```chart
 {
@@ -1458,7 +1459,7 @@ Content-Type: application/json
     <li><strong>PostgreSQL (localhost)</strong> — Driver = <code>QPSQL</code>, Port = <code>5432</code>, Database = <code>postgres</code>, Username = <code>postgres</code></li>
     <li><strong>MySQL / MariaDB (localhost)</strong> — Driver = <code>QMYSQL</code>, Port = <code>3306</code>, Database = <code>mysql</code>, Username = <code>root</code></li>
     <li><strong>SQLite (file on disk)</strong> — Driver = <code>QSQLITE</code>, Browse… picker focused on Database for the .db path</li>
-    <li><strong>DuckDB (file or :memory:)</strong> — Driver = <code>DUCKDB</code>, Database = <code>:memory:</code> (also accepts a .duckdb / .csv / .parquet / s3:// path)</li>
+    <li><strong>DuckDB (file or :memory:)</strong> — Driver = <code>DUCKDB</code>, Database = <code>:memory:</code> (also accepts a .duckdb / .csv / .parquet / s3:// path) <em>(requires a from-source build; reports "support not compiled in" in stock downloads)</em></li>
   </ul>
 
   <p>Under the form, a hint label paints in <strong>green</strong> when the Qt SQL plugin for the chosen driver is present (with a usage tip — e.g. "Named instances use the SQL Browser service — leave Port at default") or <strong>amber</strong> with the exact per-OS install commands when the plugin is missing.</p>
@@ -1526,6 +1527,7 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
   </ol>
 
   <h4>DuckDB — files, S3, in-memory</h4>
+  <p>DuckDB is not included in prebuilt downloads — these steps require a from-source build with <code>-DNOTEPATRA_USE_DUCKDB=ON</code> and a vendored/system libduckdb. In stock downloads the DuckDB connection reports "support not compiled in."</p>
   <ol>
     <li>Pick the <strong>DuckDB (file or :memory:)</strong> preset — Database defaults to <code>:memory:</code>.</li>
     <li>The Database field is multi-mode — point it at:
@@ -1547,7 +1549,7 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
       <tr><td>QPSQL (PostgreSQL)</td><td><code>sudo apt-get install libqt5sql5-psql</code></td><td>bundled in <code>brew install qt@5</code></td><td>Bundled with the Notepatra Windows release</td></tr>
       <tr><td>QMYSQL (MySQL/MariaDB)</td><td><code>sudo apt-get install libqt5sql5-mysql</code></td><td>bundled in <code>brew install qt@5</code></td><td>Bundled with the Notepatra Windows release</td></tr>
       <tr><td>QODBC (SQL Server)</td><td><code>sudo apt-get install libqt5sql5-odbc unixodbc-dev msodbcsql18</code> (see <a href="https://learn.microsoft.com/en-us/sql/connect/odbc/linux-mac/installing-the-microsoft-odbc-driver-for-sql-server" rel="noopener">MS install guide</a> for the package repo setup)</td><td><code>brew tap microsoft/mssql-release &amp;&amp; HOMEBREW_ACCEPT_EULA=Y brew install msodbcsql18 unixodbc</code></td><td>Bundled with the Notepatra Windows release (Microsoft ships ODBC drivers with Windows itself)</td></tr>
-      <tr><td>DUCKDB</td><td>Bundled in the Notepatra Linux release (vendored libduckdb.so)</td><td>Bundled in the Notepatra macOS release</td><td>Bundled in the Notepatra Windows release</td></tr>
+      <tr><td>DUCKDB</td><td>Not in prebuilt downloads — build from source with <code>-DNOTEPATRA_USE_DUCKDB=ON</code> and a vendored/system libduckdb; runs in-process once present.</td><td>Not in prebuilt downloads — build from source with <code>-DNOTEPATRA_USE_DUCKDB=ON</code> and a vendored/system libduckdb; runs in-process once present.</td><td>Not in prebuilt downloads — build from source with <code>-DNOTEPATRA_USE_DUCKDB=ON</code> and a vendored/system libduckdb; runs in-process once present.</td></tr>
     </tbody>
   </table>
 
@@ -1860,7 +1862,7 @@ sha256sum -c SHA256SUMS --ignore-missing</code></pre>
   <h2 id="faq" class="anchor-target">FAQ</h2>
 
   <h4>Is Notepatra a port of another editor?</h4>
-  <p>No. Notepatra is its own editor — written from scratch in C++17 with a Rust core for hot paths (mmap I/O, Aho-Corasick search, Myers diff, formatters). It runs natively on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase.</p>
+  <p>No. Notepatra is its own application — a native Qt5 + QScintilla editor with an original C++17/Rust core for hot paths (mmap I/O, search, diff, formatters). It runs natively on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase.</p>
 
   <h4>How big is the binary?</h4>
   <p>The bare executable is under 12 MB on each platform. Installed footprint ranges 5 MB on Linux (Qt comes from your distro) to ~85 MB on Windows (Qt5 DLLs + QScintilla DLL bundled in the MSI). Truly tiny — and zero browser runtime.</p>
