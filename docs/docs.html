@@ -397,7 +397,7 @@
 
   <h2 id="introduction" class="anchor-target">Introduction</h2>
   <p>Notepatra is a <strong>native</strong> code editor written in C++17 with a Rust core for the heavy-lifting (memory-mapped file I/O, Aho-Corasick search, Myers diff, formatters). It targets <strong>Linux x64 / ARM64, macOS Apple Silicon, and Windows x64</strong>. The bare executable is under 12 MB (11.5 MB on Linux x64) on each platform; downloads range 3.9 MB (Linux ARM64) to ~42.4 MB (Windows MSI with Qt DLLs bundled).</p>
-  <p>Unlike Electron-based editors, Notepatra does not ship a browser runtime. It uses Qt5 + QScintilla — a battle-tested Scintilla-based editor engine — so 226 file types, 92 language lexers, brace matching, folding, and code completion are built in.</p>
+  <p>Unlike Electron-based editors, Notepatra does not ship a browser runtime. It uses Qt5 + QScintilla — a battle-tested Scintilla-based editor engine — so 226 file types, 82 language lexers, brace matching, folding, and code completion are built in.</p>
   <p>Unlike cloud-first editors, Notepatra's AI is <strong>local-first</strong>. The AI dock dropdown ships <strong>six backends</strong>: <a href="https://ollama.com">Ollama</a> (default · <code>localhost:11434</code>), <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>'s llama-server (loads any GGUF directly · <code>localhost:8080</code>), <a href="https://openrouter.ai">OpenRouter</a> (cloud · 100+ models — Claude, GPT, Gemini, Grok, Kimi, …), <a href="https://ollama.com/cloud">Ollama Cloud</a> (cloud · gpt-oss:120b, qwen3-coder:480b, deepseek-v3.1:671b), <a href="https://openai.com">OpenAI</a> direct, and <a href="https://azure.microsoft.com/en-us/products/ai-services/openai-service">Azure OpenAI</a> (enterprise). The <code>llama.cpp</code> entry also accepts a user-configured base URL via Settings → Preferences → AI, so it can reach any OpenAI-compatible HTTP server you've installed. Nothing leaves your computer unless you pick a cloud backend. No mandatory API keys, no subscription, no telemetry.</p>
   <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock and the model gets 5 native tools — <code>read_file</code>, <code>list_dir</code>, <code>search</code>, <code>write_file</code>, <code>apply_diff</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
 
@@ -695,7 +695,7 @@ make -j$(nproc)
   <!-- ══════════════ Editor ══════════════ -->
 
   <h2 id="editor-basics" class="anchor-target">Editor basics</h2>
-  <p>The editor is QScintilla 2.14.1 (official Riverbank source) under the hood: folding, brace matching, auto-indent, bookmarks, multi-cursor (hold Alt), rectangular selection, code completion, and snippets are all built in.</p>
+  <p>The editor is QScintilla 2.14.1 (official Riverbank source) under the hood: folding, brace matching, auto-indent, bookmarks, multi-cursor (Ctrl+click), rectangular/column selection (Alt+drag), and word-based code completion are all built in.</p>
 
   <h3>Opening &amp; saving</h3>
   <ul>
@@ -709,27 +709,22 @@ make -j$(nproc)
   </ul>
 
   <h3>File-size limits</h3>
-  <p>Notepatra uses the Rust core's memory-mapped file I/O for large files. Limits:</p>
+  <p>Notepatra uses the Rust core's memory-mapped file loading to avoid a double read on open; the file is then held in the editor buffer (roughly 3x file size in RAM). Limits:</p>
   <ul>
     <li><strong>Up to 50 MB</strong> — full syntax highlighting, auto-completion, word wrap, indent guides, all features enabled</li>
-    <li><strong>50 MB – 500 MB</strong> (v0.1.88 hardened) — syntax highlighting, auto-completion, undo history, word wrap, indent guides, and edge column all disabled for performance; still fully editable. Find &rarr; Mark All caps the indicator fills at 10,000 highlights to keep paint cycles bounded.</li>
-    <li><strong>500 MB – 2 GB</strong> — minimal features, read-mostly mode</li>
-    <li><strong>&gt; 2 GB</strong> — refused; use a streaming tool like <code>less</code></li>
+    <li><strong>50 MB – ~1.86 GB</strong> (v0.1.88 hardened) — syntax highlighting, auto-completion, undo history, word wrap, indent guides, and edge column all disabled for performance; still fully editable. Find &rarr; Mark All caps the indicator fills at 10,000 highlights to keep paint cycles bounded.</li>
+    <li><strong>Above ~1.86 GB</strong> — the file opens truncated and read-only; use a streaming tool like <code>less</code> for the full content.</li>
   </ul>
   <p><strong>Load-path optimisations (v0.1.88).</strong> Opening a 118 MB UTF-8 file used to take ~1.5 s and peak ~700 MB RAM; v0.1.88 brings it to ~600 ms and ~360 MB. Three fixes in <code>rust-core/src/file_io.rs</code>: a UTF-8 fast path validates with <code>std::str::from_utf8</code> (SIMD-accelerated) and skips the <code>UTF_8.decode()</code> allocation entirely when the mmap bytes are already valid UTF-8; EOL detection is bounded to the first 64 KB instead of two full-text scans; and the Rust&rarr;C FFI handoff now delivers a length-prefixed <code>Box&lt;[u8]&gt;</code> through a new <code>npc_free_file_text(ptr, len)</code> entry-point instead of the old NUL-terminated <code>CString</code> round-trip — saves ~118 MB of heap on a 118 MB file. UTF-16 / UTF-32 / Windows-1252 paths unchanged.</p>
 
   <h2 id="languages-lexers" class="anchor-target">Languages &amp; lexers</h2>
-  <p>Notepatra ships <strong>92 language lexers</strong> as of v0.1.106 (covering 226 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
+  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.106 (covering 226 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
   <p><strong>Core (Qt-bundled):</strong> Python, JavaScript/TypeScript/JSX, CoffeeScript, C/C++, C#, D, Java/Kotlin, HTML/PHP, CSS/SCSS/LESS, XML, JSON, SQL (ANSI / T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite), Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Matlab, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile.</p>
   <p><strong>v0.1.55 additions (32 dedicated lexers, keyword tables verified against official specs):</strong> Dart · Solidity · Zig · Vala · Hack · Julia · R · Protobuf · F# · HCL/Terraform · Thrift · GraphQL · GDScript · Nim · Cython · Mojo · Crystal · Elixir · Scala · Groovy · Apex · Jinja · Liquid · Twig · Dockerfile · Fish · Nushell · TOML · DotEnv · Gitignore · JSON5 · BibTeX. Each ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing — <code>.dart</code>, <code>.zig</code>, <code>.jl</code>, <code>.toml</code>, <code>.ex</code>, <code>Cargo.toml</code>, <code>Dockerfile</code>, <code>.gitignore</code>, <code>.env</code>, <code>.fish</code>, <code>.json5</code>, <code>.tf</code>, etc. now point at their dedicated lexers instead of falling back to the closest-fit generic.</p>
 
-  <div class="callout info">
-    <strong>Rust / Go / Swift</strong> still use the C++ lexer base — brace/bracket handling is correct but language-specific keywords are generic. Dedicated lexers for these are planned.
-  </div>
-
   <h2 id="themes-palette" class="anchor-target">Themes &amp; palette</h2>
   <p>Three themes ship: <strong>Light</strong> (default), <strong>Dark</strong>, and <strong>Monokai</strong>. Change via <code>Settings → Theme</code>. The theme is persisted in <code>config.json</code>.</p>
-  <p>Every theme applies a curated 9-hue palette: keywords blue bold (<code>#0000FF</code>), types violet (<code>#8000FF</code>), comments green italic (<code>#008000</code>), numbers orange (<code>#FF8000</code>), strings grey (<code>#808080</code>), operators navy bold (<code>#000080</code>), preprocessor brown (<code>#804000</code>), classes maroon (<code>#7F0000</code>), identifiers plain (default text). Dark theme uses Zenburn-derived hues (warm sand keywords, sage types, rose strings, olive operators, peach preprocessor) so each token kind is on a distinct hue arc — no more "all blue shades" effect. The palette is driven by <code>lexer-&gt;description(i)</code> — it walks every style slot in every lexer, matches substrings like "keyword", "comment", "string", and paints accordingly. Works across all 92 lexers without hard-coding.</p>
+  <p>Every theme applies a curated 9-hue palette: keywords blue bold (<code>#0000FF</code>), types violet (<code>#8000FF</code>), comments green italic (<code>#008000</code>), numbers orange (<code>#FF8000</code>), strings grey (<code>#808080</code>), operators navy bold (<code>#000080</code>), preprocessor brown (<code>#804000</code>), classes maroon (<code>#7F0000</code>), identifiers plain (default text). Dark theme uses Zenburn-derived hues (warm sand keywords, sage types, rose strings, olive operators, peach preprocessor) so each token kind is on a distinct hue arc — no more "all blue shades" effect. The palette is driven by <code>lexer-&gt;description(i)</code> — it walks every style slot in every lexer, matches substrings like "keyword", "comment", "string", and paints accordingly. Works across all 82 lexers without hard-coding.</p>
 
   <h2 id="rulers-crosshair" class="anchor-target">Rulers &amp; crosshair overlay</h2>
   <p>Optional visual aids for long files and precise cursor placement:</p>
@@ -741,7 +736,7 @@ make -j$(nproc)
   <h2 id="find-replace" class="anchor-target">Find &amp; replace</h2>
   <p>5-tab dialog: <strong>Find</strong>, <strong>Replace</strong>, <strong>Find in Files</strong>, <strong>Mark</strong>, <strong>Go to</strong>.</p>
   <ul>
-    <li><strong>Normal / Extended / Regex</strong> modes — extended supports <code>\n</code>, <code>\t</code>, <code>\xNN</code> escapes; regex uses PCRE2.</li>
+    <li><strong>Normal / Extended / Regex</strong> modes — extended supports <code>\n</code>, <code>\t</code>, <code>\xNN</code> escapes; in-document Find/Replace uses Scintilla's built-in regex (recursive Find-in-Files uses a separate Rust regex engine).</li>
     <li><strong>Match case, Whole word, Wrap around, In selection</strong> checkboxes.</li>
     <li><strong>Find in Files</strong> walks a directory recursively (respects glob patterns), results land in the Search Results panel — double-click to jump to line.</li>
     <li><strong>Mark</strong> highlights every occurrence of a pattern without moving the caret. On files larger than 50 MB the indicator fill is <strong>capped at 10,000 highlights</strong> (v0.1.88) so the redraw doesn't stall the UI — the result label reports e.g. "Marked first 10000 of 124312 occurrence(s) — capped for performance on large files".</li>
@@ -782,7 +777,7 @@ make -j$(nproc)
   <h2 id="macros" class="anchor-target">Macros</h2>
   <p>Record keyboard + mouse operations and play them back:</p>
   <ul>
-    <li><span class="kbd">Ctrl+Shift+R</span> — start/stop recording</li>
+    <li><span class="kbd">Ctrl+Shift+M</span> — start/stop recording</li>
     <li><span class="kbd">Ctrl+Shift+P</span> — play last macro</li>
     <li><code>Macro → Run Multiple Times</code> — play N times</li>
     <li><code>Macro → Save</code> — persist the macro as JSON to <code>~/.config/notepatra/macros/</code></li>
@@ -921,7 +916,7 @@ make -j$(nproc)
     <li><strong>Status bar</strong> in every AI panel showing connectivity dot, the searchable model dropdown, and a refresh button</li>
   </ul>
   <p><strong>Privacy: "Share file with AI" toggle (v0.1.55).</strong> A red lock indicator next to the AI dock title controls whether the file currently in the editor is included in the AI's context. <strong>Default OFF</strong>. Available <strong>only in Coding Mode</strong> — Chat and Data Analyst modes never see file content. The system prompt teaches the model to politely instruct you to enable the toggle if asked "can you see this file?".</p>
-  <p><strong>Credential scrubber (v0.1.55).</strong> Every editor-derived chunk (selection, workspace block, attached file, user input) passes through a 14-pattern redactor before leaving the machine — OpenRouter / Anthropic / OpenAI / GitHub / GitLab / AWS / Slack / Stripe / SendGrid / Google API / JWT / PEM private-key blocks / generic <code>password=</code>/<code>api_key=</code>/<code>token=</code>. Replacement is in-place with a <code>[REDACTED-VENDOR-KEY]</code> marker so the model still sees that a credential was redacted.</p>
+  <p><strong>Credential scrubber (v0.1.55).</strong> Every editor-derived chunk (selection, workspace block, attached file, user input) passes through a 20+-pattern redactor before leaving the machine — OpenRouter / Anthropic / OpenAI / GitHub / GitLab / AWS / Slack / Stripe / SendGrid / Google API / JWT / PEM private-key blocks / generic <code>password=</code>/<code>api_key=</code>/<code>token=</code>. Replacement is in-place with a <code>[REDACTED-VENDOR-KEY]</code> marker so the model still sees that a credential was redacted.</p>
 
   <h2 id="ai-setup" class="anchor-target">Ollama setup</h2>
   <ol>
@@ -1171,7 +1166,7 @@ cmake --build build --config Release -j</code></pre>
   <p>Every key slot has three buttons:</p>
   <ul>
     <li><strong>Test</strong> — fires a probe at the provider's <code>/models</code> endpoint with the key. Doesn't save anything; only validates.</li>
-    <li><strong>Save</strong> — writes the key to the platform's secure store (libsecret on Linux, Credential Manager on Windows, Keychain on macOS). Never written to disk in plaintext.</li>
+    <li><strong>Save</strong> — stores the key in your local Notepatra config file on your machine; it is never transmitted anywhere except to the AI backend you select. OS-keychain integration is a future candidate.</li>
     <li><strong>Forget</strong> — wipes the stored key. Use this on shared machines before logging out.</li>
   </ul>
   <p>Notepatra <strong>never</strong> uses a key from one provider against another. Selecting OpenRouter as the backend with no OpenRouter key set will show "OpenRouter key not set", even if your OpenAI key is configured.</p>
@@ -1245,9 +1240,9 @@ cmake --build build --config Release -j</code></pre>
   <h5>Where Notepatra stores AI config</h5>
   <ul>
     <li><strong>Backend selection, model id, base URL, options</strong> — <code>~/.config/notepatra/preferences.json</code> on Linux, <code>%APPDATA%\notepatra\preferences.json</code> on Windows, <code>~/Library/Application Support/notepatra/preferences.json</code> on macOS.</li>
-    <li><strong>API keys</strong> — never in JSON. Linux: libsecret (e.g. GNOME Keyring). Windows: Credential Manager. macOS: Keychain.</li>
+    <li><strong>API keys</strong> — stored in your local Notepatra config file on your machine; they are never transmitted anywhere except to the AI backend you select. OS-keychain integration is a future candidate.</li>
     <li><strong>Chat history</strong> — <code>~/.config/notepatra/ai_history/</code> (or platform equivalent), one JSON file per session.</li>
-    <li><strong>Reset</strong> — close Notepatra, delete <code>preferences.json</code>, click <em>Forget</em> in each provider section to clear keychain entries. Restart for a clean slate.</li>
+    <li><strong>Reset</strong> — close Notepatra, delete <code>preferences.json</code>, click <em>Forget</em> in each provider section to clear stored keys. Restart for a clean slate.</li>
   </ul>
 
   <h2 id="ai-openai-compat" class="anchor-target">OpenAI-compatible servers (user-configured)</h2>
@@ -1599,8 +1594,6 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
   <ul>
     <li><strong>PPT / image data extraction.</strong> Attaching a <code>.pptx</code> currently falls back to the existing text extractor; chart images aren't OCR'd into structured data. v0.1.44+ candidate.</li>
     <li><strong>Real OS-keychain integration</strong> for connection passwords. The XOR obscuration is a placeholder. v0.1.44+ candidate.</li>
-    <li><strong>Multi-series charts.</strong> Current spec supports a single <code>x</code> / <code>y</code> per chart; multi-line / stacked-bar in v0.1.44+.</li>
-    <li><strong>Chart export</strong> to PNG / SVG. The Vega-Lite QtWebEngine view is interactive; right-click → save image as a workaround.</li>
   </ul>
 
   <h2 id="thinking-models" class="anchor-target">Thinking models</h2>
@@ -1675,7 +1668,7 @@ icon db :database "DB"  <span class="cm">rich-icon node</span></code></pre>
   <p><strong>A rich icon set</strong> — ~55 hand-drawn icons (covering system / ER / flowchart vocabularies: <code>database, server, user, patient, hospital, document, cloud, gear, queue, cache, api, lambda, container, kubernetes, loadbalancer, firewall, mobile, browser, table, process, decision, chart</code> and more) with ~150 aliases so familiar names resolve automatically (<code>postgres</code>→database, <code>k8s</code>→kubernetes, …). <strong>Arrows:</strong> <code>a -&gt; b</code> (directed), <code>a -&gt; b : label</code> (labelled — write the colon with a leading space), <code>a &lt;-&gt; b</code> (bidirectional), and chains <code>a -&gt; b -&gt; c</code> (expands to a→b, b→c; a trailing <code>: label</code> rides the last hop). <strong>Optional colour (v0.1.104):</strong> add a <code>#hex</code> or common colour name <em>after a node's shape</em> — <code>node proc [Process] #1565c0</code>, <code>node start (Start) green</code> — and the renderer derives a readable border and auto-contrast label text; leave it off and the node keeps the palette, so diagrams stay monochrome by default. Keep shape text short and put detail on hover: <code>node dash [Dashboard] :: "Loads the saved session"</code>. Set <code>diagram flow|er|system</code>, <code>title "…"</code>, <code>palette clay|ocean|forest|mono</code>, and <code>textbox "caption"</code>.</p>
 
   <h3>Canvas &amp; export</h3>
-  <p>Drag to pan, scroll to zoom, double-click to fit. Export the rendered diagram with the <strong>Export</strong> button: <strong>PNG / JPEG / PDF</strong> on every build, plus <strong>SVG / HTML</strong> where your Qt has the Svg module and <strong>WebP</strong> where it has the WebP image plugin — the menu shows exactly what your build supports, and unavailable formats are hidden rather than writing a broken file. The headless <code>npd_render &lt;file.npd&gt; &lt;out.{png|jpeg|webp|svg|pdf|html}&gt;</code> CLI renders any <code>.npd</code> without launching the GUI (output format taken from the extension).</p>
+  <p>Drag to pan, scroll to zoom, double-click to fit. Export the rendered diagram with the <strong>Export</strong> button: <strong>PNG / JPEG / PDF</strong> on every build, plus <strong>SVG / HTML</strong> where your Qt has the Svg module and <strong>WebP</strong> where it has the WebP image plugin — the menu shows exactly what your build supports, and unavailable formats are hidden rather than writing a broken file. The headless <code>npd_render &lt;file.npd&gt; &lt;out.{png|jpeg|webp|svg|pdf|html}&gt;</code> utility renders any <code>.npd</code> without launching the GUI (output format taken from the extension) — it is a build-from-source developer utility, not packaged in releases.</p>
 
   <!-- ══════════════ Reference ══════════════ -->
 
@@ -1741,7 +1734,7 @@ icon db :database "DB"  <span class="cm">rich-icon node</span></code></pre>
   <h3>Macro</h3>
   <table>
     <tbody>
-      <tr><td><span class="kbd">Ctrl+Shift+R</span></td><td>Start / stop macro recording</td></tr>
+      <tr><td><span class="kbd">Ctrl+Shift+M</span></td><td>Start / stop macro recording</td></tr>
       <tr><td><span class="kbd">Ctrl+Shift+P</span></td><td>Play last macro</td></tr>
     </tbody>
   </table>

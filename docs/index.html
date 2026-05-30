@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Notepatra — The Code Editor Built for the AI Era</title>
-    <meta name="description" content="Native C++/Rust code editor built for the AI era. under-12 MB bare native executable. 226 file types. 92 language lexers. JSON/HTML/SQL fixers. DuckDB-powered Data Analyst mode. AI dock dropdown: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI — plus any OpenAI-compatible server. Free forever. Linux, Windows, macOS.">
+    <meta name="description" content="Native C++/Rust code editor built for the AI era. under-12 MB bare native executable. 226 file types. 82 language lexers. JSON/HTML/SQL fixers. Data Analyst mode (CSV + in-memory SQLite; DuckDB is an optional build-from-source engine). AI dock dropdown: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI — plus any OpenAI-compatible server. Free forever. Linux, Windows, macOS.">
     <meta name="keywords" content="notepatra, code editor, linux, windows, mac, macos, AI code editor, ollama, llama.cpp, openrouter, azure openai, duckdb, data analyst, JSON formatter, HTML fixer, rust, c++, qscintilla, native, lightweight">
     <meta name="author" content="Prateek Singh">
     <link rel="canonical" href="https://notepatra.org/">
@@ -19,13 +19,13 @@
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://notepatra.org/">
     <meta property="og:title" content="Notepatra — The Code Editor Built for the AI Era">
-    <meta property="og:description" content="Tiny native C++/Rust binary (under 12 MB bare). 226 file types · 92 language lexers. AI-powered JSON/HTML/SQL fixers. 6 AI backends (Ollama · llama.cpp · OpenRouter · Ollama Cloud · OpenAI · Azure OpenAI) plus any OpenAI-compatible server. Linux · Windows · macOS. Free forever.">
+    <meta property="og:description" content="Tiny native C++/Rust binary (under 12 MB bare). 226 file types · 82 language lexers. AI-powered JSON/HTML/SQL fixers. 6 AI backends (Ollama · llama.cpp · OpenRouter · Ollama Cloud · OpenAI · Azure OpenAI) plus any OpenAI-compatible server. Linux · Windows · macOS. Free forever.">
     <meta property="og:image" content="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-512.png">
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Notepatra — Code Editor for the AI Era">
-    <meta name="twitter:description" content="Tiny native C++/Rust binary (under 12 MB bare). 226 file types · 92 language lexers. AI-powered formatters. Linux · Windows · macOS.">
+    <meta name="twitter:description" content="Tiny native C++/Rust binary (under 12 MB bare). 226 file types · 82 language lexers. AI-powered formatters. Linux · Windows · macOS.">
     <meta name="twitter:image" content="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-512.png">
 
     <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png">
@@ -48,7 +48,7 @@
       "operatingSystem": ["Linux", "Windows", "macOS"],
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
-      "description": "Native C++/Rust code editor built from scratch for the AI era. Bare executable is under 12 MB across platforms (11.5 MB on Linux x64); full downloads are 4.1 MB (Linux x64 tar.gz), 27.5 MB (macOS DMG with bundled Qt), 42.4 MB (Windows MSI with bundled Qt DLLs). 226 file types. 92 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server (examples redacted). Free forever. Linux, Windows, macOS.",
+      "description": "Native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. Bare executable is under 12 MB across platforms (11.5 MB on Linux x64); full downloads are 4.1 MB (Linux x64 tar.gz), 27.5 MB (macOS DMG with bundled Qt), 42.4 MB (Windows MSI with bundled Qt DLLs). 226 file types. 82 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server (examples redacted). Free forever. Linux, Windows, macOS.",
       "softwareVersion": "0.1.106",
       "fileSize": "11.5 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
@@ -74,7 +74,7 @@
         "logo": "https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-512.png"
       },
       "featureList": [
-        "226 file types with 92 language lexers",
+        "226 file types with 82 language lexers",
         "AI-powered JSON/HTML/SQL/Bracket fixers",
         "Memory-mapped 2 GB file support",
         "Side-by-side file comparison with Myers diff",
@@ -127,7 +127,7 @@
           "name": "What is Notepatra?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra is a native C++/Rust code editor built from scratch for the AI era. It runs on Linux, macOS Apple Silicon, and Windows, has a under-12 MB bare native executable (~11.5 MB on Linux x64), supports 226 file types with 92 language lexers, and includes AI-powered formatters that fix broken JSON, HTML, and brackets. The AI panel ships six dropdown backends — two local (Ollama, llama.cpp) and four cloud (Ollama Cloud, OpenRouter, OpenAI, Azure OpenAI) — and the llama.cpp entry also accepts a user-configured base URL for any OpenAI-compatible server."
+            "text": "Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. It runs on Linux, macOS Apple Silicon, and Windows, has a under-12 MB bare native executable (~11.5 MB on Linux x64), supports 226 file types with 82 language lexers, and includes AI-powered formatters that fix broken JSON, HTML, and brackets. The AI panel ships six dropdown backends — two local (Ollama, llama.cpp) and four cloud (Ollama Cloud, OpenRouter, OpenAI, Azure OpenAI) — and the llama.cpp entry also accepts a user-configured base URL for any OpenAI-compatible server."
           }
         },
         {
@@ -143,7 +143,7 @@
           "name": "What makes Notepatra different from other code editors?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra is its own editor — written from scratch in C++17 and Rust, not a port or a clone. It runs natively on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase, with a under-12 MB bare executable (~11.5 MB on Linux x64). Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. Native DuckDB engine ships in v0.1.55 for the Data Analyst mode. v0.1.57 adds a Composer tab with multi-file Edit Plan, `@file` mentions, Ctrl+I inline edit, agentic git tools, and multi-cursor editing. No Electron runtime, no telemetry, no mandatory account."
+            "text": "Notepatra is its own editor — a native Qt5 + QScintilla app with an original C++17/Rust core. It runs natively on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase, with a under-12 MB bare executable (~11.5 MB on Linux x64). Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. The Data Analyst mode works out of the box on CSV files and an in-memory SQLite engine; DuckDB is an optional build-from-source engine (-DNOTEPATRA_USE_DUCKDB=ON), not bundled in the prebuilt binaries. The Composer tab adds a multi-file Edit Plan, `@file` mentions, Ctrl+I inline edit, AI-driven git tools (read-only: status / diff / log / branch / show), and multi-cursor editing. No Electron runtime, no telemetry, no mandatory account."
           }
         },
         {
@@ -167,7 +167,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 226 file types with 92 language lexers as of v0.1.106: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 226 file types with 82 language lexers as of v0.1.106: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1314,7 +1314,7 @@
     <div class="hero">
         <div class="hero-badge">v0.1.106 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
-        <p>Tiny native binary (under 12 MB bare, ~4.1 MB compressed on Linux). C++ and Rust. 226 file types · 92 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints.</p>
+        <p>Tiny native binary (under 12 MB bare, ~4.1 MB compressed on Linux). C++ and Rust. 226 file types · 82 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints.</p>
 
         <div class="install-box">
             <div class="install-tabs">
@@ -1366,13 +1366,13 @@
     <section class="pillars" aria-label="Design pillars">
         <div class="pillars-header">
             <h2>Designed for people who write code.</h2>
-            <p>9-hue canonical color palette across 92 lexers. Native Qt5 widgets. No Electron, no telemetry.</p>
+            <p>9-hue canonical color palette across 82 lexers. Native Qt5 widgets. No Electron, no telemetry.</p>
         </div>
         <div class="pillars-grid">
             <div class="pillar">
                 <div class="pillar-glyph">⚡</div>
                 <h3>Memory-mapped at every scale.</h3>
-                <p>Rust memory-mapped I/O — 2 GB files open without loading the whole file into RAM. 92 language lexers, 226 file types. Native execution — not Electron.</p>
+                <p>Rust memory-mapped loading avoids a double read on open; the file is then held in the editor buffer (roughly 3x file size in RAM). Files up to ~1.86 GB load fully; larger files open truncated and read-only. 82 language lexers, 226 file types. Native execution — not Electron.</p>
             </div>
             <div class="pillar">
                 <div class="pillar-glyph">🛡</div>
@@ -1391,7 +1391,7 @@
     <div class="stats">
         <div class="stat"><div class="stat-number">~<span>12</span> MB</div><div class="stat-label">Bare Binary</div></div>
         <div class="stat"><div class="stat-number"><span>226</span></div><div class="stat-label">File Types</div></div>
-        <div class="stat"><div class="stat-number"><span>92</span></div><div class="stat-label">Language Lexers</div></div>
+        <div class="stat"><div class="stat-number"><span>82</span></div><div class="stat-label">Language Lexers</div></div>
         <div class="stat"><div class="stat-number"><span>2</span> GB</div><div class="stat-label">Max File Size</div></div>
         <div class="stat"><div class="stat-number"><span>51</span></div><div class="stat-label">Regression Suites</div></div>
         <div class="stat"><div class="stat-number"><span>0</span></div><div class="stat-label">Electron</div></div>
@@ -1691,7 +1691,7 @@
             <div class="feature-card" style="border-color: rgba(204,120,92,0.35); box-shadow: 0 10px 30px rgba(204,120,92,0.10);">
                 <div class="feature-icon fi-purple">📐</div>
                 <h3>Diagram tool (.npd) <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
-                <p>Flow charts, ER diagrams and system designs from a tiny text DSL — the <code>.npd</code> source is the truth, the canvas is a live projection. <strong>Describe it in plain English and a local model writes it</strong> (review before it touches the canvas), start from a template, or type it yourself — <strong>Import Mermaid</strong> too. 5 shapes, ~55 hand-drawn icons, labelled + bidirectional arrows, 5 palettes, infinite pan/zoom. Export to <strong>PNG / JPEG / PDF</strong> on every build (plus SVG / HTML / WebP where your Qt supports them). Opens from the toolbar next to Noter. <em>Renders natively in the default binary — every platform, no WebEngine.</em></p>
+                <p>Flow charts, ER diagrams and system designs from a tiny text DSL — the <code>.npd</code> source is the truth, the canvas is a live projection. <strong>Describe it in plain English and a local model writes it</strong> (review before it touches the canvas), start from a template, or type it yourself — <strong>Import Mermaid</strong> too. 5 shapes, ~55 hand-drawn icons, labelled + bidirectional arrows, 4 palettes (+ a default fallback), infinite pan/zoom. Export to <strong>PNG / JPEG / PDF</strong> on every build (plus SVG / HTML / WebP where your Qt supports them). Opens from the toolbar next to Noter. <em>Renders natively in the default binary — every platform, no WebEngine.</em></p>
             </div>
             <!-- AI Interaction Log — promoted to a prominent privacy /
                  transparency selling point in v0.1.97. Same halo treatment. -->
@@ -1743,12 +1743,12 @@
             <div class="feature-card">
                 <div class="feature-icon fi-teal">🎙</div>
                 <h3>Macro Recording</h3>
-                <p>Record keystrokes (Ctrl+Shift+R), playback (Ctrl+Shift+P), run multiple times, save to .macro files, replay tomorrow.</p>
+                <p>Record keystrokes (Ctrl+Shift+M), playback (Ctrl+Shift+P), run multiple times, save to .macro files, replay tomorrow.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon fi-blue">📑</div>
                 <h3>226 File Types</h3>
-                <p>92 language lexers — Python, Rust, Go, C/C++, Java, JS/TS, SQL, HTML, CSS, JSON, YAML, Markdown, Bash, Fortran, Verilog, MATLAB, LaTeX and more.</p>
+                <p>82 language lexers — Python, Rust, Go, C/C++, Java, JS/TS, SQL, HTML, CSS, JSON, YAML, Markdown, Bash, Fortran, Verilog, MATLAB, LaTeX and more.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon fi-green">🎨</div>
@@ -1893,7 +1893,7 @@
                     <td class="cross">Plugin</td>
                     <td class="cross">✗</td>
                     <td class="cross">✗</td>
-                    <td class="cross">✗</td>
+                    <td class="cross">✗<sup>†</sup></td>
                     <td class="cross">✗</td>
                     <td class="check">✓</td>
                     <td class="cross">✗</td>
@@ -1953,6 +1953,7 @@
                 </tr>
             </tbody>
         </table>
+        <p style="margin-top: 12px; font-size: 12px; color: var(--text-dim);"><sup>†</sup> Notepad++ also opens large files; the ✗ marks "out-of-the-box, no plugins."</p>
     </section>
 
     <!-- Security -->
@@ -2089,7 +2090,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native code editor written from scratch in C++17 with a Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. under-12 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.106: 226 file types · 92 language lexers, native DuckDB engine for the Data Analyst mode, agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools.</p>
+                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. under-12 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.106: 226 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (DuckDB is an optional build-from-source engine, not bundled in the prebuilt binaries), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2097,7 +2098,7 @@
             </div>
             <div class="feature-card">
                 <h3>Can I install Notepatra at my company?</h3>
-                <p>Yes — same license posture as Notepad++, GIMP, vim, and Linux (all GPL). Notepatra is a standalone end-user editor: installing it doesn't oblige your organization to release any of your own code, doesn't "infect" the files your developers edit, and doesn't phone home. For IT, legal, or procurement teams reviewing the install: see the <a href="/enterprise.html" style="color:var(--green);">For Enterprise</a> page — plain-English explainer, supply-chain provenance (SHA-256 + cosign + SLSA), and a copy-paste block for your software-acceptance request.</p>
+                <p>Yes — same license posture as Notepad++, GIMP, vim, and Linux (all GPL). Notepatra is a standalone end-user editor: under the GPL, using Notepatra as an editor does not place obligations on the files you edit (see the <a href="https://www.gnu.org/licenses/gpl-faq.html" style="color:var(--green);">FSF GPL FAQ</a>), and it doesn't phone home. For IT, legal, or procurement teams reviewing the install: see the <a href="/enterprise.html" style="color:var(--green);">For Enterprise</a> page — plain-English explainer, supply-chain provenance (SHA-256 + cosign + SLSA), and a copy-paste block for your software-acceptance request.</p>
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
@@ -2109,7 +2110,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>226 file types via <strong>92 language lexers</strong> as of v0.1.106 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>226 file types via <strong>82 language lexers</strong> as of v0.1.106 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (5 dialects), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>How do I verify a download is genuine?</h3>
@@ -2117,7 +2118,7 @@
             </div>
             <div class="feature-card">
                 <h3>Will it open big files?</h3>
-                <p>Yes — up to 2 GB. The Rust core uses memory-mapped I/O (mmap2), so opening a 2 GB log file doesn't load the whole file into RAM (pages are faulted in lazily as you scroll). Files larger than 50 MB automatically disable syntax highlighting and auto-complete to keep things snappy.</p>
+                <p>Yes — large files load fully. The Rust core uses memory-mapped loading (mmap2), which avoids a double read on open; the file is then held in the editor buffer (roughly 3x file size in RAM). Files up to ~1.86 GB load fully; larger files open truncated and read-only. Files from 50 MB up to ~1.86 GB automatically disable lexer/syntax highlighting, auto-complete, word wrap, and indent guides to keep things snappy, but stay fully editable.</p>
             </div>
             <div class="feature-card">
                 <h3>Can I write plugins?</h3>

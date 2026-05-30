@@ -31,7 +31,7 @@ cd "$(dirname "$0")/.."
 # When a new lexer / file extension / backend is added, update the
 # constant here AND every surface that mentions it. The script will
 # fail loudly if any surface drifts from these values.
-LEXER_COUNT=92
+LEXER_COUNT=82
 FILE_EXT_COUNT=226
 BACKEND_COUNT=6
 BACKEND_LIST="Ollama / llama.cpp / OpenRouter / Ollama Cloud / OpenAI / Azure OpenAI"
@@ -82,6 +82,21 @@ assert_contains "About body: backend count" \
     src/mainwindow.cpp "$BACKEND_COUNT AI backends"
 assert_contains "About body: full backend list" \
     src/mainwindow.cpp "$BACKEND_LIST"
+
+echo
+echo "── lexer count derived from source (src/lexerutils.cpp) ──"
+# Derive the real distinct-lexer count straight from the code so the canonical
+# LEXER_COUNT (and therefore every docs surface above) can never silently drift
+# from what the binary actually registers. Each lexer maps to one return-case.
+derived_lexer_count=$(grep -cE 'return new Qsci|return new Lexer|new Lexer[A-Z]' src/lexerutils.cpp 2>/dev/null)
+if [[ "$derived_lexer_count" == "$LEXER_COUNT" ]]; then
+    printf "  ✓ src/lexerutils.cpp registers %s lexers (matches LEXER_COUNT)\n" "$derived_lexer_count"
+    PASS=$((PASS + 1))
+else
+    printf "  ✗ src/lexerutils.cpp registers %s lexers but LEXER_COUNT=%s\n      bump LEXER_COUNT and every docs surface to match the code\n" \
+           "$derived_lexer_count" "$LEXER_COUNT"
+    FAIL=$((FAIL + 1))
+fi
 
 echo
 echo "── README.md ──"
@@ -183,9 +198,9 @@ check_phrase "index.html 'Get Notepatra Local AI v…' download button" \
 check_phrase "index.html 'Latest v… download sizes:' (FAQ + body, colon-anchored)" \
     docs/index.html 'Latest v__V__ download sizes:'
 check_phrase "index.html JSON-LD 'as of v…:' (FAQ)" \
-    docs/index.html '92 language lexers as of v__V__:'
-check_phrase "index.html body lead 'As of v…: 226 file types · 92'" \
-    docs/index.html 'As of v__V__: 226 file types · 92'
+    docs/index.html '82 language lexers as of v__V__:'
+check_phrase "index.html body lead 'As of v…: 226 file types · 82'" \
+    docs/index.html 'As of v__V__: 226 file types · 82'
 check_phrase "index.html lexer paragraph 'as of v… —'" \
     docs/index.html 'language lexers</strong> as of v__V__ —'
 

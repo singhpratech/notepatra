@@ -4343,7 +4343,7 @@ void MainWindow::buildMenus() {
             "<p style='color:#888; margin:0 0 14px 0;'>The first editor built for the AI era.</p>"
             "<p>A blazing-fast native code editor for Linux, macOS, and Windows.<br>"
             "Native C++ + Rust. No Electron.<br>"
-            "226 file extensions · 92 language lexers. Plugin system. 2 GB files.<br>"
+            "226 file extensions · 82 language lexers. Plugin system. 2 GB files.<br>"
             "6 AI backends — Ollama / llama.cpp / OpenRouter / Ollama Cloud / OpenAI / Azure OpenAI. Zero telemetry.</p>"
             "<p>"
             "🌐 Website: <a href='https://notepatra.org'>notepatra.org</a><br>"
