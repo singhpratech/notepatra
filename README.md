@@ -273,7 +273,7 @@ irm https://notepatra.org/install.ps1 | iex
 
 That's it. Auto-detects your OS, downloads the right binary, installs it, adds to PATH, creates shortcuts.
 
-### Or download manually — [Latest release: v0.1.106](https://github.com/singhpratech/notepatra/releases/latest)
+### Or download manually — [Latest release: v0.1.107](https://github.com/singhpratech/notepatra/releases/latest)
 
 | Platform | Download | Size | What's inside |
 |---|---|---|---|
@@ -298,11 +298,11 @@ For one-time-install-then-every-user-sees-it on a shared machine, or silent push
 
 | OS | Artefact | Silent admin install |
 |---|---|---|
-| 🪟 **Windows** | [`notepatra-x.x.x.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-0.1.106.msi /quiet` — installs to `C:\Program Files\Notepatra\`, adds system PATH, registers HKCR file associations, all-users Start Menu. WiX-built, MajorUpgrade-aware, SCCM-friendly. |
+| 🪟 **Windows** | [`notepatra-x.x.x.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-0.1.107.msi /quiet` — installs to `C:\Program Files\Notepatra\`, adds system PATH, registers HKCR file associations, all-users Start Menu. WiX-built, MajorUpgrade-aware, SCCM-friendly. |
 | 🍎 **macOS** | [`Notepatra.dmg`](https://github.com/singhpratech/notepatra/releases/latest) | Mount + `sudo cp -R "/Volumes/Notepatra/Notepatra.app" /Applications/` from a deployment script. Or open the DMG manually and drag to `/Applications` (admin password). Notarised + stapled. |
-| 🐧 **Debian / Ubuntu / Mint / Pop!_OS** (x64 + ARM64) | [`notepatra_0.1.106_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra_0.1.106_amd64.deb` — installs to `/opt/notepatra/` + symlink at `/usr/bin/notepatra`, hicolor icons, `.desktop` registration. ARM64: replace `amd64` → `arm64`. |
-| 🐧 **Fedora / RHEL / CentOS Stream / Rocky / Alma** (x64 + ARM64) | [`notepatra-0.1.106-1.x86_64.rpm`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo dnf install ./notepatra-0.1.106-1.x86_64.rpm` — same layout as the .deb. ARM64: replace `x86_64` → `aarch64`. Bundles QScintilla 2.14.1 alongside the binary because Fedora ships an incompatible packaging. |
-| 🐧 **Arch / openSUSE Tumbleweed / Manjaro / EndeavourOS / other glibc 2.38+** | [`Notepatra-0.1.106-x86_64.AppImage`](https://github.com/singhpratech/notepatra/releases/latest) | `chmod +x Notepatra-0.1.106-x86_64.AppImage && sudo cp Notepatra-0.1.106-x86_64.AppImage /opt/notepatra.AppImage && sudo ln -s /opt/notepatra.AppImage /usr/local/bin/notepatra`. Requires glibc 2.38+ (Ubuntu 24.04+, Fedora 40+, Arch, Tumbleweed). Older distros: use the .deb / .rpm. |
+| 🐧 **Debian / Ubuntu / Mint / Pop!_OS** (x64 + ARM64) | [`notepatra_0.1.107_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra_0.1.107_amd64.deb` — installs to `/opt/notepatra/` + symlink at `/usr/bin/notepatra`, hicolor icons, `.desktop` registration. ARM64: replace `amd64` → `arm64`. |
+| 🐧 **Fedora / RHEL / CentOS Stream / Rocky / Alma** (x64 + ARM64) | [`notepatra-0.1.107-1.x86_64.rpm`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo dnf install ./notepatra-0.1.107-1.x86_64.rpm` — same layout as the .deb. ARM64: replace `x86_64` → `aarch64`. Bundles QScintilla 2.14.1 alongside the binary because Fedora ships an incompatible packaging. |
+| 🐧 **Arch / openSUSE Tumbleweed / Manjaro / EndeavourOS / other glibc 2.38+** | [`Notepatra-0.1.107-x86_64.AppImage`](https://github.com/singhpratech/notepatra/releases/latest) | `chmod +x Notepatra-0.1.107-x86_64.AppImage && sudo cp Notepatra-0.1.107-x86_64.AppImage /opt/notepatra.AppImage && sudo ln -s /opt/notepatra.AppImage /usr/local/bin/notepatra`. Requires glibc 2.38+ (Ubuntu 24.04+, Fedora 40+, Arch, Tumbleweed). Older distros: use the .deb / .rpm. |
 
 > All artefacts ship with cosign `.sig` + `.pem` for keyless Sigstore verification and SLSA build provenance. See **[Verify your download](#verify-your-download)** below.
 
@@ -312,9 +312,9 @@ For teams that **can't or won't send code to public LLM endpoints** — regulate
 
 | OS | Artefact | Silent admin install |
 |---|---|---|
-| 🪟 **Windows** | [`notepatra-local-ai-0.1.106.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-local-ai-0.1.106.msi /quiet` — installs to `C:\Program Files\Notepatra Local AI\`, distinct UpgradeCode so SCCM treats it as its own product. Add/Remove Programs shows "Notepatra Local AI". |
-| 🐧 **Debian/Ubuntu x64** | [`notepatra-local-ai_0.1.106_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.106_amd64.deb` |
-| 🐧 **Debian/Ubuntu ARM64** | [`notepatra-local-ai_0.1.106_arm64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.106_arm64.deb` |
+| 🪟 **Windows** | [`notepatra-local-ai-0.1.107.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-local-ai-0.1.107.msi /quiet` — installs to `C:\Program Files\Notepatra Local AI\`, distinct UpgradeCode so SCCM treats it as its own product. Add/Remove Programs shows "Notepatra Local AI". |
+| 🐧 **Debian/Ubuntu x64** | [`notepatra-local-ai_0.1.107_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.107_amd64.deb` |
+| 🐧 **Debian/Ubuntu ARM64** | [`notepatra-local-ai_0.1.107_arm64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.107_arm64.deb` |
 
 **The binary physically cannot reach `api.openai.com`, `api.anthropic.com`, `openrouter.ai`, `api.mistral.ai`, `generativelanguage.googleapis.com`, or any other public LLM endpoint.** Every `QNetworkAccessManager` request goes through an allowlist that only accepts:
 
@@ -326,7 +326,7 @@ For teams that **can't or won't send code to public LLM endpoints** — regulate
 
 Local Ollama, local llama.cpp, self-hosted Ollama on the LAN, and any other OpenAI-compatible server you have installed locally or on your private network — **all continue to work** in the cloud-free build. Only public-cloud LLM endpoints are blocked. The cloud-URL paste box is stripped from the UI as well, so users can't even type a public host. Auditors can confirm by running `strings notepatra | grep -c openai.com` — zero hits.
 
-On Linux the two flavors share the same `notepatra` binary name on disk; `apt` Conflicts ensures only one of `notepatra` / `notepatra-local-ai` is installed at a time, swap transactionally with `sudo apt install ./notepatra-local-ai_0.1.106_amd64.deb`. On Windows the two MSIs are independent products (different UpgradeCode + ProductName + install dir) so they can coexist if needed; admins typically push one or the other based on policy. `notepatra --version` self-identifies the build: `Notepatra v0.1.106 (cloud-free / local-ai)` for the local-ai flavor, `Notepatra v0.1.106` for the regular flavor.
+On Linux the two flavors share the same `notepatra` binary name on disk; `apt` Conflicts ensures only one of `notepatra` / `notepatra-local-ai` is installed at a time, swap transactionally with `sudo apt install ./notepatra-local-ai_0.1.107_amd64.deb`. On Windows the two MSIs are independent products (different UpgradeCode + ProductName + install dir) so they can coexist if needed; admins typically push one or the other based on policy. `notepatra --version` self-identifies the build: `Notepatra v0.1.107 (cloud-free / local-ai)` for the local-ai flavor, `Notepatra v0.1.107` for the regular flavor.
 
 ### Verify your download
 
