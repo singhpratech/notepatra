@@ -345,7 +345,6 @@
       <li><a href="#terminal">Terminal</a></li>
       <li><a href="#rest-client">REST client</a></li>
       <li><a href="#hex-editor">Hex editor</a></li>
-      <li><a href="#markdown-preview">Markdown preview</a></li>
     </ul>
 
     <div class="section-label">AI (Local)</div>
@@ -399,7 +398,7 @@
   <p>Notepatra is a <strong>native</strong> code editor written in C++17 with a Rust core for the heavy-lifting (memory-mapped file I/O, Aho-Corasick search, Myers diff, formatters). It targets <strong>Linux x64 / ARM64, macOS Apple Silicon, and Windows x64</strong>. The bare executable is under 12 MB (11.5 MB on Linux x64) on each platform; downloads range 3.9 MB (Linux ARM64) to ~42.4 MB (Windows MSI with Qt DLLs bundled).</p>
   <p>Unlike Electron-based editors, Notepatra does not ship a browser runtime. It uses Qt5 + QScintilla — a battle-tested Scintilla-based editor engine — so 238 file types, 82 language lexers, brace matching, folding, and code completion are built in.</p>
   <p>Unlike cloud-first editors, Notepatra's AI is <strong>local-first</strong>. The AI dock dropdown ships <strong>six backends</strong>: <a href="https://ollama.com">Ollama</a> (default · <code>localhost:11434</code>), <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>'s llama-server (loads any GGUF directly · <code>localhost:8080</code>), <a href="https://openrouter.ai">OpenRouter</a> (cloud · 100+ models — Claude, GPT, Gemini, Grok, Kimi, …), <a href="https://ollama.com/cloud">Ollama Cloud</a> (cloud · gpt-oss:120b, qwen3-coder:480b, deepseek-v3.1:671b), <a href="https://openai.com">OpenAI</a> direct, and <a href="https://azure.microsoft.com/en-us/products/ai-services/openai-service">Azure OpenAI</a> (enterprise). The <code>llama.cpp</code> entry also accepts a user-configured base URL via Settings → Preferences → AI, so it can reach any OpenAI-compatible HTTP server you've installed. Nothing leaves your computer unless you pick a cloud backend. No mandatory API keys, no subscription, no telemetry.</p>
-  <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock and the model gets 5 native tools — <code>read_file</code>, <code>list_dir</code>, <code>search</code>, <code>write_file</code>, <code>apply_diff</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
+  <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock (with a workspace open and a tool-capable model) and the model gets up to 13 native tools — file tools <code>read_file</code>, <code>list_dir</code>, <code>write_file</code>, <code>search</code>, <code>apply_diff</code>; data tools <code>query_sql</code>, <code>csv_query</code>, <code>generate_chart</code>; and read-only git tools <code>git_status</code>, <code>git_diff</code>, <code>git_log</code>, <code>git_branch_list</code>, <code>git_show</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
 
   <div class="callout info">
     <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.106 (May 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
@@ -419,7 +418,7 @@
 
   <h4>Windows (PowerShell)</h4>
   <pre><code>irm https://notepatra.org/install.ps1 | iex</code></pre>
-  <p>Downloads the latest <code>notepatra-setup-&lt;version&gt;.exe</code>, runs the NSIS installer which registers in Settings → Apps → Installed apps, creates Start Menu + optional Desktop shortcut, optionally adds to <code>PATH</code>. Uninstall via Control Panel works.</p>
+  <p>Downloads the portable <code>notepatra-windows-x64.zip</code>, extracts it to <code>%LOCALAPPDATA%\Notepatra</code>, adds that directory to your user <code>PATH</code>, creates Start Menu + Desktop shortcuts, and writes its own uninstall entry (registered in Settings → Apps → Installed apps via an <code>HKCU</code> Uninstall key + bundled <code>uninstall.ps1</code>). No NSIS installer or <code>notepatra-setup.exe</code> is involved.</p>
 
   <h3>Manual download</h3>
   <p>Every release is at <a href="https://github.com/singhpratech/notepatra/releases/latest">github.com/singhpratech/notepatra/releases/latest</a>.</p>
@@ -580,7 +579,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
 
   <h2 id="first-launch" class="anchor-target">First launch</h2>
   <p>Launch Notepatra from your start menu / Launchpad / <code>notepatra</code> command. You'll see an empty editor with the menu bar, toolbar, tab bar, status bar, and (collapsed) side panels.</p>
-  <p>The first time you run Notepatra, it creates <code>~/.config/notepatra/</code> (Linux/macOS) or <code>%LOCALAPPDATA%\Notepatra\</code> (Windows) and writes a default <code>config.json</code>. Themes, fonts, tab width, word wrap, etc. are persisted there.</p>
+  <p>The first time you run Notepatra, it creates its per-user config directory — <code>~/.config/notepatra/</code> on Linux, <code>%APPDATA%\Notepatra\</code> (Roaming) on Windows, <code>~/Library/Application Support/Notepatra/</code> on macOS — and writes a default <code>config.json</code>. Themes, fonts, tab width, word wrap, etc. are persisted there.</p>
 
   <!-- ══════════════ Lite vs Full + packs (v0.1.64+) ══════════════ -->
 
@@ -599,7 +598,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
         <td><strong>Lite</strong> (default)</td>
         <td>under 12 MB</td>
         <td>Everything: editor, lexers, AI Assistant, Coding Mode, Data Analyst tool calls, Git, REST client, hex editor, plugins, themes.</td>
-        <td>Inline Vega-Lite chart rendering. The Data Analyst can still generate chart specs — they show as a "Charts Pack required" card with [View JSON] to copy the spec out.</td>
+        <td>Inline Vega-Lite chart rendering. The Data Analyst can still generate chart specs — they show as a "Chart rendering requires the Charts Pack" card with [View JSON instead] to copy the spec out.</td>
       </tr>
       <tr>
         <td><strong>Full</strong> (opt-in)</td>
@@ -617,20 +616,20 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
     <li><strong>macOS:</strong> <code>~/Library/Application Support/notepatra/plugins/&lt;pack&gt;/</code></li>
     <li><strong>Windows:</strong> <code>%APPDATA%/notepatra/plugins/&lt;pack&gt;/</code></li>
   </ul>
-  <p>As of v0.1.106, the Full flavor ships the <em>charts</em> pack bundled (it's the same binary — the pack is "installed" if WebEngine was linked at compile time). v0.1.66+ adds in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation so packs can be added without swapping binaries.</p>
+  <p>As of v0.1.106, the Full flavor ships the <em>charts</em> pack bundled (it's the same binary — the pack is "installed" if WebEngine was linked at compile time). The in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation path is scaffolded but not yet wired (still queued as of v0.1.106), so today packs are added by swapping in the Full binary rather than downloaded inside the app.</p>
 
   <table>
     <thead>
       <tr><th>Pack ID</th><th>Size</th><th>What it does</th><th>Status</th></tr>
     </thead>
     <tbody>
-      <tr>
+      <tr id="charts-pack">
         <td><code>charts</code></td>
         <td>≈ 95 MB</td>
         <td>Renders Vega-Lite charts (bar / line / scatter / area / composite) inline in the chat transcript. Powered by QtWebEngine + vega-embed.</td>
         <td>Bundled in the Full flavor (Linux x64 / Linux ARM64 tar.gz, macOS DMG, Windows MSI / NSIS / zip) since v0.1.66. The Linux <code>-full</code> tarballs are explicitly tagged; macOS and Windows ship a single flavor with WebEngine included.</td>
       </tr>
-      <tr>
+      <tr id="pdf-pack">
         <td><code>pdf</code></td>
         <td>≈ 12 MB</td>
         <td>Rasterises PDFs to PNG pages so vision-capable AI models can read them. Powered by Poppler-Qt5.</td>
@@ -643,7 +642,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
   <p>Three paths, pick whichever matches your situation:</p>
 
   <h4>Path A — Click [Install charts pack] in the app</h4>
-  <p>When you ask the AI Assistant to chart something in Data Analyst mode, the lite binary shows the <strong>📊 Chart rendering requires the Charts Pack</strong> card with two buttons:</p>
+  <p>When you ask the AI Assistant to chart something in Data Analyst mode, the lite binary shows a <strong>Chart rendering requires the Charts Pack</strong> card with two buttons:</p>
   <ul>
     <li><strong>[Install charts pack]</strong> — opens a dialog explaining the lite/full split, then opens your default browser to the GitHub Releases page for the current tag. Pick the file ending in <code>-full</code> for your OS.</li>
     <li><strong>[View JSON instead]</strong> — appends the raw Vega-Lite spec under the card as a fenced code block. You can copy it into any standalone Vega-Lite editor (<a href="https://vega.github.io/editor/" rel="noopener">vega.github.io/editor</a>) without installing anything.</li>
@@ -676,7 +675,7 @@ make -j$(nproc)
 
   <h3 id="lite-vs-full-faq">FAQ</h3>
   <ul>
-    <li><strong>Do I lose anything by staying on Lite?</strong> No — every editor / lexer / AI / Git / data / plugin feature works identically. The only difference is that <code>generate_chart</code> tool results paint as a "Charts Pack required" card instead of as an inline rendered chart. You can still see the spec via [View JSON instead] and copy it elsewhere.</li>
+    <li><strong>Do I lose anything by staying on Lite?</strong> No — every editor / lexer / AI / Git / data / plugin feature works identically. The only difference is that <code>generate_chart</code> tool results paint as a "Chart rendering requires the Charts Pack" card instead of as an inline rendered chart. You can still see the spec via [View JSON instead] and copy it elsewhere.</li>
     <li><strong>Can I downgrade Full → Lite?</strong> Yes. Just download the Lite tarball and replace the binary. Your config / chat history / connections are preserved (they live under <code>~/.config/notepatra</code>, not inside the binary).</li>
     <li><strong>Will the chart spec data be lost if I'm on Lite?</strong> No — the AI's tool result is preserved in your chat history just like any other tool result. If you upgrade to Full later, opening the same chat shows the rendered chart for those past results.</li>
     <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.106. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
@@ -684,8 +683,8 @@ make -j$(nproc)
 
   <h2 id="ui-overview" class="anchor-target">UI overview</h2>
   <ul>
-    <li><strong>Menu bar</strong> — File, Edit, Search, View, Features, Encoding, Language, Settings, Tools, Plugins, Macro, Run, Window, Help. Most actions have keyboard shortcuts (<a href="#shortcuts">full list</a>).</li>
-    <li><strong>Toolbar</strong> — quick-access buttons for New, Open, Save, Save All, Close, Cut, Copy, Paste, Undo, Redo, Find, Replace, Zoom In/Out, Word Wrap, Show All Characters, Function List, Workspace.</li>
+    <li><strong>Menu bar</strong> — File, Edit, Search, View, Tools, Encoding, Language, Settings, Utilities, Plugins, Macro, Run, Window, Help. Most actions have keyboard shortcuts (<a href="#shortcuts">full list</a>).</li>
+    <li><strong>Toolbar</strong> — the <strong>Built-in Tools</strong> bar with tool-launch buttons: Project Search, AI, Terminal, Compare, JSON, HTML, SQL, Brackets, REST, Noter, Diagram.</li>
     <li><strong>Tab bar</strong> — one tab per open file. Modified tabs show a dot. Close with the <code>×</code> or middle-click.</li>
     <li><strong>Editor area</strong> — Scintilla-based editor with line numbers, code folding, brace matching, syntax highlighting, caret-line highlight, word-wrap toggle, EOL visibility toggle, rulers, optional crosshair.</li>
     <li><strong>Status bar</strong> — language, file length, line count, word count, cursor line/col, EOL type (CRLF/LF), encoding, INS/OVR.</li>
@@ -702,8 +701,8 @@ make -j$(nproc)
     <li><strong>New</strong> <span class="kbd">Ctrl+N</span> — empty untitled tab</li>
     <li><strong>Open</strong> <span class="kbd">Ctrl+O</span> — multi-select file dialog, opens each as a tab</li>
     <li><strong>Save</strong> <span class="kbd">Ctrl+S</span> — save current tab (prompts for path if untitled)</li>
-    <li><strong>Save As</strong> (right-click tab → Save As, or File menu) — opens the platform Save dialog with a <strong>~72-entry file-type dropdown</strong> covering every supported language (Plain Text, Markdown, Python, JavaScript, TypeScript, C/C++, Rust, Go, SQL, JSON, YAML, TOML, HTML/CSS, Bash, Dockerfile, …). The filter matching the current tab's language is pre-selected, matching Notepad++ behaviour. Filter helper lives in <code>src/lexerutils.cpp::buildSaveAsFilters()</code>. <span class="muted">Added v0.1.88 — pre-fix the dropdown only ever offered "All Files (*)".</span></li>
-    <li><strong>Save All</strong> <span class="kbd">Ctrl+Shift+S</span> — saves every modified tab with a known path</li>
+    <li><strong>Save As</strong> <span class="kbd">Ctrl+Shift+S</span> (also right-click tab → Save As, or File menu) — opens the platform Save dialog with a <strong>~72-entry file-type dropdown</strong> covering every supported language (Plain Text, Markdown, Python, JavaScript, TypeScript, C/C++, Rust, Go, SQL, JSON, YAML, TOML, HTML/CSS, Bash, Dockerfile, …). The filter matching the current tab's language is pre-selected, matching Notepad++ behaviour. Filter helper lives in <code>src/lexerutils.cpp::buildSaveAsFilters()</code>. <span class="muted">Added v0.1.88 — pre-fix the dropdown only ever offered "All Files (*)".</span></li>
+    <li><strong>Save All</strong> <span class="kbd">Ctrl+Alt+S</span> — saves every modified tab with a known path</li>
     <li><strong>Close</strong> <span class="kbd">Ctrl+W</span> — close current tab (prompts to save if modified)</li>
     <li><strong>Drag &amp; drop</strong> files from the OS file manager into the editor — they open as tabs</li>
   </ul>
@@ -720,7 +719,7 @@ make -j$(nproc)
   <h2 id="languages-lexers" class="anchor-target">Languages &amp; lexers</h2>
   <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.106 (covering 238 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
   <p><strong>Core (Qt-bundled):</strong> Python, JavaScript/TypeScript/JSX, CoffeeScript, C/C++, C#, D, Java/Kotlin, HTML/PHP, CSS/SCSS/LESS, XML, JSON, SQL (ANSI / T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite), Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Matlab, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile.</p>
-  <p><strong>v0.1.55 additions (32 dedicated lexers, keyword tables verified against official specs):</strong> Dart · Solidity · Zig · Vala · Hack · Julia · R · Protobuf · F# · HCL/Terraform · Thrift · GraphQL · GDScript · Nim · Cython · Mojo · Crystal · Elixir · Scala · Groovy · Apex · Jinja · Liquid · Twig · Dockerfile · Fish · Nushell · TOML · DotEnv · Gitignore · JSON5 · BibTeX. Each ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing — <code>.dart</code>, <code>.zig</code>, <code>.jl</code>, <code>.toml</code>, <code>.ex</code>, <code>Cargo.toml</code>, <code>Dockerfile</code>, <code>.gitignore</code>, <code>.env</code>, <code>.fish</code>, <code>.json5</code>, <code>.tf</code>, etc. now point at their dedicated lexers instead of falling back to the closest-fit generic.</p>
+  <p><strong>v0.1.55 additions (32 dedicated lexers, keyword tables verified against official specs):</strong> Dart · Solidity · Zig · Vala · Hack · Julia · R · Protobuf · F# · HCL/Terraform · Thrift · GraphQL · GDScript · Nim · Cython · Mojo · Crystal · Elixir · Scala · Groovy · Apex · Jinja · Liquid · Twig · Dockerfile · Fish · Nushell · TOML · DotEnv · Gitignore · JSON5 · BibTeX. Each ships with comment / uncomment / block-comment syntax (Ctrl+/ for line, Ctrl+Shift+Q for block) and proper file-extension routing — <code>.dart</code>, <code>.zig</code>, <code>.jl</code>, <code>.toml</code>, <code>.ex</code>, <code>Cargo.toml</code>, <code>Dockerfile</code>, <code>.gitignore</code>, <code>.env</code>, <code>.fish</code>, <code>.json5</code>, <code>.tf</code>, etc. now point at their dedicated lexers instead of falling back to the closest-fit generic.</p>
 
   <h2 id="themes-palette" class="anchor-target">Themes &amp; palette</h2>
   <p>Three themes ship: <strong>Light</strong> (default), <strong>Dark</strong>, and <strong>Monokai</strong>. Change via <code>Settings → Theme</code>. The theme is persisted in <code>config.json</code>.</p>
@@ -777,22 +776,23 @@ make -j$(nproc)
   <h2 id="macros" class="anchor-target">Macros</h2>
   <p>Record keyboard + mouse operations and play them back:</p>
   <ul>
-    <li><span class="kbd">Ctrl+Shift+M</span> — start/stop recording</li>
-    <li><span class="kbd">Ctrl+Shift+P</span> — play last macro</li>
-    <li><code>Macro → Run Multiple Times</code> — play N times</li>
-    <li><code>Macro → Save</code> — persist the macro as JSON to <code>~/.config/notepatra/macros/</code></li>
-    <li><code>Macro → Load</code> — restore a saved macro</li>
+    <li><span class="kbd">Ctrl+Shift+M</span> — start recording</li>
+    <li><span class="kbd">Ctrl+Shift+T</span> — stop recording</li>
+    <li><span class="kbd">Ctrl+Shift+P</span> — Playback (play last macro)</li>
+    <li><code>Macro → Run Multiple Times...</code> — play N times</li>
+    <li><code>Macro → Save Current Macro...</code> — write the macro to a user-chosen <code>.macro</code> file (QsciMacro serialization, not JSON; no fixed directory)</li>
+    <li><code>Macro → Load Macro...</code> — restore a saved <code>.macro</code> file</li>
   </ul>
   <p>Uses QScintilla's built-in <code>QsciMacro</code> serialization.</p>
 
   <h2 id="sessions" class="anchor-target">Sessions &amp; crash recovery</h2>
-  <p>On close, Notepatra saves <code>~/.config/notepatra/session.json</code>: list of open file paths, cursor positions, window geometry, maximized state, theme, active tab. On next launch, all tabs reopen at the same cursor positions.</p>
-  <p>Every 10 seconds, Notepatra writes unsaved buffers to <code>~/.config/notepatra/recovery/&lt;crash-id&gt;.txt</code>. If the app crashes (caught by <code>SIGSEGV</code>/<code>SIGABRT</code>/<code>SIGFPE</code> handlers), the next launch detects <code>.crash_flag</code> and offers to restore unsaved work.</p>
+  <p>On close, Notepatra saves <code>session.json</code> in its per-user config directory (<code>~/.config/notepatra/</code> on Linux; <code>%APPDATA%\Notepatra\</code> on Windows; <code>~/Library/Application Support/Notepatra/</code> on macOS): list of open file paths, cursor positions, window geometry, maximized state, theme, active tab. On next launch, all tabs reopen at the same cursor positions.</p>
+  <p>Roughly every 5 seconds (configurable 1–300 s) Notepatra writes full unsaved-buffer content into <code>session.json</code> — that file is the recovery store. If the app crashes (caught by <code>SIGSEGV</code>/<code>SIGABRT</code>/<code>SIGFPE</code> handlers), a <code>.crash_flag</code> is left in the config directory's <code>recovery/</code> folder and the next launch detects it and offers to restore unsaved work.</p>
 
   <!-- ══════════════ Plugins ══════════════ -->
 
-  <h2 id="json-tools" class="anchor-target">JSON Tools plugin</h2>
-  <p>Open: <code>Plugins → JSON Tools (inbuilt)</code>. Panel opens as a new tab.</p>
+  <h2 id="json-tools" class="anchor-target">JSON Tools (inbuilt)</h2>
+  <p>Open: <code>Tools → JSON Tools (inbuilt)</code>. Panel opens as a new tab.</p>
 
   <h3>Buttons</h3>
   <ul>
@@ -811,14 +811,14 @@ make -j$(nproc)
 [14:23:02] Minify: 98 → 60 chars (-38)</code></pre>
   <p>Color-coded: teal for "added/fixed", amber for "shrunk/minified", gray for no-op. Capped at 50 entries, scrollable.</p>
 
-  <h2 id="html-tools" class="anchor-target">HTML Tools plugin</h2>
+  <h2 id="html-tools" class="anchor-target">HTML Tools (inbuilt)</h2>
   <p>Same structure as JSON Tools but with HTML-specific buttons: <strong>Format (2 spaces)</strong>, <strong>Format (4 spaces)</strong>, <strong>Minify</strong>, <strong>Fix + Format</strong>, <strong>AI Fix</strong>, <strong>Show Diff</strong>, <strong>Copy Output</strong>. Fixer handles: self-closing <code>&lt;img&gt;</code>/<code>&lt;br&gt;</code>, mismatched tags, attribute quotes.</p>
 
-  <h2 id="bracket-tools" class="anchor-target">Bracket Tools plugin</h2>
+  <h2 id="bracket-tools" class="anchor-target">Bracket Tools (inbuilt)</h2>
   <p>Generic bracket/quote balancer. Works on any language. Uses the Rust core's <code>bracket_fix</code> module which walks the input, tracks a bracket stack, and closes any unclosed opens at the end in reverse order.</p>
 
-  <h2 id="sql-formatter" class="anchor-target">SQL Formatter plugin</h2>
-  <p>Open: <code>Plugins → SQL Formatter (inbuilt)</code>.</p>
+  <h2 id="sql-formatter" class="anchor-target">SQL Formatter (inbuilt)</h2>
+  <p>Open: <code>Tools → SQL Formatter (inbuilt)</code>.</p>
   <ul>
     <li><strong>Dialect dropdown</strong> — ANSI SQL / T-SQL (SQL Server) / PL/SQL (Oracle) / MySQL / PostgreSQL / SQLite. Switching dialect re-colorizes the visible buffer with that dialect's keywords.</li>
     <li><strong>UPPERCASE keywords</strong> checkbox — toggles keyword casing in the formatted output.</li>
@@ -828,7 +828,7 @@ make -j$(nproc)
   <p>Dialect-specific keyword sets are fed to Scintilla via <code>SCI_SETKEYWORDS</code> (since <code>QsciLexerSQL::setKeywords</code> is protected). T-SQL adds DECLARE/MERGE/OUTPUT/PIVOT/OVER/PARTITION, PL/SQL adds PLS_INTEGER/SYSDATE/NVL/DECODE/CONNECT BY, etc.</p>
 
   <h2 id="compare" class="anchor-target">Compare</h2>
-  <p>A side-by-side diff view shipped under Plugins → Compare. Backed by Rust's Myers diff (<code>similar</code> crate) and a custom <code>CompareWidget</code> rendered with Qt.</p>
+  <p>A side-by-side diff view; open via <code>Tools → Compare (inbuilt)</code>. Backed by Rust's Myers diff (<code>similar</code> crate) and a custom <code>CompareWidget</code> rendered with Qt.</p>
 
   <blockquote>
     Visual UX inspired by <a href="https://github.com/pnedev/comparePlus">ComparePlus</a> by Pavel Nedev. Notepatra's implementation is a fresh Qt + Rust port in a different codebase, but the visual conventions are credit to Pavel.
@@ -874,22 +874,18 @@ make -j$(nproc)
     <li>Current branch name with upstream tracking status</li>
     <li><strong>Changed files</strong> list — added (green), modified (yellow), deleted (red), untracked</li>
     <li><strong>Git gutter</strong> in the editor margin — colored line markers for added/modified/deleted lines compared to HEAD</li>
-    <li><strong>Push / Pull / Refresh</strong> buttons</li>
-    <li><strong>Open on GitHub</strong> — opens the current file's blob URL in your browser</li>
+    <li><strong>Commit / Push / Pull / Fetch</strong> buttons</li>
   </ul>
   <p>Shells out to <code>git</code> via <code>QProcess</code>. Non-invasive — no libgit2 dependency.</p>
 
   <h2 id="terminal" class="anchor-target">Terminal</h2>
-  <p>Built-in terminal panel (Linux/macOS). Uses <code>QProcess</code> to spawn <code>bash</code>/<code>zsh</code> and feeds stdout/stderr to a monospace widget. Not a full pty (no colors, no curses) — fine for simple commands and scripts, not for <code>vim</code>/<code>htop</code>.</p>
+  <p>Built-in terminal panel (Linux/macOS/Windows). Uses <code>QProcess</code> to spawn the platform shell (<code>bash</code>/<code>zsh</code> on Linux/macOS, <code>pwsh</code>→<code>cmd.exe</code> on Windows) and feeds stdout/stderr to a monospace widget, rendering ANSI colour escapes. Not a full pty (no curses) — fine for simple commands and scripts, not for <code>vim</code>/<code>htop</code>.</p>
 
   <h2 id="rest-client" class="anchor-target">REST client</h2>
-  <p>A Postman-lite panel: URL field, method dropdown (GET/POST/PUT/PATCH/DELETE/HEAD), headers editor, request body editor with JSON syntax highlighting, response viewer with pretty-printed JSON output + status code + timing.</p>
+  <p>A Postman-lite panel: URL field, method dropdown (GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS), headers editor, monospace request body editor, response viewer with pretty-printed JSON output + status code + timing.</p>
 
   <h2 id="hex-editor" class="anchor-target">Hex editor</h2>
   <p>Byte-level view of any file. Left column: offset. Middle: hex bytes in 16-byte rows. Right: printable ASCII. Read-only for now.</p>
-
-  <h2 id="markdown-preview" class="anchor-target">Markdown preview</h2>
-  <p>Live side-by-side preview for <code>.md</code>/<code>.markdown</code> files. Uses Qt's <code>QTextDocument::setMarkdown()</code> — CommonMark-compatible. Scrolls in sync with the source.</p>
 
   <!-- ══════════════ AI ══════════════ -->
 
@@ -902,7 +898,7 @@ make -j$(nproc)
       <tr><td><strong>Ollama Cloud</strong></td><td>Cloud</td><td>OpenAI-compat over HTTPS · <code>https://ollama.com</code></td><td>Same Ollama models, served from Ollama's hosted infrastructure. Per-provider key slot in Settings.</td></tr>
       <tr><td><strong>llama.cpp</strong></td><td>Local</td><td>OpenAI <code>/v1/chat/completions</code> · <code>http://localhost:8080</code></td><td>Loads any GGUF file directly — no daemon, no config format. Maximum control + minimum overhead.</td></tr>
       <tr><td><strong>OpenRouter</strong></td><td>Cloud</td><td>OpenAI-compat · <code>https://openrouter.ai/api</code></td><td>One key, hundreds of models (Anthropic, OpenAI, Google, Mistral, Meta, xAI, DeepSeek, Qwen). Unified <code>reasoning</code> field — Think checkbox toggles thinking on Claude / o-series / Gemini consistently.</td></tr>
-      <tr><td><strong>OpenAI</strong></td><td>Cloud</td><td>OpenAI <code>/v1/chat/completions</code> · <code>https://api.openai.com</code></td><td>Direct OpenAI access for GPT-4 family + o-series. Per-provider key slot.</td></tr>
+      <tr><td><strong>OpenAI</strong></td><td>Cloud</td><td>OpenAI <code>/v1/chat/completions</code> · <code>https://api.openai.com</code></td><td>Direct OpenAI access for the GPT-4o / GPT-5 / o-series families. Per-provider key slot.</td></tr>
       <tr><td><strong>Azure OpenAI</strong></td><td>Cloud</td><td>Azure deployment URL with <code>?api-version=...</code></td><td>Enterprise OpenAI through your Azure subscription. Configure resource name + deployment name + API version in the dedicated Azure section of the Settings dialog.</td></tr>
     </tbody>
   </table>
@@ -911,11 +907,11 @@ make -j$(nproc)
   <p><strong>Searchable model dropdown (v0.1.55).</strong> Type any provider key (<code>openai</code>, <code>anthropic</code>, <code>google</code>, <code>xai</code>) or alias (<code>grok</code>, <code>claude</code>, <code>gpt</code>, <code>gemini</code>, <code>kimi</code>, <code>qwen</code>) and the dropdown filters to that provider's models — works whether you remember the brand name or the model name.</p>
   <p>AI surfaces in Notepatra:</p>
   <ul>
-    <li><strong>AI Fix buttons</strong> in JSON Tools / HTML Tools / Bracket Tools plugins — sends broken content, gets fixed content back</li>
+    <li><strong>AI Fix buttons</strong> in the JSON Tools / HTML Tools / Bracket Tools inbuilt tools — sends broken content, gets fixed content back</li>
     <li><strong>AI Assistant panel</strong> — general-purpose chat with your code, supports multi-turn, attach files, voice input. Modes: Chat / Coding / Data Analyst.</li>
     <li><strong>Status bar</strong> in every AI panel showing connectivity dot, the searchable model dropdown, and a refresh button</li>
   </ul>
-  <p><strong>Privacy: "Share file with AI" toggle (v0.1.55).</strong> A red lock indicator next to the AI dock title controls whether the file currently in the editor is included in the AI's context. <strong>Default OFF</strong>. Available <strong>only in Coding Mode</strong> — Chat and Data Analyst modes never see file content. The system prompt teaches the model to politely instruct you to enable the toggle if asked "can you see this file?".</p>
+  <p><strong>Privacy: "Auto-attach open file" toggle (v0.1.55).</strong> The <strong>Auto-attach open file</strong> checkbox (it reads "Auto-attaching open file" while on, styled red-when-off / green-when-on like a lock indicator) controls whether the file currently in the editor is included in the AI's context. <strong>Default OFF</strong>. Available <strong>only in Coding Mode</strong> — Chat and Data Analyst modes never see file content. The system prompt teaches the model to politely instruct you to enable the toggle if asked "can you see this file?".</p>
   <p><strong>Credential scrubber (v0.1.55).</strong> Every editor-derived chunk (selection, workspace block, attached file, user input) passes through a 20+-pattern redactor before leaving the machine — OpenRouter / Anthropic / OpenAI / GitHub / GitLab / AWS / Slack / Stripe / SendGrid / Google API / JWT / PEM private-key blocks / generic <code>password=</code>/<code>api_key=</code>/<code>token=</code>. Replacement is in-place with a <code>[REDACTED-VENDOR-KEY]</code> marker so the model still sees that a credential was redacted.</p>
 
   <h2 id="ai-setup" class="anchor-target">Ollama setup</h2>
@@ -1121,7 +1117,7 @@ cmake --build build --config Release -j</code></pre>
     <li><strong>You can still type any name</strong> — the dropdown is editable. Type the exact model id <code>llama-server</code> reports in its startup banner.</li>
   </ul>
 
-  <h3 id="setup-cloud">Cloud backends (OpenAI, OpenRouter, Anthropic, Azure, Ollama Cloud)</h3>
+  <h3 id="setup-cloud">Cloud backends (OpenAI, OpenRouter, Azure, Ollama Cloud)</h3>
   <p>Cloud backends need a key. Notepatra has <strong>per-provider key slots</strong> — keys never cross-pollinate between providers. Open Settings → Preferences → AI to see the four sections (OpenRouter, OpenAI, Ollama Cloud, Azure OpenAI), each with its own Test / Save / Forget buttons.</p>
 
   <h4>OpenRouter (recommended cloud — one key, many models)</h4>
@@ -1136,7 +1132,7 @@ cmake --build build --config Release -j</code></pre>
   <ol>
     <li><strong>Get a key</strong> at <a href="https://platform.openai.com/api-keys">platform.openai.com/api-keys</a>. The string starts with <code>sk-</code> (or <code>sk-proj-</code> for project keys).</li>
     <li><strong>Paste</strong> in Settings → AI → <em>OpenAI</em> section → Test → Save.</li>
-    <li><strong>Pick "OpenAI"</strong> in the backend dropdown. Curated list of GPT-4 family + o-series; type <code>o1</code> or <code>gpt-4</code> to filter.</li>
+    <li><strong>Pick "OpenAI"</strong> in the backend dropdown. Curated list of the GPT-4o / GPT-5 / o-series families; type <code>gpt-5</code> or <code>o4</code> to filter.</li>
   </ol>
 
   <h4>Azure OpenAI deployment</h4>
@@ -1196,7 +1192,7 @@ cmake --build build --config Release -j</code></pre>
   <ul>
     <li><strong>Free tier exhausted</strong> — most cloud providers cap requests-per-minute on free credit. Add credit or wait the reset window.</li>
     <li><strong>Concurrent requests</strong> — Notepatra serialises requests per panel, but if you have multiple AI panels open and all hit the same provider, you can pile on. Close idle panels.</li>
-    <li><strong>Exponential backoff</strong> — Notepatra retries 429s with exponential backoff up to 3 attempts before surfacing the error in the panel.</li>
+    <li><strong>No automatic retry</strong> — on HTTP 429 Notepatra surfaces a rate-limit message immediately ("Rate limited (HTTP 429) — too many requests; wait a moment and try again."). There is no exponential backoff; wait for the provider's reset window and retry manually.</li>
   </ul>
 
   <h5>Model not in dropdown after refresh</h5>
@@ -1228,7 +1224,7 @@ cmake --build build --config Release -j</code></pre>
   <ul>
     <li><strong>Model lacks tools capability</strong> — the v0.1.55 capability probe should have hidden it. If you bypassed the probe by typing the id manually, the model may not emit tool calls regardless of prompt.</li>
     <li><strong>llama.cpp without <code>--jinja</code></strong> — restart with <code>llama-server --jinja ...</code> so the chat template is applied. Without it, the model never sees the tool schema.</li>
-    <li><strong>"Share file with AI" toggle off</strong> — Coding Mode without the file context is still functional, but the model can only act on what you paste. Toggle the red lock by the AI dock title to share the current file.</li>
+    <li><strong>"Auto-attach open file" toggle off</strong> — Coding Mode without the file context is still functional, but the model can only act on what you paste. Tick the <strong>Auto-attach open file</strong> checkbox (the red-when-off / green-when-on lock-styled toggle in the AI dock) to share the current file.</li>
   </ul>
 
   <h5>Capabilities probe never returns</h5>
@@ -1239,10 +1235,10 @@ cmake --build build --config Release -j</code></pre>
 
   <h5>Where Notepatra stores AI config</h5>
   <ul>
-    <li><strong>Backend selection, model id, base URL, options</strong> — <code>~/.config/notepatra/preferences.json</code> on Linux, <code>%APPDATA%\notepatra\preferences.json</code> on Windows, <code>~/Library/Application Support/notepatra/preferences.json</code> on macOS.</li>
-    <li><strong>API keys</strong> — stored in plaintext in your local config file (no encryption; OS-keychain integration is a future candidate); they are never transmitted anywhere except to the AI backend you select.</li>
-    <li><strong>Chat history</strong> — <code>~/.config/notepatra/ai_history/</code> (or platform equivalent), one JSON file per session.</li>
-    <li><strong>Reset</strong> — close Notepatra, delete <code>preferences.json</code>, click <em>Forget</em> in each provider section to clear stored keys. Restart for a clean slate.</li>
+    <li><strong>Backend selection, model id, base URL, options</strong> — all settings persist to a single <code>config.json</code>: <code>~/.config/notepatra/config.json</code> on Linux, <code>%APPDATA%\Notepatra\config.json</code> on Windows (the Roaming app-data dir), <code>~/Library/Application Support/Notepatra/config.json</code> on macOS.</li>
+    <li><strong>API keys</strong> — stored in plaintext in the same <code>config.json</code> above (fields <code>aiOpenRouterKey</code> / <code>aiOpenAIKey</code> / <code>aiOllamaCloudKey</code> / <code>aiAzureKey</code>; no encryption, no separate key file; OS-keychain integration is a future candidate); they are never transmitted anywhere except to the AI backend you select.</li>
+    <li><strong>Chat history</strong> — <code>~/.config/notepatra/chat-history/&lt;sha1-of-workspace&gt;.json</code> (or platform equivalent), one JSON file per workspace (keyed by the SHA-1 of the workspace path), not per session.</li>
+    <li><strong>Reset</strong> — close Notepatra, delete <code>config.json</code> (in the dir above), then on next launch click <em>Forget</em> in each provider section if any keys remain. Restart for a clean slate.</li>
   </ul>
 
   <h2 id="ai-openai-compat" class="anchor-target">OpenAI-compatible servers (user-configured)</h2>
@@ -1256,7 +1252,7 @@ cmake --build build --config Release -j</code></pre>
 Content-Type: application/json
 
 {
-  "model": "qwen2.5:7b",
+  "model": "&lt;your selected model&gt;",   // whatever is picked in the model dropdown — NOT hardcoded
   "prompt": "Fix ONLY the broken parts of this JSON. Make MINIMAL
              changes. PRESERVE the original line order, key order, and
              formatting. Do NOT reorder keys. Do NOT reformat. Return
@@ -1264,7 +1260,7 @@ Content-Type: application/json
   "system": "You are a minimal-change JSON patcher. ... /no_think",
   "stream": true,
   "think": false,
-  "options": { "temperature": 0.1, "num_predict": 4096 }
+  "options": { "temperature": 0.3, "num_predict": 2048, "num_ctx": 4096 }
 }</code></pre>
 
   <h3>Response cleanup pipeline</h3>
@@ -1366,24 +1362,28 @@ Content-Type: application/json
   </ul>
 
   <h3>Agentic tools</h3>
-  <p>The agent gets <strong>5 native tools</strong> (v0.1.40 surface). Every tool call shows up as an inline <code>🔧 toolname (args) → result</code> card in the chat:</p>
+  <p>The agent gets <strong>up to 13 native tools</strong> — the five core file tools plus <code>query_sql</code> / <code>csv_query</code> / <code>generate_chart</code> and five read-only <code>git_*</code> inspection tools. <code>AiTools::availableTools()</code> registers all 13 unconditionally; the same array is sent on every Coding/Data turn. Every tool call shows up as an inline <code>🔧 toolname (args) → result</code> card in the chat:</p>
   <table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td><code>read_file(path, offset?, limit?, with_line_numbers?)</code></td><td>Read a text file from the workspace. Default emits <code>      N\t</code> line-number prefix per line so the model can reference exact lines. <strong>v0.1.40</strong>: pass <code>with_line_numbers=false</code> to get raw content (recommended when feeding lines into <code>apply_diff old_lines</code>).</td></tr>
       <tr><td><code>list_dir(path)</code></td><td>List one level of entries with type (file/dir) and size. Filters <code>.git</code> / <code>node_modules</code> / <code>target</code> / <code>dist</code> / <code>__pycache__</code> / <code>.gradle</code> / <code>.idea</code> / <code>.vs</code>.</td></tr>
       <tr><td><code>search(pattern, path?, regex?, glob?, case_sensitive?, max_matches?)</code></td><td>Find a string or regex across the workspace. Returns up to 50 (default) / 200 (max) matches with file path, line, column, and a snippet. Same heavy-dir skip-list as the file tree.</td></tr>
-      <tr><td><code>write_file(path, content, mode?)</code></td><td>Create or overwrite a text file. Modes: <code>overwrite</code> (default) / <code>create</code> (fails if exists, returns <code>error_kind: exists</code>) / <code>append</code>. Auto-creates parent directories <strong>inside the workspace</strong>; refuses paths matching the credential deny-list (<code>.ssh</code>, <code>.pem</code>, <code>.key</code>, <code>id_rsa*</code>, <code>/etc/passwd</code>, etc.). 5 MB content cap. After success the file auto-opens in a new tab — or the buffer reloads if it's already open.</td></tr>
+      <tr><td><code>write_file(path, content, mode?)</code></td><td>Create or overwrite a text file. Modes: <code>overwrite</code> (default) / <code>create</code> (fails if exists, returns <code>error_kind: exists</code>) / <code>append</code>. Auto-creates parent directories <strong>inside the workspace</strong>; refuses paths matching the credential deny-list (suffixes <code>.pem</code> / <code>.key</code> / <code>.pfx</code> / <code>.p12</code> / <code>.tfvars</code> / <code>.tfstate</code>; filenames <code>id_rsa*</code> / <code>authorized_keys</code> / <code>known_hosts</code> / <code>.env</code> / <code>secrets.json</code>). 5 MB content cap. After success the file auto-opens in a new tab — or the buffer reloads if it's already open.</td></tr>
       <tr><td><code>apply_diff(path, hunks)</code></td><td>Atomic line-level edits. Each hunk has <code>old_start_line</code> + <code>old_lines</code> (expected current text) + <code>new_lines</code> (replacement). <strong>Two-phase apply</strong>: validates ALL hunks against the live file first → if any drifted, returns <code>error_kind: conflict</code> and <strong>nothing</strong> is written. Otherwise hunks apply in reverse-line-order so earlier indices stay stable. <strong>v0.1.40 three-tier match</strong>: strict → strip read_file's <code>      N\t</code> prefix from <code>old_lines</code> → <code>.trimmed()</code> comparison. Relaxed tiers still apply but emit <code>result.warnings</code> so the agent self-corrects on the next read. Atomic write via <code>.tmp + std::rename</code>.</td></tr>
+      <tr><td><code>query_sql(connection_name, sql, max_rows?, confirm?)</code></td><td>Run SQL against a saved database connection. SELECT-only by default (also WITH / EXPLAIN / PRAGMA / SHOW / DESCRIBE); INSERT / UPDATE / DELETE / DDL require <code>confirm:true</code>. Returns up to 100 rows by default (hard max 500). Most useful in Data Analyst Mode — see below.</td></tr>
+      <tr><td><code>csv_query(file_path, sql, max_rows?, max_load_rows?)</code></td><td>Load a workspace CSV into in-memory SQLite (table <code>csv</code>) and run SQL against it. Default loads up to 250,000 rows; returns up to 500.</td></tr>
+      <tr><td><code>generate_chart(...)</code></td><td>Emit a Vega-Lite chart spec for the assistant to render. On Lite the result paints as a "Chart rendering requires the Charts Pack" card; full rendering needs the Charts Pack (WebEngine).</td></tr>
+      <tr><td><code>git_status</code> / <code>git_diff</code> / <code>git_log</code> / <code>git_branch_list</code> / <code>git_show</code></td><td>Read-only git inspection (implemented in <code>src/git_tools.cpp</code>; the QProcess verb list is hard-coded so there is no path through these to mutate the repo).</td></tr>
     </tbody>
   </table>
 
   <h3>Three-layer path security</h3>
   <p>Every tool call goes through <code>resolveSafePath</code>:</p>
   <ol>
-    <li><strong>Workspace anchor + canonicalize</strong>. Relative paths resolve against the workspace root; absolute paths are accepted only if they canonicalize back inside it. Catches <code>../../../../etc/passwd</code> and symlink-to-secrets attacks.</li>
-    <li><strong>Hardcoded deny-list</strong>. Refuses <code>~/.ssh/</code>, <code>*.pem</code>, <code>*.key</code>, <code>id_rsa*</code>, <code>/etc/passwd|shadow</code>, <code>~/.gnupg/</code>, <code>~/.aws/</code>, <code>~/.netrc</code>, <code>~/.npmrc</code>, <code>~/.docker/config.json</code>, etc. Applied to the candidate path itself, so creating <code>~/.ssh/foo</code> via a mkpath chain is still refused.</li>
-    <li><strong>Structured errors</strong>. Refusals come back as <code>error_kind: outside_workspace | denied | not_found | exists | binary | too_large | conflict | malformed_args | timed_out</code> — the model knows what to fix.</li>
+    <li><strong>Workspace anchor + canonicalize</strong>. Relative paths resolve against the workspace root; absolute paths are accepted only if they canonicalize back inside it. This is what refuses <code>../../../../etc/passwd</code>, <code>~/.ssh/</code>, <code>~/.aws/</code>, <code>~/.gnupg/</code>, <code>~/.netrc</code> and the like — they fall outside the workspace anchor (<code>error_kind: outside_workspace</code>), not via the deny-list below. Also catches symlink-to-secrets attacks.</li>
+    <li><strong>Hardcoded credential deny-list</strong> (<code>isHardDenied()</code>). Refuses paths by suffix — <code>.pem</code> / <code>.key</code> / <code>.pfx</code> / <code>.p12</code> / <code>.tfvars</code> / <code>.tfstate</code> — or by filename — <code>id_rsa</code> / <code>id_ed25519</code> / <code>id_ecdsa</code> / <code>id_dsa</code> / <code>authorized_keys</code> / <code>known_hosts</code> / <code>.env</code> (and <code>*.env</code> / <code>*.env.*</code>) / <code>secrets.json</code>. Applied to the candidate path itself, so a mkpath chain can't sneak one through (<code>error_kind: denied</code>).</li>
+    <li><strong>Structured errors</strong>. Refusals come back as <code>error_kind: outside_workspace | denied | not_found | exists | binary | too_large | conflict | malformed_args | io_error</code> — the model knows what to fix.</li>
   </ol>
 
   <h3>Per-turn budget (Hard cap)</h3>
@@ -1413,7 +1413,7 @@ Content-Type: application/json
 
   <h3>What changes when Data Mode is on</h3>
   <ul>
-    <li><strong>Header band turns orange</strong> — "AI · 📊 DATA" — so it's unmistakable which mode is active.</li>
+    <li><strong>Header shows an orange accent</strong> — the title reads "AI · DATA" with orange (<code>#FF9F43</code>) text and a 2px bottom border (the band background stays the normal chrome colour) — so it's unmistakable which mode is active.</li>
     <li>A <strong>Manage Connections…</strong> button appears under the model picker.</li>
     <li>Attached CSVs get a <strong>structured digest</strong> instead of a raw text dump (delimiter sniff, header probe, per-column type — Integer / Real / Boolean / Date / DateTime / Text — null counts, ranges, head + tail rows, capped at 4 KB).</li>
     <li>The system prompt swaps to a data-analyst persona that emits <strong>Findings → Method → Suggested follow-ups</strong> structure.</li>
@@ -1426,14 +1426,14 @@ Content-Type: application/json
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td><code>csv_query(file_path, sql, max_rows?, max_load_rows?)</code></td><td>Loads a workspace CSV into in-memory SQLite (table name <code>csv</code>, column names from the header) and runs your SQL. Default loads up to 250,000 rows; default returns up to 500. Lets the model ask <em>"SELECT category, SUM(amount) FROM csv WHERE order_date >= '2026-04-01' GROUP BY category ORDER BY 2 DESC"</em> instead of trying to mentally scan a million-line file.</td></tr>
-      <tr><td><code>query_sql(connection_name, sql, max_rows?, confirm?)</code></td><td>Runs SQL against a saved connection. <strong>SELECT-only by default</strong> (also: WITH / EXPLAIN / PRAGMA / SHOW / DESCRIBE). INSERT / UPDATE / DELETE / DDL require <code>confirm:true</code> after the user explicitly approves — no implicit mutations. Caps results at 500 rows.</td></tr>
+      <tr><td><code>query_sql(connection_name, sql, max_rows?, confirm?)</code></td><td>Runs SQL against a saved connection. <strong>SELECT-only by default</strong> (also: WITH / EXPLAIN / PRAGMA / SHOW / DESCRIBE). INSERT / UPDATE / DELETE / DDL require <code>confirm:true</code> after the user explicitly approves — no implicit mutations. Returns up to 100 rows by default (hard max 500 — the model must raise <code>max_rows</code> to get more).</td></tr>
     </tbody>
   </table>
 
   <h3>Live charts inline in the chat</h3>
-  <p><strong>v0.1.64+ note:</strong> charts now ship behind the optional <a href="#packs"><code>charts</code> pack</a>. On a default (lite) install, the AI's <code>generate_chart</code> tool result paints as a <strong>📊 Chart rendering requires the Charts Pack</strong> card with two buttons — <strong>[Install charts pack]</strong> (opens GitHub Releases with the matching <code>-full</code> asset for your OS) and <strong>[View JSON instead]</strong> (shows the raw Vega-Lite spec in a fenced code block). See <a href="#lite-vs-full">Lite vs Full</a> for the upgrade paths. The flow described below is what you see once you're on the Full flavor.</p>
+  <p><strong>v0.1.64+ note:</strong> charts now ship behind the optional <a href="#packs"><code>charts</code> pack</a>. On a default (lite) install, the AI's <code>generate_chart</code> tool result paints as a <strong>Chart rendering requires the Charts Pack</strong> card with two buttons — <strong>[Install charts pack]</strong> (opens GitHub Releases with the matching <code>-full</code> asset for your OS) and <strong>[View JSON instead]</strong> (shows the raw Vega-Lite spec in a fenced code block). See <a href="#lite-vs-full">Lite vs Full</a> for the upgrade paths. The flow described below is what you see once you're on the Full flavor.</p>
   <p>Charts the model emits as a fenced <code>```chart</code> block render inline on Lite via QtCharts; only <code>generate_chart</code> tool results (Vega-Lite) need the Charts Pack (Full / WebEngine).</p>
-  <p>When a visualization clarifies the answer, the model emits a fenced <code>```chart</code> block with a small JSON spec. Notepatra parses each one, translates it to a <strong>Vega-Lite</strong> specification, and renders it inline through an embedded <strong>QtWebEngine</strong> view (using <code>vega-embed</code>) under the assistant's prose:</p>
+  <p>When a visualization clarifies the answer, the model emits a fenced <code>```chart</code> block with a small JSON spec. Notepatra parses each one and renders it inline <strong>natively via QtCharts</strong> (<code>ChartRender::renderFromSpec</code>) — no WebEngine, so these fenced charts work on both the Lite and Full builds. (Only the <code>generate_chart</code> tool's Vega-Lite output goes through the embedded QtWebEngine + <code>vega-embed</code> path, which needs the Charts Pack / Full build.) Example:</p>
   <pre><code>```chart
 {
   "type": "bar",
@@ -1447,13 +1447,14 @@ Content-Type: application/json
   ]
 }
 ```</code></pre>
-  <p>Supported types: <code>line</code>, <code>bar</code>, <code>pie</code>, <code>scatter</code>. Theme-aware. Category-aware axes for string-valued X columns; numeric axes for numeric X. Malformed JSON falls back to displaying the spec as a code block — nothing breaks.</p>
+  <p>Supported types rendered natively by QtCharts: <code>line</code>, <code>bar</code>, <code>pie</code>, <code>scatter</code>, <code>area</code>, <code>horizontal-bar</code>, <code>stacked-bar</code>, <code>stacked-horizontal-bar</code>, <code>grouped-bar</code>, <code>donut</code>, <code>histogram</code>, <code>boxplot</code>. (Vega-Lite-only types — <code>heatmap</code>, <code>density</code>, <code>regression-line</code>, <code>faceted-bar</code>, <code>error-bar</code> — fall back to a "Chart rendering requires the Charts Pack" stub on Lite.) Theme-aware. Category-aware axes for string-valued X columns; numeric axes for numeric X. Malformed JSON falls back to displaying the spec as a code block — nothing breaks.</p>
 
   <h3>Database connection manager</h3>
   <p>Click <strong>Manage Connections…</strong> (visible only when Data Mode is on) to add a new connection. The dialog has a <strong>Preset</strong> dropdown at the top — pick one and the form fills with sensible defaults for that database type so you only edit what's specific to your server.</p>
   <p>Available presets (v0.1.66+):</p>
   <ul>
     <li><strong>SQL Server (localhost, ODBC)</strong> — Driver = <code>QODBC</code>, Host = <code>127.0.0.1</code>, Port = <code>1433</code>, Database = <code>master</code>, Username = <code>sa</code>, Options = <code>DRIVER={ODBC Driver 18 for SQL Server};Encrypt=no</code></li>
+    <li><strong>SQL Server (Notepatra local Docker, port 14330)</strong> — pre-configured for the bundled <code>sql-server-local</code> Docker harness; Port = <code>14330</code> (not 1433, so it coexists with any SQL Server already on the default port). Pre-fills everything except the password.</li>
     <li><strong>SQL Server Express (named instance, ODBC)</strong> — Host = <code>localhost\SQLEXPRESS</code>, Port = <i>default</i> (named instances use the SQL Browser service), Options include <code>Trusted_Connection=yes</code> for Windows Auth</li>
     <li><strong>Azure SQL Database (ODBC)</strong> — Host = <code>yourserver.database.windows.net</code>, Options include <code>Encrypt=yes;TrustServerCertificate=no</code> (Azure requires TLS)</li>
     <li><strong>PostgreSQL (localhost)</strong> — Driver = <code>QPSQL</code>, Port = <code>5432</code>, Database = <code>postgres</code>, Username = <code>postgres</code></li>
@@ -1566,7 +1567,7 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
   <p>Click <strong>Browse Schemas…</strong> in the Data Analyst panel to open a tree view of every saved connection. Schema introspection is lazy — clicking a connection node loads its schemas; clicking a schema loads its tables; clicking a table loads its columns + types. Supports SQLite (via <code>sqlite_master</code>), DuckDB (via the native <code>listTables</code> / <code>describeTable</code> wrappers), and any database with <code>INFORMATION_SCHEMA</code> (PostgreSQL, MySQL, SQL Server). Live filter input narrows the tree by name. Right-click any node:</p>
   <ul>
     <li><strong>Send schema to AI</strong> — pins the table's column list to the next prompt as authoritative schema context.</li>
-    <li><strong>Sample 10 rows</strong> — runs <code>SELECT * FROM &lt;table&gt; LIMIT 10</code> in a results pane.</li>
+    <li><strong>Sample 10 rows (clipboard)</strong> — copies <code>SELECT * FROM &lt;table&gt; LIMIT 10</code> to the clipboard. It does <em>not</em> run the query or open a results pane.</li>
     <li><strong>Copy SELECT *</strong> — drops a fully-qualified <code>SELECT * FROM schema.table</code> into your clipboard.</li>
   </ul>
 
@@ -1582,7 +1583,7 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
     <li><code>sample-queries.sql</code> — reference SQL the model can adapt</li>
     <li>any other <code>*.md</code> / <code>*.sql</code> files in the directory get loaded too</li>
   </ul>
-  <p>Caps: 64 KB total across all files, 16 KB per file. The Welcome card surfaces the loaded-files count so you know context was picked up. The legacy single-file <code>.notepatra/data-analyst.md</code> is also still supported.</p>
+  <p>Caps: each file is read up to 16 KB and the combined context is gathered up to 64 KB, but the result is then truncated to <strong>8 KB total</strong> (with a <code>[...truncated]</code> marker) before it reaches the system prompt — so only the first ~8 KB of your combined project data context actually lands in the model's prompt. Curate accordingly: put the most important guidance first. The Welcome card surfaces the loaded-files count so you know context was picked up. The legacy single-file <code>.notepatra/data-analyst.md</code> is also still supported.</p>
   <pre><code>- The `orders` table joins `customers` on `customer_id`.
 - Treat NULL in `amount` as 0 (legacy import bug, never backfilled).
 - `rate` is a percentage stored 0–1, not 0–100. Don't average it.
@@ -1612,7 +1613,7 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
   <table>
     <thead><tr><th>File kind</th><th>Handled how</th></tr></thead>
     <tbody>
-      <tr><td>🖼 Images (png/jpg/webp/gif/bmp)</td><td>Loaded as <code>QImage</code>, downscaled to max 1280px, re-encoded as PNG, base64-encoded, passed in the <code>images</code> field of <code>/api/generate</code>. <strong>Vision models</strong> (llava, llama3.2-vision, qwen2-vl, moondream, granite-vision) actually see the image. Non-vision models silently ignore the field.</td></tr>
+      <tr><td>🖼 Images (png/jpg/webp/gif/bmp)</td><td>Loaded as <code>QImage</code>, downscaled to max 1280px, re-encoded as PNG, base64-encoded, passed in the <code>images</code> field of <code>/api/generate</code>. Recognised local <strong>vision models</strong> (prefix allowlist: <code>llava</code>, <code>llama3.2-vision</code>, <code>qwen2.5vl</code> / <code>qwen2.5-vl</code>, <code>gemma3</code>, <code>minicpm-v</code>, <code>moondream</code>, <code>mistral-small3.1</code>) actually see the image; cloud Claude 3.5+ / GPT-4o-4.1-5 / Gemini are also vision-capable. If the selected model is <strong>not</strong> vision-capable, the image attachment is <strong>refused up front</strong> with an error bubble that names the model and suggests alternatives — it is not silently dropped.</td></tr>
       <tr><td>📕 PDF</td><td><code>pdftotext -layout</code> via QProcess (requires <code>poppler-utils</code>), extracted text appended to the prompt as context, capped at 100 KB.</td></tr>
       <tr><td>📘 DOCX / ODT</td><td><code>unzip -p file.docx word/document.xml</code>, XML tags stripped, appended to prompt.</td></tr>
       <tr><td>📙 PPTX</td><td><code>unzip -p file.pptx ppt/slides/slide1.xml</code>, XML stripped, appended (first slide only for now).</td></tr>
@@ -1682,9 +1683,9 @@ icon db :database "DB"  <span class="cm">rich-icon node</span></code></pre>
       <tr><td><span class="kbd">Ctrl+N</span></td><td>New</td></tr>
       <tr><td><span class="kbd">Ctrl+O</span></td><td>Open</td></tr>
       <tr><td><span class="kbd">Ctrl+S</span></td><td>Save</td></tr>
-      <tr><td><span class="kbd">Ctrl+Shift+S</span></td><td>Save All</td></tr>
+      <tr><td><span class="kbd">Ctrl+Shift+S</span></td><td>Save As</td></tr>
+      <tr><td><span class="kbd">Ctrl+Alt+S</span></td><td>Save All</td></tr>
       <tr><td><span class="kbd">Ctrl+W</span></td><td>Close tab</td></tr>
-      <tr><td><span class="kbd">Ctrl+Shift+T</span></td><td>Reopen last closed tab</td></tr>
       <tr><td><span class="kbd">Ctrl+P</span></td><td>Print</td></tr>
     </tbody>
   </table>
@@ -1701,7 +1702,7 @@ icon db :database "DB"  <span class="cm">rich-icon node</span></code></pre>
       <tr><td><span class="kbd">Ctrl+/</span></td><td>Toggle line comment</td></tr>
       <tr><td><span class="kbd">Ctrl+Shift+U</span></td><td>UPPERCASE selection</td></tr>
       <tr><td><span class="kbd">Ctrl+U</span></td><td>lowercase selection</td></tr>
-      <tr><td><span class="kbd">Alt+↑</span> / <span class="kbd">Alt+↓</span></td><td>Move line up / down</td></tr>
+      <tr><td><span class="kbd">Ctrl+Shift+↑</span> / <span class="kbd">Ctrl+Shift+↓</span></td><td>Move line up / down</td></tr>
     </tbody>
   </table>
 
@@ -1736,7 +1737,8 @@ icon db :database "DB"  <span class="cm">rich-icon node</span></code></pre>
   <h3>Macro</h3>
   <table>
     <tbody>
-      <tr><td><span class="kbd">Ctrl+Shift+M</span></td><td>Start / stop macro recording</td></tr>
+      <tr><td><span class="kbd">Ctrl+Shift+M</span></td><td>Start macro recording</td></tr>
+      <tr><td><span class="kbd">Ctrl+Shift+T</span></td><td>Stop macro recording</td></tr>
       <tr><td><span class="kbd">Ctrl+Shift+P</span></td><td>Play last macro</td></tr>
     </tbody>
   </table>
@@ -1763,8 +1765,9 @@ Examples:
   <table>
     <thead><tr><th>OS</th><th>Path</th></tr></thead>
     <tbody>
-      <tr><td>Linux / macOS</td><td><code>~/.config/notepatra/</code></td></tr>
-      <tr><td>Windows</td><td><code>%LOCALAPPDATA%\Notepatra\</code></td></tr>
+      <tr><td>Linux</td><td><code>~/.config/notepatra/</code> (honours <code>$XDG_CONFIG_HOME</code>)</td></tr>
+      <tr><td>macOS</td><td><code>~/Library/Application Support/Notepatra/</code></td></tr>
+      <tr><td>Windows</td><td><code>%APPDATA%\Notepatra\</code> (Roaming)</td></tr>
     </tbody>
   </table>
 
@@ -1772,10 +1775,9 @@ Examples:
   <ul>
     <li><code>config.json</code> — editor preferences: theme, font, tab width, word wrap, line numbers, etc.</li>
     <li><code>session.json</code> — open tabs, cursor positions, window geometry</li>
-    <li><code>recovery/</code> — auto-save backups of unsaved buffers (every 10s)</li>
-    <li><code>macros/</code> — saved macro files (JSON)</li>
+    <li><code>recovery/</code> — auto-save backups of unsaved buffers (every 5s by default, configurable 1–300s)</li>
     <li><code>plugins/</code> — user-installed external plugins</li>
-    <li><code>context.json</code> — runtime LLM context (editable via the Context page)</li>
+    <li><code>ai-logs/interactions.db</code> — the AI Interaction Log (SQLite; on by default, auto-pruned after 7 days)</li>
   </ul>
 
   <h2 id="build" class="anchor-target">Build from source</h2>
@@ -1862,22 +1864,40 @@ sha256sum -c SHA256SUMS --ignore-missing</code></pre>
   <h2 id="faq" class="anchor-target">FAQ</h2>
 
   <h4>Is Notepatra a port of another editor?</h4>
-  <p>No. Notepatra is its own application — a native Qt5 + QScintilla editor with an original C++17/Rust core for hot paths (mmap I/O, search, diff, formatters). It runs natively on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase.</p>
+  <p>No. Notepatra is its own application — a native Qt5 + QScintilla editor with an original C++17/Rust core for the hot paths (memory-mapped file I/O, Aho-Corasick search, Myers diff, the formatters). The editing surface is QScintilla — the mature Scintilla engine, the same one Notepad++ is built on — so folding, brace matching and lexing are battle-tested rather than reinvented; everything around it (the AI dock, the tools, the Rust core, the UI) is Notepatra's own. It builds from a single codebase for Linux x64 / ARM64, macOS Apple Silicon, and Windows x64.</p>
 
-  <h4>How big is the binary?</h4>
-  <p>The bare executable is under 12 MB on each platform. Installed footprint ranges 5 MB on Linux (Qt comes from your distro) to ~85 MB on Windows (Qt5 DLLs + QScintilla DLL bundled in the MSI). Truly tiny — and zero browser runtime.</p>
+  <h4>What's the difference between the Lite and Full builds, and which do I get?</h4>
+  <p>The default download is <strong>Lite</strong>: the complete editor — all 82 lexers, the AI dock, diagrams, formatters, Git, terminal — with no browser engine bundled, which is why the bare binary stays under 12 MB. <strong>Full</strong> adds QtWebEngine for one reason: so the <code>generate_chart</code> AI tool can render interactive Vega-Lite charts inline. Everything else is identical. Most people want Lite; reach for Full only if you specifically need WebEngine-rendered charts — the native QtCharts inline charts and the <code>.npd</code> diagram renderer work in <em>both</em> flavors. See <a href="#lite-vs-full">Lite mode vs Full mode</a>.</p>
 
-  <h4>Does my code go to the cloud?</h4>
-  <p>By default, no — Notepatra is local-first. The outbound connections are: (1) your selected AI backend (the local Ollama at <code>localhost:11434</code> or llama-server at <code>localhost:8080</code>, or whichever URL you've configured in the llama.cpp entry) when you use AI features, (2) <code>git push/pull</code> when you click the Git panel buttons, (3) the REST client when you send a request, (4) a single GitHub-API call on launch when the auto-updater checks for new releases. Cloud AI backends (Ollama Cloud / OpenRouter / OpenAI / Azure OpenAI) are <strong>opt-in</strong> via the AI dock backend dropdown — your code only leaves the machine when you explicitly pick one. No analytics, no telemetry. Verifiable with <code>strace</code>.</p>
+  <h4>How big is it, really?</h4>
+  <p>The bare executable is under 12 MB (~11.5 MB on Linux x64) on every platform — no Electron, no bundled browser runtime. Download sizes differ because Linux links Qt from your distro while macOS and Windows bundle it: roughly 4.1 MB (Linux x64 tar.gz), 27.5 MB (macOS DMG with Qt), 42.4 MB (Windows MSI with the Qt DLLs). The GitHub release page is always canonical for exact bytes.</p>
+
+  <h4>Does my code go to the cloud? Is there any telemetry?</h4>
+  <p>No telemetry, no analytics, no account — the editor starts fully offline. Every outbound connection is one you trigger: (1) your selected AI backend — a <em>local</em> Ollama (<code>localhost:11434</code>) or llama-server (<code>localhost:8080</code>) by default, or whichever URL you set on the llama.cpp entry; (2) <code>git push/pull</code> from the Git panel; (3) the REST client when you send a request; (4) one GitHub-API call at launch if the update check is enabled. Cloud AI backends (Ollama Cloud / OpenRouter / OpenAI / Azure OpenAI) are <strong>opt-in</strong> from the dropdown and use <em>your</em> key — your code leaves the machine only when you pick one and send it. All of this is verifiable with <code>strace</code>, and the built-in AI Interaction Log records exactly what was sent so you never have to take our word for it.</p>
+
+  <h4>Do I need an API key or a subscription?</h4>
+  <p>No. Point the AI dock at a local Ollama or llama.cpp model and it's free and offline forever — no key, no account, no usage cap beyond your own hardware. API keys only matter if you opt into a cloud backend, and then it's <em>your</em> key billed by <em>that</em> provider. Notepatra itself has no subscription, no paid tier, and takes no cut.</p>
+
+  <h4>Where are my settings and API keys stored?</h4>
+  <p>Everything lives in one <code>config.json</code> in your config directory — <code>~/.config/notepatra/</code> on Linux, <code>%APPDATA%\Notepatra\</code> on Windows, <code>~/Library/Application Support/Notepatra/</code> on macOS. Be aware that API keys are written there in <strong>plaintext</strong> today — there's no encryption yet (OS-keychain integration is a planned improvement), so treat that file like any dotfile that holds secrets, and use a provider's <em>Forget</em> button to wipe a key on a shared machine.</p>
+
+  <h4>Is the DuckDB "Data Analyst" included in the download?</h4>
+  <p>Data Analyst mode ships and works out of the box on CSV files and an in-memory SQLite engine — load data, ask in plain English, get SQL and charts back. <strong>DuckDB specifically is not bundled in the prebuilt binaries.</strong> It's an optional engine you enable by building from source with <code>-DNOTEPATRA_USE_DUCKDB=ON</code> and a vendored or system <code>libduckdb</code>; pick a DuckDB connection in a stock download and it will honestly report "support not compiled in." Bundling it into the Full build is on the roadmap.</p>
+
+  <h4>Will it open huge files?</h4>
+  <p>Yes, within reason. Files up to ~1.86 GB load fully; above that they open truncated and read-only (use a streaming tool like <code>less</code> for the whole thing). Past 50 MB, Notepatra automatically turns off syntax highlighting, auto-completion, word wrap and indent guides to stay responsive — the file is still fully editable. The Rust core uses memory-mapped loading to avoid a double read on open.</p>
 
   <h4>Why GPL-3.0?</h4>
-  <p>Because the source is open, modifications should stay open. If you embed Notepatra in a product, the product has to be GPL-compatible. If that's a problem, reach out — alternative licensing can be discussed.</p>
+  <p>Because the source is open and we want modifications to stay open. Using Notepatra as an <em>editor</em> puts no obligation on the files you edit — the GPL governs Notepatra's own code, not your documents or projects (see the <a href="https://www.gnu.org/licenses/gpl-faq.html" rel="noopener">FSF GPL FAQ</a>). If you're evaluating it for an organization, the <a href="/enterprise.html">For Enterprise</a> page lays out the licensing posture, supply-chain provenance, and warranty position in plain English.</p>
 
   <h4>Will you add LSP support?</h4>
-  <p>Planned for a future milestone. The goal is to plug into <code>clangd</code>, <code>rust-analyzer</code>, <code>pyright</code>, etc. for proper autocomplete and go-to-definition. The Scintilla autocomplete today is word-based.</p>
+  <p>It's planned, not shipped — and we'd rather say that plainly than imply it already works. Today's autocomplete is QScintilla's word-based completion. The goal is to plug into language servers (<code>clangd</code>, <code>rust-analyzer</code>, <code>pyright</code>, …) for real completion and go-to-definition. It's tracked on the roadmap.</p>
 
   <h4>Where's the Windows ARM64 build?</h4>
-  <p>Not yet — Windows ARM64 is a small but growing market. Tracked on the roadmap.</p>
+  <p>Not yet. Current builds are Linux x64 / ARM64, macOS Apple Silicon, and Windows x64. Windows-on-ARM is a small but growing target and is tracked on the roadmap.</p>
+
+  <h4>How do I report a bug or get help?</h4>
+  <p>Open a GitHub issue — there are bug-report and feature-request templates. For anything security-sensitive, use GitHub's private vulnerability reporting (see the <a href="#security">Security policy</a>). Notepatra is free software with no SLA or support contract, but issues are read, and the release binary intentionally ships unstripped (with debug symbols) so crash reports come back with usable stack traces.</p>
 
   <!-- ══════════════ Community ══════════════ -->
 
