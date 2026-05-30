@@ -471,15 +471,22 @@ if(NOTEPATRA_USE_DUCKDB)
         target_include_directories(${EXE_NAME} PRIVATE ${DUCKDB_INCLUDE_DIR})
         target_link_libraries(${EXE_NAME} PRIVATE ${DUCKDB_LIBRARY})
         # Tell the runtime loader to look next to the binary first.
+        # NOTE: CI ships build-full/notepatra directly (no `make install`), so
+        # the BUILD rpath — not just INSTALL_RPATH — must carry $ORIGIN /
+        # @executable_path, else the shipped binary can't find libduckdb sitting
+        # next to it (the bare build-tree rpath was the absolute vendor path +
+        # an empty/cwd entry, which only resolved when cwd == the binary dir).
+        # The vendor dir is kept as a second entry for local dev where the lib
+        # lives under vendor/duckdb/.
         if(UNIX AND NOT APPLE)
             set_target_properties(${EXE_NAME} PROPERTIES
                 INSTALL_RPATH "$ORIGIN"
-                BUILD_RPATH   "${_DUCKDB_VENDOR_DIR}"
+                BUILD_RPATH   "$ORIGIN;${_DUCKDB_VENDOR_DIR}"
             )
         elseif(APPLE)
             set_target_properties(${EXE_NAME} PROPERTIES
                 INSTALL_RPATH "@executable_path"
-                BUILD_RPATH   "${_DUCKDB_VENDOR_DIR}"
+                BUILD_RPATH   "@executable_path;${_DUCKDB_VENDOR_DIR}"
             )
         endif()
     else()
