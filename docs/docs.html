@@ -602,8 +602,8 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
       </tr>
       <tr>
         <td><strong>Full</strong> (opt-in)</td>
-        <td>~95 MB bundled</td>
-        <td>Everything in Lite, plus the QtWebEngine-backed chart renderer that paints Vega-Lite specs inline in the chat transcript.</td>
+        <td>Larger than Lite — see release page</td>
+        <td>Everything in Lite, plus the bundled DuckDB engine (every platform) and the QtWebEngine-backed renderer that paints Vega-Lite specs inline in the chat transcript (Linux/Windows; macOS Full is DuckDB-only — see note below).</td>
         <td>—</td>
       </tr>
     </tbody>
@@ -616,7 +616,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
     <li><strong>macOS:</strong> <code>~/Library/Application Support/notepatra/plugins/&lt;pack&gt;/</code></li>
     <li><strong>Windows:</strong> <code>%APPDATA%/notepatra/plugins/&lt;pack&gt;/</code></li>
   </ul>
-  <p>As of v0.1.106, the Full flavor ships the <em>charts</em> pack bundled (it's the same binary — the pack is "installed" if WebEngine was linked at compile time). The in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation path is scaffolded but not yet wired (still queued as of v0.1.106), so today packs are added by swapping in the Full binary rather than downloaded inside the app.</p>
+  <p>As of v0.1.107, the Full flavor ships the <em>charts</em> pack bundled on Linux and Windows (it's the same binary — the pack is "installed" if WebEngine was linked at compile time; macOS Full is DuckDB-only and has no inline Vega renderer). The in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation path is scaffolded but not yet wired (still queued as of v0.1.107), so today packs are added by swapping in the Full binary rather than downloaded inside the app.</p>
 
   <table>
     <thead>
@@ -625,15 +625,15 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
     <tbody>
       <tr id="charts-pack">
         <td><code>charts</code></td>
-        <td>≈ 95 MB</td>
-        <td>Renders Vega-Lite charts (bar / line / scatter / area / composite) inline in the chat transcript. Powered by QtWebEngine + vega-embed.</td>
-        <td>Bundled in the Full flavor (Linux x64 / Linux ARM64 tar.gz, macOS DMG, Windows MSI / zip). All platforms have explicit Lite (default) and Full download variants: Full bundles DuckDB everywhere, plus WebEngine inline Vega-Lite charts on Linux/Windows. macOS Full is DuckDB-only (Homebrew qt@5 dropped WebEngine).</td>
+        <td>In Full binary</td>
+        <td>Renders Vega-Lite charts (bar / line / scatter / area / composite) inline in the chat transcript. Powered by QtWebEngine + vega-embed — Linux &amp; Windows Full only.</td>
+        <td>Bundled in the Full flavor on Linux x64 / Linux ARM64 (tar.gz) and Windows (MSI / zip). <strong>The macOS DMG does not include it</strong> — macOS Full is DuckDB-only (Homebrew qt@5 dropped QtWebEngine). All platforms have explicit Lite (default) and Full downloads; Full bundles DuckDB everywhere, plus the WebEngine inline Vega-Lite renderer on Linux/Windows.</td>
       </tr>
       <tr id="pdf-pack">
         <td><code>pdf</code></td>
         <td>≈ 12 MB</td>
         <td>Rasterises PDFs to PNG pages so vision-capable AI models can read them. Powered by Poppler-Qt5.</td>
-        <td>Still queued (not shipped as of v0.1.106). Until then, dragging a PDF into the AI dock shows the "use a vision-capable model" error bubble.</td>
+        <td>Still queued (not shipped as of v0.1.107). Until then, dragging a PDF into the AI dock shows the "use a vision-capable model" error bubble.</td>
       </tr>
     </tbody>
   </table>
@@ -644,7 +644,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
   <h4>Path A — Click [Install charts pack] in the app</h4>
   <p>When you ask the AI Assistant to chart something in Data Analyst mode, the lite binary shows a <strong>Chart rendering requires the Charts Pack</strong> card with two buttons:</p>
   <ul>
-    <li><strong>[Install charts pack]</strong> — opens a dialog explaining the lite/full split, then opens your default browser to the GitHub Releases page for the current tag. Pick the file ending in <code>-full</code> for your OS.</li>
+    <li><strong>[Install charts pack]</strong> — opens a dialog explaining the lite/full split, then opens your default browser to the GitHub Releases page for the current tag. On Linux/Windows pick the file ending in <code>-full</code> for your OS. <strong>On macOS the <code>-full</code> DMG adds the DuckDB engine only — inline Vega-Lite charts remain unavailable</strong> (no Apple-Silicon Qt5 WebEngine); use [View JSON instead] or a native <code>```chart</code> block, which renders on every platform.</li>
     <li><strong>[View JSON instead]</strong> — appends the raw Vega-Lite spec under the card as a fenced code block. You can copy it into any standalone Vega-Lite editor (<a href="https://vega.github.io/editor/" rel="noopener">vega.github.io/editor</a>) without installing anything.</li>
   </ul>
 
@@ -678,7 +678,7 @@ make -j$(nproc)
     <li><strong>Do I lose anything by staying on Lite?</strong> No — every editor / lexer / AI / Git / data / plugin feature works identically. The only difference is that <code>generate_chart</code> tool results paint as a "Chart rendering requires the Charts Pack" card instead of as an inline rendered chart. You can still see the spec via [View JSON instead] and copy it elsewhere.</li>
     <li><strong>Can I downgrade Full → Lite?</strong> Yes. Just download the Lite tarball and replace the binary. Your config / chat history / connections are preserved (they live under <code>~/.config/notepatra</code>, not inside the binary).</li>
     <li><strong>Will the chart spec data be lost if I'm on Lite?</strong> No — the AI's tool result is preserved in your chat history just like any other tool result. If you upgrade to Full later, opening the same chat shows the rendered chart for those past results.</li>
-    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.106. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
+    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.107. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
   </ul>
 
   <h2 id="ui-overview" class="anchor-target">UI overview</h2>
@@ -717,7 +717,7 @@ make -j$(nproc)
   <p><strong>Load-path optimisations (v0.1.88).</strong> Opening a 118 MB UTF-8 file used to take ~1.5 s and peak ~700 MB RAM; v0.1.88 brings it to ~600 ms and ~360 MB. Three fixes in <code>rust-core/src/file_io.rs</code>: a UTF-8 fast path validates with <code>std::str::from_utf8</code> (SIMD-accelerated) and skips the <code>UTF_8.decode()</code> allocation entirely when the mmap bytes are already valid UTF-8; EOL detection is bounded to the first 64 KB instead of two full-text scans; and the Rust&rarr;C FFI handoff now delivers a length-prefixed <code>Box&lt;[u8]&gt;</code> through a new <code>npc_free_file_text(ptr, len)</code> entry-point instead of the old NUL-terminated <code>CString</code> round-trip — saves ~118 MB of heap on a 118 MB file. UTF-16 / UTF-32 / Windows-1252 paths unchanged.</p>
 
   <h2 id="languages-lexers" class="anchor-target">Languages &amp; lexers</h2>
-  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.106 (covering 238 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
+  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.107 (covering 238 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
   <p><strong>Core (Qt-bundled):</strong> Python, JavaScript/TypeScript/JSX, CoffeeScript, C/C++, C#, D, Java/Kotlin, HTML/PHP, CSS/SCSS/LESS, XML, JSON, SQL (ANSI / T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite), Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Matlab, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile.</p>
   <p><strong>v0.1.55 additions (32 dedicated lexers, keyword tables verified against official specs):</strong> Dart · Solidity · Zig · Vala · Hack · Julia · R · Protobuf · F# · HCL/Terraform · Thrift · GraphQL · GDScript · Nim · Cython · Mojo · Crystal · Elixir · Scala · Groovy · Apex · Jinja · Liquid · Twig · Dockerfile · Fish · Nushell · TOML · DotEnv · Gitignore · JSON5 · BibTeX. Each ships with comment / uncomment / block-comment syntax (Ctrl+/ for line, Ctrl+Shift+Q for block) and proper file-extension routing — <code>.dart</code>, <code>.zig</code>, <code>.jl</code>, <code>.toml</code>, <code>.ex</code>, <code>Cargo.toml</code>, <code>Dockerfile</code>, <code>.gitignore</code>, <code>.env</code>, <code>.fish</code>, <code>.json5</code>, <code>.tf</code>, etc. now point at their dedicated lexers instead of falling back to the closest-fit generic.</p>
 
@@ -1431,7 +1431,7 @@ Content-Type: application/json
   </table>
 
   <h3>Live charts inline in the chat</h3>
-  <p><strong>v0.1.64+ note:</strong> charts now ship behind the optional <a href="#packs"><code>charts</code> pack</a>. On a default (lite) install, the AI's <code>generate_chart</code> tool result paints as a <strong>Chart rendering requires the Charts Pack</strong> card with two buttons — <strong>[Install charts pack]</strong> (opens GitHub Releases with the matching <code>-full</code> asset for your OS) and <strong>[View JSON instead]</strong> (shows the raw Vega-Lite spec in a fenced code block). See <a href="#lite-vs-full">Lite vs Full</a> for the upgrade paths. The flow described below is what you see once you're on the Full flavor.</p>
+  <p><strong>v0.1.64+ note:</strong> charts now ship behind the optional <a href="#packs"><code>charts</code> pack</a>. On a default (lite) install, the AI's <code>generate_chart</code> tool result paints as a <strong>Chart rendering requires the Charts Pack</strong> card with two buttons — <strong>[Install charts pack]</strong> (opens GitHub Releases with the matching <code>-full</code> asset for your OS — on Linux/Windows; <strong>on macOS the <code>-full</code> DMG adds the DuckDB engine only, with no inline Vega rendering</strong>) and <strong>[View JSON instead]</strong> (shows the raw Vega-Lite spec in a fenced code block). See <a href="#lite-vs-full">Lite vs Full</a> for the upgrade paths. The flow described below is what you see once you're on the Full flavor.</p>
   <p>Charts the model emits as a fenced <code>```chart</code> block render inline on Lite via QtCharts; only <code>generate_chart</code> tool results (Vega-Lite) need the Charts Pack (Full / WebEngine).</p>
   <p>When a visualization clarifies the answer, the model emits a fenced <code>```chart</code> block with a small JSON spec. Notepatra parses each one and renders it inline <strong>natively via QtCharts</strong> (<code>ChartRender::renderFromSpec</code>) — no WebEngine, so these fenced charts work on both the Lite and Full builds. (Only the <code>generate_chart</code> tool's Vega-Lite output goes through the embedded QtWebEngine + <code>vega-embed</code> path, which needs the Charts Pack / Full build.) Example:</p>
   <pre><code>```chart
@@ -1460,7 +1460,7 @@ Content-Type: application/json
     <li><strong>PostgreSQL (localhost)</strong> — Driver = <code>QPSQL</code>, Port = <code>5432</code>, Database = <code>postgres</code>, Username = <code>postgres</code></li>
     <li><strong>MySQL / MariaDB (localhost)</strong> — Driver = <code>QMYSQL</code>, Port = <code>3306</code>, Database = <code>mysql</code>, Username = <code>root</code></li>
     <li><strong>SQLite (file on disk)</strong> — Driver = <code>QSQLITE</code>, Browse… picker focused on Database for the .db path</li>
-    <li><strong>DuckDB (file or :memory:)</strong> — Driver = <code>DUCKDB</code>, Database = <code>:memory:</code> (also accepts a .duckdb / .csv / .parquet / s3:// path) <em>(requires a from-source build; reports "support not compiled in" in stock downloads)</em></li>
+    <li><strong>DuckDB (file or :memory:)</strong> — Driver = <code>DUCKDB</code>, Database = <code>:memory:</code> (also accepts a .duckdb / .csv / .parquet / s3:// path) <em>(ships in the Full download on every platform; the Lite default download reports "support not compiled in")</em></li>
   </ul>
 
   <p>Under the form, a hint label paints in <strong>green</strong> when the Qt SQL plugin for the chosen driver is present (with a usage tip — e.g. "Named instances use the SQL Browser service — leave Port at default") or <strong>amber</strong> with the exact per-OS install commands when the plugin is missing.</p>
@@ -1528,7 +1528,7 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
   </ol>
 
   <h4>DuckDB — files, S3, in-memory</h4>
-  <p>DuckDB is not included in prebuilt downloads — these steps require a from-source Full build (<code>-DNOTEPATRA_WITH_WEBENGINE=ON</code>, which enables DuckDB) with a vendored/system libduckdb. In stock downloads the DuckDB connection reports "support not compiled in."</p>
+  <p>DuckDB ships in the Full prebuilt download (libduckdb v1.1.3 bundled alongside the binary) on every platform. On the Lite (default) download the DuckDB connection reports "support not compiled in" — switch to the Full download to use it.</p>
   <ol>
     <li>Pick the <strong>DuckDB (file or :memory:)</strong> preset — Database defaults to <code>:memory:</code>.</li>
     <li>The Database field is multi-mode — point it at:
@@ -1550,7 +1550,7 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
       <tr><td>QPSQL (PostgreSQL)</td><td><code>sudo apt-get install libqt5sql5-psql</code></td><td>bundled in <code>brew install qt@5</code></td><td>Bundled with the Notepatra Windows release</td></tr>
       <tr><td>QMYSQL (MySQL/MariaDB)</td><td><code>sudo apt-get install libqt5sql5-mysql</code></td><td>bundled in <code>brew install qt@5</code></td><td>Bundled with the Notepatra Windows release</td></tr>
       <tr><td>QODBC (SQL Server)</td><td><code>sudo apt-get install libqt5sql5-odbc unixodbc-dev msodbcsql18</code> (see <a href="https://learn.microsoft.com/en-us/sql/connect/odbc/linux-mac/installing-the-microsoft-odbc-driver-for-sql-server" rel="noopener">MS install guide</a> for the package repo setup)</td><td><code>brew tap microsoft/mssql-release &amp;&amp; HOMEBREW_ACCEPT_EULA=Y brew install msodbcsql18 unixodbc</code></td><td>Bundled with the Notepatra Windows release (Microsoft ships ODBC drivers with Windows itself)</td></tr>
-      <tr><td>DUCKDB</td><td>Not in prebuilt downloads — build the Full flavor from source (<code>-DNOTEPATRA_WITH_WEBENGINE=ON</code>, which enables DuckDB) with a vendored/system libduckdb; runs in-process once present.</td><td>Not in prebuilt downloads — build the Full flavor from source (<code>-DNOTEPATRA_WITH_WEBENGINE=ON</code>, which enables DuckDB) with a vendored/system libduckdb; runs in-process once present.</td><td>Not in prebuilt downloads — build the Full flavor from source (<code>-DNOTEPATRA_WITH_WEBENGINE=ON</code>, which enables DuckDB) with a vendored/system libduckdb; runs in-process once present.</td></tr>
+      <tr><td>DUCKDB</td><td>Bundled in the Full prebuilt download (libduckdb v1.1.3 alongside the binary); runs in-process. Lite (default) reports "support not compiled in."</td><td>Bundled in the Full prebuilt download (libduckdb v1.1.3 alongside the binary); runs in-process. Lite (default) reports "support not compiled in."</td><td>Bundled in the Full prebuilt download (libduckdb v1.1.3 alongside the binary); runs in-process. Lite (default) reports "support not compiled in."</td></tr>
     </tbody>
   </table>
 
@@ -1867,7 +1867,7 @@ sha256sum -c SHA256SUMS --ignore-missing</code></pre>
   <p>No. Notepatra is its own application — a native Qt5 + QScintilla editor with an original C++17/Rust core for the hot paths (memory-mapped file I/O, Aho-Corasick search, Myers diff, the formatters). The editing surface is QScintilla — the mature Scintilla engine, the same one Notepad++ is built on — so folding, brace matching and lexing are battle-tested rather than reinvented; everything around it (the AI dock, the tools, the Rust core, the UI) is Notepatra's own. It builds from a single codebase for Linux x64 / ARM64, macOS Apple Silicon, and Windows x64.</p>
 
   <h4>What's the difference between the Lite and Full builds, and which do I get?</h4>
-  <p>The default download is <strong>Lite</strong>: the complete editor — all 82 lexers, the AI dock, diagrams, formatters, Git, terminal — with no browser engine bundled, which is why the bare binary stays under 12 MB. <strong>Full</strong> adds QtWebEngine for one reason: so the <code>generate_chart</code> AI tool can render interactive Vega-Lite charts inline. Everything else is identical. Most people want Lite; reach for Full only if you specifically need WebEngine-rendered charts — the native QtCharts inline charts and the <code>.npd</code> diagram renderer work in <em>both</em> flavors. See <a href="#lite-vs-full">Lite mode vs Full mode</a>.</p>
+  <p>The default download is <strong>Lite</strong>: the complete editor — all 82 lexers, the AI dock, diagrams, formatters, Git, terminal — with no browser engine bundled, which is why the bare binary stays under 12 MB. <strong>Full</strong> bundles the DuckDB engine on every platform, and — on <strong>Linux and Windows</strong> — adds QtWebEngine so the <code>generate_chart</code> AI tool can render interactive Vega-Lite charts inline. (<strong>macOS Full is DuckDB-only</strong>: Homebrew <code>qt@5</code> no longer ships QtWebEngine and there is no Apple-Silicon Qt5 WebEngine, so inline Vega charts are a Linux/Windows feature.) Everything else is identical. Most people want Lite; reach for Full only if you need the DuckDB engine or WebEngine-rendered Vega charts — the native QtCharts inline charts and the <code>.npd</code> diagram renderer work in <em>both</em> flavors on <em>every</em> platform. See <a href="#lite-vs-full">Lite mode vs Full mode</a>.</p>
 
   <h4>How big is it, really?</h4>
   <p>The bare executable is under 12 MB (~11.5 MB on Linux x64) on every platform — no Electron, no bundled browser runtime. Download sizes differ because Linux links Qt from your distro while macOS and Windows bundle it: roughly 4.1 MB (Linux x64 tar.gz), 27.5 MB (macOS DMG with Qt), 42.4 MB (Windows MSI with the Qt DLLs). The GitHub release page is always canonical for exact bytes.</p>
@@ -1882,7 +1882,7 @@ sha256sum -c SHA256SUMS --ignore-missing</code></pre>
   <p>Everything lives in one <code>config.json</code> in your config directory — <code>~/.config/notepatra/</code> on Linux, <code>%APPDATA%\Notepatra\</code> on Windows, <code>~/Library/Application Support/Notepatra/</code> on macOS. Be aware that API keys are written there in <strong>plaintext</strong> today — there's no encryption yet (OS-keychain integration is a planned improvement), so treat that file like any dotfile that holds secrets, and use a provider's <em>Forget</em> button to wipe a key on a shared machine.</p>
 
   <h4>Is the DuckDB "Data Analyst" included in the download?</h4>
-  <p>Data Analyst mode ships and works out of the box on CSV files and an in-memory SQLite engine — load data, ask in plain English, get SQL and charts back. <strong>DuckDB specifically is not bundled in the prebuilt binaries.</strong> It's an optional engine you enable by building the Full flavor from source (<code>-DNOTEPATRA_WITH_WEBENGINE=ON</code>, which turns DuckDB on) with a vendored or system <code>libduckdb</code>; pick a DuckDB connection in a stock download and it will honestly report "support not compiled in." Bundling it into the prebuilt Full downloads is on the roadmap.</p>
+  <p>Data Analyst mode ships and works out of the box on CSV files and an in-memory SQLite engine — load data, ask in plain English, get SQL and charts back. <strong>DuckDB now ships bundled in the prebuilt Full download (v1.1.3) on every platform.</strong> The Lite default download has CSV + in-memory SQLite only; pick a DuckDB connection there and it will honestly report "support not compiled in" — switch to the Full download to use DuckDB.</p>
 
   <h4>Will it open huge files?</h4>
   <p>Yes, within reason. Files up to ~1.86 GB load fully; above that they open truncated and read-only (use a streaming tool like <code>less</code> for the whole thing). Past 50 MB, Notepatra automatically turns off syntax highlighting, auto-completion, word wrap and indent guides to stay responsive — the file is still fully editable. The Rust core uses memory-mapped loading to avoid a double read on open.</p>

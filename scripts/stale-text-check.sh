@@ -176,8 +176,14 @@ check_phrase() {
         return 0
     fi
     local all_count current_count
-    all_count=$(grep -oE "$any_re" "$file" 2>/dev/null | wc -l)
-    current_count=$(grep -oE "$current_re" "$file" 2>/dev/null | wc -l)
+    # `|| true` inside each group keeps a no-match grep (exit 1) from tripping
+    # `set -o pipefail` + `set -e` and aborting the whole script. Without it a
+    # STALE version ref (current_re finds nothing → grep exits 1) crashed the
+    # run instead of reaching the ✗ report branch below — so this sweep never
+    # actually reported drift; it only ever passed because release-check bumps
+    # the version first. The miss is the same class as the v0.1.107 honesty gap.
+    all_count=$( { grep -oE "$any_re" "$file" 2>/dev/null || true; } | wc -l)
+    current_count=$( { grep -oE "$current_re" "$file" 2>/dev/null || true; } | wc -l)
     if (( all_count == 0 )); then
         printf "  ⚠ %s — phrase template not found in %s\n      template: %s\n" \
                "$label" "$file" "$template"
@@ -401,6 +407,117 @@ else
     echo "    include X' instead of 'Notepatra will never include X'."
     FAIL=$((FAIL + 1))
 fi
+
+echo
+echo "── content-honesty sweep: DuckDB-bundled + macOS inline-charts (v0.1.107) ──"
+# Why this exists (the v0.1.107 miss): v0.1.107 changed shipped reality. The
+# Full download now BUNDLES the DuckDB v1.1.3 engine on every platform (it
+# used to be build-from-source only), and macOS Full is DuckDB-ONLY (Homebrew
+# qt@5 dropped QtWebEngine; there is no Apple-Silicon Qt5 WebEngine), so inline
+# Vega-Lite charts are a Linux/Windows-only feature. The docs + in-app strings
+# were only half-updated and SHIPPED self-contradictory (docs.html said both
+# "bundles DuckDB on every platform" and "not bundled in the prebuilt binaries"
+# on the same page). stale-text-check only gated counts/versions, so nothing
+# caught it — exactly the failure feedback_factual_audit_must_be_a_gate.md
+# warned about since v0.1.80. This block FAILS the release if either false-claim
+# class reappears in current-tense docs or in user-visible in-app strings.
+#
+# Matching strategy — LITERAL forbidden phrases (grep -F), NOT a regex that
+# tries to span "DuckDB … not bundled" across HTML tags (that silently misses
+# <td>/<code>-separated cells, which is why an earlier draft of this gate let
+# docs.html:1463/1553 through). Each phrase below only ever appeared in the
+# now-false framing. The generic "not bundled with Notepatra" (about third-
+# party AI servers) is deliberately excluded — we require the "prebuilt"
+# qualifier so legitimate uses don't false-positive.
+honesty_fail=0
+HONESTY_DOCS="docs/index.html docs/docs.html docs/enterprise.html README.md"
+
+# (1) DuckDB-is-build-from-source / not-bundled — FALSE since v0.1.107.
+duckdb_stale_phrases=(
+    "optional build-from-source engine"
+    "not bundled in the prebuilt"
+    "not bundled in prebuilt"
+    "Not in prebuilt downloads"
+    "not included in prebuilt"
+    "which enables DuckDB"
+    "which turns DuckDB on"
+    "Bundling it into the prebuilt"
+)
+# (2) macOS inline-charts overclaim — inline Vega is Linux/Windows-only.
+# Each requires "Vega-Lite charts" + every/all-platform: the native fenced
+# ```chart (QtCharts) renderer IS on every platform but is never called
+# "Vega-Lite", so these stay specific to the false WebEngine claim.
+macos_overclaim_phrases=(
+    "inline Vega-Lite charts on every platform"
+    "inline Vega-Lite charts on all platforms"
+    "Vega-Lite charts on every platform"
+    "Vega-Lite charts on all platforms"
+)
+for f in $HONESTY_DOCS; do
+    # Exclude frozen release-history rows (any line linking releases/tag/v0.1.X).
+    filtered=$(grep -nvE 'releases/tag/v0\.1\.' "$f" 2>/dev/null || true)
+    for phrase in "${duckdb_stale_phrases[@]}" "${macos_overclaim_phrases[@]}"; do
+        hit=$(printf '%s\n' "$filtered" | grep -F -- "$phrase" || true)
+        if [ -n "$hit" ]; then
+            echo "  ✗ $f: stale claim — \"$phrase\""
+            printf '%s\n' "$hit" | sed "s|^|      $f:|"
+            honesty_fail=1
+        fi
+    done
+done
+
+# (3) In-app (src/) strings that regressed in v0.1.107 — the sweep's first
+# gate draft skipped src/ entirely, so these could regress freely. Scan all
+# tracked C++ under src/ (recursive — vega_chart_renderer.cpp lives in
+# src/charts/). Each phrase is one we just removed for being false.
+src_files=$(git ls-files -- src/ 2>/dev/null | grep -E '\.(cpp|h)$' || true)
+src_stale_phrases=(
+    "install Charts Pack to enable"
+    "Auto-installs on first use"
+    "DuckDB is not bundled in this build"
+    "NOTEPATRA_WITH_DUCKDB"
+)
+for phrase in "${src_stale_phrases[@]}"; do
+    hit=$(printf '%s\n' "$src_files" | xargs -r grep -nF -- "$phrase" 2>/dev/null || true)
+    if [ -n "$hit" ]; then
+        echo "  ✗ src/: stale/false in-app string — \"$phrase\""
+        printf '%s\n' "$hit" | sed 's|^|      |'
+        honesty_fail=1
+    fi
+done
+
+# Emoji-codepoint icon — the 📊 bar-chart glyph as a UI icon violates the
+# no-emoji rule (tofu on Linux without a colour-emoji font; use
+# QStyle::standardIcon). Exclude comment lines (leading // or *) so the
+# rule-documenting comment in aipanel.cpp doesn't false-positive — we only
+# care about the glyph inside a live string literal / label.
+emoji_hit=$(printf '%s\n' "$src_files" | xargs -r grep -nF -- "📊" 2>/dev/null \
+    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true)
+if [ -n "$emoji_hit" ]; then
+    echo "  ✗ src/: 📊 emoji used as a UI icon (tofu on Linux; use QStyle::standardIcon)"
+    printf '%s\n' "$emoji_hit" | sed 's|^|      |'
+    honesty_fail=1
+fi
+
+if [ "$honesty_fail" -eq 0 ]; then
+    echo "  ✓ no stale DuckDB-not-bundled / macOS-inline-charts claims in docs or in-app strings"
+    PASS=$((PASS + 1))
+else
+    echo "    Ground truth (v0.1.107): the Full download BUNDLES DuckDB v1.1.3 on"
+    echo "    EVERY platform; macOS Full is DuckDB-ONLY (no Apple-Silicon Qt5"
+    echo "    WebEngine), so inline Vega-Lite charts are Linux/Windows-only. The"
+    echo "    native fenced \`\`\`chart (QtCharts) renderer works on every platform."
+    FAIL=$((FAIL + 1))
+fi
+
+# (4) Positive canary — the detailed docs page MUST always carry the macOS
+# caveat. Per the v0.1.107 decision: don't surface it prominently on the main
+# marketing site, but docs.html must keep users aware. If a future rewrite of
+# the Lite-vs-Full section drops the caveat, fail loudly.
+echo
+echo "── macOS-DuckDB-only caveat present in detailed docs ──"
+assert_contains "docs.html carries the macOS-Full-is-DuckDB-only caveat" \
+    docs/docs.html "macOS Full is DuckDB-only"
 
 echo
 echo "── test-suite count (Regression Suites stat) ──"

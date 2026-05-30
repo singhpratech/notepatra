@@ -947,9 +947,10 @@ void DbConnectionsDialog::refreshDriverHint() {
                 "<b>macOS:</b> already bundled with <code>brew install qt@5</code><br>"
                 "<b>Windows:</b> already bundled with Qt — restart Notepatra.";
         } else if (drv == QLatin1String("DUCKDB")) {
-            cmd = "<b>DuckDB is not bundled in this build.</b> Build from source with "
-                  "<code>-DNOTEPATRA_WITH_DUCKDB=ON</code>, or download the full-flavor "
-                  "release (v0.1.66+).";
+            cmd = "<b>DuckDB isn't in this Lite build.</b> Download the <b>Full</b> "
+                  "release — Linux, macOS and Windows Full all bundle the DuckDB "
+                  "v1.1.3 engine next to the binary. (Developers can also build the "
+                  "Full flavor from source with <code>-DNOTEPATRA_FULL=ON</code>.)";
         } else {
             cmd = tr("<b>%1 plugin is not available on this system.</b>").arg(drv);
         }

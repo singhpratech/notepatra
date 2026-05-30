@@ -44,7 +44,8 @@ QString packDescription(const QString &name) {
         return QStringLiteral(
             "Renders Vega-Lite charts (bar / line / scatter / area / "
             "composite) inline in the chat transcript. Powered by "
-            "QtWebEngine + vega-embed.");
+            "QtWebEngine + vega-embed — Linux & Windows Full builds only "
+            "(macOS Full is DuckDB-only, no inline Vega rendering).");
     }
     if (name == QLatin1String(kPdfPack)) {
         return QStringLiteral(
@@ -56,10 +57,11 @@ QString packDescription(const QString &name) {
 
 qint64 approximateDownloadSize(const QString &name) {
     if (name == QLatin1String(kChartsPack)) {
-        // QtWebEngine + dependencies. macOS/Win bundles QWE.framework
-        // (~80 MB compressed); Linux uses the system libqt5webengine5
-        // shared library (~30 MB on the wire, ~95 MB unpacked).
-        return 95LL * 1024LL * 1024LL;
+        // There is no separately-downloadable charts pack — inline Vega
+        // rendering ships in the Full binary (Linux & Windows; macOS Full
+        // is DuckDB-only and has no QtWebEngine). Return 0 so the lite-stub
+        // card omits any "download size" line rather than inventing one.
+        return 0;
     }
     if (name == QLatin1String(kPdfPack)) {
         return 12LL * 1024LL * 1024LL;

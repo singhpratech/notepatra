@@ -1082,11 +1082,18 @@ QWidget *renderFromObject(const QJsonObject &spec,
              type == "regression-line" || type == "faceted-bar" ||
              type == "error-bar") {
         // v0.1.90 — these are Vega-Lite-only chart types. They reach
-        // this branch only on lite builds (no WebEngine), so the user
-        // needs the Charts Pack to render them.
+        // this branch only on lite builds (no WebEngine). Inline Vega is a
+        // Linux/Windows Full feature; macOS has no Qt5 WebEngine at all.
         if (outError) {
-            *outError = QString("%1 charts need the Charts Pack — install "
-                                "via Tools → Install Charts Pack.").arg(type);
+#if defined(Q_OS_MACOS)
+            *outError = QString("%1 charts need the WebEngine-backed Vega "
+                                "renderer, which isn't available on macOS. Use a "
+                                "bar / line / scatter ```chart block instead.").arg(type);
+#else
+            *outError = QString("%1 charts need the Full build (Linux/Windows) "
+                                "for the WebEngine-backed Vega renderer; the native "
+                                "```chart types render in any build.").arg(type);
+#endif
         }
         return nullptr;
     }

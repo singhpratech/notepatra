@@ -47,7 +47,7 @@ Not a port. Not a wrapper. Something new — **for everyone**.
 
 I asked: **what would a small native code editor look like if it was built today, in 2026, when AI is part of every developer's workflow, and ran natively on Linux + macOS + Windows from one codebase?**
 
-The answer: a tiny native executable — under 12 MB bare (~11.5 MB on Linux x64) on every platform — with a Rust-powered core, Scintilla editing engine, and local-first AI integration (cloud backends optional). v0.1.106 downloads: 4.1 MB Linux x64 (tarball, Qt from the system), 27.5 MB on macOS (DMG with bundled Qt), 32.7–42.4 MB on Windows (MSI/zip/setup.exe with bundled Qt DLLs). An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your AI to figure it out — local by default, six cloud backends one click away when you want a frontier model. No telemetry. No subscription. No mandatory API key.
+The answer: a tiny native executable — under 12 MB bare (~11.5 MB on Linux x64) on every platform — with a Rust-powered core, Scintilla editing engine, and local-first AI integration (cloud backends optional). v0.1.107 downloads: 4.1 MB Linux x64 (tarball, Qt from the system), 27.5 MB on macOS (DMG with bundled Qt), 32.7–42.4 MB on Windows (MSI/zip/setup.exe with bundled Qt DLLs). An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your AI to figure it out — local by default, six cloud backends one click away when you want a frontier model. No telemetry. No subscription. No mandatory API key.
 
 Notepatra started on Linux — because that's where the gap was. But great tools shouldn't have borders. **Notepatra runs on Linux, Windows, and macOS.** Same codebase. Same features. No one gets left behind.
 
@@ -253,7 +253,7 @@ A first-class diagramming surface that **renders in the default binary on every 
 **Why this hybrid?**
 - **C++** because Qt and QScintilla are C++ — zero friction for UI
 - **Rust** because file I/O, text processing, and parsing must never crash — Rust's ownership system guarantees memory safety
-- **Result**: the speed of C++, the safety of Rust. The bare executable is **under 12 MB** on every platform (~11.5 MB Linux x64, similar on macOS / Windows). Latest v0.1.106 download sizes: **4.1 MB** Linux x64 tar.gz · **3.9 MB** Linux ARM64 tar.gz · **27.5 MB** macOS DMG (with bundled Qt) · **42.4 MB** Windows MSI · **32.7 MB** Windows NSIS · **37.3 MB** Windows portable zip. _Installed footprint on Windows is ~75-85 MB after the MSI extracts bundled Qt + QScintilla DLLs — normal for any Qt-based installer._
+- **Result**: the speed of C++, the safety of Rust. The bare executable is **under 12 MB** on every platform (~11.5 MB Linux x64, similar on macOS / Windows). Latest v0.1.107 download sizes: **4.1 MB** Linux x64 tar.gz · **3.9 MB** Linux ARM64 tar.gz · **27.5 MB** macOS DMG (with bundled Qt) · **42.4 MB** Windows MSI · **32.7 MB** Windows NSIS · **37.3 MB** Windows portable zip. _Installed footprint on Windows is ~75-85 MB after the MSI extracts bundled Qt + QScintilla DLLs — normal for any Qt-based installer._
 
 ---
 
@@ -285,6 +285,8 @@ That's it. Auto-detects your OS, downloads the right binary, installs it, adds t
 | 🪟 **Windows x64 (portable)** | [`.zip`](https://github.com/singhpratech/notepatra/releases/latest) | **37.3 MB** | `notepatra.exe` + Qt DLLs + QScintilla DLL. Unzip and run anywhere. No installer, no registry. Optional: double-click `register-associations.bat` inside the zip to add Notepatra to the "Open with" menu for `.txt`/`.md`/`.py`/`.json`/etc. — HKCU only, no admin needed. Undo with `unregister-associations.bat`. |
 
 > ⚠ **Download size vs. installed size are different.** The numbers above are **download sizes** — the `.msi` / `.dmg` / `.tar.gz` files you grab from GitHub Releases. After install, the on-disk footprint is larger because the installer extracts the bundled Qt DLLs, QScintilla DLL, and Rust core library out of the compressed payload. **Typical installed size on Windows: ~75-85 MB.** Linux installs are still tiny (~10 MB on disk) because Qt5 comes from your distro repo, not the tarball. macOS Notepatra.app on disk is ~50-60 MB after `xattr` removal.
+
+> **Lite vs Full.** The downloads above are the default **Lite** build. Each release also ships an opt-in **Full** variant (`-full`) that bundles the **DuckDB** query engine on every platform — plus, on **Linux and Windows**, the QtWebEngine inline Vega-Lite chart renderer (the `generate_chart` tool). **macOS Full is DuckDB-only**: Homebrew `qt@5` no longer ships QtWebEngine and there is no Apple-Silicon Qt5 WebEngine, so inline Vega charts are a Linux/Windows Full feature. The native fenced `` ```chart `` (QtCharts) renderer and the `.npd` diagram tool work on **every** platform in **both** flavors.
 
 **Why are the download sizes different?** Bare `notepatra` executable is **under 12 MB** on each platform (~11.5 MB Linux x64 — slightly smaller on Windows/macOS than on Linux because clang + MSVC emit denser code than gcc). On Linux, Qt5 is a standard system package (`apt install qtbase5-dev libqscintilla2-qt5-dev`), so the download is just the binary (~4.1 MB compressed). On macOS and Windows, Qt isn't pre-installed, so we bundle the Qt frameworks / DLLs alongside the executable for portability — same approach Krita, Kdenlive, and every cross-platform Qt app uses. Even with Qt bundled, Notepatra installs at 5–85 MB depending on platform vs 300+ MB for VS Code.
 
@@ -549,7 +551,7 @@ cl /LD myplugin.cpp /Fe:myplugin.dll
 | **Kate / Gedit** | ~30 MB | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✓ |
 | **Notepatra** | **4.1 / 27.5 / 42.4 MB** | ✓ C++/Rust | ✓ Ollama | ✓ regex + AI | ✓ Rust mmap | ✓ | ✓ | ✓ | ✓ GPL-3 |
 
-> *Notepatra download sizes are Linux x64 tar.gz / macOS DMG / Windows MSI from v0.1.106. Linux is just the binary (Qt is system-installed). macOS and Windows include bundled Qt. The bare `notepatra` executable inside is under 12 MB on every platform (Linux 11.5 MB, similar on macOS / Windows). Compressed download is much smaller because tar.gz / DMG / MSI all compress the binary plus shared libraries.*
+> *Notepatra download sizes are Linux x64 tar.gz / macOS DMG / Windows MSI from v0.1.107. Linux is just the binary (Qt is system-installed). macOS and Windows include bundled Qt. The bare `notepatra` executable inside is under 12 MB on every platform (Linux 11.5 MB, similar on macOS / Windows). Compressed download is much smaller because tar.gz / DMG / MSI all compress the binary plus shared libraries.*
 
 ---
 

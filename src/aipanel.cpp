@@ -6632,20 +6632,25 @@ void AIPanel::openChartsPackInstall() {
 
     // Platform-specific instruction line. Detected via Qt's compile-time
     // OS macros — matches what the CI release artifacts are named after.
-    // v0.1.64 ships Linux full flavors; macOS/Windows full flavors land in
-    // v0.1.65 — see CHANGELOG. For those platforms we currently route
-    // users to the source-build instructions.
+    // As of v0.1.107 Linux + Windows ship Full builds WITH the WebEngine Vega
+    // renderer; macOS Full is DuckDB-only (Homebrew qt@5 dropped QtWebEngine and
+    // there is no Apple-Silicon Qt5 WebEngine), so on macOS we tell the truth:
+    // inline Vega charts are unavailable — use View JSON / the native QtCharts
+    // fenced ```chart fallback. Never promise a macOS download that can't deliver.
     QString platformInstruction;
 #if defined(Q_OS_WIN)
     platformInstruction = QStringLiteral(
-        "<b>Windows full-flavor ships in v0.1.65.</b> For v0.1.64 you can either "
-        "(a) wait for the next release, or (b) build from source with "
-        "<code>-DNOTEPATRA_WITH_WEBENGINE=ON</code> — see the docs page below.");
+        "On Windows: download <code>notepatra-windows-x64-full.zip</code> "
+        "(or the <code>notepatra-full-*.msi</code>) from the Releases page below "
+        "and run it in place of your current install.");
 #elif defined(Q_OS_MACOS)
     platformInstruction = QStringLiteral(
-        "<b>macOS full-flavor ships in v0.1.65.</b> For v0.1.64 you can either "
-        "(a) wait for the next release, or (b) build from source with "
-        "<code>-DNOTEPATRA_WITH_WEBENGINE=ON</code> — see the docs page below.");
+        "<b>Inline Vega-Lite charts aren't available on macOS.</b> Homebrew's "
+        "<code>qt@5</code> no longer ships QtWebEngine and there is no "
+        "Apple-Silicon Qt5 WebEngine, so the macOS Full build is DuckDB-only. "
+        "You can still copy this chart's spec with <b>View JSON instead</b>, and "
+        "the model's fenced <code>```chart</code> blocks already render inline "
+        "natively (QtCharts) on macOS.");
 #else
     platformInstruction = QStringLiteral(
         "On Linux: download the file named "
@@ -6661,12 +6666,16 @@ void AIPanel::openChartsPackInstall() {
     box.setTextFormat(Qt::RichText);
     box.setIcon(QMessageBox::Information);
     box.setText(QStringLiteral(
-        "<p><b>The Charts Pack is bundled with the \"full\" build flavor.</b></p>"
+        "<p><b>Inline Vega-Lite charts ship in the \"full\" build flavor "
+        "(Linux and Windows).</b></p>"
         "<p>Notepatra ships two binaries per release:</p>"
         "<ul>"
-        "<li><b>Lite</b> (≈ 9 MB) — what you're running now. No charts.</li>"
-        "<li><b>Full</b> (≈ 95 MB) — bundles QtWebEngine. Renders Vega-Lite "
-        "charts inline.</li>"
+        "<li><b>Lite</b> — what you're running now. The native <code>chart</code> "
+        "renderer (QtCharts) works everywhere; inline Vega-Lite "
+        "(<code>generate_chart</code>) charts do not.</li>"
+        "<li><b>Full</b> — bundles the DuckDB engine on every platform, plus "
+        "QtWebEngine for inline Vega-Lite charts on <b>Linux and Windows</b> "
+        "(macOS Full is DuckDB-only).</li>"
         "</ul>"
         "<p>%1</p>"
         "<p>Your settings, chat history, and connections are preserved when "

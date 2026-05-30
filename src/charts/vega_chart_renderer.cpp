@@ -402,13 +402,14 @@ void VegaChartRenderer::exportSpecAsync(ExportCallback cb) {
 //
 // Composition:
 //   ┌─────────────────────────────────────────────────────┐
-//   │  📊 Chart rendering requires the Charts Pack        │
+//   │  Inline Vega-Lite charts need the Full build        │
 //   │  ───────────────────────────────────────────────    │
 //   │  Renders Vega-Lite charts (bar / line / scatter /   │
 //   │  area / composite) inline in the chat transcript.   │
 //   │                                                     │
-//   │  ≈ 95 MB · One-time download · Auto-installs on     │
-//   │  first use                                          │
+//   │  Linux / Windows Full build — swap your Lite        │
+//   │  binary for Full to render inline charts            │
+//   │  (macOS Full is DuckDB-only: use View JSON)         │
 //   │                                                     │
 //   │  [ Install charts pack ]   [ View JSON instead ]    │
 //   └─────────────────────────────────────────────────────┘
@@ -451,7 +452,8 @@ void VegaChartRenderer::buildLiteStubCard() {
     cardLay->setContentsMargins(14, 12, 14, 12);
     cardLay->setSpacing(8);
 
-    auto *title = new QLabel(QStringLiteral("📊 Chart rendering requires the Charts Pack"), card);
+    auto *title = new QLabel(
+        QStringLiteral("Inline Vega-Lite charts need the Full build (Linux / Windows)"), card);
     title->setStyleSheet(QString("color: %1; font-size: 13px; font-weight: 600;")
                              .arg(text.name()));
     title->setWordWrap(true);
@@ -463,12 +465,18 @@ void VegaChartRenderer::buildLiteStubCard() {
     desc->setStyleSheet(QString("color: %1; font-size: 11px;").arg(text.name()));
     cardLay->addWidget(desc);
 
-    const qint64 bytes = NotepatraPlugins::approximateDownloadSize(NotepatraPlugins::kChartsPack);
-    const QString sizeText = QLocale().formattedDataSize(bytes, 0, QLocale::DataSizeIecFormat);
+#if defined(Q_OS_MACOS)
     auto *meta = new QLabel(
-        QStringLiteral("≈ %1 · One-time download · Auto-installs on first use")
-            .arg(sizeText),
+        QStringLiteral("Inline Vega-Lite charts aren't available on macOS "
+                       "(no Apple-Silicon Qt5 WebEngine). Use View JSON, or a "
+                       "native ```chart block — those render on every platform."),
         card);
+#else
+    auto *meta = new QLabel(
+        QStringLiteral("Available in the Full build (Linux & Windows) — swap "
+                       "your Lite binary for the Full download to render charts."),
+        card);
+#endif
     meta->setWordWrap(true);
     meta->setStyleSheet(QString("color: %1; font-size: 10px; font-style: italic;")
                             .arg(muted.name()));
