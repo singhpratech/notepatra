@@ -16,6 +16,7 @@
 #include "mainwindow.h"
 #include "editor.h"
 #include "tabmanager.h"
+#include "config.h"
 
 #include <QApplication>
 #include <QDir>
@@ -46,6 +47,20 @@ int main(int argc, char *argv[]) {
     QTemporaryDir cfg;
     qputenv("XDG_CONFIG_HOME", cfg.path().toUtf8());
     qputenv("XDG_DATA_HOME",   cfg.path().toUtf8());
+    // appConfigDir() honours XDG only on Linux. macOS reads
+    // $HOME/Library/Application Support/Notepatra and Windows reads
+    // %APPDATA%\Notepatra — both ignore XDG_*, so without these redirects the
+    // hand-seeded session.json below lands somewhere restoreSession() never
+    // looks and NOTHING is restored (the Linux-only original failed the
+    // macOS+Windows CI exactly this way). Redirect each platform's config root
+    // into the temp dir so the seeded session is the one that gets read.
+#ifdef Q_OS_MAC
+    qputenv("HOME", cfg.path().toUtf8());
+#endif
+#ifdef Q_OS_WIN
+    qputenv("APPDATA",     cfg.path().toUtf8());
+    qputenv("USERPROFILE", cfg.path().toUtf8());
+#endif
     qputenv("QT_QPA_PLATFORM", "offscreen");
 
     QApplication app(argc, argv);
@@ -116,8 +131,10 @@ int main(int argc, char *argv[]) {
     session["windowH"] = 700;
     session["maximized"] = false;
 
-    const QString cfgDir = cfg.path() + "/notepatra";
-    QDir().mkpath(cfgDir);
+    // Write session.json to the EXACT directory restoreSession() reads on THIS
+    // platform. Asking Config for the path (rather than hardcoding "/notepatra")
+    // is what makes the test portable; appConfigDir() also mkpaths it.
+    const QString cfgDir = Config::appConfigDir();
     const QString sessionPath = cfgDir + "/session.json";
     {
         QFile sf(sessionPath);
