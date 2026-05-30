@@ -1615,11 +1615,16 @@ jobs:
           Write-Host ""
           Write-Host "Exit code: $code (informational — destructor cleanup may set this non-zero)"
 
-          # Pass criterion: the exe printed the expected version line
-          if ($output -like "*Notepatra v0.1*") {
-            Write-Host "✓ Smoke test passed (exe printed 'Notepatra v0.1...')"
+          # Pass criterion: the exe printed its version banner. Since v0.1.107
+          # the banner is flavor-aware — "Notepatra Lite v0.1.x" / "Notepatra
+          # Full v0.1.x" (and "Notepatra Local AI Lite/Full ..." for cloud-free
+          # builds), so the edition word sits between "Notepatra" and "v0.1".
+          # Match with a wildcard between them so every flavor passes; a crash
+          # or empty stdout still fails.
+          if ($output -like "*Notepatra*v0.1*") {
+            Write-Host "✓ Smoke test passed (exe printed a 'Notepatra <flavor> v0.1...' banner)"
           } else {
-            Write-Host "::error::notepatra.exe did not print 'Notepatra v0.1' to stdout"
+            Write-Host "::error::notepatra.exe did not print a 'Notepatra ... v0.1' banner to stdout"
             switch ($code) {
               -1073741515 { Write-Host "::error::STATUS_DLL_NOT_FOUND (0xC0000135)" }
               -1073741819 { Write-Host "::error::STATUS_ACCESS_VIOLATION (0xC0000005)" }
