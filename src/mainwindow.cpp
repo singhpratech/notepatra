@@ -3,6 +3,7 @@
 #include "mainwindow.h"
 #include "editor.h"
 #include "lexerutils.h"
+#include "build_flavor.h"
 #include "inlineedit.h"
 #include "npp_palette.h"
 #include "preferences.h"
@@ -905,7 +906,7 @@ static QRect centeredWindowRect(int wWant, int hWant) {
 }
 
 MainWindow::MainWindow() {
-    setWindowTitle("new 1 - Notepatra");
+    setWindowTitle("new 1 - " NOTEPATRA_FLAVOR_NAME);
     setMinimumSize(640, 480);
     setAcceptDrops(true);  // Enable drag-and-drop
 
@@ -2006,11 +2007,11 @@ void MainWindow::closeTab(int index) {
 void MainWindow::updateTitle() {
     auto *e = currentEditor();
     if (e && !e->filePath().isEmpty())
-        setWindowTitle(QDir::toNativeSeparators(e->filePath()) + " - Notepatra");
+        setWindowTitle(QDir::toNativeSeparators(e->filePath()) + " - " NOTEPATRA_FLAVOR_NAME);
     else if (e)
-        setWindowTitle(m_tabs->tabText(m_tabs->currentIndex()) + " - Notepatra");
+        setWindowTitle(m_tabs->tabText(m_tabs->currentIndex()) + " - " NOTEPATRA_FLAVOR_NAME);
     else
-        setWindowTitle("Notepatra");
+        setWindowTitle(NOTEPATRA_FLAVOR_NAME);
 }
 
 void MainWindow::updateStatusBar() {
@@ -4336,12 +4337,12 @@ void MainWindow::buildMenus() {
         QString version = QApplication::applicationVersion();
         if (version.isEmpty()) version = NOTEPATRA_VERSION;
         QMessageBox box(this);
-        box.setWindowTitle("About Notepatra");
+        box.setWindowTitle("About " NOTEPATRA_FLAVOR_NAME);
         box.setIconPixmap(windowIcon().pixmap(64, 64));
         box.setTextFormat(Qt::RichText);
         box.setTextInteractionFlags(Qt::TextBrowserInteraction);
         box.setText(QString(
-            "<h2 style='margin:0 0 6px 0;'>Notepatra v%1</h2>"
+            "<h2 style='margin:0 0 6px 0;'>" NOTEPATRA_FLAVOR_NAME " v%1</h2>"
             "<p style='color:#888; margin:0 0 14px 0;'>The first editor built for the AI era.</p>"
             "<p>A blazing-fast native code editor for Linux, macOS, and Windows.<br>"
             "Native C++ + Rust. No Electron.<br>"
