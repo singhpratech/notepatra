@@ -7,6 +7,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.107] — 2026-05-30
+
+**Lite + Full downloads for all three platforms, with DuckDB bundled in Full — plus extension-routing and shortcut fixes.**
+
+### Added
+- **DuckDB v1.1.3 ships in the Full downloads** on every platform (Linux x64/ARM64, macOS, Windows). The library is SHA-pinned, fetched in CI, and bundled next to the binary; the Data Analyst's DuckDB connection now works out of the box in Full (in-process Parquet / JSON / S3 / SQLite federation). Lite is unaffected — CSV + in-memory SQLite still work everywhere.
+- **A true Full flavor for macOS and Windows.** Previously only Linux published a `-full` build; the mac DMG / Windows MSI shipped without WebEngine despite the docs saying otherwise (the v0.1.106 Windows zip had zero WebEngine DLLs). Every platform now offers a Lite (bare) and a Full (QtWebEngine inline Vega-Lite charts + DuckDB) download.
+
+### Fixed
+- **Extension routing (#556)** — 13 file extensions were mapped twice in the lexer table and resolved correctly only by hash ordering; `.hh` actually opened as **Hack** instead of **C++**. Deduped and locked by tests: `.hh`→C++, `.pyx`/`.pxd`→Cython, `.scala`/`.sc`→Scala, `.groovy`/`.gradle`→Groovy, `.toml`→TOML, `.twig`→Twig, `.jinja`/`.jinja2`→Jinja, `.fish`→Fish, `.v`→Verilog.
+- **Shortcut collision** — `Ctrl+Shift+K` was bound to both Delete Line and Uncomment Line (menu *and* right-click context menu), shadowing Delete Line. Uncomment Line moved to `Ctrl+Alt+U`.
+
+### Changed
+- **DuckDB is Full-only at build time** — the option is tied to `NOTEPATRA_WITH_WEBENGINE`; a Lite build can never link DuckDB even with `-DNOTEPATRA_USE_DUCKDB=ON`, keeping the default binary bare. CMake `BUILD_RPATH` now carries `$ORIGIN`/`@executable_path` so the shipped Full binary finds the bundled DuckDB lib next to it.
+- **Docs honesty** — corrected the false "macOS/Windows ship WebEngine bundled" claim; the Lite-vs-Full pages now describe the real per-platform Lite and Full downloads.
+
 ## [0.1.106] — 2026-05-29
 
 **A reliability + security hardening release. Every change hardens a code path that already shipped — no new features.** Battle-readiness ship-blockers, shipped ahead of the still-deferred Data-Analyst work.
