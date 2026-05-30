@@ -1528,7 +1528,7 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
   </ol>
 
   <h4>DuckDB — files, S3, in-memory</h4>
-  <p>DuckDB is not included in prebuilt downloads — these steps require a from-source build with <code>-DNOTEPATRA_USE_DUCKDB=ON</code> and a vendored/system libduckdb. In stock downloads the DuckDB connection reports "support not compiled in."</p>
+  <p>DuckDB is not included in prebuilt downloads — these steps require a from-source Full build (<code>-DNOTEPATRA_WITH_WEBENGINE=ON</code>, which enables DuckDB) with a vendored/system libduckdb. In stock downloads the DuckDB connection reports "support not compiled in."</p>
   <ol>
     <li>Pick the <strong>DuckDB (file or :memory:)</strong> preset — Database defaults to <code>:memory:</code>.</li>
     <li>The Database field is multi-mode — point it at:
@@ -1550,7 +1550,7 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
       <tr><td>QPSQL (PostgreSQL)</td><td><code>sudo apt-get install libqt5sql5-psql</code></td><td>bundled in <code>brew install qt@5</code></td><td>Bundled with the Notepatra Windows release</td></tr>
       <tr><td>QMYSQL (MySQL/MariaDB)</td><td><code>sudo apt-get install libqt5sql5-mysql</code></td><td>bundled in <code>brew install qt@5</code></td><td>Bundled with the Notepatra Windows release</td></tr>
       <tr><td>QODBC (SQL Server)</td><td><code>sudo apt-get install libqt5sql5-odbc unixodbc-dev msodbcsql18</code> (see <a href="https://learn.microsoft.com/en-us/sql/connect/odbc/linux-mac/installing-the-microsoft-odbc-driver-for-sql-server" rel="noopener">MS install guide</a> for the package repo setup)</td><td><code>brew tap microsoft/mssql-release &amp;&amp; HOMEBREW_ACCEPT_EULA=Y brew install msodbcsql18 unixodbc</code></td><td>Bundled with the Notepatra Windows release (Microsoft ships ODBC drivers with Windows itself)</td></tr>
-      <tr><td>DUCKDB</td><td>Not in prebuilt downloads — build from source with <code>-DNOTEPATRA_USE_DUCKDB=ON</code> and a vendored/system libduckdb; runs in-process once present.</td><td>Not in prebuilt downloads — build from source with <code>-DNOTEPATRA_USE_DUCKDB=ON</code> and a vendored/system libduckdb; runs in-process once present.</td><td>Not in prebuilt downloads — build from source with <code>-DNOTEPATRA_USE_DUCKDB=ON</code> and a vendored/system libduckdb; runs in-process once present.</td></tr>
+      <tr><td>DUCKDB</td><td>Not in prebuilt downloads — build the Full flavor from source (<code>-DNOTEPATRA_WITH_WEBENGINE=ON</code>, which enables DuckDB) with a vendored/system libduckdb; runs in-process once present.</td><td>Not in prebuilt downloads — build the Full flavor from source (<code>-DNOTEPATRA_WITH_WEBENGINE=ON</code>, which enables DuckDB) with a vendored/system libduckdb; runs in-process once present.</td><td>Not in prebuilt downloads — build the Full flavor from source (<code>-DNOTEPATRA_WITH_WEBENGINE=ON</code>, which enables DuckDB) with a vendored/system libduckdb; runs in-process once present.</td></tr>
     </tbody>
   </table>
 
@@ -1882,7 +1882,7 @@ sha256sum -c SHA256SUMS --ignore-missing</code></pre>
   <p>Everything lives in one <code>config.json</code> in your config directory — <code>~/.config/notepatra/</code> on Linux, <code>%APPDATA%\Notepatra\</code> on Windows, <code>~/Library/Application Support/Notepatra/</code> on macOS. Be aware that API keys are written there in <strong>plaintext</strong> today — there's no encryption yet (OS-keychain integration is a planned improvement), so treat that file like any dotfile that holds secrets, and use a provider's <em>Forget</em> button to wipe a key on a shared machine.</p>
 
   <h4>Is the DuckDB "Data Analyst" included in the download?</h4>
-  <p>Data Analyst mode ships and works out of the box on CSV files and an in-memory SQLite engine — load data, ask in plain English, get SQL and charts back. <strong>DuckDB specifically is not bundled in the prebuilt binaries.</strong> It's an optional engine you enable by building from source with <code>-DNOTEPATRA_USE_DUCKDB=ON</code> and a vendored or system <code>libduckdb</code>; pick a DuckDB connection in a stock download and it will honestly report "support not compiled in." Bundling it into the Full build is on the roadmap.</p>
+  <p>Data Analyst mode ships and works out of the box on CSV files and an in-memory SQLite engine — load data, ask in plain English, get SQL and charts back. <strong>DuckDB specifically is not bundled in the prebuilt binaries.</strong> It's an optional engine you enable by building the Full flavor from source (<code>-DNOTEPATRA_WITH_WEBENGINE=ON</code>, which turns DuckDB on) with a vendored or system <code>libduckdb</code>; pick a DuckDB connection in a stock download and it will honestly report "support not compiled in." Bundling it into the prebuilt Full downloads is on the roadmap.</p>
 
   <h4>Will it open huge files?</h4>
   <p>Yes, within reason. Files up to ~1.86 GB load fully; above that they open truncated and read-only (use a streaming tool like <code>less</code> for the whole thing). Past 50 MB, Notepatra automatically turns off syntax highlighting, auto-completion, word wrap and indent guides to stay responsive — the file is still fully editable. The Rust core uses memory-mapped loading to avoid a double read on open.</p>

@@ -2239,14 +2239,16 @@ void MainWindow::buildMenus() {
         [E]() { if (auto *e = E()) e->toggleBlockComment(); });
     blockCommentAct->setShortcut(QKeySequence("Ctrl+Shift+Q"));
     // v0.1.45 — explicit Comment / Uncomment per kind, NPP-style.
-    // Ctrl+K + Ctrl+Shift+K match Notepad++'s defaults.
+    // Comment Line = Ctrl+K. Uncomment Line = Ctrl+Alt+U — Ctrl+Shift+K is
+    // reserved for Delete Current Line (Line Operations above); binding both
+    // to Ctrl+Shift+K shadowed Delete Line (fixed v0.1.107).
     commentMenu->addSeparator();
     auto *commentLineAct = commentMenu->addAction("&Comment Line", this,
         [E]() { if (auto *e = E()) e->commentLine(); });
     commentLineAct->setShortcut(QKeySequence("Ctrl+K"));
     auto *uncommentLineAct = commentMenu->addAction("&Uncomment Line", this,
         [E]() { if (auto *e = E()) e->uncommentLine(); });
-    uncommentLineAct->setShortcut(QKeySequence("Ctrl+Shift+K"));
+    uncommentLineAct->setShortcut(QKeySequence("Ctrl+Alt+U"));
     commentMenu->addAction("Co&mment Block", this,
         [E]() { if (auto *e = E()) e->commentBlock(); });
     commentMenu->addAction("Un&comment Block", this,

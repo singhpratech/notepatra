@@ -430,7 +430,21 @@ endif()
 #
 # Runtime: an RPATH of $ORIGIN tells the loader to look for
 # libduckdb.so next to the notepatra binary so we can ship them together.
-option(NOTEPATRA_USE_DUCKDB "Enable DuckDB-backed connection types in Data mode" ON)
+# DuckDB is FULL-ONLY. libduckdb is ~57 MB, so the default Lite binary must
+# never link it (hard rule: the bare binary stays small). DuckDB is enabled
+# only in the Full flavor (NOTEPATRA_WITH_WEBENGINE=ON); for Lite it is forced
+# OFF even if a caller passes -DNOTEPATRA_USE_DUCKDB=ON. The Data Analyst works
+# on CSV + in-memory SQLite without DuckDB; with DuckDB it additionally gains
+# in-process Parquet/JSON/S3/SQLite federation.
+if(NOTEPATRA_WITH_WEBENGINE)
+    option(NOTEPATRA_USE_DUCKDB "Enable DuckDB-backed connection types (Full only)" ON)
+else()
+    if(NOTEPATRA_USE_DUCKDB)
+        message(WARNING "NOTEPATRA_USE_DUCKDB ignored: DuckDB is Full-only and needs "
+                        "NOTEPATRA_WITH_WEBENGINE=ON. Forcing OFF to keep the Lite binary small.")
+    endif()
+    set(NOTEPATRA_USE_DUCKDB OFF)
+endif()
 if(NOTEPATRA_USE_DUCKDB)
     set(_DUCKDB_VENDOR_DIR "${CMAKE_SOURCE_DIR}/vendor/duckdb")
     find_path(DUCKDB_INCLUDE_DIR

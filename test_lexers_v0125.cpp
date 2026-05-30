@@ -179,6 +179,27 @@ int main(int argc, char *argv[]) {
     check_eq(".clj   -> Lua",         detectLanguageFromPath("core.clj", ""), QStringLiteral("Lua"));  // still fallback (Lisp lexer pending)
     check_eq(".ex    -> Elixir",      detectLanguageFromPath("server.ex", ""), QStringLiteral("Elixir"));
 
+    // ───── 2b. v0.1.107 — the 13 formerly-duplicate extMap keys ──────────
+    // Each of these used to appear TWICE in extMap and only resolved
+    // correctly by relying on QHash last-wins ordering; .hh actively
+    // misrouted to Hack. After the dedup, every key maps to exactly one
+    // language and these assertions lock the routing so a future reorder
+    // can't silently break it. See #556.
+    check_eq(".fish  -> Fish",        detectLanguageFromPath("config.fish", ""), QStringLiteral("Fish"));
+    check_eq(".gradle-> Groovy",      detectLanguageFromPath("build.gradle", ""), QStringLiteral("Groovy"));
+    check_eq(".groovy-> Groovy",      detectLanguageFromPath("Jenkinsfile.groovy", ""), QStringLiteral("Groovy"));
+    check_eq(".hh    -> C++ (NOT Hack)", detectLanguageFromPath("widget.hh", ""), QStringLiteral("C++"));
+    check_eq(".hack  -> Hack",        detectLanguageFromPath("lib.hack", ""), QStringLiteral("Hack"));
+    check_eq(".jinja -> Jinja",       detectLanguageFromPath("page.jinja", ""), QStringLiteral("Jinja"));
+    check_eq(".jinja2-> Jinja",       detectLanguageFromPath("page.jinja2", ""), QStringLiteral("Jinja"));
+    check_eq(".pxd   -> Cython",      detectLanguageFromPath("decls.pxd", ""), QStringLiteral("Cython"));
+    check_eq(".pyx   -> Cython",      detectLanguageFromPath("fast.pyx", ""), QStringLiteral("Cython"));
+    check_eq(".sc    -> Scala",       detectLanguageFromPath("worksheet.sc", ""), QStringLiteral("Scala"));
+    check_eq(".scala -> Scala",       detectLanguageFromPath("Main.scala", ""), QStringLiteral("Scala"));
+    check_eq(".toml  -> TOML (NOT Properties)", detectLanguageFromPath("Cargo.toml", ""), QStringLiteral("TOML"));
+    check_eq(".twig  -> Twig",        detectLanguageFromPath("layout.twig", ""), QStringLiteral("Twig"));
+    check_eq(".v     -> Verilog",     detectLanguageFromPath("alu.v", ""), QStringLiteral("Verilog"));
+
     // ───── 3. createLexerForLanguage returns instances for new langs ───
     {
         QsciLexer *l = createLexerForLanguage("PowerShell", nullptr);
@@ -240,6 +261,20 @@ int main(int argc, char *argv[]) {
         if (l) check("LexerCsv language() == 'CSV'",
                      QString::fromLatin1(l->language()) == QStringLiteral("CSV"));
         delete l;
+    }
+    {
+        // v0.1.107 #556 — the languages the deduped extensions now route to
+        // must each have a real lexer, else correct detection still yields
+        // no highlighting. (.hh -> C++ and .v -> Verilog use built-in
+        // QScintilla lexers, already covered elsewhere.)
+        for (const char *lang : {"Fish", "Groovy", "Cython", "Scala",
+                                 "Jinja", "Twig", "TOML", "Hack"}) {
+            QsciLexer *l = createLexerForLanguage(QString::fromLatin1(lang), nullptr);
+            const QByteArray label =
+                QByteArray("createLexerForLanguage(") + lang + ") is non-null";
+            check(label.constData(), l != nullptr);
+            delete l;
+        }
     }
 
     std::printf("\n=== Summary: %d passed, %d failed ===\n", passed, failed);
