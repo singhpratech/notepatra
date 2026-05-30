@@ -627,7 +627,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
         <td><code>charts</code></td>
         <td>≈ 95 MB</td>
         <td>Renders Vega-Lite charts (bar / line / scatter / area / composite) inline in the chat transcript. Powered by QtWebEngine + vega-embed.</td>
-        <td>Bundled in the Full flavor (Linux x64 / Linux ARM64 tar.gz, macOS DMG, Windows MSI / NSIS / zip) since v0.1.66. The Linux <code>-full</code> tarballs are explicitly tagged; macOS and Windows ship a single flavor with WebEngine included.</td>
+        <td>Bundled in the Full flavor (Linux x64 / Linux ARM64 tar.gz, macOS DMG, Windows MSI / zip) since v0.1.66. All platforms now have explicit Lite (default) and Full (with WebEngine and DuckDB) download variants.</td>
       </tr>
       <tr id="pdf-pack">
         <td><code>pdf</code></td>
@@ -653,8 +653,8 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
   <ul>
     <li><strong>Linux x64:</strong> <code>notepatra-linux-x64-full.tar.gz</code> — extract it, then replace <code>~/.local/bin/notepatra</code> (or wherever you installed). Your config, chat history, and connections live outside the binary and are preserved.</li>
     <li><strong>Linux ARM64:</strong> <code>notepatra-linux-arm64-full.tar.gz</code> — same pattern.</li>
-    <li><strong>macOS:</strong> The DMG ships with WebEngine bundled — no separate Full variant needed.</li>
-    <li><strong>Windows:</strong> The MSI / NSIS / portable zip ship with WebEngine bundled — no separate Full variant needed.</li>
+    <li><strong>macOS:</strong> <code>Notepatra-full.dmg</code> — contains the Full flavor with WebEngine and DuckDB bundled. Drag to Applications as usual; your config, chat history, and connections are preserved.</li>
+    <li><strong>Windows:</strong> <code>notepatra-full-*.msi</code> or <code>notepatra-windows-x64-full.zip</code> — MSI installs the Full flavor; zip is the portable equivalent. Your config, chat history, and connections are preserved.</li>
   </ul>
 
   <h4>Path C — Build from source with <code>-DNOTEPATRA_WITH_WEBENGINE=ON</code></h4>
