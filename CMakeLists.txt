@@ -18,6 +18,16 @@ option(BUILD_LEXER_TEST "Backward-compatible alias for BUILD_TESTING" OFF)
 # small for users who don't need charts.
 option(NOTEPATRA_WITH_WEBENGINE "Bundle QtWebEngine for inline Vega-Lite chart rendering (full-mode build)" OFF)
 
+# v0.1.107 — Full-flavor umbrella. Turns on the heavy opt-in features:
+# WebEngine (inline Vega-Lite charts, WHERE the Qt module is available) and
+# the DuckDB engine. The default (Lite) build has neither. On macOS, Homebrew
+# qt@5 no longer ships QtWebEngine, so a Full macOS build gets DuckDB only and
+# the WebEngine probe below downgrades to a stub — that is expected and fine.
+option(NOTEPATRA_FULL "Full flavor: WebEngine charts (where available) + DuckDB engine" OFF)
+if(NOTEPATRA_FULL)
+    set(NOTEPATRA_WITH_WEBENGINE ON)
+endif()
+
 # v0.1.72 — Cloud-free build variant. When ON, the binary physically
 # refuses to talk to any non-private network destination (i.e. anything
 # that's not localhost / 127.x / [::1] / 10.x / 172.16-31.x / 192.168.x /
@@ -431,17 +441,18 @@ endif()
 # Runtime: an RPATH of $ORIGIN tells the loader to look for
 # libduckdb.so next to the notepatra binary so we can ship them together.
 # DuckDB is FULL-ONLY. libduckdb is ~57 MB, so the default Lite binary must
-# never link it (hard rule: the bare binary stays small). DuckDB is enabled
-# only in the Full flavor (NOTEPATRA_WITH_WEBENGINE=ON); for Lite it is forced
-# OFF even if a caller passes -DNOTEPATRA_USE_DUCKDB=ON. The Data Analyst works
-# on CSV + in-memory SQLite without DuckDB; with DuckDB it additionally gains
-# in-process Parquet/JSON/S3/SQLite federation.
-if(NOTEPATRA_WITH_WEBENGINE)
-    option(NOTEPATRA_USE_DUCKDB "Enable DuckDB-backed connection types (Full only)" ON)
+# never link it (hard rule: the bare binary stays small). It is enabled in the
+# Full flavor — via the Full umbrella (NOTEPATRA_FULL, used where WebEngine is
+# unavailable, e.g. macOS where Homebrew qt@5 dropped WebEngine) OR alongside
+# WebEngine on Linux/Windows. Lite (neither) forces it OFF even if a caller
+# passes -DNOTEPATRA_USE_DUCKDB=ON. The Data Analyst works on CSV + in-memory
+# SQLite without DuckDB; with DuckDB it gains in-process Parquet/JSON/S3/SQLite.
+if(NOTEPATRA_FULL OR NOTEPATRA_WITH_WEBENGINE)
+    set(NOTEPATRA_USE_DUCKDB ON)
 else()
     if(NOTEPATRA_USE_DUCKDB)
-        message(WARNING "NOTEPATRA_USE_DUCKDB ignored: DuckDB is Full-only and needs "
-                        "NOTEPATRA_WITH_WEBENGINE=ON. Forcing OFF to keep the Lite binary small.")
+        message(WARNING "NOTEPATRA_USE_DUCKDB ignored: DuckDB is Full-only. Build the "
+                        "Full flavor (-DNOTEPATRA_FULL=ON). Forcing OFF for the Lite binary.")
     endif()
     set(NOTEPATRA_USE_DUCKDB OFF)
 endif()

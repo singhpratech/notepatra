@@ -388,16 +388,20 @@ jobs:
           echo "✓ DuckDB v1.1.3 verified and extracted"
 
           rm -rf build-full && mkdir -p build-full && cd build-full
+          # macOS Full = DuckDB engine. Homebrew qt@5 dropped QtWebEngine
+          # (Chromium CVEs) and there is no arm64-native Qt5 WebEngine, so the
+          # WebEngine probe downgrades to a stub here — DuckDB is the macOS Full
+          # feature. NOTEPATRA_FULL enables DuckDB regardless of WebEngine.
           cmake .. -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$QT_PATH" \
             -DQSCINTILLA_INCLUDE="$QSC_INC" \
             -DQSCINTILLA_LIB="$QSC_LIB" \
-            -DNOTEPATRA_WITH_WEBENGINE=ON
+            -DNOTEPATRA_FULL=ON
           make VERBOSE=1 2>&1 | tail -200
           ls -lh notepatra
-          otool -L notepatra | grep -i webengine | head -3 || echo "WARN: full build did not link WebEngine"
+          otool -L notepatra | grep -i webengine | head -3 || echo "note: macOS Full has no WebEngine (brew qt@5 dropped it) — DuckDB only"
           otool -L notepatra | grep -i duckdb || { echo "::error::Full build did not link DuckDB"; exit 1; }
-          echo "✓ Full binary built with WebEngine and DuckDB"
+          echo "✓ macOS Full binary built (DuckDB engine; WebEngine N/A on brew qt@5)"
 
       - name: Build and run regression suite
         run: |
