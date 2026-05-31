@@ -13,6 +13,7 @@
 #include <QPushButton>
 #include <QSet>
 #include <QSpacerItem>
+#include <QStyle>
 #include <QVBoxLayout>
 
 // Slice B+C — EditPlanList implementation.
@@ -98,7 +99,10 @@ EditPlanRow::EditPlanRow(const QString &absPath, const QString &displayPath,
     m_selectBox->setToolTip(tr("Include in Apply Selected"));
     header->addWidget(m_selectBox);
 
-    auto *icon = new QLabel(QStringLiteral("📄"));
+    // File icon via QStyle (never an emoji codepoint — U+1F4C4 tofus on
+    // Linux without a colour-emoji font; the project's standing icon rule).
+    auto *icon = new QLabel;
+    icon->setPixmap(style()->standardIcon(QStyle::SP_FileIcon).pixmap(14, 14));
     header->addWidget(icon);
 
     auto *pathLabel = new QLabel(truncateMiddle(m_displayPath));
@@ -167,6 +171,22 @@ void EditPlanRow::setApplied() {
     // over an ancestor's cascade in Qt), so the ✓ stays vivid.
     setStyleSheet("EditPlanRow { border-bottom: 1px solid palette(midlight); }"
                   "EditPlanRow QLabel { color: palette(mid); }");
+}
+
+void EditPlanRow::setPending() {
+    // v0.1.111 — inverse of setApplied(). The host calls this after reverting
+    // the file on disk so the row stops claiming "applied" and becomes
+    // re-appliable. Restores every control setApplied() disabled.
+    if (!m_applied) return;
+    m_applied = false;
+    if (m_selectBox) {
+        m_selectBox->setEnabled(true);
+        m_selectBox->setChecked(true);  // re-arm for Apply Selected, like a fresh row
+    }
+    if (m_removeBtn) m_removeBtn->setEnabled(true);
+    if (m_appliedTag) m_appliedTag->setVisible(false);
+    // Restore the un-dimmed stylesheet (drop the muted-QLabel cascade).
+    setStyleSheet("EditPlanRow { border-bottom: 1px solid palette(midlight); }");
 }
 
 void EditPlanRow::onToggleDiff() {
@@ -243,7 +263,28 @@ void EditPlanList::buildActionBar() {
     connect(m_rejectAllBtn, &QPushButton::clicked, this, &EditPlanList::onRejectAll);
     layout->addWidget(m_rejectAllBtn);
 
+    // v0.1.111 — "Undo apply". Hidden until an Apply lands a revertible batch.
+    // U+21B6 (↶) is a plain dingbat, not a colour-emoji (no Linux tofu).
+    m_undoBtn = new QPushButton(QStringLiteral("↶ Undo apply"));
+    m_undoBtn->setToolTip(tr("Restore the files from the last Apply to their previous content"));
+    connect(m_undoBtn, &QPushButton::clicked, this, &EditPlanList::undoApplyRequested);
+    m_undoBtn->setVisible(false);
+    layout->addWidget(m_undoBtn);
+
     layout->addStretch(1);
+}
+
+void EditPlanList::showUndoButton(bool show) {
+    if (m_undoBtn) m_undoBtn->setVisible(show);
+}
+
+void EditPlanList::markPending(const QList<QString> &absPaths) {
+    if (absPaths.isEmpty()) return;
+    const QSet<QString> reverted(absPaths.begin(), absPaths.end());
+    for (EditPlanRow *row : m_rows) {
+        if (reverted.contains(row->absPath())) row->setPending();
+    }
+    updateActionBarEnabled();
 }
 
 void EditPlanList::addEdit(const QString &absPath, const QString &before,
@@ -267,6 +308,9 @@ void EditPlanList::addEdit(const QString &absPath, const QString &before,
     const int insertAt = m_listLayout->count() - 1;
     m_listLayout->insertWidget(insertAt, row);
     m_rows.append(row);
+    // A fresh proposal supersedes any previous applied batch — its Undo is
+    // stale, so hide it (the host also drops m_lastApplyBatch on a new apply).
+    showUndoButton(false);
     updateActionBarEnabled();
 }
 
@@ -276,6 +320,7 @@ void EditPlanList::clear() {
         row->deleteLater();
     }
     m_rows.clear();
+    showUndoButton(false);  // no batch left to undo
     updateActionBarEnabled();
 }
 

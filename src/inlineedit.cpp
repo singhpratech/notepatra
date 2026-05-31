@@ -5,22 +5,26 @@
 //
 // See inlineedit.h for the workflow + design notes.
 //
-// Diffing strategy: for v1 we do a naive line-by-line equality check
-// (good enough for short selections, which is the common case for an
-// inline edit). The Rust Myers diff in rust-core/ is overkill here and
-// would require pulling in compare_widget.cpp. If we ever want true
-// LCS-aware highlighting we can swap renderDiff() to call into it.
+// Diffing strategy: renderDiff() drives the side-by-side view off the real
+// Myers diff (RustCore::computeDiff, via InlineDiff::computeInlineDiffRows)
+// — the same engine DiffView/EditPlan use. Inserts/deletes are aligned with
+// filler rows so a one-line change highlights exactly one line instead of
+// cascading red/green down the rest of the block (the old line-index check's
+// failure mode). Tints are theme-aware (Light/Dark/Monokai parity).
 // ─────────────────────────────────────────────────────────────────────
 
 #include "inlineedit.h"
 
+#include "inlineedit_diff.h"
 #include "ollama.h"
 
+#include <QApplication>
 #include <QDialogButtonBox>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QPalette>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -340,45 +344,52 @@ QString InlineEditDialog::stripFences(const QString &raw) {
     return s;
 }
 
-// Renders a naive line-aligned diff into the side-by-side QTextEdits.
-// Lines that match exactly get a neutral background. Lines on either
-// side that don't have an equal counterpart at the same index get a
-// red (old) or green (new) tint. For inline edits the selections are
-// short enough that a fancier algorithm isn't worth the complexity.
+// Renders a real Myers diff into the side-by-side QTextEdits. The diff
+// is computed by InlineDiff::computeInlineDiffRows (RustCore::computeDiff
+// under the hood) and walked as aligned visual rows: an inserted line gets
+// a filler cell on the old side, a deleted line gets a filler cell on the
+// new side, so the two columns stay vertically aligned and only the truly
+// changed lines are tinted. Tints are theme-aware so the dialog reads in
+// Light, Dark, and Monokai (the old hardcoded light-only hexes were a
+// dark-mode parity bug).
 void InlineEditDialog::renderDiff(const QString &oldText, const QString &newText) {
-    const QStringList oldLines = oldText.split('\n');
-    const QStringList newLines = newText.split('\n');
+    // Theme-aware tints — mirror DiffView's luminance check on the app
+    // palette (updated by mainwindow::applyTheme on every theme switch).
+    const QColor base = QApplication::palette().color(QPalette::Base);
+    const qreal lum = (0.299 * base.redF()) + (0.587 * base.greenF())
+                      + (0.114 * base.blueF());
+    const bool dark = lum < 0.5;
+    const QString redBg   = dark ? "background:#5C2424;color:#f4d4d4;"
+                                  : "background:#fde4e4;color:#5a1212;";
+    const QString greenBg = dark ? "background:#1E4620;color:#d4f4d6;"
+                                  : "background:#e3f7e3;color:#0e4d0e;";
+    const QString fillerBg = dark ? "background:#2a2a2a;" : "background:#f4f4f4;";
 
     auto escape = [](const QString &s) {
         return s.toHtmlEscaped().replace(' ', "&nbsp;");
     };
 
-    const QString redBg   = "background:#fde4e4;color:#5a1212;";
-    const QString greenBg = "background:#e3f7e3;color:#0e4d0e;";
-
     QString oldHtml = "<pre style='margin:0;padding:0;font-family:monospace;'>";
     QString newHtml = oldHtml;
 
-    const int n = qMax(oldLines.size(), newLines.size());
-    for (int i = 0; i < n; ++i) {
-        const QString o = (i < oldLines.size()) ? oldLines.at(i) : QString();
-        const QString nw = (i < newLines.size()) ? newLines.at(i) : QString();
-        const bool same = (i < oldLines.size()) && (i < newLines.size()) && (o == nw);
-
-        if (i < oldLines.size()) {
-            const QString style = same ? QString() : redBg;
+    const QVector<InlineDiff::Row> rows =
+        InlineDiff::computeInlineDiffRows(oldText, newText);
+    for (const InlineDiff::Row &r : rows) {
+        // Old (left) side.
+        if (r.leftFiller) {
+            oldHtml += QString("<div style='%1'>&nbsp;</div>").arg(fillerBg);
+        } else {
+            const QString style = r.changed ? redBg : QString();
             oldHtml += QString("<div style='%1'>%2</div>")
-                .arg(style, escape(o).isEmpty() ? "&nbsp;" : escape(o));
-        } else {
-            oldHtml += "<div>&nbsp;</div>";
+                .arg(style, escape(r.left).isEmpty() ? "&nbsp;" : escape(r.left));
         }
-
-        if (i < newLines.size()) {
-            const QString style = same ? QString() : greenBg;
-            newHtml += QString("<div style='%1'>%2</div>")
-                .arg(style, escape(nw).isEmpty() ? "&nbsp;" : escape(nw));
+        // New (right) side.
+        if (r.rightFiller) {
+            newHtml += QString("<div style='%1'>&nbsp;</div>").arg(fillerBg);
         } else {
-            newHtml += "<div>&nbsp;</div>";
+            const QString style = r.changed ? greenBg : QString();
+            newHtml += QString("<div style='%1'>%2</div>")
+                .arg(style, escape(r.right).isEmpty() ? "&nbsp;" : escape(r.right));
         }
     }
     oldHtml += "</pre>";

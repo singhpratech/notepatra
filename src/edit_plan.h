@@ -60,6 +60,17 @@ public:
     // tests and lets a host show "2 of 3 applied". (v0.1.110)
     int appliedCount() const;
 
+    // v0.1.111 — Composer rollback. After the host reverts applied files back
+    // to their pre-edit content, it calls markPending() to flip those rows
+    // from applied back to PENDING (badge cleared, checkbox re-enabled,
+    // re-appliable). Symmetric inverse of markApplied().
+    void markPending(const QList<QString> &absPaths);
+
+    // Show / hide the "Undo apply" action-bar button. The host shows it after
+    // a successful Apply (when a revertible batch exists) and hides it after
+    // the undo lands, a new apply supersedes it, or the plan is cleared.
+    void showUndoButton(bool show);
+
     // Configure the workspace root used to render relative paths. Optional —
     // when unset we fall back to the absolute path. Slice A will wire this
     // from the user's open project directory.
@@ -77,6 +88,11 @@ signals:
     // from the conversation transcript.
     void editRemoved(const QString &absPath);
 
+    // v0.1.111 — emitted when the user clicks "Undo apply". The host
+    // (AIPanel::undoLastApply) reverts the last applied batch back to its
+    // pre-edit content (with drift protection) and calls markPending().
+    void undoApplyRequested();
+
 private slots:
     void onApplyAll();
     void onApplySelected();
@@ -91,6 +107,7 @@ private:
     QPushButton *m_applyAllBtn = nullptr;
     QPushButton *m_applySelectedBtn = nullptr;
     QPushButton *m_rejectAllBtn = nullptr;
+    QPushButton *m_undoBtn = nullptr;     // v0.1.111 — "Undo apply" (hidden until an apply lands)
 
     QString m_workspaceRoot;
     QVector<EditPlanRow *> m_rows;  // non-owning pointers; QObject parent owns
@@ -109,12 +126,17 @@ public:
 
     QString absPath() const { return m_absPath; }
     QString afterText() const { return m_after; }
+    QString beforeText() const { return m_before; }  // v0.1.111 — for rollback
     bool isSelected() const;
 
     // v0.1.110 — applied-state tracking so the row reflects reality after a
     // successful write and can't be re-applied.
     void setApplied();
     bool isApplied() const { return m_applied; }
+    // v0.1.111 — inverse of setApplied(): flip an applied row back to pending
+    // after the host reverts the file on disk (badge cleared, controls
+    // re-enabled, re-appliable).
+    void setPending();
     int added() const { return m_added; }
     int removed() const { return m_removed; }
 

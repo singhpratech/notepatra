@@ -97,6 +97,27 @@ int main(int argc, char **argv) {
     EXPECT(plan2.appliedCount() == 2);                 // both now applied
     QCoreApplication::processEvents();
 
+    // ── v0.1.111: Composer rollback — markPending() is the inverse ─────────
+    // Contract: after the host reverts files on disk, markPending(paths)
+    // flips exactly those rows back to PENDING (re-appliable), the symmetric
+    // inverse of markApplied(). This guards the v0.1.110 applied-badge state
+    // machine against a one-way trap.
+    plan2.markPending({QStringLiteral("/tmp/syn2/a.cpp")});
+    EXPECT(plan2.appliedCount() == 1);                 // a.cpp back to pending
+    plan2.markPending({QStringLiteral("/tmp/syn2/a.cpp")});
+    EXPECT(plan2.appliedCount() == 1);                 // idempotent — already pending
+    plan2.markPending({QStringLiteral("/tmp/syn2/nonexistent.cpp")});
+    EXPECT(plan2.appliedCount() == 1);                 // unknown path is a no-op
+    plan2.markPending({QStringLiteral("/tmp/syn2/b.cpp")});
+    EXPECT(plan2.appliedCount() == 0);                 // both reverted to pending
+    // Re-apply must work after a revert (apply → undo → apply).
+    plan2.markApplied({QStringLiteral("/tmp/syn2/a.cpp"), QStringLiteral("/tmp/syn2/b.cpp")});
+    EXPECT(plan2.appliedCount() == 2);                 // re-appliable after undo
+    // showUndoButton must not crash whether or not a batch exists.
+    plan2.showUndoButton(true);
+    plan2.showUndoButton(false);
+    QCoreApplication::processEvents();
+
     // ── Slice B: DiffView ────────────────────────────────────────────────
     // Construct directly so we exercise the Rust diff path without needing
     // to click [Diff] on a hidden row.

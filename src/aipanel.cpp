@@ -11,7 +11,9 @@
 #include "csvanalyst.h"
 #include "dbconnections.h"
 #include "dbtree.h"
+#include "diff_view.h"
 #include "edit_plan.h"
+#include "rustbridge.h"
 #include "fonts.h"
 #include "config.h"
 #include <QVBoxLayout>
@@ -1492,6 +1494,9 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // open / reload the file in the editor.
     connect(m_editPlan, &EditPlanList::applyRequested,
             this,        &AIPanel::applyComposerEdits);
+    // v0.1.111 — "Undo apply" reverts the last applied batch (drift-protected).
+    connect(m_editPlan, &EditPlanList::undoApplyRequested,
+            this,        &AIPanel::undoLastApply);
     // v0.1.61 (Item 8) — auto-hide the inline panel when the last row
     // is removed (Reject All / per-row [x] / Apply pipeline housekeeping).
     connect(m_editPlan, &EditPlanList::editRemoved, this,
@@ -2002,6 +2007,16 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     });
     connect(m_ollama, &OllamaClient::finished, this, [this](const QString &response) {
         m_lastResponse = response;
+        // v0.1.111 — if Agent write-approval cards are still awaiting the
+        // user, DON'T flush or finalise: the turn is paused on the user, not
+        // the model. The card's button (maybeResumeAfterApprovals) flushes
+        // once the last approval resolves. Leave the bubble in its streaming
+        // state ("agent paused, awaiting you").
+        if (m_pendingWriteApprovals > 0) {
+            m_streamFinishedAwaitingApproval = true;
+            if (m_stopBtn) m_stopBtn->setEnabled(false);
+            return;
+        }
         // v0.1.35 — agent loop: if any tool calls landed during this
         // stream, flush them back to the model BEFORE finalising the
         // bubble. flushPendingToolResults handles the round-trip and
@@ -2013,6 +2028,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         m_toolsActiveThisTurn = false;
         m_toolCallsThisTurn = 0;
         m_toolCallsTotal = 0;
+        m_turnWriteApproval = false;  // re-arm the gate each new turn
         if (m_stopBtn) m_stopBtn->setEnabled(false);  // hardening: guard m_stopBtn (slot may fire after teardown)
         endAssistantBubble();
     });
@@ -2411,6 +2427,11 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         m_toolCallsThisTurn = 0;
         m_toolCallsTotal = 0;
         m_toolsActiveThisTurn = false;
+        // v0.1.111 — clear any pending write-approval state so an aborted run
+        // doesn't strand the gate (a stranded counter would freeze the next turn).
+        m_pendingWriteApprovals = 0;
+        m_streamFinishedAwaitingApproval = false;
+        m_turnWriteApproval = false;
         if (m_inAssistantBubble) {
             endAssistantBubble();
         }
@@ -3507,6 +3528,11 @@ void AIPanel::sendPrompt(const QString &action) {
     m_toolCallsThisTurn = 0;
     m_toolCallsTotal = 0;
     m_toolsActiveThisTurn = false;
+    // v0.1.111 — each new user turn re-arms the write gate; "approve all this
+    // turn" is deliberately turn-scoped (never session-wide).
+    m_turnWriteApproval = false;
+    m_pendingWriteApprovals = 0;
+    m_streamFinishedAwaitingApproval = false;
     if (toolModeActive && !m_workspaceRoot.isEmpty()) {
         if (currentModelSupportsTools()) {
             toolsForRequest = AiTools::availableTools();
@@ -5200,6 +5226,15 @@ void AIPanel::endAssistantBubble() {
 // ═══════════════════════════════════════════════════════════════════════
 
 namespace {
+// v0.1.111 — the only tools that mutate disk. The Agent-mode confirmation
+// gate fires on exactly these; every read-only tool (read_file, list_dir,
+// search, git_*, generate_chart) executes immediately and is never gated
+// (gating reads = the "nags on every read" anti-pattern that kills agent flow).
+bool isMutatingTool(const QString &name) {
+    return name == QLatin1String("write_file")
+        || name == QLatin1String("apply_diff");
+}
+
 // Render a transient inline tool-call card. Goes into m_chatLayout
 // just before the streaming card so the user sees "🔧 read_file …"
 // while the model decides what to do next. Style is muted compared to
@@ -5339,6 +5374,25 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
     call.id = id;
     call.name = name;
     call.args = args;
+
+    // ── v0.1.111 — Agent-mode write confirmation gate ───────────────────
+    // In the Agent segment, a mutating tool must be user-approved before it
+    // touches disk. We hold the write, render an inline Approve/Reject card,
+    // and resume the turn when the user decides. Guards:
+    //   • Agent segment only (Compose routes via dry_run below; Chat has no
+    //     write tools). Detect via the live button state (same source of
+    //     truth as the agent-mode check elsewhere).
+    //   • mutating tool only (reads are never gated).
+    //   • not already "approve all this turn".
+    //   • not a dry_run call (belt — those never hit disk anyway).
+    const bool agentSegment = m_agentSegBtn && m_agentSegBtn->isChecked();
+    if (agentSegment && isMutatingTool(name)
+            && !m_turnWriteApproval
+            && !args.value(QStringLiteral("dry_run")).toBool(false)) {
+        enqueueWriteApproval(id, name, args, argsSummary);
+        return;  // result is withheld until a card button resolves it
+    }
+
     AiTools::ToolResult result = AiTools::execute(call, m_workspaceRoot);
 
     // hardening: shared JSON-parse helper. AiTools::execute always returns
@@ -5563,6 +5617,229 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
     payload["args"] = args;
     payload["content"] = content;
     m_pendingToolResults.append(payload);
+}
+
+// v0.1.111 — Agent-mode write confirmation gate. Render an inline card that
+// previews a held write (via a forced dry-run, so disk is untouched) and lets
+// the user Approve / Reject / Approve-all-this-turn before it lands. The agent
+// turn is paused until the user decides (the flush is withheld in the
+// OllamaClient::finished lambda while m_pendingWriteApprovals > 0).
+void AIPanel::enqueueWriteApproval(const QString &id, const QString &name,
+                                   const QJsonObject &args, const QString &argsSummary) {
+    if (!m_chatLayout) return;
+    const AiPalette pal = aiPalette();
+
+    // Build the preview through a forced dry-run — identical safety + path
+    // resolution as the real write, but nothing touches disk.
+    AiTools::ToolCall preview;
+    preview.id = id;
+    preview.name = name;
+    QJsonObject dryArgs = args;
+    dryArgs[QStringLiteral("dry_run")] = true;
+    preview.args = dryArgs;
+    const AiTools::ToolResult pr = AiTools::execute(preview, m_workspaceRoot);
+
+    // Parse proposed before/after/abs_path out of the dry-run result.
+    QString before, after, absPath, errKind;
+    {
+        QJsonParseError perr{};
+        const QJsonDocument jd = QJsonDocument::fromJson(pr.content.toUtf8(), &perr);
+        const QJsonObject root = jd.isObject() ? jd.object() : QJsonObject();
+        const QJsonObject body = root.value("result").toObject();
+        const QJsonObject proposed = body.value("proposed").toObject();
+        before  = proposed.value("before").toString();
+        after   = proposed.value("after").toString();
+        absPath = body.value("abs_path").toString();
+        errKind = root.value("error_kind").toString();
+        if (errKind.isEmpty()) errKind = body.value("error_kind").toString();
+    }
+
+    // If the executor would refuse the write anyway (outside workspace, deny
+    // list, etc.), there's nothing to approve — queue the error so the model
+    // gets the signal and render a plain error card, no buttons.
+    if (pr.isError) {
+        QJsonObject payload;
+        payload["id"] = id; payload["name"] = name; payload["args"] = args;
+        payload["content"] = pr.content;
+        m_pendingToolResults.append(payload);
+        aiAddToolCallCard(m_chatLayout, name, argsSummary,
+                          QStringLiteral("✗ ") + (errKind.isEmpty()
+                              ? QStringLiteral("refused") : errKind),
+                          true, pal);
+        return;
+    }
+
+    ++m_pendingWriteApprovals;
+
+    // ── Inline approval card ───────────────────────────────────────────────
+    auto *card = new QFrame(m_chatContent);
+    card->setObjectName(QStringLiteral("writeApprovalCard"));
+    card->setStyleSheet(QString(
+        "#writeApprovalCard { background:%1; border:1px solid %2; "
+        "border-left:3px solid %3; border-radius:8px; }")
+        .arg(pal.assistBg, pal.assistBorder, pal.accent));
+    auto *lay = new QVBoxLayout(card);
+    lay->setContentsMargins(10, 8, 10, 8);
+    lay->setSpacing(6);
+
+    QString shown = absPath;
+    if (!m_workspaceRoot.isEmpty()) {
+        const QString rel = QDir(m_workspaceRoot).relativeFilePath(absPath);
+        if (!rel.startsWith("..")) shown = rel;
+    }
+    const RustCore::DiffInfo di = RustCore::computeDiff(before, after);
+    auto *hdr = new QLabel(card);
+    hdr->setTextFormat(Qt::RichText);
+    hdr->setWordWrap(true);
+    hdr->setText(QString("<b>%1</b> &nbsp; <span style='color:%2;'>%3</span> "
+                         "&nbsp; <span style='color:%2;'>+%4 -%5</span>")
+                     .arg(name).arg(pal.muted).arg(shown.toHtmlEscaped())
+                     .arg(di.added + di.changed).arg(di.removed + di.changed));
+    hdr->setStyleSheet(QString("color:%1; background:transparent;").arg(pal.headerFg));
+    lay->addWidget(hdr);
+
+    auto *sub = new QLabel(tr("Agent wants to write this file. Review before it hits disk."), card);
+    sub->setStyleSheet(QString("color:%1; background:transparent; font-size:11px;").arg(pal.muted));
+    sub->setWordWrap(true);
+    lay->addWidget(sub);
+
+    auto *diff = new DiffView(before, after, card);
+    diff->setMinimumHeight(110);
+    diff->setMaximumHeight(280);
+    lay->addWidget(diff);
+
+    auto *status = new QLabel(card);
+    status->setStyleSheet(QStringLiteral("background:transparent; font-weight:600;"));
+    status->setVisible(false);
+    lay->addWidget(status);
+
+    auto *btnRow = new QHBoxLayout;
+    btnRow->setSpacing(6);
+    auto *approveBtn = new QPushButton(QStringLiteral("✓ Approve"), card);
+    auto *allBtn     = new QPushButton(tr("Approve all this turn"), card);
+    auto *rejectBtn  = new QPushButton(tr("Reject"), card);
+    const QString plainBtn = QString(
+        "QPushButton{background:%1;color:%2;border:1px solid %3;border-radius:6px;"
+        "padding:4px 10px;} QPushButton:hover{background:%4;}")
+        .arg(pal.btnBg, pal.inputText, pal.btnBorder, pal.btnHover);
+    allBtn->setStyleSheet(plainBtn);
+    rejectBtn->setStyleSheet(plainBtn);
+    approveBtn->setStyleSheet(QString(
+        "QPushButton{background:%1;color:#ffffff;border:1px solid %1;border-radius:6px;"
+        "padding:4px 10px;font-weight:600;} QPushButton:hover{background:%2;}")
+        .arg(pal.accent, pal.accent));
+    btnRow->addWidget(approveBtn);
+    btnRow->addWidget(allBtn);
+    btnRow->addStretch(1);
+    btnRow->addWidget(rejectBtn);
+    lay->addLayout(btnRow);
+
+    auto *row = new QWidget(m_chatContent);
+    row->setStyleSheet(QStringLiteral("background:transparent;"));
+    auto *rowLay = new QVBoxLayout(row);
+    rowLay->setContentsMargins(0, 0, 0, 12);
+    rowLay->setSpacing(0);
+    rowLay->addWidget(card);
+    m_chatLayout->insertWidget(m_chatLayout->count() - 1, row);
+
+    // ── Resolution ─────────────────────────────────────────────────────────
+    // One-shot: a flag guards double-resolution (e.g. teardown mid-decision).
+    auto *decided = new bool(false);
+
+    auto disableButtons = [approveBtn, allBtn, rejectBtn]() {
+        approveBtn->setEnabled(false);
+        allBtn->setEnabled(false);
+        rejectBtn->setEnabled(false);
+    };
+
+    auto queueAndResume = [this, id, name, args](const QString &resultContent) {
+        QJsonObject payload;
+        payload["id"] = id; payload["name"] = name; payload["args"] = args;
+        payload["content"] = resultContent;
+        m_pendingToolResults.append(payload);
+        if (m_pendingWriteApprovals > 0) --m_pendingWriteApprovals;
+        maybeResumeAfterApprovals();
+    };
+
+    auto doApprove = [this, id, name, args, card, status, decided,
+                      disableButtons, queueAndResume]() {
+        if (*decided) return;
+        *decided = true;
+        disableButtons();
+        // Execute the REAL write now (no dry_run).
+        AiTools::ToolCall realCall;
+        realCall.id = id; realCall.name = name; realCall.args = args;
+        const AiTools::ToolResult real = AiTools::execute(realCall, m_workspaceRoot);
+        // Parse abs_path + created for the editor reload.
+        QString realAbsPath; bool created = false;
+        {
+            QJsonParseError perr{};
+            const QJsonDocument jd = QJsonDocument::fromJson(real.content.toUtf8(), &perr);
+            const QJsonObject rootObj = jd.isObject() ? jd.object() : QJsonObject();
+            const QJsonObject body = rootObj.value("result").toObject();
+            realAbsPath = body.value("abs_path").toString();
+            created  = body.value("created").toBool();
+        }
+        const AiPalette p = aiPalette();
+        card->setStyleSheet(QString(
+            "#writeApprovalCard { background:%1; border:1px solid %2; "
+            "border-left:3px solid %3; border-radius:8px; }")
+            .arg(p.assistBg, p.assistBorder, real.isError ? p.errBorder : p.accent));
+        status->setVisible(true);
+        status->setText(real.isError
+            ? QStringLiteral("<span style='color:%1;'>✗ Write failed.</span>").arg(p.errFg)
+            : QStringLiteral("<span style='color:#2e9b57;'>✓ Approved — written to disk.</span>"));
+        if (!real.isError && !realAbsPath.isEmpty()) emit fileWrittenByAgent(realAbsPath, created);
+        queueAndResume(real.content);
+    };
+
+    auto doReject = [this, decided, card, status, disableButtons, queueAndResume,
+                     shown]() {
+        if (*decided) return;
+        *decided = true;
+        disableButtons();
+        const AiPalette p = aiPalette();
+        card->setStyleSheet(QString(
+            "#writeApprovalCard { background:%1; border:1px solid %2; "
+            "border-left:3px solid %3; border-radius:8px; }")
+            .arg(p.assistBg, p.assistBorder, p.errBorder));
+        status->setVisible(true);
+        status->setText(QStringLiteral("<span style='color:%1;'>✗ Rejected — not written.</span>")
+                            .arg(p.errFg));
+        // Structured rejection so the model stops retrying the same write.
+        const QString msg = QStringLiteral(
+            "{\"ok\":false,\"error_kind\":\"user_rejected\",\"message\":"
+            "\"The user rejected this write to %1. Do not retry the same write. "
+            "Ask what they'd prefer, or stop.\"}").arg(QString(shown).replace('"', "'"));
+        queueAndResume(msg);
+    };
+
+    connect(approveBtn, &QPushButton::clicked, this, doApprove);
+    connect(rejectBtn,  &QPushButton::clicked, this, doReject);
+    connect(allBtn,     &QPushButton::clicked, this, [this, doApprove]() {
+        m_turnWriteApproval = true;   // skip the gate for the rest of this turn
+        doApprove();
+    });
+}
+
+// v0.1.111 — once the last pending write-approval resolves, resume the agent
+// loop if the stream already finished while we were waiting.
+void AIPanel::maybeResumeAfterApprovals() {
+    if (m_pendingWriteApprovals > 0) return;            // other cards still open
+    if (!m_streamFinishedAwaitingApproval) return;      // stream still live; its
+                                                        // finished handler will flush
+    m_streamFinishedAwaitingApproval = false;
+    if (m_toolsActiveThisTurn && !m_pendingToolResults.isEmpty()) {
+        flushPendingToolResults();
+        return;
+    }
+    // Nothing to send back — finalise the turn cleanly.
+    m_toolsActiveThisTurn = false;
+    m_toolCallsThisTurn = 0;
+    m_toolCallsTotal = 0;
+    m_turnWriteApproval = false;
+    if (m_stopBtn) m_stopBtn->setEnabled(false);
+    endAssistantBubble();
 }
 
 void AIPanel::flushPendingToolResults() {
@@ -6493,6 +6770,7 @@ void AIPanel::applyComposerEdits(const QList<QPair<QString, QString>> &edits) {
 
     QStringList failures;
     QStringList writtenPaths;
+    QVector<AppliedSnapshot> batchSnapshots;  // v0.1.111 — rollback record
     int wrote = 0;
     for (const auto &pair : edits) {
         QString absPath      = pair.first;
@@ -6520,47 +6798,34 @@ void AIPanel::applyComposerEdits(const QList<QPair<QString, QString>> &edits) {
             }
         }
 
-        // Ensure parent directory exists. The AI tool layer already
-        // canonicalised + workspace-anchored this path; we just need to
-        // make the on-disk parent exist before we write.
-        QFileInfo fi(absPath);
-        QDir parent = fi.dir();
-        if (!parent.exists() && !parent.mkpath(".")) {
-            failures << absPath + " (parent dir creation failed)";
-            continue;
+        // v0.1.111 — capture the pre-edit disk content BEFORE we overwrite,
+        // so "Undo apply" can restore it. Read disk (the row's before-text is
+        // the model's view; disk is ground truth for what we're replacing).
+        QByteArray beforeBytes;
+        {
+            QFile in(absPath);
+            if (in.open(QIODevice::ReadOnly)) { beforeBytes = in.readAll(); in.close(); }
         }
 
-        // Atomic write — same pattern as ai_tools::executeWriteFile.
-        const QString tmp = absPath + ".notepatra.tmp";
-        QFile out(tmp);
-        if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            failures << absPath + " (open " + tmp + " failed: " + out.errorString() + ")";
-            continue;
-        }
+        // Atomic write via the shared helper (same .tmp+rename used by undo).
         const QByteArray bytes = after.toUtf8();
-        const qint64 written = out.write(bytes);
-        out.close();
-        if (written != bytes.size()) {
-            QFile::remove(tmp);
-            failures << absPath + " (short write: " + QString::number(written) + "/"
-                                + QString::number(bytes.size()) + ")";
-            continue;
-        }
-        // QFile::rename refuses to overwrite on some platforms; remove
-        // first if the destination exists, then rename. This races with
-        // an external editor saving simultaneously, but the same is true
-        // of the non-dry path (and the user is reviewing the diff at
-        // this point so concurrent external saves are unlikely).
-        const bool wasNew = !QFile::exists(absPath);
-        if (!wasNew) QFile::remove(absPath);
-        if (!QFile::rename(tmp, absPath)) {
-            QFile::remove(tmp);
-            failures << absPath + " (rename failed)";
+        bool wasNew = false;
+        QString werr;
+        if (!writeFileAtomic(absPath, bytes, &wasNew, &werr)) {
+            failures << absPath + " (" + werr + ")";
             continue;
         }
 
         ++wrote;
         writtenPaths << absPath;
+        // Snapshot for rollback: revert target = pre-edit content, drift
+        // baseline = exactly the bytes we just wrote, wasNew → revert deletes.
+        AppliedSnapshot snap;
+        snap.absPath    = absPath;
+        snap.before     = QString::fromUtf8(beforeBytes);
+        snap.afterBytes = bytes;
+        snap.wasNew     = wasNew;
+        batchSnapshots.append(snap);
         emit fileWrittenByAgent(absPath, wasNew);
     }
 
@@ -6571,11 +6836,15 @@ void AIPanel::applyComposerEdits(const QList<QPair<QString, QString>> &edits) {
     // confirmation bubble so system state matches what's on disk.
     if (wrote > 0) {
         if (m_editPlan) m_editPlan->markApplied(writtenPaths);
+        // v0.1.111 — retain ONLY this batch (single-level undo) and reveal the
+        // "Undo apply" affordance so the write is reversible.
+        m_lastApplyBatch = batchSnapshots;
+        if (m_editPlan) m_editPlan->showUndoButton(true);
         ChatMessage done;
         done.role = ChatMessage::Assistant;
         done.text = (wrote == 1)
-            ? QStringLiteral("✓ Applied 1 file to disk.")
-            : QStringLiteral("✓ Applied %1 files to disk.").arg(wrote);
+            ? QStringLiteral("✓ Applied 1 file to disk.  ·  Undo apply available below.")
+            : QStringLiteral("✓ Applied %1 files to disk.  ·  Undo apply available below.").arg(wrote);
         activeMessages().push_back(done);
         scheduleChatSave();
         if (m_chatLayout) renderTranscript();
@@ -6585,6 +6854,174 @@ void AIPanel::applyComposerEdits(const QList<QPair<QString, QString>> &edits) {
     if (!failures.isEmpty()) {
         QString msg = QString("Composer Apply: %1 wrote, %2 failed:")
                         .arg(wrote).arg(failures.size());
+        for (const QString &f : failures) msg += "\n  • " + f;
+        appendErrorBubble(msg);
+    }
+}
+
+// v0.1.111 — shared atomic .tmp+rename write. Single source of truth for both
+// applyComposerEdits and undoLastApply so the write semantics (and the
+// rename-can't-overwrite workaround) stay identical between apply and revert.
+bool AIPanel::writeFileAtomic(const QString &absPath, const QByteArray &bytes,
+                              bool *wasNew, QString *err) {
+    auto fail = [&](const QString &m) { if (err) *err = m; return false; };
+
+    // Ensure the parent directory exists (the AI tool layer already
+    // canonicalised + workspace-anchored the path).
+    QFileInfo fi(absPath);
+    QDir parent = fi.dir();
+    if (!parent.exists() && !parent.mkpath("."))
+        return fail(QStringLiteral("parent dir creation failed"));
+
+    const QString tmp = absPath + ".notepatra.tmp";
+    QFile out(tmp);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return fail(QStringLiteral("open %1 failed: %2").arg(tmp, out.errorString()));
+    const qint64 written = out.write(bytes);
+    out.close();
+    if (written != bytes.size()) {
+        QFile::remove(tmp);
+        return fail(QStringLiteral("short write: %1/%2")
+                        .arg(written).arg(bytes.size()));
+    }
+    const bool isNew = !QFile::exists(absPath);
+    if (wasNew) *wasNew = isNew;
+    // QFile::rename refuses to overwrite on some platforms; remove first.
+    if (!isNew) QFile::remove(absPath);
+    if (!QFile::rename(tmp, absPath)) {
+        QFile::remove(tmp);
+        return fail(QStringLiteral("rename failed"));
+    }
+    return true;
+}
+
+// v0.1.111 — Composer rollback. Restore the files written by the LAST
+// applyComposerEdits to their pre-edit content. Drift-protected: a file whose
+// on-disk bytes no longer match what we wrote was edited since the apply, so
+// reverting would silently destroy that work — we ask the user first and skip
+// by default. Single-level (only the last apply is undoable).
+void AIPanel::undoLastApply() {
+    if (m_lastApplyBatch.isEmpty()) return;
+
+    // Classify each snapshot against current disk state.
+    QVector<AppliedSnapshot> clean;     // disk == what we wrote → safe revert
+    QVector<AppliedSnapshot> drifted;   // disk changed since apply → needs consent
+    QStringList alreadyReverted;        // disk already == before → no-op
+    for (const AppliedSnapshot &s : m_lastApplyBatch) {
+        QByteArray disk;
+        bool exists = false;
+        {
+            QFile in(s.absPath);
+            if (in.open(QIODevice::ReadOnly)) { disk = in.readAll(); in.close(); exists = true; }
+        }
+        if (s.wasNew) {
+            // A create's revert is a delete. Clean only if the file still
+            // holds exactly what we wrote; otherwise it drifted.
+            if (!exists)                       alreadyReverted << s.absPath;  // already gone
+            else if (disk == s.afterBytes)     clean << s;
+            else                               drifted << s;
+        } else {
+            if (!exists)                       drifted << s;                  // vanished → treat as drift
+            else if (disk == s.afterBytes)     clean << s;
+            else if (disk == s.before.toUtf8()) alreadyReverted << s.absPath; // user already reverted
+            else                               drifted << s;
+        }
+    }
+
+    // If anything drifted, ask before clobbering. Default-safe (Skip).
+    bool revertDrifted = false;
+    if (!drifted.isEmpty()) {
+        QString list;
+        for (const AppliedSnapshot &s : drifted) {
+            QString shown = s.absPath;
+            if (!m_workspaceRoot.isEmpty()) {
+                const QString rel = QDir(m_workspaceRoot).relativeFilePath(s.absPath);
+                if (!rel.startsWith("..")) shown = rel;
+            }
+            list += "\n  • " + shown;
+        }
+        QMessageBox box(this);
+        box.setIcon(QMessageBox::Warning);
+        box.setWindowTitle(tr("Undo apply — files changed since apply"));
+        box.setText(tr("These files changed since you applied them. Reverting "
+                       "will discard those changes:%1").arg(list));
+        box.setInformativeText(tr("Revert them anyway, or skip them and revert "
+                                  "only the unchanged files?"));
+        QPushButton *anyway = box.addButton(tr("Revert anyway"), QMessageBox::DestructiveRole);
+        QPushButton *skip   = box.addButton(tr("Skip changed files"), QMessageBox::AcceptRole);
+        QPushButton *cancel = box.addButton(QMessageBox::Cancel);
+        box.setDefaultButton(skip);
+        box.exec();
+        if (box.clickedButton() == cancel) return;             // abort entirely
+        revertDrifted = (box.clickedButton() == anyway);
+        Q_UNUSED(skip);
+    }
+
+    // Build the revert set.
+    QVector<AppliedSnapshot> toRevert = clean;
+    if (revertDrifted) toRevert += drifted;
+
+    QStringList revertedPaths;
+    QStringList failures;
+    int deleted = 0;
+    for (const AppliedSnapshot &s : toRevert) {
+        if (s.wasNew) {
+            // Revert a create → delete the file.
+            if (QFile::exists(s.absPath) && !QFile::remove(s.absPath)) {
+                failures << s.absPath + " (delete failed)";
+                continue;
+            }
+            revertedPaths << s.absPath;
+            ++deleted;
+            // Tell the editor the file is gone (reload → empty/closed handling
+            // lives in the fileWrittenByAgent path; a missing file there is a
+            // benign no-op load).
+            emit fileWrittenByAgent(s.absPath, false);
+        } else {
+            bool wn = false;
+            QString werr;
+            if (!writeFileAtomic(s.absPath, s.before.toUtf8(), &wn, &werr)) {
+                failures << s.absPath + " (" + werr + ")";
+                continue;
+            }
+            revertedPaths << s.absPath;
+            emit fileWrittenByAgent(s.absPath, false);
+        }
+    }
+
+    // Flip reverted rows back to pending (re-appliable); also count rows that
+    // were already at their before-state as resolved.
+    QStringList pendingAgain = revertedPaths;
+    pendingAgain += alreadyReverted;
+    if (m_editPlan) {
+        m_editPlan->markPending(pendingAgain);
+        m_editPlan->showUndoButton(false);
+    }
+    m_lastApplyBatch.clear();  // single-level: the batch is consumed
+
+    // Report symmetric to apply.
+    const int reverted = revertedPaths.size();
+    if (reverted > 0 || !alreadyReverted.isEmpty()) {
+        ChatMessage done;
+        done.role = ChatMessage::Assistant;
+        QString txt = (reverted == 1)
+            ? QStringLiteral("↶ Reverted 1 file to its previous content.")
+            : QStringLiteral("↶ Reverted %1 files to their previous content.").arg(reverted);
+        if (deleted > 0)
+            txt += QStringLiteral("  (%1 newly-created file%2 removed.)")
+                       .arg(deleted).arg(deleted == 1 ? "" : "s");
+        const int skipped = drifted.size() - (revertDrifted ? drifted.size() : 0);
+        if (skipped > 0)
+            txt += QStringLiteral("  (%1 changed file%2 left untouched.)")
+                       .arg(skipped).arg(skipped == 1 ? "" : "s");
+        done.text = txt;
+        activeMessages().push_back(done);
+        scheduleChatSave();
+        if (m_chatLayout) renderTranscript();
+    }
+    if (!failures.isEmpty()) {
+        QString msg = QStringLiteral("Undo apply: %1 reverted, %2 failed:")
+                          .arg(reverted).arg(failures.size());
         for (const QString &f : failures) msg += "\n  • " + f;
         appendErrorBubble(msg);
     }

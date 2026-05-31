@@ -308,6 +308,24 @@ private:
     // m_chatContent so it renders inline below the bubbles.
     EditPlanList      *m_editPlan       = nullptr;
 
+    // v0.1.111 — Composer rollback. After each applyComposerEdits we snapshot
+    // exactly what we wrote so "Undo apply" can restore the pre-edit content
+    // and detect drift (file changed since apply → don't clobber silently).
+    // Only the LAST apply is retained (single-level undo).
+    struct AppliedSnapshot {
+        QString    absPath;
+        QString    before;      // pre-edit content (revert target)
+        QByteArray afterBytes;  // exact bytes we wrote — the drift baseline
+        bool       wasNew;      // true → the apply created the file → revert deletes it
+    };
+    QVector<AppliedSnapshot> m_lastApplyBatch;
+
+    // Shared atomic .tmp+rename write used by BOTH applyComposerEdits and
+    // undoLastApply, so the two paths can never diverge. *wasNew (out) reports
+    // whether the destination did not exist before the write.
+    bool writeFileAtomic(const QString &absPath, const QByteArray &bytes,
+                         bool *wasNew, QString *err);
+
     // v0.1.61 (Item 8) — bottom-of-panel 3-segment toggle.
     //   Chat    = plain conversation, no tools
     //   Compose = tools enabled but write_file/apply_diff are forced
@@ -349,6 +367,23 @@ private:
     QString    m_lastSystemPromptForTools; // remember system prompt for continuations
     QJsonArray m_lastToolsArray;           // remember tools array for continuations
     bool       m_toolsActiveThisTurn = false;
+
+    // v0.1.111 — Agent-mode write confirmation gate. In Agent segment a
+    // mutating tool (write_file / apply_diff) does NOT hit disk until the
+    // user approves it via an inline card. Because the agent loop is
+    // event-driven (handleToolCall queues a result; the OllamaClient::finished
+    // lambda flushes it), we hold the flush while approvals are pending and
+    // let each card's button resume it.
+    int  m_pendingWriteApprovals = 0;          // outstanding approval cards
+    bool m_turnWriteApproval = false;          // "Approve all writes this turn"
+    bool m_streamFinishedAwaitingApproval = false;  // stream ended while pending
+    // Render an inline Approve/Reject/Approve-all card for a held mutating
+    // tool call and pause the turn until the user decides.
+    void enqueueWriteApproval(const QString &id, const QString &name,
+                              const QJsonObject &args, const QString &argsSummary);
+    // Resume the agent loop once the last pending approval resolves.
+    void maybeResumeAfterApprovals();
+
     // Legacy placeholder — retained so any stray references still compile.
     // All rendering now goes through m_chatLayout.
     QTextBrowser *m_output = nullptr;
@@ -507,6 +542,12 @@ private slots:
     // the buffer. Failures surface as an error bubble; successes drop
     // the row from the list.
     void applyComposerEdits(const QList<QPair<QString, QString>> &edits);
+    // v0.1.111 — Composer rollback. Reverts the files written by the LAST
+    // applyComposerEdits back to their pre-edit content. Drift-protected:
+    // if a file changed on disk since it was applied (user edit, external
+    // tool), the user is asked before any clobber. Single-level (last apply
+    // only). Wired to EditPlanList::undoApplyRequested.
+    void undoLastApply();
     // v0.1.59 — gate the chat input + Send button on model readiness.
     // The dropdown shows "(detecting…)", "(Ollama offline)", "(no models
     // installed)", or "(API key required)" when no model is usable; the

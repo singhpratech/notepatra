@@ -258,6 +258,7 @@ set(HEADERS
     src/ollama.h
     src/aipanel.h
     src/inlineedit.h
+    src/inlineedit_diff.h
     src/dbconnections.h
     src/csvanalyst.h
     src/chartrender.h
@@ -1852,6 +1853,42 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_edit_plan.cpp")
     notepatra_add_qt_test(test_edit_plan)
     set_tests_properties(test_edit_plan PROPERTIES LABELS "smoke;ui;coding-mode")
     message(STATUS "Smoke test enabled — target: test_edit_plan")
+endif()
+
+# v0.1.111 — Myers inline-edit diff mapping. Asserts that a shifted insert
+# highlights exactly the inserted line (the naive line-index diff's failure
+# mode) and that the trailing-newline off-by-one between Qt split and Rust
+# from_lines is handled without crashing.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_inline_diff.cpp")
+    add_executable(test_inline_diff
+        test_inline_diff.cpp
+        src/inlineedit_diff.cpp
+        src/rustbridge.cpp
+    )
+    add_dependencies(test_inline_diff rust_core)
+    target_include_directories(test_inline_diff PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+    )
+    target_link_libraries(test_inline_diff PRIVATE
+        Qt5::Core
+        ${RUST_LIB}
+    )
+    if(WIN32)
+        target_link_libraries(test_inline_diff PRIVATE
+            ws2_32 userenv bcrypt ntdll
+            advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32
+        )
+    elseif(APPLE)
+        target_link_libraries(test_inline_diff PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_inline_diff PRIVATE pthread dl m)
+    endif()
+    notepatra_add_qt_test(test_inline_diff)
+    set_tests_properties(test_inline_diff PROPERTIES LABELS "smoke;diff;ui")
+    message(STATUS "Smoke test enabled — target: test_inline_diff")
 endif()
 
 # v0.1.55 — DuckDB smoke test. Validates RAII handle lifecycle, streaming
