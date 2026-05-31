@@ -1155,33 +1155,23 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         // pick and no longer flashes "this model is too small" warnings.
         if (m_dataCapBanner) m_dataCapBanner->setVisible(false);
 
-        if (m_headerLabel) {
-            const AiPalette p = aiPalette();
-            // v0.1.70 — plain-ASCII glyphs only. The previous ⌘ (U+2318) and
-            // 📊 (U+1F4CA) rendered as tofu on systems without their fonts.
-            const QString text = coding ? "  AI  ·  CODING"
-                              : data   ? "  AI  ·  DATA"
-                                       : "  AI";
-            const QString fg   = coding ? QStringLiteral("#4EC9B0")
-                              : data   ? QStringLiteral("#FF9F43")
-                                       : p.headerFg;
-            const QString rule = coding ? QStringLiteral("#4EC9B0")
-                              : data   ? QStringLiteral("#FF9F43")
-                                       : QStringLiteral("transparent");
-            m_headerLabel->setText(text);
-            m_headerLabel->setStyleSheet(QString(
-                "font-weight: 600; background: %1; color: %2; "
-                "padding: 6px 10px; letter-spacing: 1px; font-size: 11px;"
-                "border-bottom: 2px solid %3;")
-                .arg(p.chromeBg, fg, rule));
-        }
+        // v0.1.110 — header label (intent + Coding segment) is set by
+        // refreshModeHeader() below, AFTER the segment default is applied, so
+        // it reflects Compose vs Agent. Single source of truth; segment toggles
+        // and theme changes call the same method.
 
         // v0.1.61 (Item 8) — chat surface is one conversation surface,
         // controlled by the bottom 3-segment toggle (Chat / Compose / Agent).
-        // Default segment by intent: Coding → Agent, otherwise Chat.
+        // Default segment by intent: Coding → Compose, otherwise Chat.
+        // v0.1.110 — Coding now defaults to COMPOSE (review-before-write), not
+        // Agent (autonomous disk writes). Safe-by-default: the path of least
+        // resistance must not silently mutate the user's files. The user can
+        // still pick Agent explicitly; this only changes the cold default so a
+        // user who re-enters Coding never lands in autonomous-write mode
+        // unawares.
         if (m_chatSegBtn && m_composeSegBtn && m_agentSegBtn) {
             QAbstractButton *target =
-                  coding ? m_agentSegBtn
+                  coding ? m_composeSegBtn
                 : data   ? m_chatSegBtn
                          : m_chatSegBtn;
             if (target && !target->isChecked()) {
@@ -1198,6 +1188,9 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         if (m_chatModeSegFrame) {
             m_chatModeSegFrame->setVisible(coding);
         }
+
+        // Reflect intent + segment in the chrome header now that both are set.
+        refreshModeHeader();
 
         if (m_chatLayout) renderTranscript();
         emit codingModeRequested(coding);
@@ -1957,7 +1950,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         segWrap->addWidget(segFrame, 1);
 
         // Default state — applyMode below will override based on the
-        // active intent (Coding → Agent, Data → Chat, otherwise Chat).
+        // active intent (Coding → Compose, Data → Chat, otherwise Chat).
         m_chatSegBtn->setChecked(true);
 
 #if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
@@ -4060,6 +4053,16 @@ void AIPanel::appendErrorBubble(const QString &text) {
 // importance order, then writes the dropdown as section headers + indented
 // model entries with a "<provider>/<model>  ·  $in/$out" price suffix.
 // ─────────────────────────────────────────────────────────────────────────────
+QString AIPanel::currentModelName() const {
+    // m_ollama->model() is kept in sync with the model combo as the user
+    // selects, so it IS the user's current choice. Returns empty for a
+    // placeholder like "(detecting…)" so callers can fall back gracefully.
+    if (!m_ollama) return QString();
+    const QString m = m_ollama->model().trimmed();
+    if (m.isEmpty() || m.startsWith('(')) return QString();
+    return m;
+}
+
 bool AIPanel::currentModelSupportsTools() const {
     if (!m_ollama) return false;
     const QString model = m_ollama->model();
@@ -5684,6 +5687,49 @@ void AIPanel::resetToChatMode() {
     }
 }
 
+void AIPanel::refreshModeHeader() {
+    if (!m_headerLabel) return;
+    const AiPalette p = aiPalette();
+    const bool coding  = m_codingMode && m_codingMode->isChecked();
+    const bool data    = m_dataMode   && m_dataMode->isChecked();
+    const bool agent   = coding && m_agentSegBtn   && m_agentSegBtn->isChecked();
+    const bool compose = coding && m_composeSegBtn && m_composeSegBtn->isChecked();
+
+    // Plain-ASCII glyphs + middot only (no emoji → no Linux tofu). Accent
+    // colours are hardcoded on purpose — the same theme-independent pattern the
+    // teal/orange header already used; a saturated red reads on every chrome.
+    QString text, fg, rule, tip;
+    if (coding && agent) {
+        text = QStringLiteral("  AI  ·  CODING  ·  AGENT");
+        fg = rule = QStringLiteral("#E5534B");   // red — autonomous writes hit disk
+        tip = QStringLiteral("Agent mode — the AI writes files directly to disk.");
+    } else if (coding && compose) {
+        text = QStringLiteral("  AI  ·  CODING  ·  COMPOSE");
+        fg = rule = QStringLiteral("#4EC9B0");    // teal — review before any write
+        tip = QStringLiteral("Compose mode — edits are proposed for your review before any write.");
+    } else if (coding) {
+        text = QStringLiteral("  AI  ·  CODING");
+        fg = rule = QStringLiteral("#4EC9B0");
+        tip = QStringLiteral("Coding chat — ask about code; no file edits.");
+    } else if (data) {
+        text = QStringLiteral("  AI  ·  DATA");
+        fg = rule = QStringLiteral("#FF9F43");
+        tip = QStringLiteral("Data analyst — queries your CSV files / database connections.");
+    } else {
+        text = QStringLiteral("  AI");
+        fg   = p.headerFg;
+        rule = QStringLiteral("transparent");
+        tip  = QStringLiteral("Chat — plain conversation; no file tools.");
+    }
+    m_headerLabel->setText(text);
+    m_headerLabel->setToolTip(tip);
+    m_headerLabel->setStyleSheet(QString(
+        "font-weight: 600; background: %1; color: %2; "
+        "padding: 6px 10px; letter-spacing: 1px; font-size: 11px;"
+        "border-bottom: 2px solid %3;")
+        .arg(p.chromeBg, fg, rule));
+}
+
 void AIPanel::onThemeChanged() {
     // The bubble HTML (user / assistant / error cards) embeds per-theme
     // colours inline; renderTranscript() rebuilds every bubble by
@@ -5693,12 +5739,10 @@ void AIPanel::onThemeChanged() {
     // area + inputs that live for the lifetime of the widget).
     const AiPalette pal = aiPalette();
 
-    if (m_headerLabel) {
-        m_headerLabel->setStyleSheet(QString(
-            "font-weight: 600; background: %1; color: %2; "
-            "padding: 6px 10px; letter-spacing: 1px; font-size: 11px;")
-            .arg(pal.chromeBg, pal.headerFg));
-    }
+    // v0.1.110 — re-render the mode/segment-aware header so a theme switch
+    // keeps "AI · CODING · AGENT" (and its accent) instead of resetting to a
+    // plain "AI". refreshModeHeader() re-reads the fresh palette itself.
+    refreshModeHeader();
 
     if (m_chatArea) {
         // Match the original ctor stylesheet for the chat scroll area so
@@ -6424,6 +6468,10 @@ void AIPanel::chatModeSelectorChanged(int segment) {
         }
         m_customInput->setPlaceholderText(base);
     }
+
+    // v0.1.110 — keep the chrome header's Compose/Agent label in sync the
+    // instant the user flips segment (so the posture is always readable).
+    refreshModeHeader();
 }
 
 // ─── Slice D — apply Edit Plan rows ─────────────────────────────────
@@ -6444,6 +6492,7 @@ void AIPanel::applyComposerEdits(const QList<QPair<QString, QString>> &edits) {
     if (edits.isEmpty()) return;
 
     QStringList failures;
+    QStringList writtenPaths;
     int wrote = 0;
     for (const auto &pair : edits) {
         QString absPath      = pair.first;
@@ -6511,12 +6560,28 @@ void AIPanel::applyComposerEdits(const QList<QPair<QString, QString>> &edits) {
         }
 
         ++wrote;
+        writtenPaths << absPath;
         emit fileWrittenByAgent(absPath, wasNew);
     }
 
-    // Surface a summary bubble. Successful rows are silent (the file
-    // tabs popping open / reloading is the user-visible signal); any
-    // failures get a single grouped error message.
+    // v0.1.110 — make a successful Apply UNMISSABLE. Previously successful
+    // rows were silent, so the user couldn't tell the write landed and could
+    // re-click Apply and silently re-write every file. Now: mark the applied
+    // rows (green ✓, unchecked, disabled, excluded from re-apply) and drop one
+    // confirmation bubble so system state matches what's on disk.
+    if (wrote > 0) {
+        if (m_editPlan) m_editPlan->markApplied(writtenPaths);
+        ChatMessage done;
+        done.role = ChatMessage::Assistant;
+        done.text = (wrote == 1)
+            ? QStringLiteral("✓ Applied 1 file to disk.")
+            : QStringLiteral("✓ Applied %1 files to disk.").arg(wrote);
+        activeMessages().push_back(done);
+        scheduleChatSave();
+        if (m_chatLayout) renderTranscript();
+    }
+
+    // Any failures get a single grouped error message.
     if (!failures.isEmpty()) {
         QString msg = QString("Composer Apply: %1 wrote, %2 failed:")
                         .arg(wrote).arg(failures.size());

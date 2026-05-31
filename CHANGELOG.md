@@ -7,6 +7,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.110] — 2026-05-31
+
+**AI coding assistant — a trust & clarity pass (driven by a deep usability audit; grade C+ → B-). UX/state changes only; same bare binary.**
+
+### Changed
+- **Mode is always readable** — the assistant header now shows the full posture incl. the Coding segment: `AI · CODING · COMPOSE` (teal, review-before-write) or `AI · CODING · AGENT` (red, writes hit disk live). Updated on segment toggle and theme change via a single `refreshModeHeader()` source of truth (`aipanel.cpp`).
+- **Safe-by-default** — Coding mode now defaults to the **Compose** segment (propose-then-review), not autonomous Agent, so reopening can't silently land the user in live disk-writes (`aipanel.cpp`).
+- **Apply confirmation + applied state** — `applyComposerEdits` now marks written rows **✓ applied** (`EditPlanRow::setApplied`), drops a "✓ Applied N files" bubble, excludes applied rows from re-apply, and greys out Apply buttons when nothing is pending (`edit_plan.{h,cpp}`, `aipanel.cpp`). Fixes the verified "did it land? / silent double-write" bug.
+- **Inline edit (Ctrl+I)** — now uses the user's selected model via `AIPanel::currentModelName()` instead of a hardcoded `qwen2.5-coder:3b`, and wraps the apply in `beginUndoAction()/endUndoAction()` so one Ctrl+Z reverts the whole edit (`inlineedit.{h,cpp}`, `mainwindow.cpp`).
+
+### Notes
+- UX/state only — no binary / dependency / download-size change from v0.1.109. The new `✓` is U+2713 (dingbat, not a colour-emoji → no Linux tofu). Dock-hidden-on-launch intentionally unchanged. 51/51 ctest pass (Lite + Full), plus a new apply-confirmation integration test in `test_edit_plan.cpp`.
+
 ## [0.1.109] — 2026-05-31
 
 **The full build drops its "Full" name tag — the default build self-identifies simply as "Notepatra"; only the bare lite build keeps a "Lite" suffix.**

@@ -24,6 +24,7 @@
 #include <QWidget>
 
 class QCheckBox;
+class QLabel;
 class QPushButton;
 class QVBoxLayout;
 class EditPlanRow;
@@ -44,8 +45,20 @@ public:
     // or after a successful Apply All.
     void clear();
 
+    // Mark the rows whose absolute path is in `absPaths` as APPLIED — the
+    // host calls this after AIPanel::applyComposerEdits has written those
+    // files to disk. An applied row shows a green ✓, is unchecked + disabled,
+    // and is excluded from any later Apply All / Apply Selected so the user
+    // can never silently double-write the same edit. (v0.1.110 — fixes the
+    // verified "Apply did nothing visible / re-apply re-writes" trust bug.)
+    void markApplied(const QList<QString> &absPaths);
+
     // Number of pending edits (rows). Mostly useful for tests.
     int count() const;
+
+    // Number of rows that have been marked applied (written to disk). Used by
+    // tests and lets a host show "2 of 3 applied". (v0.1.110)
+    int appliedCount() const;
 
     // Configure the workspace root used to render relative paths. Optional —
     // when unset we fall back to the absolute path. Slice A will wire this
@@ -72,6 +85,7 @@ private slots:
 
 private:
     void buildActionBar();
+    void updateActionBarEnabled();  // grey out Apply when nothing is pending
 
     QVBoxLayout *m_listLayout = nullptr;  // holds EditPlanRow widgets
     QPushButton *m_applyAllBtn = nullptr;
@@ -97,6 +111,13 @@ public:
     QString afterText() const { return m_after; }
     bool isSelected() const;
 
+    // v0.1.110 — applied-state tracking so the row reflects reality after a
+    // successful write and can't be re-applied.
+    void setApplied();
+    bool isApplied() const { return m_applied; }
+    int added() const { return m_added; }
+    int removed() const { return m_removed; }
+
 signals:
     void removeRequested();
 
@@ -114,7 +135,9 @@ private:
     int m_added = 0;
     int m_removed = 0;
 
+    bool m_applied = false;
     QCheckBox *m_selectBox = nullptr;
+    QLabel *m_appliedTag = nullptr;      // hidden "✓ applied" badge, shown by setApplied()
     QPushButton *m_diffBtn = nullptr;
     QPushButton *m_removeBtn = nullptr;
     QWidget *m_diffContainer = nullptr;  // lazily filled with a DiffView

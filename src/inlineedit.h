@@ -43,6 +43,7 @@ public:
     InlineEditDialog(const QString &selectedText,
                      const QString &filePath,
                      const QString &language,
+                     const QString &model = QString(),
                      QWidget *parent = nullptr);
     ~InlineEditDialog() override;
 
@@ -74,6 +75,7 @@ private:
     QString m_selected;
     QString m_filePath;
     QString m_language;
+    QString m_model;   // user's chosen model (empty → OllamaClient default)
 
     // Promotion of latest streamed text — kept so we can render the diff
     // once the response is finished. Stripped of <think> blocks and

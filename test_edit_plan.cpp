@@ -77,6 +77,26 @@ int main(int argc, char **argv) {
     plan.clear();
     EXPECT(plan.count() == 0);
 
+    // ── v0.1.110: apply-blocker fix — markApplied() marks the right rows ──
+    // Contract: after the host writes files, markApplied(paths) flips exactly
+    // those rows to applied so the UI reflects reality and they're excluded
+    // from any later Apply (no silent double-write).
+    EditPlanList plan2;
+    plan2.setWorkspaceRoot(QStringLiteral("/tmp/syn2"));
+    plan2.addEdit(QStringLiteral("/tmp/syn2/a.cpp"), QStringLiteral("x\n"), QStringLiteral("y\n"));
+    plan2.addEdit(QStringLiteral("/tmp/syn2/b.cpp"), QStringLiteral("p\n"), QStringLiteral("q\n"));
+    EXPECT(plan2.count() == 2);
+    EXPECT(plan2.appliedCount() == 0);
+    plan2.markApplied({QStringLiteral("/tmp/syn2/a.cpp")});
+    EXPECT(plan2.appliedCount() == 1);                 // exactly the marked path
+    plan2.markApplied({QStringLiteral("/tmp/syn2/a.cpp")});
+    EXPECT(plan2.appliedCount() == 1);                 // idempotent — no double count
+    plan2.markApplied({QStringLiteral("/tmp/syn2/nonexistent.cpp")});
+    EXPECT(plan2.appliedCount() == 1);                 // unknown path is a no-op
+    plan2.markApplied({QStringLiteral("/tmp/syn2/b.cpp")});
+    EXPECT(plan2.appliedCount() == 2);                 // both now applied
+    QCoreApplication::processEvents();
+
     // ── Slice B: DiffView ────────────────────────────────────────────────
     // Construct directly so we exercise the Rust diff path without needing
     // to click [Diff] on a hidden row.

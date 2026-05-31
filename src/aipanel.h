@@ -180,8 +180,21 @@ public:
     // pull path for the initial sync).
     bool isCodingMode() const;
 
+    // v0.1.110 — the model the user currently has selected (empty if none /
+    // not ready). Lets other surfaces (e.g. the Ctrl+I inline-edit dialog)
+    // reuse the user's chosen model instead of a hardcoded default —
+    // see [[feedback_no_hardcoded_model_allowlists]].
+    QString currentModelName() const;
+
 private:
     void sendPrompt(const QString &action);
+    // v0.1.110 — single source of truth for the chrome header label: shows the
+    // active intent AND the Coding segment (Compose/Agent), so the user can
+    // always read their effective posture ("AI · CODING · AGENT" in red when
+    // writes hit disk live). Called on mode change, segment change, and theme
+    // change. Theme-safe: reuses the same accent-on-chrome pattern already
+    // proven on Light/Dark/Monokai.
+    void refreshModeHeader();
     void setStatus(const QString &text, bool error = false);
     void updateVoiceButtonVisual(bool recording);
     void renderTranscript();

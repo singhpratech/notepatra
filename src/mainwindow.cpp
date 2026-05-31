@@ -4458,11 +4458,22 @@ void MainWindow::setupShortcuts() {
         const QString sel  = e->selectedText();
         const QString path = e->filePath();
         const QString lang = e->language();
-        auto *dlg = new InlineEditDialog(sel, path, lang, this);
+        // v0.1.110 — Ctrl+I uses the model the user selected in the AI dock
+        // (not a hardcoded 3B default). Empty → InlineEditDialog falls back to
+        // the OllamaClient default.
+        const QString model = m_aiDockPanel ? m_aiDockPanel->currentModelName()
+                                            : QString();
+        auto *dlg = new InlineEditDialog(sel, path, lang, model, this);
         dlg->setAttribute(Qt::WA_DeleteOnClose);
         connect(dlg, &InlineEditDialog::applyRequested, this, [this](const QString &text) {
             if (auto *ed = currentEditor(); ed && ed->hasSelectedText()) {
+                // v0.1.110 — group the AI rewrite as ONE undo action so a
+                // single Ctrl+Z cleanly reverts the whole inline edit (the
+                // "safe to try" contract), matching every other multi-step
+                // edit in editor.cpp.
+                ed->beginUndoAction();
                 ed->replaceSelectedText(text);
+                ed->endUndoAction();
             }
         });
         dlg->show();

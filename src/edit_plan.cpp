@@ -11,6 +11,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QSet>
 #include <QSpacerItem>
 #include <QVBoxLayout>
 
@@ -109,6 +110,14 @@ EditPlanRow::EditPlanRow(const QString &absPath, const QString &displayPath,
     stats->setTextFormat(Qt::RichText);
     header->addWidget(stats);
 
+    // Hidden until setApplied() — a green ✓ badge that makes "this edit was
+    // written to disk" unmissable, so the user never wonders whether Apply
+    // did anything (the v0.1.110 trust fix).
+    m_appliedTag = new QLabel(QStringLiteral("✓ applied"));
+    m_appliedTag->setStyleSheet("color:#16a34a; font-weight:600;");
+    m_appliedTag->setVisible(false);
+    header->addWidget(m_appliedTag);
+
     m_diffBtn = new QPushButton(tr("Diff"));
     m_diffBtn->setCheckable(true);
     m_diffBtn->setToolTip(tr("Show before/after preview"));
@@ -139,7 +148,25 @@ EditPlanRow::EditPlanRow(const QString &absPath, const QString &displayPath,
 }
 
 bool EditPlanRow::isSelected() const {
-    return m_selectBox && m_selectBox->isChecked();
+    // An already-applied row is never re-selected — guards against a second
+    // Apply silently re-writing files that already landed.
+    return !m_applied && m_selectBox && m_selectBox->isChecked();
+}
+
+void EditPlanRow::setApplied() {
+    if (m_applied) return;
+    m_applied = true;
+    if (m_selectBox) {
+        m_selectBox->setChecked(false);
+        m_selectBox->setEnabled(false);
+    }
+    if (m_removeBtn) m_removeBtn->setEnabled(false);
+    if (m_appliedTag) m_appliedTag->setVisible(true);
+    // Dim the row so applied edits visually recede behind still-pending ones.
+    // m_appliedTag keeps its own green colour (a widget's own stylesheet wins
+    // over an ancestor's cascade in Qt), so the ✓ stays vivid.
+    setStyleSheet("EditPlanRow { border-bottom: 1px solid palette(midlight); }"
+                  "EditPlanRow QLabel { color: palette(mid); }");
 }
 
 void EditPlanRow::onToggleDiff() {
@@ -240,6 +267,7 @@ void EditPlanList::addEdit(const QString &absPath, const QString &before,
     const int insertAt = m_listLayout->count() - 1;
     m_listLayout->insertWidget(insertAt, row);
     m_rows.append(row);
+    updateActionBarEnabled();
 }
 
 void EditPlanList::clear() {
@@ -248,10 +276,30 @@ void EditPlanList::clear() {
         row->deleteLater();
     }
     m_rows.clear();
+    updateActionBarEnabled();
 }
 
 int EditPlanList::count() const {
     return m_rows.size();
+}
+
+int EditPlanList::appliedCount() const {
+    int n = 0;
+    for (EditPlanRow *row : m_rows)
+        if (row->isApplied()) ++n;
+    return n;
+}
+
+void EditPlanList::updateActionBarEnabled() {
+    // Apply All / Apply Selected only make sense while there's a pending
+    // (not-yet-applied) row — otherwise a click is a silent no-op. Reject All
+    // stays available as long as any rows are listed.
+    int pending = 0;
+    for (EditPlanRow *row : m_rows)
+        if (!row->isApplied()) ++pending;
+    if (m_applyAllBtn)      m_applyAllBtn->setEnabled(pending > 0);
+    if (m_applySelectedBtn) m_applySelectedBtn->setEnabled(pending > 0);
+    if (m_rejectAllBtn)     m_rejectAllBtn->setEnabled(!m_rows.isEmpty());
 }
 
 void EditPlanList::setWorkspaceRoot(const QString &absRoot) {
@@ -262,9 +310,19 @@ void EditPlanList::onApplyAll() {
     QList<QPair<QString, QString>> edits;
     edits.reserve(m_rows.size());
     for (EditPlanRow *row : m_rows) {
+        if (row->isApplied()) continue;  // never re-write an already-applied edit
         edits.append({row->absPath(), row->afterText()});
     }
     if (!edits.isEmpty()) emit applyRequested(edits);
+}
+
+void EditPlanList::markApplied(const QList<QString> &absPaths) {
+    if (absPaths.isEmpty()) return;
+    const QSet<QString> applied(absPaths.begin(), absPaths.end());
+    for (EditPlanRow *row : m_rows) {
+        if (applied.contains(row->absPath())) row->setApplied();
+    }
+    updateActionBarEnabled();
 }
 
 void EditPlanList::onApplySelected() {

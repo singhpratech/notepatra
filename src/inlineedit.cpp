@@ -35,11 +35,13 @@
 InlineEditDialog::InlineEditDialog(const QString &selectedText,
                                    const QString &filePath,
                                    const QString &language,
+                                   const QString &model,
                                    QWidget *parent)
     : QDialog(parent),
       m_selected(selectedText),
       m_filePath(filePath),
-      m_language(language)
+      m_language(language),
+      m_model(model)
 {
     setWindowTitle("Inline Edit");
     setWindowModality(Qt::ApplicationModal);
@@ -247,10 +249,11 @@ void InlineEditDialog::onSendClicked() {
         connect(m_ollama, &OllamaClient::finished,      this, &InlineEditDialog::onResponseFinished);
         connect(m_ollama, &OllamaClient::error,         this, &InlineEditDialog::onResponseError);
     }
-    // OllamaClient defaults to "qwen2.5-coder:3b" — a sensible local
-    // code-rewrite model. We don't override here because the user's
-    // selected model in the AI panel isn't exposed via Config; using
-    // the default keeps Ctrl+I self-contained and predictable.
+    // v0.1.110 — use the model the user picked in the AI panel (threaded in
+    // via the ctor) instead of the OllamaClient hardcoded default. Honours
+    // the user's choice and fixes the no-hardcoded-allowlist rule; falls back
+    // to the client default only when no model is selected yet.
+    if (!m_model.isEmpty()) m_ollama->setModel(m_model);
 
     m_streamEdit->clear();
     m_lastResult.clear();
