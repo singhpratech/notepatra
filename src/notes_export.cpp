@@ -48,8 +48,9 @@ bool exportPdf(const QString &noteHtmlPath,
     Q_UNUSED(outputPdfPath);
     if (errorOut) {
         *errorOut = QStringLiteral(
-            "PDF export requires the Full build (Qt WebEngine). "
-            "The Lite build can install the Charts/Full pack to enable it.");
+            "PDF export requires the Full build (Qt WebEngine), available on "
+            "Linux and Windows. macOS has no Qt5 WebEngine, so this WebEngine-"
+            "based PDF export isn't available there.");
     }
     return false;
 #else

@@ -8,16 +8,19 @@
 //
 // The AI emits a Vega-Lite JSON spec via the `generate_chart` tool. This
 // widget embeds a QWebEngineView, loads a tiny HTML+JS shell that imports
-// vega + vega-lite + vega-embed from the public CDN, and renders the spec
-// inline in the AI chat transcript.
+// vega + vega-lite + vega-embed bundled via qrc (qrc:///vega/, no CDN),
+// and renders the spec inline in the AI chat transcript.
 //
 // v0.1.64 — Lite mode by default. The bare-binary build flips
 // NOTEPATRA_WITH_WEBENGINE OFF, in which case setSpec() does NOT render
-// a chart; instead the widget paints a "Charts Pack required" card with
-// two actions: [Install charts pack] (currently links to manual-install
-// docs, auto-installer ships v0.1.65) and [View JSON instead] (emits
-// viewJsonRequested(spec) so the host can swap in a code block). This
-// keeps the bare binary ~9 MB while giving users a clean upgrade path.
+// a chart; instead the widget paints an upgrade card with two actions:
+// [Install charts pack] (opens the Releases page so the user can swap in
+// the Full binary; no in-app auto-installer ships yet) and [View JSON
+// instead] (emits viewJsonRequested(spec) so the host can swap in a code
+// block). This keeps the bare binary ~11.5 MB while giving users a clean
+// upgrade path. Inline Vega is a Linux/Windows Full feature; macOS Full is
+// DuckDB-only (no Apple-Silicon Qt5 WebEngine) — the native ```chart
+// renderer (QtCharts) still works on every platform and in both flavors.
 //
 // Library choice — Vega-Lite via QtWebEngine. Reason: AI emission
 // ergonomics. Vega-Lite specs are short, flat, schema-validatable;

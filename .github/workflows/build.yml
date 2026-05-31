@@ -82,10 +82,21 @@ jobs:
       - name: Build C++ (full flavor — WebEngine bundled)
         run: |
           rm -rf build-full && mkdir -p build-full && cd build-full
+          # v0.1.107 — fetch + SHA-pin DuckDB v1.1.3 *C library* (NOT the CLI)
+          # for the Full flavor. libduckdb-linux-amd64.zip ships libduckdb.so +
+          # duckdb.h + duckdb.hpp at the zip root; CMake (Full) auto-detects it.
+          mkdir -p ../vendor/duckdb
+          curl -fL -o /tmp/libduckdb.zip https://github.com/duckdb/duckdb/releases/download/v1.1.3/libduckdb-linux-amd64.zip
+          echo "81199bf01b6d49941a38f426cad60e73c1ccd43f1f769a65ed8097d53fc7e40b  /tmp/libduckdb.zip" | sha256sum -c - || { echo "::error::DuckDB x64 SHA256 mismatch"; exit 1; }
+          unzip -o /tmp/libduckdb.zip -d ../vendor/duckdb
+          test -f ../vendor/duckdb/libduckdb.so || { echo "::error::libduckdb.so missing after unzip"; exit 1; }
           cmake .. -DCMAKE_BUILD_TYPE=Release -DNOTEPATRA_WITH_WEBENGINE=ON
           make -j$(nproc)
           ls -lh notepatra
           ldd notepatra | grep -i webengine | head -3 || echo "WARN: full build did not link WebEngine"
+          ldd notepatra | grep -i duckdb || { echo "::error::Full build did not link DuckDB"; exit 1; }
+          # Stage libduckdb.so next to the binary so the $ORIGIN rpath resolves it.
+          cp ../vendor/duckdb/libduckdb.so .
           # Runtime smoke test — v0.1.63 was a RUNTIME crash behind
           # #ifdef NOTEPATRA_WITH_WEBENGINE; a compile-clean / link-broken
           # binary would pass `ldd` and the lite ctest above, then crash in
@@ -96,7 +107,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-linux-x64-full
-          path: build-full/notepatra
+          path: |
+            build-full/notepatra
+            build-full/libduckdb.so
 
       # ─── v0.1.72: Fleet-grade Linux installers ───────────────────────
       # .deb + .rpm + AppImage for the regular (lite) flavor, plus a
@@ -222,10 +235,19 @@ jobs:
       - name: Build C++ (full flavor — WebEngine bundled)
         run: |
           rm -rf build-full && mkdir -p build-full && cd build-full
+          # v0.1.107 — fetch + SHA-pin DuckDB v1.1.3 C library (aarch64).
+          mkdir -p ../vendor/duckdb
+          curl -fL -o /tmp/libduckdb.zip https://github.com/duckdb/duckdb/releases/download/v1.1.3/libduckdb-linux-aarch64.zip
+          echo "9069db3627456ab8b14399a73cd8d450c7863b1bc93b2b197d157ea18bad7801  /tmp/libduckdb.zip" | sha256sum -c - || { echo "::error::DuckDB arm64 SHA256 mismatch"; exit 1; }
+          unzip -o /tmp/libduckdb.zip -d ../vendor/duckdb
+          test -f ../vendor/duckdb/libduckdb.so || { echo "::error::libduckdb.so missing after unzip"; exit 1; }
           cmake .. -DCMAKE_BUILD_TYPE=Release -DNOTEPATRA_WITH_WEBENGINE=ON
           make -j$(nproc)
           ls -lh notepatra
           ldd notepatra | grep -i webengine | head -3 || echo "WARN: full ARM build did not link WebEngine"
+          ldd notepatra | grep -i duckdb || { echo "::error::Full ARM build did not link DuckDB"; exit 1; }
+          # Stage libduckdb.so next to the binary so the $ORIGIN rpath resolves it.
+          cp ../vendor/duckdb/libduckdb.so .
           # Runtime smoke test — see x64 job for v0.1.63 backstory.
           QT_QPA_PLATFORM=offscreen ./notepatra --version
 
@@ -233,7 +255,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-linux-arm64-full
-          path: build-full/notepatra
+          path: |
+            build-full/notepatra
+            build-full/libduckdb.so
 
       # ─── v0.1.72: Fleet-grade Linux installers (ARM64) ───────────────
       # Same .deb + .rpm matrix as x64.  No AppImage on ARM in this
@@ -340,6 +364,48 @@ jobs:
             -DQSCINTILLA_INCLUDE="$QSC_INC" \
             -DQSCINTILLA_LIB="$QSC_LIB"
           make VERBOSE=1 2>&1 | tail -200
+
+      - name: Build C++ (full flavor — WebEngine + DuckDB bundled)
+        run: |
+          QT_PATH=$(brew --prefix qt@5)
+          export PATH="$QT_PATH/bin:$PATH"
+
+          # Find QScintilla location (same as Lite build)
+          echo "=== Searching for QScintilla =="
+          QSC_LIB=$(find /opt/homebrew /usr/local -name "libqscintilla2_qt5*dylib" 2>/dev/null | head -1)
+          [ -z "$QSC_LIB" ] && QSC_LIB=$(find /opt/homebrew /usr/local -name "libqscintilla2*dylib" 2>/dev/null | head -1)
+          QSC_HDR=$(find /opt/homebrew /usr/local -name "qsciscintilla.h" 2>/dev/null | head -1)
+          QSC_INC=$(dirname $(dirname "$QSC_HDR"))
+          echo "Lib: $QSC_LIB"
+          echo "Inc: $QSC_INC"
+
+          # v0.1.107 — fetch + SHA-pin DuckDB v1.1.3 macOS universal C library
+          mkdir -p vendor/duckdb
+          curl -fL -o /tmp/libduckdb-osx.zip https://github.com/duckdb/duckdb/releases/download/v1.1.3/libduckdb-osx-universal.zip
+          echo "35d2d1c7da9770ccd70590f50313045382a44d06070580c0abf4e8eb2cccc405  /tmp/libduckdb-osx.zip" | shasum -a 256 -c - || { echo "::error::DuckDB macOS SHA256 mismatch"; exit 1; }
+          unzip -o /tmp/libduckdb-osx.zip -d vendor/duckdb
+          test -f vendor/duckdb/libduckdb.dylib || { echo "::error::libduckdb.dylib missing after unzip"; exit 1; }
+          echo "✓ DuckDB v1.1.3 verified and extracted"
+
+          rm -rf build-full && mkdir -p build-full && cd build-full
+          # macOS Full = DuckDB engine. Homebrew qt@5 dropped QtWebEngine
+          # (Chromium CVEs) and there is no arm64-native Qt5 WebEngine, so the
+          # WebEngine probe downgrades to a stub here — DuckDB is the macOS Full
+          # feature. NOTEPATRA_FULL enables DuckDB regardless of WebEngine.
+          cmake .. -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QT_PATH" \
+            -DQSCINTILLA_INCLUDE="$QSC_INC" \
+            -DQSCINTILLA_LIB="$QSC_LIB" \
+            -DNOTEPATRA_FULL=ON
+          make VERBOSE=1 2>&1 | tail -200
+          # macOS links into an app bundle (MACOSX_BUNDLE), NOT a bare ./notepatra
+          # like Linux. The binary lives at Notepatra.app/Contents/MacOS/Notepatra.
+          BIN=Notepatra.app/Contents/MacOS/Notepatra
+          test -f "$BIN" || { echo "::error::macOS Full binary not found at $BIN"; ls -lR . | head -40; exit 1; }
+          ls -lh "$BIN"
+          otool -L "$BIN" | grep -i webengine | head -3 || echo "note: macOS Full has no WebEngine (brew qt@5 dropped it) — DuckDB only"
+          otool -L "$BIN" | grep -i duckdb || { echo "::error::Full build did not link DuckDB"; exit 1; }
+          echo "✓ macOS Full binary built (DuckDB engine; WebEngine N/A on brew qt@5)"
 
       - name: Build and run regression suite
         run: |
@@ -568,11 +634,218 @@ jobs:
             fi
           done
 
+      - name: Create DMG (full flavor)
+        run: |
+          QT_PATH=/opt/homebrew/opt/qt@5
+          export PATH="$QT_PATH/bin:$PATH"
+
+          APP=build-full/Notepatra.app
+          FW="$APP/Contents/Frameworks"
+          mkdir -p "$FW"
+
+          # ─── Step 1: macdeployqt bundles Qt frameworks + QtWebEngine for Full build
+          echo "=== macdeployqt (full) =="
+          macdeployqt "$APP"
+
+          # ─── Step 1b: Bundle OpenSSL 3 dylibs (same as Lite)
+          OPENSSL_PREFIX=$(brew --prefix openssl@3 2>/dev/null || echo /opt/homebrew/opt/openssl@3)
+          echo "=== OpenSSL source: $OPENSSL_PREFIX =="
+          for lib in libssl.3.dylib libcrypto.3.dylib; do
+            SRC="$OPENSSL_PREFIX/lib/$lib"
+            if [ ! -f "$SRC" ]; then
+              echo "::error::$SRC missing — HTTPS will fail at runtime on user Macs"
+              exit 1
+            fi
+            cp "$SRC" "$FW/$lib"
+            chmod u+w "$FW/$lib"
+            install_name_tool -id "@rpath/$lib" "$FW/$lib"
+            echo "  ✓ bundled $lib"
+          done
+          install_name_tool -change "$OPENSSL_PREFIX/lib/libcrypto.3.dylib" \
+            "@rpath/libcrypto.3.dylib" "$FW/libssl.3.dylib" 2>/dev/null || true
+          QTNET_BIN="$APP/Contents/Frameworks/QtNetwork.framework/Versions/5/QtNetwork"
+          if [ -f "$QTNET_BIN" ]; then
+            chmod u+w "$QTNET_BIN"
+            install_name_tool -change "$OPENSSL_PREFIX/lib/libssl.3.dylib" \
+              "@rpath/libssl.3.dylib" "$QTNET_BIN" 2>/dev/null || true
+            install_name_tool -change "$OPENSSL_PREFIX/lib/libcrypto.3.dylib" \
+              "@rpath/libcrypto.3.dylib" "$QTNET_BIN" 2>/dev/null || true
+            echo "  ✓ rewrote QtNetwork OpenSSL refs → @rpath"
+          fi
+
+          # ─── Step 2: Copy QScintilla dylib (same as Lite)
+          QSC_SRC=$(find "$QT_PATH/lib" -name "libqscintilla2_qt5*.dylib" -type f 2>/dev/null | head -1)
+          if [ -z "$QSC_SRC" ]; then
+            QSC_SRC=$(find /opt/homebrew /usr/local -name "libqscintilla2_qt5*.dylib" -type f 2>/dev/null | head -1)
+          fi
+          if [ -z "$QSC_SRC" ]; then
+            echo "::error::QScintilla dylib not found — bundle would be unusable"
+            exit 1
+          fi
+          echo "QScintilla source: $QSC_SRC"
+          cp "$QSC_SRC" "$FW/libqscintilla2_qt5.15.dylib"
+          chmod u+w "$FW/libqscintilla2_qt5.15.dylib"
+          QSC_BUNDLED="$FW/libqscintilla2_qt5.15.dylib"
+          install_name_tool -id "@rpath/libqscintilla2_qt5.15.dylib" "$QSC_BUNDLED"
+
+          # ─── Step 3: Rewrite QScintilla deps (same rewrite logic as Lite)
+          echo "=== Before rewrite ==="
+          otool -L "$QSC_BUNDLED"
+          otool -L "$QSC_BUNDLED" | tail -n +2 | awk '{print $1}' | while read -r DEP; do
+            case "$DEP" in
+              /opt/homebrew*|/usr/local*)
+                if echo "$DEP" | grep -q "\.framework/"; then
+                  FW_NAME=$(echo "$DEP" | sed -E 's|.*/([^/]+)\.framework/Versions/([^/]+)/.*|\1|')
+                  FW_VER=$(echo "$DEP"  | sed -E 's|.*/([^/]+)\.framework/Versions/([^/]+)/.*|\2|')
+                  NEW="@rpath/${FW_NAME}.framework/Versions/${FW_VER}/${FW_NAME}"
+                else
+                  NEW="@rpath/$(basename "$DEP")"
+                fi
+                echo "  rewrite: $DEP"
+                echo "       -> $NEW"
+                install_name_tool -change "$DEP" "$NEW" "$QSC_BUNDLED"
+                ;;
+            esac
+          done
+          echo "=== After rewrite ==="
+          otool -L "$QSC_BUNDLED"
+          codesign --force --sign - "$QSC_BUNDLED"
+
+          # ─── Step 4: Handle QtPrintSupport.framework (same as Lite)
+          if [ ! -d "$FW/QtPrintSupport.framework" ]; then
+            echo "=== Copying QtPrintSupport.framework (macdeployqt skipped it) ==="
+            cp -R "$QT_PATH/lib/QtPrintSupport.framework" "$FW/"
+            QTPS_BIN="$FW/QtPrintSupport.framework/Versions/5/QtPrintSupport"
+            chmod u+w "$QTPS_BIN"
+            install_name_tool -id "@rpath/QtPrintSupport.framework/Versions/5/QtPrintSupport" "$QTPS_BIN"
+            otool -L "$QTPS_BIN" | tail -n +2 | awk '{print $1}' | while read -r DEP; do
+              case "$DEP" in
+                /opt/homebrew*|/usr/local*)
+                  if echo "$DEP" | grep -q "\.framework/"; then
+                    FW_NAME=$(echo "$DEP" | sed -E 's|.*/([^/]+)\.framework/Versions/([^/]+)/.*|\1|')
+                    FW_VER=$(echo "$DEP"  | sed -E 's|.*/([^/]+)\.framework/Versions/([^/]+)/.*|\2|')
+                    NEW="@rpath/${FW_NAME}.framework/Versions/${FW_VER}/${FW_NAME}"
+                  else
+                    NEW="@rpath/$(basename "$DEP")"
+                  fi
+                  install_name_tool -change "$DEP" "$NEW" "$QTPS_BIN"
+                  ;;
+              esac
+            done
+            codesign --force --sign - "$QTPS_BIN"
+          fi
+
+          # ─── Step 5: Copy + rewrite libduckdb.dylib (Full-specific)
+          echo "=== Bundling libduckdb.dylib ==="
+          cp vendor/duckdb/libduckdb.dylib "$APP/Contents/MacOS/libduckdb.dylib"
+          chmod u+w "$APP/Contents/MacOS/libduckdb.dylib"
+          install_name_tool -id "@rpath/libduckdb.dylib" "$APP/Contents/MacOS/libduckdb.dylib"
+          echo "  ✓ bundled libduckdb.dylib with @rpath id"
+          # The MAIN binary references libduckdb by the upstream dylib's id, which
+          # may NOT be @rpath/libduckdb.dylib. Rewrite whatever it references to
+          # @rpath so it resolves to Contents/MacOS/libduckdb.dylib via the
+          # @executable_path rpath baked in at link time — else the shipped app
+          # would point at a CI build path and crash on a user's Mac.
+          MACBIN="$APP/Contents/MacOS/Notepatra"
+          DUCKREF=$(otool -L "$MACBIN" | awk '/libduckdb\.dylib/{print $1; exit}')
+          if [ -z "$DUCKREF" ]; then
+            echo "::error::main binary does not reference libduckdb.dylib at all"; exit 1
+          fi
+          if [ "$DUCKREF" != "@rpath/libduckdb.dylib" ]; then
+            chmod u+w "$MACBIN"
+            install_name_tool -change "$DUCKREF" "@rpath/libduckdb.dylib" "$MACBIN"
+            echo "  ✓ rewrote main binary libduckdb ref: $DUCKREF -> @rpath/libduckdb.dylib"
+          else
+            echo "  ✓ main binary already references @rpath/libduckdb.dylib"
+          fi
+          # Prove it resolves: the @rpath ref + @executable_path rpath + the copy
+          # in Contents/MacOS must all line up.
+          otool -L "$MACBIN" | grep -i duckdb
+          test -f "$APP/Contents/MacOS/libduckdb.dylib" || { echo "::error::libduckdb.dylib not next to binary"; exit 1; }
+
+          # ─── Step 6: Final verification
+          echo "=== Final bundle link audit ==="
+          LEFTOVER=$(find "$APP" -type f \( -name "*.dylib" -o -name "*.framework" \) -o -perm +111 2>/dev/null | \
+                     xargs -I{} sh -c 'otool -L "{}" 2>/dev/null | grep -E "/opt/homebrew|/usr/local" && echo "  ^ in: {}"' | head -40)
+          if [ -n "$LEFTOVER" ]; then
+            echo "::warning::Some bundled binaries still reference Homebrew paths:"
+            echo "$LEFTOVER"
+          else
+            echo "✓ All bundled binaries use @rpath or system paths — no Homebrew absolutes"
+          fi
+
+          # ─── Step 7: Codesigning (same approach + pattern as Lite, including WebEngine helper)
+          ENTITLEMENTS="$GITHUB_WORKSPACE/resources/entitlements.plist"
+          if [ ! -f "$ENTITLEMENTS" ]; then
+            echo "::error::entitlements.plist missing — Tahoe launch will fail"
+            exit 1
+          fi
+
+          # Sign every dylib / framework binary including QtWebEngineProcess helper
+          find "$APP/Contents/Frameworks" -type f \( -name "*.dylib" -o -name "*.so" \) 2>/dev/null | \
+            while read -r lib; do
+              codesign --force --sign - --options runtime --timestamp=none "$lib" 2>/dev/null || true
+            done
+          find "$APP/Contents/Frameworks" -type d -name "*.framework" 2>/dev/null | \
+            while read -r fw; do
+              codesign --force --sign - --options runtime --timestamp=none "$fw" 2>/dev/null || true
+            done
+          # QtWebEngineProcess helper (in Contents/Frameworks or Contents/PlugIns)
+          if [ -f "$APP/Contents/Frameworks/QtWebEngineCore.framework/Helpers/QtWebEngineProcess.app/Contents/MacOS/QtWebEngineProcess" ]; then
+            HELPER="$APP/Contents/Frameworks/QtWebEngineCore.framework/Helpers/QtWebEngineProcess.app"
+            echo "=== Signing QtWebEngineProcess helper ==="
+            codesign --force --sign - --options runtime --timestamp=none "$HELPER" 2>/dev/null || true
+            echo "  ✓ signed $HELPER"
+          fi
+          # Plugin dylibs under Contents/PlugIns
+          find "$APP/Contents/PlugIns" -type f -name "*.dylib" 2>/dev/null | \
+            while read -r plug; do
+              codesign --force --sign - --options runtime --timestamp=none "$plug" 2>/dev/null || true
+            done
+          # libduckdb.dylib in Contents/MacOS
+          codesign --force --sign - --options runtime --timestamp=none "$APP/Contents/MacOS/libduckdb.dylib" 2>/dev/null || true
+
+          # Sign the main bundle LAST with entitlements + hardened runtime
+          codesign --force --deep --sign - \
+            --options runtime \
+            --entitlements "$ENTITLEMENTS" \
+            --timestamp=none \
+            "$APP"
+
+          # Verify the signature
+          codesign -v --verbose=4 "$APP" || {
+            echo "::error::codesign verification failed — Tahoe will reject this bundle"
+            exit 1
+          }
+          echo "✓ Full bundle signed with hardened runtime + entitlements"
+
+          # ─── Step 8: Create the DMG
+          rm -f build-full/Notepatra-full.dmg
+          for attempt in 1 2 3; do
+            if hdiutil create -volname "Notepatra" -srcfolder "$APP" -ov \
+                              -format UDZO -nospotlight build-full/Notepatra-full.dmg; then
+              echo "✓ Full DMG built on attempt $attempt"
+              break
+            fi
+            echo "hdiutil create failed (attempt $attempt) — detaching any stale volumes and retrying"
+            hdiutil detach "/Volumes/Notepatra" -force 2>/dev/null || true
+            sleep $((attempt * 3))
+            if [ "$attempt" = "3" ]; then
+              echo "::error::hdiutil create failed after 3 attempts"; exit 1
+            fi
+          done
+
       - name: Upload DMG
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-macos-arm64
           path: build/Notepatra.dmg
+
+      - name: Upload DMG (full flavor)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: notepatra-macos-arm64-full
+          path: build-full/Notepatra-full.dmg
 
   build-windows:
     runs-on: windows-latest
@@ -1075,6 +1348,238 @@ jobs:
           }
           exit 0
 
+      - name: Build C++ (full flavor — WebEngine + DuckDB bundled)
+        shell: pwsh
+        run: |
+          # v0.1.107 — Full Windows variant bundles QtWebEngine (inline
+          # Vega-Lite chart rendering) + DuckDB v1.1.3 C library. Build in
+          # build-full\ with the same Qt/QScintilla discovery + flags
+          # PLUS -DNOTEPATRA_WITH_WEBENGINE=ON.
+          $qtRoot = "${{ steps.qscintilla.outputs.QT_ROOT }}"
+          New-Item -ItemType Directory -Force -Path build-full | Out-Null
+          Set-Location build-full
+
+          # Download + SHA-pin DuckDB v1.1.3 C library (Windows x64)
+          New-Item -ItemType Directory -Force -Path ..\vendor\duckdb | Out-Null
+          Write-Host "Downloading DuckDB v1.1.3 for Windows x64"
+          Invoke-WebRequest -Uri "https://github.com/duckdb/duckdb/releases/download/v1.1.3/libduckdb-windows-amd64.zip" `
+            -OutFile "libduckdb.zip" -UseBasicParsing
+          Write-Host "Verifying DuckDB SHA256"
+          $hash = (Get-FileHash libduckdb.zip -Algorithm SHA256).Hash
+          if ($hash -ne "c86390b0b5cbabf971e6446b5b59acddf661c098d076633f1f3c93f84b636c22") {
+            Write-Host "::error::DuckDB SHA256 mismatch: got $hash"
+            exit 1
+          }
+          Expand-Archive -Path libduckdb.zip -DestinationPath ..\vendor\duckdb -Force
+          if (-not (Test-Path ..\vendor\duckdb\duckdb.dll)) {
+            Write-Host "::error::duckdb.dll missing after unzip"
+            exit 1
+          }
+          Remove-Item libduckdb.zip
+
+          # CMake configure + build with WebEngine + DuckDB
+          $vsMajor = 0
+          if ($env:VisualStudioVersion) {
+              $vsMajor = [int]($env:VisualStudioVersion.Split('.')[0])
+          }
+          switch ($vsMajor) {
+              18 { $vsGen = "Visual Studio 18 2026" }
+              17 { $vsGen = "Visual Studio 17 2022" }
+              default {
+                  Write-Host "::warning::Unrecognised VisualStudioVersion; falling back to VS 17 2022."
+                  $vsGen = "Visual Studio 17 2022"
+              }
+          }
+          Write-Host "Using CMake generator: $vsGen"
+          cmake .. -G "$vsGen" -A x64 `
+            "-DCMAKE_PREFIX_PATH=$qtRoot" `
+            "-DQSCINTILLA_INCLUDE=${{ steps.qscintilla.outputs.QSC_INC }}" `
+            "-DQSCINTILLA_LIB=${{ steps.qscintilla.outputs.QSC_LIB }}" `
+            -DNOTEPATRA_WITH_WEBENGINE=ON 2>&1 | Tee-Object -FilePath ..\cmake-configure-full.log
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::cmake configure (full) failed"; exit 1 }
+          cmake --build . --config Release 2>&1 | Tee-Object -FilePath ..\cmake-build-full.log
+          $buildExit = $LASTEXITCODE
+          if ($buildExit -ne 0) { Write-Host "::error::cmake build (full) failed (exit $buildExit)"; exit 1 }
+          Write-Host "=== Searching for notepatra.exe in full build ==="
+          Get-ChildItem -Path . -Recurse -Filter "notepatra.exe" | ForEach-Object { Write-Host $_.FullName }
+          if (-not (Test-Path "Release\notepatra.exe")) {
+            Write-Host "::error::notepatra.exe not found in Release/ after full build"
+            exit 1
+          }
+          Write-Host "✓ Full build complete"
+          Set-Location ..
+
+      - name: Bundle Full variant (WebEngine + DuckDB)
+        shell: pwsh
+        run: |
+          # Mirror the Lite bundle logic but for the Full exe + WebEngine DLLs.
+          # windeployqt on the full exe auto-bundles QtWebEngineProcess.exe,
+          # .pak resources, ICU, and ANGLE DLLs.
+
+          $exeFull = Get-ChildItem -Path build-full -Recurse -Filter "notepatra.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exeFull) {
+            Write-Host "::error::notepatra.exe not found in build-full/"
+            exit 1
+          }
+          Write-Host "Found Full exe: $($exeFull.FullName) ($([math]::Round($exeFull.Length / 1MB, 2)) MB)"
+
+          $outDirFull = "notepatra-win-full"
+          New-Item -ItemType Directory -Path $outDirFull -Force | Out-Null
+          Copy-Item $exeFull.FullName "$outDirFull\"
+
+          $qtRoot = "${{ steps.qscintilla.outputs.QT_ROOT }}"
+          $qtBin = "$qtRoot\bin"
+          $qtPlugins = "$qtRoot\plugins"
+
+          # Bundle the QScintilla DLL (same as Lite)
+          $qsciDll = "${{ steps.qscintilla.outputs.QSC_DLL }}"
+          if ($qsciDll -and (Test-Path $qsciDll)) {
+            Copy-Item $qsciDll "$outDirFull\"
+            Write-Host "Bundled QScintilla DLL: $qsciDll"
+          } else {
+            $found = Get-ChildItem -Path $qtRoot -Recurse -Filter "qscintilla2_qt5.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) {
+              Copy-Item $found.FullName "$outDirFull\"
+              Write-Host "Bundled QScintilla DLL (via search): $($found.FullName)"
+            } else {
+              Write-Host "::error::qscintilla2_qt5.dll not found"
+              exit 1
+            }
+          }
+
+          # ── windeployqt on Full exe (bundles WebEngine: QtWebEngineProcess.exe + resources) ──
+          $windeployqt = "$qtRoot\bin\windeployqt.exe"
+          if (Test-Path $windeployqt) {
+            Write-Host ""
+            Write-Host "════════════ windeployqt (Full): notepatra.exe ════════════"
+            & $windeployqt --release --compiler-runtime --no-translations --no-opengl-sw `
+              --dir "$outDirFull" "$outDirFull\notepatra.exe" 2>&1
+            $code1 = $LASTEXITCODE
+            Write-Host "windeployqt (Full) exit: $code1"
+
+            Write-Host ""
+            Write-Host "════════════ windeployqt (Full): qscintilla2_qt5.dll ════════════"
+            & $windeployqt --release --no-translations --no-opengl-sw `
+              --dir "$outDirFull" "$outDirFull\qscintilla2_qt5.dll" 2>&1
+            $code2 = $LASTEXITCODE
+            Write-Host "windeployqt (Full) pass 2 exit: $code2"
+          } else {
+            Write-Host "::warning::windeployqt not found — manual copy will handle it"
+          }
+
+          # ── Manual DLL copy (same as Lite) ──
+          Write-Host ""
+          Write-Host "════════════ Manual DLL copy (Full) ════════════"
+          $coreDlls = @("Qt5Core.dll", "Qt5Gui.dll", "Qt5Widgets.dll", "Qt5Network.dll", "Qt5PrintSupport.dll")
+          foreach ($dll in $coreDlls) {
+            $src = Join-Path $qtBin $dll
+            if (Test-Path $src) {
+              Copy-Item $src "$outDirFull\" -Force
+              Write-Host "  ✓ $dll"
+            } else {
+              Write-Host "  ✗ MISSING: $src"
+            }
+          }
+
+          # ── OpenSSL DLLs (HTTPS — same as Lite) ──
+          $opensslDlls = @("libcrypto-1_1-x64.dll", "libssl-1_1-x64.dll")
+          $sslSearchDirs = @(
+            "C:\Program Files\OpenSSL-Win64\bin",
+            "C:\Program Files\OpenSSL\bin",
+            "C:\tools\OpenSSL-Win64\bin",
+            "${{ runner.temp }}/OpenSSL"
+          )
+          foreach ($dll in $opensslDlls) {
+            $found = $null
+            foreach ($d in $sslSearchDirs) {
+              if (Test-Path "$d\$dll") { $found = "$d\$dll"; break }
+            }
+            if (-not $found) {
+              foreach ($d in $sslSearchDirs) {
+                if (Test-Path $d) {
+                  $hit = Get-ChildItem -Path $d -Recurse -Filter $dll -ErrorAction SilentlyContinue | Select-Object -First 1
+                  if ($hit) { $found = $hit.FullName; break }
+                }
+              }
+            }
+            if ($found) {
+              Copy-Item $found "$outDirFull\" -Force
+              Write-Host "  ✓ $dll (from $found)"
+            } else {
+              Write-Host "::error::$dll NOT FOUND"
+              exit 1
+            }
+          }
+
+          # ── Qt plugins (same as Lite) ──
+          $plugins = @(
+            @{src="platforms\qwindows.dll"; dest="platforms"},
+            @{src="styles\qwindowsvistastyle.dll"; dest="styles"},
+            @{src="imageformats\qico.dll"; dest="imageformats"},
+            @{src="imageformats\qjpeg.dll"; dest="imageformats"},
+            @{src="imageformats\qsvg.dll"; dest="imageformats"},
+            @{src="iconengines\qsvgicon.dll"; dest="iconengines"},
+            @{src="printsupport\windowsprintersupport.dll"; dest="printsupport"},
+            @{src="bearer\qgenericbearer.dll"; dest="bearer"}
+          )
+          foreach ($p in $plugins) {
+            $src = Join-Path $qtPlugins $p.src
+            $destDir = Join-Path $outDirFull $p.dest
+            New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+            if (Test-Path $src) {
+              Copy-Item $src $destDir -Force
+              Write-Host "  ✓ $($p.src)"
+            } else {
+              Write-Host "  ✗ MISSING: $src"
+            }
+          }
+
+          # ── Copy DuckDB DLL into bundle ──
+          $duckdbDll = "vendor\duckdb\duckdb.dll"
+          if (Test-Path $duckdbDll) {
+            Copy-Item $duckdbDll "$outDirFull\" -Force
+            Write-Host "  ✓ duckdb.dll"
+          } else {
+            Write-Host "::error::duckdb.dll not found at $duckdbDll"
+            exit 1
+          }
+
+          # ── Bundle helper scripts (same as Lite) ──
+          if (Test-Path "installers\register-associations.bat") {
+            Copy-Item "installers\register-associations.bat" "$outDirFull\" -Force
+          }
+          if (Test-Path "installers\unregister-associations.bat") {
+            Copy-Item "installers\unregister-associations.bat" "$outDirFull\" -Force
+          }
+
+          # ── Verify critical files + report ──
+          Write-Host ""
+          Write-Host "════════════ Full bundle contents ════════════"
+          Get-ChildItem $outDirFull -Recurse | Select-Object FullName, Length | Format-Table -AutoSize
+          $totalSize = (Get-ChildItem $outDirFull -Recurse | Measure-Object Length -Sum).Sum / 1MB
+          Write-Host "Total Full bundle size: $([math]::Round($totalSize, 1)) MB"
+
+          # Critical files
+          $critical = @(
+            "$outDirFull\notepatra.exe",
+            "$outDirFull\Qt5Core.dll",
+            "$outDirFull\Qt5Gui.dll",
+            "$outDirFull\Qt5Widgets.dll",
+            "$outDirFull\qscintilla2_qt5.dll",
+            "$outDirFull\platforms\qwindows.dll",
+            "$outDirFull\duckdb.dll"
+          )
+          $missing = @()
+          foreach ($f in $critical) {
+            if (-not (Test-Path $f)) { $missing += $f }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Host "::error::Critical files missing from Full bundle:"
+            foreach ($f in $missing) { Write-Host "  - $f" }
+            exit 1
+          }
+          Write-Host "✓ All critical files present in Full bundle"
+
       - name: Smoke-test the binary (--version output check)
         shell: pwsh
         run: |
@@ -1110,11 +1615,16 @@ jobs:
           Write-Host ""
           Write-Host "Exit code: $code (informational — destructor cleanup may set this non-zero)"
 
-          # Pass criterion: the exe printed the expected version line
-          if ($output -like "*Notepatra v0.1*") {
-            Write-Host "✓ Smoke test passed (exe printed 'Notepatra v0.1...')"
+          # Pass criterion: the exe printed its version banner. Since v0.1.107
+          # the banner is flavor-aware — "Notepatra Lite v0.1.x" / "Notepatra
+          # Full v0.1.x" (and "Notepatra Local AI Lite/Full ..." for cloud-free
+          # builds), so the edition word sits between "Notepatra" and "v0.1".
+          # Match with a wildcard between them so every flavor passes; a crash
+          # or empty stdout still fails.
+          if ($output -like "*Notepatra*v0.1*") {
+            Write-Host "✓ Smoke test passed (exe printed a 'Notepatra <flavor> v0.1...' banner)"
           } else {
-            Write-Host "::error::notepatra.exe did not print 'Notepatra v0.1' to stdout"
+            Write-Host "::error::notepatra.exe did not print a 'Notepatra ... v0.1' banner to stdout"
             switch ($code) {
               -1073741515 { Write-Host "::error::STATUS_DLL_NOT_FOUND (0xC0000135)" }
               -1073741819 { Write-Host "::error::STATUS_ACCESS_VIOLATION (0xC0000005)" }
@@ -1215,6 +1725,44 @@ jobs:
           # Copy to workspace root so upload-artifact can pick it up easily
           Copy-Item $installerExe "notepatra-setup-$version.exe" -Force
 
+      - name: Build Windows installer (NSIS Full)
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF -like "refs/tags/v*") {
+              $env:GITHUB_REF.Substring(11)
+          } else { "0.0.0" }
+          Write-Host "Building Full installer for version: $version"
+
+          $makensis = (Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
+          if (-not $makensis) {
+              $nsisDir = "C:\Program Files (x86)\NSIS"
+              if (Test-Path "$nsisDir\makensis.exe") {
+                  $makensis = "$nsisDir\makensis.exe"
+              }
+          }
+          if (-not $makensis) {
+              choco install nsis -y --no-progress
+              $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          }
+          Write-Host "Using makensis: $makensis"
+
+          & $makensis /V3 "/DVERSION=$version" "/DSOURCE_DIR=..\notepatra-win-full" installers\windows.nsi
+          if ($LASTEXITCODE -ne 0) {
+              Write-Host "::error::NSIS compile (Full) failed (exit $LASTEXITCODE)"
+              exit 1
+          }
+
+          # Rename the exe to -full variant
+          $installerExe = "installers\notepatra-setup-$version.exe"
+          if (-not (Test-Path $installerExe)) {
+              Write-Host "::error::Installer EXE missing at $installerExe"
+              exit 1
+          }
+          $installerFull = "notepatra-setup-$version-full.exe"
+          Move-Item $installerExe $installerFull -Force
+          $installerSize = [math]::Round((Get-Item $installerFull).Length / 1MB, 2)
+          Write-Host "✓ Built $installerFull ($installerSize MB)"
+
       # ─── Build the Windows MSI with WiX v3 ───
       # Produces notepatra-<VERSION>.msi — enterprise-grade installer with
       # proper upgrade codes, file-type associations, PATH integration, and
@@ -1289,6 +1837,71 @@ jobs:
           }
           $msiSize = [math]::Round((Get-Item "notepatra-$version.msi").Length / 1MB, 2)
           Write-Host "✓ Built notepatra-$version.msi ($msiSize MB)"
+
+      - name: Build Windows MSI (WiX Full)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF -like "refs/tags/v*") {
+              $env:GITHUB_REF.Substring(11)
+          } else { "0.0.0" }
+          Write-Host "Building Full MSI for version: $version"
+
+          $wixBin = "${env:WIX}bin"
+          if (-not (Test-Path $wixBin)) {
+              $wixBin = "C:\Program Files (x86)\WiX Toolset v3.14\bin"
+              if (-not (Test-Path $wixBin)) {
+                  $wixBin = "C:\Program Files (x86)\WiX Toolset v3.11\bin"
+              }
+          }
+          Write-Host "Using WiX at: $wixBin"
+
+          $candle = Join-Path $wixBin "candle.exe"
+          $light  = Join-Path $wixBin "light.exe"
+          $heat   = Join-Path $wixBin "heat.exe"
+
+          # Harvest Full bundle dir
+          & $heat dir notepatra-win-full `
+              -cg HarvestedComponentsFull `
+              -dr INSTALLFOLDER `
+              -var var.SourceDir `
+              -gg -g1 -sfrag -srd -sreg -scom `
+              -out installers\HarvestedFiles-full.wxs
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::heat (Full) failed"; exit 1 }
+
+          # Remove main exe from harvested list
+          (Get-Content installers\HarvestedFiles-full.wxs) `
+              -replace '<Component[^>]*>[^<]*<File[^>]*notepatra\.exe[^>]*/>[^<]*</Component>','' `
+              | Set-Content installers\HarvestedFiles-full.wxs
+
+          # Create a copy of windows.wxs for the Full variant
+          Copy-Item installers\windows.wxs installers\windows-full.wxs -Force
+          # Inject the Full component group reference
+          (Get-Content installers\windows-full.wxs) `
+              -replace '<!-- ComponentGroupRef Id="HarvestedComponents" / — injected at build time -->', `
+                       '<ComponentGroupRef Id="HarvestedComponentsFull" />' `
+              | Set-Content installers\windows-full.wxs
+
+          # Candle the Full variant
+          & $candle -arch x64 "-dVersion=$version" "-dSourceDir=notepatra-win-full" `
+              -ext WixUtilExtension `
+              -out installers\full\ `
+              installers\windows-full.wxs installers\HarvestedFiles-full.wxs
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::candle (Full) failed"; exit 1 }
+
+          # Light the Full MSI
+          & $light -ext WixUIExtension -ext WixUtilExtension `
+              -cultures:en-us `
+              -out "notepatra-$version-full.msi" `
+              installers\full\windows-full.wixobj installers\full\HarvestedFiles-full.wixobj
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::light (Full) failed"; exit 1 }
+
+          if (-not (Test-Path "notepatra-$version-full.msi")) {
+              Write-Host "::error::Full MSI missing after build"
+              exit 1
+          }
+          $msiSize = [math]::Round((Get-Item "notepatra-$version-full.msi").Length / 1MB, 2)
+          Write-Host "✓ Built notepatra-$version-full.msi ($msiSize MB)"
 
       # ─── v0.1.72: Cloud-free Windows variant (notepatra-local-ai) ───
       # Second compile pass with -DNOTEPATRA_NO_CLOUD=ON produces a
@@ -1426,6 +2039,27 @@ jobs:
           path: notepatra-local-ai-*.msi
           if-no-files-found: ignore
 
+      - name: Upload artifact (portable zip Full)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: notepatra-windows-x64-full
+          path: notepatra-win-full/
+          if-no-files-found: ignore
+
+      - name: Upload artifact (installer exe Full)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: notepatra-windows-installer-full
+          path: notepatra-setup-*-full.exe
+          if-no-files-found: ignore
+
+      - name: Upload artifact (MSI Full)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: notepatra-windows-msi-full
+          path: notepatra-*-full.msi
+          if-no-files-found: ignore
+
       # ─── Failure diagnostics — must be LAST so it sees failures from any prior step ───
       - name: Upload build logs on failure
         if: failure()
@@ -1559,13 +2193,20 @@ jobs:
           # build steps that mirror the Linux pattern.
           if [ -d notepatra-linux-x64-full ]; then
             chmod +x notepatra-linux-x64-full/notepatra
-            tar czf notepatra-linux-x64-full.tar.gz -C notepatra-linux-x64-full notepatra
+            # v0.1.107 — Full tarball now ships libduckdb.so next to the binary
+            # ($ORIGIN rpath resolves it); fail loudly if the lib is missing.
+            test -f notepatra-linux-x64-full/libduckdb.so || { echo "::error::x64 Full artifact missing libduckdb.so"; exit 1; }
+            tar czf notepatra-linux-x64-full.tar.gz -C notepatra-linux-x64-full notepatra libduckdb.so
           fi
           if [ -d notepatra-linux-arm64-full ]; then
             chmod +x notepatra-linux-arm64-full/notepatra
-            tar czf notepatra-linux-arm64-full.tar.gz -C notepatra-linux-arm64-full notepatra
+            test -f notepatra-linux-arm64-full/libduckdb.so || { echo "::error::arm64 Full artifact missing libduckdb.so"; exit 1; }
+            tar czf notepatra-linux-arm64-full.tar.gz -C notepatra-linux-arm64-full notepatra libduckdb.so
           fi
           cp notepatra-macos-arm64/Notepatra.dmg notepatra-macos-arm64.dmg
+          if [ -d notepatra-macos-arm64-full ]; then
+            cp notepatra-macos-arm64-full/Notepatra.dmg notepatra-macos-arm64-full.dmg
+          fi
           if [ -d notepatra-windows-x64 ]; then
             cd notepatra-windows-x64 && zip -r ../notepatra-windows-x64.zip . && cd ..
           fi
@@ -1593,6 +2234,16 @@ jobs:
               cp "$MSI" "notepatra-local-ai-${VERSION}.msi"
               ls -la "notepatra-local-ai-${VERSION}.msi"
             fi
+          fi
+          if [ -d notepatra-windows-msi-full ]; then
+            MSI=$(ls notepatra-windows-msi-full/notepatra-*.msi 2>/dev/null | head -1)
+            if [ -n "$MSI" ]; then
+              cp "$MSI" "notepatra-full-${VERSION}.msi"
+              ls -la "notepatra-full-${VERSION}.msi"
+            fi
+          fi
+          if [ -d notepatra-windows-x64-full ]; then
+            cd notepatra-windows-x64-full && zip -r ../notepatra-windows-x64-full.zip . && cd ..
           fi
           ls -la *.tar.gz *.dmg 2>/dev/null
           ls -la *.zip *.exe *.msi 2>/dev/null || true
@@ -1629,8 +2280,8 @@ jobs:
           #   sha256sum -c SHA256SUMS
           for f in notepatra-linux-x64.tar.gz notepatra-linux-arm64.tar.gz \
                    notepatra-linux-x64-full.tar.gz notepatra-linux-arm64-full.tar.gz \
-                   notepatra-macos-arm64.dmg \
-                   notepatra-windows-x64.zip notepatra-setup-*.exe notepatra-*.msi \
+                   notepatra-macos-arm64.dmg notepatra-macos-arm64-full.dmg \
+                   notepatra-windows-x64.zip notepatra-windows-x64-full.zip notepatra-setup-*.exe notepatra-*.msi notepatra-full-*.msi \
                    notepatra_*_amd64.deb notepatra_*_arm64.deb \
                    notepatra-local-ai_*_amd64.deb notepatra-local-ai_*_arm64.deb \
                    notepatra-*x86_64.rpm notepatra-*aarch64.rpm \
@@ -1685,8 +2336,8 @@ jobs:
           # ties the signature to this repo + workflow + commit SHA.
           for f in notepatra-linux-x64.tar.gz notepatra-linux-arm64.tar.gz \
                    notepatra-linux-x64-full.tar.gz notepatra-linux-arm64-full.tar.gz \
-                   notepatra-macos-arm64.dmg \
-                   notepatra-windows-x64.zip notepatra-setup-*.exe notepatra-*.msi \
+                   notepatra-macos-arm64.dmg notepatra-macos-arm64-full.dmg \
+                   notepatra-windows-x64.zip notepatra-windows-x64-full.zip notepatra-setup-*.exe notepatra-*.msi notepatra-full-*.msi \
                    notepatra_*_amd64.deb notepatra_*_arm64.deb \
                    notepatra-local-ai_*_amd64.deb notepatra-local-ai_*_arm64.deb \
                    notepatra-*x86_64.rpm notepatra-*aarch64.rpm \
@@ -1709,9 +2360,12 @@ jobs:
             notepatra-linux-x64-full.tar.gz
             notepatra-linux-arm64-full.tar.gz
             notepatra-macos-arm64.dmg
+            notepatra-macos-arm64-full.dmg
             notepatra-windows-x64.zip
+            notepatra-windows-x64-full.zip
             notepatra-setup-*.exe
             notepatra-*.msi
+            notepatra-full-*.msi
             notepatra_*_amd64.deb
             notepatra_*_arm64.deb
             notepatra-local-ai_*_amd64.deb
@@ -1729,9 +2383,12 @@ jobs:
             notepatra-linux-x64-full.tar.gz
             notepatra-linux-arm64-full.tar.gz
             notepatra-macos-arm64.dmg
+            notepatra-macos-arm64-full.dmg
             notepatra-windows-x64.zip
+            notepatra-windows-x64-full.zip
             notepatra-setup-*.exe
             notepatra-*.msi
+            notepatra-full-*.msi
             notepatra_*_amd64.deb
             notepatra_*_arm64.deb
             notepatra-local-ai_*_amd64.deb
@@ -1750,12 +2407,18 @@ jobs:
             notepatra-linux-arm64-full.tar.gz.pem
             notepatra-macos-arm64.dmg.sig
             notepatra-macos-arm64.dmg.pem
+            notepatra-macos-arm64-full.dmg.sig
+            notepatra-macos-arm64-full.dmg.pem
             notepatra-windows-x64.zip.sig
             notepatra-windows-x64.zip.pem
+            notepatra-windows-x64-full.zip.sig
+            notepatra-windows-x64-full.zip.pem
             notepatra-setup-*.exe.sig
             notepatra-setup-*.exe.pem
             notepatra-*.msi.sig
             notepatra-*.msi.pem
+            notepatra-full-*.msi.sig
+            notepatra-full-*.msi.pem
             notepatra_*_amd64.deb.sig
             notepatra_*_amd64.deb.pem
             notepatra_*_arm64.deb.sig

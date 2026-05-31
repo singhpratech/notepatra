@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.106 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.107 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -17,6 +17,16 @@ option(BUILD_LEXER_TEST "Backward-compatible alias for BUILD_TESTING" OFF)
 # bits installed on demand. Keeps download / launch / disk footprint
 # small for users who don't need charts.
 option(NOTEPATRA_WITH_WEBENGINE "Bundle QtWebEngine for inline Vega-Lite chart rendering (full-mode build)" OFF)
+
+# v0.1.107 — Full-flavor umbrella. Turns on the heavy opt-in features:
+# WebEngine (inline Vega-Lite charts, WHERE the Qt module is available) and
+# the DuckDB engine. The default (Lite) build has neither. On macOS, Homebrew
+# qt@5 no longer ships QtWebEngine, so a Full macOS build gets DuckDB only and
+# the WebEngine probe below downgrades to a stub — that is expected and fine.
+option(NOTEPATRA_FULL "Full flavor: WebEngine charts (where available) + DuckDB engine" OFF)
+if(NOTEPATRA_FULL)
+    set(NOTEPATRA_WITH_WEBENGINE ON)
+endif()
 
 # v0.1.72 — Cloud-free build variant. When ON, the binary physically
 # refuses to talk to any non-private network destination (i.e. anything
@@ -430,7 +440,22 @@ endif()
 #
 # Runtime: an RPATH of $ORIGIN tells the loader to look for
 # libduckdb.so next to the notepatra binary so we can ship them together.
-option(NOTEPATRA_USE_DUCKDB "Enable DuckDB-backed connection types in Data mode" ON)
+# DuckDB is FULL-ONLY. libduckdb is ~57 MB, so the default Lite binary must
+# never link it (hard rule: the bare binary stays small). It is enabled in the
+# Full flavor — via the Full umbrella (NOTEPATRA_FULL, used where WebEngine is
+# unavailable, e.g. macOS where Homebrew qt@5 dropped WebEngine) OR alongside
+# WebEngine on Linux/Windows. Lite (neither) forces it OFF even if a caller
+# passes -DNOTEPATRA_USE_DUCKDB=ON. The Data Analyst works on CSV + in-memory
+# SQLite without DuckDB; with DuckDB it gains in-process Parquet/JSON/S3/SQLite.
+if(NOTEPATRA_FULL OR NOTEPATRA_WITH_WEBENGINE)
+    set(NOTEPATRA_USE_DUCKDB ON)
+else()
+    if(NOTEPATRA_USE_DUCKDB)
+        message(WARNING "NOTEPATRA_USE_DUCKDB ignored: DuckDB is Full-only. Build the "
+                        "Full flavor (-DNOTEPATRA_FULL=ON). Forcing OFF for the Lite binary.")
+    endif()
+    set(NOTEPATRA_USE_DUCKDB OFF)
+endif()
 if(NOTEPATRA_USE_DUCKDB)
     set(_DUCKDB_VENDOR_DIR "${CMAKE_SOURCE_DIR}/vendor/duckdb")
     find_path(DUCKDB_INCLUDE_DIR
@@ -457,15 +482,22 @@ if(NOTEPATRA_USE_DUCKDB)
         target_include_directories(${EXE_NAME} PRIVATE ${DUCKDB_INCLUDE_DIR})
         target_link_libraries(${EXE_NAME} PRIVATE ${DUCKDB_LIBRARY})
         # Tell the runtime loader to look next to the binary first.
+        # NOTE: CI ships build-full/notepatra directly (no `make install`), so
+        # the BUILD rpath — not just INSTALL_RPATH — must carry $ORIGIN /
+        # @executable_path, else the shipped binary can't find libduckdb sitting
+        # next to it (the bare build-tree rpath was the absolute vendor path +
+        # an empty/cwd entry, which only resolved when cwd == the binary dir).
+        # The vendor dir is kept as a second entry for local dev where the lib
+        # lives under vendor/duckdb/.
         if(UNIX AND NOT APPLE)
             set_target_properties(${EXE_NAME} PROPERTIES
                 INSTALL_RPATH "$ORIGIN"
-                BUILD_RPATH   "${_DUCKDB_VENDOR_DIR}"
+                BUILD_RPATH   "$ORIGIN;${_DUCKDB_VENDOR_DIR}"
             )
         elseif(APPLE)
             set_target_properties(${EXE_NAME} PROPERTIES
                 INSTALL_RPATH "@executable_path"
-                BUILD_RPATH   "${_DUCKDB_VENDOR_DIR}"
+                BUILD_RPATH   "@executable_path;${_DUCKDB_VENDOR_DIR}"
             )
         endif()
     else()

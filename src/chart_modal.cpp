@@ -117,9 +117,9 @@ ChartModalDialog::ChartModalDialog(const QJsonObject &spec, QWidget *parent)
     // fallback (lite mode) keeps PNG, disables the rest.
     if (!vegaRenderer()) {
         svgAct->setEnabled(false);
-        svgAct->setText(tr("SVG · install Charts Pack to enable"));
+        svgAct->setText(tr("SVG · Full build only (Linux/Windows)"));
         htmlAct->setEnabled(false);
-        htmlAct->setText(tr("HTML · install Charts Pack to enable"));
+        htmlAct->setText(tr("HTML · Full build only (Linux/Windows)"));
     }
     btnRow->addWidget(exportBtn);
 

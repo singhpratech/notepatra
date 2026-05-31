@@ -207,8 +207,13 @@ int main(int argc, char **argv) {
                == chartsLinked);
         EXPECT(NotepatraPlugins::isInstalled(
                    QStringLiteral("nonexistent-pack-name")) == false);
+        // v0.1.107 — there is NO separately-downloadable charts pack: inline
+        // Vega rendering ships in the Full binary (Linux/Windows; macOS Full is
+        // DuckDB-only). approximateDownloadSize() returns 0 so the lite-stub
+        // card omits the size line instead of fabricating a "≈ 95 MB" download.
+        // Guards against the stale hardcoded flavor size returning.
         EXPECT(NotepatraPlugins::approximateDownloadSize(
-                   QString::fromLatin1(NotepatraPlugins::kChartsPack)) > 0);
+                   QString::fromLatin1(NotepatraPlugins::kChartsPack)) == 0);
         EXPECT(!NotepatraPlugins::manualInstallDocUrl(
                    QString::fromLatin1(NotepatraPlugins::kChartsPack)).isEmpty());
         EXPECT(!NotepatraPlugins::pluginDir().isEmpty());

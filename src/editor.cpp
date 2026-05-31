@@ -1521,9 +1521,9 @@ void Editor::toggleBlockComment() {
 }
 
 // v0.1.45 — explicit Comment-only / Uncomment-only operations. The
-// toggle helpers above flip state; these always go in one direction,
-// matching Notepad++'s separate menu items + Ctrl+K / Ctrl+Shift+K
-// shortcuts.
+// toggle helpers above flip state; these always go in one direction.
+// Shortcuts: Comment Line = Ctrl+K, Uncomment Line = Ctrl+Alt+U
+// (Ctrl+Shift+K is Delete Current Line; moved here in v0.1.107).
 void Editor::commentLine() {
     const CommentSyntax cs = commentSyntaxFor(m_language);
     if (cs.line.isEmpty()) return;
@@ -1726,7 +1726,8 @@ void Editor::contextMenuEvent(QContextMenuEvent *event) {
 
     auto *uncmtLineAct = menu.addAction(tr("&Uncomment Line"), this,
         [this]() { uncommentLine(); });
-    uncmtLineAct->setShortcut(QKeySequence("Ctrl+Shift+K"));
+    // Ctrl+Alt+U — Ctrl+Shift+K is reserved for Delete Current Line (v0.1.107).
+    uncmtLineAct->setShortcut(QKeySequence("Ctrl+Alt+U"));
     uncmtLineAct->setEnabled(!cs.line.isEmpty());
 
     auto *cmtBlockAct = menu.addAction(tr("Co&mment Block"), this,

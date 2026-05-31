@@ -323,8 +323,9 @@ QString detectLanguageFromPath(const QString &path, const QString &text) {
     const QString name = fi.fileName();
 
     static const QHash<QString, QString> extMap = {
-        {"py", "Python"}, {"pyw", "Python"}, {"pyx", "Python"}, {"pyi", "Python"},
-        {"pxd", "Python"}, {"ipynb", "JSON"}, {"sage", "Python"}, {"bzl", "Python"},
+        {"py", "Python"}, {"pyw", "Python"}, {"pyi", "Python"},
+        {"ipynb", "JSON"}, {"sage", "Python"}, {"bzl", "Python"},
+        // .pyx / .pxd are Cython, mapped below (not Python).
         {"js", "JavaScript"}, {"mjs", "JavaScript"}, {"cjs", "JavaScript"},
         {"jsx", "JavaScript"},
         {"ts", "TypeScript"}, {"tsx", "TypeScript"}, {"mts", "TypeScript"}, {"cts", "TypeScript"},
@@ -335,7 +336,7 @@ QString detectLanguageFromPath(const QString &path, const QString &text) {
         {"m", "Octave"}, {"mm", "C++"},
         {"cs", "C#"},
         {"java", "Java"},
-        {"scala", "Java"}, {"sc", "Java"}, {"groovy", "Java"}, {"gradle", "Java"},
+        // .scala/.sc → Scala, .groovy/.gradle → Groovy (mapped below, not Java).
         {"d", "D"}, {"di", "D"},
         {"rs", "Rust"},
         {"go", "Go"},
@@ -344,7 +345,7 @@ QString detectLanguageFromPath(const QString &path, const QString &text) {
         {"html", "HTML"}, {"htm", "HTML"}, {"xhtml", "HTML"}, {"html5", "HTML"},
         {"vue", "HTML"}, {"svelte", "HTML"}, {"jsp", "HTML"},
         {"erb", "HTML"}, {"ejs", "HTML"}, {"hbs", "HTML"},
-        {"twig", "HTML"}, {"jinja", "HTML"}, {"jinja2", "HTML"},
+        // .twig → Twig, .jinja/.jinja2 → Jinja (mapped below, not HTML).
         {"php", "HTML"}, {"phtml", "HTML"},
         {"css", "CSS"}, {"scss", "CSS"}, {"sass", "CSS"}, {"less", "CSS"},
         {"xml", "XML"}, {"svg", "XML"}, {"xsl", "XML"}, {"xsd", "XML"},
@@ -360,8 +361,9 @@ QString detectLanguageFromPath(const QString &path, const QString &text) {
         {"pgsql", "SQL"}, {"plsql", "SQL"}, {"tsql", "SQL"},
         {"mysql", "SQL"}, {"sqlite", "SQL"}, {"hql", "SQL"},
         {"cql", "SQL"}, {"psql", "SQL"},
-        {"sh", "Bash"}, {"bash", "Bash"}, {"zsh", "Bash"}, {"fish", "Bash"},
+        {"sh", "Bash"}, {"bash", "Bash"}, {"zsh", "Bash"},
         {"ksh", "Bash"}, {"csh", "Bash"}, {"tcsh", "Bash"},
+        // .fish → Fish (mapped below, not Bash).
         {"bat", "Batch"}, {"cmd", "Batch"},
         {"ps1", "PowerShell"}, {"psm1", "PowerShell"}, {"psd1", "PowerShell"},
         {"ps1xml", "XML"},
@@ -393,7 +395,7 @@ QString detectLanguageFromPath(const QString &path, const QString &text) {
         {"md", "Markdown"}, {"markdown", "Markdown"}, {"mkd", "Markdown"},
         {"rst", "Markdown"},
         {"yml", "YAML"}, {"yaml", "YAML"},
-        {"toml", "Properties"},
+        // .toml → TOML (mapped below, not Properties).
         {"diff", "Diff"}, {"patch", "Diff"},
         {"pas", "Pascal"}, {"pp", "Pascal"}, {"dpr", "Pascal"}, {"dpk", "Pascal"},
         {"cmake", "CMake"},
@@ -412,7 +414,7 @@ QString detectLanguageFromPath(const QString &path, const QString &text) {
         {"sol", "Solidity"},
         {"zig", "Zig"}, {"zon", "Zig"},
         {"vala", "Vala"}, {"vapi", "Vala"},
-        {"hack", "Hack"}, {"hh", "Hack"},
+        {"hack", "Hack"},   // .hh stays C++ (header), mapped above
         {"jl", "Julia"},
         {"proto", "Protobuf"},
         {"fs", "F#"}, {"fsx", "F#"}, {"fsi", "F#"},
@@ -442,8 +444,7 @@ QString detectLanguageFromPath(const QString &path, const QString &text) {
         {"ml", "Bash"}, {"mli", "Bash"},    // OCaml — needs custom (* *) comment lexer
         {"clj", "Lua"}, {"cljs", "Lua"}, {"cljc", "Lua"}, {"edn", "Lua"},   // Clojure
         {"elm", "Bash"},                    // Elm
-        {"v", "Verilog"},                   // V (lang) collision with Verilog
-        {"vlang", "C++"},                   // V language unique extension
+        {"vlang", "C++"},                   // V language unique extension (.v yields to Verilog above)
         {"odin", "C++"},                    // Odin — C-family
         {"sb", "Bash"}, {"sbn", "Bash"},    // SmallBASIC / scratch
         {"awk", "Bash"},                    // AWK — Bash lexer is close enough

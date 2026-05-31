@@ -272,7 +272,7 @@
                 <tr><td>Supply chain</td><td>Each release page on GitHub publishes SHA-256 checksums, cosign signatures (recorded in the Sigstore Rekor transparency log), and SLSA build-provenance attestations. The releases are built from public source on GitHub Actions; bit-for-bit reproducible builds are planned but not yet implemented.</td></tr>
                 <tr><td>Code signing</td><td>SHA-256 + cosign on every release artifact at the time of writing. Operating-system code signing (Authenticode on Windows, Apple notarization on macOS) is on the roadmap; current builds are unsigned at the OS level but are cryptographically verifiable via cosign.</td></tr>
                 <tr><td>Platforms</td><td>Linux x64 / ARM64, macOS Apple Silicon, Windows x64</td></tr>
-                <tr><td>Footprint</td><td>Bare executable under 10 MB. Latest release downloads: 3.5 MB (Linux x64 tar.gz), ~27 MB (macOS DMG), ~40 MB (Windows MSI). Exact sizes vary release-to-release; the GitHub release page is canonical.</td></tr>
+                <tr><td>Footprint</td><td>Bare executable under 12 MB (~11.5 MB on Linux x64). Latest Lite (default) downloads: 4.1 MB (Linux x64 tar.gz), 27.5 MB (macOS DMG), 42.4 MB (Windows MSI); the opt-in Full download is larger (bundles DuckDB, plus WebEngine on Linux/Windows). Exact sizes vary release-to-release; the GitHub release page is canonical.</td></tr>
                 <tr><td>Updates</td><td>Manual. No auto-update daemon. No background service.</td></tr>
                 <tr><td>Plugins</td><td>Drop a <code>.so</code>/<code>.dylib</code>/<code>.dll</code> in <code>~/.config/notepatra/plugins/</code>. No remote plugin registry. No auto-install.</td></tr>
             </table>
@@ -367,7 +367,7 @@
                 <tr><td>Qt 5/6 (UI framework)</td><td>LGPL-3.0 (dynamic linking)</td><td><span class="ok">Yes.</span> Standard Qt-app posture.</td></tr>
                 <tr><td>QScintilla (editor widget)</td><td>GPL-3.0 (or commercial)</td><td><span class="ok">Yes.</span> Riverbank Computing dual-licenses this; Notepatra uses the free GPL-3.0 path.</td></tr>
                 <tr><td>Scintilla (editor engine)</td><td>HPND (BSD-like, permissive)</td><td><span class="ok">Yes.</span></td></tr>
-                <tr><td>DuckDB (Data Analyst mode — optional, not bundled in prebuilt downloads; enabled only when building from source with <code>-DNOTEPATRA_USE_DUCKDB=ON</code>)</td><td>MIT</td><td><span class="ok">Yes.</span></td></tr>
+                <tr><td>DuckDB v1.1.3 (Data Analyst mode — bundled in the Full prebuilt download on every platform; the Lite default download has CSV + in-memory SQLite only)</td><td>MIT</td><td><span class="ok">Yes.</span></td></tr>
                 <tr><td>Rust crates (memmap2, regex, aho-corasick, encoding_rs, etc.)</td><td>MIT / Apache-2.0 dual</td><td><span class="ok">Yes.</span></td></tr>
                 <tr><td>Vega + Vega-Lite + vega-embed (chart rendering — Full flavor only)</td><td>BSD-3-Clause</td><td><span class="ok">Yes.</span></td></tr>
             </table>
@@ -541,7 +541,7 @@
             <p>Yes — GPL-3.0 explicitly allows this. You may redistribute the binaries inside your organization (or publicly) as long as you also offer the source code under GPL-3.0. Pointing users at <code>github.com/singhpratech/notepatra</code> satisfies the source-availability requirement.</p>
 
             <h3>Can we run Notepatra in an air-gapped environment?</h3>
-            <p>Yes. The Lite flavor is fully self-contained (~10 MB on disk). The Full flavor bundles the chart-rendering JS as a Qt resource and works offline. AI features can be configured for a local Ollama or llama.cpp running on the air-gapped machine — no external network required.</p>
+            <p>Yes. The Lite flavor is fully self-contained (~11.5 MB on disk). On Linux and Windows, the Full flavor bundles the chart-rendering JS as a Qt resource and works offline (the WebEngine Vega chart path is Linux/Windows-only; macOS Full is DuckDB-only with no inline Vega). The native QtCharts <code>```chart</code> renderer works offline on every platform. AI features can be configured for a local Ollama or llama.cpp running on the air-gapped machine — no external network required.</p>
         </section>
 
         <section id="warranty">
