@@ -2205,7 +2205,12 @@ jobs:
           fi
           cp notepatra-macos-arm64/Notepatra.dmg notepatra-macos-arm64.dmg
           if [ -d notepatra-macos-arm64-full ]; then
-            cp notepatra-macos-arm64-full/Notepatra.dmg notepatra-macos-arm64-full.dmg
+            # The macOS Full build uploads its DMG as Notepatra-full.dmg
+            # (build.yml "Upload DMG (full flavor)" → path build-full/Notepatra-full.dmg),
+            # NOT Notepatra.dmg. v0.1.107 is the first release to ship a macOS
+            # Full DMG, so this path never ran before and the wrong basename
+            # (Notepatra.dmg) hard-failed the Package step. Use the real name.
+            cp notepatra-macos-arm64-full/Notepatra-full.dmg notepatra-macos-arm64-full.dmg
           fi
           if [ -d notepatra-windows-x64 ]; then
             cd notepatra-windows-x64 && zip -r ../notepatra-windows-x64.zip . && cd ..
