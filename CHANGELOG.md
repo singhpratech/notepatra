@@ -7,6 +7,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.108] — 2026-05-31
+
+**Data Analyst mode writes sharper SQL — three filter-correctness idioms added to the built-in analyst prompt. Prompt-only; same bare binary.**
+
+### Changed
+- **Case-insensitive text search** — "description contains X" now lower-cases both sides (`WHERE LOWER(col) LIKE '%x%'`). A bare `LIKE` is case-sensitive in SQLite / PostgreSQL / DuckDB and silently skipped Capitalized rows, undercounting the answer.
+- **Exact-code matching without over-filtering** — when a question names a coded value ("LOINC 8480-6", "CVX 140"), the analyst matches the bare stored code and stops, instead of adding a guessed `AND system = …` / `AND category = …` / redundant `LIKE` that could silently drop every matching row (a plausible `system = 'SNOMED'` returns 0 rows when the column actually stores `'SNOMED-CT'`).
+- **No invented category/type literals** — the analyst no longer filters on a category literal guessed from the question's English label ("obese", "active") without verifying it exists; it checks the distinct values or filters on the code first.
+
+### Notes
+- Prompt-only change in `src/ai_systemprompt.cpp` (Data Analyst mode); no binary / dependency / download-size change from v0.1.107. Validated against a multi-domain text-to-SQL evaluation with no regressions. 51/51 ctest pass.
+
 ## [0.1.107] — 2026-05-30
 
 **Lite + Full downloads for all three platforms, with DuckDB bundled in Full — plus extension-routing and shortcut fixes.**

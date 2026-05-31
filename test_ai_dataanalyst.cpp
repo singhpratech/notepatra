@@ -145,8 +145,12 @@ static void testBuildWithProjectContext() {
     QString spHuge = buildWithProjectContext(Intent::DataAnalyst, "", false, huge);
     EXPECT_TRUE("8KB cap on project ctx (truncated marker present)",
                 spHuge.contains("[...truncated]"));
-    EXPECT_TRUE("8KB cap keeps prompt under 18KB (safe margin)",
-                spHuge.toUtf8().size() < 18 * 1024);
+    // The base DataAnalyst prompt grew +~1KB in v0.1.108 (filter-correctness
+    // idioms: case-insensitive LIKE, bare-code matching, no guessed category
+    // literals). The 8KB project-context cap is still the contract under test;
+    // total = base + 8KB cap + headers, so the bound is 19KB with margin.
+    EXPECT_TRUE("8KB project-ctx cap keeps total prompt under 19KB (safe margin)",
+                spHuge.toUtf8().size() < 19 * 1024);
 }
 
 static void testReadInstructions(const QTemporaryDir &fixDir) {
