@@ -2084,7 +2084,14 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             }
         }
         scheduleChatSave();
-        if (m_chatLayout) renderTranscript();  // hardening: skip render if surface gone
+        // v0.1.111 — responseStats fires synchronously right after finished().
+        // If a write-approval card is pending, a re-render here would destroy
+        // the just-created card (renderTranscript's teardown-guard) before the
+        // user can click it — making the gate non-functional. Skip the render
+        // while paused on the user; the stats are already stored on the message
+        // and will show when the turn finalises (after Approve/Reject →
+        // endAssistantBubble → renderTranscript). hardening: skip if surface gone.
+        if (m_chatLayout && m_pendingWriteApprovals == 0) renderTranscript();
     });
     connect(m_ollama, &OllamaClient::error, this, [this](const QString &msg) {
         // v0.1.111 — a mid-stream error (e.g. dropped connection) after a write
@@ -3011,6 +3018,9 @@ AIPanel::OutgoingContext AIPanel::computeOutgoingContext(bool attachWorkspace) {
     acTabs.reserve(m_openTabs.size());
     for (const auto &t : m_openTabs) {
         if (m_ctxExcludeOtherTabs && !t.isCurrent) continue;
+        // Excluding the current file also drops it from the open-tab listing
+        // header, not just the body section (consistent exclusion).
+        if (m_ctxExcludeCurrentFile && t.isCurrent) continue;
         AiContext::OpenTabInfo n;
         n.filePath = t.filePath;
         n.displayName = t.displayName;
@@ -3057,13 +3067,28 @@ void AIPanel::refreshContextChips() {
     const OutgoingContext oc = computeOutgoingContext(attachWorkspace);
 
     if (!oc.attached || oc.text.isEmpty()) {
-        const bool shareOff = !Config::instance().aiShareOpenFile;
-        m_contextChip->setText(shareOff ? tr("none sent — file sharing off")
-                                        : tr("none sent"));
-        m_contextChip->setToolTip(shareOff
-            ? tr("The AI is not sent your open files. Enable \"Auto-attach open file\" "
-                 "in AI settings to share context.")
-            : tr("No workspace context is attached to this message."));
+        // No fixed context block is prepended for a typed coding message — but
+        // that does NOT mean the AI is blind: in Coding mode it reads files on
+        // demand via the read_file / search tools (a workspace + tools-capable
+        // model). Be honest about that rather than misleadingly saying "none".
+        const bool hasWorkspace = !m_workspaceRoot.isEmpty();
+        const bool toolMode = codingMode && hasWorkspace
+            && ((m_composeSegBtn && m_composeSegBtn->isChecked())
+                || (m_agentSegBtn && m_agentSegBtn->isChecked()));
+        if (toolMode) {
+            m_contextChip->setText(tr("AI reads files on demand  ▸"));
+            m_contextChip->setToolTip(tr("In Coding mode the AI reads your workspace "
+                "files as it needs them (read_file / search tools). Click to see what, "
+                "if anything, is prepended to this message."));
+        } else if (hasWorkspace) {
+            m_contextChip->setText(tr("workspace only  ▸"));
+            m_contextChip->setToolTip(tr("Only the workspace location is shared; no file "
+                                         "contents are prepended to this message."));
+        } else {
+            m_contextChip->setText(tr("none sent"));
+            m_contextChip->setToolTip(tr("No workspace is open, so no codebase context "
+                                         "is attached to this message."));
+        }
         return;
     }
 
@@ -3149,8 +3174,17 @@ void AIPanel::showContextPopover() {
         const int approxTokens = (bytes + 3) / 4;
         QString h;
         if (!oc.attached || oc.text.isEmpty()) {
-            h = tr("Nothing is sent — the privacy gate is off, or this message "
-                   "doesn't trigger workspace context.");
+            const bool coding = (m_codingMode && m_codingMode->isChecked());
+            const bool toolMode = coding && !m_workspaceRoot.isEmpty()
+                && ((m_composeSegBtn && m_composeSegBtn->isChecked())
+                    || (m_agentSegBtn && m_agentSegBtn->isChecked()));
+            h = toolMode
+                ? tr("No fixed context block is prepended to this message. In Coding "
+                     "mode the AI reads your workspace files on demand via the "
+                     "read_file / search tools (the Include toggles below apply when a "
+                     "block IS prepended, e.g. for Explain / Refactor actions).")
+                : tr("Nothing is prepended — the privacy gate is off, or this message "
+                     "doesn't trigger workspace context.");
         } else {
             h = tr("~%1 KB · ~%2 tokens%3 prepended to your message.")
                     .arg(bytes / 1024.0, 0, 'f', 1).arg(approxTokens)
@@ -3764,6 +3798,7 @@ void AIPanel::sendPrompt(const QString &action) {
     m_pendingWriteApprovals = 0;
     m_streamFinishedAwaitingApproval = false;
     m_approvalCancellers.clear();
+    m_approvalApprovers.clear();
     if (toolModeActive && !m_workspaceRoot.isEmpty()) {
         if (currentModelSupportsTools()) {
             toolsForRequest = AiTools::availableTools();
@@ -6088,11 +6123,20 @@ void AIPanel::enqueueWriteApproval(const QString &id, const QString &name,
         queueAndResume(msg);
     };
 
+    // Register this card's approve action so "Approve all this turn" can resolve
+    // it even if a different card was the one clicked.
+    m_approvalApprovers.append(doApprove);
+
     connect(approveBtn, &QPushButton::clicked, this, doApprove);
     connect(rejectBtn,  &QPushButton::clicked, this, doReject);
-    connect(allBtn,     &QPushButton::clicked, this, [this, doApprove]() {
-        m_turnWriteApproval = true;   // skip the gate for the rest of this turn
-        doApprove();
+    connect(allBtn,     &QPushButton::clicked, this, [this]() {
+        m_turnWriteApproval = true;   // skip the gate for the REST of this turn
+        // Approve every still-open card this turn (each doApprove is guarded by
+        // its own `decided`, so already-resolved cards are a no-op). Iterate a
+        // snapshot — each approve decrements the counter and the last one flushes.
+        const QVector<std::function<void()>> approvers = m_approvalApprovers;
+        for (const auto &approve : approvers)
+            if (approve) approve();
     });
 }
 
@@ -6125,6 +6169,7 @@ void AIPanel::cancelPendingWriteApprovals() {
     for (auto &cancel : m_approvalCancellers)
         if (cancel) cancel();
     m_approvalCancellers.clear();
+    m_approvalApprovers.clear();
     m_pendingWriteApprovals = 0;
     m_streamFinishedAwaitingApproval = false;
     m_turnWriteApproval = false;
@@ -7272,9 +7317,13 @@ void AIPanel::undoLastApply() {
     // and none were already reverted — do NOT silently consume the undo. Keep
     // the batch + the Undo button and tell the user why nothing happened.
     if (toRevert.isEmpty() && alreadyReverted.isEmpty()) {
-        appendErrorBubble(tr("Undo apply: all %n file(s) changed since they were "
-                             "applied — nothing reverted. Undo is still available.",
-                             nullptr, drifted.size()));
+        ChatMessage note;
+        note.role = ChatMessage::Assistant;
+        note.text = tr("↶ Nothing reverted — all %n file(s) changed since they were "
+                       "applied. Undo is still available.", nullptr, drifted.size());
+        activeMessages().push_back(note);
+        scheduleChatSave();
+        if (m_chatLayout) renderTranscript();
         return;  // batch + Undo button intentionally retained
     }
 

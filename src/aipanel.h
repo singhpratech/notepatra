@@ -418,6 +418,10 @@ private:
     // strand the next turn. Each enqueueWriteApproval registers a canceller here.
     void cancelPendingWriteApprovals();
     QVector<std::function<void()>> m_approvalCancellers;
+    // Parallel registry of per-card "approve" callbacks so "Approve all this
+    // turn" resolves EVERY open card (not just the clicked one) — matching the
+    // button's promise when a stream emitted several writes.
+    QVector<std::function<void()>> m_approvalApprovers;
 
     // Legacy placeholder — retained so any stray references still compile.
     // All rendering now goes through m_chatLayout.
