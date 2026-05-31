@@ -7,6 +7,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.111] — 2026-05-31
+
+**AI coding assistant — the "lovable agent" wave (grade B- → B+/A-). Four UX features; same bare binary, no new deps. Hardened by a parallel adversarial worktree review that caught a non-UTF-8 revert-corruption bug and a write-after-cancel bug before ship.**
+
+### Added
+- **Agent write-confirmation gate** — in the autonomous **Agent** segment, `write_file` / `apply_diff` now show an inline **Approve / Reject / Approve-all-this-turn** card with a diff preview *before* touching disk; reads are never gated (`aipanel.cpp` `handleToolCall` gate + `enqueueWriteApproval`). The held flush resumes the turn only after the user decides; Stop / stream-error / clear / re-render all neutralise an open card so a cancelled write can never land (`cancelPendingWriteApprovals`).
+- **Context transparency** — a **Context** chip above the input shows exactly what codebase context (current file · tabs · tree) will be sent, with its size; clicking opens a read-only popover of the *literal bytes* with per-source **Include** toggles. One assembler (`computeOutgoingContext`) feeds both the preview and the send path, so preview == sent by construction; credentials are redacted in both (`aipanel.cpp`, `ai_context.*`).
+- **Composer Apply rollback** — an **Undo apply** button restores the last applied batch to its previous content, **byte-exact** (raw `QByteArray`, safe for non-UTF-8 files) and **drift-protected** (a file changed since apply prompts Revert-anyway / Skip / Cancel rather than clobbering); reverting a created file deletes it (`aipanel.cpp` `undoLastApply` + `writeFileAtomic`, `edit_plan.{h,cpp}` `setPending`/`markPending`/Undo button).
+
+### Changed
+- **Inline edit (Ctrl+I) diff** — now uses the real **Myers diff** (`InlineDiff::computeInlineDiffRows` → `RustCore::computeDiff`) with filler-row alignment, so a one-line change highlights one line instead of the whole block; tints (and the legend) are now **theme-aware** (they were light-only — a Dark/Monokai bug) (`inlineedit_diff.{h,cpp}`, `inlineedit.cpp`).
+- Replaced the `📄` file-page emoji in the Edit Plan with `QStyle::SP_FileIcon` (no Linux tofu) (`edit_plan.cpp`).
+
+### Notes
+- UX / behaviour changes only — no binary, dependency, or download-size change. Lite stays bare. New UI uses plain dingbats (✓ ↶ ▸ ⊘), never colour-emoji.
+- The Agent write-gate is the authorized behaviour change: Agent mode is confirm-before-write by default. "Approve all this turn" re-arms each new message — there is no session-wide "always allow".
+- No regressions: **52/52 ctest** (Lite + Full), incl. a new `test_inline_diff` and an extended `test_edit_plan` rollback-state test, plus a parallel adversarial worktree review of every changed file.
+
+---
+
 ## [0.1.110] — 2026-05-31
 
 **AI coding assistant — a trust & clarity pass (driven by a deep usability audit; grade C+ → B-). UX/state changes only; same bare binary.**
