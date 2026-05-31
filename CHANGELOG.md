@@ -7,6 +7,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.109] — 2026-05-31
+
+**The full build drops its "Full" name tag — the default build self-identifies simply as "Notepatra"; only the bare lite build keeps a "Lite" suffix.**
+
+### Changed
+- **In-app build-flavor name** (`src/build_flavor.h`) — `notepatra --version`, the window title bar, and the About dialog now show **Notepatra** for the full (DuckDB-bundled) build instead of "Notepatra Full"; the full edition is the default, so it carries no qualifier. The bare build still says **Notepatra Lite**, and the cloud-free builds are **Notepatra Local AI** / **Notepatra Local AI Lite**. Only the lite edition carries an edition suffix.
+
+### Notes
+- Naming only — the Lite vs Full **downloads** are unchanged (Full still bundles DuckDB v1.1.3 on every platform), as are the binary's features and download sizes. The internal `setApplicationName("Notepatra")` that drives config/settings paths is unchanged. 51/51 ctest pass on both Lite and Full builds.
+
 ## [0.1.108] — 2026-05-31
 
 **Data Analyst mode writes sharper SQL — three filter-correctness idioms added to the built-in analyst prompt. Prompt-only; same bare binary.**
