@@ -195,6 +195,32 @@ private:
     // change. Theme-safe: reuses the same accent-on-chrome pattern already
     // proven on Light/Dark/Monokai.
     void refreshModeHeader();
+
+    // v0.1.111 — Context transparency. The SINGLE place outgoing codebase
+    // context is assembled. Both sendPrompt and the context-chip preview call
+    // this over the same member state, so what the chip/popover shows is
+    // byte-for-byte what gets sent (preview == reality, by construction — no
+    // second assembler can drift). `attachWorkspace` is the intent-dependent
+    // gate (shouldAttachWorkspace), passed in so this stays free of the Intent
+    // enum. Per-source exclude flags (m_ctxExclude*) drop inputs BEFORE the one
+    // assembly call — never by editing its output.
+    struct OutgoingContext {
+        QString text;             // exact bytes prepended (post-scrub); "" if not attached
+        int     redactions = 0;   // CredScrub count
+        bool    attached = false; // were both gates satisfied?
+        int     currentFileChars = 0;
+        int     otherTabsChars = 0;
+        int     treeEntries = 0;
+    };
+    OutgoingContext computeOutgoingContext(bool attachWorkspace);
+    // Recompute + re-render the context chip summary. Called on tab/file change,
+    // mode/segment change, and popover open — NOT on every keystroke (recompute
+    // per-keystroke janks typing on a many-tab workspace).
+    void refreshContextChips();
+    // Open the read-only popover showing the literal context bytes + per-source
+    // exclude toggles.
+    void showContextPopover();
+
     void setStatus(const QString &text, bool error = false);
     void updateVoiceButtonVisual(bool recording);
     void renderTranscript();
@@ -314,7 +340,9 @@ private:
     // Only the LAST apply is retained (single-level undo).
     struct AppliedSnapshot {
         QString    absPath;
-        QString    before;      // pre-edit content (revert target)
+        QByteArray beforeBytes; // EXACT pre-edit bytes (revert target). Raw bytes,
+                                // never a QString — a lossy UTF-8 round-trip would
+                                // corrupt non-UTF-8 (latin-1/binary) files on revert.
         QByteArray afterBytes;  // exact bytes we wrote — the drift baseline
         bool       wasNew;      // true → the apply created the file → revert deletes it
     };
@@ -383,6 +411,13 @@ private:
                               const QJsonObject &args, const QString &argsSummary);
     // Resume the agent loop once the last pending approval resolves.
     void maybeResumeAfterApprovals();
+    // Neutralise every open write-approval card (set its one-shot decided flag,
+    // disable its buttons) and reset the gate counters. Called from every turn-
+    // teardown path — Stop, stream error, clearChat, and a forced re-render —
+    // so a write the user cancelled can NEVER land, and the counter can never
+    // strand the next turn. Each enqueueWriteApproval registers a canceller here.
+    void cancelPendingWriteApprovals();
+    QVector<std::function<void()>> m_approvalCancellers;
 
     // Legacy placeholder — retained so any stray references still compile.
     // All rendering now goes through m_chatLayout.
@@ -469,6 +504,15 @@ private:
     QString m_workspaceRoot;
     QStringList m_workspaceFilePaths;  // relative paths of every file under the workspace
     ContextProvider m_contextProvider;
+
+    // v0.1.111 — Context transparency. Per-source exclude flags are ephemeral
+    // (reset after each send): an in-the-moment privacy gesture, not a persisted
+    // setting (persisting would duplicate Config::aiShareOpenFile and rot).
+    bool m_ctxExcludeCurrentFile = false;
+    bool m_ctxExcludeOtherTabs   = false;
+    bool m_ctxExcludeTree        = false;
+    QWidget     *m_contextChipRow = nullptr;  // strip above the input
+    QPushButton *m_contextChip    = nullptr;  // the clickable summary chip
     QString m_lastResponse;
     QString m_currentAssistantText;  // accumulating during stream
     bool m_inAssistantBubble = false;

@@ -172,9 +172,17 @@ InlineEditDialog::InlineEditDialog(const QString &selectedText,
         v->addWidget(split, 1);
 
         auto *row = new QHBoxLayout;
+        // Theme-aware legend colours (the diff tints themselves are already
+        // luminance-aware in renderDiff; keep the legend in step for Dark/Monokai).
+        const QColor lbase = QApplication::palette().color(QPalette::Base);
+        const bool ldark = ((0.299 * lbase.redF()) + (0.587 * lbase.greenF())
+                            + (0.114 * lbase.blueF())) < 0.5;
+        const QString legRed   = ldark ? "#e88" : "#a33";
+        const QString legGreen = ldark ? "#8d8" : "#2a7";
         auto *legend = new QLabel(
-            "<span style='color:#a33'>red</span> = removed · "
-            "<span style='color:#2a7'>green</span> = added", page);
+            QStringLiteral("<span style='color:%1'>red</span> = removed · "
+                           "<span style='color:%2'>green</span> = added")
+                .arg(legRed, legGreen), page);
         row->addWidget(legend);
         row->addStretch(1);
         m_discardBtn = new QPushButton("Cancel", page);

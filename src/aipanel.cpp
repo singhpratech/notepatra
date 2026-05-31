@@ -18,6 +18,7 @@
 #include "config.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QPointer>
 #include <QtMath>
 #include <QLabel>
 #include <QFont>
@@ -1193,6 +1194,9 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
 
         // Reflect intent + segment in the chrome header now that both are set.
         refreshModeHeader();
+        // v0.1.111 — the context strip only shows in Coding mode; refresh it
+        // when the intent mode flips.
+        refreshContextChips();
 
         if (m_chatLayout) renderTranscript();
         emit codingModeRequested(coding);
@@ -1503,6 +1507,9 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             [this](const QString &) {
                 if (m_editPlan && m_editPlan->count() == 0) {
                     m_editPlan->setVisible(false);
+                    // v0.1.111 — the plan is empty (Reject All / last row removed);
+                    // drop the stale rollback snapshot so it can't outlive its rows.
+                    m_lastApplyBatch.clear();
                 }
             });
 
@@ -1663,6 +1670,31 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     m_attachmentChip->setFixedHeight(0);  // hidden until something attached
     m_attachmentChip->setVisible(false);
     layout->addWidget(m_attachmentChip);
+
+    // ─── CONTEXT CHIP (v0.1.111) — shows what codebase context will be sent ─
+    // A privacy/transparency strip above the input: a clickable summary of the
+    // exact context block (current file + tabs + tree, with byte size) that
+    // computeOutgoingContext will prepend, or "none sent" when the gates are
+    // off. Clicking opens a popover with the literal bytes + per-source toggles.
+    m_contextChipRow = new QWidget;
+    auto *ctxLay = new QHBoxLayout(m_contextChipRow);
+    ctxLay->setContentsMargins(8, 0, 8, 2);
+    ctxLay->setSpacing(6);
+    auto *ctxLabel = new QLabel(tr("Context:"));
+    ctxLabel->setStyleSheet(QString("color:%1; background:transparent; font-size:11px;").arg(pal.muted));
+    ctxLay->addWidget(ctxLabel);
+    m_contextChip = new QPushButton(tr("none sent"));
+    m_contextChip->setCursor(Qt::PointingHandCursor);
+    m_contextChip->setStyleSheet(QString(
+        "QPushButton{background:%1; color:%2; border:1px solid %3; border-radius:10px; "
+        "padding:2px 10px; font-size:11px; text-align:left;} "
+        "QPushButton:hover{border-color:%4;}")
+        .arg(pal.chromeBg, pal.headerFg, pal.inputBorder, pal.accent));
+    connect(m_contextChip, &QPushButton::clicked, this, &AIPanel::showContextPopover);
+    ctxLay->addWidget(m_contextChip);
+    ctxLay->addStretch(1);
+    m_contextChipRow->setVisible(false);  // shown by refreshContextChips when relevant
+    layout->addWidget(m_contextChipRow);
 
     // ─── INPUT BAR AT THE BOTTOM (like every real chat / SMS app) ───────
     auto *customRow = new QHBoxLayout;
@@ -2055,6 +2087,10 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         if (m_chatLayout) renderTranscript();  // hardening: skip render if surface gone
     });
     connect(m_ollama, &OllamaClient::error, this, [this](const QString &msg) {
+        // v0.1.111 — a mid-stream error (e.g. dropped connection) after a write
+        // tool-call must neutralise any open approval card too — otherwise it
+        // stays clickable and a later Approve writes into a dead turn.
+        cancelPendingWriteApprovals();
         endAssistantBubble();
         // hardening: surface even an empty error string with a generic notice
         // so a silent backend failure never becomes an invisible failure.
@@ -2427,11 +2463,10 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         m_toolCallsThisTurn = 0;
         m_toolCallsTotal = 0;
         m_toolsActiveThisTurn = false;
-        // v0.1.111 — clear any pending write-approval state so an aborted run
-        // doesn't strand the gate (a stranded counter would freeze the next turn).
-        m_pendingWriteApprovals = 0;
-        m_streamFinishedAwaitingApproval = false;
-        m_turnWriteApproval = false;
+        // v0.1.111 — Stop means "cancel this run": neutralise any open write-
+        // approval card so clicking Approve on it AFTER Stop can't still write
+        // to disk, and reset the gate counters so the next turn isn't stranded.
+        cancelPendingWriteApprovals();
         if (m_inAssistantBubble) {
             endAssistantBubble();
         }
@@ -2528,6 +2563,9 @@ void AIPanel::setWorkspaceContext(const QString &selectedText,
             renderTranscript();
         }
     }
+
+    // v0.1.111 — the context chip reflects the freshest workspace state.
+    refreshContextChips();
 }
 
 void AIPanel::refreshModels() {
@@ -2947,6 +2985,205 @@ QString AIPanel::buildWorkspaceContextBlock(const QString &currentFilePath,
     }
     return AiContext::buildWorkspaceContextBlock(
         currentFilePath, currentFileText, tabs, workspaceRoot);
+}
+
+// v0.1.111 — Context transparency single source of truth. Assemble the exact
+// codebase-context block that will be prepended to the prompt, honouring the
+// privacy gates and the per-source exclude flags. sendPrompt and the chip
+// preview BOTH call this over the same member state → preview == sent.
+AIPanel::OutgoingContext AIPanel::computeOutgoingContext(bool attachWorkspace) {
+    OutgoingContext c;
+    const bool aiCanSeeFile =
+        (m_codingMode && m_codingMode->isChecked()) && Config::instance().aiShareOpenFile;
+    c.attached = attachWorkspace && aiCanSeeFile;
+    if (!c.attached) return c;
+
+    int red = 0;
+    auto scrub = [&red](const QString &s) -> QString {
+        int n = 0;
+        const QString out = CredScrub::redact(s, &n);
+        red += n;
+        return out;
+    };
+
+    // Other open tabs (excludable). Track raw char totals for the chip sizes.
+    QVector<AiContext::OpenTabInfo> acTabs;
+    acTabs.reserve(m_openTabs.size());
+    for (const auto &t : m_openTabs) {
+        if (m_ctxExcludeOtherTabs && !t.isCurrent) continue;
+        AiContext::OpenTabInfo n;
+        n.filePath = t.filePath;
+        n.displayName = t.displayName;
+        n.language = t.language;
+        n.text = scrub(t.text);
+        n.isCurrent = t.isCurrent;
+        if (!t.isCurrent) c.otherTabsChars += t.text.size();
+        acTabs.append(n);
+    }
+
+    // Current file (excludable).
+    const QString curPath = m_ctxExcludeCurrentFile ? QString() : m_currentFilePath;
+    const QString curText = m_ctxExcludeCurrentFile ? QString() : scrub(m_currentFileText);
+    if (!m_ctxExcludeCurrentFile) c.currentFileChars = m_currentFileText.size();
+
+    // Workspace tree (excludable).
+    const QStringList tree = m_ctxExcludeTree ? QStringList() : m_workspaceFilePaths;
+    c.treeEntries = tree.size();
+
+    c.text = AiContext::buildWorkspaceContextBlockWithTree(
+        curPath, curText, acTabs, m_workspaceRoot, tree);
+    c.redactions = red;
+    return c;
+}
+
+// v0.1.111 — recompute the context-chip summary from the SSOT. The chip is an
+// estimate that converges to truth; the authoritative assembly is on Send (and
+// the popover, which renders the literal bytes). Cheap enough to call on
+// tab/file/mode change and popover-open; deliberately NOT bound to keystrokes.
+void AIPanel::refreshContextChips() {
+    if (!m_contextChipRow || !m_contextChip) return;
+    const bool codingMode = (m_codingMode && m_codingMode->isChecked());
+    // The context strip is only meaningful in Coding mode (Chat/Data don't
+    // attach workspace context). Hide it elsewhere to avoid clutter.
+    if (!codingMode) { m_contextChipRow->setVisible(false); return; }
+    m_contextChipRow->setVisible(true);
+
+    const bool dataMode = (m_dataMode && m_dataMode->isChecked());
+    const QString userText = m_customInput ? m_customInput->toPlainText() : QString();
+    const AiSystemPrompt::Intent intent =
+        AiSystemPrompt::classifyIntent(QStringLiteral("custom"), codingMode, dataMode);
+    const bool attachWorkspace =
+        AiSystemPrompt::shouldAttachWorkspace(intent, m_context, userText);
+    const OutgoingContext oc = computeOutgoingContext(attachWorkspace);
+
+    if (!oc.attached || oc.text.isEmpty()) {
+        const bool shareOff = !Config::instance().aiShareOpenFile;
+        m_contextChip->setText(shareOff ? tr("none sent — file sharing off")
+                                        : tr("none sent"));
+        m_contextChip->setToolTip(shareOff
+            ? tr("The AI is not sent your open files. Enable \"Auto-attach open file\" "
+                 "in AI settings to share context.")
+            : tr("No workspace context is attached to this message."));
+        return;
+    }
+
+    QStringList parts;
+    if (oc.currentFileChars > 0) {
+        const QString base = m_currentFilePath.isEmpty()
+            ? tr("this file") : QFileInfo(m_currentFilePath).fileName();
+        parts << base;
+    }
+    int otherTabs = 0;
+    for (const auto &t : m_openTabs) if (!t.isCurrent && !t.text.isEmpty()) ++otherTabs;
+    if (!m_ctxExcludeOtherTabs && otherTabs > 0)
+        parts << tr("%n tab(s)", nullptr, otherTabs);
+    if (!m_ctxExcludeTree && oc.treeEntries > 0)
+        parts << tr("%n file(s)", nullptr, oc.treeEntries);
+
+    const int bytes = oc.text.toUtf8().size();
+    const QString sizeStr = bytes >= 1024
+        ? QStringLiteral("~%1 KB").arg(bytes / 1024.0, 0, 'f', 1)
+        : QStringLiteral("%1 B").arg(bytes);
+    QString summary = parts.join(QStringLiteral(" · "));
+    if (summary.isEmpty()) summary = tr("workspace");
+    summary += QStringLiteral("  ·  ") + sizeStr;
+    if (oc.redactions > 0)
+        summary += QStringLiteral("  ·  ") + tr("%n redacted", nullptr, oc.redactions);
+    summary += QStringLiteral("  ▸");
+    m_contextChip->setText(summary);
+    m_contextChip->setToolTip(tr("Click to see exactly what's sent to the model "
+                                 "(and exclude parts)."));
+}
+
+// v0.1.111 — the read-only popover: shows the LITERAL context bytes + per-source
+// exclude toggles. Renders computeOutgoingContext().text directly so it is, by
+// construction, exactly what Send will prepend.
+void AIPanel::showContextPopover() {
+    const bool codingMode = (m_codingMode && m_codingMode->isChecked());
+    const bool dataMode   = (m_dataMode && m_dataMode->isChecked());
+    const QString userText = m_customInput ? m_customInput->toPlainText() : QString();
+    const AiSystemPrompt::Intent intent =
+        AiSystemPrompt::classifyIntent(QStringLiteral("custom"), codingMode, dataMode);
+
+    const AiPalette pal = aiPalette();
+    auto *dlg = new QDialog(this);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->setWindowTitle(tr("Context sent to the model"));
+    dlg->resize(560, 460);
+    auto *lay = new QVBoxLayout(dlg);
+    lay->setSpacing(8);
+
+    auto *hdr = new QLabel(dlg);
+    hdr->setWordWrap(true);
+    lay->addWidget(hdr);
+
+    // Per-source exclude toggles.
+    auto *excCur  = new QCheckBox(tr("Current file"), dlg);
+    auto *excTabs = new QCheckBox(tr("Other open tabs"), dlg);
+    auto *excTree = new QCheckBox(tr("Workspace file tree"), dlg);
+    excCur->setChecked(!m_ctxExcludeCurrentFile);
+    excTabs->setChecked(!m_ctxExcludeOtherTabs);
+    excTree->setChecked(!m_ctxExcludeTree);
+    auto *togRow = new QHBoxLayout;
+    togRow->addWidget(new QLabel(tr("Include:"), dlg));
+    togRow->addWidget(excCur);
+    togRow->addWidget(excTabs);
+    togRow->addWidget(excTree);
+    togRow->addStretch(1);
+    lay->addLayout(togRow);
+
+    auto *view = new QPlainTextEdit(dlg);
+    view->setReadOnly(true);
+    view->setLineWrapMode(QPlainTextEdit::NoWrap);
+    view->setStyleSheet(QString(
+        "background:%1; color:%2; border:1px solid %3; "
+        "font-family:'JetBrains Mono','Cascadia Code','Consolas',monospace; font-size:11px;")
+        .arg(pal.codeBg, pal.codeFg, pal.inputBorder));
+    lay->addWidget(view, 1);
+
+    auto rerender = [this, intent, userText, hdr, view]() {
+        const bool attach =
+            AiSystemPrompt::shouldAttachWorkspace(intent, m_context, userText);
+        const OutgoingContext oc = computeOutgoingContext(attach);
+        const int bytes = oc.text.toUtf8().size();
+        const int approxTokens = (bytes + 3) / 4;
+        QString h;
+        if (!oc.attached || oc.text.isEmpty()) {
+            h = tr("Nothing is sent — the privacy gate is off, or this message "
+                   "doesn't trigger workspace context.");
+        } else {
+            h = tr("~%1 KB · ~%2 tokens%3 prepended to your message.")
+                    .arg(bytes / 1024.0, 0, 'f', 1).arg(approxTokens)
+                    .arg(oc.redactions > 0
+                         ? tr(" · %n credential(s) redacted", nullptr, oc.redactions)
+                         : QString());
+        }
+        hdr->setText(h);
+        view->setPlainText(oc.text.isEmpty()
+            ? tr("(no context attached)") : oc.text);
+    };
+
+    auto onToggle = [this, excCur, excTabs, excTree, rerender]() {
+        m_ctxExcludeCurrentFile = !excCur->isChecked();
+        m_ctxExcludeOtherTabs   = !excTabs->isChecked();
+        m_ctxExcludeTree        = !excTree->isChecked();
+        rerender();
+        refreshContextChips();
+    };
+    connect(excCur,  &QCheckBox::toggled, dlg, onToggle);
+    connect(excTabs, &QCheckBox::toggled, dlg, onToggle);
+    connect(excTree, &QCheckBox::toggled, dlg, onToggle);
+
+    auto *btnRow = new QHBoxLayout;
+    btnRow->addStretch(1);
+    auto *closeBtn = new QPushButton(tr("Close"), dlg);
+    connect(closeBtn, &QPushButton::clicked, dlg, &QDialog::accept);
+    btnRow->addWidget(closeBtn);
+    lay->addLayout(btnRow);
+
+    rerender();
+    dlg->exec();
+    refreshContextChips();  // reflect any exclude changes back on the chip
 }
 
 void AIPanel::sendPrompt(const QString &action) {
@@ -3422,29 +3659,20 @@ void AIPanel::sendPrompt(const QString &action) {
     // "what's a closure?" (when there's a `.py` open) would still attach
     // the file because hasOpenFileKeyword fires on "the file" buried in
     // a model's tone. Now: blind unless Coding+Share are both green.
-    if (attachWorkspace && aiCanSeeFile) {
-        QVector<AiContext::OpenTabInfo> acTabs;
-        acTabs.reserve(m_openTabs.size());
-        for (const auto &t : m_openTabs) {
-            AiContext::OpenTabInfo n;
-            n.filePath = t.filePath;
-            n.displayName = t.displayName;
-            n.language = t.language;
-            // Scrub each tab's buffer — this is the broader leak vector.
-            // Without this, ANY open tab containing a credential gets
-            // forwarded to the model whenever workspace awareness fires.
-            n.text = scrubAndCount(t.text);
-            n.isCurrent = t.isCurrent;
-            acTabs.append(n);
-        }
-        const QString safeCurrentFileText = scrubAndCount(m_currentFileText);
-        QString workspaceBlock = AiContext::buildWorkspaceContextBlockWithTree(
-            m_currentFilePath, safeCurrentFileText, acTabs,
-            m_workspaceRoot, m_workspaceFilePaths);
-        if (!workspaceBlock.isEmpty()) {
-            prompt = workspaceBlock + "\n---\n\n" + prompt;
-        }
+    // v0.1.111 — assemble the workspace block via the SINGLE source of truth
+    // (computeOutgoingContext), the same call the context-chip preview uses, so
+    // what the user saw in the chip/popover is exactly what we send. The per-
+    // source exclude flags are applied inside it. Its internal CredScrub count
+    // is folded into the outer redactionCount so the status warning stays right.
+    const OutgoingContext oc = computeOutgoingContext(attachWorkspace);
+    if (oc.attached && !oc.text.isEmpty()) {
+        prompt = oc.text + "\n---\n\n" + prompt;
     }
+    redactionCount += oc.redactions;
+    // Exclude flags are an in-the-moment gesture — reset after each send and
+    // refresh the chip so the next turn starts from the full context.
+    m_ctxExcludeCurrentFile = m_ctxExcludeOtherTabs = m_ctxExcludeTree = false;
+    refreshContextChips();
 
     // Surface the redaction in the status bar so the user knows we caught
     // something and can decide whether to rotate the secret. We do this
@@ -3529,10 +3757,13 @@ void AIPanel::sendPrompt(const QString &action) {
     m_toolCallsTotal = 0;
     m_toolsActiveThisTurn = false;
     // v0.1.111 — each new user turn re-arms the write gate; "approve all this
-    // turn" is deliberately turn-scoped (never session-wide).
+    // turn" is deliberately turn-scoped (never session-wide). Drop any stale
+    // (already-resolved) cancellers from the previous turn so the list can't
+    // grow unbounded across a long session.
     m_turnWriteApproval = false;
     m_pendingWriteApprovals = 0;
     m_streamFinishedAwaitingApproval = false;
+    m_approvalCancellers.clear();
     if (toolModeActive && !m_workspaceRoot.isEmpty()) {
         if (currentModelSupportsTools()) {
             toolsForRequest = AiTools::availableTools();
@@ -3582,6 +3813,9 @@ void AIPanel::sendPrompt(const QString &action) {
 void AIPanel::clearChat() {
     if (m_ollama) m_ollama->cancel();  // hardening: guard m_ollama (clearChat can be invoked during teardown)
     if (m_stopBtn) m_stopBtn->setEnabled(false);  // hardening: guard m_stopBtn
+    // v0.1.111 — clearing the chat deletes any open approval card; trip its
+    // decided flag + reset the gate counters so nothing strands.
+    cancelPendingWriteApprovals();
 
     if (m_recordProcess) {
         QProcess *recordProcess = m_recordProcess;
@@ -3984,6 +4218,13 @@ static void aiAddErrorCard(QVBoxLayout *target, const QString &text,
 
 void AIPanel::renderTranscript() {
     if (!m_chatLayout) return;
+    // v0.1.111 — a full re-render (theme/mode switch, apply, history load)
+    // deletes any open write-approval card, which lives in m_chatLayout and is
+    // NOT part of activeMessages(). Cancel it first so its decided flag is
+    // tripped (no zombie click can write) and the pending counter can't strand
+    // the next turn. Approval-resolution paths don't trigger renderTranscript,
+    // so this only fires on genuine teardown-by-rerender.
+    if (m_pendingWriteApprovals > 0) cancelPendingWriteApprovals();
     // v0.1.38 crash fix: stop the live streaming-stats timer + nullify the
     // QLabel pointer BEFORE we delete the streaming card. aiClearChat
     // deleteLater()s every widget in m_chatLayout including m_streamingCard
@@ -5385,7 +5626,10 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
     //   • mutating tool only (reads are never gated).
     //   • not already "approve all this turn".
     //   • not a dry_run call (belt — those never hit disk anyway).
-    const bool agentSegment = m_agentSegBtn && m_agentSegBtn->isChecked();
+    // Use the canonical agent-mode test (coding + Agent segment), matching
+    // refreshModeHeader — the segment buttons are only meaningful in Coding mode.
+    const bool agentSegment = (m_codingMode && m_codingMode->isChecked())
+                              && m_agentSegBtn && m_agentSegBtn->isChecked();
     if (agentSegment && isMutatingTool(name)
             && !m_turnWriteApproval
             && !args.value(QStringLiteral("dry_run")).toBool(false)) {
@@ -5691,10 +5935,12 @@ void AIPanel::enqueueWriteApproval(const QString &id, const QString &name,
     auto *hdr = new QLabel(card);
     hdr->setTextFormat(Qt::RichText);
     hdr->setWordWrap(true);
+    // di.added / di.removed already count a modified line once on each side
+    // (similar emits delete+insert); adding di.changed would double-count.
     hdr->setText(QString("<b>%1</b> &nbsp; <span style='color:%2;'>%3</span> "
                          "&nbsp; <span style='color:%2;'>+%4 -%5</span>")
                      .arg(name).arg(pal.muted).arg(shown.toHtmlEscaped())
-                     .arg(di.added + di.changed).arg(di.removed + di.changed));
+                     .arg(di.added).arg(di.removed));
     hdr->setStyleSheet(QString("color:%1; background:transparent;").arg(pal.headerFg));
     lay->addWidget(hdr);
 
@@ -5743,14 +5989,39 @@ void AIPanel::enqueueWriteApproval(const QString &id, const QString &name,
     m_chatLayout->insertWidget(m_chatLayout->count() - 1, row);
 
     // ── Resolution ─────────────────────────────────────────────────────────
-    // One-shot: a flag guards double-resolution (e.g. teardown mid-decision).
-    auto *decided = new bool(false);
+    // One-shot guard against double-resolution. QSharedPointer (not raw new)
+    // so it's freed when the last capturing lambda dies — no per-card leak.
+    auto decided = QSharedPointer<bool>::create(false);
 
     auto disableButtons = [approveBtn, allBtn, rejectBtn]() {
         approveBtn->setEnabled(false);
         allBtn->setEnabled(false);
         rejectBtn->setEnabled(false);
     };
+
+    // Register a canceller so every turn-teardown path (Stop, stream error,
+    // clearChat, forced re-render) can neutralise this still-open card: flip
+    // `decided` so a later Approve/Reject click is a no-op (the write can NEVER
+    // land after the user cancelled the run), and disable the buttons. Widgets
+    // are held by QPointer — if the card was already destroyed (re-render), the
+    // canceller safely does nothing but still trips `decided`.
+    {
+        QPointer<QPushButton> apv(approveBtn), alb(allBtn), rjt(rejectBtn);
+        QPointer<QLabel> st(status);
+        QPointer<QFrame> cardPtr(card);
+        m_approvalCancellers.append([decided, apv, alb, rjt, st, cardPtr]() {
+            if (*decided) return;
+            *decided = true;
+            if (apv) apv->setEnabled(false);
+            if (alb) alb->setEnabled(false);
+            if (rjt) rjt->setEnabled(false);
+            if (st) {
+                st->setVisible(true);
+                st->setText(QStringLiteral("Cancelled."));
+            }
+            Q_UNUSED(cardPtr);
+        });
+    }
 
     auto queueAndResume = [this, id, name, args](const QString &resultContent) {
         QJsonObject payload;
@@ -5785,10 +6056,13 @@ void AIPanel::enqueueWriteApproval(const QString &id, const QString &name,
             "#writeApprovalCard { background:%1; border:1px solid %2; "
             "border-left:3px solid %3; border-radius:8px; }")
             .arg(p.assistBg, p.assistBorder, real.isError ? p.errBorder : p.accent));
+        // Theme-aware success green (the codebase's okFg pattern) — never a
+        // hardcoded light-only hex (Dark/Monokai parity).
+        const QString okFg = aiIsDark() ? QStringLiteral("#9BD9A0") : QStringLiteral("#1B5E20");
         status->setVisible(true);
         status->setText(real.isError
             ? QStringLiteral("<span style='color:%1;'>✗ Write failed.</span>").arg(p.errFg)
-            : QStringLiteral("<span style='color:#2e9b57;'>✓ Approved — written to disk.</span>"));
+            : QStringLiteral("<span style='color:%1;'>✓ Approved — written to disk.</span>").arg(okFg));
         if (!real.isError && !realAbsPath.isEmpty()) emit fileWrittenByAgent(realAbsPath, created);
         queueAndResume(real.content);
     };
@@ -5840,6 +6114,20 @@ void AIPanel::maybeResumeAfterApprovals() {
     m_turnWriteApproval = false;
     if (m_stopBtn) m_stopBtn->setEnabled(false);
     endAssistantBubble();
+}
+
+// v0.1.111 — neutralise every open write-approval card and reset the gate. This
+// is the single safety valve invoked by EVERY turn-teardown path (Stop, stream
+// error, clearChat, forced re-render). After it runs, a write the user
+// cancelled can never land (each card's `decided` is tripped), and the pending
+// counter can never strand the next turn.
+void AIPanel::cancelPendingWriteApprovals() {
+    for (auto &cancel : m_approvalCancellers)
+        if (cancel) cancel();
+    m_approvalCancellers.clear();
+    m_pendingWriteApprovals = 0;
+    m_streamFinishedAwaitingApproval = false;
+    m_turnWriteApproval = false;
 }
 
 void AIPanel::flushPendingToolResults() {
@@ -6020,6 +6308,23 @@ void AIPanel::onThemeChanged() {
     // keeps "AI · CODING · AGENT" (and its accent) instead of resetting to a
     // plain "AI". refreshModeHeader() re-reads the fresh palette itself.
     refreshModeHeader();
+
+    // v0.1.111 — re-style the context chip + its label with the fresh palette
+    // (their stylesheets were captured at build time → would keep stale-theme
+    // colours otherwise). Theme parity for the transparency strip.
+    if (m_contextChip) {
+        m_contextChip->setStyleSheet(QString(
+            "QPushButton{background:%1; color:%2; border:1px solid %3; border-radius:10px; "
+            "padding:2px 10px; font-size:11px; text-align:left;} "
+            "QPushButton:hover{border-color:%4;}")
+            .arg(pal.chromeBg, pal.headerFg, pal.inputBorder, pal.accent));
+    }
+    if (m_contextChipRow) {
+        if (auto *lbl = m_contextChipRow->findChild<QLabel *>())
+            lbl->setStyleSheet(QString("color:%1; background:transparent; font-size:11px;")
+                                   .arg(pal.muted));
+    }
+    refreshContextChips();
 
     if (m_chatArea) {
         // Match the original ctor stylesheet for the chat scroll area so
@@ -6749,6 +7054,8 @@ void AIPanel::chatModeSelectorChanged(int segment) {
     // v0.1.110 — keep the chrome header's Compose/Agent label in sync the
     // instant the user flips segment (so the posture is always readable).
     refreshModeHeader();
+    // v0.1.111 — segment can change whether context attaches; refresh the chip.
+    refreshContextChips();
 }
 
 // ─── Slice D — apply Edit Plan rows ─────────────────────────────────
@@ -6821,10 +7128,10 @@ void AIPanel::applyComposerEdits(const QList<QPair<QString, QString>> &edits) {
         // Snapshot for rollback: revert target = pre-edit content, drift
         // baseline = exactly the bytes we just wrote, wasNew → revert deletes.
         AppliedSnapshot snap;
-        snap.absPath    = absPath;
-        snap.before     = QString::fromUtf8(beforeBytes);
-        snap.afterBytes = bytes;
-        snap.wasNew     = wasNew;
+        snap.absPath     = absPath;
+        snap.beforeBytes = beforeBytes;   // raw bytes — revert is byte-exact
+        snap.afterBytes  = bytes;
+        snap.wasNew      = wasNew;
         batchSnapshots.append(snap);
         emit fileWrittenByAgent(absPath, wasNew);
     }
@@ -6923,7 +7230,7 @@ void AIPanel::undoLastApply() {
         } else {
             if (!exists)                       drifted << s;                  // vanished → treat as drift
             else if (disk == s.afterBytes)     clean << s;
-            else if (disk == s.before.toUtf8()) alreadyReverted << s.absPath; // user already reverted
+            else if (disk == s.beforeBytes)    alreadyReverted << s.absPath;  // user already reverted
             else                               drifted << s;
         }
     }
@@ -6961,26 +7268,38 @@ void AIPanel::undoLastApply() {
     QVector<AppliedSnapshot> toRevert = clean;
     if (revertDrifted) toRevert += drifted;
 
+    // If nothing is actionable — every file drifted and the user chose Skip,
+    // and none were already reverted — do NOT silently consume the undo. Keep
+    // the batch + the Undo button and tell the user why nothing happened.
+    if (toRevert.isEmpty() && alreadyReverted.isEmpty()) {
+        appendErrorBubble(tr("Undo apply: all %n file(s) changed since they were "
+                             "applied — nothing reverted. Undo is still available.",
+                             nullptr, drifted.size()));
+        return;  // batch + Undo button intentionally retained
+    }
+
     QStringList revertedPaths;
     QStringList failures;
     int deleted = 0;
     for (const AppliedSnapshot &s : toRevert) {
         if (s.wasNew) {
-            // Revert a create → delete the file.
+            // Revert a create → delete the file. Do NOT emit fileWrittenByAgent
+            // for a delete: the host's reload handler would try to loadFile a
+            // now-missing path and pop a "Cannot open" dialog. If the file is
+            // open, its buffer is left intact (content preserved; the user can
+            // re-save or close).
             if (QFile::exists(s.absPath) && !QFile::remove(s.absPath)) {
                 failures << s.absPath + " (delete failed)";
                 continue;
             }
             revertedPaths << s.absPath;
             ++deleted;
-            // Tell the editor the file is gone (reload → empty/closed handling
-            // lives in the fileWrittenByAgent path; a missing file there is a
-            // benign no-op load).
-            emit fileWrittenByAgent(s.absPath, false);
         } else {
             bool wn = false;
             QString werr;
-            if (!writeFileAtomic(s.absPath, s.before.toUtf8(), &wn, &werr)) {
+            // Byte-exact revert — write the raw pre-edit bytes (never a lossy
+            // QString round-trip, which would corrupt non-UTF-8 files).
+            if (!writeFileAtomic(s.absPath, s.beforeBytes, &wn, &werr)) {
                 failures << s.absPath + " (" + werr + ")";
                 continue;
             }
@@ -7001,16 +7320,21 @@ void AIPanel::undoLastApply() {
 
     // Report symmetric to apply.
     const int reverted = revertedPaths.size();
+    const int skipped = revertDrifted ? 0 : drifted.size();
     if (reverted > 0 || !alreadyReverted.isEmpty()) {
         ChatMessage done;
         done.role = ChatMessage::Assistant;
-        QString txt = (reverted == 1)
-            ? QStringLiteral("↶ Reverted 1 file to its previous content.")
-            : QStringLiteral("↶ Reverted %1 files to their previous content.").arg(reverted);
+        QString txt;
+        if (reverted > 0) {
+            txt = (reverted == 1)
+                ? QStringLiteral("↶ Reverted 1 file to its previous content.")
+                : QStringLiteral("↶ Reverted %1 files to their previous content.").arg(reverted);
+        } else {
+            txt = QStringLiteral("↶ Nothing to revert — already at the original content.");
+        }
         if (deleted > 0)
             txt += QStringLiteral("  (%1 newly-created file%2 removed.)")
                        .arg(deleted).arg(deleted == 1 ? "" : "s");
-        const int skipped = drifted.size() - (revertDrifted ? drifted.size() : 0);
         if (skipped > 0)
             txt += QStringLiteral("  (%1 changed file%2 left untouched.)")
                        .arg(skipped).arg(skipped == 1 ? "" : "s");
