@@ -19,18 +19,34 @@ echo ""
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
 
+# Build flavor. Default to the small "lite" build; opt into the larger
+# DuckDB-bundled "full" build with NOTEPATRA_FULL=1.
+#
+# The exact asset filename (this suffix + extension) is the SINGLE source of
+# truth used VERBATIM for both the download and the SHA-256 lookup. They must
+# never be chosen independently: "notepatra-macos-arm64" is a prefix of
+# "notepatra-macos-arm64-full", so a substring match (the old bug) could pick
+# the *full* DMG to download but the *lite* hash to verify against — and refuse
+# a perfectly good install with a bogus "tampered" error (v0.1.111 report).
+FLAVOR=""
+case "${NOTEPATRA_FULL:-}" in
+    1|true|TRUE|yes|YES) FLAVOR="-full" ;;
+esac
+
 case "$OS" in
     linux)
+        EXT="tar.gz"
         case "$ARCH" in
-            x86_64) ARTIFACT="notepatra-linux-x64" ;;
-            aarch64|arm64) ARTIFACT="notepatra-linux-arm64" ;;
+            x86_64) BASE="notepatra-linux-x64" ;;
+            aarch64|arm64) BASE="notepatra-linux-arm64" ;;
             *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
         esac
         ;;
     darwin)
+        EXT="dmg"
         case "$ARCH" in
-            arm64) ARTIFACT="notepatra-macos-arm64" ;;
-            x86_64) ARTIFACT="notepatra-macos-x64" ;;
+            arm64) BASE="notepatra-macos-arm64" ;;
+            x86_64) BASE="notepatra-macos-x64" ;;
             *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
         esac
         ;;
@@ -41,14 +57,25 @@ case "$OS" in
         ;;
 esac
 
+# Exact asset filename — one string drives both download and verification.
+ASSET="${BASE}${FLAVOR}.${EXT}"
+
 echo "  OS:   $OS ($ARCH)"
-echo "  File: $ARTIFACT"
+echo "  File: $ASSET"
+if [ -n "$FLAVOR" ]; then
+    echo "  Build: full (DuckDB bundled)"
+else
+    echo "  Build: lite  (set NOTEPATRA_FULL=1 for the DuckDB-bundled build)"
+fi
 echo ""
 
 # Get latest release URL
 echo "  Fetching latest release..."
+# Match the EXACT asset filename: the leading "/" and trailing '"' anchor it
+# so "notepatra-macos-arm64.dmg" never matches "…-full.dmg" or "…dmg.pem/.sig".
+# grep -F keeps the "." literal (not a regex wildcard).
 RELEASE_URL=$(curl -sL "https://api.github.com/repos/$REPO/releases/latest" | \
-    grep "browser_download_url.*${ARTIFACT}" | \
+    grep -F "/${ASSET}\"" | \
     head -1 | cut -d '"' -f 4)
 
 if [ -z "$RELEASE_URL" ]; then
@@ -138,10 +165,13 @@ if [ "$OS" = "darwin" ]; then
         rm -rf "$TMPDIR"
         exit 1
     fi
-    EXPECTED=$(grep "$ARTIFACT" "$TMPDIR/SHA256SUMS" | awk '{print $1}' | head -1)
+    # Exact second-field match — never a substring, so a lite/full prefix
+    # collision can't return the wrong line. Tolerate a leading '*' binary-mode
+    # marker on the filename (sha256sum -b), matching the in-app updater.
+    EXPECTED=$(awk -v f="$ASSET" '{ n=$2; sub(/^\*/, "", n); if (n==f) print $1 }' "$TMPDIR/SHA256SUMS")
     if [ -z "$EXPECTED" ]; then
         echo ""
-        echo "  ❌ Artifact '$ARTIFACT' is not listed in SHA256SUMS for $RELEASE_TAG"
+        echo "  ❌ Artifact '$ASSET' is not listed in SHA256SUMS for $RELEASE_TAG"
         echo "  Refusing to install an unverified binary."
         echo ""
         rm -rf "$TMPDIR"
@@ -350,10 +380,13 @@ else
         rm -rf "$TMPDIR"
         exit 1
     fi
-    EXPECTED=$(grep "$ARTIFACT" "$TMPDIR/SHA256SUMS" | awk '{print $1}' | head -1)
+    # Exact second-field match — never a substring, so a lite/full prefix
+    # collision can't return the wrong line. Tolerate a leading '*' binary-mode
+    # marker on the filename (sha256sum -b), matching the in-app updater.
+    EXPECTED=$(awk -v f="$ASSET" '{ n=$2; sub(/^\*/, "", n); if (n==f) print $1 }' "$TMPDIR/SHA256SUMS")
     if [ -z "$EXPECTED" ]; then
         echo ""
-        echo "  ❌ Artifact '$ARTIFACT' is not listed in SHA256SUMS for $RELEASE_TAG"
+        echo "  ❌ Artifact '$ASSET' is not listed in SHA256SUMS for $RELEASE_TAG"
         echo "  Refusing to install an unverified binary."
         echo ""
         rm -rf "$TMPDIR"

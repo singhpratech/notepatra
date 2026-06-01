@@ -67,6 +67,15 @@ else
 fi
 
 echo
+echo "── install-script artifact selection (lite/full prefix-collision lock) ──"
+if bash scripts/test-install-selection.sh >/tmp/install-sel-check.log 2>&1; then
+    check "test-install-selection.sh: install.sh download-name == hash-name for every OS/arch/flavor" "true"
+else
+    check "test-install-selection.sh: install.sh download-name == hash-name for every OS/arch/flavor" "false"
+    sed 's/^/    /' /tmp/install-sel-check.log | tail -30 || true
+fi
+
+echo
 echo "── download-size byte cross-check (vs GitHub release artifacts) ──"
 if bash scripts/verify-download-sizes.sh >/tmp/dl-size-check.log 2>&1; then
     check "verify-download-sizes.sh: docs match actual artifact bytes (±0.15 MB)" "true"

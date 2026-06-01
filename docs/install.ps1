@@ -32,7 +32,21 @@ Write-Host "  Fetching latest release..." -ForegroundColor Yellow
 # Get latest release
 try {
     $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest"
-    $asset = $release.assets | Where-Object { $_.name -like "*windows*" } | Select-Object -First 1
+
+    # Build flavor: default to the small "lite" build; opt into the larger
+    # DuckDB-bundled "full" build with NOTEPATRA_FULL=1. Select the EXACT zip
+    # by name so the download can never grab a ".pem"/".sig" sidecar or the
+    # wrong flavor (the SHA lookup below keys off this same $asset.name).
+    $flavor = ""
+    if ($env:NOTEPATRA_FULL -in @("1", "true", "TRUE", "yes", "YES")) { $flavor = "-full" }
+    $wantName = "notepatra-windows-x64$flavor.zip"
+    $asset = $release.assets | Where-Object { $_.name -eq $wantName } | Select-Object -First 1
+    if (-not $asset) {
+        # Fall back to any non-signature windows x64 zip if the exact name moved.
+        $asset = $release.assets |
+            Where-Object { $_.name -like "*windows*x64*.zip" -and $_.name -notlike "*.pem" -and $_.name -notlike "*.sig" } |
+            Select-Object -First 1
+    }
 
     if ($asset) {
         $downloadUrl = $asset.browser_download_url
