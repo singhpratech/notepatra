@@ -464,7 +464,7 @@ void WelcomeWidget::buildFeatureCards(QVBoxLayout *parent) {
         {"🌐", "REST Client",
          "Built-in HTTP request tester. Pretty-prints JSON responses. Import curl commands.",
          "RESTClient", hex("REST")},
-        {"📝", "Noter",
+        {"📝", "Noter (Ctrl+Alt+N)",
          "Meeting notes. AI Extract pulls a summary + action items, set reminders that fire at due time, all in a central Reminders list. Local-first, no bots.",
          "Noter", hex("Noter")},
     };

@@ -673,7 +673,8 @@ int main(int argc, char *argv[]) {
             if (tt.contains(QStringLiteral("Action Items"))) hasActionItems = true;
             if (tt.contains(QStringLiteral("What I plan")))  hasWhatIPlan = true;
             if (tt.contains(QStringLiteral("To-dos")))       hasToDos = true;
-            if (tt == QStringLiteral("Insert checkbox"))     hasCheckboxBtn = true;
+            // M6 — tooltip now carries the F4 shortcut hint, so prefix-match.
+            if (tt.startsWith(QStringLiteral("Insert checkbox"))) hasCheckboxBtn = true;
         }
         EXPECT("toolbar has a standalone Action Items icon", hasActionItems);
         EXPECT("toolbar has a standalone What I plan icon", hasWhatIPlan);
@@ -941,7 +942,7 @@ int main(int argc, char *argv[]) {
         QTextEdit *ed = panel.findChild<QTextEdit *>();
         QToolButton *chkBtn = nullptr;
         for (QToolButton *b : panel.findChildren<QToolButton *>())
-            if (b->toolTip() == QStringLiteral("Insert checkbox")) chkBtn = b;
+            if (b->toolTip().startsWith(QStringLiteral("Insert checkbox"))) chkBtn = b;
         EXPECT("Insert checkbox toolbar button found", chkBtn != nullptr);
         if (ed && chkBtn) {
             ed->clear();

@@ -10,7 +10,7 @@
 // these resolve to the same Noter red:
 //   "Noter"
 //   "noter"
-//   "Noter — Meeting Thinkpad        Ctrl+Alt+N"
+//   "Noter — Meeting Thinkpad (toggle)        Ctrl+Alt+N"
 //   "noter-card"
 
 #pragma once

@@ -713,13 +713,15 @@ NotesPanel::NotesPanel(QWidget *parent) : QWidget(parent) {
     };
     bind("Ctrl+Alt+M", [this]() { newMeetingNote(); });
     bind("Ctrl+Alt+J", [this]() { quickSwitchMeeting(); });
-    // v0.1.97 — Ctrl+Alt+T now focuses the Todos root in the sidebar
-    // tree instead of opening a separate pane. The third pane is gone.
+    // Ctrl+Alt+T focuses the Reminders root in the sidebar tree (root
+    // order: Notes / Reminders / Trash — the v0.1.97 Todos root became
+    // Reminders in v0.1.98). Help text documents it as "jump to the
+    // Reminders section"; keep the two in sync.
     bind("Ctrl+Alt+T", [this]() {
         if (m_sidebarTree && m_sidebarTree->topLevelItemCount() >= 2) {
-            auto *todos = m_sidebarTree->topLevelItem(1);
-            todos->setExpanded(true);
-            m_sidebarTree->setCurrentItem(todos);
+            auto *reminders = m_sidebarTree->topLevelItem(1);
+            reminders->setExpanded(true);
+            m_sidebarTree->setCurrentItem(reminders);
             m_sidebarTree->setFocus();
         }
     });
@@ -781,6 +783,7 @@ QWidget *NotesPanel::buildSidebar() {
     m_search = new QLineEdit(searchWrap);
     m_search->setObjectName("noterSearch");
     m_search->setPlaceholderText(tr("Search meetings…"));
+    m_search->setToolTip(tr("Search notes (Ctrl+Alt+J)"));
     m_search->addAction(searchIcon(), QLineEdit::LeadingPosition);
     m_search->setClearButtonEnabled(true);
     searchLayout->addWidget(m_search);
@@ -797,6 +800,7 @@ QWidget *NotesPanel::buildSidebar() {
     newLayout->setSpacing(6);
     m_newBtn = new QPushButton(tr("+ Noter"), newWrap);
     m_newBtn->setObjectName("noterNewBtn");
+    m_newBtn->setToolTip(tr("New note (Ctrl+Alt+M)"));
     m_newBtn->setCursor(Qt::PointingHandCursor);
     newLayout->addWidget(m_newBtn, 1);
     v->addWidget(newWrap);
@@ -1241,7 +1245,8 @@ QWidget *NotesPanel::buildEditorPage() {
         hdrBtn->setMenu(m);
     }
     tb->addWidget(hdrBtn);
-    auto *chkBtn = makeToolBtn(checkBadgeIcon(), tr("Insert checkbox"));
+    auto *chkBtn = makeToolBtn(checkBadgeIcon(),
+                               tr("Insert checkbox — F4 toggles ☐/✓ on the current line"));
     connect(chkBtn, &QToolButton::clicked, this, [this]() { insertCheckboxAtCursor(); });
     tb->addWidget(chkBtn);
     tb->addStretch(1);

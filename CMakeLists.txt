@@ -831,7 +831,13 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_noter_render.cpp")
     target_link_libraries(test_noter_render PRIVATE
         Qt5::Core Qt5::Widgets Qt5::Sql Qt5::Network Qt5::Test
         Qt5::PrintSupport)
-    # NOT registered as a ctest — it's a manual visual-dump tool.
+    # Originally a manual visual-dump tool; registered as a ctest since the
+    # M6 discoverability gate (every Noter QShortcut must be documented in
+    # the Help guide) made it pass/fail. PNG dumps still land in /tmp.
+    add_test(NAME test_noter_render COMMAND $<TARGET_FILE:test_noter_render>)
+    set_tests_properties(test_noter_render PROPERTIES
+        LABELS "integration;noter;render"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
 # ── Noter — right-click context menus test (37 cases) ──

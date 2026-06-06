@@ -10,7 +10,11 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QKeySequence>
 #include <QPixmap>
+#include <QShortcut>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QToolButton>
@@ -77,5 +81,78 @@ int main(int argc, char *argv[]) {
         }
         ++idx;
     }
+
+    // ── M6 discoverability gate (pass/fail) ────────────────────────────
+    // Every QShortcut the live NotesPanel registers MUST be documented in
+    // the Help guide's Noter section (mainwindow.cpp). The help HTML lives
+    // in a static fn inside mainwindow.cpp which this harness doesn't link,
+    // so we assert against the SOURCE — a new/changed Noter shortcut that
+    // isn't added to Help fails this run.
+    int docFailures = 0;
+    {
+        QStringList keys;
+        const auto shortcuts = panel.findChildren<QShortcut *>();
+        for (auto *sc : shortcuts) {
+            const QString k = sc->key().toString(QKeySequence::PortableText);
+            if (!k.isEmpty()) keys << k;
+        }
+        keys << QStringLiteral("Ctrl+Alt+N");  // global toggle (MainWindow-owned)
+        keys.removeDuplicates();
+        std::printf("noter shortcuts registered: %d\n", int(keys.size()));
+
+        // mainwindow.cpp sits next to this file's src/ dir; __FILE__ is the
+        // compile-time path of this harness at the repo root. Fall back to
+        // cwd-relative for odd invocations.
+        QString mwPath = QFileInfo(QString::fromUtf8(__FILE__))
+                             .dir().filePath(QStringLiteral("src/mainwindow.cpp"));
+        if (!QFileInfo::exists(mwPath))
+            mwPath = QStringLiteral("src/mainwindow.cpp");
+
+        QFile mw(mwPath);
+        if (!mw.open(QIODevice::ReadOnly)) {
+            std::printf("FAIL: cannot open %s to verify Help text\n",
+                        qPrintable(mwPath));
+            ++docFailures;
+        } else {
+            const QString src = QString::fromUtf8(mw.readAll());
+            const int noterIdx = src.indexOf(QStringLiteral("<h3>Noter</h3>"));
+            const int endIdx = noterIdx >= 0
+                ? src.indexOf(QStringLiteral("<h2>"), noterIdx) : -1;
+            if (noterIdx < 0 || endIdx < 0) {
+                std::printf("FAIL: <h3>Noter</h3> help section not found in %s\n",
+                            qPrintable(mwPath));
+                ++docFailures;
+            } else {
+                const QString section = src.mid(noterIdx, endIdx - noterIdx);
+                for (const QString &k : keys) {
+                    const bool ok = section.contains(k);
+                    std::printf("  help documents %-11s : %s\n",
+                                qPrintable(k), ok ? "yes" : "MISSING");
+                    if (!ok) ++docFailures;
+                }
+            }
+            // Naming honesty — the Features action toggles, so its surfaces
+            // must say so and advertise the new-note key; no stale "Open
+            // Noter" claim may survive anywhere in mainwindow.cpp.
+            struct Claim { const char *what; bool ok; };
+            const Claim claims[] = {
+                {"status tip mentions 'New note: Ctrl+Alt+M'",
+                 src.contains(QStringLiteral("New note: Ctrl+Alt+M"))},
+                {"a Noter surface says 'Toggle Noter'",
+                 src.contains(QStringLiteral("Toggle Noter"))},
+                {"no stale 'Open Noter' claim",
+                 !src.contains(QStringLiteral("Open Noter"))},
+            };
+            for (const Claim &c : claims) {
+                std::printf("  %-45s : %s\n", c.what, c.ok ? "yes" : "FAIL");
+                if (!c.ok) ++docFailures;
+            }
+        }
+    }
+    if (docFailures > 0) {
+        std::printf("noter-doc gate: %d failure(s)\n", docFailures);
+        return 1;
+    }
+    std::printf("noter-doc gate: OK\n");
     return 0;
 }

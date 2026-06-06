@@ -780,12 +780,13 @@ ul { margin-top: 4px; }
 <li><b>Git gutter:</b> modified files show changed-line markers directly in the editor margin.</li>
 </ul>
 
-<h3>Noter — Meeting Notes</h3>
+<h3>Noter</h3>
 <ul>
-<li>Open Noter from the icon row or <code>Ctrl+Alt+N</code>: a two-pane meeting workspace (notes list on the left, editor on the right). Fully local — notes live under <code>~/Documents/Notepatra/Noter/</code>, with no accounts and no bots.</li>
-<li><b>+ Noter</b> creates a note. A small top toolbar inserts <b>Action Items</b> / <b>What I plan</b> / <b>To-dos</b> section headers and checkbox bullets; click a checkbox to mark it done and strike the line through.</li>
+<li><code>Ctrl+Alt+N</code> (or the icon row, or <b>Features &gt; Noter — Meeting Thinkpad</b>) toggles Noter: it opens the tab, and pressing it again while the tab is focused closes it. Noter is a two-pane meeting workspace (notes list on the left, editor on the right). Fully local — notes live under <code>~/Documents/Notepatra/Noter/</code>, with no accounts and no bots.</li>
+<li><b>+ Noter</b> (or <code>Ctrl+Alt+M</code>) creates a note. A small top toolbar inserts <b>Action Items</b> / <b>What I plan</b> / <b>To-dos</b> section headers and checkbox bullets; click a checkbox to mark it done and strike the line through.</li>
 <li><b>Extract</b> (footer button or <code>Ctrl+Alt+E</code>) runs your configured AI backend over the note and returns a short <b>summary</b> plus <b>action items, decisions, questions and risks</b>. An action that mentions a time ("ship the build 10am tomorrow") comes back with that date/time pre-filled.</li>
 <li><b>Reminders:</b> right-click a note to set a reminder, or schedule action items straight from Extract (each with a calendar + time picker). Every reminder appears in the central <b>Reminders</b> section of the sidebar, grouped <i>Overdue / Today / This week / Later</i> — click to open the note, the pencil to change the time, the ✕ to delete. Desktop notifications fire at the due time. Re-running Extract flags items already scheduled so you don't get duplicates.</li>
+<li><b>Noter shortcuts</b> (active while the Noter tab has focus): <code>Ctrl+Alt+M</code> new note, <code>Ctrl+Alt+J</code> jump to the note search box (quick-switch between notes), <code>Ctrl+Alt+E</code> Extract, <code>Ctrl+Alt+T</code> jump to the Reminders section in the sidebar, <code>Ctrl+Alt+B</code> show/hide the sidebar, <code>Ctrl+Alt+P</code> pop the current note out into its own window, <code>F4</code> toggle the checkbox on the current line. <code>Ctrl+Alt+N</code> toggles the Noter tab itself from anywhere.</li>
 </ul>
 
 <h2>Tools, Utilities, and Panels</h2>
@@ -812,6 +813,7 @@ ul { margin-top: 4px; }
 <li><code>Ctrl+N</code> new file, <code>Ctrl+O</code> open, <code>Ctrl+S</code> save, <code>Ctrl+W</code> close tab</li>
 <li><code>Ctrl+F</code> find, <code>Ctrl+H</code> replace, <code>Ctrl+Shift+F</code> find in files, <code>Ctrl+G</code> go to line</li>
 <li><code>Ctrl+Shift+A</code> AI Assistant, <code>Ctrl+`</code> Terminal, <code>Ctrl+Shift+R</code> REST Client, <code>Ctrl+Shift+E</code> Workspace</li>
+<li><code>Ctrl+Alt+N</code> toggle Noter, <code>Ctrl+Alt+M</code> new note in Noter (full Noter shortcut list in the Noter section above)</li>
 <li><code>F11</code> full screen, <code>Ctrl+=</code> / <code>Ctrl+-</code> zoom, <code>Ctrl+0</code> reset zoom</li>
 </ul>
 
@@ -2717,10 +2719,14 @@ void MainWindow::buildMenus() {
     });
 
     // --- Noter (meeting thinkpad) ---
-    auto *noterAct = feat->addAction("Noter — Meeting Thinkpad        Ctrl+Alt+N");
+    // v0.1.112 — "(toggle)" in the label because triggering it CLOSES the
+    // tab when Noter is already focused (see the connect below). The text
+    // keeps the "Noter — Meeting Thinkpad" prefix so findActionByPrefix
+    // lookups (feature toolbar + Welcome cards) stay stable.
+    auto *noterAct = feat->addAction("Noter — Meeting Thinkpad (toggle)        Ctrl+Alt+N");
     noterAct->setCheckable(true);
     noterAct->setShortcut(QKeySequence("Ctrl+Alt+N"));
-    noterAct->setStatusTip("Open Noter — meeting notes with AI Extract (summary + action items) and desktop reminders.");
+    noterAct->setStatusTip("Toggle Noter — meeting notes with AI Extract (summary + action items) and desktop reminders. New note: Ctrl+Alt+M.");
     connect(noterAct, &QAction::triggered, this, [this, noterAct]() {
         // v0.1.97 — toggle behavior, matches the AI dock pattern (Ctrl+Q).
         // Three states:
