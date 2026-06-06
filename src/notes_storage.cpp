@@ -960,6 +960,31 @@ static QString asciiFold(const QString &in) {
     return out;
 }
 
+// v0.1.112 — see the contract comment in notes_storage.h. Pure, QtCore-only.
+QString NotesStorage::plainTextForSearch(const QString &fullHtml) {
+    QString s = fullHtml;
+    static const QRegularExpression kHead(
+        QStringLiteral("<head\\b[^>]*>.*?</head\\s*>"),
+        QRegularExpression::CaseInsensitiveOption |
+        QRegularExpression::DotMatchesEverythingOption);
+    static const QRegularExpression kStyleScript(
+        QStringLiteral("<(style|script)\\b[^>]*>.*?</\\1\\s*>"),
+        QRegularExpression::CaseInsensitiveOption |
+        QRegularExpression::DotMatchesEverythingOption);
+    static const QRegularExpression kTag(QStringLiteral("<[^>]*>"));
+    s.remove(kHead);
+    s.remove(kStyleScript);
+    s.replace(kTag, QStringLiteral(" "));
+    s.replace(QStringLiteral("&nbsp;"), QStringLiteral(" "));
+    s.replace(QStringLiteral("&lt;"),   QStringLiteral("<"));
+    s.replace(QStringLiteral("&gt;"),   QStringLiteral(">"));
+    s.replace(QStringLiteral("&quot;"), QStringLiteral("\""));
+    s.replace(QStringLiteral("&#39;"),  QStringLiteral("'"));
+    s.replace(QStringLiteral("&apos;"), QStringLiteral("'"));
+    s.replace(QStringLiteral("&amp;"),  QStringLiteral("&"));   // MUST be last
+    return s.simplified();
+}
+
 QString NotesStorage::safeFilename(const QString &raw) {
     if (raw.isEmpty()) return QStringLiteral("untitled");
 

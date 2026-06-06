@@ -39,8 +39,10 @@
 #include <QCompleter>
 #include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QPair>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QInputDialog>
@@ -80,6 +82,8 @@
 #include <QTextEdit>
 #include <QTimer>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 namespace {
 
@@ -637,17 +641,52 @@ bool permanentlyDeleteMeetingTree(const QString &trashedAbsPath) {
     return removedCanonical;
 }
 
-// Group a file's mtime into a recency bucket label.
-QString recencyBucket(const QDateTime &mtime) {
+// Group a note's CREATION time into a recency bucket label. Older than
+// "This month" subdivides by month: same year → "March" (locale name),
+// prior years → "November 2025".
+QString recencyBucket(const QDateTime &created) {
     const QDate today = QDate::currentDate();
-    const QDate mdate = mtime.date();
-    if (mdate == today) return QStringLiteral("Today");
-    if (mdate == today.addDays(-1)) return QStringLiteral("Yesterday");
-    if (mtime.daysTo(QDateTime::currentDateTime()) <= 7)
+    const QDate cdate = created.date();
+    if (cdate == today) return QStringLiteral("Today");
+    if (cdate == today.addDays(-1)) return QStringLiteral("Yesterday");
+    if (created.daysTo(QDateTime::currentDateTime()) <= 7)
         return QStringLiteral("This week");
-    if (mdate.year() == today.year() && mdate.month() == today.month())
+    if (cdate.year() == today.year() && cdate.month() == today.month())
         return QStringLiteral("This month");
-    return QStringLiteral("Older");
+    if (cdate.year() == today.year())
+        return cdate.toString(QStringLiteral("MMMM"));
+    return cdate.toString(QStringLiteral("MMMM yyyy"));
+}
+
+// v0.1.112 — creation time parsed from the filename stamp written by
+// newMeetingNote ("yyyy-MM-dd-hhmmss-") or the legacy 4-digit HHmm
+// form; mtime fallback for un-stamped / hand-renamed files. The rename
+// handler preserves the prefix so renamed notes keep their creation
+// date. Invalid stamps (e.g. 2026-13-99) fail isValid() → mtime.
+QDateTime creationTimeOf(const QFileInfo &fi) {
+    static const QRegularExpression kStamp(
+        QStringLiteral("^(\\d{4}-\\d{2}-\\d{2})-(\\d{4}|\\d{6})-"));
+    const QRegularExpressionMatch m = kStamp.match(fi.fileName());
+    if (m.hasMatch()) {
+        const QDate d = QDate::fromString(m.captured(1), Qt::ISODate);
+        const QString t = m.captured(2);
+        const QTime tm = (t.size() == 6)
+            ? QTime::fromString(t, QStringLiteral("HHmmss"))
+            : QTime::fromString(t, QStringLiteral("HHmm"));
+        if (d.isValid() && tm.isValid()) return QDateTime(d, tm);
+    }
+    return fi.lastModified();
+}
+
+// v0.1.112 — every whitespace-split term must appear in the haystack.
+// Strict superset of the old single contains() (a haystack containing the
+// whole phrase contains every term). Terms arrive pre-lowercased
+// (refreshSidebar trims+lowercases the filter); haystack must be
+// lowercased by the caller.
+bool matchesAllTerms(const QString &haystackLower, const QStringList &terms) {
+    for (const QString &t : terms)
+        if (!haystackLower.contains(t)) return false;
+    return true;
 }
 
 }  // namespace
@@ -697,6 +736,15 @@ NotesPanel::NotesPanel(QWidget *parent) : QWidget(parent) {
     buildUi();
     refreshSidebar();
     showEmptyPage();
+
+    // v0.1.112 — warm the body-search cache off the critical path so the
+    // first search keystroke never pays ~300 cold file reads. Receiver-
+    // context singleShot: destruction of the panel cancels it.
+    QTimer::singleShot(1200, this, [this] {
+        m_prewarmQueue = QDir(inboxFolder()).entryList(
+            QStringList() << QStringLiteral("*.html"), QDir::Files);
+        prewarmBodyCache();
+    });
 
     // Autosave tick — 5s, configurable via global setting.
     m_autosave = new QTimer(this);
@@ -789,13 +837,23 @@ QWidget *NotesPanel::buildSidebar() {
     searchLayout->setSpacing(0);
     m_search = new QLineEdit(searchWrap);
     m_search->setObjectName("noterSearch");
-    m_search->setPlaceholderText(tr("Search meetings…"));
-    m_search->setToolTip(tr("Search notes (Ctrl+Alt+J)"));
+    m_search->setPlaceholderText(tr("Search notes — titles & content"));
+    m_search->setToolTip(tr("Search notes — titles & content (Ctrl+Alt+J)"));
     m_search->addAction(searchIcon(), QLineEdit::LeadingPosition);
     m_search->setClearButtonEnabled(true);
     searchLayout->addWidget(m_search);
     v->addWidget(searchWrap);
     connect(m_search, &QLineEdit::textChanged, this, &NotesPanel::onSearchChanged);
+
+    // v0.1.112 — live match-count feedback under the search box. Hidden by
+    // default → zero layout shift when not searching. refreshSidebar drives
+    // its text ("%n match(es)" / "No matches") while a filter is active.
+    m_searchStatus = new QLabel(w);
+    m_searchStatus->setObjectName(QStringLiteral("noterSearchStatus"));
+    m_searchStatus->setStyleSheet(
+        QStringLiteral("color:%1; font-size:11px; padding:0 14px 4px;").arg(kMutedText));
+    m_searchStatus->hide();
+    v->addWidget(m_searchStatus);
 
     // v0.1.98 — single "+ Noter" create button. Todos were dropped
     // entirely (user 2026-05-24): a reminder now lives on the note itself
@@ -1447,6 +1505,19 @@ void NotesPanel::refreshSidebar() {
                 wasExpanded.insert(rk + "/" + stripCount(child->text(0)));
         }
     }
+
+    // v0.1.112 — filter-session expand-state machine. Entering a search
+    // snapshots the user's REAL expand state exactly once; leaving restores
+    // it verbatim. Mid-search refreshes (autosave, rename) hit the
+    // active→active branch: snapshot untouched, force-expand re-applies.
+    const bool filterActive = !filter.isEmpty();
+    const bool justCleared  = !filterActive && m_filterWasActive;
+    if (filterActive && !m_filterWasActive)
+        m_preFilterExpanded = wasExpanded;
+    else if (justCleared)
+        wasExpanded = m_preFilterExpanded;
+    m_filterWasActive = filterActive;
+
     m_sidebarTree->clear();
 
     // v0.1.97 — three-root tree with QStyle::SP_* icons (no emoji tofu)
@@ -1486,6 +1557,51 @@ void NotesPanel::refreshSidebar() {
                 child->setExpanded(true);
         }
     }
+
+    // v0.1.112 — while a filter is live, auto-expand every root/section that
+    // holds a match (a hit hidden under a collapsed section reads as "search
+    // is broken") and surface the match count. Sections are only created
+    // non-empty under a filter (meetings pre-filtered before bucketing,
+    // Trash deletes its empty section, Reminders skips empty buckets), so
+    // summing depth-3 leaves is the match count.
+    if (filterActive) {
+        int matches = 0;
+        for (int i = 0; i < m_sidebarTree->topLevelItemCount(); ++i) {
+            auto *rootItem = m_sidebarTree->topLevelItem(i);
+            int rootLeaves = 0;
+            for (int j = 0; j < rootItem->childCount(); ++j) {
+                auto *sect = rootItem->child(j);
+                rootLeaves += sect->childCount();
+                sect->setExpanded(sect->childCount() > 0);
+            }
+            rootItem->setExpanded(rootLeaves > 0);   // empty root collapsed = "nothing here"
+            matches += rootLeaves;
+        }
+        if (m_searchStatus) {
+            m_searchStatus->setText(matches > 0 ? tr("%n match(es)", "", matches)
+                                                : tr("No matches"));
+            m_searchStatus->show();
+        }
+    } else if (m_searchStatus) {
+        m_searchStatus->hide();
+    }
+    // v0.1.112 — leaving a filter session restores the snapshot VERBATIM.
+    // populateMeetingsRoot's setCurrentItem fires QTreeView::scrollTo while
+    // the panel is visible, which auto-expands the current leaf's ancestors;
+    // enforce the pre-search shape over that side effect on the one refresh
+    // that exits the session. Ordinary refreshes are untouched.
+    if (justCleared) {
+        for (int i = 0; i < m_sidebarTree->topLevelItemCount(); ++i) {
+            auto *rootItem = m_sidebarTree->topLevelItem(i);
+            const QString rk = stripCount(rootItem->text(0));
+            rootItem->setExpanded(wasExpanded.contains(rk));
+            for (int j = 0; j < rootItem->childCount(); ++j) {
+                auto *sect = rootItem->child(j);
+                sect->setExpanded(
+                    wasExpanded.contains(rk + "/" + stripCount(sect->text(0))));
+            }
+        }
+    }
     m_loadingTree = false;
 }
 
@@ -1503,6 +1619,10 @@ void NotesPanel::showEvent(QShowEvent *event) {
     // working" after switching to OpenRouter). Cheap; keeps it in sync.
     refreshNoterModels();
     if (!m_sidebarTree) return;
+    // v0.1.112 — a LIVE search's results must survive a tab switch; the
+    // tidy-collapse preference (user 2026-05-24) applies only when no
+    // filter is active. Normal collapse resumes when the box clears.
+    if (m_search && !m_search->text().trimmed().isEmpty()) return;
     for (int i = 0; i < m_sidebarTree->topLevelItemCount(); ++i) {
         auto *root = m_sidebarTree->topLevelItem(i);
         root->setExpanded(false);
@@ -1581,15 +1701,70 @@ static QString noterDisplayTitleForFile(const QString &absPath) {
     return display;
 }
 
+// v0.1.112 — search-plaintext for one note, served from the (mtime, size)-
+// keyed in-memory cache; cold misses read the file once. NEVER touches the
+// note (plain read), never blocks beyond one bounded read.
+QString NotesPanel::bodyTextFor(const QFileInfo &fi) {
+    const QString key = fi.absoluteFilePath();
+    if (m_bodyCache.size() > 2048) m_bodyCache.clear();  // bound renamed/trashed strays
+    auto it = m_bodyCache.constFind(key);
+    if (it != m_bodyCache.constEnd() &&
+        it->mtime == fi.lastModified() && it->size == fi.size())
+        return it->plain;
+    QFile f(key);
+    if (!f.open(QIODevice::ReadOnly)) return QString();
+    // Defensive cap: notes are tens of KB; never slurp a pathological file
+    // a sync tool dropped in the Inbox.
+    const QString html = QString::fromUtf8(f.read(2 * 1024 * 1024));
+    BodySearchEntry e{ fi.lastModified(), fi.size(),
+                       NotesStorage::plainTextForSearch(html) };
+    m_bodyCache.insert(key, e);
+    return e.plain;
+}
+
+// v0.1.112 — chunked idle prewarm of the body-search cache: ≤25 files per
+// 16ms tick so a large Inbox never janks the UI. Re-arms itself via a
+// receiver-context singleShot (cancelled automatically on destruction).
+void NotesPanel::prewarmBodyCache() {
+    int n = 0;
+    QDir inbox(inboxFolder());
+    while (!m_prewarmQueue.isEmpty() && n < 25) {
+        const QString name = m_prewarmQueue.takeFirst();
+        if (name == QStringLiteral("quick-todos.html")) continue;
+        bodyTextFor(QFileInfo(inbox.absoluteFilePath(name)));
+        ++n;
+    }
+    if (!m_prewarmQueue.isEmpty())
+        QTimer::singleShot(16, this, [this] { prewarmBodyCache(); });
+}
+
 void NotesPanel::populateMeetingsRoot(QTreeWidgetItem *root, const QString &filter) {
     QDir d(inboxFolder());
     QFileInfoList all = d.entryInfoList(QStringList() << QStringLiteral("*.html"),
                                         QDir::Files, QDir::Time);
 
+    // v0.1.112 — decorate-sort by CREATION time (filename stamp, mtime
+    // fallback) so each stamp is parsed once, not O(n log n) times in a
+    // comparator. stable_sort keeps QDir::Time (mtime desc) as tiebreak.
+    QVector<QPair<QDateTime, QFileInfo>> dated;
+    dated.reserve(all.size());
+    for (const QFileInfo &afi : all) dated.append({creationTimeOf(afi), afi});
+    std::stable_sort(dated.begin(), dated.end(),
+                     [](const QPair<QDateTime, QFileInfo> &a,
+                        const QPair<QDateTime, QFileInfo> &b) { return a.first > b.first; });
+
+    // v0.1.112 — AND-of-terms matching over title-OR-body. Terms arrive
+    // pre-lowercased; matchSnippets carries body-hit context to the leaf
+    // TOOLTIP only (leaf text is load-bearing: the rename handler slugs it
+    // into the filename, and uniformRowHeights bans multi-line rows).
+    const QStringList terms = filter.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    QHash<QString, QString> matchSnippets;   // absPath -> context snippet
+
     // Group meetings by date-bucket using a parallel map.
     QMap<QString, QList<QFileInfo>> buckets;  // bucket -> files
     QStringList bucketOrder;                  // insertion order
-    for (const QFileInfo &fi : all) {
+    for (const auto &df : dated) {
+        const QFileInfo &fi = df.second;
         const QString name = fi.fileName();
         // The Todos checklist store lives in the Inbox too, but it is NOT a
         // meeting — it has its own Todos root + editable checklist view.
@@ -1611,9 +1786,38 @@ void NotesPanel::populateMeetingsRoot(QTreeWidgetItem *root, const QString &filt
         display.remove(datePrefix);
         display.replace(QChar('-'), QChar(' '));
         if (display.isEmpty()) display = fi.completeBaseName();
-        if (!filter.isEmpty() && !display.toLower().contains(filter)) continue;
+        // v0.1.112 — AND-of-terms over title-OR-body. Strict superset of the
+        // old single display.contains(filter): a title containing the whole
+        // phrase contains every term, so everything that matched before
+        // still matches. Body is read lazily — a title-only hit costs zero
+        // disk reads. Filter chars are literal (contains/indexOf, never
+        // regex). Body search reads last-saved disk state; the 5s autosave
+        // bounds staleness — accepted, no dirty-buffer special case.
+        if (!terms.isEmpty()) {
+            const QString displayLower = display.toLower();
+            QString body;
+            bool bodyLoaded = false;
+            int firstHit = -1, firstHitLen = 0;
+            bool allMatch = true;
+            for (const QString &t : terms) {
+                if (displayLower.contains(t)) continue;          // title hit — no disk read
+                if (!bodyLoaded) { body = bodyTextFor(fi); bodyLoaded = true; }
+                const int idx = body.indexOf(t, 0, Qt::CaseInsensitive);
+                if (idx < 0) { allMatch = false; break; }
+                if (firstHit < 0) { firstHit = idx; firstHitLen = t.size(); }
+            }
+            if (!allMatch) continue;
+            if (firstHit >= 0) {
+                const int from = qMax(0, firstHit - 40);
+                const int len  = qMin(firstHitLen + 80, int(body.size()) - from);
+                matchSnippets.insert(fi.absoluteFilePath(),
+                    (from > 0 ? QStringLiteral("…") : QString())
+                    + body.mid(from, len).trimmed()
+                    + (from + len < body.size() ? QStringLiteral("…") : QString()));
+            }
+        }
 
-        const QString bucket = recencyBucket(fi.lastModified());
+        const QString bucket = recencyBucket(df.first);
         if (!buckets.contains(bucket)) bucketOrder << bucket;
         buckets[bucket].append(fi);
     }
@@ -1644,8 +1848,16 @@ void NotesPanel::populateMeetingsRoot(QTreeWidgetItem *root, const QString &filt
             leaf->setIcon(0, iconForLeaf(this->style(), QStringLiteral("meeting")));
             leaf->setData(0, Qt::UserRole, QStringLiteral("meeting"));
             leaf->setData(0, Qt::UserRole + 1, fi.absoluteFilePath());
-            leaf->setToolTip(0, QDir::toNativeSeparators(fi.absoluteFilePath()) +
-                                "\n\nClick to open · pencil to rename · ✕ to trash");
+            // v0.1.112 — body-hit context goes in the TOOLTIP only. Leaf
+            // text must stay the display title (the rename handler slugs
+            // leaf text into the filename; uniformRowHeights bans rows
+            // growing a second line).
+            QString tip = QDir::toNativeSeparators(fi.absoluteFilePath());
+            const QString snip = matchSnippets.value(fi.absoluteFilePath());
+            if (!snip.isEmpty())
+                tip += QStringLiteral("\n\n") + tr("Match: %1").arg(snip);
+            tip += QStringLiteral("\n\nClick to open · pencil to rename · ✕ to trash");
+            leaf->setToolTip(0, tip);
             leaf->setFlags(leaf->flags() | Qt::ItemIsEditable);
             if (fi.absoluteFilePath() == m_currentPath) {
                 QFont bf = leaf->font(0); bf.setBold(true); leaf->setFont(0, bf);
@@ -1664,6 +1876,10 @@ void NotesPanel::populateMeetingsRoot(QTreeWidgetItem *root, const QString &filt
 void NotesPanel::populateRemindersRoot(QTreeWidgetItem *root, const QString &filter) {
     if (!m_todos) { root->setText(0, QStringLiteral("%1  (0)").arg(tr("Reminders"))); return; }
 
+    // v0.1.112 — multi-word consistency with the meetings root: every term
+    // must hit, over the SAME haystack as before (title only, not bodies).
+    const QStringList terms = filter.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+
     const QVector<TodoRow> rows = m_todos->allScheduledReminders();
     const QDateTime now = QDateTime::currentDateTime();
     const QDate today = now.date();
@@ -1681,7 +1897,7 @@ void NotesPanel::populateRemindersRoot(QTreeWidgetItem *root, const QString &fil
         if (!r.reminderAt.isValid()) continue;
         QString title = r.text.isEmpty() ? r.meetingTitle : r.text;
         if (title.isEmpty()) title = QFileInfo(r.sourceFile).completeBaseName();
-        if (!filter.isEmpty() && !title.toLower().contains(filter)) continue;
+        if (!terms.isEmpty() && !matchesAllTerms(title.toLower(), terms)) continue;
         const QDateTime at = r.reminderAt.toLocalTime();
         int b;
         if (at < now)                          b = 0;   // overdue
@@ -1788,6 +2004,11 @@ void NotesPanel::populateTodosRoot(QTreeWidgetItem *root, const QString &filter)
 }
 
 void NotesPanel::populateTrashRoot(QTreeWidgetItem *root, const QString &filter) {
+    // v0.1.112 — multi-word consistency with the meetings root: every term
+    // must hit, over the SAME haystack as before (display only, not bodies —
+    // trash leaves never open, so body snippets would be unverifiable).
+    const QStringList terms = filter.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+
     // Sub-group 1: trashed meetings — CANONICAL .html files only. The
     // backup ring (.bak1-.bak5) + draft sidecars travel with the
     // canonical when a meeting is trashed (see moveMeetingTreeToTrash)
@@ -1837,7 +2058,7 @@ void NotesPanel::populateTrashRoot(QTreeWidgetItem *root, const QString &filter)
             // capitalize to "Noter NN" so it reads as the user asked.
             display.replace(QRegExp(QStringLiteral("^noter\\s*")),
                             QStringLiteral("Noter "));
-            if (!filter.isEmpty() && !display.toLower().contains(filter)) continue;
+            if (!terms.isEmpty() && !matchesAllTerms(display.toLower(), terms)) continue;
             // Native item — delegate paints ↺ restore + ✕ purge.
             auto *leaf = new QTreeWidgetItem(sect);
             leaf->setText(0, display);
@@ -2062,36 +2283,12 @@ void NotesPanel::newMeetingNote() {
     scanDir(trashFolder());
     const int nextCounter = maxCounter + 1;
 
-    // v0.1.97 — hard cap at 99 untitled meetings. The label format
-    // (zero-padded 2-digit counter) makes 100+ visually awkward, and
-    // a sidebar of 100 untitled-meeting-NN entries is a sign the user
-    // should be RENAMING things, not stacking more drafts. Block #100
-    // with an instruction to clean up; #90+ shows a warning so the
-    // user has runway to act.
-    if (nextCounter >= 100) {
-        QMessageBox box(this);
-        box.setWindowTitle(tr("Noter limit reached"));
-        box.setIcon(QMessageBox::Warning);
-        box.setTextFormat(Qt::RichText);
-        box.setText(tr(
-            "<b>You have %1 unnamed notes already.</b><br><br>"
-            "Rename a few to free up the counter, or move some to "
-            "Trash, then try again. The counter is reserved to stop "
-            "the sidebar from becoming an undifferentiated wall of "
-            "<code>Noter NN</code> rows.")
-                .arg(maxCounter));
-        box.addButton(QMessageBox::Ok);
-        box.exec();
-        return;
-    }
-    if (nextCounter >= 90) {
-        // Soft nudge — don't block, just inform.
-        QMessageBox::information(this,
-            tr("Lots of unnamed notes"),
-            tr("You're at %1 unnamed Noters. The hard cap is 99 — "
-               "consider renaming a few (double-click any in the sidebar) "
-               "or trashing old drafts.").arg(maxCounter));
-    }
+    // v0.1.112 — the 99-note hard cap + >=90 nag are gone: capture must
+    // NEVER block. Past 99 the counter grows to 3+ digits ("Noter 100"):
+    // rightJustified(2,'0') pads only below 100, the display regexes
+    // (^noter\s*, counterRx (\d+)) are digit-count-agnostic, and the
+    // monotonic Inbox+Trash scan above still prevents number reuse.
+    // Scale is handled by body search + month buckets, not by refusing input.
 
     const QString counterStr = QString::number(nextCounter).rightJustified(2, '0');
 

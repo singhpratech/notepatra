@@ -1646,6 +1646,320 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // ══ v0.1.112 — retrieval & search (sections 37+; 24-36 are reserved
+    // by the mechanical wave on the noter-agrade branch). ══════════════
+    // EVERY section below that touches the search box MUST end with
+    //   search->setText(QString()); QApplication::processEvents();
+    // so sections stay order-independent and section 14's collapse-on-show
+    // assertion is never poisoned by a lingering filter.
+    QLineEdit *search = panel.findChild<QLineEdit *>(QStringLiteral("noterSearch"));
+    QLabel *searchStatus =
+        panel.findChild<QLabel *>(QStringLiteral("noterSearchStatus"));
+    auto countMeetingLeaves = [&]() {
+        int n = 0;
+        QTreeWidgetItemIterator it(tree);
+        while (*it) {
+            if ((*it)->data(0, Qt::UserRole).toString() ==
+                QStringLiteral("meeting")) ++n;
+            ++it;
+        }
+        return n;
+    };
+    auto findLeafByText = [&](const QString &text) -> QTreeWidgetItem * {
+        QTreeWidgetItemIterator it(tree);
+        while (*it) {
+            if ((*it)->data(0, Qt::UserRole).toString() ==
+                    QStringLiteral("meeting") &&
+                (*it)->text(0) == text) return *it;
+            ++it;
+        }
+        return nullptr;
+    };
+    QString sentinelPath;
+
+    // ── 37. Body search end-to-end (match, expand, visible, tooltip) ──
+    std::printf("\n--- 37. body-content search end-to-end ---\n");
+    if (tree && search && editor) {
+        panel.resize(1000, 700);
+        panel.show();
+        QApplication::processEvents();
+
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        QFileInfoList newest = QDir(panel.inboxFolder())
+            .entryInfoList(QStringList() << "*.html", QDir::Files, QDir::Time);
+        if (!newest.isEmpty()) sentinelPath = newest.first().absoluteFilePath();
+        EXPECT("sentinel note created", !sentinelPath.isEmpty());
+
+        editor->setPlainText(
+            QStringLiteral("zebrabudget quantum rollout"));
+        panel.saveCurrentNote();
+        QApplication::processEvents();
+
+        search->setText(QStringLiteral("zebrabudget"));
+        QApplication::processEvents();
+
+        EXPECT("body-only term finds exactly 1 meeting leaf",
+               countMeetingLeaves() == 1);
+        QTreeWidgetItem *hit = nullptr;
+        {
+            QTreeWidgetItemIterator it(tree);
+            while (*it) {
+                if ((*it)->data(0, Qt::UserRole).toString() ==
+                    QStringLiteral("meeting")) { hit = *it; break; }
+                ++it;
+            }
+        }
+        EXPECT("matched leaf resolved", hit != nullptr);
+        if (hit) {
+            EXPECT("leaf's section auto-expanded",
+                   hit->parent() && hit->parent()->isExpanded());
+            EXPECT("leaf's root auto-expanded",
+                   hit->parent() && hit->parent()->parent() &&
+                   hit->parent()->parent()->isExpanded());
+            // The 0×0-rect probe: an auto-expanded match must occupy real
+            // pixels — a hit hidden under a collapsed section reads as
+            // "search is broken".
+            EXPECT("matched leaf paints at a real rect (height > 0)",
+                   tree->visualItemRect(hit).height() > 0);
+            EXPECT("tooltip carries the match snippet",
+                   hit->toolTip(0).contains(QStringLiteral("Match:")) &&
+                   hit->toolTip(0).contains(QStringLiteral("zebrabudget")));
+            EXPECT("leaf TEXT does NOT carry the snippet (rename safety)",
+                   !hit->text(0).contains(QStringLiteral("zebrabudget")));
+        }
+        search->setText(QString());
+        QApplication::processEvents();
+    }
+
+    // ── 38. Match-count label under the search box ────────────────────
+    std::printf("\n--- 38. match-count label ---\n");
+    EXPECT("noterSearchStatus label exists", searchStatus != nullptr);
+    if (tree && search && searchStatus) {
+        EXPECT("label hidden while not searching", !searchStatus->isVisible());
+        search->setText(QStringLiteral("zebrabudget"));
+        QApplication::processEvents();
+        EXPECT("label visible during a search", searchStatus->isVisible());
+        EXPECT("label reports the 1 match",
+               searchStatus->text().contains(QStringLiteral("1")));
+
+        search->setText(QStringLiteral("qqqxyzzy"));
+        QApplication::processEvents();
+        EXPECT("no-hit search lists 0 meeting leaves", countMeetingLeaves() == 0);
+        EXPECT("label visible with the no-match string",
+               searchStatus->isVisible() &&
+               searchStatus->text() == QStringLiteral("No matches"));
+        EXPECT("empty Notes root stays collapsed (\"nothing here\")",
+               tree->topLevelItemCount() > 0 &&
+               !tree->topLevelItem(0)->isExpanded());
+
+        search->setText(QString());
+        QApplication::processEvents();
+        EXPECT("label hides when the filter clears", !searchStatus->isVisible());
+    }
+
+    // ── 39. Multi-term AND semantics over title-OR-body ───────────────
+    std::printf("\n--- 39. multi-term AND ---\n");
+    if (tree && search) {
+        search->setText(QStringLiteral("quantum rollout"));   // both in body
+        QApplication::processEvents();
+        EXPECT("both-terms-in-body matches the sentinel note",
+               countMeetingLeaves() == 1);
+
+        search->setText(QStringLiteral("noter quantum"));     // title + body
+        QApplication::processEvents();
+        EXPECT("title term + body term AND-match",
+               countMeetingLeaves() >= 1);
+
+        search->setText(QStringLiteral("quantum nonexistentterm"));
+        QApplication::processEvents();
+        EXPECT("one failing term kills the match (AND, not OR)",
+               countMeetingLeaves() == 0);
+
+        search->setText(QString());
+        QApplication::processEvents();
+    }
+
+    // ── 40. Title-filter regression — filename path still matches ─────
+    std::printf("\n--- 40. title filter regression ---\n");
+    if (tree && search) {
+        search->setText(QStringLiteral("noter"));
+        QApplication::processEvents();
+        EXPECT("title-derived display still matches (>= 2 leaves)",
+               countMeetingLeaves() >= 2);
+        search->setText(QString());
+        QApplication::processEvents();
+    }
+
+    // ── 41. Clearing the filter restores the pre-search expand state ──
+    std::printf("\n--- 41. filter-session snapshot restore ---\n");
+    if (tree && search) {
+        panel.hide();
+        QApplication::processEvents();
+        panel.show();
+        for (int i = 0; i < 4; ++i) QApplication::processEvents();
+        bool allCollapsedBefore = true;
+        for (int i = 0; i < tree->topLevelItemCount(); ++i)
+            if (tree->topLevelItem(i)->isExpanded()) allCollapsedBefore = false;
+        EXPECT("baseline: roots collapsed post-showEvent", allCollapsedBefore);
+
+        search->setText(QStringLiteral("zebrabudget"));
+        QApplication::processEvents();
+        EXPECT("search auto-expands the matched root",
+               tree->topLevelItemCount() > 0 &&
+               tree->topLevelItem(0)->isExpanded());
+
+        search->setText(QString());
+        QApplication::processEvents();
+        bool allCollapsedAfter = true;
+        for (int i = 0; i < tree->topLevelItemCount(); ++i)
+            if (tree->topLevelItem(i)->isExpanded()) allCollapsedAfter = false;
+        EXPECT("clearing restores the pre-search snapshot (all collapsed)",
+               allCollapsedAfter);
+    }
+
+    // ── 42. showEvent guard — a live search survives a tab switch ─────
+    std::printf("\n--- 42. showEvent skips collapse while filtering ---\n");
+    if (tree && search) {
+        search->setText(QStringLiteral("zebrabudget"));
+        QApplication::processEvents();
+        panel.hide();
+        QApplication::processEvents();
+        panel.show();
+        for (int i = 0; i < 4; ++i) QApplication::processEvents();
+        EXPECT("matched root still expanded after hide+show mid-search",
+               tree->topLevelItemCount() > 0 &&
+               tree->topLevelItem(0)->isExpanded());
+
+        // Clear → the tidy-collapse preference resumes (mirrors section 14).
+        search->setText(QString());
+        QApplication::processEvents();
+        panel.hide();
+        QApplication::processEvents();
+        panel.show();
+        for (int i = 0; i < 4; ++i) QApplication::processEvents();
+        bool allCollapsed = true;
+        for (int i = 0; i < tree->topLevelItemCount(); ++i)
+            if (tree->topLevelItem(i)->isExpanded()) allCollapsed = false;
+        EXPECT("collapse-on-show preference intact once filter clears",
+               allCollapsed);
+    }
+
+    // ── 43. Creation-date buckets: filename stamp wins, mtime falls back ─
+    std::printf("\n--- 43. creation-date month bucket + mtime fallback ---\n");
+    if (tree && search) {
+        const QDate today = QDate::currentDate();
+        const QDate past = today.addDays(-70);
+        // Compute the expected label EXACTLY like the implementation —
+        // month names are locale-dependent; never hard-code "March".
+        const QString expectedLabel = (past.year() == today.year())
+            ? past.toString(QStringLiteral("MMMM"))
+            : past.toString(QStringLiteral("MMMM yyyy"));
+
+        const QString stamped = past.toString(QStringLiteral("yyyy-MM-dd"))
+            + QStringLiteral("-1200-march-note.html");
+        {
+            QFile f(QDir(panel.inboxFolder()).absoluteFilePath(stamped));
+            EXPECT("stamped fixture written", f.open(QIODevice::WriteOnly));
+            f.write("<html><head></head><body><p>march body</p></body></html>");
+        }
+        // Trigger a rebuild (mtime is NOW — only the stamp says -70 days).
+        search->setText(QStringLiteral("zzz-no-such"));
+        QApplication::processEvents();
+        search->setText(QString());
+        QApplication::processEvents();
+
+        QTreeWidgetItem *marchLeaf = findLeafByText(QStringLiteral("march note"));
+        EXPECT("stamped leaf present", marchLeaf != nullptr);
+        if (marchLeaf && marchLeaf->parent()) {
+            EXPECT("stamped leaf bucketed by its CREATION month",
+                   marchLeaf->parent()->text(0).startsWith(expectedLabel));
+            EXPECT("stamped leaf NOT under Today despite fresh mtime",
+                   !marchLeaf->parent()->text(0).startsWith(
+                       QStringLiteral("Today")));
+        }
+
+        {
+            QFile f(QDir(panel.inboxFolder())
+                        .absoluteFilePath(QStringLiteral("plain-note.html")));
+            EXPECT("unstamped fixture written", f.open(QIODevice::WriteOnly));
+            f.write("<html><head></head><body><p>plain body</p></body></html>");
+        }
+        search->setText(QStringLiteral("zzz-no-such"));
+        QApplication::processEvents();
+        search->setText(QString());
+        QApplication::processEvents();
+
+        QTreeWidgetItem *plainLeaf = findLeafByText(QStringLiteral("plain note"));
+        EXPECT("unstamped leaf present", plainLeaf != nullptr);
+        if (plainLeaf && plainLeaf->parent()) {
+            EXPECT("unstamped leaf falls back to mtime → Today",
+                   plainLeaf->parent()->text(0).startsWith(
+                       QStringLiteral("Today")));
+        }
+        search->setText(QString());
+        QApplication::processEvents();
+    }
+
+    // ── 44. Cap gone — capture never blocks past note 99 ──────────────
+    std::printf("\n--- 44. no cap / no modal past noter-99 ---\n");
+    {
+        {
+            QFile f(QDir(panel.inboxFolder()).absoluteFilePath(
+                QStringLiteral("2026-01-01-120000-noter-99.html")));
+            EXPECT("noter-99 seed written", f.open(QIODevice::WriteOnly));
+            f.write("<html><head></head><body><p>n99</p></body></html>");
+        }
+        bool sawModal = false;
+        QTimer::singleShot(150, [&sawModal]() {
+            for (QWidget *w : QApplication::topLevelWidgets())
+                if (auto *d = qobject_cast<QDialog *>(w))
+                    if (d->isVisible()) { sawModal = true; d->reject(); }
+        });
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        QTest::qWait(250);   // let the watchdog fire (and prove it saw nothing)
+
+        const QStringList after100 = QDir(panel.inboxFolder())
+            .entryList(QStringList() << QStringLiteral("*-noter-100.html"),
+                       QDir::Files);
+        EXPECT("note #100 created", after100.size() == 1);
+        EXPECT("NO modal blocked or nagged the capture", !sawModal);
+
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        const QStringList after101 = QDir(panel.inboxFolder())
+            .entryList(QStringList() << QStringLiteral("*-noter-101.html"),
+                       QDir::Files);
+        EXPECT("note #101 created on the next call", after101.size() == 1);
+        if (search) { search->setText(QString()); QApplication::processEvents(); }
+    }
+
+    // ── 45. Cache invalidation — edited body drops out of the results ─
+    std::printf("\n--- 45. (mtime,size) cache invalidation ---\n");
+    if (tree && search && editor && !sentinelPath.isEmpty()) {
+        search->setText(QStringLiteral("zebrabudget"));
+        QApplication::processEvents();
+        EXPECT("sentinel still matches before the edit",
+               countMeetingLeaves() == 1);
+
+        panel.openNoteFile(sentinelPath);
+        QApplication::processEvents();
+        editor->setPlainText(QStringLiteral("nothing to see here"));
+        panel.saveCurrentNote();
+        QApplication::processEvents();
+
+        search->setText(QString());
+        QApplication::processEvents();
+        search->setText(QStringLiteral("zebrabudget"));
+        QApplication::processEvents();
+        EXPECT("edited-away sentinel no longer matches (cache invalidated)",
+               countMeetingLeaves() == 0);
+
+        search->setText(QString());
+        QApplication::processEvents();
+    }
+
     // ── Summary ───────────────────────────────────────────────────
     std::printf("\n──────────────────────────\n");
     std::printf("PASS: %d   FAIL: %d\n", g_pass, g_fail);

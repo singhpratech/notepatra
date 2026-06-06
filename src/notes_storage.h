@@ -63,6 +63,19 @@ public:
     // list in the implementation header comment.
     static QString sanitizeBody(const QString &dirtyHtml);
 
+    // v0.1.112 — search-plaintext of a note's full HTML: <head> (incl. the
+    // template's <title> + styleBlock CSS) and any <style>/<script> regions
+    // dropped, remaining tags replaced by spaces, the 6 common entities
+    // decoded (&amp; LAST so &amp;lt; never double-decodes), whitespace
+    // collapsed via QString::simplified(). Case PRESERVED — callers match
+    // with Qt::CaseInsensitive. Pure function; QtCore only (test_notes_storage
+    // links no Qt5::Gui — do NOT switch to QTextDocument::toPlainText()).
+    // Known accepted limitations: numeric entities other than &#39; stay
+    // encoded (those exact characters won't match a search); HTML comments
+    // containing '>' clip early under the <[^>]*> pass — harmless residue
+    // for a contains-style search.
+    static QString plainTextForSearch(const QString &fullHtml);
+
     // Filename safety — strip control + reserved chars, ASCII-fold,
     // collapse whitespace, lowercase, cap at 200 chars, "untitled"
     // fallback if everything sanitizes away to empty.

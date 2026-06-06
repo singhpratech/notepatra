@@ -75,6 +75,16 @@ private slots:
     // ── draft sidecar ──
     void draft_writeAndClear();
     void draft_clearedOnSuccessfulSave();
+
+    // ── plainTextForSearch (v0.1.112 body-content search) ──
+    void plainText_stripsTags();
+    void plainText_stripsHeadAndTitle();
+    void plainText_stripsStyleScriptInBody();
+    void plainText_entityOrderAmpLast();
+    void plainText_whitespaceCollapsed();
+    void plainText_attributesNeverLeak();
+    void plainText_casePreserved();
+    void plainText_emptyAndTagOnly();
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -675,6 +685,75 @@ void TestNotesStorage::draft_clearedOnSuccessfulSave() {
 
     QVERIFY(s.saveNote(path, "<html><body><p>saved</p></body></html>"));
     QVERIFY(!QFile::exists(path + ".draft"));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// plainTextForSearch — v0.1.112 body-content search plaintext extractor.
+// Pure static; QtCore only (this target links no Qt5::Gui).
+// ═══════════════════════════════════════════════════════════════════════
+
+void TestNotesStorage::plainText_stripsTags() {
+    QCOMPARE(NotesStorage::plainTextForSearch(
+                 QStringLiteral("<p>hello <b>world</b></p>")),
+             QStringLiteral("hello world"));
+}
+
+void TestNotesStorage::plainText_stripsHeadAndTitle() {
+    // A real NotesTemplate-shaped document: <head> holds the <title> plus
+    // the full styleBlock CSS (font-family / --sans / serif tokens). The
+    // head strip is LOAD-BEARING — without it every note matches "serif".
+    QTemporaryDir td;
+    NotesStorage s(td.path());
+    const QString html = s.newNoteHtml(QStringLiteral("Noter 03"),
+                                       QDateTime::currentDateTime(),
+                                       QStringList());
+    QVERIFY(html.contains(QStringLiteral("font-family")));   // fixture sanity
+    const QString plain = NotesStorage::plainTextForSearch(html);
+    QVERIFY(plain.contains(QStringLiteral("Noter 03")));      // body <h1> survives
+    QVERIFY(!plain.contains(QStringLiteral("font-family")));
+    QVERIFY(!plain.contains(QStringLiteral("serif")));
+    QVERIFY(!plain.contains(QStringLiteral("--sans")));
+    QVERIFY(!plain.contains(QLatin1Char('<')));
+    QVERIFY(!plain.contains(QLatin1Char('>')));
+}
+
+void TestNotesStorage::plainText_stripsStyleScriptInBody() {
+    QCOMPARE(NotesStorage::plainTextForSearch(QStringLiteral(
+                 "<style>p{color:red}</style>body<script>x()</script>")),
+             QStringLiteral("body"));
+}
+
+void TestNotesStorage::plainText_entityOrderAmpLast() {
+    // &amp; MUST decode last: "&amp;lt;" → "&lt;" (literal), never a
+    // double-decode to "<".
+    QCOMPARE(NotesStorage::plainTextForSearch(QStringLiteral(
+                 "&amp;lt;b&amp;gt; &nbsp; &#39;x&#39;")),
+             QStringLiteral("&lt;b&gt; 'x'"));
+}
+
+void TestNotesStorage::plainText_whitespaceCollapsed() {
+    QCOMPARE(NotesStorage::plainTextForSearch(
+                 QStringLiteral("<p>a</p>\n\n<p>b</p>")),
+             QStringLiteral("a b"));
+}
+
+void TestNotesStorage::plainText_attributesNeverLeak() {
+    const QString plain = NotesStorage::plainTextForSearch(QStringLiteral(
+        "<div class=\"b-act\" data-id=\"act-x1\" data-due=\"2026-01-01\">"
+        "ship it</div>"));
+    QCOMPARE(plain, QStringLiteral("ship it"));
+    QVERIFY(!plain.contains(QStringLiteral("act-x1")));
+}
+
+void TestNotesStorage::plainText_casePreserved() {
+    QCOMPARE(NotesStorage::plainTextForSearch(QStringLiteral("<p>ZeBrA</p>")),
+             QStringLiteral("ZeBrA"));
+}
+
+void TestNotesStorage::plainText_emptyAndTagOnly() {
+    QCOMPARE(NotesStorage::plainTextForSearch(QString()), QString());
+    QCOMPARE(NotesStorage::plainTextForSearch(QStringLiteral("<p></p>")),
+             QString());
 }
 
 QTEST_MAIN(TestNotesStorage)

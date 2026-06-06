@@ -25,6 +25,7 @@
 #include <QString>
 #include <QStringList>
 #include <QSet>
+#include <QHash>
 #include <QPointer>
 #include <QDateTime>
 #include <QObject>
@@ -33,6 +34,7 @@
 class QStackedWidget;
 class QSplitter;
 class QLabel;
+class QFileInfo;
 class QToolButton;
 class QPushButton;
 class QListWidget;       // legacy — kept for now, not used by the new tree sidebar
@@ -162,6 +164,11 @@ private:
     // + per-action), grouped Overdue / Today / This week / Later. Each leaf
     // opens its source note; pencil changes the time; ✕ deletes it.
     void populateRemindersRoot(QTreeWidgetItem *root, const QString &filter);
+
+    // v0.1.112 — body-content search. Plaintext cache keyed by absolute
+    // path, invalidated by (mtime, size). Lazy on filter; idle-prewarmed.
+    QString bodyTextFor(const QFileInfo &fi);
+    void prewarmBodyCache();   // chunked: ≤25 files per 16ms tick
 
     // Shared date+time picker (calendar popup + quick-pick chips). Returns the
     // chosen time, or invalid if cancelled. *cleared is set true if the user
@@ -328,6 +335,19 @@ private:
     // currently collapsed. Click a header to toggle; refreshSidebar()
     // hides items whose section is in this set.
     QSet<QString>  m_collapsedSections;
+    // v0.1.112 — body-content search cache: search-plaintext per absolute
+    // note path, invalidated by (mtime, size). In-memory only; bounded by
+    // a clear() guard in bodyTextFor. m_prewarmQueue drives the chunked
+    // idle prewarm so the first search keystroke never pays cold reads.
+    struct BodySearchEntry { QDateTime mtime; qint64 size = 0; QString plain; };
+    QHash<QString, BodySearchEntry> m_bodyCache;
+    QStringList   m_prewarmQueue;
+    // Filter-session expand-state machine (see refreshSidebar): entering a
+    // search snapshots the user's REAL expand state once; clearing the box
+    // restores that snapshot verbatim.
+    QSet<QString> m_preFilterExpanded;
+    bool          m_filterWasActive { false };
+    QLabel       *m_searchStatus    { nullptr };
     bool           m_loadingInProgress { false };  // suppress dirty during setHtml
     bool           m_loadingTree       { false };  // suppress itemChanged during refreshSidebar
     QDateTime      m_lastSavedAt;
