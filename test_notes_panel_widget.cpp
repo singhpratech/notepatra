@@ -28,6 +28,7 @@
 #include <QTimer>
 #include <QKeyEvent>
 #include <QCheckBox>
+#include <QFont>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -1207,6 +1208,154 @@ int main(int argc, char *argv[]) {
         // Restore the dir for the rest of tmpHome's lifetime (cleanup).
         QFile::setPermissions(inbox, QFileDevice::ReadOwner |
             QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+    }
+
+    // ── 30. Section headers survive save + reload as REAL h2 (M3) ─────
+    // The bug: insertSubheader made text bold but never set
+    // QTextBlockFormat::headingLevel, so toHtml() saved no <h2> and the
+    // reloaded note rendered the header as plain body text. Contract:
+    // insertSubheader → save via the real writer → reload via the real
+    // reader → the header block still has headingLevel==2 AND bold.
+    std::printf("\n--- 30. subheader survives save+reload as h2 ---\n");
+    {
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        QString hdrPath;
+        {
+            QFileInfoList l = QDir(panel.inboxFolder())
+                .entryInfoList(QStringList() << "*.html", QDir::Files, QDir::Time);
+            if (!l.isEmpty()) hdrPath = l.first().absoluteFilePath();
+        }
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        EXPECT("editor present for header round-trip", ed != nullptr);
+        if (ed && !hdrPath.isEmpty()) {
+            ed->clear();
+            QApplication::processEvents();
+            panel.insertSubheader(QStringLiteral("Action Items"));
+            QApplication::processEvents();
+
+            auto findBlock = [](QTextDocument *doc,
+                                const QString &prefix) -> QTextBlock {
+                for (QTextBlock b = doc->begin(); b.isValid(); b = b.next())
+                    if (b.text().startsWith(prefix)) return b;
+                return QTextBlock();
+            };
+
+            // In-editor: the header is a REAL heading block, the ☐ seed
+            // below it stays plain body.
+            QTextBlock hb = findBlock(ed->document(),
+                                      QStringLiteral("Action Items"));
+            EXPECT("header block exists in editor", hb.isValid());
+            EXPECT("header block has headingLevel 2 (pre-save)",
+                   hb.isValid() && hb.blockFormat().headingLevel() == 2);
+            QTextBlock sb = findBlock(ed->document(), QStringLiteral("☐"));
+            EXPECT("☐ seed block stays plain body (headingLevel 0)",
+                   sb.isValid() && sb.blockFormat().headingLevel() == 0);
+
+            // Save via the real writer → the artifact carries a real <h2>.
+            panel.saveCurrentNote();
+            QApplication::processEvents();
+            const QString disk = readAll(hdrPath);
+            EXPECT("saved HTML contains a real <h2> tag",
+                   disk.contains(QStringLiteral("<h2")));
+            EXPECT("saved HTML carries the header text",
+                   disk.contains(QStringLiteral("Action Items")));
+
+            // Reload via the real reader in a FRESH panel.
+            NotesPanel reopened;
+            reopened.openNoteFile(hdrPath);
+            QApplication::processEvents();
+            QTextEdit *ed2 = reopened.findChild<QTextEdit *>();
+            EXPECT("reopened panel has editor (header test)", ed2 != nullptr);
+            if (ed2) {
+                QTextBlock rb = findBlock(ed2->document(),
+                                          QStringLiteral("Action Items"));
+                EXPECT("reloaded header block exists", rb.isValid());
+                EXPECT("reloaded header keeps headingLevel==2",
+                       rb.isValid() && rb.blockFormat().headingLevel() == 2);
+                bool boldAgain = false;
+                if (rb.isValid() && rb.length() > 1) {
+                    QTextCursor c(ed2->document());
+                    c.setPosition(rb.position() + 1);   // format of 1st char
+                    boldAgain = c.charFormat().fontWeight() >= QFont::Bold;
+                }
+                EXPECT("reloaded header text is bold", boldAgain);
+                QTextBlock rs = findBlock(ed2->document(), QStringLiteral("☐"));
+                EXPECT("reloaded ☐ seed stays plain body (headingLevel 0)",
+                       rs.isValid() && rs.blockFormat().headingLevel() == 0);
+            }
+        }
+    }
+
+    // ── 31. Enter at the end of a heading exits the heading format ────
+    // Companion to 24: the block AFTER a heading must be plain body text
+    // (headingLevel 0, not bold) or everything typed under a header would
+    // save as more <h2> lines.
+    std::printf("\n--- 31. Enter exits the heading format ---\n");
+    {
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        EXPECT("editor present for Enter-exit test", ed != nullptr);
+        if (ed) {
+            ed->clear();
+            QApplication::processEvents();
+            panel.insertSubheader(QStringLiteral("Decisions"));
+            QApplication::processEvents();
+            // Park the caret at the END of the heading line, press Enter.
+            for (QTextBlock b = ed->document()->begin(); b.isValid();
+                 b = b.next()) {
+                if (!b.text().startsWith(QStringLiteral("Decisions"))) continue;
+                QTextCursor c(ed->document());
+                c.setPosition(b.position() + b.length() - 1);
+                ed->setTextCursor(c);
+                break;
+            }
+            ed->setFocus();
+            QTest::keyClick(ed, Qt::Key_Return);
+            QApplication::processEvents();
+            const QTextBlock nb = ed->textCursor().block();
+            EXPECT("Enter after heading lands on a body block (headingLevel 0)",
+                   nb.blockFormat().headingLevel() == 0);
+            EXPECT("body block after heading is not bold",
+                   ed->textCursor().charFormat().fontWeight() < QFont::Bold);
+        }
+    }
+
+    // ── 32. Extract append path writes REAL h2 section headers (M3) ───
+    // Accepting the Extract dialog appends "Summary" + "Action Items" —
+    // those must be heading blocks too (same evaporate-on-reload bug).
+    std::printf("\n--- 32. Extract appends real h2 headers ---\n");
+    {
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        const QString fakeResponse = QStringLiteral(
+            "{\"summary\":\"Quick sync about the build.\","
+            "\"actions\":[{\"text\":\"Ship the build\",\"owner\":\"@prateek\","
+            "\"due\":\"2026-12-25T10:00\"}],"
+            "\"decisions\":[],\"questions\":[],\"risks\":[]}");
+        QTimer::singleShot(150, []() {
+            for (QWidget *w : QApplication::topLevelWidgets())
+                if (auto *d = qobject_cast<QDialog *>(w))
+                    if (d->isVisible()) d->accept();
+        });
+        QTimer::singleShot(1500, []() {           // watchdog: never hang
+            for (QWidget *w : QApplication::topLevelWidgets())
+                if (auto *d = qobject_cast<QDialog *>(w)) d->reject();
+        });
+        panel.showExtractResult(fakeResponse, QStringLiteral("test-model"));
+        QApplication::processEvents();
+        bool summaryH2 = false, actionsH2 = false;
+        if (ed)
+            for (QTextBlock b = ed->document()->begin(); b.isValid();
+                 b = b.next()) {
+                if (b.text() == QStringLiteral("Summary") &&
+                    b.blockFormat().headingLevel() == 2) summaryH2 = true;
+                if (b.text() == QStringLiteral("Action Items") &&
+                    b.blockFormat().headingLevel() == 2) actionsH2 = true;
+            }
+        EXPECT("accepted Extract appended 'Summary' as a real h2", summaryH2);
+        EXPECT("accepted Extract appended 'Action Items' as a real h2",
+               actionsH2);
     }
 
     // ── Summary ───────────────────────────────────────────────────

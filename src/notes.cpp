@@ -2548,6 +2548,49 @@ void NotesPanel::endMeetingSweep() {
     client->generate(prompt, QString(), /*enableThinking=*/false);
 }
 
+// ── Real heading blocks ──────────────────────────────────────────────────
+// Section headers used to be bold-only char formats — they EVAPORATED on
+// save+reload: QTextDocument::toHtml() only emits <h1>…<h6> when the block
+// format's headingLevel is set, so a bold line serialized as
+// <p><span style="font-weight:600…">, the sanitizer stripped the inline
+// style attribute, and the note reopened as plain body text. These helpers
+// write REAL heading blocks (headingLevel + bold char format), which
+// round-trip: toHtml() emits <hN>, the sanitizer allowlist keeps h1–h6
+// (notes_storage.cpp), and setHtml() re-derives level + bold on load.
+namespace {
+
+// H1 biggest → H3 smallest; body text is ~11pt. Matches the in-editor look
+// the toolbar presets have always had.
+qreal headingPointSize(int level) {
+    return (level <= 1) ? 18.0 : (level == 2 ? 15.0 : 13.0);
+}
+
+// Writes `title` as a heading block at `level`, then leaves `cur` at the
+// start of a fresh PLAIN body block below it (headingLevel cleared, normal
+// weight) so the following text never inherits the heading look.
+void insertHeadingBlock(QTextCursor &cur, const QString &title, int level) {
+    QTextBlockFormat hb = cur.blockFormat();
+    hb.setHeadingLevel(level);
+    cur.setBlockFormat(hb);
+    QTextCharFormat hf;
+    hf.setFontWeight(QFont::Bold);
+    hf.setFontPointSize(headingPointSize(level));
+    cur.setBlockCharFormat(hf);
+    cur.insertText(title, hf);
+
+    cur.insertBlock();
+    QTextBlockFormat bb = cur.blockFormat();
+    bb.setHeadingLevel(0);
+    cur.setBlockFormat(bb);
+    QTextCharFormat plain;
+    plain.setFontWeight(QFont::Normal);
+    plain.setFontItalic(false);
+    cur.setBlockCharFormat(plain);
+    cur.setCharFormat(plain);
+}
+
+} // anonymous namespace
+
 // Runs the Extract review dialog + applies the result. Deferred (called via
 // singleShot from the finished handler) so it NEVER opens a nested event loop
 // while the network reply is still being torn down — see the crash note above.
@@ -2581,17 +2624,15 @@ void NotesPanel::showExtractResult(const QString &response, const QString &model
     QTextCursor cur(m_editor->document());
     cur.movePosition(QTextCursor::End);
     cur.insertBlock();
-    QTextCharFormat hdr;
-    hdr.setFontWeight(QFont::Bold);
+    // Summary / Action Items are REAL h2 blocks (see insertHeadingBlock
+    // above) — bold-only headers degraded to plain text after save+reload.
     if (!finalResult.summary.isEmpty()) {
-        cur.insertText(tr("Summary"), hdr);
-        cur.insertBlock();
-        cur.insertText(finalResult.summary, QTextCharFormat());
+        insertHeadingBlock(cur, tr("Summary"), 2);
+        cur.insertText(finalResult.summary);
         cur.insertBlock();
         cur.insertBlock();
     }
-    cur.insertText(tr("Action Items"), hdr);
-    cur.insertBlock();
+    insertHeadingBlock(cur, tr("Action Items"), 2);
     QTextCharFormat plain;
     for (const auto &item : finalResult.actions) {
         QString line = QStringLiteral("☐ ") + item.text;
@@ -2829,6 +2870,26 @@ bool NotesPanel::eventFilter(QObject *watched, QEvent *event) {
                 m_dirty = true;
                 return true;
             }
+
+            // Enter at the END of a heading line starts a PLAIN body block.
+            // Without this the new block inherits headingLevel + bold from
+            // the heading, so the next line typed would save as another
+            // <hN> instead of body text.
+            if (cur.atBlockEnd() && !cur.hasSelection() &&
+                cur.blockFormat().headingLevel() > 0) {
+                cur.insertBlock();
+                QTextBlockFormat bf = cur.blockFormat();
+                bf.setHeadingLevel(0);
+                cur.setBlockFormat(bf);
+                QTextCharFormat plain;
+                plain.setFontWeight(QFont::Normal);
+                plain.setFontItalic(false);
+                cur.setBlockCharFormat(plain);
+                cur.setCharFormat(plain);
+                m_editor->setTextCursor(cur);
+                m_dirty = true;
+                return true;
+            }
         }
 
         // F4 → toggle checkbox on current line.
@@ -2947,8 +3008,6 @@ void NotesPanel::insertSubheader(const QString &titleIn, int level) {
                                       QString(), &ok).trimmed();
         if (!ok || title.isEmpty()) return;
     }
-    // H1 biggest → H3 smallest; body text is ~11pt.
-    const qreal headPt = (level <= 1) ? 18.0 : (level == 2 ? 15.0 : 13.0);
 
     QTextCursor cur = m_editor->textCursor();
     cur.beginEditBlock();
@@ -2962,23 +3021,16 @@ void NotesPanel::insertSubheader(const QString &titleIn, int level) {
         cur.movePosition(QTextCursor::StartOfBlock);
     }
 
-    // Bold heading sized by level (H1/H2/H3).
-    QTextCharFormat hf;
-    hf.setFontWeight(QFont::Bold);
-    hf.setFontPointSize(headPt);
-    cur.insertText(title, hf);
+    // REAL heading block (headingLevel + bold sized by level) — bold-only
+    // text used to lose the header look on save+reload because toHtml()
+    // never emitted <hN>. Leaves the cursor on a fresh PLAIN block below.
+    insertHeadingBlock(cur, title, level);
 
     // Always seed the section with a checkbox bullet in NORMAL format, so
     // every subheader comes with a checkable/cancellable line ready to type
     // (user: "always a checkbox as bullet point"). Enter then continues the
     // ☐ list via the editor's Key_Return handler.
-    QTextCharFormat plain;
-    plain.setFontWeight(QFont::Normal);
-    plain.setFontItalic(false);
-    cur.insertBlock();
-    cur.setBlockCharFormat(plain);
-    cur.setCharFormat(plain);
-    cur.insertText(QStringLiteral("☐ "), plain);
+    cur.insertText(QStringLiteral("☐ "));
 
     cur.endEditBlock();
     cur.movePosition(QTextCursor::EndOfBlock);

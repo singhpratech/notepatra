@@ -52,6 +52,8 @@ private slots:
     void sanitizer_mismatchedTags_autoClosed();
     void sanitizer_eventHandlerAttributes_stripped();
     void sanitizer_inlineStyleAttribute_stripped();
+    void sanitizer_headingTags_preserved();
+    void roundTrip_savedHeading_keepsH2();
 
     // ── filename safety ──
     void filename_twentyEdgeCases();
@@ -97,6 +99,31 @@ void TestNotesStorage::roundTrip_saveThenRead_returnsIdentical() {
     QVERIFY(rerr.isEmpty());
     QVERIFY(back.contains("<h1>Hello</h1>"));
     QVERIFY(back.contains("<p>world</p>"));
+}
+
+void TestNotesStorage::roundTrip_savedHeading_keepsH2() {
+    // Full writer→reader round-trip for a section header: the body shape
+    // QTextDocument::toHtml() produces for a headingLevel-2 block must come
+    // back from disk still carrying the <h2> tag — the reload side derives
+    // the heading look (level + bold) from it.
+    QTemporaryDir td;
+    QVERIFY(td.isValid());
+    NotesStorage s(td.path());
+
+    const QString path = td.path() + "/note-h2.html";
+    const QString html =
+        "<!doctype html><html><head><title>x</title></head>"
+        "<body><h2 style=\"font-size:15pt;\">"
+        "<span style=\" font-weight:600;\">Action Items</span></h2>"
+        "<p>follow up</p></body></html>";
+
+    QString err;
+    QVERIFY2(s.saveNote(path, html, &err), qPrintable(err));
+    const QString back = s.readNote(path, nullptr);
+    QVERIFY(back.contains("<h2>"));
+    QVERIFY(back.contains("Action Items"));
+    QVERIFY(back.contains("</h2>"));
+    QVERIFY(!back.contains("style="));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -342,6 +369,23 @@ void TestNotesStorage::sanitizer_inlineStyleAttribute_stripped() {
         "<p style=\"color:red;background:url(javascript:0)\">x</p>");
     QVERIFY(!sane.contains("style="));
     QVERIFY(sane.contains("<p>"));
+}
+
+void TestNotesStorage::sanitizer_headingTags_preserved() {
+    // Section headers are real <h2>/<h3> blocks now (toolbar Insert header
+    // + the Extract append path). The allowlist must keep them — including
+    // the form QTextDocument::toHtml() emits, where the tag carries an
+    // inline style (style is stripped; the tag itself must survive).
+    const QString sane = NotesStorage::sanitizeBody(
+        "<h2 style=\"margin-top:12px;\">Action Items</h2>"
+        "<h3>Sub section</h3>"
+        "<p>body text</p>");
+    QVERIFY(sane.contains("<h2>"));
+    QVERIFY(sane.contains("Action Items"));
+    QVERIFY(sane.contains("</h2>"));
+    QVERIFY(sane.contains("<h3>"));
+    QVERIFY(sane.contains("</h3>"));
+    QVERIFY(!sane.contains("style="));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
