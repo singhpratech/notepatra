@@ -115,6 +115,82 @@ static void testSystemPrompt() {
                 !chat.contains("csv_query"));
 }
 
+// v0.1.112 — apply_diff escalation-ladder contract in the tool-mode layer.
+// The system prompt documents the TOOL's recovery contract (true for every
+// model): conflict → one re-read then rebuild; same hunk conflicts twice →
+// stop retrying (write_file or report); hunk strings carry real newlines;
+// new_lines are final content (degenerate_hunk otherwise). Every
+// instruction must carry its boundary, and the prompt must stay
+// model-agnostic — no model names in ANY built variant.
+static void testToolModePromptContract() {
+    using AiSystemPrompt::Intent;
+    using AiSystemPrompt::build;
+
+    std::printf("\n=== tool-mode prompt: apply_diff escalation ladder ===\n");
+    const QString sp = build(Intent::CodingStrict, "", true);
+
+    // Conflict recovery — instruction + boundary pair.
+    EXPECT_CONTAINS("documents error_kind:conflict recovery", sp,
+                    "error_kind:conflict");
+    EXPECT_CONTAINS("conflict → re-read once (with_line_numbers=false)", sp,
+                    "re-read the file once with with_line_numbers=false");
+    EXPECT_CONTAINS("  boundary: one re-read is sufficient", sp,
+                    "that one re-read is sufficient");
+    EXPECT_CONTAINS("  boundary: do not re-read repeatedly", sp,
+                    "do not re-read repeatedly");
+
+    // Same-hunk-twice escalation — instruction + boundary pair.
+    EXPECT_CONTAINS("same hunk conflicts twice → stop retrying", sp,
+                    "If the same hunk conflicts twice, stop retrying");
+    EXPECT_CONTAINS("  escape hatch: write_file with complete content", sp,
+                    "write_file with the complete corrected");
+    EXPECT_CONTAINS("  boundary: never resend the same failing call", sp,
+                    "never send the same failing call again");
+
+    // Hunk content rules — real newlines, final content, degenerate_hunk.
+    EXPECT_CONTAINS("hunk rule: real newline characters", sp,
+                    "real newline characters");
+    EXPECT_CONTAINS("  boundary: never the two-character backslash-n", sp,
+                    "never the two-character text");
+    EXPECT_CONTAINS("hunk rule: new_lines are the final content", sp,
+                    "new_lines must be the final content");
+    EXPECT_CONTAINS("  boundary: never old content plus appended fixes", sp,
+                    "never the old content with fixes appended");
+    EXPECT_CONTAINS("degenerate_hunk error documented", sp,
+                    "degenerate_hunk");
+    EXPECT_CONTAINS("hunk rule: current line numbers, tool compensates", sp,
+                    "do not renumber later hunks");
+
+    // Model-agnostic: no model-name strings in any built prompt variant.
+    const char *modelNames[] = {
+        "qwen", "llama", "gemma", "mistral", "claude", "gpt-3", "gpt-4",
+        "gpt-5", "gpt-oss", "deepseek", "granite", "hermes", "phi-3",
+        "command r", "gemini", "codestral"
+    };
+    const Intent intents[] = { Intent::Chat, Intent::Explain,
+                               Intent::Transform, Intent::CodingStrict,
+                               Intent::DataAnalyst };
+    bool clean = true;
+    QString offender;
+    for (Intent it : intents) {
+        for (int toolsOn = 0; toolsOn <= 1; ++toolsOn) {
+            for (int composer = 0; composer <= 1; ++composer) {
+                const QString p = build(it, "", toolsOn != 0,
+                                        composer != 0).toLower();
+                for (const char *mn : modelNames) {
+                    if (p.contains(QString::fromLatin1(mn))) {
+                        clean = false;
+                        offender = QString::fromLatin1(mn);
+                    }
+                }
+            }
+        }
+    }
+    if (!clean)
+        std::printf("    offending model name: %s\n", qPrintable(offender));
+    EXPECT_TRUE("no model-name strings in ANY built prompt variant", clean);
+}
+
 static void testShouldAttachWorkspace() {
     using AiSystemPrompt::Intent;
     using AiSystemPrompt::shouldAttachWorkspace;
@@ -493,6 +569,7 @@ int main(int argc, char *argv[]) {
 
     testIntent();
     testSystemPrompt();
+    testToolModePromptContract();
     testShouldAttachWorkspace();
     testBuildWithProjectContext();
     testReadInstructions(dir);

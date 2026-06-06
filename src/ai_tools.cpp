@@ -805,11 +805,11 @@ QJsonArray availableTools() {
         };
         hunkProps["old_lines"] = QJsonObject{
             {"type", "string"},
-            {"description", "Exact text the tool expects to find at old_start_line. Used for conflict detection."}
+            {"description", "Exact text the tool expects to find at old_start_line. Used for conflict detection. Line breaks must be real newline characters in the string value, never the two-character text backslash-n."}
         };
         hunkProps["new_lines"] = QJsonObject{
             {"type", "string"},
-            {"description", "Replacement text."}
+            {"description", "Replacement text — the FINAL content of the region, never old content plus appended fixes. Line breaks must be real newline characters, never the two-character text backslash-n."}
         };
         QJsonObject hunkSchema;
         hunkSchema["type"] = "object";
@@ -1354,6 +1354,59 @@ ToolResult executeSearch(const ToolCall &call, const QString &workspaceRoot) {
     return makeSuccess(call, result);
 }
 
+// ── apply_diff literal-escape lint helpers ─────────────────────────────
+//
+// Some models JSON-escape hunk strings one level too many, so the parsed
+// old_lines/new_lines arrive carrying the two-character sequences
+// backslash-n / backslash-t / backslash-doublequote where a real newline /
+// tab / quote was intended. Left alone, that garbage either fails to match
+// (conflict loop) or gets WRITTEN verbatim into the file. These helpers
+// detect and reverse exactly one level of JSON-style escaping. Pure string
+// logic — no model-specific behaviour.
+
+// True if `s` contains a bare literal two-char escape sequence (\n, \t or
+// \"). An escaped backslash (\\) guards the char after it — `\\n` is a
+// correctly-encoded "backslash then n" and must NOT trigger the lint.
+static bool containsLiteralEscapes(const QString &s) {
+    for (int i = 0; i + 1 < s.size(); ++i) {
+        if (s.at(i) != QLatin1Char('\\')) continue;
+        const QChar c = s.at(i + 1);
+        if (c == QLatin1Char('n') || c == QLatin1Char('t') || c == QLatin1Char('"'))
+            return true;
+        ++i;  // skip the escaped char — handles "\\\\n" and unknown escapes
+    }
+    return false;
+}
+
+// Reverses one level of JSON-string escaping: \n → newline, \t → tab,
+// \" → quote, \\ → backslash. Unknown sequences are left untouched.
+static QString decodeLiteralEscapes(const QString &s) {
+    QString out;
+    out.reserve(s.size());
+    for (int i = 0; i < s.size(); ++i) {
+        const QChar c = s.at(i);
+        if (c == QLatin1Char('\\') && i + 1 < s.size()) {
+            const QChar n = s.at(i + 1);
+            if (n == QLatin1Char('n'))  { out += QLatin1Char('\n'); ++i; continue; }
+            if (n == QLatin1Char('t'))  { out += QLatin1Char('\t'); ++i; continue; }
+            if (n == QLatin1Char('"'))  { out += QLatin1Char('"');  ++i; continue; }
+            if (n == QLatin1Char('\\')) { out += QLatin1Char('\\'); ++i; continue; }
+        }
+        out += c;
+    }
+    return out;
+}
+
+// Splits hunk text into lines, dropping the empty trailing element a
+// final newline leaves behind (same convention the file-content split
+// uses). Shared by validation, the degenerate-hunk check, and apply.
+static QStringList splitHunkLines(const QString &text) {
+    QStringList ls = text.split('\n');
+    if (!ls.isEmpty() && ls.last().isEmpty() && text.endsWith('\n'))
+        ls.removeLast();
+    return ls;
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // executeApplyDiff — v0.1.39
 //
@@ -1436,6 +1489,39 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
         }
         sortedHunks.push_back(v.toObject());
     }
+
+    // ── Degenerate-hunk lint (pre-sort, original call order) ────────────
+    // Reject the "no-op-plus-junk" pattern server-side: hunk i's new_lines
+    // begin with exactly its old_lines and only APPEND content, and a
+    // subsequent hunk j in the SAME call targets an overlapping region
+    // (usually a fix-up for the junk hunk i would create). Overlapping
+    // hunks were never valid for this tool anyway (all hunks validate
+    // against the file as it exists NOW), so this carries no false
+    // positives for legitimate append-after-anchor edits — those have no
+    // second hunk on the same lines. Pure structural check, model-blind.
+    for (int i = 0; i < sortedHunks.size(); ++i) {
+        const QStringList oldI = splitHunkLines(sortedHunks[i].value("old_lines").toString());
+        const QStringList newI = splitHunkLines(sortedHunks[i].value("new_lines").toString());
+        if (oldI.isEmpty() || newI.size() <= oldI.size()) continue;
+        if (newI.mid(0, oldI.size()) != oldI) continue;   // not no-op-plus-append
+        const int startI = sortedHunks[i].value("old_start_line").toInt();
+        const int endI   = startI + oldI.size();          // [startI, endI)
+        for (int j = i + 1; j < sortedHunks.size(); ++j) {
+            const int startJ = sortedHunks[j].value("old_start_line").toInt();
+            const int lenJ   = qMax(1, splitHunkLines(
+                                   sortedHunks[j].value("old_lines").toString()).size());
+            const bool overlap = startJ < endI && startI < startJ + lenJ;
+            if (!overlap) continue;
+            return makeError(call, "degenerate_hunk",
+                             QString("Hunks at line %1 and line %2 target the same region, and the "
+                                     "first hunk's new_lines merely repeat its old_lines and append "
+                                     "extra content. Send ONE hunk whose new_lines contain the final "
+                                     "intended content of that region — do not send a no-op-plus-append "
+                                     "hunk followed by a fix-up hunk.")
+                                 .arg(startI).arg(startJ));
+        }
+    }
+
     std::sort(sortedHunks.begin(), sortedHunks.end(),
               [](const QJsonObject &a, const QJsonObject &b) {
                   return a.value("old_start_line").toInt()
@@ -1453,6 +1539,19 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
     static const QRegularExpression kReadFilePrefix(QStringLiteral("^\\s*\\d+\\t"));
     enum MatchTier { TierStrict = 0, TierStripPrefix = 1, TierTrimmed = 2 };
     QStringList warnings;
+
+    // Effective per-hunk values phase 2 will apply. For normal hunks these
+    // are byte-identical to a re-split of the raw JSON strings (the
+    // pre-existing behaviour); for hunks rescued by the literal-escape
+    // fallback they carry the DECODED line lists so the escape garbage is
+    // never written to disk.
+    struct EffectiveHunk {
+        int startLine;
+        int oldCount;          // lines removed from the file
+        QStringList newLines;  // lines inserted in their place
+    };
+    QVector<EffectiveHunk> effective;
+    effective.reserve(sortedHunks.size());
 
     for (const QJsonObject &h : sortedHunks) {
         const int startLine = h.value("old_start_line").toInt();
@@ -1515,6 +1614,29 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
             if (matched) hunkTier = TierTrimmed;
         }
 
+        // Unescape fallback tier — the model double-escaped the hunk, so
+        // old_lines arrived as one string carrying literal \n / \t / \"
+        // two-char sequences instead of real characters. Decode one level
+        // and retry a strict match. Only attempted when the raw string
+        // actually contains literal escapes, so clean hunks never reach it.
+        bool unescapedOld = false;
+        QStringList effOldLines = oldLines;
+        if (!matched && containsLiteralEscapes(oldText)) {
+            const QStringList decodedOld = splitHunkLines(decodeLiteralEscapes(oldText));
+            if (!decodedOld.isEmpty()
+                && startLine - 1 + decodedOld.size() <= lines.size()) {
+                bool m = true;
+                for (int i = 0; i < decodedOld.size(); ++i) {
+                    if (lines[startLine - 1 + i] != decodedOld[i]) { m = false; break; }
+                }
+                if (m) {
+                    matched = true;
+                    unescapedOld = true;
+                    effOldLines = decodedOld;
+                }
+            }
+        }
+
         if (!matched) {
             return makeError(call, "conflict",
                              QString("Hunk at line %1 doesn't match the file's current content "
@@ -1530,27 +1652,54 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
             warnings.append(QString("hunk@%1: matched only after whitespace normalization — verify indentation in new_lines")
                                 .arg(startLine));
         }
+        if (unescapedOld) {
+            warnings.append(QString("hunk@%1: old_lines contained literal \\n escape sequences — decoded "
+                                    "to real characters before matching. Send real newlines/tabs in hunk "
+                                    "strings, not two-character escape sequences.")
+                                .arg(startLine));
+        }
+
+        // new_lines lint — decode literal escapes when the evidence says the
+        // model double-escaped, so the two-char garbage is never WRITTEN:
+        //   • old_lines needed the unescape tier (whole hunk was double-
+        //     escaped), or
+        //   • new_lines carry literal escapes that old_lines do NOT — when
+        //     the matched old text itself contains \n-style sequences, the
+        //     file region legitimately holds them (e.g. C string literals)
+        //     and new_lines escapes are real content, so they are kept.
+        const QString newText = h.value("new_lines").toString();
+        bool decodeNew = false;
+        if (containsLiteralEscapes(newText)) {
+            decodeNew = unescapedOld || !containsLiteralEscapes(oldText);
+        }
+        const QStringList effNewLines =
+            splitHunkLines(decodeNew ? decodeLiteralEscapes(newText) : newText);
+        if (decodeNew) {
+            warnings.append(QString("hunk@%1: new_lines contained literal \\n escape sequences — decoded "
+                                    "to real characters before writing. Send real newlines/tabs in hunk "
+                                    "strings, not two-character escape sequences.")
+                                .arg(startLine));
+        }
+
+        EffectiveHunk eff;
+        eff.startLine = startLine;
+        eff.oldCount  = effOldLines.size();
+        eff.newLines  = effNewLines;
+        effective.push_back(eff);
     }
 
     // Phase 2 — apply in reverse so earlier hunks' indices are stable.
-    for (int hi = sortedHunks.size() - 1; hi >= 0; --hi) {
-        const QJsonObject &h = sortedHunks[hi];
-        const int startLine = h.value("old_start_line").toInt();
-        QStringList oldLines = h.value("old_lines").toString().split('\n');
-        if (!oldLines.isEmpty() && oldLines.last().isEmpty() &&
-            h.value("old_lines").toString().endsWith('\n'))
-            oldLines.removeLast();
-        QStringList newLines = h.value("new_lines").toString().split('\n');
-        if (!newLines.isEmpty() && newLines.last().isEmpty() &&
-            h.value("new_lines").toString().endsWith('\n'))
-            newLines.removeLast();
+    // Uses the EFFECTIVE per-hunk values phase 1 validated (identical to a
+    // raw re-split for normal hunks; decoded for escape-rescued hunks).
+    for (int hi = effective.size() - 1; hi >= 0; --hi) {
+        const EffectiveHunk &h = effective[hi];
 
-        // Replace lines [startLine-1 .. startLine-1+oldLines.size()) with newLines.
-        for (int i = oldLines.size() - 1; i >= 0; --i) {
-            lines.removeAt(startLine - 1 + i);
+        // Replace lines [startLine-1 .. startLine-1+oldCount) with newLines.
+        for (int i = h.oldCount - 1; i >= 0; --i) {
+            lines.removeAt(h.startLine - 1 + i);
         }
-        for (int i = newLines.size() - 1; i >= 0; --i) {
-            lines.insert(startLine - 1, newLines[i]);
+        for (int i = h.newLines.size() - 1; i >= 0; --i) {
+            lines.insert(h.startLine - 1, h.newLines[i]);
         }
     }
 

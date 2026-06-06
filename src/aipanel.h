@@ -15,6 +15,7 @@
 #include <QHash>
 #include <QVector>
 #include <functional>
+#include "agent_repeat_guard.h"
 #include "ollama.h"
 
 class QProcess;
@@ -395,6 +396,25 @@ private:
     QString    m_lastSystemPromptForTools; // remember system prompt for continuations
     QJsonArray m_lastToolsArray;           // remember tools array for continuations
     bool       m_toolsActiveThisTurn = false;
+
+    // v0.1.112 — agent-loop perseveration breaker + force-finalize state.
+    // m_repeatGuard tracks consecutive byte-identical failing tool calls:
+    // the 2nd identical failure queues a one-time change-strategy system
+    // nudge (m_pendingSystemNudge, flushed with the next tool-result
+    // batch); the 3rd is refused outright with error_kind:"repeated_call".
+    // m_lastToolErrorText / m_turnToolActions feed forcedFinalText() so a
+    // turn with tool activity can never end as a silent empty reply.
+    AgentRepeatGuard m_repeatGuard;
+    QString     m_pendingSystemNudge;   // one-shot; cleared on flush
+    QString     m_lastToolErrorText;    // last failing tool result, human-readable
+    QStringList m_turnToolActions;      // per-turn "tool(args) — result" log
+    // Updates guard + nudge + last-error from one executed tool outcome.
+    void noteToolOutcome(const QString &sig, bool isError,
+                         const QString &errorText);
+    // If the turn had tool activity but the model's final text is empty,
+    // stream a synthesized summary (last tool error / actions taken) so the
+    // user never sees a silent empty reply. Called from every finalize path.
+    void forceFinalizeEmptyToolTurn();
 
     // v0.1.111 — Agent-mode write confirmation gate. In Agent segment a
     // mutating tool (write_file / apply_diff) does NOT hit disk until the

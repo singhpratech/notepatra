@@ -74,6 +74,8 @@ struct ToolResult {
                        // "outside_workspace" | "binary" | "io_error" |
                        // "exists" (write_file mode=create, target exists) |
                        // "conflict" (apply_diff, file drifted from expected) |
+                       // "degenerate_hunk" (apply_diff, no-op-plus-append hunk
+                       //   followed by a fix-up hunk on the same region) |
                        // "no_connection" (query_sql, name not in db-connections.json) |
                        // "non_select" (query_sql, mutation without confirm) |
                        // "open_failed" (query_sql, driver/connection error) |

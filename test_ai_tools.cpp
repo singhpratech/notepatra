@@ -20,6 +20,7 @@
 #include <QTemporaryDir>
 #include <cstdio>
 
+#include "agent_repeat_guard.h"
 #include "ai_tools.h"
 #include "git_tools.h"
 
@@ -852,6 +853,212 @@ int main(int argc, char *argv[]) {
         fread.close();
     }
 
+    // ── v0.1.112: apply_diff literal-escape lint (unescape fallback) ──
+    //
+    // Some models JSON-escape hunk strings one level too many, so
+    // old_lines/new_lines arrive carrying the two-char sequences \n / \t
+    // instead of real newlines/tabs. The unescape fallback decodes one
+    // level, matches, applies the DECODED replacement, and warns.
+    {
+        writeFile(ws + "/esc_target.txt", "alpha\nbeta\ngamma\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"] = "esc_target.txt";
+        QJsonArray hunks;
+        QJsonObject h1;
+        h1["old_start_line"] = 1;
+        // C++ "\\n" = the two chars backslash+n — the double-escaped form.
+        h1["old_lines"] = "alpha\\nbeta";
+        h1["new_lines"] = "ALPHA\\n\\tBETA";
+        hunks.append(h1);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("apply_diff escape-lint: double-escaped old_lines still applies",
+              !r.isError);
+        QFile fread(ws + "/esc_target.txt");
+        fread.open(QFile::ReadOnly);
+        const QByteArray after = fread.readAll();
+        fread.close();
+        check("  decoded REAL newline + tab written (no literal backslash-n)",
+              after == QByteArray("ALPHA\n\tBETA\ngamma\n"));
+        QJsonDocument jd = QJsonDocument::fromJson(r.content.toUtf8());
+        QJsonObject body = jd.object().value("result").toObject();
+        const QJsonArray warnings = body.value("warnings").toArray();
+        check("  warnings present", !warnings.isEmpty());
+        bool oldWarn = false, newWarn = false;
+        for (const QJsonValue &wv : warnings) {
+            const QString w = wv.toString();
+            if (w.contains("old_lines") && w.contains("decoded")) oldWarn = true;
+            if (w.contains("new_lines") && w.contains("decoded")) newWarn = true;
+        }
+        check("  old_lines decode warning emitted", oldWarn);
+        check("  new_lines decode warning emitted", newWarn);
+    }
+
+    // new_lines-only escapes with CLEAN old_lines: old matched strictly and
+    // carries no escapes, so escapes in new_lines are the double-escape bug —
+    // decode them so garbage is never written.
+    {
+        writeFile(ws + "/esc_newonly.txt", "one\ntwo\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"] = "esc_newonly.txt";
+        QJsonArray hunks;
+        QJsonObject h1;
+        h1["old_start_line"] = 1;
+        h1["old_lines"] = "one\n";              // clean, strict match
+        h1["new_lines"] = "one\\nadded";        // literal \n — double-escaped
+        hunks.append(h1);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("apply_diff escape-lint: new_lines-only escapes applies", !r.isError);
+        QFile fread(ws + "/esc_newonly.txt");
+        fread.open(QFile::ReadOnly);
+        const QByteArray after = fread.readAll();
+        fread.close();
+        check("  decoded to a real newline (two lines written)",
+              after == QByteArray("one\nadded\ntwo\n"));
+        QJsonDocument jd = QJsonDocument::fromJson(r.content.toUtf8());
+        const QJsonArray warnings = jd.object().value("result").toObject()
+                                        .value("warnings").toArray();
+        bool newWarn = false;
+        for (const QJsonValue &wv : warnings) {
+            const QString w = wv.toString();
+            if (w.contains("new_lines") && w.contains("decoded")) newWarn = true;
+        }
+        check("  new_lines decode warning emitted", newWarn);
+    }
+
+    // FALSE-POSITIVE guard: when the FILE region itself contains literal
+    // backslash-n (e.g. C string literals) and old_lines matched strictly
+    // WITH those escapes, escapes in new_lines are real content — they must
+    // be written verbatim, NOT decoded.
+    {
+        writeFile(ws + "/esc_code.c",
+                  "int main() {\n    printf(\"x\\n\");\n    return 0;\n}\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"] = "esc_code.c";
+        QJsonArray hunks;
+        QJsonObject h1;
+        h1["old_start_line"] = 2;
+        h1["old_lines"] = "    printf(\"x\\n\");\n";   // matches file bytes exactly
+        h1["new_lines"] = "    printf(\"y\\n\");\n";   // escape is REAL content
+        hunks.append(h1);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("apply_diff escape-lint: code-with-escapes edit applies", !r.isError);
+        QFile fread(ws + "/esc_code.c");
+        fread.open(QFile::ReadOnly);
+        const QByteArray after = fread.readAll();
+        fread.close();
+        check("  literal backslash-n PRESERVED in written code",
+              after.contains("printf(\"y\\n\");"));
+        check("  no real newline injected inside the printf line",
+              after == QByteArray("int main() {\n    printf(\"y\\n\");\n    return 0;\n}\n"));
+        QJsonDocument jd = QJsonDocument::fromJson(r.content.toUtf8());
+        check("  no warnings (escapes recognised as content)",
+              !jd.object().value("result").toObject().contains("warnings"));
+    }
+
+    // ── v0.1.112: degenerate-hunk rejection (no-op-plus-junk) ─────────
+    //
+    // hunk 1 repeats its old_lines and only APPENDS junk; hunk 2 then
+    // targets the same region to "fix" it. The whole call is rejected with
+    // error_kind:degenerate_hunk and the file stays untouched.
+    {
+        writeFile(ws + "/degen.txt", "line A\nline B\nline C\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"] = "degen.txt";
+        QJsonArray hunks;
+        QJsonObject h1;
+        h1["old_start_line"] = 2;
+        h1["old_lines"] = "line B\n";
+        h1["new_lines"] = "line B\njunk line\n";     // no-op + append
+        QJsonObject h2;
+        h2["old_start_line"] = 2;
+        h2["old_lines"] = "line B\n";
+        h2["new_lines"] = "line B fixed\n";          // fix-up on same region
+        hunks.append(h1);
+        hunks.append(h2);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("apply_diff degenerate hunk pair: rejected", r.isError);
+        check("  errorKind == degenerate_hunk", r.errorKind == "degenerate_hunk");
+        check("  message says to send ONE hunk",
+              r.content.contains("ONE hunk"));
+        QFile fread(ws + "/degen.txt");
+        fread.open(QFile::ReadOnly);
+        check("  file untouched on degenerate rejection",
+              fread.readAll() == QByteArray("line A\nline B\nline C\n"));
+        fread.close();
+    }
+
+    // Legitimate append-after-anchor hunk WITHOUT a same-region follow-up
+    // still applies — no degenerate false positive.
+    {
+        writeFile(ws + "/append_ok.txt", "line A\nline B\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"] = "append_ok.txt";
+        QJsonArray hunks;
+        QJsonObject h1;
+        h1["old_start_line"] = 2;
+        h1["old_lines"] = "line B\n";
+        h1["new_lines"] = "line B\nline B2\n";       // append is the EDIT
+        hunks.append(h1);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("apply_diff single append hunk: no degenerate false positive",
+              !r.isError);
+        QFile fread(ws + "/append_ok.txt");
+        fread.open(QFile::ReadOnly);
+        check("  appended line written",
+              fread.readAll() == QByteArray("line A\nline B\nline B2\n"));
+        fread.close();
+    }
+
+    // Append hunk + DIFFERENT-region hunk in one call → not degenerate.
+    {
+        writeFile(ws + "/append_two.txt", "line A\nline B\nline C\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"] = "append_two.txt";
+        QJsonArray hunks;
+        QJsonObject h1;
+        h1["old_start_line"] = 1;
+        h1["old_lines"] = "line A\n";
+        h1["new_lines"] = "line A\nA2\n";            // append at line 1
+        QJsonObject h2;
+        h2["old_start_line"] = 3;
+        h2["old_lines"] = "line C\n";
+        h2["new_lines"] = "CC\n";                    // disjoint region
+        hunks.append(h1);
+        hunks.append(h2);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("apply_diff append + disjoint hunk: applies (no false degenerate)",
+              !r.isError);
+        QFile fread(ws + "/append_two.txt");
+        fread.open(QFile::ReadOnly);
+        check("  both hunks landed",
+              fread.readAll() == QByteArray("line A\nA2\nline B\nCC\n"));
+        fread.close();
+    }
+
     // ── v0.1.40: read_file with_line_numbers parameter ────────────────
     //
     // Default (no arg): line-number prefix included, back-compat with
@@ -1359,6 +1566,94 @@ int main(int argc, char *argv[]) {
         check("  apply_diff dry_run is boolean",
               applyProps.value("dry_run").toObject()
                         .value("type").toString() == "boolean");
+    }
+
+    // ── v0.1.112: AgentRepeatGuard — agent-loop perseveration breaker ──
+    //
+    // Pure-logic detector consulted by AIPanel::handleToolCall: 2nd
+    // consecutive byte-identical failing call → one-time nudge; 3rd →
+    // refuse (error_kind:repeated_call). Any success or different call
+    // resets the streak.
+    {
+        QJsonObject argsA; argsA["path"] = "a.txt"; argsA["hunks"] = QJsonArray();
+        QJsonObject argsA2; argsA2["hunks"] = QJsonArray(); argsA2["path"] = "a.txt";
+        QJsonObject argsB; argsB["path"] = "b.txt";
+
+        const QString sigA  = AgentRepeatGuard::signature("apply_diff", argsA);
+        const QString sigA2 = AgentRepeatGuard::signature("apply_diff", argsA2);
+        const QString sigB  = AgentRepeatGuard::signature("apply_diff", argsB);
+        check("guard: signature is canonical (key order irrelevant)", sigA == sigA2);
+        check("guard: different args → different signature", sigA != sigB);
+        check("guard: same args, different tool → different signature",
+              sigA != AgentRepeatGuard::signature("write_file", argsA));
+
+        AgentRepeatGuard g;
+        check("guard: fresh — no refusal", !g.shouldRefuse(sigA));
+        check("guard: 1st failure → no nudge",
+              g.recordFailure(sigA) == AgentRepeatGuard::Note::None);
+        check("guard: after 1 failure — still no refusal", !g.shouldRefuse(sigA));
+        check("guard: 2nd identical failure → NudgeOnce",
+              g.recordFailure(sigA) == AgentRepeatGuard::Note::NudgeOnce);
+        check("guard: after 2 identical failures → refuse the 3rd",
+              g.shouldRefuse(sigA));
+        check("guard: different signature is NOT refused", !g.shouldRefuse(sigB));
+        check("guard: 3rd identical failure → nudge NOT repeated",
+              g.recordFailure(sigA) == AgentRepeatGuard::Note::None);
+        check("guard: still refusing after the 3rd", g.shouldRefuse(sigA));
+
+        // A different failing call resets the streak (consecutive only).
+        check("guard: different failure resets streak → no nudge yet",
+              g.recordFailure(sigB) == AgentRepeatGuard::Note::None);
+        check("guard: old signature no longer refused", !g.shouldRefuse(sigA));
+        check("guard: new signature not refused after 1 failure",
+              !g.shouldRefuse(sigB));
+        check("guard: new streak nudges again on its own 2nd failure",
+              g.recordFailure(sigB) == AgentRepeatGuard::Note::NudgeOnce);
+
+        // A success breaks the streak entirely.
+        g.recordSuccess();
+        check("guard: success resets — no refusal", !g.shouldRefuse(sigB));
+        check("guard: post-success failure counts as 1st again",
+              g.recordFailure(sigB) == AgentRepeatGuard::Note::None);
+
+        // reset() = new turn.
+        g.recordFailure(sigB);  // streak back to 2
+        check("guard: pre-reset sanity — refusing", g.shouldRefuse(sigB));
+        g.reset();
+        check("guard: reset clears refusal", !g.shouldRefuse(sigB));
+    }
+
+    // forcedFinalText — the force-finalize formatter: a tool-active turn
+    // that ends with empty model output surfaces the last tool error (or
+    // the action log) instead of a silent empty reply.
+    {
+        const QString withErr = AgentRepeatGuard::forcedFinalText(
+            "apply_diff(a.txt) — conflict: hunk at line 3 doesn't match",
+            QStringList() << "read_file(a.txt) — 12 lines"
+                          << "apply_diff(a.txt) — ✗ conflict");
+        check("forcedFinalText: quotes the last tool error",
+              withErr.contains("conflict: hunk at line 3"));
+        check("forcedFinalText: lists actions taken",
+              withErr.contains("read_file(a.txt) — 12 lines"));
+        check("forcedFinalText: explains the empty output",
+              withErr.contains("ended without a final answer"));
+
+        const QString actionsOnly = AgentRepeatGuard::forcedFinalText(
+            QString(), QStringList() << "write_file(b.txt) — wrote (10 bytes)");
+        check("forcedFinalText: actions-only summary works",
+              actionsOnly.contains("write_file(b.txt)"));
+        check("forcedFinalText: no 'Last tool error' when there was none",
+              !actionsOnly.contains("Last tool error"));
+
+        check("forcedFinalText: empty inputs → empty (caller keeps legacy path)",
+              AgentRepeatGuard::forcedFinalText(QString(), QStringList()).isEmpty());
+
+        // Long action logs are capped so the bubble stays readable.
+        QStringList many;
+        for (int i = 0; i < 20; ++i) many << QString("read_file(f%1.txt) — ok").arg(i);
+        const QString capped = AgentRepeatGuard::forcedFinalText(QString(), many);
+        check("forcedFinalText: long logs are capped with an '… and N more' tail",
+              capped.contains("and 8 more"));
     }
 
     fprintf(stdout, "\n=== test_ai_tools: %d passed, %d failed ===\n", g_pass, g_fail);

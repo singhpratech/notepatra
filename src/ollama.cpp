@@ -733,7 +733,8 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
 // ═══════════════════════════════════════════════════════════════════════
 void OllamaClient::continueWithToolResults(const QJsonArray &toolResults,
                                            const QString &systemPrompt,
-                                           const QJsonArray &tools) {
+                                           const QJsonArray &tools,
+                                           const QString &systemNote) {
     if (!m_nam) {  // hardening: guard NAM
         emit error(QStringLiteral("Network manager unavailable"));
         return;
@@ -789,6 +790,17 @@ void OllamaClient::continueWithToolResults(const QJsonArray &toolResults,
             msg["name"] = r.value("name").toString();
         }
         m_messages.append(msg);
+    }
+
+    // v0.1.112 — one-shot system note (perseveration-breaker nudge). It
+    // rides AFTER the tool results so the model reads it as the latest
+    // instruction, and it lives in m_messages only for this conversation —
+    // the sticky system prompt is untouched.
+    if (!systemNote.isEmpty()) {
+        QJsonObject sys;
+        sys["role"]    = "system";
+        sys["content"] = systemNote;
+        m_messages.append(sys);
     }
 
     // Re-send with full history.

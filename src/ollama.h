@@ -70,9 +70,15 @@ public:
     // per executed tool call). systemPrompt + history are reused from the
     // last generate() call so the model retains the conversation. Used
     // by AIPanel's agent loop after handleToolCall executes a tool.
+    // v0.1.112 — systemNote (optional): a one-shot role:system message
+    // appended AFTER this batch's tool results. The agent loop uses it to
+    // inject the perseveration-breaker nudge ("the identical call failed
+    // twice; change strategy") exactly once, without touching the sticky
+    // system prompt.
     void continueWithToolResults(const QJsonArray &toolResults,
                                  const QString &systemPrompt = "",
-                                 const QJsonArray &tools = QJsonArray());
+                                 const QJsonArray &tools = QJsonArray(),
+                                 const QString &systemNote = QString());
     void cancel();
     bool isAvailable();
     void listModels();   // async — emits modelsListed or modelsError

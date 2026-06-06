@@ -2057,6 +2057,9 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             flushPendingToolResults();
             return;
         }
+        // v0.1.112 — never end a tool-active turn with an empty reply:
+        // surface the last tool error / action log instead.
+        forceFinalizeEmptyToolTurn();
         m_toolsActiveThisTurn = false;
         m_toolCallsThisTurn = 0;
         m_toolCallsTotal = 0;
@@ -2470,6 +2473,11 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         m_toolCallsThisTurn = 0;
         m_toolCallsTotal = 0;
         m_toolsActiveThisTurn = false;
+        // v0.1.112 — Stop also drops the perseveration/force-finalize state.
+        m_repeatGuard.reset();
+        m_pendingSystemNudge.clear();
+        m_lastToolErrorText.clear();
+        m_turnToolActions.clear();
         // v0.1.111 — Stop means "cancel this run": neutralise any open write-
         // approval card so clicking Approve on it AFTER Stop can't still write
         // to disk, and reset the gate counters so the next turn isn't stranded.
@@ -3790,6 +3798,11 @@ void AIPanel::sendPrompt(const QString &action) {
     m_toolCallsThisTurn = 0;
     m_toolCallsTotal = 0;
     m_toolsActiveThisTurn = false;
+    // v0.1.112 — perseveration breaker + force-finalize are per-turn state.
+    m_repeatGuard.reset();
+    m_pendingSystemNudge.clear();
+    m_lastToolErrorText.clear();
+    m_turnToolActions.clear();
     // v0.1.111 — each new user turn re-arms the write gate; "approve all this
     // turn" is deliberately turn-scoped (never session-wide). Drop any stale
     // (already-resolved) cancellers from the previous turn so the list can't
@@ -3878,6 +3891,11 @@ void AIPanel::clearChat() {
     if (m_chatLayout) aiClearChat(m_chatLayout);
     m_dataWelcomeFrame = nullptr;  // wiped by aiClearChat above; clear our pointer to avoid use-after-free
     m_codingWelcomeFrame = nullptr;  // ditto for the v0.1.57 Coding welcome card
+    // v0.1.112 — clearing the chat also drops the perseveration state.
+    m_repeatGuard.reset();
+    m_pendingSystemNudge.clear();
+    m_lastToolErrorText.clear();
+    m_turnToolActions.clear();
     m_currentAssistantText.clear();
     m_inAssistantBubble = false;
     m_streamingCard = nullptr;
@@ -5585,10 +5603,40 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
         m_pendingToolResults.append(payload);
         const AiPalette pal = aiPalette();
         aiAddToolCallCard(m_chatLayout, name, "(budget exhausted)", "skipped", true, pal);
+        m_turnToolActions.append(name + QStringLiteral(" — skipped (budget exhausted)"));
         return;
     }
     ++m_toolCallsThisTurn;
     ++m_toolCallsTotal;
+
+    // ── v0.1.112 — perseveration breaker ─────────────────────────────────
+    // The same (tool, args) signature has already failed twice in a row;
+    // executing it a third time cannot succeed either. Refuse it with a
+    // structured error so the model gets an unambiguous "change strategy"
+    // signal instead of burning the whole round budget on identical calls.
+    const QString repeatSig = AgentRepeatGuard::signature(name, args);
+    if (m_repeatGuard.shouldRefuse(repeatSig)) {
+        m_repeatGuard.recordFailure(repeatSig);
+        const QString content = QStringLiteral(
+            "{\"ok\":false,\"error_kind\":\"repeated_call\",\"message\":"
+            "\"This exact call already failed twice with identical arguments; "
+            "it was not executed again. Change strategy: re-read the file "
+            "(with_line_numbers=false) and rebuild the edit from the current "
+            "content, use write_file with the complete corrected content, or "
+            "report the blocker. Do not resend the identical call.\"}");
+        QJsonObject payload;
+        payload["id"] = id;
+        payload["name"] = name;
+        payload["args"] = args;
+        payload["content"] = content;
+        m_pendingToolResults.append(payload);
+        m_lastToolErrorText = name + QStringLiteral(
+            " — repeated_call: identical call already failed twice; not executed again");
+        m_turnToolActions.append(name + QStringLiteral(" — refused (repeated_call)"));
+        const AiPalette pal = aiPalette();
+        aiAddToolCallCard(m_chatLayout, name, "(repeated call)", "✗ repeated_call", true, pal);
+        return;
+    }
 
     // v0.1.40: detect the malformed-args marker that ollama.cpp stuffs
     // into args when the model emits invalid JSON in tool-call arguments.
@@ -5627,6 +5675,12 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
         m_pendingToolResults.append(payload);
         const AiPalette palErr = aiPalette();
         aiAddToolCallCard(m_chatLayout, name, "(malformed args)", "✗ malformed_args", true, palErr);
+        // v0.1.112 — identical malformed calls are perseveration too: the
+        // parse-error marker rides in args, so byte-identical raw args give
+        // a byte-identical signature for the repeat guard.
+        noteToolOutcome(repeatSig, true,
+                        name + QStringLiteral(" — malformed_args: ") + perr);
+        m_turnToolActions.append(name + QStringLiteral(" — ✗ malformed_args"));
         return;
     }
 
@@ -5873,6 +5927,29 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
     aiAddToolCallCard(m_chatLayout, name, argsSummary, resultSummary,
                       result.isError, pal);
 
+    // v0.1.112 — feed the repeat guard + force-finalize bookkeeping.
+    if (result.isError) {
+        // Pull the human-readable message out of the structured error body
+        // so the force-finalize summary can quote it verbatim.
+        QString emsg;
+        {
+            QJsonParseError jpe{};
+            const QJsonDocument jd = QJsonDocument::fromJson(result.content.toUtf8(), &jpe);
+            if (jpe.error == QJsonParseError::NoError && jd.isObject())
+                emsg = jd.object().value(QStringLiteral("message")).toString();
+        }
+        noteToolOutcome(repeatSig, true,
+                        name + argsSummary + QStringLiteral(" — ") + result.errorKind
+                        + (emsg.isEmpty() ? QString() : QStringLiteral(": ") + emsg));
+    } else {
+        noteToolOutcome(repeatSig, false, QString());
+    }
+    m_turnToolActions.append(name + argsSummary + QStringLiteral(" — ")
+                             + (resultSummary.isEmpty()
+                                    ? (result.isError ? result.errorKind
+                                                      : QStringLiteral("ok"))
+                                    : resultSummary));
+
     // Queue for flush when the stream finishes.
     //
     // v0.1.104 SECURITY fix: the tool-result channel was the one path that
@@ -5945,6 +6022,14 @@ void AIPanel::enqueueWriteApproval(const QString &id, const QString &name,
                           QStringLiteral("✗ ") + (errKind.isEmpty()
                               ? QStringLiteral("refused") : errKind),
                           true, pal);
+        // v0.1.112 — this auto-failure (no user in the loop) feeds the
+        // repeat guard too, so an identically-failing gated write is
+        // nudged after 2 and refused on the 3rd just like direct calls.
+        noteToolOutcome(AgentRepeatGuard::signature(name, args), true,
+                        name + argsSummary + QStringLiteral(" — ")
+                        + (errKind.isEmpty() ? pr.errorKind : errKind));
+        m_turnToolActions.append(name + argsSummary + QStringLiteral(" — ✗ ")
+                                 + (errKind.isEmpty() ? pr.errorKind : errKind));
         return;
     }
 
@@ -6151,7 +6236,9 @@ void AIPanel::maybeResumeAfterApprovals() {
         flushPendingToolResults();
         return;
     }
-    // Nothing to send back — finalise the turn cleanly.
+    // Nothing to send back — finalise the turn cleanly. Same force-finalize
+    // as the finished() path: tool activity must never end as empty output.
+    forceFinalizeEmptyToolTurn();
     m_toolsActiveThisTurn = false;
     m_toolCallsThisTurn = 0;
     m_toolCallsTotal = 0;
@@ -6175,6 +6262,41 @@ void AIPanel::cancelPendingWriteApprovals() {
     m_turnWriteApproval = false;
 }
 
+// v0.1.112 — single bookkeeping point for one executed tool outcome. On
+// failure it advances the repeat guard's consecutive-identical streak and,
+// exactly when the 2nd identical failure lands, arms the one-time system
+// nudge that rides out with the next tool-result flush. On success it
+// resets the streak (the calls are no longer consecutive failures).
+void AIPanel::noteToolOutcome(const QString &sig, bool isError,
+                              const QString &errorText) {
+    if (!isError) {
+        m_repeatGuard.recordSuccess();
+        return;
+    }
+    m_lastToolErrorText = errorText;
+    if (m_repeatGuard.recordFailure(sig) == AgentRepeatGuard::Note::NudgeOnce) {
+        m_pendingSystemNudge = QStringLiteral(
+            "The previous tool call was sent twice with identical arguments "
+            "and failed both times. Do not send it a third time — change "
+            "strategy: re-read the file (with_line_numbers=false) and rebuild "
+            "the edit from the current content, or use write_file with the "
+            "complete corrected content, or report the blocker.");
+    }
+}
+
+// v0.1.112 — force-finalize. A turn that executed tool calls must never end
+// as a silent empty assistant reply (perseverating models burn the budget
+// then emit nothing). If the model's accumulated text is empty, synthesize
+// a summary from the last tool error / per-turn action log and stream it
+// into the bubble so endAssistantBubble() persists + renders it.
+void AIPanel::forceFinalizeEmptyToolTurn() {
+    if (m_toolCallsTotal <= 0) return;                       // no tool activity
+    if (!m_currentAssistantText.trimmed().isEmpty()) return; // model said something
+    const QString forced = AgentRepeatGuard::forcedFinalText(
+        m_lastToolErrorText, m_turnToolActions);
+    if (!forced.isEmpty()) streamIntoAssistantBubble(forced);
+}
+
 void AIPanel::flushPendingToolResults() {
     if (m_pendingToolResults.isEmpty()) return;
     if (!m_ollama) {  // hardening: guard m_ollama (continueWithToolResults would deref a null nam)
@@ -6186,10 +6308,16 @@ void AIPanel::flushPendingToolResults() {
     const QJsonArray batch = m_pendingToolResults;
     m_pendingToolResults = QJsonArray();
 
+    // v0.1.112 — one-shot perseveration nudge: armed by noteToolOutcome on
+    // the 2nd identical failure, delivered as a role:system note appended
+    // AFTER this batch's tool results, then cleared.
+    const QString nudge = m_pendingSystemNudge;
+    m_pendingSystemNudge.clear();
+
     // Continue the conversation: feed the tool results back, the model
     // will keep streaming text or call more tools.
     m_ollama->continueWithToolResults(batch, m_lastSystemPromptForTools,
-                                      m_lastToolsArray);
+                                      m_lastToolsArray, nudge);
     // The streaming-bubble flow continues into the same body — token
     // streaming will resume in the existing card.
 }
