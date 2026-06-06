@@ -12,12 +12,14 @@
 #include "notes_sweep_dialog.h"
 #include "notes_sweep_prompt.h"
 
+#include <QAbstractButton>
 #include <QAction>
 #include <QApplication>
 #include <QComboBox>
 #include <QCompleter>
 #include <QAbstractItemView>
 #include <QMenu>
+#include <QMessageBox>
 #include <QCalendarWidget>
 #include <QDateTimeEdit>
 #include <QDialog>
@@ -987,6 +989,224 @@ int main(int argc, char *argv[]) {
             EXPECT("re-opening the SAME note preserved the unsaved typing",
                    ed->toPlainText().contains(QStringLiteral("UNSAVED_TYPING_26")));
         }
+    }
+
+    // ── 27. failed save → red NOT SAVED hint + one-shot banner (M2a) ──
+    // The silent save/read failure cluster: a failed autosave used to be
+    // stderr-only while the footer hint kept reading "editing… (auto-saves
+    // in 5s)". Contract now: the hint flips to a red NOT SAVED failure
+    // state, a 2nd consecutive failure raises the "Save a copy…" banner,
+    // and the next successful save restores the normal hint cycle.
+    std::printf("\n--- 27. failed save → NOT SAVED hint + banner ---\n");
+    {
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        QTextEdit *ed  = panel.findChild<QTextEdit *>();
+        QLabel *hint   = panel.findChild<QLabel *>(QStringLiteral("noterSavedHint"));
+        QWidget *banner = panel.findChild<QWidget *>(
+            QStringLiteral("noterSaveFailBanner"));
+        EXPECT("editor + hint + banner widgets resolved",
+               ed && hint && banner);
+        QString failPath;
+        {
+            QFileInfoList l = QDir(panel.inboxFolder())
+                .entryInfoList(QStringList() << "*.html", QDir::Files, QDir::Time);
+            if (!l.isEmpty()) failPath = l.first().absoluteFilePath();
+        }
+        if (ed && hint && banner && !failPath.isEmpty()) {
+            ed->insertPlainText(QStringLiteral("\nDELTA_24_RESCUE_ME"));
+            QApplication::processEvents();
+
+            // Lock the Inbox DIRECTORY (0500). Read-only-ing just the note
+            // file would NOT fail the atomic .tmp+rename save protocol —
+            // POSIX rename only needs write permission on the directory,
+            // which is also where the .tmp sibling is created.
+            const QString inbox = panel.inboxFolder();
+            QFile::setPermissions(inbox,
+                QFileDevice::ReadOwner | QFileDevice::ExeOwner);
+
+            panel.saveCurrentNote();             // failure #1
+            QApplication::processEvents();
+            EXPECT("hint shows NOT SAVED after failed save",
+                   hint->text().startsWith(QStringLiteral("NOT SAVED")));
+            EXPECT("hint carries the saveFailed failure-state property",
+                   hint->property("saveFailed").toBool());
+            EXPECT("hint is restyled red (failure state)",
+                   hint->styleSheet().contains(QStringLiteral("#DC2626")));
+            EXPECT("banner stays hidden after a single failure",
+                   banner->isHidden());
+            EXPECT("failed save did NOT flush the delta to disk",
+                   !readAll(failPath).contains(QStringLiteral("DELTA_24_RESCUE_ME")));
+
+            // Typing must NOT mask the failure state with "editing…".
+            ed->insertPlainText(QStringLiteral("x"));
+            QApplication::processEvents();
+            EXPECT("typing keeps the NOT SAVED hint visible",
+                   hint->text().startsWith(QStringLiteral("NOT SAVED")));
+
+            panel.saveCurrentNote();             // failure #2 → banner
+            QApplication::processEvents();
+            EXPECT("2nd consecutive failure shows the banner",
+                   !banner->isHidden());
+            EXPECT("banner offers a 'Save a copy…' button",
+                   banner->findChild<QPushButton *>(
+                       QStringLiteral("noterSaveCopyBtn")) != nullptr);
+
+            // Unlock + save again → normal hint cycle restored.
+            QFile::setPermissions(inbox, QFileDevice::ReadOwner |
+                QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+            panel.saveCurrentNote();
+            QApplication::processEvents();
+            EXPECT_STR_EQ("hint back to 'auto-saved' after recovery",
+                          hint->text(), QStringLiteral("auto-saved"));
+            EXPECT("failure-state property cleared after recovery",
+                   !hint->property("saveFailed").toBool());
+            EXPECT("banner hidden again after recovery", banner->isHidden());
+            EXPECT("recovered save flushed the delta to disk",
+                   readAll(failPath).contains(QStringLiteral("DELTA_24_RESCUE_ME")));
+        }
+    }
+
+    // ── 28. unreadable/missing note → read-only error state (M2b) ─────
+    // renderNoteAtPath used to discard readNote's error channel: a locked
+    // or missing file opened as a BLANK editor still bound to the path —
+    // one keystroke + the 5s autosave tick then OVERWROTE the real file.
+    // Contract now: read-only "Could not open" notice, m_currentPath NOT
+    // bound (so a save is inert), real file untouched.
+    std::printf("\n--- 28. unreadable note → error state, no overwrite ---\n");
+    {
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+
+        // (a) missing file.
+        const QString missing =
+            panel.inboxFolder() + QStringLiteral("/no-such-note.html");
+        panel.openNoteFile(missing);
+        QApplication::processEvents();
+        EXPECT("missing file renders a 'Could not open' notice",
+               ed && ed->toPlainText().contains(QStringLiteral("Could not open")));
+        EXPECT("error notice is read-only", ed && ed->isReadOnly());
+        panel.saveCurrentNote();   // the autosave tick path — must be inert
+        QApplication::processEvents();
+        EXPECT("no file was created at the missing path",
+               !QFile::exists(missing));
+
+        // (b) existing-but-unreadable file — the original overwrite bug.
+        const QString lockedPath =
+            panel.inboxFolder() + QStringLiteral("/locked-note.html");
+        {
+            QFile f(lockedPath);
+            f.open(QIODevice::WriteOnly);
+            f.write("<html><body><div>SECRET_REAL_CONTENT_25</div></body></html>");
+            f.close();
+        }
+        QFile::setPermissions(lockedPath, QFileDevice::WriteOwner);  // 0200
+        panel.openNoteFile(lockedPath);
+        QApplication::processEvents();
+        EXPECT("locked file renders a 'Could not open' notice",
+               ed && ed->toPlainText().contains(QStringLiteral("Could not open")));
+        EXPECT("locked-file state is read-only", ed && ed->isReadOnly());
+
+        // The killer sequence: an edit (programmatic insert bypasses the
+        // read-only flag, standing in for the old bug's keystroke) + the
+        // autosave tick. With the path unbound this must be a no-op.
+        if (ed) ed->insertPlainText(QStringLiteral("CLOBBER_25"));
+        QApplication::processEvents();
+        panel.saveCurrentNote();
+        QApplication::processEvents();
+        QFile::setPermissions(lockedPath,
+            QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+        const QString diskNow = readAll(lockedPath);
+        EXPECT("real file NOT overwritten after edit + autosave tick",
+               diskNow.contains(QStringLiteral("SECRET_REAL_CONTENT_25")));
+        EXPECT("no CLOBBER text reached the disk",
+               !diskNow.contains(QStringLiteral("CLOBBER_25")));
+
+        // Recovery: the now-readable file opens normally again.
+        panel.openNoteFile(lockedPath);
+        QApplication::processEvents();
+        EXPECT("fixed file opens normally (notice gone)",
+               ed && !ed->toPlainText().contains(QStringLiteral("Could not open")));
+        EXPECT("editor writable again after recovery", ed && !ed->isReadOnly());
+    }
+
+    // ── 29. navigate-away after a failed save asks first (M2c) ────────
+    // renderNoteAtPath used to replace the editor content + clear m_dirty
+    // unconditionally — navigating away after a failed save silently
+    // destroyed the only copy of the delta. Contract now: a Stay /
+    // Discard changes / Save a copy… modal guards the replacement.
+    std::printf("\n--- 29. navigate-away after failed save asks Stay/Discard ---\n");
+    {
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        auto newestHtml = [&]() {
+            const QFileInfoList l = QDir(panel.inboxFolder())
+                .entryInfoList(QStringList() << "*.html", QDir::Files, QDir::Time);
+            return l.isEmpty() ? QString() : l.first().absoluteFilePath();
+        };
+        // Note A — saved cleanly while the dir is writable.
+        panel.newMeetingNote(); QApplication::processEvents();
+        const QString pathA = newestHtml();
+        if (ed) ed->setPlainText(QStringLiteral("ALPHA_BODY_26"));
+        panel.saveCurrentNote(); QApplication::processEvents();
+
+        // Note B — gets a delta, then the dir goes read-only.
+        panel.newMeetingNote(); QApplication::processEvents();
+        if (ed) ed->insertPlainText(QStringLiteral("\nDELTA_26_UNSAVED"));
+        QApplication::processEvents();
+
+        const QString inbox = panel.inboxFolder();
+        QFile::setPermissions(inbox,
+            QFileDevice::ReadOwner | QFileDevice::ExeOwner);
+        panel.saveCurrentNote();             // fails — arms the M2c guard
+        QApplication::processEvents();
+
+        auto clickModalButton = [](const QString &needle, bool *clicked) {
+            for (QWidget *w : QApplication::topLevelWidgets()) {
+                auto *mb = qobject_cast<QMessageBox *>(w);
+                if (!mb || !mb->isVisible()) continue;
+                for (QAbstractButton *b : mb->buttons())
+                    if (b->text().contains(needle)) {
+                        if (clicked) *clicked = true;
+                        b->click();
+                        return;
+                    }
+            }
+        };
+
+        // (i) Stay — content must NOT be replaced.
+        bool sawStay = false;
+        QTimer::singleShot(150, [&]() {
+            clickModalButton(QStringLiteral("Stay"), &sawStay);
+        });
+        QTimer::singleShot(1500, []() {       // watchdog: never hang
+            for (QWidget *w : QApplication::topLevelWidgets())
+                if (auto *d = qobject_cast<QDialog *>(w)) d->reject();
+        });
+        panel.openNoteFile(pathA);
+        QApplication::processEvents();
+        EXPECT("modal appeared and Stay was clicked", sawStay);
+        EXPECT("Stay kept the unsaved delta in the editor",
+               ed && ed->toPlainText().contains(QStringLiteral("DELTA_26_UNSAVED")));
+
+        // (ii) Discard changes — content replaced by the target note.
+        bool sawDiscard = false;
+        QTimer::singleShot(150, [&]() {
+            clickModalButton(QStringLiteral("Discard"), &sawDiscard);
+        });
+        QTimer::singleShot(1500, []() {
+            for (QWidget *w : QApplication::topLevelWidgets())
+                if (auto *d = qobject_cast<QDialog *>(w)) d->reject();
+        });
+        panel.openNoteFile(pathA);
+        QApplication::processEvents();
+        EXPECT("modal appeared and Discard was clicked", sawDiscard);
+        EXPECT("Discard navigated to the target note",
+               ed && ed->toPlainText().contains(QStringLiteral("ALPHA_BODY_26")));
+        EXPECT("the unsaved delta is gone after Discard",
+               ed && !ed->toPlainText().contains(QStringLiteral("DELTA_26_UNSAVED")));
+
+        // Restore the dir for the rest of tmpHome's lifetime (cleanup).
+        QFile::setPermissions(inbox, QFileDevice::ReadOwner |
+            QFileDevice::WriteOwner | QFileDevice::ExeOwner);
     }
 
     // ── Summary ───────────────────────────────────────────────────

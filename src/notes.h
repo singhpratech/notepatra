@@ -204,6 +204,24 @@ private:
     void hideReminderBanner();
     QVector<TodoRow> m_reminderQueue;
 
+    // ── silent save/read failure cluster (M2) ─────────────────────────
+    // (a) a failed save flips the footer hint to a red "NOT SAVED" state
+    //     (it used to be stderr-only while the hint kept reading
+    //     "editing… (auto-saves in 5s)"); 2+ consecutive failures raise a
+    //     one-shot banner offering "Save a copy…".
+    // (b) renderNoteAtPath propagates readNote's error channel: an
+    //     unreadable file renders a read-only notice and NEVER binds
+    //     m_currentPath, so autosave can't overwrite the real file.
+    // (c) navigating away from an unsaved delta whose last save FAILED
+    //     asks Stay / Discard / Save a copy… instead of dropping it.
+    void setSavedHintNormal(const QString &text);
+    void setSavedHintFailure(const QString &reason);
+    void noteSaveFailed(const QString &err);
+    void noteSaveSucceeded();
+    void showSaveFailureBanner();
+    void hideSaveFailureBanner();
+    bool promptSaveCopyAs();   // returns true when a copy was written
+
     // QTextEdit event filter — click ☐/✓ toggles, F4 hotkey,
     // markdown auto-replacement, etc.
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -257,6 +275,11 @@ private:
     QPointer<QTimer> m_reminderFlashTimer;
     bool             m_reminderFlashOn     { false };
 
+    // M2 — save-failure banner (red sibling of the reminder banner;
+    // hidden until autosave fails twice in a row).
+    QWidget        *m_saveFailBanner       { nullptr };
+    QLabel         *m_saveFailLabel        { nullptr };
+
     // Optional third pane — only constructed when first toggled.
     NoterTodosPanel *m_todosPane    { nullptr };
 
@@ -283,6 +306,15 @@ private:
     bool           m_loadingInProgress { false };  // suppress dirty during setHtml
     bool           m_loadingTree       { false };  // suppress itemChanged during refreshSidebar
     QDateTime      m_lastSavedAt;
+    // M2 — save/read failure tracking. m_lastSaveFailed + the consecutive
+    // counter drive the red hint + one-shot banner; m_readError marks the
+    // editor as showing a read-error notice (not user content), so the
+    // dirty/autosave machinery stays inert until a real note loads.
+    bool           m_lastSaveFailed     { false };
+    int            m_saveFailureCount   { 0 };
+    bool           m_saveFailBannerShown { false };
+    QString        m_lastSaveError;
+    bool           m_readError          { false };
 
     QPointer<QTimer> m_autosave;
 

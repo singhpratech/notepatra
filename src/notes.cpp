@@ -39,6 +39,7 @@
 #include <QCompleter>
 #include <QDateTime>
 #include <QDir>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -1119,6 +1120,41 @@ QWidget *NotesPanel::buildEditorPage() {
         showNextReminder();
     });
 
+    // M2 — save-failure banner (hidden until autosave fails twice in a
+    // row). Red sibling of the reminder banner: tells the user their edits
+    // exist only in memory and offers the "Save a copy…" escape hatch.
+    m_saveFailBanner = new QWidget(w);
+    m_saveFailBanner->setObjectName(QStringLiteral("noterSaveFailBanner"));
+    m_saveFailBanner->setStyleSheet(QStringLiteral(
+        "QWidget#noterSaveFailBanner { background: #FEE2E2;"
+        "  border-bottom: 2px solid #DC2626; }"));
+    m_saveFailBanner->setVisible(false);
+    auto *sfL = new QHBoxLayout(m_saveFailBanner);
+    sfL->setContentsMargins(14, 8, 14, 8);
+    sfL->setSpacing(8);
+    auto *sfIcon = new QLabel(m_saveFailBanner);
+    sfIcon->setPixmap(this->style()->standardIcon(QStyle::SP_MessageBoxCritical).pixmap(18, 18));
+    sfL->addWidget(sfIcon);
+    m_saveFailLabel = new QLabel(m_saveFailBanner);
+    m_saveFailLabel->setWordWrap(true);
+    m_saveFailLabel->setStyleSheet(QStringLiteral("color: #7F1D1D; font-weight: 600;"));
+    sfL->addWidget(m_saveFailLabel, 1);
+    auto *sfCopyBtn = new QPushButton(tr("Save a copy…"), m_saveFailBanner);
+    sfCopyBtn->setObjectName(QStringLiteral("noterSaveCopyBtn"));
+    auto *sfHideBtn = new QPushButton(tr("Hide"), m_saveFailBanner);
+    sfHideBtn->setObjectName(QStringLiteral("noterSaveFailHideBtn"));
+    for (auto *b : {sfCopyBtn, sfHideBtn}) {
+        b->setCursor(Qt::PointingHandCursor);
+        b->setStyleSheet(QStringLiteral(
+            "QPushButton { background: #DC2626; color: white; border: none;"
+            "  border-radius: 4px; padding: 4px 12px; font-size: 12px; }"
+            "QPushButton:hover { background: #B91C1C; }"));
+        sfL->addWidget(b);
+    }
+    v->addWidget(m_saveFailBanner);
+    connect(sfCopyBtn, &QPushButton::clicked, this, [this]() { promptSaveCopyAs(); });
+    connect(sfHideBtn, &QPushButton::clicked, this, [this]() { hideSaveFailureBanner(); });
+
     // Top edge — "saved 2s ago" hint, right-aligned, very muted
     auto *topBar = new QWidget(w);
     auto *topLayout = new QHBoxLayout(topBar);
@@ -2050,7 +2086,66 @@ void NotesPanel::openNoteFile(const QString &absolutePath) {
 
 void NotesPanel::renderNoteAtPath(const QString &absolutePath) {
     if (absolutePath.isEmpty() || !m_editor) return;
-    const QString html = m_storage->readNote(absolutePath, nullptr);
+
+    // M2 (c) — if the open note has an unsaved delta whose last save
+    // FAILED, replacing the editor content below would destroy the ONLY
+    // copy of those edits. Ask first: Stay / Discard / Save a copy….
+    if (m_dirty && m_lastSaveFailed) {
+        QMessageBox box(this);
+        box.setWindowTitle(tr("Unsaved changes"));
+        box.setIcon(QMessageBox::Warning);
+        box.setText(tr("\"%1\" could not be saved (%2).\n"
+                       "Leaving now will discard those changes.")
+                        .arg(m_currentTitle.isEmpty() ? tr("This note")
+                                                      : m_currentTitle,
+                             m_lastSaveError.isEmpty() ? tr("disk write failed")
+                                                       : m_lastSaveError));
+        QPushButton *stayBtn    = box.addButton(tr("Stay"),
+                                                QMessageBox::RejectRole);
+        QPushButton *discardBtn = box.addButton(tr("Discard changes"),
+                                                QMessageBox::DestructiveRole);
+        QPushButton *copyBtn    = box.addButton(tr("Save a copy…"),
+                                                QMessageBox::ActionRole);
+        Q_UNUSED(discardBtn);
+        box.setDefaultButton(stayBtn);
+        box.exec();
+        if (box.clickedButton() == stayBtn) return;
+        if (box.clickedButton() == copyBtn && !promptSaveCopyAs())
+            return;   // copy cancelled / failed → stay, delta intact
+    }
+
+    // M2 (b) — propagate readNote's error channel. A locked/missing file
+    // used to open as a BLANK editor still bound to the path: one
+    // keystroke + the next autosave tick then OVERWROTE the real file.
+    QString readErr;
+    const QString html = m_storage->readNote(absolutePath, &readErr);
+    if (!readErr.isEmpty()) {
+        const QString name = QFileInfo(absolutePath).fileName();
+        m_loadingInProgress = true;
+        m_editor->blockSignals(true);
+        m_editor->setHtml(QStringLiteral(
+            "<div style=\"color:#DC2626;font-weight:600;font-size:16px;\">%1</div>"
+            "<div style=\"color:#525252;margin-top:8px;\">%2</div>"
+            "<div style=\"color:#a0a0a0;margin-top:12px;\">%3</div>")
+                .arg(tr("Could not open %1").arg(name.toHtmlEscaped()),
+                     readErr.toHtmlEscaped(),
+                     tr("The file on disk was left untouched. Fix its "
+                        "permissions (or restore it), then open it again "
+                        "from the sidebar.")));
+        m_editor->setReadOnly(true);
+        m_editor->blockSignals(false);
+        m_loadingInProgress = false;
+        m_readError = true;
+        m_currentPath.clear();           // NEVER bind the unreadable path —
+        m_currentIsChecklist = false;    // autosave must not target it
+        m_dirty = false;
+        m_currentTitle = QFileInfo(absolutePath).completeBaseName();
+        emit noteTitleChanged(m_currentTitle);
+        setSavedHintNormal(QString());   // no save state applies here
+        return;
+    }
+    m_editor->setReadOnly(false);   // may be leaving an earlier error state
+    m_readError = false;
     m_loadingInProgress = true;
     m_editor->blockSignals(true);
     m_editor->setHtml(html);
@@ -2073,6 +2168,9 @@ void NotesPanel::renderNoteAtPath(const QString &absolutePath) {
     m_currentPath = absolutePath;
     m_currentIsChecklist = false;   // a normal note, not the Todos checklist
     m_dirty = false;
+    // A note loaded cleanly — any earlier failure streak belonged to the
+    // previous path. Reset to the normal hint cycle (screen == disk now).
+    noteSaveSucceeded();
 
     // Move caret to end of body so user can start typing immediately.
     QTextCursor cur = m_editor->textCursor();
@@ -2169,6 +2267,8 @@ void NotesPanel::openTodosChecklist() {
 
     m_loadingInProgress = true;
     m_editor->blockSignals(true);
+    m_editor->setReadOnly(false);   // may be leaving an M2 read-error state
+    m_readError = false;
     m_editor->setPlainText(body);
     m_editor->blockSignals(false);
     m_loadingInProgress = false;
@@ -2242,12 +2342,13 @@ void NotesPanel::saveTodosChecklist() {
     QString err;
     if (!m_storage->saveNote(m_currentPath, body, &err)) {
         fprintf(stderr, "Noter: saveTodosChecklist failed: %s\n", qPrintable(err));
+        noteSaveFailed(err);   // M2 — visible failure state, not stderr-only
         return;
     }
     m_checklistBlocks = rebuilt;
     m_dirty = false;
     m_lastSavedAt = QDateTime::currentDateTime();
-    if (m_savedHint) m_savedHint->setText(tr("auto-saved"));
+    noteSaveSucceeded();
     if (m_todos) m_todos->reindexNote(m_currentPath, body);
     refreshSidebar();
     emit noteSaved(m_currentPath);
@@ -2260,20 +2361,116 @@ void NotesPanel::saveCurrentNote() {
     const QString body = m_editor->toHtml();
     QString err;
     if (!m_storage->saveNote(m_currentPath, body, &err)) {
-        // Don't pop a dialog on every autosave failure — the user will see
-        // the "saved" hint disappear. Log to stderr.
+        // M2 — failures used to be stderr-only while the hint kept reading
+        // "editing… (auto-saves in 5s)". Now the hint flips to a red
+        // NOT SAVED state; a 2nd consecutive failure raises the banner.
         fprintf(stderr, "Noter: saveNote failed: %s\n", qPrintable(err));
+        noteSaveFailed(err);
         return;
     }
     m_dirty = false;
     m_lastSavedAt = QDateTime::currentDateTime();
-    if (m_savedHint) m_savedHint->setText(tr("auto-saved"));
+    noteSaveSucceeded();
 
     // Re-index todos so the sidebar tree reflects current state.
     if (m_todos) m_todos->reindexNote(m_currentPath, body);
     refreshSidebar();
 
     emit noteSaved(m_currentPath);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  M2 — visible save-failure state + "Save a copy…" escape hatch
+//
+//  Before this block a failed autosave was stderr-only while the footer
+//  hint kept reading "editing… (auto-saves in 5s)" — the user had NO
+//  signal that minutes of typing existed only in memory.
+// ═══════════════════════════════════════════════════════════════════════
+
+void NotesPanel::setSavedHintNormal(const QString &text) {
+    if (!m_savedHint) return;
+    m_savedHint->setText(text);
+    m_savedHint->setStyleSheet(QString());   // back to the page QSS (muted grey)
+    m_savedHint->setProperty("saveFailed", false);
+}
+
+void NotesPanel::setSavedHintFailure(const QString &reason) {
+    if (!m_savedHint) return;
+    QString shortReason = reason.simplified();
+    if (shortReason.isEmpty()) shortReason = tr("disk write failed");
+    if (shortReason.size() > 80)
+        shortReason = shortReason.left(79) + QChar(0x2026);
+    m_savedHint->setText(tr("NOT SAVED — %1").arg(shortReason));
+    m_savedHint->setStyleSheet(QStringLiteral(
+        "color: #DC2626; font-weight: 600; padding-right: 8px;"));
+    m_savedHint->setProperty("saveFailed", true);
+}
+
+void NotesPanel::noteSaveFailed(const QString &err) {
+    m_lastSaveFailed = true;
+    ++m_saveFailureCount;
+    m_lastSaveError = err.simplified();
+    setSavedHintFailure(m_lastSaveError);
+    // 2+ consecutive failures is a pattern, not a blip — surface the
+    // one-shot banner with the "Save a copy…" escape hatch. One-shot per
+    // failure streak so it doesn't re-pop every 5s autosave tick after the
+    // user hides it; the red hint stays on regardless.
+    if (m_saveFailureCount >= 2 && !m_saveFailBannerShown) {
+        m_saveFailBannerShown = true;
+        showSaveFailureBanner();
+    }
+}
+
+void NotesPanel::noteSaveSucceeded() {
+    m_lastSaveFailed = false;
+    m_saveFailureCount = 0;
+    m_saveFailBannerShown = false;
+    m_lastSaveError.clear();
+    hideSaveFailureBanner();
+    setSavedHintNormal(tr("auto-saved"));
+}
+
+void NotesPanel::showSaveFailureBanner() {
+    if (!m_saveFailBanner || !m_saveFailLabel) return;
+    m_saveFailLabel->setText(tr(
+        "This note can't be written to disk (%1). Your latest edits exist "
+        "only in this window — save a copy somewhere safe.")
+            .arg(m_lastSaveError.isEmpty() ? tr("unknown error")
+                                           : m_lastSaveError));
+    if (m_rightStack && m_editorPage) showEditorPage();
+    m_saveFailBanner->setVisible(true);
+}
+
+void NotesPanel::hideSaveFailureBanner() {
+    if (m_saveFailBanner) m_saveFailBanner->setVisible(false);
+}
+
+// "Save a copy…" — rescue an in-memory delta to a user-picked path when
+// the canonical note location is unwritable. Default suggested name is the
+// note title + .html, in the user's Documents folder.
+bool NotesPanel::promptSaveCopyAs() {
+    if (!m_editor) return false;
+    QString base = m_currentTitle.isEmpty() ? tr("note") : m_currentTitle;
+    base.replace(QLatin1Char('/'), QLatin1Char('-'));
+    const QString docs =
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    const QString suggested =
+        QDir(docs).filePath(base + QStringLiteral(".html"));
+    const QString picked = QFileDialog::getSaveFileName(
+        this, tr("Save a copy of this note"), suggested,
+        tr("HTML files (*.html);;All files (*)"));
+    if (picked.isEmpty()) return false;
+    // Write through the storage layer so the copy gets the same sanitize +
+    // atomic-write treatment as a normal note (and reopens cleanly later).
+    QString err;
+    if (!m_storage->saveNote(picked, m_editor->toHtml(), &err)) {
+        QMessageBox::warning(this, tr("Save a copy failed"),
+                             tr("Could not write %1: %2").arg(picked, err));
+        return false;
+    }
+    if (auto *sb = window() ? window()->findChild<QStatusBar *>() : nullptr)
+        sb->showMessage(tr("Copy saved to %1").arg(picked), 5000);
+    return true;
 }
 
 void NotesPanel::popOutActive() {
@@ -2494,7 +2691,12 @@ void NotesPanel::onExtractClicked() {
 
 void NotesPanel::onEditorBodyChanged() {
     if (m_loadingInProgress) return;
+    if (m_readError) return;   // M2 — error notice is not user content; never dirty
     m_dirty = true;
+    // M2 — keep the red NOT SAVED state visible while the last save failed;
+    // "editing…" would mask an active data-loss condition. The next
+    // SUCCESSFUL save restores the normal hint cycle.
+    if (m_lastSaveFailed) return;
     if (m_savedHint) m_savedHint->setText(tr("editing… (auto-saves in 5s)"));
 }
 
@@ -2663,7 +2865,7 @@ bool NotesPanel::eventFilter(QObject *watched, QEvent *event) {
 }
 
 void NotesPanel::toggleCheckboxOnCurrentLine() {
-    if (!m_editor) return;
+    if (!m_editor || m_readError) return;   // M2 — keep the error notice intact
     QTextCursor cur = m_editor->textCursor();
     const QTextBlock block = cur.block();
     const QString line = block.text();
@@ -2685,7 +2887,7 @@ void NotesPanel::toggleCheckboxOnCurrentLine() {
 }
 
 void NotesPanel::insertCheckboxAtCursor() {
-    if (!m_editor) return;
+    if (!m_editor || m_readError) return;   // m_readError: keep the error notice intact
     // The checkbox is a LINE marker, not an inline glyph — normalize to the
     // start of the block so a mid-line caret turns the WHOLE line into a
     // checklist item (the existing text becomes the item text) instead of
@@ -2735,7 +2937,7 @@ void NotesPanel::restyleChecklistLines() {
 }
 
 void NotesPanel::insertSubheader(const QString &titleIn, int level) {
-    if (!m_editor) return;
+    if (!m_editor || m_readError) return;   // M2 — keep the error notice intact
     QString title = titleIn;
     if (title.isEmpty()) {
         bool ok = false;
@@ -2783,7 +2985,8 @@ void NotesPanel::insertSubheader(const QString &titleIn, int level) {
     m_editor->setTextCursor(cur);
     m_editor->setFocus();
     m_dirty = true;
-    if (m_savedHint) m_savedHint->setText(tr("editing… (auto-saves in 5s)"));
+    if (m_savedHint && !m_lastSaveFailed)   // M2 — don't mask NOT SAVED
+        m_savedHint->setText(tr("editing… (auto-saves in 5s)"));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
