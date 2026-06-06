@@ -34,6 +34,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
+#include <QRegExp>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QToolButton>
@@ -1483,6 +1484,165 @@ int main(int argc, char *argv[]) {
             QApplication::processEvents();
         }
         EXPECT("cleanup: pop-out fully gone", panel.popOutForTesting() == nullptr);
+    }
+
+    // ── 34-36. Sidebar rename — prefix preservation, collision dedup,
+    // failure honesty (package M5). The rename path is the itemChanged
+    // lambda: setting the leaf's text is exactly what the inline editor's
+    // commit does, so these drive the production code path directly.
+    auto newestInboxHtml = [&]() {
+        const QFileInfoList l = QDir(panel.inboxFolder())
+            .entryInfoList(QStringList() << "*.html", QDir::Files, QDir::Time);
+        return l.isEmpty() ? QString() : l.first().absoluteFilePath();
+    };
+    auto meetingLeafForPath = [&](const QString &p) -> QTreeWidgetItem * {
+        if (!tree) return nullptr;
+        QTreeWidgetItemIterator it(tree);
+        while (*it) {
+            if ((*it)->data(0, Qt::UserRole).toString() == QLatin1String("meeting") &&
+                (*it)->data(0, Qt::UserRole + 1).toString() == p) return *it;
+            ++it;
+        }
+        return nullptr;
+    };
+
+    // ── 24. rename PRESERVES the 6-digit-time creation prefix ─────────
+    // Regression: the prefix regex expected \d{4} for the time part while
+    // newMeetingNote stamps hhmmss (6 digits) — every rename of a new note
+    // silently dropped its creation-date prefix.
+    std::printf("\n--- 34. rename preserves 6-digit-time creation prefix ---\n");
+    {
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        const QString srcPath = newestInboxHtml();
+        EXPECT("created a note to rename", !srcPath.isEmpty());
+        QRegExp stampRx(QStringLiteral("^(\\d{4}-\\d{2}-\\d{2}-\\d{6}-)"));
+        const QString srcName = QFileInfo(srcPath).fileName();
+        EXPECT("new note carries a 6-digit-time prefix",
+               stampRx.indexIn(srcName) == 0);
+        const QString prefix = stampRx.cap(1);
+
+        QTreeWidgetItem *leaf = meetingLeafForPath(srcPath);
+        EXPECT("found the sidebar leaf for the new note", leaf != nullptr);
+        if (leaf && !prefix.isEmpty()) {
+            leaf->setText(0, QStringLiteral("Weekly Sync Platform Team"));
+            for (int i = 0; i < 4; ++i) QApplication::processEvents();
+            const QString want =
+                prefix + QStringLiteral("weekly-sync-platform-team.html");
+            EXPECT("renamed file KEPT the creation-date prefix",
+                   QFile::exists(panel.inboxFolder() + "/" + want));
+            EXPECT("no prefix-less file appeared (the dropped-prefix bug)",
+                   !QFile::exists(panel.inboxFolder() +
+                                  "/weekly-sync-platform-team.html"));
+            EXPECT("old filename is gone after rename", !QFile::exists(srcPath));
+        }
+    }
+
+    // ── 25. rename onto an EXISTING name dedups with ' (2)' ───────────
+    // Regression: d.rename() was unchecked — on target-exists it silently
+    // failed yet the buffer was repointed at the OTHER note's file, which
+    // the next autosave would clobber. Contract: insert ' (2)' BEFORE the
+    // extension (split on the LAST dot), both files intact.
+    std::printf("\n--- 35. rename collision dedups with ' (2)' before .html ---\n");
+    {
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        const QString srcPath = newestInboxHtml();
+        EXPECT("created a note for the collision test", !srcPath.isEmpty());
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        if (ed) ed->setPlainText(QStringLiteral("DEDUP_BODY_25"));
+        panel.saveCurrentNote();
+        QApplication::processEvents();
+
+        QRegExp stampRx(QStringLiteral("^(\\d{4}-\\d{2}-\\d{2}-\\d{6}-)"));
+        stampRx.indexIn(QFileInfo(srcPath).fileName());
+        const QString prefix = stampRx.cap(1);
+        // Pre-create the EXACT rename target → forces the collision.
+        const QString targetName =
+            prefix + QStringLiteral("quarterly-review.html");
+        const QString targetPath = panel.inboxFolder() + "/" + targetName;
+        {
+            QFile f(targetPath);
+            EXPECT("seeded the colliding note on disk",
+                   f.open(QIODevice::WriteOnly));
+            f.write("<html><body>OTHER_NOTE_25</body></html>");
+        }
+
+        QTreeWidgetItem *leaf = meetingLeafForPath(srcPath);
+        EXPECT("found the sidebar leaf to rename onto the collision",
+               leaf != nullptr);
+        if (leaf && !prefix.isEmpty()) {
+            leaf->setText(0, QStringLiteral("Quarterly Review"));
+            for (int i = 0; i < 4; ++i) QApplication::processEvents();
+            const QString dedupPath = panel.inboxFolder() + "/" + prefix +
+                QStringLiteral("quarterly-review (2).html");
+            EXPECT("collision produced ' (2)' BEFORE .html",
+                   QFile::exists(dedupPath));
+            EXPECT("the existing note was NOT clobbered",
+                   readAll(targetPath).contains(QStringLiteral("OTHER_NOTE_25")));
+            EXPECT("renamed note's content intact in the deduped file",
+                   readAll(dedupPath).contains(QStringLiteral("DEDUP_BODY_25")));
+            EXPECT("old filename gone after dedup rename",
+                   !QFile::exists(srcPath));
+            // The open buffer must FOLLOW the deduped file — a save lands
+            // there, never in the other note.
+            if (ed) {
+                ed->setPlainText(QStringLiteral("DEDUP_BODY_25 v2"));
+                panel.saveCurrentNote();
+                QApplication::processEvents();
+            }
+            EXPECT("buffer follows the deduped file (save lands in ' (2)')",
+                   readAll(dedupPath).contains(QStringLiteral("DEDUP_BODY_25 v2")));
+            EXPECT("save did NOT leak into the colliding note",
+                   readAll(targetPath).contains(QStringLiteral("OTHER_NOTE_25")));
+        }
+    }
+
+    // ── 26. FAILED rename keeps the buffer on the ORIGINAL file ───────
+    // Read-only dir → rename(2) fails. Contract: old name kept, no new
+    // file, and the open buffer still saves to the ORIGINAL path (never
+    // silently repointed).
+    std::printf("\n--- 36. failed rename keeps buffer on the original file ---\n");
+    {
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        const QString srcPath = newestInboxHtml();
+        EXPECT("created a note for the failure test", !srcPath.isEmpty());
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        if (ed) ed->setPlainText(QStringLiteral("READONLY_BODY_26"));
+        panel.saveCurrentNote();
+        QApplication::processEvents();
+
+        QTreeWidgetItem *leaf = meetingLeafForPath(srcPath);
+        EXPECT("found the sidebar leaf for the failure test", leaf != nullptr);
+        if (leaf) {
+            // Make the inbox dir read-only so the rename syscall fails.
+            QFile dirf(panel.inboxFolder());
+            const QFile::Permissions orig = dirf.permissions();
+            EXPECT("made inbox read-only",
+                   dirf.setPermissions(QFile::ReadOwner | QFile::ExeOwner));
+            leaf->setText(0, QStringLiteral("Should Not Apply"));
+            for (int i = 0; i < 4; ++i) QApplication::processEvents();
+            // Restore FIRST so later assertions + tmpdir cleanup work.
+            dirf.setPermissions(orig);
+
+            EXPECT("original file still exists after failed rename",
+                   QFile::exists(srcPath));
+            const QStringList strays = QDir(panel.inboxFolder())
+                .entryList(QStringList() << "*should-not-apply*",
+                           QDir::Files | QDir::Hidden);
+            EXPECT("no renamed file appeared in the read-only dir",
+                   strays.isEmpty());
+            // Buffer must still point at the ORIGINAL file.
+            if (ed) {
+                ed->setPlainText(QStringLiteral("READONLY_BODY_26 after-fail"));
+                panel.saveCurrentNote();
+                QApplication::processEvents();
+            }
+            EXPECT("buffer still saves to the ORIGINAL file after failure",
+                   readAll(srcPath).contains(
+                       QStringLiteral("READONLY_BODY_26 after-fail")));
+        }
     }
 
     // ── Summary ───────────────────────────────────────────────────

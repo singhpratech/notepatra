@@ -854,21 +854,49 @@ QWidget *NotesPanel::buildSidebar() {
                     QFileInfo fi(payload);
                     QString slug = NotesStorage::safeFilename(newText);
                     if (slug.isEmpty()) { refreshSidebar(); return; }
-                    // Keep the YYYY-MM-DD-HHMM- prefix from the existing
-                    // filename so date-bucket sorting stays correct.
-                    static const QRegExp prefixRx(QStringLiteral("^(\\d{4}-\\d{2}-\\d{2}-\\d{4}-)"));
+                    // Keep the creation-date prefix from the existing filename
+                    // so date-bucket sorting stays correct. New notes are
+                    // stamped yyyy-MM-dd-hhmmss (6-digit time, newMeetingNote);
+                    // legacy ones used a 4-digit HHMM — accept both, matching
+                    // the display-side parser in populateMeetingsRoot. (\d{4}
+                    // alone silently DROPPED the prefix off every new note.)
+                    static const QRegExp prefixRx(QStringLiteral("^(\\d{4}-\\d{2}-\\d{2}-\\d{4,6}-)"));
                     QRegExp px = prefixRx;
                     QString prefix;
                     if (px.indexIn(fi.fileName()) >= 0) prefix = px.cap(1);
-                    const QString newName = prefix + slug + QStringLiteral(".html");
+                    QString newName = prefix + slug + QStringLiteral(".html");
                     QDir d = fi.dir();
                     const QString oldStem = fi.fileName();
-                    // Rename canonical + family.
+                    // No-op rename (same slug) — nothing to do on disk.
+                    if (newName == oldStem) { refreshSidebar(); return; }
+                    // Target already taken by another note? Dedup with " (n)"
+                    // inserted BEFORE the extension — split on the LAST dot,
+                    // never QFileInfo::baseName() (it splits on the FIRST dot
+                    // and mangles dotted names like "spec-1.2.html").
+                    if (d.exists(newName)) {
+                        const int dot = newName.lastIndexOf(QChar('.'));
+                        const QString stem = (dot > 0) ? newName.left(dot) : newName;
+                        const QString ext  = (dot > 0) ? newName.mid(dot)  : QString();
+                        for (int n = 2; n < 100 && d.exists(newName); ++n)
+                            newName = stem + QStringLiteral(" (%1)").arg(n) + ext;
+                    }
+                    // Rename the canonical file FIRST and CHECK the result.
+                    // QDir::rename fails on read-only dirs / existing targets;
+                    // unchecked, the buffer got repointed at a file that was
+                    // never renamed — i.e. at ANOTHER note, which the next
+                    // autosave would then clobber.
+                    if (d.exists(newName) || !d.rename(oldStem, newName)) {
+                        if (auto *mw = window())
+                            if (auto *sb = mw->findChild<QStatusBar *>())
+                                sb->showMessage(tr("Rename failed — the note keeps its old name"), 4000);
+                        refreshSidebar();   // restores the old label
+                        return;
+                    }
+                    // Canonical renamed — carry the family along (best-effort).
                     for (const QString &name : d.entryList(QStringList() << oldStem + "*",
                                                            QDir::Files | QDir::Hidden)) {
-                        QString suffix = name.mid(oldStem.size()); // .bak1 / .draft / ""
-                        QString dstName = newName + suffix;
-                        d.rename(name, dstName);
+                        QString suffix = name.mid(oldStem.size()); // .bak1 / .draft
+                        d.rename(name, newName + suffix);
                     }
                     const QString newAbs = d.absoluteFilePath(newName);
                     if (payload == m_currentPath) m_currentPath = newAbs;
