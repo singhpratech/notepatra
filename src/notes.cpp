@@ -53,6 +53,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QListWidgetItem>
+#include <QMainWindow>
 #include <QMap>
 #include <QContextMenuEvent>
 #include <QMenu>
@@ -709,43 +710,59 @@ bool matchesAllTerms(const QString &haystackLower, const QStringList &terms) {
 //  NotesPanel — construction
 // ═══════════════════════════════════════════════════════════════════════
 
-NotesPanel::NotesPanel(QWidget *parent) : QWidget(parent) {
+NotesPanel::NotesPanel(QWidget *parent, NotesTodos *sharedTodos,
+                       NotesReminderEngine *sharedEngine)
+    : QWidget(parent) {
     ensureNotesFolder();
     m_storage = new NotesStorage(notesRoot(), this);
-    m_todos = new NotesTodos(notesRoot() + QStringLiteral("/.notepatra/todos.db"));
-    m_todos->open(nullptr);
+    m_ownsTodos = (sharedTodos == nullptr);
+    m_todos = sharedTodos ? sharedTodos : new NotesTodos(todosDbPath());
+    m_todos->open(nullptr);   // idempotent; self-heals a failed service open
 
-    // v0.1.97 — wire up the reminder engine that had been dormant.
-    // catchUpMissed() runs first so notifications that should have
-    // fired while the app was closed still surface (as a single
-    // batch alert, not N popups). Then start() begins the 60s
-    // poll loop.
-    m_reminders = new NotesReminderEngine(m_todos, this);
+    const bool ownsEngine = (sharedEngine == nullptr);
+    m_reminders = sharedEngine ? sharedEngine
+                               : new NotesReminderEngine(m_todos, this);
+    // ALWAYS (owned or shared): in-window banner + live sidebar Reminders
+    // count. Receiver is `this` → connections die with the panel; a shared
+    // engine keeps polling for MainWindow's desktop-toast path.
     connect(m_reminders, &NotesReminderEngine::reminderDue, this,
             [this](const TodoRow &r) {
-                const QString title = tr("Noter reminder");
-                QString body = r.text;
-                if (!r.owner.isEmpty()) body += QStringLiteral("  ") + r.owner;
-                if (!r.meetingTitle.isEmpty())
-                    body += QStringLiteral("\n— from \"%1\"").arg(r.meetingTitle);
-                fireDesktopNotification(title, body);
-                // Also show the in-window flashing banner so the reminder
-                // is visible even if the OS notification was missed.
                 enqueueReminder(r);
+                refreshSidebar();   // fired row left allScheduledReminders
             });
-    connect(m_reminders, &NotesReminderEngine::missedBatch, this,
-            [this](const QVector<TodoRow> &batch) {
-                const QString title = tr("Noter — %n reminder(s) missed", "", batch.size());
-                QString body;
-                int n = 0;
-                for (const TodoRow &r : batch) {
-                    if (n++ >= 4) { body += tr("\n…and %1 more").arg(batch.size() - n + 1); break; }
-                    body += (n > 1 ? "\n" : "") + r.text;
-                }
-                fireDesktopNotification(title, body);
-            });
-    m_reminders->catchUpMissed();
-    m_reminders->start();
+    if (ownsEngine) {
+        // Standalone construction (widget tests / screenshot harness): the
+        // panel is also the notification surface — v0.1.97 behavior
+        // verbatim. This fork is the zero-regression contract for default
+        // construction; do NOT "simplify" it away — the app-lifetime path
+        // (shared engine) keeps its toast lambdas in MainWindow instead.
+        connect(m_reminders, &NotesReminderEngine::reminderDue, this,
+                [](const TodoRow &r) {
+                    const QString title = tr("Noter reminder");
+                    QString body = r.text;
+                    if (!r.owner.isEmpty()) body += QStringLiteral("  ") + r.owner;
+                    if (!r.meetingTitle.isEmpty())
+                        body += QStringLiteral("\n— from \"%1\"").arg(r.meetingTitle);
+                    fireDesktopNotification(title, body);
+                });
+        connect(m_reminders, &NotesReminderEngine::missedBatch, this,
+                [](const QVector<TodoRow> &batch) {
+                    const QString title = tr("Noter — %n reminder(s) missed", "", batch.size());
+                    QString body;
+                    int n = 0;
+                    for (const TodoRow &r : batch) {
+                        if (n++ >= 4) { body += tr("\n…and %1 more").arg(batch.size() - n + 1); break; }
+                        body += (n > 1 ? "\n" : "") + r.text;
+                    }
+                    fireDesktopNotification(title, body);
+                });
+        // catchUpMissed() runs first so notifications that should have
+        // fired while the app was closed still surface (as a single
+        // batch alert, not N popups). Then start() begins the 60s
+        // poll loop. In shared mode MainWindow already did both.
+        m_reminders->catchUpMissed();
+        m_reminders->start();
+    }
 
     buildUi();
     refreshSidebar();
@@ -819,7 +836,11 @@ NotesPanel::~NotesPanel() {
         m_extractBusy = false;
     }
     if (m_dirty && !m_currentPath.isEmpty()) saveCurrentNote();
-    if (m_todos) { delete m_todos; m_todos = nullptr; }
+    // Shared (MainWindow-owned) todos must survive the panel; only a
+    // self-owned instance is ours to delete. (Owned engine is panel-
+    // parented → auto-deleted; shared engine is MainWindow-parented.)
+    if (m_ownsTodos) delete m_todos.data();
+    m_todos.clear();
 }
 
 void NotesPanel::buildUi() {
@@ -1479,10 +1500,14 @@ QWidget *NotesPanel::buildEmptyPage() {
 //  Folder helpers
 // ═══════════════════════════════════════════════════════════════════════
 
-QString NotesPanel::defaultNotesFolder() const {
+QString NotesPanel::defaultNotesFolder() {
     const QString docs =
         QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
     return docs + QStringLiteral("/Notepatra/Noter");
+}
+
+QString NotesPanel::todosDbPath() {
+    return defaultNotesFolder() + QStringLiteral("/.notepatra/todos.db");
 }
 
 QString NotesPanel::notesRoot() const { return defaultNotesFolder(); }
@@ -3751,22 +3776,15 @@ void NotesPanel::toggleSidebar() {
 // (matching projectsearch.cpp's pattern). It stays alive for the
 // session and survives the NotesPanel being torn down (e.g. tab
 // close + reopen).
-bool NotesPanel::fireDesktopNotification(const QString &title, const QString &body) {
+QSystemTrayIcon *NotesPanel::notificationTray() {
     if (!QSystemTrayIcon::isSystemTrayAvailable() ||
-        !QSystemTrayIcon::supportsMessages()) {
-        // No notification daemon available — fall back to a transient
-        // status-bar message via the parent window (if any). Better than
-        // silent.
-        if (auto *mw = window())
-            if (auto *sb = mw->findChild<QStatusBar *>())
-                sb->showMessage(QStringLiteral("%1: %2").arg(title, body), 8000);
-        return false;
-    }
+        !QSystemTrayIcon::supportsMessages())
+        return nullptr;
     static QSystemTrayIcon *s_tray = nullptr;
     if (!s_tray) {
         QIcon appIcon = QApplication::windowIcon();
         if (appIcon.isNull())
-            appIcon = this->style()->standardIcon(QStyle::SP_MessageBoxInformation);
+            appIcon = QApplication::style()->standardIcon(QStyle::SP_MessageBoxInformation);
         s_tray = new QSystemTrayIcon(appIcon, qApp);
         s_tray->setToolTip(QStringLiteral("Notepatra"));
         s_tray->show();
@@ -3777,9 +3795,33 @@ bool NotesPanel::fireDesktopNotification(const QString &title, const QString &bo
         s_tray->hide();
         s_tray->show();
     }
-    s_tray->showMessage(title, body, QSystemTrayIcon::Information,
-                        /*timeoutMs=*/8000);
-    return true;
+    return s_tray;
+}
+
+bool NotesPanel::fireDesktopNotification(const QString &title, const QString &body) {
+    if (QSystemTrayIcon *tray = notificationTray()) {
+        tray->showMessage(title, body, QSystemTrayIcon::Information,
+                          /*timeoutMs=*/8000);
+        return true;
+    }
+    // No notification daemon available — fall back to a transient
+    // status-bar message on the first top-level QMainWindow (static fn:
+    // no `window()` to reach for, but in-app that QMainWindow IS the
+    // panel's window). Better than silent; still a no-op headless.
+    for (QWidget *top : QApplication::topLevelWidgets()) {
+        if (auto *mw = qobject_cast<QMainWindow *>(top)) {
+            if (auto *sb = mw->findChild<QStatusBar *>())
+                sb->showMessage(QStringLiteral("%1: %2").arg(title, body), 8000);
+            break;
+        }
+    }
+    return false;
+}
+
+// App-lifetime reminder service replay — reminders whose desktop delivery
+// failed while no panel existed land back in the in-window banner here.
+void NotesPanel::replayReminders(const QVector<TodoRow> &rows) {
+    for (const TodoRow &r : rows) enqueueReminder(r);
 }
 
 // v0.1.97 — reminder banner queue + flash.

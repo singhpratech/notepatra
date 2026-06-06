@@ -363,6 +363,149 @@ static void test_reminder_engine(const QString &workDir) {
     }
 }
 
+// ─── 7b) app-lifetime reminder service — persisted last-tick meta ────
+
+static void test_meta_last_tick(const QString &workDir) {
+    std::printf("\n[meta_last_tick]\n");
+    const QString dbPath = workDir + "/meta.db";
+    {
+        NotesTodos n(dbPath);
+        EXPECT("open()", n.open(nullptr));
+        // Fresh DB → never persisted → invalid.
+        EXPECT("lastReminderTickAt invalid on fresh db",
+               !n.lastReminderTickAt().isValid());
+        // Invalid input rejected.
+        EXPECT("setLastReminderTickAt rejects invalid QDateTime",
+               !n.setLastReminderTickAt(QDateTime()));
+        EXPECT("still invalid after rejected write",
+               !n.lastReminderTickAt().isValid());
+
+        QDateTime t = QDateTime::currentDateTimeUtc().addSecs(-7200);
+        t = t.addMSecs(-t.time().msec());   // ISO storage is second-precision
+        EXPECT("setLastReminderTickAt accepts a valid instant",
+               n.setLastReminderTickAt(t));
+        EXPECT_EQ("same instance reads it back (UTC, second precision)",
+                  n.lastReminderTickAt().toSecsSinceEpoch(),
+                  t.toSecsSinceEpoch());
+        // Overwrite (INSERT OR REPLACE) — single row, newest wins.
+        const QDateTime t2 = t.addSecs(60);
+        EXPECT("second write succeeds", n.setLastReminderTickAt(t2));
+        EXPECT_EQ("overwrite wins",
+                  n.lastReminderTickAt().toSecsSinceEpoch(),
+                  t2.toSecsSinceEpoch());
+    }
+    {
+        // A SECOND NotesTodos on the same path reads it back (restart sim).
+        NotesTodos n2(dbPath);
+        EXPECT("reopen same path", n2.open(nullptr));
+        EXPECT("persisted tick survives reopen",
+               n2.lastReminderTickAt().isValid());
+    }
+}
+
+// ─── 7c) engine tick persists last_tick_at ───────────────────────────
+
+static void test_engine_tick_persists(const QString &workDir) {
+    std::printf("\n[engine_tick_persists]\n");
+    NotesTodos n(workDir + "/tickpersist.db");
+    EXPECT("open()", n.open(nullptr));
+    NotesReminderEngine engine(&n);
+    EXPECT("no tick persisted before first tick",
+           !n.lastReminderTickAt().isValid());
+    engine.tick();
+    const QDateTime persisted = n.lastReminderTickAt();
+    EXPECT("tick() persisted last_tick_at", persisted.isValid());
+    EXPECT("persisted tick is now-ish (within 5s)",
+           persisted.isValid() &&
+           qAbs(persisted.secsTo(QDateTime::currentDateTimeUtc())) <= 5);
+}
+
+// ─── 7d) engine ctor seeds m_lastTickAt from the persisted meta ──────
+
+static void test_engine_ctor_seeds_from_meta(const QString &workDir) {
+    std::printf("\n[engine_ctor_seeds_from_meta]\n");
+    NotesTodos n(workDir + "/ctorseed.db");
+    EXPECT("open()", n.open(nullptr));
+    QDateTime t0 = QDateTime::currentDateTimeUtc().addSecs(-2 * 3600);
+    t0 = t0.addMSecs(-t0.time().msec());
+    EXPECT("persist t0 = now-2h", n.setLastReminderTickAt(t0));
+    NotesReminderEngine engine(&n);
+    EXPECT_EQ("ctor seeded lastTickAt from persisted meta",
+              engine.lastTickAt().toSecsSinceEpoch(), t0.toSecsSinceEpoch());
+}
+
+// ─── 7e) THE leak test — unbounded catch-up ──────────────────────────
+// A 'scheduled' open reminder OLDER than the persisted last tick. The old
+// bounded remindersMissedSince(lastTick) query would EXCLUDE it
+// (reminder_at < lastTick) and it would leak as an individual popup on the
+// first 60s tick. Unbounded catch-up (remindersReadyAt(now)) digests it.
+
+static void test_catchup_unbounded(const QString &workDir) {
+    std::printf("\n[catchup_unbounded]\n");
+    NotesTodos n(workDir + "/unbounded.db");
+    EXPECT("open()", n.open(nullptr));
+    QList<QStringList> rows = {
+        {"id-old", "@x", "", "open", "missed long before last tick"},
+    };
+    n.reindexNote(workDir + "/ub.html", buildHtml("UB", rows));
+    n.setReminder("id-old", QDateTime::currentDateTimeUtc().addSecs(-3 * 3600));
+    // Persisted last tick AFTER the reminder time → old query missed it.
+    EXPECT("persist last_tick_at = now-60s",
+           n.setLastReminderTickAt(
+               QDateTime::currentDateTimeUtc().addSecs(-60)));
+
+    NotesReminderEngine engine(&n);   // ctor seeds from meta (now-60s)
+    QSignalSpy batch(&engine, &NotesReminderEngine::missedBatch);
+    QSignalSpy due(&engine, &NotesReminderEngine::reminderDue);
+    engine.catchUpMissed();
+    EXPECT_EQ("exactly ONE missedBatch", batch.count(), 1);
+    if (batch.count() == 1) {
+        const QVector<TodoRow> v =
+            batch.first().first().value<QVector<TodoRow>>();
+        EXPECT_EQ("batch contains exactly the old row", v.size(), 1);
+        if (!v.isEmpty())
+            EXPECT_EQ("batch item is id-old", v.first().id,
+                      QStringLiteral("id-old"));
+    }
+    EXPECT_EQ("row flipped to fired",
+              n.find("id-old").reminderStatus, QStringLiteral("fired"));
+    engine.tick();
+    EXPECT_EQ("following tick emits ZERO reminderDue (no leak)",
+              due.count(), 0);
+}
+
+// ─── 7f) first run after upgrade — no meta row, overdue backlog ──────
+
+static void test_catchup_no_meta_first_upgrade(const QString &workDir) {
+    std::printf("\n[catchup_no_meta_first_upgrade]\n");
+    // meta row absent (pre-upgrade DB). The overdue backlog must surface
+    // ONCE as a digest (not N popups, not silence).
+    NotesTodos n(workDir + "/upgrade.db");
+    EXPECT("open()", n.open(nullptr));
+    QList<QStringList> rows = {
+        {"id-b1", "@x", "", "open", "backlog one"},
+        {"id-b2", "@x", "", "open", "backlog two"},
+    };
+    n.reindexNote(workDir + "/up.html", buildHtml("UP", rows));
+    n.setReminder("id-b1", QDateTime::currentDateTimeUtc().addSecs(-86400));
+    n.setReminder("id-b2", QDateTime::currentDateTimeUtc().addSecs(-3600));
+    EXPECT("no meta row yet", !n.lastReminderTickAt().isValid());
+
+    NotesReminderEngine engine(&n);
+    QSignalSpy batch(&engine, &NotesReminderEngine::missedBatch);
+    engine.catchUpMissed();
+    EXPECT_EQ("backlog digested in ONE missedBatch", batch.count(), 1);
+    if (batch.count() == 1)
+        EXPECT_EQ("digest carries both rows",
+                  batch.first().first().value<QVector<TodoRow>>().size(), 2);
+    // Catch-up persisted the tick.
+    EXPECT("catch-up persisted last_tick_at",
+           n.lastReminderTickAt().isValid());
+    // Second catch-up: nothing left.
+    engine.catchUpMissed();
+    EXPECT_EQ("second catch-up emits nothing", batch.count(), 1);
+}
+
 // ─── 8) rebuildFromHtmlFiles ─────────────────────────────────────────
 
 static void test_rebuild_from_html(const QString &workDir) {
@@ -531,6 +674,11 @@ int main(int argc, char *argv[]) {
     test_mark_done_and_snooze(root);
     test_reminders_ready(root);
     test_reminder_engine(root);
+    test_meta_last_tick(root);
+    test_engine_tick_persists(root);
+    test_engine_ctor_seeds_from_meta(root);
+    test_catchup_unbounded(root);
+    test_catchup_no_meta_first_upgrade(root);
     test_rebuild_from_html(root);
     test_add_quick_todo(root);
     test_set_text(root);

@@ -52,6 +52,7 @@ class QTextEdit;
 class QEvent;
 class OllamaClient;
 class QComboBox;
+class QSystemTrayIcon;
 
 class NotesStorage;          // src/notes_storage.h
 class NotesTodos;            // src/notes_todos.h
@@ -64,7 +65,14 @@ namespace NoterSweepPrompt { struct SweepResult; }   // src/notes_sweep_prompt.h
 class NotesPanel : public QWidget {
     Q_OBJECT
 public:
-    explicit NotesPanel(QWidget *parent = nullptr);
+    // App-lifetime reminder service (MainWindow) may inject a shared
+    // NotesTodos + NotesReminderEngine so reminders keep firing after the
+    // panel is closed. Default-constructed panels (tests, screenshot
+    // harness) own both — v0.1.97 behavior verbatim; that fork is the
+    // zero-regression contract for default construction.
+    explicit NotesPanel(QWidget *parent = nullptr,
+                        NotesTodos *sharedTodos = nullptr,
+                        NotesReminderEngine *sharedEngine = nullptr);
     ~NotesPanel() override;
 
     // Open a brand-new meeting note. Creates the file under
@@ -120,6 +128,9 @@ public:
     QString notesRoot() const;
     QString inboxFolder() const;
     QString trashFolder() const;
+    // Canonical todos.db location — static so MainWindow's app-lifetime
+    // reminder service can find (or stat-probe) it without a panel.
+    static QString todosDbPath();
 
     // The standalone Todos checklist file (Inbox/quick-todos.html) and the
     // action that opens it in the editor AS AN EDITABLE CHECKLIST (☐/✓
@@ -140,6 +151,27 @@ public:
     // section has a checkable/cancellable bullet). Empty title → prompt for it.
     // Public so the widget test can assert the contract.
     void insertSubheader(const QString &title, int level = 2);
+
+    // App-lifetime reminder service hands back reminders whose desktop
+    // delivery failed while no panel existed (tray-less sessions). Each is
+    // enqueued into the in-window banner. Dedupe by id is inherited from
+    // enqueueReminder.
+    void replayReminders(const QVector<TodoRow> &rows);
+
+    // v0.1.97 — cross-platform desktop notification. Routes through
+    // QSystemTrayIcon::showMessage which Qt translates to:
+    //   - Linux: libnotify / D-Bus org.freedesktop.Notifications
+    //   - macOS: NSUserNotificationCenter (Qt5) or UNUserNotificationCenter
+    //   - Windows: Windows Action Center Toast
+    // One code path, three platforms. Returns false if the platform
+    // doesn't expose a tray notification daemon (then falls back to a
+    // status-bar message on the first top-level QMainWindow). Static so
+    // MainWindow's app-lifetime reminder service can fire toasts with no
+    // panel alive.
+    static bool fireDesktopNotification(const QString &title, const QString &body);
+    // The lazily-created shared tray icon (null when no tray daemon /
+    // no message support). MainWindow uses it to hook messageClicked.
+    static QSystemTrayIcon *notificationTray();
 
 signals:
     void noteSaved(const QString &absolutePath);
@@ -225,16 +257,6 @@ private:
     void toggleSidebar();
     void quickSwitchMeeting();
 
-    // v0.1.97 — cross-platform desktop notification. Routes through
-    // QSystemTrayIcon::showMessage which Qt translates to:
-    //   - Linux: libnotify / D-Bus org.freedesktop.Notifications
-    //   - macOS: NSUserNotificationCenter (Qt5) or UNUserNotificationCenter
-    //   - Windows: Windows Action Center Toast
-    // One code path, three platforms. Returns false if the platform
-    // doesn't expose a tray notification daemon (rare — every modern
-    // desktop has one).
-    bool fireDesktopNotification(const QString &title, const QString &body);
-
     // v0.1.97 — in-window reminder banner. enqueueReminder pushes a
     // fired reminder onto the queue and shows the banner (flashing) if
     // it's idle. Dismiss / Snooze advance to the next queued reminder.
@@ -292,7 +314,7 @@ private:
 
     // Helpers
     void ensureNotesFolder();
-    QString defaultNotesFolder() const;
+    static QString defaultNotesFolder();
     QString slugifyTitle(const QString &title) const;
 
     // ── widgets ────────────────────────────────────────────────────
@@ -412,11 +434,16 @@ private:
 
     // ── services (lazily created) ─────────────────────────────────
     NotesStorage         *m_storage   { nullptr };
-    NotesTodos           *m_todos     { nullptr };
+    // QPointer: when MainWindow injects its app-lifetime NotesTodos the
+    // panel must never dangle across shutdown reordering. m_ownsTodos
+    // tracks whether the panel created (and must delete) it.
+    QPointer<NotesTodos>  m_todos;
+    bool                  m_ownsTodos { true };
     // v0.1.97 — reminder engine. Pre-fix the class existed but was
     // never instantiated; reminders set via right-click → Set Reminder
     // went into SQLite but the 60s poll loop never ran, so desktop
-    // notifications never fired on any platform.
+    // notifications never fired on any platform. May now be the
+    // MainWindow-owned shared engine (app-lifetime reminder service).
     NotesReminderEngine  *m_reminders { nullptr };
 
     // v0.1.97 — refreshTodosPanel removed; todos render inline in the

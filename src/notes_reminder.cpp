@@ -31,6 +31,13 @@ NotesReminderEngine::NotesReminderEngine(NotesTodos *todos, QObject *parent)
     m_pollTimer.setSingleShot(false);
     connect(&m_pollTimer, &QTimer::timeout, this, &NotesReminderEngine::tick);
     m_lastTickAt = QDateTime::currentDateTimeUtc();
+    // Resume from the persisted last tick when available (metadata for the
+    // away-window; catch-up itself no longer depends on it — see
+    // catchUpMissed() below).
+    if (m_todos) {
+        const QDateTime persisted = m_todos->lastReminderTickAt();
+        if (persisted.isValid()) m_lastTickAt = persisted.toUTC();
+    }
 }
 
 void NotesReminderEngine::start() {
@@ -61,19 +68,26 @@ void NotesReminderEngine::tick() {
         emit reminderDue(r);
     }
     m_lastTickAt = now;
+    if (m_todos) m_todos->setLastReminderTickAt(now);
 }
 
 void NotesReminderEngine::catchUpMissed() {
     if (!m_todos) return;
     const QDateTime now = QDateTime::currentDateTimeUtc();
 
-    // The window is "anything that should have fired between our last
-    // known tick and now". If we've never run, lastTickAt is the
-    // constructor-time stamp, which is "now-ish" — that's fine,
-    // there's nothing to catch up on.
-    QVector<TodoRow> missed = m_todos->remindersMissedSince(m_lastTickAt);
+    // Unbounded by design: "reminder_status='scheduled' AND status='open'
+    // AND reminder_at <= now" already IS the exact set of reminders that
+    // should have fired but haven't. A time lower-bound (the old
+    // remindersMissedSince(m_lastTickAt) query) could only EXCLUDE
+    // genuinely-missed rows — clock skew, crash before the meta write,
+    // pre-existing overdue rows on first run after upgrade — and anything
+    // excluded here leaks back as N individual popups on the first 60s
+    // tick. Everything caught here is marked 'fired' before the emit, so
+    // tick() can never double-deliver.
+    QVector<TodoRow> missed = m_todos->remindersReadyAt(now);
     if (missed.isEmpty()) {
         m_lastTickAt = now;
+        if (m_todos) m_todos->setLastReminderTickAt(now);
         return;
     }
 
@@ -86,4 +100,5 @@ void NotesReminderEngine::catchUpMissed() {
     }
     emit missedBatch(missed);
     m_lastTickAt = now;
+    if (m_todos) m_todos->setLastReminderTickAt(now);
 }

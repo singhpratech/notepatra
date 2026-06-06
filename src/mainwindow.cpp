@@ -248,6 +248,8 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include "ollama.h"
 #include "ollamastatus.h"
 #include "notes.h"
+#include "notes_reminder.h"
+#include <QSystemTrayIcon>
 #include "diagram/diagram_editor.h"
 #include "tool_colors.h"
 #include <QRegularExpression>
@@ -785,7 +787,7 @@ ul { margin-top: 4px; }
 <li><code>Ctrl+Alt+N</code> (or the icon row, or <b>Features &gt; Noter — Meeting Thinkpad</b>) toggles Noter: it opens the tab, and pressing it again while the tab is focused closes it. Noter is a two-pane meeting workspace (notes list on the left, editor on the right). Fully local — notes live under <code>~/Documents/Notepatra/Noter/</code>, with no accounts and no bots.</li>
 <li><b>+ Noter</b> (or <code>Ctrl+Alt+M</code>) creates a note. A small top toolbar inserts <b>Action Items</b> / <b>What I plan</b> / <b>To-dos</b> section headers and checkbox bullets; click a checkbox to mark it done and strike the line through.</li>
 <li><b>Extract</b> (footer button or <code>Ctrl+Alt+E</code>) runs your configured AI backend over the note and returns a short <b>summary</b> plus <b>action items, decisions, questions and risks</b>. An action that mentions a time ("ship the build 10am tomorrow") comes back with that date/time pre-filled.</li>
-<li><b>Reminders:</b> right-click a note to set a reminder, or schedule action items straight from Extract (each with a calendar + time picker). Every reminder appears in the central <b>Reminders</b> section of the sidebar, grouped <i>Overdue / Today / This week / Later</i> — click to open the note, the pencil to change the time, the ✕ to delete. Desktop notifications fire at the due time. Re-running Extract flags items already scheduled so you don't get duplicates.</li>
+<li><b>Reminders:</b> right-click a note to set a reminder, or schedule action items straight from Extract (each with a calendar + time picker). Every reminder appears in the central <b>Reminders</b> section of the sidebar, grouped <i>Overdue / Today / This week / Later</i> — click to open the note, the pencil to change the time, the ✕ to delete. Desktop notifications fire at the due time whenever Notepatra is running — the Noter tab does not need to be open. Reminders that come due while Notepatra is closed arrive as a single catch-up notification on the next launch. Re-running Extract flags items already scheduled so you don't get duplicates.</li>
 <li><b>Noter shortcuts</b> (active while the Noter tab has focus): <code>Ctrl+Alt+M</code> new note, <code>Ctrl+Alt+J</code> jump to the note search box (quick-switch between notes), <code>Ctrl+Alt+E</code> Extract, <code>Ctrl+Alt+T</code> jump to the Reminders section in the sidebar, <code>Ctrl+Alt+B</code> show/hide the sidebar, <code>Ctrl+Alt+P</code> pop the current note out into its own window, <code>F4</code> toggle the checkbox on the current line. <code>Ctrl+Alt+N</code> toggles the Noter tab itself from anywhere.</li>
 </ul>
 
@@ -1531,6 +1533,17 @@ MainWindow::MainWindow() {
             });
         }
     }
+
+    // Noter reminders are app-lifetime. One stat() decides — users who never
+    // opened Noter pay nothing and get zero Documents/ side effects (the
+    // service ctor path would mkpath .notepatra). The 1.5s delay lets the
+    // window paint before a catch-up digest can pop. If the user opens Noter
+    // within the window, ensureNoterTab ran the service first and this
+    // no-ops via the idempotence guard.
+    QTimer::singleShot(1500, this, [this]() {
+        if (QFileInfo::exists(NotesPanel::todosDbPath()))
+            ensureNoterReminderService();
+    });
 
     // Auto-save session every 10 seconds. saveSession() now writes full
     // unsaved-buffer content into session.json, so the legacy recovery_*.txt
@@ -2723,40 +2736,29 @@ void MainWindow::buildMenus() {
     // tab when Noter is already focused (see the connect below). The text
     // keeps the "Noter — Meeting Thinkpad" prefix so findActionByPrefix
     // lookups (feature toolbar + Welcome cards) stay stable.
-    auto *noterAct = feat->addAction("Noter — Meeting Thinkpad (toggle)        Ctrl+Alt+N");
-    noterAct->setCheckable(true);
-    noterAct->setShortcut(QKeySequence("Ctrl+Alt+N"));
-    noterAct->setStatusTip("Toggle Noter — meeting notes with AI Extract (summary + action items) and desktop reminders. New note: Ctrl+Alt+M.");
-    connect(noterAct, &QAction::triggered, this, [this, noterAct]() {
+    m_noterAct = feat->addAction("Noter — Meeting Thinkpad (toggle)        Ctrl+Alt+N");
+    m_noterAct->setCheckable(true);
+    m_noterAct->setShortcut(QKeySequence("Ctrl+Alt+N"));
+    m_noterAct->setStatusTip("Toggle Noter — meeting notes with AI Extract (summary + action items) and reminders that fire while Notepatra is running. New note: Ctrl+Alt+M.");
+    connect(m_noterAct, &QAction::triggered, this, [this]() {
         // v0.1.97 — toggle behavior, matches the AI dock pattern (Ctrl+Q).
         // Three states:
         //   - Tab doesn't exist  → create + focus
         //   - Tab exists, NOT current → focus
         //   - Tab exists, IS current → close
         // This makes the toolbar/keybind a true on/off switch.
-        NotesPanel *noter = nullptr;
         int existingIdx = -1;
-        for (int i = 0; i < m_tabs->count(); ++i) {
-            if (auto *np = qobject_cast<NotesPanel*>(m_tabs->widget(i))) {
-                noter = np;
-                existingIdx = i;
-                break;
-            }
-        }
+        NotesPanel *noter = findNoterPanel(&existingIdx);
         if (noter && existingIdx == m_tabs->currentIndex()) {
-            // Currently focused → close.
+            // Currently focused → close. (The destroyed-connection wired in
+            // ensureNoterTab also clears the checkmark — redundant but
+            // harmless here; it exists for the generic closeTab path.)
             m_tabs->removeTab(existingIdx);
             delete noter;
-            noterAct->setChecked(false);
+            m_noterAct->setChecked(false);
             return;
         }
-        if (!noter) {
-            noter = new NotesPanel;
-            exitAiFullscreenIfActive();
-            existingIdx = m_tabs->addTab(noter, "Noter");
-        }
-        m_tabs->setCurrentIndex(existingIdx);
-        noterAct->setChecked(true);
+        ensureNoterTab();
     });
 
     // --- Diagram (flow / ER / system, .npd) ---
@@ -4364,6 +4366,112 @@ void MainWindow::buildMenus() {
             .arg(version));
         box.exec();
     });
+}
+
+// ── Noter app-lifetime reminder service ────────────────────────────────
+// Audit fix: reminders used to die with the Noter tab (the engine lived
+// inside NotesPanel). The service below is MainWindow-owned, so reminders
+// fire whenever Notepatra is running — any tab, Noter open or not.
+// Reminders missed while the app was CLOSED arrive as ONE catch-up digest
+// shortly after launch (OS-level scheduling is explicitly out of scope).
+
+NotesPanel *MainWindow::findNoterPanel(int *indexOut) const {
+    for (int i = 0; i < m_tabs->count(); ++i)
+        if (auto *np = qobject_cast<NotesPanel*>(m_tabs->widget(i))) {
+            if (indexOut) *indexOut = i;
+            return np;
+        }
+    if (indexOut) *indexOut = -1;
+    return nullptr;
+}
+
+void MainWindow::ensureNoterReminderService() {
+    if (m_noterReminderEngine) return;                      // idempotent
+    m_noterTodos = new NotesTodos(NotesPanel::todosDbPath(), this);
+    m_noterTodos->open(nullptr);
+    m_noterReminderEngine = new NotesReminderEngine(m_noterTodos, this);
+    // Live fire → desktop toast. EXACT body format from the old panel
+    // handler (notes.cpp reminderDue lambda) so user-visible text is
+    // unchanged.
+    connect(m_noterReminderEngine, &NotesReminderEngine::reminderDue, this,
+            [this](const TodoRow &r) {
+        QString body = r.text;
+        if (!r.owner.isEmpty()) body += QStringLiteral("  ") + r.owner;
+        if (!r.meetingTitle.isEmpty())
+            body += QStringLiteral("\n— from \"%1\"").arg(r.meetingTitle);
+        m_noterToastNote    = r.sourceFile;
+        m_noterToastShownMs = QDateTime::currentMSecsSinceEpoch();
+        if (QSystemTrayIcon *tray = NotesPanel::notificationTray())
+            connect(tray, &QSystemTrayIcon::messageClicked,
+                    this, &MainWindow::onNoterTrayMessageClicked,
+                    Qt::UniqueConnection);   // member-fn ptr → UniqueConnection valid
+        const bool delivered =
+            NotesPanel::fireDesktopNotification(tr("Noter reminder"), body);
+        // Tray-less AND tab closed → stash for banner replay on next open.
+        // (Panel open: its own banner already showed via reminderDue.)
+        if (!delivered && !findNoterPanel()) m_noterUndelivered.append(r);
+    });
+    // Catch-up → ONE batched digest.
+    connect(m_noterReminderEngine, &NotesReminderEngine::missedBatch, this,
+            [this](const QVector<TodoRow> &batch) {
+        const QString title =
+            tr("Noter — %n reminder(s) fired while you were away", "", batch.size());
+        QString body; int n = 0;
+        for (const TodoRow &r : batch) {
+            if (n++ >= 4) { body += tr("\n…and %1 more").arg(batch.size() - n + 1); break; }
+            body += (n > 1 ? "\n" : "") + r.text;
+        }
+        m_noterToastNote    = (batch.size() == 1) ? batch.first().sourceFile : QString();
+        m_noterToastShownMs = QDateTime::currentMSecsSinceEpoch();
+        if (QSystemTrayIcon *tray = NotesPanel::notificationTray())
+            connect(tray, &QSystemTrayIcon::messageClicked,
+                    this, &MainWindow::onNoterTrayMessageClicked,
+                    Qt::UniqueConnection);
+        const bool delivered = NotesPanel::fireDesktopNotification(title, body);
+        if (!delivered && !findNoterPanel()) m_noterUndelivered += batch;
+    });
+    // Synchronous catch-up BEFORE start(): rows are marked 'fired' before
+    // the first 60s tick can see them — the N-popup leak is closed by
+    // construction. Also preserves the invariant that missedBatch never
+    // fires while a panel exists (panel creation ensures the service FIRST).
+    m_noterReminderEngine->catchUpMissed();
+    m_noterReminderEngine->start();
+}
+
+void MainWindow::onNoterTrayMessageClicked() {
+    // messageClicked carries no payload and fires for ANY message from our
+    // tray icon — only honor it within 60s of showing a Noter toast/digest.
+    if (m_noterToastShownMs == 0 ||
+        QDateTime::currentMSecsSinceEpoch() - m_noterToastShownMs > 60000) return;
+    m_noterToastShownMs = 0;
+    const QString note = m_noterToastNote;
+    NotesPanel *noter = ensureNoterTab();
+    if (noter && !note.isEmpty()) noter->openNoteFile(note);
+}
+
+NotesPanel *MainWindow::ensureNoterTab() {
+    int idx = -1;
+    NotesPanel *noter = findNoterPanel(&idx);
+    if (!noter) {
+        ensureNoterReminderService();   // idempotent; creates dirs now (user asked for Noter)
+        noter = new NotesPanel(nullptr, m_noterTodos, m_noterReminderEngine);
+        // Truthful Features-menu indicator on EVERY deletion path (toggle-
+        // close AND generic closeTab). Receiver = the action → connection
+        // auto-dies with it at shutdown.
+        if (m_noterAct)
+            connect(noter, &QObject::destroyed, m_noterAct,
+                    [act = m_noterAct]() { act->setChecked(false); });
+        exitAiFullscreenIfActive();
+        idx = m_tabs->addTab(noter, "Noter");
+        // Replay reminders that fired tray-less while no panel existed.
+        if (!m_noterUndelivered.isEmpty()) {
+            noter->replayReminders(m_noterUndelivered);
+            m_noterUndelivered.clear();
+        }
+    }
+    m_tabs->setCurrentIndex(idx);
+    if (m_noterAct) m_noterAct->setChecked(true);
+    return noter;
 }
 
 void MainWindow::buildToolbar() {

@@ -186,6 +186,16 @@ bool NotesTodos::createSchema(QString *errorOut) {
         if (errorOut) *errorOut = q.lastError().text();
         return false;
     }
+    // App-lifetime reminder service bookkeeping (key/value). Runs on
+    // every open() so existing v1 DBs self-upgrade — no schema-version
+    // bump needed (IF NOT EXISTS, like every sibling statement).
+    if (!q.exec(QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS meta ("
+            " key   TEXT PRIMARY KEY,"
+            " value TEXT)"))) {
+        if (errorOut) *errorOut = q.lastError().text();
+        return false;
+    }
     return true;
 }
 
@@ -945,6 +955,23 @@ bool NotesTodos::markReminderFired(const QString &id) {
     if (!q.exec()) return false;
     emit todoChanged(id);
     return true;
+}
+
+QDateTime NotesTodos::lastReminderTickAt() const {
+    if (!ensureOpen()) return QDateTime();
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral("SELECT value FROM meta WHERE key='last_tick_at'"));
+    if (!q.exec() || !q.next()) return QDateTime();
+    return fromIso(q.value(0).toString());
+}
+
+bool NotesTodos::setLastReminderTickAt(const QDateTime &t) {
+    if (!ensureOpen() || !t.isValid()) return false;
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral(
+        "INSERT OR REPLACE INTO meta(key,value) VALUES('last_tick_at',?)"));
+    q.addBindValue(toIso(t.toUTC()));
+    return q.exec();   // bookkeeping — deliberately NO todoChanged emit
 }
 
 // ─── rebuild from disk ─────────────────────────────────────────────────

@@ -177,6 +177,12 @@ public:
     // this one") even though both result in a non-"scheduled" state.
     bool markReminderFired(const QString &id);
 
+    // Reminder-engine bookkeeping: UTC instant of the engine's last completed
+    // poll, persisted so restarts know how long the app was closed. Invalid
+    // QDateTime = never persisted. Deliberately does NOT emit todoChanged.
+    QDateTime lastReminderTickAt() const;
+    bool setLastReminderTickAt(const QDateTime &t);
+
     // Full rebuild from HTML files on disk — recovery path if the
     // SQLite file gets corrupted or schema drifts.
     bool rebuildFromHtmlFiles(const QString &notesRoot, QString *errorOut = nullptr);

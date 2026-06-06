@@ -707,10 +707,11 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_storage.cpp"
     message(STATUS "Regression test enabled — target: test_notes_storage")
 endif()
 
-# ── Noter — SQLite todos + reminder engine test (83 cases) ──
+# ── Noter — SQLite todos + reminder engine test (172 cases) ──
 # Validates schema migration, HTML action-block reindex round-trip,
 # due-group classification across time boundaries, snooze + reminder
-# state transitions, and quick-todo creation.
+# state transitions, quick-todo creation, and the app-lifetime reminder
+# service (persisted last-tick meta + unbounded catch-up digest).
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_todos.cpp")
     add_executable(test_notes_todos
         test_notes_todos.cpp

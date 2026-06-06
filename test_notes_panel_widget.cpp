@@ -11,8 +11,10 @@
 #include "notes.h"
 #include "notes_extract_apply.h"
 #include "notes_popout.h"
+#include "notes_reminder.h"
 #include "notes_sweep_dialog.h"
 #include "notes_sweep_prompt.h"
+#include "notes_todos.h"
 #include "config.h"
 
 #include <QAbstractButton>
@@ -44,6 +46,7 @@
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QtTest/QSignalSpy>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -2748,6 +2751,176 @@ int main(int argc, char *argv[]) {
                !ed || ed->toPlainText() == before);
         EXPECT("no marked region written on the checklist",
                !ed || countBeginAnchors(ed->toHtml()) == 0);
+    }
+
+    // ── 58. app-lifetime service: shared engine + todos survive panel
+    // delete (audit fix — reminders used to die with the Noter tab).
+    std::printf("\n--- 58. shared-engine lifetime survives panel delete ---\n");
+    {
+        qRegisterMetaType<TodoRow>("TodoRow");
+        qRegisterMetaType<QVector<TodoRow>>("QVector<TodoRow>");
+
+        NotesTodos todos(tmpHome.path() + "/shared-todos.db");
+        EXPECT("shared todos open()", todos.open(nullptr));
+        NotesReminderEngine engine(&todos);
+
+        auto *p = new NotesPanel(nullptr, &todos, &engine);
+        QApplication::processEvents();
+        delete p;                         // "close the Noter tab"
+        QApplication::processEvents();
+
+        // Panel must NOT have deleted the injected todos: still usable.
+        const QString rid = todos.addReminder(
+            tmpHome.path() + "/Documents/Notepatra/Noter/Inbox/shared-note.html",
+            QStringLiteral("fires after tab close"),
+            QDateTime::currentDateTime().addSecs(-120));
+        EXPECT("injected todos still usable after panel delete",
+               !rid.isEmpty());
+
+        QSignalSpy spy(&engine, &NotesReminderEngine::reminderDue);
+        engine.tick();
+        EXPECT("engine still fires reminderDue after panel delete",
+               spy.count() == 1);
+        if (spy.count() == 1)
+            EXPECT_STR_EQ("fired row is the one scheduled after close",
+                          spy.first().first().value<TodoRow>().id, rid);
+        EXPECT_STR_EQ("row flipped to fired",
+                      todos.find(rid).reminderStatus,
+                      QStringLiteral("fired"));
+    }
+
+    // ── 59. shared panel alive: exactly ONE fire, no double-handling ──
+    std::printf("\n--- 59. shared panel alive: single fire ---\n");
+    {
+        NotesTodos todos(tmpHome.path() + "/shared2-todos.db");
+        EXPECT("shared todos open()", todos.open(nullptr));
+        NotesReminderEngine engine(&todos);
+        NotesPanel shared(nullptr, &todos, &engine);
+        shared.show();
+        shared.newMeetingNote();          // editor page → banner visibility is real
+        QApplication::processEvents();
+
+        const QString rid = todos.addReminder(
+            shared.inboxFolder() + "/sp-note.html",
+            QStringLiteral("one ping only"),
+            QDateTime::currentDateTime().addSecs(-60));
+        EXPECT("due reminder scheduled", !rid.isEmpty());
+
+        QSignalSpy spy(&engine, &NotesReminderEngine::reminderDue);
+        engine.tick();
+        QApplication::processEvents();
+        EXPECT("reminderDue emitted exactly once", spy.count() == 1);
+        EXPECT_STR_EQ("row fired exactly once",
+                      todos.find(rid).reminderStatus,
+                      QStringLiteral("fired"));
+        engine.tick();
+        QApplication::processEvents();
+        EXPECT("second tick does not re-fire", spy.count() == 1);
+
+        // The in-window banner showed (shared mode keeps the panel as the
+        // banner surface; toasts move to MainWindow).
+        auto *banner = shared.findChild<QWidget *>(
+            QStringLiteral("noterReminderBanner"));
+        EXPECT("banner exists", banner != nullptr);
+        EXPECT("banner visible after fire", banner && banner->isVisible());
+        bool labelHasText = false;
+        if (banner)
+            for (QLabel *l : banner->findChildren<QLabel *>())
+                if (l->text().contains(QStringLiteral("one ping only")))
+                    labelHasText = true;
+        EXPECT("banner label carries the reminder text", labelHasText);
+    }
+
+    // ── 60. sidebar Reminders count decrements when a reminder fires ──
+    std::printf("\n--- 60. sidebar Reminders count updates on fire ---\n");
+    {
+        NotesTodos todos(tmpHome.path() + "/shared3-todos.db");
+        EXPECT("shared todos open()", todos.open(nullptr));
+        NotesReminderEngine engine(&todos);
+        NotesPanel shared(nullptr, &todos, &engine);
+        shared.show();
+        QApplication::processEvents();
+
+        // One past (will fire) + one future (stays scheduled).
+        EXPECT("past reminder scheduled",
+               !todos.addReminder(shared.inboxFolder() + "/sw-note.html",
+                                  QStringLiteral("past one"),
+                                  QDateTime::currentDateTime().addSecs(-60))
+                    .isEmpty());
+        EXPECT("future reminder scheduled",
+               !todos.addReminder(shared.inboxFolder() + "/sw-note.html",
+                                  QStringLiteral("future one"),
+                                  QDateTime::currentDateTime().addSecs(3600))
+                    .isEmpty());
+
+        engine.tick();                    // fires "past one" → refreshSidebar
+        QApplication::processEvents();
+
+        auto *tree = shared.findChild<QTreeWidget *>(
+            QStringLiteral("noterSidebarTree"));
+        EXPECT("sidebar tree present", tree != nullptr);
+        int remCount = -1;
+        if (tree)
+            for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+                const QString t = tree->topLevelItem(i)->text(0);
+                if (!t.startsWith(QStringLiteral("Reminders"))) continue;
+                const int op = t.indexOf('(');
+                if (op >= 0)
+                    remCount = t.mid(op + 1, t.indexOf(')') - op - 1).toInt();
+            }
+        EXPECT("Reminders root shows ONLY the future reminder (count==1)",
+               remCount == 1);
+    }
+
+    // ── 61. replayReminders → banner shows + dedupes by id ───────────
+    std::printf("\n--- 61. replayReminders banner + dedupe ---\n");
+    {
+        NotesTodos todos(tmpHome.path() + "/shared4-todos.db");
+        EXPECT("shared todos open()", todos.open(nullptr));
+        NotesReminderEngine engine(&todos);
+        NotesPanel shared(nullptr, &todos, &engine);
+        shared.show();
+        shared.newMeetingNote();          // editor page → banner can be visible
+        QApplication::processEvents();
+
+        TodoRow row;
+        row.id = QStringLiteral("replay-1");
+        row.text = QStringLiteral("undelivered toast");
+        row.sourceFile = shared.inboxFolder() + "/replay-note.html";
+        shared.replayReminders({row});
+        QApplication::processEvents();
+
+        auto *banner = shared.findChild<QWidget *>(
+            QStringLiteral("noterReminderBanner"));
+        EXPECT("banner exists", banner != nullptr);
+        EXPECT("banner visible after replay", banner && banner->isVisible());
+        bool labelHasText = false;
+        if (banner)
+            for (QLabel *l : banner->findChildren<QLabel *>())
+                if (l->text().contains(QStringLiteral("undelivered toast")))
+                    labelHasText = true;
+        EXPECT("banner carries the replayed reminder text", labelHasText);
+
+        // Replay the SAME id again — enqueueReminder dedupe must drop it.
+        shared.replayReminders({row});
+        QApplication::processEvents();
+        bool labelHasMore = false;
+        if (banner)
+            for (QLabel *l : banner->findChildren<QLabel *>())
+                if (l->text().contains(QStringLiteral("more")))
+                    labelHasMore = true;
+        EXPECT("no '(+N more)' suffix after duplicate replay", !labelHasMore);
+
+        // One Dismiss must empty the queue (dedupe held) → banner hides.
+        QPushButton *dismiss = nullptr;
+        if (banner)
+            for (QPushButton *b : banner->findChildren<QPushButton *>())
+                if (b->text() == QStringLiteral("Dismiss")) dismiss = b;
+        EXPECT("Dismiss button present", dismiss != nullptr);
+        if (dismiss) dismiss->click();
+        QApplication::processEvents();
+        EXPECT("banner hidden after a single dismiss (no duplicate queued)",
+               banner && !banner->isVisible());
     }
 
     // ── Summary ───────────────────────────────────────────────────

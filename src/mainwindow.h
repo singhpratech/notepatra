@@ -26,10 +26,15 @@
 #include "projectsearch.h"
 #include "themes.h"
 #include "config.h"
+// QVector<TodoRow> member (m_noterUndelivered) needs the complete type.
+// notes_todos.h is QtCore/Sql-only; Qt5::Sql is already linked app-wide.
+#include "notes_todos.h"
 #include <Qsci/qscimacro.h>
 
 class Editor;
 class QMenu;
+class NotesPanel;
+class NotesReminderEngine;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -201,6 +206,21 @@ private:
     SqlFmtPanel *m_sqlFmtPanel = nullptr;
     SearchResultsPanel *m_searchResults = nullptr;
     QSplitter *m_vertSplitter = nullptr;
+
+    // App-lifetime Noter reminder service (audit fix: reminders used to die
+    // with the Noter tab). Lazily created — see ensureNoterReminderService().
+    // OS-level scheduling (firing while the app is CLOSED) is out of scope;
+    // reminders missed while closed arrive as ONE catch-up digest at launch.
+    NotesTodos          *m_noterTodos          = nullptr;
+    NotesReminderEngine *m_noterReminderEngine = nullptr;
+    QAction             *m_noterAct            = nullptr;  // truthful checked-state
+    QString m_noterToastNote;        // click-to-open target for the last toast/digest
+    qint64  m_noterToastShownMs = 0; // messageClicked relevance window
+    QVector<TodoRow> m_noterUndelivered;  // toast failed AND no panel existed
+    void ensureNoterReminderService();
+    NotesPanel *findNoterPanel(int *indexOut = nullptr) const;
+    NotesPanel *ensureNoterTab();
+    void onNoterTrayMessageClicked();
 
     // Macro recording/playback
     QsciMacro *m_macro = nullptr;

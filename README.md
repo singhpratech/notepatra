@@ -177,7 +177,7 @@ Notepatra auto-detects the running Ollama and picks the most CPU-friendly model 
 A local-first, two-pane meeting workspace (notes list · editor) — no accounts, no bots; notes live under `~/Documents/Notepatra/Noter/`.
 - **Write fast** — a top toolbar drops in *Action Items / What I plan / To-dos* headers and checkbox bullets; check a line to strike it through.
 - **Extract** (`Ctrl+Alt+E`) runs your AI backend over the note and returns a **summary** plus **action items / decisions / questions / risks**. A task that mentions a time ("ship the build 10am tomorrow") comes back with that date/time pre-filled.
-- **Reminders** — set one on a note (right-click) or schedule action items straight from Extract; they all collect in a central **Reminders** list grouped *Overdue / Today / This week / Later*, with desktop notifications at the due time. Click to open the note, pencil to reschedule, ✕ to delete. Re-running Extract flags what's already scheduled so you never pile up duplicates.
+- **Reminders** — set one on a note (right-click) or schedule action items straight from Extract; they all collect in a central **Reminders** list grouped *Overdue / Today / This week / Later*, with desktop notifications at the due time while Notepatra is running (missed ones arrive as one summary at next launch). Click to open the note, pencil to reschedule, ✕ to delete. Re-running Extract flags what's already scheduled so you never pile up duplicates.
 
 #### 📐 Diagram tool — flow / ER / system diagrams from text (`.npd`)
 
@@ -557,7 +557,7 @@ cl /LD myplugin.cpp /Fe:myplugin.dll
 
 ## Tests
 
-Focused automated regression tests are wired through CMake + CTest and run in CI — **52 test suites** on the Full build (51 on Lite, which omits the WebEngine chart suite); all green, each with many assertions. A representative sample:
+Focused automated regression tests are wired through CMake + CTest and run in CI — **54 test suites** on the Full build (53 on Lite, which omits the WebEngine chart suite); all green, each with many assertions. A representative sample:
 
 - `test_lexers` — verifies every shipped QScintilla lexer produces real styling
 - `test_palette` — verifies the canonical 9-hue palette colors and bold/italic styles
