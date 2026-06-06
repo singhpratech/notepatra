@@ -35,6 +35,11 @@ public:
     // Path to the note this pop-out is mirroring. Read-only after ctor.
     QString notePath() const { return m_notePath; }
 
+    // Titlebar text. The ctor seeds the raw filename stem as a fallback;
+    // NotesPanel overrides it with the same prettified label the sidebar
+    // shows ("Noter 06", not "2026-06-06-145233-noter-06").
+    void setDisplayTitle(const QString &title);
+
     // Test hooks — let unit tests inspect chrome without yanking it
     // out via objectName lookup.
     QLabel      *titleLabelForTesting()  const { return m_titleLabel; }

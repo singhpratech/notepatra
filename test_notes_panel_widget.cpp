@@ -9,6 +9,7 @@
 // untouched.
 
 #include "notes.h"
+#include "notes_popout.h"
 #include "notes_sweep_dialog.h"
 #include "notes_sweep_prompt.h"
 
@@ -1356,6 +1357,132 @@ int main(int argc, char *argv[]) {
         EXPECT("accepted Extract appended 'Summary' as a real h2", summaryH2);
         EXPECT("accepted Extract appended 'Action Items' as a real h2",
                actionsH2);
+    }
+
+    // ── 33. Pop-out — close → reopen, re-point, pretty title ──────
+    // v0.1.111 audit (CRITICAL): the pop-out died permanently after its
+    // first close — close() only hid the WA_DeleteOnClose-less window, the
+    // panel pointer stayed non-null, and popOutActive() early-returned
+    // forever. The titlebar also showed the raw filename stem instead of
+    // the prettified sidebar label.
+    std::printf("\n--- 33. pop-out lifecycle + title ---\n");
+    {
+        // Filenames that exercise the shared prettifier end-to-end.
+        const QString rawA = QStringLiteral("2026-06-06-145233-noter-06.html");
+        const QString rawB = QStringLiteral("2026-06-06-150000-noter-07.html");
+        const QString pathA = QDir(panel.inboxFolder()).absoluteFilePath(rawA);
+        const QString pathB = QDir(panel.inboxFolder()).absoluteFilePath(rawB);
+        {
+            QFile f(pathA);
+            f.open(QIODevice::WriteOnly);
+            f.write("<html><body><p>pop-out body A</p></body></html>");
+        }
+        {
+            QFile f(pathB);
+            f.open(QIODevice::WriteOnly);
+            f.write("<html><body><p>pop-out body B</p></body></html>");
+        }
+
+        panel.openNoteFile(pathA);
+        QApplication::processEvents();
+
+        // (1) First pop-out: live, visible, mirrors the current note.
+        panel.popOutActive();
+        QApplication::processEvents();
+        NoterPopOut *p1 = panel.popOutForTesting();
+        EXPECT("popOutActive creates a pop-out", p1 != nullptr);
+        EXPECT("pop-out is visible", p1 && p1->isVisible());
+        EXPECT("pop-out mirrors the current note",
+               p1 && p1->notePath() == pathA);
+
+        // (1b) Titlebar = the sidebar display label, NOT the raw stem.
+        QString sidebarLabel;
+        if (auto *tree = panel.findChild<QTreeWidget *>(
+                QStringLiteral("noterSidebarTree"))) {
+            QList<QTreeWidgetItem *> stack;
+            for (int i = 0; i < tree->topLevelItemCount(); ++i)
+                stack << tree->topLevelItem(i);
+            while (!stack.isEmpty()) {
+                QTreeWidgetItem *it = stack.takeLast();
+                if (it->data(0, Qt::UserRole + 1).toString() == pathA)
+                    sidebarLabel = it->text(0);
+                for (int i = 0; i < it->childCount(); ++i)
+                    stack << it->child(i);
+            }
+        }
+        EXPECT("sidebar lists the note (label found)", !sidebarLabel.isEmpty());
+        EXPECT_STR_EQ("sidebar label is the prettified form",
+                      sidebarLabel, QStringLiteral("Noter 06"));
+        EXPECT_STR_EQ("pop-out titlebar equals the sidebar label",
+                      p1 && p1->titleLabelForTesting()
+                          ? p1->titleLabelForTesting()->text() : QString(),
+                      sidebarLabel);
+        EXPECT("pop-out titlebar is NOT the raw filename stem",
+               p1 && p1->titleLabelForTesting() &&
+                   p1->titleLabelForTesting()->text() !=
+                       QStringLiteral("2026-06-06-145233-noter-06"));
+
+        // (2) Close → reopen — the marquee regression. close() destroys the
+        // WA_DeleteOnClose window, the destroyed-connection nulls the panel
+        // pointer, and popOutActive must build a FRESH visible pop-out.
+        p1->close();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QApplication::processEvents();
+        EXPECT("panel pointer nulled after close (destroyed-connection)",
+               panel.popOutForTesting() == nullptr);
+
+        panel.popOutActive();
+        QApplication::processEvents();
+        NoterPopOut *p2 = panel.popOutForTesting();
+        EXPECT("pop-out comes back after close (was permanently dead pre-fix)",
+               p2 != nullptr);
+        EXPECT("reopened pop-out is visible", p2 && p2->isVisible());
+        EXPECT("reopened pop-out mirrors the current note",
+               p2 && p2->notePath() == pathA);
+
+        // (2b) Close again but DON'T pump DeferredDelete before re-invoking:
+        // covers the closed-but-not-yet-destroyed window. popOutActive must
+        // replace the hidden pop-out, and the LATE deferred delete of the
+        // old one must not wipe the new pointer.
+        p2->close();   // hidden now; deletion queued, not yet run
+        panel.popOutActive();
+        NoterPopOut *p3 = panel.popOutForTesting();
+        EXPECT("hidden-but-alive pop-out replaced immediately",
+               p3 != nullptr && p3 != p2);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QApplication::processEvents();
+        EXPECT("late delete of the REPLACED pop-out keeps the new pointer",
+               panel.popOutForTesting() == p3);
+        EXPECT("replacement pop-out is visible", p3 && p3->isVisible());
+
+        // (3) Switch the current note → popOutActive re-points.
+        panel.openNoteFile(pathB);
+        QApplication::processEvents();
+        panel.popOutActive();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QApplication::processEvents();
+        NoterPopOut *p4 = panel.popOutForTesting();
+        EXPECT("pop-out re-points to the newly opened note",
+               p4 && p4->notePath() == pathB);
+        EXPECT("re-pointed pop-out is visible", p4 && p4->isVisible());
+        EXPECT_STR_EQ("re-pointed titlebar follows the new note",
+                      p4 && p4->titleLabelForTesting()
+                          ? p4->titleLabelForTesting()->text() : QString(),
+                      QStringLiteral("Noter 07"));
+
+        // (4) Same note + still visible → reuse, not respawn.
+        panel.popOutActive();
+        QApplication::processEvents();
+        EXPECT("same-note popOutActive reuses the live window",
+               panel.popOutForTesting() == p4);
+
+        // Tidy up so no always-on-top window outlives this section.
+        if (NoterPopOut *last = panel.popOutForTesting()) {
+            last->close();
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            QApplication::processEvents();
+        }
+        EXPECT("cleanup: pop-out fully gone", panel.popOutForTesting() == nullptr);
     }
 
     // ── Summary ───────────────────────────────────────────────────

@@ -81,6 +81,10 @@ public:
     // (Ctrl+Alt+P). Power-user shortcut only — no UI button.
     void popOutActive();
 
+    // Test hook — the live pop-out (nullptr when none). It is a parentless
+    // top-level window, so findChild<NoterPopOut*>() can't reach it.
+    NoterPopOut *popOutForTesting() const { return m_popOut; }
+
     // Run the AI extraction over the note body + show the preview
     // dialog. Wired to the ✨ Extract button AND Ctrl+Alt+E.
     void endMeetingSweep();

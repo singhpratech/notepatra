@@ -20,7 +20,12 @@
 
 NoterPopOut::NoterPopOut(const QString &noteAbsPath, QWidget *parent)
     : QWidget(parent), m_notePath(noteAbsPath) {
-    setAttribute(Qt::WA_DeleteOnClose, false);
+    // Close destroys the window. The panel holds a raw pointer guarded by
+    // a destroyed-connection; with DeleteOnClose OFF the window merely hid
+    // on close, the pointer stayed non-null, and popOutActive() early-
+    // returned forever — the pop-out was permanently dead after its first
+    // close (v0.1.111 audit, CRITICAL).
+    setAttribute(Qt::WA_DeleteOnClose, true);
     setAttribute(Qt::WA_ShowWithoutActivating, true);
 
     // Frameless + always-on-top window. We keep Qt::Window so the
@@ -90,8 +95,10 @@ void NoterPopOut::buildUi() {
     connect(m_pinBtn, &QPushButton::clicked, this, &NoterPopOut::onTogglePin);
     tl->addWidget(m_pinBtn);
 
-    // Title — derived from filename. The integrator can update via
-    // setWindowTitle() if they want a fancier "Meeting · Project" form.
+    // Title — seeded from the filename stem as a fallback; the panel
+    // overrides it with the prettified sidebar label via setDisplayTitle()
+    // right after construction (raw "2026-06-06-145233-noter-06" stems
+    // are not user-facing).
     QString stem = QFileInfo(m_notePath).completeBaseName();
     if (stem.isEmpty()) stem = tr("Note");
     m_titleLabel = new QLabel(stem, m_titleBar);
@@ -144,6 +151,12 @@ void NoterPopOut::buildUi() {
         "padding: 10px 14px; font-size: 13px; }"
     );
     outer->addWidget(m_body, 1);
+}
+
+void NoterPopOut::setDisplayTitle(const QString &title) {
+    if (title.isEmpty()) return;
+    if (m_titleLabel) m_titleLabel->setText(title);
+    setWindowTitle(title);   // taskbar / alt-tab label too
 }
 
 void NoterPopOut::reloadFromDisk() {

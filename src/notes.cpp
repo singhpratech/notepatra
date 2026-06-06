@@ -1516,6 +1516,31 @@ void NotesPanel::refreshNoterModels() {
     m_modelListClient->listModels();
 }
 
+// Shared filename → display-title prettifier. SINGLE source of truth for
+// the user-facing label of a note file: the sidebar meeting leaves AND the
+// pop-out titlebar both go through here so they can never disagree.
+//   <YYYY-MM-DD-HHMM[SS]>-noter-06.html          → "Noter 06"
+//   <YYYY-MM-DD-HHMM[SS]>-untitled-meeting-03    → "Untitled 03"
+//   <ts>-renamed-by-user.html                    → "renamed by user"
+static QString noterDisplayTitleForFile(const QString &absPath) {
+    const QFileInfo fi(absPath);
+    QString display = fi.completeBaseName();
+    // Strip the date+time prefix (4 OR 6 digit time).
+    display.remove(QRegExp(QStringLiteral("^\\d{4}-\\d{2}-\\d{2}-\\d{4,6}-")));
+    display.replace(QChar('-'), QChar(' '));
+    if (display.isEmpty()) display = fi.completeBaseName();
+    // v0.1.97 — "untitled meeting 01" is too long for the sidebar and
+    // elides before the counter shows ("unti…"). Collapse it to
+    // "Untitled 01" so the 01/02/03 the user asked for stays visible.
+    display.replace(QRegExp(QStringLiteral("^untitled meeting\\s*")),
+                    QStringLiteral("Untitled "));
+    // v0.1.98 — new notes use the "noter-NN" slug → display "noter NN";
+    // capitalize to "Noter NN" so it reads as the user asked.
+    display.replace(QRegExp(QStringLiteral("^noter\\s*")),
+                    QStringLiteral("Noter "));
+    return display;
+}
+
 void NotesPanel::populateMeetingsRoot(QTreeWidgetItem *root, const QString &filter) {
     QDir d(inboxFolder());
     QFileInfoList all = d.entryInfoList(QStringList() << QStringLiteral("*.html"),
@@ -1567,20 +1592,8 @@ void NotesPanel::populateMeetingsRoot(QTreeWidgetItem *root, const QString &filt
             // Legacy formats also handled:
             //   <YYYY-MM-DD-HHMM>-untitled-meeting.html  (4-digit time)
             //   <YYYY-MM-DD-HHMMSS>-untitled-meeting.html  (6-digit time)
-            QString display = fi.completeBaseName();
-            // Strip the date+time prefix (4 OR 6 digit time).
-            display.remove(QRegExp(QStringLiteral("^\\d{4}-\\d{2}-\\d{2}-\\d{4,6}-")));
-            display.replace(QChar('-'), QChar(' '));
-            if (display.isEmpty()) display = fi.completeBaseName();
-            // v0.1.97 — "untitled meeting 01" is too long for the sidebar and
-            // elides before the counter shows ("unti…"). Collapse it to
-            // "Untitled 01" so the 01/02/03 the user asked for stays visible.
-            display.replace(QRegExp(QStringLiteral("^untitled meeting\\s*")),
-                            QStringLiteral("Untitled "));
-            // v0.1.98 — new notes use the "noter-NN" slug → display "noter NN";
-            // capitalize to "Noter NN" so it reads as the user asked.
-            display.replace(QRegExp(QStringLiteral("^noter\\s*")),
-                            QStringLiteral("Noter "));
+            // Shared with the pop-out titlebar — see noterDisplayTitleForFile.
+            const QString display = noterDisplayTitleForFile(fi.absoluteFilePath());
 
             // v0.1.97 — NATIVE item (no setItemWidget). Click-to-open,
             // double-click rename, F2 all work. The pencil + ✕ buttons
@@ -2475,13 +2488,33 @@ bool NotesPanel::promptSaveCopyAs() {
 
 void NotesPanel::popOutActive() {
     if (m_currentPath.isEmpty()) return;
-    if (m_popOut) {
+    // Reuse only a LIVE pop-out that is still on screen AND mirrors the
+    // current note. The window is WA_DeleteOnClose (closing destroys it and
+    // the destroyed-connection below nulls the pointer), but the pointer
+    // can also be stale-but-alive: hidden (close not fully processed yet)
+    // or pointing at a previously open note. Both get a fresh pop-out —
+    // pre-fix the unconditional early-return left the pop-out permanently
+    // dead after its first close.
+    if (m_popOut && m_popOut->isVisible() &&
+        m_popOut->notePath() == m_currentPath) {
         m_popOut->raise();
         m_popOut->activateWindow();
         return;
     }
+    if (m_popOut) {
+        m_popOut->deleteLater();
+        m_popOut = nullptr;
+    }
     m_popOut = new NoterPopOut(m_currentPath);
-    connect(m_popOut, &QObject::destroyed, this, [this]() { m_popOut = nullptr; });
+    // Titlebar shows the same prettified label as the sidebar leaf
+    // ("Noter 06"), never the raw filename stem.
+    m_popOut->setDisplayTitle(noterDisplayTitleForFile(m_currentPath));
+    // Null the pointer when the window dies — but only if the dying object
+    // is the one we currently track, so the deferred delete of a REPLACED
+    // pop-out can't wipe its successor.
+    connect(m_popOut, &QObject::destroyed, this, [this](QObject *gone) {
+        if (static_cast<QObject *>(m_popOut) == gone) m_popOut = nullptr;
+    });
     m_popOut->show();
 }
 
