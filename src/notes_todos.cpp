@@ -311,11 +311,31 @@ QString NotesTodos::stripHtml(const QString &fragment) {
 }
 
 QString NotesTodos::parseMeetingTitle(const QString &html) {
+    // Title-identity SSOT — the notepatra-title head meta wins when
+    // present (it is rewritten on every save/rename, while the body H1
+    // can go stale). Small local regex + decode on purpose: this file
+    // must not grow a NotesStorage dependency (its test target links
+    // neither). Decode order: &amp; LAST so "&amp;lt;" → literal "&lt;".
+    static const QRegularExpression kTitleMeta(
+        QStringLiteral("<meta\\s+name=\"notepatra-title\"\\s+content=(['\"])(.*?)\\1"),
+        QRegularExpression::CaseInsensitiveOption
+            | QRegularExpression::DotMatchesEverythingOption);
+    QRegularExpressionMatch m = kTitleMeta.match(html);
+    if (m.hasMatch()) {
+        QString t = m.captured(2);
+        t.replace(QLatin1String("&lt;"),   QLatin1String("<"));
+        t.replace(QLatin1String("&gt;"),   QLatin1String(">"));
+        t.replace(QLatin1String("&quot;"), QLatin1String("\""));
+        t.replace(QLatin1String("&#39;"),  QLatin1String("'"));
+        t.replace(QLatin1String("&amp;"),  QLatin1String("&"));
+        t = t.simplified();
+        if (!t.isEmpty()) return t;
+    }
     static const QRegularExpression kMeet(
         QStringLiteral("<h1[^>]*class=\"[^\"]*\\bmeet-title\\b[^\"]*\"[^>]*>(.*?)</h1>"),
         QRegularExpression::CaseInsensitiveOption
             | QRegularExpression::DotMatchesEverythingOption);
-    QRegularExpressionMatch m = kMeet.match(html);
+    m = kMeet.match(html);
     if (m.hasMatch()) return stripHtml(m.captured(1));
     // Fallback: <title>...</title>.
     static const QRegularExpression kTitle(

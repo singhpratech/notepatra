@@ -653,6 +653,82 @@ static void test_set_text(const QString &workDir) {
            !n.setText(QString(), QStringLiteral("x")));
 }
 
+// ─── 14) meeting-title precedence (title-identity SSOT) ─────────────
+// notepatra-title meta > h1.meet-title > <title>. The meta is rewritten
+// on every save/rename while the body H1 can go stale — todos.db
+// meeting_title must converge on the meta when present. Tested through
+// the user-visible contract: reindexNote() + find().meetingTitle
+// (parseMeetingTitle itself is private).
+
+static void test_parse_meeting_title(const QString &workDir) {
+    std::printf("\n[parse_meeting_title]\n");
+    NotesTodos n(workDir + "/title_meta.db");
+    EXPECT("open()", n.open(nullptr));
+
+    int seq = 0;
+    // Reindex a one-action note built from `docPrefix` (everything up to
+    // and including <body...>) and read back the row's meeting_title.
+    auto titleFor = [&n, &workDir, &seq](const QString &docPrefix) -> QString {
+        ++seq;
+        const QString id = QStringLiteral("title-act-%1").arg(seq);
+        const QString notePath =
+            workDir + QStringLiteral("/title-note-%1.html").arg(seq);
+        const QString html = docPrefix
+            + QStringLiteral("<div class=\"b b-act\" data-id=\"") + id
+            + QStringLiteral("\" data-status=\"open\">act</div></body></html>");
+        n.reindexNote(notePath, html);
+        return n.find(id).meetingTitle;
+    };
+
+    // Meta wins over BOTH the h1.meet-title and <title>.
+    EXPECT_EQ("notepatra-title meta wins over h1 + title",
+              titleFor(QStringLiteral(
+                  "<html><head><title>Old Title</title>"
+                  "<meta name=\"notepatra-title\" content=\"Fresh Name\">"
+                  "</head><body>"
+                  "<h1 class=\"meet-title\">Stale H1</h1>")),
+              QStringLiteral("Fresh Name"));
+
+    // Entity decode — &amp; LAST, so escaped hostile chars come back.
+    EXPECT_EQ("meta entities decoded",
+              titleFor(QStringLiteral(
+                  "<html><head><meta name=\"notepatra-title\" "
+                  "content=\"R&amp;D &lt;review&gt; &quot;q&quot; &#39;m&#39;\">"
+                  "</head><body>")),
+              QStringLiteral("R&D <review> \"q\" 'm'"));
+
+    // Unicode passes through as-is (UTF-8 byte escapes — no raw glyphs
+    // in this source file).
+    EXPECT_EQ("meta unicode title passes through",
+              titleFor(QStringLiteral(
+                           "<html><head><meta name=\"notepatra-title\" content=\"")
+                       + QString::fromUtf8("\xE8\xAE\xBE\xE8\xAE\xA1\xE5\x91\xA8"
+                                           "\xE4\xBC\x9A \xF0\x9F\x9A\x80")
+                       + QStringLiteral("\"></head><body>")),
+              QString::fromUtf8("\xE8\xAE\xBE\xE8\xAE\xA1\xE5\x91\xA8\xE4\xBC\x9A "
+                                "\xF0\x9F\x9A\x80"));
+
+    // Empty meta content falls through to the h1.
+    EXPECT_EQ("empty meta falls through to h1",
+              titleFor(QStringLiteral(
+                  "<html><head><meta name=\"notepatra-title\" content=\"\"></head>"
+                  "<body><h1 class=\"meet-title\">From H1</h1>")),
+              QStringLiteral("From H1"));
+
+    // REGRESSION PIN — meta-absent inputs return exactly today's result.
+    EXPECT_EQ("no meta: h1.meet-title wins (unchanged behavior)",
+              titleFor(QStringLiteral(
+                  "<html><head><title>Doc Title</title></head><body>"
+                  "<h1 class=\"meet-title\">Q2 Sync</h1>")),
+              QStringLiteral("Q2 Sync"));
+    EXPECT_EQ("no meta, no h1: <title> fallback (unchanged behavior)",
+              titleFor(QStringLiteral(
+                  "<html><head><title>Doc Title</title></head><body>")),
+              QStringLiteral("Doc Title"));
+    EXPECT("no meta, no h1, no title: empty (unchanged behavior)",
+           titleFor(QStringLiteral("<html><body>")).isEmpty());
+}
+
 // ─── main ────────────────────────────────────────────────────────────
 
 int main(int argc, char *argv[]) {
@@ -682,6 +758,7 @@ int main(int argc, char *argv[]) {
     test_rebuild_from_html(root);
     test_add_quick_todo(root);
     test_set_text(root);
+    test_parse_meeting_title(root);
 
     // ─── 11) trash + restore + permanent delete (v0.1.95+) ───────
     std::printf("\n[trash_lifecycle]\n");

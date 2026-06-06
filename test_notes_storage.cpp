@@ -90,6 +90,13 @@ private slots:
     void plainText_emptyAndTagOnly();
     // ── durability budget (A7) ──
     void durability_oneMbSave_latencyBudget();
+    // ── title identity (notepatra-title meta = display-title SSOT) ──
+    void title_withTitleMeta_insertionShapes();
+    void title_metaRoundTrip_hostileAndUnicode();
+    void title_prettyTitleFromFilename_parityTable();
+    void title_titleInfo_precedenceAndHeuristic();
+    void title_cache_invalidationAndSaveNote();
+    void title_saveNote_preservesMetaAndDataAttrs();
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -797,6 +804,264 @@ void TestNotesStorage::durability_oneMbSave_latencyBudget() {
     QVERIFY2(worst < 500,
              qPrintable(QStringLiteral("1 MB save took %1 ms (budget 500 ms)")
                             .arg(worst)));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Title identity — notepatra-title meta SSOT (resolver + injector).
+// No QtGui in this target: Qt-toHtml-shaped inputs are hardcoded fixture
+// strings; CJK/emoji fixtures are built from UTF-8 byte escapes so the
+// source file stays pure ASCII.
+// ═══════════════════════════════════════════════════════════════════════
+
+// Hand-written legacy-shaped note (no notepatra-title meta unless given).
+static QString fixtureNoteHtml(const QString &h1Inner,
+                               const QString &escapedMetaTitle = QString()) {
+    QString head = QStringLiteral(
+        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n");
+    if (!escapedMetaTitle.isEmpty())
+        head += QStringLiteral("<meta name=\"notepatra-title\" content=\"")
+              + escapedMetaTitle + QStringLiteral("\">\n");
+    return head
+        + QStringLiteral("<title>t</title>\n</head>\n<body>\n"
+                         "<h1 class=\"meet-title\">") + h1Inner
+        + QStringLiteral("</h1>\n<p>body text</p>\n</body>\n</html>\n");
+}
+
+static bool writeRawFile(const QString &path, const QString &content) {
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+    const QByteArray b = content.toUtf8();
+    return f.write(b) == b.size();
+}
+
+void TestNotesStorage::title_withTitleMeta_insertionShapes() {
+    // (a) Template-shaped input — newNoteHtml already carries the meta
+    // from birth; withTitleMeta must REPLACE it, leaving exactly one tag.
+    QTemporaryDir td;
+    QVERIFY(td.isValid());
+    NotesStorage s(td.path());
+    const QString tpl = s.newNoteHtml(QStringLiteral("Noter 01"),
+                                      QDateTime::currentDateTime(), QStringList());
+    QVERIFY(tpl.contains(QStringLiteral("notepatra-title")));
+    QCOMPARE(NotesStorage::titleMetaIn(tpl), QStringLiteral("Noter 01"));
+
+    const QString replaced = NotesStorage::withTitleMeta(tpl, QStringLiteral("Renamed"));
+    QCOMPARE(replaced.count(QStringLiteral("notepatra-title")), 1);
+    QCOMPARE(NotesStorage::titleMetaIn(replaced), QStringLiteral("Renamed"));
+
+    // (b) Hardcoded Qt5-toHtml-shaped fixture (no QtGui in this target).
+    const QString qtShape = QStringLiteral(
+        "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" "
+        "\"http://www.w3.org/TR/REC-html40/strict.dtd\">\n"
+        "<html><head><meta name=\"qrichtext\" content=\"1\" />"
+        "<style type=\"text/css\">\np, li { white-space: pre-wrap; }\n"
+        "</style></head><body style=\" font-family:'Sans Serif'; "
+        "font-size:10pt; font-weight:400; font-style:normal;\">\n"
+        "<p>x</p></body></html>");
+    const QString injected = NotesStorage::withTitleMeta(qtShape, QStringLiteral("T1"));
+    const int headEnd = injected.indexOf(QStringLiteral("</head>"));
+    const int tagAt   = injected.indexOf(QStringLiteral("notepatra-title"));
+    QVERIFY(tagAt > 0);
+    QVERIFY(tagAt < headEnd);                       // landed inside <head>
+    QCOMPARE(NotesStorage::titleMetaIn(injected), QStringLiteral("T1"));
+
+    // Idempotence: double-apply leaves exactly ONE tag, latest title wins.
+    const QString twice = NotesStorage::withTitleMeta(injected, QStringLiteral("T2"));
+    QCOMPARE(twice.count(QStringLiteral("notepatra-title")), 1);
+    QCOMPARE(NotesStorage::titleMetaIn(twice), QStringLiteral("T2"));
+
+    // (c) No <head> → inserted before <body>.
+    const QString noHead = NotesStorage::withTitleMeta(
+        QStringLiteral("<html><body><p>x</p></body></html>"), QStringLiteral("NH"));
+    const int metaIdx = noHead.indexOf(QStringLiteral("notepatra-title"));
+    const int bodyIdx = noHead.indexOf(QStringLiteral("<body"));
+    QVERIFY(metaIdx >= 0);
+    QVERIFY(metaIdx < bodyIdx);
+    QCOMPARE(NotesStorage::titleMetaIn(noHead), QStringLiteral("NH"));
+
+    // (d) No head, no body → prepended.
+    const QString frag = NotesStorage::withTitleMeta(
+        QStringLiteral("<p>frag</p>"), QStringLiteral("FR"));
+    QVERIFY(frag.startsWith(QStringLiteral("<meta name=\"notepatra-title\"")));
+    QCOMPARE(NotesStorage::titleMetaIn(frag), QStringLiteral("FR"));
+
+    // (e) titleMetaIn tolerates single-quoted content.
+    QCOMPARE(NotesStorage::titleMetaIn(
+                 QStringLiteral("<head><meta name=\"notepatra-title\" "
+                                "content='Solo'></head>")),
+             QStringLiteral("Solo"));
+}
+
+void TestNotesStorage::title_metaRoundTrip_hostileAndUnicode() {
+    const QString base = QStringLiteral(
+        "<html><head></head><body><p>x</p></body></html>");
+
+    const QStringList titles = {
+        QStringLiteral("Weekly sync"),
+        QStringLiteral("R&D \"quarterly\" <review> & 'more'"),
+        // CJK + emoji built from UTF-8 byte escapes (no raw glyphs in
+        // this source file — non-UTF-8 corruption class).
+        QString::fromUtf8("\xE8\xAE\xBE\xE8\xAE\xA1\xE5\x91\xA8\xE4\xBC\x9A "
+                          "\xF0\x9F\x9A\x80"),
+        // Pre-escaped literal — decode order (&amp; LAST) must hand back
+        // the literal "&lt;tag&gt;" the user typed, not "<tag>".
+        QStringLiteral("literal &lt;tag&gt; title"),
+    };
+    for (const QString &t : titles) {
+        const QString html = NotesStorage::withTitleMeta(base, t);
+        QVERIFY2(NotesStorage::titleMetaIn(html) == t,
+                 qPrintable(QStringLiteral("round-trip failed for '%1' → '%2'")
+                                .arg(t, NotesStorage::titleMetaIn(html))));
+    }
+
+    // Empty title REMOVES the tag (never write an empty meta).
+    const QString withT = NotesStorage::withTitleMeta(base, QStringLiteral("X"));
+    QVERIFY(withT.contains(QStringLiteral("notepatra-title")));
+    const QString cleared = NotesStorage::withTitleMeta(withT, QString());
+    QVERIFY(!cleared.contains(QStringLiteral("notepatra-title")));
+    QVERIFY(NotesStorage::titleMetaIn(cleared).isEmpty());
+    // Whitespace-only counts as empty too.
+    QVERIFY(!NotesStorage::withTitleMeta(withT, QStringLiteral("   "))
+                 .contains(QStringLiteral("notepatra-title")));
+}
+
+void TestNotesStorage::title_prettyTitleFromFilename_parityTable() {
+    // Parity vs the legacy noterDisplayTitleForFile outputs — pins zero
+    // display regressions for the QRegExp → QRegularExpression port.
+    struct Row { const char *path; const char *expected; const char *label; };
+    const Row rows[] = {
+        { "/in/2026-05-24-140312-noter-06.html",  "Noter 06",   "6-digit time noter" },
+        { "/in/2026-05-24-1403-noter-07.html",    "Noter 07",   "4-digit legacy time" },
+        { "/in/2026-05-24-140312-untitled-meeting-03.html",
+                                                  "Untitled 03", "untitled collapse" },
+        { "/t/.trashed-1717-2026-05-24-1403-untitled-meeting-05.html",
+                                                  "Untitled 05", "trashed prefix" },
+        { "/t/.trashed-99-2026-01-02-090011-noter-08.html",
+                                                  "Noter 08",    "trashed 6-digit" },
+        { "/in/2026-05-24-140312-weekly-sync (2).html",
+                                                  "weekly sync (2)", "dedup suffix" },
+        { "/in/2026-05-24-1403-quarterly-plan.html",
+                                                  "quarterly plan",  "custom name" },
+        { "/in/custom-name.html",                 "custom name", "no date prefix" },
+    };
+    for (const Row &r : rows) {
+        const QString got =
+            NotesStorage::prettyTitleFromFilename(QString::fromUtf8(r.path));
+        QVERIFY2(got == QString::fromUtf8(r.expected),
+                 qPrintable(QStringLiteral("[%1] expected '%2' got '%3'")
+                                .arg(QString::fromUtf8(r.label),
+                                     QString::fromUtf8(r.expected), got)));
+    }
+}
+
+void TestNotesStorage::title_titleInfo_precedenceAndHeuristic() {
+    QTemporaryDir td;
+    QVERIFY(td.isValid());
+    NotesStorage s(td.path());
+
+    // (1) Meta wins; legacyH1 still populated (the counter scan needs it).
+    const QString pMeta = td.path() + "/2026-01-01-1200-noter-01.html";
+    const QString cafe = QString::fromUtf8("Caf\xC3\xA9 Sync");
+    QVERIFY(writeRawFile(pMeta, fixtureNoteHtml(QStringLiteral("Noter 01"),
+                                                QString::fromUtf8("Caf\xC3\xA9 Sync"))));
+    NotesStorage::TitleInfo ti = s.titleInfoForFile(pMeta);
+    QCOMPARE(ti.display, cafe);
+    QCOMPARE(ti.legacyH1, QStringLiteral("Noter 01"));
+
+    // (2) The audit fix: default filename + customized H1 + no meta → H1.
+    const QString pAudit = td.path() + "/2026-01-01-1200-noter-02.html";
+    QVERIFY(writeRawFile(pAudit, fixtureNoteHtml(QStringLiteral("Roadmap review"))));
+    QCOMPARE(s.displayTitleForFile(pAudit), QStringLiteral("Roadmap review"));
+
+    // (2b) Dedup default shape "noter-03 (2)" still counts as default.
+    const QString pDedup = td.path() + "/2026-01-01-1200-noter-03 (2).html";
+    QVERIFY(writeRawFile(pDedup, fixtureNoteHtml(QStringLiteral("Custom T"))));
+    QCOMPARE(s.displayTitleForFile(pDedup), QStringLiteral("Custom T"));
+
+    // (3) The no-hijack guard: custom filename + stale default H1 → the
+    // user's explicit rename wins, NEVER the stale "Noter 01" H1.
+    const QString pRenamed = td.path() + "/2026-01-01-1200-weekly-sync.html";
+    QVERIFY(writeRawFile(pRenamed, fixtureNoteHtml(QStringLiteral("Noter 01"))));
+    QCOMPARE(s.displayTitleForFile(pRenamed), QStringLiteral("weekly sync"));
+
+    // (4) Custom filename + custom H1 (no meta) → filename-pretty
+    // (bit-for-bit today's label — zero regression).
+    const QString pBoth = td.path() + "/2026-01-01-1200-team-retro.html";
+    QVERIFY(writeRawFile(pBoth, fixtureNoteHtml(QStringLiteral("Big Plans"))));
+    QCOMPARE(s.displayTitleForFile(pBoth), QStringLiteral("team retro"));
+
+    // (5) Default H1 in "Untitled NN" form does not trigger the audit fix.
+    const QString pUnt = td.path() + "/2026-01-01-1200-untitled-meeting-04.html";
+    QVERIFY(writeRawFile(pUnt, fixtureNoteHtml(QStringLiteral("Untitled 04"))));
+    QCOMPARE(s.displayTitleForFile(pUnt), QStringLiteral("Untitled 04"));
+
+    // (6) Missing file → filename-pretty, and NOT cached: creating the
+    // file afterwards must be picked up immediately.
+    const QString pGhost = td.path() + "/2026-01-01-1200-ghost-note.html";
+    QCOMPARE(s.displayTitleForFile(pGhost), QStringLiteral("ghost note"));
+    QVERIFY(writeRawFile(pGhost, fixtureNoteHtml(QStringLiteral("Boo"),
+                                                 QStringLiteral("Now Here"))));
+    QCOMPARE(s.displayTitleForFile(pGhost), QStringLiteral("Now Here"));
+}
+
+void TestNotesStorage::title_cache_invalidationAndSaveNote() {
+    QTemporaryDir td;
+    QVERIFY(td.isValid());
+    NotesStorage s(td.path());
+    const QString p = td.path() + "/2026-01-01-1200-noter-01.html";
+
+    // Resolve once (cache fill).
+    QVERIFY(writeRawFile(p, fixtureNoteHtml(QStringLiteral("Noter 01"),
+                                            QStringLiteral("One"))));
+    QCOMPARE(s.displayTitleForFile(p), QStringLiteral("One"));
+
+    // External rewrite with a different size → (mtime,size) key self-heals.
+    QVERIFY(writeRawFile(p, fixtureNoteHtml(QStringLiteral("Noter 01"),
+                                            QStringLiteral("Two longer title"))));
+    QCOMPARE(s.displayTitleForFile(p), QStringLiteral("Two longer title"));
+
+    // Same-size rewrite + explicit invalidation → fresh value guaranteed
+    // even when mtime granularity would have served the stale entry.
+    QVERIFY(writeRawFile(p, fixtureNoteHtml(QStringLiteral("Noter 01"),
+                                            QStringLiteral("AAA"))));
+    QCOMPARE(s.displayTitleForFile(p), QStringLiteral("AAA"));
+    QVERIFY(writeRawFile(p, fixtureNoteHtml(QStringLiteral("Noter 01"),
+                                            QStringLiteral("BBB"))));
+    s.invalidateTitleCache(p);
+    QCOMPARE(s.displayTitleForFile(p), QStringLiteral("BBB"));
+
+    // saveNote() drops its own cache entry — no panel discipline needed.
+    QCOMPARE(s.displayTitleForFile(p), QStringLiteral("BBB"));   // cached
+    QString err;
+    QVERIFY2(s.saveNote(p, NotesStorage::withTitleMeta(
+                              fixtureNoteHtml(QStringLiteral("Noter 01")),
+                              QStringLiteral("Three")), &err),
+             qPrintable(err));
+    QCOMPARE(s.displayTitleForFile(p), QStringLiteral("Three"));
+}
+
+void TestNotesStorage::title_saveNote_preservesMetaAndDataAttrs() {
+    // The head passes through saveNote VERBATIM (only the <body> region is
+    // sanitized) — the injected meta must survive, and b-act data-* attrs
+    // must keep working (the todos reindex parses them post-save).
+    QTemporaryDir td;
+    QVERIFY(td.isValid());
+    NotesStorage s(td.path());
+    const QString p = td.path() + "/2026-01-01-1200-noter-01.html";
+
+    const QString html = NotesStorage::withTitleMeta(QStringLiteral(
+        "<!doctype html><html><head><title>t</title></head><body>"
+        "<h1 class=\"meet-title\">Kept</h1>"
+        "<div class=\"b b-act\" data-id=\"abc\" data-status=\"open\">do thing</div>"
+        "</body></html>"), QStringLiteral("Kept & Title"));
+
+    QString err;
+    QVERIFY2(s.saveNote(p, html, &err), qPrintable(err));
+    const QString back = s.readNote(p, nullptr);
+    QCOMPARE(NotesStorage::titleMetaIn(back), QStringLiteral("Kept & Title"));
+    QVERIFY(back.contains(QStringLiteral("data-id=\"abc\"")));
+    QVERIFY(back.contains(QStringLiteral("data-status=\"open\"")));
+    QVERIFY(back.contains(QStringLiteral("meet-title")));
 }
 
 QTEST_MAIN(TestNotesStorage)

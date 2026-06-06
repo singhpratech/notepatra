@@ -37,6 +37,7 @@
 #include <QString>
 #include <QStringList>
 #include <QDateTime>
+#include <QHash>
 
 class NotesStorage : public QObject {
     Q_OBJECT
@@ -90,6 +91,48 @@ public:
     // fallback if everything sanitizes away to empty.
     static QString safeFilename(const QString &raw);
 
+    // ── Title identity (single source of truth) ──────────────────────
+    // The display title of a note lives in a dedicated head meta:
+    //   <meta name="notepatra-title" content="...">
+    // The tag name never existed before this feature, so legacy files
+    // cannot carry stale values. The resolver below is READ-ONLY (no
+    // file is ever rewritten on load/listing); a note adopts the meta
+    // the first time it is saved or renamed.
+    struct TitleInfo {
+        QString display;   // what every UI surface shows
+        QString legacyH1;  // first <h1> inner text (best-effort; the
+                           // "Noter NN" counter scan needs it even when
+                           // the meta wins)
+    };
+
+    // Resolve the display title for a note file. Cached by (mtime, size);
+    // read failures fall back to the filename prettifier and are NOT
+    // cached so a later permission fix self-heals.
+    TitleInfo titleInfoForFile(const QString &absPath) const;
+    QString   displayTitleForFile(const QString &absPath) const;
+    void      invalidateTitleCache(const QString &absPath);
+
+    // Parse the notepatra-title meta out of raw HTML (entity-decoded).
+    // Returns empty if absent.
+    static QString titleMetaIn(const QString &html);
+
+    // Idempotent upsert of the notepatra-title meta into <head> (falls
+    // back to before-<body>, else prepend). An empty title REMOVES any
+    // existing tag instead of writing an empty meta.
+    static QString withTitleMeta(QString fullHtml, const QString &title);
+
+    // First <h1 ...>...</h1> inner text — tags stripped, entities
+    // decoded, simplified, capped at 200 chars. Empty if no h1.
+    static QString legacyH1In(const QString &html);
+
+    // Filename → display-title prettifier (the legacy fallback). Strips
+    // a leading ".trashed-<ts>-", the date+time prefix (4 OR 6 digit
+    // time), maps dashes to spaces, and collapses the default slugs:
+    //   <ts>-noter-06.html              → "Noter 06"
+    //   <ts>-untitled-meeting-03.html   → "Untitled 03"
+    //   <ts>-renamed-by-user.html       → "renamed by user"
+    static QString prettyTitleFromFilename(const QString &absPath);
+
     // List all .html files under root recursively, sorted by mtime desc.
     // Skip files ending in .bak1..bak<depth>, .draft, .tmp — plus .lock,
     // a legacy sidecar from builds that still shipped the (now removed)
@@ -119,6 +162,12 @@ private:
 
     QString m_root;
     int     m_backupDepth = 5;
+
+    // Title-resolver cache. Keyed by absolute path, validated against
+    // the file's current (mtimeMs, size) so external edits self-heal.
+    // saveNote() drops its own entry on every successful save.
+    struct TitleCacheEnt { qint64 mtimeMs; qint64 size; TitleInfo info; };
+    mutable QHash<QString, TitleCacheEnt> m_titleCache;
 };
 
 #endif // NOTES_STORAGE_H

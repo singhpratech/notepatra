@@ -316,7 +316,11 @@ bool NotesStorage::saveNote(const QString &absolutePath, const QString &fullHtml
 #endif
 
     // (6) Emit signal + clear the draft sidecar (a successful save
-    //     supersedes any outstanding draft).
+    //     supersedes any outstanding draft). Drop the title-resolver
+    //     cache entry FIRST so any handler re-reading the display title
+    //     sees the just-written content — this auto-invalidates every
+    //     save path without requiring panel discipline.
+    m_titleCache.remove(absolutePath);
     clearDraft(absolutePath);
     emit noteSaved(absolutePath);
     return true;
@@ -977,6 +981,201 @@ QString NotesStorage::safeFilename(const QString &raw) {
     }
 
     return s;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Title identity — the notepatra-title meta is the on-disk single source
+// of truth for a note's display title. Everything here is QtCore-only
+// (test_notes_storage links Core+Network+Test — no QtGui allowed).
+//
+// Escaping uses the SAME 5-entity table as NotesTemplate::escapeText so
+// the template-written meta and the save-path-injected meta round-trip
+// identically. Decode order matters: &amp; LAST, so "&amp;lt;" comes
+// back as the literal "&lt;" the user typed, not "<".
+// ═══════════════════════════════════════════════════════════════════════
+
+static QString titleAttrEscape(const QString &raw) {
+    QString out;
+    out.reserve(raw.size() + 16);
+    for (const QChar c : raw) {
+        switch (c.unicode()) {
+            case '&':  out += QStringLiteral("&amp;");  break;
+            case '<':  out += QStringLiteral("&lt;");   break;
+            case '>':  out += QStringLiteral("&gt;");   break;
+            case '"':  out += QStringLiteral("&quot;"); break;
+            case '\'': out += QStringLiteral("&#39;");  break;
+            default:   out += c;
+        }
+    }
+    return out;
+}
+
+static QString titleAttrUnescape(QString s) {
+    s.replace(QLatin1String("&lt;"),   QLatin1String("<"));
+    s.replace(QLatin1String("&gt;"),   QLatin1String(">"));
+    s.replace(QLatin1String("&quot;"), QLatin1String("\""));
+    s.replace(QLatin1String("&#39;"),  QLatin1String("'"));
+    s.replace(QLatin1String("&amp;"),  QLatin1String("&"));   // LAST
+    return s;
+}
+
+// The parse regex tolerates single- OR double-quoted content; the writer
+// always emits double quotes.
+static const QRegularExpression &titleMetaRe() {
+    static const QRegularExpression re(
+        QStringLiteral("<meta\\s+name=\"notepatra-title\"\\s+content=(['\"])(.*?)\\1"),
+        QRegularExpression::CaseInsensitiveOption
+            | QRegularExpression::DotMatchesEverythingOption);
+    return re;
+}
+
+QString NotesStorage::titleMetaIn(const QString &html) {
+    const QRegularExpressionMatch m = titleMetaRe().match(html);
+    if (!m.hasMatch()) return QString();
+    return titleAttrUnescape(m.captured(2));
+}
+
+QString NotesStorage::withTitleMeta(QString fullHtml, const QString &title) {
+    // Remove ALL existing occurrences first — this is what makes the
+    // upsert idempotent (double-apply leaves exactly one tag).
+    static const QRegularExpression anyTitleMeta(
+        QStringLiteral("<meta\\s+name=\"notepatra-title\"[^>]*>\\n?"),
+        QRegularExpression::CaseInsensitiveOption);
+    fullHtml.remove(anyTitleMeta);
+
+    if (title.trimmed().isEmpty())
+        return fullHtml;          // never write an empty meta
+
+    const QString tag = QStringLiteral("<meta name=\"notepatra-title\" content=\"")
+                      + titleAttrEscape(title) + QStringLiteral("\">\n");
+
+    // (a) after the first <head ...> ; (b) else before the first <body ;
+    // (c) else prepend. Qt5's QTextDocument::toHtml() does emit a <head>,
+    // but the fallbacks guard head-shape variance across point releases.
+    static const QRegularExpression headOpenRe(
+        QStringLiteral("<head[^>]*>"), QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression bodyOpenRe(
+        QStringLiteral("<body"), QRegularExpression::CaseInsensitiveOption);
+
+    const QRegularExpressionMatch headM = headOpenRe.match(fullHtml);
+    if (headM.hasMatch()) {
+        fullHtml.insert(headM.capturedEnd(), QStringLiteral("\n") + tag);
+        return fullHtml;
+    }
+    const QRegularExpressionMatch bodyM = bodyOpenRe.match(fullHtml);
+    if (bodyM.hasMatch()) {
+        fullHtml.insert(bodyM.capturedStart(), tag);
+        return fullHtml;
+    }
+    return tag + fullHtml;
+}
+
+QString NotesStorage::legacyH1In(const QString &html) {
+    static const QRegularExpression h1Re(
+        QStringLiteral("<h1\\b[^>]*>(.*?)</h1>"),
+        QRegularExpression::CaseInsensitiveOption
+            | QRegularExpression::DotMatchesEverythingOption);
+    const QRegularExpressionMatch m = h1Re.match(html);
+    if (!m.hasMatch()) return QString();
+    QString inner = m.captured(1);
+    static const QRegularExpression tagRe(QStringLiteral("<[^>]*>"));
+    inner.replace(tagRe, QStringLiteral(" "));
+    inner.replace(QLatin1String("&nbsp;"), QLatin1String(" "));
+    inner = titleAttrUnescape(inner);
+    return inner.simplified().left(200);
+}
+
+QString NotesStorage::prettyTitleFromFilename(const QString &absPath) {
+    const QFileInfo fi(absPath);
+    QString display = fi.completeBaseName();
+    // Trash prefix FIRST so trashed notes prettify like live ones.
+    static const QRegularExpression trashedRe(
+        QStringLiteral("^\\.trashed-\\d+-"));
+    display.remove(trashedRe);
+    // Date+time prefix — 4 OR 6 digit time.
+    static const QRegularExpression datePrefixRe(
+        QStringLiteral("^\\d{4}-\\d{2}-\\d{2}-\\d{4,6}-"));
+    display.remove(datePrefixRe);
+    display.replace(QChar('-'), QChar(' '));
+    if (display.isEmpty()) display = fi.completeBaseName();
+    // "untitled meeting 01" elides before the counter shows — collapse
+    // to "Untitled 01"; new notes use the "noter-NN" slug → "Noter NN".
+    static const QRegularExpression untitledRe(
+        QStringLiteral("^untitled meeting\\s*"));
+    display.replace(untitledRe, QStringLiteral("Untitled "));
+    static const QRegularExpression noterRe(QStringLiteral("^noter\\s*"));
+    display.replace(noterRe, QStringLiteral("Noter "));
+    return display;
+}
+
+NotesStorage::TitleInfo NotesStorage::titleInfoForFile(const QString &absPath) const {
+    const QFileInfo fi(absPath);
+    const qint64 mtimeMs = fi.lastModified().toMSecsSinceEpoch();
+    const qint64 size    = fi.size();
+
+    const auto it = m_titleCache.constFind(absPath);
+    if (it != m_titleCache.constEnd() &&
+        it->mtimeMs == mtimeMs && it->size == size)
+        return it->info;
+
+    TitleInfo info;
+    QFile f(absPath);
+    if (!f.open(QIODevice::ReadOnly)) {
+        // Missing / unreadable → filename fallback. DO NOT cache, so a
+        // later permission fix (or the file appearing) self-heals.
+        info.display = prettyTitleFromFilename(absPath);
+        return info;
+    }
+    // Cap the read at 512 KB — the template head is ≈30 KB; the cap only
+    // guards a corrupt giant file from stalling the sidebar.
+    const QByteArray bytes = f.read(512 * 1024);
+    f.close();
+    const QString raw = QString::fromUtf8(bytes);
+
+    // legacyH1 is ALWAYS populated best-effort — the "Noter NN" counter
+    // scan needs it even when the meta wins.
+    info.legacyH1 = legacyH1In(raw);
+
+    const QString meta = titleMetaIn(raw);
+    if (!meta.isEmpty()) {
+        info.display = meta;
+    } else {
+        // Legacy heuristic (display-only, NO file rewrite). Strip a
+        // .trashed prefix so trashed legacy notes resolve like live ones.
+        QString stem = fi.completeBaseName();
+        static const QRegularExpression trashedRe(
+            QStringLiteral("^\\.trashed-\\d+-"));
+        stem.remove(trashedRe);
+        static const QRegularExpression defaultShapeRe(QStringLiteral(
+            "^\\d{4}-\\d{2}-\\d{2}-\\d{4,6}-(?:noter|untitled-meeting)-\\d+(?: \\(\\d+\\))?$"));
+        static const QRegularExpression defaultH1Re(
+            QStringLiteral("^(?:noter|untitled(?: meeting)?)\\s*\\d+$"),
+            QRegularExpression::CaseInsensitiveOption);
+        if (defaultShapeRe.match(stem).hasMatch() &&
+            !info.legacyH1.isEmpty() &&
+            !defaultH1Re.match(info.legacyH1).hasMatch()) {
+            // Default filename + customized H1 + no meta: the user titled
+            // the note in the body but never renamed the file. Show the H1
+            // (the deliberate audit fix — pre-feature this wrongly showed
+            // "Noter NN").
+            info.display = info.legacyH1;
+        } else {
+            // Bit-for-bit today's label. A stale "Noter 01" H1 must NEVER
+            // override the user's explicit sidebar rename.
+            info.display = prettyTitleFromFilename(absPath);
+        }
+    }
+
+    m_titleCache.insert(absPath, TitleCacheEnt{ mtimeMs, size, info });
+    return info;
+}
+
+QString NotesStorage::displayTitleForFile(const QString &absPath) const {
+    return titleInfoForFile(absPath).display;
+}
+
+void NotesStorage::invalidateTitleCache(const QString &absPath) {
+    m_titleCache.remove(absPath);
 }
 
 // ═══════════════════════════════════════════════════════════════════════

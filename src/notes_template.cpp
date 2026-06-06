@@ -128,6 +128,10 @@ QString shellHtml(const QString &title,
     html += QStringLiteral("<meta name=\"notepatra-meeting\" content='")
           + escapeText(metaJson)
           + QStringLiteral("'>\n");
+    // Title-identity SSOT — new notes carry the display-title meta from
+    // birth. Re-injected on every save by NotesStorage::withTitleMeta.
+    html += QStringLiteral("<meta name=\"notepatra-title\" content=\"")
+          + escapeText(title) + QStringLiteral("\">\n");
     html += QStringLiteral("<title>") + escapeText(title) + QStringLiteral("</title>\n");
     // BLOCKER FIX #6 — no external fetch. Notes used to phone Google
     // Fonts on every load (privacy violation against Notepatra's
