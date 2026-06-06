@@ -32,8 +32,13 @@ public:
                          QWidget *parent = nullptr);
     ~NoterPopOut() override;
 
-    // Path to the note this pop-out is mirroring. Read-only after ctor.
+    // Path to the note this pop-out is mirroring.
     QString notePath() const { return m_notePath; }
+
+    // A3 — a sidebar rename moves the file on disk; the panel re-points
+    // the live pop-out here so the 2s reload loop follows the rename
+    // instead of flipping to "(note file unavailable)".
+    void setNotePath(const QString &absPath);
 
     // Titlebar text. The ctor seeds the raw filename stem as a fallback;
     // NotesPanel overrides it with the same prettified label the sidebar

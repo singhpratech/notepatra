@@ -704,6 +704,26 @@ bool matchesAllTerms(const QString &haystackLower, const QStringList &terms) {
     return true;
 }
 
+// A3 — 5-entity escape for the closed-note rename's <h1> inner-text
+// patch. Same table as NotesTemplate::escapeText / the notepatra-title
+// meta writer, so a rename-written H1 round-trips identically to a
+// template-written one.
+QString titleEntityEscape(const QString &raw) {
+    QString out;
+    out.reserve(raw.size() + 16);
+    for (const QChar c : raw) {
+        switch (c.unicode()) {
+            case '&':  out += QStringLiteral("&amp;");  break;
+            case '<':  out += QStringLiteral("&lt;");   break;
+            case '>':  out += QStringLiteral("&gt;");   break;
+            case '"':  out += QStringLiteral("&quot;"); break;
+            case '\'': out += QStringLiteral("&#39;");  break;
+            default:   out += c;
+        }
+    }
+    return out;
+}
+
 }  // namespace
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -968,9 +988,20 @@ QWidget *NotesPanel::buildSidebar() {
                 if (m_loadingTree || !it) return;
                 const QString kind = it->data(0, Qt::UserRole).toString();
                 const QString payload = it->data(0, Qt::UserRole + 1).toString();
-                const QString newText = it->text(0).trimmed();
+                QString newText = it->text(0).trimmed();
                 if (newText.isEmpty()) { refreshSidebar(); return; }
                 if (kind == QStringLiteral("meeting") && !payload.isEmpty()) {
+                    // A3 — titles are full Unicode; cap at the same 200
+                    // chars safeFilename / the meta writer enforce.
+                    newText = newText.left(200);
+                    // True no-op vs the RESOLVER display title. Slug-equality
+                    // is no longer the no-op test: "Café Sync" → "Cafe Sync"
+                    // shares a slug but IS a title change the meta must keep.
+                    // Unchanged text → zero disk writes, zero renames.
+                    if (newText == m_storage->displayTitleForFile(payload)) {
+                        refreshSidebar();
+                        return;
+                    }
                     // Rename the file (canonical + backup ring + draft).
                     QFileInfo fi(payload);
                     QString slug = NotesStorage::safeFilename(newText);
@@ -988,8 +1019,15 @@ QWidget *NotesPanel::buildSidebar() {
                     QString newName = prefix + slug + QStringLiteral(".html");
                     QDir d = fi.dir();
                     const QString oldStem = fi.fileName();
-                    // No-op rename (same slug) — nothing to do on disk.
-                    if (newName == oldStem) { refreshSidebar(); return; }
+                    // A3 — the filename is a stable ASCII disk-id, not the
+                    // title. A pure-CJK/emoji title folds to "untitled" and
+                    // must KEEP the existing filename (sync tools watch this
+                    // dir; "<prefix>-untitled.html" would be meaningless).
+                    // The title still commits to the meta below.
+                    const bool doRename = slug != QStringLiteral("untitled")
+                                          && newName != oldStem;
+                    QString newAbs = payload;
+                    if (doRename) {
                     // Target already taken by another note? Dedup with " (n)"
                     // inserted BEFORE the extension — split on the LAST dot,
                     // never QFileInfo::baseName() (it splits on the FIRST dot
@@ -1005,7 +1043,9 @@ QWidget *NotesPanel::buildSidebar() {
                     // QDir::rename fails on read-only dirs / existing targets;
                     // unchecked, the buffer got repointed at a file that was
                     // never renamed — i.e. at ANOTHER note, which the next
-                    // autosave would then clobber.
+                    // autosave would then clobber. A failure bails BEFORE any
+                    // title write, so the old label/title/meta stay intact
+                    // and the message below stays honest.
                     if (d.exists(newName) || !d.rename(oldStem, newName)) {
                         if (auto *mw = window())
                             if (auto *sb = mw->findChild<QStatusBar *>())
@@ -1019,8 +1059,71 @@ QWidget *NotesPanel::buildSidebar() {
                         QString suffix = name.mid(oldStem.size()); // .bak1 / .draft
                         d.rename(name, newName + suffix);
                     }
-                    const QString newAbs = d.absoluteFilePath(newName);
+                    newAbs = d.absoluteFilePath(newName);
                     if (payload == m_currentPath) m_currentPath = newAbs;
+                    // A3 — a live pop-out mirroring this note must follow the
+                    // rename (its 2s reload loop reads the path each tick).
+                    if (m_popOut && m_popOut->notePath() == payload)
+                        m_popOut->setNotePath(newAbs);
+                    }   // doRename
+
+                    // ── A3 title commit — disk rename FIRST, title SECOND,
+                    // so a rename failure leaves *everything* untouched. ──
+                    if (newAbs == m_currentPath && !m_currentIsChecklist) {
+                        // Open note: rewrite the H1 in the live document and
+                        // force-save — saveCurrentNote injects the meta,
+                        // reindexes todos.db and refreshes the sidebar.
+                        // m_lastSeenH1 is pre-set so the save's adoption
+                        // block sees no H1 *change* (no double-adopt).
+                        setEditorH1(newText);
+                        m_currentTitle = newText;
+                        m_lastSeenH1   = newText;
+                        m_dirty = true;
+                        saveCurrentNote();
+                        // The sidebar rename is not an editor edit — Ctrl+Z
+                        // must not resurrect the old title text (the next
+                        // autosave would silently re-adopt it).
+                        if (m_editor) m_editor->document()->clearUndoRedoStacks();
+                        emit noteTitleChanged(m_currentTitle);
+                    } else {
+                        // Closed note: string-level head surgery on the raw
+                        // bytes (NOT a QTextDocument round-trip — that would
+                        // Qt-normalize a never-opened template file). Replace
+                        // the first <h1>'s INNER text (tag + attrs kept so
+                        // class="meet-title" survives for the todos parser),
+                        // then upsert the meta; saveNote's sanitize/validate
+                        // + atomic write gate corruption.
+                        QString err;
+                        QString raw = m_storage->readNote(newAbs, &err);
+                        bool committed = false;
+                        if (err.isEmpty()) {
+                            static const QRegularExpression h1Re(
+                                QStringLiteral("(<h1\\b[^>]*>).*?(</h1>)"),
+                                QRegularExpression::CaseInsensitiveOption
+                                    | QRegularExpression::DotMatchesEverythingOption);
+                            const QRegularExpressionMatch hm = h1Re.match(raw);
+                            if (hm.hasMatch())
+                                raw.replace(hm.capturedStart(), hm.capturedLength(),
+                                            hm.captured(1) + titleEntityEscape(newText)
+                                                + hm.captured(2));
+                            QString err2;
+                            committed = m_storage->saveNote(
+                                newAbs,
+                                NotesStorage::withTitleMeta(raw, newText), &err2);
+                        }
+                        if (!committed) {
+                            // Honest status — the file rename (if any) stands;
+                            // the resolver falls back to the renamed filename,
+                            // so the label still reads the new name.
+                            if (auto *mw = window())
+                                if (auto *sb = mw->findChild<QStatusBar *>())
+                                    sb->showMessage(tr("Renamed, but the title could not be written into the note"), 4000);
+                        }
+                    }
+                    if (m_popOut && m_popOut->notePath() == newAbs)
+                        m_popOut->setDisplayTitle(newText);
+                    m_storage->invalidateTitleCache(payload);
+                    m_storage->invalidateTitleCache(newAbs);
                     refreshSidebar();
                 } else if (kind == QStringLiteral("todo") && !payload.isEmpty()) {
                     if (m_todos) m_todos->setText(payload, newText);
@@ -1732,30 +1835,9 @@ void NotesPanel::refreshNoterModels() {
     m_modelListClient->listModels();
 }
 
-// Shared filename → display-title prettifier. SINGLE source of truth for
-// the user-facing label of a note file: the sidebar meeting leaves AND the
-// pop-out titlebar both go through here so they can never disagree.
-//   <YYYY-MM-DD-HHMM[SS]>-noter-06.html          → "Noter 06"
-//   <YYYY-MM-DD-HHMM[SS]>-untitled-meeting-03    → "Untitled 03"
-//   <ts>-renamed-by-user.html                    → "renamed by user"
-static QString noterDisplayTitleForFile(const QString &absPath) {
-    const QFileInfo fi(absPath);
-    QString display = fi.completeBaseName();
-    // Strip the date+time prefix (4 OR 6 digit time).
-    display.remove(QRegExp(QStringLiteral("^\\d{4}-\\d{2}-\\d{2}-\\d{4,6}-")));
-    display.replace(QChar('-'), QChar(' '));
-    if (display.isEmpty()) display = fi.completeBaseName();
-    // v0.1.97 — "untitled meeting 01" is too long for the sidebar and
-    // elides before the counter shows ("unti…"). Collapse it to
-    // "Untitled 01" so the 01/02/03 the user asked for stays visible.
-    display.replace(QRegExp(QStringLiteral("^untitled meeting\\s*")),
-                    QStringLiteral("Untitled "));
-    // v0.1.98 — new notes use the "noter-NN" slug → display "noter NN";
-    // capitalize to "Noter NN" so it reads as the user asked.
-    display.replace(QRegExp(QStringLiteral("^noter\\s*")),
-                    QStringLiteral("Noter "));
-    return display;
-}
+// A3 — the filename prettifier moved to NotesStorage::prettyTitleFromFilename;
+// every label now reads the title RESOLVER (m_storage->displayTitleForFile):
+// notepatra-title meta first, legacy heuristic / filename-pretty fallback.
 
 // v0.1.112 — search-plaintext for one note, served from the (mtime, size)-
 // keyed in-memory cache; cold misses read the file once. NEVER touches the
@@ -1835,13 +1917,22 @@ void NotesPanel::populateMeetingsRoot(QTreeWidgetItem *root, const QString &filt
             name.endsWith(QStringLiteral(".lock")) ||
             name.endsWith(QStringLiteral(".tmp"))) continue;
 
-        // Derive a friendly display title from the filename. Strip the
-        // Derive a friendly display name + filter by search.
-        QString display = fi.completeBaseName();
+        // A3 — the DISPLAY title comes from the resolver (notepatra-title
+        // meta first; legacy heuristic / filename-pretty fallback), used
+        // for BOTH the search filter and the leaf text below.
+        const QString display =
+            m_storage->displayTitleForFile(fi.absoluteFilePath());
+        // Legacy title haystack — KEPT BYTE-IDENTICAL (retrieval-spec hard
+        // rule): its 4-digit-only prefix regex leaves the raw stamp of
+        // 6-digit files in the haystack, so a search for "2026" keeps
+        // matching today's notes. The resolver display above is an
+        // ADDITIONAL match path (Unicode/meta titles), never a
+        // replacement for this one.
+        QString legacyHaystack = fi.completeBaseName();
         const QRegExp datePrefix(QStringLiteral("^\\d{4}-\\d{2}-\\d{2}-\\d{4}-"));
-        display.remove(datePrefix);
-        display.replace(QChar('-'), QChar(' '));
-        if (display.isEmpty()) display = fi.completeBaseName();
+        legacyHaystack.remove(datePrefix);
+        legacyHaystack.replace(QChar('-'), QChar(' '));
+        if (legacyHaystack.isEmpty()) legacyHaystack = fi.completeBaseName();
         // v0.1.112 — AND-of-terms over title-OR-body. Strict superset of the
         // old single display.contains(filter): a title containing the whole
         // phrase contains every term, so everything that matched before
@@ -1851,12 +1942,14 @@ void NotesPanel::populateMeetingsRoot(QTreeWidgetItem *root, const QString &filt
         // bounds staleness — accepted, no dirty-buffer special case.
         if (!terms.isEmpty()) {
             const QString displayLower = display.toLower();
+            const QString legacyLower  = legacyHaystack.toLower();
             QString body;
             bool bodyLoaded = false;
             int firstHit = -1, firstHitLen = 0;
             bool allMatch = true;
             for (const QString &t : terms) {
-                if (displayLower.contains(t)) continue;          // title hit — no disk read
+                if (displayLower.contains(t) ||
+                    legacyLower.contains(t)) continue;           // title hit — no disk read
                 if (!bodyLoaded) { body = bodyTextFor(fi); bodyLoaded = true; }
                 const int idx = body.indexOf(t, 0, Qt::CaseInsensitive);
                 if (idx < 0) { allMatch = false; break; }
@@ -1886,14 +1979,12 @@ void NotesPanel::populateMeetingsRoot(QTreeWidgetItem *root, const QString &filt
         sect->setData(0, Qt::UserRole, QStringLiteral("section"));
         sect->setForeground(0, QColor(kMutedText));
         for (const QFileInfo &fi : buckets[b]) {
-            // v0.1.97 — derive display name from filename.
-            // New format (preferred):  <ts>-untitled-meeting-NN.html
-            //   → strip date-prefix → "untitled meeting NN"
-            // Legacy formats also handled:
-            //   <YYYY-MM-DD-HHMM>-untitled-meeting.html  (4-digit time)
-            //   <YYYY-MM-DD-HHMMSS>-untitled-meeting.html  (6-digit time)
-            // Shared with the pop-out titlebar — see noterDisplayTitleForFile.
-            const QString display = noterDisplayTitleForFile(fi.absoluteFilePath());
+            // A3 — leaf text reads the title RESOLVER (cache hit — the
+            // filter loop above already resolved this file): notepatra-title
+            // meta first, legacy heuristic / filename-pretty fallback.
+            // Shared with the pop-out titlebar so they can never disagree.
+            const QString display =
+                m_storage->displayTitleForFile(fi.absoluteFilePath());
 
             // v0.1.97 — NATIVE item (no setItemWidget). Click-to-open,
             // double-click rename, F2 all work. The pencil + ✕ buttons
@@ -1952,7 +2043,8 @@ void NotesPanel::populateRemindersRoot(QTreeWidgetItem *root, const QString &fil
     for (const TodoRow &r : rows) {
         if (!r.reminderAt.isValid()) continue;
         QString title = r.text.isEmpty() ? r.meetingTitle : r.text;
-        if (title.isEmpty()) title = QFileInfo(r.sourceFile).completeBaseName();
+        if (title.isEmpty())   // A3 — pretty fallback, never the raw stem
+            title = NotesStorage::prettyTitleFromFilename(r.sourceFile);
         if (!terms.isEmpty() && !matchesAllTerms(title.toLower(), terms)) continue;
         const QDateTime at = r.reminderAt.toLocalTime();
         int b;
@@ -1975,7 +2067,8 @@ void NotesPanel::populateRemindersRoot(QTreeWidgetItem *root, const QString &fil
         for (const TodoRow &r : bk.items) {
             const QDateTime at = r.reminderAt.toLocalTime();
             QString title = r.text.isEmpty() ? r.meetingTitle : r.text;
-            if (title.isEmpty()) title = QFileInfo(r.sourceFile).completeBaseName();
+            if (title.isEmpty())   // A3 — pretty fallback, never the raw stem
+                title = NotesStorage::prettyTitleFromFilename(r.sourceFile);
             // Compact relative time: today→HH:mm, this week→ddd HH:mm, else→MMM d HH:mm.
             QString whenStr;
             if (at.date() == today)            whenStr = at.toString(QStringLiteral("HH:mm"));
@@ -2096,24 +2189,13 @@ void NotesPanel::populateTrashRoot(QTreeWidgetItem *root, const QString &filter)
         sect->setData(0, Qt::UserRole, QStringLiteral("section"));
         sect->setForeground(0, QColor(kMutedText));
         for (const QFileInfo &fi : trashedCanonical) {
-            QString display = fi.fileName();
-            display.remove(QRegExp(QStringLiteral("^\\.trashed-\\d+-")));
-            // v0.1.97 — accept both 4-digit (legacy) and 6-digit (current)
-            // time formats in filenames. Without \d{4,6} the prefix wasn't
-            // being stripped on newer files, leaving "2026 05 24 140312 u…"
-            // literal in trash listings.
-            display.remove(QRegExp(QStringLiteral("^\\d{4}-\\d{2}-\\d{2}-\\d{4,6}-")));
-            display.remove(QStringLiteral(".html"));
-            display.replace(QChar('-'), QChar(' '));
-            // Match the active-meeting shortening so trashed labels read the
-            // same ("Untitled 05" not "untitled meeting 05") and the counter
-            // stays visible before the row elides.
-            display.replace(QRegExp(QStringLiteral("^untitled meeting\\s*")),
-                            QStringLiteral("Untitled "));
-            // v0.1.98 — new notes use the "noter-NN" slug → display "noter NN";
-            // capitalize to "Noter NN" so it reads as the user asked.
-            display.replace(QRegExp(QStringLiteral("^noter\\s*")),
-                            QStringLiteral("Noter "));
+            // A3 — trashed leaves read the title RESOLVER too: the
+            // notepatra-title meta travels with the trashed file (Unicode
+            // titles survive the Trash), and prettyTitleFromFilename's
+            // ".trashed-<ts>-" strip covers the legacy fallback. Replaces
+            // the third inline prettifier copy.
+            const QString display =
+                m_storage->displayTitleForFile(fi.absoluteFilePath());
             if (!terms.isEmpty() && !matchesAllTerms(display.toLower(), terms)) continue;
             // Native item — delegate paints ↺ restore + ✕ purge.
             auto *leaf = new QTreeWidgetItem(sect);
@@ -2291,6 +2373,7 @@ void NotesPanel::showEmptyPage() {
     m_rightStack->setCurrentWidget(m_emptyPage);
     m_currentPath.clear();
     m_currentTitle.clear();
+    m_lastSeenH1.clear();   // A3 — no note, no H1 snapshot
 }
 
 void NotesPanel::showEditorPage() {
@@ -2337,6 +2420,48 @@ void NotesPanel::newMeetingNote() {
     };
     scanDir(inboxFolder());
     scanDir(trashFolder());
+
+    // A3 — the filename scan above stays as a floor; ALSO scan resolver
+    // TITLES (display + legacy body H1) so a number that is still VISIBLE
+    // anywhere is never reused: (a) a meta-titled "Noter 06" whose file
+    // was renamed, (b) a legacy note whose stale body H1 still reads
+    // "Noter 06". Numbers freed by genuine retitles stay reusable.
+    // Nuance: a PRE-feature sidebar rename left its stale body H1 in
+    // place, so that number stays reserved — slightly stricter than the
+    // old "rename frees the counter" behavior; post-feature renames
+    // rewrite the H1, so renames free numbers again.
+    static const QRegularExpression liveTitleRx(
+        QStringLiteral("^(?:Noter|Untitled(?: meeting)?)\\s*0*(\\d{1,3})$"),
+        QRegularExpression::CaseInsensitiveOption);
+    auto scanTitles = [&](const QString &path) {
+        QDir d(path);
+        for (const QFileInfo &fi : d.entryInfoList(QStringList()
+                << QStringLiteral("*.html")
+                << QStringLiteral(".trashed-*.html"),
+            QDir::Files | QDir::Hidden)) {
+            const QString name = fi.fileName();
+            if (name == QStringLiteral("quick-todos.html")) continue;
+            // Sidecar guard — the two-pattern glob shouldn't match
+            // .bak/.draft/.lock/.tmp names, kept defensively anyway.
+            if (name.endsWith(QStringLiteral(".bak1")) ||
+                name.endsWith(QStringLiteral(".bak2")) ||
+                name.endsWith(QStringLiteral(".bak3")) ||
+                name.endsWith(QStringLiteral(".bak4")) ||
+                name.endsWith(QStringLiteral(".bak5")) ||
+                name.endsWith(QStringLiteral(".draft")) ||
+                name.endsWith(QStringLiteral(".lock")) ||
+                name.endsWith(QStringLiteral(".tmp"))) continue;
+            const NotesStorage::TitleInfo ti =
+                m_storage->titleInfoForFile(fi.absoluteFilePath());
+            for (const QString &t : { ti.display, ti.legacyH1 }) {
+                const QRegularExpressionMatch m = liveTitleRx.match(t);
+                if (m.hasMatch())
+                    maxCounter = qMax(maxCounter, m.captured(1).toInt());
+            }
+        }
+    };
+    scanTitles(inboxFolder());
+    scanTitles(trashFolder());
     const int nextCounter = maxCounter + 1;
 
     // v0.1.112 — the 99-note hard cap + >=90 nag are gone: capture must
@@ -2445,7 +2570,11 @@ void NotesPanel::renderNoteAtPath(const QString &absolutePath) {
         m_currentPath.clear();           // NEVER bind the unreadable path —
         m_currentIsChecklist = false;    // autosave must not target it
         m_dirty = false;
-        m_currentTitle = QFileInfo(absolutePath).completeBaseName();
+        // A3 — the resolver's unreadable-file branch returns the PRETTY
+        // filename fallback (never the raw stem), and is not cached so a
+        // later permission fix self-heals.
+        m_currentTitle = m_storage->displayTitleForFile(absolutePath);
+        m_lastSeenH1.clear();            // error notice has no user H1
         emit noteTitleChanged(m_currentTitle);
         setSavedHintNormal(QString());   // no save state applies here
         return;
@@ -2517,6 +2646,10 @@ void NotesPanel::renderNoteAtPath(const QString &absolutePath) {
         }
     }
     restyleChecklistLines();   // re-apply ✓ strike-through (sanitizer drops it)
+    // A3 — the 00:00 strip + restyle above are LOAD-time doc surgery, not
+    // user edits: Ctrl+Z must not resurrect what they removed (a revived
+    // timer line above the H1 would also confuse the H1 snapshot below).
+    m_editor->document()->clearUndoRedoStacks();
     m_editor->blockSignals(false);
     m_loadingInProgress = false;
     m_currentPath = absolutePath;
@@ -2540,8 +2673,12 @@ void NotesPanel::renderNoteAtPath(const QString &absolutePath) {
     m_editor->setTextCursor(cur);
     m_editor->setFocus();
 
-    // Update tab title via signal (mainwindow listens).
-    m_currentTitle = QFileInfo(absolutePath).completeBaseName();
+    // A3 — m_currentTitle is the DISPLAY title (resolver: meta first,
+    // legacy heuristic / filename-pretty fallback), never a raw stem.
+    // m_lastSeenH1 snapshots the editor H1 AFTER setHtml + the 00:00
+    // strip — saveCurrentNote adopts the H1 only when it CHANGES vs this.
+    m_currentTitle = m_storage->displayTitleForFile(absolutePath);
+    m_lastSeenH1 = titleFromEditorH1();
     emit noteTitleChanged(m_currentTitle);
 }
 
@@ -2644,6 +2781,9 @@ void NotesPanel::openTodosChecklist() {
     m_editor->setFocus();
 
     m_currentTitle = tr("Todos");
+    // A3 — checklist saves exit saveCurrentNote before the H1-adoption
+    // block ever runs; clear the snapshot anyway (belt and braces).
+    m_lastSeenH1.clear();
     emit noteTitleChanged(m_currentTitle);
     showEditorPage();
     refreshSidebar();
@@ -2720,7 +2860,26 @@ void NotesPanel::saveCurrentNote() {
     if (m_currentPath.isEmpty() || !m_editor) return;
     if (!m_dirty) return;
     if (m_currentIsChecklist) { saveTodosChecklist(); return; }
-    const QString body = m_editor->toHtml();
+
+    // A3 — H1-edit adoption (Bear/Apple-Notes semantics): a CHANGED first
+    // H1 becomes the display title at save time (never per keystroke —
+    // the 5s autosave is the debounce). An unchanged or deleted H1 leaves
+    // the title sticky, so a stale legacy "Noter 01" body H1 can never
+    // hijack a renamed note. The filename NEVER changes on this path.
+    const QString h1Now = titleFromEditorH1();
+    if (!h1Now.isEmpty() && h1Now != m_lastSeenH1) {
+        m_currentTitle = h1Now;
+        m_lastSeenH1   = h1Now;
+        emit noteTitleChanged(m_currentTitle);
+        if (m_popOut && m_popOut->notePath() == m_currentPath)
+            m_popOut->setDisplayTitle(m_currentTitle);   // live follow
+    }
+    // The meta is regenerated on EVERY save (QTextEdit::setHtml drops it
+    // on load, so it is injected — never round-tripped). This also seeds
+    // the meta on a legacy note's first save: m_currentTitle equals the
+    // resolver output the user has been seeing, so the label never flips.
+    const QString body =
+        NotesStorage::withTitleMeta(m_editor->toHtml(), m_currentTitle);
 
     // A7 — external-edit conflict guard. If the file on disk no longer
     // matches the stamp we recorded at load / last save (sync tool,
@@ -2751,6 +2910,64 @@ void NotesPanel::saveCurrentNote() {
     refreshSidebar();
 
     emit noteSaved(m_currentPath);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  A3 — title identity helpers (H1 ↔ display title sync)
+// ═══════════════════════════════════════════════════════════════════════
+
+// The text of the FIRST headingLevel==1 block, simplified and capped at
+// 200 chars (matching safeFilename / the meta writer). Scans at most the
+// first 200 blocks; empty when the document has no H1. Qt's HTML import
+// sets blockFormat().headingLevel() for <h1> (pinned by widget test).
+QString NotesPanel::titleFromEditorH1() const {
+    if (!m_editor) return QString();
+    int scanned = 0;
+    for (QTextBlock b = m_editor->document()->firstBlock();
+         b.isValid() && scanned < 200; b = b.next(), ++scanned) {
+        if (b.blockFormat().headingLevel() == 1)
+            return b.text().simplified().left(200);
+    }
+    return QString();
+}
+
+// Rewrite that same block's text in place (sidebar rename → H1 heal).
+// Doc surgery, not a user edit: signals blocked + m_loadingInProgress so
+// onEditorBodyChanged / the markdown-shortcut hook never fire mid-write;
+// m_dirty is set manually by the caller's commit path. No H1 block →
+// no-op (the title lives in the meta only).
+void NotesPanel::setEditorH1(const QString &title) {
+    if (!m_editor) return;
+    QTextDocument *doc = m_editor->document();
+    QTextBlock target;
+    int scanned = 0;
+    for (QTextBlock b = doc->firstBlock(); b.isValid() && scanned < 200;
+         b = b.next(), ++scanned) {
+        if (b.blockFormat().headingLevel() == 1) { target = b; break; }
+    }
+    if (!target.isValid()) return;
+
+    const bool wasLoading = m_loadingInProgress;
+    m_loadingInProgress = true;
+    m_editor->blockSignals(true);
+    // Keep the block's existing char format (or rebuild the bold/18pt
+    // heading look for an empty block, like insertHeadingBlock does).
+    QTextCharFormat fmt;
+    if (target.length() > 1) {
+        QTextCursor probe(doc);
+        probe.setPosition(target.position() + 1);
+        fmt = probe.charFormat();
+    } else {
+        fmt.setFontWeight(QFont::Bold);
+        fmt.setFontPointSize(NoterExtractApply::headingPointSize(1));
+    }
+    QTextCursor cur(doc);
+    cur.setPosition(target.position());
+    cur.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+    cur.insertText(title.left(200), fmt);
+    m_editor->blockSignals(false);
+    m_loadingInProgress = wasLoading;
+    m_dirty = true;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -2836,8 +3053,12 @@ bool NotesPanel::promptSaveCopyAs() {
     if (picked.isEmpty()) return false;
     // Write through the storage layer so the copy gets the same sanitize +
     // atomic-write treatment as a normal note (and reopens cleanly later).
+    // A3 — rescued copies keep their display title (meta injected).
     QString err;
-    if (!m_storage->saveNote(picked, m_editor->toHtml(), &err)) {
+    if (!m_storage->saveNote(picked,
+                             NotesStorage::withTitleMeta(m_editor->toHtml(),
+                                                         m_currentTitle),
+                             &err)) {
         QMessageBox::warning(this, tr("Save a copy failed"),
                              tr("Could not write %1: %2").arg(picked, err));
         return false;
@@ -2996,9 +3217,13 @@ void NotesPanel::popOutActive() {
         m_popOut = nullptr;
     }
     m_popOut = new NoterPopOut(m_currentPath);
-    // Titlebar shows the same prettified label as the sidebar leaf
-    // ("Noter 06"), never the raw filename stem.
-    m_popOut->setDisplayTitle(noterDisplayTitleForFile(m_currentPath));
+    // Titlebar shows the same display title as the sidebar leaf
+    // ("Noter 06" / the meta title), never the raw filename stem.
+    // m_currentTitle is resolver-fed at load; the empty fallback covers
+    // a pop-out raised before any title state exists.
+    m_popOut->setDisplayTitle(m_currentTitle.isEmpty()
+                                  ? m_storage->displayTitleForFile(m_currentPath)
+                                  : m_currentTitle);
     // Null the pointer when the window dies — but only if the dying object
     // is the one we currently track, so the deferred delete of a REPLACED
     // pop-out can't wipe its successor.

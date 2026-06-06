@@ -237,6 +237,17 @@ private:
                                   const QString &model,
                                   int wordsUsed, int wordsTotal);
 
+    // ── Title identity (A3) ────────────────────────────────────────────
+    // The display title lives in the notepatra-title head meta (see
+    // NotesStorage); H1 *edits* are primary, the meta stores, every label
+    // projects from the resolver. titleFromEditorH1 returns the text of
+    // the first headingLevel==1 block (capped 200 blocks / 200 chars;
+    // empty when no H1). setEditorH1 rewrites that block's text in place
+    // (signals blocked — doc surgery, not a user edit); no-op when the
+    // document has no H1 (meta-only title).
+    QString titleFromEditorH1() const;
+    void setEditorH1(const QString &title);
+
     // Serialize the editor's ☐/✓ checklist lines back to b-act divs,
     // re-attaching each line's id / owner / due (current value pulled from
     // the todos DB) so the structured todo + reminder data survives a
@@ -369,6 +380,11 @@ private:
     // ── state ─────────────────────────────────────────────────────
     QString        m_currentPath;
     QString        m_currentTitle;
+    // A3 — the editor H1 snapshot captured at load (and refreshed after
+    // every successful save / rename). saveCurrentNote adopts the H1 as
+    // the display title only when it CHANGED vs this snapshot, so a stale
+    // legacy "Noter 01" body H1 can never hijack a sidebar-renamed note.
+    QString        m_lastSeenH1;
     bool           m_dirty          { false };
     // v0.1.112 — Extract in-flight state. m_extractClient tracks the live
     // request so Cancel / the watchdog can abort it; QPointer because the

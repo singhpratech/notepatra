@@ -153,6 +153,12 @@ void NoterPopOut::buildUi() {
     outer->addWidget(m_body, 1);
 }
 
+void NoterPopOut::setNotePath(const QString &absPath) {
+    if (absPath.isEmpty() || absPath == m_notePath) return;
+    m_notePath = absPath;
+    reloadFromDisk();   // immediate refresh; the 2s loop keeps following
+}
+
 void NoterPopOut::setDisplayTitle(const QString &title) {
     if (title.isEmpty()) return;
     if (m_titleLabel) m_titleLabel->setText(title);

@@ -11,6 +11,7 @@
 #include "notes.h"
 #include "notes_extract_apply.h"
 #include "notes_popout.h"
+#include "notes_storage.h"
 #include "notes_reminder.h"
 #include "notes_sweep_dialog.h"
 #include "notes_sweep_prompt.h"
@@ -2921,6 +2922,520 @@ int main(int argc, char *argv[]) {
         QApplication::processEvents();
         EXPECT("banner hidden after a single dismiss (no duplicate queued)",
                banner && !banner->isVisible());
+    }
+
+    // ══ A3 — title identity (sections 62+; spec integration tests 7-17).
+    // The notepatra-title head meta is the on-disk title SSOT; every label
+    // reads the resolver; H1 *edits* adopt at save time; sidebar renames
+    // commit the title to meta + H1; the filename stays an ASCII disk-id. ══
+    auto findH1Block = [](QTextDocument *doc) -> QTextBlock {
+        int scanned = 0;
+        for (QTextBlock b = doc->firstBlock(); b.isValid() && scanned < 200;
+             b = b.next(), ++scanned)
+            if (b.blockFormat().headingLevel() == 1) return b;
+        return QTextBlock();
+    };
+    auto readBytes = [](const QString &path) -> QByteArray {
+        QFile f(path);
+        if (!f.open(QIODevice::ReadOnly)) return {};
+        return f.readAll();
+    };
+    auto leafTextForPath = [&](const QString &p) -> QString {
+        QTreeWidgetItem *l = meetingLeafForPath(p);
+        return l ? l->text(0) : QString();
+    };
+    auto stampPrefixOf = [](const QString &absPath) -> QString {
+        QRegExp rx(QStringLiteral("^(\\d{4}-\\d{2}-\\d{2}-\\d{4,6}-)"));
+        return rx.indexIn(QFileInfo(absPath).fileName()) == 0 ? rx.cap(1)
+                                                              : QString();
+    };
+    QString teamSyncPath;   // set in 65, reused by 69
+
+    // ── 62. new note carries the title meta from birth + h1 import pin ─
+    std::printf("\n--- 62. new note: title meta + sidebar leaf + h1 import ---\n");
+    {
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        const QString p = newestInboxHtml();
+        EXPECT("created a note for the meta-from-birth test", !p.isEmpty());
+        QRegExp nRx(QStringLiteral("noter-(\\d+)\\.html$"));
+        EXPECT("default filename carries the counter", nRx.indexIn(p) >= 0);
+        const QString want = QStringLiteral("Noter %1").arg(nRx.cap(1));
+        EXPECT_STR_EQ("head meta notepatra-title == default title",
+                      NotesStorage::titleMetaIn(readAll(p)), want);
+        EXPECT_STR_EQ("sidebar leaf reads the same title",
+                      leafTextForPath(p), want);
+        // Pin the Qt h1-import assumption the whole design depends on:
+        // the template's <h1 class="meet-title"> must arrive as a block
+        // with blockFormat().headingLevel()==1, and it is the first block
+        // with any text in it.
+        const QTextBlock h1 = findH1Block(editor->document());
+        EXPECT("template h1 imports with headingLevel==1", h1.isValid());
+        EXPECT_STR_EQ("h1 block text is the default title",
+                      h1.isValid() ? h1.text().simplified() : QString(), want);
+        bool h1IsFirstText = false;
+        for (QTextBlock b = editor->document()->firstBlock(); b.isValid();
+             b = b.next()) {
+            if (b.text().simplified().isEmpty()) continue;
+            h1IsFirstText = (b == h1);
+            break;
+        }
+        EXPECT("the h1 is the first non-empty block", h1IsFirstText);
+    }
+
+    // ── 63. H1 edit → title adopted at save; filename NEVER changes ───
+    std::printf("\n--- 63. H1-edit sync on save ---\n");
+    {
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        const QString p = newestInboxHtml();
+        const QStringList namesBefore = QDir(panel.inboxFolder())
+            .entryList(QStringList() << "*.html", QDir::Files);
+        QTextBlock h1 = findH1Block(editor->document());
+        EXPECT("h1 block found for the edit", h1.isValid());
+        if (h1.isValid()) {
+            QSignalSpy titleSpy(&panel, &NotesPanel::noteTitleChanged);
+            QTextCursor c(editor->document());
+            c.setPosition(h1.position());
+            c.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+            c.insertText(QStringLiteral("Roadmap review"));
+            QApplication::processEvents();
+            panel.saveCurrentNote();
+            QApplication::processEvents();
+            EXPECT_STR_EQ("sidebar leaf adopted the H1 after save",
+                          leafTextForPath(p), QStringLiteral("Roadmap review"));
+            EXPECT_STR_EQ("file meta carries the adopted title",
+                          NotesStorage::titleMetaIn(readAll(p)),
+                          QStringLiteral("Roadmap review"));
+            EXPECT("disk FILENAME unchanged (H1 sync writes meta only)",
+                   QFile::exists(p) &&
+                   QDir(panel.inboxFolder())
+                           .entryList(QStringList() << "*.html", QDir::Files)
+                       == namesBefore);
+            bool spyCarried = false;
+            for (int i = 0; i < titleSpy.count(); ++i)
+                if (titleSpy.at(i).first().toString()
+                        == QStringLiteral("Roadmap review")) spyCarried = true;
+            EXPECT("noteTitleChanged fired with the new title", spyCarried);
+        }
+    }
+
+    // ── 64. legacy note: body edit never adopts; meta seeds the SAME
+    // label; an H1 edit then adopts; audit-fix display rules ───────────
+    std::printf("\n--- 64. legacy no-meta note: no-flip seed + heal rules ---\n");
+    {
+        // (a) custom filename + stale default H1 → filename-pretty wins
+        // (the no-hijack guard), and the first save seeds THAT label.
+        const QString p64 = QDir(panel.inboxFolder()).absoluteFilePath(
+            QStringLiteral("2026-01-02-0930-weekly-sync.html"));
+        {
+            QFile f(p64);
+            EXPECT("legacy fixture written", f.open(QIODevice::WriteOnly));
+            f.write("<html><head><title>w</title></head><body>"
+                    "<h1 class=\"meet-title\">Noter 01</h1>"
+                    "<p>legacy body 64</p></body></html>");
+        }
+        panel.openNoteFile(p64);
+        QApplication::processEvents();
+        EXPECT_STR_EQ("stale 'Noter 01' H1 does NOT hijack the renamed file",
+                      leafTextForPath(p64), QStringLiteral("weekly sync"));
+        // Body edit (NOT the H1) + save → label sticky, meta seeded.
+        {
+            QTextCursor c(editor->document());
+            c.movePosition(QTextCursor::End);
+            c.insertText(QStringLiteral(" plus64"));
+        }
+        QApplication::processEvents();
+        panel.saveCurrentNote();
+        QApplication::processEvents();
+        EXPECT_STR_EQ("label did not flip on the migration save",
+                      leafTextForPath(p64), QStringLiteral("weekly sync"));
+        EXPECT_STR_EQ("meta seeded with the label the user has been seeing",
+                      NotesStorage::titleMetaIn(readAll(p64)),
+                      QStringLiteral("weekly sync"));
+        // Editing the H1 itself IS a title change → adopt on save.
+        QTextBlock h1 = findH1Block(editor->document());
+        EXPECT("legacy hand-written <h1> imported with headingLevel==1",
+               h1.isValid());
+        if (h1.isValid()) {
+            QTextCursor c(editor->document());
+            c.setPosition(h1.position());
+            c.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+            c.insertText(QStringLiteral("Platform retro"));
+            QApplication::processEvents();
+            panel.saveCurrentNote();
+            QApplication::processEvents();
+            EXPECT_STR_EQ("H1 edit adopted as the new label",
+                          leafTextForPath(p64), QStringLiteral("Platform retro"));
+            EXPECT_STR_EQ("meta follows the adopted H1",
+                          NotesStorage::titleMetaIn(readAll(p64)),
+                          QStringLiteral("Platform retro"));
+        }
+        // (b) DEFAULT filename + CUSTOMIZED H1 → the H1 shows (audit fix);
+        // DEFAULT filename + default H1 → filename-pretty (pristine).
+        const QString pAudit = QDir(panel.inboxFolder()).absoluteFilePath(
+            QStringLiteral("2026-01-03-1000-noter-55.html"));
+        const QString pPristine = QDir(panel.inboxFolder()).absoluteFilePath(
+            QStringLiteral("2026-01-03-1015-noter-56.html"));
+        {
+            QFile f(pAudit);
+            f.open(QIODevice::WriteOnly);
+            f.write("<html><head></head><body><h1>Budget kickoff</h1>"
+                    "<p>a</p></body></html>");
+        }
+        {
+            QFile f(pPristine);
+            f.open(QIODevice::WriteOnly);
+            f.write("<html><head></head><body><h1>Noter 56</h1>"
+                    "<p>b</p></body></html>");
+        }
+        if (search) { search->setText(QStringLiteral("x")); QApplication::processEvents();
+                      search->setText(QString());           QApplication::processEvents(); }
+        EXPECT_STR_EQ("default file + customized H1 shows the H1 (audit fix)",
+                      leafTextForPath(pAudit), QStringLiteral("Budget kickoff"));
+        EXPECT_STR_EQ("default file + pristine H1 keeps the filename label",
+                      leafTextForPath(pPristine), QStringLiteral("Noter 56"));
+    }
+
+    // ── 65. sidebar rename (Latin): file + meta + H1 heal + pop-out
+    // follow + undo cannot resurrect the old title ─────────────────────
+    std::printf("\n--- 65. sidebar rename commits title everywhere ---\n");
+    {
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        const QString p = newestInboxHtml();
+        const QString prefix = stampPrefixOf(p);
+        EXPECT("rename fixture created with a stamp prefix", !prefix.isEmpty());
+        panel.popOutActive();
+        QApplication::processEvents();
+        QTreeWidgetItem *leaf = meetingLeafForPath(p);
+        EXPECT("leaf found for the open-note rename", leaf != nullptr);
+        const QString newP = QDir(panel.inboxFolder())
+            .absoluteFilePath(prefix + QStringLiteral("team-sync-hub.html"));
+        if (leaf) {
+            leaf->setText(0, QStringLiteral("Team Sync Hub"));
+            for (int i = 0; i < 4; ++i) QApplication::processEvents();
+            EXPECT("file renamed, stamp prefix kept", QFile::exists(newP));
+            EXPECT("old filename gone", !QFile::exists(p));
+            EXPECT_STR_EQ("meta carries the EXACT rename case",
+                          NotesStorage::titleMetaIn(readAll(newP)),
+                          QStringLiteral("Team Sync Hub"));
+            EXPECT_STR_EQ("body H1 healed to the new title",
+                          NotesStorage::legacyH1In(readAll(newP)),
+                          QStringLiteral("Team Sync Hub"));
+            NoterPopOut *pop = panel.popOutForTesting();
+            EXPECT("pop-out re-pointed at the renamed file",
+                   pop && pop->notePath() == newP);
+            EXPECT_STR_EQ("pop-out titlebar follows the rename",
+                          pop && pop->titleLabelForTesting()
+                              ? pop->titleLabelForTesting()->text() : QString(),
+                          QStringLiteral("Team Sync Hub"));
+            // The rename surgery is NOT a user edit: undo must be unable
+            // to resurrect the old H1 (a revived "Noter NN" would be
+            // re-adopted by the next autosave).
+            EXPECT("undo stack cleared after rename surgery",
+                   !editor->document()->isUndoAvailable());
+            editor->undo();
+            QApplication::processEvents();
+            panel.saveCurrentNote();
+            QApplication::processEvents();
+            EXPECT_STR_EQ("undo + save cannot resurrect the old title",
+                          NotesStorage::titleMetaIn(readAll(newP)),
+                          QStringLiteral("Team Sync Hub"));
+            // Buffer follows the renamed file (wave M5 contract intact).
+            editor->insertPlainText(QStringLiteral(" REPOINT_65"));
+            QApplication::processEvents();
+            panel.saveCurrentNote();
+            QApplication::processEvents();
+            EXPECT("buffer save lands in the renamed file",
+                   readAll(newP).contains(QStringLiteral("REPOINT_65")));
+        }
+        if (NoterPopOut *last = panel.popOutForTesting()) {
+            last->close();
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            QApplication::processEvents();
+        }
+        teamSyncPath = newP;   // reused by section 69
+
+        // Closed-note rename — byte-level head surgery, never a
+        // QTextDocument round-trip of a note that isn't open.
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        const QString pB = newestInboxHtml();
+        panel.newMeetingNote();          // open ANOTHER note → pB is closed
+        QApplication::processEvents();
+        QTreeWidgetItem *leafB = meetingLeafForPath(pB);
+        EXPECT("leaf found for the closed-note rename", leafB != nullptr);
+        if (leafB) {
+            const QString newB = QDir(panel.inboxFolder()).absoluteFilePath(
+                stampPrefixOf(pB) + QStringLiteral("archive-plan.html"));
+            leafB->setText(0, QStringLiteral("Archive Plan"));
+            for (int i = 0; i < 4; ++i) QApplication::processEvents();
+            EXPECT("closed note renamed on disk", QFile::exists(newB));
+            EXPECT_STR_EQ("closed-note meta written via head surgery",
+                          NotesStorage::titleMetaIn(readAll(newB)),
+                          QStringLiteral("Archive Plan"));
+            EXPECT_STR_EQ("closed-note H1 inner text healed",
+                          NotesStorage::legacyH1In(readAll(newB)),
+                          QStringLiteral("Archive Plan"));
+            EXPECT("h1 keeps its meet-title class (todos parser contract)",
+                   readAll(newB).contains(QStringLiteral("meet-title")));
+        }
+    }
+
+    // ── 66. CJK/emoji rename: Unicode label + meta, ASCII filename ────
+    std::printf("\n--- 66. CJK/emoji title — filename stays ASCII ---\n");
+    const QString cjkTitle = QString::fromUtf8(
+        "\xE8\xAE\xBE\xE8\xAE\xA1\xE5\x91\xA8\xE4\xBC\x9A "
+        "\xF0\x9F\x9A\x80");   // "design weekly" CJK + rocket
+    QString cjkPath;
+    {
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        const QString p = newestInboxHtml();
+        cjkPath = p;
+        panel.popOutActive();
+        QApplication::processEvents();
+        QTreeWidgetItem *leaf = meetingLeafForPath(p);
+        EXPECT("leaf found for the CJK rename", leaf != nullptr);
+        if (leaf) {
+            leaf->setText(0, cjkTitle);
+            for (int i = 0; i < 4; ++i) QApplication::processEvents();
+            EXPECT("disk filename UNCHANGED for a pure-CJK/emoji title",
+                   QFile::exists(p));
+            EXPECT("no '<prefix>-untitled.html' stray appeared",
+                   QDir(panel.inboxFolder())
+                       .entryList(QStringList() << "*-untitled.html",
+                                  QDir::Files).isEmpty());
+            bool asciiName = true;
+            const QString fname = QFileInfo(p).fileName();
+            for (const QChar c : fname)
+                if (c.unicode() > 127) asciiName = false;
+            EXPECT("filename is pure ASCII", asciiName);
+            EXPECT_STR_EQ("sidebar leaf shows the Unicode title verbatim",
+                          leafTextForPath(p), cjkTitle);
+            EXPECT_STR_EQ("meta stores the Unicode title",
+                          NotesStorage::titleMetaIn(readAll(p)), cjkTitle);
+            NoterPopOut *pop = panel.popOutForTesting();
+            EXPECT_STR_EQ("pop-out titlebar shows the Unicode title",
+                          pop && pop->titleLabelForTesting()
+                              ? pop->titleLabelForTesting()->text() : QString(),
+                          cjkTitle);
+        }
+        if (NoterPopOut *last = panel.popOutForTesting()) {
+            last->close();
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            QApplication::processEvents();
+        }
+    }
+
+    // ── 67. true no-op rename: zero writes, zero renames ──────────────
+    std::printf("\n--- 67. no-op rename leaves the file untouched ---\n");
+    {
+        // "Archive Plan" from 65 is CLOSED and meta-titled — ideal probe.
+        QString p;
+        for (const QFileInfo &fi : QDir(panel.inboxFolder())
+                 .entryInfoList(QStringList() << "*archive-plan.html",
+                                QDir::Files))
+            p = fi.absoluteFilePath();
+        EXPECT("no-op probe file present", !p.isEmpty());
+        if (!p.isEmpty()) {
+            const QByteArray bytesBefore = readBytes(p);
+            const QDateTime mtimeBefore = QFileInfo(p).lastModified();
+            QTreeWidgetItem *leaf = meetingLeafForPath(p);
+            EXPECT("leaf found for the no-op rename", leaf != nullptr);
+            if (leaf) {
+                // Padded text → itemChanged fires, trimmed text equals the
+                // resolver display → MUST be swallowed as a no-op.
+                leaf->setText(0, QStringLiteral(" Archive Plan "));
+                for (int i = 0; i < 4; ++i) QApplication::processEvents();
+                EXPECT("file not renamed on a no-op", QFile::exists(p));
+                EXPECT("bytes unchanged (no write)", readBytes(p) == bytesBefore);
+                EXPECT("mtime unchanged (no write)",
+                       QFileInfo(p).lastModified() == mtimeBefore);
+                EXPECT_STR_EQ("leaf label restored",
+                              leafTextForPath(p), QStringLiteral("Archive Plan"));
+            }
+        }
+    }
+
+    // ── 68. counter never reuses a LIVE number (titles count too) ─────
+    std::printf("\n--- 68. counter: stale H1 + meta titles reserve numbers ---\n");
+    {
+        // (a) stale legacy body H1 "Noter 150" on a custom-named file.
+        {
+            QFile f(QDir(panel.inboxFolder()).absoluteFilePath(
+                QStringLiteral("2026-01-04-1100-counter-probe.html")));
+            EXPECT("H1 counter probe written", f.open(QIODevice::WriteOnly));
+            f.write("<html><head></head><body><h1>Noter 150</h1>"
+                    "<p>probe a</p></body></html>");
+        }
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        EXPECT("stale legacy H1 reserves its number (next == 151)",
+               QDir(panel.inboxFolder())
+                       .entryList(QStringList() << "*noter-151.html",
+                                  QDir::Files).size() == 1);
+        // (b) meta title "Noter 200" on a custom-named file.
+        const QString metaProbe = QDir(panel.inboxFolder()).absoluteFilePath(
+            QStringLiteral("2026-01-04-1130-meta-probe.html"));
+        {
+            QFile f(metaProbe);
+            EXPECT("meta counter probe written", f.open(QIODevice::WriteOnly));
+            f.write("<html><head>"
+                    "<meta name=\"notepatra-title\" content=\"Noter 200\">"
+                    "</head><body><p>probe b</p></body></html>");
+        }
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        const QStringList got201 = QDir(panel.inboxFolder())
+            .entryList(QStringList() << "*noter-201.html", QDir::Files);
+        EXPECT("meta title reserves its number (next == 201)",
+               got201.size() == 1);
+        // (c) a number that disappears from EVERY surface is freed again.
+        panel.openTodosChecklist();        // unbind the open note first
+        QApplication::processEvents();
+        if (got201.size() == 1)
+            QFile::remove(QDir(panel.inboxFolder())
+                              .absoluteFilePath(got201.first()));
+        {
+            QFile f(metaProbe);            // genuine retitle, everywhere
+            f.open(QIODevice::WriteOnly);
+            f.write("<html><head>"
+                    "<meta name=\"notepatra-title\" content=\"Probe archived\">"
+                    "</head><body><p>probe b v2</p></body></html>");
+        }
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        EXPECT("genuinely retitled number is freed (next == 152, not 202)",
+               QDir(panel.inboxFolder())
+                       .entryList(QStringList() << "*noter-152.html",
+                                  QDir::Files).size() == 1);
+        EXPECT("no note skipped to 202",
+               QDir(panel.inboxFolder())
+                       .entryList(QStringList() << "*noter-202.html",
+                                  QDir::Files).isEmpty());
+    }
+
+    // ── 69. pop-out: meta-titled note + LIVE H1-edit follow ───────────
+    std::printf("\n--- 69. pop-out follows the live display title ---\n");
+    {
+        const QString p = teamSyncPath;   // "Team Sync Hub" from section 65
+        EXPECT("meta-titled note available", QFile::exists(p));
+        panel.openNoteFile(p);
+        QApplication::processEvents();
+        panel.popOutActive();
+        QApplication::processEvents();
+        NoterPopOut *pop = panel.popOutForTesting();
+        EXPECT("pop-out alive on the meta-titled note", pop != nullptr);
+        EXPECT_STR_EQ("pop-out titlebar equals the sidebar leaf",
+                      pop && pop->titleLabelForTesting()
+                          ? pop->titleLabelForTesting()->text() : QString(),
+                      leafTextForPath(p));
+        QTextBlock h1 = findH1Block(editor->document());
+        EXPECT("h1 present for the live-follow edit", h1.isValid());
+        if (h1.isValid() && pop) {
+            QTextCursor c(editor->document());
+            c.setPosition(h1.position());
+            c.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+            c.insertText(QStringLiteral("Hub Sync v2"));
+            QApplication::processEvents();
+            panel.saveCurrentNote();
+            QApplication::processEvents();
+            EXPECT_STR_EQ("pop-out title updated LIVE on H1 adoption",
+                          pop->titleLabelForTesting()->text(),
+                          QStringLiteral("Hub Sync v2"));
+            EXPECT_STR_EQ("sidebar agrees with the pop-out",
+                          leafTextForPath(p), QStringLiteral("Hub Sync v2"));
+        }
+        if (NoterPopOut *last = panel.popOutForTesting()) {
+            last->close();
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            QApplication::processEvents();
+        }
+    }
+
+    // ── 70. read-error title is the PRETTY name, never the raw stem ───
+    std::printf("\n--- 70. read-error carries the pretty title ---\n");
+    {
+        const QString p = QDir(panel.inboxFolder()).absoluteFilePath(
+            QStringLiteral("2026-01-05-1200-secret-probe.html"));
+        {
+            QFile f(p);
+            EXPECT("read-error fixture written", f.open(QIODevice::WriteOnly));
+            f.write("<html><body><p>locked</p></body></html>");
+        }
+        QFile::setPermissions(p, QFileDevice::WriteOwner);   // 0200 — unreadable
+        QSignalSpy titleSpy(&panel, &NotesPanel::noteTitleChanged);
+        panel.openNoteFile(p);
+        QApplication::processEvents();
+        EXPECT("noteTitleChanged fired on the read error", titleSpy.count() >= 1);
+        const QString carried = titleSpy.count()
+            ? titleSpy.last().first().toString() : QString();
+        EXPECT_STR_EQ("signal carries the PRETTY name", carried,
+                      QStringLiteral("secret probe"));
+        EXPECT("signal does NOT carry the raw stem",
+               carried != QStringLiteral("2026-01-05-1200-secret-probe"));
+        QFile::setPermissions(p,
+            QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+        panel.openNoteFile(p);   // leave the panel in a clean, bound state
+        QApplication::processEvents();
+    }
+
+    // ── 71. zero-rewrite migration: open+close never touches the file ─
+    std::printf("\n--- 71. legacy note: zero-rewrite + no label flip ---\n");
+    {
+        const QString p = QDir(panel.inboxFolder()).absoluteFilePath(
+            QStringLiteral("2026-01-06-0930-noter-03.html"));   // 4-digit legacy
+        {
+            QFile f(p);
+            EXPECT("legacy 4-digit fixture written", f.open(QIODevice::WriteOnly));
+            f.write("<html><head><title>n</title></head><body>"
+                    "<h1 class=\"meet-title\">Noter 03</h1>"
+                    "<p>legacy migrate body</p></body></html>");
+        }
+        if (search) { search->setText(QStringLiteral("x")); QApplication::processEvents();
+                      search->setText(QString());           QApplication::processEvents(); }
+        EXPECT_STR_EQ("label before open (filename-pretty)",
+                      leafTextForPath(p), QStringLiteral("Noter 03"));
+        const QByteArray bytesBefore = readBytes(p);
+        panel.openNoteFile(p);
+        QApplication::processEvents();
+        panel.openTodosChecklist();   // navigate away WITHOUT editing
+        QApplication::processEvents();
+        EXPECT("file bytes hash-identical after open+close (no rewrite)",
+               readBytes(p) == bytesBefore);
+        EXPECT_STR_EQ("label unchanged after open+close",
+                      leafTextForPath(p), QStringLiteral("Noter 03"));
+        // An unrelated BODY edit + save adopts the meta — same label.
+        panel.openNoteFile(p);
+        QApplication::processEvents();
+        {
+            QTextCursor c(editor->document());
+            c.movePosition(QTextCursor::End);
+            c.insertText(QStringLiteral(" tail71"));
+        }
+        QApplication::processEvents();
+        panel.saveCurrentNote();
+        QApplication::processEvents();
+        EXPECT_STR_EQ("meta adoption locks in the SAME label",
+                      leafTextForPath(p), QStringLiteral("Noter 03"));
+        EXPECT_STR_EQ("seeded meta equals the pre-migration label",
+                      NotesStorage::titleMetaIn(readAll(p)),
+                      QStringLiteral("Noter 03"));
+    }
+
+    // ── 72. Unicode search matches the meta title ──────────────────────
+    std::printf("\n--- 72. Unicode title is searchable ---\n");
+    if (search && !cjkPath.isEmpty()) {
+        search->setText(QString::fromUtf8("\xE8\xAE\xBE\xE8\xAE\xA1"));  // CJK fragment
+        QApplication::processEvents();
+        EXPECT("CJK fragment keeps exactly the renamed leaf visible",
+               countMeetingLeaves() == 1);
+        EXPECT("the surviving leaf IS the CJK-titled note",
+               meetingLeafForPath(cjkPath) != nullptr);
+        search->setText(QString());
+        QApplication::processEvents();
     }
 
     // ── Summary ───────────────────────────────────────────────────
