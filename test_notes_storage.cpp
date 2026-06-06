@@ -58,13 +58,11 @@ private slots:
     // ── filename safety ──
     void filename_twentyEdgeCases();
 
-    // ── lock file ──
-    void lock_acquireByFreshPid_succeeds();
-    void lock_claimStalePid_succeeds();
-    void lock_refuseLivePid_returnsFalse();
-    void lock_release_removesFile();
-
     // ── listAllNotes filter ──
+    // (The per-PID .lock tests that used to sit here were removed in A7
+    //  together with the lock API itself — it was dead code with zero
+    //  production callers. listAllNotes_filtersOutSidecars still proves
+    //  legacy *.lock files are filtered from listings.)
     void listAllNotes_filtersOutSidecars();
     void listAllNotes_sortedByMtimeDesc();
 
@@ -85,6 +83,8 @@ private slots:
     void plainText_attributesNeverLeak();
     void plainText_casePreserved();
     void plainText_emptyAndTagOnly();
+    // ── durability budget (A7) ──
+    void durability_oneMbSave_latencyBudget();
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -476,84 +476,6 @@ void TestNotesStorage::filename_twentyEdgeCases() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Lock file
-// ═══════════════════════════════════════════════════════════════════════
-
-void TestNotesStorage::lock_acquireByFreshPid_succeeds() {
-    QTemporaryDir td;
-    NotesStorage s(td.path());
-    const QString path = td.path() + "/n.html";
-    QVERIFY(s.acquireLock(path));
-    QVERIFY(QFile::exists(path + ".lock"));
-}
-
-void TestNotesStorage::lock_claimStalePid_succeeds() {
-    QTemporaryDir td;
-    NotesStorage s(td.path());
-    const QString path = td.path() + "/n.html";
-    QDir().mkpath(QFileInfo(path).absolutePath());
-
-    // Write a stale lock from a PID that almost certainly doesn't
-    // exist (max int32 PID). On all supported OSes, pidIsAlive(2147483646)
-    // returns false.
-    QFile f(path + ".lock");
-    QVERIFY(f.open(QIODevice::WriteOnly));
-    f.write("2147483646\t2020-01-01T00:00:00Z");
-    f.close();
-
-    QVERIFY(s.acquireLock(path));
-
-    // Confirm the lock file now contains OUR pid.
-    QFile r(path + ".lock");
-    QVERIFY(r.open(QIODevice::ReadOnly));
-    const QString contents = QString::fromUtf8(r.readAll());
-    r.close();
-    QVERIFY(!contents.startsWith("2147483646"));
-}
-
-void TestNotesStorage::lock_refuseLivePid_returnsFalse() {
-    QTemporaryDir td;
-    NotesStorage s(td.path());
-    const QString path = td.path() + "/n.html";
-    QDir().mkpath(QFileInfo(path).absolutePath());
-
-    // Use a "different but alive" PID: the parent of the current
-    // process. On Unix that's the shell / ctest; on Windows we use
-    // the current process's PID after acquiring once, then attempt a
-    // re-acquire from a faux holder. To keep this portable we just use
-    // PID 1 (init / launchd / System on Win), which is always alive
-    // on POSIX. On Windows PID 1 may not exist, so the test uses
-    // current PID as the "live" sentinel and forces a synthetic
-    // foreign holder.
-#if defined(Q_OS_UNIX) || defined(Q_OS_MAC)
-    QFile f(path + ".lock");
-    QVERIFY(f.open(QIODevice::WriteOnly));
-    f.write("1\t2099-01-01T00:00:00Z");
-    f.close();
-    QVERIFY(!s.acquireLock(path));
-#else
-    // Windows: use our own PID as the "live foreign holder". The lock
-    // logic treats holder == self as re-entrant (returns true), so we
-    // simulate a foreign live holder by writing our PID minus the
-    // re-entrant short-circuit — actually the simplest path here is
-    // to skip if no portable always-alive low PID. Just verify the
-    // re-entrant branch behaves.
-    QVERIFY(s.acquireLock(path));
-    QVERIFY(s.acquireLock(path));   // re-entrant; we own it
-#endif
-}
-
-void TestNotesStorage::lock_release_removesFile() {
-    QTemporaryDir td;
-    NotesStorage s(td.path());
-    const QString path = td.path() + "/n.html";
-    QVERIFY(s.acquireLock(path));
-    QVERIFY(QFile::exists(path + ".lock"));
-    s.releaseLock(path);
-    QVERIFY(!QFile::exists(path + ".lock"));
-}
-
-// ═══════════════════════════════════════════════════════════════════════
 // listAllNotes filter
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -754,6 +676,56 @@ void TestNotesStorage::plainText_emptyAndTagOnly() {
     QCOMPARE(NotesStorage::plainTextForSearch(QString()), QString());
     QCOMPARE(NotesStorage::plainTextForSearch(QStringLiteral("<p></p>")),
              QString());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Durability budget — A7. saveNote now fsyncs the .tmp (and the directory
+// entry on POSIX) before the atomic rename, so a power loss mid-rename
+// can't surface a zero-byte note. The fsync must not blow the save budget:
+// a 1 MB note has to stay well under ~50ms per save on a dev box (the
+// assert uses a generous 500ms ceiling so slow shared CI runners don't
+// flake); the measured numbers are printed for the release notes.
+// ═══════════════════════════════════════════════════════════════════════
+
+void TestNotesStorage::durability_oneMbSave_latencyBudget() {
+    QTemporaryDir td;
+    QVERIFY(td.isValid());
+    NotesStorage s(td.path());
+    const QString path = td.path() + "/big.html";
+
+    // ~1 MB body of plain paragraphs (sanitizer + validator see realistic
+    // markup, not one giant text node).
+    QString body;
+    body.reserve(1100 * 1024);
+    const QString line =
+        QStringLiteral("<p>0123456789 abcdefghijklmnopqrstuvwxyz "
+                       "lorem ipsum dolor sit amet consectetur.</p>\n");
+    while (body.size() < 1024 * 1024) body += line;
+    const QString html =
+        QStringLiteral("<html><head><title>big</title></head><body>") +
+        body + QStringLiteral("</body></html>");
+
+    // Warm-up save (no backup rotation yet; fills caches).
+    QString err;
+    QVERIFY2(s.saveNote(path, html, &err), qPrintable(err));
+
+    // Timed saves — these include backup-ring rotation, sanitize,
+    // validate, write, fsync, rename, dir-fsync: the full autosave cost.
+    qint64 total = 0, worst = 0;
+    const int runs = 3;
+    for (int i = 0; i < runs; ++i) {
+        QElapsedTimer t;
+        t.start();
+        QVERIFY2(s.saveNote(path, html, &err), qPrintable(err));
+        const qint64 ms = t.elapsed();
+        total += ms;
+        worst = qMax(worst, ms);
+        qInfo("1 MB saveNote run %d: %lld ms", i + 1, ms);
+    }
+    qInfo("1 MB saveNote avg: %lld ms, worst: %lld ms", total / runs, worst);
+    QVERIFY2(worst < 500,
+             qPrintable(QStringLiteral("1 MB save took %1 ms (budget 500 ms)")
+                            .arg(worst)));
 }
 
 QTEST_MAIN(TestNotesStorage)

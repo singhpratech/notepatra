@@ -22,6 +22,7 @@
 #pragma once
 
 #include <QWidget>
+#include <QByteArray>
 #include <QString>
 #include <QStringList>
 #include <QSet>
@@ -245,6 +246,25 @@ private:
     void hideSaveFailureBanner();
     bool promptSaveCopyAs();   // returns true when a copy was written
 
+    // ── external-edit conflict guard (A7) ──────────────────────────────
+    // Zero mtime checks used to exist: an externally-modified note (sync
+    // tool, another editor, another Notepatra instance) was silently
+    // overwritten by the next autosave tick — and rotated out of the .bak
+    // ring within ~25s of typing. Now the on-disk stamp (mtime + size +
+    // SHA-256) is recorded at load and after every successful save;
+    // before each save we re-stat. On a mismatch the buffer is rescued to
+    // "<name> (conflict yyyy-MM-dd hhmmss).html" NEXT TO the original
+    // (which stays untouched, reloadable via its sidebar leaf), editing
+    // rebinds to the conflict copy, and the M2 banner surfaces what
+    // happened. An mtime-only touch(1) is NOT a conflict — the content
+    // hash short-circuits it. A missing file (deleted under us) IS
+    // treated as a conflict (rescue copy written).
+    void recordDiskState(const QString &absolutePath);
+    bool diskChangedSinceLoad(const QString &absolutePath);
+    void rescueToConflictCopy(const QString &bodyHtml);
+    void noteSaveConflicted(const QString &origName, const QString &conflictName);
+    static QString conflictCopyPathFor(const QString &absolutePath);
+
     // QTextEdit event filter — click ☐/✓ toggles, F4 hotkey,
     // markdown auto-replacement, etc.
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -361,7 +381,19 @@ private:
     QString        m_lastSaveError;
     bool           m_readError          { false };
 
+    // A7 — stamp of m_currentPath's on-disk state at load / last save
+    // (drives the external-edit conflict guard above).
+    QDateTime      m_diskMtime;
+    qint64         m_diskSize          { -1 };
+    QByteArray     m_diskHash;          // SHA-256 of the on-disk bytes
+    bool           m_diskStateValid    { false };
+
     QPointer<QTimer> m_autosave;
+    // A7 — draft cadence. Single-shot ~1.5s timer armed by the FIRST
+    // dirty keystroke; writes the .draft sidecar so a hard crash
+    // (kill -9 / power loss) loses <=2s of typing instead of the 5s
+    // autosave window. saveNote() clears the draft on every clean save.
+    QPointer<QTimer> m_draftTimer;
 
     // ── services (lazily created) ─────────────────────────────────
     NotesStorage         *m_storage   { nullptr };

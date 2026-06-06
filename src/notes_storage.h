@@ -2,22 +2,33 @@
 //
 // notes_storage — bulletproof HTML storage layer for the Notes feature.
 //
-// Twelve failure modes defended against:
-//   1.  Power loss mid-save              → write-temp + atomic rename
-//   2.  Crash before save                → 5-second .draft sidecar
-//   3.  Two processes editing same file  → per-PID .lock + stale detection
-//   4.  XSS / hostile paste              → whitelist sanitizer (sanitizeBody)
-//   5.  Malformed user-supplied HTML     → validate-before-write via
+// Ten failure modes defended against:
+//   1.  Power loss mid-save              → write-temp + fsync + atomic
+//                                          rename (+ directory fsync on
+//                                          POSIX so the rename itself is
+//                                          durable)
+//   2.  Crash before save                → .draft sidecar, written by
+//                                          NotesPanel ~1.5s after the first
+//                                          unsaved keystroke; recovery is
+//                                          offered on the next open
+//   3.  XSS / hostile paste              → whitelist sanitizer (sanitizeBody)
+//   4.  Malformed user-supplied HTML     → validate-before-write via
 //                                          QXmlStreamReader on body region
-//   6.  Disk corruption of newest file   → 5-deep .bak1..bak5 ring
-//   7.  Filename-injection on Win/macOS  → safeFilename strips reserved chars
-//   8.  Stale lock from killed process   → PID liveness probe per OS
-//   9.  Sync-tool partial writes         → list filter skips .tmp/.draft/.bak
-//   10. Backup rotation failure          → best-effort, never blocks save
-//   11. Size cap readiness (future cap)  → readNote takes errorOut so the
+//   5.  Disk corruption of newest file   → 5-deep .bak1..bak5 ring
+//   6.  Filename-injection on Win/macOS  → safeFilename strips reserved chars
+//   7.  Sync-tool partial writes         → list filter skips .tmp/.draft/.bak
+//   8.  Backup rotation failure          → best-effort, never blocks save
+//   9.  Size cap readiness (future cap)  → readNote takes errorOut so the
 //                                          caller can surface size errors
-//   12. Forward template integration     → ForwardDecl of NotesTemplate so
-//                                          this file compiles standalone
+//   10. External edit while open         → NotesPanel stamps mtime/size/hash
+//                                          at load + save and reroutes a
+//                                          stale save to a conflict copy
+//                                          (see notes.cpp, A7)
+//
+// NOT defended against (deliberately): two *processes* editing the same
+// note concurrently. A per-PID .lock protocol existed here as dead code
+// (documented, zero callers) and was removed in A7 — multi-instance
+// protection needs an explicit opt-in design, not a false promise.
 
 #ifndef NOTES_STORAGE_H
 #define NOTES_STORAGE_H
@@ -47,17 +58,15 @@ public:
     bool saveNote(const QString &absolutePath, const QString &fullHtml,
                   QString *errorOut = nullptr);
 
-    // Draft sidecar — called by the 5s autosave timer in NotesPanel.
-    // Writes absolutePath + ".draft" non-atomically (small fast write).
-    // On launch, NotesPanel checks: if .draft mtime > .html mtime, offer
-    // recover. After successful saveNote(), draft is removed.
+    // Draft sidecar — called by NotesPanel's ~1.5s draft timer (armed on
+    // the first unsaved keystroke), so a hard crash loses at most ~2s of
+    // typing instead of the full 5s autosave window. Writes
+    // absolutePath + ".draft" non-atomically (small fast write). On note
+    // open, NotesPanel checks: if a .draft newer than the .html exists,
+    // it offers recovery. After successful saveNote() (and after a
+    // declined recovery), the draft is removed.
     bool writeDraft(const QString &absolutePath, const QString &html);
     void clearDraft(const QString &absolutePath);
-
-    // Per-PID lock file at absolutePath + ".lock".
-    // Contents: "<pid>\t<isoTimestamp>".
-    bool acquireLock(const QString &absolutePath);
-    void releaseLock(const QString &absolutePath);
 
     // Sanitizer — strip dangerous HTML. See the full forbidden / allowed
     // list in the implementation header comment.
@@ -82,7 +91,9 @@ public:
     static QString safeFilename(const QString &raw);
 
     // List all .html files under root recursively, sorted by mtime desc.
-    // Skip files ending in .bak1..bak<depth>, .draft, .lock, .tmp.
+    // Skip files ending in .bak1..bak<depth>, .draft, .tmp — plus .lock,
+    // a legacy sidecar from builds that still shipped the (now removed)
+    // lock protocol; stale ones may survive on disk.
     QStringList listAllNotes() const;
 
     // Configurable backup ring depth (default 5). Useful for tests.

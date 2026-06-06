@@ -12,6 +12,7 @@
 #include "notes_popout.h"
 #include "notes_sweep_dialog.h"
 #include "notes_sweep_prompt.h"
+#include "config.h"
 
 #include <QAbstractButton>
 #include <QAction>
@@ -50,6 +51,27 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
+
+// A7 — every "watchdog: never hang" singleShot(1500) used to be
+// fire-and-forget: it rejected EVERY visible QDialog 1.5s after arming,
+// whether or not its own section was still waiting. With ~7 such timers
+// armed across the suite, any shift in section pacing (here: the A7
+// conflict-guard hashing) could land a stale watchdog INSIDE a later
+// section's modal exec and kill that dialog before its acceptor ran
+// (observed: section 15's watchdog rejecting section 32's Extract
+// dialog). Each watchdog now carries a section-done flag and no-ops once
+// its section completed — same anti-hang rescue, zero cross-section
+// interference.
+static std::shared_ptr<bool> armDialogWatchdog(int ms = 1500) {
+    auto done = std::make_shared<bool>(false);
+    QTimer::singleShot(ms, [done]() {
+        if (*done) return;             // section finished — leave later dialogs alone
+        for (QWidget *w : QApplication::topLevelWidgets())
+            if (auto *d = qobject_cast<QDialog *>(w)) d->reject();
+    });
+    return done;
+}
 
 static int g_pass = 0, g_fail = 0;
 #define EXPECT(label, cond) \
@@ -525,12 +547,10 @@ int main(int argc, char *argv[]) {
                 if (auto *d = qobject_cast<QDialog *>(w))
                     if (d->isVisible()) { d->reject(); dismissed = true; }
         });
-        QTimer::singleShot(1500, []() {           // watchdog: never hang
-            for (QWidget *w : QApplication::topLevelWidgets())
-                if (auto *d = qobject_cast<QDialog *>(w)) d->reject();
-        });
+        auto done15a = armDialogWatchdog();       // watchdog: never hang
         panel.promptReminderForNote(QStringLiteral("/tmp/repro-noter-01.html"),
                                     QStringLiteral("Noter 01"));
+        *done15a = true;
         EXPECT("reminder dialog (no existing) opened without crashing", true);
         EXPECT("watchdog saw + dismissed the modal", dismissed);
 
@@ -541,15 +561,13 @@ int main(int argc, char *argv[]) {
                 if (auto *d = qobject_cast<QDialog *>(w))
                     if (d->isVisible()) d->reject();
         });
-        QTimer::singleShot(1500, []() {
-            for (QWidget *w : QApplication::topLevelWidgets())
-                if (auto *d = qobject_cast<QDialog *>(w)) d->reject();
-        });
+        auto done15b = armDialogWatchdog();
         // Seed a reminder via the same public path (accept would set one, but
         // we just need noteReminderAt to be valid — reuse promptReminder is
         // overkill; instead schedule directly is private, so accept once).
         panel.promptReminderForNote(QStringLiteral("/tmp/repro-noter-01.html"),
                                     QStringLiteral("Noter 01"));
+        *done15b = true;
         EXPECT("reminder dialog (2nd open) opened without crashing", true);
     }
 
@@ -758,12 +776,10 @@ int main(int argc, char *argv[]) {
                 if (auto *d = qobject_cast<QDialog *>(w))
                     if (d->isVisible()) d->accept();
         });
-        QTimer::singleShot(1500, []() {           // watchdog: never hang
-            for (QWidget *w : QApplication::topLevelWidgets())
-                if (auto *d = qobject_cast<QDialog *>(w)) d->reject();
-        });
+        auto done21 = armDialogWatchdog();        // watchdog: never hang
         const QString remNote = panel.inboxFolder() + "/rem-test-note.html";
         panel.promptReminderForNote(remNote, QStringLiteral("Ship the build"));
+        *done21 = true;
         QApplication::processEvents();
 
         int remCount = -1; bool sawLeaf = false;
@@ -810,11 +826,9 @@ int main(int argc, char *argv[]) {
                 if (auto *d = qobject_cast<QDialog *>(w))
                     if (d->isVisible()) { d->reject(); rejected = true; }
         });
-        QTimer::singleShot(1500, []() {           // watchdog: never hang
-            for (QWidget *w : QApplication::topLevelWidgets())
-                if (auto *d = qobject_cast<QDialog *>(w)) d->reject();
-        });
+        auto done22 = armDialogWatchdog();        // watchdog: never hang
         panel.showExtractResult(fakeResponse, QStringLiteral("test-model"));
+        *done22 = true;
         QApplication::processEvents();
         EXPECT("Extract dialog opened + cancelled without crashing", true);
         EXPECT("watchdog saw + rejected the Extract dialog", rejected);
@@ -1181,11 +1195,9 @@ int main(int argc, char *argv[]) {
         QTimer::singleShot(150, [&]() {
             clickModalButton(QStringLiteral("Stay"), &sawStay);
         });
-        QTimer::singleShot(1500, []() {       // watchdog: never hang
-            for (QWidget *w : QApplication::topLevelWidgets())
-                if (auto *d = qobject_cast<QDialog *>(w)) d->reject();
-        });
+        auto done29a = armDialogWatchdog();   // watchdog: never hang
         panel.openNoteFile(pathA);
+        *done29a = true;
         QApplication::processEvents();
         EXPECT("modal appeared and Stay was clicked", sawStay);
         EXPECT("Stay kept the unsaved delta in the editor",
@@ -1196,11 +1208,9 @@ int main(int argc, char *argv[]) {
         QTimer::singleShot(150, [&]() {
             clickModalButton(QStringLiteral("Discard"), &sawDiscard);
         });
-        QTimer::singleShot(1500, []() {
-            for (QWidget *w : QApplication::topLevelWidgets())
-                if (auto *d = qobject_cast<QDialog *>(w)) d->reject();
-        });
+        auto done29b = armDialogWatchdog();
         panel.openNoteFile(pathA);
+        *done29b = true;
         QApplication::processEvents();
         EXPECT("modal appeared and Discard was clicked", sawDiscard);
         EXPECT("Discard navigated to the target note",
@@ -1341,11 +1351,9 @@ int main(int argc, char *argv[]) {
                 if (auto *d = qobject_cast<QDialog *>(w))
                     if (d->isVisible()) d->accept();
         });
-        QTimer::singleShot(1500, []() {           // watchdog: never hang
-            for (QWidget *w : QApplication::topLevelWidgets())
-                if (auto *d = qobject_cast<QDialog *>(w)) d->reject();
-        });
+        auto done32 = armDialogWatchdog();        // watchdog: never hang
         panel.showExtractResult(fakeResponse, QStringLiteral("test-model"));
+        *done32 = true;
         QApplication::processEvents();
         bool summaryH2 = false, actionsH2 = false;
         if (ed)
@@ -1958,6 +1966,340 @@ int main(int argc, char *argv[]) {
 
         search->setText(QString());
         QApplication::processEvents();
+    }
+
+    // ── 46. external edit → conflict copy, original intact (A7) ───────
+    // THE silent-clobber bug: zero mtime checks existed anywhere in the
+    // save path, so a note rewritten on disk (sync tool, other editor)
+    // while open here was silently overwritten by the next autosave tick
+    // and rotated out of the .bak ring within ~25s. Contract now: the
+    // external version stays untouched; the buffer is rescued to a
+    // "<name> (conflict …).html" sibling; the M2 banner says what
+    // happened; editing stays bound to the conflict copy.
+    std::printf("\n--- 46. external edit → conflict copy, original intact ---\n");
+    {
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        QWidget *banner = panel.findChild<QWidget *>(
+            QStringLiteral("noterSaveFailBanner"));
+        QLabel *hint = panel.findChild<QLabel *>(QStringLiteral("noterSavedHint"));
+        const QString p37 = QDir(panel.inboxFolder())
+            .absoluteFilePath(QStringLiteral("2026-01-02-091500-conflict-test.html"));
+        {
+            QFile f(p37);
+            f.open(QIODevice::WriteOnly);
+            f.write("<html><body><p>MINE_BODY_37</p></body></html>");
+        }
+        EXPECT("editor + banner + hint present for conflict test",
+               ed && banner && hint);
+        if (ed && banner && hint) {
+            panel.openNoteFile(p37);          // records the disk stamp
+            QApplication::processEvents();
+
+            // External program rewrites the note behind our back.
+            {
+                QFile f(p37);
+                f.open(QIODevice::WriteOnly | QIODevice::Truncate);
+                f.write("<html><body><p>EXTERNAL_BODY_37 — a sync tool "
+                        "rewrote this file while it was open</p></body></html>");
+            }
+
+            ed->insertPlainText(QStringLiteral("\nTYPED_AFTER_37"));
+            QApplication::processEvents();
+            panel.saveCurrentNote();          // must NOT clobber the external version
+            QApplication::processEvents();
+
+            const QString diskOrig = readAll(p37);
+            EXPECT("external version NOT clobbered by the save",
+                   diskOrig.contains(QStringLiteral("EXTERNAL_BODY_37")));
+            EXPECT("typed delta did NOT reach the original file",
+                   !diskOrig.contains(QStringLiteral("TYPED_AFTER_37")));
+
+            QString confPath;
+            for (const QString &c : QDir(panel.inboxFolder()).entryList(
+                     QStringList() << QStringLiteral("*conflict-test (conflict*"),
+                     QDir::Files)) {
+                const QString full = panel.inboxFolder() + "/" + c;
+                if (readAll(full).contains(QStringLiteral("TYPED_AFTER_37")))
+                    confPath = full;
+            }
+            EXPECT("a conflict copy holds the user's version", !confPath.isEmpty());
+            EXPECT("conflict copy carries the pre-edit body too",
+                   !confPath.isEmpty() &&
+                       readAll(confPath).contains(QStringLiteral("MINE_BODY_37")));
+
+            EXPECT("M2 banner visible after the conflict", !banner->isHidden());
+            bool bannerSaysConflict = false;
+            for (QLabel *l : banner->findChildren<QLabel *>())
+                if (l->text().contains(QStringLiteral("Note changed on disk")))
+                    bannerSaysConflict = true;
+            EXPECT("banner says 'Note changed on disk — your version was saved as …'",
+                   bannerSaysConflict);
+            EXPECT("hint flips to the red CONFLICT state",
+                   hint->text().startsWith(QStringLiteral("CONFLICT")));
+
+            // Editing stays bound to the conflict copy — never the original.
+            ed->insertPlainText(QStringLiteral("\nMORE_AFTER_CONFLICT_37"));
+            QApplication::processEvents();
+            panel.saveCurrentNote();
+            QApplication::processEvents();
+            EXPECT("further saves land in the conflict copy",
+                   !confPath.isEmpty() && readAll(confPath).contains(
+                       QStringLiteral("MORE_AFTER_CONFLICT_37")));
+            EXPECT("original STILL holds the external version afterwards",
+                   readAll(p37).contains(QStringLiteral("EXTERNAL_BODY_37")) &&
+                   !readAll(p37).contains(QStringLiteral("MORE_AFTER_CONFLICT_37")));
+        }
+    }
+
+    // ── 47. mtime-only touch is NOT a conflict (A7) ───────────────────
+    // touch(1) / sync tools that re-stamp without rewriting bump mtime
+    // only. The content-hash short-circuit must let the save proceed
+    // normally — no false-positive conflict copies.
+    std::printf("\n--- 47. mtime-only touch does not false-positive ---\n");
+    {
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        const QString p38 = QDir(panel.inboxFolder())
+            .absoluteFilePath(QStringLiteral("2026-01-02-093000-touch-test.html"));
+        {
+            QFile f(p38);
+            f.open(QIODevice::WriteOnly);
+            f.write("<html><body><p>TOUCH_BASE_38</p></body></html>");
+        }
+        EXPECT("editor present for touch test", ed != nullptr);
+        if (ed) {
+            panel.openNoteFile(p38);
+            QApplication::processEvents();
+            // mtime-only bump — same bytes (touch(1) equivalent).
+            {
+                QFile f(p38);
+                f.open(QIODevice::ReadWrite);
+                f.setFileTime(QDateTime::currentDateTime().addSecs(7),
+                              QFileDevice::FileModificationTime);
+            }
+            ed->insertPlainText(QStringLiteral("\nTOUCH_OK_38"));
+            QApplication::processEvents();
+            panel.saveCurrentNote();
+            QApplication::processEvents();
+            const QStringList confs = QDir(panel.inboxFolder()).entryList(
+                QStringList() << QStringLiteral("*touch-test (conflict*"),
+                QDir::Files);
+            EXPECT("no conflict copy for an mtime-only touch", confs.isEmpty());
+            EXPECT("save proceeded into the original file",
+                   readAll(p38).contains(QStringLiteral("TOUCH_OK_38")));
+        }
+    }
+
+    // ── 48. note deleted under us → rescue conflict copy (A7) ─────────
+    // A missing file is treated as a conflict too: the buffer is the only
+    // copy left, so it gets rescued — never silently re-materialized at
+    // the old path (the deleting program may have meant it).
+    std::printf("\n--- 48. deleted-under-us note rescues to a conflict copy ---\n");
+    {
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        QWidget *banner = panel.findChild<QWidget *>(
+            QStringLiteral("noterSaveFailBanner"));
+        const QString p39 = QDir(panel.inboxFolder())
+            .absoluteFilePath(QStringLiteral("2026-01-02-094500-vanish-test.html"));
+        {
+            QFile f(p39);
+            f.open(QIODevice::WriteOnly);
+            f.write("<html><body><p>VANISH_BASE_39</p></body></html>");
+        }
+        EXPECT("editor present for vanish test", ed != nullptr);
+        if (ed && banner) {
+            panel.openNoteFile(p39);
+            QApplication::processEvents();
+            QFile::remove(p39);               // deleted behind our back
+            ed->insertPlainText(QStringLiteral("\nVANISH_TYPED_39"));
+            QApplication::processEvents();
+            panel.saveCurrentNote();
+            QApplication::processEvents();
+            EXPECT("the deleted path was NOT silently re-created",
+                   !QFile::exists(p39));
+            QString confPath;
+            for (const QString &c : QDir(panel.inboxFolder()).entryList(
+                     QStringList() << QStringLiteral("*vanish-test (conflict*"),
+                     QDir::Files))
+                confPath = panel.inboxFolder() + "/" + c;
+            EXPECT("buffer rescued to a conflict copy", !confPath.isEmpty());
+            EXPECT("rescued copy holds the typed delta",
+                   !confPath.isEmpty() && readAll(confPath).contains(
+                       QStringLiteral("VANISH_TYPED_39")));
+            EXPECT("banner visible for the vanished-file conflict",
+                   !banner->isHidden());
+        }
+    }
+
+    // ── 49. draft cadence: .draft within 2s of typing, gone on save (A7)
+    // The .draft API existed in notes_storage with ZERO callers — a hard
+    // crash used to lose up to the full 5s autosave window. The panel's
+    // single-shot ~1.5s draft timer now writes the sidecar after the
+    // first unsaved keystroke. A dedicated panel with a 300s autosave
+    // interval isolates the draft from the 5s autosave of `panel`.
+    std::printf("\n--- 49. draft written within 2s, cleared by clean save ---\n");
+    {
+        const int savedInterval = Config::instance().autoSaveIntervalSec;
+        Config::instance().autoSaveIntervalSec = 300;
+        {
+            NotesPanel draftPanel;
+            const QString p40 = QDir(draftPanel.inboxFolder())
+                .absoluteFilePath(QStringLiteral("2026-01-03-080000-draft-test.html"));
+            {
+                QFile f(p40);
+                f.open(QIODevice::WriteOnly);
+                f.write("<html><body><p>DRAFT_BASE_40</p></body></html>");
+            }
+            QTextEdit *ded = draftPanel.findChild<QTextEdit *>();
+            EXPECT("draft panel has an editor", ded != nullptr);
+            if (ded) {
+                draftPanel.openNoteFile(p40);
+                QApplication::processEvents();
+                ded->insertPlainText(QStringLiteral("\nDRAFT_ME_40"));
+                QApplication::processEvents();
+                EXPECT("no .draft immediately after the keystroke",
+                       !QFile::exists(p40 + QStringLiteral(".draft")));
+                QTest::qWait(2000);           // cadence target: <=2s loss window
+                EXPECT(".draft exists within 2s of the first keystroke",
+                       QFile::exists(p40 + QStringLiteral(".draft")));
+                EXPECT(".draft holds the typed delta",
+                       readAll(p40 + QStringLiteral(".draft"))
+                           .contains(QStringLiteral("DRAFT_ME_40")));
+                draftPanel.saveCurrentNote();
+                QApplication::processEvents();
+                EXPECT("clean save removed the .draft",
+                       !QFile::exists(p40 + QStringLiteral(".draft")));
+                EXPECT("clean save landed the delta in the note",
+                       readAll(p40).contains(QStringLiteral("DRAFT_ME_40")));
+            }
+        }
+        Config::instance().autoSaveIntervalSec = savedInterval;
+    }
+
+    // ── 50. crash-sim: newer .draft offers recovery on open (A7) ──────
+    // kill -9 equivalent: the .draft survives on disk, the dtor never ran,
+    // no clean save landed. Opening the note in a FRESH panel must offer
+    // "Recover unsaved changes?" — Restore loads the draft (then autosaves
+    // it into the .html and clears the sidecar); Discard keeps the disk
+    // version and deletes the sidecar.
+    std::printf("\n--- 50. crash-sim recovery prompt (Restore / Discard) ---\n");
+    {
+        auto clickBoxButton = [](const QString &needle, bool *clicked) {
+            for (QWidget *w : QApplication::topLevelWidgets()) {
+                auto *mb = qobject_cast<QMessageBox *>(w);
+                if (!mb || !mb->isVisible()) continue;
+                for (QAbstractButton *b : mb->buttons())
+                    if (b->text().contains(needle)) {
+                        if (clicked) *clicked = true;
+                        b->click();
+                        return;
+                    }
+            }
+        };
+        auto craftCrashArtifact = [&](const QString &path, const char *disk,
+                                      const char *draft) {
+            {
+                QFile f(path);
+                f.open(QIODevice::WriteOnly);
+                f.write(disk);
+            }
+            const QString dp = path + QStringLiteral(".draft");
+            {
+                QFile f(dp);
+                f.open(QIODevice::WriteOnly);
+                f.write(draft);
+            }
+            {   // draft strictly NEWER than the note — the crash signature
+                QFile f(dp);
+                f.open(QIODevice::ReadWrite);
+                f.setFileTime(QDateTime::currentDateTime().addSecs(60),
+                              QFileDevice::FileModificationTime);
+            }
+        };
+
+        NotesPanel recoveredPanel;
+        QTextEdit *red = recoveredPanel.findChild<QTextEdit *>();
+        EXPECT("recovery panel has an editor", red != nullptr);
+
+        // (a) Restore.
+        const QString p41 = QDir(recoveredPanel.inboxFolder())
+            .absoluteFilePath(QStringLiteral("2026-01-03-090000-crash-a.html"));
+        craftCrashArtifact(p41,
+            "<html><body><p>OLD_DISK_BODY_41A</p></body></html>",
+            "<html><body><p>OLD_DISK_BODY_41A</p>"
+            "<p>DRAFT_RECOVERED_41A</p></body></html>");
+        bool sawRestore = false;
+        QTimer::singleShot(150, [&]() {
+            clickBoxButton(QStringLiteral("Restore"), &sawRestore);
+        });
+        auto done41a = armDialogWatchdog();
+        recoveredPanel.openNoteFile(p41);
+        *done41a = true;
+        QApplication::processEvents();
+        EXPECT("recovery prompt appeared and Restore was clicked", sawRestore);
+        EXPECT("editor shows the recovered draft text",
+               red && red->toPlainText().contains(
+                   QStringLiteral("DRAFT_RECOVERED_41A")));
+        recoveredPanel.saveCurrentNote();   // the autosave-tick path
+        QApplication::processEvents();
+        EXPECT("recovered text persisted into the note",
+               readAll(p41).contains(QStringLiteral("DRAFT_RECOVERED_41A")));
+        EXPECT(".draft cleared after the post-recovery save",
+               !QFile::exists(p41 + QStringLiteral(".draft")));
+
+        // (b) Discard.
+        const QString p41b = QDir(recoveredPanel.inboxFolder())
+            .absoluteFilePath(QStringLiteral("2026-01-03-091000-crash-b.html"));
+        craftCrashArtifact(p41b,
+            "<html><body><p>OLD_DISK_BODY_41B</p></body></html>",
+            "<html><body><p>OLD_DISK_BODY_41B</p>"
+            "<p>DRAFT_LOST_41B</p></body></html>");
+        bool sawDiscard41 = false;
+        QTimer::singleShot(150, [&]() {
+            clickBoxButton(QStringLiteral("Discard"), &sawDiscard41);
+        });
+        auto done41b = armDialogWatchdog();
+        recoveredPanel.openNoteFile(p41b);
+        *done41b = true;
+        QApplication::processEvents();
+        EXPECT("recovery prompt appeared and Discard was clicked", sawDiscard41);
+        EXPECT("editor shows the DISK version after Discard",
+               red && red->toPlainText().contains(
+                   QStringLiteral("OLD_DISK_BODY_41B")) &&
+                   !red->toPlainText().contains(QStringLiteral("DRAFT_LOST_41B")));
+        EXPECT(".draft deleted after Discard",
+               !QFile::exists(p41b + QStringLiteral(".draft")));
+
+        // (c) A stale draft (older than the note) must NOT prompt at all —
+        // openNoteFile must complete without any modal. The watchdog stays
+        // armed purely as an anti-hang rescue.
+        const QString p41c = QDir(recoveredPanel.inboxFolder())
+            .absoluteFilePath(QStringLiteral("2026-01-03-092000-crash-c.html"));
+        {
+            const QString dc = p41c + QStringLiteral(".draft");
+            QFile f(dc);
+            f.open(QIODevice::WriteOnly);
+            f.write("<html><body><p>STALE_DRAFT_41C</p></body></html>");
+        }
+        {
+            QFile f(p41c);
+            f.open(QIODevice::WriteOnly);
+            f.write("<html><body><p>NEWER_DISK_41C</p></body></html>");
+        }
+        {   // note strictly newer than the draft
+            QFile f(p41c);
+            f.open(QIODevice::ReadWrite);
+            f.setFileTime(QDateTime::currentDateTime().addSecs(60),
+                          QFileDevice::FileModificationTime);
+        }
+        auto done41c = armDialogWatchdog();
+        recoveredPanel.openNoteFile(p41c);
+        *done41c = true;
+        QApplication::processEvents();
+        EXPECT("stale (older) draft opened WITHOUT a prompt, disk wins",
+               red && red->toPlainText().contains(
+                   QStringLiteral("NEWER_DISK_41C")));
+        EXPECT("stale draft silently dropped",
+               !QFile::exists(p41c + QStringLiteral(".draft")));
     }
 
     // ── Summary ───────────────────────────────────────────────────

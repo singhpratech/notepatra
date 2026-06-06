@@ -37,6 +37,7 @@
 #include <QStatusBar>
 #include <QComboBox>
 #include <QCompleter>
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -641,6 +642,16 @@ bool permanentlyDeleteMeetingTree(const QString &trashedAbsPath) {
     return removedCanonical;
 }
 
+// A7 — human-readable "how long ago" for the draft-recovery prompt.
+QString relativeTimeString(const QDateTime &then) {
+    if (!then.isValid()) return QObject::tr("an unknown time ago");
+    const qint64 secs = qMax<qint64>(0, then.secsTo(QDateTime::currentDateTime()));
+    if (secs < 90)      return QObject::tr("moments ago");
+    if (secs < 3600)    return QObject::tr("%n minute(s) ago", "", int(secs / 60));
+    if (secs < 86400)   return QObject::tr("%n hour(s) ago",   "", int(secs / 3600));
+    return QObject::tr("%n day(s) ago", "", int(secs / 86400));
+}
+
 // Group a note's CREATION time into a recency bucket label. Older than
 // "This month" subdivides by month: same year → "March" (locale name),
 // prior years → "November 2025".
@@ -751,6 +762,23 @@ NotesPanel::NotesPanel(QWidget *parent) : QWidget(parent) {
     connect(m_autosave, &QTimer::timeout, this, &NotesPanel::onAutoSaveTick);
     const int interval = qBound(1, Config::instance().autoSaveIntervalSec, 300) * 1000;
     m_autosave->start(interval);
+
+    // A7 — draft cadence. Armed by onEditorBodyChanged on the first dirty
+    // keystroke; fires ~1.5s later and writes the .draft sidecar so a hard
+    // crash loses at most ~2s of typing (the autosave window alone left up
+    // to 5s on the floor — the .draft API existed but had ZERO callers).
+    // Re-armed by the next keystroke after each write, so sustained typing
+    // refreshes the draft roughly every 1.5s. saveNote() clears the draft
+    // on every clean save.
+    m_draftTimer = new QTimer(this);
+    m_draftTimer->setSingleShot(true);
+    m_draftTimer->setInterval(1500);
+    connect(m_draftTimer, &QTimer::timeout, this, [this]() {
+        if (!m_dirty || m_currentPath.isEmpty() || m_readError ||
+            m_currentIsChecklist || !m_editor || !m_storage)
+            return;
+        m_storage->writeDraft(m_currentPath, m_editor->toHtml());
+    });
 
     // ── shortcuts ───────────────────────────────────────────────────
     // All Noter-scoped (active when this widget is in the focus chain).
@@ -2394,11 +2422,59 @@ void NotesPanel::renderNoteAtPath(const QString &absolutePath) {
         setSavedHintNormal(QString());   // no save state applies here
         return;
     }
+    // A7 — crash recovery. A .draft newer than the .html means the last
+    // session died hard (kill -9 / power loss) after the draft cadence
+    // wrote it but before any clean save landed. Offer to restore it; a
+    // stale or identical draft is silently dropped.
+    QString contentHtml = html;
+    bool restoredDraft = false;
+    {
+        const QString draftPath = absolutePath + QStringLiteral(".draft");
+        const QFileInfo draftFi(draftPath);
+        if (draftFi.exists()) {
+            const QFileInfo noteFi(absolutePath);
+            QString draftHtml;
+            {
+                QFile df(draftPath);
+                if (df.open(QIODevice::ReadOnly))
+                    draftHtml = QString::fromUtf8(df.readAll());
+            }
+            if (draftFi.lastModified() <= noteFi.lastModified() ||
+                draftHtml.trimmed().isEmpty() || draftHtml == html) {
+                // Superseded / empty / identical — no user delta in it.
+                m_storage->clearDraft(absolutePath);
+            } else {
+                QMessageBox box(this);
+                box.setWindowTitle(tr("Recover unsaved changes?"));
+                box.setIcon(QMessageBox::Question);
+                box.setText(tr("\"%1\" has unsaved changes from %2 — the app "
+                               "closed before they could be saved.\n"
+                               "Recover them?")
+                                .arg(QFileInfo(absolutePath).completeBaseName(),
+                                     relativeTimeString(draftFi.lastModified())));
+                QPushButton *restoreBtn =
+                    box.addButton(tr("Restore"), QMessageBox::AcceptRole);
+                box.addButton(tr("Discard"), QMessageBox::DestructiveRole);
+                box.setDefaultButton(restoreBtn);
+                box.exec();
+                if (box.clickedButton() == restoreBtn) {
+                    contentHtml = draftHtml;
+                    restoredDraft = true;   // marked dirty below → autosaves
+                    // Draft stays on disk until the save lands (saveNote
+                    // clears it) — a crash during THIS session must not
+                    // lose the recovered text a second time.
+                } else {
+                    m_storage->clearDraft(absolutePath);
+                }
+            }
+        }
+    }
+
     m_editor->setReadOnly(false);   // may be leaving an earlier error state
     m_readError = false;
     m_loadingInProgress = true;
     m_editor->blockSignals(true);
-    m_editor->setHtml(html);
+    m_editor->setHtml(contentHtml);
     // v0.1.98 — older notes baked a "00:00" meeting-timer line above the
     // title before the template dropped it. Strip it on load so existing
     // notes lose it too (it's gone permanently on the next save).
@@ -2417,10 +2493,18 @@ void NotesPanel::renderNoteAtPath(const QString &absolutePath) {
     m_loadingInProgress = false;
     m_currentPath = absolutePath;
     m_currentIsChecklist = false;   // a normal note, not the Todos checklist
-    m_dirty = false;
+    // A7 — a restored draft IS an unsaved delta: dirty so the next
+    // autosave tick persists it into the .html (which then clears the
+    // draft). A plain load is clean.
+    m_dirty = restoredDraft;
+    // A7 — stamp the on-disk state we just loaded; the conflict guard
+    // compares against this before every save.
+    recordDiskState(absolutePath);
     // A note loaded cleanly — any earlier failure streak belonged to the
     // previous path. Reset to the normal hint cycle (screen == disk now).
     noteSaveSucceeded();
+    if (restoredDraft)
+        setSavedHintNormal(tr("recovered draft — auto-saves in 5s"));
 
     // Move caret to end of body so user can start typing immediately.
     QTextCursor cur = m_editor->textCursor();
@@ -2609,6 +2693,17 @@ void NotesPanel::saveCurrentNote() {
     if (!m_dirty) return;
     if (m_currentIsChecklist) { saveTodosChecklist(); return; }
     const QString body = m_editor->toHtml();
+
+    // A7 — external-edit conflict guard. If the file on disk no longer
+    // matches the stamp we recorded at load / last save (sync tool,
+    // another editor, deletion), DO NOT overwrite it: rescue the buffer
+    // to a "<name> (conflict …).html" sibling instead. An mtime-only
+    // touch(1) passes (content hash unchanged).
+    if (diskChangedSinceLoad(m_currentPath)) {
+        rescueToConflictCopy(body);
+        return;
+    }
+
     QString err;
     if (!m_storage->saveNote(m_currentPath, body, &err)) {
         // M2 — failures used to be stderr-only while the hint kept reading
@@ -2620,6 +2715,7 @@ void NotesPanel::saveCurrentNote() {
     }
     m_dirty = false;
     m_lastSavedAt = QDateTime::currentDateTime();
+    recordDiskState(m_currentPath);   // A7 — refresh the conflict stamp
     noteSaveSucceeded();
 
     // Re-index todos so the sidebar tree reflects current state.
@@ -2721,6 +2817,135 @@ bool NotesPanel::promptSaveCopyAs() {
     if (auto *sb = window() ? window()->findChild<QStatusBar *>() : nullptr)
         sb->showMessage(tr("Copy saved to %1").arg(picked), 5000);
     return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  A7 — external-edit conflict guard
+//
+//  Before this block there were ZERO mtime checks anywhere in the Noter
+//  save path: a note rewritten on disk by a sync tool (or any other
+//  program) while open here was silently overwritten by the next 5s
+//  autosave tick — and the external version was rotated out of the .bak
+//  ring within ~25s of continued typing. The guard stamps the on-disk
+//  state (mtime + size + SHA-256) at load and after every successful
+//  save; a pre-save mismatch reroutes the buffer to a conflict copy.
+// ═══════════════════════════════════════════════════════════════════════
+
+void NotesPanel::recordDiskState(const QString &absolutePath) {
+    const QFileInfo fi(absolutePath);
+    m_diskStateValid = fi.exists();
+    if (!m_diskStateValid) {
+        m_diskMtime = QDateTime();
+        m_diskSize = -1;
+        m_diskHash.clear();
+        return;
+    }
+    m_diskMtime = fi.lastModified();
+    m_diskSize = fi.size();
+    QFile f(absolutePath);
+    m_diskHash = f.open(QIODevice::ReadOnly)
+                     ? QCryptographicHash::hash(f.readAll(),
+                                                QCryptographicHash::Sha256)
+                     : QByteArray();
+}
+
+bool NotesPanel::diskChangedSinceLoad(const QString &absolutePath) {
+    // No stamp recorded (e.g. the Todos checklist path, which doesn't go
+    // through renderNoteAtPath) → behave as before the guard existed.
+    if (!m_diskStateValid) return false;
+    const QFileInfo fi(absolutePath);
+    if (!fi.exists()) return true;            // deleted under us → conflict
+    if (fi.lastModified() == m_diskMtime && fi.size() == m_diskSize)
+        return false;                         // fast path: stamp untouched
+    // mtime or size moved — confirm with the content hash. touch(1) (and
+    // sync tools that re-stamp without rewriting) bump mtime only; that
+    // is NOT a conflict, just refresh the stamp.
+    QFile f(absolutePath);
+    if (!f.open(QIODevice::ReadOnly)) return true;   // unreadable → conflict
+    const QByteArray hash =
+        QCryptographicHash::hash(f.readAll(), QCryptographicHash::Sha256);
+    if (hash == m_diskHash) {
+        m_diskMtime = fi.lastModified();
+        m_diskSize = fi.size();
+        return false;
+    }
+    return true;
+}
+
+// "<name> (conflict yyyy-MM-dd hhmmss).html" next to the original. The
+// extension split is on the LAST dot (completeBaseName) — see
+// feedback_qfileinfo_basename_splits_first_dot. A numeric suffix dedups
+// the (unlikely) same-second double conflict.
+QString NotesPanel::conflictCopyPathFor(const QString &absolutePath) {
+    const QFileInfo fi(absolutePath);
+    const QString base = fi.completeBaseName();
+    const QString ext =
+        fi.suffix().isEmpty() ? QStringLiteral("html") : fi.suffix();
+    const QString stamp = QDateTime::currentDateTime().toString(
+        QStringLiteral("yyyy-MM-dd hhmmss"));
+    QString candidate = fi.dir().filePath(
+        QStringLiteral("%1 (conflict %2).%3").arg(base, stamp, ext));
+    int n = 2;
+    while (QFile::exists(candidate)) {
+        candidate = fi.dir().filePath(
+            QStringLiteral("%1 (conflict %2) (%3).%4")
+                .arg(base, stamp, QString::number(n++), ext));
+    }
+    return candidate;
+}
+
+void NotesPanel::rescueToConflictCopy(const QString &bodyHtml) {
+    const QString origPath = m_currentPath;
+    const QString origName = QFileInfo(origPath).fileName();
+    const QString conflictPath = conflictCopyPathFor(origPath);
+    QString err;
+    if (!m_storage->saveNote(conflictPath, bodyHtml, &err)) {
+        // Couldn't even write the rescue copy — fall back to the plain M2
+        // failure path (red hint; banner on the 2nd consecutive failure).
+        fprintf(stderr, "Noter: conflict-copy save failed: %s\n",
+                qPrintable(err));
+        noteSaveFailed(err);
+        return;
+    }
+    // The buffer's home is now the conflict copy. The externally-modified
+    // original stays untouched on disk; its sidebar leaf reloads it.
+    m_storage->clearDraft(origPath);   // the delta lives in the copy now
+    m_currentPath = conflictPath;
+    m_currentTitle = QFileInfo(conflictPath).completeBaseName();
+    emit noteTitleChanged(m_currentTitle);
+    recordDiskState(conflictPath);
+    m_dirty = false;
+    m_lastSavedAt = QDateTime::currentDateTime();
+    // NOT noteSaveFailed(): the user's version IS safely on disk, so the
+    // M2c navigate-away guard must stay disarmed.
+    m_lastSaveFailed = false;
+    m_saveFailureCount = 0;
+    m_lastSaveError.clear();
+    noteSaveConflicted(origName, QFileInfo(conflictPath).fileName());
+    if (m_todos) m_todos->reindexNote(m_currentPath, bodyHtml);
+    refreshSidebar();
+    emit noteSaved(m_currentPath);
+}
+
+void NotesPanel::noteSaveConflicted(const QString &origName,
+                                    const QString &conflictName) {
+    // Reuse the M2 surfaces (red hint + banner) with conflict wording —
+    // shown immediately: a conflict is never a blip, and silence here is
+    // exactly the data-loss class this guard exists to kill.
+    if (m_savedHint) {
+        m_savedHint->setText(tr("CONFLICT — saved as a copy"));
+        m_savedHint->setStyleSheet(QStringLiteral(
+            "color: #DC2626; font-weight: 600; padding-right: 8px;"));
+        m_savedHint->setProperty("saveFailed", false);
+    }
+    if (m_saveFailBanner && m_saveFailLabel) {
+        m_saveFailLabel->setText(tr(
+            "Note changed on disk — your version was saved as %1. "
+            "It is open here now; click %2 in the sidebar to see the "
+            "version from disk.").arg(conflictName, origName));
+        if (m_rightStack && m_editorPage) showEditorPage();
+        m_saveFailBanner->setVisible(true);
+    }
 }
 
 void NotesPanel::popOutActive() {
@@ -3132,6 +3357,10 @@ void NotesPanel::onEditorBodyChanged() {
     if (m_loadingInProgress) return;
     if (m_readError) return;   // M2 — error notice is not user content; never dirty
     m_dirty = true;
+    // A7 — arm the draft timer on the FIRST dirty keystroke (don't restart
+    // on every keystroke or sustained typing would postpone the draft
+    // forever; single-shot + re-arm gives a steady ~1.5s cadence).
+    if (m_draftTimer && !m_draftTimer->isActive()) m_draftTimer->start();
     // M2 — keep the red NOT SAVED state visible while the last save failed;
     // "editing…" would mask an active data-loss condition. The next
     // SUCCESSFUL save restores the normal hint cycle.

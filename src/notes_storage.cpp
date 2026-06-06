@@ -25,18 +25,14 @@
 #include <cstdlib>
 
 #if defined(Q_OS_UNIX) || defined(Q_OS_MAC)
-    #include <csignal>      // kill(pid, 0)
+    #include <fcntl.h>      // open(O_RDONLY) for the directory fsync
     #include <sys/types.h>
-    #include <unistd.h>     // getpid
-#endif
-
-#ifdef Q_OS_LINUX
-    #include <sys/stat.h>   // stat /proc/<pid>
+    #include <unistd.h>     // fsync, close
 #endif
 
 #ifdef Q_OS_WIN
-    #include <windows.h>
-    #include <process.h>    // _getpid
+    #include <windows.h>    // FlushFileBuffers
+    #include <io.h>         // _get_osfhandle
 #endif
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -267,12 +263,19 @@ bool NotesStorage::saveNote(const QString &absolutePath, const QString &fullHtml
         }
         const QByteArray bytes = cleaned.toUtf8();
         const qint64 n = tmp.write(bytes);
-        // Force kernel buffers to disk before rename so a power-loss
-        // mid-rename can't leave us with a renamed-but-empty file.
+        // Force the data to STABLE STORAGE before the rename. flush()
+        // only drains Qt's userspace buffer into the kernel page cache —
+        // a power loss between rename and the kernel's writeback used to
+        // be able to surface a zero-length (or truncated) note under the
+        // canonical name. fsync the tmp file's payload first, so the
+        // rename can only ever publish fully-durable bytes. (A7 fix —
+        // the old comment claimed fsync-equivalence that never existed.)
         tmp.flush();
-        // QFileDevice::flushFileBuffers does the fsync equivalent —
-        // Qt's name varies by version, so we just use the OS as the
-        // ultimate guarantor of durability via rename(2).
+#ifdef Q_OS_WIN
+        FlushFileBuffers(reinterpret_cast<HANDLE>(_get_osfhandle(tmp.handle())));
+#else
+        if (tmp.handle() >= 0) ::fsync(tmp.handle());
+#endif
         tmp.close();
         if (n != bytes.size()) {
             QFile::remove(tmpPath);
@@ -294,6 +297,21 @@ bool NotesStorage::saveNote(const QString &absolutePath, const QString &fullHtml
         QFile::remove(tmpPath);
         if (errorOut) *errorOut = QStringLiteral("Atomic rename failed");
         return false;
+    }
+    // Flush the DIRECTORY entry too — on POSIX the rename itself lives
+    // in the directory's metadata; without this a power loss right after
+    // rename(2) could still roll the directory back to the old entry.
+    // Best-effort: a failure here never fails the save (the data fsync
+    // above already guarantees no torn content). No-op on Windows, where
+    // MoveFileEx-style metadata is journalled by NTFS.
+    {
+        const QByteArray dirPath =
+            QFileInfo(absolutePath).absolutePath().toLocal8Bit();
+        const int dfd = ::open(dirPath.constData(), O_RDONLY);
+        if (dfd >= 0) {
+            ::fsync(dfd);
+            ::close(dfd);
+        }
     }
 #endif
 
@@ -361,116 +379,13 @@ void NotesStorage::clearDraft(const QString &absolutePath) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Lock file — "<pid>\t<isoTimestamp>". Stale detection via per-OS
-// liveness probe; falls back to a 24-h time-based stale window if the
-// OS isn't recognized.
+// NOTE (A7): the per-PID .lock protocol that used to live here was
+// removed. It was dead code — documented in the header, ZERO callers —
+// i.e. a false promise of two-instance protection. Multi-instance
+// editing needs an explicit opt-in design; until then the header is
+// honest about what is and isn't protected. listAllNotes still filters
+// stale *.lock sidecars left behind by older builds.
 // ═══════════════════════════════════════════════════════════════════════
-
-static qint64 currentPid() {
-#ifdef Q_OS_WIN
-    return static_cast<qint64>(_getpid());
-#else
-    return static_cast<qint64>(::getpid());
-#endif
-}
-
-static bool pidIsAlive(qint64 pid) {
-    if (pid <= 0) return false;
-#if defined(Q_OS_LINUX)
-    struct stat st;
-    const QByteArray p = QStringLiteral("/proc/%1").arg(pid).toLocal8Bit();
-    return ::stat(p.constData(), &st) == 0;
-#elif defined(Q_OS_MAC) || defined(Q_OS_UNIX)
-    // kill(pid, 0) returns 0 if the process exists (or EPERM if we don't
-    // have permission to signal it — which still means it exists).
-    const int rc = ::kill(static_cast<pid_t>(pid), 0);
-    if (rc == 0) return true;
-    return errno == EPERM;
-#elif defined(Q_OS_WIN)
-    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
-                           static_cast<DWORD>(pid));
-    if (!h) return false;
-    DWORD exitCode = 0;
-    BOOL ok = GetExitCodeProcess(h, &exitCode);
-    CloseHandle(h);
-    return ok && exitCode == STILL_ACTIVE;
-#else
-    // Unknown OS — refuse to claim ANY lock that's less than 24h old.
-    Q_UNUSED(pid);
-    return true;
-#endif
-}
-
-bool NotesStorage::acquireLock(const QString &absolutePath) {
-    const QString lockPath = absolutePath + QStringLiteral(".lock");
-    QFileInfo fi(absolutePath);
-    QDir().mkpath(fi.absolutePath());
-
-    if (QFile::exists(lockPath)) {
-        QFile inf(lockPath);
-        if (inf.open(QIODevice::ReadOnly)) {
-            const QByteArray contents = inf.readAll();
-            inf.close();
-            const QList<QByteArray> parts = contents.split('\t');
-            if (parts.size() >= 1) {
-                bool okPid = false;
-                const qint64 holderPid = parts.at(0).trimmed().toLongLong(&okPid);
-                if (okPid && holderPid == currentPid()) {
-                    // We already own it (re-entrant). Refresh the timestamp.
-                } else if (okPid && pidIsAlive(holderPid)) {
-                    // Live OTHER process holds the lock → refuse.
-                    return false;
-                }
-                // Else: stale lock (dead pid, malformed, or unknown OS
-                // with file age policy). Fall through to claim.
-
-                // For "unknown OS" fallback, additionally require the
-                // file to be older than 24h before stealing — protects
-                // against the unknown-platform conservative branch.
-#if !defined(Q_OS_LINUX) && !defined(Q_OS_MAC) && \
-    !defined(Q_OS_UNIX)  && !defined(Q_OS_WIN)
-                const QFileInfo lf(lockPath);
-                const qint64 ageMs = lf.lastModified().msecsTo(
-                    QDateTime::currentDateTime());
-                if (ageMs < 24LL * 60 * 60 * 1000) return false;
-#endif
-            }
-        }
-        // Drop the stale lock so the rename below succeeds.
-        QFile::remove(lockPath);
-    }
-
-    QFile f(lockPath);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
-    const QString payload = QStringLiteral("%1\t%2")
-                                .arg(currentPid())
-                                .arg(QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
-    const QByteArray bytes = payload.toUtf8();
-    const qint64 n = f.write(bytes);
-    f.close();
-    return n == bytes.size();
-}
-
-void NotesStorage::releaseLock(const QString &absolutePath) {
-    const QString lockPath = absolutePath + QStringLiteral(".lock");
-    // Only release if WE own it — avoid clobbering a freshly-claimed
-    // lock from another process if the caller mis-sequences.
-    QFile f(lockPath);
-    if (f.open(QIODevice::ReadOnly)) {
-        const QByteArray contents = f.readAll();
-        f.close();
-        const QList<QByteArray> parts = contents.split('\t');
-        if (!parts.isEmpty()) {
-            bool ok = false;
-            const qint64 holderPid = parts.at(0).trimmed().toLongLong(&ok);
-            if (ok && holderPid != currentPid()) {
-                // Not ours — leave it alone.
-                return;
-            }
-        }
-    }
-    QFile::remove(lockPath);
-}
 
 // ═══════════════════════════════════════════════════════════════════════
 // Sanitizer.
