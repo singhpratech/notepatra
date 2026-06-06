@@ -709,9 +709,15 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
     }
 
     if (!m_reply) return;  // hardening: skip wiring if every branch failed to allocate
+    // Last-resort backstop. The onFinished* handlers (connected first, so
+    // they run first) now check m_reply->error() themselves, null m_reply
+    // and set m_done before this lambda runs — so it only ever fires if a
+    // future finished-handler forgets the error short-circuit. m_done is
+    // set before emitting to keep the single-outcome contract.
     connect(m_reply, &QNetworkReply::finished, this, [this]() {
         if (m_reply && m_reply->error() != QNetworkReply::NoError && !m_done) {
-            emit error(m_reply->errorString());
+            m_done = true;
+            emit error(friendlyTransportMessage(m_reply->errorString()));
         }
     });
 }
@@ -883,6 +889,10 @@ void OllamaClient::onReadyReadOllama() {
         if (perr.error != QJsonParseError::NoError || doc.isNull() || !doc.isObject()) continue;  // hardening: skip malformed/non-object frames
         QJsonObject obj = doc.object();
         if (obj.contains("error")) {
+            // Single-outcome guard: mark the request terminal BEFORE emitting
+            // so onFinishedOllama's error short-circuit (and its finished()/
+            // stats emission) can't fire a second signal for this request.
+            m_done = true;
             emit error(obj["error"].toString());
             return;
         }
@@ -1013,7 +1023,13 @@ void OllamaClient::onReadyReadOpenAI() {
                 QJsonValue err = obj.value("error");
                 QString msg = err.isObject() ? err.toObject().value("message").toString()
                                               : err.toString();
-                if (!msg.isEmpty()) emit error(msg);
+                if (!msg.isEmpty()) {
+                    // Single-outcome guard — same as the Ollama path: block
+                    // onFinishedOpenAI from emitting a second error() or a
+                    // phantom finished() for this already-failed request.
+                    m_done = true;
+                    emit error(msg);
+                }
                 return;
             }
             // OpenAI-compat servers emit a usage object on the final
@@ -1172,6 +1188,39 @@ void OllamaClient::onFinished() {
 void OllamaClient::onFinishedOllama() {
     if (!m_reply) return;
     QByteArray remaining = m_reply->readAll();
+    const int httpStatus =
+        m_reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+
+    // ── Transport / HTTP error short-circuit — mirrors the v0.1.98 fix in
+    // onFinishedOpenAI. Ollama down → /api/generate (or /api/chat) gets
+    // connection-refused: no NDJSON ever arrives, so the loop below parses
+    // nothing, m_fullResponse stays empty and neither finished() nor error()
+    // fires — and because we null m_reply at the bottom, the safety-net
+    // lambda in generate() skips too. Net effect pre-fix: the caller hung
+    // forever (Noter audit, CRITICAL). Check the reply's error FIRST and
+    // surface the friendly per-backend message. Gated on
+    // m_fullResponse.isEmpty() so a mid-stream drop still flushes whatever
+    // partial text already arrived (same contract as the OpenAI path).
+    // Cleanup precedes the emit so a caller that reacts to error() by
+    // calling cancel() finds no live reply (the Extract crash class —
+    // see notes.cpp).
+    if (!m_done && m_fullResponse.isEmpty() &&
+        (m_reply->error() != QNetworkReply::NoError || httpStatus >= 400)) {
+        // Ollama HTTP failures carry an {"error":"..."} JSON body (e.g.
+        // 404 "model not found"); transport failures (refused /
+        // unreachable / timeout) carry nothing useful — map those to the
+        // friendly "start the server" hint instead.
+        const QString msg = (httpStatus >= 400)
+            ? httpErrorMessage(httpStatus, remaining,
+                               friendlyTransportMessage(m_reply->errorString()))
+            : friendlyTransportMessage(m_reply->errorString());
+        m_done = true;
+        m_reply->deleteLater();
+        m_reply = nullptr;
+        emit error(msg);
+        return;
+    }
+
     for (const QByteArray &line : remaining.split('\n')) {
         if (line.trimmed().isEmpty()) continue;
         QJsonParseError perr{};  // hardening: capture parse error
@@ -1212,8 +1261,12 @@ void OllamaClient::onFinishedOpenAI() {
     if (!m_done && m_fullResponse.isEmpty() &&
         (m_reply->error() != QNetworkReply::NoError || httpStatus >= 400)) {
         const int sc = (httpStatus >= 400) ? httpStatus : 0;
+        // Route the transport-error fallback (sc == 0 — refused / unreachable
+        // / timeout, no HTTP status) through the friendly per-backend wording
+        // so "llama-server not running. Start it: …" actually surfaces.
         const QString msg =
-            httpErrorMessage(sc, m_sseBuffer, m_reply->errorString());
+            httpErrorMessage(sc, m_sseBuffer,
+                             friendlyTransportMessage(m_reply->errorString()));
         m_done = true;
         m_sseBuffer.clear();
         m_reply->deleteLater();
@@ -1237,15 +1290,37 @@ void OllamaClient::onFinishedOpenAI() {
     }
 }
 
-void OllamaClient::onError(QNetworkReply::NetworkError) {
-    QString msg = m_reply ? m_reply->errorString() : QString("Connection failed");
-    if (msg.contains("Connection refused")) {
+// ─── friendlyTransportMessage ──────────────────────────────────────────
+// Map a raw QNetworkReply::errorString() onto the per-backend "how do I
+// start the server" hint. This is the SINGLE source of the friendly
+// wording: onError and both onFinished* transport-error short-circuits
+// route through it. Pre-fix, this wording lived only in onError — which
+// was connected nowhere, so "Ollama not running" never reached the user;
+// errors are routed through the finished() handlers instead (the same way
+// the v0.1.98 OpenAI fix does), which Qt guarantees to fire after every
+// errorOccurred and which also have the response body for rich HTTP
+// messages.
+QString OllamaClient::friendlyTransportMessage(const QString &raw) const {
+    QString msg = raw.isEmpty() ? QStringLiteral("Connection failed") : raw;
+    if (msg.contains(QLatin1String("Connection refused"), Qt::CaseInsensitive)) {
         if (m_backend == Ollama)
-            msg = "Ollama not running. Start it with: ollama serve";
+            msg = QStringLiteral("Ollama not running. Start it with: ollama serve");
         else if (m_backend == LlamaCpp)
-            msg = "llama-server not running. Start it: llama-server -m <model.gguf> --port 8080";
+            msg = QStringLiteral("llama-server not running. Start it: "
+                                 "llama-server -m <model.gguf> --port 8080");
         else
-            msg = "No local-AI server reachable at " + m_baseUrl;
+            msg = QStringLiteral("No local-AI server reachable at ") + m_baseUrl;
     }
-    emit error(msg);
+    return msg;
+}
+
+void OllamaClient::onError(QNetworkReply::NetworkError) {
+    // Defensive: errors normally arrive via the onFinished* short-circuits
+    // (single emission point, post-cleanup). If this slot ever gets wired to
+    // QNetworkReply::errorOccurred, the m_done guard keeps the single-outcome
+    // contract — never error() after finished() or a second error().
+    if (m_done) return;
+    m_done = true;
+    emit error(friendlyTransportMessage(
+        m_reply ? m_reply->errorString() : QString()));
 }

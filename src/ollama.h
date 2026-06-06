@@ -134,6 +134,11 @@ private:
     void onReadyReadOpenAI();
     void onFinishedOllama();
     void onFinishedOpenAI();
+    // Single source of the per-backend "how do I start the server" wording
+    // ("Ollama not running. Start it with: ollama serve", …). onError and
+    // BOTH onFinished* transport-error short-circuits route through it, so
+    // the friendly hint surfaces no matter which path catches the failure.
+    QString friendlyTransportMessage(const QString &raw) const;
 
     QNetworkAccessManager *m_nam;
     QNetworkReply *m_reply = nullptr;
