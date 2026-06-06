@@ -7,6 +7,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.112] — 2026-06-06
+
+**Noter — the system-of-record wave (audit grade C- → target A). A 19-agent UX audit found the capture core solid but everything around it (remind / find / trust) failing; this release fixes all 27 CRITICAL/HIGH findings. Plus a 3-layer hardening of the AI coding assistant's `apply_diff` loop. Same bare binary, no new dependencies.**
+
+### Fixed — Noter trust & data safety
+- **Reminders now actually fire** — the reminder engine previously lived inside the Noter tab and died the moment the tab closed (or was never created), so Help's promise of "desktop notifications" was silently false. The engine is now **app-lifetime** (owned by the main window, started lazily when a todos database exists): reminders fire whenever Notepatra is running, Noter tab or not. Reminders that came due while Notepatra was closed arrive as **one catch-up digest** on next launch ("fired while you were away") instead of being dropped (`notes_reminder.*`, `notes_todos.*`, `mainwindow.cpp`).
+- **Save failures are no longer silent** — a failed note save now shows a red **NOT SAVED** hint + an in-panel banner with a **Save a copy as…** escape hatch, instead of a stderr line under a footer still claiming "auto-saves in 5s". A failed *read* no longer opens a blank editor that autosave then writes over the real file (`notes.cpp`, `notes_storage.cpp`).
+- **External edits can't be clobbered** — Noter now stamps (mtime, size, SHA-256) on load; if the file changed under it, the conflicting save is diverted to a **conflict copy** next to the original instead of overwriting. Saves are now **fsync-durable** before the atomic rename (+~3 ms/MB), and a `.draft` sidecar written at 1.5 s dirty-cadence bounds crash loss to ≤2 s of typing. The never-functional `.lock` API was deleted (`notes_storage.*`).
+- **Clicking a checklist line no longer toggles it from anywhere** — only a click on the checkbox itself (first 2 columns) toggles done-state; clicking the text places the caret, as in every other editor (`notes.cpp`).
+
+### Fixed — Noter retrieval & identity
+- **Search finds note bodies** — search previously matched filename-derived titles only (while new notes default to "Noter NN", making them unfindable). It now searches **titles + body text** (AND-of-terms), auto-expands collapsed groups around matches, shows per-note match counts and a snippet tooltip, and caches body text keyed by (mtime, size). The 99-note sidebar cap is gone — capture never blocks (`notes.cpp`).
+- **One title everywhere** — a note's display title is now a single source of truth (`notepatra-title` meta, synced one-way from the body H1 on save), so the sidebar, tab, popout and rename dialog can no longer disagree with the body heading (`notes_storage.*`, `notes.cpp`).
+- **Headers survive save+reload** — `Add subheader` now emits a real `<h2>` (was visual-only formatting that sanitized back to plain text) (`notes.cpp`).
+- **Rename keeps the date prefix and dedups properly** — renaming preserves the leading date stamp and collisions append " (n)" before the *last* dot (`notes.cpp`).
+
+### Fixed — Noter AI Extract
+- **Ollama down can no longer hang the app** — Extract now pre-flights backend availability, runs under a 125 s watchdog with a visible **Cancel** button, and the shared Ollama reply path short-circuits transport errors into a friendly message (~1 s) everywhere — Noter Extract, AI panel, Ctrl+I — mirroring the OpenAI-path fix from v0.1.98 (`ollama.cpp`, `notes.cpp`).
+- **Extract output now persists** — Decisions / Questions / Risks are written into the note inside invisible idempotent region anchors, so re-running Extract **replaces** the previous run instead of stacking duplicates; truncated extractions are labelled honestly (`notes_extract_apply.*` — new module).
+
+### Fixed — Noter chrome
+- **Popout works more than once** — the popout window previously died permanently after its first close (`notes_popout.cpp`).
+- **Noter follows your theme** — Dark and Monokai themes now restyle the whole Noter surface (was hardcoded light-cream regardless of theme — a dark-parity violation) (`notes_theme.h`, `notes.cpp`).
+- **Shortcuts are documented** — all 7 Noter shortcuts now appear in Help; the menu item is labelled "(toggle)"; toolbar chips have tooltips (`mainwindow.cpp`).
+
+### Changed — AI coding assistant `apply_diff` hardening
+- **Tool-side lint** — `apply_diff` calls with escaped-newline payloads or degenerate hunks are rejected with a corrective error message before touching the file (`ai_tools.cpp`).
+- **Escalation ladder** — the tool contract now tells the model what to do after a failed patch: re-read the file, then fall back to `write_file` with full content — phrased model-agnostically (no model names, no dataset-specific hints) (`ai_systemprompt.cpp`).
+- **Perseveration breaker** — the agent loop detects repeated identical failing tool calls and forces the turn to finalize with an honest summary instead of looping (`aipanel.cpp`).
+
+### Notes
+- All Noter fixes are local to the Noter subsystem except the authorized app-level reminder-service hooks (owner-approved scope relaxation).
+- No regressions: **full ctest green (Lite + Full)** including new suites `test_notes_extract_apply` and `test_noter_render`; widget harness grown to 60+ sections; stale-text gate green.
+- The `apply_diff` prompt change ships to the *test* build now; the frozen-eval per-question regression diff (data + coding) remains a gate before public release.
+
+---
+
 ## [0.1.111] — 2026-05-31
 
 **AI coding assistant — the "lovable agent" wave (grade B- → B+/A-). Four UX features; same bare binary, no new deps. Hardened by a parallel adversarial worktree review that caught a non-UTF-8 revert-corruption bug and a write-after-cancel bug before ship.**
