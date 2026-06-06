@@ -93,25 +93,36 @@
 namespace {
 
 // ─── styling helpers ────────────────────────────────────────────────
-static const QString kNoterRed = QStringLiteral("#DC2626");
-static const QString kSidebarBg = QStringLiteral("#f3f1ea");
-static const QString kSidebarBorder = QStringLiteral("#e5e1d6");
-static const QString kEditorBg = QStringLiteral("#fafaf6");
-static const QString kActiveBg = QStringLiteral("#fef3c7");
-static const QString kMutedText = QStringLiteral("#94a3b8");
+// A5 — every colour comes from the NoterPalette (see notes_theme.h).
+// The Light palette reproduces the pre-A5 hardcoded values verbatim, so
+// the default rendering is unchanged; Dark/Monokai swap in sympathetic
+// values via NotesPanel::applyNoterTheme().
 
-QString sidebarStyle() {
+// Shared QMenu rules — the panel-level QSS variant (also embedded in
+// sidebarStyle below) per feedback_qmenu_cascade_through_widget_qss.
+QString menuQss(const NoterPalette &pal) {
     return QStringLiteral(
+        "QMenu { background: %1; color: %2; border: 1px solid %3;"
+        "  padding: 4px 0; }"
+        "QMenu::item { padding: 6px 22px 6px 18px; }"
+        "QMenu::item:selected { background: %4; color: %5; }"
+        "QMenu::separator { height: 1px; background: %6; margin: 4px 8px; }"
+    ).arg(pal.menuBg, pal.menuFg, pal.menuBorder,
+          pal.menuSelBg, pal.menuSelFg, pal.menuSep);
+}
+
+QString sidebarStyle(const NoterPalette &pal) {
+    return (QStringLiteral(
         "QWidget#noterSidebar { background: %1; }"
-        "QLineEdit#noterSearch { border: 1px solid #d5d0c0; border-radius: 6px;"
-        "  padding: 5px 9px; font-size: 12px; background: white; color: #525252; }"
+        "QLineEdit#noterSearch { border: 1px solid %5; border-radius: 6px;"
+        "  padding: 5px 9px; font-size: 12px; background: %6; color: %7; }"
         "QPushButton#noterNewBtn { background: %2; color: white; border: none;"
         "  border-radius: 6px; padding: 7px 10px; font-size: 13px; font-weight: 500; }"
-        "QPushButton#noterNewBtn:hover { background: #b91c1c; }"
+        "QPushButton#noterNewBtn:hover { background: %8; }"
         "QPushButton#noterTodosBtn { background: transparent; border: none;"
-        "  text-align: left; padding: 9px 14px; font-size: 13px; color: #525252;"
+        "  text-align: left; padding: 9px 14px; font-size: 13px; color: %7;"
         "  border-top: 1px solid %3; }"
-        "QPushButton#noterTodosBtn:hover { background: #ede9dc; }"
+        "QPushButton#noterTodosBtn:hover { background: %9; }"
         // The sidebar is a QTreeWidget#noterSidebarTree (the old
         // QListWidget#noterMeetingList shape is gone). An item-view paints
         // its viewport from its OWN palette Base role — the parent
@@ -121,48 +132,48 @@ QString sidebarStyle() {
         // light. palette Base is also pinned in code (buildSidebar) as a
         // belt-and-braces fallback for styles that bypass this selector.
         "QTreeWidget#noterSidebarTree, QTreeView#noterSidebarTree { background: %1;"
-        "  border: none; font-size: 13px; outline: none; color: #525252; }"
-        "QTreeWidget#noterSidebarTree::item { padding: 5px 6px; color: #525252; }"
-        "QTreeWidget#noterSidebarTree::item:hover { background: #ede9dc; }"
-        "QTreeWidget#noterSidebarTree::item:selected { background: %4; color: #0a0d12; }"
+        "  border: none; font-size: 13px; outline: none; color: %7; }"
+        "QTreeWidget#noterSidebarTree::item { padding: 5px 6px; color: %7; }"
+        "QTreeWidget#noterSidebarTree::item:hover { background: %9; }"
+        "QTreeWidget#noterSidebarTree::item:selected { background: %4; color: %10; }")
         // v0.1.95+ — QMenu must be styled inside the panel's QSS so the
         // right-click context menus aren't dark-on-dark (per the memory
         // rule feedback_qmenu_cascade_through_widget_qss).
-        "QMenu { background: white; color: #111827; border: 1px solid #d5d0c0;"
-        "  padding: 4px 0; }"
-        "QMenu::item { padding: 6px 22px 6px 18px; }"
-        "QMenu::item:selected { background: #FEF3C7; color: #0a0d12; }"
-        "QMenu::separator { height: 1px; background: #e5e1d6; margin: 4px 8px; }"
-    ).arg(kSidebarBg, kNoterRed, kSidebarBorder, kActiveBg);
+        + menuQss(pal)
+    ).arg(pal.sidebarBg, pal.accent, pal.sidebarBorder, pal.leafHighlight,
+          pal.inputBorder, pal.inputBg, pal.text, pal.accentHover,
+          pal.hoverBg).arg(pal.leafHighlightFg);
 }
 
-QString editorPageStyle() {
+QString editorPageStyle(const NoterPalette &pal) {
     return QStringLiteral(
         "QWidget#noterEditorPage { background: %1; }"
-        "QWidget#noterEditorFooter { background: %1; border-top: 1px solid #e5e1d6; }"
+        "QWidget#noterEditorFooter { background: %1; border-top: 1px solid %3; }"
         "QTextEdit#noterEditor { background: %1; border: none;"
         "  padding: 32px 56px; font-family: 'IBM Plex Sans','Segoe UI',sans-serif;"
-        "  font-size: 15px; color: #0a0d12; }"
+        "  font-size: 15px; color: %4; }"
         "QPushButton#noterExtractBtn { background: %2; color: white; border: none;"
         "  border-radius: 18px; padding: 7px 18px; font-size: 13px; font-weight: 500; }"
-        "QPushButton#noterExtractBtn:hover { background: #b91c1c; }"
-        "QLabel#noterSavedHint { color: #a0a0a0; font-size: 11px;"
+        "QPushButton#noterExtractBtn:hover { background: %5; }"
+        "QLabel#noterSavedHint { color: %6; font-size: 11px;"
         "  padding-right: 8px; }"
-        "QLabel#noterModelLabel { color: #a0a0a0; font-size: 11px; }"
-        "QComboBox#noterModelCombo { border: 1px solid #d5d0c0; border-radius: 4px;"
-        "  padding: 3px 8px; font-size: 12px; min-width: 160px; background: white; color: #525252; }"
-    ).arg(kEditorBg, kNoterRed);
+        "QLabel#noterModelLabel { color: %6; font-size: 11px; }"
+        "QComboBox#noterModelCombo { border: 1px solid %7; border-radius: 4px;"
+        "  padding: 3px 8px; font-size: 12px; min-width: 160px; background: %8; color: %9; }"
+    ).arg(pal.pageBg, pal.accent, pal.sidebarBorder, pal.strongText,
+          pal.accentHover, pal.hintFg, pal.inputBorder, pal.inputBg, pal.text);
 }
 
-QString emptyPageStyle() {
+QString emptyPageStyle(const NoterPalette &pal) {
     return QStringLiteral(
         "QWidget#noterEmptyPage { background: %1; }"
-        "QLabel#noterEmptyTitle { color: #c8c4b8; font-size: 28px; font-weight: 300; }"
-        "QLabel#noterEmptySub { color: #a0a0a0; font-size: 14px; }"
-        "QLabel#noterEmptyHint { color: #525252; font-size: 13px; padding: 12px 16px;"
-        "  border: 1px dashed #d5d0c0; border-radius: 8px; background: white; }"
-        "QLabel#noterEmptyNegs { color: #94a3b8; font-size: 12px; line-height: 1.7; }"
-    ).arg(kEditorBg);
+        "QLabel#noterEmptyTitle { color: %2; font-size: 28px; font-weight: 300; }"
+        "QLabel#noterEmptySub { color: %3; font-size: 14px; }"
+        "QLabel#noterEmptyHint { color: %4; font-size: 13px; padding: 12px 16px;"
+        "  border: 1px dashed %5; border-radius: 8px; background: %6; }"
+        "QLabel#noterEmptyNegs { color: %7; font-size: 12px; line-height: 1.7; }"
+    ).arg(pal.pageBg, pal.emptyTitleFg, pal.hintFg, pal.text,
+          pal.inputBorder, pal.inputBg, pal.mutedText);
 }
 
 // ─── icon helpers (anti-tofu) ───────────────────────────────────────
@@ -733,6 +744,10 @@ QString titleEntityEscape(const QString &raw) {
 NotesPanel::NotesPanel(QWidget *parent, NotesTodos *sharedTodos,
                        NotesReminderEngine *sharedEngine)
     : QWidget(parent) {
+    // A5 — resolve the CURRENT app theme before buildUi() so construction
+    // renders Light/Dark/Monokai correctly from the first frame (the
+    // pre-A5 panel was a hardcoded light-cream island in dark themes).
+    m_pal = noterPaletteForTheme(Config::instance().theme);
     ensureNotesFolder();
     m_storage = new NotesStorage(notesRoot(), this);
     m_ownsTodos = (sharedTodos == nullptr);
@@ -872,7 +887,7 @@ void NotesPanel::buildUi() {
     m_splitter->setChildrenCollapsible(false);
     m_splitter->setHandleWidth(1);
     m_splitter->setStyleSheet(
-        QStringLiteral("QSplitter::handle { background: %1; }").arg(kSidebarBorder));
+        QStringLiteral("QSplitter::handle { background: %1; }").arg(m_pal.sidebarBorder));
 
     m_sidebar = buildSidebar();
     m_splitter->addWidget(m_sidebar);
@@ -894,7 +909,7 @@ void NotesPanel::buildUi() {
 QWidget *NotesPanel::buildSidebar() {
     auto *w = new QWidget(this);
     w->setObjectName("noterSidebar");
-    w->setStyleSheet(sidebarStyle());
+    w->setStyleSheet(sidebarStyle(m_pal));
     w->setMinimumWidth(180);
     w->setMaximumWidth(360);
 
@@ -923,7 +938,7 @@ QWidget *NotesPanel::buildSidebar() {
     m_searchStatus = new QLabel(w);
     m_searchStatus->setObjectName(QStringLiteral("noterSearchStatus"));
     m_searchStatus->setStyleSheet(
-        QStringLiteral("color:%1; font-size:11px; padding:0 14px 4px;").arg(kMutedText));
+        QStringLiteral("color:%1; font-size:11px; padding:0 14px 4px;").arg(m_pal.mutedText));
     m_searchStatus->hide();
     v->addWidget(m_searchStatus);
 
@@ -962,8 +977,8 @@ QWidget *NotesPanel::buildSidebar() {
     // resolve to the same light colour.
     {
         QPalette tp = m_sidebarTree->palette();
-        tp.setColor(QPalette::Base, QColor(kSidebarBg));
-        tp.setColor(QPalette::Text, QColor(QStringLiteral("#525252")));
+        tp.setColor(QPalette::Base, QColor(m_pal.sidebarBg));
+        tp.setColor(QPalette::Text, QColor(m_pal.text));
         m_sidebarTree->setPalette(tp);
     }
     v->addWidget(m_sidebarTree, 1);
@@ -1220,13 +1235,14 @@ QWidget *NotesPanel::buildSidebar() {
                 const QString payload = it->data(0, Qt::UserRole + 1).toString();
                 QMenu menu(this);
                 menu.setStyleSheet(QStringLiteral(
-                    "QMenu { background: #FFFFFF; color: #111827;"
-                    "  border: 1px solid #d5d0c0; padding: 4px 0; }"
+                    "QMenu { background: %1; color: %2;"
+                    "  border: 1px solid %3; padding: 4px 0; }"
                     "QMenu::item { padding: 7px 24px 7px 22px; font-size: 13px; }"
-                    "QMenu::item:selected { background: #FEF3C7; color: #0a0d12; }"
-                    "QMenu::separator { height: 1px; background: #e5e1d6;"
+                    "QMenu::item:selected { background: %4; color: %5; }"
+                    "QMenu::separator { height: 1px; background: %6;"
                     "  margin: 4px 8px; }"
-                ));
+                ).arg(m_pal.menuBg, m_pal.menuFg, m_pal.menuBorder,
+                      m_pal.menuSelBg, m_pal.menuSelFg, m_pal.menuSep));
                 if (kind == QStringLiteral("meeting")) {
                     // v0.1.98 CRASH FIX — `menu.exec()` below runs a nested
                     // event loop. The 5s autosave timer (onAutoSaveTick →
@@ -1315,7 +1331,7 @@ QWidget *NotesPanel::buildSidebar() {
 QWidget *NotesPanel::buildEditorPage() {
     auto *w = new QWidget(this);
     w->setObjectName("noterEditorPage");
-    w->setStyleSheet(editorPageStyle());
+    w->setStyleSheet(editorPageStyle(m_pal));
 
     auto *v = new QVBoxLayout(w);
     v->setContentsMargins(0, 0, 0, 0);
@@ -1334,7 +1350,8 @@ QWidget *NotesPanel::buildEditorPage() {
     banL->addWidget(bell);
     m_reminderLabel = new QLabel(m_reminderBanner);
     m_reminderLabel->setWordWrap(true);
-    m_reminderLabel->setStyleSheet(QStringLiteral("color: #7c2d12; font-weight: 600;"));
+    m_reminderLabel->setStyleSheet(
+        QStringLiteral("color: %1; font-weight: 600;").arg(m_pal.bannerFg));
     banL->addWidget(m_reminderLabel, 1);
     m_reminderOpenSrcBtn = new QPushButton(tr("Open"), m_reminderBanner);
     m_reminderSnoozeBtn  = new QPushButton(tr("Snooze 10m"), m_reminderBanner);
@@ -1342,9 +1359,10 @@ QWidget *NotesPanel::buildEditorPage() {
     for (auto *b : {m_reminderOpenSrcBtn, m_reminderSnoozeBtn, m_reminderDismissBtn}) {
         b->setCursor(Qt::PointingHandCursor);
         b->setStyleSheet(QStringLiteral(
-            "QPushButton { background: #7c2d12; color: white; border: none;"
+            "QPushButton { background: %1; color: white; border: none;"
             "  border-radius: 4px; padding: 4px 12px; font-size: 12px; }"
-            "QPushButton:hover { background: #9a3412; }"));
+            "QPushButton:hover { background: %2; }")
+                .arg(m_pal.bannerBtnBg, m_pal.bannerBtnHover));
         banL->addWidget(b);
     }
     v->addWidget(m_reminderBanner);
@@ -1378,8 +1396,9 @@ QWidget *NotesPanel::buildEditorPage() {
     m_saveFailBanner = new QWidget(w);
     m_saveFailBanner->setObjectName(QStringLiteral("noterSaveFailBanner"));
     m_saveFailBanner->setStyleSheet(QStringLiteral(
-        "QWidget#noterSaveFailBanner { background: #FEE2E2;"
-        "  border-bottom: 2px solid #DC2626; }"));
+        "QWidget#noterSaveFailBanner { background: %1;"
+        "  border-bottom: 2px solid %2; }")
+            .arg(m_pal.saveFailBg, m_pal.saveFailBorder));
     m_saveFailBanner->setVisible(false);
     auto *sfL = new QHBoxLayout(m_saveFailBanner);
     sfL->setContentsMargins(14, 8, 14, 8);
@@ -1389,7 +1408,8 @@ QWidget *NotesPanel::buildEditorPage() {
     sfL->addWidget(sfIcon);
     m_saveFailLabel = new QLabel(m_saveFailBanner);
     m_saveFailLabel->setWordWrap(true);
-    m_saveFailLabel->setStyleSheet(QStringLiteral("color: #7F1D1D; font-weight: 600;"));
+    m_saveFailLabel->setStyleSheet(
+        QStringLiteral("color: %1; font-weight: 600;").arg(m_pal.saveFailFg));
     sfL->addWidget(m_saveFailLabel, 1);
     auto *sfCopyBtn = new QPushButton(tr("Save a copy…"), m_saveFailBanner);
     sfCopyBtn->setObjectName(QStringLiteral("noterSaveCopyBtn"));
@@ -1398,9 +1418,10 @@ QWidget *NotesPanel::buildEditorPage() {
     for (auto *b : {sfCopyBtn, sfHideBtn}) {
         b->setCursor(Qt::PointingHandCursor);
         b->setStyleSheet(QStringLiteral(
-            "QPushButton { background: #DC2626; color: white; border: none;"
+            "QPushButton { background: %1; color: white; border: none;"
             "  border-radius: 4px; padding: 4px 12px; font-size: 12px; }"
-            "QPushButton:hover { background: #B91C1C; }"));
+            "QPushButton:hover { background: %2; }")
+                .arg(m_pal.saveFailBtnBg, m_pal.saveFailBtnHover));
         sfL->addWidget(b);
     }
     v->addWidget(m_saveFailBanner);
@@ -1555,7 +1576,7 @@ QWidget *NotesPanel::buildEditorPage() {
 QWidget *NotesPanel::buildEmptyPage() {
     auto *w = new QWidget(this);
     w->setObjectName("noterEmptyPage");
-    w->setStyleSheet(emptyPageStyle());
+    w->setStyleSheet(emptyPageStyle(m_pal));
 
     auto *outer = new QVBoxLayout(w);
     outer->addStretch(1);
@@ -1574,7 +1595,7 @@ QWidget *NotesPanel::buildEmptyPage() {
 
     auto *hint = new QLabel(
         tr("Press <b style='color:%1'>Ctrl+Alt+M</b> to start a new meeting note.")
-            .arg(kNoterRed), w);
+            .arg(m_pal.accent), w);
     hint->setObjectName("noterEmptyHint");
     hint->setAlignment(Qt::AlignCenter);
     hint->setTextFormat(Qt::RichText);
@@ -1597,6 +1618,113 @@ QWidget *NotesPanel::buildEmptyPage() {
 
     outer->addStretch(2);
     return w;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  A5 — theme parity
+// ═══════════════════════════════════════════════════════════════════════
+//
+// Re-issues every chrome stylesheet / palette / per-item foreground from
+// the NoterPalette for `themeName`. Chrome only: the note DOCUMENT keeps
+// its own in-file styling — the editor viewport background + default ink
+// come from the page QSS, and the checklist done/undone char formats are
+// re-derived (they are runtime-only; the sanitizer strips them on save).
+
+void NotesPanel::onThemeChanged() {
+    applyNoterTheme(Config::instance().theme);
+}
+
+void NotesPanel::applyNoterTheme(const QString &themeName) {
+    m_pal = noterPaletteForTheme(themeName);
+
+    // ── chrome stylesheets ──────────────────────────────────────────
+    if (m_splitter)
+        m_splitter->setStyleSheet(QStringLiteral(
+            "QSplitter::handle { background: %1; }").arg(m_pal.sidebarBorder));
+    if (m_sidebar) m_sidebar->setStyleSheet(sidebarStyle(m_pal));
+    if (m_sidebarTree) {
+        // Mirror buildSidebar's belt-and-braces palette pin (macOS
+        // item-view-viewport bug) — both mechanisms must agree.
+        QPalette tp = m_sidebarTree->palette();
+        tp.setColor(QPalette::Base, QColor(m_pal.sidebarBg));
+        tp.setColor(QPalette::Text, QColor(m_pal.text));
+        m_sidebarTree->setPalette(tp);
+    }
+    if (m_searchStatus)
+        m_searchStatus->setStyleSheet(QStringLiteral(
+            "color:%1; font-size:11px; padding:0 14px 4px;").arg(m_pal.mutedText));
+    if (m_editorPage) m_editorPage->setStyleSheet(editorPageStyle(m_pal));
+    if (m_emptyPage) {
+        m_emptyPage->setStyleSheet(emptyPageStyle(m_pal));
+        // The keyboard-hint label bakes the accent into rich text.
+        if (auto *hint = m_emptyPage->findChild<QLabel *>(
+                QStringLiteral("noterEmptyHint")))
+            hint->setText(tr("Press <b style='color:%1'>Ctrl+Alt+M</b> "
+                             "to start a new meeting note.").arg(m_pal.accent));
+    }
+
+    // ── reminder banner (label + buttons + live flash bg) ───────────
+    if (m_reminderLabel)
+        m_reminderLabel->setStyleSheet(QStringLiteral(
+            "color: %1; font-weight: 600;").arg(m_pal.bannerFg));
+    for (auto *b : {m_reminderOpenSrcBtn, m_reminderSnoozeBtn,
+                    m_reminderDismissBtn}) {
+        if (!b) continue;
+        b->setStyleSheet(QStringLiteral(
+            "QPushButton { background: %1; color: white; border: none;"
+            "  border-radius: 4px; padding: 4px 12px; font-size: 12px; }"
+            "QPushButton:hover { background: %2; }")
+                .arg(m_pal.bannerBtnBg, m_pal.bannerBtnHover));
+    }
+    if (m_reminderBanner && m_reminderBanner->isVisible())
+        m_reminderBanner->setStyleSheet(QStringLiteral(
+            "QWidget#noterReminderBanner { background: %1;"
+            "  border-bottom: 2px solid %2; }")
+                .arg(m_reminderFlashOn ? m_pal.bannerFlashA : m_pal.bannerFlashB,
+                     m_pal.bannerBorder));
+
+    // ── save-failure banner ─────────────────────────────────────────
+    if (m_saveFailBanner) {
+        m_saveFailBanner->setStyleSheet(QStringLiteral(
+            "QWidget#noterSaveFailBanner { background: %1;"
+            "  border-bottom: 2px solid %2; }")
+                .arg(m_pal.saveFailBg, m_pal.saveFailBorder));
+        for (QPushButton *b : m_saveFailBanner->findChildren<QPushButton *>())
+            b->setStyleSheet(QStringLiteral(
+                "QPushButton { background: %1; color: white; border: none;"
+                "  border-radius: 4px; padding: 4px 12px; font-size: 12px; }"
+                "QPushButton:hover { background: %2; }")
+                    .arg(m_pal.saveFailBtnBg, m_pal.saveFailBtnHover));
+    }
+    if (m_saveFailLabel)
+        m_saveFailLabel->setStyleSheet(QStringLiteral(
+            "color: %1; font-weight: 600;").arg(m_pal.saveFailFg));
+
+    // ── savedHint — keep an active failure/conflict state red ───────
+    // Normal state has an EMPTY stylesheet (inherits the page QSS hint
+    // grey) — only re-issue when a failure style is currently applied.
+    if (m_savedHint && !m_savedHint->styleSheet().isEmpty())
+        m_savedHint->setStyleSheet(QStringLiteral(
+            "color: %1; font-weight: 600; padding-right: 8px;").arg(m_pal.danger));
+
+    // ── checklist char formats in the OPEN document ─────────────────
+    // Runtime-only restyle (sanitizer strips it on save); guard exactly
+    // like the load path so it can't mark the note dirty.
+    if (m_editor && !m_readError &&
+        !m_editor->document()->isEmpty() && !m_currentPath.isEmpty()) {
+        const bool wasLoading = m_loadingInProgress;
+        m_loadingInProgress = true;
+        m_editor->blockSignals(true);
+        restyleChecklistLines();
+        m_editor->blockSignals(false);
+        m_loadingInProgress = wasLoading;
+    }
+
+    // ── sidebar item foregrounds (muted sections, overdue red) ──────
+    refreshSidebar();
+
+    // ── live pop-out chrome ─────────────────────────────────────────
+    if (m_popOut) m_popOut->applyNoterPalette(m_pal);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1977,7 +2105,7 @@ void NotesPanel::populateMeetingsRoot(QTreeWidgetItem *root, const QString &filt
         auto *sect = new QTreeWidgetItem(root);
         sect->setText(0, QStringLiteral("%1  (%2)").arg(b, QString::number(buckets[b].size())));
         sect->setData(0, Qt::UserRole, QStringLiteral("section"));
-        sect->setForeground(0, QColor(kMutedText));
+        sect->setForeground(0, QColor(m_pal.mutedText));
         for (const QFileInfo &fi : buckets[b]) {
             // A3 — leaf text reads the title RESOLVER (cache hit — the
             // filter loop above already resolved this file): notepatra-title
@@ -2062,7 +2190,7 @@ void NotesPanel::populateRemindersRoot(QTreeWidgetItem *root, const QString &fil
         auto *sect = new QTreeWidgetItem(root);
         sect->setText(0, QStringLiteral("%1  (%2)").arg(bk.name).arg(bk.items.size()));
         sect->setData(0, Qt::UserRole, QStringLiteral("section"));
-        sect->setForeground(0, QColor(kMutedText));
+        sect->setForeground(0, QColor(m_pal.mutedText));
 
         for (const TodoRow &r : bk.items) {
             const QDateTime at = r.reminderAt.toLocalTime();
@@ -2085,7 +2213,7 @@ void NotesPanel::populateRemindersRoot(QTreeWidgetItem *root, const QString &fil
                 tr("%1\nReminder: %2\n\nClick to open note · pencil to change time · ✕ to delete")
                     .arg(QDir::toNativeSeparators(r.sourceFile),
                          at.toString(QStringLiteral("ddd MMM d, yyyy  HH:mm"))));
-            if (at < now) leaf->setForeground(0, QColor(QStringLiteral("#DC2626")));  // overdue → red
+            if (at < now) leaf->setForeground(0, QColor(m_pal.danger));  // overdue → red
         }
     }
 }
@@ -2112,7 +2240,7 @@ void NotesPanel::populateTodosRoot(QTreeWidgetItem *root, const QString &filter)
         auto *sect = new QTreeWidgetItem(root);
         sect->setText(0, QStringLiteral("%1  (%2)").arg(g.name, QString::number(g.rows.size())));
         sect->setData(0, Qt::UserRole, QStringLiteral("section"));
-        sect->setForeground(0, QColor(kMutedText));
+        sect->setForeground(0, QColor(m_pal.mutedText));
         // Done group collapsed by default — too noisy.
         sect->setExpanded(g.name != tr("Done"));
         for (const TodoRow &r : g.rows) {
@@ -2145,7 +2273,7 @@ void NotesPanel::populateTodosRoot(QTreeWidgetItem *root, const QString &filter)
             leaf->setToolTip(0, tip);
             if (g.name == tr("Done")) {
                 QFont f = leaf->font(0); f.setStrikeOut(true); leaf->setFont(0, f);
-                leaf->setForeground(0, QColor(kMutedText));
+                leaf->setForeground(0, QColor(m_pal.mutedText));
             }
         }
         if (sect->childCount() == 0) delete root->takeChild(root->indexOfChild(sect));
@@ -2187,7 +2315,7 @@ void NotesPanel::populateTrashRoot(QTreeWidgetItem *root, const QString &filter)
         sect->setText(0, QStringLiteral("%1  (%2)").arg(tr("Trashed notes"))
                                                     .arg(trashedCanonical.size()));
         sect->setData(0, Qt::UserRole, QStringLiteral("section"));
-        sect->setForeground(0, QColor(kMutedText));
+        sect->setForeground(0, QColor(m_pal.mutedText));
         for (const QFileInfo &fi : trashedCanonical) {
             // A3 — trashed leaves read the title RESOLVER too: the
             // notepatra-title meta travels with the trashed file (Unicode
@@ -2202,7 +2330,7 @@ void NotesPanel::populateTrashRoot(QTreeWidgetItem *root, const QString &filter)
             leaf->setText(0, display);
             leaf->setIcon(0, iconForLeaf(this->style(), QStringLiteral("trashed_meeting")));
             QFont mf = leaf->font(0); mf.setItalic(true); leaf->setFont(0, mf);
-            leaf->setForeground(0, QColor(kMutedText));
+            leaf->setForeground(0, QColor(m_pal.mutedText));
             leaf->setData(0, Qt::UserRole, QStringLiteral("trashed_meeting"));
             leaf->setData(0, Qt::UserRole + 1, fi.absoluteFilePath());
             leaf->setToolTip(0, QDir::toNativeSeparators(fi.absoluteFilePath()) +
@@ -2555,9 +2683,10 @@ void NotesPanel::renderNoteAtPath(const QString &absolutePath) {
         m_loadingInProgress = true;
         m_editor->blockSignals(true);
         m_editor->setHtml(QStringLiteral(
-            "<div style=\"color:#DC2626;font-weight:600;font-size:16px;\">%1</div>"
-            "<div style=\"color:#525252;margin-top:8px;\">%2</div>"
-            "<div style=\"color:#a0a0a0;margin-top:12px;\">%3</div>")
+            "<div style=\"color:%1;font-weight:600;font-size:16px;\">%4</div>"
+            "<div style=\"color:%2;margin-top:8px;\">%5</div>"
+            "<div style=\"color:%3;margin-top:12px;\">%6</div>")
+                .arg(m_pal.danger, m_pal.text, m_pal.hintFg)
                 .arg(tr("Could not open %1").arg(name.toHtmlEscaped()),
                      readErr.toHtmlEscaped(),
                      tr("The file on disk was left untouched. Fix its "
@@ -2993,7 +3122,7 @@ void NotesPanel::setSavedHintFailure(const QString &reason) {
         shortReason = shortReason.left(79) + QChar(0x2026);
     m_savedHint->setText(tr("NOT SAVED — %1").arg(shortReason));
     m_savedHint->setStyleSheet(QStringLiteral(
-        "color: #DC2626; font-weight: 600; padding-right: 8px;"));
+        "color: %1; font-weight: 600; padding-right: 8px;").arg(m_pal.danger));
     m_savedHint->setProperty("saveFailed", true);
 }
 
@@ -3184,7 +3313,7 @@ void NotesPanel::noteSaveConflicted(const QString &origName,
     if (m_savedHint) {
         m_savedHint->setText(tr("CONFLICT — saved as a copy"));
         m_savedHint->setStyleSheet(QStringLiteral(
-            "color: #DC2626; font-weight: 600; padding-right: 8px;"));
+            "color: %1; font-weight: 600; padding-right: 8px;").arg(m_pal.danger));
         m_savedHint->setProperty("saveFailed", false);
     }
     if (m_saveFailBanner && m_saveFailLabel) {
@@ -3217,6 +3346,9 @@ void NotesPanel::popOutActive() {
         m_popOut = nullptr;
     }
     m_popOut = new NoterPopOut(m_currentPath);
+    // A5 — restyle the pop-out chrome with the panel's active palette
+    // (its constructor defaults to Light for standalone construction).
+    m_popOut->applyNoterPalette(m_pal);
     // Titlebar shows the same display title as the sidebar leaf
     // ("Noter 06" / the meta title), never the raw filename stem.
     // m_currentTitle is resolver-fed at load; the empty fallback covers
@@ -3912,7 +4044,10 @@ void NotesPanel::applyChecklistDoneStyle(const QTextBlock &block, bool done) {
     c.setPosition(end, QTextCursor::KeepAnchor);
     QTextCharFormat fmt;
     fmt.setFontStrikeOut(done);
-    fmt.setForeground(done ? QColor("#9ca3af") : QColor("#0a0d12"));
+    // A5 — themed runtime format only; the storage sanitizer strips inline
+    // style attributes on save, so these colours never reach the file.
+    fmt.setForeground(done ? QColor(m_pal.checkDoneFg)
+                           : QColor(m_pal.checkUndoneFg));
     c.mergeCharFormat(fmt);
 }
 
@@ -4083,11 +4218,13 @@ void NotesPanel::showNextReminder() {
         connect(m_reminderFlashTimer, &QTimer::timeout, this, [this]() {
             if (!m_reminderBanner) return;
             m_reminderFlashOn = !m_reminderFlashOn;
-            const QString bg = m_reminderFlashOn ? QStringLiteral("#FDE68A")
-                                                 : QStringLiteral("#FCD34D");
+            // A5 — read m_pal fresh each tick so a live theme switch
+            // re-colours the flash without restarting the timer.
+            const QString bg = m_reminderFlashOn ? m_pal.bannerFlashA
+                                                 : m_pal.bannerFlashB;
             m_reminderBanner->setStyleSheet(QStringLiteral(
                 "QWidget#noterReminderBanner { background: %1;"
-                "  border-bottom: 2px solid #D97706; }").arg(bg));
+                "  border-bottom: 2px solid %2; }").arg(bg, m_pal.bannerBorder));
         });
     }
     m_reminderFlashOn = false;

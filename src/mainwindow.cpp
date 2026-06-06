@@ -4455,6 +4455,11 @@ NotesPanel *MainWindow::ensureNoterTab() {
     if (!noter) {
         ensureNoterReminderService();   // idempotent; creates dirs now (user asked for Noter)
         noter = new NotesPanel(nullptr, m_noterTodos, m_noterReminderEngine);
+        // A5 — theme parity. The constructor already applied the CURRENT
+        // Config theme; this keeps a live switch (Settings → Theme) in
+        // sync without reopening the tab, matching the AIPanel pattern.
+        connect(this, &MainWindow::themeChanged,
+                noter, &NotesPanel::onThemeChanged);
         // Truthful Features-menu indicator on EVERY deletion path (toggle-
         // close AND generic closeTab). Receiver = the action → connection
         // auto-dies with it at shutdown.

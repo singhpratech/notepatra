@@ -37,14 +37,12 @@ NoterPopOut::NoterPopOut(const QString &noteAbsPath, QWidget *parent)
     resize(480, 540);
     setMinimumSize(320, 240);
 
-    setStyleSheet(
-        // Subtle drop-shadow effect courtesy of a 1px outer border;
-        // real shadow needs a platform-specific blur which Qt5 lacks
-        // on X11. The border is enough to read against video.
-        "NoterPopOut { background: #FFFFFF; border: 1px solid #C7D2FE; }"
-    );
-
     buildUi();
+
+    // A5 — default chrome is the Light palette (byte-identical to the
+    // pre-A5 hardcoded look, the standalone/test contract). NotesPanel
+    // re-applies its active palette right after construction.
+    applyNoterPalette(noterLightPalette());
 
     m_session.start();
     m_clockTimer = new QTimer(this);
@@ -72,13 +70,9 @@ void NoterPopOut::buildUi() {
     m_titleBar = new QWidget(this);
     m_titleBar->setObjectName("popOutTitleBar");
     m_titleBar->setFixedHeight(30);
-    m_titleBar->setStyleSheet(
-        "QWidget#popOutTitleBar { background: #EEF2FF; "
-        "border-bottom: 1px solid #C7D2FE; }"
-        "QPushButton { background: transparent; border: none; "
-        "padding: 0 6px; }"
-        "QPushButton:hover { background: #C7D2FE; border-radius: 3px; }"
-    );
+    // Stylesheets for the whole chrome are issued by applyNoterPalette()
+    // (called at the end of the constructor, and by NotesPanel on theme
+    // switches) — nothing is styled inline here.
 
     QHBoxLayout *tl = new QHBoxLayout(m_titleBar);
     tl->setContentsMargins(8, 0, 4, 0);
@@ -102,18 +96,10 @@ void NoterPopOut::buildUi() {
     QString stem = QFileInfo(m_notePath).completeBaseName();
     if (stem.isEmpty()) stem = tr("Note");
     m_titleLabel = new QLabel(stem, m_titleBar);
-    m_titleLabel->setStyleSheet(
-        "QLabel { color: #1E1B4B; font-weight: 600; font-size: 12px; }"
-    );
     tl->addWidget(m_titleLabel, 1);
 
     // Live timer — mm:ss since the pop-out opened.
     m_timerLabel = new QLabel(QStringLiteral("00:00"), m_titleBar);
-    m_timerLabel->setStyleSheet(
-        "QLabel { color: #4338CA; font-family: monospace; "
-        "font-size: 12px; padding: 0 6px; "
-        "background: #C7D2FE; border-radius: 4px; }"
-    );
     tl->addWidget(m_timerLabel);
 
     m_minBtn = new QPushButton(m_titleBar);
@@ -146,10 +132,6 @@ void NoterPopOut::buildUi() {
     m_body = new QTextEdit(this);
     m_body->setReadOnly(true);
     m_body->setFrameShape(QFrame::NoFrame);
-    m_body->setStyleSheet(
-        "QTextEdit { background: #FFFFFF; color: #111827; "
-        "padding: 10px 14px; font-size: 13px; }"
-    );
     outer->addWidget(m_body, 1);
 }
 
@@ -157,6 +139,40 @@ void NoterPopOut::setNotePath(const QString &absPath) {
     if (absPath.isEmpty() || absPath == m_notePath) return;
     m_notePath = absPath;
     reloadFromDisk();   // immediate refresh; the 2s loop keeps following
+}
+
+void NoterPopOut::applyNoterPalette(const NoterPalette &pal) {
+    // The Light palette reproduces the pre-A5 hardcoded strings verbatim.
+    setStyleSheet(
+        // Subtle drop-shadow effect courtesy of a 1px outer border;
+        // real shadow needs a platform-specific blur which Qt5 lacks
+        // on X11. The border is enough to read against video.
+        QStringLiteral(
+            "NoterPopOut { background: %1; border: 1px solid %2; }")
+            .arg(pal.popoutBg, pal.popoutBorder));
+    if (m_titleBar)
+        m_titleBar->setStyleSheet(QStringLiteral(
+            "QWidget#popOutTitleBar { background: %1; "
+            "border-bottom: 1px solid %2; }"
+            "QPushButton { background: transparent; border: none; "
+            "padding: 0 6px; }"
+            "QPushButton:hover { background: %3; border-radius: 3px; }")
+                .arg(pal.popoutTitleBg, pal.popoutBorder, pal.popoutHoverBg));
+    if (m_titleLabel)
+        m_titleLabel->setStyleSheet(QStringLiteral(
+            "QLabel { color: %1; font-weight: 600; font-size: 12px; }")
+                .arg(pal.popoutTitleFg));
+    if (m_timerLabel)
+        m_timerLabel->setStyleSheet(QStringLiteral(
+            "QLabel { color: %1; font-family: monospace; "
+            "font-size: 12px; padding: 0 6px; "
+            "background: %2; border-radius: 4px; }")
+                .arg(pal.popoutChipFg, pal.popoutChipBg));
+    if (m_body)
+        m_body->setStyleSheet(QStringLiteral(
+            "QTextEdit { background: %1; color: %2; "
+            "padding: 10px 14px; font-size: 13px; }")
+                .arg(pal.popoutBg, pal.popoutBodyFg));
 }
 
 void NoterPopOut::setDisplayTitle(const QString &title) {

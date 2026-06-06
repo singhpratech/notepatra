@@ -21,6 +21,8 @@
 
 #pragma once
 
+#include "notes_theme.h"
+
 #include <QWidget>
 #include <QByteArray>
 #include <QString>
@@ -172,6 +174,20 @@ public:
     // The lazily-created shared tray icon (null when no tray daemon /
     // no message support). MainWindow uses it to hook messageClicked.
     static QSystemTrayIcon *notificationTray();
+
+    // A5 — theme parity. Re-issues every Noter chrome stylesheet/palette
+    // from the NoterPalette matching `themeName` (a Config::theme key:
+    // "Light" / "Dark" / "Monokai" / "System"→Light). The constructor
+    // applies the current Config theme; MainWindow wires themeChanged →
+    // onThemeChanged() at the panel creation site so a live switch
+    // restyles without reopening the tab. Chrome only — the note DOCUMENT
+    // keeps its own in-file styling (see notes_theme.h scope note).
+    void applyNoterTheme(const QString &themeName);
+
+public slots:
+    // Convenience slot for MainWindow::themeChanged (no-arg signal):
+    // re-reads Config::instance().theme and applies it.
+    void onThemeChanged();
 
 signals:
     void noteSaved(const QString &absolutePath);
@@ -378,6 +394,11 @@ private:
     NoterPopOut    *m_popOut        { nullptr };
 
     // ── state ─────────────────────────────────────────────────────
+    // A5 — the active Noter palette. Set from Config::theme before
+    // buildUi() (so construction renders the current theme) and replaced
+    // by applyNoterTheme() on every switch. All chrome styling reads
+    // through this; never hardcode a colour in a Noter stylesheet again.
+    NoterPalette   m_pal;
     QString        m_currentPath;
     QString        m_currentTitle;
     // A3 — the editor H1 snapshot captured at load (and refreshed after

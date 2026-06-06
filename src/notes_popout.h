@@ -15,6 +15,8 @@
 #ifndef NOTES_POPOUT_H
 #define NOTES_POPOUT_H
 
+#include "notes_theme.h"
+
 #include <QElapsedTimer>
 #include <QPoint>
 #include <QString>
@@ -44,6 +46,12 @@ public:
     // NotesPanel overrides it with the same prettified label the sidebar
     // shows ("Noter 06", not "2026-06-06-145233-noter-06").
     void setDisplayTitle(const QString &title);
+
+    // A5 — re-issue the pop-out chrome stylesheets from a NoterPalette.
+    // The constructor applies noterLightPalette() (standalone default,
+    // byte-identical to the pre-A5 look); NotesPanel calls this with its
+    // active palette right after construction and on every theme switch.
+    void applyNoterPalette(const NoterPalette &pal);
 
     // Test hooks — let unit tests inspect chrome without yanking it
     // out via objectName lookup.

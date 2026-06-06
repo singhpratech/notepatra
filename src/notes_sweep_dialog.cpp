@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "notes_sweep_dialog.h"
+#include "notes_theme.h"
+#include "config.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -179,7 +181,12 @@ void NoterSweepDialog::buildHeader() {
         QFont ef = m_existingLabel->font();
         ef.setPointSizeF(ef.pointSizeF() * 0.9);
         m_existingLabel->setFont(ef);
-        m_existingLabel->setStyleSheet(QStringLiteral("color: #B45309;"));
+        // A5 — amber notice ink from the Noter palette so it stays legible
+        // on dark dialog backgrounds (#B45309 in Light, brighter in Dark/
+        // Monokai). The dialog is modal, so the theme can't change while
+        // it's open — baking at construction is safe.
+        m_existingLabel->setStyleSheet(QStringLiteral("color: %1;").arg(
+            noterPaletteForTheme(Config::instance().theme).noticeFg));
     }
     hv->addWidget(m_existingLabel);
 
@@ -192,7 +199,8 @@ void NoterSweepDialog::buildHeader() {
         QFont tf = m_truncLabel->font();
         tf.setPointSizeF(tf.pointSizeF() * 0.9);
         m_truncLabel->setFont(tf);
-        m_truncLabel->setStyleSheet(QStringLiteral("color: #B45309;"));
+        m_truncLabel->setStyleSheet(QStringLiteral("color: %1;").arg(
+            noterPaletteForTheme(Config::instance().theme).noticeFg));
     }
     hv->addWidget(m_truncLabel);
 

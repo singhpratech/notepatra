@@ -3438,6 +3438,108 @@ int main(int argc, char *argv[]) {
         QApplication::processEvents();
     }
 
+    // ── 73. A5 theme parity — applyNoterTheme restyles the chrome ────
+    // Contract: Dark/Monokai swap every chrome stylesheet; switching back
+    // to Light restores the construction-time stylesheets BYTE-IDENTICAL
+    // (the zero-regression contract for the default look); the checklist
+    // done/undone char formats re-derive per theme WITHOUT dirtying the
+    // note; onThemeChanged() follows Config::theme.
+    std::printf("\n--- 73. theme parity (applyNoterTheme) ---\n");
+    {
+        NotesPanel themed;
+        themed.show();
+        themed.newMeetingNote();
+        QApplication::processEvents();
+
+        auto *sidebar = themed.findChild<QWidget *>(QStringLiteral("noterSidebar"));
+        auto *editorPage =
+            themed.findChild<QWidget *>(QStringLiteral("noterEditorPage"));
+        auto *ed = themed.findChild<QTextEdit *>(QStringLiteral("noterEditor"));
+        EXPECT("sidebar + editor page + editor found",
+               sidebar && editorPage && ed);
+
+        // Construction defaulted to Light (sandboxed config: theme=System
+        // → Light, matching the AI panel's System handling).
+        const QString lightSidebarQss = sidebar ? sidebar->styleSheet() : QString();
+        const QString lightEditorQss  = editorPage ? editorPage->styleSheet() : QString();
+        EXPECT("construction-time sidebar QSS is the Light cream",
+               lightSidebarQss.contains(QStringLiteral("#f3f1ea")));
+
+        // A ✓ done + ☐ open pair to verify themed checklist formats.
+        QTextCursor cur = ed->textCursor();
+        cur.movePosition(QTextCursor::End);
+        cur.insertText(QStringLiteral("\n☐ theme open\n✓ theme done"));
+        themed.applyNoterTheme(QStringLiteral("Light"));   // normalize formats
+        QApplication::processEvents();
+        const QString plainBefore = ed->toPlainText();
+
+        // Dark
+        themed.applyNoterTheme(QStringLiteral("Dark"));
+        QApplication::processEvents();
+        EXPECT("Dark sidebar QSS differs from Light",
+               sidebar && sidebar->styleSheet() != lightSidebarQss);
+        EXPECT("Dark sidebar QSS carries the dark surface #252526",
+               sidebar && sidebar->styleSheet().contains(QStringLiteral("#252526")));
+        EXPECT("Dark editor page QSS carries the dark paper #1e1e1e",
+               editorPage &&
+               editorPage->styleSheet().contains(QStringLiteral("#1e1e1e")));
+        // Reminder-banner buttons re-styled with the dark amber.
+        auto *banner = themed.findChild<QWidget *>(
+            QStringLiteral("noterReminderBanner"));
+        bool darkBannerBtn = false;
+        if (banner)
+            for (QPushButton *b : banner->findChildren<QPushButton *>())
+                if (b->styleSheet().contains(QStringLiteral("#92400e")))
+                    darkBannerBtn = true;
+        EXPECT("Dark restyles the reminder-banner buttons", darkBannerBtn);
+        // Checklist formats re-derived for Dark; document text untouched.
+        {
+            bool doneIsDark = false, openIsDark = false;
+            for (QTextBlock b = ed->document()->begin(); b.isValid(); b = b.next()) {
+                if (b.text().startsWith(QStringLiteral("✓ theme done"))) {
+                    QTextCursor c(ed->document());
+                    c.setPosition(b.position() + 3);
+                    doneIsDark = c.charFormat().foreground().color() ==
+                                 QColor(QStringLiteral("#6e7681"));
+                }
+                if (b.text().startsWith(QStringLiteral("☐ theme open"))) {
+                    QTextCursor c(ed->document());
+                    c.setPosition(b.position() + 3);
+                    openIsDark = c.charFormat().foreground().color() ==
+                                 QColor(QStringLiteral("#d4d4d4"));
+                }
+            }
+            EXPECT("Dark checklist done line uses the dark muted ink", doneIsDark);
+            EXPECT("Dark checklist open line uses the dark body ink", openIsDark);
+        }
+        EXPECT("theme switch leaves the note text untouched",
+               ed->toPlainText() == plainBefore);
+
+        // Monokai (via the Config-driven slot)
+        Config::instance().theme = QStringLiteral("Monokai");
+        themed.onThemeChanged();
+        QApplication::processEvents();
+        EXPECT("onThemeChanged() follows Config::theme (Monokai sidebar)",
+               sidebar && sidebar->styleSheet().contains(QStringLiteral("#1e1f1c")));
+        EXPECT("Monokai differs from Dark",
+               sidebar && !sidebar->styleSheet().contains(QStringLiteral("#252526")));
+        Config::instance().theme = QStringLiteral("System");   // restore default
+
+        // Back to Light — byte-identical restore.
+        themed.applyNoterTheme(QStringLiteral("Light"));
+        QApplication::processEvents();
+        EXPECT("Light restore: sidebar QSS byte-identical",
+               sidebar && sidebar->styleSheet() == lightSidebarQss);
+        EXPECT("Light restore: editor page QSS byte-identical",
+               editorPage && editorPage->styleSheet() == lightEditorQss);
+        // And the save-failure red is the Light danger again.
+        themed.saveCurrentNote();   // clean save → normal hint
+        QApplication::processEvents();
+        auto *hint = themed.findChild<QLabel *>(QStringLiteral("noterSavedHint"));
+        EXPECT("hint back on the page QSS after restore",
+               hint && hint->styleSheet().isEmpty());
+    }
+
     // ── Summary ───────────────────────────────────────────────────
     std::printf("\n──────────────────────────\n");
     std::printf("PASS: %d   FAIL: %d\n", g_pass, g_fail);
