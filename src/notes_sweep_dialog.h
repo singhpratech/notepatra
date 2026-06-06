@@ -64,6 +64,11 @@ public:
     // re-check a row deliberately.
     void setExistingReminders(const QVector<QPair<QString, QDateTime>> &existing);
 
+    // v0.1.112 — honest long-note coverage notice: "the AI read only the
+    // first N of M words". Call when build() reported truncation; no-op /
+    // hides the label for the full-coverage case.
+    void setTruncationNotice(int wordsUsed, int wordsTotal);
+
 signals:
     void saveRequested();
     void discardRequested();
@@ -103,6 +108,7 @@ private:
     QLabel      *m_titleLabel   = nullptr;
     QLabel      *m_countsLabel  = nullptr;
     QLabel      *m_existingLabel = nullptr;   // "Already scheduled: …" (v0.1.98)
+    QLabel      *m_truncLabel    = nullptr;   // "Long note: read first N of M words" (v0.1.112)
     QLabel      *m_footerStatus = nullptr;
     QVector<QPair<QString, QDateTime>> m_existing;   // reminders already on this note
     QPushButton *m_discardBtn   = nullptr;

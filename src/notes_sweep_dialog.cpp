@@ -22,16 +22,9 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
-// Normalise an action / reminder title for fuzzy duplicate detection:
-// lowercase, drop @owner handles + punctuation, collapse whitespace. Used to
-// recognise "ship the build tomorrow" ≈ "Ship the build" across Extract runs.
-static QString normalizeForMatch(const QString &s) {
-    QString n = s.toLower();
-    n.remove(QRegularExpression(QStringLiteral("@\\S+")));
-    n.remove(QRegularExpression(QStringLiteral("[^a-z0-9 ]")));
-    n.replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral(" "));
-    return n.trimmed();
-}
+// normalizeForMatch moved to NoterSweepPrompt (v0.1.112) — the extract-
+// apply done-state carry needs the SAME normalization, so it now lives in
+// the shared QtCore-only module. See notes_sweep_prompt.{h,cpp}.
 
 // ═══════════════════════════════════════════════════════════════════════
 // Construction
@@ -99,6 +92,21 @@ void NoterSweepDialog::setSweepTitle(const QString &title) {
 void NoterSweepDialog::setTargetPath(const QString &absPath) {
     m_targetPath = absPath;
     refreshFooterStatus();
+}
+
+// v0.1.112 — honest long-note coverage notice. Shown when build()
+// truncated the note body to fit the model's context window.
+void NoterSweepDialog::setTruncationNotice(int wordsUsed, int wordsTotal) {
+    if (!m_truncLabel) return;
+    if (wordsUsed <= 0 || wordsTotal <= wordsUsed) {
+        m_truncLabel->setVisible(false);
+        return;
+    }
+    m_truncLabel->setText(
+        tr("Long note: the AI read only the first %L1 of %L2 words. "
+           "Items mentioned after that point were not extracted — split or "
+           "trim the note to capture them.").arg(wordsUsed).arg(wordsTotal));
+    m_truncLabel->setVisible(true);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -174,6 +182,19 @@ void NoterSweepDialog::buildHeader() {
         m_existingLabel->setStyleSheet(QStringLiteral("color: #B45309;"));
     }
     hv->addWidget(m_existingLabel);
+
+    // v0.1.112 — honest long-note truncation notice. Empty + hidden until
+    // setTruncationNotice() fills it. Amber, mirroring m_existingLabel.
+    m_truncLabel = new QLabel(header);
+    m_truncLabel->setWordWrap(true);
+    m_truncLabel->setVisible(false);
+    {
+        QFont tf = m_truncLabel->font();
+        tf.setPointSizeF(tf.pointSizeF() * 0.9);
+        m_truncLabel->setFont(tf);
+        m_truncLabel->setStyleSheet(QStringLiteral("color: #B45309;"));
+    }
+    hv->addWidget(m_truncLabel);
 
     m_outerLayout->addWidget(header);
 
@@ -527,11 +548,11 @@ void NoterSweepDialog::setExistingReminders(
     // re-running Extract doesn't duplicate. The user can re-check deliberately.
     for (int i = 0; i < m_actionRows.size() && i < m_result.actions.size(); ++i) {
         if (!m_actionRows[i].remind) continue;
-        const QString aNorm = normalizeForMatch(m_result.actions[i].text);
+        const QString aNorm = NoterSweepPrompt::normalizeForMatch(m_result.actions[i].text);
         if (aNorm.size() < 4) continue;
         bool matched = false;
         for (const auto &e : existing) {
-            const QString eNorm = normalizeForMatch(e.first);
+            const QString eNorm = NoterSweepPrompt::normalizeForMatch(e.first);
             if (eNorm.isEmpty()) continue;
             if (eNorm.contains(aNorm) || aNorm.contains(eNorm)) { matched = true; break; }
         }

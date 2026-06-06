@@ -54,6 +54,11 @@ private slots:
     void sanitizer_inlineStyleAttribute_stripped();
     void sanitizer_headingTags_preserved();
     void roundTrip_savedHeading_keepsH2();
+    // v0.1.112 — Noter AI-Extract region markers: `name` allowed ONLY on
+    // <a> and ONLY with the np-extract- prefix.
+    void sanitizer_extractAnchorName_keptOnPrefixedA();
+    void sanitizer_extractAnchorName_hostileVariantsDropped();
+    void roundTrip_extractAnchors_surviveSaveRead();
 
     // ── filename safety ──
     void filename_twentyEdgeCases();
@@ -396,6 +401,72 @@ void TestNotesStorage::sanitizer_headingTags_preserved() {
     QVERIFY(sane.contains("<h3>"));
     QVERIFY(sane.contains("</h3>"));
     QVERIFY(!sane.contains("style="));
+}
+
+void TestNotesStorage::sanitizer_extractAnchorName_keptOnPrefixedA() {
+    // v0.1.112 — the AI-Extract apply layer marks its region with
+    // invisible <a name="np-extract-…"> anchors. The sanitizer must keep
+    // EXACTLY that prefix-gated form so re-runs can find + replace the
+    // region after a save/reload (notes_extract_apply.h).
+    const QString begin = NotesStorage::sanitizeBody(
+        "<p><a name=\"np-extract-begin-aabbccdd\"></a>AI Extract</p>");
+    QVERIFY(begin.contains("name=\"np-extract-begin-aabbccdd\""));
+    QVERIFY(begin.contains("AI Extract"));
+
+    const QString end = NotesStorage::sanitizeBody(
+        "<p><a name=\"np-extract-end\"></a>Extracted by m</p>");
+    QVERIFY(end.contains("name=\"np-extract-end\""));
+}
+
+void TestNotesStorage::sanitizer_extractAnchorName_hostileVariantsDropped() {
+    // Non-prefixed values drop (DOM-clobbering shaped surface stays shut).
+    QVERIFY(!NotesStorage::sanitizeBody("<p><a name=\"evil\"></a>x</p>")
+                 .contains("name="));
+    QVERIFY(!NotesStorage::sanitizeBody("<p><a name=\"window\"></a>x</p>")
+                 .contains("name="));
+    // name is NOT in the global allowlist — non-<a> tags drop it even
+    // with the magic prefix.
+    QVERIFY(!NotesStorage::sanitizeBody(
+                 "<p><img name=\"np-extract-begin-aabbccdd\" /></p>")
+                 .contains("name="));
+    QVERIFY(!NotesStorage::sanitizeBody(
+                 "<div name=\"np-extract-end\">x</div>")
+                 .contains("name="));
+    // name combined with on*/style: handlers + style ALWAYS strip; the
+    // prefixed name itself survives on <a>.
+    const QString combo = NotesStorage::sanitizeBody(
+        "<p><a name=\"np-extract-end\" onclick=\"alert(1)\" "
+        "style=\"color:red\"></a>x</p>");
+    QVERIFY(combo.contains("name=\"np-extract-end\""));
+    QVERIFY(!combo.contains("onclick"));
+    QVERIFY(!combo.contains("style"));
+    QVERIFY(!combo.contains("alert"));
+    // Attr-value escaping still applies to the kept name.
+    const QString esc = NotesStorage::sanitizeBody(
+        "<p><a name='np-extract-x\"><script>alert(1)</script>'></a>x</p>");
+    QVERIFY(!esc.contains("<script"));
+}
+
+void TestNotesStorage::roundTrip_extractAnchors_surviveSaveRead() {
+    // Full saveNote→readNote round trip: both region anchors must come
+    // back from disk byte-intact (the replace-in-place contract).
+    QTemporaryDir td;
+    QVERIFY(td.isValid());
+    NotesStorage s(td.path());
+    const QString path = td.path() + "/extract.html";
+    const QString html =
+        "<html><head></head><body>"
+        "<h2><a name=\"np-extract-begin-0123abcd\"></a>AI Extract</h2>"
+        "<p>☐ Ship the build</p>"
+        "<p><a name=\"np-extract-end\"></a>Extracted by m · full note</p>"
+        "</body></html>";
+    QString err;
+    QVERIFY2(s.saveNote(path, html, &err), qPrintable(err));
+    QString rerr;
+    const QString back = s.readNote(path, &rerr);
+    QVERIFY(rerr.isEmpty());
+    QVERIFY(back.contains("name=\"np-extract-begin-0123abcd\""));
+    QVERIFY(back.contains("name=\"np-extract-end\""));
 }
 
 // ═══════════════════════════════════════════════════════════════════════

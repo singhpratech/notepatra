@@ -9,6 +9,7 @@
 // untouched.
 
 #include "notes.h"
+#include "notes_extract_apply.h"
 #include "notes_popout.h"
 #include "notes_sweep_dialog.h"
 #include "notes_sweep_prompt.h"
@@ -36,6 +37,7 @@
 #include <QListWidget>
 #include <QPushButton>
 #include <QRegExp>
+#include <QRegularExpression>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QToolButton>
@@ -2300,6 +2302,452 @@ int main(int argc, char *argv[]) {
                    QStringLiteral("NEWER_DISK_41C")));
         EXPECT("stale draft silently dropped",
                !QFile::exists(p41c + QStringLiteral(".draft")));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // 51-57. AI-Extract marked-region persistence (v0.1.112)
+    // ═══════════════════════════════════════════════════════════════
+
+    // Earlier sections (conflict/draft fixtures) forge FUTURE mtimes to
+    // exercise the (mtime,size) guards; clamp them back to now so the
+    // mtime-sorted newestInboxHtml() lookups below stay order-independent.
+    {
+        const QDateTime nowTs = QDateTime::currentDateTime();
+        for (const QFileInfo &pf : QDir(panel.inboxFolder())
+                 .entryInfoList(QStringList() << "*.html", QDir::Files))
+            if (pf.lastModified() > nowTs) {
+                QFile f(pf.absoluteFilePath());
+                if (f.open(QIODevice::ReadWrite)) {
+                    f.setFileTime(nowTs, QFileDevice::FileModificationTime);
+                    f.close();
+                }
+            }
+    }
+
+    // Shared helpers for the extract-region sections.
+    //
+    // TIMING: sections run back-to-back in milliseconds, but the earlier
+    // dialog-driving sections (22/32) leave 1.5s/2.5s reject-everything
+    // watchdogs pending — those fire DURING these sections' modal execs
+    // and silently reject them (flaky pass/fail depending on wall time).
+    // Two defenses: (a) drain all stale timers once before section 37,
+    // (b) every timer here is generation-guarded — bumping dlgGen
+    // neutralizes the previous section's pending watchdog.
+    int dlgGen = 0;
+    auto countBeginAnchors = [](const QString &html) {
+        static const QRegularExpression re(
+            QStringLiteral("name=\"np-extract-begin-[0-9a-f]{8}\""));
+        int n = 0;
+        QRegularExpressionMatchIterator it = re.globalMatch(html);
+        while (it.hasNext()) { it.next(); ++n; }
+        return n;
+    };
+    auto acceptDialogSoon = [&dlgGen]() {
+        const int gen = ++dlgGen;
+        QTimer::singleShot(150, [&dlgGen, gen]() {
+            if (dlgGen != gen) return;            // a later section took over
+            for (QWidget *w : QApplication::topLevelWidgets())
+                if (auto *d = qobject_cast<QDialog *>(w))
+                    if (d->isVisible()) d->accept();
+        });
+        QTimer::singleShot(2500, [&dlgGen, gen]() {   // watchdog: never hang
+            if (dlgGen != gen) return;
+            for (QWidget *w : QApplication::topLevelWidgets())
+                if (auto *d = qobject_cast<QDialog *>(w)) d->reject();
+        });
+    };
+    // Drain the stale watchdogs sections 22/32 left pending (they reject
+    // EVERY visible dialog when they fire). No dialog is open right now,
+    // so they expire harmlessly during this wait.
+    QTest::qWait(2600);
+    auto findBlockStarting = [](QTextDocument *doc,
+                                const QString &prefix) -> QTextBlock {
+        for (QTextBlock b = doc->begin(); b.isValid(); b = b.next())
+            if (b.text().startsWith(prefix)) return b;
+        return QTextBlock();
+    };
+
+    const QString fakeAllSections = QStringLiteral(
+        "{\"summary\":\"Quick sync about the build and follow-ups.\","
+        "\"actions\":[{\"text\":\"Ship the build\",\"owner\":\"@prateek\","
+        "\"due\":\"2026-12-25T10:00\"}],"
+        "\"decisions\":[{\"text\":\"Adopt the marked-region design\"}],"
+        "\"questions\":[{\"text\":\"Who owns the rollout?\"}],"
+        "\"risks\":[{\"text\":\"CI capacity is tight\"}]}");
+
+    // ── 51. ALL reviewed sections persist (incl. Decisions/Questions/
+    // Risks, which used to be silently discarded) + provenance caption ──
+    std::printf("\n--- 51. all four sections persist into the note ---\n");
+    {
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        EXPECT("editor present (37)", ed != nullptr);
+        if (ed) {
+            ed->clear();
+            QApplication::processEvents();
+            ed->insertPlainText(QStringLiteral("Meeting raw notes."));
+            QApplication::processEvents();
+
+            acceptDialogSoon();
+            panel.showExtractResult(fakeAllSections, QStringLiteral("test-model"));
+            QApplication::processEvents();
+
+            // The one-sentence user contract: every reviewed section is
+            // really IN the note, as h2 sections, with the action as an
+            // interactive ☐ line.
+            bool decH2 = false, qH2 = false, riskH2 = false, wrapH2 = false;
+            for (QTextBlock b = ed->document()->begin(); b.isValid();
+                 b = b.next()) {
+                if (b.blockFormat().headingLevel() != 2) continue;
+                if (b.text() == QStringLiteral("Decisions")) decH2 = true;
+                if (b.text() == QStringLiteral("Questions")) qH2 = true;
+                if (b.text() == QStringLiteral("Risks")) riskH2 = true;
+                if (b.text() == QStringLiteral("AI Extract")) wrapH2 = true;
+            }
+            EXPECT("Decisions persisted as real h2", decH2);
+            EXPECT("Questions persisted as real h2", qH2);
+            EXPECT("Risks persisted as real h2", riskH2);
+            EXPECT("AI Extract wrapper heading present", wrapH2);
+            const QString plain = ed->toPlainText();
+            EXPECT("decision bullet persisted",
+                   plain.contains(QStringLiteral(
+                       "• Adopt the marked-region design")));
+            EXPECT("question bullet persisted",
+                   plain.contains(QStringLiteral("• Who owns the rollout?")));
+            EXPECT("risk bullet persisted",
+                   plain.contains(QStringLiteral("• CI capacity is tight")));
+            EXPECT("action persisted as an interactive ☐ line",
+                   findBlockStarting(ed->document(),
+                                     QStringLiteral("☐ Ship the build"))
+                       .isValid());
+            EXPECT("provenance caption persisted (model + coverage)",
+                   plain.contains(QStringLiteral("Extracted by test-model")) &&
+                       plain.contains(QStringLiteral("full note")));
+            EXPECT("markers are invisible (no np-extract in visible text)",
+                   !plain.contains(QStringLiteral("np-extract")));
+            EXPECT("exactly one marked region written",
+                   countBeginAnchors(ed->toHtml()) == 1);
+            EXPECT("user's raw notes untouched above the region",
+                   plain.startsWith(QStringLiteral("Meeting raw notes.")));
+        }
+    }
+
+    // ── 52. Idempotent re-run — replace in place, never stack ─────────
+    std::printf("\n--- 52. re-run replaces the region, never stacks ---\n");
+    {
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        EXPECT("editor present (38)", ed != nullptr);
+        if (ed) {
+            // A user paragraph AFTER the region (plain format, so it can
+            // never inherit the end anchor).
+            {
+                QTextCursor c(ed->document());
+                c.movePosition(QTextCursor::End);
+                c.setCharFormat(QTextCharFormat());
+                c.insertBlock();
+                c.insertText(QStringLiteral("USER PARAGRAPH AFTER."),
+                             QTextCharFormat());
+            }
+
+            const QString fakeB = QStringLiteral(
+                "{\"summary\":\"Second pass.\","
+                "\"actions\":[{\"text\":\"Email the vendor\",\"owner\":null,"
+                "\"due\":\"2026-12-26T09:00\"}],"
+                "\"decisions\":[],\"questions\":[],\"risks\":[]}");
+            acceptDialogSoon();
+            panel.showExtractResult(fakeB, QStringLiteral("test-model"));
+            QApplication::processEvents();
+
+            EXPECT("still exactly one begin anchor after the re-run",
+                   countBeginAnchors(ed->toHtml()) == 1);
+            const QString plain = ed->toPlainText();
+            EXPECT("run-B item present",
+                   plain.contains(QStringLiteral("Email the vendor")));
+            EXPECT("run-A item replaced (absent)",
+                   !plain.contains(QStringLiteral("Ship the build")));
+            EXPECT("run-A decision replaced (absent)",
+                   !plain.contains(QStringLiteral(
+                       "Adopt the marked-region design")));
+            EXPECT("paragraph above the region intact",
+                   plain.contains(QStringLiteral("Meeting raw notes.")));
+            EXPECT("paragraph below the region intact",
+                   plain.contains(QStringLiteral("USER PARAGRAPH AFTER.")));
+
+            // Two more sig-matched re-runs → stable block count, one region.
+            const int stableBlocks = ed->document()->blockCount();
+            for (int run = 0; run < 2; ++run) {
+                acceptDialogSoon();
+                panel.showExtractResult(fakeB, QStringLiteral("test-model"));
+                QApplication::processEvents();
+            }
+            EXPECT("3 runs total: block count stable (no bloat per run)",
+                   ed->document()->blockCount() == stableBlocks);
+            EXPECT("3 runs total: still one begin anchor",
+                   countBeginAnchors(ed->toHtml()) == 1);
+        }
+    }
+
+    // ── 53. Done-state carries across a re-run ────────────────────────
+    std::printf("\n--- 53. checked ✓ item stays checked after a re-run ---\n");
+    {
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        EXPECT("editor present (39)", ed != nullptr);
+        if (ed) {
+            // Flip the region's "☐ " to "✓ " — the exact 2-char toggle the
+            // click handler performs.
+            QTextBlock line = findBlockStarting(
+                ed->document(), QStringLiteral("☐ Email the vendor"));
+            EXPECT("found the ☐ action line to toggle", line.isValid());
+            if (line.isValid()) {
+                QTextCursor c(ed->document());
+                c.setPosition(line.position());
+                c.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, 2);
+                c.insertText(QStringLiteral("✓ "));
+                QApplication::processEvents();
+            }
+
+            const QString fakeB = QStringLiteral(
+                "{\"summary\":\"Second pass.\","
+                "\"actions\":[{\"text\":\"Email the vendor\",\"owner\":null,"
+                "\"due\":\"2026-12-26T09:00\"}],"
+                "\"decisions\":[],\"questions\":[],\"risks\":[]}");
+            acceptDialogSoon();
+            panel.showExtractResult(fakeB, QStringLiteral("test-model"));
+            QApplication::processEvents();
+
+            EXPECT("re-run after toggle still replaces (one region — the "
+                   "✓ toggle is NOT an edit)",
+                   countBeginAnchors(ed->toHtml()) == 1);
+            QTextBlock done = findBlockStarting(
+                ed->document(), QStringLiteral("✓ Email the vendor"));
+            EXPECT("re-written action line carries the ✓ done-state",
+                   done.isValid());
+            if (done.isValid() && done.length() > 4) {
+                QTextCursor c(ed->document());
+                c.setPosition(done.position() + 4);   // inside the item text
+                EXPECT("carried ✓ line is struck through "
+                       "(restyleChecklistLines ran)",
+                       c.charFormat().fontStrikeOut());
+            }
+        }
+    }
+
+    // ── 54. Edited region → Keep-both ask, default never destroys ─────
+    std::printf("\n--- 54. edited region asks; Keep both preserves edits ---\n");
+    {
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        EXPECT("editor present (40)", ed != nullptr);
+        if (ed) {
+            // Edit a body line INSIDE the region.
+            QTextBlock summaryLine = findBlockStarting(
+                ed->document(), QStringLiteral("Second pass."));
+            EXPECT("found a region body line to edit", summaryLine.isValid());
+            if (summaryLine.isValid()) {
+                QTextCursor c(ed->document());
+                c.setPosition(summaryLine.position() + summaryLine.length() - 1);
+                c.insertText(QStringLiteral(" EDITED-BY-USER"));
+                QApplication::processEvents();
+            }
+
+            const QString fakeC = QStringLiteral(
+                "{\"summary\":\"Third pass.\","
+                "\"actions\":[{\"text\":\"Book the venue\",\"owner\":null,"
+                "\"due\":\"2026-12-27T09:00\"}],"
+                "\"decisions\":[],\"questions\":[],\"risks\":[]}");
+
+            bool keepBothSeen = false, keepBothDefault = false;
+            // t=150: accept the sweep dialog (a QDialog). t=700: the
+            // Keep-both QMessageBox is up — assert + click "Keep both".
+            const int gen40 = ++dlgGen;
+            QTimer::singleShot(150, [&dlgGen, gen40]() {
+                if (dlgGen != gen40) return;
+                for (QWidget *w : QApplication::topLevelWidgets())
+                    if (auto *d = qobject_cast<QDialog *>(w))
+                        if (d->isVisible() &&
+                            !qobject_cast<QMessageBox *>(d)) d->accept();
+            });
+            QTimer::singleShot(700, [&dlgGen, gen40,
+                                     &keepBothSeen, &keepBothDefault]() {
+                if (dlgGen != gen40) return;
+                for (QWidget *w : QApplication::topLevelWidgets()) {
+                    auto *mb = qobject_cast<QMessageBox *>(w);
+                    if (!mb || !mb->isVisible()) continue;
+                    for (QAbstractButton *b : mb->buttons()) {
+                        if (!b->text().contains(QStringLiteral("Keep both")))
+                            continue;
+                        keepBothSeen = true;
+                        keepBothDefault =
+                            (mb->defaultButton() ==
+                             qobject_cast<QPushButton *>(b));
+                        b->click();
+                        return;
+                    }
+                }
+            });
+            QTimer::singleShot(2500, [&dlgGen, gen40]() {   // watchdog
+                if (dlgGen != gen40) return;
+                for (QWidget *w : QApplication::topLevelWidgets())
+                    if (auto *d = qobject_cast<QDialog *>(w)) d->reject();
+            });
+            panel.showExtractResult(fakeC, QStringLiteral("test-model"));
+            QApplication::processEvents();
+
+            EXPECT("Keep-both ask appeared for the edited region",
+                   keepBothSeen);
+            EXPECT("Keep both is the DEFAULT button (never destroy edits)",
+                   keepBothDefault);
+            EXPECT("Keep both → two regions",
+                   countBeginAnchors(ed->toHtml()) == 2);
+            const QString plain = ed->toPlainText();
+            EXPECT("the user's edit survived",
+                   plain.contains(QStringLiteral("EDITED-BY-USER")));
+            EXPECT("the new extract was appended",
+                   plain.contains(QStringLiteral("Book the venue")));
+        }
+    }
+
+    // ── 55. Truncation honesty — dialog notice + persisted caption ────
+    std::printf("\n--- 55. truncation notice + coverage caption ---\n");
+    {
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        EXPECT("editor present (41)", ed != nullptr);
+        if (ed) {
+            ed->clear();
+            QApplication::processEvents();
+            ed->insertPlainText(QStringLiteral("A very long note, allegedly."));
+            QApplication::processEvents();
+
+            bool noticeSeen = false;
+            const int gen41 = ++dlgGen;
+            QTimer::singleShot(150, [&dlgGen, gen41, &noticeSeen]() {
+                if (dlgGen != gen41) return;
+                for (QWidget *w : QApplication::topLevelWidgets()) {
+                    auto *d = qobject_cast<QDialog *>(w);
+                    if (!d || !d->isVisible()) continue;
+                    for (QLabel *lbl : d->findChildren<QLabel *>())
+                        if (lbl->isVisible() &&
+                            lbl->text().startsWith(QStringLiteral("Long note:")))
+                            noticeSeen = true;
+                    d->accept();
+                }
+            });
+            QTimer::singleShot(2500, [&dlgGen, gen41]() {   // watchdog
+                if (dlgGen != gen41) return;
+                for (QWidget *w : QApplication::topLevelWidgets())
+                    if (auto *d = qobject_cast<QDialog *>(w)) d->reject();
+            });
+            panel.showExtractResult(fakeAllSections,
+                                    QStringLiteral("test-model"),
+                                    /*wordsUsed=*/1200, /*wordsTotal=*/5000);
+            QApplication::processEvents();
+
+            EXPECT("amber truncation notice visible in the dialog",
+                   noticeSeen);
+            const QString plain = ed->toPlainText();
+            EXPECT("persisted caption records partial coverage",
+                   plain.contains(QStringLiteral("first ~")) &&
+                       (plain.contains(QStringLiteral("1,200")) ||
+                        plain.contains(QStringLiteral("1200"))) &&
+                       (plain.contains(QStringLiteral("5,000")) ||
+                        plain.contains(QStringLiteral("5000"))));
+            EXPECT("partial-coverage caption never claims 'full note'",
+                   !plain.contains(QStringLiteral("full note")));
+        }
+    }
+
+    // ── 56. End-to-end survival — save → reopen from disk → re-run ────
+    std::printf("\n--- 56. region survives disk round-trip, re-run replaces ---\n");
+    {
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        const QString pathA = newestInboxHtml();
+        EXPECT("created the survival note", !pathA.isEmpty());
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        if (ed && !pathA.isEmpty()) {
+            ed->clear();
+            QApplication::processEvents();
+            ed->insertPlainText(QStringLiteral("Survival meeting notes."));
+            QApplication::processEvents();
+
+            acceptDialogSoon();
+            panel.showExtractResult(fakeAllSections, QStringLiteral("test-model"));
+            QApplication::processEvents();
+            panel.saveCurrentNote();
+            QApplication::processEvents();
+            EXPECT("artifact on disk carries the begin anchor",
+                   countBeginAnchors(readAll(pathA)) == 1);
+
+            // Force a REAL disk reload: switch to another note, then back.
+            panel.newMeetingNote();
+            QApplication::processEvents();
+            panel.openNoteFile(pathA);
+            QApplication::processEvents();
+
+            EXPECT("region found after reopen (anchors re-attached)",
+                   NoterExtractApply::findExtractRegion(
+                       ed->document()).found);
+            QTextBlock done = findBlockStarting(
+                ed->document(), QStringLiteral("☐ Ship the build"));
+            EXPECT("☐ action line intact after reopen", done.isValid());
+
+            const QString fakeB = QStringLiteral(
+                "{\"summary\":\"After reload.\","
+                "\"actions\":[{\"text\":\"Post-reload action\",\"owner\":null,"
+                "\"due\":\"2026-12-28T09:00\"}],"
+                "\"decisions\":[],\"questions\":[],\"risks\":[]}");
+            acceptDialogSoon();
+            panel.showExtractResult(fakeB, QStringLiteral("test-model"));
+            QApplication::processEvents();
+            EXPECT("re-run after the disk round-trip REPLACES (one region)",
+                   countBeginAnchors(ed->toHtml()) == 1);
+            EXPECT("post-reload item present",
+                   ed->toPlainText().contains(
+                       QStringLiteral("Post-reload action")));
+            EXPECT("pre-reload item replaced",
+                   !ed->toPlainText().contains(
+                       QStringLiteral("Ship the build")));
+        }
+    }
+
+    // ── 57. Extract is gated OFF the Todos checklist surface ──────────
+    // Accepting Extract there would feed the written headings/bullets into
+    // saveTodosChecklist, which converts EVERY line into a todo row —
+    // corrupting the todo store.
+    std::printf("\n--- 57. Extract refuses the Todos checklist ---\n");
+    {
+        panel.openTodosChecklist();
+        QApplication::processEvents();
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        const QString before = ed ? ed->toPlainText() : QString();
+
+        bool guardSeen = false;
+        const int gen43 = ++dlgGen;
+        QTimer::singleShot(150, [&dlgGen, gen43, &guardSeen]() {
+            if (dlgGen != gen43) return;
+            for (QWidget *w : QApplication::topLevelWidgets()) {
+                auto *mb = qobject_cast<QMessageBox *>(w);
+                if (!mb || !mb->isVisible()) continue;
+                guardSeen = mb->text().contains(
+                    QStringLiteral("meeting note"));
+                mb->close();
+            }
+        });
+        QTimer::singleShot(2500, [&dlgGen, gen43]() {     // watchdog
+            if (dlgGen != gen43) return;
+            for (QWidget *w : QApplication::topLevelWidgets())
+                if (auto *d = qobject_cast<QDialog *>(w)) d->reject();
+        });
+        panel.showExtractResult(fakeAllSections, QStringLiteral("test-model"));
+        QApplication::processEvents();
+
+        EXPECT("guard info box shown on the checklist surface", guardSeen);
+        EXPECT("checklist content untouched (no extract written)",
+               !ed || ed->toPlainText() == before);
+        EXPECT("no marked region written on the checklist",
+               !ed || countBeginAnchors(ed->toHtml()) == 0);
     }
 
     // ── Summary ───────────────────────────────────────────────────

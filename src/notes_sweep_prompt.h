@@ -26,13 +26,37 @@
 
 namespace NoterSweepPrompt {
 
+// v0.1.112 — honest ctx-budget truncation report. The generate path runs
+// with a hardcoded num_ctx=4096 (ollama.cpp — deliberately untouched);
+// build() trims the note body to fit and reports what it kept so the
+// dialog and the persisted caption can tell the user the truth instead
+// of silently extracting from a partial note.
+struct BuildInfo {
+    bool truncated = false;
+    int  wordsUsed = 0;    // words of the body actually sent
+    int  wordsTotal = 0;   // words the full body had
+};
+
 // Build the system+user prompt sent to the local LLM. Strips HTML to
 // a clean text representation before stitching the user turn so small
 // 3B/7B models don't have to wade through Noter's block markup.
 //
 // `meetingTitle` is woven into the user-turn header so the model has
 // the meeting name as a hint when it picks owners / decisions.
-QString build(const QString &meetingHtml, const QString &meetingTitle);
+//
+// `info` (optional) receives the truncation report. When the body is
+// over budget it is cut at a line boundary and the user-turn header
+// honestly tells the MODEL the input is partial ("TRUNCATED — this is
+// only the FIRST N of M words…"). Short notes are byte-identical to the
+// pre-v0.1.112 prompt.
+QString build(const QString &meetingHtml, const QString &meetingTitle,
+              BuildInfo *info = nullptr);
+
+// Normalise an action / reminder title for fuzzy duplicate detection:
+// lowercase, drop @owner handles + punctuation, collapse whitespace. Used
+// to recognise "ship the build tomorrow" ≈ "Ship the build" across
+// Extract runs (sweep-dialog dedup + extract-apply done-state carry).
+QString normalizeForMatch(const QString &s);
 
 // v0.1.112 — split build()'s combined return into its SYSTEM and USER
 // halves (build() glues them with a U+001F sentinel). Callers MUST route

@@ -115,7 +115,30 @@ QString htmlToPlainContext(const QString &html) {
 // long preamble starves the small-context Ollama defaults (3B / 7B
 // models with 4K windows are still common on Linux dev boxes).
 
-QString build(const QString &meetingHtml, const QString &meetingTitle) {
+namespace {
+
+// v0.1.112 — token estimator for the ctx budget. ASCII ≈ 4 chars/token;
+// every non-ASCII QChar counts as a full token (CJK/emoji-safe — the
+// error direction is over-truncation, which is safe AND honestly
+// labeled, never a silent model-side overflow).
+int estimateTokens(const QString &s) {
+    int ascii = 0, nonAscii = 0;
+    for (const QChar c : s) {
+        if (c.unicode() < 128) ++ascii;
+        else ++nonAscii;
+    }
+    return ascii / 4 + nonAscii;
+}
+
+int wordCount(const QString &s) {
+    static const QRegularExpression ws(QStringLiteral("\\s+"));
+    return s.split(ws, Qt::SkipEmptyParts).size();
+}
+
+}  // namespace
+
+QString build(const QString &meetingHtml, const QString &meetingTitle,
+              BuildInfo *info) {
     // LOCAL wall-clock anchors. The model is asked to emit `due` as plain local
     // time (no timezone suffix) so "10am tomorrow" round-trips to the picker as
     // 10:00 — parse() keeps it local and storage converts to UTC. A concrete
@@ -127,6 +150,50 @@ QString build(const QString &meetingHtml, const QString &meetingTitle) {
     const QString dowToday = nowLocal.date().toString(QStringLiteral("dddd"));
 
     const QString plain = htmlToPlainContext(meetingHtml);
+
+    // v0.1.112 — honest ctx-budget truncation. Budget against the
+    // hardcoded generate-path ctx (ollama.cpp num_ctx=4096, untouched);
+    // num_predict=2048 means generation also competes for the window.
+    //   input budget ≈ 4096 − 600 (system) − 1400 (reply) = 2096 tokens
+    //   ≈ 8.4 KB ASCII ≈ ~1400 words.
+    // Long-note strategy decision (final): single request + honest label
+    // in three places (prompt header → model, dialog notice, persisted
+    // caption). Map-reduce chunking was evaluated and rejected for this
+    // release — N sequential CPU-bound calls under a single-request
+    // watchdog/cancel plus a merge layer is not day-sized, and 4-12B
+    // local models degrade past ~3-4K tokens anyway.
+    constexpr int kCtxTokens = 4096, kSysReserve = 600, kReplyReserve = 1400;
+    constexpr int kInputBudget = kCtxTokens - kSysReserve - kReplyReserve;
+
+    QString kept = plain;
+    bool truncated = false;
+    if (estimateTokens(plain) > kInputBudget) {
+        // Walk forward until the budget is spent, then back off to the
+        // last line boundary (fallback: last space; final fallback: hard
+        // cut) so the model never sees a mid-word fragment.
+        int ascii = 0, nonAscii = 0, cutPos = plain.size();
+        for (int i = 0; i < plain.size(); ++i) {
+            if (plain.at(i).unicode() < 128) ++ascii;
+            else ++nonAscii;
+            if (ascii / 4 + nonAscii > kInputBudget) { cutPos = i; break; }
+        }
+        kept = plain.left(cutPos);
+        const int nl = kept.lastIndexOf(QLatin1Char('\n'));
+        if (nl > 0) {
+            kept = kept.left(nl);
+        } else {
+            const int sp = kept.lastIndexOf(QLatin1Char(' '));
+            if (sp > 0) kept = kept.left(sp);
+        }
+        truncated = true;
+    }
+    const int wordsTotal = wordCount(plain);
+    const int wordsUsed  = truncated ? wordCount(kept) : wordsTotal;
+    if (info) {
+        info->truncated  = truncated;
+        info->wordsUsed  = wordsUsed;
+        info->wordsTotal = wordsTotal;
+    }
 
     QString sys;
     sys += "You are a meeting-note structure extractor.\n";
@@ -164,9 +231,17 @@ QString build(const QString &meetingHtml, const QString &meetingTitle) {
     user += "MEETING: " + (meetingTitle.isEmpty()
                               ? QStringLiteral("(untitled)")
                               : meetingTitle) + "\n";
-    user += "NOTE BODY (plain text, with bracketed tags showing existing block types):\n";
+    if (truncated) {
+        // Tell the MODEL the input is partial so it doesn't claim
+        // coverage of text it never saw.
+        user += "NOTE BODY (TRUNCATED — this is only the FIRST " +
+                QString::number(wordsUsed) + " of " +
+                QString::number(wordsTotal) + " words of a longer note):\n";
+    } else {
+        user += "NOTE BODY (plain text, with bracketed tags showing existing block types):\n";
+    }
     user += "---\n";
-    user += plain + "\n";
+    user += kept + "\n";
     user += "---\n";
     user += "Extract. Output JSON only.";
 
@@ -176,6 +251,20 @@ QString build(const QString &meetingHtml, const QString &meetingTitle) {
     // caller splits on, so this function stays a single-return API and
     // doesn't leak internal structure into the public header.
     return sys + "\n\x1f\n" + user;  // U+001F is the splitter
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// normalizeForMatch — fuzzy-dedup key shared by the sweep dialog and the
+// extract-apply done-state carry. Moved from notes_sweep_dialog.cpp's
+// file-static (v0.1.112) — body verbatim.
+// ═══════════════════════════════════════════════════════════════════════
+
+QString normalizeForMatch(const QString &s) {
+    QString n = s.toLower();
+    n.remove(QRegularExpression(QStringLiteral("@\\S+")));
+    n.remove(QRegularExpression(QStringLiteral("[^a-z0-9 ]")));
+    n.replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral(" "));
+    return n.trimmed();
 }
 
 // ═══════════════════════════════════════════════════════════════════════

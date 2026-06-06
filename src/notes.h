@@ -59,6 +59,7 @@ class NotesReminderEngine;   // src/notes_reminder.h
 class NoterTodosPanel;       // src/notes_panels.h
 class NoterPopOut;           // src/notes_popout.h
 struct TodoRow;
+namespace NoterSweepPrompt { struct SweepResult; }   // src/notes_sweep_prompt.h
 
 class NotesPanel : public QWidget {
     Q_OBJECT
@@ -96,7 +97,12 @@ public:
     // MUST be invoked deferred (singleShot) from the finished handler, never
     // synchronously inside the signal — see the crash note in notes.cpp.
     // Public so the widget test can drive it without a live network client.
-    void showExtractResult(const QString &response, const QString &model);
+    // v0.1.112 — wordsUsed/wordsTotal carry build()'s truncation report
+    // (0/0 = full coverage; defaulted so existing callers compile
+    // unchanged): the dialog shows the honest coverage notice and the
+    // persisted caption records it.
+    void showExtractResult(const QString &response, const QString &model,
+                           int wordsUsed = 0, int wordsTotal = 0);
 
     // v0.1.112 — Extract reliability layer. With the backend down the
     // generate() stream never emits finished OR error, so pre-v0.1.112 the
@@ -189,6 +195,15 @@ private:
     // Show / hide UI states
     void showEmptyPage();
     void showEditorPage();
+
+    // v0.1.112 — apply an accepted Extract result as the note's OWNED
+    // MARKED REGION (see notes_extract_apply.h): all reviewed sections +
+    // provenance caption, invisible anchor markers, sig-gated replace-in-
+    // place on re-runs (Keep-both ask when the user edited inside), done-
+    // state carry for ✓ lines. Replaces the old append-only writer.
+    void applyExtractResultToNote(const NoterSweepPrompt::SweepResult &finalResult,
+                                  const QString &model,
+                                  int wordsUsed, int wordsTotal);
 
     // Serialize the editor's ☐/✓ checklist lines back to b-act divs,
     // re-attaching each line's id / owner / due (current value pulled from

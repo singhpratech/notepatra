@@ -23,6 +23,7 @@
 #include "notes_context_menus.h"
 #include "notes_sweep_dialog.h"
 #include "notes_sweep_prompt.h"
+#include "notes_extract_apply.h"
 #include "notes_export.h"
 #include "ollama.h"
 #include "config.h"
@@ -77,9 +78,11 @@
 #include <QStyle>
 #include <QStyledItemDelegate>
 #include <QStyleOptionViewItem>
+#include <QScopedPointer>
 #include <QTextBlock>
 #include <QTextCharFormat>
 #include <QTextCursor>
+#include <QTextDocument>
 #include <QTextEdit>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -2990,11 +2993,28 @@ void NotesPanel::endMeetingSweep() {
                                  tr("Open or create a meeting note first."));
         return;
     }
-    const QString bodyHtml = m_editor->toHtml();
     if (m_editor->toPlainText().trimmed().isEmpty()) {
         QMessageBox::information(this, tr("Extract"),
                                  tr("Nothing to extract — the note is empty."));
         return;
+    }
+    // v0.1.112 — exclude the previous AI-Extract region from the prompt:
+    // the model must not re-extract its own output, and a long note gets
+    // its ctx budget back. Done on a CLONE so the editor is untouched.
+    QString bodyHtml;
+    {
+        const auto reg = NoterExtractApply::findExtractRegion(m_editor->document());
+        if (reg.found) {
+            QScopedPointer<QTextDocument> clone(m_editor->document()->clone());
+            QTextCursor c(clone.data());
+            c.setPosition(reg.beginBlockPos);
+            c.setPosition(reg.endBlockPos + reg.endBlockLen - 1,
+                          QTextCursor::KeepAnchor);
+            c.removeSelectedText();
+            bodyHtml = clone->toHtml();
+        } else {
+            bodyHtml = m_editor->toHtml();
+        }
     }
 
     // Build the prompt + spawn an Ollama request. The model is whatever
@@ -3034,8 +3054,10 @@ void NotesPanel::endMeetingSweep() {
     // v0.1.112 — split the prompt at the U+001F sentinel into its system
     // and user halves. The combined string used to be sent verbatim as the
     // prompt arg — raw control byte on the wire, system rules in the user
-    // turn.
-    const QString combined = NoterSweepPrompt::build(bodyHtml, m_currentTitle);
+    // turn. binfo carries the honest ctx-budget truncation report through
+    // to the dialog notice + the persisted caption.
+    NoterSweepPrompt::BuildInfo binfo;
+    const QString combined = NoterSweepPrompt::build(bodyHtml, m_currentTitle, &binfo);
     const NoterSweepPrompt::PromptParts parts =
         NoterSweepPrompt::splitPrompt(combined);
 
@@ -3043,7 +3065,7 @@ void NotesPanel::endMeetingSweep() {
     beginExtractBusy();
 
     connect(client, &OllamaClient::finished, this,
-            [this, client, model](const QString &response) {
+            [this, client, model, binfo](const QString &response) {
                 // v0.1.98 CRASH FIX (core 1321961) — `finished` is emitted from
                 // INSIDE the client's reply-handling slot while the QNetworkReply
                 // is still mid-teardown. The previous code opened the sweep dialog
@@ -3058,8 +3080,10 @@ void NotesPanel::endMeetingSweep() {
                 client->deleteLater();
                 if (m_extractClient == client) m_extractClient.clear();
                 finishExtractCleanup();    // cursor + button + watchdog
-                QTimer::singleShot(0, this, [this, response, model]() {
-                    showExtractResult(response, model);
+                const int wu = binfo.truncated ? binfo.wordsUsed : 0;
+                const int wt = binfo.truncated ? binfo.wordsTotal : 0;
+                QTimer::singleShot(0, this, [this, response, model, wu, wt]() {
+                    showExtractResult(response, model, wu, wt);
                 });
             });
     connect(client, &OllamaClient::error, this,
@@ -3152,51 +3176,25 @@ void NotesPanel::cancelExtract() {
 
 // ── Real heading blocks ──────────────────────────────────────────────────
 // Section headers used to be bold-only char formats — they EVAPORATED on
-// save+reload: QTextDocument::toHtml() only emits <h1>…<h6> when the block
-// format's headingLevel is set, so a bold line serialized as
-// <p><span style="font-weight:600…">, the sanitizer stripped the inline
-// style attribute, and the note reopened as plain body text. These helpers
-// write REAL heading blocks (headingLevel + bold char format), which
-// round-trip: toHtml() emits <hN>, the sanitizer allowlist keeps h1–h6
-// (notes_storage.cpp), and setHtml() re-derives level + bold on load.
-namespace {
-
-// H1 biggest → H3 smallest; body text is ~11pt. Matches the in-editor look
-// the toolbar presets have always had.
-qreal headingPointSize(int level) {
-    return (level <= 1) ? 18.0 : (level == 2 ? 15.0 : 13.0);
-}
-
-// Writes `title` as a heading block at `level`, then leaves `cur` at the
-// start of a fresh PLAIN body block below it (headingLevel cleared, normal
-// weight) so the following text never inherits the heading look.
-void insertHeadingBlock(QTextCursor &cur, const QString &title, int level) {
-    QTextBlockFormat hb = cur.blockFormat();
-    hb.setHeadingLevel(level);
-    cur.setBlockFormat(hb);
-    QTextCharFormat hf;
-    hf.setFontWeight(QFont::Bold);
-    hf.setFontPointSize(headingPointSize(level));
-    cur.setBlockCharFormat(hf);
-    cur.insertText(title, hf);
-
-    cur.insertBlock();
-    QTextBlockFormat bb = cur.blockFormat();
-    bb.setHeadingLevel(0);
-    cur.setBlockFormat(bb);
-    QTextCharFormat plain;
-    plain.setFontWeight(QFont::Normal);
-    plain.setFontItalic(false);
-    cur.setBlockCharFormat(plain);
-    cur.setCharFormat(plain);
-}
-
-} // anonymous namespace
+// save+reload. headingPointSize/insertHeadingBlock (which write REAL
+// heading blocks that round-trip as <hN>) moved to notes_extract_apply.cpp
+// (v0.1.112) so the Extract region writer and insertSubheader share one
+// implementation.
 
 // Runs the Extract review dialog + applies the result. Deferred (called via
 // singleShot from the finished handler) so it NEVER opens a nested event loop
 // while the network reply is still being torn down — see the crash note above.
-void NotesPanel::showExtractResult(const QString &response, const QString &model) {
+void NotesPanel::showExtractResult(const QString &response, const QString &model,
+                                   int wordsUsed, int wordsTotal) {
+    // v0.1.112 — Extract is for meeting notes. Accepting it on the Todos
+    // checklist would feed the written headings/bullets through
+    // saveTodosChecklist, which converts EVERY line into a todo row —
+    // corrupting the todo store.
+    if (m_currentIsChecklist) {
+        QMessageBox::information(this, tr("Extract"),
+            tr("Extract works on meeting notes — open a meeting note to use it."));
+        return;
+    }
     NoterSweepPrompt::SweepResult result = NoterSweepPrompt::parse(response);
     // v0.1.112 — honest outcome triage. An unparseable reply used to fall
     // into the same 'no actionable items' info box as a genuinely empty
@@ -3221,6 +3219,10 @@ void NotesPanel::showExtractResult(const QString &response, const QString &model
     NoterSweepDialog dlg(result, this);
     dlg.setEyebrow(model, 0);
     dlg.setTargetPath(m_currentPath);
+    // v0.1.112 — honest long-note coverage: tell the user how much of the
+    // note the model actually read (build() truncates to fit the ctx).
+    if (wordsUsed > 0 && wordsTotal > wordsUsed)
+        dlg.setTruncationNotice(wordsUsed, wordsTotal);
     // v0.1.98 — tell the dialog what's ALREADY scheduled for this note so it
     // flags duplicates (user: "already-scheduled should be flagged"). It lists
     // them + default-unchecks matching action rows.
@@ -3234,34 +3236,10 @@ void NotesPanel::showExtractResult(const QString &response, const QString &model
     }
     if (dlg.exec() != QDialog::Accepted) return;
 
-    // Append a "Summary" recap (if any) + an "Action Items" section at the
-    // bottom, then save.
-    const auto finalResult = dlg.finalResult();
-    QTextCursor cur(m_editor->document());
-    cur.movePosition(QTextCursor::End);
-    cur.insertBlock();
-    // Summary / Action Items are REAL h2 blocks (see insertHeadingBlock
-    // above) — bold-only headers degraded to plain text after save+reload.
-    if (!finalResult.summary.isEmpty()) {
-        insertHeadingBlock(cur, tr("Summary"), 2);
-        cur.insertText(finalResult.summary);
-        cur.insertBlock();
-        cur.insertBlock();
-    }
-    insertHeadingBlock(cur, tr("Action Items"), 2);
-    QTextCharFormat plain;
-    for (const auto &item : finalResult.actions) {
-        QString line = QStringLiteral("☐ ") + item.text;
-        if (!item.owner.isEmpty()) line += QStringLiteral("  ") + item.owner;
-        if (item.dueAt.isValid()) {
-            line += QStringLiteral("  (") +
-                    tr("due %1").arg(item.dueAt.toString(
-                        QStringLiteral("MMM d HH:mm"))) +
-                    QStringLiteral(")");
-        }
-        cur.insertText(line, plain);
-        cur.insertBlock();
-    }
+    // v0.1.112 — persist ALL reviewed sections (incl. Decisions /
+    // Questions / Risks, which used to be discarded) as the note's owned
+    // marked region: replace-in-place on re-runs instead of stacking.
+    applyExtractResultToNote(dlg.finalResult(), model, wordsUsed, wordsTotal);
     m_dirty = true;
     saveCurrentNote();
 
@@ -3292,6 +3270,85 @@ void NotesPanel::showExtractResult(const QString &response, const QString &model
                        "", scheduled), 4000);
         }
     }
+}
+
+// v0.1.112 — write the accepted Extract result as the note's OWNED MARKED
+// REGION (see notes_extract_apply.h for the marker design):
+//   * no previous region        → append at the end (first run, legacy
+//     pre-marker notes, deleted-marker recovery — old stacked blocks stay
+//     untouched).
+//   * region found + sig match  → replace in place, carrying ✓ done-state
+//     across (checkbox toggles are normalized OUT of the sig, so marking
+//     an item done still counts as "untouched").
+//   * region found + sig MISMATCH (user edited inside) → ask Replace /
+//     Keep both, DEFAULT Keep both — a re-run can never destroy user
+//     edits. Modal-safety: we are already past dlg.exec() on the deferred
+//     singleShot stack, the same modal context as the review dialog (NOT
+//     the v0.1.98 nested-event-loop class).
+void NotesPanel::applyExtractResultToNote(
+        const NoterSweepPrompt::SweepResult &finalResult,
+        const QString &model, int wordsUsed, int wordsTotal) {
+    if (!m_editor) return;
+
+    const QVector<NoterExtractApply::ExtractLine> lines =
+        NoterExtractApply::renderExtractLines(
+            finalResult, model, QDateTime::currentDateTime(),
+            wordsUsed, wordsTotal);
+
+    // Sig over the lines EXACTLY as they will appear in the document
+    // (Check lines carry the "☐ " marker writeRegion prepends).
+    QStringList lineTexts;
+    lineTexts.reserve(lines.size());
+    for (const auto &ln : lines)
+        lineTexts << (ln.kind == NoterExtractApply::ExtractLine::Check
+                          ? QStringLiteral("☐ ") + ln.text
+                          : ln.text);
+    const QString sig = NoterExtractApply::regionSig(lineTexts);
+
+    const NoterExtractApply::Region reg =
+        NoterExtractApply::findExtractRegion(m_editor->document());
+
+    bool replaceInPlace = false;
+    QSet<QString> doneKeys;
+    if (reg.found) {
+        // Harvest done-state BEFORE any removal/ask — both paths may use it.
+        doneKeys = NoterExtractApply::collectDoneKeys(reg.innerTexts);
+        if (NoterExtractApply::regionSig(reg.innerTexts) == reg.storedSig) {
+            replaceInPlace = true;
+        } else {
+            QMessageBox box(QMessageBox::Question, tr("Extract"),
+                tr("The previous AI Extract block was edited since it was "
+                   "written. Replace it with the new extract, or keep both?"),
+                QMessageBox::NoButton, this);
+            QPushButton *replaceBtn =
+                box.addButton(tr("Replace"), QMessageBox::DestructiveRole);
+            QPushButton *keepBtn =
+                box.addButton(tr("Keep both"), QMessageBox::AcceptRole);
+            box.setDefaultButton(keepBtn);   // never destroy edits by default
+            box.exec();
+            replaceInPlace = (box.clickedButton() == replaceBtn);
+        }
+    }
+
+    // One edit block: a single Ctrl+Z restores the previous state.
+    QTextCursor cur(m_editor->document());
+    cur.beginEditBlock();
+    if (replaceInPlace) {
+        cur.setPosition(reg.beginBlockPos);
+        cur.setPosition(reg.endBlockPos + reg.endBlockLen - 1,
+                        QTextCursor::KeepAnchor);
+        cur.removeSelectedText();
+        NoterExtractApply::writeRegion(cur, lines, sig, doneKeys);
+    } else {
+        cur.movePosition(QTextCursor::End);
+        cur.insertBlock();
+        NoterExtractApply::writeRegion(cur, lines, sig, QSet<QString>());
+    }
+    cur.endEditBlock();
+
+    // Re-derive strike-through for carried-over "✓ " lines — same pass the
+    // load path runs after setHtml.
+    restyleChecklistLines();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -3651,7 +3708,7 @@ void NotesPanel::insertSubheader(const QString &titleIn, int level) {
     // REAL heading block (headingLevel + bold sized by level) — bold-only
     // text used to lose the header look on save+reload because toHtml()
     // never emitted <hN>. Leaves the cursor on a fresh PLAIN block below.
-    insertHeadingBlock(cur, title, level);
+    NoterExtractApply::insertHeadingBlock(cur, title, level);
 
     // Always seed the section with a checkbox bullet in NORMAL format, so
     // every subheader comes with a checkable/cancellable line ready to type

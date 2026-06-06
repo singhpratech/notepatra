@@ -710,6 +710,20 @@ QString NotesStorage::sanitizeBody(const QString &dirtyHtml) {
                     continue;
                 }
 
+                // v0.1.112 — Noter AI-Extract region markers. `name` is
+                // allowed ONLY on <a> and ONLY with the np-extract- prefix
+                // (the invisible begin/end anchors the extract-apply layer
+                // keys on — see notes_extract_apply.h); every other name=
+                // still drops. Deliberately NOT in allowedAttrs(): a
+                // blanket name allowance would re-open DOM-clobbering
+                // shaped surface on img/form/etc.
+                if (k == QLatin1String("name")) {
+                    if (tag == QLatin1String("a") &&
+                        v.startsWith(QLatin1String("np-extract-")))
+                        rendered += " name=\"" + escapeAttrValue(v) + "\"";
+                    continue;
+                }
+
                 if (!allowedAttrs().contains(k)) continue;
 
                 // URL attrs need scheme validation.

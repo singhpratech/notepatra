@@ -763,6 +763,30 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_sweep_prompt
     set_tests_properties(test_notes_sweep_prompt PROPERTIES LABELS "unit;noter;sweep")
 endif()
 
+# ── Noter — AI-Extract marked-region apply layer (v0.1.112) ──
+# Headless (QGuiApplication — QTextDocument needs QtGui, not Widgets).
+# Links the REAL storage sanitizer so the apply→toHtml→sanitizeBody→
+# setHtml→findExtractRegion round trip is exercised end-to-end: that
+# round trip is the strongest regression guard on the invisible anchor
+# markers the replace-in-place re-run behavior depends on.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_extract_apply.cpp")
+    add_executable(test_notes_extract_apply
+        test_notes_extract_apply.cpp
+        src/notes_extract_apply.cpp
+        src/notes_sweep_prompt.cpp
+        src/notes_storage.cpp
+        src/notes_template.cpp
+    )
+    target_include_directories(test_notes_extract_apply PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_notes_extract_apply PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Network Qt5::Test)
+    add_test(NAME test_notes_extract_apply COMMAND $<TARGET_FILE:test_notes_extract_apply>)
+    set_tests_properties(test_notes_extract_apply PROPERTIES
+        LABELS "unit;noter;extract"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_notes_extract_apply")
+endif()
+
 # ── Noter — slide-over panels test (18 cases) ──
 # v0.1.112 — also hosts the Extract reliability-layer widget tests, which
 # drive the REAL NotesPanel (busy-state machine + pre-flight probe), so it
@@ -780,6 +804,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_panels.cpp")
         src/notes_context_menus.cpp
         src/notes_sweep_dialog.cpp
         src/notes_sweep_prompt.cpp
+        src/notes_extract_apply.cpp
         src/notes_export.cpp
         src/ollama.cpp
         src/ai_interaction_log.cpp
@@ -810,6 +835,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_panel_widget
         src/notes_context_menus.cpp
         src/notes_sweep_dialog.cpp
         src/notes_sweep_prompt.cpp
+        src/notes_extract_apply.cpp
         src/notes_export.cpp
         src/ollama.cpp
         src/ai_interaction_log.cpp
@@ -840,6 +866,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_noter_render.cpp")
         src/notes_context_menus.cpp
         src/notes_sweep_dialog.cpp
         src/notes_sweep_prompt.cpp
+        src/notes_extract_apply.cpp
         src/notes_export.cpp
         src/ollama.cpp
         src/ai_interaction_log.cpp

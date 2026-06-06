@@ -8,6 +8,7 @@
 
 #include <QCoreApplication>
 #include <QDebug>
+#include <QRegularExpression>
 
 #include <cstdio>
 
@@ -109,6 +110,103 @@ static void test_split_prompt_sentinel() {
            !multi.user.contains(QChar(0x1F)));
     EXPECT("split: multi-sentinel keeps all user text",
            multi.user.contains("usr") && multi.user.contains("tail"));
+}
+
+// v0.1.112 — honest ctx-budget truncation. build() must (a) leave short
+// notes byte-identical to the pre-truncation prompt, (b) cut long notes
+// at a line boundary AND tell the MODEL the input is partial via the
+// TRUNCATED user-turn header, (c) report exact word counts through
+// BuildInfo so the dialog notice + persisted caption can tell the USER.
+static void test_build_truncation() {
+    std::printf("test_build_truncation\n");
+
+    // (a) Short note: untouched, info says full coverage.
+    const QString shortHtml =
+        "<h1>Sync</h1><div class=\"b b-act\">Ship the build</div>";
+    NoterSweepPrompt::BuildInfo shortInfo;
+    const QString with2   = NoterSweepPrompt::build(shortHtml, "Sync");
+    const QString with3   = NoterSweepPrompt::build(shortHtml, "Sync", &shortInfo);
+    EXPECT("short note: not truncated", !shortInfo.truncated);
+    EXPECT("short note: wordsUsed == wordsTotal",
+           shortInfo.wordsUsed == shortInfo.wordsTotal &&
+               shortInfo.wordsTotal > 0);
+    // The NOW timestamp lives in the system half — compare the user
+    // halves, which must be byte-identical between the 2-arg and 3-arg
+    // calls (the defaulted param changes nothing for short notes).
+    EXPECT("short note: user half byte-identical with/without info",
+           NoterSweepPrompt::splitPrompt(with2).user ==
+               NoterSweepPrompt::splitPrompt(with3).user);
+    EXPECT("short note: keeps the original NOTE BODY header",
+           with3.contains("NOTE BODY (plain text, with bracketed tags"));
+    EXPECT("short note: no TRUNCATED header", !with3.contains("TRUNCATED"));
+
+    // (b)+(c) Long note: ~3000 words across many lines.
+    QString longHtml = "<h1>Big meeting</h1>";
+    for (int i = 0; i < 300; ++i) {
+        QString line = "<p>";
+        for (int w = 0; w < 10; ++w)
+            line += QString("word%1n%2 ").arg(i).arg(w);
+        line += "</p>";
+        longHtml += line;
+    }
+    NoterSweepPrompt::BuildInfo longInfo;
+    const QString longPrompt =
+        NoterSweepPrompt::build(longHtml, "Big meeting", &longInfo);
+    EXPECT("long note: truncated", longInfo.truncated);
+    EXPECT("long note: wordsUsed < wordsTotal",
+           longInfo.wordsUsed > 0 &&
+               longInfo.wordsUsed < longInfo.wordsTotal);
+    // 300 lines × 10 words + the 2-word heading.
+    EXPECT("long note: total = 3002 words", longInfo.wordsTotal == 3002);
+
+    const NoterSweepPrompt::PromptParts parts =
+        NoterSweepPrompt::splitPrompt(longPrompt);
+    EXPECT("long note: TRUNCATED header tells the model",
+           parts.user.contains("NOTE BODY (TRUNCATED — this is only the FIRST " +
+                               QString::number(longInfo.wordsUsed) + " of " +
+                               QString::number(longInfo.wordsTotal) +
+                               " words of a longer note):"));
+    EXPECT("long note: sentinel contract unchanged",
+           longPrompt.contains(QChar(0x1F)));
+
+    // Cut on a LINE boundary: the kept body's last line must be one of
+    // the source lines, complete (ends with its 10th word, "…n9").
+    const int bodyStart = parts.user.indexOf("---\n") + 4;
+    const int bodyEnd   = parts.user.indexOf("\n---", bodyStart);
+    const QString keptBody = parts.user.mid(bodyStart, bodyEnd - bodyStart);
+    const QStringList keptLines = keptBody.split('\n', Qt::SkipEmptyParts);
+    EXPECT("long note: body retained at least one line", !keptLines.isEmpty());
+    EXPECT("long note: cut on a line boundary (last kept line complete)",
+           !keptLines.isEmpty() &&
+               keptLines.last().trimmed().endsWith("n9"));
+    EXPECT("long note: kept word count matches the report",
+           keptBody.split(QRegularExpression("\\s+"),
+                          Qt::SkipEmptyParts).size() == longInfo.wordsUsed);
+    EXPECT("long note: later content NOT in the prompt",
+           !parts.user.contains("word299n9"));
+}
+
+// v0.1.112 — normalizeForMatch moved from the dialog's file-static into
+// NoterSweepPrompt (the extract-apply done-state carry shares it). The
+// dialog's fuzzy already-scheduled dedup keys on this exact behavior.
+static void test_normalize_for_match() {
+    std::printf("test_normalize_for_match\n");
+
+    EXPECT("lowercases + strips punctuation",
+           NoterSweepPrompt::normalizeForMatch("Ship the BUILD!!") ==
+               "ship the build");
+    EXPECT("drops @owner handles",
+           NoterSweepPrompt::normalizeForMatch("Ship the build @alice") ==
+               "ship the build");
+    EXPECT("collapses whitespace",
+           NoterSweepPrompt::normalizeForMatch("  ship   the   build ") ==
+               "ship the build");
+    EXPECT("reworded-with-handle equals the bare form",
+           NoterSweepPrompt::normalizeForMatch("Email the vendor  @bob.") ==
+               NoterSweepPrompt::normalizeForMatch("email the vendor"));
+    EXPECT("different tasks stay different",
+           NoterSweepPrompt::normalizeForMatch("ship the build") !=
+               NoterSweepPrompt::normalizeForMatch("sink the build"));
 }
 
 // v0.1.112 — classify(): an unparseable reply is an ERROR outcome, not
@@ -280,6 +378,8 @@ int main(int argc, char *argv[]) {
     test_parse_summary_and_local_date();
     test_split_prompt_sentinel();
     test_classify_outcomes();
+    test_build_truncation();
+    test_normalize_for_match();
 
     std::printf("\n[%d passed, %d failed]\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
