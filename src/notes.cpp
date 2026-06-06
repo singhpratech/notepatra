@@ -2030,6 +2030,16 @@ void NotesPanel::newMeetingNote() {
 }
 
 void NotesPanel::openNoteFile(const QString &absolutePath) {
+    // Re-opening the note that is ALREADY in the editor (reminder banner
+    // "Open", reminder-leaf click, context-menu Open) must NOT reload from
+    // disk — that reverted up to 5s of unsaved typing (the autosave
+    // interval). Just make sure the editor page is front-most.
+    if (!absolutePath.isEmpty() && absolutePath == m_currentPath
+        && m_rightStack && m_editorPage
+        && m_rightStack->currentWidget() == m_editorPage) {
+        if (m_editor) m_editor->setFocus();
+        return;
+    }
     if (m_dirty && !m_currentPath.isEmpty() && m_currentPath != absolutePath) {
         saveCurrentNote();
     }
@@ -2505,7 +2515,14 @@ bool NotesPanel::eventFilter(QObject *watched, QEvent *event) {
             const QString line = block.text();
             if (line.startsWith(QStringLiteral("☐ ")) ||
                 line.startsWith(QStringLiteral("✓ "))) {
-                // Toggle if click was within the first ~3 characters.
+                // Toggle ONLY when the click landed on the marker itself
+                // (columns 0–2: the box glyph, its trailing space, or just
+                // past it). A click anywhere in the item TEXT must place the
+                // caret normally — pre-fix the column was discarded, so any
+                // click on the line flipped its done-state and editing a
+                // checklist item by mouse was impossible.
+                if (cur.positionInBlock() > 2)
+                    return false;   // let QTextEdit position the caret
                 cur.setPosition(block.position());
                 cur.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, 2);
                 const QString token = cur.selectedText();
@@ -2669,8 +2686,17 @@ void NotesPanel::toggleCheckboxOnCurrentLine() {
 
 void NotesPanel::insertCheckboxAtCursor() {
     if (!m_editor) return;
+    // The checkbox is a LINE marker, not an inline glyph — normalize to the
+    // start of the block so a mid-line caret turns the WHOLE line into a
+    // checklist item (the existing text becomes the item text) instead of
+    // dropping "☐ " into the middle of a word. No-op if the line already
+    // carries a marker.
     QTextCursor cur = m_editor->textCursor();
-    cur.insertText(QStringLiteral("☐ "));
+    cur.movePosition(QTextCursor::StartOfBlock);
+    const QString line = cur.block().text();
+    if (!line.startsWith(QStringLiteral("☐ ")) &&
+        !line.startsWith(QStringLiteral("✓ ")))
+        cur.insertText(QStringLiteral("☐ "));
     m_editor->setFocus();
     m_dirty = true;
 }

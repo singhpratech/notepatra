@@ -863,6 +863,132 @@ int main(int argc, char *argv[]) {
         EXPECT("header lists already-scheduled reminders", hasExistingHeader);
     }
 
+    // ── 24. Checklist click semantics — marker toggles, text edits ────
+    // M1 fix (a): pre-fix the MouseButtonRelease handler discarded the click
+    // column, so a click ANYWHERE on a "☐ …" line flipped its done-state and
+    // editing an item by mouse was impossible. Contract now: a click on the
+    // marker (columns 0–2) toggles; a click in the item text places the
+    // caret normally. F4 keeps toggling regardless.
+    std::printf("\n--- 24. checklist click: marker toggles, text places caret ---\n");
+    {
+        panel.show();
+        QApplication::processEvents();
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        EXPECT("editor present for click-semantics test", ed != nullptr);
+        if (ed) {
+            ed->clear();
+            QApplication::processEvents();
+            ed->insertPlainText(QStringLiteral("☐ buy milk and eggs"));
+            QApplication::processEvents();
+            QTextBlock line = ed->document()->firstBlock();
+
+            // Click at a given column of the first line — viewport coords
+            // come from cursorRect so the point is exact, not font-guessed.
+            auto clickAtColumn = [&](int col) {
+                QTextCursor c(ed->document());
+                c.setPosition(line.position() + col);
+                const QPoint pt = ed->cursorRect(c).center();
+                QTest::mouseClick(ed->viewport(), Qt::LeftButton,
+                                  Qt::NoModifier, pt);
+                QApplication::processEvents();
+            };
+
+            // (a) click deep in the TEXT (column 12) → NOT toggled, caret
+            //     placed in that line near the click. THE regression.
+            clickAtColumn(12);
+            EXPECT("click at column 12 did NOT toggle the item",
+                   ed->document()->firstBlock().text()
+                       .startsWith(QStringLiteral("☐ buy milk and eggs")));
+            EXPECT("click at column 12 placed the caret in that line",
+                   ed->textCursor().block() == ed->document()->firstBlock());
+            EXPECT("caret landed near the click (col >= 5, not col 0)",
+                   ed->textCursor().positionInBlock() >= 5);
+
+            // (b) click ON the marker (column 0–2) → toggles ☐ → ✓.
+            clickAtColumn(1);
+            EXPECT("click on the marker toggled ☐ → ✓",
+                   ed->document()->firstBlock().text()
+                       .startsWith(QStringLiteral("✓ buy milk and eggs")));
+
+            // (c) F4 on the line still toggles (✓ back to ☐) — the keyboard
+            //     path must be untouched by the mouse fix.
+            {
+                QTextCursor c(ed->document());
+                c.setPosition(ed->document()->firstBlock().position() + 8);
+                ed->setTextCursor(c);
+            }
+            QTest::keyClick(ed, Qt::Key_F4);
+            QApplication::processEvents();
+            EXPECT("F4 still toggles the line (✓ → ☐)",
+                   ed->document()->firstBlock().text()
+                       .startsWith(QStringLiteral("☐ buy milk and eggs")));
+        }
+    }
+
+    // ── 25. Insert checkbox mid-line → marker normalizes to line start ──
+    // M1 fix (b): the checkbox is a LINE marker. With the caret mid-word,
+    // Insert checkbox used to drop "☐ " into the middle of the text
+    // ("buy ☐ milk"); now the whole line becomes the item.
+    std::printf("\n--- 25. insert checkbox mid-line normalizes to line start ---\n");
+    {
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        QToolButton *chkBtn = nullptr;
+        for (QToolButton *b : panel.findChildren<QToolButton *>())
+            if (b->toolTip() == QStringLiteral("Insert checkbox")) chkBtn = b;
+        EXPECT("Insert checkbox toolbar button found", chkBtn != nullptr);
+        if (ed && chkBtn) {
+            ed->clear();
+            QApplication::processEvents();
+            ed->insertPlainText(QStringLiteral("buy milk"));
+            QTextCursor c(ed->document());
+            c.setPosition(ed->document()->firstBlock().position() + 4); // "buy |milk"
+            ed->setTextCursor(c);
+            chkBtn->click();
+            QApplication::processEvents();
+            EXPECT_STR_EQ("mid-line Insert checkbox put the marker at line start",
+                          ed->document()->firstBlock().text(),
+                          QStringLiteral("☐ buy milk"));
+            // Invoking it again on the same line must not stack a second box.
+            chkBtn->click();
+            QApplication::processEvents();
+            EXPECT_STR_EQ("second Insert checkbox on the line is a no-op",
+                          ed->document()->firstBlock().text(),
+                          QStringLiteral("☐ buy milk"));
+        }
+    }
+
+    // ── 26. Re-opening the ALREADY-OPEN note keeps unsaved typing ─────
+    // M1 fix (c): banner "Open" / reminder-leaf click call openNoteFile with
+    // the CURRENT path; pre-fix that re-read the file from disk and reverted
+    // up to 5s of typing (the autosave interval). Now it early-returns.
+    std::printf("\n--- 26. openNoteFile on current path preserves unsaved text ---\n");
+    {
+        panel.newMeetingNote();
+        QApplication::processEvents();
+        QString curPath;
+        {
+            const QFileInfoList l = QDir(panel.inboxFolder())
+                .entryInfoList(QStringList() << "*.html", QDir::Files, QDir::Time);
+            if (!l.isEmpty()) curPath = l.first().absoluteFilePath();
+        }
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        EXPECT("editor + path present for revert-guard test",
+               ed != nullptr && !curPath.isEmpty());
+        if (ed && !curPath.isEmpty()) {
+            ed->insertPlainText(QStringLiteral("\nUNSAVED_TYPING_26"));
+            QApplication::processEvents();
+            // Prove the typing is genuinely unsaved (autosave hasn't fired).
+            EXPECT("disk does NOT yet contain the unsaved typing",
+                   !readAll(curPath).contains(QStringLiteral("UNSAVED_TYPING_26")));
+            panel.openNoteFile(curPath);   // same path — the banner-Open path
+            QApplication::processEvents();
+            EXPECT("re-opening the SAME note preserved the unsaved typing",
+                   ed->toPlainText().contains(QStringLiteral("UNSAVED_TYPING_26")));
+        }
+    }
+
     // ── Summary ───────────────────────────────────────────────────
     std::printf("\n──────────────────────────\n");
     std::printf("PASS: %d   FAIL: %d\n", g_pass, g_fail);
