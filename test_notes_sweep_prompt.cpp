@@ -63,6 +63,88 @@ static void test_build_prompt() {
     EXPECT("prompt has split sentinel (U+001F)", prompt.contains(QChar(0x1F)));
 }
 
+// v0.1.112 — splitPrompt: build() glues system+user with a U+001F
+// sentinel; the Extract flow must split them into generate()'s prompt and
+// system args. The sentinel is consumed by the split — it must NEVER
+// reach the request builder (pre-v0.1.112 the combined string went out
+// verbatim as the prompt, control byte included).
+static void test_split_prompt_sentinel() {
+    std::printf("test_split_prompt_sentinel\n");
+
+    const QString combined = NoterSweepPrompt::build(
+        "<h1>Sync</h1><div class=\"b b-act\">Ship the build</div>",
+        "Roadmap sync");
+    const NoterSweepPrompt::PromptParts parts =
+        NoterSweepPrompt::splitPrompt(combined);
+
+    EXPECT("split: system half non-empty", !parts.system.isEmpty());
+    EXPECT("split: user half non-empty",   !parts.user.isEmpty());
+    EXPECT("split: system half carries the schema",
+           parts.system.contains("\"decisions\""));
+    EXPECT("split: system rules NOT in the user half",
+           !parts.user.contains("\"decisions\""));
+    EXPECT("split: user half carries the meeting header",
+           parts.user.contains("MEETING: Roadmap sync"));
+    EXPECT("split: user half carries the note body",
+           parts.user.contains("Ship the build"));
+    EXPECT("split: no U+001F in system half",
+           !parts.system.contains(QChar(0x1F)));
+    EXPECT("split: no U+001F in user half",
+           !parts.user.contains(QChar(0x1F)));
+
+    // No-sentinel input degrades to "all user" — nothing dropped.
+    const NoterSweepPrompt::PromptParts bare =
+        NoterSweepPrompt::splitPrompt(QStringLiteral("just a prompt"));
+    EXPECT("split: no-sentinel -> system empty", bare.system.isEmpty());
+    EXPECT("split: no-sentinel -> user keeps the text",
+           bare.user == QStringLiteral("just a prompt"));
+
+    // Defensive: multiple sentinels are all scrubbed, never forwarded.
+    const NoterSweepPrompt::PromptParts multi = NoterSweepPrompt::splitPrompt(
+        QStringLiteral("sys") + QChar(0x1F) + QStringLiteral("usr") +
+        QChar(0x1F) + QStringLiteral("tail"));
+    EXPECT("split: multi-sentinel system clean",
+           !multi.system.contains(QChar(0x1F)));
+    EXPECT("split: multi-sentinel user clean",
+           !multi.user.contains(QChar(0x1F)));
+    EXPECT("split: multi-sentinel keeps all user text",
+           multi.user.contains("usr") && multi.user.contains("tail"));
+}
+
+// v0.1.112 — classify(): an unparseable reply is an ERROR outcome, not
+// "the model found nothing". Pre-v0.1.112 both rendered the same 'no
+// actionable items' info box, hiding real failures.
+static void test_classify_outcomes() {
+    std::printf("test_classify_outcomes\n");
+
+    const auto bad = NoterSweepPrompt::parse(
+        QStringLiteral("Sorry, I can't help with that."));
+    EXPECT("classify: unparseable -> ParseError (NOT Empty)",
+           NoterSweepPrompt::classify(bad) ==
+               NoterSweepPrompt::ExtractOutcome::ParseError);
+    EXPECT("classify: ParseError keeps raw reply for the details box",
+           bad.rawResponse.contains("Sorry"));
+
+    const auto empty = NoterSweepPrompt::parse(QStringLiteral(
+        R"({"decisions":[],"actions":[],"questions":[],"risks":[]})"));
+    EXPECT("classify: valid zero-item reply -> Empty",
+           NoterSweepPrompt::classify(empty) ==
+               NoterSweepPrompt::ExtractOutcome::Empty);
+
+    const auto items = NoterSweepPrompt::parse(QStringLiteral(
+        R"({"actions":[{"text":"Ship it"}]})"));
+    EXPECT("classify: reply with an action -> Items",
+           NoterSweepPrompt::classify(items) ==
+               NoterSweepPrompt::ExtractOutcome::Items);
+
+    // Truncated JSON (mid-stream drop) must classify as ParseError too.
+    const auto truncated = NoterSweepPrompt::parse(QStringLiteral(
+        R"({"actions":[{"text":"Ship)"));
+    EXPECT("classify: truncated JSON -> ParseError",
+           NoterSweepPrompt::classify(truncated) ==
+               NoterSweepPrompt::ExtractOutcome::ParseError);
+}
+
 // v0.1.98 — summary field + LOCAL wall-clock due handling. The old parser
 // force-set no-offset times to UTC, which shifted "10am tomorrow" by the
 // user's offset (showed/fired at the wrong hour). Local must stay local; a
@@ -196,6 +278,8 @@ int main(int argc, char *argv[]) {
     test_parse_malformed();
     test_parse_with_think_block();
     test_parse_summary_and_local_date();
+    test_split_prompt_sentinel();
+    test_classify_outcomes();
 
     std::printf("\n[%d passed, %d failed]\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

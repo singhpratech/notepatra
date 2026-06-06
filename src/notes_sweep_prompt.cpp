@@ -179,6 +179,38 @@ QString build(const QString &meetingHtml, const QString &meetingTitle) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// splitPrompt — consume the U+001F sentinel build() glued in.
+// ═══════════════════════════════════════════════════════════════════════
+//
+// v0.1.112 — the Extract flow used to pass build()'s combined string
+// straight into generate() as the prompt, so the model saw the raw
+// control byte AND the system instructions landed in the user turn.
+// This is the single place the sentinel is interpreted; both halves are
+// scrubbed of any stray U+001F so it can never reach the request builder.
+
+PromptParts splitPrompt(const QString &combined) {
+    PromptParts p;
+    const QChar sentinel(0x1F);
+    const int idx = combined.indexOf(sentinel);
+    if (idx < 0) {
+        // No sentinel — treat the whole thing as the user turn so no
+        // prompt text is silently dropped.
+        p.user = combined;
+        return p;
+    }
+    p.system = combined.left(idx);
+    p.user   = combined.mid(idx + 1);
+    // Defensive: scrub any further sentinels (never expected — note text
+    // is HTML-escaped — but a control byte must not hit the wire) and
+    // drop the "\n…\n" glue around the splitter.
+    p.system.remove(sentinel);
+    p.user.remove(sentinel);
+    p.system = p.system.trimmed();
+    p.user   = p.user.trimmed();
+    return p;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // parse — best-effort tolerant JSON parser for the model reply.
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -316,6 +348,19 @@ SweepResult parse(const QString &llmReplyJson) {
     appendSection(r.risks,     root.value("risks"),     "!");
 
     return r;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// classify — honest outcome triage for the result handler.
+// ═══════════════════════════════════════════════════════════════════════
+
+ExtractOutcome classify(const SweepResult &r) {
+    if (!r.errorMessage.isEmpty())
+        return ExtractOutcome::ParseError;
+    if (r.decisions.isEmpty() && r.actions.isEmpty() &&
+        r.questions.isEmpty() && r.risks.isEmpty())
+        return ExtractOutcome::Empty;
+    return ExtractOutcome::Items;
 }
 
 }  // namespace NoterSweepPrompt

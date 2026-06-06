@@ -95,6 +95,18 @@ public:
     // Public so the widget test can drive it without a live network client.
     void showExtractResult(const QString &response, const QString &model);
 
+    // v0.1.112 — Extract reliability layer. With the backend down the
+    // generate() stream never emits finished OR error, so pre-v0.1.112 the
+    // app-wide wait cursor stayed forever and every retry click stacked
+    // another override + duplicate request. The state machine below makes
+    // every exit path (finish / error / cancel / watchdog / pre-flight
+    // refusal) converge on one cleanup helper. Public so the widget test
+    // can drive the busy state without a live network request.
+    void beginExtractBusy();      // wait cursor + Extract→Cancel + watchdog
+    void finishExtractCleanup();  // restore cursor/button, stop watchdog
+    void cancelExtract();         // Cancel click / watchdog: abort + cleanup
+    bool extractBusy() const { return m_extractBusy; }
+
     // Folder paths.
     QString notesRoot() const;
     QString inboxFolder() const;
@@ -294,6 +306,15 @@ private:
     QString        m_currentPath;
     QString        m_currentTitle;
     bool           m_dirty          { false };
+    // v0.1.112 — Extract in-flight state. m_extractClient tracks the live
+    // request so Cancel / the watchdog can abort it; QPointer because the
+    // finished/error lambdas deleteLater() the client themselves. The
+    // watchdog is a single-shot ~125s timer armed by beginExtractBusy() —
+    // it is the Noter-side safety net for the ollama.cpp silent-hang path
+    // (connection drop emits neither finished nor error).
+    QPointer<OllamaClient> m_extractClient;
+    QPointer<QTimer>       m_extractWatchdog;
+    bool                   m_extractBusy { false };
     // v0.1.98 — when the open document is the Todos checklist we edit it as
     // plain ☐/✓ lines (which round-trip through QTextEdit cleanly, unlike
     // the b-act data-* divs). m_checklistBlocks holds the blocks parsed on

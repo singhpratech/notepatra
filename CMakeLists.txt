@@ -764,13 +764,31 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_sweep_prompt
 endif()
 
 # ── Noter — slide-over panels test (18 cases) ──
+# v0.1.112 — also hosts the Extract reliability-layer widget tests, which
+# drive the REAL NotesPanel (busy-state machine + pre-flight probe), so it
+# links the same source set as test_notes_panel_widget.
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_panels.cpp")
     add_executable(test_notes_panels
         test_notes_panels.cpp
+        src/notes.cpp
+        src/notes_storage.cpp
+        src/notes_template.cpp
+        src/notes_todos.cpp
+        src/notes_reminder.cpp
         src/notes_panels.cpp
+        src/notes_popout.cpp
+        src/notes_context_menus.cpp
+        src/notes_sweep_dialog.cpp
+        src/notes_sweep_prompt.cpp
+        src/notes_export.cpp
+        src/ollama.cpp
+        src/ai_interaction_log.cpp
+        src/credscrub.cpp
     )
     target_include_directories(test_notes_panels PRIVATE ${CMAKE_SOURCE_DIR}/src)
-    target_link_libraries(test_notes_panels PRIVATE Qt5::Core Qt5::Widgets Qt5::Test)
+    target_link_libraries(test_notes_panels PRIVATE
+        Qt5::Core Qt5::Widgets Qt5::Sql Qt5::Network Qt5::Test
+        Qt5::PrintSupport)
     add_test(NAME test_notes_panels COMMAND $<TARGET_FILE:test_notes_panels>)
     set_tests_properties(test_notes_panels PROPERTIES LABELS "unit;noter;panels")
 endif()

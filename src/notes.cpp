@@ -732,6 +732,13 @@ NotesPanel::NotesPanel(QWidget *parent) : QWidget(parent) {
 }
 
 NotesPanel::~NotesPanel() {
+    // v0.1.112 — an app-wide override cursor must not outlive the panel
+    // if it's torn down mid-Extract (the client + watchdog are children
+    // and die with us; the override cursor is global state).
+    if (m_extractBusy) {
+        QApplication::restoreOverrideCursor();
+        m_extractBusy = false;
+    }
     if (m_dirty && !m_currentPath.isEmpty()) saveCurrentNote();
     if (m_todos) { delete m_todos; m_todos = nullptr; }
 }
@@ -2552,6 +2559,10 @@ void NotesPanel::popOutActive() {
 }
 
 void NotesPanel::endMeetingSweep() {
+    // v0.1.112 — one Extract in flight at a time. Re-triggering (button
+    // routes to cancelExtract(); this guards the Ctrl+Alt+E path) used to
+    // stack another override cursor + a duplicate network request.
+    if (m_extractBusy) return;
     if (m_currentPath.isEmpty() || !m_editor) {
         QMessageBox::information(this, tr("Extract"),
                                  tr("Open or create a meeting note first."));
@@ -2567,23 +2578,50 @@ void NotesPanel::endMeetingSweep() {
     // Build the prompt + spawn an Ollama request. The model is whatever
     // the user picked in Config::aiNoterModel; baseUrl + backend come
     // from the global AI settings so cloud-via-OpenAI-compat works too.
-    const QString prompt = NoterSweepPrompt::build(bodyHtml, m_currentTitle);
     const QString model = Config::instance().aiNoterModel.isEmpty()
                               ? QStringLiteral("llama3.1:8b")
                               : Config::instance().aiNoterModel;
 
-    auto *client = new OllamaClient(this);
-    client->setBackend(OllamaClient::backendFromString(
+    const auto backend = OllamaClient::backendFromString(
         Config::instance().aiBackend.isEmpty() ? QStringLiteral("Ollama")
-                                               : Config::instance().aiBackend));
+                                               : Config::instance().aiBackend);
+    auto *client = new OllamaClient(this);
+    client->setBackend(backend);
     if (!Config::instance().aiBaseUrl.isEmpty())
         client->setBaseUrl(Config::instance().aiBaseUrl);
     client->setModel(model);
-    QApplication::setOverrideCursor(Qt::WaitCursor);
+    // v0.1.112 — tag the request so the AI Interaction Log can attribute
+    // it (it logged Extract rows with an empty mode before).
+    client->setMode(QStringLiteral("noter-extract"));
+
+    // v0.1.112 PRE-FLIGHT — synchronous 3s reachability probe BEFORE any
+    // cursor override or request. With the backend down, the generate()
+    // stream emits neither finished nor error (ollama.cpp's silent-hang
+    // path), so pre-v0.1.112 the wait cursor stayed forever. Failing fast
+    // here costs one /api/tags GET when the backend is up.
+    if (!client->isAvailable()) {
+        const QString msg = (backend == OllamaClient::Ollama)
+            ? tr("Ollama isn't running — start it with: ollama serve")
+            : tr("The AI backend at %1 isn't reachable. Check the backend "
+                 "settings in the AI panel.").arg(client->baseUrl());
+        client->deleteLater();
+        QMessageBox::warning(this, tr("Extract"), msg);
+        return;
+    }
+
+    // v0.1.112 — split the prompt at the U+001F sentinel into its system
+    // and user halves. The combined string used to be sent verbatim as the
+    // prompt arg — raw control byte on the wire, system rules in the user
+    // turn.
+    const QString combined = NoterSweepPrompt::build(bodyHtml, m_currentTitle);
+    const NoterSweepPrompt::PromptParts parts =
+        NoterSweepPrompt::splitPrompt(combined);
+
+    m_extractClient = client;
+    beginExtractBusy();
 
     connect(client, &OllamaClient::finished, this,
             [this, client, model](const QString &response) {
-                QApplication::restoreOverrideCursor();
                 // v0.1.98 CRASH FIX (core 1321961) — `finished` is emitted from
                 // INSIDE the client's reply-handling slot while the QNetworkReply
                 // is still mid-teardown. The previous code opened the sweep dialog
@@ -2596,22 +2634,98 @@ void NotesPanel::endMeetingSweep() {
                 // emission stack.
                 client->cancel();          // disconnect + abort + free the reply
                 client->deleteLater();
+                if (m_extractClient == client) m_extractClient.clear();
+                finishExtractCleanup();    // cursor + button + watchdog
                 QTimer::singleShot(0, this, [this, response, model]() {
                     showExtractResult(response, model);
                 });
             });
     connect(client, &OllamaClient::error, this,
             [this, client](const QString &err) {
-                QApplication::restoreOverrideCursor();
                 client->cancel();
                 client->deleteLater();
+                if (m_extractClient == client) m_extractClient.clear();
+                finishExtractCleanup();
                 // Defer the modal off the signal stack too (same crash class).
                 QTimer::singleShot(0, this, [this, err]() {
                     QMessageBox::warning(this, tr("Extract failed"),
                         tr("Could not reach the AI backend: %1").arg(err));
                 });
             });
-    client->generate(prompt, QString(), /*enableThinking=*/false);
+    client->generate(parts.user, parts.system, /*enableThinking=*/false);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Extract busy-state machine (v0.1.112)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// Every way an Extract can end — finished, error, user Cancel, watchdog
+// timeout, panel-level pre-flight refusal — funnels through
+// finishExtractCleanup() so the override cursor and the button can never
+// be left stranded again (the original hang left BOTH stuck forever).
+
+void NotesPanel::beginExtractBusy() {
+    m_extractBusy = true;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    if (m_extractBtn) {
+        // The button stays ENABLED — it becomes the Cancel control while
+        // the request is in flight (onExtractClicked branches on busy).
+        m_extractBtn->setText(tr("Cancel"));
+        m_extractBtn->setIcon(
+            style()->standardIcon(QStyle::SP_BrowserStop));
+        m_extractBtn->setToolTip(tr("Cancel the in-flight AI extraction"));
+    }
+    if (!m_extractWatchdog) {
+        m_extractWatchdog = new QTimer(this);
+        m_extractWatchdog->setSingleShot(true);
+        // ~125s — generous for a slow local 8B model on CPU, but finite.
+        // This is the Noter-side net for the backend's silent-hang path
+        // (mid-stream connection drop emits neither finished nor error).
+        m_extractWatchdog->setInterval(125000);
+        connect(m_extractWatchdog, &QTimer::timeout, this, [this]() {
+            cancelExtract();
+            // Defer the modal off the timer slot (same crash class as the
+            // finished/error handlers — never nest an event loop here).
+            QTimer::singleShot(0, this, [this]() {
+                QMessageBox::warning(this, tr("Extract timed out"),
+                    tr("The AI backend didn't answer within ~2 minutes. "
+                       "The request was cancelled — try again, or pick a "
+                       "smaller model."));
+            });
+        });
+    }
+    m_extractWatchdog->start();
+}
+
+void NotesPanel::finishExtractCleanup() {
+    if (m_extractWatchdog) m_extractWatchdog->stop();
+    // beginExtractBusy() pushes exactly one override per flight (the
+    // m_extractBusy guard prevents stacking), so restore exactly one —
+    // but only if we actually own one, so a stray call can't pop some
+    // other feature's override.
+    if (m_extractBusy)
+        QApplication::restoreOverrideCursor();
+    if (m_extractBtn) {
+        m_extractBtn->setEnabled(true);
+        m_extractBtn->setText(tr("Extract"));
+        m_extractBtn->setIcon(sparkleIcon());
+        m_extractBtn->setToolTip(
+            tr("AI: extract action items from this note (Ctrl+Alt+E)"));
+    }
+    m_extractBusy = false;
+}
+
+void NotesPanel::cancelExtract() {
+    if (m_extractClient) {
+        // Sever the panel-side connections FIRST so a queued finished()/
+        // error() from the dying reply can't re-enter the handlers after
+        // cleanup, then abort the wire request.
+        disconnect(m_extractClient, nullptr, this, nullptr);
+        m_extractClient->cancel();
+        m_extractClient->deleteLater();
+        m_extractClient.clear();
+    }
+    finishExtractCleanup();
 }
 
 // ── Real heading blocks ──────────────────────────────────────────────────
@@ -2662,11 +2776,25 @@ void insertHeadingBlock(QTextCursor &cur, const QString &title, int level) {
 // while the network reply is still being torn down — see the crash note above.
 void NotesPanel::showExtractResult(const QString &response, const QString &model) {
     NoterSweepPrompt::SweepResult result = NoterSweepPrompt::parse(response);
-    if (result.actions.isEmpty() && result.decisions.isEmpty() &&
-        result.questions.isEmpty() && result.risks.isEmpty()) {
+    // v0.1.112 — honest outcome triage. An unparseable reply used to fall
+    // into the same 'no actionable items' info box as a genuinely empty
+    // result, hiding real model failures from the user.
+    switch (NoterSweepPrompt::classify(result)) {
+    case NoterSweepPrompt::ExtractOutcome::ParseError: {
+        QMessageBox box(QMessageBox::Warning, tr("Extract failed"),
+            tr("The model returned something I could not parse (%1). "
+               "The raw reply is under Details.").arg(result.errorMessage),
+            QMessageBox::Ok, this);
+        box.setDetailedText(result.rawResponse);
+        box.exec();
+        return;
+    }
+    case NoterSweepPrompt::ExtractOutcome::Empty:
         QMessageBox::information(this, tr("Extract"),
             tr("AI didn't find any actionable items in this note."));
         return;
+    case NoterSweepPrompt::ExtractOutcome::Items:
+        break;
     }
     NoterSweepDialog dlg(result, this);
     dlg.setEyebrow(model, 0);
@@ -2793,6 +2921,13 @@ void NotesPanel::onNewMeetingClicked() {
 }
 
 void NotesPanel::onExtractClicked() {
+    // v0.1.112 — while a request is in flight the button reads "Cancel"
+    // and aborts it (same path as the watchdog). No more duplicate
+    // requests from retry-clicking.
+    if (m_extractBusy) {
+        cancelExtract();
+        return;
+    }
     endMeetingSweep();
 }
 

@@ -34,6 +34,20 @@ namespace NoterSweepPrompt {
 // the meeting name as a hint when it picks owners / decisions.
 QString build(const QString &meetingHtml, const QString &meetingTitle);
 
+// v0.1.112 — split build()'s combined return into its SYSTEM and USER
+// halves (build() glues them with a U+001F sentinel). Callers MUST route
+// each half into the matching OllamaClient::generate(prompt, systemPrompt)
+// argument — sending the combined string as one prompt leaks the raw
+// sentinel byte into the wire payload (the pre-v0.1.112 Extract bug).
+// Degrades safely: input without a sentinel comes back whole in `user`
+// (system empty) so no prompt text is ever dropped. Neither half ever
+// contains U+001F.
+struct PromptParts {
+    QString system;
+    QString user;
+};
+PromptParts splitPrompt(const QString &combined);
+
 // Parsed structured form of the LLM's JSON reply.
 struct SweepResult {
     struct Item {
@@ -64,6 +78,17 @@ struct SweepResult {
 };
 
 SweepResult parse(const QString &llmReplyJson);
+
+// v0.1.112 — classify a parsed reply for the result handler. An
+// unparseable reply MUST surface as an error, not masquerade as "the
+// model found nothing" (pre-v0.1.112 both rendered the same 'no
+// actionable items' info box, hiding real failures from the user).
+enum class ExtractOutcome {
+    Items,       // at least one decision / action / question / risk
+    Empty,       // valid reply, genuinely zero items
+    ParseError,  // parse() set errorMessage — show rawResponse in details
+};
+ExtractOutcome classify(const SweepResult &r);
 
 // Reduce a Noter HTML body to a plain-text representation suitable for
 // stuffing into the prompt. Drops every tag, collapses runs of
