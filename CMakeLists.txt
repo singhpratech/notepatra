@@ -70,6 +70,14 @@ endif()
 # and -source-charset to UTF-8 — the canonical fix.
 if(MSVC)
     add_compile_options(/utf-8)
+    # v0.1.113: VS2026 (MSVC toolset 14.5x / _MSC_VER >= 1950) removed
+    # stdext::make_checked_array_iterator, which Qt 5.15.2's qlist.h still calls
+    # via QT_MAKE_CHECKED_ARRAY_ITERATOR — so every QList-instantiating TU fails
+    # to compile (C2653 / C3861). GitHub's hosted Windows images all rolled to
+    # VS2026 with no VS2022 left, so it can't be fixed at the runner level.
+    # Force-include a one-line shim before every TU's Qt headers. The shim is a
+    # no-op (#if-guarded out) on every other toolchain. See src/msvc_stdext_shim.h.
+    add_compile_options(/FI${CMAKE_CURRENT_SOURCE_DIR}/src/msvc_stdext_shim.h)
 endif()
 
 # ── Platform detection ──
