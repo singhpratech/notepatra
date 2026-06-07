@@ -44,7 +44,10 @@
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QToolButton>
+#include <QHostAddress>
 #include <QStandardPaths>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QtTest/QSignalSpy>
@@ -893,6 +896,61 @@ int main(int argc, char *argv[]) {
                ed && !ed->toPlainText().contains(QStringLiteral("WRONG_NOTE_ACTION")));
         EXPECT("A's extract did NOT land in B's file",
                !readAll(pathB).contains(QStringLiteral("WRONG_NOTE_ACTION")));
+    }
+
+    // ── 22c. Extract pre-flight re-entrancy: one flight, no leaked cursor (H4) ─
+    // The pre-flight isAvailable() probe spins a nested QEventLoop; a 2nd
+    // Extract trigger delivered DURING it used to re-enter endMeetingSweep
+    // (m_extractBusy still false) and stack a 2nd probe + a 2nd override
+    // cursor — one wait cursor leaked app-wide forever. The m_extractStarting
+    // latch must no-op the re-entrant call. Contract: the probe runs ONCE and
+    // the override-cursor stack returns to baseline (no stuck wait cursor).
+    std::printf("\n--- 22c. extract re-entry during pre-flight probe ---\n");
+    {
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        QTcpServer server;
+        int probeHits = 0;
+        QObject::connect(&server, &QTcpServer::newConnection, &server, [&]() {
+            while (QTcpSocket *sock = server.nextPendingConnection()) {
+                QObject::connect(sock, &QTcpSocket::readyRead, sock,
+                                 [sock, &probeHits]() {
+                    const QByteArray req = sock->readAll();
+                    if (req.contains("/api/tags")) ++probeHits;  // count ONLY the probe
+                    sock->write("HTTP/1.1 200 OK\r\nContent-Length: 13\r\n\r\n"
+                                "{\"models\":[]}");
+                    sock->flush();
+                });
+            }
+        });
+        const bool listening = server.listen(QHostAddress::LocalHost, 0);
+        EXPECT("test probe server listening", listening);
+        if (listening) {
+            const QString savedBackend = Config::instance().aiBackend;
+            const QString savedUrl     = Config::instance().aiBaseUrl;
+            Config::instance().aiBackend = QStringLiteral("Ollama");
+            Config::instance().aiBaseUrl =
+                QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+
+            panel.newMeetingNote(); QApplication::processEvents();
+            if (ed) ed->setPlainText(QStringLiteral("EXTRACT_REENTRY_BODY"));
+            QApplication::processEvents();
+
+            // Pre-arm a re-entry that fires INSIDE the outer probe's loop.exec()
+            // (the only event loop between m_extractStarting=true and the reply).
+            QTimer::singleShot(0, &panel, [&]() { panel.endMeetingSweep(); });
+            panel.endMeetingSweep();                 // outer flight: probes, then starts
+            for (int i = 0; i < 5; ++i) QApplication::processEvents();
+            panel.cancelExtract();                   // settle: abort + restore cursor
+            for (int i = 0; i < 3; ++i) QApplication::processEvents();
+
+            EXPECT("pre-flight probe ran exactly once (re-entrant call no-opped)",
+                   probeHits == 1);
+            EXPECT("no leaked wait cursor after the flight settles (FAILS on HEAD)",
+                   QApplication::overrideCursor() == nullptr);
+
+            Config::instance().aiBackend = savedBackend;
+            Config::instance().aiBaseUrl = savedUrl;
+        }
     }
 
     // ── 23. Extract flags already-scheduled + Remind defaults (v0.1.98) ──

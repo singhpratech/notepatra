@@ -3498,6 +3498,16 @@ void NotesPanel::endMeetingSweep() {
     // Extract trigger delivered during it re-enters endMeetingSweep and
     // hits the guard above instead of starting a second flight.
     m_extractStarting = true;
+    // RAII so the latch can NEVER stick: if isAvailable()'s nested event
+    // loop, the prompt build, or the QMessageBox throws between here and the
+    // live request, a permanently-true m_extractStarting would deadlock ALL
+    // future Extracts at the guard above. This clears it on EVERY exit —
+    // fail-return, exception, AND the success path (where m_extractBusy then
+    // owns single-flight, so dropping the latch on return is correct).
+    struct ClearOnExit {
+        bool &flag;
+        ~ClearOnExit() { flag = false; }
+    } clearStarting{ m_extractStarting };
     if (!client->isAvailable()) {
         const QString msg = (backend == OllamaClient::Ollama)
             ? tr("Ollama isn't running — start it with: ollama serve")
@@ -3505,8 +3515,7 @@ void NotesPanel::endMeetingSweep() {
                  "settings in the AI panel.").arg(client->baseUrl());
         client->deleteLater();
         QMessageBox::warning(this, tr("Extract"), msg);
-        m_extractStarting = false;
-        return;
+        return;   // clearStarting resets m_extractStarting
     }
 
     // v0.1.112 — split the prompt at the U+001F sentinel into its system
@@ -3520,8 +3529,8 @@ void NotesPanel::endMeetingSweep() {
         NoterSweepPrompt::splitPrompt(combined);
 
     m_extractClient = client;
-    beginExtractBusy();
-    m_extractStarting = false;   // request is live — m_extractBusy owns single-flight
+    beginExtractBusy();   // request is live — m_extractBusy owns single-flight now;
+                          // clearStarting drops m_extractStarting on return.
     // v0.1.113 — PIN the note Extract was launched on. The reply lands up
     // to ~125s later and the sidebar stays live, so m_currentPath may be a
     // DIFFERENT note when it does; apply must target the launch note.

@@ -38,6 +38,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 #include "aipanel.h"
+#include "agent_repeat_guard.h"
 #include "config.h"
 
 #include <QAbstractButton>
@@ -120,6 +121,28 @@ public:
     static void saveNow(AIPanel *p) { p->saveChatHistoryNow(); }
     static void load(AIPanel *p)    { p->loadChatHistory(); }
     static void clearChat(AIPanel *p) { p->clearChat(); }
+
+    // ── Agent gated-write path (H8/H9) ──────────────────────────────────
+    // Drive the write-approval gate without a live model stream. handleToolCall
+    // is safe to call cold (budget=0, m_chatLayout built in the ctor); the
+    // approve gate fires on (coding && Agent segment && mutating tool).
+    static void setWorkspace(AIPanel *p, const QString &dir) { p->m_workspaceRoot = dir; }
+    static bool setAgentSegment(AIPanel *p) {
+        if (!p->m_codingMode || !p->m_agentSegBtn) return false;
+        if (!p->m_codingMode->isChecked()) p->m_codingMode->setChecked(true);
+        p->m_chatModeSegment = AIPanel::ChatModeSegment::Agent;
+        if (!p->m_agentSegBtn->isChecked()) p->m_agentSegBtn->setChecked(true);
+        return p->m_codingMode->isChecked() && p->m_agentSegBtn->isChecked();
+    }
+    static void callHandleToolCall(AIPanel *p, const QString &id,
+                                   const QString &name, const QJsonObject &args) {
+        p->handleToolCall(id, name, args);
+    }
+    static AgentRepeatGuard &repeatGuard(AIPanel *p) { return p->m_repeatGuard; }
+    static QStringList &turnToolActions(AIPanel *p) { return p->m_turnToolActions; }
+    static QVector<std::function<void()>> &approvers(AIPanel *p) {
+        return p->m_approvalApprovers;
+    }
 
     // For the "switch back to chat resurfaces" tests, we sometimes want
     // to check the active vector immediately after a switch; renderTranscript
@@ -420,6 +443,65 @@ static void testV1Migration() {
 // ───────────────────────────────────────────────────────────────────────
 // main — offscreen QApplication; no event loop.
 // ───────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────
+// Section 5 — Agent gated-write bookkeeping (H8/H9). An APPROVED gated write
+// must run the same post-tool bookkeeping the direct-execute path does:
+//   • success resets the repeat-guard streak, so a now-valid byte-identical
+//     call that earlier failed twice is no longer refused as repeated_call;
+//   • the approve logs an action so an empty-prose turn force-finalizes to a
+//     non-blank transcript instead of erasing the write from the log.
+// ───────────────────────────────────────────────────────────────────────
+static void testGatedWriteBookkeeping() {
+    std::printf("\n=== agent gated-write bookkeeping (H8/H9) ===\n");
+    QTemporaryDir ws;
+    EXPECT_TRUE("workspace temp dir valid", ws.isValid());
+
+    AIPanel panel;
+    AIPanelTestAccess::setWorkspace(&panel, ws.path());
+    EXPECT_TRUE("agent segment (coding + Agent) set",
+                AIPanelTestAccess::setAgentSegment(&panel));
+
+    const QString cfg = QStringLiteral("cfg.json");
+    QJsonObject readArgs; readArgs["path"] = cfg;
+    const QString readSig =
+        AgentRepeatGuard::signature(QStringLiteral("read_file"), readArgs);
+
+    // Two byte-identical read_file failures on a NON-existent file → the
+    // perseveration guard would now refuse a third identical call.
+    AIPanelTestAccess::callHandleToolCall(&panel, "id1", "read_file", readArgs);
+    AIPanelTestAccess::callHandleToolCall(&panel, "id2", "read_file", readArgs);
+    EXPECT_TRUE("precondition: identical read failed twice → guard would refuse",
+                AIPanelTestAccess::repeatGuard(&panel).shouldRefuse(readSig));
+
+    // A gated write to the SAME path enqueues an approval card + a doApprove.
+    QJsonObject writeArgs;
+    writeArgs["path"] = cfg;
+    writeArgs["content"] = QStringLiteral("{}");
+    AIPanelTestAccess::callHandleToolCall(&panel, "id3", "write_file", writeArgs);
+    auto &approvers = AIPanelTestAccess::approvers(&panel);
+    EXPECT_TRUE("gated write registered an approver", !approvers.isEmpty());
+
+    if (!approvers.isEmpty()) {
+        approvers.last()();   // user clicks Approve → doApprove writes + bookkeeps
+
+        // FINDING 2 (H8): the approved write reset the guard streak, so the
+        // now-valid identical read is no longer refused as repeated_call.
+        EXPECT_TRUE("approved write RESET the repeat-guard streak (FAILS on HEAD)",
+                    !AIPanelTestAccess::repeatGuard(&panel).shouldRefuse(readSig));
+        EXPECT_TRUE("the approved write actually hit disk",
+                    QFile::exists(ws.path() + "/" + cfg));
+
+        // FINDING 3 (H9): the approve logged an action, so a force-finalized
+        // empty-prose turn is non-blank (forcedFinalText reads m_turnToolActions).
+        bool logged = false;
+        for (const QString &a : AIPanelTestAccess::turnToolActions(&panel))
+            if (a.contains("write_file") && a.contains("written to disk"))
+                logged = true;
+        EXPECT_TRUE("approve logged a 'written to disk' action (non-blank transcript)",
+                    logged);
+    }
+}
+
 int main(int argc, char *argv[]) {
 
     // Force offscreen platform BEFORE QApplication construction so any
@@ -442,6 +524,7 @@ int main(int argc, char *argv[]) {
     testClearChatLeavesOtherModes();
     testSaveReloadRoundTrip();
     testV1Migration();
+    testGatedWriteBookkeeping();
 
     std::printf("\n=== %d passed · %d failed ===\n", g_passed, g_failed);
     return (g_failed == 0) ? 0 : 1;
