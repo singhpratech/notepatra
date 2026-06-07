@@ -3,11 +3,42 @@
 All notable changes to Notepatra will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Versioning](https://semver.org/).
 
-> **Gaps in the version number timeline:** v0.1.4 and v0.1.6 were tagged but never published a GitHub Release (CI failures — NSIS macro bug and Windows MSVC C2666 respectively); their content shipped in v0.1.5 and v0.1.7. v0.1.11 was prepared with a macOS dylib install_name hotfix but was rolled forward into v0.1.12 to reduce release churn — the v0.1.11 changes ship as part of v0.1.12. v0.1.94 was prepared locally as a crash-hardening release but rolled forward into v0.1.95 alongside the Noter redesign to reduce churn.
+> **Gaps in the version number timeline:** v0.1.4 and v0.1.6 were tagged but never published a GitHub Release (CI failures — NSIS macro bug and Windows MSVC C2666 respectively); their content shipped in v0.1.5 and v0.1.7. v0.1.11 was prepared with a macOS dylib install_name hotfix but was rolled forward into v0.1.12 to reduce release churn — the v0.1.11 changes ship as part of v0.1.12. v0.1.94 was prepared locally as a crash-hardening release but rolled forward into v0.1.95 alongside the Noter redesign to reduce churn. v0.1.112 (the Noter system-of-record wave) was prepared and fully tested locally but never published standalone — it ships as part of v0.1.113 alongside the A-grade hardening pass that audited and fixed 12 issues in the v0.1.112 work; the [0.1.112] entry below is kept as a record of those changes, which reach users under the v0.1.113 tag.
+
+---
+
+## [0.1.113] — 2026-06-06
+
+**Noter reaches A (audit grade C- → A). v0.1.112 fixed the audit's findings; an adversarial re-verify then audited the *fixes* and surfaced 12 more serious issues (3 critical + 9 high), several introduced by v0.1.112's own changes. This release closes all 12 properly; a fresh 7-dimension regrade scores Noter A. Full ctest 54/54, every finding covered by a dedicated contract test. Same bare binary, no new dependencies.**
+
+### Fixed — Noter data safety
+- **Todos-checklist nav no longer destroys an unsaved note after a failed save** — `openTodosChecklist()` bypassed the M2c Stay/Discard/Save-a-copy guard and replaced the editor unconditionally, silently discarding the only copy of an unsaved delta when the save had failed. The guard was extracted into a shared helper and now gates both the note-switch and the checklist-nav paths (`notes.cpp`).
+- **A conflict raised during navigation stays visible** — when a flush-on-navigate diverted an externally-modified note to a conflict copy, the destination note then loaded cleanly in the same synchronous stack and hid the conflict banner before it ever painted. A one-shot `m_conflictNoticePending` flag keeps the "changed on disk" banner up (`notes.cpp`).
+- **A conflict copy keeps its real title** — the rescue path stamped the raw `…(conflict …)` filename stem as the display title, which the next save then burned into the title meta. It now resolves the real display title (`notes.cpp`).
+
+### Fixed — Noter reminders
+- **A fired/replayed reminder shows even with no note open** — the reminder banner was a child of the editor stack page, which a `QStackedWidget` hides when the empty page is current (the default state and the exact state during reminder replay), so on tray-less desktops it never showed. The banner is now pinned above the page stack and shows on both pages (`notes.cpp`).
+- **Renaming a note follows its reminders** — rename moved the file and re-pointed action rows but left the synthetic reminder rows at the dead old path, so clicking the reminder red-errored the editor with "Could not open" and cleared the current path. A new `NotesTodos::repathNote` migrates every row to the new path (`notes.cpp`, `notes_todos.*`).
+
+### Fixed — Noter AI Extract
+- **Rapid re-trigger can't double-fire or leak a wait cursor** — the pre-flight reachability probe spins a nested event loop; a second Extract trigger delivered during it re-entered and stacked a second request + a second override cursor (one wait cursor leaked app-wide). A single-flight latch — made exception-safe via RAII so it can never stick and deadlock future Extracts — no-ops the re-entrant trigger (`notes.cpp`).
+- **Extract applies to the note it was launched on** — the reply could land up to ~125 s later with a different note current; the result (and any reminders it scheduled) used to write into whatever note was open when the model answered. The launch note is now pinned through the deferred apply (`notes.cpp`).
+
+### Fixed — Noter editor fidelity
+- **Switching theme on a checklist note no longer corrupts undo/redo** — the theme switch re-merged per-line checklist char formats into the live document (an undo-recorded edit applied in place with no compensating stack clear), truncating the user's redo stack on every Light↔Dark↔Monokai switch. Undone lines now inherit themed ink and done lines keep their baked format, so the switch performs zero document edits (`notes.cpp`).
+
+### Fixed — Noter performance
+- **Body search can't freeze the app on a malformed/oversized note** — the searchable-text extractor used two `DotMatchesEverything` regexes whose lazy `.*?` re-scanned to end-of-string at every opening tag, going quadratic on a multi-block `.html` with unclosed `<style>`/`<script>`/`<head>`; a 2 MB Inbox note froze the GUI thread for ~150 s. It is now a linear single-pass `QString::indexOf` scanner (~1.4 s on the same input) (`notes_storage.cpp`).
+
+### Fixed — AI coding assistant
+- **`apply_diff` writes inserted lines byte-exact** — `new_lines` were decoded whenever the matched old region was clean, so a correct insertion containing a C escape (`printf("…\n")`, a quoted `\"`) was split across a real newline into non-compiling code. Decoding now happens only with per-hunk evidence that the hunk itself was double-escaped (`ai_tools.cpp`).
+- **Approved agent writes keep the assistant honest** — the Agent write-gate's early-return skipped the direct-path bookkeeping, so an approved write never reset the perseveration guard (a now-valid identical earlier-failed call was wrongly refused as `repeated_call`) and logged no action (a write-only turn force-finalized to a blank reply). Both approve and reject now mirror the direct-path bookkeeping (`aipanel.cpp`).
 
 ---
 
 ## [0.1.112] — 2026-06-06
+
+> _Never published standalone — these changes ship under the **v0.1.113** tag (see the rolled-forward note at the top of this file). Kept here as a record of the wave._
 
 **Noter — the system-of-record wave (audit grade C- → target A). A 19-agent UX audit found the capture core solid but everything around it (remind / find / trust) failing; this release fixes all 27 CRITICAL/HIGH findings. Plus a 3-layer hardening of the AI coding assistant's `apply_diff` loop. Same bare binary, no new dependencies.**
 
