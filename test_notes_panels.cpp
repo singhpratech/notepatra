@@ -485,6 +485,10 @@ static void testExtractPreflightClosedPort() {
 }
 
 int main(int argc, char *argv[]) {
+    // DIAG (win-noter-segfault): unbuffered stdout so the LAST section header
+    // printed before a hard crash is captured by ctest --output-on-failure,
+    // pinpointing the exact failing section on Windows. No behaviour change.
+    setvbuf(stdout, nullptr, _IONBF, 0);
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QApplication app(argc, argv);
 
