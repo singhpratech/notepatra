@@ -848,7 +848,17 @@ jobs:
           path: build-full/Notepatra-full.dmg
 
   build-windows:
-    runs-on: windows-latest
+    # PINNED (v0.1.113): windows-latest began redirecting to the
+    # windows-2025-vs2026 image (VS2026) in June 2026, whose MSVC STL REMOVED
+    # stdext::make_checked_array_iterator — Qt 5.15.2's qlist.h:915 calls it
+    # via QT_MAKE_CHECKED_ARRAY_ITERATOR, so every QList-instantiating TU
+    # fails with C2653/C3861 (this killed the first v0.1.113 release run;
+    # v0.1.111 had built fine on the pre-redirect image days earlier).
+    # windows-2025 carries VS2022 (stdext deprecated but present) — the exact
+    # toolchain that built v0.1.111. Revisit before windows-2025 retires:
+    # the durable fix is a KDE-patched Qt 5.15 / Qt 6 migration (see
+    # project_qt6_migration_assessment) or a stdext shim header.
+    runs-on: windows-2025
     permissions:
       contents: read
       issues: write
