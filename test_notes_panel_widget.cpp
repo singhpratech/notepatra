@@ -842,6 +842,59 @@ int main(int argc, char *argv[]) {
                !ed || ed->toPlainText() == before);
     }
 
+    // ── 22b. Extract applies to the LAUNCH note, never a switched-to note ─
+    // H5 — the finished lambda captured no path, so a reply that lands after
+    // the user switches notes wrote note A's extract into note B's body +
+    // file. Contract: an extract launched on A, answered while B is current,
+    // is refused (not applied to B). The fix pins launchPath through the apply.
+    std::printf("\n--- 22b. Extract applies to launch note, not switched-to note ---\n");
+    {
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        auto newestHtml = [&]() {
+            const QFileInfoList l = QDir(panel.inboxFolder())
+                .entryInfoList(QStringList() << "*.html", QDir::Files, QDir::Time);
+            return l.isEmpty() ? QString() : l.first().absoluteFilePath();
+        };
+        panel.newMeetingNote(); QApplication::processEvents();
+        if (ed) ed->setPlainText(QStringLiteral("NOTE_A_BODY"));
+        panel.saveCurrentNote(); QApplication::processEvents();
+        const QString pathA = newestHtml();
+
+        panel.newMeetingNote(); QApplication::processEvents();
+        if (ed) ed->setPlainText(QStringLiteral("NOTE_B_BODY"));
+        panel.saveCurrentNote(); QApplication::processEvents();
+        const QString pathB = newestHtml();        // B is now the CURRENT note
+        EXPECT("two distinct notes created", pathA != pathB && !pathA.isEmpty());
+
+        const QString fakeResponse = QStringLiteral(
+            "{\"summary\":\"A's sync.\",\"actions\":[{\"text\":\"WRONG_NOTE_ACTION\","
+            "\"owner\":\"@p\",\"due\":\"2026-12-25T10:00\"}],"
+            "\"decisions\":[],\"questions\":[],\"risks\":[]}");
+
+        // The launch-note mismatch raises a QMessageBox::information; dismiss it.
+        bool sawRefusal = false;
+        QTimer::singleShot(150, [&sawRefusal]() {
+            for (QWidget *w : QApplication::topLevelWidgets())
+                if (auto *mb = qobject_cast<QMessageBox *>(w))
+                    if (mb->isVisible()) {
+                        sawRefusal = true;
+                        mb->accept();
+                    }
+        });
+        auto done22b = armDialogWatchdog();
+        // The model answering for A while B is current.
+        panel.showExtractResult(fakeResponse, QStringLiteral("test-model"),
+                                0, 0, pathA);
+        *done22b = true;
+        QApplication::processEvents();
+
+        EXPECT("mid-flight note switch was refused (info box shown)", sawRefusal);
+        EXPECT("A's extract did NOT land in B's editor (FAILS on HEAD)",
+               ed && !ed->toPlainText().contains(QStringLiteral("WRONG_NOTE_ACTION")));
+        EXPECT("A's extract did NOT land in B's file",
+               !readAll(pathB).contains(QStringLiteral("WRONG_NOTE_ACTION")));
+    }
+
     // ── 23. Extract flags already-scheduled + Remind defaults (v0.1.98) ──
     // Re-running Extract must not silently duplicate: setExistingReminders()
     // default-unchecks any action that fuzzy-matches an existing reminder and
@@ -1229,6 +1282,54 @@ int main(int argc, char *argv[]) {
             QFileDevice::WriteOwner | QFileDevice::ExeOwner);
     }
 
+    // ── 29b. Todos-checklist nav after a failed save guards the delta ──
+    // C1 — openTodosChecklist() flushes then setPlainText()s the checklist
+    // body. On HEAD it skipped the M2c guard, so a failed flush meant the
+    // ONLY copy of the unsaved delta was destroyed with no prompt. Contract:
+    // the same Stay/Discard/Save-a-copy modal a note-switch uses must fire,
+    // and Stay keeps the delta.
+    std::printf("\n--- 29b. Todos-checklist nav after failed save guards delta ---\n");
+    {
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        panel.newMeetingNote(); QApplication::processEvents();
+        if (ed) ed->setPlainText(QStringLiteral("CHECKLIST_GUARD_DELTA"));
+        QApplication::processEvents();
+
+        const QString inbox = panel.inboxFolder();
+        QFile::setPermissions(inbox,
+            QFileDevice::ReadOwner | QFileDevice::ExeOwner);
+        panel.saveCurrentNote();             // fails — arms the M2c guard
+        QApplication::processEvents();
+
+        auto clickModalButton = [](const QString &needle, bool *clicked) {
+            for (QWidget *w : QApplication::topLevelWidgets()) {
+                auto *mb = qobject_cast<QMessageBox *>(w);
+                if (!mb || !mb->isVisible()) continue;
+                for (QAbstractButton *b : mb->buttons())
+                    if (b->text().contains(needle)) {
+                        if (clicked) *clicked = true;
+                        b->click();
+                        return;
+                    }
+            }
+        };
+
+        bool sawStay = false;
+        QTimer::singleShot(150, [&]() {
+            clickModalButton(QStringLiteral("Stay"), &sawStay);
+        });
+        auto done = armDialogWatchdog();
+        panel.openTodosChecklist();          // the previously-unguarded nav
+        *done = true;
+        QApplication::processEvents();
+        EXPECT("Todos-checklist nav showed the M2c modal (FAILS on HEAD)", sawStay);
+        EXPECT("Stay kept the unsaved delta (not replaced by the checklist body)",
+               ed && ed->toPlainText().contains(QStringLiteral("CHECKLIST_GUARD_DELTA")));
+
+        QFile::setPermissions(inbox, QFileDevice::ReadOwner |
+            QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+    }
+
     // ── 30. Section headers survive save + reload as REAL h2 (M3) ─────
     // The bug: insertSubheader made text bold but never set
     // QTextBlockFormat::headingLevel, so toHtml() saved no <h2> and the
@@ -1550,6 +1651,86 @@ int main(int argc, char *argv[]) {
                    !QFile::exists(panel.inboxFolder() +
                                   "/weekly-sync-platform-team.html"));
             EXPECT("old filename is gone after rename", !QFile::exists(srcPath));
+        }
+    }
+
+    // ── 34b. renaming a note REPATHS its reminders (H6) ───────────────
+    // The rename moved the file + reindexed action rows but never repathed
+    // the synthetic reminder rows, so a reminder still pointed at the dead
+    // old path; clicking it red-errored the editor ("Could not open …") and
+    // cleared m_currentPath. Contract: after a rename the reminder follows
+    // the file and still opens the renamed note.
+    std::printf("\n--- 34b. rename repaths reminders → reminder still opens note ---\n");
+    {
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        panel.newMeetingNote(); QApplication::processEvents();
+        const QString srcPath = newestInboxHtml();
+        EXPECT("created a note to rename+remind", !srcPath.isEmpty());
+        if (ed) ed->insertPlainText(QStringLiteral("\nREMINDER_BODY_42"));
+        panel.saveCurrentNote(); QApplication::processEvents();
+
+        // Schedule a note reminder (default accept = tomorrow 9am → future).
+        QTimer::singleShot(150, [&]() {
+            for (QWidget *w : QApplication::topLevelWidgets())
+                if (auto *d = qobject_cast<QDialog *>(w))
+                    if (d->isVisible()) d->accept();
+        });
+        auto doneR = armDialogWatchdog();
+        panel.promptReminderForNote(srcPath, QStringLiteral("Ship it 42"));
+        *doneR = true;
+        QApplication::processEvents();
+
+        // Rename via the production itemChanged path.
+        QRegExp stampRx(QStringLiteral("^(\\d{4}-\\d{2}-\\d{2}-\\d{6}-)"));
+        stampRx.indexIn(QFileInfo(srcPath).fileName());
+        const QString newAbs = panel.inboxFolder() + "/" + stampRx.cap(1)
+            + QStringLiteral("renamed-reminder-note.html");
+        QTreeWidgetItem *mleaf = meetingLeafForPath(srcPath);
+        EXPECT("found the meeting leaf to rename", mleaf != nullptr);
+        if (mleaf) {
+            mleaf->setText(0, QStringLiteral("Renamed Reminder Note"));
+            for (int i = 0; i < 4; ++i) QApplication::processEvents();
+        }
+        EXPECT("note file was renamed",
+               QFile::exists(newAbs) && !QFile::exists(srcPath));
+
+        // Open a DIFFERENT note so the same-path open guard can't mask the bug.
+        panel.newMeetingNote(); QApplication::processEvents();
+
+        // The reminder leaf must now bind the RENAMED path (repathNote).
+        auto *tree = panel.findChild<QTreeWidget *>(QStringLiteral("noterSidebarTree"));
+        QString remLeafPath; bool sawRemLeaf = false;
+        if (tree)
+            for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+                auto *root = tree->topLevelItem(i);
+                if (!root->text(0).startsWith(QStringLiteral("Reminders"))) continue;
+                for (int s = 0; s < root->childCount(); ++s) {
+                    auto *sect = root->child(s);
+                    for (int l = 0; l < sect->childCount(); ++l) {
+                        auto *leaf = sect->child(l);
+                        if (leaf->data(0, Qt::UserRole).toString()
+                                == QStringLiteral("reminder")
+                            && leaf->text(0).contains(QStringLiteral("Ship it 42"))) {
+                            sawRemLeaf = true;
+                            remLeafPath = leaf->data(0, Qt::UserRole + 1).toString();
+                        }
+                    }
+                }
+            }
+        EXPECT("reminder leaf still present after rename", sawRemLeaf);
+        EXPECT("reminder repathed to the RENAMED note (FAILS on HEAD)",
+               remLeafPath == newAbs);
+
+        // Clicking it (openNoteFile is the path onSidebarItemActivated takes)
+        // opens the renamed note — not a 'Could not open' read error.
+        if (!remLeafPath.isEmpty()) {
+            panel.openNoteFile(remLeafPath);
+            QApplication::processEvents();
+            EXPECT("reminder click opens the renamed note body",
+                   ed && ed->toPlainText().contains(QStringLiteral("REMINDER_BODY_42")));
+            EXPECT("editor not stuck in a read-error state",
+                   ed && !ed->isReadOnly() &&
+                   !ed->toPlainText().contains(QStringLiteral("Could not open")));
         }
     }
 
@@ -2054,6 +2235,115 @@ int main(int argc, char *argv[]) {
             EXPECT("original STILL holds the external version afterwards",
                    readAll(p37).contains(QStringLiteral("EXTERNAL_BODY_37")) &&
                    !readAll(p37).contains(QStringLiteral("MORE_AFTER_CONFLICT_37")));
+        }
+    }
+
+    // ── 46b. conflict raised by a NAVIGATION flush still shows the banner ─
+    // H2 (A7) — openNoteFile(Y) flushes a dirty X; if X changed on disk the
+    // flush rescues it to a conflict copy AND raises the banner, but the
+    // clean load of Y then ran noteSaveSucceeded() in the SAME synchronous
+    // stack, hiding the banner before it ever painted. Contract: after Y
+    // loads, the conflict banner is still visible and the delta was rescued.
+    std::printf("\n--- 46b. conflict during a navigation flush still shows banner ---\n");
+    {
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        QWidget *banner = panel.findChild<QWidget *>(
+            QStringLiteral("noterSaveFailBanner"));
+        const QString pX = QDir(panel.inboxFolder())
+            .absoluteFilePath(QStringLiteral("2026-03-03-101010-nav-conflict-X.html"));
+        const QString pY = QDir(panel.inboxFolder())
+            .absoluteFilePath(QStringLiteral("2026-03-03-101011-nav-conflict-Y.html"));
+        {
+            QFile f(pX); f.open(QIODevice::WriteOnly);
+            f.write("<html><body><p>X_MINE_BODY</p></body></html>");
+        }
+        {
+            QFile f(pY); f.open(QIODevice::WriteOnly);
+            f.write("<html><body><p>Y_DISK_BODY</p></body></html>");
+        }
+        EXPECT("editor + banner present for nav-conflict test", ed && banner);
+        if (ed && banner) {
+            panel.openNoteFile(pX);                    // records X's disk stamp
+            QApplication::processEvents();
+            ed->insertPlainText(QStringLiteral("\nX_TYPED_DELTA"));
+            QApplication::processEvents();
+            {                                          // external rewrite of X
+                QFile f(pX);
+                f.open(QIODevice::WriteOnly | QIODevice::Truncate);
+                f.write("<html><body><p>X_EXTERNAL_BODY</p></body></html>");
+            }
+            panel.openNoteFile(pY);                    // flush of X conflicts, then load Y
+            QApplication::processEvents();
+
+            EXPECT("conflict banner SURVIVED the load of Y (FAILS on HEAD)",
+                   !banner->isHidden());
+            bool saysConflict = false;
+            for (QLabel *l : banner->findChildren<QLabel *>())
+                if (l->text().contains(QStringLiteral("Note changed on disk")))
+                    saysConflict = true;
+            EXPECT("banner still explains the conflict", saysConflict);
+            EXPECT("navigation still completed (Y is open)",
+                   ed->toPlainText().contains(QStringLiteral("Y_DISK_BODY")));
+            QString confPath;
+            for (const QString &c : QDir(panel.inboxFolder()).entryList(
+                     QStringList() << QStringLiteral("*nav-conflict-X (conflict*"),
+                     QDir::Files))
+                if (readAll(panel.inboxFolder() + "/" + c)
+                        .contains(QStringLiteral("X_TYPED_DELTA")))
+                    confPath = panel.inboxFolder() + "/" + c;
+            EXPECT("X's unsaved delta was rescued to a conflict copy, not lost",
+                   !confPath.isEmpty());
+        }
+    }
+
+    // ── 46c. conflict rescue keeps the note's real display title (H3) ────
+    // The conflict-copy rescue stamped m_currentTitle with the raw filename
+    // stem ("…-weekly-sync (conflict …)"), so the NEXT save's withTitleMeta
+    // burned that ugly stem into notepatra-title. Contract: the rescued copy
+    // keeps the note's real title ("Weekly Sync").
+    std::printf("\n--- 46c. conflict rescue keeps the real display title ---\n");
+    {
+        QTextEdit *ed = panel.findChild<QTextEdit *>();
+        const QString pW = QDir(panel.inboxFolder())
+            .absoluteFilePath(QStringLiteral("2026-06-06-192233-weekly-sync.html"));
+        {
+            QFile f(pW); f.open(QIODevice::WriteOnly);
+            f.write("<html><head><meta name=\"notepatra-title\" "
+                    "content=\"Weekly Sync\"></head>"
+                    "<body><h1>Weekly Sync</h1><p>WS_BODY</p></body></html>");
+        }
+        if (ed) {
+            panel.openNoteFile(pW);
+            QApplication::processEvents();
+            {                                          // external rewrite → conflict
+                QFile f(pW);
+                f.open(QIODevice::WriteOnly | QIODevice::Truncate);
+                f.write("<html><body><p>WS_EXTERNAL</p></body></html>");
+            }
+            ed->insertPlainText(QStringLiteral("\nEDIT_A"));
+            QApplication::processEvents();
+            panel.saveCurrentNote();                   // rescue → conflict copy
+            QApplication::processEvents();
+            ed->insertPlainText(QStringLiteral("\nEDIT_B"));
+            QApplication::processEvents();
+            panel.saveCurrentNote();                   // the formerly-corrupting 2nd save
+            QApplication::processEvents();
+
+            QString confPath;
+            for (const QString &c : QDir(panel.inboxFolder()).entryList(
+                     QStringList() << QStringLiteral("*weekly-sync (conflict*"),
+                     QDir::Files))
+                if (readAll(panel.inboxFolder() + "/" + c)
+                        .contains(QStringLiteral("EDIT_A")))
+                    confPath = panel.inboxFolder() + "/" + c;
+            EXPECT("conflict copy located", !confPath.isEmpty());
+            if (!confPath.isEmpty()) {
+                const QString meta = NotesStorage::titleMetaIn(readAll(confPath));
+                EXPECT("rescued copy keeps the real title 'Weekly Sync' (FAILS on HEAD)",
+                       meta == QStringLiteral("Weekly Sync"));
+                EXPECT("rescued copy title is NOT the raw '(conflict …)' stem",
+                       !meta.contains(QStringLiteral("conflict")));
+            }
         }
     }
 
@@ -2924,6 +3214,38 @@ int main(int argc, char *argv[]) {
                banner && !banner->isVisible());
     }
 
+    // ── 61b. reminder banner visible on empty page (no note open) ────
+    // Contract: a reminder replayed/fired while Noter is open with NO note
+    // selected is actually SHOWN (banner visible) on the empty page. Pre-fix
+    // the banner lived on the hidden editor stack page → invisible.
+    std::printf("\n--- 61b. reminder banner visible on empty page ---\n");
+    {
+        NotesTodos todos(tmpHome.path() + "/shared4b-todos.db");
+        EXPECT("shared todos open()", todos.open(nullptr));
+        NotesReminderEngine engine(&todos);
+        NotesPanel shared(nullptr, &todos, &engine);
+        shared.show();
+        QApplication::processEvents();        // empty page current; NO note opened
+        TodoRow row;
+        row.id = QStringLiteral("empty-replay-1");
+        row.text = QStringLiteral("fired while no note open");
+        row.sourceFile = shared.inboxFolder() + "/empty-replay.html";
+        shared.replayReminders({row});
+        QApplication::processEvents();
+        auto *banner = shared.findChild<QWidget *>(QStringLiteral("noterReminderBanner"));
+        EXPECT("banner exists", banner != nullptr);
+        // THE user-visible contract (FAILS pre-fix: banner lived on the hidden editor page):
+        EXPECT("banner VISIBLE on empty page (no note open)", banner && banner->isVisible());
+        bool labelHasText = false;
+        if (banner)
+            for (QLabel *l : banner->findChildren<QLabel *>())
+                if (l->text().contains(QStringLiteral("fired while no note open"))) labelHasText = true;
+        EXPECT("banner carries the reminder text", labelHasText);
+        // Shape guard: the fix must NOT yank the user into a blank editor; the empty welcome page stays current.
+        auto *emptyTitle = shared.findChild<QLabel *>(QStringLiteral("noterEmptyTitle"));
+        EXPECT("empty welcome page still shown behind the banner", emptyTitle && emptyTitle->isVisible());
+    }
+
     // ══ A3 — title identity (sections 62+; spec integration tests 7-17).
     // The notepatra-title head meta is the on-disk title SSOT; every label
     // reads the resolver; H1 *edits* adopt at save time; sidebar renames
@@ -3441,9 +3763,9 @@ int main(int argc, char *argv[]) {
     // ── 73. A5 theme parity — applyNoterTheme restyles the chrome ────
     // Contract: Dark/Monokai swap every chrome stylesheet; switching back
     // to Light restores the construction-time stylesheets BYTE-IDENTICAL
-    // (the zero-regression contract for the default look); the checklist
-    // done/undone char formats re-derive per theme WITHOUT dirtying the
-    // note; onThemeChanged() follows Config::theme.
+    // (the zero-regression contract for the default look); checklist colours
+    // follow the theme via inherited ink (undone) + the baked done format,
+    // WITHOUT a document edit; onThemeChanged() follows Config::theme.
     std::printf("\n--- 73. theme parity (applyNoterTheme) ---\n");
     {
         NotesPanel themed;
@@ -3492,26 +3814,9 @@ int main(int argc, char *argv[]) {
                 if (b->styleSheet().contains(QStringLiteral("#92400e")))
                     darkBannerBtn = true;
         EXPECT("Dark restyles the reminder-banner buttons", darkBannerBtn);
-        // Checklist formats re-derived for Dark; document text untouched.
-        {
-            bool doneIsDark = false, openIsDark = false;
-            for (QTextBlock b = ed->document()->begin(); b.isValid(); b = b.next()) {
-                if (b.text().startsWith(QStringLiteral("✓ theme done"))) {
-                    QTextCursor c(ed->document());
-                    c.setPosition(b.position() + 3);
-                    doneIsDark = c.charFormat().foreground().color() ==
-                                 QColor(QStringLiteral("#6e7681"));
-                }
-                if (b.text().startsWith(QStringLiteral("☐ theme open"))) {
-                    QTextCursor c(ed->document());
-                    c.setPosition(b.position() + 3);
-                    openIsDark = c.charFormat().foreground().color() ==
-                                 QColor(QStringLiteral("#d4d4d4"));
-                }
-            }
-            EXPECT("Dark checklist done line uses the dark muted ink", doneIsDark);
-            EXPECT("Dark checklist open line uses the dark body ink", openIsDark);
-        }
+        // Checklist colours now follow the theme via inherited ink (undone) +
+        // the baked done format — NO per-line document edit (see Test 74 for
+        // the undo/redo-preservation contract). The note text stays untouched.
         EXPECT("theme switch leaves the note text untouched",
                ed->toPlainText() == plainBefore);
 
@@ -3538,6 +3843,37 @@ int main(int argc, char *argv[]) {
         auto *hint = themed.findChild<QLabel *>(QStringLiteral("noterSavedHint"));
         EXPECT("hint back on the page QSS after restore",
                hint && hint->styleSheet().isEmpty());
+    }
+
+    // ── 74. theme switch preserves the undo/redo journal on a checklist note ──
+    // Contract: switching the app theme performs ZERO QTextDocument edits, so
+    // an edit the user had undone is still redoable afterwards (the old
+    // on-switch char-format re-merge truncated the redo stack).
+    std::printf("\n--- 74. theme switch preserves undo/redo on a checklist note ---\n");
+    {
+        NotesPanel panel; panel.show();
+        panel.newMeetingNote();              // openNoteFile sets m_currentPath + clean journal
+        QApplication::processEvents();
+        auto *ed = panel.findChild<QTextEdit *>(QStringLiteral("noterEditor"));
+        EXPECT("editor found", ed != nullptr);
+        if (ed) {
+            QTextCursor cur = ed->textCursor();
+            cur.movePosition(QTextCursor::End);
+            cur.insertText(QStringLiteral("\n☐ task one\n✓ task two"));  // checklist lines = the bug trigger
+            ed->document()->clearUndoRedoStacks();         // mimic a freshly-loaded note: clean journal
+            cur.movePosition(QTextCursor::End);
+            cur.insertText(QStringLiteral("URGENT"));       // the user's real edit
+            ed->undo();                                     // Ctrl+Z → URGENT removed, redo now armed
+            EXPECT("precondition: the undone edit is redoable before the switch",
+                   ed->document()->isRedoAvailable());
+            panel.applyNoterTheme(QStringLiteral("Dark")); // cosmetic theme switch on the checklist note
+            QApplication::processEvents();
+            EXPECT("theme switch preserves the user's redo (no document edit)",
+                   ed->document()->isRedoAvailable());      // OLD code: false (redo truncated)
+            ed->redo();
+            EXPECT("Redo restores the user's edit after a theme switch",
+                   ed->toPlainText().contains(QStringLiteral("URGENT")));  // OLD code: URGENT gone
+        }
     }
 
     // ── Summary ───────────────────────────────────────────────────

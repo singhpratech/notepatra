@@ -1668,10 +1668,16 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
         //     file region legitimately holds them (e.g. C string literals)
         //     and new_lines escapes are real content, so they are kept.
         const QString newText = h.value("new_lines").toString();
-        bool decodeNew = false;
-        if (containsLiteralEscapes(newText)) {
-            decodeNew = unescapedOld || !containsLiteralEscapes(oldText);
-        }
+        // Decode new_lines ONLY when THIS hunk's old_lines themselves had to be
+        // unescaped to match (unescapedOld) — direct, per-hunk proof the whole
+        // hunk was double-escaped. A clean-matching old region is NOT such proof:
+        // a correct model inserting a line that legitimately contains a C escape
+        // (printf("x\n"), a regex \t, a quoted \") produces literal escapes in
+        // new_lines over a clean old region, and decoding them would split the
+        // string literal across a real newline = silent non-compiling output
+        // through the primary agent edit path. When in doubt, write byte-exact
+        // (the pre-lint phase-2 contract).
+        const bool decodeNew = unescapedOld && containsLiteralEscapes(newText);
         const QStringList effNewLines =
             splitHunkLines(decodeNew ? decodeLiteralEscapes(newText) : newText);
         if (decodeNew) {

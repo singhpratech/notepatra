@@ -112,7 +112,8 @@ public:
     // unchanged): the dialog shows the honest coverage notice and the
     // persisted caption records it.
     void showExtractResult(const QString &response, const QString &model,
-                           int wordsUsed = 0, int wordsTotal = 0);
+                           int wordsUsed = 0, int wordsTotal = 0,
+                           const QString &launchPath = QString());
 
     // v0.1.112 — Extract reliability layer. With the backend down the
     // generate() stream never emits finished OR error, so pre-v0.1.112 the
@@ -309,6 +310,12 @@ private:
     void showSaveFailureBanner();
     void hideSaveFailureBanner();
     bool promptSaveCopyAs();   // returns true when a copy was written
+    // M2c — the Stay / Discard / Save-a-copy… guard shared by EVERY
+    // navigate-away path (renderNoteAtPath note-switch + openTodosChecklist).
+    // Returns false when the caller must ABORT (user chose Stay, or
+    // "Save a copy…" was cancelled/failed) so the dirty delta stays in the
+    // editor; true when it is safe to replace the editor content.
+    bool confirmLeaveAfterFailedSave();
 
     // ── external-edit conflict guard (A7) ──────────────────────────────
     // Zero mtime checks used to exist: an externally-modified note (sync
@@ -416,6 +423,14 @@ private:
     QPointer<OllamaClient> m_extractClient;
     QPointer<QTimer>       m_extractWatchdog;
     bool                   m_extractBusy { false };
+    // v0.1.113 — single-flight LATCH spanning the synchronous pre-flight
+    // probe. isAvailable() (ollama.cpp) spins a nested event loop that
+    // drains queued Ctrl+Alt+E / Extract-button activations; m_extractBusy
+    // is set only AFTER the probe, so without this latch a re-entrant
+    // endMeetingSweep would stack a 2nd request + a 2nd override cursor
+    // (one leaks app-wide forever). Cleared on every exit; once the request
+    // is live, m_extractBusy owns single-flight.
+    bool                   m_extractStarting { false };
     // v0.1.98 — when the open document is the Todos checklist we edit it as
     // plain ☐/✓ lines (which round-trip through QTextEdit cleanly, unlike
     // the b-act data-* divs). m_checklistBlocks holds the blocks parsed on
@@ -452,6 +467,12 @@ private:
     bool           m_lastSaveFailed     { false };
     int            m_saveFailureCount   { 0 };
     bool           m_saveFailBannerShown { false };
+    // Bug2 (A7) — a conflict notice raised by a navigation FLUSH must
+    // survive the clean load of the target note in the SAME synchronous
+    // stack (renderNoteAtPath's success path would otherwise hide the
+    // banner before it ever paints). Set by noteSaveConflicted; consumed
+    // once by the next clean load; cleared by the next save outcome.
+    bool           m_conflictNoticePending { false };
     QString        m_lastSaveError;
     bool           m_readError          { false };
 

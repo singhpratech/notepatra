@@ -86,6 +86,13 @@ public:
     // Remove all rows for a deleted note file.
     void purgeNote(const QString &absolutePath);
 
+    // Rename-analog of purgeNote: move EVERY row for a note (HTML action
+    // todos AND the '__'-prefixed synthetic reminder rows) from its old
+    // path to its new path. reindexNote re-points action rows by id but
+    // SKIPS synthetic reminder rows, so without this a reminder set on a
+    // renamed note is stranded at the dead old source_file.
+    void repathNote(const QString &oldPath, const QString &newPath);
+
     // Read-side queries — used by the Todos slide-over UI.
     QVector<TodoRow> dueGroupOverdue(const QDateTime &now) const;  // dueAt < now AND status="open"
     QVector<TodoRow> dueGroupToday(const QDateTime &now) const;    // today (00:00 - 23:59) AND open

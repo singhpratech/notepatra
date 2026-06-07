@@ -893,20 +893,81 @@ static QString asciiFold(const QString &in) {
     return out;
 }
 
+// v0.1.112 (retrieval-redos) — strip <head>/<style>/<script> regions in a
+// SINGLE linear forward pass built ENTIRELY from QString::indexOf (which
+// searches from a start offset WITHOUT re-scanning the prefix). The old form
+// removed two DotMatchesEverything regexes — <head\b[^>]*>.*?</head\s*> and
+// <(style|script)\b[^>]*>.*?</\1\s*> — whose lazy .*? re-scanned to
+// end-of-string at EVERY opening tag, so a malformed/synced/truncated
+// multi-block .html with many UNCLOSED opens cost O(opens × bytes): a 2MB note
+// froze the GUI thread for ~150s on the body-search path. NOTE: an early
+// rewrite used QRegularExpression::match(in, offset) in the loop — that ALSO
+// went quadratic (~125s on a 2MB CLOSED-style flood), because the offset form
+// still re-validates the whole subject per call. indexOf does not. Each open
+// makes exactly one decision — find its matching close (forward search) or, if
+// unclosed, drop the remainder and stop — so total work is O(n). Closed
+// regions strip byte-identically to the old regexes: same tag names, same
+// </name\s*> close form, same case-insensitivity, same \b word boundary (so
+// <header>/<styled>/<scripts> are NOT treated as containers).
+static QString stripContainerRegions(const QString &in) {
+    static const QString kNames[3] = {
+        QStringLiteral("head"), QStringLiteral("style"), QStringLiteral("script")
+    };
+    QString out;
+    out.reserve(in.size());
+    const int n = in.size();
+    int i = 0;
+    while (i < n) {
+        const int lt = in.indexOf(QLatin1Char('<'), i);
+        if (lt < 0) { out += in.mid(i); break; }   // no more tags — keep the tail
+        // Is this '<' the start of a <head|style|script container open?
+        int which = -1;
+        for (int k = 0; k < 3; ++k) {
+            const int afterName = lt + 1 + kNames[k].size();
+            if (afterName > n) continue;
+            if (in.mid(lt + 1, kNames[k].size())
+                    .compare(kNames[k], Qt::CaseInsensitive) != 0)
+                continue;
+            // \b — the char after the name must NOT be a word char (end of
+            // input counts as a boundary). Keeps <styled>/<scripts>/<header>.
+            if (afterName < n) {
+                const QChar c = in.at(afterName);
+                if (c.isLetterOrNumber() || c == QLatin1Char('_')) continue;
+            }
+            which = k;
+            break;
+        }
+        if (which < 0) {                            // ordinary tag — keep '<' and move on
+            out += in.mid(i, lt + 1 - i);           // (kTag strips it downstream)
+            i = lt + 1;
+            continue;
+        }
+        out += in.mid(i, lt - i);                   // keep text before the container open
+        const int gt = in.indexOf(QLatin1Char('>'), lt + 1);
+        if (gt < 0) { out += in.mid(lt); break; }   // truncated open — keep residue
+        // Find the matching close </name\s*> (replicates the \1 backreference).
+        const QString closePrefix = QStringLiteral("</") + kNames[which];
+        int regionEnd = -1;
+        int from = gt + 1;
+        while (true) {
+            const int cl = in.indexOf(closePrefix, from, Qt::CaseInsensitive);
+            if (cl < 0) break;                      // no real close anywhere
+            int p = cl + closePrefix.size();        // require optional \s* then '>'
+            while (p < n && in.at(p).isSpace()) ++p;
+            if (p < n && in.at(p) == QLatin1Char('>')) { regionEnd = p + 1; break; }
+            from = cl + closePrefix.size();         // "</styled>" etc. — not a close, keep looking
+        }
+        if (regionEnd < 0) break;                   // UNCLOSED — drop remainder, stop (linearity guard)
+        i = regionEnd;                              // skip the whole region
+    }
+    return out;
+}
+
 // v0.1.112 — see the contract comment in notes_storage.h. Pure, QtCore-only.
 QString NotesStorage::plainTextForSearch(const QString &fullHtml) {
     QString s = fullHtml;
-    static const QRegularExpression kHead(
-        QStringLiteral("<head\\b[^>]*>.*?</head\\s*>"),
-        QRegularExpression::CaseInsensitiveOption |
-        QRegularExpression::DotMatchesEverythingOption);
-    static const QRegularExpression kStyleScript(
-        QStringLiteral("<(style|script)\\b[^>]*>.*?</\\1\\s*>"),
-        QRegularExpression::CaseInsensitiveOption |
-        QRegularExpression::DotMatchesEverythingOption);
     static const QRegularExpression kTag(QStringLiteral("<[^>]*>"));
-    s.remove(kHead);
-    s.remove(kStyleScript);
+    s = stripContainerRegions(s);
     s.replace(kTag, QStringLiteral(" "));
     s.replace(QStringLiteral("&nbsp;"), QStringLiteral(" "));
     s.replace(QStringLiteral("&lt;"),   QStringLiteral("<"));

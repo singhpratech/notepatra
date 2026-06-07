@@ -88,6 +88,7 @@ private slots:
     void plainText_attributesNeverLeak();
     void plainText_casePreserved();
     void plainText_emptyAndTagOnly();
+    void plainText_redosFloodStaysBounded();
     // ── durability budget (A7) ──
     void durability_oneMbSave_latencyBudget();
     // ── title identity (notepatra-title meta = display-title SSOT) ──
@@ -754,6 +755,37 @@ void TestNotesStorage::plainText_emptyAndTagOnly() {
     QCOMPARE(NotesStorage::plainTextForSearch(QString()), QString());
     QCOMPARE(NotesStorage::plainTextForSearch(QStringLiteral("<p></p>")),
              QString());
+}
+
+void TestNotesStorage::plainText_redosFloodStaysBounded() {
+    // retrieval-redos: a malformed/2MB-truncated note with thousands of
+    // UNCLOSED <style> opens drove plainTextForSearch O(n^2) — a minutes-
+    // long GUI-thread freeze on the body-search keystroke + prewarm paths.
+    // Contract: extraction is bounded (linear) AND real body text before
+    // the malformed region is still searchable.
+    QString html = QStringLiteral("<p>findme</p>");
+    const QString openTok = QStringLiteral("<style>x");          // unclosed, repeated
+    html += openTok.repeated(2 * 1024 * 1024 / openTok.size());  // ~2MB flood
+    QElapsedTimer t; t.start();
+    const QString plain = NotesStorage::plainTextForSearch(html);
+    const qint64 ms = t.elapsed();
+    // Linear strip is ~milliseconds; the unfixed regex was ~150,000 ms, so
+    // the generous 1s ceiling fails loudly on a regression yet is safe on
+    // slow CI runners.
+    QVERIFY2(ms < 1000, qPrintable(QStringLiteral(
+        "plainTextForSearch took %1 ms on a 2MB unclosed-style flood").arg(ms)));
+    QVERIFY(plain.contains(QStringLiteral("findme")));   // body before the flood survives
+    // A CLOSED flood at the same scale must still strip cleanly AND stay
+    // bounded (guards the new scanner's closed-region path under scale).
+    QString closed;
+    closed.reserve(2 * 1024 * 1024);
+    const QString closedTok = QStringLiteral("<style>x</style>");
+    closed += closedTok.repeated(2 * 1024 * 1024 / closedTok.size());
+    closed += QStringLiteral("<p>keepme</p>");
+    QElapsedTimer t2; t2.start();
+    const QString plain2 = NotesStorage::plainTextForSearch(closed);
+    QVERIFY2(t2.elapsed() < 1000, "closed-flood strip exceeded 1s");
+    QCOMPARE(plain2, QStringLiteral("keepme"));
 }
 
 // ═══════════════════════════════════════════════════════════════════════

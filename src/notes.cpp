@@ -892,12 +892,35 @@ void NotesPanel::buildUi() {
     m_sidebar = buildSidebar();
     m_splitter->addWidget(m_sidebar);
 
-    m_rightStack = new QStackedWidget(this);
+    // Right pane = page stack with the reminder banner PINNED ABOVE it.
+    // buildEditorPage() builds the banner into the editor page, but a
+    // QStackedWidget hides its non-current page -- so the banner was
+    // invisible whenever the empty page was current (the default on open and
+    // the exact state during replayReminders()). Host it in a container above
+    // the stack so a fired/replayed reminder shows over BOTH pages.
+    auto *rightSide = new QWidget(this);
+    auto *rv = new QVBoxLayout(rightSide);
+    rv->setContentsMargins(0, 0, 0, 0);
+    rv->setSpacing(0);
+
+    m_rightStack = new QStackedWidget(rightSide);
     m_emptyPage = buildEmptyPage();
-    m_editorPage = buildEditorPage();
+    m_editorPage = buildEditorPage();          // creates m_reminderBanner
     m_rightStack->addWidget(m_emptyPage);
     m_rightStack->addWidget(m_editorPage);
-    m_splitter->addWidget(m_rightStack);
+
+    // Lift the reminder banner out of the editor page's layout (added there
+    // as its first row) and re-host it above the stack. removeWidget +
+    // addWidget reparents it to rightSide; the save-failure banner stays on
+    // the editor page (it only matters while a note is being edited).
+    if (m_reminderBanner) {
+        if (QLayout *epl = m_editorPage->layout())
+            epl->removeWidget(m_reminderBanner);
+        rv->addWidget(m_reminderBanner);
+    }
+    rv->addWidget(m_rightStack, 1);
+
+    m_splitter->addWidget(rightSide);
 
     m_splitter->setStretchFactor(0, 0);
     m_splitter->setStretchFactor(1, 1);
@@ -1080,6 +1103,13 @@ QWidget *NotesPanel::buildSidebar() {
                     // rename (its 2s reload loop reads the path each tick).
                     if (m_popOut && m_popOut->notePath() == payload)
                         m_popOut->setNotePath(newAbs);
+                    // M5/A3 — reminders + todos key off source_file. Follow
+                    // the file to newAbs so a reminder set on this note still
+                    // opens it: the open-note save below re-points HTML action
+                    // rows via reindexNote, but that SKIPS the synthetic
+                    // reminder rows, which would otherwise strand at the dead
+                    // path and red-error the editor on the next reminder click.
+                    if (m_todos) m_todos->repathNote(payload, newAbs);
                     }   // doRename
 
                     // ── A3 title commit — disk rename FIRST, title SECOND,
@@ -1707,18 +1737,18 @@ void NotesPanel::applyNoterTheme(const QString &themeName) {
         m_savedHint->setStyleSheet(QStringLiteral(
             "color: %1; font-weight: 600; padding-right: 8px;").arg(m_pal.danger));
 
-    // ── checklist char formats in the OPEN document ─────────────────
-    // Runtime-only restyle (sanitizer strips it on save); guard exactly
-    // like the load path so it can't mark the note dirty.
-    if (m_editor && !m_readError &&
-        !m_editor->document()->isEmpty() && !m_currentPath.isEmpty()) {
-        const bool wasLoading = m_loadingInProgress;
-        m_loadingInProgress = true;
-        m_editor->blockSignals(true);
-        restyleChecklistLines();
-        m_editor->blockSignals(false);
-        m_loadingInProgress = wasLoading;
-    }
+    // ── checklist colours follow the theme WITHOUT a document edit ──
+    // Undone (☐) lines carry NO explicit foreground, so they inherit the
+    // editor's themed default ink (editorPageStyle's `color:`, re-issued
+    // above) and re-tint automatically with the QSS swap. Done (✓) lines
+    // keep their baked muted+strike format from load/toggle. We must NOT
+    // re-merge those formats here: the live theme switch runs IN PLACE (no
+    // reload, so the load path's clearUndoRedoStacks never compensates) and
+    // mergeCharFormat is an undo-recorded QTextDocument edit — it would
+    // truncate the user's redo stack and push junk undo entries on every
+    // Light↔Dark↔Monokai switch. blockSignals gates Qt SIGNALS, not the
+    // undo journal. A done line's mid-grey lagging until the next reload is
+    // cosmetic and always legible; a corrupted undo journal is not.
 
     // ── sidebar item foregrounds (muted sections, overdue red) ──────
     refreshSidebar();
@@ -2643,35 +2673,43 @@ void NotesPanel::openNoteFile(const QString &absolutePath) {
     refreshSidebar();
 }
 
+// M2c — the Stay / Discard / Save-a-copy… guard shared by every
+// navigate-away path. Returns false when the caller must ABORT (Stay, or a
+// cancelled/failed "Save a copy…") so the dirty delta stays in the editor.
+bool NotesPanel::confirmLeaveAfterFailedSave() {
+    if (!(m_dirty && m_lastSaveFailed)) return true;
+    QMessageBox box(this);
+    box.setWindowTitle(tr("Unsaved changes"));
+    box.setIcon(QMessageBox::Warning);
+    box.setText(tr("\"%1\" could not be saved (%2).\n"
+                   "Leaving now will discard those changes.")
+                    .arg(m_currentTitle.isEmpty() ? tr("This note")
+                                                  : m_currentTitle,
+                         m_lastSaveError.isEmpty() ? tr("disk write failed")
+                                                   : m_lastSaveError));
+    QPushButton *stayBtn    = box.addButton(tr("Stay"),
+                                            QMessageBox::RejectRole);
+    QPushButton *discardBtn = box.addButton(tr("Discard changes"),
+                                            QMessageBox::DestructiveRole);
+    QPushButton *copyBtn    = box.addButton(tr("Save a copy…"),
+                                            QMessageBox::ActionRole);
+    Q_UNUSED(discardBtn);
+    box.setDefaultButton(stayBtn);
+    box.exec();
+    if (box.clickedButton() == stayBtn) return false;
+    if (box.clickedButton() == copyBtn && !promptSaveCopyAs())
+        return false;   // copy cancelled / failed → stay, delta intact
+    return true;
+}
+
 void NotesPanel::renderNoteAtPath(const QString &absolutePath) {
     if (absolutePath.isEmpty() || !m_editor) return;
 
     // M2 (c) — if the open note has an unsaved delta whose last save
     // FAILED, replacing the editor content below would destroy the ONLY
-    // copy of those edits. Ask first: Stay / Discard / Save a copy….
-    if (m_dirty && m_lastSaveFailed) {
-        QMessageBox box(this);
-        box.setWindowTitle(tr("Unsaved changes"));
-        box.setIcon(QMessageBox::Warning);
-        box.setText(tr("\"%1\" could not be saved (%2).\n"
-                       "Leaving now will discard those changes.")
-                        .arg(m_currentTitle.isEmpty() ? tr("This note")
-                                                      : m_currentTitle,
-                             m_lastSaveError.isEmpty() ? tr("disk write failed")
-                                                       : m_lastSaveError));
-        QPushButton *stayBtn    = box.addButton(tr("Stay"),
-                                                QMessageBox::RejectRole);
-        QPushButton *discardBtn = box.addButton(tr("Discard changes"),
-                                                QMessageBox::DestructiveRole);
-        QPushButton *copyBtn    = box.addButton(tr("Save a copy…"),
-                                                QMessageBox::ActionRole);
-        Q_UNUSED(discardBtn);
-        box.setDefaultButton(stayBtn);
-        box.exec();
-        if (box.clickedButton() == stayBtn) return;
-        if (box.clickedButton() == copyBtn && !promptSaveCopyAs())
-            return;   // copy cancelled / failed → stay, delta intact
-    }
+    // copy of those edits. Ask first: Stay / Discard / Save a copy…. The
+    // same guard now protects the Todos-checklist nav (openTodosChecklist).
+    if (!confirmLeaveAfterFailedSave()) return;
 
     // M2 (b) — propagate readNote's error channel. A locked/missing file
     // used to open as a BLANK editor still bound to the path: one
@@ -2792,7 +2830,21 @@ void NotesPanel::renderNoteAtPath(const QString &absolutePath) {
     recordDiskState(absolutePath);
     // A note loaded cleanly — any earlier failure streak belonged to the
     // previous path. Reset to the normal hint cycle (screen == disk now).
-    noteSaveSucceeded();
+    // Bug2 (A7) — EXCEPT when the navigation flush we just ran rescued the
+    // PREVIOUS note to a conflict copy: calling noteSaveSucceeded() here
+    // would hide that banner inside the same synchronous stack, so the user
+    // would never see the conflict. Reset only the failure streak for this
+    // freshly-loaded clean note and set its hint; leave the banner up.
+    if (m_conflictNoticePending) {
+        m_conflictNoticePending = false;
+        m_lastSaveFailed      = false;
+        m_saveFailureCount    = 0;
+        m_saveFailBannerShown = false;
+        m_lastSaveError.clear();
+        setSavedHintNormal(tr("auto-saved"));
+    } else {
+        noteSaveSucceeded();
+    }
     if (restoredDraft)
         setSavedHintNormal(tr("recovered draft — auto-saves in 5s"));
 
@@ -2873,6 +2925,11 @@ void NotesPanel::openTodosChecklist() {
     if (!m_editor) return;
     // Persist any pending edit to the previously-open note first.
     if (m_dirty && !m_currentPath.isEmpty()) saveCurrentNote();
+    // M2c — that flush can FAIL (read-only dir / full disk), leaving the
+    // ONLY copy of the delta in the editor; the setPlainText below would
+    // destroy it with no prompt and no disk copy. Gate on the same
+    // Stay/Discard/Save-a-copy guard a note-switch uses in renderNoteAtPath.
+    if (!confirmLeaveAfterFailedSave()) return;
 
     const QString path = todosChecklistPath();
     QString html;
@@ -3127,6 +3184,7 @@ void NotesPanel::setSavedHintFailure(const QString &reason) {
 }
 
 void NotesPanel::noteSaveFailed(const QString &err) {
+    m_conflictNoticePending = false;   // a real write failure supersedes it
     m_lastSaveFailed = true;
     ++m_saveFailureCount;
     m_lastSaveError = err.simplified();
@@ -3142,6 +3200,7 @@ void NotesPanel::noteSaveFailed(const QString &err) {
 }
 
 void NotesPanel::noteSaveSucceeded() {
+    m_conflictNoticePending = false;   // a clean save clears any pending notice
     m_lastSaveFailed = false;
     m_saveFailureCount = 0;
     m_saveFailBannerShown = false;
@@ -3289,7 +3348,13 @@ void NotesPanel::rescueToConflictCopy(const QString &bodyHtml) {
     // original stays untouched on disk; its sidebar leaf reloads it.
     m_storage->clearDraft(origPath);   // the delta lives in the copy now
     m_currentPath = conflictPath;
-    m_currentTitle = QFileInfo(conflictPath).completeBaseName();
+    // A3 ↔ A7 — m_currentTitle is the resolver DISPLAY title (meta-first),
+    // NEVER the raw filename stem. The conflict body we just wrote carries
+    // the correct notepatra-title meta (computed PRE-rescue from the old
+    // m_currentTitle), so re-resolving from the new path returns the real
+    // title — matching the two renderNoteAtPath sites and keeping the NEXT
+    // save's withTitleMeta + reindexNote honest.
+    m_currentTitle = m_storage->displayTitleForFile(conflictPath);
     emit noteTitleChanged(m_currentTitle);
     recordDiskState(conflictPath);
     m_dirty = false;
@@ -3307,6 +3372,10 @@ void NotesPanel::rescueToConflictCopy(const QString &bodyHtml) {
 
 void NotesPanel::noteSaveConflicted(const QString &origName,
                                     const QString &conflictName) {
+    // Bug2 (A7) — survive a clean load of another note in the SAME nav stack
+    // (renderNoteAtPath's success path would otherwise hide the banner before
+    // it ever paints). Consumed once by the next clean load.
+    m_conflictNoticePending = true;
     // Reuse the M2 surfaces (red hint + banner) with conflict wording —
     // shown immediately: a conflict is never a blip, and silence here is
     // exactly the data-loss class this guard exists to kill.
@@ -3369,7 +3438,9 @@ void NotesPanel::endMeetingSweep() {
     // v0.1.112 — one Extract in flight at a time. Re-triggering (button
     // routes to cancelExtract(); this guards the Ctrl+Alt+E path) used to
     // stack another override cursor + a duplicate network request.
-    if (m_extractBusy) return;
+    // v0.1.113 — m_extractStarting also latches the pre-flight-probe window
+    // (m_extractBusy is set only AFTER the nested-event-loop probe).
+    if (m_extractBusy || m_extractStarting) return;
     if (m_currentPath.isEmpty() || !m_editor) {
         QMessageBox::information(this, tr("Extract"),
                                  tr("Open or create a meeting note first."));
@@ -3423,6 +3494,10 @@ void NotesPanel::endMeetingSweep() {
     // stream emits neither finished nor error (ollama.cpp's silent-hang
     // path), so pre-v0.1.112 the wait cursor stayed forever. Failing fast
     // here costs one /api/tags GET when the backend is up.
+    // v0.1.113 — latch BEFORE the nested-event-loop probe so a second
+    // Extract trigger delivered during it re-enters endMeetingSweep and
+    // hits the guard above instead of starting a second flight.
+    m_extractStarting = true;
     if (!client->isAvailable()) {
         const QString msg = (backend == OllamaClient::Ollama)
             ? tr("Ollama isn't running — start it with: ollama serve")
@@ -3430,6 +3505,7 @@ void NotesPanel::endMeetingSweep() {
                  "settings in the AI panel.").arg(client->baseUrl());
         client->deleteLater();
         QMessageBox::warning(this, tr("Extract"), msg);
+        m_extractStarting = false;
         return;
     }
 
@@ -3445,9 +3521,14 @@ void NotesPanel::endMeetingSweep() {
 
     m_extractClient = client;
     beginExtractBusy();
+    m_extractStarting = false;   // request is live — m_extractBusy owns single-flight
+    // v0.1.113 — PIN the note Extract was launched on. The reply lands up
+    // to ~125s later and the sidebar stays live, so m_currentPath may be a
+    // DIFFERENT note when it does; apply must target the launch note.
+    const QString launchPath = m_currentPath;
 
     connect(client, &OllamaClient::finished, this,
-            [this, client, model, binfo](const QString &response) {
+            [this, client, model, binfo, launchPath](const QString &response) {
                 // v0.1.98 CRASH FIX (core 1321961) — `finished` is emitted from
                 // INSIDE the client's reply-handling slot while the QNetworkReply
                 // is still mid-teardown. The previous code opened the sweep dialog
@@ -3464,8 +3545,8 @@ void NotesPanel::endMeetingSweep() {
                 finishExtractCleanup();    // cursor + button + watchdog
                 const int wu = binfo.truncated ? binfo.wordsUsed : 0;
                 const int wt = binfo.truncated ? binfo.wordsTotal : 0;
-                QTimer::singleShot(0, this, [this, response, model, wu, wt]() {
-                    showExtractResult(response, model, wu, wt);
+                QTimer::singleShot(0, this, [this, response, model, wu, wt, launchPath]() {
+                    showExtractResult(response, model, wu, wt, launchPath);
                 });
             });
     connect(client, &OllamaClient::error, this,
@@ -3567,7 +3648,8 @@ void NotesPanel::cancelExtract() {
 // singleShot from the finished handler) so it NEVER opens a nested event loop
 // while the network reply is still being torn down — see the crash note above.
 void NotesPanel::showExtractResult(const QString &response, const QString &model,
-                                   int wordsUsed, int wordsTotal) {
+                                   int wordsUsed, int wordsTotal,
+                                   const QString &launchPath) {
     // v0.1.112 — Extract is for meeting notes. Accepting it on the Todos
     // checklist would feed the written headings/bullets through
     // saveTodosChecklist, which converts EVERY line into a todo row —
@@ -3575,6 +3657,16 @@ void NotesPanel::showExtractResult(const QString &response, const QString &model
     if (m_currentIsChecklist) {
         QMessageBox::information(this, tr("Extract"),
             tr("Extract works on meeting notes — open a meeting note to use it."));
+        return;
+    }
+    // v0.1.113 — refuse to apply A's extract into a note switched-to mid-
+    // flight. launchPath = the note Extract ran on; empty = legacy direct
+    // call (apply to current, unchanged). A non-empty mismatch means the
+    // live editor/document/path now belong to a different note.
+    if (!launchPath.isEmpty() && launchPath != m_currentPath) {
+        QMessageBox::information(this, tr("Extract"),
+            tr("You switched notes while the AI was working. Open the note "
+               "you ran Extract on, then run Extract again to apply it."));
         return;
     }
     NoterSweepPrompt::SweepResult result = NoterSweepPrompt::parse(response);
@@ -4060,9 +4152,12 @@ void NotesPanel::restyleChecklistLines() {
     if (!m_editor) return;
     QTextDocument *doc = m_editor->document();
     for (QTextBlock b = doc->begin(); b.isValid(); b = b.next()) {
-        const QString t = b.text();
-        if (t.startsWith(QStringLiteral("✓ ")))      applyChecklistDoneStyle(b, true);
-        else if (t.startsWith(QStringLiteral("☐ "))) applyChecklistDoneStyle(b, false);
+        // Only DONE lines need a baked format (muted ink + strike-through).
+        // Undone (☐) lines are left UNSTYLED so they inherit the editor's
+        // themed default ink — that lets them re-tint on a theme switch with
+        // no per-line document edit (which would corrupt undo/redo).
+        if (b.text().startsWith(QStringLiteral("✓ ")))
+            applyChecklistDoneStyle(b, true);
     }
 }
 

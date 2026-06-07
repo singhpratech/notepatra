@@ -6153,7 +6153,7 @@ void AIPanel::enqueueWriteApproval(const QString &id, const QString &name,
     };
 
     auto doApprove = [this, id, name, args, card, status, decided,
-                      disableButtons, queueAndResume]() {
+                      disableButtons, queueAndResume, shown]() {
         if (*decided) return;
         *decided = true;
         disableButtons();
@@ -6184,10 +6184,36 @@ void AIPanel::enqueueWriteApproval(const QString &id, const QString &name,
             ? QStringLiteral("<span style='color:%1;'>✗ Write failed.</span>").arg(p.errFg)
             : QStringLiteral("<span style='color:%1;'>✓ Approved — written to disk.</span>").arg(okFg));
         if (!real.isError && !realAbsPath.isEmpty()) emit fileWrittenByAgent(realAbsPath, created);
+        // Mirror the direct-execute path's post-tool bookkeeping
+        // (handleToolCall) that the gated early-return skipped: feed the
+        // repeat guard so an approved SUCCESS resets the streak (a now-valid
+        // identical earlier-failed call is no longer refused) and a FAILURE
+        // refreshes m_lastToolErrorText, and log the action so an empty-prose
+        // turn force-finalises to a non-blank transcript instead of erasing
+        // the write from the log.
+        const QString sig = AgentRepeatGuard::signature(name, args);
+        if (real.isError) {
+            QString emsg;
+            QJsonParseError jpe{};
+            const QJsonDocument ejd =
+                QJsonDocument::fromJson(real.content.toUtf8(), &jpe);
+            if (jpe.error == QJsonParseError::NoError && ejd.isObject())
+                emsg = ejd.object().value(QStringLiteral("message")).toString();
+            noteToolOutcome(sig, true,
+                name + QStringLiteral(" (") + shown + QStringLiteral(") — ")
+                + real.errorKind
+                + (emsg.isEmpty() ? QString() : QStringLiteral(": ") + emsg));
+            m_turnToolActions.append(name + QStringLiteral(" (") + shown
+                + QStringLiteral(") — failed: ") + real.errorKind);
+        } else {
+            noteToolOutcome(sig, false, QString());
+            m_turnToolActions.append(name + QStringLiteral(" (") + shown
+                + QStringLiteral(") — written to disk"));
+        }
         queueAndResume(real.content);
     };
 
-    auto doReject = [this, decided, card, status, disableButtons, queueAndResume,
+    auto doReject = [this, name, decided, card, status, disableButtons, queueAndResume,
                      shown]() {
         if (*decided) return;
         *decided = true;
@@ -6205,6 +6231,13 @@ void AIPanel::enqueueWriteApproval(const QString &id, const QString &name,
             "{\"ok\":false,\"error_kind\":\"user_rejected\",\"message\":"
             "\"The user rejected this write to %1. Do not retry the same write. "
             "Ask what they'd prefer, or stop.\"}").arg(QString(shown).replace('"', "'"));
+        // Log the rejection so an empty-prose turn force-finalises to an
+        // honest summary, not a blank transcript. Deliberately does NOT touch
+        // the repeat guard: a user veto is not a deterministic tool failure
+        // and the file still does not exist, so a prior read-failure streak
+        // stays valid.
+        m_turnToolActions.append(name + QStringLiteral(" (") + shown
+            + QStringLiteral(") — rejected by user"));
         queueAndResume(msg);
     };
 

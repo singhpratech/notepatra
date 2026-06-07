@@ -897,9 +897,14 @@ int main(int argc, char *argv[]) {
         check("  new_lines decode warning emitted", newWarn);
     }
 
-    // new_lines-only escapes with CLEAN old_lines: old matched strictly and
-    // carries no escapes, so escapes in new_lines are the double-escape bug —
-    // decode them so garbage is never written.
+    // new_lines escapes with CLEAN old_lines are written BYTE-EXACT.
+    // v0.1.113 (adiff-agent-loop) — a clean-matching old region is NOT
+    // evidence of double-escaping: a correct model inserting a line that
+    // legitimately contains a C escape produces literal \n in new_lines over
+    // a clean old region. The old heuristic decoded these → split string
+    // literals across a real newline = silent non-compiling output. We now
+    // decode ONLY when this hunk's own old_lines had to be unescaped to match
+    // (unescapedOld). So here the literal backslash-n is PRESERVED, not decoded.
     {
         writeFile(ws + "/esc_newonly.txt", "one\ntwo\n");
         AiTools::ToolCall call;
@@ -909,8 +914,8 @@ int main(int argc, char *argv[]) {
         QJsonArray hunks;
         QJsonObject h1;
         h1["old_start_line"] = 1;
-        h1["old_lines"] = "one\n";              // clean, strict match
-        h1["new_lines"] = "one\\nadded";        // literal \n — double-escaped
+        h1["old_lines"] = "one\n";              // clean, strict match (no escapes)
+        h1["new_lines"] = "one\\nadded";        // literal \n — written verbatim now
         hunks.append(h1);
         args["hunks"] = hunks;
         call.args = args;
@@ -920,8 +925,8 @@ int main(int argc, char *argv[]) {
         fread.open(QFile::ReadOnly);
         const QByteArray after = fread.readAll();
         fread.close();
-        check("  decoded to a real newline (two lines written)",
-              after == QByteArray("one\nadded\ntwo\n"));
+        check("  literal backslash-n PRESERVED over clean old (NOT decoded)",
+              after == QByteArray("one\\nadded\ntwo\n"));
         QJsonDocument jd = QJsonDocument::fromJson(r.content.toUtf8());
         const QJsonArray warnings = jd.object().value("result").toObject()
                                         .value("warnings").toArray();
@@ -930,7 +935,39 @@ int main(int argc, char *argv[]) {
             const QString w = wv.toString();
             if (w.contains("new_lines") && w.contains("decoded")) newWarn = true;
         }
-        check("  new_lines decode warning emitted", newWarn);
+        check("  NO new_lines decode warning (clean old is not double-escape proof)",
+              !newWarn);
+    }
+
+    // adiff-agent-loop: a CORRECT insertion of a line carrying a C escape
+    // (printf with backslash-n) over a clean-matching old region is written
+    // byte-for-byte — the string literal is never split across a real newline.
+    {
+        writeFile(ws + "/esc_insert.c", "int main() {\n    return 0;\n}\n");
+        AiTools::ToolCall call;
+        call.name = "apply_diff";
+        QJsonObject args;
+        args["path"] = "esc_insert.c";
+        QJsonArray hunks;
+        QJsonObject h1;
+        h1["old_start_line"] = 1;
+        h1["old_lines"] = "int main() {\n";                       // clean, strict match
+        // Two real lines; the \\n inside the printf is literal string content.
+        h1["new_lines"] = "int main() {\n    printf(\"starting\\n\");\n";
+        hunks.append(h1);
+        args["hunks"] = hunks;
+        call.args = args;
+        AiTools::ToolResult r = AiTools::execute(call, ws);
+        check("apply_diff: C-escape insertion over clean old applies", !r.isError);
+        QFile fread(ws + "/esc_insert.c");
+        fread.open(QFile::ReadOnly);
+        const QByteArray after = fread.readAll();
+        fread.close();
+        check("  inserted printf written byte-exact (literal backslash-n kept)",
+              after == QByteArray(
+                  "int main() {\n    printf(\"starting\\n\");\n    return 0;\n}\n"));
+        check("  no real newline injected inside the printf literal",
+              after.contains("printf(\"starting\\n\");"));
     }
 
     // FALSE-POSITIVE guard: when the FILE region itself contains literal

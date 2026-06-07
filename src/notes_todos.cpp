@@ -507,6 +507,16 @@ void NotesTodos::purgeNote(const QString &absolutePath) {
     q.exec();
 }
 
+void NotesTodos::repathNote(const QString &oldPath, const QString &newPath) {
+    if (!ensureOpen() || oldPath == newPath || oldPath.isEmpty()) return;
+    QSqlQuery q(m_db);
+    q.prepare(QStringLiteral(
+        "UPDATE todos SET source_file = ? WHERE source_file = ?"));
+    q.addBindValue(newPath);
+    q.addBindValue(oldPath);
+    q.exec();
+}
+
 // ─── read-side queries ─────────────────────────────────────────────────
 
 TodoRow NotesTodos::rowFromQuery(QSqlQuery &q) {
