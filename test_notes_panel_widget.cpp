@@ -106,6 +106,26 @@ static bool winOffscreenModalUnsafe() {
 #endif
 }
 
+// win-noter-segfault sibling (filesystem semantics): Windows does NOT honour
+// POSIX-style read-only INJECTION the way these tests rely on — the read-only
+// attribute is IGNORED on directories (so creating/renaming files inside a
+// "read-only" dir still succeeds) and an admin owner (the CI runner) bypasses
+// file ACLs, so QFile::setPermissions() cannot make a save/read/rename FAIL.
+// Sections that INDUCE a failure that way (§27 failed-save, §28b unreadable
+// file, §36 failed-rename) would see the operation SUCCEED on Windows and so
+// their failure-handling assertions become vacuous. The behaviours are
+// platform-independent and stay covered on Linux Debug/ASan/Release; skip the
+// injection on Windows. (These sections never ran on Windows pre-v0.1.113 — the
+// binary crashed at §22b first — so this is a latent POSIX-only test limit
+// exposed by the QMessageBox-skip fix, not a product or regression bug.)
+static bool winReadOnlyUnenforced() {
+#if defined(Q_OS_WIN)
+    return true;
+#else
+    return false;
+#endif
+}
+
 static int g_pass = 0, g_fail = 0;
 #define EXPECT(label, cond) \
     do { if (cond) { ++g_pass; std::printf("  [PASS] %s\n", label); } \
@@ -1168,6 +1188,12 @@ int main(int argc, char *argv[]) {
     // state, a 2nd consecutive failure raises the "Save a copy…" banner,
     // and the next successful save restores the normal hint cycle.
     std::printf("\n--- 27. failed save → NOT SAVED hint + banner ---\n");
+    if (winReadOnlyUnenforced()) {
+        std::printf("  [SKIP] §27 failed-save NOT-SAVED hint/banner — Windows "
+                    "ignores read-only on the inbox dir so the save SUCCEEDS and "
+                    "the failure can't be induced (win-noter-segfault); the M2a "
+                    "failure-state logic is covered on Linux Debug/ASan/Release.\n");
+    } else
     {
         panel.newMeetingNote();
         QApplication::processEvents();
@@ -1261,42 +1287,50 @@ int main(int argc, char *argv[]) {
                !QFile::exists(missing));
 
         // (b) existing-but-unreadable file — the original overwrite bug.
-        const QString lockedPath =
-            panel.inboxFolder() + QStringLiteral("/locked-note.html");
-        {
-            QFile f(lockedPath);
-            f.open(QIODevice::WriteOnly);
-            f.write("<html><body><div>SECRET_REAL_CONTENT_25</div></body></html>");
-            f.close();
+        if (winReadOnlyUnenforced()) {
+            std::printf("  [SKIP] §28(b) unreadable-file 'Could not open' state — "
+                        "Windows lets the owner read a 0200 file so the read can't "
+                        "be made to FAIL (win-noter-segfault); the M2b locked-file "
+                        "guard is covered on Linux Debug/ASan/Release. The missing-"
+                        "file case (a) above still runs on Windows.\n");
+        } else {
+            const QString lockedPath =
+                panel.inboxFolder() + QStringLiteral("/locked-note.html");
+            {
+                QFile f(lockedPath);
+                f.open(QIODevice::WriteOnly);
+                f.write("<html><body><div>SECRET_REAL_CONTENT_25</div></body></html>");
+                f.close();
+            }
+            QFile::setPermissions(lockedPath, QFileDevice::WriteOwner);  // 0200
+            panel.openNoteFile(lockedPath);
+            QApplication::processEvents();
+            EXPECT("locked file renders a 'Could not open' notice",
+                   ed && ed->toPlainText().contains(QStringLiteral("Could not open")));
+            EXPECT("locked-file state is read-only", ed && ed->isReadOnly());
+
+            // The killer sequence: an edit (programmatic insert bypasses the
+            // read-only flag, standing in for the old bug's keystroke) + the
+            // autosave tick. With the path unbound this must be a no-op.
+            if (ed) ed->insertPlainText(QStringLiteral("CLOBBER_25"));
+            QApplication::processEvents();
+            panel.saveCurrentNote();
+            QApplication::processEvents();
+            QFile::setPermissions(lockedPath,
+                QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+            const QString diskNow = readAll(lockedPath);
+            EXPECT("real file NOT overwritten after edit + autosave tick",
+                   diskNow.contains(QStringLiteral("SECRET_REAL_CONTENT_25")));
+            EXPECT("no CLOBBER text reached the disk",
+                   !diskNow.contains(QStringLiteral("CLOBBER_25")));
+
+            // Recovery: the now-readable file opens normally again.
+            panel.openNoteFile(lockedPath);
+            QApplication::processEvents();
+            EXPECT("fixed file opens normally (notice gone)",
+                   ed && !ed->toPlainText().contains(QStringLiteral("Could not open")));
+            EXPECT("editor writable again after recovery", ed && !ed->isReadOnly());
         }
-        QFile::setPermissions(lockedPath, QFileDevice::WriteOwner);  // 0200
-        panel.openNoteFile(lockedPath);
-        QApplication::processEvents();
-        EXPECT("locked file renders a 'Could not open' notice",
-               ed && ed->toPlainText().contains(QStringLiteral("Could not open")));
-        EXPECT("locked-file state is read-only", ed && ed->isReadOnly());
-
-        // The killer sequence: an edit (programmatic insert bypasses the
-        // read-only flag, standing in for the old bug's keystroke) + the
-        // autosave tick. With the path unbound this must be a no-op.
-        if (ed) ed->insertPlainText(QStringLiteral("CLOBBER_25"));
-        QApplication::processEvents();
-        panel.saveCurrentNote();
-        QApplication::processEvents();
-        QFile::setPermissions(lockedPath,
-            QFileDevice::ReadOwner | QFileDevice::WriteOwner);
-        const QString diskNow = readAll(lockedPath);
-        EXPECT("real file NOT overwritten after edit + autosave tick",
-               diskNow.contains(QStringLiteral("SECRET_REAL_CONTENT_25")));
-        EXPECT("no CLOBBER text reached the disk",
-               !diskNow.contains(QStringLiteral("CLOBBER_25")));
-
-        // Recovery: the now-readable file opens normally again.
-        panel.openNoteFile(lockedPath);
-        QApplication::processEvents();
-        EXPECT("fixed file opens normally (notice gone)",
-               ed && !ed->toPlainText().contains(QStringLiteral("Could not open")));
-        EXPECT("editor writable again after recovery", ed && !ed->isReadOnly());
     }
 
     // ── 29. navigate-away after a failed save asks first (M2c) ────────
@@ -1904,6 +1938,12 @@ int main(int argc, char *argv[]) {
     // file, and the open buffer still saves to the ORIGINAL path (never
     // silently repointed).
     std::printf("\n--- 36. failed rename keeps buffer on the original file ---\n");
+    if (winReadOnlyUnenforced()) {
+        std::printf("  [SKIP] §36 failed-rename keeps-buffer — Windows ignores "
+                    "read-only on the inbox dir so the rename SUCCEEDS and the "
+                    "failure can't be induced (win-noter-segfault); the rename-"
+                    "failure safety is covered on Linux Debug/ASan/Release.\n");
+    } else
     {
         panel.newMeetingNote();
         QApplication::processEvents();
