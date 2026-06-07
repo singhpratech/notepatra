@@ -2228,10 +2228,26 @@ jobs:
           TAG="${GITHUB_REF##*/}"
           VERSION="${TAG#v}"
           if [ -d notepatra-windows-installer ]; then
-            INSTALLER=$(ls notepatra-windows-installer/notepatra-setup-*.exe 2>/dev/null | head -1)
-            if [ -n "$INSTALLER" ]; then
-              cp "$INSTALLER" "notepatra-setup-${VERSION}.exe"
+            # Stage the LITE and FULL NSIS installers under DISTINCT canonical
+            # names. The old `ls notepatra-setup-*.exe | head -1` lexically
+            # picked notepatra-setup-X-full.exe ("-" 0x2D sorts before "." 0x2E)
+            # and published the FULL build (WebEngine 102MB + DuckDB 29MB → ~81MB
+            # installer) UNDER THE LITE NAME, while the real lite installer was
+            # never staged for attachment. Same prefix-collision bug class as the
+            # install.sh fix (01d8f08) — exact-match each variant instead of glob
+            # + head -1. The downstream SHA256SUMS / cosign / softprops globs
+            # (notepatra-setup-*.exe) then correctly pick up BOTH.
+            LITE="notepatra-windows-installer/notepatra-setup-${VERSION}.exe"
+            if [ -f "$LITE" ]; then
+              cp "$LITE" "notepatra-setup-${VERSION}.exe"
               ls -la "notepatra-setup-${VERSION}.exe"
+            else
+              echo "::error::lite NSIS installer missing: $LITE"
+            fi
+            FULL="notepatra-windows-installer/notepatra-setup-${VERSION}-full.exe"
+            if [ -f "$FULL" ]; then
+              cp "$FULL" "notepatra-setup-${VERSION}-full.exe"
+              ls -la "notepatra-setup-${VERSION}-full.exe"
             fi
           fi
           if [ -d notepatra-windows-msi ]; then
