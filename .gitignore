@@ -8,6 +8,10 @@ build-full/
 # local Docker iteration on installers (build-v172, build-v172-nocloud,
 # build-nocloud).  Generic pattern catches future versions too.
 build-v*/
+# v0.1.114 — ASan and release-test scratch dirs from the open-pipeline
+# deep-dive sessions.
+build-asan/
+build-reltest/
 build-nocloud/
 
 # v0.1.72 — Linux installer outputs left behind by local Docker test
