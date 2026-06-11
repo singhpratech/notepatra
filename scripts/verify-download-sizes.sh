@@ -106,6 +106,38 @@ do
     check_artifact "$glob" "$label" || failed=$((failed + 1))
 done
 
+# Bare-binary claim verification — the "~12 MB bare (12.2 MB on Linux x64)"
+# class went stale in v0.1.114 when two fix waves grew the binary past the
+# "under 12 MB" wording. Measure the SHIPPED binary, not the local build.
+echo
+echo "── bare-binary claim (Linux x64 tarball) ──"
+BARE_TMP=$(mktemp -d)
+trap 'rm -rf "$BARE_TMP"' EXIT
+if gh release download "v$VERSION" \
+        --pattern "notepatra-linux-x64.tar.gz" --dir "$BARE_TMP" 2>/dev/null \
+   && tar xzf "$BARE_TMP/notepatra-linux-x64.tar.gz" -C "$BARE_TMP" 2>/dev/null; then
+    BARE_BIN=$(find "$BARE_TMP" -name notepatra -type f | head -1)
+    if [[ -n "$BARE_BIN" ]]; then
+        bare_mb=$(awk -v b="$(stat -c%s "$BARE_BIN")" 'BEGIN{printf "%.1f", b/1048576}')
+        # The docs claim one decimal value for the Linux x64 bare binary.
+        claim=$(grep -hoE "[0-9]+\.[0-9]+ MB on Linux x64" docs/index.html README.md \
+                    | grep -oE "^[0-9]+\.[0-9]+" | sort -u | head -1)
+        if [[ -z "$claim" ]]; then
+            echo "    ⓘ no 'X.Y MB on Linux x64' bare claim found — skipping"
+        elif awk -v c="$claim" -v a="$bare_mb" -v t="$TOL" \
+                 'BEGIN{d=c-a; if(d<0)d=-d; exit !(d<=t)}'; then
+            echo "    ✓ bare binary $bare_mb MB matches claim $claim MB"
+        else
+            echo "    ✗ bare binary $bare_mb MB vs claimed $claim MB (> $TOL MB drift)"
+            failed=$((failed + 1))
+        fi
+    else
+        echo "    ⓘ binary not found in tarball — skipping"
+    fi
+else
+    echo "    ⓘ tarball download failed — skipping"
+fi
+
 # Stripped-binary claim verification — separate check, separate failure mode
 echo
 echo "── stripped-binary claim ──"
