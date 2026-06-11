@@ -98,8 +98,8 @@ for spec in \
     "notepatra-linux-x64.tar.gz|Linux x64 tar.gz" \
     "notepatra-linux-arm64.tar.gz|Linux ARM64 tar.gz" \
     "notepatra-macos-arm64.dmg|macOS DMG" \
-    "notepatra-*.msi|Windows MSI" \
-    "notepatra-setup-*.exe|Windows NSIS .exe" \
+    "notepatra-[0-9]*.msi|Windows MSI" \
+    "notepatra-setup-*[0-9].exe|Windows NSIS .exe" \
     "notepatra-windows-x64.zip|Windows portable .zip"
 do
     glob="${spec%%|*}"; label="${spec##*|}"
