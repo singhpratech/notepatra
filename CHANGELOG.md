@@ -7,6 +7,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.114] — 2026-06-11
+
+**The Windows "double-click does nothing" ghost-open class is dead, and the whole open pipeline is hardened on every platform. 13 deep-dive findings + 30 fleet-confirmed follow-ups (a second adversarial fleet audited the fixes themselves and caught 3 serious bugs the first wave introduced) — all fixed, all pinned by tests. Full ctest 67/67 (13 new test binaries), 16/16 real-binary multi-process smoke. Same bare binary, no new dependencies.**
+
+### Fixed — opening files
+- **Greeting-gated single-instance forward** — the running instance proves it is alive *before* the payload is sent (no payload can sit deliverable in the pipe after a fallback), every byte is confirmed drained before reporting success, and a genuinely hung primary yields a visible temporary window with the requested files instead of silence. Double opens are structurally impossible (`singleinstance.cpp`, `main.cpp`, `remoteopen.cpp`).
+- **Windows non-ASCII paths** — argv arrived through the ANSI codepage and mangled accents/Cyrillic/CJK paths into silent drops; arguments now come from `QCoreApplication::arguments()` (true UTF-16 via GetCommandLineW) through an extracted, unit-tested `parseCliArgs()` (`cliargs.cpp`).
+- **Missing files surface a notice** — forwarded not-found args, stale recent entries, vanished session files and CLI typos all ended in a silent return; each now queues a non-modal notice on the app's real surface (the lazily-created phantom second status bar is gone) (`mainwindow.cpp`, `main.cpp`).
+- **`--line` contract** — applies to the FIRST file as `--help` promises (CLI and forwarded opens), never jumps an unrelated tab when that file fails to open, and no longer consumes a filename that follows a valueless `--line`. Relative not-found args absolutize against the *secondary's* cwd before forwarding (`cliargs.cpp`, `mainwindow.cpp`).
+- **Cold-start races** — the Windows mutex race-loser retries through the primary's startup window (NoAck is retryable, bounded ~4 s); the Unix listen-loser re-probes before `removeServer` so it can never unlink a LIVE primary's socket and split the session across two writers (`main.cpp`).
+- **Old-protocol compatibility** — the primary attaches its reader before writing the greeting and pre-drains kernel-buffered bytes, so a fire-and-forget secondary from an older version can't have its payload destroyed by the greeting write hitting a closed pipe (`main.cpp`, `remoteopen.cpp`).
+
+### Fixed — session safety
+- **Session-passive windows prompt on close** — `--new` / hung-primary-fallback windows AND the live-owner restore-skip window have `saveSession()` no-op'd by design; closing one silently discarded every unsaved buffer. All now route modified tabs through Save / Discard / Cancel, never delete the primary's crash evidence, and the restore-skip window says it is session-less up front (`mainwindow.cpp`).
+- **Atomic session writes on Windows** — `MoveFileExW(REPLACE_EXISTING|WRITE_THROUGH)` replaces the remove-then-rename gap that left zero copies on disk mid-swap (`mainwindow.cpp`).
+- **Live-owner restore skip** — a second instance launched while the first is mid-restore no longer clobbers session.json with its own empty state (write-gate for the skipping instance's lifetime), and a session tab whose file vanished is reported instead of silently dropped (`mainwindow.cpp`).
+- **Deferred cold-start restore** — session restore runs after first paint behind a PID-stamped `.restoring` marker, so a hung restore can't brick the next launch and a kill-retry can't wipe the tab list (`mainwindow.cpp`).
+
+### Fixed — freezes and crashes
+- **File → Close All infinite loop** — `while (count) closeTab(0)` fought the keep-one-tab backfill forever (100% CPU; Cancel re-prompted infinitely). Pre-existing for many releases. Bounded descending sweep, Cancel aborts; Close Others now tracks the kept tab by widget, not stale index (`mainwindow.cpp`).
+- **Watcher-vs-close-prompt use-after-free** — a file deleted externally while a tab-close Save prompt was open stacked a "File Deleted" box whose "No" deleted the very editor the close prompt held. Every modal in the window now raises the one-at-a-time watcher gate (cleared only after post-modal mutations), and indices re-resolve after any nested event loop (`mainwindow.cpp`).
+- **Remote-open re-entrancy** — a forward arriving while a load modal (large-file confirm) was open re-entered the flush and duplicated the half-constructed tab; guarded (`mainwindow.cpp`).
+- **Status-bar word count** — cached + debounced (2 MB suppression cap); typing in multi-MB files no longer recounts the document per keystroke, and giant pastes are guarded by a bulk-load RAII (`mainwindow.cpp`, `editor.cpp`, `statusbar.cpp`).
+- **Crash observability** — an async-signal-safe crash flag written from the signal handler; the next launch surfaces "closed unexpectedly" *then* clears it (`crashflag.cpp`).
+
+### Added
+- 13 new test binaries pinning the open pipeline end-to-end: `test_single_instance` (greeting protocol incl. slow-reader drain + zero-bytes-after-recovery), `test_remote_open`, `test_cold_start_order`, `test_cli_args`, `test_standalone_window`, `test_session_autosave_guard`, `test_watcher_prompts` (incl. the UAF repro, verified red against ungated code), `test_preshow_modal_hygiene`, `test_crash_flag`, `test_crash_notice_mainwindow`, `test_bulk_settext_guard`, `test_statusbar_wordcount_perf`, `test_occurrence_highlight_cap`.
+- 6-scenario real-binary multi-process smoke (cold start, forward+ACK, `--new`, graceful quit, crash-flag cycle, kill -9 recovery).
+
+### Known trade-off
+- A primary busy >~3 s (huge session restore) sends a double-click to a visible temporary window instead of queueing it — data-safe (those windows prompt on close) and noted in-app.
+
+### Verifying this release
+Same as previous — SHA-256, cosign, SLSA. See SECURITY.md.
+
+
 ## [0.1.113] — 2026-06-06
 
 **Noter reaches A (audit grade C- → A). v0.1.112 fixed the audit's findings; an adversarial re-verify then audited the *fixes* and surfaced 12 more serious issues (3 critical + 9 high), several introduced by v0.1.112's own changes. This release closes all 12 properly; a fresh 7-dimension regrade scores Noter A. Full ctest 54/54, every finding covered by a dedicated contract test. Same bare binary, no new dependencies.**
