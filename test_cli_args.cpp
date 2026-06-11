@@ -159,6 +159,47 @@ int main(int argc, char *argv[]) {
                r.files == QStringList{QFileInfo(plain).absoluteFilePath()});
     }
 
+    // ── --line boundary values: 0 and negatives parse + consume; jump
+    //    suppression happens at the consumer's `> 0` guard ──
+    {
+        const CliArgs r = parseCliArgs({QStringLiteral("prog"),
+                                        QStringLiteral("--line"),
+                                        QStringLiteral("0"), plain});
+        EXPECT("--line 0: parsed as 0", r.gotoLine == 0);
+        EXPECT("--line 0: file still opened",
+               r.files == QStringList{QFileInfo(plain).absoluteFilePath()});
+        EXPECT("--line 0: notFound empty", r.notFound.isEmpty());
+    }
+    {
+        const CliArgs r = parseCliArgs({QStringLiteral("prog"),
+                                        QStringLiteral("--line"),
+                                        QStringLiteral("-5"), plain});
+        EXPECT("--line -5: parsed as -5", r.gotoLine == -5);
+        EXPECT("--line -5: file still opened",
+               r.files == QStringList{QFileInfo(plain).absoluteFilePath()});
+        EXPECT("--line -5: notFound empty", r.notFound.isEmpty());
+    }
+
+    // ── Relative NOT-FOUND arg absolutizes against OUR cwd — forwarded
+    //    payloads must never be re-resolved against the primary's cwd ──
+    {
+        EXPECT("chdir into workspace (notFound case)",
+               QDir::setCurrent(wd.path()));
+        const CliArgs r = parseCliArgs({QStringLiteral("prog"),
+                                        QStringLiteral("ghost-rel.sql")});
+        EXPECT("relative missing arg lands in notFound (one entry)",
+               r.notFound.size() == 1);
+        if (r.notFound.size() == 1) {
+            EXPECT("relative missing arg became absolute",
+                   QFileInfo(r.notFound.first()).isAbsolute());
+            // Compare against currentPath() (not wd.path()) — setCurrent
+            // can land on a symlink-resolved variant of the temp dir.
+            EXPECT("relative missing arg resolved against secondary cwd",
+                   r.notFound.first() ==
+                       QDir::currentPath() + QStringLiteral("/ghost-rel.sql"));
+        }
+    }
+
     // ── Relative path resolves to an absolute path ──
     {
         EXPECT("chdir into workspace", QDir::setCurrent(wd.path()));

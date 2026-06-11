@@ -63,7 +63,11 @@ void attachRemoteOpenClient(QLocalSocket *client, RemoteOpenHandler handler) {
 
     // Bytes (or even the close) may have raced ahead of the wire-up — this is
     // exactly the startup-drain case where the sender wrote and exited before
-    // the slot existed.
+    // the slot existed. waitForReadyRead(0) forces kernel-buffered bytes into
+    // Qt (emitting readyRead into the handler above): the caller writes the
+    // greeting next, and a write to a dead peer aborts the socket, discarding
+    // anything still unread.
+    client->waitForReadyRead(0);
     if (client->bytesAvailable() > 0) buf->append(client->readAll());
     tryParse();
     if (client->state() != QLocalSocket::ConnectedState) finalize();

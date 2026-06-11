@@ -25,7 +25,11 @@ CliArgs parseCliArgs(const QStringList &args) {
             if (fi.isFile())
                 out.files.append(fi.absoluteFilePath());
             else
-                out.notFound.append(arg);
+                // Absolutize even when missing: not-found args ride the
+                // forward payload to the primary, which must not re-resolve
+                // a relative name against ITS cwd — a file of the same name
+                // there would silently open instead.
+                out.notFound.append(fi.absoluteFilePath());
         }
     }
     return out;

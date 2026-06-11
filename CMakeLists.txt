@@ -1651,6 +1651,58 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_preshow_modal_hygi
     message(STATUS "Regression test enabled — target: test_preshow_modal_hygiene")
 endif()
 
+# Watcher prompt branches (re-verify fix wave): Yes-reload, File Deleted
+# keep/remove, cross-path one-at-a-time deferral, closeTab-modal gate (UAF).
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_watcher_prompts.cpp")
+    set(WATCHER_PROMPTS_SOURCES ${SOURCES})
+    list(FILTER WATCHER_PROMPTS_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_watcher_prompts
+        test_watcher_prompts.cpp
+        ${WATCHER_PROMPTS_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_watcher_prompts rust_core)
+    target_compile_definitions(test_watcher_prompts PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_watcher_prompts PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_watcher_prompts PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_watcher_prompts PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_watcher_prompts PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_watcher_prompts PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_watcher_prompts PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_watcher_prompts PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_watcher_prompts PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_watcher_prompts PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_watcher_prompts PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_watcher_prompts PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_watcher_prompts COMMAND $<TARGET_FILE:test_watcher_prompts>)
+    set_tests_properties(test_watcher_prompts PROPERTIES
+        LABELS "integration;mainwindow;watcher;modal"
+        TIMEOUT 300
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_watcher_prompts")
+endif()
+
 # D6 (win-open-ghost) — single-instance ACK protocol + hung-primary fallback.
 # Protocol-only: links just singleinstance.cpp, no GUI.
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_single_instance.cpp")

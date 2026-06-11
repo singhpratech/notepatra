@@ -372,6 +372,71 @@ int main(int argc, char *argv[]) {
             QApplication::processEvents(QEventLoop::AllEvents, 10);
         EXPECT("4 MB file eventually opened (no lost open)",
                tabForName(tm, "big.txt") != nullptr);
+
+        // B5 — empty forward (icon re-click / bare `notepatra`): raise only,
+        // open nothing, no notice.
+        const int b5Before = tm->count();
+        mw.handleRemoteOpen({}, -1);
+        pumpFor(200);
+        EXPECT("empty forward: tab count unchanged", tm->count() == b5Before);
+        EXPECT("empty forward: window still visible", mw.isVisible());
+
+        // B6 — re-open of an ALREADY-OPEN file focuses the existing tab:
+        // no duplicate, no silent disk reload clobbering unsaved edits.
+        Editor *a2 = tabForName(tm, "a.txt");
+        EXPECT("B6: a.txt still open", a2 != nullptr);
+        if (a2) {
+            a2->insertAt(QStringLiteral("REMOTE-UNSAVED-EDIT\n"), 0, 0);
+            const int b6Before = tm->count();
+            mw.handleRemoteOpen({fA}, -1);
+            pumpFor(200);
+            EXPECT("B6: no duplicate tab", tm->count() == b6Before);
+            EXPECT("B6: existing tab focused",
+                   tm->currentEditor() == tabForName(tm, "a.txt"));
+            EXPECT("B6: unsaved edit survived the re-open",
+                   tabForName(tm, "a.txt") &&
+                   tabForName(tm, "a.txt")->text().contains(
+                       QStringLiteral("REMOTE-UNSAVED-EDIT")));
+        }
+
+        // B7 — multi-file forward with gotoLine: --help promises the FIRST
+        // file gets the jump; openFile leaves the LAST tab active.
+        const QString m1 = wd.path() + "/multi1.txt";
+        const QString m2 = wd.path() + "/multi2.txt";
+        for (const QString &p : {m1, m2}) {
+            QFile f(p);
+            f.open(QIODevice::WriteOnly);
+            for (int i = 1; i <= 10; ++i)
+                f.write(QString("m line %1\n").arg(i).toUtf8());
+        }
+        mw.handleRemoteOpen({m1, m2}, 4);
+        pumpFor(200);
+        Editor *em1 = tabForName(tm, "multi1.txt");
+        EXPECT("B7: multi1.txt opened", em1 != nullptr);
+        EXPECT("B7: multi2.txt opened",
+               tabForName(tm, "multi2.txt") != nullptr);
+        EXPECT("B7: FIRST file is the current tab",
+               tm->currentEditor() && tm->currentEditor() == em1);
+        if (em1) {
+            int line = -1, col = -1;
+            em1->getCursorPosition(&line, &col);
+            EXPECT("B7: gotoLine(4) landed in the FIRST file (0-based 3)",
+                   line == 3);
+        }
+
+        // B8 — gotoLine for a first file that FAILS to open must not jump
+        // an unrelated surviving tab.
+        Editor *cur = tm->currentEditor();
+        int curLine = -1, curCol = -1;
+        if (cur) cur->getCursorPosition(&curLine, &curCol);
+        mw.handleRemoteOpen({wd.path() + "/does-not-exist.txt"}, 8);
+        pumpFor(200);
+        if (cur) {
+            int nl = -1, nc = -1;
+            cur->getCursorPosition(&nl, &nc);
+            EXPECT("B8: failed first file leaves the surviving tab's cursor",
+                   nl == curLine && nc == curCol);
+        }
     }
 
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);

@@ -40,8 +40,10 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QMessageBox>
 #include <QProcess>
 #include <QTemporaryDir>
+#include <QTimer>
 
 #include <cstdio>
 #include <string>
@@ -78,6 +80,32 @@ static bool anyTabContains(TabManager *tabs, const QString &token) {
         if (e && e->text().contains(token)) return true;
     }
     return false;
+}
+
+// QMessageBox modal drives SIGSEGV in Qt's offscreen QPA on Windows
+// (win-noter-segfault) — skip modal-driven sections there.
+static bool winOffscreenModalUnsafe() {
+#if defined(Q_OS_WIN)
+    return QGuiApplication::platformName()
+               .compare(QLatin1String("offscreen"), Qt::CaseInsensitive) == 0;
+#else
+    return false;
+#endif
+}
+
+// Click `which` on the first visible QMessageBox; re-arms until one shows.
+static void scheduleModalClick(QMessageBox::StandardButton which,
+                               int triesLeft = 60) {
+    QTimer::singleShot(50, [which, triesLeft]() {
+        for (QWidget *tw : QApplication::topLevelWidgets()) {
+            if (auto *mb = qobject_cast<QMessageBox *>(tw)) {
+                if (mb->isVisible()) {
+                    if (auto *b = mb->button(which)) { b->click(); return; }
+                }
+            }
+        }
+        if (triesLeft > 0) scheduleModalClick(which, triesLeft - 1);
+    });
 }
 
 // Shared stale-path outcome (cases B2/B3/B4): session.json renamed aside to
@@ -327,6 +355,38 @@ int main(int argc, char *argv[]) {
                readFile(sessionPath) == seedJson);
         EXPECT("B1: marker still intact after close",
                readFile(markerPath) == liveMarker);
+
+        // The skipping instance is session-passive for LIFE, so closeEvent
+        // must prompt per modified buffer — the old prompt-less close
+        // discarded them silently (no session write ever happens here).
+        if (!winOffscreenModalUnsafe()) {
+            Editor *ed0 = tmB ? tmB->editorAt(0) : nullptr;
+            EXPECT("B1: untitled tab present for close-prompt test",
+                   ed0 != nullptr);
+            if (ed0) {
+                ed0->insertAt(QStringLiteral("B1-UNSAVED-EDIT\n"), 0, 0);
+                EXPECT("B1: tab modified after edit", ed0->isModified());
+
+                scheduleModalClick(QMessageBox::Cancel);
+                const bool closedA = raceMw->close();
+                QApplication::processEvents();
+                EXPECT("B1: Cancel keeps the skip window open", !closedA);
+                EXPECT("B1: Cancel keeps the unsaved content",
+                       anyTabContains(tmB, "B1-UNSAVED-EDIT"));
+
+                scheduleModalClick(QMessageBox::Discard);
+                const bool closedB = raceMw->close();
+                QApplication::processEvents();
+                EXPECT("B1: Discard lets the skip window close", closedB);
+                EXPECT("B1: session.json STILL unchanged after prompted close",
+                       readFile(sessionPath) == seedJson);
+                EXPECT("B1: marker STILL intact after prompted close",
+                       readFile(markerPath) == liveMarker);
+            }
+        } else {
+            std::printf("  [SKIP] B1 close-prompt section "
+                        "(offscreen Windows)\n");
+        }
 
         delete raceMw;
         sleeper.kill();

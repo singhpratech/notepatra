@@ -70,6 +70,15 @@ public:
     // Public so the session-autosave contract test can drive ticks directly.
     void saveSession();
 
+    // Post-show non-modal notice queue (D5) — also used by main() for the
+    // crash-recovery / standalone-fallback startup notices.
+    void queueStartupNotice(const QString &msg);
+
+    // Bounded close-all sweep. The old `while (count() > 0) closeTab(0)`
+    // looped forever against closeTab's newFile-on-zero backfill, and
+    // Cancel on a modified tab re-prompted forever. Cancel aborts the sweep.
+    void closeAllTabs();
+
     // v0.1.70 — AI dock visibility public API. setAiDockVisible() is the
     // single source of truth for whether the AI dock is on screen.
     // showAiDockForInvocation() is the auto-open helper called by AI
@@ -123,7 +132,6 @@ private:
     // first show as ONE combined non-modal dialog; the file watcher defers,
     // coalesces, and debounces its prompts so they can never stack or fire
     // against a never-shown window.
-    void queueStartupNotice(const QString &msg);
     void flushStartupNotices();
     void onWatchedFileChanged(const QString &path);
     QStringList m_startupNotices;
@@ -210,6 +218,11 @@ private:
     struct RemoteOpenRequest { QStringList paths; int gotoLine; };
     QVector<RemoteOpenRequest> m_pendingRemoteOpens;
     bool m_remoteFlushQueued = false;
+    // Re-entrancy guard: a forward arriving while openFile sits in a load
+    // modal (large-file confirm) must not re-enter the drain loop — the
+    // half-constructed first editor isn't in the tab bar yet, so the
+    // already-open check would miss it and duplicate the tab.
+    bool m_remoteFlushActive = false;
     void scheduleRemoteOpenFlush();
     void flushPendingRemoteOpens();
     QFileSystemWatcher *m_fileWatcher = nullptr;

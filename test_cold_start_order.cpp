@@ -157,6 +157,33 @@ int main(int argc, char *argv[]) {
     }
     cleanSessionArtifacts();
 
+    // ── Phase A2 — multi-file CLI: --line targets the FIRST file ──
+    // With one file the first-file re-resolution is vacuously green —
+    // openFile leaves the LAST opened tab active, so two files is the
+    // smallest case that exercises the branch.
+    std::printf("\nPhase A2 — multi-file CLI, --line hits the first file\n");
+    {
+        MainWindow mw;
+        auto *tm = mw.findChild<TabManager *>();
+        mw.show();
+        mw.setStartupActions({cliTxt, cli2Txt}, 3);
+        mw.runStartupNow();
+
+        Editor *first = tabForName(tm, "cli.txt");
+        EXPECT("A2: first CLI file opened", first != nullptr);
+        EXPECT("A2: second CLI file opened",
+               tabForName(tm, "cli2.txt") != nullptr);
+        EXPECT("A2: FIRST file is the CURRENT tab",
+               tm->currentEditor() && tm->currentEditor() == first);
+        if (first) {
+            int line = -1, col = -1;
+            first->getCursorPosition(&line, &col);
+            EXPECT("A2: gotoLine(3) landed in the FIRST file (0-based 2)",
+                   line == 2);
+        }
+    }
+    cleanSessionArtifacts();
+
     // ── Phase B — remote opens queue behind the deferred restore ──
     std::printf("\nPhase B — remote opens queued until startup completes\n");
     seedSession(sessTxt);

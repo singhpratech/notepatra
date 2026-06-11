@@ -292,6 +292,7 @@ int main(int argc, char *argv[]) {
     // black-hole opens, never binds the pipe, never touches session.json.
     const QString serverName = SingleInstance::serverName();
     bool standaloneFallback = false;  // primary exists but is unreachable/hung
+    QByteArray forwardBody;  // also used by the listen-loser re-probe below
     if (!newWindow) {
         QJsonObject payload;
         QJsonArray arr;
@@ -309,7 +310,8 @@ int main(int argc, char *argv[]) {
         if (!capturedStartupId.isEmpty())
             payload.insert("startupId", QString::fromUtf8(capturedStartupId));
 #endif
-        const QByteArray body = QJsonDocument(payload).toJson(QJsonDocument::Compact);
+        forwardBody = QJsonDocument(payload).toJson(QJsonDocument::Compact);
+        const QByteArray &body = forwardBody;
 #ifdef Q_OS_WIN
         // Grant foreground rights BEFORE the ACK wait — the primary may
         // raise its window while we are still alive waiting for the ACK.
@@ -356,10 +358,15 @@ int main(int argc, char *argv[]) {
                     reprobe.start();
                     auto re = SingleInstance::ForwardResult::NoServer;
                     while (reprobe.elapsed() < 3000) {
+                        // Short per-attempt budgets keep the TOTAL near the
+                        // loop bound (a 3 s ackMs here let one in-flight call
+                        // blow past it). NoAck usually means the primary is
+                        // mid-startup — pipe pre-accepted, greeting not
+                        // written yet — so retry that too; only Acked is
+                        // terminal. Worst case ≈ 4 s, then standalone.
                         re = SingleInstance::forwardToPrimary(serverName, body,
-                                                              500, 0, 3000);
-                        // Delivered, or up-but-stuck — either way stop.
-                        if (re != SingleInstance::ForwardResult::NoServer) break;
+                                                              500, 0, 800);
+                        if (re == SingleInstance::ForwardResult::Acked) break;
                         QThread::msleep(100);
                     }
                     if (re == SingleInstance::ForwardResult::Acked) return 0;
@@ -391,16 +398,41 @@ int main(int argc, char *argv[]) {
         server = new QLocalServer();
         server->setSocketOptions(QLocalServer::UserAccessOption);
         if (!server->listen(serverName)) {
-            // Stale socket from a crashed previous instance — clean up and
-            // retry once. Only on listen-failure do we call removeServer,
-            // so a still-alive previous instance is never orphaned.
-            QLocalServer::removeServer(serverName);
-            if (!server->listen(serverName)) {
-                fprintf(stderr,
-                        "Notepatra: single-instance server bind failed: %s\n",
-                        qPrintable(server->errorString()));
+            // Two causes: stale socket from a crash (no listener behind it)
+            // — OR we lost a cold-start race to a primary that bound between
+            // our probe and now (both launches saw NoServer). removeServer()
+            // on a LIVE primary's socket unlinks it and splits every future
+            // open across two session-writing instances, so re-probe first.
+            auto re = SingleInstance::ForwardResult::NoServer;
+            if (!forwardBody.isEmpty())
+                re = SingleInstance::forwardToPrimary(serverName, forwardBody,
+                                                      500, 0, 3000);
+            if (re == SingleInstance::ForwardResult::Acked) {
+                delete server;
+#ifdef Q_OS_LINUX
+                sendStartupNotifyComplete(
+                    capturedStartupId.isEmpty() ? nullptr
+                                                : capturedStartupId.constData());
+#endif
+                return 0;
+            }
+            if (re == SingleInstance::ForwardResult::NoAck) {
+                // A live-but-unresponsive primary owns the socket — never
+                // steal it; open standalone like the direct NoAck path.
                 delete server;
                 server = nullptr;
+                standaloneFallback = true;
+            } else {
+                // NoServer: genuinely stale crash residue — clean up and
+                // retry once.
+                QLocalServer::removeServer(serverName);
+                if (!server->listen(serverName)) {
+                    fprintf(stderr,
+                            "Notepatra: single-instance server bind failed: %s\n",
+                            qPrintable(server->errorString()));
+                    delete server;
+                    server = nullptr;
+                }
             }
         }
     }
@@ -418,18 +450,24 @@ int main(int argc, char *argv[]) {
     if (server) {
         auto drainConnections = [server, &window]() {
             while (QLocalSocket *client = server->nextPendingConnection()) {
-                // D6 — ACK on accept: reaching this code proves the event
-                // loop is pumping, which is exactly what the secondary's
-                // 3 s ACK wait disambiguates (a hung primary never accepts).
-                // Write fails harmlessly if the peer already hung up.
-                SingleInstance::ackClient(client);
                 // D2 — readyRead-driven, size-capped accumulation; never
                 // blocks the GUI thread (old code waited 500 ms per client).
+                // Attach BEFORE the greeting write: flushing one byte to an
+                // already-exited peer makes Qt abort() the socket, which
+                // discards any payload still unread (pre-greeting-protocol
+                // secondaries write first and exit). Attaching first drains
+                // anything already arrived into our buffer.
                 attachRemoteOpenClient(client,
                     [&window](const QStringList &paths, int gotoLine,
                               const QByteArray &startupId) {
                         window.handleRemoteOpen(paths, gotoLine, startupId);
                     });
+                // D6 — greeting on accept: reaching this code proves the
+                // event loop is pumping, which is exactly what the
+                // secondary's 3 s greeting wait disambiguates (a hung
+                // primary never accepts). New secondaries send their payload
+                // only after this byte arrives.
+                SingleInstance::ackClient(client);
             }
         };
         QObject::connect(server, &QLocalServer::newConnection, &window, drainConnections);
@@ -440,31 +478,30 @@ int main(int argc, char *argv[]) {
         drainConnections();
     }
 
-    // D7 — post-show startup notices on the existing statusbar surface.
-    // No modal, no new UI; queued so they run after the first paint.
-    QStringList startupNotices;
+    // D7 — post-show startup notices via the MainWindow notice queue (one
+    // combined non-modal box on the real window). QMainWindow::statusBar()
+    // here lazily CREATED a second, permanent status strip below the app's
+    // NppStatusBar — Notepatra never calls setStatusBar.
     const bool standaloneMode = newWindow || standaloneFallback;
     if (standaloneFallback)
-        startupNotices << QObject::tr(
+        window.queueStartupNotice(QObject::tr(
             "Another Notepatra is running but not responding — opened a "
-            "temporary window; your saved session is untouched.");
+            "temporary window; your saved session is untouched."));
     // In standalone mode the crash flag belongs to the primary's next normal
     // launch — don't surface or clear it here.
-    if (crashedLastRun && !standaloneMode)
-        startupNotices << QObject::tr("Notepatra closed unexpectedly last time.");
-    if (!cli.notFound.isEmpty())
-        startupNotices << QObject::tr("Could not open: %1 (not found or not a file)")
-                              .arg(cli.notFound.join(QStringLiteral(", ")));
-    if (!startupNotices.isEmpty()) {
-        const QString msg = startupNotices.join(QStringLiteral("  |  "));
-        const bool clearFlag = crashedLastRun && !standaloneMode;
-        QTimer::singleShot(0, &window, [&window, msg, crashFlagPath, clearFlag]() {
-            window.statusBar()->showMessage(msg, 15000);
-            // Surfaced, THEN cleared — if we crash before the event loop
-            // runs this, the flag survives to the next launch.
-            if (clearFlag) QFile::remove(crashFlagPath);
+    if (crashedLastRun && !standaloneMode) {
+        window.queueStartupNotice(
+            QObject::tr("Notepatra closed unexpectedly last time."));
+        // Queued for surfacing, THEN cleared — if we crash before the event
+        // loop runs this, the flag survives to the next launch.
+        QTimer::singleShot(0, &window, [crashFlagPath]() {
+            QFile::remove(crashFlagPath);
         });
     }
+    if (!cli.notFound.isEmpty())
+        window.queueStartupNotice(
+            QObject::tr("Could not open: %1 (not found or not a file)")
+                .arg(cli.notFound.join(QStringLiteral(", "))));
 
     return app.exec();
 }

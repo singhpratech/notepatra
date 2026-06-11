@@ -94,6 +94,28 @@ static void scheduleModalClick(QMessageBox::StandardButton which,
     });
 }
 
+// Click a SEQUENCE of buttons, one per successive visible QMessageBox —
+// drives multi-prompt flows (closeEvent loops over several modified tabs).
+static void scheduleModalClickSeq(QList<QMessageBox::StandardButton> seq,
+                                  int triesLeft = 120) {
+    if (seq.isEmpty()) return;
+    QTimer::singleShot(50, [seq, triesLeft]() mutable {
+        for (QWidget *tw : QApplication::topLevelWidgets()) {
+            if (auto *mb = qobject_cast<QMessageBox *>(tw)) {
+                if (mb->isVisible()) {
+                    if (auto *b = mb->button(seq.first())) {
+                        seq.removeFirst();
+                        b->click();
+                        if (!seq.isEmpty()) scheduleModalClickSeq(seq, 120);
+                        return;
+                    }
+                }
+            }
+        }
+        if (triesLeft > 0) scheduleModalClickSeq(seq, triesLeft - 1);
+    });
+}
+
 static bool writeAllBytes(const QString &path, const QByteArray &bytes) {
     QFile f(path);
     if (!f.open(QIODevice::WriteOnly)) return false;
@@ -249,12 +271,50 @@ int main(int argc, char *argv[]) {
             EXPECT("Cancel keeps the unsaved content",
                    anyTabContains(tm, QStringLiteral("EDITED-BETA-UNSAVED")));
 
-            scheduleModalClick(QMessageBox::Discard);
+            // Save — the most likely answer — must write the file, close
+            // the tab, let the window close, and never touch session.json.
+            scheduleModalClick(QMessageBox::Save);
             const bool closedB = w.close();
             QApplication::processEvents();
-            EXPECT("Discard lets the window close (close() == true)", closedB);
-            EXPECT("Discard removed the unsaved tab",
+            EXPECT("Save lets the window close (close() == true)", closedB);
+            EXPECT("Save removed the now-clean tab",
                    tabForName(tm, "beta.txt") == nullptr);
+            EXPECT("Save wrote the edit to disk",
+                   readAllBytes(betaPath)
+                       .startsWith("EDITED-BETA-UNSAVED"));
+            EXPECT("session.json bytes still identical to S after Save-close",
+                   readAllBytes(sessionPath) == S);
+
+            // Multi-tab close: prompts run highest-index-first. Discard the
+            // second file, then Cancel the first — the sweep must stop,
+            // keeping the window open and the cancelled tab intact.
+            w.openFile(alphaPath);
+            w.openFile(betaPath);
+            QApplication::processEvents();
+            Editor *ea = tabForName(tm, "alpha.txt");
+            Editor *eb = tabForName(tm, "beta.txt");
+            EXPECT("multi-tab close: both tabs open", ea && eb);
+            if (ea && eb) {
+                ea->insertAt(QStringLiteral("EDITED-ALPHA-KEEP\n"), 0, 0);
+                eb->insertAt(QStringLiteral("EDITED-BETA-DROP\n"), 0, 0);
+                scheduleModalClickSeq({QMessageBox::Discard,
+                                       QMessageBox::Cancel});
+                const bool closedC = w.close();
+                QApplication::processEvents();
+                EXPECT("Discard-then-Cancel keeps the window open", !closedC);
+                EXPECT("the discarded (beta) tab is gone",
+                       tabForName(tm, "beta.txt") == nullptr);
+                EXPECT("the cancelled (alpha) tab survives with its edit",
+                       anyTabContains(tm,
+                                      QStringLiteral("EDITED-ALPHA-KEEP")));
+
+                // Cleanup: discard the survivor so the final close below is
+                // prompt-less again.
+                scheduleModalClick(QMessageBox::Discard);
+                const bool closedD = w.close();
+                QApplication::processEvents();
+                EXPECT("final Discard lets the window close", closedD);
+            }
         }
     } else {
         std::printf("  [SKIP] modal-driven unsaved-close section "

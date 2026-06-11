@@ -14,6 +14,7 @@
 #include "ai_interaction_log.h"
 #include "fontpack_dialog.h"
 #include <QPointer>
+#include <QScopeGuard>
 #include <numeric>
 #include <algorithm>
 #ifdef Q_OS_WIN
@@ -1345,10 +1346,14 @@ MainWindow::MainWindow(bool standaloneNoSession)
     connect(m_tabs, &TabManager::tabContextNew, this, [this]() { newFile(); });
     connect(m_tabs, &TabManager::tabContextClose, this, [this](int idx) { closeTab(idx); });
     connect(m_tabs, &TabManager::tabContextCloseAll, this, [this]() {
-        while (m_tabs->count() > 0) closeTab(0);
+        closeAllTabs();
     });
     connect(m_tabs, &TabManager::tabContextCloseOthers, this, [this](int keep) {
-        for (int i = m_tabs->count() - 1; i >= 0; i--) if (i != keep) closeTab(i);
+        // Track the kept tab by widget, not index — each closeTab() above
+        // it shifts `keep` down and the stale index closed the wrong tab.
+        QWidget *keepW = m_tabs->widget(keep);
+        for (int i = m_tabs->count() - 1; i >= 0; i--)
+            if (m_tabs->widget(i) != keepW) closeTab(i);
     });
     connect(m_tabs, &TabManager::tabContextCloseLeft, this, [this](int idx) {
         for (int i = idx - 1; i >= 0; i--) closeTab(i);
@@ -1830,19 +1835,31 @@ void MainWindow::scheduleRemoteOpenFlush() {
 void MainWindow::flushPendingRemoteOpens() {
     m_remoteFlushQueued = false;
     if (!m_startupDone) return;  // runStartupNow() re-schedules after restore
+    // Re-entered through a load modal's nested event loop — the outer drain
+    // below picks the new request up once the modal closes (see header).
+    if (m_remoteFlushActive) return;
+    m_remoteFlushActive = true;
     while (!m_pendingRemoteOpens.isEmpty()) {
         const RemoteOpenRequest req = m_pendingRemoteOpens.takeFirst();
         for (const QString &p : req.paths) openFile(p);
         if (req.gotoLine > 0) {
-            // Same "first file" promise as runStartupNow().
+            // Same "first file" promise as runStartupNow(). If the first
+            // file failed to open (notice already queued by openFile),
+            // don't jump an unrelated surviving tab to that line.
             if (!req.paths.isEmpty()) {
                 const int idx = tabIndexForPath(
                     QFileInfo(req.paths.first()).absoluteFilePath());
-                if (idx >= 0) m_tabs->setCurrentIndex(idx);
+                if (idx >= 0) {
+                    m_tabs->setCurrentIndex(idx);
+                    if (auto *e = m_tabs->editorAt(idx))
+                        e->gotoLine(req.gotoLine);
+                }
+            } else if (auto *e = currentEditor()) {
+                e->gotoLine(req.gotoLine);  // bare `--line N` forward
             }
-            if (auto *e = currentEditor()) e->gotoLine(req.gotoLine);
         }
     }
+    m_remoteFlushActive = false;
 }
 
 // Save As dialog UX baseline:
@@ -1980,6 +1997,16 @@ void MainWindow::closeTab(int index) {
     // If it's an editor, check for unsaved changes
     auto *editor = qobject_cast<Editor *>(widget);
     if (editor && editor->isModified()) {
+        // Defer watcher prompts while OUR prompt/dialog is up: a fileChanged
+        // delivered into the nested event loop would stack its own modal,
+        // and the File-Deleted "No" branch deletes the very editor this
+        // frame holds across the prompt. Drained on scope exit.
+        const bool prevGate = m_anyFileChangePromptOpen;
+        m_anyFileChangePromptOpen = true;
+        const auto watcherGate = qScopeGuard([this, prevGate]() {
+            m_anyFileChangePromptOpen = prevGate;
+            if (!prevGate) drainDeferredFileChanges();
+        });
         QString name = m_tabs->tabText(index).remove(" *");
         auto result = QMessageBox::question(this, "Save",
             QString("Save changes to %1?").arg(name),
@@ -2032,6 +2059,11 @@ void MainWindow::closeTab(int index) {
         }
     }
 
+    // The prompt's nested event loop can add or reorder tabs (deferred
+    // remote opens) — re-resolve before removing by index.
+    index = m_tabs->indexOf(widget);
+    if (index < 0) return;   // tab vanished while we prompted
+
     // Remove file from watcher if it's an editor
     if (editor && !editor->filePath().isEmpty() && m_fileWatcher) {
         m_fileWatcher->removePath(editor->filePath());
@@ -2041,6 +2073,17 @@ void MainWindow::closeTab(int index) {
     m_tabs->removeTab(index);
     delete widget;
     if (m_tabs->count() == 0) newFile();
+}
+
+void MainWindow::closeAllTabs() {
+    // Descending bounded sweep — `while (count() > 0) closeTab(0)` never
+    // terminated: closing the last tab backfills a fresh untitled
+    // (newFile-on-zero), and Cancel on a modified tab re-prompted forever.
+    for (int i = m_tabs->count() - 1; i >= 0; i--) {
+        QPointer<QWidget> alive(m_tabs->widget(i));
+        closeTab(i);
+        if (alive) return;   // Cancel / failed save — abort the sweep
+    }
 }
 
 // ── UI updates ──
@@ -2158,7 +2201,7 @@ void MainWindow::buildMenus() {
     });
     file->addSeparator();
     file->addAction("&Close", this, [this]() { closeTab(m_tabs->currentIndex()); }, QKeySequence("Ctrl+W"));
-    file->addAction("Close All", this, [this]() { while (m_tabs->count() > 0) closeTab(0); });
+    file->addAction("Close All", this, [this]() { closeAllTabs(); });
     file->addAction("Close All BUT This", this, [this]() {
         int cur = m_tabs->currentIndex();
         for (int i = m_tabs->count()-1; i >= 0; i--) if (i != cur) closeTab(i);
@@ -4834,6 +4877,11 @@ void MainWindow::restoreSession() {
             qWarning("notepatra: session restore skipped; instance %lld "
                      "is mid-restore", (long long)ownerPid);
             m_restoreSkippedLiveOwner = true;
+            // Session-passive for our lifetime (saveSession no-ops; close
+            // prompts per modified tab) — say so instead of failing silently.
+            queueStartupNotice(tr("Another Notepatra window is restoring your "
+                                  "saved session — this window opened separately "
+                                  "and won't auto-save the session."));
             return;
         }
         // Previous restore was interrupted (likely a hang). Move
@@ -4957,6 +5005,12 @@ void MainWindow::restoreSession() {
                 }
             }
         } else {
+            // Pristine tab whose file vanished since the session was saved —
+            // surface it instead of silently dropping the tab.
+            if (!path.isEmpty())
+                queueStartupNotice(tr("Session tab dropped — file no longer "
+                                      "exists: %1")
+                                       .arg(QDir::toNativeSeparators(path)));
             continue;
         }
 
@@ -5026,13 +5080,20 @@ void MainWindow::runStartupNow() {
     for (const QString &path : files) openFile(path);
     if (m_startupGotoLine > 0) {
         // --help promises "the first file"; openFile leaves the LAST opened
-        // tab active, so re-resolve the first by path.
+        // tab active, so re-resolve the first by path. If the first file
+        // failed to open (notice already queued), don't jump an unrelated
+        // surviving tab to that line.
         if (!files.isEmpty()) {
             const int idx =
                 tabIndexForPath(QFileInfo(files.first()).absoluteFilePath());
-            if (idx >= 0) m_tabs->setCurrentIndex(idx);
+            if (idx >= 0) {
+                m_tabs->setCurrentIndex(idx);
+                if (auto *e = m_tabs->editorAt(idx))
+                    e->gotoLine(m_startupGotoLine);
+            }
+        } else if (auto *e = currentEditor()) {
+            e->gotoLine(m_startupGotoLine);
         }
-        if (auto *e = currentEditor()) e->gotoLine(m_startupGotoLine);
     }
 
     m_startupDone = true;
@@ -5068,7 +5129,9 @@ void MainWindow::flushStartupNotices() {
     m_startupNotices.clear();
     const int extra = items.size() - 10;
     if (extra > 0) { items = items.mid(0, 10); items.append(tr("…and %1 more").arg(extra)); }
-    auto *box = new QMessageBox(QMessageBox::Warning, tr("Some files could not be opened"),
+    // Title stays generic: besides open failures, main() routes the crash-
+    // recovery and standalone-fallback notices through this queue too.
+    auto *box = new QMessageBox(QMessageBox::Warning, tr("Notepatra — startup notices"),
                                 items.join(QStringLiteral("\n\n")), QMessageBox::Ok, this);
     box->setAttribute(Qt::WA_DeleteOnClose);
     box->setModal(false);
@@ -5155,10 +5218,8 @@ void MainWindow::onWatchedFileChanged(const QString &path) {
                         "Keep this file in editor?")
                 .arg(QFileInfo(path).fileName()),
                 QMessageBox::Yes | QMessageBox::No);
-            m_anyFileChangePromptOpen = false;
             m_fileChangePromptOpen.remove(path);
             m_fileChangePromptClosedMs[path] = QDateTime::currentMSecsSinceEpoch();
-            drainDeferredFileChanges();
             if (result == QMessageBox::No) {
                 // Re-resolve: the prompt's nested event loop may have
                 // reordered or removed tabs — i and e can be stale.
@@ -5170,6 +5231,11 @@ void MainWindow::onWatchedFileChanged(const QString &path) {
                     if (m_tabs->count() == 0) newFile();
                 }
             }
+            // Gate stays up through the mutation above — cleared only when
+            // this dispatch is fully done, so drained re-dispatches (and any
+            // modal an inner call opens) see settled tab state.
+            m_anyFileChangePromptOpen = false;
+            drainDeferredFileChanges();
             return;
         }
 
@@ -5188,26 +5254,31 @@ void MainWindow::onWatchedFileChanged(const QString &path) {
                     "  No = Keep your version")
             .arg(QFileInfo(path).fileName()),
             QMessageBox::Yes | QMessageBox::No);
-        m_anyFileChangePromptOpen = false;
         m_fileChangePromptOpen.remove(path);
         m_fileChangePromptClosedMs[path] = QDateTime::currentMSecsSinceEpoch();
-        drainDeferredFileChanges();
 
         // Re-stat AFTER the dialog: changes made while it was up are
         // absorbed by this one prompt instead of stacking another.
         const QFileInfo post(path);
         // Re-resolve by path — i and e can be stale after the nested loop.
-        const int idx = tabIndexForPath(path);
+        int idx = tabIndexForPath(path);
         if (result == QMessageBox::Yes && idx >= 0) {
             if (auto *cur = m_tabs->editorAt(idx)) {
+                // loadFile can modal (large-file confirm, load-error) — the
+                // gate is deliberately still up so nothing stacks on it.
                 cur->loadFile(path);
-                updateTabTitle(idx);
+                idx = tabIndexForPath(path);  // its nested loop can shift tabs
+                if (idx >= 0) updateTabTitle(idx);
             }
         }
         m_fileTimestamps[path] = post.lastModified();
 
         // Re-add to watcher (Qt removes it after signal)
         m_fileWatcher->addPath(path);
+        // Gate cleared only now — clearing before the reload let deferred
+        // changes re-dispatch into loadFile's own modal and stack.
+        m_anyFileChangePromptOpen = false;
+        drainDeferredFileChanges();
         return;
     }
 }
@@ -5254,11 +5325,13 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     // for *individual* tab close (the X on a tab), where the user has
     // explicitly chosen to dismiss one buffer. See closeTab() for that path.
     //
-    // EXCEPT in standalone mode: --new / hung-primary-fallback windows have
-    // no session backing (saveSession() no-ops), so the prompt-less contract
-    // above would silently discard unsaved buffers. Route each modified tab
-    // through the same Save / Discard / Cancel flow as an individual close.
-    if (m_standaloneNoSession) {
+    // EXCEPT when this window has no session backing (saveSession() no-ops):
+    // --new / hung-primary-fallback standalone windows, and live-owner
+    // restore-skip windows (another live instance owns session.json). There
+    // the prompt-less contract would silently discard unsaved buffers —
+    // route each modified tab through Save / Discard / Cancel instead.
+    const bool sessionless = m_standaloneNoSession || m_restoreSkippedLiveOwner;
+    if (sessionless) {
         for (int i = m_tabs->count() - 1; i >= 0; i--) {
             auto *e = m_tabs->editorAt(i);
             if (!e || !e->isModified()) continue;
@@ -5273,10 +5346,10 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     }
 
     // Save session including unsaved buffers and untitled tabs.
-    saveSession();   // no-ops in standalone mode
+    saveSession();   // no-ops in both session-less modes
 
-    // Standalone windows must not destroy the primary's crash evidence.
-    if (!m_standaloneNoSession) {
+    // Session-less windows must not destroy the owner's crash evidence.
+    if (!sessionless) {
         // Remove crash flag (clean exit) so next launch knows this was tidy.
         QFile::remove(recoveryDir() + "/.crash_flag");
 
