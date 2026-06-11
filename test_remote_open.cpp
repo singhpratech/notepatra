@@ -7,7 +7,9 @@
 // PART B: handleRemoteOpen must raise/activate synchronously and defer the
 // file loads one event-loop turn, so a forwarded double-click paints feedback
 // before any heavy load runs.
-// No modal is ever driven, so no winOffscreenModalUnsafe() guard is needed.
+// B8's not-found open queues a startup notice whose flush shows a QMessageBox
+// — the offscreen-Windows QMessageBox class (win-noter-segfault) — so that
+// section is winOffscreenModalUnsafe()-guarded.
 
 #include "mainwindow.h"
 #include "editor.h"
@@ -35,6 +37,15 @@ static int g_pass = 0, g_fail = 0;
 #define EXPECT(label, cond) \
     do { if (cond) { ++g_pass; std::printf("  [PASS] %s\n", label); } \
          else      { ++g_fail; std::printf("  [FAIL] %s\n", label); } } while (0)
+
+static bool winOffscreenModalUnsafe() {
+#if defined(Q_OS_WIN)
+    return QGuiApplication::platformName()
+               .compare(QLatin1String("offscreen"), Qt::CaseInsensitive) == 0;
+#else
+    return false;
+#endif
+}
 
 static void pumpFor(int ms) {
     QElapsedTimer t;
@@ -107,6 +118,11 @@ int main(int argc, char *argv[]) {
     qputenv("USERPROFILE", cfg.path().toUtf8());
 #endif
     qputenv("QT_QPA_PLATFORM", "offscreen");
+
+    // Unbuffered stdout: section headers printed before a hard crash are
+    // captured by ctest --output-on-failure, pinpointing the failing section
+    // on Windows (the v0.1.114 first run segfaulted with ZERO output).
+    setvbuf(stdout, nullptr, _IONBF, 0);
 
     QApplication app(argc, argv);
 
@@ -425,17 +441,23 @@ int main(int argc, char *argv[]) {
         }
 
         // B8 — gotoLine for a first file that FAILS to open must not jump
-        // an unrelated surviving tab.
-        Editor *cur = tm->currentEditor();
-        int curLine = -1, curCol = -1;
-        if (cur) cur->getCursorPosition(&curLine, &curCol);
-        mw.handleRemoteOpen({wd.path() + "/does-not-exist.txt"}, 8);
-        pumpFor(200);
-        if (cur) {
-            int nl = -1, nc = -1;
-            cur->getCursorPosition(&nl, &nc);
-            EXPECT("B8: failed first file leaves the surviving tab's cursor",
-                   nl == curLine && nc == curCol);
+        // an unrelated surviving tab. The not-found notice flush shows a
+        // QMessageBox, unsafe under the offscreen-Windows QPA plugin.
+        if (winOffscreenModalUnsafe()) {
+            std::printf("  [SKIP] B8 not-found notice flush — offscreen-"
+                        "Windows QMessageBox class (win-noter-segfault)\n");
+        } else {
+            Editor *cur = tm->currentEditor();
+            int curLine = -1, curCol = -1;
+            if (cur) cur->getCursorPosition(&curLine, &curCol);
+            mw.handleRemoteOpen({wd.path() + "/does-not-exist.txt"}, 8);
+            pumpFor(200);
+            if (cur) {
+                int nl = -1, nc = -1;
+                cur->getCursorPosition(&nl, &nc);
+                EXPECT("B8: failed first file leaves the surviving tab's cursor",
+                       nl == curLine && nc == curCol);
+            }
         }
     }
 
