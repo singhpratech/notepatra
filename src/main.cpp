@@ -9,7 +9,12 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
-#include <QCryptographicHash>
+#include <QElapsedTimer>
+#include <QFile>
+#include <QStatusBar>
+#include <QStringList>
+#include <QThread>
+#include <QTimer>
 #include <cstdio>
 #include <csignal>
 #include <exception>
@@ -27,6 +32,10 @@
 #  include <string>
 #endif
 #include "mainwindow.h"
+#include "remoteopen.h"
+#include "singleinstance.h"
+#include "cliargs.h"
+#include "crashflag.h"
 #include "editor.h"
 #include "config.h"
 #include "fonts.h"
@@ -41,32 +50,22 @@
 #define NOTEPATRA_VERSION "0.0.0-dev"
 #endif
 
-// Global crash handler — saves recovery data before dying
+// Global crash handler. Async-signal-safe: precomputed path (crashFlagInit),
+// raw kernel write, then default action. The old handler called
+// Config::appConfigDir()/QDir::mkpath/QFile inside the signal context —
+// any of those can deadlock in malloc and turn a crash into a silent hang.
 static void crashHandler(int sig) {
-    // Try to save recovery info
-    fprintf(stderr, "Notepatra: caught signal %d, attempting recovery save...\n", sig);
-    // Write crash flag
-    // v0.1.96 — use platform-conventional config dir. Avoids %APPDATA% being
-    // empty on Windows while session state lived in ~/.config/notepatra/.
-    QString dir = Config::appConfigDir() + QStringLiteral("/recovery");
-    QDir().mkpath(dir);
-    QFile flag(dir + "/.crash_flag");
-    if (flag.open(QIODevice::WriteOnly)) flag.write("crashed");
-    // Re-raise to get default behavior (core dump etc)
+    crashFlagWrite();
     signal(sig, SIG_DFL);
     raise(sig);
 }
 
-// Per-user local-IPC name. Hashing the home path keeps the socket distinct
-// across user accounts on the same box (and across WSL / native Windows
-// sessions, where %USERNAME% can collide). Keep it short — Windows caps
-// named-pipe names at 256 chars but older Qt on Linux uses
-// /tmp/<name> and some filesystems are fussy.
-static QString singleInstanceServerName() {
-    const QByteArray salt = QDir::homePath().toUtf8();
-    const QByteArray h = QCryptographicHash::hash(salt, QCryptographicHash::Sha1).toHex();
-    return QStringLiteral("notepatra-") + QString::fromLatin1(h.left(16));
+#ifdef Q_OS_WIN
+static LONG WINAPI crashExceptionFilter(EXCEPTION_POINTERS *) {
+    crashFlagWrite();
+    return EXCEPTION_CONTINUE_SEARCH;  // keep WER dump / debugger behavior
 }
+#endif
 
 #ifdef Q_OS_LINUX
 // When Nemo / Files / gtk-launch fires our .desktop entry, it stamps
@@ -191,10 +190,18 @@ int main(int argc, char *argv[]) {
     }
 #endif
 
-    // Install crash handlers
+    // Install crash handlers. All are no-ops until crashFlagInit runs
+    // (post-QApplication), so installing this early is safe.
     signal(SIGSEGV, crashHandler);
     signal(SIGABRT, crashHandler);
     signal(SIGFPE, crashHandler);
+    std::set_terminate([]() {
+        crashFlagWrite();
+        std::abort();   // routes through the SIGABRT handler; flag write is idempotent
+    });
+#ifdef Q_OS_WIN
+    SetUnhandledExceptionFilter(crashExceptionFilter);
+#endif
 
     // ───────────────────────────────────────────────────────────────────
     // v0.1.50 — HiDPI / fractional-zoom support, especially for Windows.
@@ -242,6 +249,14 @@ int main(int argc, char *argv[]) {
     app.setOrganizationName("Notepatra");
     app.setApplicationVersion(NOTEPATRA_VERSION);
 
+    // Precompute the crash-flag path: Config::appConfigDir allocates, and
+    // signal handlers must not. crashedLastRun is captured BEFORE MainWindow
+    // construction so it is immune to ctor reordering by other code.
+    const QString crashFlagPath =
+        Config::appConfigDir() + QStringLiteral("/recovery/.crash_flag");
+    crashFlagInit(crashFlagPath);
+    const bool crashedLastRun = QFile::exists(crashFlagPath);
+
     // v0.1.75 — register every user-installed runtime font BEFORE we
     // pick the default UI / code family. notepatraDefaultUiFamily() and
     // notepatraDefaultCodeFamily() walk QFontDatabase().families() in
@@ -251,102 +266,115 @@ int main(int argc, char *argv[]) {
 
     app.setFont(notepatraUiFont());
 
-    // Parse remaining args
-    int gotoLine = -1;
-    QString themeOverride;
-    bool newWindow = false;
-    QStringList filesToOpen;
+    // Parse remaining args. Windows argv[] bytes are CP_ACP (qtmain hands
+    // main() the CRT's ANSI argv), so fromUtf8(argv[i]) mangled every
+    // non-ASCII path and the isFile() check silently dropped it — the
+    // "double-click does nothing" ghost. QCoreApplication::arguments()
+    // rebuilds the list from GetCommandLineW (true UTF-16) on Windows and
+    // is fromLocal8Bit elsewhere — strictly better on all three platforms.
+    const CliArgs cli = parseCliArgs(QCoreApplication::arguments());
+    const int gotoLine = cli.gotoLine;
+    const QString themeOverride = cli.theme;
+    const bool newWindow = cli.newWindow;
+    const QStringList filesToOpen = cli.files;
+    for (const QString &p : cli.notFound)
+        qWarning("Notepatra: skipping argument that is not an existing file: %s",
+                 qPrintable(p));
 
-    for (int i = 1; i < argc; i++) {
-        QString arg = QString::fromUtf8(argv[i]);
-        if (arg == "--line" && i + 1 < argc) {
-            gotoLine = QString::fromUtf8(argv[++i]).toInt();
-        } else if (arg == "--theme" && i + 1 < argc) {
-            themeOverride = QString::fromUtf8(argv[++i]);
-        } else if (arg == "-n" || arg == "--new") {
-            newWindow = true;
-        } else if (!arg.startsWith("-")) {
-            if (QFileInfo(arg).isFile())
-                filesToOpen.append(QFileInfo(arg).absoluteFilePath());
-        }
-    }
-
-    // ─── Single-instance bridge ───
+    // ─── Single-instance bridge (D6) ───
     // If another Notepatra is already running for this user and the caller
-    // didn't pass --new, forward our args into it and exit. This is the
-    // fix for "Windows double-click spawns a fresh clone per file" — the
-    // shell verb invokes notepatra.exe with the file path, we hand it to
-    // the running instance, and the user sees a new tab instead of a new
-    // window.
-    //
-    // v0.1.94 hardening — three changes versus the pre-fix path:
-    //   1. Two-stage probe (500 ms + 1500 ms retry). On Windows cold-start
-    //      with Defender scanning the new EXE, the first connect can stall
-    //      past the legacy 300 ms cutoff. We retry once on a longer timer
-    //      before declaring "no server" — eliminates the spurious miss
-    //      that produced the multi-PID symptom users reported.
-    //   2. Don't unconditionally `removeServer()` before listen(). The
-    //      pre-fix code wiped the running instance's named-pipe binding
-    //      whenever a probe missed — orphaning the original window. Now
-    //      we only call removeServer after listen() itself fails (stale
-    //      socket from a previous crash), and only on that single retry.
-    //   3. listen() happens BEFORE MainWindow construction. The pre-fix
-    //      ordering ran the slow session-restore inside MainWindow's
-    //      constructor while the pipe wasn't bound yet; concurrent
-    //      launches during that window all spawned fresh PIDs. With the
-    //      server bound first, probes from rapid double-clicks succeed.
-    const QString serverName = singleInstanceServerName();
+    // didn't pass --new, forward our args into it and exit — but only after
+    // the primary ACKs. The old fire-and-forget write meant a hung primary
+    // silently swallowed up to 8 opens (Windows pre-accepts pipe instances),
+    // and the 9th spawned a duplicate full instance that clone-raced the
+    // session. Now: no ACK in 3 s → primary exists but is stuck → open a
+    // standalone window with ONLY the requested files. Visible, can't
+    // black-hole opens, never binds the pipe, never touches session.json.
+    const QString serverName = SingleInstance::serverName();
+    bool standaloneFallback = false;  // primary exists but is unreachable/hung
     if (!newWindow) {
-        QLocalSocket probe;
-        probe.connectToServer(serverName);
-        if (!probe.waitForConnected(500)) {
-            probe.abort();
-            probe.connectToServer(serverName);
-            probe.waitForConnected(1500);
-        }
-        if (probe.state() == QLocalSocket::ConnectedState) {
-            QJsonObject payload;
-            QJsonArray arr;
-            for (const QString &p : filesToOpen) arr.append(p);
-            payload.insert("files", arr);
-            payload.insert("gotoLine", gotoLine);
-            // Forward DESKTOP_STARTUP_ID (captured at main() entry before
-            // Qt could unset it) so the running instance can set
-            // _NET_STARTUP_ID on its window — that's what Cinnamon's panel
-            // matches to stop the spinner, and what Muffin uses to treat
-            // the activate request as user-initiated.
+        QJsonObject payload;
+        QJsonArray arr;
+        for (const QString &p : filesToOpen) arr.append(p);
+        // Not-found args ride along too: openFile() surfaces a statusbar
+        // notice for them in the primary. Without this the stderr warning
+        // above was the ONLY feedback — invisible to GUI launches.
+        for (const QString &p : cli.notFound) arr.append(p);
+        payload.insert("files", arr);
+        payload.insert("gotoLine", gotoLine);
+        // Forward DESKTOP_STARTUP_ID (captured at main() entry before Qt
+        // could unset it) so the running instance can set _NET_STARTUP_ID
+        // on its window — Cinnamon matches it to stop the spinner.
 #ifdef Q_OS_LINUX
-            if (!capturedStartupId.isEmpty()) {
-                payload.insert("startupId",
-                               QString::fromUtf8(capturedStartupId));
-            }
+        if (!capturedStartupId.isEmpty())
+            payload.insert("startupId", QString::fromUtf8(capturedStartupId));
 #endif
-            const QByteArray body = QJsonDocument(payload).toJson(QJsonDocument::Compact);
-            probe.write(body);
-            probe.flush();
-            probe.waitForBytesWritten(500);
-            probe.disconnectFromServer();
+        const QByteArray body = QJsonDocument(payload).toJson(QJsonDocument::Compact);
 #ifdef Q_OS_WIN
-            // Windows blocks SetForegroundWindow() in the running instance
-            // unless a process with foreground rights grants permission.
-            // Explorer hands those rights to *this* (newly spawned) process,
-            // not to the running one — so we surrender them to anyone
-            // (ASFW_ANY = -1) before exiting. Without this, the running
-            // instance opens the file but only flashes its taskbar button.
-            ::AllowSetForegroundWindow(ASFW_ANY);
+        // Grant foreground rights BEFORE the ACK wait — the primary may
+        // raise its window while we are still alive waiting for the ACK.
+        // (Explorer hands foreground rights to *this* process, not the
+        // running one; ASFW_ANY surrenders them. The grant persists after
+        // we exit.)
+        ::AllowSetForegroundWindow(ASFW_ANY);
 #endif
+        QElapsedTimer probeClock;
+        probeClock.start();
+        const SingleInstance::ForwardResult fwd =
+            SingleInstance::forwardToPrimary(serverName, body);
+        if (fwd == SingleInstance::ForwardResult::Acked) {
 #ifdef Q_OS_LINUX
-            // Cancel the desktop-environment launch-feedback spinner so the
-            // user isn't stuck staring at a busy cursor after we forwarded
-            // the file path. No-op when DESKTOP_STARTUP_ID isn't set (CLI
-            // invocations, terminal launches, Wayland-only sessions).
-            // Use captured value since Qt already cleared the env var.
+            // Cancel the desktop launch-feedback spinner — we exit without
+            // ever mapping a window.
             sendStartupNotifyComplete(
                 capturedStartupId.isEmpty() ? nullptr
                                             : capturedStartupId.constData());
 #endif
             return 0;
         }
+        if (fwd == SingleInstance::ForwardResult::NoAck) {
+            // Connected but never acknowledged — a primary exists and is
+            // stuck. Open our files standalone; never bind its pipe or
+            // touch its session.
+            standaloneFallback = true;
+        }
+#ifdef Q_OS_WIN
+        else {  // NoServer: pipe unreachable — the kernel mutex is ground truth
+            bool primaryExists = false;
+            void *mutexHandle =
+                SingleInstance::acquireSingletonMutex(serverName, &primaryExists);
+            if (primaryExists) {
+                if (mutexHandle) ::CloseHandle(static_cast<HANDLE>(mutexHandle));
+                // Primary alive but its pipe didn't answer (instances
+                // exhausted or mid-startup). Re-probe with patience, but
+                // only if the first probe failed FAST (cold-start mutex
+                // race): connectToServer fails INSTANTLY when the pipe
+                // doesn't exist yet, so a single immediate retry lost the
+                // race every time.
+                if (probeClock.elapsed() < 2000) {
+                    QElapsedTimer reprobe;
+                    reprobe.start();
+                    auto re = SingleInstance::ForwardResult::NoServer;
+                    while (reprobe.elapsed() < 3000) {
+                        re = SingleInstance::forwardToPrimary(serverName, body,
+                                                              500, 0, 3000);
+                        // Delivered, or up-but-stuck — either way stop.
+                        if (re != SingleInstance::ForwardResult::NoServer) break;
+                        QThread::msleep(100);
+                    }
+                    if (re == SingleInstance::ForwardResult::Acked) return 0;
+                }
+                standaloneFallback = true;
+            }
+            // else: we created the mutex — we are the primary. The handle is
+            // deliberately held for process lifetime; the kernel frees it on
+            // any exit, including a crash. Qt's QLocalServer on Windows lacks
+            // FILE_FLAG_FIRST_PIPE_INSTANCE, so without the mutex a second
+            // listen() would silently succeed and split future opens.
+        }
+#endif
+        // Linux/macOS NoServer: fall through to listen() exactly as before —
+        // Unix-domain bind gives the mutual exclusion Windows pipes lack.
     }
 
     // Apply theme override before window creation
@@ -359,7 +387,7 @@ int main(int argc, char *argv[]) {
     // many seconds on a large session); without an early bind, any double-
     // click during that window failed every probe and accumulated PIDs.
     QLocalServer *server = nullptr;
-    if (!newWindow) {
+    if (!newWindow && !standaloneFallback) {
         server = new QLocalServer();
         server->setSocketOptions(QLocalServer::UserAccessOption);
         if (!server->listen(serverName)) {
@@ -377,38 +405,31 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    MainWindow window;
+    // --new and the hung-primary fallback never read/write session state.
+    MainWindow window(newWindow || standaloneFallback);
     if (server) server->setParent(&window);
 
-    // Open files from command line
-    for (const auto &path : filesToOpen)
-        window.openFile(path);
+    // D1 — CLI files + --line are applied by the deferred startup slot,
+    // after the window is visible.
+    window.setStartupActions(filesToOpen, gotoLine);
 
-    // Go to line if specified
-    if (gotoLine > 0) {
-        if (auto *e = window.currentEditor())
-            e->gotoLine(gotoLine);
-    }
+    window.show();
 
     if (server) {
         auto drainConnections = [server, &window]() {
             while (QLocalSocket *client = server->nextPendingConnection()) {
-                QObject::connect(client, &QLocalSocket::disconnected,
-                                 client, &QLocalSocket::deleteLater);
-                client->waitForReadyRead(500);
-                const QByteArray body = client->readAll();
-                const QJsonDocument doc = QJsonDocument::fromJson(body);
-                if (doc.isObject()) {
-                    const QJsonObject o = doc.object();
-                    QStringList paths;
-                    for (const QJsonValue &v : o.value("files").toArray())
-                        paths.append(v.toString());
-                    const int line = o.value("gotoLine").toInt(-1);
-                    const QByteArray sid =
-                        o.value("startupId").toString().toUtf8();
-                    window.handleRemoteOpen(paths, line, sid);
-                }
-                client->disconnectFromServer();
+                // D6 — ACK on accept: reaching this code proves the event
+                // loop is pumping, which is exactly what the secondary's
+                // 3 s ACK wait disambiguates (a hung primary never accepts).
+                // Write fails harmlessly if the peer already hung up.
+                SingleInstance::ackClient(client);
+                // D2 — readyRead-driven, size-capped accumulation; never
+                // blocks the GUI thread (old code waited 500 ms per client).
+                attachRemoteOpenClient(client,
+                    [&window](const QStringList &paths, int gotoLine,
+                              const QByteArray &startupId) {
+                        window.handleRemoteOpen(paths, gotoLine, startupId);
+                    });
             }
         };
         QObject::connect(server, &QLocalServer::newConnection, &window, drainConnections);
@@ -419,6 +440,31 @@ int main(int argc, char *argv[]) {
         drainConnections();
     }
 
-    window.show();
+    // D7 — post-show startup notices on the existing statusbar surface.
+    // No modal, no new UI; queued so they run after the first paint.
+    QStringList startupNotices;
+    const bool standaloneMode = newWindow || standaloneFallback;
+    if (standaloneFallback)
+        startupNotices << QObject::tr(
+            "Another Notepatra is running but not responding — opened a "
+            "temporary window; your saved session is untouched.");
+    // In standalone mode the crash flag belongs to the primary's next normal
+    // launch — don't surface or clear it here.
+    if (crashedLastRun && !standaloneMode)
+        startupNotices << QObject::tr("Notepatra closed unexpectedly last time.");
+    if (!cli.notFound.isEmpty())
+        startupNotices << QObject::tr("Could not open: %1 (not found or not a file)")
+                              .arg(cli.notFound.join(QStringLiteral(", ")));
+    if (!startupNotices.isEmpty()) {
+        const QString msg = startupNotices.join(QStringLiteral("  |  "));
+        const bool clearFlag = crashedLastRun && !standaloneMode;
+        QTimer::singleShot(0, &window, [&window, msg, crashFlagPath, clearFlag]() {
+            window.statusBar()->showMessage(msg, 15000);
+            // Surfaced, THEN cleared — if we crash before the event loop
+            // runs this, the flag survives to the next launch.
+            if (clearFlag) QFile::remove(crashFlagPath);
+        });
+    }
+
     return app.exec();
 }

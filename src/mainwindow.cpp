@@ -13,6 +13,7 @@
 #include "ai_log_dialog.h"
 #include "ai_interaction_log.h"
 #include "fontpack_dialog.h"
+#include <QPointer>
 #include <numeric>
 #include <algorithm>
 #ifdef Q_OS_WIN
@@ -25,6 +26,12 @@
 #  include <xcb/xcb.h>
 #  include <cstring>
 #endif
+#ifndef Q_OS_WIN
+#  include <csignal>   // kill(pid,0) liveness probe (session marker)
+#  include <cerrno>
+#endif
+#include <cstdio>      // std::rename (atomic session write)
+#include <QCoreApplication>
 #include <QDir>
 #include <QDirIterator>
 
@@ -909,7 +916,8 @@ static QRect centeredWindowRect(int wWant, int hWant) {
     return clampWindowToScreens(QRect(x, y, w, h));
 }
 
-MainWindow::MainWindow() {
+MainWindow::MainWindow(bool standaloneNoSession)
+    : m_standaloneNoSession(standaloneNoSession) {
     setWindowTitle("new 1 - " NOTEPATRA_FLAVOR_NAME);
     setMinimumSize(640, 480);
     setAcceptDrops(true);  // Enable drag-and-drop
@@ -1396,6 +1404,15 @@ MainWindow::MainWindow() {
     m_statusBar = new NppStatusBar;
     centralLayout->addWidget(m_statusBar);
 
+    // D3 — debounced word-count recompute; one linear pass, per-editor cache.
+    m_wordCountTimer = new QTimer(this);
+    m_wordCountTimer->setSingleShot(true);
+    m_wordCountTimer->setInterval(300);
+    connect(m_wordCountTimer, &QTimer::timeout, this, [this]() {
+        if (auto *e = currentEditor())
+            m_statusBar->updateWords(e->recomputeWordCount());
+    });
+
     setCentralWidget(central);
 
     // ── Menus, toolbar, shortcuts ──
@@ -1496,27 +1513,11 @@ MainWindow::MainWindow() {
     // SQLite DELETE; no-op when the user has opted out of logging.
     AiInteractionLog::pruneOld();
 
-    // Notepad++-style: session.json IS the recovery mechanism. Saved every
-    // 10s with full unsaved-buffer content + on every clean close. Reading
-    // it silently restores everything — no separate "Restore recovered
-    // files?" prompt (that was the old recovery_*.txt path, which now
-    // double-restored the same tabs that session.json already brought back).
-    // checkCrashRecovery() left in place but only fires if session.json
-    // is absent (genuine first-launch crash before any save).
-    restoreSession();
-    if (m_tabs && m_tabs->count() <= 1) {
-        // session.json gave us nothing → fall back to the legacy recovery
-        // pile, in case it has crash residue worth restoring.
-        checkCrashRecovery();
-    } else {
-        // session.json restored at least one tab — wipe stale recovery
-        // files so they don't re-appear on the next launch.
-        QFile::remove(recoveryDir() + "/.crash_flag");
-        QDir recovDir(recoveryDir());
-        for (const QString &rf : recovDir.entryList({"recovery_*"}, QDir::Files)) {
-            QFile::remove(recoveryDir() + "/" + rf);
-        }
-    }
+    // D1 — session restore + CLI opens are deferred to runStartupNow() (0 ms
+    // timer) so the window is shown and painting before any heavy file work.
+    if (!m_standaloneNoSession && QFileInfo::exists(sessionFilePath()))
+        m_statusBar->updateLanguage(tr("Restoring session..."));
+    QTimer::singleShot(0, this, &MainWindow::runStartupNow);
 
     // Optional check-on-startup — throttled to once per 24h via QSettings
     // so we don't hammer the GitHub API on every launch. User can disable
@@ -1550,14 +1551,17 @@ MainWindow::MainWindow() {
     // pile is no longer needed — autoSaveRecovery() removed from this tick.
     m_autoSaveTimer = new QTimer(this);
     connect(m_autoSaveTimer, &QTimer::timeout, this, [this]() {
-        saveSession();
+        saveSession();       // no-ops in standalone mode
         checkFileChanges();
-        // Persist window geometry + config
-        auto &cfg = Config::instance();
-        cfg.windowX = x(); cfg.windowY = y();
-        cfg.windowW = width(); cfg.windowH = height();
-        cfg.maximized = isMaximized();
-        cfg.save();
+        // Persist window geometry + config. Standalone windows skip it —
+        // their throwaway geometry must not clobber the primary's.
+        if (!m_standaloneNoSession) {
+            auto &cfg = Config::instance();
+            cfg.windowX = x(); cfg.windowY = y();
+            cfg.windowW = width(); cfg.windowH = height();
+            cfg.maximized = isMaximized();
+            cfg.save();
+        }
     });
     m_autoSaveTimer->start(qBound(1, Config::instance().autoSaveIntervalSec, 300) * 1000);
 
@@ -1609,13 +1613,7 @@ Editor *MainWindow::newFile() {
     connect(editor, &Editor::cursorPositionUpdated, this, [this](int line, int col, int pos) {
         m_statusBar->updatePosition(line, col, pos);
     });
-    connect(editor, &QsciScintilla::textChanged, this, [this]() {
-        if (auto *e = currentEditor()) {
-            m_statusBar->updateLines(e->lines());
-            m_statusBar->updateLength(e->text().length());
-            m_statusBar->updateWords(e->text().split(QRegularExpression("\\s+"), Qt::SkipEmptyParts).size());
-        }
-    });
+    connect(editor, &QsciScintilla::textChanged, this, &MainWindow::updateDocStats);
     connect(editor, &Editor::changeHistoryUpdated, this, [this, editor]() {
         if (currentEditor() == editor)
             m_statusBar->updateChangeHistory(editor->modifiedLineCount(), editor->savedLineCount());
@@ -1625,7 +1623,15 @@ Editor *MainWindow::newFile() {
 }
 
 void MainWindow::openFile(const QString &path) {
-    if (path.isEmpty() || !QFileInfo(path).isFile()) return;
+    if (path.isEmpty()) return;
+    if (!QFileInfo(path).isFile()) {
+        // Visible, non-modal. Silent return here was the last "open did
+        // nothing" hole: forwarded not-found args, stale recent-files
+        // entries and restored tabs whose file vanished all ended here.
+        queueStartupNotice(tr("Could not open: %1 (not found or not a file)")
+                               .arg(QDir::toNativeSeparators(path)));
+        return;
+    }
 
     // Check if already open
     for (int i = 0; i < m_tabs->count(); i++) {
@@ -1637,8 +1643,10 @@ void MainWindow::openFile(const QString &path) {
     }
 
     auto *editor = new Editor(this);
-    if (!editor->loadFile(path)) {
+    QString loadErr;
+    if (!editor->loadFile(path, &loadErr)) {
         delete editor;
+        if (!loadErr.isEmpty()) queueStartupNotice(loadErr);
         return;
     }
     editor->applyTheme(Config::instance().theme);
@@ -1653,13 +1661,7 @@ void MainWindow::openFile(const QString &path) {
     connect(editor, &Editor::cursorPositionUpdated, this, [this](int line, int col, int pos) {
         m_statusBar->updatePosition(line, col, pos);
     });
-    connect(editor, &QsciScintilla::textChanged, this, [this]() {
-        if (auto *e = currentEditor()) {
-            m_statusBar->updateLines(e->lines());
-            m_statusBar->updateLength(e->text().length());
-            m_statusBar->updateWords(e->text().split(QRegularExpression("\\s+"), Qt::SkipEmptyParts).size());
-        }
-    });
+    connect(editor, &QsciScintilla::textChanged, this, &MainWindow::updateDocStats);
     connect(editor, &Editor::changeHistoryUpdated, this, [this, editor]() {
         if (currentEditor() == editor)
             m_statusBar->updateChangeHistory(editor->modifiedLineCount(), editor->savedLineCount());
@@ -1683,10 +1685,6 @@ void MainWindow::openFile(const QString &path) {
 
 void MainWindow::handleRemoteOpen(const QStringList &paths, int gotoLine,
                                   const QByteArray &startupId) {
-    for (const QString &p : paths) openFile(p);
-    if (gotoLine > 0) {
-        if (auto *e = currentEditor()) e->gotoLine(gotoLine);
-    }
     // Un-minimize if needed, then bring to front. The second-instance
     // process called AllowSetForegroundWindow(ASFW_ANY) before exiting,
     // so SetForegroundWindow now succeeds instead of flashing the taskbar.
@@ -1817,6 +1815,34 @@ void MainWindow::handleRemoteOpen(const QStringList &paths, int gotoLine,
         if (conn) xcb_disconnect(conn);
     }
 #endif
+    // Loads are deferred one event-loop turn so the raise above paints first.
+    m_pendingRemoteOpens.append({paths, gotoLine});
+    scheduleRemoteOpenFlush();
+}
+
+void MainWindow::scheduleRemoteOpenFlush() {
+    if (m_pendingRemoteOpens.isEmpty() || m_remoteFlushQueued || !m_startupDone)
+        return;
+    m_remoteFlushQueued = true;
+    QTimer::singleShot(0, this, [this]() { flushPendingRemoteOpens(); });
+}
+
+void MainWindow::flushPendingRemoteOpens() {
+    m_remoteFlushQueued = false;
+    if (!m_startupDone) return;  // runStartupNow() re-schedules after restore
+    while (!m_pendingRemoteOpens.isEmpty()) {
+        const RemoteOpenRequest req = m_pendingRemoteOpens.takeFirst();
+        for (const QString &p : req.paths) openFile(p);
+        if (req.gotoLine > 0) {
+            // Same "first file" promise as runStartupNow().
+            if (!req.paths.isEmpty()) {
+                const int idx = tabIndexForPath(
+                    QFileInfo(req.paths.first()).absoluteFilePath());
+                if (idx >= 0) m_tabs->setCurrentIndex(idx);
+            }
+            if (auto *e = currentEditor()) e->gotoLine(req.gotoLine);
+        }
+    }
 }
 
 // Save As dialog UX baseline:
@@ -2029,6 +2055,17 @@ void MainWindow::updateTitle() {
         setWindowTitle(NOTEPATRA_FLAVOR_NAME);
 }
 
+// D3 — O(1) doc stats: cached word count shows instantly, the debounce
+// timer refreshes it async. No text() materialization, no regex.
+void MainWindow::updateDocStats() {
+    auto *e = currentEditor();
+    if (!e) return;
+    m_statusBar->updateLines(e->lines());
+    m_statusBar->updateLength(e->length());
+    m_statusBar->updateWords(e->lastWordCount());
+    if (e->wordCountDirty()) m_wordCountTimer->start();
+}
+
 void MainWindow::updateStatusBar() {
     auto *e = currentEditor();
     if (!e) return;
@@ -2039,9 +2076,7 @@ void MainWindow::updateStatusBar() {
     m_statusBar->updateLanguage(e->language());
     m_statusBar->updateEncoding(e->encoding());
     m_statusBar->updateEol(e->eolModeName());
-    m_statusBar->updateLines(e->lines());
-    m_statusBar->updateLength(e->text().length());
-            m_statusBar->updateWords(e->text().split(QRegularExpression("\\s+"), Qt::SkipEmptyParts).size());
+    updateDocStats();
     m_statusBar->updateChangeHistory(e->modifiedLineCount(), e->savedLineCount());
 }
 
@@ -4603,6 +4638,24 @@ void MainWindow::setupShortcuts() {
 // Session persistence + crash recovery
 // ═══════════════════════════════════════
 
+// Marker liveness window: a live owner with a marker older than this is
+// assumed to be PID reuse after a crash, not a concurrent restore.
+static const qint64 kRestoringMarkerLiveWindowMs = 10 * 60 * 1000;
+
+static bool notepatraPidAlive(qint64 pid) {
+    if (pid <= 0) return false;
+#ifdef Q_OS_WIN
+    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)pid);
+    if (!h) return false;
+    DWORD code = 0;
+    const bool alive = GetExitCodeProcess(h, &code) && code == STILL_ACTIVE;
+    CloseHandle(h);
+    return alive;
+#else
+    return ::kill((pid_t)pid, 0) == 0 || errno == EPERM;
+#endif
+}
+
 QString MainWindow::sessionFilePath() {
     // v0.1.96 — use the platform-conventional config dir from Config.
     // Linux: ~/.config/notepatra/session.json
@@ -4616,9 +4669,18 @@ QString MainWindow::recoveryDir() {
 }
 
 void MainWindow::saveSession() {
-    QDir().mkpath(QFileInfo(sessionFilePath()).path());
+    if (m_standaloneNoSession) return;  // never clobber the primary's session.json
+    // Never overwrite session.json before the deferred restore has run.
+    if (!m_startupDone) return;
+    // Live-owner skip (D8): another live instance is mid-restore and owns
+    // session.json — writing here (autosave fires within ~5 s) clobbers the
+    // very session it is restoring. Stay session-passive for our lifetime.
+    if (m_restoreSkippedLiveOwner) return;
 
     QJsonArray tabs;
+    bool anyTextDirty = false;
+    QVector<QPair<int, Editor*>> contentTabs;  // tabs[] index -> editor
+
     for (int i = 0; i < m_tabs->count(); i++) {
         auto *e = m_tabs->editorAt(i);
         if (!e) continue;
@@ -4626,7 +4688,8 @@ void MainWindow::saveSession() {
         const QString path = e->filePath();
         const bool modified = e->isModified();
         // Skip pristine empty untitled tabs — nothing to restore.
-        if (path.isEmpty() && !modified && e->text().isEmpty()) continue;
+        // length()==0 replaces text().isEmpty() — O(1), no extraction.
+        if (path.isEmpty() && !modified && e->length() == 0) continue;
 
         QJsonObject tab;
         tab["path"] = path;
@@ -4637,14 +4700,13 @@ void MainWindow::saveSession() {
         tab["col"] = col;
         tab["active"] = (i == m_tabs->currentIndex());
         tab["modified"] = modified;
-        // Notepad++-style: persist unsaved content so the buffer survives
-        // app close → relaunch even without a save. Three cases store text:
-        //   1. Untitled tab (no path) with any content.
-        //   2. File-backed tab that's been modified since last save.
-        // Pristine file-backed tabs only need path + cursor — we re-read
-        // from disk on restore.
+        // Notepad++-style: unsaved content persists so the buffer survives
+        // close → relaunch. Untitled tabs and modified file-backed tabs
+        // store text; pristine file-backed tabs re-read from disk on restore.
+        // Extraction is deferred until we know a write will happen.
         if (path.isEmpty() || modified) {
-            tab["unsavedContent"] = e->text();
+            anyTextDirty = anyTextDirty || e->sessionTextDirty();
+            contentTabs.append(qMakePair(tabs.size(), e));
         }
         tabs.append(tab);
     }
@@ -4657,10 +4719,62 @@ void MainWindow::saveSession() {
     session["windowH"] = height();
     session["maximized"] = isMaximized();
 
-    QFile f(sessionFilePath());
-    if (f.open(QIODevice::WriteOnly)) {
-        f.write(QJsonDocument(session).toJson());
+    // Cheap change detection: metadata fingerprint (no buffer text) + the
+    // per-editor text-dirty flags. Idle app with a big modified buffer →
+    // identical fingerprint, no dirty flag → zero work, zero disk write.
+    // (Old code re-serialized every open buffer to disk every 5 s, forever.)
+    const QByteArray metaBytes =
+        QJsonDocument(session).toJson(QJsonDocument::Compact);
+    if (!anyTextDirty && metaBytes == m_lastSessionMeta
+        && QFileInfo::exists(sessionFilePath()))
+        return;
+
+    // Something changed — splice in the expensive buffer extractions.
+    for (const auto &ct : contentTabs) {
+        QJsonObject t = tabs[ct.first].toObject();
+        t["unsavedContent"] = ct.second->text();
+        tabs[ct.first] = t;
     }
+    session["tabs"] = tabs;
+
+    QDir().mkpath(QFileInfo(sessionFilePath()).path());
+    // Atomic write — .tmp + rename, so a crash mid-write can never leave a
+    // truncated session.json (QSaveFile deliberately avoided, see
+    // notes_storage.cpp).
+    const QString target = sessionFilePath();
+    const QString tmpPath = target + QStringLiteral(".tmp");
+    QFile tmp(tmpPath);
+    if (!tmp.open(QIODevice::WriteOnly | QIODevice::Truncate)) return;
+    const QByteArray payload = QJsonDocument(session).toJson();
+    const bool wroteAll = tmp.write(payload) == payload.size();
+    tmp.close();
+    if (!wroteAll) { QFile::remove(tmpPath); return; }
+#ifdef Q_OS_WIN
+    // MoveFileExW(REPLACE_EXISTING) swaps atomically. The old remove-then-
+    // rename left a window with NO session.json on disk, and a rename
+    // failure after the remove deleted the only surviving copy. On failure
+    // keep the .tmp — it may be the freshest copy that exists.
+    if (!::MoveFileExW(
+            reinterpret_cast<const wchar_t *>(
+                QDir::toNativeSeparators(tmpPath).utf16()),
+            reinterpret_cast<const wchar_t *>(
+                QDir::toNativeSeparators(target).utf16()),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        return;
+    }
+#else
+    if (std::rename(QFile::encodeName(tmpPath).constData(),
+                    QFile::encodeName(target).constData()) != 0) {
+        QFile::remove(tmpPath);
+        return;
+    }
+#endif
+
+    // Only after a successful rename — a failed write leaves the flags set
+    // so the next tick retries.
+    m_lastSessionMeta = metaBytes;
+    for (int i = 0; i < m_tabs->count(); i++)
+        if (auto *e = m_tabs->editorAt(i)) e->clearSessionTextDirty();
 }
 
 void MainWindow::restoreSession() {
@@ -4679,33 +4793,63 @@ void MainWindow::restoreSession() {
     // restoring. User sees a deferred dialog ("Previous session
     // couldn't restore — your tabs are saved at …") AFTER the empty
     // editor is up, NOT during construction.
+    // Belt-and-braces: the sole caller (runStartupNow) is already gated, but
+    // this also guarantees a standalone window never creates the marker.
+    if (m_standaloneNoSession) return;
+
     const QString sessionPath = sessionFilePath();
     const QString marker = sessionPath + QStringLiteral(".restoring");
 
     if (QFileInfo::exists(marker)) {
+        QByteArray stage;
+        { QFile mf(marker); if (mf.open(QIODevice::ReadOnly)) stage = mf.readAll(); }
+        if (stage.startsWith("cliopen")) {
+            // Previous hang was in the post-restore opens — session is fine.
+            QFile::remove(marker);
+        } else {
+        // D8 — marker format: "<pid> <msecsSinceEpoch>" (legacy: stage tag
+        // or msecs only — both parse as pid-unknown and take the stale path).
+        qint64 ownerPid = -1, stampMs = -1;
+        {
+            const QList<QByteArray> parts = stage.trimmed().split(' ');
+            if (parts.size() >= 2) {
+                bool okP = false, okT = false;
+                const qint64 p = parts.at(0).toLongLong(&okP);
+                const qint64 t = parts.at(1).toLongLong(&okT);
+                if (okP) ownerPid = p;
+                if (okT) stampMs = t;
+            }
+        }
+        const qint64 ageMs = stampMs > 0
+            ? QDateTime::currentMSecsSinceEpoch() - stampMs : -1;
+        if (ownerPid > 0
+            && ownerPid != QCoreApplication::applicationPid()
+            && notepatraPidAlive(ownerPid)
+            && ageMs >= 0 && ageMs < kRestoringMarkerLiveWindowMs) {
+            // Another live instance is restoring this session RIGHT NOW —
+            // not a stale crash. Leave session.json and the marker alone
+            // (the owner deletes it when its restore completes). The
+            // pid != ours guard handles OS PID reuse handing us the crashed
+            // owner's PID; the age window bounds reuse by unrelated processes.
+            qWarning("notepatra: session restore skipped; instance %lld "
+                     "is mid-restore", (long long)ownerPid);
+            m_restoreSkippedLiveOwner = true;
+            return;
+        }
         // Previous restore was interrupted (likely a hang). Move
         // session.json aside so the next launch starts clean.
         const QString failedAside = sessionPath + QStringLiteral(".failed-%1")
                                         .arg(QDateTime::currentMSecsSinceEpoch());
         QFile::rename(sessionPath, failedAside);
         QFile::remove(marker);
-        // Defer the dialog so the user sees an empty editor first.
-        QTimer::singleShot(800, this, [this, failedAside]() {
-            QMessageBox box(this);
-            box.setWindowTitle(tr("Previous session restore was interrupted"));
-            box.setIcon(QMessageBox::Information);
-            box.setText(tr(
-                "<b>The previous Notepatra session didn't finish restoring "
-                "— likely a file in your tab list hung on open.</b><br><br>"
-                "Your tab list has been preserved at:<br><code>%1</code><br><br>"
-                "If you want to recover it, rename that file back to "
-                "<code>session.json</code> — but expect the same hang. Better "
-                "to open the file and remove the problematic entry first."
-            ).arg(QDir::toNativeSeparators(failedAside)));
-            box.addButton(QMessageBox::Ok);
-            box.exec();
-        });
+        // D5 — joins the startup-notice queue: surfaces non-modally after
+        // first show instead of racing show() with a deferred exec().
+        queueStartupNotice(tr("The previous Notepatra session didn't finish restoring — likely a file "
+                              "in your tab list hung on open.\nYour tab list is preserved at:\n%1\n"
+                              "To retry, remove the problematic entry from that file, then rename it "
+                              "back to session.json.").arg(QDir::toNativeSeparators(failedAside)));
         return;
+        }
     }
 
     QFile f(sessionPath);
@@ -4718,10 +4862,15 @@ void MainWindow::restoreSession() {
 
     // Drop the marker — if the restore loop below hangs, this file
     // persists and the next launch will hit the bail-out path above.
+    // Format "<pid> <ms>" lets that launch tell a live concurrent restore
+    // from a dead one (D8).
     {
         QFile m(marker);
         if (m.open(QIODevice::WriteOnly)) {
-            m.write(QByteArray::number(QDateTime::currentMSecsSinceEpoch()));
+            m.write(QByteArray::number(
+                        (qint64)QCoreApplication::applicationPid())
+                    + ' '
+                    + QByteArray::number(QDateTime::currentMSecsSinceEpoch()));
             m.close();
         }
     }
@@ -4778,7 +4927,7 @@ void MainWindow::restoreSession() {
             if (m_tabs->count() > before) {
                 e = m_tabs->editorAt(m_tabs->count() - 1);
                 if (e) {
-                    e->setText(unsavedContent);
+                    { Editor::ScopedBulkLoad bulk(e); e->setText(unsavedContent); }
                     e->setModified(true);
                 }
             } else {
@@ -4788,7 +4937,7 @@ void MainWindow::restoreSession() {
                 // clobber the wrong file.
                 e = newFile();
                 if (e) {
-                    e->setText(unsavedContent);
+                    { Editor::ScopedBulkLoad bulk(e); e->setText(unsavedContent); }
                     e->setModified(true);
                     if (!tabName.isEmpty()) {
                         int idx = m_tabs->indexOf(e);
@@ -4800,7 +4949,7 @@ void MainWindow::restoreSession() {
             // Untitled tab or file-no-longer-exists — recreate as new buffer.
             e = newFile();
             if (e) {
-                e->setText(unsavedContent);
+                { Editor::ScopedBulkLoad bulk(e); e->setText(unsavedContent); }
                 e->setModified(true);
                 if (!tabName.isEmpty()) {
                     int idx = m_tabs->indexOf(e);
@@ -4834,175 +4983,249 @@ void MainWindow::restoreSession() {
     }
 
     m_tabs->setCurrentIndex(activeIdx);
-
-    // v0.1.96 — restore completed without hanging. Drop the marker so
-    // the next launch doesn't trigger the bail-out path.
-    QFile::remove(sessionPath + QStringLiteral(".restoring"));
+    // Marker is removed by runStartupNow() after the deferred opens complete.
 }
 
-void MainWindow::autoSaveRecovery() {
-    QString dir = recoveryDir();
-    QDir().mkpath(dir);
-
-    // Write a crash flag
-    QFile flag(dir + "/.crash_flag");
-    if (flag.open(QIODevice::WriteOnly)) {
-        flag.write("running");
-        flag.close();
-    }
-
-    // Save unsaved/modified content to recovery files
-    for (int i = 0; i < m_tabs->count(); i++) {
-        auto *e = m_tabs->editorAt(i);
-        if (!e || !e->isModified()) continue;
-
-        QString recoveryPath = dir + QString("/recovery_%1.txt").arg(i);
-        QFile rf(recoveryPath);
-        if (rf.open(QIODevice::WriteOnly)) {
-            rf.write(e->text().toUtf8());
-        }
-
-        // Save metadata
-        QJsonObject meta;
-        meta["originalPath"] = e->filePath();
-        meta["tabName"] = m_tabs->tabText(i);
-        meta["tabIndex"] = i;
-        int line, col;
-        e->getCursorPosition(&line, &col);
-        meta["line"] = line;
-        meta["col"] = col;
-
-        QFile mf(recoveryPath + ".meta");
-        if (mf.open(QIODevice::WriteOnly)) {
-            mf.write(QJsonDocument(meta).toJson());
-        }
-    }
+void MainWindow::setStartupActions(const QStringList &files, int gotoLine) {
+    m_startupFiles = files;
+    m_startupGotoLine = gotoLine;
 }
 
-void MainWindow::checkCrashRecovery() {
-    QString dir = recoveryDir();
-    QFile flag(dir + "/.crash_flag");
+void MainWindow::runStartupNow() {
+    if (m_startupDone) return;
 
-    if (!flag.exists()) return;
-
-    // Flag exists = last session didn't close cleanly
-    QDir recovDir(dir);
-    QStringList recoveryFiles = recovDir.entryList({"recovery_*.txt"}, QDir::Files);
-
-    if (recoveryFiles.isEmpty()) {
-        flag.remove();
-        return;
+    if (!m_standaloneNoSession) {
+        // session.json IS the recovery mechanism (full unsaved-buffer
+        // content on every autosave tick); restoring it needs no prompt.
+        restoreSession();
+        // Legacy recovery_*.txt residue from pre-v0.1.96 builds — nothing
+        // writes these anymore (autoSaveRecovery is gone). .crash_flag is
+        // owned by main(): surfaced on the statusbar post-show, THEN
+        // cleared — the old code here wiped it silently before anyone saw it.
+        QDir recovDir(recoveryDir());
+        for (const QString &rf : recovDir.entryList({"recovery_*"}, QDir::Files))
+            QFile::remove(recoveryDir() + "/" + rf);
     }
 
-    auto result = QMessageBox::question(this, "Crash Recovery",
-        QString("Notepatra detected an unclean shutdown.\n\n"
-                "%1 unsaved file(s) found in recovery.\n\n"
-                "Restore recovered files?").arg(recoveryFiles.size()),
-        QMessageBox::Yes | QMessageBox::No);
+    // Marker now also covers the deferred CLI opens (kill-retry trap); stage
+    // "cliopen" tells the next launch the session itself restored fine.
+    // Queued remote opens run from their own flushed slot AFTER the marker is
+    // removed — by then session.json is known-good and needs no protection.
+    // Standalone windows never touch the marker — it belongs to the primary.
+    // Live-owner skip: the marker belongs to ANOTHER live instance mid-restore;
+    // neither overwrite nor remove it (the owner clears it itself).
+    const QString marker = sessionFilePath() + QStringLiteral(".restoring");
+    const bool markerIsOurs = !m_standaloneNoSession && !m_restoreSkippedLiveOwner;
+    if (markerIsOurs && !m_startupFiles.isEmpty()) {
+        QFile m(marker);
+        if (m.open(QIODevice::WriteOnly)) m.write("cliopen");
+    }
 
-    if (result == QMessageBox::Yes) {
-        for (const QString &rf : recoveryFiles) {
-            QString recovPath = dir + "/" + rf;
-            QString metaPath = recovPath + ".meta";
-
-            // Read content
-            QFile contentFile(recovPath);
-            if (!contentFile.open(QIODevice::ReadOnly)) continue;
-            QString content = QString::fromUtf8(contentFile.readAll());
-
-            // Read metadata
-            QString tabName = "Recovered";
-            QString originalPath;
-            int line = 0, col = 0;
-
-            QFile metaFile(metaPath);
-            if (metaFile.open(QIODevice::ReadOnly)) {
-                QJsonObject meta = QJsonDocument::fromJson(metaFile.readAll()).object();
-                tabName = meta["tabName"].toString("Recovered");
-                originalPath = meta["originalPath"].toString();
-                line = meta["line"].toInt();
-                col = meta["col"].toInt();
-            }
-
-            // Create a new tab with recovered content
-            auto *editor = newFile();
-            editor->setText(content);
-            editor->setCursorPosition(line, col);
-
-            int idx = m_tabs->indexOf(editor);
-            m_tabs->setTabText(idx, tabName + " [recovered]");
-            if (!originalPath.isEmpty()) {
-                m_tabs->setTabToolTip(idx, "Recovered from: " + QDir::toNativeSeparators(originalPath));
-            }
+    const QStringList files = m_startupFiles;
+    m_startupFiles.clear();
+    for (const QString &path : files) openFile(path);
+    if (m_startupGotoLine > 0) {
+        // --help promises "the first file"; openFile leaves the LAST opened
+        // tab active, so re-resolve the first by path.
+        if (!files.isEmpty()) {
+            const int idx =
+                tabIndexForPath(QFileInfo(files.first()).absoluteFilePath());
+            if (idx >= 0) m_tabs->setCurrentIndex(idx);
         }
+        if (auto *e = currentEditor()) e->gotoLine(m_startupGotoLine);
     }
 
-    // Clean up recovery files
-    for (const QString &rf : recovDir.entryList({"recovery_*"}, QDir::Files)) {
-        QFile::remove(dir + "/" + rf);
-    }
-    flag.remove();
+    m_startupDone = true;
+    scheduleRemoteOpenFlush();
+
+    // Clears BOTH marker stages (restoreSession's "<pid> <ms>" and the
+    // "cliopen" overwrite above). Standalone windows and live-owner skips
+    // never touch it — it belongs to the primary / the live owner.
+    if (markerIsOurs) QFile::remove(marker);
+
+    if (currentEditor()) updateStatusBar();
+    else m_statusBar->updateLanguage(tr("Normal text"));
+    updateTitle();
 }
 
 // ═══════════════════════════════════════
 // File change watcher — detect external edits
 // ═══════════════════════════════════════
 
+void MainWindow::queueStartupNotice(const QString &msg) {
+    if (msg.isEmpty()) return;
+    m_startupNotices.append(msg);
+    if (m_everShown && !m_startupNoticeFlushScheduled) {
+        m_startupNoticeFlushScheduled = true;
+        QTimer::singleShot(0, this, &MainWindow::flushStartupNotices);
+    }
+}
+
+void MainWindow::flushStartupNotices() {
+    m_startupNoticeFlushScheduled = false;
+    if (m_startupNotices.isEmpty()) return;
+    QStringList items = m_startupNotices;
+    m_startupNotices.clear();
+    const int extra = items.size() - 10;
+    if (extra > 0) { items = items.mid(0, 10); items.append(tr("…and %1 more").arg(extra)); }
+    auto *box = new QMessageBox(QMessageBox::Warning, tr("Some files could not be opened"),
+                                items.join(QStringLiteral("\n\n")), QMessageBox::Ok, this);
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    box->setModal(false);
+    box->show();   // never exec() — non-blocking by contract
+}
+
+void MainWindow::showEvent(QShowEvent *event) {
+    QMainWindow::showEvent(event);
+    if (m_everShown) return;
+    m_everShown = true;
+    if (!m_startupNotices.isEmpty() && !m_startupNoticeFlushScheduled) {
+        m_startupNoticeFlushScheduled = true;
+        QTimer::singleShot(0, this, &MainWindow::flushStartupNotices);
+    }
+    if (!m_deferredFileChangePaths.isEmpty()) {
+        const QStringList deferred = m_deferredFileChangePaths.values();
+        m_deferredFileChangePaths.clear();
+        for (const QString &p : deferred)
+            QTimer::singleShot(0, this, [this, p]() { onWatchedFileChanged(p); });
+    }
+}
+
+void MainWindow::changeEvent(QEvent *event) {
+    QMainWindow::changeEvent(event);
+    if (event->type() != QEvent::WindowStateChange) return;
+    if (isMinimized()) return;
+    drainDeferredFileChanges();
+}
+
 void MainWindow::setupFileWatcher() {
     m_fileWatcher = new QFileSystemWatcher(this);
+    connect(m_fileWatcher, &QFileSystemWatcher::fileChanged,
+            this, &MainWindow::onWatchedFileChanged);
+}
 
-    connect(m_fileWatcher, &QFileSystemWatcher::fileChanged, this, [this](const QString &path) {
-        // File was modified externally — find which tab has it
-        for (int i = 0; i < m_tabs->count(); i++) {
-            auto *e = m_tabs->editorAt(i);
-            if (!e || e->filePath() != path) continue;
+void MainWindow::onWatchedFileChanged(const QString &path) {
+    // Never-shown or minimized → defer until first show / un-minimize.
+    if (!m_everShown || isMinimized()) {
+        m_deferredFileChangePaths.insert(path);
+        if (QFileInfo::exists(path)) m_fileWatcher->addPath(path);
+        return;
+    }
+    // ANY prompt up (same path or not) → defer; processed after it closes.
+    // Without this, a fileChanged for a DIFFERENT path delivered into the
+    // open prompt's nested event loop stacked a second modal on top.
+    if (m_anyFileChangePromptOpen) {
+        m_deferredFileChangePaths.insert(path);
+        if (QFileInfo::exists(path)) m_fileWatcher->addPath(path);
+        return;
+    }
+    // Prompt already up for this path → coalesce; the post-dialog re-stat
+    // absorbs whatever changed while it was open.
+    if (m_fileChangePromptOpen.contains(path)) {
+        if (QFileInfo::exists(path)) m_fileWatcher->addPath(path);
+        return;
+    }
+    // Debounce: at most one prompt per path per 1500 ms; re-check later,
+    // never drop.
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 closed = m_fileChangePromptClosedMs.value(path, 0);
+    if (closed && now - closed < 1500) {
+        if (QFileInfo::exists(path)) m_fileWatcher->addPath(path);
+        if (!m_fileChangeRecheckPending.contains(path)) {
+            m_fileChangeRecheckPending.insert(path);
+            QTimer::singleShot(int(1500 - (now - closed)) + 50, this, [this, path]() {
+                m_fileChangeRecheckPending.remove(path);
+                onWatchedFileChanged(path);
+            });
+        }
+        return;
+    }
+    for (int i = 0; i < m_tabs->count(); i++) {
+        auto *e = m_tabs->editorAt(i);
+        if (!e || e->filePath() != path) continue;
 
-            // Check if file still exists
-            QFileInfo fi(path);
-            if (!fi.exists()) {
-                // File was deleted
-                m_tabs->setCurrentIndex(i);
-                auto result = QMessageBox::warning(this, "File Deleted",
-                    QString("The file \"%1\" has been deleted by another program.\n\n"
-                            "Keep this file in editor?")
-                    .arg(QFileInfo(path).fileName()),
-                    QMessageBox::Yes | QMessageBox::No);
-                if (result == QMessageBox::No) {
-                    m_tabs->removeTab(i);
-                    delete e;
-                    if (m_tabs->count() == 0) newFile();
-                }
-                return;
-            }
-
-            // File was modified — check if content actually changed
-            QDateTime newTime = fi.lastModified();
-            if (m_fileTimestamps.contains(path) && newTime == m_fileTimestamps[path])
-                return;  // same timestamp, ignore
-
+        QFileInfo fi(path);
+        if (!fi.exists()) {
+            // File was deleted
             m_tabs->setCurrentIndex(i);
-            auto result = QMessageBox::question(this, "File Changed",
-                QString("The file \"%1\" has been modified by another program.\n\n"
-                        "Do you want to reload it?\n\n"
-                        "  Yes = Reload from disk (lose your changes)\n"
-                        "  No = Keep your version")
+            m_fileChangePromptOpen.insert(path);
+            m_anyFileChangePromptOpen = true;
+            auto result = QMessageBox::warning(this, "File Deleted",
+                QString("The file \"%1\" has been deleted by another program.\n\n"
+                        "Keep this file in editor?")
                 .arg(QFileInfo(path).fileName()),
                 QMessageBox::Yes | QMessageBox::No);
-
-            if (result == QMessageBox::Yes) {
-                e->loadFile(path);
-                updateTabTitle(i);
-                m_fileTimestamps[path] = fi.lastModified();
-            } else {
-                // User chose to keep their version — mark as modified
-                m_fileTimestamps[path] = fi.lastModified();
+            m_anyFileChangePromptOpen = false;
+            m_fileChangePromptOpen.remove(path);
+            m_fileChangePromptClosedMs[path] = QDateTime::currentMSecsSinceEpoch();
+            drainDeferredFileChanges();
+            if (result == QMessageBox::No) {
+                // Re-resolve: the prompt's nested event loop may have
+                // reordered or removed tabs — i and e can be stale.
+                const int idx = tabIndexForPath(path);
+                if (idx >= 0) {
+                    auto *cur = m_tabs->editorAt(idx);
+                    m_tabs->removeTab(idx);
+                    delete cur;
+                    if (m_tabs->count() == 0) newFile();
+                }
             }
-
-            // Re-add to watcher (Qt removes it after signal)
-            m_fileWatcher->addPath(path);
             return;
         }
-    });
+
+        // File was modified — check if content actually changed
+        QDateTime newTime = fi.lastModified();
+        if (m_fileTimestamps.contains(path) && newTime == m_fileTimestamps[path])
+            return;  // same timestamp, ignore
+
+        m_tabs->setCurrentIndex(i);
+        m_fileChangePromptOpen.insert(path);
+        m_anyFileChangePromptOpen = true;
+        auto result = QMessageBox::question(this, "File Changed",
+            QString("The file \"%1\" has been modified by another program.\n\n"
+                    "Do you want to reload it?\n\n"
+                    "  Yes = Reload from disk (lose your changes)\n"
+                    "  No = Keep your version")
+            .arg(QFileInfo(path).fileName()),
+            QMessageBox::Yes | QMessageBox::No);
+        m_anyFileChangePromptOpen = false;
+        m_fileChangePromptOpen.remove(path);
+        m_fileChangePromptClosedMs[path] = QDateTime::currentMSecsSinceEpoch();
+        drainDeferredFileChanges();
+
+        // Re-stat AFTER the dialog: changes made while it was up are
+        // absorbed by this one prompt instead of stacking another.
+        const QFileInfo post(path);
+        // Re-resolve by path — i and e can be stale after the nested loop.
+        const int idx = tabIndexForPath(path);
+        if (result == QMessageBox::Yes && idx >= 0) {
+            if (auto *cur = m_tabs->editorAt(idx)) {
+                cur->loadFile(path);
+                updateTabTitle(idx);
+            }
+        }
+        m_fileTimestamps[path] = post.lastModified();
+
+        // Re-add to watcher (Qt removes it after signal)
+        m_fileWatcher->addPath(path);
+        return;
+    }
+}
+
+int MainWindow::tabIndexForPath(const QString &path) const {
+    for (int i = 0; i < m_tabs->count(); i++) {
+        auto *e = m_tabs->editorAt(i);
+        if (e && e->filePath() == path) return i;
+    }
+    return -1;
+}
+
+void MainWindow::drainDeferredFileChanges() {
+    if (m_deferredFileChangePaths.isEmpty()) return;
+    const QStringList deferred = m_deferredFileChangePaths.values();
+    m_deferredFileChangePaths.clear();
+    for (const QString &p : deferred)
+        QTimer::singleShot(0, this, [this, p]() { onWatchedFileChanged(p); });
 }
 
 void MainWindow::checkFileChanges() {
@@ -5030,17 +5253,38 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     // modified flag intact). The Save / Discard / Cancel dialog is reserved
     // for *individual* tab close (the X on a tab), where the user has
     // explicitly chosen to dismiss one buffer. See closeTab() for that path.
+    //
+    // EXCEPT in standalone mode: --new / hung-primary-fallback windows have
+    // no session backing (saveSession() no-ops), so the prompt-less contract
+    // above would silently discard unsaved buffers. Route each modified tab
+    // through the same Save / Discard / Cancel flow as an individual close.
+    if (m_standaloneNoSession) {
+        for (int i = m_tabs->count() - 1; i >= 0; i--) {
+            auto *e = m_tabs->editorAt(i);
+            if (!e || !e->isModified()) continue;
+            m_tabs->setCurrentIndex(i);
+            QPointer<Editor> alive(e);
+            closeTab(i);
+            if (alive) {   // Cancel (or a failed save) kept the tab open
+                event->ignore();
+                return;
+            }
+        }
+    }
 
     // Save session including unsaved buffers and untitled tabs.
-    saveSession();
+    saveSession();   // no-ops in standalone mode
 
-    // Remove crash flag (clean exit) so next launch knows this was tidy.
-    QFile::remove(recoveryDir() + "/.crash_flag");
+    // Standalone windows must not destroy the primary's crash evidence.
+    if (!m_standaloneNoSession) {
+        // Remove crash flag (clean exit) so next launch knows this was tidy.
+        QFile::remove(recoveryDir() + "/.crash_flag");
 
-    // Clean per-tab recovery files — session.json now carries unsaved state.
-    QDir recovDir(recoveryDir());
-    for (const QString &rf : recovDir.entryList({"recovery_*"}, QDir::Files)) {
-        QFile::remove(recoveryDir() + "/" + rf);
+        // Clean per-tab recovery files — session.json carries unsaved state.
+        QDir recovDir(recoveryDir());
+        for (const QString &rf : recovDir.entryList({"recovery_*"}, QDir::Files)) {
+            QFile::remove(recoveryDir() + "/" + rf);
+        }
     }
 
     event->accept();

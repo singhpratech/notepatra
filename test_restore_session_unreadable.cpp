@@ -143,8 +143,9 @@ int main(int argc, char *argv[]) {
         sf.close();
     }
 
-    // ── Constructing MainWindow runs restoreSession() in the ctor ──
+    // ── MainWindow defers restore (D1) — run the startup slot explicitly ──
     MainWindow mw;
+    mw.runStartupNow();
     QApplication::processEvents();
 
     auto *tm = mw.findChild<TabManager *>();

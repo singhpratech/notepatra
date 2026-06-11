@@ -15,7 +15,7 @@ class Editor : public QsciScintilla {
 public:
     explicit Editor(QWidget *parent = nullptr);
 
-    bool loadFile(const QString &path);
+    bool loadFile(const QString &path, QString *errorOut = nullptr);
     bool saveFile(const QString &path = QString());
     void setLanguage(const QString &lang);
     void applyTheme(const QString &themeName);
@@ -53,6 +53,29 @@ public:
     void zoomInPersistent();
     void zoomOutPersistent();
     void zoomResetPersistent();
+
+    // RAII guard for wholesale programmatic setText() outside loadFile().
+    // Suppresses per-line change-history churn; on scope exit resets the
+    // changed-lines state so markers/counts never reflect a bulk replace.
+    class ScopedBulkLoad {
+    public:
+        explicit ScopedBulkLoad(Editor *e) : m_e(e), m_prev(e->m_loadingFile) {
+            e->m_loadingFile = true;
+        }
+        ~ScopedBulkLoad() {
+            m_e->m_loadingFile = m_prev;
+            m_e->m_modifiedLines.clear();
+            m_e->m_savedLines.clear();
+            m_e->markerDeleteAll(22);
+            m_e->markerDeleteAll(23);
+            emit m_e->changeHistoryUpdated();
+        }
+        ScopedBulkLoad(const ScopedBulkLoad &) = delete;
+        ScopedBulkLoad &operator=(const ScopedBulkLoad &) = delete;
+    private:
+        Editor *m_e;
+        bool m_prev;
+    };
 
     QString filePath() const { return m_filePath; }
     QString language() const { return m_language; }
@@ -95,6 +118,21 @@ public:
     void goToMatchingBrace();
     void clearBraceHighlight();
 
+    // D3 — status-bar word count cache. lastWordCount() is O(1) and may be
+    // stale; -1 = not yet computed OR suppressed above kWordCountMaxBytes.
+    int lastWordCount() const { return m_wordCount; }
+    bool wordCountDirty() const { return m_wordCountDirty; }
+    int recomputeWordCount();
+    static constexpr int kWordCountMaxBytes = 2 * 1024 * 1024;
+
+    // D8 — session-autosave change detection: set on textChanged, cleared by
+    // MainWindow::saveSession after a successful session.json write.
+    bool sessionTextDirty() const { return m_sessionTextDirty; }
+    void clearSessionTextDirty() { m_sessionTextDirty = false; }
+
+    // Public so the perf contract test can drive it directly.
+    void highlightAllOccurrences(const QString &word);
+
 signals:
     void cursorPositionUpdated(int line, int col, int pos);
     void encodingChanged(const QString &name);
@@ -127,7 +165,6 @@ private slots:
 private:
     void setupEditor();
     void setupMargins();
-    void highlightAllOccurrences(const QString &word);
     void applyLexer(const QString &lang);
     void applySyntaxColors(QsciLexer *lexer, const QString &themeName);
     void syncMeasurementUi();
@@ -150,6 +187,9 @@ private:
     // marker 22 so the status bar can report the saved-line count in O(1)
     // instead of walking the buffer. Cleared on loadFile/setText reload.
     QSet<int> m_savedLines;
+    int m_wordCount = -1;
+    bool m_wordCountDirty = true;
+    bool m_sessionTextDirty = true;  // starts true: first save must serialize
 
 public:
     int modifiedLineCount() const { return m_modifiedLines.size(); }

@@ -347,6 +347,14 @@ Editor::Editor(QWidget *parent) : QsciScintilla(parent) {
             this, &Editor::onSavePointReached);
     connect(this, &QsciScintillaBase::SCN_SAVEPOINTLEFT,
             this, &Editor::onSavePointLeft);
+    // D3 — invalidate the cached status-bar word count on every edit.
+    // D8 — same edit marks the buffer as needing one session re-serialization
+    // (covers user edits AND programmatic setText: loadFile, restore overlay,
+    // encoding reload — all correctly force the next autosave tick to write).
+    connect(this, &QsciScintilla::textChanged, this, [this]() {
+        m_wordCountDirty = true;
+        m_sessionTextDirty = true;
+    });
     connect(horizontalScrollBar(), &QScrollBar::valueChanged, this, [this]() { syncMeasurementUi(); });
     connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this]() { syncMeasurementUi(); });
 
@@ -582,8 +590,13 @@ bool Editor::reloadWithEncoding(const QString &name, bool force) {
         decoded = codec->toUnicode(bytes);
     }
 
-    setText(decoded);
-    setModified(false);
+    {
+        // Mirror loadFile: the savepoint lands in the m_loadingFile branch of
+        // onSavePointReached, so the reopened doc starts with clean history.
+        ScopedBulkLoad bulk(this);
+        setText(decoded);
+        setModified(false);
+    }
     m_encoding = finalLabel;
     emit encodingChanged(m_encoding);
     return true;
@@ -733,24 +746,76 @@ void Editor::mouseDoubleClickEvent(QMouseEvent *event) {
     }
 }
 
+// Occurrence-highlight perf caps (D8): skip huge docs, bound indicator fills.
+// The old body did TWO full text() extractions plus a toUtf8 copy and an
+// uncapped fill loop — a double-click on a word with 1M+ matches drove
+// Scintilla's RunStyles insertion super-linear and hung the GUI thread.
+static constexpr long kOccurrenceMaxDocBytes = 4 * 1024 * 1024;
+static constexpr int  kOccurrenceMaxMatches  = 5000;
+
 void Editor::highlightAllOccurrences(const QString &word) {
-    // Clear previous highlights
     SendScintilla(SCI_SETINDICATORCURRENT, 9);
-    QByteArray fullText = text().toUtf8();
-    SendScintilla(SCI_INDICATORCLEARRANGE, 0, fullText.size());
+    // SCI_GETLENGTH is the document byte length (setUtf8(true) makes it equal
+    // the old text().toUtf8().size()) — clear range identical, no extraction.
+    const long docBytes = (long)SendScintilla(SCI_GETLENGTH);
+    SendScintilla(SCI_INDICATORCLEARRANGE, 0, docBytes);
 
+    if (docBytes > kOccurrenceMaxDocBytes) return;
+
+    const QString docText = text();  // single full-document extraction
     // Find all occurrences using Rust Aho-Corasick (fast)
-    auto positions = RustCore::findAll(text(), word, false, true, true);
+    const auto positions = RustCore::findAll(docText, word, false, true, true);
 
-    QByteArray wordBytes = word.toUtf8();
-    int wordLen = wordBytes.size();
-
+    const int wordLen = word.toUtf8().size();
+    int filled = 0;
     for (auto pos : positions) {
-        SendScintilla(SCI_INDICATORFILLRANGE, (int)pos, wordLen);
+        SendScintilla(SCI_INDICATORFILLRANGE, (long)pos, wordLen);
+        if (++filled >= kOccurrenceMaxMatches) break;
     }
 }
 
-bool Editor::loadFile(const QString &path) {
+int Editor::recomputeWordCount() {
+    if (!m_wordCountDirty) return m_wordCount;
+    const long bytes = SendScintilla(QsciScintillaBase::SCI_GETLENGTH);
+    if (bytes > kWordCountMaxBytes) {
+        m_wordCount = -1;
+        m_wordCountDirty = false;
+        return m_wordCount;
+    }
+    // UTF-8 continuation bytes are never ASCII whitespace, so a raw byte
+    // scan counts words identically to the old QRegularExpression \s+ split
+    // (Qt5 \s is ASCII-only without UCP). SCI_GETCHARACTERPOINTER must go
+    // through SendScintillaPtrResult — the long-returning overload truncates
+    // the pointer on LLP64 Windows.
+    const char *p = static_cast<const char *>(
+        SendScintillaPtrResult(QsciScintillaBase::SCI_GETCHARACTERPOINTER));
+    int words = 0;
+    bool inWord = false;
+    if (p) {
+        for (long i = 0; i < bytes; ++i) {
+            const unsigned char c = static_cast<unsigned char>(p[i]);
+            const bool ws = (c == ' ' || (c >= '\t' && c <= '\r'));
+            if (ws) inWord = false;
+            else if (!inWord) { inWord = true; ++words; }
+        }
+    } else {
+        const QString t = text();
+        for (const QChar &qc : t) {
+            if (qc.isSpace()) inWord = false;
+            else if (!inWord) { inWord = true; ++words; }
+        }
+    }
+    m_wordCount = words;
+    m_wordCountDirty = false;
+    return m_wordCount;
+}
+
+bool Editor::loadFile(const QString &path, QString *errorOut) {
+    // D5 — no modal may exec() before this editor's top-level window is
+    // visible (pre-show session restore / CLI / remote opens would hang
+    // invisibly behind it).
+    const QWidget *top = window();
+    const bool windowVisible = top && top->isVisible();
     // Soft memory-budget gate (Preferences → Editing → Large files). Opening a
     // file pulls it fully into RAM; warn once before committing to a load that
     // exceeds the user's configured budget (default 2 GB). This is NOT a hard
@@ -761,6 +826,17 @@ bool Editor::loadFile(const QString &path) {
     if (memLimitBytes > 0 && onDiskSize > memLimitBytes) {
         const double fileGb  = onDiskSize / (1024.0 * 1024.0 * 1024.0);
         const double limitGb = Config::instance().fileMemoryLimitMb / 1024.0;
+        if (!windowVisible) {
+            // Non-interactive context: decline (the dialog's default button),
+            // report via errorOut so the caller can surface a notice.
+            const QString msg = tr("\"%1\" was not opened: %2 GB exceeds your %3 GB memory limit. "
+                                   "Raise it in Preferences → Editing → Large files, then open the file again.")
+                .arg(QFileInfo(path).fileName())
+                .arg(fileGb, 0, 'f', 2)
+                .arg(limitGb, 0, 'f', 1);
+            if (errorOut) *errorOut = msg;
+            return false;
+        }
         const auto reply = QMessageBox::question(this, tr("Large file"),
             tr("\"%1\" is %2 GB, larger than your %3 GB memory limit.\n\n"
                "Notepatra can open it, but loading needs roughly that much free "
@@ -779,7 +855,12 @@ bool Editor::loadFile(const QString &path) {
     auto result = RustCore::loadFile(path);
 
     if (result.status == 3) {
-        QMessageBox::warning(this, "Error", result.errorMsg);
+        // errorOut != nullptr: caller surfaces the failure (never a modal
+        // here). nullptr keeps today's modal, but only when visible.
+        if (errorOut)
+            *errorOut = tr("\"%1\": %2").arg(QFileInfo(path).fileName(), result.errorMsg);
+        else if (windowVisible)
+            QMessageBox::warning(this, "Error", result.errorMsg);
         return false;
     }
 
@@ -1840,6 +1921,18 @@ void Editor::onScintillaModified(int position, int modificationType,
     constexpr int kInsert = 0x01;
     constexpr int kDelete = 0x02;
     if ((modificationType & (kInsert | kDelete)) == 0) return;
+
+    // Bulk insert (programmatic setText / giant paste) — per-line tracking
+    // would issue ~4 Scintilla calls per line; reset history wholesale.
+    constexpr int kBulkLineThreshold = 1000;
+    if (linesAdded > kBulkLineThreshold) {
+        m_modifiedLines.clear();
+        m_savedLines.clear();
+        markerDeleteAll(22);
+        markerDeleteAll(23);
+        emit changeHistoryUpdated();
+        return;
+    }
 
     // Compute the first line affected. SCN_MODIFIED supplies `line` but
     // some bindings forward 0 for single-line edits — fall back to

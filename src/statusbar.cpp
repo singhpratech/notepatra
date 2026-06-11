@@ -99,7 +99,9 @@ void NppStatusBar::updateWords(int count) {
     QString t = m_size->text();
     int wIdx = t.indexOf("words");
     if (wIdx >= 0) t = t.left(wIdx).trimmed();
-    m_size->setText(t + QString("   words : %1").arg(count));
+    // count < 0 = suppressed (very large doc) or not yet computed.
+    const QString shown = count < 0 ? QString(QChar(0x2014)) : QString::number(count);
+    m_size->setText(t + QString("   words : %1").arg(shown));
 }
 
 void NppStatusBar::updateChangeHistory(int modified, int saved) {

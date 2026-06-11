@@ -7,7 +7,10 @@
 #include <QSplitter>
 #include <QFileSystemWatcher>
 #include <QDateTime>
+#include <QHash>
 #include <QMap>
+#include <QSet>
+#include <QVector>
 #include "tabmanager.h"
 #include "statusbar.h"
 #include "fileexplorer.h"
@@ -39,7 +42,10 @@ class NotesReminderEngine;
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
-    MainWindow();
+    // standaloneNoSession (--new / hung-primary fallback windows): never
+    // reads or writes session/recovery state — can't clobber the primary's
+    // session.json or destroy its crash evidence.
+    explicit MainWindow(bool standaloneNoSession = false);
     Editor *currentEditor();
     void openFile(const QString &path);
     SearchResultsPanel *searchResults() { return m_searchResults; }
@@ -47,11 +53,22 @@ public:
 
     // Called by the single-instance bridge in main.cpp when a second
     // `notepatra path/to/file` invocation forwards its args into the
-    // already-running process. Opens each file as a tab, jumps to
-    // `gotoLine` in the first file if > 0, then raises + activates
-    // the window so the user's double-click feels instant.
+    // already-running process. Raises + activates immediately (so the
+    // user's double-click feels instant), then opens each file from a
+    // queued slot one event-loop turn later — a paint lands between the
+    // raise and the load. Jumps to `gotoLine` in the last file if > 0.
     void handleRemoteOpen(const QStringList &paths, int gotoLine,
                           const QByteArray &startupId = QByteArray());
+
+    // D1 cold-start ordering — CLI args are applied by the deferred startup
+    // slot after the window is shown. Call before the event loop starts.
+    void setStartupActions(const QStringList &files, int gotoLine);
+    // Session restore + CLI/queued remote opens, run synchronously once.
+    // Idempotent: fired by a 0 ms timer from the ctor; tests call it directly.
+    void runStartupNow();
+
+    // Public so the session-autosave contract test can drive ticks directly.
+    void saveSession();
 
     // v0.1.70 — AI dock visibility public API. setAiDockVisible() is the
     // single source of truth for whether the AI dock is on screen.
@@ -74,6 +91,8 @@ signals:
 
 protected:
     void closeEvent(QCloseEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+    void changeEvent(QEvent *event) override;
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dropEvent(QDropEvent *event) override;
 
@@ -90,17 +109,36 @@ private:
 
     void updateTitle();
     void updateStatusBar();
+    void updateDocStats();
     void updateTabTitle(int index);
 
     // Session persistence + crash recovery
-    void saveSession();
     void restoreSession();
-    void autoSaveRecovery();
-    void checkCrashRecovery();
     void setupFileWatcher();
     void checkFileChanges();
     QString sessionFilePath();
     QString recoveryDir();
+
+    // D5 — modal hygiene. Pre-show load failures queue here and flush after
+    // first show as ONE combined non-modal dialog; the file watcher defers,
+    // coalesces, and debounces its prompts so they can never stack or fire
+    // against a never-shown window.
+    void queueStartupNotice(const QString &msg);
+    void flushStartupNotices();
+    void onWatchedFileChanged(const QString &path);
+    QStringList m_startupNotices;
+    bool m_startupNoticeFlushScheduled = false;
+    bool m_everShown = false;
+    QSet<QString> m_fileChangePromptOpen;
+    QHash<QString, qint64> m_fileChangePromptClosedMs;
+    QSet<QString> m_fileChangeRecheckPending;
+    QSet<QString> m_deferredFileChangePaths;
+    // One watcher prompt at a time across ALL paths — a second fileChanged
+    // delivered into the first prompt's nested event loop stacked another
+    // modal and mutated the tab list under the first one's saved index.
+    bool m_anyFileChangePromptOpen = false;
+    void drainDeferredFileChanges();
+    int tabIndexForPath(const QString &path) const;
 
     TabManager *m_tabs;
     NppStatusBar *m_statusBar;
@@ -153,6 +191,27 @@ private:
     QMenu *m_recentMenu = nullptr;
     PluginManager m_pluginManager;
     QTimer *m_autoSaveTimer = nullptr;
+    QTimer *m_wordCountTimer = nullptr;
+    // Fallback/--new window: never reads or writes session/recovery state.
+    bool m_standaloneNoSession = false;
+    // Compact metadata fingerprint of the last session.json actually written.
+    QByteArray m_lastSessionMeta;
+    // restoreSession() skipped because a LIVE instance owns the .restoring
+    // marker — runStartupNow must not overwrite or remove that marker.
+    bool m_restoreSkippedLiveOwner = false;
+    bool m_startupDone = false;
+    QStringList m_startupFiles;
+    int m_startupGotoLine = -1;
+    // D2 remote-open: raise/activate happens synchronously in
+    // handleRemoteOpen; file loads queue here and run one event-loop turn
+    // later so a paint lands between raise and load. While startup is
+    // pending (!m_startupDone, D1) the flush stays parked; runStartupNow()
+    // re-schedules it after the deferred session restore.
+    struct RemoteOpenRequest { QStringList paths; int gotoLine; };
+    QVector<RemoteOpenRequest> m_pendingRemoteOpens;
+    bool m_remoteFlushQueued = false;
+    void scheduleRemoteOpenFlush();
+    void flushPendingRemoteOpens();
     QFileSystemWatcher *m_fileWatcher = nullptr;
     QMap<QString, QDateTime> m_fileTimestamps;  // track last known modification time
     TerminalWidget *m_terminal = nullptr;

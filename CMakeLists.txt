@@ -1398,6 +1398,501 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_restore_session_un
     message(STATUS "Regression test enabled — target: test_restore_session_unreadable")
 endif()
 
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_cold_start_order.cpp")
+    set(COLD_START_SOURCES ${SOURCES})
+    list(FILTER COLD_START_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_cold_start_order
+        test_cold_start_order.cpp
+        ${COLD_START_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_cold_start_order rust_core)
+    target_compile_definitions(test_cold_start_order PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_cold_start_order PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_cold_start_order PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_cold_start_order PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_cold_start_order PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_cold_start_order PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_cold_start_order PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_cold_start_order PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_cold_start_order PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_cold_start_order PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_cold_start_order PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_cold_start_order PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_cold_start_order COMMAND $<TARGET_FILE:test_cold_start_order>)
+    set_tests_properties(test_cold_start_order PROPERTIES
+        LABELS "integration;mainwindow;session;startup;coldstart"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_cold_start_order")
+endif()
+
+# D2 (win-open-ghost) — remote-open: non-blocking pipe drain + activation
+# before deferred file loads. Pure local-socket IPC, fully offline.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_remote_open.cpp")
+    set(REMOTE_OPEN_SOURCES ${SOURCES})
+    list(FILTER REMOTE_OPEN_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_remote_open
+        test_remote_open.cpp
+        ${REMOTE_OPEN_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_remote_open rust_core)
+    target_compile_definitions(test_remote_open PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_remote_open PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_remote_open PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_remote_open PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_remote_open PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_remote_open PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_remote_open PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_remote_open PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_remote_open PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_remote_open PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_remote_open PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_remote_open PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_remote_open COMMAND $<TARGET_FILE:test_remote_open>)
+    set_tests_properties(test_remote_open PROPERTIES
+        LABELS "integration;mainwindow;remoteopen;singleinstance"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_remote_open")
+endif()
+
+# D3 (win-open-ghost) — status-bar word count: cached + debounced + capped.
+# Sections 6/7 are QElapsedTimer ceilings that fail on the old regex path.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_statusbar_wordcount_perf.cpp")
+    set(WORDCOUNT_PERF_SOURCES ${SOURCES})
+    list(FILTER WORDCOUNT_PERF_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_statusbar_wordcount_perf
+        test_statusbar_wordcount_perf.cpp
+        ${WORDCOUNT_PERF_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_statusbar_wordcount_perf rust_core)
+    target_compile_definitions(test_statusbar_wordcount_perf PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_statusbar_wordcount_perf PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_statusbar_wordcount_perf PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_statusbar_wordcount_perf PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_statusbar_wordcount_perf PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_statusbar_wordcount_perf PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_statusbar_wordcount_perf PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_statusbar_wordcount_perf PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_statusbar_wordcount_perf PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_statusbar_wordcount_perf PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_statusbar_wordcount_perf PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_statusbar_wordcount_perf PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_statusbar_wordcount_perf COMMAND $<TARGET_FILE:test_statusbar_wordcount_perf>)
+    set_tests_properties(test_statusbar_wordcount_perf PROPERTIES
+        LABELS "integration;statusbar;perf;d3"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_statusbar_wordcount_perf")
+endif()
+
+# D4 (win-open-ghost) — bulk setText guard: ScopedBulkLoad + the >1000-line
+# threshold keep wholesale loads out of the per-line change-history loop.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_bulk_settext_guard.cpp")
+    set(BULK_SETTEXT_SOURCES ${SOURCES})
+    list(FILTER BULK_SETTEXT_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_bulk_settext_guard
+        test_bulk_settext_guard.cpp
+        ${BULK_SETTEXT_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_bulk_settext_guard rust_core)
+    target_compile_definitions(test_bulk_settext_guard PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_bulk_settext_guard PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_bulk_settext_guard PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_bulk_settext_guard PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_bulk_settext_guard PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_bulk_settext_guard PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_bulk_settext_guard PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_bulk_settext_guard PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_bulk_settext_guard PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_bulk_settext_guard PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_bulk_settext_guard PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_bulk_settext_guard PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_bulk_settext_guard COMMAND $<TARGET_FILE:test_bulk_settext_guard>)
+    set_tests_properties(test_bulk_settext_guard PROPERTIES
+        LABELS "integration;editor;changehistory;perf;d4"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_bulk_settext_guard")
+endif()
+
+# D5 (win-open-ghost) — pre-show modal hygiene: no exec() before first show;
+# watcher prompts coalesce/debounce/defer. Modal drives are guarded.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_preshow_modal_hygiene.cpp")
+    set(PRESHOW_MODAL_SOURCES ${SOURCES})
+    list(FILTER PRESHOW_MODAL_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_preshow_modal_hygiene
+        test_preshow_modal_hygiene.cpp
+        ${PRESHOW_MODAL_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_preshow_modal_hygiene rust_core)
+    target_compile_definitions(test_preshow_modal_hygiene PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_preshow_modal_hygiene PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_preshow_modal_hygiene PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_preshow_modal_hygiene PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_preshow_modal_hygiene PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_preshow_modal_hygiene PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_preshow_modal_hygiene PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_preshow_modal_hygiene PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_preshow_modal_hygiene PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_preshow_modal_hygiene PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_preshow_modal_hygiene PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_preshow_modal_hygiene PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_preshow_modal_hygiene COMMAND $<TARGET_FILE:test_preshow_modal_hygiene>)
+    set_tests_properties(test_preshow_modal_hygiene PROPERTIES
+        LABELS "integration;mainwindow;modal;preshow;d5"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_preshow_modal_hygiene")
+endif()
+
+# D6 (win-open-ghost) — single-instance ACK protocol + hung-primary fallback.
+# Protocol-only: links just singleinstance.cpp, no GUI.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_single_instance.cpp")
+    if(NOT TARGET Threads::Threads)
+        find_package(Threads REQUIRED)
+    endif()
+    add_executable(test_single_instance test_single_instance.cpp src/singleinstance.cpp)
+    target_include_directories(test_single_instance PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_single_instance PRIVATE Qt5::Core Qt5::Network Threads::Threads)
+    notepatra_add_qt_test(test_single_instance)
+    set_tests_properties(test_single_instance PROPERTIES
+        LABELS "unit;singleinstance;d6" TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_single_instance")
+endif()
+
+# D7 (win-open-ghost) — CLI arg parse contract (the Windows wide-argv fix
+# feeds QCoreApplication::arguments() into this parser).
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_cli_args.cpp")
+    add_executable(test_cli_args test_cli_args.cpp src/cliargs.cpp)
+    target_include_directories(test_cli_args PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_cli_args PRIVATE Qt5::Core)
+    notepatra_add_qt_test(test_cli_args)
+    set_tests_properties(test_cli_args PROPERTIES LABELS "smoke;cli;d7")
+    message(STATUS "Regression test enabled — target: test_cli_args")
+endif()
+
+# D7 (win-open-ghost) — async-signal-safe crash flag write/read cycle.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_crash_flag.cpp")
+    add_executable(test_crash_flag test_crash_flag.cpp src/crashflag.cpp)
+    target_include_directories(test_crash_flag PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_crash_flag PRIVATE Qt5::Core)
+    notepatra_add_qt_test(test_crash_flag)
+    set_tests_properties(test_crash_flag PROPERTIES LABELS "smoke;crash;d7")
+    message(STATUS "Regression test enabled — target: test_crash_flag")
+endif()
+
+# D6 (win-open-ghost) — standalone/--new windows never read or write
+# session or recovery state (hung-primary fallback safety).
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_standalone_window.cpp")
+    set(STANDALONE_WINDOW_SOURCES ${SOURCES})
+    list(FILTER STANDALONE_WINDOW_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_standalone_window
+        test_standalone_window.cpp
+        ${STANDALONE_WINDOW_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_standalone_window rust_core)
+    target_compile_definitions(test_standalone_window PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_standalone_window PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_standalone_window PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_standalone_window PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_standalone_window PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_standalone_window PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_standalone_window PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_standalone_window PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_standalone_window PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_standalone_window PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_standalone_window PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_standalone_window PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_standalone_window COMMAND $<TARGET_FILE:test_standalone_window>)
+    set_tests_properties(test_standalone_window PROPERTIES
+        LABELS "integration;mainwindow;session;singleinstance;d6"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_standalone_window")
+endif()
+
+# D7 (win-open-ghost) — .crash_flag survives MainWindow construction
+# (surfaced by main() post-show, not silently wiped); legacy recovery_*
+# residue cleaned; dead crash-recovery modal stays dead.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_crash_notice_mainwindow.cpp")
+    set(CRASH_NOTICE_SOURCES ${SOURCES})
+    list(FILTER CRASH_NOTICE_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_crash_notice_mainwindow
+        test_crash_notice_mainwindow.cpp
+        ${CRASH_NOTICE_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_crash_notice_mainwindow rust_core)
+    target_compile_definitions(test_crash_notice_mainwindow PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_crash_notice_mainwindow PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_crash_notice_mainwindow PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_crash_notice_mainwindow PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_crash_notice_mainwindow PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_crash_notice_mainwindow PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_crash_notice_mainwindow PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_crash_notice_mainwindow PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_crash_notice_mainwindow PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_crash_notice_mainwindow PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_crash_notice_mainwindow PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_crash_notice_mainwindow PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_crash_notice_mainwindow COMMAND $<TARGET_FILE:test_crash_notice_mainwindow>)
+    set_tests_properties(test_crash_notice_mainwindow PROPERTIES
+        LABELS "integration;mainwindow;crash;d7"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_crash_notice_mainwindow")
+endif()
+
+# D8 (win-open-ghost) — session autosave change-detection (idle ticks
+# are free), atomic session.json write, .restoring marker PID liveness.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_session_autosave_guard.cpp")
+    set(AUTOSAVE_GUARD_SOURCES ${SOURCES})
+    list(FILTER AUTOSAVE_GUARD_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_session_autosave_guard
+        test_session_autosave_guard.cpp
+        ${AUTOSAVE_GUARD_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_session_autosave_guard rust_core)
+    target_compile_definitions(test_session_autosave_guard PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_session_autosave_guard PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_session_autosave_guard PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_session_autosave_guard PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_session_autosave_guard PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_session_autosave_guard PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_session_autosave_guard PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_session_autosave_guard PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_session_autosave_guard PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_session_autosave_guard PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_session_autosave_guard PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_session_autosave_guard PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_session_autosave_guard COMMAND $<TARGET_FILE:test_session_autosave_guard>)
+    set_tests_properties(test_session_autosave_guard PROPERTIES
+        LABELS "integration;mainwindow;session;perf;d8"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 180)
+    message(STATUS "Regression test enabled — target: test_session_autosave_guard")
+endif()
+
+# D8 (win-open-ghost) — double-click occurrence highlight: doc-size
+# gate + match cap so a popular word can't hang the GUI thread.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_occurrence_highlight_cap.cpp")
+    set(OCC_CAP_SOURCES ${SOURCES})
+    list(FILTER OCC_CAP_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_occurrence_highlight_cap
+        test_occurrence_highlight_cap.cpp
+        ${OCC_CAP_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_occurrence_highlight_cap rust_core)
+    target_compile_definitions(test_occurrence_highlight_cap PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_occurrence_highlight_cap PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_occurrence_highlight_cap PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_occurrence_highlight_cap PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_occurrence_highlight_cap PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_occurrence_highlight_cap PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_occurrence_highlight_cap PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_occurrence_highlight_cap PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_occurrence_highlight_cap PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_occurrence_highlight_cap PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_occurrence_highlight_cap PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_occurrence_highlight_cap PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_occurrence_highlight_cap COMMAND $<TARGET_FILE:test_occurrence_highlight_cap>)
+    set_tests_properties(test_occurrence_highlight_cap PROPERTIES
+        LABELS "unit;editor;perf;d8"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    message(STATUS "Regression test enabled — target: test_occurrence_highlight_cap")
+endif()
+
 # Same as test_change_history_mainwindow but pumps events between saves
 # so any QFileSystemWatcher race fires inside the test window.
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_change_history_watcher.cpp")

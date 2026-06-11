@@ -142,6 +142,22 @@ void LexerPlainText::styleText(int start, int end) {
     const int sliceLen = slice.size();
     if (sliceLen <= 0) return;  // nothing to paint; Scintilla buffer was empty here
 
+    // A pathological document (e.g. a multi-MB single line, where the whole
+    // doc is the visible range) would run 9 regex scans over the full text on
+    // every keystroke. Past this cap, degrade to default styling — same as
+    // Notepad++ disabling styling on huge documents.
+    constexpr int kMaxRegexSliceBytes = 512 * 1024;
+    if (sliceLen > kMaxRegexSliceBytes) {
+        startStyling(start);
+        int remaining = wantBytes;
+        while (remaining > 0) {
+            const int n = qMin(remaining, kMaxRegexSliceBytes);
+            setStyling(n, 0);
+            remaining -= n;
+        }
+        return;
+    }
+
     // Convert to QString for regex; multi-byte UTF-8 chars become single QChars,
     // but we only restyle on offsets we map back via charToByte() so spans align.
     const QString sliceQs = QString::fromUtf8(slice);
