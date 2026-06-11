@@ -5,7 +5,9 @@
 // and the fileChanged watcher must coalesce/debounce/defer its prompts.
 // Failure trigger is the cross-platform large-file gate (fileMemoryLimitMb=1
 // + a 2 MB file) — no POSIX permission injection, runs on all 3 platforms.
-// Modal DRIVES are winOffscreenModalUnsafe()-guarded (win-noter-segfault).
+// Modal DRIVES are winOffscreenModalUnsafe()-guarded (win-noter-segfault);
+// the watcher-prompt sections (§4/§5) are additionally skipped under
+// offscreen macOS, where FSEvents-backed prompts wedged the modal loop.
 // Fully offline.
 
 #include "mainwindow.h"
@@ -27,6 +29,7 @@
 #include <QTimer>
 
 #include <cstdio>
+#include <cstdlib>
 
 static int g_pass = 0, g_fail = 0;
 #define EXPECT(label, cond) \
@@ -35,6 +38,18 @@ static int g_pass = 0, g_fail = 0;
 
 static bool winOffscreenModalUnsafe() {
 #if defined(Q_OS_WIN)
+    return QGuiApplication::platformName()
+               .compare(QLatin1String("offscreen"), Qt::CaseInsensitive) == 0;
+#else
+    return false;
+#endif
+}
+
+// FSEvents/kqueue-backed watcher prompts wedge modal drives under offscreen
+// macOS (v0.1.114 second tag run hung 2 h in §4/§5); Windows shares the
+// offscreen QMessageBox class. Watcher behaviour stays covered on Linux.
+static bool offscreenWatcherModalUnsafe() {
+#if defined(Q_OS_WIN) || defined(Q_OS_MAC)
     return QGuiApplication::platformName()
                .compare(QLatin1String("offscreen"), Qt::CaseInsensitive) == 0;
 #else
@@ -84,7 +99,20 @@ int main(int argc, char *argv[]) {
 #endif
     qputenv("QT_QPA_PLATFORM", "offscreen");
 
+    // Unbuffered stdout: section headers survive a hard crash or a watchdog
+    // kill, so ctest --output-on-failure pinpoints the failing section (the
+    // v0.1.114 second tag run hung here for 2 h with zero output).
+    setvbuf(stdout, nullptr, _IONBF, 0);
+
     QApplication app(argc, argv);
+
+    // Hard watchdog: every section is elapsed-bounded, so the only way past
+    // ~240 s is a wedged nested modal loop. Exit red fast instead of hanging
+    // CI until the 6-hour job kill.
+    QTimer::singleShot(240000, []() {
+        std::printf("[WATCHDOG] test exceeded 240 s — aborting\n");
+        std::_Exit(3);
+    });
 
     std::printf("=== test_preshow_modal_hygiene ===\n\n");
 
@@ -258,16 +286,22 @@ int main(int argc, char *argv[]) {
     QObject::connect(&clicker, &QTimer::timeout, [&promptCount]() {
         for (QWidget *w : QApplication::topLevelWidgets()) {
             auto *mb = qobject_cast<QMessageBox *>(w);
-            if (mb && mb->isVisible() &&
-                mb->windowTitle() == QLatin1String("File Changed")) {
+            if (!mb || !mb->isVisible()) continue;
+            if (mb->windowTitle() == QLatin1String("File Changed"))
                 ++promptCount;
-                if (auto *no = mb->button(QMessageBox::No)) no->click();
-            }
+            else
+                std::printf("  [CLICKER] unexpected box: \"%s\"\n",
+                            qPrintable(mb->windowTitle()));
+            // Answer EVERY box — an unanswered unexpected modal wedges the
+            // pump loop forever (red-state lesson: clickers answer
+            // unexpected boxes).
+            if (auto *no = mb->button(QMessageBox::No)) no->click();
+            else mb->close();
         }
     });
 
-    if (winOffscreenModalUnsafe()) {
-        std::printf("  [SKIP] §4 drives modals (offscreen-Windows)\n");
+    if (offscreenWatcherModalUnsafe()) {
+        std::printf("  [SKIP] §4 watcher modal drives (offscreen Windows/macOS)\n");
     } else {
         const QString watched = wd.path() + "/watched.txt";
         writeBytes(watched, "original content\n");
@@ -310,8 +344,8 @@ int main(int argc, char *argv[]) {
 
     // ── §5 — never-shown / minimized deferral ──
     std::printf("\nSection 5 — deferral until show / un-minimize\n");
-    if (winOffscreenModalUnsafe()) {
-        std::printf("  [SKIP] §5 drives modals (offscreen-Windows)\n");
+    if (offscreenWatcherModalUnsafe()) {
+        std::printf("  [SKIP] §5 watcher modal drives (offscreen Windows/macOS)\n");
     } else {
         const QString watched2 = wd.path() + "/watched2.txt";
         writeBytes(watched2, "v1\n");

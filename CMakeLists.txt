@@ -2816,3 +2816,16 @@ if(NOTEPATRA_BUILD_TESTS)
         message(STATUS "Aggregated ${_n} test_* executables into notepatra_all_tests")
     endif()
 endif()
+
+# v0.1.114's second tag run: a test with no TIMEOUT hung macOS CI for 2 hours
+# (plain enable_testing() has no default — a wedged test waits for the 6-hour
+# job kill). Every test gets a ceiling; explicit per-test TIMEOUTs win.
+if(NOTEPATRA_BUILD_TESTS)
+    get_property(_all_tests DIRECTORY "${CMAKE_SOURCE_DIR}" PROPERTY TESTS)
+    foreach(_t IN LISTS _all_tests)
+        get_test_property(${_t} TIMEOUT _to)
+        if(NOT _to)
+            set_tests_properties(${_t} PROPERTIES TIMEOUT 600)
+        endif()
+    endforeach()
+endif()

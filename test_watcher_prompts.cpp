@@ -8,7 +8,8 @@
 //   §4 closeTab's Save/Discard/Cancel modal is covered by the same gate:
 //      deleting the watched file mid-prompt must NOT stack a File Deleted
 //      box that deletes the editor closeTab holds (use-after-free repro).
-// Modal drives are winOffscreenModalUnsafe()-guarded (win-noter-segfault).
+// Skipped entirely under offscreen Windows (win-noter-segfault QMessageBox
+// class) AND offscreen macOS (FSEvents watcher prompts wedge modal drives).
 // Fully offline.
 
 #include "mainwindow.h"
@@ -34,8 +35,11 @@ static int g_pass = 0, g_fail = 0;
          else      { ++g_fail; std::printf("  [FAIL] %s\n", label); } \
          fflush(stdout); } while (0)
 
-static bool winOffscreenModalUnsafe() {
-#if defined(Q_OS_WIN)
+// Windows: the offscreen QMessageBox class (win-noter-segfault). macOS:
+// FSEvents-backed watcher prompts wedged a sibling test's modal loop for 2 h
+// (v0.1.114 second tag run) — same skip, behaviour stays covered on Linux.
+static bool offscreenWatcherModalUnsafe() {
+#if defined(Q_OS_WIN) || defined(Q_OS_MAC)
     return QGuiApplication::platformName()
                .compare(QLatin1String("offscreen"), Qt::CaseInsensitive) == 0;
 #else
@@ -91,8 +95,9 @@ int main(int argc, char *argv[]) {
     std::printf("=== test_watcher_prompts ===\n\n");
     fflush(stdout);
 
-    if (winOffscreenModalUnsafe()) {
-        std::printf("  [SKIP] entire test drives modals (offscreen-Windows)\n");
+    if (offscreenWatcherModalUnsafe()) {
+        std::printf("  [SKIP] entire test drives watcher modals "
+                    "(offscreen Windows/macOS)\n");
         std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
         return 0;
     }
