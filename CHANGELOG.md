@@ -9,7 +9,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ## [0.1.114] — 2026-06-11
 
-**The Windows "double-click does nothing" ghost-open class is dead, and the whole open pipeline is hardened on every platform. 13 deep-dive findings + 30 fleet-confirmed follow-ups (a second adversarial fleet audited the fixes themselves and caught 3 serious bugs the first wave introduced) — all fixed, all pinned by tests. Full ctest 67/67 (13 new test binaries), 16/16 real-binary multi-process smoke. Same bare binary, no new dependencies.**
+**The Windows "double-click does nothing" ghost-open class is dead, and the whole open pipeline is hardened on every platform. 13 deep-dive findings + 30 fleet-confirmed follow-ups (a second adversarial fleet audited the fixes themselves and caught 3 serious bugs the first wave introduced) — every serious finding fixed and pinned by tests; 7 low-priority items documented as deferred (see Known trade-off + task backlog). Full ctest 67/67 (13 new test binaries), 16/16 real-binary multi-process smoke. Same bare binary, no new dependencies.**
 
 ### Fixed — opening files
 - **Greeting-gated single-instance forward** — the running instance proves it is alive *before* the payload is sent (no payload can sit deliverable in the pipe after a fallback), every byte is confirmed drained before reporting success, and a genuinely hung primary yields a visible temporary window with the requested files instead of silence. Double opens are structurally impossible (`singleinstance.cpp`, `main.cpp`, `remoteopen.cpp`).
