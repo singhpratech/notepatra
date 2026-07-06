@@ -58,7 +58,9 @@
 
 #include <cstdio>
 #include <cstdlib>
+#ifndef _WIN32
 #include <unistd.h>   // geteuid — skip the read-only-dir case when running as root
+#endif
 
 static int g_pass = 0, g_fail = 0, g_skip = 0;
 
@@ -453,8 +455,16 @@ static void testAtomicWrite() {
     //     the filesystem does not actually enforce the read-only dir (probed
     //     below) — either way the perms wouldn't bite and asserting would be a
     //     false failure rather than a real signal.
-    if (geteuid() == 0) {
-        skip("blocked-write-preserves-original", "running as root; dir perms don't bite");
+#ifdef _WIN32
+    // Windows has no POSIX euid, and NTFS does not honor POSIX-style read-only
+    // dir permissions via QFile::setPermissions — the enforcement probe below
+    // would report "not enforced" anyway, so skip this sub-case outright.
+    const bool rootBypassesDirPerms = true;
+#else
+    const bool rootBypassesDirPerms = (geteuid() == 0);
+#endif
+    if (rootBypassesDirPerms) {
+        skip("blocked-write-preserves-original", "root or non-POSIX FS; dir perms don't bite");
     } else {
         const QString roDir = tmp.path() + "/ro";
         QDir().mkpath(roDir);
