@@ -7,6 +7,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.115] — 2026-07-05
+
+**The AI assistant and Data-analyst mode are now safe by construction — a five-wave hardening sprint took the coding assistant from grade B to A- and the data-analyst piece from C+ to A-.** No new dependencies, same bare binary, no user-facing feature changes: a pure safety, robustness, and quality release. Full ctest 70/70 (three new security/gate suites, 217 new assertions), 8 red-state proofs, and an adversarial re-verification fleet that caught and closed a regression a fix itself introduced.
+
+### Fixed — Data-analyst database safety
+- **Real read-only enforcement (3 layers).** On-disk analysis databases open engine-level read-only (DuckDB `access_mode=READ_ONLY`; the in-memory CSV ingestion scratch stays writable). A structural SQL classifier replaces the bypassable prefix allowlist — it strips comments/literals, enforces a single statement, and walks every token, so CTE-wrapped DML, `EXPLAIN ANALYZE <DML>`, `SELECT … INTO`, stacked statements, `INSTALL`/`LOAD`/`ATTACH`/`COPY`, assignment-form `PRAGMA`, and side-effecting functions (`load_extension`, `OPENQUERY`, `nextval`, `pg_terminate_backend`, …) are rejected and routed to a human approval card. PostgreSQL/MySQL sessions get a server-side read-only transaction backstop.
+- **Human approval for DB mutations.** A data-changing query surfaces an inline card previewing the exact SQL and runs only on Approve; the model's own `confirm: true` self-approval is removed.
+- **Genuine cancel + no OOM.** Queries run off the GUI thread with a timeout and a Stop button that actually interrupts a running DuckDB query (`duckdb_interrupt`); results are row-capped before materialization so a cross-join can't OOM.
+
+### Fixed — AI coding assistant safety
+- **Mode-aware tool registry:** the read-only Ask segment and Data mode no longer receive `write_file`/`apply_diff`, and the host refuses a mutating call on any read-only surface; Compose's dry-run is host-enforced.
+- **Atomic file writes** via `QSaveFile` — a failed write leaves the original byte-for-byte intact (fixes a window that could destroy both copies); byte-exact rollback preserved.
+- **"Approve all this turn" is scoped per kind** — approving file writes no longer authorizes a later DB mutation; pending approvals discard on switch to Ask.
+- **Truncation is a distinct, recoverable state** with an inline "Response cut off — Retry" affordance and cause (context-limit / content-filter / network-drop / backend-abort); truncated replies now recorded in the AI Interaction Log.
+- **Keyboard pass:** Esc-hide, focus-input shortcut, Edit-Plan Space/Enter, approval-card Enter/Esc; inner "Chat" segment renamed **Ask** with persisted segment selection; empty-state prompt card.
+
+### Testing
+- The previously-phantom read-only-gate test (git-excluded, never compiled) is now real, tracked, and CI-run — 143 assertions. New `test_ai_write_gate` (44) and `test_db_query_runner` (30, real `duckdb_interrupt`). Full offscreen ctest **70/70** (up from 67), every security fix red-state proven (revert → fast fail → restore → green). A 5-agent adversarial fleet re-verified all fixes; a fix-introduced classifier regression was caught and closed (`WITH … <outer DML>`), 23/23 re-verified with no new regression.
+
+### Known trade-offs (deferred, non-blocking)
+- Raw model-authored Vega specs lack a `data.url` CSP; CSV Latin-1 fallback + newline-less-giant-file guard unimplemented; DB passwords XOR-obfuscated not keychain-stored. All defense-in-depth / robustness — none allow an unapproved mutation or leak on normal use.
+
+---
+
 ## [0.1.114] — 2026-06-11
 
 **The Windows "double-click does nothing" ghost-open class is dead, and the whole open pipeline is hardened on every platform. 13 deep-dive findings + 30 fleet-confirmed follow-ups (a second adversarial fleet audited the fixes themselves and caught 3 serious bugs the first wave introduced) — every serious finding fixed and pinned by tests; 7 low-priority items documented as deferred (see Known trade-off + task backlog). Full ctest 67/67 (13 new test binaries), 16/16 real-binary multi-process smoke. Same bare binary, no new dependencies.**

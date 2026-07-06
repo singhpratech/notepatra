@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+> **Maintainers: read `MAINTAINING.md` first.** This file covers build/style basics only; `MAINTAINING.md` is the full handbook — release gates, CI traps, testing discipline, code-level gotchas, current fix queues, and the working agreement with the repo owner.
+
 ## Project Structure & Module Organization
 `src/` contains the Qt5/QScintilla desktop app in C++17, with paired headers and sources such as `mainwindow.h` and `mainwindow.cpp`. `rust-core/` holds the Rust 2021 static library that handles file I/O, search, diff, formatting, and other backend logic exposed through FFI. Top-level `test_*.cpp` files are focused smoke or regression tests. `resources/` stores icons and platform assets, `docs/` contains the website/install artifacts, and `installers/` plus `scripts/` cover packaging and release helpers.
 

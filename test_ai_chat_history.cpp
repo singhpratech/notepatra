@@ -140,8 +140,13 @@ public:
     }
     static AgentRepeatGuard &repeatGuard(AIPanel *p) { return p->m_repeatGuard; }
     static QStringList &turnToolActions(AIPanel *p) { return p->m_turnToolActions; }
-    static QVector<std::function<void()>> &approvers(AIPanel *p) {
-        return p->m_approvalApprovers;
+    // v0.1.114 (B1, item 6) — the approval gate now stores held tool calls as
+    // PendingApproval records (survive re-render) instead of per-card lambdas.
+    // Count open approvals and drive an Approve via the record-based resolver.
+    static int openApprovalCount(AIPanel *p) { return p->m_openApprovals.size(); }
+    static void approveLastOpen(AIPanel *p) {
+        if (!p->m_openApprovals.isEmpty())
+            p->resolveApproval(p->m_openApprovals.last(), /*approve=*/true);
     }
 
     // For the "switch back to chat resurfaces" tests, we sometimes want
@@ -478,11 +483,11 @@ static void testGatedWriteBookkeeping() {
     writeArgs["path"] = cfg;
     writeArgs["content"] = QStringLiteral("{}");
     AIPanelTestAccess::callHandleToolCall(&panel, "id3", "write_file", writeArgs);
-    auto &approvers = AIPanelTestAccess::approvers(&panel);
-    EXPECT_TRUE("gated write registered an approver", !approvers.isEmpty());
+    EXPECT_TRUE("gated write registered an open approval",
+                AIPanelTestAccess::openApprovalCount(&panel) > 0);
 
-    if (!approvers.isEmpty()) {
-        approvers.last()();   // user clicks Approve → doApprove writes + bookkeeps
+    if (AIPanelTestAccess::openApprovalCount(&panel) > 0) {
+        AIPanelTestAccess::approveLastOpen(&panel);   // user clicks Approve → resolveApproval writes + bookkeeps
 
         // FINDING 2 (H8): the approved write reset the guard streak, so the
         // now-valid identical read is no longer refused as repeated_call.

@@ -14,8 +14,12 @@
 #include <QAbstractButton>
 #include <QHash>
 #include <QVector>
+#include <QPointer>
+#include <QSharedPointer>
+#include <QJsonObject>
 #include <functional>
 #include "agent_repeat_guard.h"
+#include "ai_tools.h"
 #include "ollama.h"
 
 class QProcess;
@@ -115,6 +119,12 @@ public slots:
     // chat transcript so every bubble inline style is rebuilt against
     // the new aiPalette(). Wired to MainWindow::themeChanged().
     void onThemeChanged();
+    // v0.1.115 — move keyboard focus to the chat input (used by MainWindow's
+    // "focus AI input" shortcut). Shows nothing itself — the host is
+    // responsible for making the dock visible first — it only raises + focuses
+    // the multi-line prompt field so the user can type immediately.
+    void focusInput();
+
     // v0.1.67 — programmatically un-fullscreen the AI dock. Used by
     // MainWindow::exitAiFullscreenIfActive() so that opening a new tool
     // tab (Project Search, JSON Tools, REST, Git, …) while the AI dock
@@ -125,14 +135,6 @@ public slots:
     // when they click ⛶ themselves, so MainWindow's existing handler runs
     // unchanged. The AIPanel widget itself is preserved.
     void forceExitFullscreen();
-
-    // v0.1.70 — Reset the panel to Chat mode. Called by MainWindow::toggleAiDock
-    // when the AI dock is being shown (Ctrl+Shift+A from hidden → visible) so
-    // every fresh open of the dock starts in Chat mode regardless of which
-    // mode was active when the dock was last hidden. Per user UX rule:
-    // "always default to chat whenever it opens from the button on AI Assistant".
-    // No-op when m_chatMode is null or already checked.
-    void resetToChatMode();
 
 signals:
     void insertText(const QString &text);
@@ -225,6 +227,22 @@ private:
     void setStatus(const QString &text, bool error = false);
     void updateVoiceButtonVisual(bool recording);
     void renderTranscript();
+
+    // v0.1.115 — mid-stream truncation retry (OllamaClient::finishedTruncated).
+    // renderTruncationNotice() draws the compact "Response cut off — <reason>"
+    // strip with a Retry button under the just-finalized last assistant bubble;
+    // it is re-created from the ephemeral m_truncatedActive/m_truncatedReason
+    // state on every renderTranscript so a theme/mode re-render never orphans
+    // it. retryLastTurn() re-issues the identical last generate() turn (same
+    // prompt / system prompt / tools / prior history captured at send time),
+    // dropping the truncated partial first.
+    void renderTruncationNotice(const QString &reason);
+    void retryLastTurn();
+
+    // v0.1.115 — first-run placeholder for the plain Chat intent (no coding /
+    // data welcome card owns that empty state). Shows a mode-truthful
+    // capability line + 2-3 clickable example prompts that seed the input.
+    void renderChatEmptyState();
     // v0.1.55 — populate m_modelCombo with a tree-grouped view of an
     // OpenRouter / OpenAI /v1/models response. Groups by provider prefix
     // (anthropic / openai / google / meta-llama / mistralai / qwen / x-ai
@@ -348,6 +366,11 @@ private:
         bool       wasNew;      // true → the apply created the file → revert deletes it
     };
     QVector<AppliedSnapshot> m_lastApplyBatch;
+    // v0.1.115 (F10) — bumped every time applyComposerEdits records a new batch.
+    // undoLastApply captures it on entry; if a fresh Apply lands while the drift
+    // QMessageBox is open (modal re-entrancy), the generation changes and undo
+    // must NOT clear/hide the now-newer batch's undo record.
+    quint64 m_applyBatchGen = 0;
 
     // Shared atomic .tmp+rename write used by BOTH applyComposerEdits and
     // undoLastApply, so the two paths can never diverge. *wasNew (out) reports
@@ -397,6 +420,21 @@ private:
     QJsonArray m_lastToolsArray;           // remember tools array for continuations
     bool       m_toolsActiveThisTurn = false;
 
+    // v0.1.115 — truncation retry. Ephemeral (per-turn) state driving the
+    // inline "Response cut off" notice; cleared on every new/retried turn,
+    // clearChat, and mode switch. The m_retry* snapshot is captured verbatim
+    // right before each generate() so retryLastTurn() re-issues the identical
+    // request without re-deriving it from mutated input/context state.
+    bool       m_truncatedActive = false;
+    QString    m_truncatedReason;
+    bool       m_retryValid = false;
+    QString    m_retryPrompt;
+    QString    m_retrySystemPrompt;
+    bool       m_retryThinking = false;
+    QStringList m_retryImages;
+    QJsonArray m_retryTools;
+    QJsonArray m_retryPriorJson;
+
     // v0.1.112 — agent-loop perseveration breaker + force-finalize state.
     // m_repeatGuard tracks consecutive byte-identical failing tool calls:
     // the 2nd identical failure queues a one-time change-strategy system
@@ -423,25 +461,84 @@ private:
     // lambda flushes it), we hold the flush while approvals are pending and
     // let each card's button resume it.
     int  m_pendingWriteApprovals = 0;          // outstanding approval cards
-    bool m_turnWriteApproval = false;          // "Approve all writes this turn"
+    // v0.1.115 (F3) — "Approve all this turn" is scoped BY KIND: a file-write
+    // approve-all NEVER auto-runs a later mutating query_sql, and vice-versa.
+    // A single shared flag let a prompt-injected model show a harmless file diff,
+    // harvest the approve-all click, then smuggle a destructive DELETE with no
+    // card. Each grant now only covers the kind of the card that was clicked.
+    bool m_turnWriteApprovalFile = false;      // "Approve all writes this turn"
+    bool m_turnWriteApprovalSql  = false;      // "Approve all queries this turn"
     bool m_streamFinishedAwaitingApproval = false;  // stream ended while pending
-    // Render an inline Approve/Reject/Approve-all card for a held mutating
-    // tool call and pause the turn until the user decides.
+
+    // v0.1.114 (B1) — a held mutating tool call awaiting a human decision. The
+    // record is the SINGLE source of truth for the gate: its widget lives in
+    // m_chatLayout and is DESTROYED by every renderTranscript (theme/mode/history
+    // re-render). renderTranscript re-creates the card from this record so a
+    // normal re-render never orphans the tool call (the v0.1.111 regression).
+    // Only a genuine discard (mode switch, workspace change, new turn, Stop,
+    // clearChat, stream error) resolves the held call with a structured cancel.
+    struct PendingApproval {
+        // FileWrite = write_file / apply_diff (disk edit; preview is a diff).
+        // SqlMutation = query_sql / csv_query where the SQL mutates (preview is
+        // the SQL text). Only these ever gate.
+        enum class Kind { FileWrite, SqlMutation };
+        Kind kind = Kind::FileWrite;
+        QString id;             // tool-call id (correlates the eventual result)
+        QString name;           // tool name
+        QJsonObject args;       // sanitized model args (host-only flags stripped)
+        QString argsSummary;    // short label for fallback error cards
+        // FileWrite preview:
+        QString before, after, absPath, shown;
+        // SqlMutation preview:
+        QString sql, sqlContext;   // sqlContext = "connection 'x'" / "file y.csv"
+        // Stable one-shot decided flag — survives card re-creation so a stale
+        // click on a torn-down card can never double-resolve.
+        QSharedPointer<bool> decided;
+        // Live widget handles, refreshed on every renderApprovalCard() so a
+        // resolution can update whichever card instance is currently on screen.
+        QPointer<QLabel> statusLbl;
+        QPointer<QPushButton> approveBtn, allBtn, rejectBtn;
+    };
+    QVector<QSharedPointer<PendingApproval>> m_openApprovals;
+
+    // Build the approval record (FileWrite via a forced dry-run preview) and
+    // render its card. Pauses the turn until the user decides.
     void enqueueWriteApproval(const QString &id, const QString &name,
                               const QJsonObject &args, const QString &argsSummary);
+    // Same, for a mutating query_sql / csv_query call (item 3 human SQL gate).
+    void enqueueSqlApproval(const QString &id, const QString &name,
+                            const QJsonObject &args, const QString &argsSummary,
+                            const QString &sql, const QString &sqlContext);
+    // (Re)build the inline Approve/Reject/Approve-all card widget for an open
+    // approval and bind its buttons to the record. Called by enqueue* and by
+    // renderTranscript (so the card survives a re-render).
+    void renderApprovalCard(const QSharedPointer<PendingApproval> &pa);
+    // Execute (Approve) or decline (Reject) a held approval, queue its tool
+    // result, remove it from m_openApprovals, and resume the loop if idle.
+    void resolveApproval(const QSharedPointer<PendingApproval> &pa, bool approve);
+    // "Approve all this turn" — resolve every still-open card as approved and
+    // grant the rest of the turn FOR THE CLICKED KIND ONLY (F3): a FileWrite
+    // approve-all must never satisfy a later SqlMutation gate, or vice-versa.
+    void approveAllOpenApprovals(PendingApproval::Kind grantKind);
     // Resume the agent loop once the last pending approval resolves.
     void maybeResumeAfterApprovals();
-    // Neutralise every open write-approval card (set its one-shot decided flag,
-    // disable its buttons) and reset the gate counters. Called from every turn-
-    // teardown path — Stop, stream error, clearChat, and a forced re-render —
-    // so a write the user cancelled can NEVER land, and the counter can never
-    // strand the next turn. Each enqueueWriteApproval registers a canceller here.
-    void cancelPendingWriteApprovals();
-    QVector<std::function<void()>> m_approvalCancellers;
-    // Parallel registry of per-card "approve" callbacks so "Approve all this
-    // turn" resolves EVERY open card (not just the clicked one) — matching the
-    // button's promise when a stream emitted several writes.
-    QVector<std::function<void()>> m_approvalApprovers;
+    // Discard EVERY open approval: neutralise its card and resolve the held
+    // tool call with a structured cancel (Deny-shape, `reason`) so the model
+    // never waits forever. Called by every genuine turn-teardown path (Stop,
+    // stream error, clearChat, mode switch, workspace change, new turn). NOT
+    // called by a normal re-render — those re-create the card instead.
+    void cancelPendingWriteApprovals(const QString &reason = QStringLiteral("ui-refresh-cancelled"));
+
+    // v0.1.114 (B1, item 5) — run a query_sql / csv_query tool call OFF the
+    // synchronous GUI path: AiTools::execute is dispatched to a worker via
+    // QtConcurrent and awaited in a local QEventLoop that excludes socket
+    // notifiers (so the streaming HTTP socket can't re-enter handleToolCall),
+    // bounded by a 30 s timeout and cancellable via the Stop button. Guarded by
+    // m_inDbQueryLoop so a nested DB call can't spin a second event loop. The
+    // GUI thread can therefore never block forever on a slow/hung query.
+    AiTools::ToolResult runDbToolGuarded(const AiTools::ToolCall &call,
+                                         bool approvedMutation);
+    bool m_inDbQueryLoop = false;
 
     // Legacy placeholder — retained so any stray references still compile.
     // All rendering now goes through m_chatLayout.

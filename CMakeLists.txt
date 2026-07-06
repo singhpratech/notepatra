@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.114 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.115 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -539,6 +539,27 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_terminal_ansi.cpp"
     notepatra_add_qt_test(test_terminal_ansi)
     set_tests_properties(test_terminal_ansi PROPERTIES LABELS "smoke;terminal;v0125")
     message(STATUS "Regression test enabled — target: test_terminal_ansi")
+endif()
+
+# ── Read-only SQL classifier gate (query_sql / csv_query security contract) ──
+# Links the REAL DbConnections::classifySql / isReadOnlyQuery / isMutation from
+# dbconnections.cpp (Qt-Core string logic; NOTEPATRA_HAVE_DUCKDB stays off for
+# this target so the classifier is exercised in isolation, no DuckDB link).
+# Qt5::Gui/Widgets/Sql are pulled in because dbconnections.cpp's TU also holds
+# the connection-manager dialog + QSqlDatabase code. Offscreen-safe: pure
+# string logic, never constructs a widget or modal.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_db_readonly_gate.cpp")
+    add_executable(test_db_readonly_gate
+        test_db_readonly_gate.cpp
+        src/dbconnections.cpp
+    )
+    target_include_directories(test_db_readonly_gate PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_db_readonly_gate PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Sql)
+    notepatra_add_qt_test(test_db_readonly_gate)
+    set_tests_properties(test_db_readonly_gate PROPERTIES
+        LABELS "unit;ai;db;security" TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_db_readonly_gate")
 endif()
 
 # ── .npd diagram parser (diagram subsystem; pure C++, no WebEngine) ──
@@ -1176,6 +1197,70 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_chat_history.cp
         LABELS "unit;ai;chat-history"
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     message(STATUS "Regression test enabled — target: test_ai_chat_history")
+endif()
+
+# ── AI write/SQL approval gate + atomic write + byte-exact rollback + truncation ──
+# v0.1.114/v0.1.115 security contract. Links the REAL AIPanel + DbConnections
+# (same full source set as test_ai_chat_history — main.cpp stripped) so it
+# exercises the shipped writeFileAtomic / resolveApproval / undoLastApply /
+# renderTruncationNotice, not a copy. Offscreen-safe: the approval gate is
+# driven through host accessors, never a QMessageBox exec(). Explicit TIMEOUT
+# (enable_testing has no default) so a wedged nested DB event loop can't hang CI.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_write_gate.cpp")
+    set(AI_WRITE_GATE_SOURCES ${SOURCES})
+    list(FILTER AI_WRITE_GATE_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_ai_write_gate
+        test_ai_write_gate.cpp
+        ${AI_WRITE_GATE_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_ai_write_gate rust_core)
+    target_compile_definitions(test_ai_write_gate PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_ai_write_gate PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_ai_write_gate PRIVATE
+        Qt5::Widgets
+        Qt5::PrintSupport
+        Qt5::Network
+        Qt5::Concurrent
+        Qt5::Sql
+        Qt5::Charts
+        ${QSCINTILLA_LIB}
+        ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_ai_write_gate PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_ai_write_gate PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_ai_write_gate PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_ai_write_gate PRIVATE
+            ws2_32 userenv bcrypt ntdll
+            advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_ai_write_gate PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_ai_write_gate PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_ai_write_gate PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_ai_write_gate PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_ai_write_gate PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_ai_write_gate COMMAND $<TARGET_FILE:test_ai_write_gate>)
+    set_tests_properties(test_ai_write_gate PROPERTIES
+        LABELS "unit;ai;write-gate;security"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 180)
+    message(STATUS "Regression test enabled — target: test_ai_write_gate")
 endif()
 
 # v0.1.68 — integration test for AI dock auto-exit-fullscreen on tab
@@ -2529,6 +2614,49 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_duckdb.cpp"
     add_test(NAME test_duckdb COMMAND $<TARGET_FILE:test_duckdb>)
     set_tests_properties(test_duckdb PROPERTIES LABELS "unit;duckdb;data")
     message(STATUS "DuckDB smoke test enabled — target: test_duckdb")
+endif()
+
+# DB query cancel test — the SHIPPING interrupt path: DbConnections::runQuery
+# threaded with a QueryInterruptToken so a controller thread aborts a running
+# DuckDB query mid-flight (duckdb_interrupt), plus the DuckDb engine-level
+# read-only contract, the row-cap, and the SQL classifier port. DuckDB-gated
+# exactly like the test_duckdb smoke test above; links the real query path deps.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_db_query_runner.cpp"
+   AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+    add_executable(test_db_query_runner
+        test_db_query_runner.cpp
+        src/dbconnections.cpp
+        src/duckdb_client.cpp
+    )
+    target_include_directories(test_db_query_runner PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${DUCKDB_INCLUDE_DIR}
+    )
+    target_compile_definitions(test_db_query_runner PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+    target_link_libraries(test_db_query_runner PRIVATE
+        Qt5::Core
+        Qt5::Gui
+        Qt5::Widgets
+        Qt5::Sql
+        ${DUCKDB_LIBRARY}
+    )
+    if(UNIX AND NOT APPLE)
+        set_target_properties(test_db_query_runner PROPERTIES
+            BUILD_RPATH "${CMAKE_SOURCE_DIR}/vendor/duckdb"
+        )
+    elseif(APPLE)
+        set_target_properties(test_db_query_runner PROPERTIES
+            BUILD_RPATH "${CMAKE_SOURCE_DIR}/vendor/duckdb"
+        )
+    endif()
+    # notepatra_add_qt_test → runs under QT_QPA_PLATFORM=offscreen and adds the
+    # target to the notepatra_all_tests meta-target so CI always builds it.
+    notepatra_add_qt_test(test_db_query_runner)
+    # ALWAYS set a TIMEOUT (enable_testing() has no default; the heavy cancel/
+    # timeout sub-tests each self-abort at a 25s failsafe in the red state).
+    set_tests_properties(test_db_query_runner PROPERTIES
+        LABELS "unit;duckdb;data;async" TIMEOUT 180)
+    message(STATUS "DB query cancel test enabled — target: test_db_query_runner")
 endif()
 
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_fmtpanel_diff.cpp")

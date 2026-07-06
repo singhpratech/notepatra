@@ -299,7 +299,7 @@
   <div class="topbar-left">
     <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">v0.1.114 docs</span>
+    <span class="tag">v0.1.115 docs</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
@@ -401,7 +401,7 @@
   <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock (with a workspace open and a tool-capable model) and the model gets up to 13 native tools — file tools <code>read_file</code>, <code>list_dir</code>, <code>write_file</code>, <code>search</code>, <code>apply_diff</code>; data tools <code>query_sql</code>, <code>csv_query</code>, <code>generate_chart</code>; and read-only git tools <code>git_status</code>, <code>git_diff</code>, <code>git_log</code>, <code>git_branch_list</code>, <code>git_show</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
 
   <div class="callout info">
-    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.114 (June 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
+    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.115 (July 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
   </div>
 
   <h2 id="install" class="anchor-target">Install</h2>
@@ -616,7 +616,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
     <li><strong>macOS:</strong> <code>~/Library/Application Support/notepatra/plugins/&lt;pack&gt;/</code></li>
     <li><strong>Windows:</strong> <code>%APPDATA%/notepatra/plugins/&lt;pack&gt;/</code></li>
   </ul>
-  <p>As of v0.1.114, the Full flavor ships the <em>charts</em> pack bundled on Linux and Windows (it's the same binary — the pack is "installed" if WebEngine was linked at compile time; macOS Full is DuckDB-only and has no inline Vega renderer). The in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation path is scaffolded but not yet wired (still queued as of v0.1.114), so today packs are added by swapping in the Full binary rather than downloaded inside the app.</p>
+  <p>As of v0.1.115, the Full flavor ships the <em>charts</em> pack bundled on Linux and Windows (it's the same binary — the pack is "installed" if WebEngine was linked at compile time; macOS Full is DuckDB-only and has no inline Vega renderer). The in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation path is scaffolded but not yet wired (still queued as of v0.1.115), so today packs are added by swapping in the Full binary rather than downloaded inside the app.</p>
 
   <table>
     <thead>
@@ -633,7 +633,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
         <td><code>pdf</code></td>
         <td>≈ 12 MB</td>
         <td>Rasterises PDFs to PNG pages so vision-capable AI models can read them. Powered by Poppler-Qt5.</td>
-        <td>Still queued (not shipped as of v0.1.114). Until then, dragging a PDF into the AI dock shows the "use a vision-capable model" error bubble.</td>
+        <td>Still queued (not shipped as of v0.1.115). Until then, dragging a PDF into the AI dock shows the "use a vision-capable model" error bubble.</td>
       </tr>
     </tbody>
   </table>
@@ -678,7 +678,7 @@ make -j$(nproc)
     <li><strong>Do I lose anything by staying on Lite?</strong> No — every editor / lexer / AI / Git / data / plugin feature works identically. The only difference is that <code>generate_chart</code> tool results paint as a "Chart rendering requires the Charts Pack" card instead of as an inline rendered chart. You can still see the spec via [View JSON instead] and copy it elsewhere.</li>
     <li><strong>Can I downgrade Full → Lite?</strong> Yes. Just download the Lite tarball and replace the binary. Your config / chat history / connections are preserved (they live under <code>~/.config/notepatra</code>, not inside the binary).</li>
     <li><strong>Will the chart spec data be lost if I'm on Lite?</strong> No — the AI's tool result is preserved in your chat history just like any other tool result. If you upgrade to Full later, opening the same chat shows the rendered chart for those past results.</li>
-    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.114. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
+    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.115. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
   </ul>
 
   <h2 id="ui-overview" class="anchor-target">UI overview</h2>
@@ -717,7 +717,7 @@ make -j$(nproc)
   <p><strong>Load-path optimisations (v0.1.88).</strong> Opening a 118 MB UTF-8 file used to take ~1.5 s and peak ~700 MB RAM; v0.1.88 brings it to ~600 ms and ~360 MB. Three fixes in <code>rust-core/src/file_io.rs</code>: a UTF-8 fast path validates with <code>std::str::from_utf8</code> (SIMD-accelerated) and skips the <code>UTF_8.decode()</code> allocation entirely when the mmap bytes are already valid UTF-8; EOL detection is bounded to the first 64 KB instead of two full-text scans; and the Rust&rarr;C FFI handoff now delivers a length-prefixed <code>Box&lt;[u8]&gt;</code> through a new <code>npc_free_file_text(ptr, len)</code> entry-point instead of the old NUL-terminated <code>CString</code> round-trip — saves ~118 MB of heap on a 118 MB file. UTF-16 / UTF-32 / Windows-1252 paths unchanged.</p>
 
   <h2 id="languages-lexers" class="anchor-target">Languages &amp; lexers</h2>
-  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.114 (covering 238 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
+  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.115 (covering 238 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
   <p><strong>Core (Qt-bundled):</strong> Python, JavaScript/TypeScript/JSX, CoffeeScript, C/C++, C#, D, Java/Kotlin, HTML/PHP, CSS/SCSS/LESS, XML, JSON, SQL (ANSI / T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite), Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Matlab, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile.</p>
   <p><strong>v0.1.55 additions (32 dedicated lexers, keyword tables verified against official specs):</strong> Dart · Solidity · Zig · Vala · Hack · Julia · R · Protobuf · F# · HCL/Terraform · Thrift · GraphQL · GDScript · Nim · Cython · Mojo · Crystal · Elixir · Scala · Groovy · Apex · Jinja · Liquid · Twig · Dockerfile · Fish · Nushell · TOML · DotEnv · Gitignore · JSON5 · BibTeX. Each ships with comment / uncomment / block-comment syntax (Ctrl+/ for line, Ctrl+Shift+Q for block) and proper file-extension routing — <code>.dart</code>, <code>.zig</code>, <code>.jl</code>, <code>.toml</code>, <code>.ex</code>, <code>Cargo.toml</code>, <code>Dockerfile</code>, <code>.gitignore</code>, <code>.env</code>, <code>.fish</code>, <code>.json5</code>, <code>.tf</code>, etc. now point at their dedicated lexers instead of falling back to the closest-fit generic.</p>
 
@@ -1362,7 +1362,7 @@ Content-Type: application/json
   </ul>
 
   <h3>Agentic tools</h3>
-  <p>The agent gets <strong>up to 13 native tools</strong> — the five core file tools plus <code>query_sql</code> / <code>csv_query</code> / <code>generate_chart</code> and five read-only <code>git_*</code> inspection tools. <code>AiTools::availableTools()</code> registers all 13 unconditionally; the same array is sent on every Coding/Data turn. Every tool call shows up as an inline <code>🔧 toolname (args) → result</code> card in the chat:</p>
+  <p>The agent gets <strong>up to 13 native tools</strong> — the five core file tools plus <code>query_sql</code> / <code>csv_query</code> / <code>generate_chart</code> and five read-only <code>git_*</code> inspection tools. <code>AiTools::availableTools()</code> registers all 13, but the host sends a <strong>mode-aware subset</strong>: the read-only <em>Ask</em> segment and Data mode never receive <code>write_file</code> / <code>apply_diff</code> — the mutating tools are stripped before the request reaches the model, so only the Compose and Agent segments can write. Every tool call shows up as an inline <code>🔧 toolname (args) → result</code> card in the chat:</p>
   <table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
@@ -1371,7 +1371,7 @@ Content-Type: application/json
       <tr><td><code>search(pattern, path?, regex?, glob?, case_sensitive?, max_matches?)</code></td><td>Find a string or regex across the workspace. Returns up to 50 (default) / 200 (max) matches with file path, line, column, and a snippet. Same heavy-dir skip-list as the file tree.</td></tr>
       <tr><td><code>write_file(path, content, mode?)</code></td><td>Create or overwrite a text file. Modes: <code>overwrite</code> (default) / <code>create</code> (fails if exists, returns <code>error_kind: exists</code>) / <code>append</code>. Auto-creates parent directories <strong>inside the workspace</strong>; refuses paths matching the credential deny-list (suffixes <code>.pem</code> / <code>.key</code> / <code>.pfx</code> / <code>.p12</code> / <code>.tfvars</code> / <code>.tfstate</code>; filenames <code>id_rsa*</code> / <code>authorized_keys</code> / <code>known_hosts</code> / <code>.env</code> / <code>secrets.json</code>). 5 MB content cap. After success the file auto-opens in a new tab — or the buffer reloads if it's already open.</td></tr>
       <tr><td><code>apply_diff(path, hunks)</code></td><td>Atomic line-level edits. Each hunk has <code>old_start_line</code> + <code>old_lines</code> (expected current text) + <code>new_lines</code> (replacement). <strong>Two-phase apply</strong>: validates ALL hunks against the live file first → if any drifted, returns <code>error_kind: conflict</code> and <strong>nothing</strong> is written. Otherwise hunks apply in reverse-line-order so earlier indices stay stable. <strong>v0.1.40 three-tier match</strong>: strict → strip read_file's <code>      N\t</code> prefix from <code>old_lines</code> → <code>.trimmed()</code> comparison. Relaxed tiers still apply but emit <code>result.warnings</code> so the agent self-corrects on the next read. Atomic write via <code>.tmp + std::rename</code>.</td></tr>
-      <tr><td><code>query_sql(connection_name, sql, max_rows?, confirm?)</code></td><td>Run SQL against a saved database connection. SELECT-only by default (also WITH / EXPLAIN / PRAGMA / SHOW / DESCRIBE); INSERT / UPDATE / DELETE / DDL require <code>confirm:true</code>. Returns up to 100 rows by default (hard max 500). Most useful in Data Analyst Mode — see below.</td></tr>
+      <tr><td><code>query_sql(connection_name, sql, max_rows?)</code></td><td>Run SQL against a saved database connection. Read-only statements (SELECT / WITH / EXPLAIN / PRAGMA / SHOW / DESCRIBE) run immediately; a structural SQL classifier — not a leading-keyword check — routes any data mutation (INSERT / UPDATE / DELETE / DDL) to an on-screen Approve/Reject card, so the model can no longer self-approve. On-disk databases open engine-level read-only. Returns up to 100 rows by default (hard max 500). Most useful in Data Analyst Mode — see below.</td></tr>
       <tr><td><code>csv_query(file_path, sql, max_rows?, max_load_rows?)</code></td><td>Load a workspace CSV into in-memory SQLite (table <code>csv</code>) and run SQL against it. Default loads up to 250,000 rows; returns up to 500.</td></tr>
       <tr><td><code>generate_chart(...)</code></td><td>Emit a Vega-Lite chart spec for the assistant to render. On Lite the result paints as a "Chart rendering requires the Charts Pack" card; full rendering needs the Charts Pack (WebEngine).</td></tr>
       <tr><td><code>git_status</code> / <code>git_diff</code> / <code>git_log</code> / <code>git_branch_list</code> / <code>git_show</code></td><td>Read-only git inspection (implemented in <code>src/git_tools.cpp</code>; the QProcess verb list is hard-coded so there is no path through these to mutate the repo).</td></tr>
@@ -1426,7 +1426,7 @@ Content-Type: application/json
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td><code>csv_query(file_path, sql, max_rows?, max_load_rows?)</code></td><td>Loads a workspace CSV into in-memory SQLite (table name <code>csv</code>, column names from the header) and runs your SQL. Default loads up to 250,000 rows; default returns up to 500. Lets the model ask <em>"SELECT category, SUM(amount) FROM csv WHERE order_date >= '2026-04-01' GROUP BY category ORDER BY 2 DESC"</em> instead of trying to mentally scan a million-line file.</td></tr>
-      <tr><td><code>query_sql(connection_name, sql, max_rows?, confirm?)</code></td><td>Runs SQL against a saved connection. <strong>SELECT-only by default</strong> (also: WITH / EXPLAIN / PRAGMA / SHOW / DESCRIBE). INSERT / UPDATE / DELETE / DDL require <code>confirm:true</code> after the user explicitly approves — no implicit mutations. Returns up to 100 rows by default (hard max 500 — the model must raise <code>max_rows</code> to get more).</td></tr>
+      <tr><td><code>query_sql(connection_name, sql, max_rows?)</code></td><td>Runs SQL against a saved connection. <strong>Read-only by default</strong> (SELECT / WITH / EXPLAIN / PRAGMA / SHOW / DESCRIBE run immediately). A structural SQL classifier catches every data mutation — including CTE-wrapped DML, <code>EXPLAIN ANALYZE</code>, <code>SELECT … INTO</code> and stacked statements — and routes it to a <strong>human Approve/Reject card</strong>; the model's old <code>confirm:true</code> self-approval is gone, and on-disk databases open engine-level read-only. Returns up to 100 rows by default (hard max 500 — the model must raise <code>max_rows</code> to get more).</td></tr>
     </tbody>
   </table>
 
@@ -1760,7 +1760,7 @@ Examples:
   notepatra --theme Dark          Start in dark mode
   notepatra *.json                Open multiple files</code></pre>
 
-  <p><strong>Single instance.</strong> As of v0.1.114, launching <code>notepatra file.txt</code> while Notepatra is already running hands the file to the existing window (raised and focused) and exits — after the running instance proves it's alive, so an open can never be silently swallowed. If the running instance is hung or busy for more than ~3&nbsp;seconds, you get a visible <em>temporary window</em> with just your files instead: it never touches your saved session, and it prompts Save&nbsp;/&nbsp;Discard&nbsp;/&nbsp;Cancel per modified tab when closed. <code>--new</code> opens the same kind of session-independent window on purpose. <code>--line N</code> always targets the <em>first</em> file listed. Files that don't exist produce a notice in the running window rather than disappearing silently.</p>
+  <p><strong>Single instance.</strong> As of v0.1.115, launching <code>notepatra file.txt</code> while Notepatra is already running hands the file to the existing window (raised and focused) and exits — after the running instance proves it's alive, so an open can never be silently swallowed. If the running instance is hung or busy for more than ~3&nbsp;seconds, you get a visible <em>temporary window</em> with just your files instead: it never touches your saved session, and it prompts Save&nbsp;/&nbsp;Discard&nbsp;/&nbsp;Cancel per modified tab when closed. <code>--new</code> opens the same kind of session-independent window on purpose. <code>--line N</code> always targets the <em>first</em> file listed. Files that don't exist produce a notice in the running window rather than disappearing silently.</p>
 
   <h2 id="file-layout" class="anchor-target">Config file layout</h2>
   <p>All persistent state lives under:</p>

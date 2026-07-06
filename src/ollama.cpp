@@ -1187,6 +1187,15 @@ void OllamaClient::onReadyReadOpenAI() {
                 }
                 AiInteractionLog::recordAssistant(bt, m_model, m_mode,
                     m_fullResponse, m_promptTokens, m_evalTokens, int(elapsed));
+                // v0.1.115 — a terminal finish_reason of "length" (hit
+                // max_tokens / the context window) or "content_filter" means
+                // the answer was cut off, not completed. Surface it as a
+                // first-class truncation so the UI can offer Retry. "stop" and
+                // any other normal terminator stay a clean finished() only.
+                if (finishReason == QLatin1String("length"))
+                    emit finishedTruncated(m_fullResponse, QStringLiteral("context-limit"));
+                else if (finishReason == QLatin1String("content_filter"))
+                    emit finishedTruncated(m_fullResponse, QStringLiteral("content-filter"));
             }
         }
     }
@@ -1246,7 +1255,26 @@ void OllamaClient::onFinishedOllama() {
     }
     if (!m_done && !m_fullResponse.isEmpty()) {
         m_done = true;
+        // v0.1.115 — mid-stream truncation. The transport finished but no
+        // Ollama `done:true` frame ever arrived, yet partial text had
+        // accumulated: the response was cut off, not completed. Compute the
+        // reason BEFORE emitting (a finished() slot may call cancel() and null
+        // m_reply — see the re-check below). A transport-level error (reset /
+        // timeout) ⇒ network-drop; a clean EOF that merely lacked the
+        // completion marker ⇒ backend-abort (server killed the generation,
+        // model unloaded, OOM, …).
+        const QString reason = (m_reply && m_reply->error() != QNetworkReply::NoError)
+            ? (QStringLiteral("network-drop: ") + m_reply->errorString())
+            : QStringLiteral("backend-abort");
+        const qint64 elapsed = QDateTime::currentMSecsSinceEpoch() - m_startMs;
         emit finished(m_fullResponse);
+        // Interaction-log parity with the normal `done`-frame path (which
+        // records the assistant turn via recordAssistant): a truncated reply is
+        // still a reply and must appear in the audit log. record() scrubs
+        // credentials internally, so this opens no new exfil path.
+        AiInteractionLog::recordAssistant(QStringLiteral("ollama"), m_model,
+            m_mode, m_fullResponse, m_promptTokens, m_evalTokens, int(elapsed));
+        emit finishedTruncated(m_fullResponse, reason);
     }
     if (m_reply) {  // hardening: re-check pointer (cancel may have nulled it)
         m_reply->deleteLater();
@@ -1294,7 +1322,35 @@ void OllamaClient::onFinishedOpenAI() {
     }
     if (!m_done && !m_fullResponse.isEmpty()) {
         m_done = true;
+        // v0.1.115 — mid-stream truncation. The transport finished but no SSE
+        // `[DONE]` / finish_reason frame ever arrived, yet partial text had
+        // accumulated. m_reply may ALREADY be null here — the trailing-flush
+        // onReadyReadOpenAI() call above can emit a signal whose slot calls
+        // cancel() — so guard before reading transport state. Transport error
+        // ⇒ network-drop; clean EOF without a terminator ⇒ backend-abort.
+        const QString reason = (m_reply && m_reply->error() != QNetworkReply::NoError)
+            ? (QStringLiteral("network-drop: ") + m_reply->errorString())
+            : QStringLiteral("backend-abort");
+        const qint64 elapsed = QDateTime::currentMSecsSinceEpoch() - m_startMs;
+        QString bt;
+        switch (m_backend) {
+            case LlamaCpp:     bt = "llama.cpp"; break;
+            case OpenAICompat:
+                if (m_baseUrl.contains("openai.azure.com", Qt::CaseInsensitive))    bt = "azure-openai";
+                else if (m_baseUrl.contains("api.openai.com", Qt::CaseInsensitive)) bt = "openai";
+                else if (m_baseUrl.contains("ollama.com", Qt::CaseInsensitive))     bt = "ollama-cloud";
+                else if (m_baseUrl.contains("openrouter.ai", Qt::CaseInsensitive))  bt = "openrouter";
+                else                                                                bt = "openai-compat";
+                break;
+            default:           bt = "openai-compat"; break;
+        }
         emit finished(m_fullResponse);
+        // Interaction-log parity with the [DONE] / finish_reason completion
+        // paths: log the partial (scrubbed inside record()) so a truncated
+        // reply still lands in the audit log.
+        AiInteractionLog::recordAssistant(bt, m_model, m_mode,
+            m_fullResponse, m_promptTokens, m_evalTokens, int(elapsed));
+        emit finishedTruncated(m_fullResponse, reason);
     }
     if (m_reply) {  // hardening: re-check pointer (cancel may have nulled it during onReadyReadOpenAI)
         m_reply->deleteLater();

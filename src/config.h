@@ -192,6 +192,13 @@ public:
     // privacy posture explicit — the user opts INTO sharing, not out.
     bool aiShareOpenFile = false;
 
+    // v0.1.115 — persisted Chat/Compose/Agent segment (the bottom strip that
+    // only applies in Coding mode). 0 = Ask (read-only), 1 = Compose (Edit
+    // Plan review), 2 = Agent (approved writes). Default 1 (Compose) keeps the
+    // v0.1.110 safe-by-default decision: a re-entrant Coding session never
+    // lands in autonomous-write Agent unless the user explicitly chose it.
+    int aiChatSegment = 1;
+
     // v0.1.70 — AI dock visibility persisted across launches. When true
     // (default for new installs), Notepatra opens with the AI dock on
     // screen at 50% width. Toggling the dock via Ctrl+Shift+A / the AI
@@ -292,6 +299,7 @@ public:
         aiHideDataWelcome = o.value("aiHideDataWelcome").toBool(aiHideDataWelcome);
         aiHideCodingWelcome = o.value("aiHideCodingWelcome").toBool(aiHideCodingWelcome);
         aiShareOpenFile = o.value("aiShareOpenFile").toBool(aiShareOpenFile);
+        aiChatSegment = o.value("aiChatSegment").toInt(aiChatSegment);
         aiDockVisible = o.value("aiDockVisible").toBool(aiDockVisible);
         aiInteractionLogging = o.value("aiInteractionLogging").toBool(aiInteractionLogging);
         windowX = o.value("windowX").toInt(windowX);
@@ -354,6 +362,7 @@ public:
         o["aiHideDataWelcome"] = aiHideDataWelcome;
         o["aiHideCodingWelcome"] = aiHideCodingWelcome;
         o["aiShareOpenFile"] = aiShareOpenFile;
+        o["aiChatSegment"] = aiChatSegment;
         o["aiDockVisible"] = aiDockVisible;
         o["aiInteractionLogging"] = aiInteractionLogging;
         o["windowX"] = windowX;

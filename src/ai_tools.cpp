@@ -587,15 +587,11 @@ QJsonArray availableTools() {
         };
         props["sql"] = QJsonObject{
             {"type", "string"},
-            {"description", "SQL to execute. By default only SELECT / WITH / EXPLAIN / PRAGMA / SHOW / DESCRIBE are allowed; for INSERT / UPDATE / DELETE / DDL set confirm=true after the user has explicitly approved."}
+            {"description", "SQL to execute. Read-only queries (SELECT / WITH / EXPLAIN / PRAGMA / SHOW / DESCRIBE) run immediately. A mutation (INSERT / UPDATE / DELETE / DDL) is NOT run automatically: submit it and the host shows the user an on-screen Approve/Reject card with your SQL; it runs only if the user approves. You do NOT need to (and cannot) self-approve a mutation."}
         };
         props["max_rows"] = QJsonObject{
             {"type", "integer"},
             {"description", "Cap on returned rows. Default 100, max 500."}
-        };
-        props["confirm"] = QJsonObject{
-            {"type", "boolean"},
-            {"description", "Set true ONLY after the user has approved a non-SELECT query (mutation / DDL). Default false."}
         };
         QJsonObject params;
         params["type"] = "object";
@@ -1787,17 +1783,26 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
 // ═══════════════════════════════════════════════════════════════════════
 // executeQuerySql — v0.1.43 (Data Analyst Mode)
 //
-// Runs SQL against a connection saved in db-connections.json. Defaults to
-// SELECT-only; mutations require confirm:true. Returns columns + rows in
-// a compact format the model can summarize.
+// Runs SQL against a connection saved in db-connections.json. Read-only by
+// default; a mutation runs only when the HOST sets _notepatra_host_approved
+// (after a human approves the on-screen card — v0.1.114). Returns columns +
+// rows in a compact format the model can summarize.
 // ═══════════════════════════════════════════════════════════════════════
-ToolResult executeQuerySql(const ToolCall &call) {
+ToolResult executeQuerySql(const ToolCall &call,
+                           DbConnections::QueryInterruptToken *token) {
     const QString connectionName = call.args.value("connection_name").toString();
     const QString sql = call.args.value("sql").toString();
     int maxRows = call.args.value("max_rows").toInt(100);
     if (maxRows <= 0) maxRows = 100;
     if (maxRows > 500) maxRows = 500;
-    const bool allowMutation = call.args.value("confirm").toBool(false);
+    // v0.1.114 (B1, item 3) — a mutation is authorised ONLY by the host after a
+    // human clicks Approve, signalled by the host-only "_notepatra_host_approved"
+    // flag. The old model-supplied "confirm":true let the model self-approve its
+    // own DELETE/UPDATE — removed. AIPanel routes a mutating query_sql through the
+    // inline approval card and re-dispatches it with this flag on Approve; it
+    // also strips any model-forged copy of the flag before dispatch.
+    const bool allowMutation =
+        call.args.value("_notepatra_host_approved").toBool(false);
 
     if (connectionName.isEmpty()) {
         return makeError(call, "io_error", "connection_name is required.");
@@ -1815,28 +1820,14 @@ ToolResult executeQuerySql(const ToolCall &call) {
     }
 
     DbConnections::QueryResult qr =
-        DbConnections::runQuery(rec, sql, maxRows, allowMutation);
+        DbConnections::runQuery(rec, sql, maxRows, allowMutation, token);
     if (!qr.ok) {
         return makeError(call, qr.errorKind.isEmpty() ? "exec_failed" : qr.errorKind,
                          qr.error);
     }
 
-    QJsonArray colsJson;
-    for (const QString &c : qr.columns) colsJson.append(c);
-    QJsonArray rowsJson;
-    for (const auto &row : qr.rows) {
-        QJsonArray r;
-        for (const QString &cell : row) r.append(cell);
-        rowsJson.append(r);
-    }
-    QJsonObject result;
-    result["connection_name"] = connectionName;
-    result["driver"]          = rec.driver;
-    result["columns"]         = colsJson;
-    result["rows"]            = rowsJson;
-    result["rows_returned"]   = qr.rowsReturned;
-    result["truncated"]       = qr.truncated;
-    return makeSuccess(call, result);
+    return makeSuccess(call,
+                       AiTools::buildQuerySqlResultBody(connectionName, rec.driver, qr));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1861,6 +1852,17 @@ ToolResult executeCsvQuery(const ToolCall &call, const QString &workspaceRoot) {
     }
     if (sql.trimmed().isEmpty()) {
         return makeError(call, "io_error", "sql is required.");
+    }
+    // v0.1.114 (B1, item 3) — csv_query runs against an in-memory SQLite copy,
+    // but a mutating statement is still gated: only the host may authorise one
+    // (after a human Approve) via the host-only "_notepatra_host_approved" flag.
+    // The model can never self-approve a mutation here either.
+    const bool hostApproved =
+        call.args.value("_notepatra_host_approved").toBool(false);
+    if (!hostApproved && DbConnections::isMutation(sql)) {
+        return makeError(call, "non_select",
+                         "This query modifies data. Mutations require explicit "
+                         "user approval and cannot be run directly from the model.");
     }
 
     QString canonical;
@@ -2002,7 +2004,33 @@ ToolResult executeGenerateChart(const ToolCall &call) {
 
 } // anonymous namespace
 
-ToolResult execute(const ToolCall &call, const QString &workspaceRoot) {
+QJsonObject buildQuerySqlResultBody(const QString &connectionName,
+                                    const QString &driver,
+                                    const DbConnections::QueryResult &qr) {
+    QJsonArray colsJson;
+    for (const QString &c : qr.columns) colsJson.append(c);
+    QJsonArray rowsJson;
+    for (const auto &row : qr.rows) {
+        QJsonArray r;
+        for (const QString &cell : row) r.append(cell);
+        rowsJson.append(r);
+    }
+    QJsonObject result;
+    result["connection_name"] = connectionName;
+    result["driver"]          = driver;
+    result["columns"]         = colsJson;
+    result["rows"]            = rowsJson;
+    result["rows_returned"]   = qr.rowsReturned;
+    result["truncated"]       = qr.truncated;
+    // F6 — surface degraded read-only enforcement (e.g. a server session that
+    // couldn't be forced read-only) so the model knows the classifier was the
+    // only layer. Emitted only when present, so the common case is byte-identical.
+    if (!qr.warning.isEmpty()) result["warning"] = qr.warning;
+    return result;
+}
+
+ToolResult execute(const ToolCall &call, const QString &workspaceRoot,
+                   DbConnections::QueryInterruptToken *dbInterrupt) {
     // hardening: empty tool name produced an "Unknown tool: ''" before — guard early.
     if (call.name.isEmpty()) {
         return makeError(call, "io_error", "Empty tool name.");
@@ -2012,7 +2040,7 @@ ToolResult execute(const ToolCall &call, const QString &workspaceRoot) {
     if (call.name == "write_file")      return executeWriteFile(call, workspaceRoot);
     if (call.name == "search")          return executeSearch(call, workspaceRoot);
     if (call.name == "apply_diff")      return executeApplyDiff(call, workspaceRoot);
-    if (call.name == "query_sql")       return executeQuerySql(call);
+    if (call.name == "query_sql")       return executeQuerySql(call, dbInterrupt);
     if (call.name == "csv_query")       return executeCsvQuery(call, workspaceRoot);
     if (call.name == "generate_chart")  return executeGenerateChart(call);
     // Read-only git inspection tools — branch / status / diff / log /

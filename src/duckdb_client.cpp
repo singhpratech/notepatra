@@ -5,6 +5,8 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 
+#include <atomic>
+
 #ifdef NOTEPATRA_HAVE_DUCKDB
 #include <duckdb.h>
 #endif
@@ -19,14 +21,23 @@ namespace DuckDb {
 // normal return, exception, panic — runs the destructor.
 struct Client::Impl {
     duckdb_database database     = nullptr;
-    duckdb_connection connection = nullptr;
+    // F1 sub-bug — the connection handle is READ by requestInterrupt()
+    // (controller thread, for duckdb_interrupt) while it is WRITTEN by open() /
+    // close() on the worker thread. std::atomic makes that cross-thread pointer
+    // access well-defined (lock-free on every real platform).
+    std::atomic<duckdb_connection> connection{nullptr};
+    // Set from requestInterrupt() (possibly on another thread); read by the
+    // pending-task loop in exec(). std::atomic so the cross-thread read/write
+    // is well-defined.
+    std::atomic<bool> interruptRequested{false};
 
     ~Impl() { closeAll(); }
 
     void closeAll() {
-        if (connection) {
-            duckdb_disconnect(&connection);
-            connection = nullptr;
+        duckdb_connection c = connection.load();
+        if (c) {
+            duckdb_disconnect(&c);
+            connection.store(nullptr);
         }
         if (database) {
             duckdb_close(&database);
@@ -34,7 +45,9 @@ struct Client::Impl {
         }
     }
 
-    bool isOpen() const { return database != nullptr && connection != nullptr; }
+    bool isOpen() const {
+        return database != nullptr && connection.load() != nullptr;
+    }
 };
 
 Client::Client() : m_impl(new Impl) {}
@@ -42,24 +55,57 @@ Client::~Client() { delete m_impl; }
 
 bool Client::available() { return true; }
 
-bool Client::open(const QString &path, QString *outError) {
+bool Client::open(const QString &path, QString *outError, bool readOnly) {
     close();
     const QByteArray pathUtf8 = path.toUtf8();
-    const char *cpath = path.isEmpty() || path == ":memory:"
-                          ? nullptr
-                          : pathUtf8.constData();
-    if (duckdb_open(cpath, &m_impl->database) == DuckDBError) {
+    const bool inMemory = path.isEmpty() || path == ":memory:";
+    const char *cpath = inMemory ? nullptr : pathUtf8.constData();
+
+    // read_only is meaningful only for an on-disk database file. An in-memory
+    // database is the writable scratch space used to ingest CSV/Parquet/JSON
+    // as views for analysis, so we never force it read-only even when the
+    // caller asks — there is nothing persistent to protect and ingestion
+    // needs the writes.
+    if (readOnly && !inMemory) {
+        duckdb_config config = nullptr;
+        if (duckdb_create_config(&config) == DuckDBError) {
+            if (outError) *outError = "duckdb_create_config failed";
+            duckdb_destroy_config(&config);
+            return false;
+        }
+        // access_mode=READ_ONLY makes the engine itself reject every write —
+        // the authoritative enforcement layer, independent of the SQL
+        // classifier. Opening a not-yet-existing file read-only fails, which
+        // is the correct behaviour (we never want to create a user DB here).
+        duckdb_set_config(config, "access_mode", "READ_ONLY");
+        char *openErr = nullptr;
+        const duckdb_state st =
+            duckdb_open_ext(cpath, &m_impl->database, config, &openErr);
+        duckdb_destroy_config(&config);
+        if (st == DuckDBError) {
+            if (outError)
+                *outError = openErr ? QString::fromUtf8(openErr)
+                                    : QStringLiteral("duckdb_open (read-only) failed");
+            if (openErr) duckdb_free(openErr);
+            m_impl->database = nullptr;
+            return false;
+        }
+        if (openErr) duckdb_free(openErr);
+    } else if (duckdb_open(cpath, &m_impl->database) == DuckDBError) {
         if (outError) *outError = "duckdb_open failed";
         m_impl->database = nullptr;
         return false;
     }
-    if (duckdb_connect(m_impl->database, &m_impl->connection) == DuckDBError) {
+
+    duckdb_connection conn = nullptr;
+    if (duckdb_connect(m_impl->database, &conn) == DuckDBError) {
         if (outError) *outError = "duckdb_connect failed";
         duckdb_close(&m_impl->database);
         m_impl->database = nullptr;
-        m_impl->connection = nullptr;
+        m_impl->connection.store(nullptr);
         return false;
     }
+    m_impl->connection.store(conn);
     return true;
 }
 
@@ -67,76 +113,37 @@ void Client::close() { m_impl->closeAll(); }
 
 bool Client::isOpen() const { return m_impl->isOpen(); }
 
-// Execute a query and stream rows through `cb`. `rowCap` is enforced
-// outside DuckDB (we count rows we've delivered to cb). DuckDB's own
-// streaming API gives us `duckdb_data_chunk` objects; we iterate those
-// and emit one row at a time so the caller never sees the binary chunk
-// format.
-//
-// On error the returned ResultSet has an empty `rows`, the columns may
-// or may not be populated (depending on whether the prepare step
-// succeeded), and `errorMessage` is non-empty.
-static QStringList readChunkRow(duckdb_data_chunk chunk,
-                                idx_t rowIndex,
-                                idx_t colCount) {
-    QStringList values;
-    values.reserve(static_cast<int>(colCount));
-    for (idx_t c = 0; c < colCount; ++c) {
-        duckdb_vector vec = duckdb_data_chunk_get_vector(chunk, c);
-        // NULL handling — DuckDB's "validity" mask flags non-NULL rows.
-        uint64_t *validity = duckdb_vector_get_validity(vec);
-        const bool isNotNull = duckdb_validity_row_is_valid(validity, rowIndex);
-        if (!isNotNull) {
-            values.append(QStringLiteral("NULL"));
-            continue;
-        }
-        // For non-NULL values, ask DuckDB to produce a varchar
-        // representation. This is per-row but DuckDB caches the
-        // logical-type for the column so it's cheap; for huge
-        // tables the streaming bottleneck is the network anyway.
-        // We do this by extracting via duckdb_value_varchar on the
-        // result, which requires a row index in the global result
-        // not in the chunk — see the streaming loop below.
-        values.append(QString());  // placeholder; filled by caller
-    }
-    return values;
+void Client::requestInterrupt() {
+    m_impl->interruptRequested.store(true);
+    // duckdb_interrupt is safe to call from any thread; it flags the
+    // connection's active query so the executor unwinds at its next check.
+    duckdb_connection c = m_impl->connection.load();
+    if (c) duckdb_interrupt(c);
 }
 
-ResultSet Client::exec(const QString &sql, int rowCap) {
-    ResultSet rs;
-    if (!isOpen()) {
-        rs.errorMessage = "not connected";
-        return rs;
-    }
-
-    duckdb_result result;
-    if (duckdb_query(m_impl->connection, sql.toUtf8().constData(), &result)
-            == DuckDBError) {
-        rs.errorMessage = QString::fromUtf8(duckdb_result_error(&result));
-        if (rs.errorMessage.isEmpty()) rs.errorMessage = "query failed";
-        duckdb_destroy_result(&result);
-        return rs;
-    }
-
-    const idx_t cols = duckdb_column_count(&result);
+// Copy a materialized duckdb_result into a ResultSet, capping at `rowCap`
+// rows (0 = unbounded). Universal stringification via duckdb_value_varchar
+// handles every type uniformly. When the result was produced by the LIMIT
+// rowCap+1 wrap in execCapped(), `total` is rowCap+1 for a truncated query,
+// which sets truncated=true without exposing the extra row.
+static void fillResultSet(duckdb_result *result, ResultSet &rs, int rowCap) {
+    const idx_t cols = duckdb_column_count(result);
     rs.columns.reserve(static_cast<int>(cols));
     for (idx_t c = 0; c < cols; ++c) {
-        rs.columns.append(QString::fromUtf8(duckdb_column_name(&result, c)));
+        rs.columns.append(QString::fromUtf8(duckdb_column_name(result, c)));
     }
-
-    const idx_t total = duckdb_row_count(&result);
-    rs.totalRows = static_cast<int>(total);
+    const idx_t total = duckdb_row_count(result);
     const idx_t cap = (rowCap > 0)
                         ? std::min<idx_t>(total, static_cast<idx_t>(rowCap))
                         : total;
+    rs.totalRows = static_cast<int>(cap);
     rs.truncated = (cap < total);
-
     rs.rows.reserve(static_cast<int>(cap));
     for (idx_t r = 0; r < cap; ++r) {
         Row row;
         row.values.reserve(static_cast<int>(cols));
         for (idx_t c = 0; c < cols; ++c) {
-            char *valStr = duckdb_value_varchar(&result, c, r);
+            char *valStr = duckdb_value_varchar(result, c, r);
             if (valStr) {
                 row.values.append(QString::fromUtf8(valStr));
                 duckdb_free(valStr);
@@ -146,9 +153,133 @@ ResultSet Client::exec(const QString &sql, int rowCap) {
         }
         rs.rows.append(std::move(row));
     }
+}
 
+// Leading-keyword test for statements that can be safely wrapped in a
+// `SELECT * FROM ( <sql> ) LIMIT n` subquery. Only plain queries qualify;
+// DESCRIBE / PRAGMA / SHOW / DDL cannot appear inside a subquery.
+static bool isWrappableQuery(const QString &trimmedSql) {
+    static const QRegularExpression re(
+        QStringLiteral("^\\s*(SELECT|WITH|TABLE|VALUES|FROM)\\b"),
+        QRegularExpression::CaseInsensitiveOption);
+    return re.match(trimmedSql).hasMatch();
+}
+
+// Direct path: single duckdb_query call + post-fetch cap. Used for
+// non-wrappable / unbounded statements (introspection, DDL on the writable
+// scratch DB, multi-statement internal helpers). Still abortable because
+// requestInterrupt() calls duckdb_interrupt on the connection, which unwinds
+// a running duckdb_query.
+ResultSet Client::execRaw(const QString &sql, int rowCap) {
+    ResultSet rs;
+    duckdb_result result;
+    if (duckdb_query(m_impl->connection.load(), sql.toUtf8().constData(), &result)
+            == DuckDBError) {
+        rs.cancelled = m_impl->interruptRequested.load();
+        rs.errorMessage = QString::fromUtf8(duckdb_result_error(&result));
+        if (rs.errorMessage.isEmpty())
+            rs.errorMessage = rs.cancelled ? QStringLiteral("query cancelled")
+                                           : QStringLiteral("query failed");
+        duckdb_destroy_result(&result);
+        return rs;
+    }
+    fillResultSet(&result, rs, rowCap);
     duckdb_destroy_result(&result);
     return rs;
+}
+
+// Capped path for plain queries. Wraps the query in a LIMIT rowCap+1
+// subquery so DuckDB never materializes more than rowCap+1 rows (a
+// top-level LIMIT short-circuits the pipeline — a cross-join can't OOM),
+// and drives execution through the pending-task API so requestInterrupt()
+// can abort it between tasks.
+ResultSet Client::execCapped(const QString &querySql, int rowCap) {
+    ResultSet rs;
+    const QString effective =
+        QStringLiteral("SELECT * FROM (\n%1\n) AS _np_capped LIMIT %2")
+            .arg(querySql)
+            .arg(static_cast<qulonglong>(rowCap) + 1);
+
+    duckdb_prepared_statement prep = nullptr;
+    if (duckdb_prepare(m_impl->connection.load(), effective.toUtf8().constData(),
+                       &prep) == DuckDBError) {
+        // Our wrappability heuristic can be wrong (e.g. a statement that
+        // isn't valid inside a subquery); fall back to the direct capped
+        // path rather than surfacing a spurious syntax error.
+        duckdb_destroy_prepare(&prep);
+        return execRaw(querySql, rowCap);
+    }
+
+    duckdb_pending_result pending = nullptr;
+    if (duckdb_pending_prepared(prep, &pending) == DuckDBError) {
+        rs.errorMessage = QString::fromUtf8(duckdb_pending_error(pending));
+        if (rs.errorMessage.isEmpty()) rs.errorMessage = QStringLiteral("execution failed");
+        duckdb_destroy_pending(&pending);
+        duckdb_destroy_prepare(&prep);
+        return rs;
+    }
+
+    for (;;) {
+        const duckdb_pending_state st = duckdb_pending_execute_task(pending);
+        if (st == DUCKDB_PENDING_RESULT_READY) break;
+        if (st == DUCKDB_PENDING_ERROR) {
+            rs.cancelled = m_impl->interruptRequested.load();
+            rs.errorMessage = QString::fromUtf8(duckdb_pending_error(pending));
+            if (rs.errorMessage.isEmpty())
+                rs.errorMessage = rs.cancelled ? QStringLiteral("query cancelled")
+                                               : QStringLiteral("query failed");
+            duckdb_destroy_pending(&pending);
+            duckdb_destroy_prepare(&prep);
+            return rs;
+        }
+        if (m_impl->interruptRequested.load())
+            duckdb_interrupt(m_impl->connection.load());  // unwind; next task → ERROR
+    }
+
+    duckdb_result result;
+    const duckdb_state ok = duckdb_execute_pending(pending, &result);
+    duckdb_destroy_pending(&pending);
+    duckdb_destroy_prepare(&prep);
+    if (ok == DuckDBError) {
+        rs.cancelled = m_impl->interruptRequested.load();
+        rs.errorMessage = QString::fromUtf8(duckdb_result_error(&result));
+        if (rs.errorMessage.isEmpty())
+            rs.errorMessage = rs.cancelled ? QStringLiteral("query cancelled")
+                                           : QStringLiteral("query failed");
+        duckdb_destroy_result(&result);
+        return rs;
+    }
+    fillResultSet(&result, rs, rowCap);
+    duckdb_destroy_result(&result);
+    return rs;
+}
+
+ResultSet Client::exec(const QString &sql, int rowCap) {
+    ResultSet rs;
+    if (!isOpen()) {
+        rs.errorMessage = "not connected";
+        return rs;
+    }
+    // F1 sub-bug — do NOT unconditionally clear interruptRequested here: a
+    // requestInterrupt() that arrived just before this exec (an "early cancel",
+    // e.g. Stop pressed the instant the query dispatched) would be erased,
+    // letting the query run to completion. Instead the flag is cleared at the
+    // END of exec (RAII), so a stale flag from a prior cancelled exec on a
+    // REUSED client is gone before we start, while an early cancel for THIS run
+    // survives to be honored by the pending-task loop.
+    struct FlagReset {
+        std::atomic<bool> *f;
+        ~FlagReset() { f->store(false); }
+    } flagReset{&m_impl->interruptRequested};
+
+    QString trimmed = sql.trimmed();
+    while (trimmed.endsWith(QLatin1Char(';'))) {
+        trimmed.chop(1);
+        trimmed = trimmed.trimmed();
+    }
+    if (rowCap > 0 && isWrappableQuery(trimmed))
+        return execCapped(trimmed, rowCap);
+    return execRaw(sql, rowCap);
 }
 
 QStringList Client::execStreaming(const QString &sql,
@@ -161,7 +292,7 @@ QStringList Client::execStreaming(const QString &sql,
     }
 
     duckdb_result result;
-    if (duckdb_query(m_impl->connection, sql.toUtf8().constData(), &result)
+    if (duckdb_query(m_impl->connection.load(), sql.toUtf8().constData(), &result)
             == DuckDBError) {
         if (outError) *outError = QString::fromUtf8(duckdb_result_error(&result));
         duckdb_destroy_result(&result);
@@ -374,13 +505,20 @@ static const char *kStubError =
     "DuckDB support not compiled in (rebuild with NOTEPATRA_USE_DUCKDB=ON "
     "and a vendored libduckdb in vendor/duckdb/)";
 
-bool Client::open(const QString &, QString *outError) {
+bool Client::open(const QString &, QString *outError, bool) {
     if (outError) *outError = kStubError;
     return false;
 }
 void Client::close() {}
 bool Client::isOpen() const { return false; }
+void Client::requestInterrupt() {}
 ResultSet Client::exec(const QString &, int) {
+    ResultSet rs; rs.errorMessage = kStubError; return rs;
+}
+ResultSet Client::execCapped(const QString &, int) {
+    ResultSet rs; rs.errorMessage = kStubError; return rs;
+}
+ResultSet Client::execRaw(const QString &, int) {
     ResultSet rs; rs.errorMessage = kStubError; return rs;
 }
 QStringList Client::execStreaming(const QString &, const RowCallback &, QString *outError) {
