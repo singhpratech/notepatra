@@ -32,6 +32,12 @@
 #include <QStyle>
 #include <QClipboard>
 #include <QTimer>
+#include <QEventLoop>
+#include <QScopeGuard>
+#include <QSaveFile>
+#include <QtConcurrent>
+#include <QFutureWatcher>
+#include <QFuture>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFile>
@@ -70,6 +76,8 @@
 #include <QStandardPaths>
 #include <QTextDocument>
 #include <QUrl>
+
+#include <memory>
 
 namespace {
 
@@ -514,6 +522,12 @@ static QFrame *aiAddAssistantCard(QVBoxLayout *target,
                                   QTextBrowser **outBody = nullptr);
 static void aiAddErrorCard(QVBoxLayout *target, const QString &text,
                            const AiPalette &pal);
+
+// v0.1.114 (B1, item 1) — the write-tool predicate lives in the anonymous
+// namespace further down (near handleToolCall); forward-declare it here so
+// send()'s mode-aware tool filter (which runs earlier in the file) can call
+// it. Same unnamed namespace of this TU → same entity, no linkage surprise.
+namespace { bool isMutatingTool(const QString &name); }
 
 AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // Make the panel comfortably wide so chat bubbles render properly.
@@ -1173,10 +1187,21 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         // user who re-enters Coding never lands in autonomous-write mode
         // unawares.
         if (m_chatSegBtn && m_composeSegBtn && m_agentSegBtn) {
-            QAbstractButton *target =
-                  coding ? m_composeSegBtn
-                : data   ? m_chatSegBtn
-                         : m_chatSegBtn;
+            // v0.1.115 (item 5) — Coding restores the persisted segment
+            // (default Compose, the v0.1.110 safe cold default); Chat/Data have
+            // no strip and stay on the read-only Ask segment.
+            QAbstractButton *target = m_chatSegBtn;  // Ask
+            if (coding) {
+                switch (Config::instance().aiChatSegment) {
+                    case static_cast<int>(ChatModeSegment::Agent):
+                        target = m_agentSegBtn;   break;
+                    case static_cast<int>(ChatModeSegment::Chat):
+                        target = m_chatSegBtn;    break;
+                    case static_cast<int>(ChatModeSegment::Compose):
+                    default:
+                        target = m_composeSegBtn; break;
+                }
+            }
             if (target && !target->isChecked()) {
                 target->setChecked(true);
             }
@@ -1227,6 +1252,18 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             m_inAssistantBubble = false;
             if (m_stopBtn) m_stopBtn->setEnabled(false);
         }
+        // v0.1.114 (B1, item 6) — a mode switch DISCARDS the outgoing mode's
+        // pending approval (it belongs to a conversation we're leaving). Do it
+        // BEFORE applyMode()'s renderTranscript so the card isn't re-created in
+        // the new mode; the held tool call is resolved with a structured cancel.
+        if (!m_openApprovals.isEmpty())
+            cancelPendingWriteApprovals(QStringLiteral("mode-switched"));
+        // v0.1.115 — a truncation notice belongs to the conversation we're
+        // leaving; drop it so it doesn't bleed into the incoming mode's empty
+        // transcript. The retry snapshot is left intact but m_retryValid alone
+        // is inert without an active notice.
+        m_truncatedActive = false;
+        m_truncatedReason.clear();
         saveChatHistoryNow();  // v0.1.67 — flush outgoing mode's pending bubbles
         applyMode();           // calls renderTranscript() which now reads activeMessages()
         decorateModelsByMode();
@@ -1958,10 +1995,10 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             return btn;
         };
 
-        m_chatSegBtn = makeSegBtn("Chat", pal.accent,
-            "Chat — plain conversation, no agentic tool calls. "
-            "Picks how the CURRENT conversation behaves; the Chat / "
-            "Coding / Data buttons above pick the AI INTENT.",
+        m_chatSegBtn = makeSegBtn("Ask", pal.accent,
+            "Ask — read-only. The AI can read workspace files on demand "
+            "but never writes to disk. Picks how the CURRENT conversation "
+            "behaves; the Chat / Coding / Data buttons above pick the AI INTENT.",
             "border-top-left-radius: 6px; border-bottom-left-radius: 6px;");
         m_composeSegBtn = makeSegBtn("Compose", QStringLiteral("#4EC9B0"),
             "Compose — tools enabled but write_file / apply_diff are "
@@ -2063,9 +2100,28 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         m_toolsActiveThisTurn = false;
         m_toolCallsThisTurn = 0;
         m_toolCallsTotal = 0;
-        m_turnWriteApproval = false;  // re-arm the gate each new turn
+        m_turnWriteApprovalFile = false;  // re-arm both gates each new turn
+        m_turnWriteApprovalSql = false;
         if (m_stopBtn) m_stopBtn->setEnabled(false);  // hardening: guard m_stopBtn (slot may fire after teardown)
         endAssistantBubble();
+    });
+    // v0.1.115 — mid-stream truncation. Per the wave-1 ORDER GUARANTEE,
+    // finished(partial) has ALREADY run (endAssistantBubble finalized the
+    // bubble) by the time this fires, and `partial` == what finished() carried,
+    // so we neither re-append nor create a bubble — we mark the just-finalized
+    // last assistant message and render a compact Retry notice under it.
+    // We MUST mirror the finished() handler's own guards: if the turn is paused
+    // on a write-approval card, or a tool-result flush is mid-flight, the turn
+    // isn't really "done" for the user — defer (no-op) rather than nagging.
+    connect(m_ollama, &OllamaClient::finishedTruncated, this,
+            [this](const QString &partial, const QString &reason) {
+        Q_UNUSED(partial);
+        if (m_pendingWriteApprovals > 0) return;                       // paused on user
+        if (m_toolsActiveThisTurn && !m_pendingToolResults.isEmpty())  // flush mid-flight
+            return;
+        m_truncatedActive = true;
+        m_truncatedReason = reason;
+        if (m_chatLayout) renderTranscript();  // hardening: only render if surface exists
     });
     // v0.1.35 — Tool-call from the model. Execute against the workspace,
     // queue the result for the agent loop, and render an inline 🔧 card.
@@ -2100,7 +2156,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         // v0.1.111 — a mid-stream error (e.g. dropped connection) after a write
         // tool-call must neutralise any open approval card too — otherwise it
         // stays clickable and a later Approve writes into a dead turn.
-        cancelPendingWriteApprovals();
+        cancelPendingWriteApprovals(QStringLiteral("stream-error"));
         endAssistantBubble();
         // hardening: surface even an empty error string with a generic notice
         // so a silent backend failure never becomes an invisible failure.
@@ -2481,7 +2537,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
         // v0.1.111 — Stop means "cancel this run": neutralise any open write-
         // approval card so clicking Approve on it AFTER Stop can't still write
         // to disk, and reset the gate counters so the next turn isn't stranded.
-        cancelPendingWriteApprovals();
+        cancelPendingWriteApprovals(QStringLiteral("run-stopped"));
         if (m_inAssistantBubble) {
             endAssistantBubble();
         }
@@ -2572,6 +2628,11 @@ void AIPanel::setWorkspaceContext(const QString &selectedText,
     // chat history file. (Re-)compute the on-disk path; if a saved file
     // exists, load it and re-render the transcript.
     if (workspaceRoot != prevWorkspace) {
+        // v0.1.114 (B1, item 6) — a workspace change replaces the conversation
+        // history; discard any open approval (belongs to the old workspace) with
+        // a structured cancel BEFORE the transcript is reloaded/re-rendered.
+        if (!m_openApprovals.isEmpty())
+            cancelPendingWriteApprovals(QStringLiteral("workspace-changed"));
         updateChatHistoryPath();
         if (!m_chatHistoryPath.isEmpty() && QFileInfo::exists(m_chatHistoryPath)) {
             loadChatHistory();
@@ -2826,6 +2887,42 @@ bool AIPanel::eventFilter(QObject *obj, QEvent *evt) {
             if (!m_customInput->toPlainText().trimmed().isEmpty())
                 sendPrompt("custom");
             return true;   // swallow the keypress; don't insert a newline
+        }
+        // v0.1.115 (item 2a) — Esc while the input is focused hides the whole
+        // AI panel, BUT only when nothing more local wants the key first:
+        //   * an open @file completion popup owns Esc (dismiss the popup)
+        //   * a pending approval card must be decided, not bypassed
+        //   * a live text selection: Esc should clear it, not hide the panel
+        if (key == Qt::Key_Escape) {
+            const bool popupOpen = m_filementionCompleter
+                && m_filementionCompleter->popup()
+                && m_filementionCompleter->popup()->isVisible();
+            const bool hasSelection = m_customInput->textCursor().hasSelection();
+            if (!popupOpen && !hasSelection && m_openApprovals.isEmpty()) {
+                emit closeDockRequested();
+                return true;
+            }
+        }
+    }
+    // v0.1.115 (item 2d) — inline write/SQL approval card keyboard control.
+    // A key ignored by a focused child button propagates up to its parent
+    // (the card), so an event filter on the card sees Enter/Esc regardless of
+    // which of the three buttons currently holds focus: Enter = Approve,
+    // Esc = Deny. The card is matched back to its record via the button's
+    // parent so multiple open cards each resolve independently.
+    if (evt->type() == QEvent::KeyPress && obj->isWidgetType()
+        && obj->objectName() == QLatin1String("writeApprovalCard")) {
+        auto *ke = static_cast<QKeyEvent*>(evt);
+        const int key = ke->key();
+        if (key == Qt::Key_Return || key == Qt::Key_Enter
+            || key == Qt::Key_Escape) {
+            for (const auto &pa : qAsConst(m_openApprovals)) {
+                if (pa && pa->approveBtn && pa->approveBtn->parentWidget() == obj
+                    && pa->decided && !*pa->decided) {
+                    resolveApproval(pa, key != Qt::Key_Escape);
+                    return true;
+                }
+            }
         }
     }
     return QWidget::eventFilter(obj, evt);
@@ -3741,6 +3838,13 @@ void AIPanel::sendPrompt(const QString &action) {
         }
     }
 
+    // v0.1.114 (B1, item 6) — a NEW user turn discards any approval left open
+    // from a prior turn: resolve the held tool call with a structured cancel and
+    // neutralise the card BEFORE the render below, so a stale card can't be
+    // re-created and no zombie tool call is left unanswered.
+    if (!m_openApprovals.isEmpty())
+        cancelPendingWriteApprovals(QStringLiteral("new-turn-started"));
+
     appendUserBubble(userBubbleText);
 
     // v0.1.70 — state-injection for the no-file-open case. When the user
@@ -3804,17 +3908,43 @@ void AIPanel::sendPrompt(const QString &action) {
     m_lastToolErrorText.clear();
     m_turnToolActions.clear();
     // v0.1.111 — each new user turn re-arms the write gate; "approve all this
-    // turn" is deliberately turn-scoped (never session-wide). Drop any stale
-    // (already-resolved) cancellers from the previous turn so the list can't
-    // grow unbounded across a long session.
-    m_turnWriteApproval = false;
+    // turn" is deliberately turn-scoped (never session-wide). Any still-open
+    // approval from a prior turn was already discarded before appendUserBubble
+    // above (structured cancel); clear the members as belt.
+    m_turnWriteApprovalFile = false;
+    m_turnWriteApprovalSql = false;
     m_pendingWriteApprovals = 0;
     m_streamFinishedAwaitingApproval = false;
-    m_approvalCancellers.clear();
-    m_approvalApprovers.clear();
+    m_openApprovals.clear();
+    // v0.1.115 — a fresh user turn supersedes any prior truncation notice.
+    m_truncatedActive = false;
+    m_truncatedReason.clear();
     if (toolModeActive && !m_workspaceRoot.isEmpty()) {
         if (currentModelSupportsTools()) {
             toolsForRequest = AiTools::availableTools();
+            // v0.1.114 (B1, item 1) — HOST-side write-tool gating. availableTools()
+            // hands the FULL registry to every mode; only the Compose and Agent
+            // segments (which are Coding-only) may see write-capable tools. The
+            // coding-Chat segment and Data mode are read-only tool surfaces, so we
+            // strip every mutating tool (write_file / apply_diff / anything
+            // isMutatingTool() flags) BEFORE it reaches the model. This makes the
+            // "Chat has no write tools" contract TRUE at the host, not merely a
+            // request in the system prompt a model could ignore. query_sql /
+            // csv_query are NOT mutating tools and stay available to Data mode.
+            const bool writeCapableSegment =
+                codingMode && (m_chatModeSegment == ChatModeSegment::Compose
+                            || m_chatModeSegment == ChatModeSegment::Agent);
+            if (!writeCapableSegment) {
+                QJsonArray filtered;
+                for (const QJsonValue &tv : qAsConst(toolsForRequest)) {
+                    const QString tname = tv.toObject()
+                                              .value(QStringLiteral("function")).toObject()
+                                              .value(QStringLiteral("name")).toString();
+                    if (isMutatingTool(tname)) continue;   // drop write_file / apply_diff
+                    filtered.append(tv);
+                }
+                toolsForRequest = filtered;
+            }
             m_toolsActiveThisTurn = true;
             m_lastSystemPromptForTools = systemPrompt;
             m_lastToolsArray = toolsForRequest;
@@ -3852,6 +3982,17 @@ void AIPanel::sendPrompt(const QString &action) {
         m_ollama->setMode(isCoding ? "coding" : isData ? "data" : "chat");
     }
 
+    // v0.1.115 — snapshot this exact turn so a truncation Retry re-issues an
+    // identical generate() (same prompt/system/tools/history) instead of
+    // re-deriving it from input + context state that may have since mutated.
+    m_retryValid       = true;
+    m_retryPrompt      = prompt;
+    m_retrySystemPrompt = systemPrompt;
+    m_retryThinking    = m_thinkingCheck->isChecked();
+    m_retryImages      = imagesBase64;
+    m_retryTools       = toolsForRequest;
+    m_retryPriorJson   = priorJson;
+
     m_ollama->generate(prompt, systemPrompt, m_thinkingCheck->isChecked(),
                        imagesBase64, toolsForRequest, priorJson);
 }
@@ -3863,7 +4004,7 @@ void AIPanel::clearChat() {
     if (m_stopBtn) m_stopBtn->setEnabled(false);  // hardening: guard m_stopBtn
     // v0.1.111 — clearing the chat deletes any open approval card; trip its
     // decided flag + reset the gate counters so nothing strands.
-    cancelPendingWriteApprovals();
+    cancelPendingWriteApprovals(QStringLiteral("chat-cleared"));
 
     if (m_recordProcess) {
         QProcess *recordProcess = m_recordProcess;
@@ -3901,6 +4042,10 @@ void AIPanel::clearChat() {
     m_streamingCard = nullptr;
     m_streamingBody = nullptr;
     m_lastResponse.clear();
+    // v0.1.115 — a reset drops any pending truncation notice + retry snapshot.
+    m_truncatedActive = false;
+    m_truncatedReason.clear();
+    m_retryValid = false;
     if (m_customInput) m_customInput->clear();  // hardening: guard m_customInput
     m_pendingFilePath.clear();
     m_pendingFileKind.clear();
@@ -4271,13 +4416,18 @@ static void aiAddErrorCard(QVBoxLayout *target, const QString &text,
 
 void AIPanel::renderTranscript() {
     if (!m_chatLayout) return;
-    // v0.1.111 — a full re-render (theme/mode switch, apply, history load)
-    // deletes any open write-approval card, which lives in m_chatLayout and is
-    // NOT part of activeMessages(). Cancel it first so its decided flag is
-    // tripped (no zombie click can write) and the pending counter can't strand
-    // the next turn. Approval-resolution paths don't trigger renderTranscript,
-    // so this only fires on genuine teardown-by-rerender.
-    if (m_pendingWriteApprovals > 0) cancelPendingWriteApprovals();
+    // v0.1.114 (B1, item 6) — a re-render (theme/mode switch, apply, history
+    // load) deletes the write-approval card widget (it lives in m_chatLayout and
+    // is NOT part of activeMessages()). We DO NOT cancel the held tool call here:
+    // the pending-approval RECORD lives in m_openApprovals and survives; the card
+    // is simply re-created at the bottom of this render (see the tail of this
+    // function). This is the load-bearing fix — the v0.1.111 attempt cancelled
+    // the card on every re-render, and because responseStats fires renderTranscript
+    // synchronously right after finished(), the card was destroyed before the user
+    // could ever click it, making the whole gate non-functional. A genuine discard
+    // (mode switch, new turn, Stop, clearChat, stream error) is done by those paths
+    // calling cancelPendingWriteApprovals() BEFORE they re-render, so m_openApprovals
+    // is already empty here and nothing stale is re-created.
     // v0.1.38 crash fix: stop the live streaming-stats timer + nullify the
     // QLabel pointer BEFORE we delete the streaming card. aiClearChat
     // deleteLater()s every widget in m_chatLayout including m_streamingCard
@@ -4335,6 +4485,29 @@ void AIPanel::renderTranscript() {
         && !Config::instance().aiHideCodingWelcome) {
         renderCodingWelcomeCard();
     }
+    // v0.1.115 — plain Chat intent has no welcome card of its own; give its
+    // empty transcript a lightweight placeholder (example prompts + a truthful
+    // capability line). Only when neither Coding nor Data owns the empty state.
+    {
+        const bool coding = m_codingMode && m_codingMode->isChecked();
+        const bool data   = m_dataMode   && m_dataMode->isChecked();
+        if (msgs.isEmpty() && !coding && !data)
+            renderChatEmptyState();
+    }
+
+    // v0.1.115 — re-create the truncation notice from the ephemeral flag so a
+    // theme/mode re-render keeps it under the last assistant bubble. Comes
+    // AFTER the message loop (tail insert) so it reads as attached to the reply.
+    if (m_truncatedActive)
+        renderTruncationNotice(m_truncatedReason);
+
+    // v0.1.114 (B1, item 6) — re-create the card for every STILL-OPEN approval
+    // so a held mutating tool call survives this re-render (theme/mode/history)
+    // and the user can still decide. Resolved approvals were removed from
+    // m_openApprovals; genuine discards emptied it before re-rendering — so this
+    // only re-creates cards that are legitimately still awaiting the user.
+    for (const auto &pa : qAsConst(m_openApprovals))
+        if (pa && pa->decided && !*pa->decided) renderApprovalCard(pa);
 
     // Scroll to bottom after layout settles
     QTimer::singleShot(0, m_chatArea, [this]() {
@@ -5507,6 +5680,192 @@ void AIPanel::endAssistantBubble() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// v0.1.115 — mid-stream truncation retry UI
+// ═══════════════════════════════════════════════════════════════════════
+
+// Map a wave-1 truncation reason token to a human sentence. The token is the
+// part before the first ':'; network-drop carries an optional detail suffix.
+static QString humanTruncationReason(const QString &reason) {
+    const QString token  = reason.section(':', 0, 0).trimmed();
+    const QString detail = reason.section(':', 1).trimmed();
+    if (token == QLatin1String("network-drop")) {
+        QString base = QObject::tr("Connection lost mid-response");
+        if (!detail.isEmpty())
+            base += QStringLiteral(" (") + detail + QStringLiteral(")");
+        return base;
+    }
+    if (token == QLatin1String("backend-abort"))
+        return QObject::tr("The model stopped unexpectedly");
+    if (token == QLatin1String("context-limit"))
+        return QObject::tr("Hit the model's output/context limit");
+    if (token == QLatin1String("content-filter"))
+        return QObject::tr("Blocked by the provider's content filter");
+    // Unknown/future token — show it verbatim rather than an empty notice.
+    return reason.isEmpty() ? QObject::tr("Response cut off") : reason;
+}
+
+void AIPanel::renderTruncationNotice(const QString &reason) {
+    if (!m_chatLayout) return;
+    const AiPalette pal = aiPalette();
+
+    auto *card = new QFrame(m_chatContent);
+    card->setObjectName(QStringLiteral("truncationNotice"));
+    card->setStyleSheet(QString(
+        "#truncationNotice { background:%1; border:1px solid %2; "
+        "border-left:3px solid %3; border-radius:8px; }")
+        .arg(pal.assistBg, pal.assistBorder, pal.errFg));
+    auto *lay = new QHBoxLayout(card);
+    lay->setContentsMargins(10, 6, 10, 6);
+    lay->setSpacing(8);
+
+    auto *lbl = new QLabel(
+        tr("Response cut off — %1").arg(humanTruncationReason(reason)), card);
+    lbl->setWordWrap(true);
+    lbl->setStyleSheet(QString("color:%1; background:transparent; font-size:11px;")
+                           .arg(pal.muted));
+    lay->addWidget(lbl, 1);
+
+    auto *retryBtn = new QPushButton(tr("Retry"), card);
+    retryBtn->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
+    retryBtn->setCursor(Qt::PointingHandCursor);
+    retryBtn->setEnabled(m_retryValid);
+    retryBtn->setStyleSheet(QString(
+        "QPushButton{background:%1;color:%2;border:1px solid %3;border-radius:6px;"
+        "padding:4px 10px;font-weight:600;} QPushButton:hover{background:%4;}")
+        .arg(pal.btnBg, pal.inputText, pal.btnBorder, pal.btnHover));
+    connect(retryBtn, &QPushButton::clicked, this, [this]() { retryLastTurn(); });
+    lay->addWidget(retryBtn);
+
+    auto *row = new QWidget(m_chatContent);
+    row->setStyleSheet(QStringLiteral("background:transparent;"));
+    auto *rowLay = new QVBoxLayout(row);
+    rowLay->setContentsMargins(0, 0, 0, 12);
+    rowLay->setSpacing(0);
+    rowLay->addWidget(card);
+    m_chatLayout->insertWidget(m_chatLayout->count() - 1, row);
+}
+
+void AIPanel::retryLastTurn() {
+    if (!m_retryValid || !m_ollama) return;
+    if (m_inAssistantBubble) return;          // a stream is already running
+    if (m_pendingWriteApprovals > 0) return;  // paused on the user
+
+    // Drop the truncated partial so the retry replaces it rather than
+    // appending a second assistant bubble.
+    QVector<ChatMessage> &msgs = activeMessages();
+    if (!msgs.isEmpty() && msgs.last().role == ChatMessage::Assistant)
+        msgs.removeLast();
+    m_truncatedActive = false;
+    m_truncatedReason.clear();
+
+    // Re-establish the per-turn tool loop state (mirrors sendPrompt) so the
+    // replayed generate() drives the agent loop exactly as the first attempt.
+    m_pendingToolResults = QJsonArray();
+    m_toolCallsThisTurn = 0;
+    m_toolCallsTotal = 0;
+    m_repeatGuard.reset();
+    m_pendingSystemNudge.clear();
+    m_lastToolErrorText.clear();
+    m_turnToolActions.clear();
+    m_turnWriteApprovalFile = false;
+    m_turnWriteApprovalSql = false;
+    m_pendingWriteApprovals = 0;
+    m_streamFinishedAwaitingApproval = false;
+    m_openApprovals.clear();
+    m_toolsActiveThisTurn = !m_retryTools.isEmpty();
+    if (m_toolsActiveThisTurn) {
+        m_lastSystemPromptForTools = m_retrySystemPrompt;
+        m_lastToolsArray = m_retryTools;
+    }
+
+    // Repaint without the partial/notice, THEN open a fresh streaming bubble.
+    renderTranscript();
+    beginAssistantBubble();
+    if (m_stopBtn) m_stopBtn->setEnabled(true);
+    {
+        const bool isCoding = (m_codingMode && m_codingMode->isChecked());
+        const bool isData   = (m_dataMode && m_dataMode->isChecked());
+        m_ollama->setMode(isCoding ? "coding" : isData ? "data" : "chat");
+    }
+    m_ollama->generate(m_retryPrompt, m_retrySystemPrompt, m_retryThinking,
+                       m_retryImages, m_retryTools, m_retryPriorJson);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// v0.1.115 — plain Chat intent empty-state placeholder
+// ═══════════════════════════════════════════════════════════════════════
+
+void AIPanel::renderChatEmptyState() {
+    if (!m_chatLayout) return;
+    const AiPalette pal = aiPalette();
+
+    auto *card = new QFrame;
+    card->setFrameShape(QFrame::StyledPanel);
+    card->setStyleSheet(QString(
+        "QFrame { background: %1; border: 1px solid %2; border-radius: 10px; }"
+        "QLabel { background: transparent; color: %3; }")
+        .arg(pal.assistBg, pal.assistBorder, pal.chatFg));
+    auto *cardLay = new QVBoxLayout(card);
+    cardLay->setContentsMargins(16, 14, 16, 14);
+    cardLay->setSpacing(10);
+
+    auto *title = new QLabel(tr("Ask Notepatra"));
+    {
+        QFont f = title->font();
+        f.setPointSize(f.pointSize() + 2);
+        f.setBold(true);
+        title->setFont(f);
+        title->setStyleSheet(QString("color: %1;").arg(pal.accent));
+    }
+    cardLay->addWidget(title);
+
+    // Mode-truthful capability line (reflects B1's real host-side tool gating).
+    // Chat intent runs NO tools and never touches disk; the segment strip only
+    // exists in Coding mode, so here the line is always the Chat one — but the
+    // wording stays honest about how to get file access.
+    auto *cap = new QLabel(tr("General assistant — it can't read your files or "
+                              "write to disk. Switch to Coding mode to work on "
+                              "the workspace."), card);
+    cap->setWordWrap(true);
+    cap->setStyleSheet(QString("color: %1; font-size: 11px;").arg(pal.muted));
+    cardLay->addWidget(cap);
+
+    auto *examplesHdr = new QLabel(tr("Try:"), card);
+    examplesHdr->setStyleSheet(QString("color: %1; font-size: 11px; font-weight: 600;")
+                                   .arg(pal.muted));
+    cardLay->addWidget(examplesHdr);
+
+    const QStringList examples = {
+        tr("Explain this error message and how to fix it"),
+        tr("Write a regular expression that matches an email address"),
+        tr("Summarize the text I'm about to paste"),
+    };
+    for (const QString &ex : examples) {
+        auto *chip = new QPushButton(ex, card);
+        chip->setCursor(Qt::PointingHandCursor);
+        chip->setToolTip(tr("Click to put this prompt in the input"));
+        chip->setStyleSheet(QString(
+            "QPushButton { text-align: left; background: %1; color: %2; "
+            "border: 1px solid %3; border-radius: 6px; padding: 6px 10px; "
+            "font-size: 11px; } QPushButton:hover { background: %4; }")
+            .arg(pal.btnBg, pal.inputText, pal.btnBorder, pal.btnHover));
+        connect(chip, &QPushButton::clicked, this, [this, ex]() {
+            if (!m_customInput) return;
+            m_customInput->setPlainText(ex);
+            QTextCursor c = m_customInput->textCursor();
+            c.movePosition(QTextCursor::End);
+            m_customInput->setTextCursor(c);
+            m_customInput->setFocus(Qt::OtherFocusReason);
+        });
+        cardLay->addWidget(chip);
+    }
+
+    // Insert at the top of the chat layout (above the trailing stretch), the
+    // same slot the welcome cards use.
+    m_chatLayout->insertWidget(0, card);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // v0.1.35 — Agent-loop tool-call handling
 //
 // When Coding Mode is on AND the active model is in the tool-allowlist,
@@ -5705,13 +6064,43 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
     call.name = name;
     call.args = args;
 
+    // ── v0.1.114 (B1, item 1) — read-only-segment write refusal ─────────
+    // Mutating tools are stripped from the registry for the coding-Chat segment
+    // and Data mode (send() above), so a well-behaved model never sees them. But
+    // enforcement can't rely on the model: if one emits a write_file / apply_diff
+    // anyway, REFUSE to execute it on any surface that isn't Compose or Agent.
+    // This is the host contract that makes "Chat has no write tools" actually true.
+    {
+        const bool codingNow = m_codingMode && m_codingMode->isChecked();
+        const bool writeSeg = codingNow
+            && ((m_composeSegBtn && m_composeSegBtn->isChecked())
+             || (m_agentSegBtn   && m_agentSegBtn->isChecked()));
+        if (isMutatingTool(name) && !writeSeg) {
+            const QString content = QStringLiteral(
+                "{\"ok\":false,\"error_kind\":\"denied\",\"message\":\"Write tools "
+                "are disabled in this mode. Switch to the Compose or Agent segment "
+                "of Coding mode to edit files. This call was not executed.\"}");
+            QJsonObject payload;
+            payload["id"] = id; payload["name"] = name; payload["args"] = args;
+            payload["content"] = content;
+            m_pendingToolResults.append(payload);
+            const AiPalette palDenied = aiPalette();
+            aiAddToolCallCard(m_chatLayout, name, argsSummary,
+                              QStringLiteral("✗ denied (read-only mode)"), true, palDenied);
+            noteToolOutcome(repeatSig, true,
+                            name + argsSummary + QStringLiteral(" — denied: write tools off in this mode"));
+            m_turnToolActions.append(name + argsSummary + QStringLiteral(" — ✗ denied (read-only mode)"));
+            return;
+        }
+    }
+
     // ── v0.1.111 — Agent-mode write confirmation gate ───────────────────
     // In the Agent segment, a mutating tool must be user-approved before it
     // touches disk. We hold the write, render an inline Approve/Reject card,
     // and resume the turn when the user decides. Guards:
-    //   • Agent segment only (Compose routes via dry_run below; Chat has no
-    //     write tools). Detect via the live button state (same source of
-    //     truth as the agent-mode check elsewhere).
+    //   • Agent segment only (Compose forces dry_run below → routed to the Edit
+    //     Plan; the coding-Chat segment + Data mode never receive write tools at
+    //     all — item 1 strips them host-side before they reach the model).
     //   • mutating tool only (reads are never gated).
     //   • not already "approve all this turn".
     //   • not a dry_run call (belt — those never hit disk anyway).
@@ -5720,13 +6109,87 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
     const bool agentSegment = (m_codingMode && m_codingMode->isChecked())
                               && m_agentSegBtn && m_agentSegBtn->isChecked();
     if (agentSegment && isMutatingTool(name)
-            && !m_turnWriteApproval
+            && !m_turnWriteApprovalFile
             && !args.value(QStringLiteral("dry_run")).toBool(false)) {
         enqueueWriteApproval(id, name, args, argsSummary);
         return;  // result is withheld until a card button resolves it
     }
 
-    AiTools::ToolResult result = AiTools::execute(call, m_workspaceRoot);
+    // ── v0.1.114 (B1, item 2) — HOST-enforced Compose dry-run ───────────
+    // In the Compose segment the model is ASKED (via the composerModeLayer
+    // system prompt) to pass dry_run:true on write_file / apply_diff, but a
+    // prompt is a request, not a guarantee. Force dry_run server-side so a
+    // Compose-segment write can NEVER bypass the Edit-Plan review queue,
+    // regardless of what the model actually sent. The forced flag is surfaced
+    // in the tool result (host_enforced_dry_run) so the model knows the write
+    // was queued, not applied.
+    const bool composeSegment = (m_codingMode && m_codingMode->isChecked())
+                              && m_composeSegBtn && m_composeSegBtn->isChecked();
+    bool hostForcedDryRun = false;
+    if (composeSegment && isMutatingTool(name)
+            && !args.value(QStringLiteral("dry_run")).toBool(false)) {
+        QJsonObject forced = args;
+        forced[QStringLiteral("dry_run")] = true;
+        call.args = forced;
+        hostForcedDryRun = true;
+    }
+
+    // ── v0.1.114 (B1, items 3 + 5) — DB tools: human SQL gate + async exec ──
+    // query_sql / csv_query are not "mutating tools" in the write-file sense,
+    // but a mutating SQL statement (INSERT/UPDATE/DELETE/DDL) is exactly as
+    // dangerous. The old escape hatch was a MODEL-SUPPLIED "confirm":true, which
+    // let the model self-approve a mutation — removed. Instead:
+    //   • strip any model-forged host-approval flag (defense in depth), then
+    //   • if the SQL mutates, route it through the SAME human approval gate as
+    //     write tools (preview shows the SQL); it executes only on Approve.
+    //   • a read-only query flows WITHOUT approval friction.
+    // Either way the actual execution goes through runDbToolGuarded(), which
+    // runs the query on a worker with a 30 s timeout + cancel so a slow/hung
+    // server can never freeze the GUI thread (item 5).
+    AiTools::ToolResult result;
+    if (name == QLatin1String("query_sql") || name == QLatin1String("csv_query")) {
+        QJsonObject sanitized = args;
+        // The ONLY authority for a mutation is this host after a human Approve;
+        // never trust a model-supplied approval token.
+        sanitized.remove(QStringLiteral("_notepatra_host_approved"));
+        call.args = sanitized;
+        const QString sql = sanitized.value(QStringLiteral("sql")).toString();
+        if (DbConnections::isMutation(sql) && !m_turnWriteApprovalSql) {
+            QString sqlContext;
+            if (name == QLatin1String("query_sql"))
+                sqlContext = tr("connection '%1'")
+                                 .arg(sanitized.value(QStringLiteral("connection_name")).toString());
+            else
+                sqlContext = tr("CSV file '%1'")
+                                 .arg(sanitized.value(QStringLiteral("file_path")).toString());
+            enqueueSqlApproval(id, name, sanitized, argsSummary, sql, sqlContext);
+            return;  // withheld until the user approves the mutation
+        }
+        // Read-only (or "approve all queries this turn" already granted) — run guarded.
+        result = runDbToolGuarded(call, /*approvedMutation=*/m_turnWriteApprovalSql);
+        // Re-resolve turn state: the nested event loop may have processed a Stop
+        // / mode-switch that tore the turn down while we waited.
+        if (!m_chatLayout || !m_toolsActiveThisTurn) return;
+    } else {
+        result = AiTools::execute(call, m_workspaceRoot);
+    }
+
+    // Surface the host-forced Compose dry-run to the model so it treats the
+    // write as queued-for-review, not applied.
+    if (hostForcedDryRun && !result.isError) {
+        QJsonParseError hpe{};
+        QJsonDocument hjd = QJsonDocument::fromJson(result.content.toUtf8(), &hpe);
+        if (hpe.error == QJsonParseError::NoError && hjd.isObject()) {
+            QJsonObject ho = hjd.object();
+            ho[QStringLiteral("host_enforced_dry_run")] = true;
+            ho[QStringLiteral("host_note")] = QStringLiteral(
+                "Compose mode: the host forced dry_run=true. Nothing was written "
+                "to disk — the change was queued in the Edit Plan for the user to "
+                "review and Apply.");
+            result.content = QString::fromUtf8(
+                QJsonDocument(ho).toJson(QJsonDocument::Compact));
+        }
+    }
 
     // hardening: shared JSON-parse helper. AiTools::execute always returns
     // valid compact JSON, but if a future change returns garbage (or the
@@ -5779,6 +6242,7 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
                 m_editPlan->setVisible(true);
             }
             resultSummary = QString("queued for review (%1 chars)").arg(after.size());
+            if (hostForcedDryRun) resultSummary += QStringLiteral(" [Compose]");
         } else {
             const int bytes = body.value("bytes_written").toInt();
             const QString mode = body.value("mode").toString();
@@ -5818,6 +6282,7 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
             resultSummary = QString("queued for review (%1 hunk%2)")
                                 .arg(args.value("hunks").toArray().size())
                                 .arg(args.value("hunks").toArray().size() == 1 ? "" : "s");
+            if (hostForcedDryRun) resultSummary += QStringLiteral(" [Compose]");
         } else {
             const int hunks = body.value("hunks_applied").toInt();
             resultSummary = QString("%1 hunk%2 applied").arg(hunks).arg(hunks == 1 ? "" : "s");
@@ -5975,11 +6440,12 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
     m_pendingToolResults.append(payload);
 }
 
-// v0.1.111 — Agent-mode write confirmation gate. Render an inline card that
-// previews a held write (via a forced dry-run, so disk is untouched) and lets
-// the user Approve / Reject / Approve-all-this-turn before it lands. The agent
-// turn is paused until the user decides (the flush is withheld in the
-// OllamaClient::finished lambda while m_pendingWriteApprovals > 0).
+// v0.1.111 / v0.1.114 (B1) — Agent-mode write confirmation gate. Build the held
+// approval RECORD (via a forced dry-run preview so disk is untouched) and render
+// its card. The record — not the widget — is the source of truth: it lives in
+// m_openApprovals and survives a renderTranscript (which destroys the widget and
+// re-creates it). The turn is paused until the user decides (the flush is
+// withheld in the OllamaClient::finished lambda while m_pendingWriteApprovals>0).
 void AIPanel::enqueueWriteApproval(const QString &id, const QString &name,
                                    const QJsonObject &args, const QString &argsSummary) {
     if (!m_chatLayout) return;
@@ -6033,9 +6499,72 @@ void AIPanel::enqueueWriteApproval(const QString &id, const QString &name,
         return;
     }
 
-    ++m_pendingWriteApprovals;
+    QString shown = absPath;
+    if (!m_workspaceRoot.isEmpty()) {
+        const QString rel = QDir(m_workspaceRoot).relativeFilePath(absPath);
+        if (!rel.startsWith("..")) shown = rel;
+    }
 
-    // ── Inline approval card ───────────────────────────────────────────────
+    auto pa = QSharedPointer<PendingApproval>::create();
+    pa->kind        = PendingApproval::Kind::FileWrite;
+    pa->id          = id;
+    pa->name        = name;
+    pa->args        = args;
+    pa->argsSummary = argsSummary;
+    pa->before      = before;
+    pa->after       = after;
+    pa->absPath     = absPath;
+    pa->shown       = shown;
+    pa->decided     = QSharedPointer<bool>::create(false);
+    m_openApprovals.append(pa);
+    m_pendingWriteApprovals = m_openApprovals.size();
+    renderApprovalCard(pa);
+    // v0.1.115 (item 2d) — a freshly-enqueued card grabs focus so Enter/Esc
+    // resolve it without the user reaching for the mouse. Deferred so the
+    // widget is laid out first; guarded by a QPointer against teardown. Only
+    // on enqueue, never on re-render (that would steal focus mid-typing).
+    if (pa->approveBtn) {
+        QPointer<QPushButton> wp(pa->approveBtn);
+        QTimer::singleShot(0, this, [wp]() { if (wp) wp->setFocus(Qt::OtherFocusReason); });
+    }
+}
+
+// v0.1.114 (B1, item 3) — human approval gate for a MUTATING query_sql /
+// csv_query. Model-supplied "confirm" no longer executes a mutation; instead we
+// preview the SQL and only run it (with the host-only approval flag) on Approve.
+void AIPanel::enqueueSqlApproval(const QString &id, const QString &name,
+                                 const QJsonObject &args, const QString &argsSummary,
+                                 const QString &sql, const QString &sqlContext) {
+    if (!m_chatLayout) return;
+    auto pa = QSharedPointer<PendingApproval>::create();
+    pa->kind        = PendingApproval::Kind::SqlMutation;
+    pa->id          = id;
+    pa->name        = name;
+    pa->args        = args;
+    pa->argsSummary = argsSummary;
+    pa->sql         = sql;
+    pa->sqlContext  = sqlContext;
+    pa->decided     = QSharedPointer<bool>::create(false);
+    m_openApprovals.append(pa);
+    m_pendingWriteApprovals = m_openApprovals.size();
+    renderApprovalCard(pa);
+    // v0.1.115 (item 2d) — focus the fresh card's Approve button (see the
+    // FileWrite path above for rationale).
+    if (pa->approveBtn) {
+        QPointer<QPushButton> wp(pa->approveBtn);
+        QTimer::singleShot(0, this, [wp]() { if (wp) wp->setFocus(Qt::OtherFocusReason); });
+    }
+}
+
+// v0.1.114 (B1) — (re)build the inline Approve/Reject/Approve-all card for an
+// open approval record and bind its buttons to the record. Called by enqueue*
+// AND by renderTranscript, so the card survives a normal re-render: the record
+// (with its stable `decided` flag) persists; only the widget is rebuilt.
+void AIPanel::renderApprovalCard(const QSharedPointer<PendingApproval> &pa) {
+    if (!m_chatLayout || !pa || (pa->decided && *pa->decided)) return;
+    const AiPalette pal = aiPalette();
+    const bool sqlKind = (pa->kind == PendingApproval::Kind::SqlMutation);
+
     auto *card = new QFrame(m_chatContent);
     card->setObjectName(QStringLiteral("writeApprovalCard"));
     card->setStyleSheet(QString(
@@ -6046,33 +6575,52 @@ void AIPanel::enqueueWriteApproval(const QString &id, const QString &name,
     lay->setContentsMargins(10, 8, 10, 8);
     lay->setSpacing(6);
 
-    QString shown = absPath;
-    if (!m_workspaceRoot.isEmpty()) {
-        const QString rel = QDir(m_workspaceRoot).relativeFilePath(absPath);
-        if (!rel.startsWith("..")) shown = rel;
-    }
-    const RustCore::DiffInfo di = RustCore::computeDiff(before, after);
     auto *hdr = new QLabel(card);
     hdr->setTextFormat(Qt::RichText);
     hdr->setWordWrap(true);
-    // di.added / di.removed already count a modified line once on each side
-    // (similar emits delete+insert); adding di.changed would double-count.
-    hdr->setText(QString("<b>%1</b> &nbsp; <span style='color:%2;'>%3</span> "
-                         "&nbsp; <span style='color:%2;'>+%4 -%5</span>")
-                     .arg(name).arg(pal.muted).arg(shown.toHtmlEscaped())
-                     .arg(di.added).arg(di.removed));
+    if (sqlKind) {
+        hdr->setText(QString("<b>%1</b> &nbsp; <span style='color:%2;'>%3</span> "
+                             "&nbsp; <span style='color:%4;'>modifies data</span>")
+                         .arg(pa->name.toHtmlEscaped()).arg(pal.muted)
+                         .arg(pa->sqlContext.toHtmlEscaped()).arg(pal.errFg));
+    } else {
+        // di.added / di.removed already count a modified line once on each side
+        // (similar emits delete+insert); adding di.changed would double-count.
+        const RustCore::DiffInfo di = RustCore::computeDiff(pa->before, pa->after);
+        hdr->setText(QString("<b>%1</b> &nbsp; <span style='color:%2;'>%3</span> "
+                             "&nbsp; <span style='color:%2;'>+%4 -%5</span>")
+                         .arg(pa->name).arg(pal.muted).arg(pa->shown.toHtmlEscaped())
+                         .arg(di.added).arg(di.removed));
+    }
     hdr->setStyleSheet(QString("color:%1; background:transparent;").arg(pal.headerFg));
     lay->addWidget(hdr);
 
-    auto *sub = new QLabel(tr("Agent wants to write this file. Review before it hits disk."), card);
+    auto *sub = new QLabel(sqlKind
+        ? tr("This query changes data. Review the SQL before it runs.")
+        : tr("Agent wants to write this file. Review before it hits disk."), card);
     sub->setStyleSheet(QString("color:%1; background:transparent; font-size:11px;").arg(pal.muted));
     sub->setWordWrap(true);
     lay->addWidget(sub);
 
-    auto *diff = new DiffView(before, after, card);
-    diff->setMinimumHeight(110);
-    diff->setMaximumHeight(280);
-    lay->addWidget(diff);
+    if (sqlKind) {
+        // Show the SQL in the preview area (reusing the code-block styling).
+        auto *sqlBlock = new QLabel(card);
+        sqlBlock->setTextFormat(Qt::PlainText);
+        sqlBlock->setText(pa->sql);
+        sqlBlock->setWordWrap(true);
+        sqlBlock->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        sqlBlock->setStyleSheet(QString(
+            "background:%1; color:%2; border:1px solid %3; border-radius:4px; "
+            "padding:6px 8px; font-family:'JetBrains Mono','Cascadia Code',"
+            "'Consolas',monospace; font-size:11px;")
+            .arg(pal.codeBg, pal.codeFg, pal.assistBorder));
+        lay->addWidget(sqlBlock);
+    } else {
+        auto *diff = new DiffView(pa->before, pa->after, card);
+        diff->setMinimumHeight(110);
+        diff->setMaximumHeight(280);
+        lay->addWidget(diff);
+    }
 
     auto *status = new QLabel(card);
     status->setStyleSheet(QStringLiteral("background:transparent; font-weight:600;"));
@@ -6081,8 +6629,11 @@ void AIPanel::enqueueWriteApproval(const QString &id, const QString &name,
 
     auto *btnRow = new QHBoxLayout;
     btnRow->setSpacing(6);
-    auto *approveBtn = new QPushButton(QStringLiteral("✓ Approve"), card);
-    auto *allBtn     = new QPushButton(tr("Approve all this turn"), card);
+    auto *approveBtn = new QPushButton(sqlKind ? tr("✓ Run query") : QStringLiteral("✓ Approve"), card);
+    // F3 — the label names the kind it actually grants: an "Approve all queries
+    // this turn" click never auto-approves later file writes, and vice-versa.
+    auto *allBtn     = new QPushButton(sqlKind ? tr("Approve all queries this turn")
+                                               : tr("Approve all writes this turn"), card);
     auto *rejectBtn  = new QPushButton(tr("Reject"), card);
     const QString plainBtn = QString(
         "QPushButton{background:%1;color:%2;border:1px solid %3;border-radius:6px;"
@@ -6108,62 +6659,56 @@ void AIPanel::enqueueWriteApproval(const QString &id, const QString &name,
     rowLay->addWidget(card);
     m_chatLayout->insertWidget(m_chatLayout->count() - 1, row);
 
-    // ── Resolution ─────────────────────────────────────────────────────────
-    // One-shot guard against double-resolution. QSharedPointer (not raw new)
-    // so it's freed when the last capturing lambda dies — no per-card leak.
-    auto decided = QSharedPointer<bool>::create(false);
+    // Refresh the record's live-widget handles so a later resolution updates
+    // whichever card instance is currently on screen.
+    pa->statusLbl  = status;
+    pa->approveBtn = approveBtn;
+    pa->allBtn     = allBtn;
+    pa->rejectBtn  = rejectBtn;
 
-    auto disableButtons = [approveBtn, allBtn, rejectBtn]() {
-        approveBtn->setEnabled(false);
-        allBtn->setEnabled(false);
-        rejectBtn->setEnabled(false);
-    };
+    connect(approveBtn, &QPushButton::clicked, this, [this, pa]() { resolveApproval(pa, true); });
+    connect(rejectBtn,  &QPushButton::clicked, this, [this, pa]() { resolveApproval(pa, false); });
+    // F3 — grant only THIS card's kind for the rest of the turn.
+    connect(allBtn,     &QPushButton::clicked, this,
+            [this, pa]() { approveAllOpenApprovals(pa->kind); });
 
-    // Register a canceller so every turn-teardown path (Stop, stream error,
-    // clearChat, forced re-render) can neutralise this still-open card: flip
-    // `decided` so a later Approve/Reject click is a no-op (the write can NEVER
-    // land after the user cancelled the run), and disable the buttons. Widgets
-    // are held by QPointer — if the card was already destroyed (re-render), the
-    // canceller safely does nothing but still trips `decided`.
-    {
-        QPointer<QPushButton> apv(approveBtn), alb(allBtn), rjt(rejectBtn);
-        QPointer<QLabel> st(status);
-        QPointer<QFrame> cardPtr(card);
-        m_approvalCancellers.append([decided, apv, alb, rjt, st, cardPtr]() {
-            if (*decided) return;
-            *decided = true;
-            if (apv) apv->setEnabled(false);
-            if (alb) alb->setEnabled(false);
-            if (rjt) rjt->setEnabled(false);
-            if (st) {
-                st->setVisible(true);
-                st->setText(QStringLiteral("Cancelled."));
-            }
-            Q_UNUSED(cardPtr);
-        });
-    }
+    // v0.1.115 (item 2d) — keyboard-operable card. Buttons in a sane tab order
+    // (Approve -> Approve-all -> Reject); the card itself filters Enter/Esc (see
+    // AIPanel::eventFilter) so those shortcuts work from any of the three.
+    approveBtn->setFocusPolicy(Qt::StrongFocus);
+    allBtn->setFocusPolicy(Qt::StrongFocus);
+    rejectBtn->setFocusPolicy(Qt::StrongFocus);
+    QWidget::setTabOrder(approveBtn, allBtn);
+    QWidget::setTabOrder(allBtn, rejectBtn);
+    card->installEventFilter(this);
+}
 
-    auto queueAndResume = [this, id, name, args](const QString &resultContent) {
-        QJsonObject payload;
-        payload["id"] = id; payload["name"] = name; payload["args"] = args;
-        payload["content"] = resultContent;
-        m_pendingToolResults.append(payload);
-        if (m_pendingWriteApprovals > 0) --m_pendingWriteApprovals;
-        maybeResumeAfterApprovals();
-    };
+// v0.1.114 (B1) — execute (Approve) or decline (Reject) one held approval, queue
+// its tool result, drop it from the open set, and resume the loop if idle.
+void AIPanel::resolveApproval(const QSharedPointer<PendingApproval> &pa, bool approve) {
+    if (!pa || !pa->decided || *pa->decided) return;
+    *pa->decided = true;
+    if (pa->approveBtn) pa->approveBtn->setEnabled(false);
+    if (pa->allBtn)     pa->allBtn->setEnabled(false);
+    if (pa->rejectBtn)  pa->rejectBtn->setEnabled(false);
 
-    auto doApprove = [this, id, name, args, card, status, decided,
-                      disableButtons, queueAndResume, shown]() {
-        if (*decided) return;
-        *decided = true;
-        disableButtons();
-        // Execute the REAL write now (no dry_run).
+    const QString sig = AgentRepeatGuard::signature(pa->name, pa->args);
+    const AiPalette p = aiPalette();
+    const QString okFg = aiIsDark() ? QStringLiteral("#9BD9A0") : QStringLiteral("#1B5E20");
+    QString resultContent;
+
+    if (approve) {
+        // Execute for real. SQL mutations run through the async guarded path
+        // (timeout + cancel) with the host-only approval flag; file writes run
+        // the tool directly (no dry_run).
         AiTools::ToolCall realCall;
-        realCall.id = id; realCall.name = name; realCall.args = args;
-        const AiTools::ToolResult real = AiTools::execute(realCall, m_workspaceRoot);
-        // Parse abs_path + created for the editor reload.
+        realCall.id = pa->id; realCall.name = pa->name; realCall.args = pa->args;
+        AiTools::ToolResult real;
         QString realAbsPath; bool created = false;
-        {
+        if (pa->kind == PendingApproval::Kind::SqlMutation) {
+            real = runDbToolGuarded(realCall, /*approvedMutation=*/true);
+        } else {
+            real = AiTools::execute(realCall, m_workspaceRoot);
             QJsonParseError perr{};
             const QJsonDocument jd = QJsonDocument::fromJson(real.content.toUtf8(), &perr);
             const QJsonObject rootObj = jd.isObject() ? jd.object() : QJsonObject();
@@ -6171,91 +6716,89 @@ void AIPanel::enqueueWriteApproval(const QString &id, const QString &name,
             realAbsPath = body.value("abs_path").toString();
             created  = body.value("created").toBool();
         }
-        const AiPalette p = aiPalette();
-        card->setStyleSheet(QString(
-            "#writeApprovalCard { background:%1; border:1px solid %2; "
-            "border-left:3px solid %3; border-radius:8px; }")
-            .arg(p.assistBg, p.assistBorder, real.isError ? p.errBorder : p.accent));
-        // Theme-aware success green (the codebase's okFg pattern) — never a
-        // hardcoded light-only hex (Dark/Monokai parity).
-        const QString okFg = aiIsDark() ? QStringLiteral("#9BD9A0") : QStringLiteral("#1B5E20");
-        status->setVisible(true);
-        status->setText(real.isError
-            ? QStringLiteral("<span style='color:%1;'>✗ Write failed.</span>").arg(p.errFg)
-            : QStringLiteral("<span style='color:%1;'>✓ Approved — written to disk.</span>").arg(okFg));
-        if (!real.isError && !realAbsPath.isEmpty()) emit fileWrittenByAgent(realAbsPath, created);
-        // Mirror the direct-execute path's post-tool bookkeeping
-        // (handleToolCall) that the gated early-return skipped: feed the
-        // repeat guard so an approved SUCCESS resets the streak (a now-valid
-        // identical earlier-failed call is no longer refused) and a FAILURE
-        // refreshes m_lastToolErrorText, and log the action so an empty-prose
-        // turn force-finalises to a non-blank transcript instead of erasing
-        // the write from the log.
-        const QString sig = AgentRepeatGuard::signature(name, args);
+        resultContent = real.content;
+        const QString label = pa->kind == PendingApproval::Kind::SqlMutation
+                                  ? pa->sqlContext : pa->shown;
+        if (pa->statusLbl) {
+            pa->statusLbl->setVisible(true);
+            pa->statusLbl->setText(real.isError
+                ? QStringLiteral("<span style='color:%1;'>✗ %2 failed.</span>")
+                      .arg(p.errFg, pa->kind == PendingApproval::Kind::SqlMutation
+                                        ? tr("Query") : tr("Write"))
+                : (pa->kind == PendingApproval::Kind::SqlMutation
+                      ? QStringLiteral("<span style='color:%1;'>✓ Approved — query executed.</span>").arg(okFg)
+                      : QStringLiteral("<span style='color:%1;'>✓ Approved — written to disk.</span>").arg(okFg)));
+        }
+        if (pa->kind == PendingApproval::Kind::FileWrite
+                && !real.isError && !realAbsPath.isEmpty())
+            emit fileWrittenByAgent(realAbsPath, created);
+        // Mirror the direct-execute path's post-tool bookkeeping.
         if (real.isError) {
             QString emsg;
             QJsonParseError jpe{};
-            const QJsonDocument ejd =
-                QJsonDocument::fromJson(real.content.toUtf8(), &jpe);
+            const QJsonDocument ejd = QJsonDocument::fromJson(real.content.toUtf8(), &jpe);
             if (jpe.error == QJsonParseError::NoError && ejd.isObject())
                 emsg = ejd.object().value(QStringLiteral("message")).toString();
             noteToolOutcome(sig, true,
-                name + QStringLiteral(" (") + shown + QStringLiteral(") — ")
+                pa->name + QStringLiteral(" (") + label + QStringLiteral(") — ")
                 + real.errorKind
                 + (emsg.isEmpty() ? QString() : QStringLiteral(": ") + emsg));
-            m_turnToolActions.append(name + QStringLiteral(" (") + shown
+            m_turnToolActions.append(pa->name + QStringLiteral(" (") + label
                 + QStringLiteral(") — failed: ") + real.errorKind);
         } else {
             noteToolOutcome(sig, false, QString());
-            m_turnToolActions.append(name + QStringLiteral(" (") + shown
-                + QStringLiteral(") — written to disk"));
+            m_turnToolActions.append(pa->name + QStringLiteral(" (") + label
+                + QStringLiteral(") — ")
+                + (pa->kind == PendingApproval::Kind::SqlMutation
+                       ? QStringLiteral("query executed") : QStringLiteral("written to disk")));
         }
-        queueAndResume(real.content);
-    };
-
-    auto doReject = [this, name, decided, card, status, disableButtons, queueAndResume,
-                     shown]() {
-        if (*decided) return;
-        *decided = true;
-        disableButtons();
-        const AiPalette p = aiPalette();
-        card->setStyleSheet(QString(
-            "#writeApprovalCard { background:%1; border:1px solid %2; "
-            "border-left:3px solid %3; border-radius:8px; }")
-            .arg(p.assistBg, p.assistBorder, p.errBorder));
-        status->setVisible(true);
-        status->setText(QStringLiteral("<span style='color:%1;'>✗ Rejected — not written.</span>")
-                            .arg(p.errFg));
-        // Structured rejection so the model stops retrying the same write.
-        const QString msg = QStringLiteral(
+    } else {
+        const QString label = pa->kind == PendingApproval::Kind::SqlMutation
+                                  ? pa->sqlContext : pa->shown;
+        if (pa->statusLbl) {
+            pa->statusLbl->setVisible(true);
+            pa->statusLbl->setText(
+                QStringLiteral("<span style='color:%1;'>✗ Rejected — not run.</span>").arg(p.errFg));
+        }
+        const QString what = pa->kind == PendingApproval::Kind::SqlMutation
+                                 ? QStringLiteral("mutation") : QStringLiteral("write");
+        resultContent = QStringLiteral(
             "{\"ok\":false,\"error_kind\":\"user_rejected\",\"message\":"
-            "\"The user rejected this write to %1. Do not retry the same write. "
-            "Ask what they'd prefer, or stop.\"}").arg(QString(shown).replace('"', "'"));
-        // Log the rejection so an empty-prose turn force-finalises to an
-        // honest summary, not a blank transcript. Deliberately does NOT touch
-        // the repeat guard: a user veto is not a deterministic tool failure
-        // and the file still does not exist, so a prior read-failure streak
-        // stays valid.
-        m_turnToolActions.append(name + QStringLiteral(" (") + shown
+            "\"The user rejected this %1 (%2). Do not retry it. Ask what they'd "
+            "prefer, or stop.\"}")
+            .arg(what, QString(label).replace('"', "'"));
+        m_turnToolActions.append(pa->name + QStringLiteral(" (") + label
             + QStringLiteral(") — rejected by user"));
-        queueAndResume(msg);
-    };
+    }
 
-    // Register this card's approve action so "Approve all this turn" can resolve
-    // it even if a different card was the one clicked.
-    m_approvalApprovers.append(doApprove);
+    // Drop from the open set, keep the counter in sync, queue the result, and
+    // resume the loop if the stream already finished awaiting us.
+    m_openApprovals.removeOne(pa);
+    m_pendingWriteApprovals = m_openApprovals.size();
+    QJsonObject payload;
+    payload["id"] = pa->id; payload["name"] = pa->name; payload["args"] = pa->args;
+    payload["content"] = resultContent;
+    m_pendingToolResults.append(payload);
+    maybeResumeAfterApprovals();
+}
 
-    connect(approveBtn, &QPushButton::clicked, this, doApprove);
-    connect(rejectBtn,  &QPushButton::clicked, this, doReject);
-    connect(allBtn,     &QPushButton::clicked, this, [this]() {
-        m_turnWriteApproval = true;   // skip the gate for the REST of this turn
-        // Approve every still-open card this turn (each doApprove is guarded by
-        // its own `decided`, so already-resolved cards are a no-op). Iterate a
-        // snapshot — each approve decrements the counter and the last one flushes.
-        const QVector<std::function<void()>> approvers = m_approvalApprovers;
-        for (const auto &approve : approvers)
-            if (approve) approve();
-    });
+// v0.1.114 (B1) / v0.1.115 (F3) — "Approve all this turn": grant the rest of the
+// turn FOR grantKind ONLY, then resolve every still-open card as approved.
+// Iterate a snapshot because each resolveApproval() mutates m_openApprovals.
+//
+// F3 — the grant is kind-scoped: clicking approve-all on a file-write card
+// grants file writes (m_turnWriteApprovalFile) but leaves the SQL-mutation gate
+// armed, and vice-versa. A shared flag previously let a harmless-looking file
+// approve-all silently auto-run every later mutating query_sql with no card.
+// (Resolving the currently-open cards of the other kind is still fine — they are
+// on-screen and the user is explicitly approving what they can see; only the
+// forward-looking turn grant must not cross kinds.)
+void AIPanel::approveAllOpenApprovals(PendingApproval::Kind grantKind) {
+    if (grantKind == PendingApproval::Kind::SqlMutation) m_turnWriteApprovalSql = true;
+    else                                                 m_turnWriteApprovalFile = true;
+    const QVector<QSharedPointer<PendingApproval>> snapshot = m_openApprovals;
+    for (const auto &pa : snapshot)
+        if (pa && pa->decided && !*pa->decided) resolveApproval(pa, true);
 }
 
 // v0.1.111 — once the last pending write-approval resolves, resume the agent
@@ -6275,24 +6818,126 @@ void AIPanel::maybeResumeAfterApprovals() {
     m_toolsActiveThisTurn = false;
     m_toolCallsThisTurn = 0;
     m_toolCallsTotal = 0;
-    m_turnWriteApproval = false;
+    m_turnWriteApprovalFile = false;
+    m_turnWriteApprovalSql = false;
     if (m_stopBtn) m_stopBtn->setEnabled(false);
     endAssistantBubble();
 }
 
-// v0.1.111 — neutralise every open write-approval card and reset the gate. This
-// is the single safety valve invoked by EVERY turn-teardown path (Stop, stream
-// error, clearChat, forced re-render). After it runs, a write the user
-// cancelled can never land (each card's `decided` is tripped), and the pending
-// counter can never strand the next turn.
-void AIPanel::cancelPendingWriteApprovals() {
-    for (auto &cancel : m_approvalCancellers)
-        if (cancel) cancel();
-    m_approvalCancellers.clear();
-    m_approvalApprovers.clear();
+// v0.1.111 / v0.1.114 (B1, item 6) — DISCARD every open approval. This is the
+// single safety valve invoked by every genuine turn-teardown path (Stop, stream
+// error, clearChat, mode switch, workspace change, new turn). Unlike a normal
+// re-render — which RE-CREATES the card so the user can still decide — a discard
+// means the held tool call will never be answered by a click, so we resolve each
+// one with a structured cancel (Deny-shape, `reason`) so the model never waits
+// forever. Trips each record's one-shot decided flag first, so a stale click on
+// a torn-down card widget can NEVER still execute the write.
+void AIPanel::cancelPendingWriteApprovals(const QString &reason) {
+    const QVector<QSharedPointer<PendingApproval>> snapshot = m_openApprovals;
+    m_openApprovals.clear();
+    for (const auto &pa : snapshot) {
+        if (!pa || !pa->decided || *pa->decided) continue;
+        *pa->decided = true;
+        if (pa->approveBtn) pa->approveBtn->setEnabled(false);
+        if (pa->allBtn)     pa->allBtn->setEnabled(false);
+        if (pa->rejectBtn)  pa->rejectBtn->setEnabled(false);
+        if (pa->statusLbl) {
+            pa->statusLbl->setVisible(true);
+            pa->statusLbl->setText(QStringLiteral("Cancelled."));
+        }
+        // Resolve the held tool call so the conversation never hangs.
+        QJsonObject payload;
+        payload["id"] = pa->id; payload["name"] = pa->name; payload["args"] = pa->args;
+        payload["content"] = QStringLiteral(
+            "{\"ok\":false,\"error_kind\":\"user_cancelled\",\"message\":"
+            "\"This pending action was cancelled (%1) before the user decided. "
+            "It was NOT executed.\"}").arg(reason);
+        m_pendingToolResults.append(payload);
+    }
     m_pendingWriteApprovals = 0;
     m_streamFinishedAwaitingApproval = false;
-    m_turnWriteApproval = false;
+    m_turnWriteApprovalFile = false;
+    m_turnWriteApprovalSql = false;
+}
+
+// v0.1.114 (B1, item 5) / v0.1.115 (F1) — run a query_sql / csv_query call OFF
+// the synchronous GUI path so a slow or hung database can never freeze the
+// editor. The old code called AiTools::execute (→ DbConnections::runQuery /
+// QSqlQuery::exec) directly on the GUI thread with no timeout and no cancel.
+// Here AiTools::execute is dispatched to a QtConcurrent worker and awaited in a
+// LOCAL event loop that EXCLUDES socket notifiers — so the streaming HTTP socket
+// cannot re-enter handleToolCall mid-wait — bounded by a 30 s timeout and
+// cancellable via the Stop button.
+//
+// F1 — on timeout/Stop we now GENUINELY interrupt the query via a shared
+// QueryInterruptToken: the worker binds the live DuckDb::Client to it, and
+// requestInterrupt() reaches duckdb_interrupt on that connection so the engine
+// unwinds and returns its worker thread to the pool. The pre-fix behaviour just
+// abandoned the future, leaving the DuckDB query churning to completion in the
+// background — a wasted core and, on repeated timeouts, thread-pool saturation.
+// (A blocking QSql exec still can't be interrupted mid-flight; for those drivers
+// the token is best-effort, same as before.) The token is a shared_ptr captured
+// by the worker lambda too, so it outlives this call for the still-running task.
+//
+// m_inDbQueryLoop is the re-entrancy gate: a nested DB call (rare — a second
+// query arriving during the wait) runs inline rather than spinning a second
+// nested event loop. AiTools::execute stays the single source of truth for
+// connection resolution + result formatting.
+AiTools::ToolResult AIPanel::runDbToolGuarded(const AiTools::ToolCall &call,
+                                              bool approvedMutation) {
+    AiTools::ToolCall c = call;
+    if (approvedMutation) {
+        QJsonObject a = c.args;
+        a[QStringLiteral("_notepatra_host_approved")] = true;  // host-only grant
+        c.args = a;
+    }
+    const QString ws = m_workspaceRoot;
+    auto token = std::make_shared<DbConnections::QueryInterruptToken>();
+
+    // Re-entrancy: never spin a nested event loop inside another DB wait.
+    if (m_inDbQueryLoop)
+        return AiTools::execute(c, ws, token.get());
+
+    m_inDbQueryLoop = true;
+    const auto gate = qScopeGuard([this]() { m_inDbQueryLoop = false; });
+
+    QFuture<AiTools::ToolResult> fut =
+        QtConcurrent::run([c, ws, token]() { return AiTools::execute(c, ws, token.get()); });
+    QFutureWatcher<AiTools::ToolResult> watcher;
+    QEventLoop loop;
+    QTimer timer;
+    timer.setSingleShot(true);
+    connect(&watcher, &QFutureWatcher<AiTools::ToolResult>::finished,
+            &loop, &QEventLoop::quit);
+    connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    // Visible Cancel affordance: the Stop button interrupts the query.
+    QMetaObject::Connection stopConn;
+    if (m_stopBtn)
+        stopConn = connect(m_stopBtn, &QPushButton::clicked, &loop, &QEventLoop::quit);
+    watcher.setFuture(fut);
+    timer.start(30000);
+    loop.exec(QEventLoop::ExcludeSocketNotifiers);
+    if (stopConn) disconnect(stopConn);
+
+    if (watcher.isFinished())
+        return fut.result();
+
+    // Timed out or user-cancelled — GENUINELY abort the running query so the
+    // engine unwinds and frees its worker thread (F1), then return a readable,
+    // model-actionable error. requestInterrupt() is a no-op if the query already
+    // finished, and best-effort for non-DuckDB blocking drivers.
+    token->requestInterrupt();
+
+    AiTools::ToolResult r;
+    r.id = call.id;
+    r.name = call.name;
+    r.isError = true;
+    r.errorKind = QStringLiteral("timeout");
+    r.content = QStringLiteral(
+        "{\"ok\":false,\"error_kind\":\"timeout\",\"message\":\"The query did not "
+        "finish within the 30-second limit and was abandoned (or you cancelled "
+        "it). Narrow it (add filters / a LIMIT) and try again.\"}");
+    return r;
 }
 
 // v0.1.112 — single bookkeeping point for one executed tool outcome. On
@@ -6448,16 +7093,21 @@ void AIPanel::forceExitFullscreen() {
     }
 }
 
+// v0.1.115 (item 2b) — move keyboard focus into the chat input. The host makes
+// the dock visible first; here we just raise + focus the prompt field and put
+// the cursor at the end so the user can start typing immediately.
+void AIPanel::focusInput() {
+    if (!m_customInput) return;
+    m_customInput->setFocus(Qt::ShortcutFocusReason);
+    QTextCursor c = m_customInput->textCursor();
+    c.movePosition(QTextCursor::End);
+    m_customInput->setTextCursor(c);
+}
+
 // v0.1.70 — see header doc. Force Chat mode whenever the dock is freshly
 // opened from hidden. Sets m_chatMode checked, which fires its toggled
 // signal and runs applyModeWithCancel — the same path the user takes
 // clicking the Chat button themselves.
-void AIPanel::resetToChatMode() {
-    if (m_chatMode && !m_chatMode->isChecked()) {
-        m_chatMode->setChecked(true);
-    }
-}
-
 void AIPanel::refreshModeHeader() {
     if (!m_headerLabel) return;
     const AiPalette p = aiPalette();
@@ -6479,9 +7129,9 @@ void AIPanel::refreshModeHeader() {
         fg = rule = QStringLiteral("#4EC9B0");    // teal — review before any write
         tip = QStringLiteral("Compose mode — edits are proposed for your review before any write.");
     } else if (coding) {
-        text = QStringLiteral("  AI  ·  CODING");
+        text = QStringLiteral("  AI  ·  CODING  ·  ASK");
         fg = rule = QStringLiteral("#4EC9B0");
-        tip = QStringLiteral("Coding chat — ask about code; no file edits.");
+        tip = QStringLiteral("Ask mode — read-only. Reads files on demand; no file edits.");
     } else if (data) {
         text = QStringLiteral("  AI  ·  DATA");
         fg = rule = QStringLiteral("#FF9F43");
@@ -7218,6 +7868,7 @@ void AIPanel::openAiSettingsDialog() {
 // the user knows what the next message will do. Purely internal
 // state — the host MainWindow doesn't get a signal.
 void AIPanel::chatModeSelectorChanged(int segment) {
+    const ChatModeSegment prevSegment = m_chatModeSegment;
     switch (segment) {
         case static_cast<int>(ChatModeSegment::Chat):
             m_chatModeSegment = ChatModeSegment::Chat;
@@ -7230,6 +7881,28 @@ void AIPanel::chatModeSelectorChanged(int segment) {
             break;
         default:
             return;
+    }
+
+    // v0.1.115 (F13) — leaving a write-capable segment (Compose/Agent) for the
+    // read-only Ask (Chat) segment DISCARDS any pending write/SQL approval: it
+    // belongs to the write posture we're leaving, and letting it be Approved
+    // while the UI shows read-only Ask would be a spoof (the diff/SQL the user
+    // reviewed no longer matches the surface). Mirrors applyModeWithCancel's
+    // intent-mode discard — the held tool call is resolved with a structured
+    // cancel so the model never hangs waiting on it.
+    if (m_chatModeSegment == ChatModeSegment::Chat
+            && (prevSegment == ChatModeSegment::Compose
+                || prevSegment == ChatModeSegment::Agent)
+            && !m_openApprovals.isEmpty())
+        cancelPendingWriteApprovals(QStringLiteral("segment-switched"));
+
+    // v0.1.115 (item 5) — persist the segment so a re-entered Coding session
+    // (or the next launch) restores it. Guarded to Coding mode: the strip only
+    // applies there, and applyMode forces Chat/Data to the Ask segment — saving
+    // in those modes would clobber the user's real Coding choice.
+    if (m_codingMode && m_codingMode->isChecked()) {
+        Config::instance().aiChatSegment = static_cast<int>(m_chatModeSegment);
+        Config::instance().save();
     }
 
     // Refresh the input placeholder so the affordance stays consistent
@@ -7352,6 +8025,7 @@ void AIPanel::applyComposerEdits(const QList<QPair<QString, QString>> &edits) {
         // v0.1.111 — retain ONLY this batch (single-level undo) and reveal the
         // "Undo apply" affordance so the write is reversible.
         m_lastApplyBatch = batchSnapshots;
+        ++m_applyBatchGen;   // F10 — mark this as a distinct undo record
         if (m_editPlan) m_editPlan->showUndoButton(true);
         ChatMessage done;
         done.role = ChatMessage::Assistant;
@@ -7386,25 +8060,34 @@ bool AIPanel::writeFileAtomic(const QString &absPath, const QByteArray &bytes,
     if (!parent.exists() && !parent.mkpath("."))
         return fail(QStringLiteral("parent dir creation failed"));
 
-    const QString tmp = absPath + ".notepatra.tmp";
-    QFile out(tmp);
+    // Report create-vs-overwrite BEFORE the write so the snapshot/rollback
+    // caller (applyComposerEdits) learns whether a revert must delete the file.
+    const bool isNew = !QFile::exists(absPath);
+    if (wasNew) *wasNew = isNew;
+
+    // v0.1.114 (B1, item 4) — correct-by-construction atomic replace.
+    //
+    // The old implementation wrote a sibling `.notepatra.tmp`, then — when the
+    // target already existed — did `QFile::remove(absPath)` FOLLOWED BY
+    // `QFile::rename(tmp, absPath)`. If that rename failed, the original was
+    // ALREADY gone and the temp was then removed too: BOTH the pre-edit content
+    // AND the new content were destroyed. QSaveFile does the right thing — it
+    // writes to a sibling temp, flushes + fsyncs on commit(), then performs an
+    // atomic rename that overwrites the target in place. On ANY failure it drops
+    // its temp and leaves the original file completely untouched. This preserves
+    // the byte-snapshot rollback contract (we still take + report `wasNew` and
+    // write the exact bytes; the caller's before/after snapshot is unaffected).
+    QSaveFile out(absPath);
     if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate))
-        return fail(QStringLiteral("open %1 failed: %2").arg(tmp, out.errorString()));
+        return fail(QStringLiteral("open failed: %1").arg(out.errorString()));
     const qint64 written = out.write(bytes);
-    out.close();
     if (written != bytes.size()) {
-        QFile::remove(tmp);
+        out.cancelWriting();   // original untouched
         return fail(QStringLiteral("short write: %1/%2")
                         .arg(written).arg(bytes.size()));
     }
-    const bool isNew = !QFile::exists(absPath);
-    if (wasNew) *wasNew = isNew;
-    // QFile::rename refuses to overwrite on some platforms; remove first.
-    if (!isNew) QFile::remove(absPath);
-    if (!QFile::rename(tmp, absPath)) {
-        QFile::remove(tmp);
-        return fail(QStringLiteral("rename failed"));
-    }
+    if (!out.commit())         // fsync + atomic rename; original kept on failure
+        return fail(QStringLiteral("atomic commit failed: %1").arg(out.errorString()));
     return true;
 }
 
@@ -7415,6 +8098,12 @@ bool AIPanel::writeFileAtomic(const QString &absPath, const QByteArray &bytes,
 // by default. Single-level (only the last apply is undoable).
 void AIPanel::undoLastApply() {
     if (m_lastApplyBatch.isEmpty()) return;
+
+    // F10 — remember which batch we're reverting. The drift QMessageBox below
+    // spins a nested event loop; a Composer Apply that lands while it is open
+    // replaces m_lastApplyBatch with a NEWER undo record. We must not clear/hide
+    // that newer record when we finish reverting the old one.
+    const quint64 revertGen = m_applyBatchGen;
 
     // Classify each snapshot against current disk state.
     QVector<AppliedSnapshot> clean;     // disk == what we wrote → safe revert
@@ -7522,11 +8211,15 @@ void AIPanel::undoLastApply() {
     // were already at their before-state as resolved.
     QStringList pendingAgain = revertedPaths;
     pendingAgain += alreadyReverted;
-    if (m_editPlan) {
-        m_editPlan->markPending(pendingAgain);
-        m_editPlan->showUndoButton(false);
+    if (m_editPlan) m_editPlan->markPending(pendingAgain);
+    // F10 — only consume the undo record + hide the button if it is STILL the
+    // batch we just reverted. If a Composer Apply landed while the drift prompt
+    // was open, m_lastApplyBatch now holds that newer record; clearing it here
+    // would silently discard its rollback. Leave it (and its Undo button) intact.
+    if (revertGen == m_applyBatchGen) {
+        if (m_editPlan) m_editPlan->showUndoButton(false);
+        m_lastApplyBatch.clear();  // single-level: the batch is consumed
     }
-    m_lastApplyBatch.clear();  // single-level: the batch is consumed
 
     // Report symmetric to apply.
     const int reverted = revertedPaths.size();

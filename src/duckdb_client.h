@@ -43,6 +43,7 @@ struct ResultSet {
     int totalRows = 0;          // total observed (may exceed rows.size()
                                 // if a row cap was applied)
     bool truncated = false;     // true if more rows existed but we stopped
+    bool cancelled = false;     // true iff exec aborted via requestInterrupt()
     QString errorMessage;       // non-empty iff the query failed
 };
 
@@ -69,16 +70,38 @@ public:
     //   ":memory:"   in-memory database (alias)
     //   "/path/file.duckdb"  local DuckDB file
     // The connection stays open until close() or destruction.
-    bool open(const QString &path, QString *outError = nullptr);
+    //
+    // `readOnly` opens an EXISTING on-disk database file with
+    // access_mode=READ_ONLY (via duckdb_open_ext) so the engine itself
+    // refuses every write — the strongest enforcement layer for the
+    // Data-analyst read-only contract. It has no effect on in-memory /
+    // ":memory:" databases: those are the writable scratch space used to
+    // ingest CSV/Parquet/JSON views for analysis, and must stay writable.
+    bool open(const QString &path, QString *outError = nullptr,
+              bool readOnly = false);
 
     // Close any open connection / database. Safe to call repeatedly.
     void close();
 
     bool isOpen() const;
 
-    // Execute SQL and accumulate the full result set into memory. `rowCap`
-    // is a soft limit — once we've collected that many rows, the streaming
-    // loop returns and `truncated` is set. Use 0 for unbounded.
+    // Request cancellation of an in-flight exec(). Thread-safe: designed to
+    // be called from a DIFFERENT thread than the one blocked inside exec()
+    // (duckdb_interrupt is documented thread-safe). A no-op if nothing is
+    // running. The interrupted exec() returns a ResultSet with cancelled=true.
+    void requestInterrupt();
+
+    // Execute SQL and return up to `rowCap` rows. Use 0 for unbounded.
+    //
+    // Row-cap-BEFORE-materialization: for a plain query (SELECT / WITH /
+    // TABLE / VALUES / FROM) the statement is wrapped in a subquery with a
+    // top-level `LIMIT rowCap+1`, so DuckDB short-circuits the pipeline and
+    // a cross-join can never materialize the full product into memory before
+    // truncation. Execution is driven through the pending-task API so it can
+    // be aborted mid-flight via requestInterrupt() (used by the async worker
+    // for cancel + timeout). Non-query statements (DESCRIBE / PRAGMA / DDL /
+    // introspection) run through the direct path with a post-fetch cap; those
+    // are bounded by construction.
     ResultSet exec(const QString &sql, int rowCap = 10000);
 
     // Same as exec but streams each row to `cb` instead of accumulating.
@@ -136,6 +159,12 @@ public:
                       QString *outError = nullptr);
 
 private:
+    // Internal exec paths — see duckdb_client.cpp. execCapped wraps a plain
+    // query in a LIMIT subquery and drives it interruptibly; execRaw is the
+    // direct duckdb_query fallback for non-wrappable / unbounded statements.
+    ResultSet execCapped(const QString &querySql, int rowCap);
+    ResultSet execRaw(const QString &sql, int rowCap);
+
     struct Impl;
     Impl *m_impl;   // owned; pimpl so duckdb.h doesn't bleed into the header
 };

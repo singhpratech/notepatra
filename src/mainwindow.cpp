@@ -4629,6 +4629,18 @@ void MainWindow::setupShortcuts() {
         int idx = (m_tabs->currentIndex() + 1) % qMax(m_tabs->count(), 1);
         m_tabs->setCurrentIndex(idx);
     });
+
+    // v0.1.115 — jump straight to the AI chat input. Ctrl+Shift+A / Ctrl+Q
+    // TOGGLE the dock (hiding it if already open), which is the wrong verb for
+    // "let me type a prompt now". Ctrl+Shift+I ("AI Input") reveals the dock if
+    // hidden, then focuses the prompt field. ApplicationShortcut so it fires
+    // even when the editor is intercepting keys.
+    auto *focusAiInputSc = new QShortcut(QKeySequence("Ctrl+Shift+I"), this);
+    focusAiInputSc->setContext(Qt::ApplicationShortcut);
+    connect(focusAiInputSc, &QShortcut::activated, this, [this]() {
+        setAiDockVisible(true);
+        if (m_aiDockPanel) m_aiDockPanel->focusInput();
+    });
     new QShortcut(QKeySequence("Ctrl+Shift+Tab"), this, [this]() {
         int idx = (m_tabs->currentIndex() - 1 + m_tabs->count()) % qMax(m_tabs->count(), 1);
         m_tabs->setCurrentIndex(idx);

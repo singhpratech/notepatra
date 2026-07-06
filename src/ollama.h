@@ -93,6 +93,27 @@ public:
 signals:
     void tokenReceived(const QString &token);
     void finished(const QString &fullResponse);
+    // v0.1.115 — first-class mid-stream truncation. Emitted IN ADDITION to
+    // finished() (which still fires, unchanged, so every existing caller keeps
+    // working) whenever a response ended WITHOUT a clean completion marker:
+    //   * the transport dropped mid-stream — no Ollama `done:true` frame and
+    //     no OpenAI SSE `[DONE]`/finish_reason ever arrived, yet partial text
+    //     had already accumulated; or
+    //   * the backend reported finish_reason "length" (hit max_tokens / the
+    //     context window) or "content_filter".
+    // `partial` is the text received so far (the SAME value the paired
+    // finished() carries). `reason` is a stable kebab token the UI can switch
+    // on — one of:
+    //   "network-drop"   — transport-level failure (reset / timeout); the
+    //                       Qt error string follows after ": " for context.
+    //   "backend-abort"  — server closed the stream cleanly but never sent a
+    //                       completion marker (model unloaded / OOM / killed).
+    //   "context-limit"  — finish_reason == "length" (output/context exhausted).
+    //   "content-filter" — finish_reason == "content_filter".
+    // The token is everything before the first ": "; any trailing detail is
+    // human-readable only. The UI should render "response cut off — Retry" for
+    // this instead of treating the paired finished() as a completed answer.
+    void finishedTruncated(const QString &partial, const QString &reason);
     void error(const QString &message);
     void modelsListed(const QStringList &models);
     // v0.1.54 — rich variant carrying the raw /v1/models response for

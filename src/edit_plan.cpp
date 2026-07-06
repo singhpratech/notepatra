@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QFontMetrics>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QPushButton>
 #include <QSet>
@@ -187,6 +188,13 @@ void EditPlanRow::setPending() {
     if (m_appliedTag) m_appliedTag->setVisible(false);
     // Restore the un-dimmed stylesheet (drop the muted-QLabel cascade).
     setStyleSheet("EditPlanRow { border-bottom: 1px solid palette(midlight); }");
+}
+
+void EditPlanRow::toggleSelected() {
+    // v0.1.115 (item 2c) — no-op on an applied row (checkbox disabled): an
+    // already-written edit must never be re-armed by a stray Space.
+    if (m_applied || !m_selectBox || !m_selectBox->isEnabled()) return;
+    m_selectBox->setChecked(!m_selectBox->isChecked());
 }
 
 void EditPlanRow::onToggleDiff() {
@@ -378,6 +386,36 @@ void EditPlanList::onApplySelected() {
         }
     }
     if (!edits.isEmpty()) emit applyRequested(edits);
+}
+
+void EditPlanList::keyPressEvent(QKeyEvent *e) {
+    const int key = e->key();
+    if (key == Qt::Key_Return || key == Qt::Key_Enter) {
+        // v0.1.115 (item 2c) — Enter confirms: apply the checked rows. QCheckBox
+        // ignores Enter, so this reliably propagates up from a focused row.
+        bool anyPending = false;
+        for (EditPlanRow *r : m_rows)
+            if (!r->isApplied()) { anyPending = true; break; }
+        if (anyPending) {
+            onApplySelected();
+            e->accept();
+            return;
+        }
+    } else if (key == Qt::Key_Space) {
+        // Toggle inclusion of the row that (transitively) holds focus. When the
+        // checkbox itself is focused it consumes Space first (same outcome);
+        // this catches focus on the row / a sibling control.
+        QWidget *f = focusWidget();
+        while (f && f != this) {
+            if (auto *row = qobject_cast<EditPlanRow *>(f)) {
+                row->toggleSelected();
+                e->accept();
+                return;
+            }
+            f = f->parentWidget();
+        }
+    }
+    QWidget::keyPressEvent(e);
 }
 
 void EditPlanList::onRejectAll() {

@@ -42,6 +42,11 @@
 #include <QJsonObject>
 #include <QString>
 
+namespace DbConnections {
+class QueryInterruptToken;
+struct QueryResult;
+}
+
 namespace AiTools {
 
 // ── Tool call descriptors ────────────────────────────────────────────
@@ -125,7 +130,22 @@ QStringList suggestedModelsForDataAnalysis();
 // in Notepatra (Explorer root or current-file directory). All paths
 // in `call.args` are resolved relative to it; absolute paths must
 // canonicalize to a location inside it.
-ToolResult execute(const ToolCall &call, const QString &workspaceRoot);
+//
+// `dbInterrupt` (optional) is threaded into the query_sql DuckDB path so a
+// controller thread can abort a slow/hung query mid-flight (Stop / timeout)
+// via dbInterrupt->requestInterrupt(). nullptr keeps the fully-synchronous
+// behaviour. It does not change the result JSON in any way.
+ToolResult execute(const ToolCall &call, const QString &workspaceRoot,
+                   DbConnections::QueryInterruptToken *dbInterrupt = nullptr);
+
+// Shared query_sql result-body builder — the SINGLE source of truth for the
+// {connection_name, driver, columns, rows, rows_returned, truncated[, warning]}
+// shape returned to the model. executeQuerySql uses it, so the on-the-wire JSON
+// is identical regardless of who ran the query. `warning` is emitted only when
+// qr.warning is non-empty (F6 — surfaces degraded read-only enforcement).
+QJsonObject buildQuerySqlResultBody(const QString &connectionName,
+                                    const QString &driver,
+                                    const DbConnections::QueryResult &qr);
 
 // ── Path safety helpers (exposed for unit testing) ────────────────────
 

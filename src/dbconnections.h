@@ -20,8 +20,14 @@
 #include <QVector>
 #include <QJsonObject>
 #include <QDialog>
+#include <QMetaType>
+#include <QMutex>
+#include <atomic>
+#include <functional>
 
 class QListWidget;
+
+namespace DuckDb { class Client; }
 class QLineEdit;
 class QSpinBox;
 class QComboBox;
@@ -61,7 +67,52 @@ bool findByName(const QString &name, Record *out);
 // *outConnectionName). Caller MUST QSqlDatabase::removeDatabase(*outName)
 // when done. On failure, returns false and writes the driver error to
 // *outError.
-bool open(const Record &r, QString *outConnectionName, QString *outError);
+//
+// `readOnly` (default true) asks for a session-level read-only guard on the
+// server after connecting — PostgreSQL SET default_transaction_read_only,
+// MySQL SET SESSION TRANSACTION READ ONLY. SQLite / SQL Server (QODBC) have
+// no session read-only knob, so on those the single-statement SQL classifier
+// (see classifySql) is the sole enforcement layer. A read-only setup that
+// fails does NOT fail the connection (the query may still be a harmless
+// SELECT); the reason is emitted via qWarning and written to
+// *outReadOnlyWarning so the caller can surface it.
+bool open(const Record &r, QString *outConnectionName, QString *outError,
+          bool readOnly = true, QString *outReadOnlyWarning = nullptr);
+
+// ── SQL read-only / mutation classifier ─────────────────────────────────
+// Replaces the old leading-keyword prefix allowlist. Strips comments and
+// string/identifier literals, tokenizes, and enforces a SINGLE statement
+// (rejecting stacked "SELECT 1; DROP TABLE x"). It walks CTE bodies for
+// embedded DML (WITH t AS (DELETE ... RETURNING *)), rejects EXPLAIN
+// ANALYZE and EXPLAIN wrapping DML, rejects SELECT ... INTO, rejects
+// INSTALL/LOAD/ATTACH/COPY/EXPORT/SET/CALL, and permits only a small
+// read-only PRAGMA allowlist (rejecting assignment-form PRAGMA x=y).
+struct SqlVerdict {
+    bool singleStatement = false;  // exactly one statement (no stacking)
+    bool readOnly = false;         // provably safe to run without approval
+    bool mutation = false;         // authoritative "this changes data/state"
+                                   // verdict for the human-approval gate
+    QString reason;                // why it was rejected (empty if readOnly)
+};
+SqlVerdict classifySql(const QString &sql);
+
+// Convenience wrappers over classifySql.
+//   isReadOnlyQuery: safe to run in the default (no-approval) path.
+//   isMutation:      the verdict a human-approval gate should key on
+//                    (used by ai_tools.cpp's confirm=true flow).
+bool isReadOnlyQuery(const QString &sql);
+bool isMutation(const QString &sql);
+
+#ifdef NOTEPATRA_HAVE_DUCKDB
+// Open a DuckDb::Client for `r`: detects :memory: vs a DuckDB file vs a
+// CSV/Parquet/JSON/S3 data source, opens attached *database files* READ_ONLY
+// when !allowMutation (the in-memory scratch DB used to ingest data sources
+// always stays writable), registers the source, and configures S3. Returns
+// false and writes *outErr / *outErrKind on failure.
+bool openDuckDbForRecord(const Record &r, bool allowMutation,
+                         DuckDb::Client &client,
+                         QString *outErr, QString *outErrKind);
+#endif
 
 // Convenience: open + run a single SELECT, return rows as JSON, close.
 // `maxRows` caps the row count; `outTruncated` is set true if more rows
@@ -76,13 +127,59 @@ struct QueryResult {
     bool truncated = false;
     QString error;        // driver error text on failure
     QString errorKind;    // "non_select" | "no_connection" | "open_failed" |
-                          //  "exec_failed" | "syntax"
+                          //  "exec_failed" | "syntax" | "cancelled" | "timeout"
+    QString warning;      // non-fatal note (e.g. read-only session could not
+                          // be enforced on the server — classifier only)
 };
 
+// v0.1.115 (F1) — thread-safe cancel token for a runQuery() call in flight.
+// The controller thread holds one (typically via shared_ptr) and hands a raw
+// pointer to runQuery on a worker thread; runQuery's DuckDB path binds an
+// interrupt callback (closed over its live DuckDb::Client) for the duration of
+// exec() and unbinds after. requestInterrupt() — safe to call from ANY thread —
+// flags the token and, if a callback is currently bound, invokes it (which calls
+// duckdb_interrupt on the live connection) so the running query unwinds at its
+// next task boundary instead of running to completion. This is what makes the AI
+// DB tool's Stop button / 30 s timeout GENUINELY interrupt a DuckDB query rather
+// than merely abandoning the future (which left the query churning + could
+// saturate the thread pool). QSql drivers can't be interrupted mid-exec, so for
+// them nothing is bound and the token only records intent (best-effort).
+//
+// A std::function callback (rather than a DuckDb::Client*) keeps this type free
+// of any dependency on the DuckDB translation unit, so it compiles + links in
+// builds that don't include duckdb_client at all.
+class QueryInterruptToken {
+public:
+    QueryInterruptToken() = default;
+    QueryInterruptToken(const QueryInterruptToken &) = delete;
+    QueryInterruptToken &operator=(const QueryInterruptToken &) = delete;
+
+    // Flag the token and invoke any currently-bound interrupt callback. Thread-safe.
+    void requestInterrupt();
+    bool interruptRequested() const { return m_flag.load(); }
+
+    // Called by runQuery on the worker thread around the interruptible exec().
+    // bind() publishes the callback under the lock; unbind() clears it so a late
+    // requestInterrupt() can never touch a destroyed Client (the mutex serializes
+    // against an in-flight requestInterrupt()).
+    void bind(std::function<void()> interruptFn);
+    void unbind();
+
+private:
+    std::atomic<bool> m_flag{false};
+    QMutex m_mx;                          // guards m_interrupt
+    std::function<void()> m_interrupt;
+};
+
+// `token` (optional) makes a DuckDB query interruptible from another thread —
+// pass a QueryInterruptToken and call token->requestInterrupt() to abort a slow
+// query mid-flight (timeout / user Stop). nullptr keeps the fully-synchronous
+// behaviour. The JSON/QueryResult shape is identical either way.
 QueryResult runQuery(const Record &r,
                      const QString &sql,
                      int maxRows,
-                     bool allowMutation);
+                     bool allowMutation,
+                     QueryInterruptToken *token = nullptr);
 
 // Open the record briefly and read back the list of user tables. Skips
 // system catalogues (sys.*, INFORMATION_SCHEMA.*, sqlite_internal_*).
@@ -107,6 +204,10 @@ QString obfuscatePassword(const QString &plainOrObfuscated);
 bool driverNeedsNetwork(const QString &driver);
 
 } // namespace DbConnections
+
+// Registered so QueryResult can cross a thread boundary via a queued
+// signal/slot connection if a caller ever marshals it.
+Q_DECLARE_METATYPE(DbConnections::QueryResult)
 
 // ─── DbConnectionsDialog ──────────────────────────────────────────────────
 // Modal dialog for CRUDing the connection list. Opens from the AI panel's

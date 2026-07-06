@@ -76,6 +76,12 @@ public:
     // from the user's open project directory.
     void setWorkspaceRoot(const QString &absRoot);
 
+protected:
+    // v0.1.115 (item 2c) — keyboard operability. Space toggles the inclusion of
+    // the focused row; Enter/Return confirms (Apply Selected). Tabbing moves
+    // between rows' checkboxes natively.
+    void keyPressEvent(QKeyEvent *e) override;
+
 signals:
     // Emitted when the user clicks Apply All / Apply Selected. The payload
     // is a list of (absPath, afterText) pairs; the host writes those files
@@ -139,6 +145,10 @@ public:
     void setPending();
     int added() const { return m_added; }
     int removed() const { return m_removed; }
+
+    // v0.1.115 (item 2c) — flip the include checkbox (no-op on an applied /
+    // disabled row). Used by EditPlanList's Space-key handler.
+    void toggleSelected();
 
 signals:
     void removeRequested();
