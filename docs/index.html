@@ -2182,7 +2182,7 @@
     <footer>
         <!-- ─── Download counter (live from GitHub Releases API) ─── -->
         <div id="download-counter" style="max-width: 720px; margin: 0 auto 32px; padding: 20px 24px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px;">
-            <div style="font-size: 11px; color: var(--c-accent); text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; margin-bottom: 14px; text-align: center;">Total downloads</div>
+            <div style="font-size: 11px; color: var(--c-accent); text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; margin-bottom: 14px; text-align: center;">GitHub asset downloads</div>
             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; text-align: center;">
                 <div>
                     <div style="font-size: 32px; line-height: 1;">🐧</div>
@@ -2257,10 +2257,12 @@
         }
 
         // ─── Live download counter — sums GitHub Releases asset download counts
-        // per platform across every tag. Only counts the primary user-facing
-        // asset for each platform (zip / tar.gz / dmg / setup exe), not the
-        // .sig / .pem signature siblings, so the count matches "actual humans
-        // who downloaded the binary".
+        // per platform across every tag, for EVERY installer format
+        // (tar.gz / deb / rpm / AppImage / dmg / exe / msi / zip), excluding only
+        // the .sig / .pem / SHA256SUMS siblings. NOTE: GitHub's download_count is
+        // raw asset fetches — it includes bots, crawlers, mirrors, CI, and every
+        // run of the install scripts, sums multiple formats per release, and
+        // can't dedup people, so this is a downloads figure, NOT unique installs.
         (function loadDownloadCounter() {
             const elLinux   = document.getElementById('dl-linux');
             const elMac     = document.getElementById('dl-mac');
@@ -2276,13 +2278,14 @@
             const isPrimaryAsset = (name) => {
                 if (name.endsWith('.sig') || name.endsWith('.pem')) return false;
                 if (name === 'SHA256SUMS') return false;
-                return /\.tar\.gz$|\.dmg$|\.zip$|\.exe$/.test(name);
+                return /\.tar\.gz$|\.dmg$|\.zip$|\.exe$|\.msi$|\.deb$|\.rpm$|\.appimage$/i.test(name);
             };
 
             const platformOf = (name) => {
-                if (/linux/i.test(name)) return 'linux';
-                if (/macos|mac-|darwin|\.dmg$/i.test(name)) return 'mac';
-                if (/windows|win-|\.exe$/i.test(name) || name.endsWith('.zip')) return 'windows';
+                const n = name.toLowerCase();
+                if (/\.dmg$|macos|darwin|mac-/.test(n)) return 'mac';
+                if (/\.msi$|\.exe$|\.zip$|windows|win-/.test(n)) return 'windows';
+                if (/\.tar\.gz$|\.deb$|\.rpm$|\.appimage$|linux/.test(n)) return 'linux';
                 return null;
             };
 
@@ -2307,7 +2310,7 @@
                 elMac.textContent     = fmt(counts.mac);
                 elWindows.textContent = fmt(counts.windows);
                 const total = counts.linux + counts.mac + counts.windows;
-                elTotal.textContent = `${fmt(total)} total · live from GitHub Releases API · last refreshed ${new Date().toLocaleTimeString()}`;
+                elTotal.textContent = `${fmt(total)} GitHub asset downloads · all installer formats, every fetch (incl. bots / CI / mirrors) — not unique installs · live from the GitHub Releases API · refreshed ${new Date().toLocaleTimeString()}`;
             })
             .catch(err => {
                 elTotal.textContent = 'GitHub API rate-limited — try refreshing in a minute';
