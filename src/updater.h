@@ -49,10 +49,26 @@ struct PickedAsset {
 };
 
 // Pure logic, unit-testable: from the GitHub releases/latest `assets` array,
-// pick the best artifact for this OS + architecture. Returns found=false if
-// no suitable asset exists (e.g. Linux ARM64 user on a release that
-// shipped only x86_64 — we won't try to install a mismatched binary).
+// pick the best artifact for this OS + architecture AND this build's edition
+// (Lite/Full × cloud/local-ai). A release ships several installers per
+// platform that differ only in edition — this picks the one matching the
+// RUNNING build so a Full user isn't handed a Lite installer (or vice versa),
+// deterministically regardless of the order GitHub lists the assets. Returns
+// found=false only if no suitable-platform asset exists at all (e.g. Linux
+// ARM64 user on a release that shipped only x86_64 — we won't try to install
+// a mismatched binary).
 PickedAsset pickAssetForPlatform(const QJsonArray &assets);
+
+// Testing seam for pickAssetForPlatform(): identical selection logic with the
+// platform / arch / edition supplied explicitly, so a single (Linux, Lite)
+// unit-test binary can exercise every OS × edition combination. Production
+// callers use the zero-arg overload above, which delegates here with the
+// compile-time edition (NOTEPATRA_BUILD_IS_FULL / _IS_LOCAL_AI) and the
+// runtime-detected platform + arch — so behaviour is byte-for-byte identical.
+PickedAsset pickAssetForPlatformEx(const QJsonArray &assets,
+                                   const QString &platform,
+                                   const QString &arch,
+                                   bool isFull, bool isLocalAI);
 
 // Parse a SHA256SUMS file body (`<hex>  <filename>` per line) into a map
 // {filename → hex hash}. Tolerates trailing whitespace, blank lines,

@@ -49,7 +49,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. Bare executable is ~12 MB across platforms (12.2 MB on Linux x64); full downloads are 4.4 MB (Linux x64 tar.gz), 27.7 MB (macOS DMG with bundled Qt), 42.7 MB (Windows MSI with bundled Qt DLLs). 238 file types. 82 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server (examples redacted). Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.115",
+      "softwareVersion": "0.1.116",
       "fileSize": "12.2 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -151,7 +151,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~12 MB across every platform (12.2 MB on Linux x64). Latest v0.1.115 download sizes: 4.4 MB Linux x64 tar.gz, 4.1 MB Linux ARM64 tar.gz, 27.7 MB macOS DMG (with bundled Qt), 42.7 MB Windows MSI / 32.8 MB NSIS / 37.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~12.2 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~12 MB across every platform (12.2 MB on Linux x64). Latest v0.1.116 download sizes: 4.4 MB Linux x64 tar.gz, 4.1 MB Linux ARM64 tar.gz, 27.7 MB macOS DMG (with bundled Qt), 42.7 MB Windows MSI / 32.8 MB NSIS / 37.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~12.2 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
           }
         },
         {
@@ -167,7 +167,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 238 file types with 82 language lexers as of v0.1.115: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 238 file types with 82 language lexers as of v0.1.116: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.115">
-        Download v0.1.115 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.116">
+        Download v0.1.116 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1312,7 +1312,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.115 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.116 · Now Available · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~12 MB bare, ~4.4 MB compressed on Linux). C++ and Rust. 238 file types · 82 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints.</p>
 
@@ -1399,7 +1399,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.115</div>
+        <div class="section-label">Download v0.1.116</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1467,7 +1467,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.115 →
+                Get Notepatra v0.1.116 →
               </a>
             </div>
 
@@ -1510,7 +1510,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.115 →
+                Get Notepatra Local AI v0.1.116 →
               </a>
             </div>
           </div>
@@ -2005,50 +2005,55 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.115 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.116 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
-                        <span>2026-07-05</span>
-                        <span>· <strong>Security &amp; robustness hardening</strong>: Data-analyst mode now enforces read-only at the engine, the SQL layer, and the database session — any data mutation raises a human approval card the model can no longer self-approve. Query cancel/timeout genuinely interrupts a running query, AI file writes are mode-gated and atomic, and truncated answers get their own retry state. AI coding assistant B → A-, Data-analyst C+ → A-. No new features. Full ctest 70/70.</span>
+                        <span>2026-07-06</span>
+                        <span>· <strong>Two focused, adversarially-verified fixes</strong>: the Compare view's changed-word highlight is now readable, and the updater reliably hands you the installer that matches your edition. No new features, same bare binary, no new dependencies. Full ctest 70/70.</span>
                         <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>Hardened — read-only database safety</h5>
+                        <h5>Fixed — Compare view readability</h5>
                         <ul>
-                            <li>Data-analyst mode is now read-only at three independent layers: DuckDB is opened with an engine-level <code>READ_ONLY</code> handle, a structural SQL classifier inspects every statement (replacing the old, bypassable leading-keyword prefix check), and PostgreSQL / MySQL sessions are set read-only. A disguised or multi-statement write no longer slips through.</li>
-                            <li>Any statement that would change data now raises a <em>human</em> approval card — the model can no longer approve its own write by sending <code>confirm:true</code>.</li>
-                            <li>This takes Data-analyst mode from a C+ to an A-. It is defense-in-depth: raw-Vega CSP, a CSV-encoding fallback and keychain password storage are still on the roadmap.</li>
+                            <li>The changed-<em>word</em> inline-diff highlight used a heavy red/green fill that buried the text underneath it. It is now a soft wash with a crisp red/green outline, so the changed characters stay legible — WCAG AA contrast in Light, Dark, and Monokai themes.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>Hardened — AI file writes</h5>
+                        <h5>Fixed — updater picks the right edition</h5>
                         <ul>
-                            <li>The AI tool registry is now mode-aware: the read-only "Ask" segment and Data mode physically cannot call file-writing tools.</li>
-                            <li>Compose edits run a host-enforced dry-run before anything touches disk, and every write goes through an atomic <code>QSaveFile</code> — a failed or interrupted write can no longer destroy your original file.</li>
-                            <li>"Approve all" is now scoped per tool kind instead of one blanket grant. Together these take the AI coding assistant from a B to an A-.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>Improved — reliability</h5>
-                        <ul>
-                            <li>Query cancel and timeout now genuinely interrupt a running DuckDB query (via <code>duckdb_interrupt</code>) instead of waiting for it to finish, and a row cap keeps a runaway result set from exhausting memory.</li>
-                            <li>A truncated model response is now a distinct "Response cut off — Retry" state instead of masquerading as a finished answer.</li>
+                            <li>The release-asset picker scored every installer variant equally, so depending on GitHub's asset ordering you could be handed the wrong edition. It now deterministically selects the installer that matches this build's edition (Lite / Full × cloud / local-AI) across Windows, macOS, and Linux.</li>
                         </ul>
                     </div>
                     <div class="version-section">
                         <h5>Notes</h5>
                         <ul>
-                            <li>Security / robustness / quality hardening — no new features, no new dependencies, same bare Lite binary. The previously phantom read-only-gate test (git-excluded and never compiled) is now real and CI-run at 143 assertions, joined by new write-gate (44) and async-DB (30) suites. Full ctest 70/70 (up from 67); every fix was red-state proven, and a 5-agent adversarial fleet caught and closed a regression one of the fixes had introduced.</li>
+                            <li>Two targeted fixes only — no new features, the same bare Lite binary, and no new dependencies. Both fixes were adversarially verified. Full ctest 70/70.</li>
+                            <li>A Windows-only report ("upgrade prompts for the previous MSI in Downloads") is <em>not</em> fixed in this release: an attempted packaging change was pulled because it risked breaking Windows upgrades. A proper fix is tracked as a follow-up.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.115">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.116">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.115">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.116">Commits</a>
                 </div>
             </div>
+
+            <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.115"
+               class="version-card-link"
+               style="display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px;
+                      padding:16px 24px; background:var(--c-surface);
+                      border:1px solid var(--c-border); border-radius:14px;
+                      text-decoration:none; min-width:0;
+                      transition:border-color .15s;"
+               onmouseover="this.style.borderColor='var(--green)';"
+               onmouseout="this.style.borderColor='var(--c-border)';">
+                <span style="font-weight:700; color:var(--c-text); font-size:15px; white-space:nowrap;">v0.1.115</span>
+                <span style="color:var(--c-text-muted); font-size:13px; white-space:nowrap;">2026-07-05</span>
+                <span style="flex:1 1 260px; min-width:0; color:var(--c-text-muted); font-size:13px; white-space:normal;">Security &amp; robustness hardening — read-only database safety at three independent layers, mode-gated atomic AI file writes, and genuine query cancel/timeout. AI coding assistant B → A-, Data-analyst C+ → A-. Full ctest 70/70.</span>
+                <span style="color:var(--green); font-weight:600; font-size:13px; white-space:nowrap;">Release page →</span>
+            </a>
 
             <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.114"
                class="version-card-link"
@@ -2118,7 +2123,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~12 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.115: 238 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (the Full download bundles the DuckDB v1.1.3 engine on every platform), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
+                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~12 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.116: 238 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (the Full download bundles the DuckDB v1.1.3 engine on every platform), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2130,7 +2135,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~12 MB</strong> (12.2 MB on Linux x64) across every platform. Latest v0.1.115 download sizes: <strong>4.4 MB</strong> Linux x64 tar.gz · <strong>4.1 MB</strong> Linux ARM64 tar.gz · <strong>27.7 MB</strong> macOS DMG · <strong>42.7 MB</strong> Windows MSI / <strong>32.8 MB</strong> NSIS / <strong>37.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~12 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~12 MB</strong> (12.2 MB on Linux x64) across every platform. Latest v0.1.116 download sizes: <strong>4.4 MB</strong> Linux x64 tar.gz · <strong>4.1 MB</strong> Linux ARM64 tar.gz · <strong>27.7 MB</strong> macOS DMG · <strong>42.7 MB</strong> Windows MSI / <strong>32.8 MB</strong> NSIS / <strong>37.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~12 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -2138,7 +2143,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.115 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.116 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>How do I verify a download is genuine?</h3>

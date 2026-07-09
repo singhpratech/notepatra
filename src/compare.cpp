@@ -1055,15 +1055,23 @@ void CompareWidget::recompare() {
     auto bgr = [](const QColor &c) -> long {
         return (long(c.blue()) << 16) | (long(c.green()) << 8) | long(c.red());
     };
+    // Changed-word highlight = soft translucent FILL + crisp full-opacity OUTLINE.
+    // The fill alpha is deliberately low so the interior is a light red/green wash
+    // (like the amber changed-line bg) that lets the editor text read through, while
+    // the outline (alpha 255, same red/green fore colour) keeps the word obviously
+    // boxed. Fore colours are unchanged; only the fill alpha was lowered
+    // (light 180 -> 70, dark 140 -> 55) to fix black/gray text buried under a heavy
+    // red/green block. See contrast math in the v0.1.116 readability fix.
+    const int inlineFillAlpha = compareIsDark() ? 55 : 70;
     m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETSTYLE, 10, QsciScintilla::INDIC_ROUNDBOX);
     m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETFORE, 10, bgr(indPal.inlineRemovedFg));
-    m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETALPHA, 10, compareIsDark() ? 140 : 180);
+    m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETALPHA, 10, inlineFillAlpha);
     m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETOUTLINEALPHA, 10, 255);
     m_leftEditor->SendScintilla(QsciScintilla::SCI_INDICSETUNDER, 10, 1);
 
     m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETSTYLE, 11, QsciScintilla::INDIC_ROUNDBOX);
     m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETFORE, 11, bgr(indPal.inlineAddedFg));
-    m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETALPHA, 11, compareIsDark() ? 140 : 180);
+    m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETALPHA, 11, inlineFillAlpha);
     m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETOUTLINEALPHA, 11, 255);
     m_rightEditor->SendScintilla(QsciScintilla::SCI_INDICSETUNDER, 11, 1);
 
