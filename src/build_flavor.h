@@ -41,3 +41,25 @@
 #else
 #  define NOTEPATRA_FLAVOR_NAME "Notepatra" NOTEPATRA_EDITION_SUFFIX
 #endif
+
+// ─────────────────────────────────────────────────────────────────────
+// Compile-time edition booleans (1/0) along the same two axes as above.
+// SSOT for any code that must know "which variant is THIS binary" — the
+// in-app updater's asset picker uses these to download the matching
+// release variant (a Full build must fetch the -full installer, a
+// cloud-free build the local-ai one, etc.). Plain integer macros so they
+// work in both C and C++ (and in preprocessor arithmetic).
+//   NOTEPATRA_BUILD_IS_FULL      → DuckDB/WebEngine edition (no " Lite")
+//   NOTEPATRA_BUILD_IS_LOCAL_AI  → cloud-free (NOTEPATRA_NO_CLOUD) edition
+// ─────────────────────────────────────────────────────────────────────
+#if defined(NOTEPATRA_HAVE_DUCKDB) || defined(NOTEPATRA_WITH_WEBENGINE)
+#  define NOTEPATRA_BUILD_IS_FULL 1
+#else
+#  define NOTEPATRA_BUILD_IS_FULL 0
+#endif
+
+#if defined(NOTEPATRA_NO_CLOUD)
+#  define NOTEPATRA_BUILD_IS_LOCAL_AI 1
+#else
+#  define NOTEPATRA_BUILD_IS_LOCAL_AI 0
+#endif

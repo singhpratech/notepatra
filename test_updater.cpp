@@ -15,6 +15,7 @@
  */
 
 #include "src/updater.h"
+#include "src/build_flavor.h"   // NOTEPATRA_BUILD_IS_FULL / _IS_LOCAL_AI
 
 #include <QCoreApplication>
 #include <QDir>
@@ -303,6 +304,121 @@ int main(int argc, char **argv) {
         check("existing .AppImage → ' (1).AppImage'",
               Updater::uniqueDestPath(appimg) == dl + "/Notepatra-0.1.101-x86_64 (1).AppImage",
               Updater::uniqueDestPath(appimg));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Part D — flavor-aware, ORDER-INDEPENDENT asset picker. A release
+    // ships several installers per platform that differ only in EDITION
+    // (Lite/Full × cloud/local-ai). Before the v0.1.116 fix every Windows
+    // MSI scored identically, so which variant a user got depended on the
+    // order GitHub happened to list the assets — non-deterministic and
+    // often the wrong edition. These tests LOCK the deterministic picker:
+    // the correct-edition asset must win regardless of array order.
+    //
+    // We use pickAssetForPlatformEx() — the testing seam that takes the
+    // platform / arch / edition explicitly — so this single (Linux, Lite)
+    // test binary can exercise every OS × edition combination. Production
+    // uses the zero-arg pickAssetForPlatform(), which delegates here with
+    // the compile-time edition + runtime platform, so behaviour is identical.
+    // ═══════════════════════════════════════════════════════════════
+    std::printf("\n— pickAssetForPlatformEx (flavor + order independence) ─\n");
+
+    // Reverse a GitHub-style assets array so we can prove the pick doesn't
+    // depend on listing order.
+    auto reversed = [](const QJsonArray &a) {
+        QJsonArray r;
+        for (int i = a.size() - 1; i >= 0; --i) r.append(a.at(i));
+        return r;
+    };
+
+    // Assert the picker returns `want` for the given platform/arch/edition,
+    // AND returns the SAME asset when the array is reversed. The second
+    // assertion is the RED-STATE anchor: revert the edition penalty in
+    // scoreAsset() and the reversed array picks a different variant → FAIL.
+    auto pickCheck = [&](const QByteArray &label, const QJsonArray &assets,
+                         const char *plat, const char *arch,
+                         bool full, bool ai, const char *want) {
+        const auto f = Updater::pickAssetForPlatformEx(assets, plat, arch, full, ai);
+        const auto r = Updater::pickAssetForPlatformEx(reversed(assets), plat, arch, full, ai);
+        const QByteArray l1 = label + " → picks " + want;
+        check(l1.constData(), f.found && f.name == QString::fromLatin1(want),
+              QStringLiteral("got %1 (found=%2)").arg(f.name).arg(f.found));
+        const QByteArray l2 = label + " → ORDER-INDEPENDENT (reverse == same)";
+        check(l2.constData(), r.found && r.name == QString::fromLatin1(want),
+              QStringLiteral("forward=%1 reverse=%2").arg(f.name, r.name));
+    };
+
+    {
+        // All four Windows edition variants of the same release.
+        QJsonArray win = mkAssets({
+            {"notepatra-0.1.116.msi",              "https://example.test/notepatra-0.1.116.msi"},
+            {"notepatra-full-0.1.116.msi",         "https://example.test/notepatra-full-0.1.116.msi"},
+            {"notepatra-local-ai-0.1.116.msi",     "https://example.test/notepatra-local-ai-0.1.116.msi"},
+            {"notepatra-local-ai-full-0.1.116.msi","https://example.test/notepatra-local-ai-full-0.1.116.msi"},
+            {"SHA256SUMS",                         "https://example.test/SHA256SUMS"},
+        });
+
+        // Every edition selects its EXACT matching variant, order-independently.
+        pickCheck("windows Lite/cloud (full=0 ai=0)", win, "windows", "x86_64",
+                  false, false, "notepatra-0.1.116.msi");
+        pickCheck("windows Full/cloud (full=1 ai=0)", win, "windows", "x86_64",
+                  true, false, "notepatra-full-0.1.116.msi");
+        pickCheck("windows Lite/local-ai (full=0 ai=1)", win, "windows", "x86_64",
+                  false, true, "notepatra-local-ai-0.1.116.msi");
+        pickCheck("windows Full/local-ai (full=1 ai=1)", win, "windows", "x86_64",
+                  true, true, "notepatra-local-ai-full-0.1.116.msi");
+
+        // The three-variant array the bug was reported against (no
+        // local-ai-full published) — the correct edition still wins.
+        QJsonArray win3 = mkAssets({
+            {"notepatra-0.1.116.msi",          "https://example.test/notepatra-0.1.116.msi"},
+            {"notepatra-full-0.1.116.msi",     "https://example.test/notepatra-full-0.1.116.msi"},
+            {"notepatra-local-ai-0.1.116.msi", "https://example.test/notepatra-local-ai-0.1.116.msi"},
+        });
+        pickCheck("windows 3-variant Full/cloud", win3, "windows", "x86_64",
+                  true, false, "notepatra-full-0.1.116.msi");
+        pickCheck("windows 3-variant Lite/local-ai", win3, "windows", "x86_64",
+                  false, true, "notepatra-local-ai-0.1.116.msi");
+
+        // THIS binary's own compiled flavor must resolve to its matching
+        // variant. (test_updater compiles with no flavor macros → Lite/cloud,
+        // but assert against the macros so it stays correct if that changes.)
+        const bool selfFull = NOTEPATRA_BUILD_IS_FULL != 0;
+        const bool selfAI   = NOTEPATRA_BUILD_IS_LOCAL_AI != 0;
+        const char *selfWant =
+            selfFull ? (selfAI ? "notepatra-local-ai-full-0.1.116.msi"
+                               : "notepatra-full-0.1.116.msi")
+                     : (selfAI ? "notepatra-local-ai-0.1.116.msi"
+                               : "notepatra-0.1.116.msi");
+        pickCheck("windows / this binary's compiled flavor", win, "windows",
+                  "x86_64", selfFull, selfAI, selfWant);
+
+        // Degraded release: only the WRONG-edition installer is published.
+        // A Full user must still get an installable last-resort asset
+        // (found=true) rather than being sent to the release page.
+        QJsonArray onlyLite = mkAssets({
+            {"notepatra-0.1.116.msi", "https://example.test/notepatra-0.1.116.msi"},
+            {"SHA256SUMS",            "https://example.test/SHA256SUMS"},
+        });
+        auto lastResort = Updater::pickAssetForPlatformEx(onlyLite, "windows",
+                                                          "x86_64", true, false);
+        check("windows wrong-edition-only → last-resort found=true",
+              lastResort.found && lastResort.name == "notepatra-0.1.116.msi",
+              QStringLiteral("got %1 (found=%2)").arg(lastResort.name).arg(lastResort.found));
+    }
+
+    {
+        // macOS 2-DMG case: regular vs full share the same arch, differ only
+        // by the "-full" suffix. Correct edition wins order-independently.
+        QJsonArray mac = mkAssets({
+            {"notepatra-macos-arm64.dmg",      "https://example.test/notepatra-macos-arm64.dmg"},
+            {"notepatra-macos-arm64-full.dmg", "https://example.test/notepatra-macos-arm64-full.dmg"},
+            {"SHA256SUMS",                     "https://example.test/SHA256SUMS"},
+        });
+        pickCheck("macos regular (full=0)", mac, "macos", "arm64",
+                  false, false, "notepatra-macos-arm64.dmg");
+        pickCheck("macos full (full=1)", mac, "macos", "arm64",
+                  true, false, "notepatra-macos-arm64-full.dmg");
     }
 
     std::printf("\n=== Summary: %d passed, %d failed ===\n", g_pass, g_fail);

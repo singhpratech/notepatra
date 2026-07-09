@@ -7,6 +7,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.116] — 2026-07-06
+
+**Two focused, adversarially-verified fixes — no new features, same bare binary, no new deps.**
+
+### Fixed
+- **Compare view readability** — the changed-*word* highlight (inline diff) used a deep red/green fill at high opacity that buried the text. Now a soft wash with a crisp red/green outline: the word is still clearly marked (and red vs green obvious), but the text reads through. Passes WCAG AA in Light, Dark, and Monokai. Only the inline fill opacity changed (src/compare.cpp).
+- **Updater picks the right edition** — the release-asset picker scored all installer variants identically, so which one you were offered depended on GitHub's asset ordering (a Full user could get a Lite installer, or vice-versa). Now deterministically selects the installer matching this build's edition (Lite/Full × cloud/local-AI) across Windows/macOS/Linux, regardless of asset order. Download/SHA-256-verify/launch path unchanged. Covered by 17 new order-independence + edition tests (test_updater 45/45).
+
+### Deferred (not shipped)
+- The Windows-only report — in-app update prompting for the *previous* version's MSI in Downloads during an upgrade — was investigated. The obvious MSI major-upgrade reschedule was found to risk deleting the freshly-installed Qt DLLs on every Windows upgrade (per-build component-GUID churn) while likely not fixing the prompt, so it was **not shipped**. The proper fix (stable component GUIDs + a real Windows upgrade test) is tracked as a follow-up.
+
+Full offscreen ctest 70/70.
+
+---
+
 ## [0.1.115] — 2026-07-05
 
 **The AI assistant and Data-analyst mode are now safe by construction — a five-wave hardening sprint took the coding assistant from grade B to A- and the data-analyst piece from C+ to A-.** No new dependencies, same bare binary, no user-facing feature changes: a pure safety, robustness, and quality release. Full ctest 70/70 (three new security/gate suites, 217 new assertions), 8 red-state proofs, and an adversarial re-verification fleet that caught and closed a regression a fix itself introduced.

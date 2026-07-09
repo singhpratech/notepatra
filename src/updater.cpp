@@ -2,6 +2,8 @@
 
 #include "updater.h"
 
+#include "build_flavor.h"   // NOTEPATRA_BUILD_IS_FULL / _IS_LOCAL_AI
+
 #include <QApplication>
 #include <QCryptographicHash>
 #include <QDesktopServices>
@@ -43,10 +45,39 @@ bool matchesAny(const QString &name, std::initializer_list<const char *> pattern
 
 struct Candidate { int priority; QString name, url; qint64 size; };
 
+// The build-flavor a release asset's FILENAME advertises. A release ships up
+// to four installers per platform that differ ONLY in edition:
+//   Windows: notepatra-<v>.msi              → regular/cloud  Lite  (full=0 ai=0)
+//            notepatra-full-<v>.msi          → regular/cloud  Full  (full=1 ai=0)
+//            notepatra-local-ai-<v>.msi      → cloud-free     Lite  (full=0 ai=1)
+//            notepatra-local-ai-full-<v>.msi → cloud-free     Full  (full=1 ai=1)
+//   macOS / Linux mark the Full edition with a "-full" suffix.
+// "local-ai" ⇒ cloud-free; "full" ⇒ the DuckDB/WebEngine edition. NB the name
+// "notepatra-local-ai-full" advertises BOTH; "notepatra-full" is Full+cloud;
+// a bare "notepatra-<v>" is neither. Plain case-insensitive substring tests
+// suffice — no other token in our asset names contains "full" or "local-ai".
+struct AssetEdition { bool isFull; bool isLocalAI; };
+AssetEdition editionOf(const QString &name) {
+    const QString n = name.toLower();
+    return { n.contains(QLatin1String("full")),
+             n.contains(QLatin1String("local-ai")) };
+}
+
+// scoreAsset — lower priority number = better. Bands (so the tie-break is
+// DETERMINISTIC, not GitHub-array-order-dependent):
+//   999          junk (sig / checksum / provenance) — never installed
+//   900          unsuitable format / wrong arch / wrong OS → found=false
+//   210-230      suitable format, WRONG edition → last resort ONLY
+//    10- 30      suitable format, MATCHING edition → the deterministic winner
+// The 200-point edition penalty dominates the cross-format key (10/20/30), so
+// whenever a correct-edition asset exists it is STRICTLY the lowest score —
+// pickAssetForPlatform's first-seen-wins `<` can never pick a different one
+// regardless of asset order. `wantFull`/`wantLocalAI` describe the RUNNING
+// build (compile-time defaults supplied by pickAssetForPlatform()).
 Candidate scoreAsset(const QString &name, const QString &url, qint64 size,
-                     const QString &platform, const QString &arch) {
-    // Lower priority number = better match. 0 = perfect, >=100 = unsuitable.
-    // Also reject signature / checksum / provenance files — we download
+                     const QString &platform, const QString &arch,
+                     bool wantFull, bool wantLocalAI) {
+    // Reject signature / checksum / provenance files — we download
     // SHA256SUMS separately; we never try to "install" a .sig or .pem.
     const QString nLower = name.toLower();
     if (nLower.endsWith(".sig") || nLower.endsWith(".pem") ||
@@ -54,42 +85,49 @@ Candidate scoreAsset(const QString &name, const QString &url, qint64 size,
         nLower == "sha256sums" || nLower.contains("attestation"))
         return { 999, name, url, size };
 
+    // ── cross-format priority (edition-independent secondary key) ──────
+    // msi > setup > zip on Windows; arch-matched dmg on macOS; AppImage >
+    // tar.gz on Linux. Unsuitable format / wrong arch stays at 900.
+    int fmt = 900;
     if (platform == "windows") {
-        // Prefer MSI (transactional) > NSIS setup > portable zip
-        if (matchesAny(name, {".msi"}))            return { 10, name, url, size };
-        if (matchesAny(name, {"setup", ".exe"}))   return { 20, name, url, size };
-        if (matchesAny(name, {"windows", ".zip"})) return { 30, name, url, size };
-        return { 900, name, url, size };
-    }
-    if (platform == "macos") {
+        if (matchesAny(name, {".msi"}))                 fmt = 10;
+        else if (matchesAny(name, {"setup", ".exe"}))   fmt = 20;
+        else if (matchesAny(name, {"windows", ".zip"})) fmt = 30;
+    } else if (platform == "macos") {
         if (matchesAny(name, {".dmg"})) {
             // Prefer arch-matched DMG if the release separates them.
             if (arch == "arm64" && matchesAny(name, {"arm64", "aarch64", "apple"}))
-                return { 10, name, url, size };
-            if (arch == "x86_64" && matchesAny(name, {"x86_64", "x64", "intel"}))
-                return { 10, name, url, size };
-            return { 20, name, url, size };
+                fmt = 10;
+            else if (arch == "x86_64" && matchesAny(name, {"x86_64", "x64", "intel"}))
+                fmt = 10;
+            else
+                fmt = 20;
         }
-        return { 900, name, url, size };
+    } else { // linux
+        if (matchesAny(name, {".appimage"})) {
+            if (arch == "aarch64" && matchesAny(name, {"aarch64", "arm64"}))
+                fmt = 10;
+            else if (arch == "x86_64" && matchesAny(name, {"x86_64", "x64", "amd64"}))
+                fmt = 10;
+            else if (arch == "x86_64")   // no arch token — x86_64 by convention
+                fmt = 20;
+        } else if (matchesAny(name, {".tar.gz", ".tar.xz", ".tgz"})) {
+            if (arch == "aarch64" && matchesAny(name, {"aarch64", "arm64"}))
+                fmt = 30;
+            else if (arch == "x86_64" && matchesAny(name, {"x86_64", "x64", "amd64"}))
+                fmt = 30;
+        }
     }
-    // linux
-    if (matchesAny(name, {".appimage"})) {
-        if (arch == "aarch64" && matchesAny(name, {"aarch64", "arm64"}))
-            return { 10, name, url, size };
-        if (arch == "x86_64" && matchesAny(name, {"x86_64", "x64", "amd64"}))
-            return { 10, name, url, size };
-        // AppImage with no arch in name — probably x86_64 by convention
-        if (arch == "x86_64") return { 20, name, url, size };
-        return { 900, name, url, size };
-    }
-    if (matchesAny(name, {".tar.gz", ".tar.xz", ".tgz"})) {
-        if (arch == "aarch64" && matchesAny(name, {"aarch64", "arm64"}))
-            return { 30, name, url, size };
-        if (arch == "x86_64" && matchesAny(name, {"x86_64", "x64", "amd64"}))
-            return { 30, name, url, size };
-        return { 900, name, url, size };
-    }
-    return { 900, name, url, size };
+    if (fmt >= 900) return { 900, name, url, size };
+
+    // ── edition match (DOMINANT key) ──────────────────────────────────
+    // Same isFull AND same isLocalAI → penalty 0 (the correct variant wins).
+    // Any mismatch → +200 so it's only ever chosen when NO correct-edition
+    // asset is present (degraded release), never over a matching one.
+    const AssetEdition ae = editionOf(name);
+    const bool editionMatches =
+        (ae.isFull == wantFull) && (ae.isLocalAI == wantLocalAI);
+    return { fmt + (editionMatches ? 0 : 200), name, url, size };
 }
 
 // Normalise QSysInfo names to our three buckets.
@@ -113,10 +151,10 @@ QString detectArch() {
 
 } // anon namespace
 
-PickedAsset pickAssetForPlatform(const QJsonArray &assets) {
-    const QString plat = detectPlatform();
-    const QString arch = detectArch();
-
+PickedAsset pickAssetForPlatformEx(const QJsonArray &assets,
+                                   const QString &platform,
+                                   const QString &arch,
+                                   bool isFull, bool isLocalAI) {
     int best = 999;
     PickedAsset picked;
     for (const QJsonValue &v : assets) {
@@ -126,16 +164,29 @@ PickedAsset pickAssetForPlatform(const QJsonArray &assets) {
         const QString url  = o.value("browser_download_url").toString();
         const qint64 size  = static_cast<qint64>(o.value("size").toDouble());
         if (name.isEmpty() || url.isEmpty()) continue;
-        Candidate c = scoreAsset(name, url, size, plat, arch);
+        Candidate c = scoreAsset(name, url, size, platform, arch,
+                                 isFull, isLocalAI);
         if (c.priority < best) {
             best = c.priority;
             picked.name = c.name;
             picked.downloadUrl = c.url;
             picked.sizeBytes = c.size;
-            picked.found = (c.priority < 100);
         }
     }
+    // Installable = some suitable-platform asset was found. That INCLUDES a
+    // wrong-edition last resort (penalty band 200-230) so a Full user still
+    // gets an installer on a release that shipped only the Lite variant. Only
+    // the 900 (wrong OS/arch) and 999 (junk) bands mean "nothing usable".
+    picked.found = (best < 900);
     return picked;
+}
+
+PickedAsset pickAssetForPlatform(const QJsonArray &assets) {
+    // Production entry: detect platform + arch at runtime, edition at compile
+    // time (this binary's own flavor). Delegates to the testable Ex overload.
+    return pickAssetForPlatformEx(assets, detectPlatform(), detectArch(),
+                                  NOTEPATRA_BUILD_IS_FULL != 0,
+                                  NOTEPATRA_BUILD_IS_LOCAL_AI != 0);
 }
 
 QString parseSha256For(const QString &sha256SumsBody, const QString &filename) {
