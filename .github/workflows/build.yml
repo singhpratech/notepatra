@@ -1688,7 +1688,9 @@ jobs:
       # Produces notepatra-setup-<VERSION>.exe which registers in "Installed
       # apps" via HKCU Uninstall key, generates uninstall.exe, creates Start
       # Menu + Desktop shortcuts, and optionally adds notepatra to the user
-      # PATH. NSIS ships pre-installed on windows-latest runners.
+      # PATH. The runner image no longer ships NSIS pre-installed, so the
+      # chocolatey fallback is the normal path; community.chocolatey.org
+      # throws transient 504s, hence the retry + hard verify below.
       - name: Build Windows installer (NSIS)
         shell: pwsh
         run: |
@@ -1709,8 +1711,17 @@ jobs:
           }
           if (-not $makensis) {
               Write-Host "::warning::NSIS not found on runner — installing via chocolatey"
-              choco install nsis -y --no-progress
               $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+              foreach ($attempt in 1..3) {
+                  choco install nsis -y --no-progress
+                  if (Test-Path $makensis) { break }
+                  Write-Host "::warning::choco install nsis did not produce makensis.exe (attempt $attempt/3)"
+                  if ($attempt -lt 3) { Start-Sleep -Seconds (30 * $attempt) }
+              }
+          }
+          if (-not (Test-Path $makensis)) {
+              Write-Host "::error::makensis.exe not found at $makensis — NSIS install failed after retries"
+              exit 1
           }
           Write-Host "Using makensis: $makensis"
 
@@ -1750,8 +1761,17 @@ jobs:
               }
           }
           if (-not $makensis) {
-              choco install nsis -y --no-progress
               $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+              foreach ($attempt in 1..3) {
+                  choco install nsis -y --no-progress
+                  if (Test-Path $makensis) { break }
+                  Write-Host "::warning::choco install nsis did not produce makensis.exe (attempt $attempt/3)"
+                  if ($attempt -lt 3) { Start-Sleep -Seconds (30 * $attempt) }
+              }
+          }
+          if (-not (Test-Path $makensis)) {
+              Write-Host "::error::makensis.exe not found at $makensis — NSIS install failed after retries"
+              exit 1
           }
           Write-Host "Using makensis: $makensis"
 
