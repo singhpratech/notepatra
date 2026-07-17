@@ -13,16 +13,16 @@
 //      *.otf with QFontDatabase via addApplicationFont().
 //   2. User opens  Settings → Manage Fonts… → picks fonts → Install.
 //   3. NotepatraFontPack::Installer downloads each entry from its
-//      pinned upstream HTTPS URL, writes to fontsDir(), and registers
+//      upstream HTTPS URL, writes to fontsDir(), and registers
 //      with QFontDatabase so the font is available without restart.
 //   4. The existing notepatraDefaultCodeFamily() chain in src/fonts.h
 //      auto-picks installed families — no additional wiring needed.
 //
-// Licensing: every entry in manifest() is shipped under SIL Open Font
-// License 1.1 or Apache 2.0 — both permissive, both redistributable.
-// We do NOT host the bytes; we link to each project's upstream raw
-// GitHub URL pinned to a specific tag so the user always knows where
-// the file came from. Display the license in the install dialog.
+// Licensing: every entry in manifest() is shipped under SIL OFL 1.1,
+// Apache 2.0, or MIT — all permissive, all redistributable. We do NOT
+// host the bytes; we link to each project's upstream raw GitHub URL
+// (tag-pinned where upstream tags releases; google/fonts entries track
+// `main`). Display the license in the install dialog.
 //
 // Cloud-free build (NOTEPATRA_NO_CLOUD): downloads go to github.com /
 // raw.githubusercontent.com which are NOT private-network hosts — the

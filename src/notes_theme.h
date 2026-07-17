@@ -28,7 +28,10 @@
 
 #pragma once
 
+#include <QColor>
+#include <QPalette>
 #include <QString>
+#include <QWidget>
 
 struct NoterPalette {
     // ── surfaces ───────────────────────────────────────────────────
@@ -223,6 +226,38 @@ inline NoterPalette noterMonokaiPalette() {
     p.popoutBodyFg   = QStringLiteral("#f8f8f2");
     p.noticeFg       = QStringLiteral("#e6db74");
     return p;
+}
+
+// Modal parity — give any Noter-spawned QDialog / QMessageBox an explicit
+// QPalette + minimal QSS from the active palette so modals follow
+// Light/Dark/Monokai instead of the system default. The calendar popup's
+// item view needs explicit Base + a QSS background (item-view viewports
+// paint from their OWN palette Base, never the parent's). No QLabel rule
+// on purpose: labels inherit WindowText via the palette, so per-widget
+// alpha-dimmed / accent label palettes keep winning.
+inline void applyNoterDialogTheme(QWidget *w, const NoterPalette &pal) {
+    QPalette p = w->palette();
+    p.setColor(QPalette::Window,          QColor(pal.pageBg));
+    p.setColor(QPalette::WindowText,      QColor(pal.text));
+    p.setColor(QPalette::Base,            QColor(pal.inputBg));
+    p.setColor(QPalette::Text,            QColor(pal.text));
+    p.setColor(QPalette::Button,          QColor(pal.inputBg));
+    p.setColor(QPalette::ButtonText,      QColor(pal.text));
+    p.setColor(QPalette::Highlight,       QColor(pal.leafHighlight));
+    p.setColor(QPalette::HighlightedText, QColor(pal.leafHighlightFg));
+    w->setPalette(p);
+    w->setStyleSheet(QStringLiteral(
+        "QDialog, QMessageBox { background: %1; }"
+        "QPushButton { background: %2; color: %3; border: 1px solid %4;"
+        "  border-radius: 4px; padding: 4px 12px; }"
+        "QPushButton:hover { background: %5; }"
+        "QLineEdit, QDateTimeEdit, QComboBox, QAbstractSpinBox {"
+        "  background: %2; color: %3; border: 1px solid %4;"
+        "  border-radius: 4px; padding: 3px 6px; }"
+        "QCalendarWidget QAbstractItemView { background: %2; color: %3;"
+        "  selection-background-color: %6; selection-color: %7; }")
+            .arg(pal.pageBg, pal.inputBg, pal.text, pal.inputBorder,
+                 pal.hoverBg, pal.leafHighlight, pal.leafHighlightFg));
 }
 
 // Map a Config::theme key to a palette. "System" → Light, matching

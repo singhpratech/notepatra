@@ -37,6 +37,7 @@ private:
     QLabel *m_header = nullptr;
     QLabel *m_promptLabel = nullptr;
     QPushButton *m_copyBtn = nullptr;
+    QPushButton *m_stopBtn = nullptr;
     QProcess *m_process;
     QString m_cwd;
     QString m_prompt;

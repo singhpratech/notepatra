@@ -164,7 +164,7 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
     layout->addWidget(btnWidget);
 
     // BIG status banner — every button press updates this so users see something happen
-    m_statusLabel = new QLabel("💡 Paste content into the panel below, then click a button above");
+    m_statusLabel = new QLabel("Paste content into the panel below, then click a button above");
     m_statusLabel->setStyleSheet(QString(
         "background: %1; color: %2; padding: 8px 12px; "
         "font-size: 13px; font-weight: 600; border-left: 4px solid %3;")

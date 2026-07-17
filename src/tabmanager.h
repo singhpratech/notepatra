@@ -36,14 +36,17 @@ public:
     // a new tab is added so the colored accent bar painted on top of
     // each tab matches the tool it hosts.
     void applyToolAccents();
-    // Map index → accent color (auto-assigned or user-picked). Used by
-    // the painter via the public accessor below.
-    QColor tabAccentColor(int index) const { return m_tabColors.value(index); }
+    // Accent color for the tab at `index` (auto-assigned or user-picked).
+    // Keyed by the tab's page widget so colors survive reorder / close.
+    QColor tabAccentColor(int index) const { return m_tabColors.value(widget(index)); }
+
+protected:
+    void tabRemoved(int index) override;
 
 private:
     void showTabContextMenu(int index, const QPoint &globalPos);
     void setTabColor(int index, const QColor &color);
-    QMap<int, QColor> m_tabColors;
+    QMap<QWidget *, QColor> m_tabColors;
 };
 
 #endif

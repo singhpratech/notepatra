@@ -17,6 +17,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QStandardPaths>
+#include <QTimer>
 
 namespace {
 
@@ -333,6 +334,12 @@ TerminalWidget::TerminalWidget(QWidget *parent) : QWidget(parent) {
     m_input->setPlaceholderText("Type a command and press Enter…");
     inputRow->addWidget(m_input, 1);
     updatePrompt();
+    m_stopBtn = new QPushButton("Stop");
+    m_stopBtn->setFixedHeight(26);
+    m_stopBtn->setFixedWidth(50);
+    m_stopBtn->setEnabled(false);
+    m_stopBtn->setToolTip("Terminate the running command");
+    inputRow->addWidget(m_stopBtn);
     m_copyBtn = new QPushButton("Copy Output");
     m_copyBtn->setFixedHeight(26);
     m_copyBtn->setFixedWidth(90);
@@ -347,6 +354,18 @@ TerminalWidget::TerminalWidget(QWidget *parent) : QWidget(parent) {
 
     m_process = new QProcess(this);
     m_process->setProcessChannelMode(QProcess::MergedChannels);
+
+    // Stop = polite terminate, escalate to kill if the child ignores it.
+    connect(m_stopBtn, &QPushButton::clicked, this, [this]() {
+        if (m_process->state() == QProcess::NotRunning) return;
+        m_process->terminate();
+        QTimer::singleShot(1500, m_process, [proc = m_process]() {
+            if (proc->state() != QProcess::NotRunning) proc->kill();
+        });
+    });
+    connect(m_process, &QProcess::stateChanged, this, [this](QProcess::ProcessState s) {
+        m_stopBtn->setEnabled(s != QProcess::NotRunning);
+    });
 
     connect(m_process, &QProcess::readyReadStandardOutput, this, &TerminalWidget::onReadyRead);
     connect(m_process, &QProcess::readyRead, this, &TerminalWidget::onReadyRead);
@@ -435,7 +454,19 @@ static bool isFullscreenTty(const QString &cmd) {
 // Launch command in the user's real terminal emulator. Tries a sensible
 // list (x-terminal-emulator, gnome-terminal, konsole, xfce4-terminal,
 // xterm) and falls back to an error toast if nothing is found.
+// Per-OS handoff mirrors the Run-menu "Open in Terminal" pattern.
 static bool launchExternalTerminal(const QString &cmd, const QString &cwd) {
+#ifdef Q_OS_WIN
+    // /k keeps the console open after the command finishes.
+    return QProcess::startDetached("cmd.exe", {"/k", cmd}, cwd);
+#elif defined(Q_OS_MAC)
+    // Terminal.app can't take argv commands — drive it via AppleScript.
+    QString inner = QString("cd %1 && %2").arg(cwd, cmd);
+    inner.replace("\\", "\\\\").replace("\"", "\\\"");
+    const QString script =
+        QString("tell application \"Terminal\" to do script \"%1\"").arg(inner);
+    return QProcess::startDetached("osascript", {"-e", script});
+#else
     const QStringList emulators = {
         "x-terminal-emulator", "gnome-terminal", "konsole",
         "xfce4-terminal", "mate-terminal", "tilix",
@@ -457,6 +488,7 @@ static bool launchExternalTerminal(const QString &cmd, const QString &cwd) {
         return true;
     }
     return false;
+#endif
 }
 
 void TerminalWidget::runCommand(const QString &cmd) {
@@ -501,6 +533,17 @@ void TerminalWidget::runCommand(const QString &cmd) {
     // pressing Enter sends the line straight to the running process,
     // instead of starting a new `shell -c` invocation.
     if (isLineInteractive(cmd)) {
+#ifdef Q_OS_WIN
+        // No script(1) PTY wrapper on Windows — hand off to a real console.
+        appendLine(QString(
+            "<span style='color:#F2C14E;'>⚠ <b>%1</b> is interactive — "
+            "opening in a system console window.</span>")
+            .arg(cmd.section(' ', 0, 0).toHtmlEscaped()));
+        if (!launchExternalTerminal(cmd, m_cwd)) {
+            appendLine("<span style='color:#F44747;'>Could not start cmd.exe.</span>");
+        }
+        return;
+#else
         const QString scriptBin = QStandardPaths::findExecutable("script");
         if (scriptBin.isEmpty()) {
             appendLine(QString("<span style='color:#F44747;'>`script` not found — "
@@ -515,9 +558,14 @@ void TerminalWidget::runCommand(const QString &cmd) {
         env.insert("TERM",          "xterm-256color");
         m_process->setProcessEnvironment(env);
         m_process->setProcessChannelMode(QProcess::MergedChannels);
+#ifdef Q_OS_MAC
+        // BSD script(1) has no -c: usage is `script [-q] [file [command...]]`.
+        m_process->start(scriptBin, {"-q", "/dev/null", "/bin/sh", "-c", cmd});
+#else
         // -q suppresses script's banner, -c runs the command, /dev/null
         // discards the typescript file we don't need.
         m_process->start(scriptBin, {"-q", "-c", cmd, "/dev/null"});
+#endif
         m_interactive = true;
         m_interactiveCmdName = cmd.section(' ', 0, 0);
         // Keep input enabled so stdin can be fed — change the prompt to
@@ -528,9 +576,10 @@ void TerminalWidget::runCommand(const QString &cmd) {
             m_promptLabel->setText(QString("%1 ▷ ").arg(m_interactiveCmdName));
         }
         appendLine(QString("<span style='color:#4EC9B0;'>▶ %1 running — "
-                          "type below to send input, Ctrl+C in the editor to stop</span>")
+                          "type below to send input, press Stop to end it</span>")
                        .arg(cmd.toHtmlEscaped()));
         return;
+#endif
     }
 
     // Fullscreen TTY apps (vim, top, less…) genuinely need alternate-screen
@@ -668,14 +717,14 @@ void TerminalWidget::applyPalette() {
                  pal.selectionBg, pal.selectionFg, pal.inputFocus));
     }
 
-    if (m_copyBtn) {
-        m_copyBtn->setStyleSheet(QString(
-            "QPushButton { background: %1; color: %2; "
-            "border: 1px solid %3; border-radius: 4px; "
-            "padding: 3px 8px; margin-left: 6px; }"
-            "QPushButton:hover { background: %4; }")
-            .arg(pal.btnBg, pal.btnFg, pal.btnBorder, pal.btnHover));
-    }
+    const QString btnQss = QString(
+        "QPushButton { background: %1; color: %2; "
+        "border: 1px solid %3; border-radius: 4px; "
+        "padding: 3px 8px; margin-left: 6px; }"
+        "QPushButton:hover { background: %4; }")
+        .arg(pal.btnBg, pal.btnFg, pal.btnBorder, pal.btnHover);
+    if (m_copyBtn) m_copyBtn->setStyleSheet(btnQss);
+    if (m_stopBtn) m_stopBtn->setStyleSheet(btnQss);
 }
 
 void TerminalWidget::onThemeChanged() {

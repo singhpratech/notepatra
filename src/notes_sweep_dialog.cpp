@@ -40,6 +40,12 @@ NoterSweepDialog::NoterSweepDialog(const NoterSweepPrompt::SweepResult &result,
     setMinimumWidth(780);
     resize(780, 640);
 
+    // Modal parity — follow the active Noter palette (Light/Dark/Monokai).
+    // Applied BEFORE the children are built so every label that clones its
+    // inherited palette (eyebrow/summary/footer dimming) reads themed ink.
+    // The dialog is modal, so baking the theme at construction is safe.
+    applyNoterDialogTheme(this, noterPaletteForTheme(Config::instance().theme));
+
     m_outerLayout = new QVBoxLayout(this);
     m_outerLayout->setContentsMargins(20, 18, 20, 16);
     m_outerLayout->setSpacing(12);

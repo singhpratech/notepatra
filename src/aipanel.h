@@ -19,6 +19,7 @@
 #include <QJsonObject>
 #include <functional>
 #include "agent_repeat_guard.h"
+#include "ai_context.h"
 #include "ai_tools.h"
 #include "ollama.h"
 
@@ -45,14 +46,9 @@ public:
 
     // One entry per Editor tab currently open in the main window. Passed in
     // via setWorkspaceContext() so the AI can reference other files the user
-    // has open (Cursor / Copilot-style cross-file awareness).
-    struct OpenTabInfo {
-        QString filePath;       // absolute path (or "" for unsaved new files)
-        QString displayName;    // tab title / basename — used when filePath is empty
-        QString language;
-        QString text;           // full editor buffer; truncated later by the token budgeter
-        bool isCurrent = false;
-    };
+    // has open (Cursor / Copilot-style cross-file awareness). Alias of the
+    // canonical struct in ai_context.h — kept for source-compat with callers.
+    using OpenTabInfo = AiContext::OpenTabInfo;
 
     // Backward-compat overload — callers that only know about a single file.
     void setContext(const QString &selectedText, const QString &filePath, const QString &language);
@@ -106,9 +102,8 @@ protected:
     // v0.1.61 — accept image / PDF / DOCX / PPTX drops onto the AI panel as
     // attachments. Mirrors attachFile's happy-path: stash path + kind,
     // surface the attachment chip, and let send-time extraction handle the
-    // rest. Vision-only kinds (image) gate on modelSupportsVision() — if
-    // the active model can't read images, we refuse with a helpful bubble
-    // listing concrete model tags the user can pull / switch to.
+    // rest. Any kind is accepted for any model — an unsupported image is
+    // the backend's error to report, surfaced in the chat transcript.
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dropEvent(QDropEvent *event) override;
 
@@ -260,29 +255,6 @@ private:
     // the tools field for non-tool models, so we always send tools and
     // let the server decide.
     bool currentModelSupportsTools() const;
-
-    // v0.1.61 — does the currently-selected model accept image inputs?
-    // Mirrors the dual-path strategy used by currentModelSupportsTools():
-    //   - Ollama: trust the /api/show capabilities cache (m_ollamaModelCaps)
-    //     when populated; if empty (probe still in flight) fall through
-    //     to the prefix allowlist below — but be CONSERVATIVE: an empty
-    //     cache plus an unknown model name returns false. Silent-drop on
-    //     a non-vision Ollama model is the worst trap because the model
-    //     just hallucinates a description of nothing.
-    //   - Cloud / llama.cpp / OpenAI-compat: lowercase the visible name,
-    //     strip any "<provider>/" prefix, then check a hardcoded May-2026
-    //     allowlist of multimodal model families (claude-3.5+, gpt-4o /
-    //     4.1 / 4.5 / 5, gemini-1.5+, etc.) plus known Ollama vision tags
-    //     (qwen2.5vl, llava, gemma3, llama3.2-vision, …).
-    bool modelSupportsVision() const;
-
-    // v0.1.61 — shared gate between attachFile() (file picker) and
-    // dropEvent() (drag-and-drop). Returns true if the attachment was
-    // accepted: the caller should set m_pendingFilePath / Kind and show
-    // the chip. Returns false after appending a refusal error bubble when
-    // the kind is "image" but modelSupportsVision() is false — caller
-    // should NOT proceed.
-    bool acceptAttachment(const QString &path, const QString &kind);
 
     // v0.1.56 — paint each row in the model dropdown so the user can see at
     // a glance which models are suitable for the active mode. Coding mode
@@ -568,7 +540,7 @@ private:
     // segmented buttons in a 3-way mode selector (Chat | Coding | Data).
     // Kept as QAbstractButton* so existing isChecked()/setChecked()/
     // toggled() call sites compile unchanged.
-    QAbstractButton *m_codingMode = nullptr;  // Coding agent — write_file / apply_diff / search / run_command
+    QAbstractButton *m_codingMode = nullptr;  // Coding agent — read_file / write_file / apply_diff / search
     QAbstractButton *m_dataMode = nullptr;    // Data Analyst — query_sql / csv_query / chart_spec
     QAbstractButton *m_chatMode = nullptr;    // Default — general chat assistant (no flag set)
     QPushButton *m_manageConnsBtn = nullptr;

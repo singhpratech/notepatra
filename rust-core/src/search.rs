@@ -121,3 +121,65 @@ pub fn replace_all(
         re.replace_all(haystack, replacement).into_owned()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Copy the positions out, then release them exactly the way the FFI
+    // consumer would (Vec::from_raw_parts — the mirror of find_all's
+    // into_boxed_slice + forget).
+    fn positions_of(result: SearchResult) -> Vec<usize> {
+        if result.positions.is_null() || result.count == 0 {
+            return Vec::new();
+        }
+        unsafe { Vec::from_raw_parts(result.positions, result.count, result.count) }
+    }
+
+    #[test]
+    fn find_all_literal_case_sensitive() {
+        let r = find_all("foo bar foo Foo", "foo", false, true, false);
+        assert_eq!(positions_of(r), vec![0, 8]);
+    }
+
+    #[test]
+    fn find_all_literal_case_insensitive() {
+        let r = find_all("foo bar foo Foo", "foo", false, false, false);
+        assert_eq!(positions_of(r), vec![0, 8, 12]);
+    }
+
+    #[test]
+    fn find_all_regex() {
+        let r = find_all("a1 b22 c333", r"\d+", true, true, false);
+        assert_eq!(positions_of(r), vec![1, 4, 8]);
+    }
+
+    #[test]
+    fn find_all_whole_word() {
+        // "cat" must not match inside "catalog" / "concat".
+        let r = find_all("cat catalog concat cat", "cat", false, true, true);
+        assert_eq!(positions_of(r), vec![0, 19]);
+    }
+
+    #[test]
+    fn find_all_empty_needle_returns_null() {
+        let r = find_all("anything", "", false, true, false);
+        assert!(r.positions.is_null());
+        assert_eq!(r.count, 0);
+    }
+
+    #[test]
+    fn find_all_invalid_regex_is_no_match() {
+        let r = find_all("abc", "[unclosed", true, true, false);
+        assert!(r.positions.is_null());
+        assert_eq!(r.count, 0);
+    }
+
+    #[test]
+    fn count_and_replace_agree() {
+        assert_eq!(count_matches("x y x y x", "x", false, true), 3);
+        assert_eq!(replace_all("x y x y x", "x", "z", false, true), "z y z y z");
+        // Case-insensitive literal replace hits every casing.
+        assert_eq!(replace_all("Ab ab AB", "ab", "-", false, false), "- - -");
+    }
+}

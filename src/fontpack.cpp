@@ -13,13 +13,20 @@
 #include <QStandardPaths>
 #include <QSslConfiguration>
 
+#ifdef NOTEPATRA_NO_CLOUD
+#include "network_policy.h"
+#endif
+
 namespace NotepatraFontPack {
 
 // ─── Manifest ─────────────────────────────────────────────────────────
 //
-// All URLs are pinned to a specific upstream tag for reproducibility.
-// All entries are SIL OFL 1.1 or Apache 2.0. The on-disk file name
-// must be unique across the manifest — it's the dedupe key for
+// URL pinning is mixed: vendor-hosted entries (JetBrains, FiraCode,
+// Cascadia, Hack, Victor Mono) point at a specific upstream tag, but
+// google/fonts and comic-mono entries track their repos' `main` branch —
+// those bytes can change upstream between installs unless expectedSha256
+// is set. All entries are SIL OFL 1.1, Apache 2.0, or MIT. The on-disk
+// file name must be unique across the manifest — it's the dedupe key for
 // isInstalled() and the basename in fontsDir().
 //
 // approxSize is intentionally approximate; the installer reports
@@ -213,6 +220,18 @@ void Installer::startNext() {
     }
     m_currentEntry = m_queue.takeFirst();
     m_buffer.clear();
+
+#ifdef NOTEPATRA_NO_CLOUD
+    // Cloud-free build: refuse public hosts (github.com etc.). Air-gapped
+    // users drop .ttf/.otf files into fontsDir() manually instead.
+    if (!NotepatraNetworkPolicy::isPrivateNetworkHost(QUrl(m_currentEntry.url))) {
+        emit finishedOne(m_currentEntry, false,
+            QStringLiteral("blocked by cloud-free policy — copy the font file "
+                           "into %1 manually").arg(fontsDir()));
+        startNext();
+        return;
+    }
+#endif
 
     QNetworkRequest req(QUrl(m_currentEntry.url));
     req.setHeader(QNetworkRequest::UserAgentHeader,

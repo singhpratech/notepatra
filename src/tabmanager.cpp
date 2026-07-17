@@ -3,8 +3,10 @@
 #include "tabmanager.h"
 #include "editor.h"
 #include "tool_colors.h"
+#include "config.h"
 #include <QEvent>
 #include <QMouseEvent>
+#include <QSet>
 #include <QTabBar>
 #include <QMenu>
 #include <QAction>
@@ -83,8 +85,14 @@ bool TabManager::eventFilter(QObject *obj, QEvent *event) {
     if (obj == tabBar()) {
         if (event->type() == QEvent::MouseButtonDblClick) {
             auto *me = static_cast<QMouseEvent *>(event);
-            if (tabBar()->tabAt(me->pos()) == -1) {
+            const int idx = tabBar()->tabAt(me->pos());
+            if (idx == -1) {
                 emit tabContextNew();
+                return true;
+            }
+            if (me->button() == Qt::LeftButton
+                && Config::instance().doubleClickToCloseTab) {
+                emit tabCloseRequested(idx);
                 return true;
             }
         } else if (event->type() == QEvent::MouseButtonRelease) {
@@ -209,13 +217,25 @@ void TabManager::showTabContextMenu(int index, const QPoint &globalPos) {
 
 void TabManager::setTabColor(int index, const QColor &color) {
     if (color.isValid()) {
-        m_tabColors[index] = color;
+        m_tabColors[widget(index)] = color;
         tabBar()->setTabTextColor(index, color.darker(120));
     } else {
-        m_tabColors.remove(index);
+        m_tabColors.remove(widget(index));
         tabBar()->setTabTextColor(index, QColor());
     }
     tabBar()->update();
+}
+
+// Prune colors whose page widget is gone — a reused heap address must not
+// resurrect a closed tab's color.
+void TabManager::tabRemoved(int index) {
+    QSet<QWidget *> alive;
+    for (int i = 0; i < count(); ++i) alive.insert(widget(i));
+    for (auto it = m_tabColors.begin(); it != m_tabColors.end();) {
+        if (!alive.contains(it.key())) it = m_tabColors.erase(it);
+        else ++it;
+    }
+    QTabWidget::tabRemoved(index);
 }
 
 // ─── Auto tool-accent ─────────────────────────────────────────────────
@@ -235,7 +255,7 @@ void TabManager::applyToolAccents() {
     for (int i = 0; i < count(); ++i) {
         const QColor c = toolAccentForText(tabText(i));
         if (c.isValid()) {
-            m_tabColors[i] = c;
+            m_tabColors[widget(i)] = c;
             tabBar()->setTabTextColor(i, c.darker(125));
         }
     }

@@ -153,6 +153,13 @@ assert_contains "docs.html: latest release line says v$VERSION" \
     docs/docs.html "Latest release is v$VERSION"
 
 echo
+echo "── docs/llms.txt (AI-crawler summary) ──"
+assert_contains "llms.txt: lexer count" \
+    docs/llms.txt "$LEXER_COUNT language lexers"
+assert_contains "llms.txt: file extension count" \
+    docs/llms.txt "$FILE_EXT_COUNT file extensions"
+
+echo
 echo "── stale version-ref sweep (user-facing phrases must point at v$VERSION) ──"
 # This section catches the v0.1.82 → v0.1.83 drift: when a release bumps the
 # version, every user-facing phrase listed below must contain the NEW version.

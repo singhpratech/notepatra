@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.116 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.117 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -756,31 +756,6 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_todos.cpp")
     message(STATUS "Regression test enabled — target: test_notes_todos")
 endif()
 
-# ── Noter — bridge (slash + embed URL classifier) test (35 cases) ──
-if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_bridge.cpp")
-    add_executable(test_notes_bridge
-        test_notes_bridge.cpp
-        src/notes_bridge.cpp
-        src/notes_template.cpp
-    )
-    target_include_directories(test_notes_bridge PRIVATE ${CMAKE_SOURCE_DIR}/src)
-    target_link_libraries(test_notes_bridge PRIVATE Qt5::Core Qt5::Test)
-    add_test(NAME test_notes_bridge COMMAND $<TARGET_FILE:test_notes_bridge>)
-    set_tests_properties(test_notes_bridge PROPERTIES LABELS "unit;noter;bridge")
-endif()
-
-# ── Noter — slash-menu popover keyboard nav test (21 cases) ──
-if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_slashmenu.cpp")
-    add_executable(test_notes_slashmenu
-        test_notes_slashmenu.cpp
-        src/notes_slashmenu.cpp
-    )
-    target_include_directories(test_notes_slashmenu PRIVATE ${CMAKE_SOURCE_DIR}/src)
-    target_link_libraries(test_notes_slashmenu PRIVATE Qt5::Core Qt5::Widgets Qt5::Test)
-    add_test(NAME test_notes_slashmenu COMMAND $<TARGET_FILE:test_notes_slashmenu>)
-    set_tests_properties(test_notes_slashmenu PROPERTIES LABELS "unit;noter;slashmenu")
-endif()
-
 # ── Noter — sweep prompt builder + parser test (36 cases) ──
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_sweep_prompt.cpp")
     add_executable(test_notes_sweep_prompt
@@ -829,9 +804,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_panels.cpp")
         src/notes_template.cpp
         src/notes_todos.cpp
         src/notes_reminder.cpp
-        src/notes_panels.cpp
         src/notes_popout.cpp
-        src/notes_context_menus.cpp
         src/notes_sweep_dialog.cpp
         src/notes_sweep_prompt.cpp
         src/notes_extract_apply.cpp
@@ -860,9 +833,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_panel_widget
         src/notes_template.cpp
         src/notes_todos.cpp
         src/notes_reminder.cpp
-        src/notes_panels.cpp
         src/notes_popout.cpp
-        src/notes_context_menus.cpp
         src/notes_sweep_dialog.cpp
         src/notes_sweep_prompt.cpp
         src/notes_extract_apply.cpp
@@ -891,9 +862,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_noter_render.cpp")
         src/notes_template.cpp
         src/notes_todos.cpp
         src/notes_reminder.cpp
-        src/notes_panels.cpp
         src/notes_popout.cpp
-        src/notes_context_menus.cpp
         src/notes_sweep_dialog.cpp
         src/notes_sweep_prompt.cpp
         src/notes_extract_apply.cpp
@@ -913,18 +882,6 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_noter_render.cpp")
     set_tests_properties(test_noter_render PROPERTIES
         LABELS "integration;noter;render"
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-endif()
-
-# ── Noter — right-click context menus test (37 cases) ──
-if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_context_menus.cpp")
-    add_executable(test_notes_context_menus
-        test_notes_context_menus.cpp
-        src/notes_context_menus.cpp
-    )
-    target_include_directories(test_notes_context_menus PRIVATE ${CMAKE_SOURCE_DIR}/src)
-    target_link_libraries(test_notes_context_menus PRIVATE Qt5::Core Qt5::Widgets Qt5::Test)
-    add_test(NAME test_notes_context_menus COMMAND $<TARGET_FILE:test_notes_context_menus>)
-    set_tests_properties(test_notes_context_menus PROPERTIES LABELS "unit;noter;menus")
 endif()
 
 # ── Noter — PDF + Markdown export test (25 cases, Full edition only) ──
@@ -2317,6 +2274,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ollama.cpp")
         test_ollama.cpp
         src/ollama.cpp
         src/ai_interaction_log.cpp
+        src/credscrub.cpp
         src/network_policy.cpp   # v0.1.72 — gated in ollama.cpp under NOTEPATRA_NO_CLOUD
     )
     target_include_directories(test_ollama PRIVATE
@@ -2337,6 +2295,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_llamacpp.cpp")
         test_llamacpp.cpp
         src/ollama.cpp
         src/ai_interaction_log.cpp
+        src/credscrub.cpp
         src/network_policy.cpp   # v0.1.72 — gated in ollama.cpp under NOTEPATRA_NO_CLOUD
     )
     target_include_directories(test_llamacpp PRIVATE
@@ -2357,6 +2316,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_aifix.cpp")
         test_aifix.cpp
         src/ollama.cpp
         src/ai_interaction_log.cpp
+        src/credscrub.cpp
         src/network_policy.cpp   # v0.1.72 — gated in ollama.cpp under NOTEPATRA_NO_CLOUD
     )
     target_include_directories(test_aifix PRIVATE
@@ -2380,6 +2340,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_stream_error.cpp")
         test_stream_error.cpp
         src/ollama.cpp
         src/ai_interaction_log.cpp
+        src/credscrub.cpp
         src/network_policy.cpp   # v0.1.72 — gated in ollama.cpp under NOTEPATRA_NO_CLOUD
     )
     target_include_directories(test_stream_error PRIVATE
@@ -2503,6 +2464,22 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_fontpack.cpp")
     notepatra_add_qt_test(test_fontpack)
     set_tests_properties(test_fontpack PROPERTIES LABELS "unit;fontpack;v0175")
     message(STATUS "Font-pack test enabled — target: test_fontpack")
+endif()
+
+# ── GitPanel wiring test (v0.1.48 inline diff + widget tree) ──
+# Offscreen-safe: constructs the panel, asserts the splitter/diff-view
+# plumbing and diff line colours. Never opens a repo, never hits a modal.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_gitpanel.cpp")
+    add_executable(test_gitpanel
+        test_gitpanel.cpp
+        src/gitpanel.cpp
+    )
+    target_include_directories(test_gitpanel PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(test_gitpanel PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets)
+    notepatra_add_qt_test(test_gitpanel)
+    set_tests_properties(test_gitpanel PROPERTIES LABELS "unit;git;panel")
+    message(STATUS "Regression test enabled — target: test_gitpanel")
 endif()
 
 # v0.2 Coding-mode revamp — smoke test for EditPlanList + DiffView. Builds

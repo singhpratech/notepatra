@@ -299,7 +299,7 @@
   <div class="topbar-left">
     <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">v0.1.116 docs</span>
+    <span class="tag">v0.1.117 docs</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
@@ -325,6 +325,7 @@
     <div class="section-label">Editor</div>
     <ul>
       <li><a href="#editor-basics">Basics</a></li>
+      <li><a href="#encodings">Encodings</a></li>
       <li><a href="#languages-lexers">Languages &amp; lexers</a></li>
       <li><a href="#themes-palette">Themes &amp; palette</a></li>
       <li><a href="#rulers-crosshair">Rulers &amp; crosshair</a></li>
@@ -401,7 +402,7 @@
   <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock (with a workspace open and a tool-capable model) and the model gets up to 13 native tools — file tools <code>read_file</code>, <code>list_dir</code>, <code>write_file</code>, <code>search</code>, <code>apply_diff</code>; data tools <code>query_sql</code>, <code>csv_query</code>, <code>generate_chart</code>; and read-only git tools <code>git_status</code>, <code>git_diff</code>, <code>git_log</code>, <code>git_branch_list</code>, <code>git_show</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
 
   <div class="callout info">
-    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.116 (July 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
+    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.117 (July 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
   </div>
 
   <h2 id="install" class="anchor-target">Install</h2>
@@ -616,7 +617,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
     <li><strong>macOS:</strong> <code>~/Library/Application Support/notepatra/plugins/&lt;pack&gt;/</code></li>
     <li><strong>Windows:</strong> <code>%APPDATA%/notepatra/plugins/&lt;pack&gt;/</code></li>
   </ul>
-  <p>As of v0.1.116, the Full flavor ships the <em>charts</em> pack bundled on Linux and Windows (it's the same binary — the pack is "installed" if WebEngine was linked at compile time; macOS Full is DuckDB-only and has no inline Vega renderer). The in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation path is scaffolded but not yet wired (still queued as of v0.1.116), so today packs are added by swapping in the Full binary rather than downloaded inside the app.</p>
+  <p>As of v0.1.117, the Full flavor ships the <em>charts</em> pack bundled on Linux and Windows (it's the same binary — the pack is "installed" if WebEngine was linked at compile time; macOS Full is DuckDB-only and has no inline Vega renderer). The in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation path is scaffolded but not yet wired (still queued as of v0.1.117), so today packs are added by swapping in the Full binary rather than downloaded inside the app.</p>
 
   <table>
     <thead>
@@ -633,10 +634,14 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
         <td><code>pdf</code></td>
         <td>≈ 12 MB</td>
         <td>Rasterises PDFs to PNG pages so vision-capable AI models can read them. Powered by Poppler-Qt5.</td>
-        <td>Still queued (not shipped as of v0.1.116). Until then, dragging a PDF into the AI dock shows the "use a vision-capable model" error bubble.</td>
+        <td>Still queued (not shipped as of v0.1.117). Until then, dropping a PDF into the AI dock extracts its text via <code>pdftotext</code> (poppler-utils) when available and attaches that as context.</td>
       </tr>
     </tbody>
   </table>
+
+  <h3 id="font-pack">Font Pack — on-demand editor fonts</h3>
+  <p><strong>Settings → Manage Fonts...</strong> downloads premium open-source coding fonts on demand — JetBrains Mono, Fira Code, Cascadia Code, Source Code Pro, IBM Plex Mono, Hack, Geist Mono, and more — so the bare binary stays small. Files are downloaded to your per-user data directory (<code>~/.local/share/notepatra/fonts</code> on Linux) and registered with Qt immediately, no restart needed; the dialog shows per-variant size, license, and origin, and every font is SIL OFL 1.1, Apache 2.0, or MIT — redistributable and royalty-free.</p>
+  <p><strong>Air-gapped machines:</strong> copy <code>.ttf</code> / <code>.otf</code> files into that same fonts directory manually — Notepatra scans it at startup and registers whatever it finds. The cloud-free build blocks the download path entirely and points you at this drop-in route instead.</p>
 
   <h3 id="upgrade-to-full">Upgrading from Lite to Full</h3>
   <p>Three paths, pick whichever matches your situation:</p>
@@ -678,7 +683,7 @@ make -j$(nproc)
     <li><strong>Do I lose anything by staying on Lite?</strong> No — every editor / lexer / AI / Git / data / plugin feature works identically. The only difference is that <code>generate_chart</code> tool results paint as a "Chart rendering requires the Charts Pack" card instead of as an inline rendered chart. You can still see the spec via [View JSON instead] and copy it elsewhere.</li>
     <li><strong>Can I downgrade Full → Lite?</strong> Yes. Just download the Lite tarball and replace the binary. Your config / chat history / connections are preserved (they live under <code>~/.config/notepatra</code>, not inside the binary).</li>
     <li><strong>Will the chart spec data be lost if I'm on Lite?</strong> No — the AI's tool result is preserved in your chat history just like any other tool result. If you upgrade to Full later, opening the same chat shows the rendered chart for those past results.</li>
-    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.116. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
+    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.117. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
   </ul>
 
   <h2 id="ui-overview" class="anchor-target">UI overview</h2>
@@ -688,7 +693,7 @@ make -j$(nproc)
     <li><strong>Tab bar</strong> — one tab per open file. Modified tabs show a dot. Close with the <code>×</code> or middle-click.</li>
     <li><strong>Editor area</strong> — Scintilla-based editor with line numbers, code folding, brace matching, syntax highlighting, caret-line highlight, word-wrap toggle, EOL visibility toggle, rulers, optional crosshair.</li>
     <li><strong>Status bar</strong> — language, file length, line count, word count, cursor line/col, EOL type (CRLF/LF), encoding, INS/OVR.</li>
-    <li><strong>Side panels</strong> — File Explorer, Function List, Search Results, AI Assistant. Dockable/floatable.</li>
+    <li><strong>Side panels</strong> — File Explorer, Function List, Search Results, AI Assistant. Fixed panels in a splitter layout — resize by dragging the splitter handle, show/hide from the View menu; they don't detach into floating windows.</li>
   </ul>
 
   <!-- ══════════════ Editor ══════════════ -->
@@ -716,8 +721,31 @@ make -j$(nproc)
   </ul>
   <p><strong>Load-path optimisations (v0.1.88).</strong> Opening a 118 MB UTF-8 file used to take ~1.5 s and peak ~700 MB RAM; v0.1.88 brings it to ~600 ms and ~360 MB. Three fixes in <code>rust-core/src/file_io.rs</code>: a UTF-8 fast path validates with <code>std::str::from_utf8</code> (SIMD-accelerated) and skips the <code>UTF_8.decode()</code> allocation entirely when the mmap bytes are already valid UTF-8; EOL detection is bounded to the first 64 KB instead of two full-text scans; and the Rust&rarr;C FFI handoff now delivers a length-prefixed <code>Box&lt;[u8]&gt;</code> through a new <code>npc_free_file_text(ptr, len)</code> entry-point instead of the old NUL-terminated <code>CString</code> round-trip — saves ~118 MB of heap on a 118 MB file. UTF-16 / UTF-32 / Windows-1252 paths unchanged.</p>
 
+  <h2 id="encodings" class="anchor-target">Encodings</h2>
+  <p>Encoding detection runs in the Rust core (<code>rust-core/src/file_io.rs</code>) on the first 4 KB of the file, and it runs <em>before</em> the binary-file heuristic — so UTF-16 text (50% null bytes by design) is never mis-flagged as binary. Detected formats:</p>
+  <table>
+    <thead><tr><th>Format</th><th>How it's detected</th></tr></thead>
+    <tbody>
+      <tr><td>UTF-8 (no BOM)</td><td>Bytes validate as UTF-8. Also the label for empty files.</td></tr>
+      <tr><td>UTF-8 BOM</td><td><code>EF BB BF</code> signature; the BOM is stripped from the buffer and restored on save.</td></tr>
+      <tr><td>UTF-16 LE / BE with BOM</td><td><code>FF FE</code> / <code>FE FF</code> signature.</td></tr>
+      <tr><td>UTF-16 LE / BE without BOM</td><td>Even/odd null-column sniff: ASCII-dominant UTF-16 LE has a null at every odd byte position (BE is the mirror). Catches BOM-less UTF-16 as produced by PowerShell <code>Out-File</code>, SQL Server exports, and Java <code>-Dfile.encoding=UTF-16</code>.</td></tr>
+      <tr><td>UTF-32 LE / BE with BOM</td><td>4-byte BOM, checked before UTF-16 because UTF-32 LE's <code>FF FE 00 00</code> starts with the UTF-16 LE signature.</td></tr>
+      <tr><td>Latin-1 / legacy 8-bit</td><td>Fallback when bytes aren't valid UTF-8 — tries Windows-1252 (the Latin-1 superset), then Shift-JIS, EUC-JP, GB18030.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Encoding menu — reload vs convert</h3>
+  <ul>
+    <li><strong>Encoding → Reinterpret bytes as</strong> — re-reads the file's bytes from disk and decodes them with the codec you pick. Use this when a file opened garbled under the wrong codec. If the tab has unsaved edits you're prompted first, because reloading discards them.</li>
+    <li><strong>Encoding → Convert to</strong> — keeps the text exactly as shown and changes the encoding the file will be <em>saved</em> in. Marks the buffer modified so you're prompted to save.</li>
+  </ul>
+
+  <h3>BOM round-trip on save</h3>
+  <p>The detected encoding label ("UTF-16 LE BOM", "UTF-32 BE BOM", …) travels with the tab, and on save the matching BOM bytes are written back in front of the encoded content. Opening a UTF-16 LE BOM file and pressing <span class="kbd">Ctrl+S</span> writes it back as UTF-16 LE with its BOM intact — the BOM is never silently dropped.</p>
+
   <h2 id="languages-lexers" class="anchor-target">Languages &amp; lexers</h2>
-  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.116 (covering 238 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
+  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.117 (covering 238 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
   <p><strong>Core (Qt-bundled):</strong> Python, JavaScript/TypeScript/JSX, CoffeeScript, C/C++, C#, D, Java/Kotlin, HTML/PHP, CSS/SCSS/LESS, XML, JSON, SQL (ANSI / T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite), Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Matlab, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile.</p>
   <p><strong>v0.1.55 additions (32 dedicated lexers, keyword tables verified against official specs):</strong> Dart · Solidity · Zig · Vala · Hack · Julia · R · Protobuf · F# · HCL/Terraform · Thrift · GraphQL · GDScript · Nim · Cython · Mojo · Crystal · Elixir · Scala · Groovy · Apex · Jinja · Liquid · Twig · Dockerfile · Fish · Nushell · TOML · DotEnv · Gitignore · JSON5 · BibTeX. Each ships with comment / uncomment / block-comment syntax (Ctrl+/ for line, Ctrl+Shift+Q for block) and proper file-extension routing — <code>.dart</code>, <code>.zig</code>, <code>.jl</code>, <code>.toml</code>, <code>.ex</code>, <code>Cargo.toml</code>, <code>Dockerfile</code>, <code>.gitignore</code>, <code>.env</code>, <code>.fish</code>, <code>.json5</code>, <code>.tf</code>, etc. now point at their dedicated lexers instead of falling back to the closest-fit generic.</p>
 
@@ -737,8 +765,9 @@ make -j$(nproc)
   <ul>
     <li><strong>Normal / Extended / Regex</strong> modes — extended supports <code>\n</code>, <code>\t</code>, <code>\xNN</code> escapes; in-document Find/Replace uses Scintilla's built-in regex; recursive Find in Files counts matches via a Rust regex engine.</li>
     <li><strong>Match case, Whole word, Wrap around, In selection</strong> checkboxes.</li>
+    <li><strong>Two-step wrap on Find Next</strong> — when the search reaches the end of the document, the first press stops with "Reached end of document — press Find Next again to wrap to top" and leaves the cursor where it is; the second press wraps. No silent jump back to the top. (With <em>Wrap around</em> unticked it simply reports the text wasn't found further.)</li>
     <li><strong>Find in Files</strong> walks a directory recursively (respects glob patterns), results land in the Search Results panel — double-click to jump to line.</li>
-    <li><strong>Mark</strong> highlights every occurrence of a pattern without moving the caret. On files larger than 50 MB the indicator fill is <strong>capped at 10,000 highlights</strong> (v0.1.88) so the redraw doesn't stall the UI — the result label reports e.g. "Marked first 10000 of 124312 occurrence(s) — capped for performance on large files".</li>
+    <li><strong>Mark</strong> (also opens directly via <code>Search → Mark...</code>) highlights every occurrence of a pattern without moving the caret. On files larger than 50 MB the indicator fill is <strong>capped at 10,000 highlights</strong> (v0.1.88) so the redraw doesn't stall the UI — the result label reports e.g. "Marked first 10000 of 124312 occurrence(s) — capped for performance on large files".</li>
     <li><strong>Find / Replace All across all open tabs</strong> — one click.</li>
   </ul>
 
@@ -828,7 +857,7 @@ make -j$(nproc)
   <p>Dialect-specific keyword sets are fed to Scintilla via <code>SCI_SETKEYWORDS</code> (since <code>QsciLexerSQL::setKeywords</code> is protected). T-SQL adds DECLARE/MERGE/OUTPUT/PIVOT/OVER/PARTITION, PL/SQL adds PLS_INTEGER/SYSDATE/NVL/DECODE/CONNECT BY, etc.</p>
 
   <h2 id="compare" class="anchor-target">Compare</h2>
-  <p>A side-by-side diff view; open via <code>Tools → Compare (inbuilt)</code>. Backed by Rust's Myers diff (<code>similar</code> crate) and a custom <code>CompareWidget</code> rendered with Qt.</p>
+  <p>A side-by-side diff view; open via <code>Tools → Compare with File...</code> (current tab vs a file on disk) or <code>Tools → Compare Two Open Tabs...</code>. Backed by Rust's Myers diff (<code>similar</code> crate) and a custom <code>CompareWidget</code> rendered with Qt.</p>
 
   <blockquote>
     Visual UX inspired by <a href="https://github.com/pnedev/comparePlus">ComparePlus</a> by Pavel Nedev. Notepatra's implementation is a fresh Qt + Rust port in a different codebase, but the visual conventions are credit to Pavel.
@@ -839,7 +868,7 @@ make -j$(nproc)
     <li>Pick a left and right file (open tab, unsaved tab, or file on disk).</li>
     <li>Rust's Myers diff (<code>similar</code> crate) produces a list of Equal / Insert / Delete entries.</li>
     <li>Consecutive Delete + Add blocks are <strong>paired</strong> into "modified" rows at the same visual line.</li>
-    <li>Within paired modified rows, a common-prefix + common-suffix detector finds the exact differing bytes and highlights only those characters — not the whole line.</li>
+    <li>Within paired modified rows, a <strong>word-level LCS token diff</strong> finds exactly which words/tokens changed and highlights only those — an edit in the middle of a line ("foo bar baz" → "foo BUX baz") marks just the changed word, not the whole tail of the line.</li>
   </ol>
 
   <h3>Visual markers</h3>
@@ -863,6 +892,8 @@ make -j$(nproc)
     <li><strong>Recompare</strong> — re-run the diff algorithm</li>
     <li><strong>Ignore spaces</strong> — <em>defaults to ON</em> as of v0.1.36. Whitespace-only differences (re-indentation, alignment, trailing spaces) are collapsed so they don't show up as diffs. Untick for byte-exact mode (useful for YAML / Python where indentation IS the meaning).</li>
     <li><strong>Ignore case</strong>, <strong>Ignore empty lines</strong> — toggle and recompute</li>
+    <li><strong>Diff only</strong> — <em>defaults to ON</em>: shows only Added / Deleted / Changed rows. Untick to see the full files with matching lines included; original line numbers are preserved in the gutter either way.</li>
+    <li><strong>Unlock Editing</strong> — the compare panes are locked read-only by default; click to edit them directly (the button flips to <strong>Lock Editing</strong>).</li>
   </ul>
 
   <h3>Scroll sync</h3>
@@ -879,7 +910,8 @@ make -j$(nproc)
   <p>Shells out to <code>git</code> via <code>QProcess</code>. Non-invasive — no libgit2 dependency.</p>
 
   <h2 id="terminal" class="anchor-target">Terminal</h2>
-  <p>Built-in terminal panel (Linux/macOS/Windows). Uses <code>QProcess</code> to spawn the platform shell (<code>bash</code>/<code>zsh</code> on Linux/macOS, <code>pwsh</code>→<code>cmd.exe</code> on Windows) and feeds stdout/stderr to a monospace widget, rendering ANSI colour escapes. Not a full pty (no curses) — fine for simple commands and scripts, not for <code>vim</code>/<code>htop</code>.</p>
+  <p>Built-in terminal panel (Linux/macOS/Windows). Uses <code>QProcess</code> to spawn the platform shell (<code>bash</code>/<code>zsh</code> on Linux/macOS, <code>pwsh</code>→<code>cmd.exe</code> on Windows) and feeds stdout/stderr to a monospace widget, rendering ANSI colour escapes. A <strong>Stop</strong> button ends the running command — polite terminate first, escalating to a hard kill if the process ignores it.</p>
+  <p><strong>Interactive CLIs.</strong> Line-based interactive programs (<code>python</code> / <code>node</code> / <code>irb</code>, <code>psql</code> / <code>mysql</code> / <code>sqlite3</code>, <code>ssh</code>, <code>gdb</code>, <code>claude</code>, …) run inline on Linux/macOS: they get a real PTY via <code>script(1)</code> (util-linux), the input box switches to stdin mode so Enter sends each line straight to the running program, and Stop ends the session. Full-screen curses apps (<code>vim</code>, <code>htop</code>, <code>less</code>, …) are handed off to your system terminal instead; on Windows, interactive CLIs open in a system console window.</p>
 
   <h2 id="rest-client" class="anchor-target">REST client</h2>
   <p>A Postman-lite panel: URL field, method dropdown (GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS), headers editor, monospace request body editor, response viewer with pretty-printed JSON output + status code + timing.</p>
@@ -908,7 +940,7 @@ make -j$(nproc)
   <p>AI surfaces in Notepatra:</p>
   <ul>
     <li><strong>AI Fix buttons</strong> in the JSON Tools / HTML Tools / Bracket Tools inbuilt tools — sends broken content, gets fixed content back</li>
-    <li><strong>AI Assistant panel</strong> — general-purpose chat with your code, supports multi-turn, attach files, voice input. Modes: Chat / Coding / Data Analyst.</li>
+    <li><strong>AI Assistant panel</strong> — general-purpose chat with your code, supports multi-turn, attach files, voice input (Linux, requires <code>arecord</code> + local <code>whisper</code> CLI). Modes: Chat / Coding / Data Analyst.</li>
     <li><strong>Status bar</strong> in every AI panel showing connectivity dot, the searchable model dropdown, and a refresh button</li>
   </ul>
   <p><strong>Privacy: "Auto-attach open file" toggle (v0.1.55).</strong> The <strong>Auto-attach open file</strong> checkbox (it reads "Auto-attaching open file" while on, styled red-when-off / green-when-on like a lock indicator) controls whether the file currently in the editor is included in the AI's context. <strong>Default OFF</strong>. Available <strong>only in Coding Mode</strong> — Chat and Data Analyst modes never see file content. The system prompt teaches the model to politely instruct you to enable the toggle if asked "can you see this file?".</p>
@@ -1347,11 +1379,7 @@ Content-Type: application/json
   <p>Files with <code>UU</code> (both-modified) status in the Git panel now show a <strong>Resolve</strong> button instead of the +/− shortcuts. Clicking it opens the merge helper widget which scans column-0 <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code> / <code>=======</code> / <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code> markers and surfaces <strong>Take ours</strong> / <strong>Take theirs</strong> / <strong>Take both</strong> / <strong>Jump →</strong> buttons per conflict region, plus QScintilla annotation labels above each conflict. Full 3-way LOCAL/BASE/REMOTE merge editor is v0.2 scope; the marker-based path covers ~90% of conflicts.</p>
 
   <h3>Vision drag-and-drop (v0.1.61+)</h3>
-  <p>Drop an image (PNG / JPG / WEBP / GIF / BMP) or document (PDF / DOCX / PPTX) onto the AI dock. If the active model is <strong>not</strong> vision-capable, you get a styled error bubble listing alternatives — local <code>qwen2.5vl:7b</code> / <code>gemma3:4b</code>, cloud <code>claude-sonnet-4-6</code> / <code>gpt-5</code> / <code>gemini-2.5-flash</code>. Detection:</p>
-  <ul>
-    <li><strong>Ollama</strong> via the <code>/api/show</code> capability cache (returns <code>capabilities</code> array; conservative-false on empty cache so a slow Ollama doesn't silently drop your attachment).</li>
-    <li><strong>Cloud</strong> via May-2026 prefix allowlist for Claude 3.5+, GPT-4o/4.1/5, Gemini 1.5+, Sonnet 4.x, etc.</li>
-  </ul>
+  <p>Drop an image (PNG / JPG / WEBP / GIF / BMP) or document (PDF / DOCX / PPTX) onto the AI dock and it's staged as an attachment chip, exactly like the 📎 button. Any file kind is accepted for any model — the attachment is sent as-is, and if the selected model can't read images the backend's error is surfaced in the chat transcript instead of the attachment being refused up front or silently dropped.</p>
 
   <h3>Smart input gating + context guards (v0.1.61+)</h3>
   <p>The chat input + Send button now <strong>disable</strong> whenever the model dropdown is in a placeholder state — <code>(detecting…)</code>, <code>(Ollama offline)</code>, <code>(no models installed)</code>, <code>(API key required)</code>. State-specific placeholders explain <em>why</em> with concrete next steps (<code>ollama serve</code>, <code>ollama pull qwen2.5-coder:7b</code>, click ⚙). Additional guards:</p>
@@ -1613,7 +1641,7 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
   <table>
     <thead><tr><th>File kind</th><th>Handled how</th></tr></thead>
     <tbody>
-      <tr><td>🖼 Images (png/jpg/webp/gif/bmp)</td><td>Loaded as <code>QImage</code>, downscaled to max 1280px, re-encoded as PNG, base64-encoded, passed in the <code>images</code> field of <code>/api/generate</code>. Recognised local <strong>vision models</strong> (prefix allowlist: <code>llava</code>, <code>llama3.2-vision</code>, <code>qwen2.5vl</code> / <code>qwen2.5-vl</code>, <code>gemma3</code>, <code>minicpm-v</code>, <code>moondream</code>, <code>mistral-small3.1</code>) actually see the image; cloud Claude 3.5+ / GPT-4o-4.1-5 / Gemini are also vision-capable. If the selected model is <strong>not</strong> vision-capable, the image attachment is <strong>refused up front</strong> with an error bubble that names the model and suggests alternatives — it is not silently dropped.</td></tr>
+      <tr><td>🖼 Images (png/jpg/webp/gif/bmp)</td><td>Loaded as <code>QImage</code>, downscaled to max 1280px, re-encoded as PNG, base64-encoded, passed in the <code>images</code> field of <code>/api/generate</code>. Vision-capable models (local <code>llava</code>, <code>llama3.2-vision</code>, <code>qwen2.5-vl</code>, <code>gemma3</code>, <code>minicpm-v</code>, <code>moondream</code>, …; cloud Claude 3.5+ / GPT-4o-4.1-5 / Gemini) actually see the image. The image is attached and sent regardless of which model is selected — if the model can't read images, the backend's error is surfaced in the chat transcript rather than the attachment being silently dropped.</td></tr>
       <tr><td>📕 PDF</td><td><code>pdftotext -layout</code> via QProcess (requires <code>poppler-utils</code>), extracted text appended to the prompt as context, capped at 100 KB.</td></tr>
       <tr><td>📘 DOCX / ODT</td><td><code>unzip -p file.docx word/document.xml</code>, XML tags stripped, appended to prompt.</td></tr>
       <tr><td>📙 PPTX</td><td><code>unzip -p file.pptx ppt/slides/slide1.xml</code>, XML stripped, appended (first slide only for now).</td></tr>
@@ -1647,6 +1675,9 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
 
   <h3>Reminders</h3>
   <p>Set a reminder on any note — or straight from an Extract run — and it appears in a central <strong>Reminders</strong> list in the Noter sidebar, grouped into <strong>Overdue</strong>, <strong>Today</strong>, <strong>This week</strong>, and <strong>Later</strong>. Click a reminder to open the note it's bound to; right-click to <strong>reschedule</strong> or <strong>delete</strong> it. A <strong>desktop notification</strong> fires at the due time while Notepatra is running (any tab — Noter doesn't need to be open); reminders missed while it was closed arrive as one summary at next launch.</p>
+
+  <h3>Pop-out window &amp; export</h3>
+  <p>Press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd> to pop the current note out into its own window — handy for keeping a note visible while you work in the editor; the pop-out follows renames and title edits live. Right-click a note in the list to <strong>Export as PDF…</strong> or <strong>Export as Markdown…</strong>.</p>
 
   <!-- ══════════════ Diagram ══════════════ -->
 
@@ -1760,7 +1791,7 @@ Examples:
   notepatra --theme Dark          Start in dark mode
   notepatra *.json                Open multiple files</code></pre>
 
-  <p><strong>Single instance.</strong> As of v0.1.116, launching <code>notepatra file.txt</code> while Notepatra is already running hands the file to the existing window (raised and focused) and exits — after the running instance proves it's alive, so an open can never be silently swallowed. If the running instance is hung or busy for more than ~3&nbsp;seconds, you get a visible <em>temporary window</em> with just your files instead: it never touches your saved session, and it prompts Save&nbsp;/&nbsp;Discard&nbsp;/&nbsp;Cancel per modified tab when closed. <code>--new</code> opens the same kind of session-independent window on purpose. <code>--line N</code> always targets the <em>first</em> file listed. Files that don't exist produce a notice in the running window rather than disappearing silently.</p>
+  <p><strong>Single instance.</strong> As of v0.1.117, launching <code>notepatra file.txt</code> while Notepatra is already running hands the file to the existing window (raised and focused) and exits — after the running instance proves it's alive, so an open can never be silently swallowed. If the running instance is hung or busy for more than ~3&nbsp;seconds, you get a visible <em>temporary window</em> with just your files instead: it never touches your saved session, and it prompts Save&nbsp;/&nbsp;Discard&nbsp;/&nbsp;Cancel per modified tab when closed. <code>--new</code> opens the same kind of session-independent window on purpose. <code>--line N</code> always targets the <em>first</em> file listed. Files that don't exist produce a notice in the running window rather than disappearing silently.</p>
 
   <h2 id="file-layout" class="anchor-target">Config file layout</h2>
   <p>All persistent state lives under:</p>

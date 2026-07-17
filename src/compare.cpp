@@ -1392,16 +1392,13 @@ void CompareWidget::onThemeChanged() {
     update();
 }
 
-// v0.1.62 — per-hunk Stage / Revert strip
+// v0.1.62 — per-hunk navigation strip
 // ─────────────────────────────────────────────────────────────────────
 // A "hunk" here is one or more contiguous non-RowEqual rows in the
-// rendered diff. We walk m_rowKinds, group them, and emit one row of
-// buttons per group. Clicking Stage / Revert emits stageHunkRequested /
-// revertHunkRequested(filePath, hunkIndex); MainWindow routes those to
-// GitHunkApply once it's available (a sibling agent is wiring it). For
-// the v0.1.62 cut, if the API isn't there yet, the click pops a TODO
-// info dialog so the user knows the wiring is pending — same UX as a
-// disabled-but-discoverable button.
+// rendered diff. We walk m_rowKinds, group them, and emit one row per
+// group with a Jump button. Stage / Revert buttons were removed until
+// GitHunkApply is wired through MainWindow (the stageHunkRequested /
+// revertHunkRequested signals stay declared for that future wiring).
 
 void CompareWidget::setGitContext(const QString &repoRoot, const QString &filePath) {
     m_gitRepoRoot = repoRoot;
@@ -1463,7 +1460,6 @@ void CompareWidget::rebuildHunkStrip() {
               pal.headerBorder.name(), pal.bgChangedLeft.name(),
               pal.marginFg.name());
 
-    const QString filePath = m_gitFilePath;
     for (int h = 0; h < hunks.size(); ++h) {
         const Hunk &hk = hunks[h];
 
@@ -1482,38 +1478,6 @@ void CompareWidget::rebuildHunkStrip() {
         label->setStyleSheet(QString("color: %1; font-weight: 600;")
                                  .arg(pal.headerFg.name()));
         layout->addWidget(label, 1);
-
-        auto *stageBtn = new QPushButton("Stage hunk");
-        stageBtn->setCursor(Qt::PointingHandCursor);
-        stageBtn->setStyleSheet(btnStyle);
-        stageBtn->setToolTip("Stage this hunk (HEAD ← right side)");
-        connect(stageBtn, &QPushButton::clicked, this, [this, filePath, h]() {
-            // Always emit so a connected host (MainWindow) can handle.
-            emit stageHunkRequested(filePath, h);
-            // Fallback informational notice for the v0.1.62-MVP cut —
-            // GitHunkApply lands separately. MainWindow will silence
-            // this once the wiring is in place by intercepting the
-            // signal and stopping propagation (Qt signals don't have
-            // a "consumed" notion, so we just pop the dialog whenever
-            // the parent agent isn't done yet; the parent agent will
-            // edit-out this block when GitHunkApply is integrated).
-            QMessageBox::information(this, "Per-hunk apply",
-                "Per-hunk apply wires in once the gutter agent lands.\n\n"
-                "File: " + filePath + "\nHunk: " + QString::number(h + 1));
-        });
-        layout->addWidget(stageBtn);
-
-        auto *revertBtn = new QPushButton("Revert hunk");
-        revertBtn->setCursor(Qt::PointingHandCursor);
-        revertBtn->setStyleSheet(btnStyle);
-        revertBtn->setToolTip("Discard this hunk in the working copy");
-        connect(revertBtn, &QPushButton::clicked, this, [this, filePath, h]() {
-            emit revertHunkRequested(filePath, h);
-            QMessageBox::information(this, "Per-hunk apply",
-                "Per-hunk apply wires in once the gutter agent lands.\n\n"
-                "File: " + filePath + "\nHunk: " + QString::number(h + 1));
-        });
-        layout->addWidget(revertBtn);
 
         auto *jumpBtn = new QPushButton("Jump →");
         jumpBtn->setCursor(Qt::PointingHandCursor);

@@ -29,3 +29,6 @@ jobs:
 
       - name: Run clippy
         run: cd rust-core && cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        run: cd rust-core && cargo test --release

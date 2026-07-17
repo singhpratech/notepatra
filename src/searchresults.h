@@ -37,7 +37,11 @@ public:
     // counts. If no session is active, opens one first (back-compat
     // for callers that still use the old setHeader-first pattern).
     void setHeader(const QString &searchTerm, int totalHits, int fileCount);
-    void addFileSection(const QString &filePath, int hitCount);
+    // filePath is the REAL path (empty for unsaved tabs) stored on each
+    // match row for double-click navigation; displayName, when given, is
+    // what the file row shows (e.g. "Untitled" or a native-separator path).
+    void addFileSection(const QString &filePath, int hitCount,
+                        const QString &displayName = QString());
     void addResultLine(int lineNumber, const QString &lineContent, const QString &matchText);
 
 signals:

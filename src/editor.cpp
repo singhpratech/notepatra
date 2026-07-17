@@ -127,6 +127,7 @@
 #include <QScrollBar>
 #include <QTextCodec>
 #include <QToolTip>
+#include <QVector>
 #include "gitgutter.h"
 #include "git_hunk_apply.h"
 #include "gutter_hunk_popup.h"
@@ -553,26 +554,29 @@ bool Editor::reloadWithEncoding(const QString &name, bool force) {
         if (bytes.startsWith(QByteArray::fromHex("FFFE0000")))
             bytes.remove(0, 4);
         const int n = bytes.size() / 4;
-        decoded.reserve(n);
+        QVector<uint> ucs4;
+        ucs4.reserve(n);
         const uchar *p = reinterpret_cast<const uchar*>(bytes.constData());
         for (int i = 0; i < n; ++i) {
             const uchar *q = p + i * 4;
-            const quint32 cp = quint32(q[0]) | (quint32(q[1]) << 8) |
-                               (quint32(q[2]) << 16) | (quint32(q[3]) << 24);
-            decoded.append(QChar(static_cast<int>(cp)));
+            ucs4.append(quint32(q[0]) | (quint32(q[1]) << 8) |
+                        (quint32(q[2]) << 16) | (quint32(q[3]) << 24));
         }
+        // fromUcs4 emits surrogate pairs for code points >0xFFFF (non-BMP safe).
+        decoded = QString::fromUcs4(ucs4.constData(), ucs4.size());
     } else if (name.compare("UTF-32 BE BOM", Qt::CaseInsensitive) == 0) {
         if (bytes.startsWith(QByteArray::fromHex("0000FEFF")))
             bytes.remove(0, 4);
         const int n = bytes.size() / 4;
-        decoded.reserve(n);
+        QVector<uint> ucs4;
+        ucs4.reserve(n);
         const uchar *p = reinterpret_cast<const uchar*>(bytes.constData());
         for (int i = 0; i < n; ++i) {
             const uchar *q = p + i * 4;
-            const quint32 cp = (quint32(q[0]) << 24) | (quint32(q[1]) << 16) |
-                               (quint32(q[2]) << 8) | quint32(q[3]);
-            decoded.append(QChar(static_cast<int>(cp)));
+            ucs4.append((quint32(q[0]) << 24) | (quint32(q[1]) << 16) |
+                        (quint32(q[2]) << 8) | quint32(q[3]));
         }
+        decoded = QString::fromUcs4(ucs4.constData(), ucs4.size());
     } else {
         QTextCodec *codec = QTextCodec::codecForName(name.toUtf8());
         if (!codec) {
@@ -962,8 +966,8 @@ bool Editor::saveFile(const QString &path) {
         if (codec) bytes += codec->fromUnicode(textOut);
     } else if (enc.compare("UTF-32 LE BOM", Qt::CaseInsensitive) == 0) {
         bytes = QByteArray::fromHex("FFFE0000");
-        for (const QChar c : textOut) {
-            const quint32 cp = c.unicode();
+        // toUcs4 folds surrogate pairs into real code points (non-BMP safe).
+        for (const uint cp : textOut.toUcs4()) {
             bytes.append(char(cp & 0xFF));
             bytes.append(char((cp >> 8) & 0xFF));
             bytes.append(char((cp >> 16) & 0xFF));
@@ -971,8 +975,7 @@ bool Editor::saveFile(const QString &path) {
         }
     } else if (enc.compare("UTF-32 BE BOM", Qt::CaseInsensitive) == 0) {
         bytes = QByteArray::fromHex("0000FEFF");
-        for (const QChar c : textOut) {
-            const quint32 cp = c.unicode();
+        for (const uint cp : textOut.toUcs4()) {
             bytes.append(char((cp >> 24) & 0xFF));
             bytes.append(char((cp >> 16) & 0xFF));
             bytes.append(char((cp >> 8) & 0xFF));
@@ -1395,6 +1398,7 @@ Editor::CommentSyntax Editor::commentSyntaxFor(const QString &lang) {
         {"Makefile",     {"#",     "",        ""      }},
         {"Properties",   {"#",     "",        ""      }},
         {"AVS",          {"#",     "",        ""      }},
+        {"PO",           {"#",     "",        ""      }},
         // C-family (// line + /* */ block)
         {"C",            {"//",    "/*",      "*/"    }},
         {"C++",          {"//",    "/*",      "*/"    }},

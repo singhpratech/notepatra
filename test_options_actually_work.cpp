@@ -21,10 +21,12 @@
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QDialogButtonBox>
+#include <QFile>
 #include <QFontComboBox>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSpinBox>
+#include <QTemporaryDir>
 #include <QTimer>
 #include <Qsci/qsciscintilla.h>
 
@@ -248,6 +250,59 @@ int main(int argc, char *argv[]) {
         ed.convertEncoding("UTF-8 BOM");
         CHECK("convertEncoding(UTF-8 BOM) updates Editor::encoding()",
               ed.encoding() == "UTF-8 BOM");
+    }
+
+    // ── 11b. v0.1.117 — UTF-32 byte-level round-trip with a non-BMP char ─
+    // Pre-fix, saveFile wrote each UTF-16 code unit (surrogates included)
+    // as its own 32-bit word, and reloadWithEncoding truncated code points
+    // above 0xFFFF through QChar(int). U+1F600 exercises both defects.
+    {
+        QTemporaryDir tmp;
+        CHECK("utf32: temp dir usable", tmp.isValid());
+
+        const uint cps[] = { 0x48, 0x1F600, 0x21 };            // "H", U+1F600, "!"
+        const QString sample = QString::fromUcs4(cps, 3);
+
+        // Expected bytes: BOM + one little-endian 32-bit word per code point.
+        QByteArray expectLe = QByteArray::fromHex("FFFE0000");
+        for (const uint cp : cps) {
+            expectLe.append(char(cp & 0xFF));
+            expectLe.append(char((cp >> 8) & 0xFF));
+            expectLe.append(char((cp >> 16) & 0xFF));
+            expectLe.append(char((cp >> 24) & 0xFF));
+        }
+        QByteArray expectBe = QByteArray::fromHex("0000FEFF");
+        for (const uint cp : cps) {
+            expectBe.append(char((cp >> 24) & 0xFF));
+            expectBe.append(char((cp >> 16) & 0xFF));
+            expectBe.append(char((cp >> 8) & 0xFF));
+            expectBe.append(char(cp & 0xFF));
+        }
+
+        const struct { const char *enc; const QByteArray *expect; } cases[] = {
+            {"UTF-32 LE BOM", &expectLe},
+            {"UTF-32 BE BOM", &expectBe},
+        };
+        for (const auto &tc : cases) {
+            const QString path = tmp.path() + "/utf32_" +
+                QString(tc.enc).left(9).replace(' ', '_') + ".txt";
+            Editor ed;
+            ed.setText(sample);
+            ed.setEncoding(tc.enc);
+            CHECK(qPrintable(QString("utf32 %1: saveFile succeeds").arg(tc.enc)),
+                  ed.saveFile(path));
+
+            QFile f(path);
+            QByteArray onDisk;
+            if (f.open(QIODevice::ReadOnly)) { onDisk = f.readAll(); f.close(); }
+            CHECK(qPrintable(QString("utf32 %1: on-disk bytes exact (BOM + 3 words)").arg(tc.enc)),
+                  onDisk == *tc.expect);
+
+            CHECK(qPrintable(QString("utf32 %1: reloadWithEncoding succeeds").arg(tc.enc)),
+                  ed.reloadWithEncoding(tc.enc));
+            CHECK(qPrintable(QString("utf32 %1: text round-trips U+1F600").arg(tc.enc)),
+                  ed.text() == sample);
+        }
     }
 
     // ── 12. EOL setEolModeByName ─────────────────────────────────────
