@@ -164,6 +164,14 @@ if [ -d rust-core ]; then
         echo "  ✗ cargo fmt: drift present (run \`cd rust-core && cargo fmt\`)"
         FAILED+=("cargo fmt")
     fi
+    # cargo test — the rust-core unit suites (matches the rust-quality CI gate)
+    if (cd rust-core && cargo test --release) >/dev/null 2>&1; then
+        echo "  ✓ cargo test clean (rust-core unit suites)"
+        PASSED=$((PASSED + 1))
+    else
+        echo "  ✗ cargo test: failures present (re-run inside rust-core/ to see them)"
+        FAILED+=("cargo test")
+    fi
     # cargo audit — flags CVEs in resolved transitive deps. We install on demand
     # so the script remains usable on machines without cargo-audit pre-installed.
     if ! command -v cargo-audit >/dev/null 2>&1; then

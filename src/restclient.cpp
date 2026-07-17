@@ -54,7 +54,7 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
     QFont mono = notepatraCodeFont();
 
     // ─── Header strip ──────────────────────────────────────────────
-    m_header = new QLabel("  🌐  REST Client");
+    m_header = new QLabel("  REST Client");
     m_header->setFixedHeight(26);
     root->addWidget(m_header);
 

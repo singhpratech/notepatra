@@ -18,9 +18,7 @@
 #include "notes_todos.h"
 #include "notes_reminder.h"
 #include <QSystemTrayIcon>
-#include "notes_panels.h"
 #include "notes_popout.h"
-#include "notes_context_menus.h"
 #include "notes_sweep_dialog.h"
 #include "notes_sweep_prompt.h"
 #include "notes_extract_apply.h"
@@ -112,17 +110,15 @@ QString menuQss(const NoterPalette &pal) {
 }
 
 QString sidebarStyle(const NoterPalette &pal) {
+    // (the QPushButton#noterTodosBtn rules died with the v0.1.98 Todos
+    // button — placeholders renumbered when they were removed.)
     return (QStringLiteral(
         "QWidget#noterSidebar { background: %1; }"
-        "QLineEdit#noterSearch { border: 1px solid %5; border-radius: 6px;"
-        "  padding: 5px 9px; font-size: 12px; background: %6; color: %7; }"
+        "QLineEdit#noterSearch { border: 1px solid %4; border-radius: 6px;"
+        "  padding: 5px 9px; font-size: 12px; background: %5; color: %6; }"
         "QPushButton#noterNewBtn { background: %2; color: white; border: none;"
         "  border-radius: 6px; padding: 7px 10px; font-size: 13px; font-weight: 500; }"
-        "QPushButton#noterNewBtn:hover { background: %8; }"
-        "QPushButton#noterTodosBtn { background: transparent; border: none;"
-        "  text-align: left; padding: 9px 14px; font-size: 13px; color: %7;"
-        "  border-top: 1px solid %3; }"
-        "QPushButton#noterTodosBtn:hover { background: %9; }"
+        "QPushButton#noterNewBtn:hover { background: %7; }"
         // The sidebar is a QTreeWidget#noterSidebarTree (the old
         // QListWidget#noterMeetingList shape is gone). An item-view paints
         // its viewport from its OWN palette Base role — the parent
@@ -132,17 +128,41 @@ QString sidebarStyle(const NoterPalette &pal) {
         // light. palette Base is also pinned in code (buildSidebar) as a
         // belt-and-braces fallback for styles that bypass this selector.
         "QTreeWidget#noterSidebarTree, QTreeView#noterSidebarTree { background: %1;"
-        "  border: none; font-size: 13px; outline: none; color: %7; }"
-        "QTreeWidget#noterSidebarTree::item { padding: 5px 6px; color: %7; }"
-        "QTreeWidget#noterSidebarTree::item:hover { background: %9; }"
-        "QTreeWidget#noterSidebarTree::item:selected { background: %4; color: %10; }")
+        "  border: none; font-size: 13px; outline: none; color: %6; }"
+        "QTreeWidget#noterSidebarTree::item { padding: 5px 6px; color: %6; }"
+        "QTreeWidget#noterSidebarTree::item:hover { background: %8; }"
+        "QTreeWidget#noterSidebarTree::item:selected { background: %3; color: %9; }")
         // v0.1.95+ — QMenu must be styled inside the panel's QSS so the
         // right-click context menus aren't dark-on-dark (per the memory
         // rule feedback_qmenu_cascade_through_widget_qss).
         + menuQss(pal)
-    ).arg(pal.sidebarBg, pal.accent, pal.sidebarBorder, pal.leafHighlight,
-          pal.inputBorder, pal.inputBg, pal.text, pal.accentHover,
-          pal.hoverBg).arg(pal.leafHighlightFg);
+    ).arg(pal.sidebarBg, pal.accent, pal.leafHighlight, pal.inputBorder,
+          pal.inputBg, pal.text, pal.accentHover, pal.hoverBg,
+          pal.leafHighlightFg);
+}
+
+// Slim left-edge strip shown while the sidebar is hidden (Ctrl+Alt+B) —
+// the only mouse affordance back. QStyle chevron icon, never an emoji.
+QString sidebarRestoreStyle(const NoterPalette &pal) {
+    return QStringLiteral(
+        "QToolButton#noterSidebarRestore { background: %1; border: none;"
+        "  border-right: 1px solid %2; }"
+        "QToolButton#noterSidebarRestore:hover { background: %3; }")
+        .arg(pal.sidebarBg, pal.sidebarBorder, pal.hoverBg);
+}
+
+// Modal-parity QMessageBox — applies the active NoterPalette (via
+// applyNoterDialogTheme) before exec so Noter confirms/notices follow
+// Light/Dark/Monokai like every other Noter surface.
+QMessageBox::StandardButton noterMessageBox(
+        QWidget *parent, const NoterPalette &pal, QMessageBox::Icon icon,
+        const QString &title, const QString &text,
+        QMessageBox::StandardButtons buttons = QMessageBox::Ok,
+        QMessageBox::StandardButton def = QMessageBox::NoButton) {
+    QMessageBox box(icon, title, text, buttons, parent);
+    if (def != QMessageBox::NoButton) box.setDefaultButton(def);
+    applyNoterDialogTheme(&box, pal);
+    return static_cast<QMessageBox::StandardButton>(box.exec());
 }
 
 QString editorPageStyle(const NoterPalette &pal) {
@@ -926,7 +946,27 @@ void NotesPanel::buildUi() {
     m_splitter->setStretchFactor(1, 1);
     m_splitter->setSizes({240, 860});
 
-    outer->addWidget(m_splitter, 1);
+    // Hidden-sidebar restore strip — Ctrl+Alt+B used to be the ONLY way
+    // back once the sidebar was hidden. A slim chevron strip on the left
+    // edge (inside the Noter tab) re-opens it with the mouse.
+    m_sidebarRestoreBtn = new QToolButton(this);
+    m_sidebarRestoreBtn->setObjectName(QStringLiteral("noterSidebarRestore"));
+    m_sidebarRestoreBtn->setIcon(style()->standardIcon(QStyle::SP_ArrowRight));
+    m_sidebarRestoreBtn->setToolTip(tr("Show sidebar (Ctrl+Alt+B)"));
+    m_sidebarRestoreBtn->setCursor(Qt::PointingHandCursor);
+    m_sidebarRestoreBtn->setFixedWidth(18);
+    m_sidebarRestoreBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+    m_sidebarRestoreBtn->setStyleSheet(sidebarRestoreStyle(m_pal));
+    m_sidebarRestoreBtn->hide();   // only visible while the sidebar is hidden
+    connect(m_sidebarRestoreBtn, &QToolButton::clicked, this,
+            [this]() { toggleSidebar(); });
+
+    auto *row = new QHBoxLayout;
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(0);
+    row->addWidget(m_sidebarRestoreBtn);
+    row->addWidget(m_splitter, 1);
+    outer->addLayout(row, 1);
 }
 
 QWidget *NotesPanel::buildSidebar() {
@@ -1226,7 +1266,8 @@ QWidget *NotesPanel::buildSidebar() {
                 if (auto *sb = mw->findChild<QStatusBar *>())
                     sb->showMessage(tr("Restored from Trash"), 3000);
         } else if (action == QLatin1String("delete")) {
-            if (QMessageBox::warning(this, tr("Delete permanently?"),
+            if (noterMessageBox(this, m_pal, QMessageBox::Warning,
+                    tr("Delete permanently?"),
                     tr("Permanently delete this item? It cannot be recovered."),
                     QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
                 != QMessageBox::Yes) return;
@@ -1291,6 +1332,9 @@ QWidget *NotesPanel::buildSidebar() {
                     QAction *aRemind = menu.addAction(
                         hasRem ? tr("Change reminder…") : tr("Set reminder…"));
                     menu.addSeparator();
+                    QAction *aExpPdf = menu.addAction(tr("Export as PDF…"));
+                    QAction *aExpMd  = menu.addAction(tr("Export as Markdown…"));
+                    menu.addSeparator();
                     QAction *aDelete = menu.addAction(tr("Move to Trash"));
                     QAction *picked = menu.exec(m_sidebarTree->mapToGlobal(pos));
                     if (!picked) return;
@@ -1308,6 +1352,8 @@ QWidget *NotesPanel::buildSidebar() {
                         }
                     }
                     else if (picked == aRemind) promptReminderForNote(payload, itemLabel);
+                    else if (picked == aExpPdf) exportNoteTo(payload, /*asPdf=*/true);
+                    else if (picked == aExpMd)  exportNoteTo(payload, /*asPdf=*/false);
                     else if (picked == aDelete) {
                         if (payload == m_currentPath) {
                             m_dirty = false; showEmptyPage(); m_currentPath.clear();
@@ -1326,9 +1372,13 @@ QWidget *NotesPanel::buildSidebar() {
                         restoreMeetingTreeFromTrash(payload, inboxFolder());
                         refreshSidebar();
                     } else if (picked == aPurge) {
-                        if (QMessageBox::warning(this, tr("Delete permanently?"),
+                        // A3 — confirm with the display title, never the raw
+                        // ".trashed-<ts>-…" filename (same resolver as the
+                        // trash leaves themselves).
+                        if (noterMessageBox(this, m_pal, QMessageBox::Warning,
+                            tr("Delete permanently?"),
                             tr("Permanently delete this meeting?\n\n%1")
-                                .arg(QFileInfo(payload).fileName()),
+                                .arg(m_storage->displayTitleForFile(payload)),
                             QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
                             == QMessageBox::Yes) {
                             permanentlyDeleteMeetingTree(payload);
@@ -1672,6 +1722,8 @@ void NotesPanel::applyNoterTheme(const QString &themeName) {
         m_splitter->setStyleSheet(QStringLiteral(
             "QSplitter::handle { background: %1; }").arg(m_pal.sidebarBorder));
     if (m_sidebar) m_sidebar->setStyleSheet(sidebarStyle(m_pal));
+    if (m_sidebarRestoreBtn)
+        m_sidebarRestoreBtn->setStyleSheet(sidebarRestoreStyle(m_pal));
     if (m_sidebarTree) {
         // Mirror buildSidebar's belt-and-braces palette pin (macOS
         // item-view-viewport bug) — both mechanisms must agree.
@@ -2435,6 +2487,9 @@ QDateTime NotesPanel::pickReminderDateTime(const QString &title,
         });
     outer->addWidget(bb);
 
+    // Modal parity — the date picker follows Light/Dark/Monokai.
+    applyNoterDialogTheme(&dlg, m_pal);
+
     if (dlg.exec() != QDialog::Accepted) return QDateTime();   // cancelled
     if (clearedLocal) { if (cleared) *cleared = true; return QDateTime(); }
     return edit->dateTime();
@@ -2462,7 +2517,8 @@ void NotesPanel::promptReminderForNote(const QString &notePath,
     }
     if (!when.isValid()) return;   // cancelled
     if (when <= QDateTime::currentDateTime()) {
-        QMessageBox::information(this, tr("Reminder in the past"),
+        noterMessageBox(this, m_pal, QMessageBox::Information,
+            tr("Reminder in the past"),
             tr("Pick a time in the future — that moment has already passed."));
         return;
     }
@@ -2495,7 +2551,8 @@ void NotesPanel::changeReminderTime(const QString &id) {
     }
     if (!when.isValid()) return;   // cancelled
     if (when <= QDateTime::currentDateTime()) {
-        QMessageBox::information(this, tr("Reminder in the past"),
+        noterMessageBox(this, m_pal, QMessageBox::Information,
+            tr("Reminder in the past"),
             tr("Pick a time in the future — that moment has already passed."));
         return;
     }
@@ -2695,6 +2752,7 @@ bool NotesPanel::confirmLeaveAfterFailedSave() {
                                             QMessageBox::ActionRole);
     Q_UNUSED(discardBtn);
     box.setDefaultButton(stayBtn);
+    applyNoterDialogTheme(&box, m_pal);
     box.exec();
     if (box.clickedButton() == stayBtn) return false;
     if (box.clickedButton() == copyBtn && !promptSaveCopyAs())
@@ -2780,6 +2838,7 @@ void NotesPanel::renderNoteAtPath(const QString &absolutePath) {
                     box.addButton(tr("Restore"), QMessageBox::AcceptRole);
                 box.addButton(tr("Discard"), QMessageBox::DestructiveRole);
                 box.setDefaultButton(restoreBtn);
+                applyNoterDialogTheme(&box, m_pal);
                 box.exec();
                 if (box.clickedButton() == restoreBtn) {
                     contentHtml = draftHtml;
@@ -3247,8 +3306,9 @@ bool NotesPanel::promptSaveCopyAs() {
                              NotesStorage::withTitleMeta(m_editor->toHtml(),
                                                          m_currentTitle),
                              &err)) {
-        QMessageBox::warning(this, tr("Save a copy failed"),
-                             tr("Could not write %1: %2").arg(picked, err));
+        noterMessageBox(this, m_pal, QMessageBox::Warning,
+                        tr("Save a copy failed"),
+                        tr("Could not write %1: %2").arg(picked, err));
         return false;
     }
     if (auto *sb = window() ? window()->findChild<QStatusBar *>() : nullptr)
@@ -3442,13 +3502,13 @@ void NotesPanel::endMeetingSweep() {
     // (m_extractBusy is set only AFTER the nested-event-loop probe).
     if (m_extractBusy || m_extractStarting) return;
     if (m_currentPath.isEmpty() || !m_editor) {
-        QMessageBox::information(this, tr("Extract"),
-                                 tr("Open or create a meeting note first."));
+        noterMessageBox(this, m_pal, QMessageBox::Information, tr("Extract"),
+                        tr("Open or create a meeting note first."));
         return;
     }
     if (m_editor->toPlainText().trimmed().isEmpty()) {
-        QMessageBox::information(this, tr("Extract"),
-                                 tr("Nothing to extract — the note is empty."));
+        noterMessageBox(this, m_pal, QMessageBox::Information, tr("Extract"),
+                        tr("Nothing to extract — the note is empty."));
         return;
     }
     // v0.1.112 — exclude the previous AI-Extract region from the prompt:
@@ -3514,7 +3574,7 @@ void NotesPanel::endMeetingSweep() {
             : tr("The AI backend at %1 isn't reachable. Check the backend "
                  "settings in the AI panel.").arg(client->baseUrl());
         client->deleteLater();
-        QMessageBox::warning(this, tr("Extract"), msg);
+        noterMessageBox(this, m_pal, QMessageBox::Warning, tr("Extract"), msg);
         return;   // clearStarting resets m_extractStarting
     }
 
@@ -3566,7 +3626,8 @@ void NotesPanel::endMeetingSweep() {
                 finishExtractCleanup();
                 // Defer the modal off the signal stack too (same crash class).
                 QTimer::singleShot(0, this, [this, err]() {
-                    QMessageBox::warning(this, tr("Extract failed"),
+                    noterMessageBox(this, m_pal, QMessageBox::Warning,
+                        tr("Extract failed"),
                         tr("Could not reach the AI backend: %1").arg(err));
                 });
             });
@@ -3605,7 +3666,8 @@ void NotesPanel::beginExtractBusy() {
             // Defer the modal off the timer slot (same crash class as the
             // finished/error handlers — never nest an event loop here).
             QTimer::singleShot(0, this, [this]() {
-                QMessageBox::warning(this, tr("Extract timed out"),
+                noterMessageBox(this, m_pal, QMessageBox::Warning,
+                    tr("Extract timed out"),
                     tr("The AI backend didn't answer within ~2 minutes. "
                        "The request was cancelled — try again, or pick a "
                        "smaller model."));
@@ -3664,7 +3726,7 @@ void NotesPanel::showExtractResult(const QString &response, const QString &model
     // saveTodosChecklist, which converts EVERY line into a todo row —
     // corrupting the todo store.
     if (m_currentIsChecklist) {
-        QMessageBox::information(this, tr("Extract"),
+        noterMessageBox(this, m_pal, QMessageBox::Information, tr("Extract"),
             tr("Extract works on meeting notes — open a meeting note to use it."));
         return;
     }
@@ -3673,7 +3735,7 @@ void NotesPanel::showExtractResult(const QString &response, const QString &model
     // call (apply to current, unchanged). A non-empty mismatch means the
     // live editor/document/path now belong to a different note.
     if (!launchPath.isEmpty() && launchPath != m_currentPath) {
-        QMessageBox::information(this, tr("Extract"),
+        noterMessageBox(this, m_pal, QMessageBox::Information, tr("Extract"),
             tr("You switched notes while the AI was working. Open the note "
                "you ran Extract on, then run Extract again to apply it."));
         return;
@@ -3689,11 +3751,12 @@ void NotesPanel::showExtractResult(const QString &response, const QString &model
                "The raw reply is under Details.").arg(result.errorMessage),
             QMessageBox::Ok, this);
         box.setDetailedText(result.rawResponse);
+        applyNoterDialogTheme(&box, m_pal);
         box.exec();
         return;
     }
     case NoterSweepPrompt::ExtractOutcome::Empty:
-        QMessageBox::information(this, tr("Extract"),
+        noterMessageBox(this, m_pal, QMessageBox::Information, tr("Extract"),
             tr("AI didn't find any actionable items in this note."));
         return;
     case NoterSweepPrompt::ExtractOutcome::Items:
@@ -3808,6 +3871,7 @@ void NotesPanel::applyExtractResultToNote(
             QPushButton *keepBtn =
                 box.addButton(tr("Keep both"), QMessageBox::AcceptRole);
             box.setDefaultButton(keepBtn);   // never destroy edits by default
+            applyNoterDialogTheme(&box, m_pal);
             box.exec();
             replaceInPlace = (box.clickedButton() == replaceBtn);
         }
@@ -3970,6 +4034,15 @@ bool NotesPanel::eventFilter(QObject *watched, QEvent *event) {
         sub->addSeparator();
         QAction *aCustom = sub->addAction(tr("Custom…"));
         QAction *aChk = menu->addAction(tr("Insert checkbox"));
+        // v0.1.117 — export the OPEN note (skip read-error notices; the
+        // checklist is still a real .html document, so it may export too).
+        QAction *aExpPdf = nullptr;
+        QAction *aExpMd  = nullptr;
+        if (!m_currentPath.isEmpty() && !m_readError) {
+            menu->addSeparator();
+            aExpPdf = menu->addAction(tr("Export as PDF…"));
+            aExpMd  = menu->addAction(tr("Export as Markdown…"));
+        }
         QAction *picked = menu->exec(ce->globalPos());
         if      (picked == aChk)    insertCheckboxAtCursor();
         else if (picked == aCustom) insertSubheader(QString());
@@ -3978,6 +4051,10 @@ bool NotesPanel::eventFilter(QObject *watched, QEvent *event) {
         else if (picked == aTodo)   insertSubheader(tr("To-dos"));
         else if (picked == aQuote)  insertSubheader(tr("Quotes"));
         else if (picked == aDec)    insertSubheader(tr("Decisions"));
+        else if (aExpPdf && picked == aExpPdf)
+            exportNoteTo(m_currentPath, /*asPdf=*/true);
+        else if (aExpMd && picked == aExpMd)
+            exportNoteTo(m_currentPath, /*asPdf=*/false);
         menu->deleteLater();
         return true;
     }
@@ -4220,7 +4297,33 @@ void NotesPanel::insertSubheader(const QString &titleIn, int level) {
 
 void NotesPanel::toggleSidebar() {
     if (!m_sidebar) return;
-    m_sidebar->setVisible(!m_sidebar->isVisible());
+    const bool showNow = !m_sidebar->isVisible();
+    m_sidebar->setVisible(showNow);
+    // The slim left-edge strip is the mouse way back while hidden.
+    if (m_sidebarRestoreBtn) m_sidebarRestoreBtn->setVisible(!showNow);
+}
+
+// v0.1.117 — export a note to PDF / Markdown. NoterExport shipped in
+// v0.1.116 with zero call sites; wired to the sidebar note context menu
+// and the editor right-click menu.
+void NotesPanel::exportNoteTo(const QString &notePath, bool asPdf) {
+    if (notePath.isEmpty()) return;
+    // Flush live edits first so the export matches what's on screen.
+    if (notePath == m_currentPath && m_dirty) saveCurrentNote();
+    const QString out = NoterExport::chooseExportPath(
+        this, notePath, asPdf ? QStringLiteral("pdf") : QStringLiteral("md"));
+    if (out.isEmpty()) return;   // cancelled
+    QString err;
+    const bool ok = asPdf ? NoterExport::exportPdf(notePath, out, &err)
+                          : NoterExport::exportMarkdown(notePath, out, &err);
+    if (!ok) {
+        noterMessageBox(this, m_pal, QMessageBox::Warning, tr("Export failed"),
+                        err.isEmpty() ? tr("Could not export the note.") : err);
+        return;
+    }
+    if (auto *sb = window() ? window()->findChild<QStatusBar *>() : nullptr)
+        sb->showMessage(tr("Exported to %1")
+                            .arg(QDir::toNativeSeparators(out)), 5000);
 }
 
 // v0.1.97 — the standalone NoterTodosPanel third pane is gone. Todos
@@ -4321,7 +4424,15 @@ void NotesPanel::showNextReminder() {
         m_reminderFlashTimer = new QTimer(this);
         connect(m_reminderFlashTimer, &QTimer::timeout, this, [this]() {
             if (!m_reminderBanner) return;
-            m_reminderFlashOn = !m_reminderFlashOn;
+            // Strobe just long enough to catch the eye (~5 cycles), then
+            // settle on the calm flash-A amber. The banner itself stays
+            // visible until the user dismisses/snoozes it.
+            if (++m_reminderFlashTicks >= 10) {
+                m_reminderFlashTimer->stop();
+                m_reminderFlashOn = true;   // settle on bannerFlashA
+            } else {
+                m_reminderFlashOn = !m_reminderFlashOn;
+            }
             // A5 — read m_pal fresh each tick so a live theme switch
             // re-colours the flash without restarting the timer.
             const QString bg = m_reminderFlashOn ? m_pal.bannerFlashA
@@ -4332,6 +4443,7 @@ void NotesPanel::showNextReminder() {
         });
     }
     m_reminderFlashOn = false;
+    m_reminderFlashTicks = 0;
     m_reminderFlashTimer->start(600);
 }
 

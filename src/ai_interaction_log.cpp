@@ -2,6 +2,7 @@
 
 #include "ai_interaction_log.h"
 #include "config.h"
+#include "credscrub.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -12,7 +13,6 @@
 #include <QSqlQuery>
 #include <QStandardPaths>
 #include <QUuid>
-#include <QRegularExpression>
 
 namespace AiInteractionLog {
 
@@ -37,36 +37,12 @@ QString dbPathInternal() {
     return dir + "/interactions.db";
 }
 
-// Strip obvious secrets before persisting. Conservative — false positives
-// just blank out content, which is fine; false negatives would let a
-// credential leak into the log file. Mirrors the pre-existing v0.1.55
-// chat scrubber patterns.
+// Strip obvious secrets before persisting. Delegates to the shared
+// CredScrub pattern set so the log scrubber can never drift behind the
+// chat/export scrubbers again.
 QString scrub(const QString &in) {
     if (in.isEmpty()) return in;
-    QString s = in;
-    static const QRegularExpression kBearer(
-        QStringLiteral("(?i)bearer\\s+[A-Za-z0-9._\\-]{12,}"));
-    static const QRegularExpression kOpenAi(
-        QStringLiteral("sk-[A-Za-z0-9_\\-]{20,}"));
-    static const QRegularExpression kAnthropic(
-        QStringLiteral("sk-ant-[A-Za-z0-9_\\-]{20,}"));
-    static const QRegularExpression kGhPat(
-        QStringLiteral("(ghp|ghs|gho|ghu|ghr)_[A-Za-z0-9]{30,}"));
-    static const QRegularExpression kAwsAk(
-        QStringLiteral("(?<![A-Z0-9])AKIA[0-9A-Z]{16}(?![A-Z0-9])"));
-    static const QRegularExpression kGoogleApi(
-        QStringLiteral("(?<![A-Za-z0-9])AIza[0-9A-Za-z\\-_]{30,}(?![A-Za-z0-9])"));
-    static const QRegularExpression kPrivKey(
-        QStringLiteral("-----BEGIN [A-Z ]*PRIVATE KEY-----[\\s\\S]*?"
-                       "-----END [A-Z ]*PRIVATE KEY-----"));
-    s.replace(kBearer,    QStringLiteral("[redacted-bearer]"));
-    s.replace(kOpenAi,    QStringLiteral("[redacted-openai-key]"));
-    s.replace(kAnthropic, QStringLiteral("[redacted-anthropic-key]"));
-    s.replace(kGhPat,     QStringLiteral("[redacted-gh-token]"));
-    s.replace(kAwsAk,     QStringLiteral("[redacted-aws-key]"));
-    s.replace(kGoogleApi, QStringLiteral("[redacted-google-key]"));
-    s.replace(kPrivKey,   QStringLiteral("[redacted-private-key-block]"));
-    return s;
+    return CredScrub::redact(in);
 }
 
 QString roleToStr(Role r) {

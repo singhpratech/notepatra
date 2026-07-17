@@ -142,7 +142,7 @@ QString buildSaveAsFilters(const QString &currentLanguage,
     static const struct { const char *name; const char *exts; } entries[] = {
         {"Plain Text",          "*.txt *.log *.out *.text"},
         {"Markdown",            "*.md *.markdown *.mkd *.rmd *.rst"},
-        {"Python",              "*.py *.pyw *.pyx *.pyi *.pxd"},
+        {"Python",              "*.py *.pyw *.pyi"},
         {"JavaScript",          "*.js *.mjs *.cjs *.jsx"},
         {"TypeScript",          "*.ts *.tsx *.mts *.cts"},
         {"C",                   "*.c *.h"},
@@ -241,7 +241,7 @@ QString buildSaveAsFilters(const QString &currentLanguage,
 }
 
 // v0.1.87 follow-up — extract first "*.ext" pattern from a filter entry.
-// "Python (*.py *.pyw *.pyx)"        → "py"
+// "Python (*.py *.pyw *.pyi)"        → "py"
 // "Dockerfile (Dockerfile *.docker)" → "" (first pattern is bare filename)
 // "All Files (*)"                    → ""
 // "CMake (CMakeLists.txt *.cmake)"   → ""  (first pattern is bare filename)
@@ -375,7 +375,7 @@ QString detectLanguageFromPath(const QString &path, const QString &text) {
         {"f03", "Fortran"}, {"for", "Fortran"}, {"fpp", "Fortran"},
         {"f77", "Fortran77"},
         {"mat", "Matlab"}, {"oct", "Octave"},
-        {"asm", "ASM"}, {"s", "ASM"}, {"S", "ASM"},
+        {"asm", "ASM"}, {"s", "ASM"},
         {"nasm", "NASM"}, {"masm", "MASM"},
         {"v", "Verilog"}, {"sv", "Verilog"}, {"svh", "Verilog"},
         {"vhd", "VHDL"}, {"vhdl", "VHDL"},
@@ -390,6 +390,7 @@ QString detectLanguageFromPath(const QString &path, const QString &text) {
         {"ini", "Properties"}, {"cfg", "Properties"}, {"conf", "Properties"},
         {"properties", "Properties"}, {"env", "Properties"},
         {"editorconfig", "Properties"}, {"gitconfig", "Properties"},
+        {"po", "PO"},   // gettext translation catalog
         {"pov", "POV"}, {"inc", "POV"},
         {"spice", "Spice"}, {"cir", "Spice"},
         {"md", "Markdown"}, {"markdown", "Markdown"}, {"mkd", "Markdown"},

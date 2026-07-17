@@ -59,7 +59,6 @@ class QSystemTrayIcon;
 class NotesStorage;          // src/notes_storage.h
 class NotesTodos;            // src/notes_todos.h
 class NotesReminderEngine;   // src/notes_reminder.h
-class NoterTodosPanel;       // src/notes_panels.h
 class NoterPopOut;           // src/notes_popout.h
 struct TodoRow;
 namespace NoterSweepPrompt { struct SweepResult; }   // src/notes_sweep_prompt.h
@@ -284,6 +283,9 @@ private:
     void runMarkdownShortcuts();        // post-textChanged hook
     void toggleSidebar();
     void quickSwitchMeeting();
+    // v0.1.117 — export a note file to PDF (asPdf) or Markdown via
+    // NoterExport; wired to the sidebar + editor context menus.
+    void exportNoteTo(const QString &notePath, bool asPdf);
 
     // v0.1.97 — in-window reminder banner. enqueueReminder pushes a
     // fired reminder onto the queue and shows the banner (flashing) if
@@ -361,6 +363,8 @@ private:
     QLineEdit      *m_search        { nullptr };
     QPushButton    *m_newBtn        { nullptr };
     QTreeWidget    *m_sidebarTree   { nullptr };
+    // Slim left-edge strip; visible only while the sidebar is hidden.
+    QToolButton    *m_sidebarRestoreBtn { nullptr };
 
     // Right side: stack of [empty | editor]
     QStackedWidget *m_rightStack    { nullptr };
@@ -388,14 +392,13 @@ private:
     QPushButton    *m_reminderOpenSrcBtn   { nullptr };
     QPointer<QTimer> m_reminderFlashTimer;
     bool             m_reminderFlashOn     { false };
+    // Flash tick counter — the strobe stops after ~5 cycles (10 ticks).
+    int              m_reminderFlashTicks  { 0 };
 
     // M2 — save-failure banner (red sibling of the reminder banner;
     // hidden until autosave fails twice in a row).
     QWidget        *m_saveFailBanner       { nullptr };
     QLabel         *m_saveFailLabel        { nullptr };
-
-    // Optional third pane — only constructed when first toggled.
-    NoterTodosPanel *m_todosPane    { nullptr };
 
     // Pop-out — at most one alive.
     NoterPopOut    *m_popOut        { nullptr };

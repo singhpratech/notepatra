@@ -30,6 +30,13 @@ static QString comboText(QComboBox *cb) {
     return cb->currentText();
 }
 
+// countMatches/replaceAll have no whole-word flag — wrap the pattern in
+// \b anchors, mirroring rust-core's literal whole-word findAll path.
+static QString wholeWordWrap(const QString &pattern, bool isRegex) {
+    return QStringLiteral("\\b(?:%1)\\b")
+        .arg(isRegex ? pattern : QRegularExpression::escape(pattern));
+}
+
 void FindReplaceDialog::setDialogStatus(const QString &msg, bool isError) {
     // The bottom dialog status bar is the SINGLE source of truth — visible
     // regardless of active tab. The Find-tab inline m_resultLabel is kept
@@ -160,7 +167,8 @@ void FindReplaceDialog::buildFindTab(QWidget *tab) {
     modeLay->addWidget(m_dotMatchesNewline);
     layout->addWidget(modeGroup, 2, 0, 1, 2);
 
-    connect(m_modeRegex, &QRadioButton::toggled, m_dotMatchesNewline, &QCheckBox::setEnabled);
+    // Hidden until wired into the search engine — no code reads it yet.
+    m_dotMatchesNewline->setVisible(false);
 
     // Direction
     auto *dirGroup = new QGroupBox("Direction");
@@ -171,9 +179,14 @@ void FindReplaceDialog::buildFindTab(QWidget *tab) {
     dirLay->addWidget(m_dirUp);
     dirLay->addWidget(m_dirDown);
     layout->addWidget(dirGroup, 2, 2, 1, 2);
+    // Hidden until directional search is implemented — Find Previous
+    // already covers upward search; nothing reads these radios yet.
+    dirGroup->setVisible(false);
 
     m_inSelection = new QCheckBox("In se&lection");
     layout->addWidget(m_inSelection, 3, 0, 1, 2);
+    // Hidden until selection-scoped search is implemented.
+    m_inSelection->setVisible(false);
 
     // v0.1.92 — m_resultLabel is now hidden. All status text routes
     // through the dialog-level bottom bar (m_dialogStatus). Kept as a
@@ -267,6 +280,8 @@ void FindReplaceDialog::buildReplaceTab(QWidget *tab) {
 
     m_rInSelection = new QCheckBox("In selection");
     layout->addWidget(m_rInSelection, 3, 2, 1, 2);
+    // Hidden until selection-scoped replace is implemented.
+    m_rInSelection->setVisible(false);
 
     // Buttons
     auto *btnLay = new QVBoxLayout;
@@ -292,6 +307,7 @@ void FindReplaceDialog::buildReplaceTab(QWidget *tab) {
     connect(findBtn, &QPushButton::clicked, this, [this]() {
         auto *e = getEditor(); if (!e) return;
         QString text = comboText(m_replFindInput); if (text.isEmpty()) return;
+        if (m_rModeExtended->isChecked()) text = processExtended(text);
         bool isRegex = m_rModeRegex->isChecked();
         e->findFirst(text, isRegex, m_rMatchCase->isChecked(), m_rWholeWord->isChecked(),
                      m_rWrapAround->isChecked(), true);
@@ -604,8 +620,13 @@ void FindReplaceDialog::doCount() {
 
     if (m_modeExtended->isChecked()) needle = processExtended(needle);
 
-    size_t count = RustCore::countMatches(e->text(), needle,
-                                           m_modeRegex->isChecked(),
+    bool isRegex = m_modeRegex->isChecked();
+    QString pattern = needle;
+    if (m_wholeWord->isChecked()) {
+        pattern = wholeWordWrap(pattern, isRegex);
+        isRegex = true;
+    }
+    size_t count = RustCore::countMatches(e->text(), pattern, isRegex,
                                            m_matchCase->isChecked());
     setDialogStatus(QString("Count: %1 match(es) for \"%2\"").arg(count).arg(needle));
 }
@@ -630,15 +651,19 @@ void FindReplaceDialog::doFindAllCurrent() {
     // reserved for an explicit user action (panel close + reopen).
     auto *sr = mw->searchResults();
 
-    QString fileName = e->filePath().isEmpty() ? "Untitled" : e->filePath();
+    // Real path may be empty (unsaved tab) — stored as-is so double-
+    // click activates the existing tab instead of opening "Untitled".
+    QString filePath = e->filePath();
+    QString fileName = filePath.isEmpty() ? "Untitled" : filePath;
     QStringList lines = e->text().split('\n');
 
-    // Map byte offsets to line numbers
+    // Map byte offsets to line numbers — findAll returns UTF-8 byte
+    // offsets, so accumulate byte lengths, not UTF-16 code units.
     QVector<QPair<int, QString>> results;
     for (auto pos : positions) {
         int charPos = 0, lineNum = 0;
         for (int i = 0; i < lines.size(); i++) {
-            int lineLen = lines[i].size() + 1;
+            int lineLen = lines[i].toUtf8().size() + 1;
             if (charPos + lineLen > (int)pos) { lineNum = i + 1; break; }
             charPos += lineLen;
         }
@@ -650,7 +675,7 @@ void FindReplaceDialog::doFindAllCurrent() {
     // the new top-level row (Notepad++-style stacked history). Final
     // setHeader updates that row's label with the totals.
     sr->beginSession(needle);
-    sr->addFileSection(fileName, results.size());
+    sr->addFileSection(filePath, results.size(), fileName);
     for (const auto &r : results)
         sr->addResultLine(r.first, r.second, needle);
     sr->setHeader(needle, results.size(), 1);
@@ -693,12 +718,13 @@ void FindReplaceDialog::doFindAllOpened() {
 
         fileCount++;
         QStringList lines = ed->text().split('\n');
-        sr->addFileSection(name, positions.size());
+        // Real path (empty for unsaved tabs) as data, tab text as label.
+        sr->addFileSection(ed->filePath(), positions.size(), name);
 
         for (auto pos : positions) {
             int charPos = 0, lineNum = 0;
             for (int i = 0; i < lines.size(); i++) {
-                int lineLen = lines[i].size() + 1;
+                int lineLen = lines[i].toUtf8().size() + 1;
                 if (charPos + lineLen > (int)pos) { lineNum = i + 1; break; }
                 charPos += lineLen;
             }
@@ -755,13 +781,26 @@ void FindReplaceDialog::doReplaceAll() {
     if (m_replFindInput->findText(findText) < 0) m_replFindInput->insertItem(0, findText);
     if (m_replInput->findText(replText) < 0) m_replInput->insertItem(0, replText);
 
+    bool isRegex = m_rModeRegex->isChecked();
+    QString pattern = findText;
+    if (m_rWholeWord->isChecked()) {
+        pattern = wholeWordWrap(pattern, isRegex);
+        // Literal promoted to regex — keep user dollars literal.
+        if (!isRegex) replText.replace(QLatin1String("$"), QLatin1String("$$"));
+        isRegex = true;
+    }
+
+    size_t count = RustCore::countMatches(e->text(), pattern, isRegex,
+                                           m_rMatchCase->isChecked());
+    // Zero matches: leave the document untouched (no dirty flag).
+    if (count == 0) {
+        setDialogStatus(QString("Replace All: 0 occurrences replaced"), true);
+        return;
+    }
+
     // Use Rust core for fast replace
-    QString result = RustCore::replaceAll(e->text(), findText, replText,
-                                           m_rModeRegex->isChecked(),
-                                           m_rMatchCase->isChecked());
-    size_t count = RustCore::countMatches(e->text(), findText,
-                                           m_rModeRegex->isChecked(),
-                                           m_rMatchCase->isChecked());
+    QString result = RustCore::replaceAll(e->text(), pattern, replText,
+                                           isRegex, m_rMatchCase->isChecked());
     e->selectAll();
     e->replaceSelectedText(result);
     setDialogStatus(QString("Replace All: %1 occurrence%2 replaced")
@@ -782,6 +821,15 @@ void FindReplaceDialog::doReplaceAllOpened() {
     auto *tabs = mw->findChild<QTabWidget *>();
     if (!tabs) return;
 
+    bool isRegex = m_rModeRegex->isChecked();
+    QString pattern = findText;
+    if (m_rWholeWord->isChecked()) {
+        pattern = wholeWordWrap(pattern, isRegex);
+        // Literal promoted to regex — keep user dollars literal.
+        if (!isRegex) replText.replace(QLatin1String("$"), QLatin1String("$$"));
+        isRegex = true;
+    }
+
     int totalReplaced = 0;
     int filesTouched = 0;
 
@@ -789,13 +837,13 @@ void FindReplaceDialog::doReplaceAllOpened() {
         auto *ed = qobject_cast<Editor *>(tabs->widget(t));
         if (!ed || ed->isReadOnly()) continue;
 
-        size_t count = RustCore::countMatches(ed->text(), findText,
-                                               m_rModeRegex->isChecked(),
+        size_t count = RustCore::countMatches(ed->text(), pattern,
+                                               isRegex,
                                                m_rMatchCase->isChecked());
         if (count == 0) continue;
 
-        QString result = RustCore::replaceAll(ed->text(), findText, replText,
-                                               m_rModeRegex->isChecked(),
+        QString result = RustCore::replaceAll(ed->text(), pattern, replText,
+                                               isRegex,
                                                m_rMatchCase->isChecked());
         ed->selectAll();
         ed->replaceSelectedText(result);
@@ -808,14 +856,22 @@ void FindReplaceDialog::doReplaceAllOpened() {
 }
 
 void FindReplaceDialog::doFindInFiles() {
+    auto *mw = mainWindow(); if (!mw) return;
     QString needle = comboText(m_fifFindInput);
     QString dir = comboText(m_fifDirectory);
     QString filterStr = comboText(m_fifFilters);
     if (needle.isEmpty() || dir.isEmpty()) return;
 
-    if (m_resultsOutput) m_resultsOutput->clear();
-    if (m_resultsOutput) m_resultsOutput->append(QString("Searching for \"%1\" in %2...").arg(needle, dir));
-    if (m_resultsOutput) m_resultsOutput->append("");
+    bool isRegex = m_fifRegex->isChecked();
+    QString pattern = needle;
+    if (m_fifWholeWord->isChecked()) {
+        pattern = wholeWordWrap(pattern, isRegex);
+        isRegex = true;
+    }
+    // Compiled once — the old per-line rebuild was O(lines) compiles.
+    const QRegularExpression lineRe(pattern,
+        m_fifMatchCase->isChecked() ? QRegularExpression::NoPatternOption
+                                    : QRegularExpression::CaseInsensitiveOption);
 
     QStringList filters;
     for (const auto &f : filterStr.split(' ', Qt::SkipEmptyParts))
@@ -827,6 +883,12 @@ void FindReplaceDialog::doFindInFiles() {
 
     QDirIterator::IteratorFlags iterFlags;
     if (m_fifSubfolders->isChecked()) iterFlags = QDirIterator::Subdirectories;
+
+    // Publish hits to the dockable SearchResultsPanel — same stacked-
+    // session path Find All uses. The old in-dialog output widget was
+    // removed in v0.1.48, so results were silently dropped until now.
+    auto *sr = mw->searchResults();
+    sr->beginSession(needle);
 
     QDirIterator it(dir, filters, dirFilters, iterFlags);
     int totalHits = 0, fileCount = 0;
@@ -842,42 +904,36 @@ void FindReplaceDialog::doFindInFiles() {
         QTextStream stream(&file);
         QString content = stream.readAll();
 
-        size_t count = RustCore::countMatches(content, needle,
-                                               m_fifRegex->isChecked(),
+        size_t count = RustCore::countMatches(content, pattern,
+                                               isRegex,
                                                m_fifMatchCase->isChecked());
         if (count == 0) continue;
 
         fileCount++;
         totalHits += count;
 
-        if (m_resultsOutput) m_resultsOutput->append(QString("  %1 (%2 hits)").arg(filePath).arg(count));
+        sr->addFileSection(filePath, (int)count,
+                           QDir::toNativeSeparators(filePath));
 
-        // Show first few matching lines
-        QStringList lines = content.split('\n');
-        int shown = 0;
-        for (int i = 0; i < lines.size() && shown < 5; i++) {
+        const QStringList lines = content.split('\n');
+        for (int i = 0; i < lines.size(); i++) {
             bool match;
-            if (m_fifRegex->isChecked()) {
-                QRegularExpression re(needle, m_fifMatchCase->isChecked() ? QRegularExpression::NoPatternOption
-                                                                         : QRegularExpression::CaseInsensitiveOption);
-                match = re.match(lines[i]).hasMatch();
+            if (isRegex) {
+                match = lineRe.match(lines[i]).hasMatch();
             } else if (m_fifMatchCase->isChecked()) {
                 match = lines[i].contains(needle);
             } else {
                 match = lines[i].contains(needle, Qt::CaseInsensitive);
             }
-            if (match) {
-                if (m_resultsOutput) m_resultsOutput->append(QString("    Line %1: %2").arg(i + 1).arg(lines[i].trimmed().left(120)));
-                shown++;
-            }
+            if (match) sr->addResultLine(i + 1, lines[i], needle);
         }
-        if (m_resultsOutput) m_resultsOutput->append("");
 
-        if (fileCount >= 1000) {
-            if (m_resultsOutput) m_resultsOutput->append("... (stopped after 1000 files)");
-            break;
-        }
+        if (fileCount >= 1000) break;
     }
+
+    sr->setHeader(needle, totalHits, fileCount);
+    sr->setVisible(true);
+    mw->vertSplitter()->setSizes({500, 200});
 
     if (totalHits == 0)
         setDialogStatus(QString("Find in Files: 0 hits for \"%1\"").arg(needle), true);

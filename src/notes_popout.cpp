@@ -11,7 +11,9 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QScrollBar>
+#include <QSizeGrip>
 #include <QStyle>
 #include <QTextEdit>
 #include <QTextStream>
@@ -27,6 +29,9 @@ NoterPopOut::NoterPopOut(const QString &noteAbsPath, QWidget *parent)
     // close (v0.1.111 audit, CRITICAL).
     setAttribute(Qt::WA_DeleteOnClose, true);
     setAttribute(Qt::WA_ShowWithoutActivating, true);
+    // Plain QWidget subclasses ignore QSS background/border without this —
+    // the NoterPopOut { background/border } rules never painted before.
+    setAttribute(Qt::WA_StyledBackground, true);
 
     // Frameless + always-on-top window. We keep Qt::Window so the
     // platform still creates a top-level surface for it.
@@ -78,10 +83,11 @@ void NoterPopOut::buildUi() {
     tl->setContentsMargins(8, 0, 4, 0);
     tl->setSpacing(6);
 
-    // Pin button — toggles always-on-top.
+    // Pin button — toggles always-on-top. Directional icon + tooltip track
+    // the state; the :checked QSS tint (applyNoterPalette) shows it too.
     m_pinBtn = new QPushButton(m_titleBar);
-    m_pinBtn->setIcon(style()->standardIcon(QStyle::SP_DialogApplyButton));
-    m_pinBtn->setToolTip(tr("Always on top"));
+    m_pinBtn->setIcon(style()->standardIcon(QStyle::SP_ArrowUp));
+    m_pinBtn->setToolTip(tr("Always on top: on"));
     m_pinBtn->setCheckable(true);
     m_pinBtn->setChecked(true);
     m_pinBtn->setFixedSize(22, 22);
@@ -95,6 +101,7 @@ void NoterPopOut::buildUi() {
     // are not user-facing).
     QString stem = QFileInfo(m_notePath).completeBaseName();
     if (stem.isEmpty()) stem = tr("Note");
+    m_fullTitle = stem;
     m_titleLabel = new QLabel(stem, m_titleBar);
     tl->addWidget(m_titleLabel, 1);
 
@@ -133,6 +140,12 @@ void NoterPopOut::buildUi() {
     m_body->setReadOnly(true);
     m_body->setFrameShape(QFrame::NoFrame);
     outer->addWidget(m_body, 1);
+
+    // Frameless windows lose the native resize border; a QSizeGrip in the
+    // bottom-right corner restores resizing (it works on frameless
+    // top-levels). Title-strip drag-to-move is unaffected.
+    auto *grip = new QSizeGrip(this);
+    outer->addWidget(grip, 0, Qt::AlignBottom | Qt::AlignRight);
 }
 
 void NoterPopOut::setNotePath(const QString &absPath) {
@@ -156,8 +169,12 @@ void NoterPopOut::applyNoterPalette(const NoterPalette &pal) {
             "border-bottom: 1px solid %2; }"
             "QPushButton { background: transparent; border: none; "
             "padding: 0 6px; }"
-            "QPushButton:hover { background: %3; border-radius: 3px; }")
-                .arg(pal.popoutTitleBg, pal.popoutBorder, pal.popoutHoverBg));
+            "QPushButton:hover { background: %3; border-radius: 3px; }"
+            // Only the pin is checkable — the accent tint makes its
+            // pinned/unpinned state visible (it was invisible before).
+            "QPushButton:checked { background: %4; border-radius: 3px; }")
+                .arg(pal.popoutTitleBg, pal.popoutBorder, pal.popoutHoverBg,
+                     pal.popoutChipBg));
     if (m_titleLabel)
         m_titleLabel->setStyleSheet(QStringLiteral(
             "QLabel { color: %1; font-weight: 600; font-size: 12px; }")
@@ -177,8 +194,26 @@ void NoterPopOut::applyNoterPalette(const NoterPalette &pal) {
 
 void NoterPopOut::setDisplayTitle(const QString &title) {
     if (title.isEmpty()) return;
-    if (m_titleLabel) m_titleLabel->setText(title);
+    m_fullTitle = title;
+    updateTitleElide();
     setWindowTitle(title);   // taskbar / alt-tab label too
+}
+
+// Elide the title to the label's width instead of letting the layout clip
+// it mid-glyph; the tooltip carries the full title when elided.
+void NoterPopOut::updateTitleElide() {
+    if (!m_titleLabel) return;
+    const int w = qMax(m_titleLabel->width(), 60);
+    const QString shown = m_titleLabel->fontMetrics().elidedText(
+        m_fullTitle, Qt::ElideRight, w);
+    m_titleLabel->setText(shown);
+    m_titleLabel->setToolTip(shown == m_fullTitle ? QString() : m_fullTitle);
+}
+
+void NoterPopOut::resizeEvent(QResizeEvent *ev) {
+    QWidget::resizeEvent(ev);
+    // One tick later so the titlebar layout has settled at the new width.
+    QTimer::singleShot(0, this, [this]() { updateTitleElide(); });
 }
 
 void NoterPopOut::reloadFromDisk() {
@@ -219,6 +254,10 @@ void NoterPopOut::tickTimer() {
 
 void NoterPopOut::onTogglePin() {
     m_pinned = m_pinBtn->isChecked();
+    m_pinBtn->setIcon(style()->standardIcon(
+        m_pinned ? QStyle::SP_ArrowUp : QStyle::SP_ArrowDown));
+    m_pinBtn->setToolTip(m_pinned ? tr("Always on top: on")
+                                  : tr("Always on top: off"));
     Qt::WindowFlags f = windowFlags();
     if (m_pinned) f |= Qt::WindowStaysOnTopHint;
     else          f &= ~Qt::WindowStaysOnTopHint;

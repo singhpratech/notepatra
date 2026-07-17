@@ -989,6 +989,21 @@ static ChartSpecToVega::Theme currentChartTheme() {
                                              : QStringLiteral("Light")};
 }
 
+// Expand button → ChartModalDialog with the captured spec. Shared by
+// the Vega and QtCharts wraps; spec is captured by value so the modal
+// re-renders even after the original transcript is cleared.
+static void connectExpandToModal(QPushButton *expandBtn, QWidget *wrap,
+                                 const QJsonObject &capturedSpec) {
+    QObject::connect(expandBtn, &QPushButton::clicked, wrap,
+        [wrap, capturedSpec]() {
+            auto *dlg = new ChartModalDialog(capturedSpec, wrap);
+            dlg->setAttribute(Qt::WA_DeleteOnClose);
+            dlg->show();
+            dlg->raise();
+            dlg->activateWindow();
+        });
+}
+
 #ifdef NOTEPATRA_WITH_WEBENGINE
 // v0.1.90 — Vega-Lite path. Wraps a VegaChartRenderer in the same kind
 // of frame the QtCharts path uses (transparent background + optional
@@ -1017,15 +1032,7 @@ static QWidget *buildVegaWrap(const QJsonObject &vegaSpec,
         toolbar->addWidget(expandBtn);
         wrapLay->addLayout(toolbar);
 
-        QJsonObject capturedSpec = originalSpec;
-        QObject::connect(expandBtn, &QPushButton::clicked, wrap,
-            [wrap, capturedSpec]() {
-                auto *dlg = new ChartModalDialog(capturedSpec, wrap);
-                dlg->setAttribute(Qt::WA_DeleteOnClose);
-                dlg->show();
-                dlg->raise();
-                dlg->activateWindow();
-            });
+        connectExpandToModal(expandBtn, wrap, originalSpec);
     }
 
     auto *renderer = new VegaChartRenderer(wrap);
@@ -1061,13 +1068,21 @@ QWidget *renderFromObject(const QJsonObject &spec,
 #endif
 
     QChart *chart = nullptr;
+    // Mirror the Vega translator's auto-route: `bar` / `horizontal-bar`
+    // with an ARRAY `y` renders as grouped multi-bar (Lite/Full parity).
+    const bool yIsArray = spec.value("y").isArray();
     if (type == "line")                          chart = renderLineOrScatter(spec, false, outError);
     else if (type == "scatter")                  chart = renderLineOrScatter(spec, true,  outError);
+    else if (type == "bar" && yIsArray)          chart = renderMultiBar(spec, false, outError);
     else if (type == "bar")                      chart = renderBar(spec, outError);
     else if (type == "pie")                      chart = renderPie(spec, outError);
     // v0.1.76 — new chart types. All routed through QtCharts so they
     // work in both lite and full builds (no WebEngine required).
     else if (type == "area")                     chart = renderArea(spec, outError);
+    else if (type == "horizontal-bar" && yIsArray) {
+        QJsonObject patched = spec; patched.insert("horizontal", true);
+        chart = renderMultiBar(patched, false, outError);
+    }
     else if (type == "horizontal-bar")           chart = renderHorizontalBar(spec, outError);
     else if (type == "stacked-bar")              chart = renderMultiBar(spec, true,  outError);
     else if (type == "stacked-horizontal-bar")   { /* horizontal-stacked: explicit horizontal flag */
@@ -1163,19 +1178,7 @@ QWidget *renderFromObject(const QJsonObject &spec,
     // attached (which all the renderXxx helpers do before returning).
     wireSeriesTooltips(chart, view, callout);
 
-    // Capture the spec by value so the modal can re-render even after
-    // the original aipanel transcript is cleared / scrolled away.
-    if (expandBtn) {
-        QJsonObject capturedSpec = spec;
-        QObject::connect(expandBtn, &QPushButton::clicked, wrap,
-            [wrap, capturedSpec]() {
-                auto *dlg = new ChartModalDialog(capturedSpec, wrap);
-                dlg->setAttribute(Qt::WA_DeleteOnClose);
-                dlg->show();
-                dlg->raise();
-                dlg->activateWindow();
-            });
-    }
+    if (expandBtn) connectExpandToModal(expandBtn, wrap, spec);
 
     return wrap;
 }

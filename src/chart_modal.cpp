@@ -2,6 +2,7 @@
 
 #include "chart_modal.h"
 #include "chartrender.h"
+#include "theme_detect.h"
 
 #ifdef NOTEPATRA_WITH_WEBENGINE
 #include "charts/vega_chart_renderer.h"
@@ -56,10 +57,16 @@ ChartModalDialog::ChartModalDialog(const QJsonObject &spec, QWidget *parent)
     // Button row — v0.1.90.
     //   [status label  ........................] [Copy image] [Export ▾] [Close]
     auto *btnRow = new QHBoxLayout();
+    // Theme-aware chrome — the modal used to hardcode dark QSS, leaving
+    // the status label + Export menu unreadable on Light theme.
+    const NpPalette pal = npPalette();
     m_status = new QLabel(this);
-    m_status->setStyleSheet("color: #B4B4B4; font-size: 11px;");
+    m_status->setStyleSheet(
+        QString("color: %1; font-size: 11px;").arg(pal.textMuted));
     btnRow->addWidget(m_status, 1);
 
+    // Primary stays the fixed brand blue — white-on-blue reads on
+    // Light, Dark, and Monokai alike.
     const QString primaryBtnQss =
         "QPushButton {"
         "  background: #2E7DD8; color: #FFFFFF;"
@@ -69,22 +76,26 @@ ChartModalDialog::ChartModalDialog(const QJsonObject &spec, QWidget *parent)
         "QPushButton:hover { background: #3A8DE8; border-color: #2978C8; }"
         "QPushButton:pressed { background: #2467B8; }"
         "QPushButton::menu-indicator { width: 12px; subcontrol-position: right center; }";
-    const QString secondaryBtnQss =
+    const QString secondaryBtnQss = QString(
         "QPushButton {"
-        "  background: #3A3A3D; color: #F0F0F0;"
-        "  border: 1px solid #5C5C5F; border-radius: 4px;"
+        "  background: %1; color: %2;"
+        "  border: 1px solid %3; border-radius: 4px;"
         "  padding: 6px 14px;"
         "}"
-        "QPushButton:hover { background: #4A4A4D; border-color: #6C6C6F; }"
-        "QPushButton:pressed { background: #2A2A2D; }";
+        "QPushButton:hover { background: %4; }"
+        "QPushButton:pressed { background: %4; border-color: %2; }")
+        .arg(pal.btnBg, pal.btnFg, pal.btnBorder, pal.btnHover);
     // QMenu sits OVER the dialog, but Qt scopes per-widget QSS to the
     // spawning widget — see [[feedback_qmenu_cascade_through_widget_qss]].
-    const QString menuQss =
-        "QMenu { background-color: #2A2A2D; color: #F0F0F0;"
-        "        border: 1px solid #4C4C50; padding: 4px; }"
+    const QString menuQss = QString(
+        "QMenu { background-color: %1; color: %2;"
+        "        border: 1px solid %3; padding: 4px; }"
         "QMenu::item { padding: 6px 22px 6px 14px; }"
-        "QMenu::item:selected { background-color: #2E7DD8; color: #FFFFFF; }"
-        "QMenu::separator { height: 1px; background: #4C4C50; margin: 4px 8px; }";
+        "QMenu::item:selected { background-color: %4; color: %5; }"
+        "QMenu::item:disabled { color: %6; }"
+        "QMenu::separator { height: 1px; background: %3; margin: 4px 8px; }")
+        .arg(pal.cardBg, pal.text, pal.border,
+             pal.selectionBg, pal.selectionFg, pal.textMuted);
 
     auto *copyBtn = new QPushButton(tr("Copy image"), this);
     copyBtn->setIcon(style()->standardIcon(QStyle::SP_DialogResetButton));

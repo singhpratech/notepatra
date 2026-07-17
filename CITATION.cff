@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you reference Notepatra in your work, please cite it as below."
+title: "Notepatra"
+type: software
+authors:
+  - family-names: "Singh"
+    given-names: "Prateek"
+repository-code: "https://github.com/singhpratech/notepatra"
+url: "https://notepatra.org"
+license: GPL-3.0
+keywords:
+  - text-editor
+  - code-editor
+  - notepad
+  - qt5
+  - rust
+  - local-ai
+  - cross-platform
+abstract: "Native C++/Rust code editor for the AI era — a fast, lightweight Notepad++-class editor for Linux, macOS, and Windows with local-first AI assistance."

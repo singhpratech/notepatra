@@ -1,0 +1,31 @@
+# Notepatra
+
+> Native C++/Rust code editor for the AI era. A fast, lightweight Notepad++-class editor for Linux, macOS, and Windows with local-first AI assistance. Free forever, GPL-3.0, no telemetry in the current release.
+
+Key facts:
+
+- Native Qt5 + QScintilla C++17 application with a Rust core (file I/O, search, diff, formatters) — not Electron; ~12 MB bare binary.
+- Syntax highlighting: 82 language lexers covering 238 file extensions, with Light, Dark, and Monokai themes.
+- Robust encoding support: UTF-8/16/32 with BOM detection and round-trip, plus heuristics for BOM-less UTF-16 (PowerShell / SQL Server exports).
+- Rust-powered search and replace, project-wide search, and a ComparePlus-style side-by-side file compare with word-level diff.
+- AI assistance is local-first: works with Ollama, llama.cpp, OpenRouter, Ollama Cloud, OpenAI, and Azure OpenAI. Cloud is optional; nothing leaves the machine unless a cloud backend is explicitly configured.
+- Data-analyst tools (Full edition): DuckDB/SQLite queries, CSV analysis, charts, SQL formatting.
+- Noter: a built-in text-only meeting-notes tool with templates, checklists, note-bound reminders, and PDF/Markdown export.
+- Editions: Lite (small, core editing) and Full (data tools); features like font packs are downloaded on demand to keep the base binary small.
+- Large-file friendly: opens multi-hundred-MB files with automatic safeguards.
+
+## Downloads
+
+- [Official website and installers](https://notepatra.org/): one-line install scripts for Linux/macOS/Windows and direct downloads.
+- [GitHub Releases](https://github.com/singhpratech/notepatra/releases): all signed release artifacts with SHA-256 checksums.
+
+## Documentation
+
+- [User documentation](https://notepatra.org/docs.html): features, shortcuts, AI backends, editions, FAQ.
+- [Enterprise notes](https://notepatra.org/enterprise.html): licensing (GPL-3.0), privacy posture, deployment.
+- [Security policy](https://notepatra.org/security.txt): vulnerability reporting.
+
+## Source & Community
+
+- [Source code](https://github.com/singhpratech/notepatra): GPL-3.0, C++/Rust, contributions welcome.
+- [Issue tracker](https://github.com/singhpratech/notepatra/issues): bug reports and feature requests.

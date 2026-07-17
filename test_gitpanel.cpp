@@ -74,8 +74,17 @@ int main(int argc, char *argv[]) {
     }
 
     // ─── 3. Diff view is created and starts hidden ─────────────────────
-    QPlainTextEdit *diffView = panel->findChild<QPlainTextEdit *>();
+    // The panel owns TWO QPlainTextEdits: the commit-message box (editable)
+    // and the diff view (read-only). findChild<> returns whichever was
+    // constructed first, so select the read-only one explicitly.
+    QPlainTextEdit *diffView = nullptr;
+    int readOnlyEdits = 0;
+    for (QPlainTextEdit *e : panel->findChildren<QPlainTextEdit *>()) {
+        if (e->isReadOnly()) { diffView = e; ++readOnlyEdits; }
+    }
     check("QPlainTextEdit (diff view) exists", diffView != nullptr);
+    check("Exactly one read-only QPlainTextEdit (the diff view)",
+          readOnlyEdits == 1);
 
     // The diff view's parent (m_diffWrap) should be invisible by default.
     bool diffStartsHidden = false;

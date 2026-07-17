@@ -7,6 +7,45 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.117] — 2026-07-17
+
+**The honesty release — a 32-agent adversarial audit of every component; every confirmed defect fixed; ~4,100 LOC of dead code removed; ~150 dormant Rust tests promoted into CI. No new deps, same bare binary (slightly smaller).**
+
+### Fixed
+- **Find in Files results were discarded** — matches were written to a widget that was never shown; they now stream into the persistent results panel like Find All (src/findreplace.cpp).
+- **"Match whole word" ignored by Count / Replace All / Replace All in All Opened / Find in Files** — now honored via the same matching path Find Next uses.
+- **Find All line numbers wrong in non-ASCII documents** — position accumulator mixed byte and UTF-16 offsets; now consistently UTF-8 bytes.
+- **Replace All with zero matches dirtied the document** — now early-returns.
+- Replace-tab Find Next ignored Extended (\n, \t) mode; dead search controls (direction radios, in-selection, dot-matches-newline) hidden until implemented; unsaved-tab search results no longer open a bogus "Untitled" file; Mark gained a Search-menu entry.
+- **UTF-32 save/reload corrupted non-BMP characters** (emoji written as surrogate halves, truncated on reload) — proper UCS-4 conversion both ways, with a new byte-level round-trip regression test (src/editor.cpp).
+- **Noter export had no UI entry point** — the fully-built, unit-tested PDF/Markdown exporter is now wired into the note context menus (src/notes.cpp).
+- Noter pop-out: resizable (QSizeGrip), pin shows checked state, WA_StyledBackground so its border paints, titles elide; Noter dialogs follow Dark/Monokai (explicit palette); sidebar restore affordance after Ctrl+Alt+B; reminder banner flash capped; permanent-delete confirm shows the note title, not the raw `.trashed-…` filename.
+- "Double-click to close tab" preference was a dead setting — implemented (src/tabmanager.cpp); manual tab colors re-keyed by widget so they survive reorder/close.
+- Terminal: real Stop button (terminate→kill), false "Ctrl+C in the editor" help removed, external-terminal handoff platform-guarded (Win/macOS), menu action no longer a checkable unbounded spawner.
+- Welcome "Open folder…" now gives visible feedback; Compare's dead Stage/Revert buttons hidden (their internal-jargon TODO dialogs deleted); merge helper no longer orphans its window on no-conflict files (connect-before-attach).
+- Chart export dialog and merge helper are theme-aware in Light/Dark/Monokai (were single-theme); Lite QtCharts bar with array y renders grouped multi-bar matching Vega (was an error).
+- `.po` files: comment shortcuts + auto-detection; Python Save As filter no longer claims `.pyx`/`.pxd`; unreachable `{"S","ASM"}` extension entry removed (net extension count unchanged at 238).
+- Font pack: the NO_CLOUD gate the header claimed now exists; false "URLs pinned to tag" comment corrected.
+- UI smoke script derives its expected version from CMakeLists (was hardcoded "0.1.58").
+
+### Changed
+- **Image attach no longer gated by a hardcoded vision-model allowlist** — attachments go to whatever model is selected; backend errors are surfaced (project no-allowlist policy).
+- Voice-input button hidden unless Linux with `arecord` + `whisper` on PATH.
+- AI interaction log scrubbing unified on CredScrub (~20 patterns, was a weak 7-pattern copy).
+
+### Removed
+- ~4,100 LOC dead code: notes_panels.cpp/.h (three never-constructed panel classes), notes_context_menus.cpp/.h (zero call sites), six unreachable notes_template embed renderers, phantom root test_comprehensive.cpp (never compiled), dead CMake EXISTS blocks (notes_bridge/notes_slashmenu), dead PDF-pack plumbing in plugin_loader, orphaned Noter QSS.
+
+### Testing / CI
+- **~150 Rust-core unit tests now run in CI** (quality workflow) **and gate releases** (release-check.sh) — previously never executed anywhere; +7 new search.rs tests.
+- test_gitpanel registered into ctest (was tracked but never compiled) with a real selector bug fixed; suite total stays 70, all green.
+
+### Docs / discoverability
+- New docs sections: Encodings (detection table, reload-vs-convert, BOM round-trip), Font Pack; corrected Compare menu paths/algorithm, terminal Stop + REPL notes, two-step wrap, autosave interval, side-panel wording, vision-attach behavior; Noter export + pop-out documented.
+- New `docs/llms.txt` (AI-assistant summary, counts gated by stale-text-check), AI-crawler-friendly robots.txt, CITATION.cff, CODE_OF_CONDUCT.md.
+
+---
+
 ## [0.1.116] — 2026-07-06
 
 **Two focused, adversarially-verified fixes — no new features, same bare binary, no new deps.**

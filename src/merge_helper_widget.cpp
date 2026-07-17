@@ -3,6 +3,7 @@
 // MergeHelperWidget — see merge_helper_widget.h for the design.
 
 #include "merge_helper_widget.h"
+#include "theme_detect.h"
 
 #include <QFileInfo>
 #include <QFrame>
@@ -18,13 +19,22 @@
 namespace {
 
 QString rowStyle() {
-    return QStringLiteral(
-        "QFrame#mergeRow {"
-        "  background: rgba(255, 215, 0, 0.10);"
-        "  border: 1px solid rgba(255, 165, 0, 0.55);"
-        "  border-radius: 4px;"
-        "  padding: 4px 8px;"
-        "}");
+    // Gold conflict tint — softer on dark so the row doesn't glow.
+    return npIsDarkTheme()
+        ? QStringLiteral(
+              "QFrame#mergeRow {"
+              "  background: rgba(255, 215, 0, 0.08);"
+              "  border: 1px solid rgba(255, 190, 80, 0.45);"
+              "  border-radius: 4px;"
+              "  padding: 4px 8px;"
+              "}")
+        : QStringLiteral(
+              "QFrame#mergeRow {"
+              "  background: rgba(255, 215, 0, 0.10);"
+              "  border: 1px solid rgba(255, 165, 0, 0.55);"
+              "  border-radius: 4px;"
+              "  padding: 4px 8px;"
+              "}");
 }
 
 QString actionBtnStyle(const QString &accent) {
@@ -50,8 +60,11 @@ MergeHelperWidget::MergeHelperWidget(QWidget *parent) : QWidget(parent) {
     outer->setSpacing(6);
 
     m_header = new QLabel(this);
+    // warningFg from the shared palette — the old hardcoded #B8860B was
+    // near-invisible on Dark / Monokai.
     m_header->setStyleSheet(
-        "font-weight: 700; font-size: 13px; color: #B8860B; padding: 2px 4px;");
+        QString("font-weight: 700; font-size: 13px; color: %1; padding: 2px 4px;")
+            .arg(npPalette().warningFg));
     outer->addWidget(m_header);
 
     auto *scroll = new QScrollArea(this);
@@ -67,9 +80,11 @@ MergeHelperWidget::MergeHelperWidget(QWidget *parent) : QWidget(parent) {
 
     outer->addWidget(scroll, 1);
 
-    setStyleSheet(
-        "QWidget#mergeHelperWidget { background: rgba(0,0,0,0.02); "
-        "border-top: 1px solid rgba(0,0,0,0.10); }");
+    setStyleSheet(npIsDarkTheme()
+        ? "QWidget#mergeHelperWidget { background: rgba(255,255,255,0.03); "
+          "border-top: 1px solid rgba(255,255,255,0.12); }"
+        : "QWidget#mergeHelperWidget { background: rgba(0,0,0,0.02); "
+          "border-top: 1px solid rgba(0,0,0,0.10); }");
 }
 
 void MergeHelperWidget::attach(QsciScintilla *editor, const QString &filePath) {

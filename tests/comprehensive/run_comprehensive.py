@@ -24,7 +24,7 @@ Five test categories, each with ~100 scenarios for a total close to 500:
   cat_d_duckdb       DuckDB queries against the on-disk Synthea CSVs (pre-load
                      state). Validates Notepatra's DuckDB engine path.
 
-  cat_e_lexers       Spot-check syntax highlighting for the 78 programming
+  cat_e_lexers       Spot-check syntax highlighting for the 82 programming
                      languages by feeding a known snippet through QScintilla
                      via the existing test_lexer_coverage harness.
 

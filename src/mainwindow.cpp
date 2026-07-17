@@ -1551,7 +1551,8 @@ MainWindow::MainWindow(bool standaloneNoSession)
             ensureNoterReminderService();
     });
 
-    // Auto-save session every 10 seconds. saveSession() now writes full
+    // Auto-save session every autoSaveIntervalSec seconds (default 5,
+    // bounded [1s, 300s]). saveSession() now writes full
     // unsaved-buffer content into session.json, so the legacy recovery_*.txt
     // pile is no longer needed — autoSaveRecovery() removed from this tick.
     m_autoSaveTimer = new QTimer(this);
@@ -2418,6 +2419,7 @@ void MainWindow::buildMenus() {
     }, QKeySequence("Shift+F3"));
     search->addSeparator();
     search->addAction("&Replace...", this, [FD]() { FD()->showReplace(); }, QKeySequence("Ctrl+H"));
+    search->addAction("&Mark...", this, [FD]() { FD()->showMark(); });
     search->addSeparator();
     search->addAction("&Go to Line...", this, [FD]() { FD()->showGoto(); }, QKeySequence("Ctrl+G"));
     search->addAction("Go to Matching &Brace", this, [this, E]() {
@@ -2716,8 +2718,9 @@ void MainWindow::buildMenus() {
     sectionHeader("Workflow");
 
     // --- Terminal ---
+    // Not checkable — every trigger opens a NEW terminal tab, so a
+    // checked state would lie about visibility.
     auto *termAct = feat->addAction("Terminal                  Ctrl+`");
-    termAct->setCheckable(true);
     termAct->setShortcut(QKeySequence("Ctrl+`"));
     termAct->setStatusTip("Opens a terminal in a new tab.");
     connect(termAct, &QAction::triggered, this, [this, E]() {
@@ -2795,8 +2798,7 @@ void MainWindow::buildMenus() {
     });
 
     // --- REST Client ---
-    auto *restAct = feat->addAction("REST Client (.http)       Ctrl+Shift+R");
-    restAct->setCheckable(true);
+    auto *restAct = feat->addAction("REST Client (.http)");
     restAct->setShortcut(QKeySequence("Ctrl+Shift+R"));
     restAct->setStatusTip("Opens REST client in a new tab. Select HTTP request first.");
     connect(restAct, &QAction::triggered, this, [this, E]() {
@@ -3370,14 +3372,16 @@ void MainWindow::buildMenus() {
             helper->setWindowTitle(QString("Resolve conflicts — %1")
                                        .arg(QFileInfo(relPath).fileName()));
             helper->resize(720, 240);
-            helper->attach(editor, abs);
-            helper->show();
             // Auto-close on full resolution so the workflow ends cleanly.
+            // Connected BEFORE attach() — attach() rescans and can emit
+            // allConflictsResolved immediately when zero conflicts remain.
             connect(helper, &MergeHelperWidget::allConflictsResolved,
                     helper, [helper]() {
                         helper->close();
                         helper->deleteLater();
                     });
+            helper->attach(editor, abs);
+            helper->show();
         });
         if (auto *e = E(); e && !e->filePath().isEmpty()) {
             panel->refresh(e->filePath());
@@ -5470,7 +5474,23 @@ void MainWindow::applyThemeToAll(const Theme &t) {
                 });
                 connect(fresh, &WelcomeWidget::actionOpenFolder, this, [this]() {
                     QString dir = QFileDialog::getExistingDirectory(this, "Open folder", QDir::homePath());
-                    if (!dir.isEmpty() && m_explorer) m_explorer->setRoot(dir);
+                    if (!dir.isEmpty() && m_explorer) {
+                        m_explorer->setRoot(dir);
+                        // Visible feedback — the explorer is gated on Coding
+                        // mode, so without this the pick looks like a no-op.
+                        const bool codingOn = m_aiDockPanel && m_aiDockPanel->isCodingMode()
+                                              && m_aiDockHost && m_aiDockHost->isVisible();
+                        if (codingOn) {
+                            m_explorer->setVisible(true);
+                            if (m_explorerToggleBtn) m_explorerToggleBtn->setChecked(true);
+                            statusBar()->showMessage(
+                                tr("Workspace: %1").arg(QDir::toNativeSeparators(dir)), 4000);
+                        } else {
+                            statusBar()->showMessage(
+                                tr("Workspace set to %1 — enable Coding mode in the AI dock (Ctrl+Q) to browse it.")
+                                    .arg(QDir::toNativeSeparators(dir)), 6000);
+                        }
+                    }
                 });
                 connect(fresh, &WelcomeWidget::actionOpenRecent, this,
                         [this](const QString &path) { openFile(path); });
@@ -5854,6 +5874,20 @@ int MainWindow::showWelcomeTab() {
         QString dir = QFileDialog::getExistingDirectory(this, "Open folder", QDir::homePath());
         if (!dir.isEmpty() && m_explorer) {
             m_explorer->setRoot(dir);
+            // Visible feedback — the explorer is gated on Coding mode, so
+            // without this the pick looks like a no-op.
+            const bool codingOn = m_aiDockPanel && m_aiDockPanel->isCodingMode()
+                                  && m_aiDockHost && m_aiDockHost->isVisible();
+            if (codingOn) {
+                m_explorer->setVisible(true);
+                if (m_explorerToggleBtn) m_explorerToggleBtn->setChecked(true);
+                statusBar()->showMessage(
+                    tr("Workspace: %1").arg(QDir::toNativeSeparators(dir)), 4000);
+            } else {
+                statusBar()->showMessage(
+                    tr("Workspace set to %1 — enable Coding mode in the AI dock (Ctrl+Q) to browse it.")
+                        .arg(QDir::toNativeSeparators(dir)), 6000);
+            }
         }
     });
     connect(welcome, &WelcomeWidget::actionOpenRecent, this,

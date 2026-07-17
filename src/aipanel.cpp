@@ -536,9 +536,9 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
 
     // v0.1.61 — drag-and-drop support: users can drop images / PDFs / DOCX
     // / PPTX directly onto the AI panel and they'll be attached as context.
-    // dragEnterEvent / dropEvent below handle the heavy lifting; vision-only
-    // kinds (images) are gated on modelSupportsVision() so we don't silently
-    // drop the image when the active model can't read it.
+    // dragEnterEvent / dropEvent below handle the heavy lifting. Any kind is
+    // accepted for any model — if the backend can't read images it reports
+    // an error, which we surface in the chat transcript.
     setAcceptDrops(true);
 
     auto *layout = new QVBoxLayout(this);
@@ -1753,6 +1753,14 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     m_voiceBtn->setFixedSize(36, 36);
     m_voiceBtn->setAccessibleName("Speech to text");
     updateVoiceButtonVisual(false);
+#ifdef Q_OS_LINUX
+    // STT pipeline is arecord + whisper CLI — hide the button unless both exist.
+    m_voiceBtn->setVisible(
+        !QStandardPaths::findExecutable(QStringLiteral("arecord")).isEmpty() &&
+        !QStandardPaths::findExecutable(QStringLiteral("whisper")).isEmpty());
+#else
+    m_voiceBtn->setVisible(false);
+#endif
     customRow->addWidget(m_voiceBtn);
 
     // Multi-line, Cursor-style input — grows with content up to 6 lines,
@@ -3084,19 +3092,9 @@ QString AIPanel::buildWorkspaceContextBlock(const QString &currentFilePath,
                                             const QString &currentFileText,
                                             const QVector<AIPanel::OpenTabInfo> &openTabs,
                                             const QString &workspaceRoot) {
-    QVector<AiContext::OpenTabInfo> tabs;
-    tabs.reserve(openTabs.size());
-    for (const auto &t : openTabs) {
-        AiContext::OpenTabInfo n;
-        n.filePath = t.filePath;
-        n.displayName = t.displayName;
-        n.language = t.language;
-        n.text = t.text;
-        n.isCurrent = t.isCurrent;
-        tabs.append(n);
-    }
+    // OpenTabInfo is an alias for AiContext::OpenTabInfo — no conversion needed.
     return AiContext::buildWorkspaceContextBlock(
-        currentFilePath, currentFileText, tabs, workspaceRoot);
+        currentFilePath, currentFileText, openTabs, workspaceRoot);
 }
 
 // v0.1.111 — Context transparency single source of truth. Assemble the exact
@@ -4577,181 +4575,13 @@ bool AIPanel::currentModelSupportsTools() const {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// modelSupportsVision — does the currently-selected model accept image inputs?
-//
-// Two-path resolver (mirrors currentModelSupportsTools):
-//   1. Ollama backend: trust the /api/show capabilities cache. If it exists
-//      and is non-empty, "vision" in the capabilities array is the answer.
-//      If the cache is EMPTY for this model, fall through to the prefix
-//      allowlist below — but the allowlist only matches known vision tags
-//      (qwen2.5vl, llava, gemma3, …) so an unknown / freshly-installed
-//      Ollama model returns false. That's the safe default: it's better to
-//      tell the user "switch model" than to silently strip the image and
-//      let the model hallucinate a description of nothing.
-//   2. Cloud / llama.cpp / OpenAI-compat: read the dropdown text, lowercase
-//      it, strip any leading "<provider>/" segment (OpenRouter format), then
-//      check a hardcoded May-2026 allowlist of multimodal model families.
-//
-// Returns false if there's no model selected or no client.
-// ─────────────────────────────────────────────────────────────────────────────
-bool AIPanel::modelSupportsVision() const {
-    if (!m_ollama) return false;
-
-    // Prefer the model the dropdown currently shows — that's what the user
-    // sees and is the source of truth for "what model are we about to use."
-    // Falls back to whatever m_ollama has cached (covers the brief window
-    // before the dropdown's currentTextChanged fires after a refresh).
-    QString rawName;
-    if (m_modelCombo) rawName = m_modelCombo->currentText();
-    if (rawName.isEmpty()) rawName = m_ollama->model();
-    if (rawName.isEmpty()) return false;
-
-    QString name = rawName.trimmed().toLower();
-    if (name.isEmpty()) return false;
-
-    // Path 1: Ollama — capabilities cache is ground truth when populated.
-    if (m_ollama->backend() == OllamaClient::Ollama) {
-        auto it = m_ollamaModelCaps.constFind(rawName);
-        if (it == m_ollamaModelCaps.constEnd()) {
-            // Try the lowercased key as well — m_ollamaModelCaps is keyed by
-            // exact model id; combobox text and ollama-list text agree, so
-            // this is mostly defensive.
-            it = m_ollamaModelCaps.constFind(name);
-        }
-        if (it != m_ollamaModelCaps.constEnd() && !it.value().isEmpty()) {
-            return it.value().contains(QStringLiteral("vision"), Qt::CaseInsensitive);
-        }
-        // Cache empty: fall through to the allowlist. We do NOT default-true
-        // here — silent-drop is the worst trap on Ollama.
-    }
-
-    // Path 2: prefix allowlist (May 2026). Strip any "<provider>/" prefix
-    // first so "anthropic/claude-sonnet-4-6" matches the same way as the
-    // bare "claude-sonnet-4-6" name. Then check each family with a simple
-    // startsWith / contains rule. Order matters only insofar as we want to
-    // match the more-specific tags first — startsWith checks are mutually
-    // exclusive on these prefixes, so the order is mostly cosmetic.
-    QString stem = name;
-    int slash = stem.indexOf('/');
-    if (slash >= 0) stem = stem.mid(slash + 1);
-
-    // Anthropic Claude — anything 3.5 and up is multimodal.
-    static const QStringList kClaudePrefixes = {
-        QStringLiteral("claude-3.5"),
-        QStringLiteral("claude-3.7"),
-        QStringLiteral("claude-4"),
-        QStringLiteral("claude-opus-4"),
-        QStringLiteral("claude-sonnet-4"),
-        QStringLiteral("claude-haiku-4"),
-    };
-    // OpenAI — 4o family + 4.1 / 4.5 / 5 / o4 / chatgpt-4o.
-    static const QStringList kOpenAiPrefixes = {
-        QStringLiteral("gpt-4o"),
-        QStringLiteral("gpt-4.1"),
-        QStringLiteral("gpt-4.5"),
-        QStringLiteral("gpt-5"),
-        QStringLiteral("o4"),
-        QStringLiteral("chatgpt-4o"),
-    };
-    // Google Gemini — 1.5 / 2.x / 3.x are all multimodal.
-    static const QStringList kGeminiPrefixes = {
-        QStringLiteral("gemini-1.5"),
-        QStringLiteral("gemini-2"),
-        QStringLiteral("gemini-3"),
-    };
-    // Ollama / open-source vision tags. Used both as a fallback when the
-    // /api/show cache is empty AND when the user is on a non-Ollama
-    // backend that happens to expose one of these models (e.g. a llama.cpp
-    // server hosting a local vision model).
-    static const QStringList kOllamaVisionPrefixes = {
-        QStringLiteral("qwen2.5vl"),
-        QStringLiteral("qwen2.5-vl"),
-        QStringLiteral("llava"),
-        QStringLiteral("gemma3"),
-        QStringLiteral("llama3.2-vision"),
-        QStringLiteral("minicpm-v"),
-        QStringLiteral("moondream"),
-        QStringLiteral("mistral-small3.1"),
-    };
-
-    auto matchesAny = [&stem](const QStringList &prefixes) {
-        for (const QString &p : prefixes) {
-            if (stem.startsWith(p)) return true;
-        }
-        return false;
-    };
-
-    if (matchesAny(kClaudePrefixes))        return true;
-    if (matchesAny(kOpenAiPrefixes))        return true;
-    if (matchesAny(kGeminiPrefixes))        return true;
-    if (matchesAny(kOllamaVisionPrefixes))  return true;
-
-    return false;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// acceptAttachment — shared vision-capability gate.
-//
-// Both attachFile() (file picker) and dropEvent() (drag-drop) funnel through
-// here so the refusal logic lives in exactly one place. Returns true to mean
-// "go ahead — set m_pendingFilePath / m_pendingFileKind and show the chip."
-// Returns false (after appending a helpful error bubble) when the kind is
-// "image" and modelSupportsVision() is false. The bubble cites concrete
-// model tags so the user's next action is obvious — switch the dropdown,
-// or `ollama pull qwen2.5vl:7b`, etc.
-// ─────────────────────────────────────────────────────────────────────────────
-bool AIPanel::acceptAttachment(const QString &path, const QString &kind) {
-    if (kind != QLatin1String("image")) {
-        // Non-image kinds (pdf / docx / pptx / xlsx / text / code) flow
-        // through extractFileContent at send time and don't require a
-        // multimodal model. Always accept.
-        return true;
-    }
-
-    if (modelSupportsVision()) return true;
-
-    // Action-oriented refusal: name the file, name the current model, then
-    // give the user a one-step path forward for both local and cloud.
-    QString currentName;
-    if (m_modelCombo) currentName = m_modelCombo->currentText().trimmed();
-    if (currentName.isEmpty()) currentName = QStringLiteral("the selected model");
-
-    QFileInfo fi(path);
-    const QString fname = fi.fileName().isEmpty() ? path : fi.fileName();
-
-    const QString message = tr(
-        "Can't attach <b>%1</b> — <b>%2</b> doesn't support image input.<br>"
-        "<br>"
-        "Switch to a vision-capable model, then drop the image again:<br>"
-        "&nbsp;&nbsp;• <b>Local (Ollama)</b>: <code>ollama pull qwen2.5vl:7b</code> "
-        "or <code>ollama pull gemma3:4b</code><br>"
-        "&nbsp;&nbsp;• <b>Cloud</b>: pick <code>claude-sonnet-4-6</code>, "
-        "<code>gpt-5</code>, or <code>gemini-2.5-flash</code> from the model dropdown."
-    ).arg(fname.toHtmlEscaped(), currentName.toHtmlEscaped());
-
-    appendErrorBubble(message);
-
-    // Defensive — make sure no stale pending attachment lingers from a
-    // prior drop / pick. attachFile() and dropEvent() both clear these
-    // before they call acceptAttachment, but belt-and-braces.
-    m_pendingFilePath.clear();
-    m_pendingFileKind.clear();
-    if (m_attachmentChip) {
-        m_attachmentChip->setText(QString());
-        m_attachmentChip->setVisible(false);
-        m_attachmentChip->setFixedHeight(0);
-    }
-    return false;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // dragEnterEvent / dropEvent — accept file drops onto the AI panel.
 //
 // Drop semantics mirror attachFile(): the first dropped local file is staged
 // as m_pendingFilePath / m_pendingFileKind, the attachment chip appears, and
-// extractFileContent runs at send time. Image drops are gated by
-// modelSupportsVision() via acceptAttachment(); other kinds (PDF / DOCX /
-// PPTX) fall back to text-extraction unchanged. Drops with no local file
+// extractFileContent runs at send time. Every kind is accepted regardless of
+// model — an unsupported image is the backend's error to report, and that
+// error lands in the chat transcript. Drops with no local file
 // are silently ignored — same behaviour as MainWindow's drop handler.
 // ─────────────────────────────────────────────────────────────────────────────
 void AIPanel::dragEnterEvent(QDragEnterEvent *event) {
@@ -4784,16 +4614,7 @@ void AIPanel::dropEvent(QDropEvent *event) {
     else if (ext == QLatin1String("xlsx") || ext == QLatin1String("xls"))   kind = QStringLiteral("xlsx");
     else                                               kind = QStringLiteral("text");
 
-    // Vision-capability gate. If acceptAttachment refuses, it has already
-    // appended a helpful error bubble — bail out without touching pending
-    // state and accept the drop event so the desktop's drop animation
-    // settles correctly.
-    if (!acceptAttachment(path, kind)) {
-        event->acceptProposedAction();
-        return;
-    }
-
-    // Happy path — same as attachFile() body from m_pendingFilePath onward.
+    // Same as attachFile() body from m_pendingFilePath onward.
     m_pendingFilePath = path;
     m_pendingFileKind = kind;
 
@@ -7033,11 +6854,6 @@ void AIPanel::attachFile() {
     } else {
         kind = "text";
     }
-
-    // v0.1.61 — vision-capability gate. acceptAttachment refuses (and posts
-    // a helpful refusal bubble) when an image is picked but the active model
-    // can't read images. Same code path is hit by drag-and-drop in dropEvent.
-    if (!acceptAttachment(path, kind)) return;
 
     m_pendingFilePath = path;
     m_pendingFileKind = kind;

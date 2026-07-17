@@ -71,6 +71,9 @@ protected:
     void mouseMoveEvent(QMouseEvent *ev) override;
     void mouseReleaseEvent(QMouseEvent *ev) override;
     void closeEvent(QCloseEvent *ev) override;
+    // Re-elides the title at the new width (deferred one tick so the
+    // layout has settled).
+    void resizeEvent(QResizeEvent *ev) override;
 
 private:
     void buildUi();
@@ -78,8 +81,11 @@ private:
     void tickTimer();
     void onTogglePin();
     void onToggleMinMax();
+    // Show m_fullTitle elided to the label width; full title in tooltip.
+    void updateTitleElide();
 
     QString m_notePath;
+    QString m_fullTitle;   // un-elided display title (tooltip source)
 
     // Header chrome.
     QWidget     *m_titleBar = nullptr;

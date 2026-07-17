@@ -339,10 +339,6 @@ void SearchResultsPanel::loadPersistedHistory() {
     // Make the close + clear buttons visible since we have content.
     if (m_closeBtn) m_closeBtn->setVisible(true);
     if (m_clearBtn) m_clearBtn->setVisible(true);
-
-    // Show the panel since there's history to look at — user can
-    // dismiss it via ✕ if they don't want it.
-    setVisible(true);
 }
 
 void SearchResultsPanel::clear() {
@@ -418,17 +414,22 @@ void SearchResultsPanel::setHeader(const QString &searchTerm, int totalHits, int
     scheduleSave();
 }
 
-void SearchResultsPanel::addFileSection(const QString &filePath, int hitCount) {
+void SearchResultsPanel::addFileSection(const QString &filePath, int hitCount,
+                                        const QString &displayName) {
     // Lazy session — Find-All-in-current-doc skips beginSession and
     // calls setHeader after the file/result loop, so without a session
     // open here there's nowhere for the file row to land.
     if (!m_currentSession) {
         beginSession(QString());
     }
+    // Real path (may be empty for unsaved tabs) — lands in UserRole+1
+    // on each match row so double-click activates the existing tab
+    // instead of trying to open a bogus "Untitled" file.
     m_currentFile = filePath;
+    const QString shown = displayName.isEmpty() ? filePath : displayName;
     m_currentFileItem = new QTreeWidgetItem(m_currentSession);
     m_currentFileItem->setText(0, QString("  %1 (%2 hit%3)")
-                                  .arg(filePath).arg(hitCount)
+                                  .arg(shown).arg(hitCount)
                                   .arg(hitCount == 1 ? "" : "s"));
     m_currentFileItem->setExpanded(true);
 

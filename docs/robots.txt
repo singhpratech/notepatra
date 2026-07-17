@@ -1,4 +1,26 @@
 User-agent: *
 Allow: /
 
+# AI assistants and LLM crawlers are welcome. Machine-readable summary: https://notepatra.org/llms.txt
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
 Sitemap: https://notepatra.org/sitemap.xml
