@@ -40,6 +40,13 @@ pub const NOT_RUNNING: &str = "Notepatra is not running (start the editor first)
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 const SEARCH_TIMEOUT: Duration = Duration::from_secs(15);
+/// Write verbs block inside the editor on a human approval card for up to
+/// 120 s, so the socket read must outlast that window.
+const APPROVAL_TIMEOUT: Duration = Duration::from_secs(130);
+
+/// The approval-gated write verbs (must match the C++ bridge's card-gated
+/// verb set exactly).
+const WRITE_VERBS: [&str; 4] = ["insert_text", "replace_selection", "apply_edit", "save_tab"];
 
 /// Mirrors `SingleInstance::serverName()` in src/singleinstance.cpp.
 pub fn server_name(home_dir: &str) -> String {
@@ -67,6 +74,7 @@ pub struct SocketEditor {
     path: String,
     base_timeout: Duration,
     search_timeout: Duration,
+    approval_timeout: Duration,
     #[cfg(unix)]
     conn: RefCell<Option<Conn>>,
 }
@@ -86,6 +94,7 @@ impl SocketEditor {
             path: path.into(),
             base_timeout: DEFAULT_TIMEOUT,
             search_timeout: SEARCH_TIMEOUT,
+            approval_timeout: APPROVAL_TIMEOUT,
             #[cfg(unix)]
             conn: RefCell::new(None),
         }
@@ -95,6 +104,13 @@ impl SocketEditor {
     pub fn with_timeouts(mut self, base: Duration, search: Duration) -> Self {
         self.base_timeout = base;
         self.search_timeout = search;
+        self
+    }
+
+    /// Overrides the approval-window read timeout for the write verbs
+    /// (tests shrink it to keep suites fast).
+    pub fn with_approval_timeout(mut self, approval: Duration) -> Self {
+        self.approval_timeout = approval;
         self
     }
 
@@ -109,6 +125,10 @@ impl SocketEditor {
     fn call(&self, verb: &str, args: Value) -> Result<Value, TransportError> {
         let timeout = if verb == "search_project" {
             self.search_timeout
+        } else if WRITE_VERBS.contains(&verb) {
+            // The editor holds the response until the user answers the
+            // approval card (up to 120 s) — wait it out.
+            self.approval_timeout
         } else {
             self.base_timeout
         };
@@ -129,8 +149,10 @@ impl SocketEditor {
     #[cfg(not(unix))]
     fn call(&self, _verb: &str, _args: Value) -> Result<Value, TransportError> {
         Err(TransportError(format!(
-            "the Notepatra MCP bridge client supports Unix sockets only in this build \
-             (Windows named pipe {} not implemented yet)",
+            "the Notepatra MCP bridge is not available on Windows yet — \
+             Windows named-pipe transport lands in a future release. \
+             Until then, run notepatra-mcp without --socket to use the built-in \
+             mock editor (expected pipe: {})",
             self.path
         )))
     }
@@ -447,6 +469,66 @@ impl EditorTransport for SocketEditor {
 
     fn read_note(&self, file: &str) -> Result<Value, TransportError> {
         self.call("read_note", json!({ "file": file }))
+    }
+
+    // Write verbs (v0.1.118): the editor gates each one behind an in-app
+    // approval card, so these round-trips use the long approval timeout (see
+    // `call`). "denied by user" / "approval timed out" arrive as ordinary
+    // ok:false errors and pass through verbatim.
+
+    fn insert_text(
+        &mut self,
+        text: &str,
+        tab_index: Option<usize>,
+        line: Option<usize>,
+        col: Option<usize>,
+    ) -> Result<Value, TransportError> {
+        let mut args = json!({ "text": text });
+        if let Some(i) = tab_index {
+            args["tab_index"] = json!(i);
+        }
+        if let Some(l) = line {
+            args["line"] = json!(l);
+        }
+        if let Some(c) = col {
+            args["col"] = json!(c);
+        }
+        self.call("insert_text", args)
+    }
+
+    fn replace_selection(
+        &mut self,
+        text: &str,
+        tab_index: Option<usize>,
+    ) -> Result<Value, TransportError> {
+        let mut args = json!({ "text": text });
+        if let Some(i) = tab_index {
+            args["tab_index"] = json!(i);
+        }
+        self.call("replace_selection", args)
+    }
+
+    fn apply_edit(
+        &mut self,
+        find: &str,
+        replace: &str,
+        tab_index: Option<usize>,
+        all: bool,
+    ) -> Result<Value, TransportError> {
+        // "all" is always sent explicitly so the wire shape is deterministic.
+        let mut args = json!({ "find": find, "replace": replace, "all": all });
+        if let Some(i) = tab_index {
+            args["tab_index"] = json!(i);
+        }
+        self.call("apply_edit", args)
+    }
+
+    fn save_tab(&mut self, tab_index: Option<usize>) -> Result<Value, TransportError> {
+        let args = match tab_index {
+            Some(i) => json!({ "tab_index": i }),
+            None => json!({}),
+        };
+        self.call("save_tab", args)
     }
 }
 

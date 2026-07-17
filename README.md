@@ -231,6 +231,34 @@ A first-class diagramming surface that **renders in the default binary on every 
 | | Middle-click | Close tab |
 | | Double-click empty | New tab |
 
+### AI assistants (MCP) — coming in v0.1.118
+
+From v0.1.118, Notepatra ships **`notepatra-mcp`** — a stdio JSON-RPC 2.0 [Model Context Protocol](https://modelcontextprotocol.io) server that connects external AI assistants (Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client) to the running editor over a local socket. Nothing leaves your machine: stdio to the client, local socket to the editor, no network connections.
+
+**22 tools in three tiers:**
+
+| Tier | Tools | Gate |
+|---|---|---|
+| **Read** (10) | tabs, selection, status, recent files, in-tab + project search, Noter notes | None — observation only |
+| **Act** (8) | open file, new tab, go to line, set language, compare tabs, format JSON/SQL/HTML | None — visible, non-destructive |
+| **Write** (4) | insert text, replace selection, find-and-replace, save | **Approve/Deny card inside the editor** — 120 s auto-deny, FIFO one card at a time, no headless bypass |
+
+Hook it up in one line each (from v0.1.118):
+
+```sh
+# Claude Code (Anthropic)
+claude mcp add notepatra -- notepatra-mcp --socket
+```
+
+```toml
+# Codex CLI (OpenAI) — ~/.codex/config.toml
+[mcp_servers.notepatra]
+command = "notepatra-mcp"
+args = ["--socket"]
+```
+
+Full tool reference, Claude Desktop / Agents SDK snippets, security model, and honest limitations (editor must be running; Windows named-pipe transport lands in a later release; cloud-only connector surfaces can't reach a desktop editor): [docs/mcp.html](docs/mcp.html) / [notepatra.org/mcp.html](https://notepatra.org/mcp.html).
+
 ---
 
 ## Architecture

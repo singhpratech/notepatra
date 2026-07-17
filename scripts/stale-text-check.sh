@@ -34,6 +34,7 @@ cd "$(dirname "$0")/.."
 LEXER_COUNT=82
 FILE_EXT_COUNT=238
 BACKEND_COUNT=6
+MCP_TOOL_COUNT=22
 BACKEND_LIST="Ollama / llama.cpp / OpenRouter / Ollama Cloud / OpenAI / Azure OpenAI"
 # BARE_BIN_MB removed v0.1.86 — verify-download-sizes.sh now downloads the
 # actual artifact and asserts byte count + stripped-vs-not, which is strictly
@@ -158,6 +159,43 @@ assert_contains "llms.txt: lexer count" \
     docs/llms.txt "$LEXER_COUNT language lexers"
 assert_contains "llms.txt: file extension count" \
     docs/llms.txt "$FILE_EXT_COUNT file extensions"
+
+echo
+echo "── MCP tool count derived from source (notepatra-mcp/src/tools.rs) ──"
+# Derive the real MCP tool count straight from the sidecar's dispatch table in
+# tools.rs (`call()`): each tool is exactly one quoted match arm of the form
+#   "tool_name" => handler(...),
+# so the canonical MCP_TOOL_COUNT (and every docs surface below) can never
+# silently drift from what the server actually serves. The catch-all
+# `other =>` arm is unquoted and therefore excluded by the pattern.
+if [[ -f notepatra-mcp/src/tools.rs ]]; then
+    derived_mcp_tool_count=$(grep -cE '^[[:space:]]+"[a-z_]+" => ' notepatra-mcp/src/tools.rs 2>/dev/null)
+    if [[ "$derived_mcp_tool_count" == "$MCP_TOOL_COUNT" ]]; then
+        printf "  ✓ notepatra-mcp/src/tools.rs dispatches %s tools (matches MCP_TOOL_COUNT)\n" "$derived_mcp_tool_count"
+        PASS=$((PASS + 1))
+    else
+        printf "  ✗ notepatra-mcp/src/tools.rs dispatches %s tools but MCP_TOOL_COUNT=%s\n      bump MCP_TOOL_COUNT and every docs surface to match the code\n" \
+               "$derived_mcp_tool_count" "$MCP_TOOL_COUNT"
+        FAIL=$((FAIL + 1))
+    fi
+
+    echo
+    echo "── MCP tool count quoted on docs surfaces ──"
+    # Every surface that states a number of MCP tools must state the derived
+    # one. All surfaces standardize on the literal phrase "N tools".
+    assert_contains "mcp.html: $MCP_TOOL_COUNT tools" \
+        docs/mcp.html "$MCP_TOOL_COUNT tools"
+    assert_contains "docs.html MCP section: $MCP_TOOL_COUNT tools" \
+        docs/docs.html "$MCP_TOOL_COUNT tools"
+    assert_contains "llms.txt MCP section: $MCP_TOOL_COUNT tools" \
+        docs/llms.txt "$MCP_TOOL_COUNT tools"
+    assert_contains "README MCP section: $MCP_TOOL_COUNT tools" \
+        README.md "$MCP_TOOL_COUNT tools"
+    assert_contains "index.html MCP card: $MCP_TOOL_COUNT tools" \
+        docs/index.html "$MCP_TOOL_COUNT tools"
+else
+    echo "  ⓘ notepatra-mcp/src/tools.rs not present on this branch — skipping MCP tool-count gate"
+fi
 
 echo
 echo "── stale version-ref sweep (user-facing phrases must point at v$VERSION) ──"

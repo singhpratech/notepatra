@@ -2483,9 +2483,10 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_gitpanel.cpp")
 endif()
 
 # ── MCP bridge protocol test (v0.1.118) ──
-# Offscreen-safe, guiless: fake editor host + real QLocalServer round-trip.
-# Links singleinstance.cpp only for the server-name derivation; the
-# single-instance handshake itself is covered by test_single_instance.
+# Offscreen-safe: fake editor host + real QLocalServer round-trip. Links
+# Widgets because the write tier's human-approval card is a real QFrame the
+# test clicks programmatically. singleinstance.cpp is only for the
+# server-name derivation; the handshake is covered by test_single_instance.
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_bridge.cpp")
     add_executable(test_mcp_bridge
         test_mcp_bridge.cpp
@@ -2500,7 +2501,8 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_bridge.cpp")
     target_compile_definitions(test_mcp_bridge PRIVATE
         NOTEPATRA_VERSION="${PROJECT_VERSION}")
     target_link_libraries(test_mcp_bridge PRIVATE
-        Qt5::Core Qt5::Network Qt5::Concurrent Qt5::Test)
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::Concurrent
+        Qt5::Test)
     notepatra_add_qt_test(test_mcp_bridge)
     set_tests_properties(test_mcp_bridge PROPERTIES LABELS "unit;mcp;ipc")
     message(STATUS "Regression test enabled — target: test_mcp_bridge")

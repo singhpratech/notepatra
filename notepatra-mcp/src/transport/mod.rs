@@ -29,6 +29,23 @@ pub struct TabContent {
     pub truncated: bool,
 }
 
+/// Marker appended to tab text when the editor capped the read (the bridge
+/// truncates `read_tab` at 5 MB).
+pub const TRUNCATION_MARKER: &str = "\n[truncated at 5 MB]";
+
+impl TabContent {
+    /// Tab text with [`TRUNCATION_MARKER`] appended when the editor capped
+    /// the read. Used by both the `read_tab` tool and `resources/read` so a
+    /// client always sees that content is incomplete.
+    pub fn text_with_marker(&self) -> String {
+        if self.truncated {
+            format!("{}{}", self.text, TRUNCATION_MARKER)
+        } else {
+            self.text.clone()
+        }
+    }
+}
+
 /// One entry of `search_project` results — wire shape `{path,line,text}`.
 /// `path` is `""` for hits in untitled tab buffers.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -94,6 +111,15 @@ impl std::error::Error for TransportError {}
 /// * `list_notes` → `{notes:[{title,file,modified_iso}]}` (`file` is the
 ///   note's absolute path, native separators)
 /// * `read_note` → `{title,text}`
+///
+/// Write verbs (v0.1.118) block inside the editor on a human approval card
+/// (up to 120 s) before touching the buffer; a denial or timeout surfaces as
+/// the VERBATIM editor errors `"denied by user"` / `"approval timed out"`:
+///
+/// * `insert_text` → `{ok:true,tab_index:N}`
+/// * `replace_selection` → `{ok:true}`
+/// * `apply_edit` → `{ok:true,count:N}`
+/// * `save_tab` → `{ok:true}`
 pub trait EditorTransport {
     /// Returns the tab index the file landed in.
     fn open_file(&mut self, path: &str) -> Result<usize, TransportError>;
@@ -123,4 +149,26 @@ pub trait EditorTransport {
     fn format_text(&self, kind: &str, text: &str) -> Result<Value, TransportError>;
     fn list_notes(&self) -> Result<Value, TransportError>;
     fn read_note(&self, file: &str) -> Result<Value, TransportError>;
+
+    // Write verbs (v0.1.118) — human-approval-gated in the editor.
+    fn insert_text(
+        &mut self,
+        text: &str,
+        tab_index: Option<usize>,
+        line: Option<usize>,
+        col: Option<usize>,
+    ) -> Result<Value, TransportError>;
+    fn replace_selection(
+        &mut self,
+        text: &str,
+        tab_index: Option<usize>,
+    ) -> Result<Value, TransportError>;
+    fn apply_edit(
+        &mut self,
+        find: &str,
+        replace: &str,
+        tab_index: Option<usize>,
+        all: bool,
+    ) -> Result<Value, TransportError>;
+    fn save_tab(&mut self, tab_index: Option<usize>) -> Result<Value, TransportError>;
 }

@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notepatra MCP — Your editor, readable by your AI</title>
+<meta name="description" content="Notepatra's MCP server (coming in v0.1.118): 22 tools that let Claude, Codex, and any spec-compliant MCP client read your open tabs, search your workspace, and — only with your explicit per-action approval — edit and save. Local socket + stdio, nothing leaves your machine.">
+<link rel="canonical" href="https://notepatra.org/mcp.html">
+<link rel="icon" type="image/png" href="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png">
+
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://api.github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
+
+<style>
+  /* ─── Claude.ai palette — matches index.html / docs.html exactly ─── */
+  :root {
+    --bg:        #F5F4EE;  /* warm bone page bg */
+    --bg-alt:    #FAF9F5;  /* card / sidebar surface */
+    --bg-code:   #F0EEE6;  /* inline + block code bg */
+    --border:    #E8E6DC;  /* hairline */
+    --text:      #141413;  /* near-black warm */
+    --text-mute: #3D3D3A;  /* body copy */
+    --text-dim:  #6B6A65;  /* meta */
+    --link:      #CC785C;  /* Anthropic Clay */
+    --link-hover:#B8684F;
+    --accent:    #CC785C;
+    --content-max: 820px;
+    --font-sans: "Söhne", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", ui-sans-serif, system-ui, Roboto, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", "EmojiOne Color", "Android Emoji", emoji;
+    --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", emoji;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Top bar */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 12px; }
+  .topbar-left img { width: 28px; height: 28px; }
+  .topbar-left a.brand {
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 16px;
+  }
+  .topbar-left .tag {
+    background: var(--bg-alt);
+    color: var(--text-mute);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    border: 1px solid var(--border);
+  }
+  .topbar-right { display: flex; gap: 20px; align-items: center; }
+  .topbar-right a {
+    color: var(--text-mute);
+    text-decoration: none;
+    font-size: 14px;
+  }
+  .topbar-right a:hover { color: var(--text); }
+
+  /* Main content */
+  main.content {
+    max-width: var(--content-max);
+    margin: 0 auto;
+    padding: 48px 48px 96px 48px;
+  }
+  main.content h1 {
+    font-size: 36px;
+    margin: 0 0 8px 0;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  main.content .lead {
+    color: var(--text-mute);
+    font-size: 18px;
+    margin-bottom: 40px;
+    line-height: 1.55;
+  }
+  main.content h2 {
+    font-size: 26px;
+    margin: 56px 0 16px 0;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  main.content h3 {
+    font-size: 20px;
+    margin: 32px 0 12px 0;
+    font-weight: 600;
+  }
+  main.content p { margin: 12px 0; color: var(--text); }
+  main.content a { color: var(--link); text-decoration: none; }
+  main.content a:hover { text-decoration: underline; }
+  main.content ul, main.content ol { padding-left: 24px; }
+  main.content li { margin: 6px 0; }
+
+  main.content code {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: var(--bg-code);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  main.content pre {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    overflow-x: auto;
+    line-height: 1.5;
+    font-size: 13px;
+  }
+  main.content pre code {
+    background: transparent;
+    padding: 0;
+    border: 0;
+    font-size: 13px;
+    white-space: pre;
+  }
+
+  main.content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  main.content table th {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 2px solid var(--border);
+    font-weight: 600;
+  }
+  main.content table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  main.content table tr:hover td { background: var(--bg-alt); }
+
+  .callout {
+    padding: 14px 18px;
+    margin: 16px 0;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-alt);
+    font-size: 14px;
+  }
+  .callout.info    { border-left: 4px solid #3b82f6; }
+  .callout.warning { border-left: 4px solid #f59e0b; }
+  .callout.success { border-left: 4px solid #10b981; }
+  .callout strong { color: var(--text); }
+
+  .anchor-target { scroll-margin-top: 80px; }
+
+  /* On-page contents strip */
+  nav.pagenav {
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+  nav.pagenav a { color: var(--link); text-decoration: none; }
+  nav.pagenav a:hover { text-decoration: underline; }
+
+  @media (max-width: 900px) {
+    main.content { padding: 32px 24px 64px 24px; max-width: 100%; }
+  }
+
+  footer.doc-footer {
+    max-width: var(--content-max);
+    margin: 64px auto 0 auto;
+    padding: 32px 48px 48px 48px;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 13px;
+    text-align: center;
+  }
+  footer.doc-footer a { color: var(--text-mute); text-decoration: none; }
+  footer.doc-footer a:hover { color: var(--link); text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
+    <a href="/" class="brand">Notepatra</a>
+    <span class="tag">MCP · coming in v0.1.118</span>
+  </div>
+  <nav class="topbar-right">
+    <a href="/">Home</a>
+    <a href="/docs.html">Docs</a>
+    <a href="https://github.com/singhpratech/notepatra/releases/latest">Download</a>
+    <a href="https://github.com/singhpratech/notepatra">GitHub</a>
+  </nav>
+</header>
+
+<main class="content">
+
+  <h1>Your editor, readable by your AI</h1>
+  <p class="lead">From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a Model Context Protocol server that lets Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client see what you have open, search your workspace, and — only with your explicit per-action approval — edit and save. Everything runs over stdio and a local socket. Nothing leaves your machine.</p>
+
+  <div class="callout info">
+    <strong>Release status.</strong> MCP support ships in v0.1.118, the next release. The current release, v0.1.117, does not include it. Everything on this page describes v0.1.118.
+  </div>
+
+  <nav class="pagenav">
+    On this page:
+    <a href="#what-it-is">What it is</a> ·
+    <a href="#tools">The 22 tools</a> ·
+    <a href="#approval">Write approval</a> ·
+    <a href="#setup">Setup per client</a> ·
+    <a href="#resources-prompts">Resources &amp; prompts</a> ·
+    <a href="#limitations">Limitations</a> ·
+    <a href="#faq">FAQ</a>
+  </nav>
+
+  <h2 id="what-it-is" class="anchor-target">What it is</h2>
+  <p>MCP (the <a href="https://modelcontextprotocol.io">Model Context Protocol</a>) is the open standard AI assistants use to talk to tools. Notepatra's implementation is a small standalone binary, <code>notepatra-mcp</code>, that sits between your AI client and the running editor:</p>
+  <pre><code>AI client (Claude Desktop, Claude Code, Codex, ...)
+        │  stdio · JSON-RPC 2.0 (MCP)
+        ▼
+  notepatra-mcp  ──local socket──▶  Notepatra (the running editor)</code></pre>
+  <ul>
+    <li><strong>Transport:</strong> a stdio JSON-RPC 2.0 MCP server. It speaks MCP protocol revision <code>2025-06-18</code> and also accepts <code>2025-03-26</code> and <code>2024-11-05</code> from older clients.</li>
+    <li><strong>Editor connection:</strong> pass <code>--socket</code> and the server talks to the running editor over a dedicated per-user local socket (a Unix domain socket; the editor opens it on launch). Without <code>--socket</code>, the server runs against a built-in mock editor, so you can exercise the protocol without Notepatra running.</li>
+    <li><strong>Capabilities:</strong> tools (22 of them), resources (your open tabs and Noter notes), and prompts (three ready-made ones).</li>
+    <li><strong>Safety:</strong> reads never need permission; every write shows an approval card inside the editor window and does nothing until you click Approve. Details <a href="#approval">below</a>.</li>
+  </ul>
+  <p>In practice: ask your assistant "what do I have open?", "find where the config is parsed", "diff these two tabs", "format this JSON and put it in a new tab" — and it drives the actual editor on your screen.</p>
+
+  <h2 id="tools" class="anchor-target">The tool surface — 22 tools, three tiers</h2>
+  <p><code>notepatra-mcp</code> exposes 22 tools, grouped in three tiers by what they can touch. Read tools observe. Act tools drive visible, non-destructive editor actions. Write tools change buffer contents or disk — and every one of those is gated behind a human approval card.</p>
+
+  <h3>Tier 1 — Read (10 tools, no approval needed)</h3>
+  <table>
+    <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>list_open_tabs</code></td><td>List the open tabs with index, title, file path, and modified state.</td></tr>
+      <tr><td><code>read_tab</code></td><td>Read the full text of one open tab, selected by index or by title.</td></tr>
+      <tr><td><code>get_selection</code></td><td>Get the currently selected text, with the tab it belongs to.</td></tr>
+      <tr><td><code>get_status</code></td><td>Editor state: active tab, file path, language, encoding, cursor position.</td></tr>
+      <tr><td><code>app_info</code></td><td>Application info: name, version, edition (Lite/Full), platform.</td></tr>
+      <tr><td><code>list_recent_files</code></td><td>List recently opened file paths.</td></tr>
+      <tr><td><code>find_in_tab</code></td><td>Find a literal substring inside one open tab (default: the active tab).</td></tr>
+      <tr><td><code>search_project</code></td><td>Search all open tabs plus files under the workspace folder for a literal substring, case-insensitive (capped at 200 matches).</td></tr>
+      <tr><td><code>list_notes</code></td><td>List Noter notes with title, file name, and last-modified time.</td></tr>
+      <tr><td><code>read_note</code></td><td>Read one Noter note by its file path.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Tier 2 — Act (8 tools, visible and non-destructive)</h3>
+  <table>
+    <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>open_file</code></td><td>Open a file in a new tab, or focus the tab that already has it.</td></tr>
+      <tr><td><code>new_tab</code></td><td>Create a new untitled tab, optionally pre-filled with text.</td></tr>
+      <tr><td><code>goto_line</code></td><td>Move the cursor to a line in a tab — for pointing you at a location.</td></tr>
+      <tr><td><code>set_language</code></td><td>Set a tab's syntax-highlighting language.</td></tr>
+      <tr><td><code>compare_tabs</code></td><td>Open Notepatra's side-by-side Compare view for two open tabs.</td></tr>
+      <tr><td><code>format_json</code></td><td>Format JSON text and return the result (fails on invalid JSON).</td></tr>
+      <tr><td><code>format_sql</code></td><td>Format SQL text and return the result.</td></tr>
+      <tr><td><code>format_html</code></td><td>Format HTML text and return the result.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Tier 3 — Write, with approval (4 tools, human-gated)</h3>
+  <table>
+    <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>insert_text</code></td><td>Insert text into an open tab at the cursor, or at an explicit line/column.</td></tr>
+      <tr><td><code>replace_selection</code></td><td>Replace the currently selected text with new text.</td></tr>
+      <tr><td><code>apply_edit</code></td><td>Literal find-and-replace in one open tab — first occurrence, or all of them.</td></tr>
+      <tr><td><code>save_tab</code></td><td>Save an open tab to its file on disk.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="approval" class="anchor-target">The write-approval model</h2>
+  <p>The four write tools <strong>never execute on arrival</strong>. Each incoming write request shows a non-modal approval card inside the Notepatra window — it does not steal focus or block your typing — describing what the assistant wants to do, with a preview of the text involved and two buttons: <strong>Approve</strong> and <strong>Deny</strong>.</p>
+  <ul>
+    <li><strong>Nothing happens until you click Approve.</strong> The tool call blocks; the assistant just waits.</li>
+    <li><strong>120-second auto-deny.</strong> If you don't respond within two minutes, the request is denied automatically and the assistant receives the error <code>approval timed out</code>.</li>
+    <li><strong>Deny is a first-class answer.</strong> Click Deny and the assistant receives <code>denied by user</code> — as a tool error it can read and react to, not a silent failure.</li>
+    <li><strong>One card at a time, in order.</strong> Multiple pending writes queue FIFO; you decide each one individually. No batch-approve.</li>
+    <li><strong>No headless fallback — by design.</strong> If there is no visible editor window to host the card, the write is denied with <code>approval unavailable</code>. There is no auto-approve setting, no environment variable, and no config flag that bypasses the card.</li>
+  </ul>
+  <p>The gate lives in the editor process itself (the C++ bridge), not in the MCP sidecar — so a modified or malicious MCP client still cannot write without a human clicking Approve inside Notepatra. Read and act tools don't prompt: they can't change buffer contents or touch disk.</p>
+
+  <h2 id="setup" class="anchor-target">Setup — pick your client</h2>
+  <p>The server binary is <code>notepatra-mcp</code>. All snippets below pass <code>--socket</code>, which connects it to the running editor; make sure <code>notepatra-mcp</code> is on your <code>PATH</code> (or use its absolute path), and have Notepatra running when the assistant calls a tool.</p>
+
+  <table>
+    <thead><tr><th>Client</th><th>Vendor ecosystem</th><th>How it connects</th><th>Works with Notepatra?</th></tr></thead>
+    <tbody>
+      <tr><td>Claude Desktop</td><td>Anthropic</td><td>stdio, via <code>claude_desktop_config.json</code></td><td>Yes</td></tr>
+      <tr><td>Claude Code</td><td>Anthropic</td><td>stdio, via <code>claude mcp add</code></td><td>Yes</td></tr>
+      <tr><td>Codex CLI</td><td>OpenAI</td><td>stdio, via <code>config.toml</code></td><td>Yes</td></tr>
+      <tr><td>OpenAI Agents SDK</td><td>OpenAI</td><td>stdio, via <code>MCPServerStdio</code></td><td>Yes</td></tr>
+      <tr><td>Cursor, Windsurf, VS Code, others</td><td>Various</td><td>stdio, via each client's MCP config</td><td>Yes — any spec-compliant stdio MCP client</td></tr>
+      <tr><td>ChatGPT connectors</td><td>OpenAI</td><td>Remote URL only</td><td>No — cannot reach a desktop editor (see <a href="#limitations">limitations</a>)</td></tr>
+      <tr><td>claude.ai web connectors</td><td>Anthropic</td><td>Remote URL only</td><td>No — cannot reach a desktop editor (see <a href="#limitations">limitations</a>)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Claude Desktop</h3>
+  <p>Add Notepatra to <code>claude_desktop_config.json</code> (Settings → Developer → Edit Config):</p>
+  <pre><code>{
+  "mcpServers": {
+    "notepatra": {
+      "command": "notepatra-mcp",
+      "args": ["--socket"]
+    }
+  }
+}</code></pre>
+  <p>Restart Claude Desktop; the Notepatra tools appear in the tools menu.</p>
+
+  <h3>Claude Code</h3>
+  <p>One command:</p>
+  <pre><code>claude mcp add notepatra -- notepatra-mcp --socket</code></pre>
+  <p>Then <code>/mcp</code> inside Claude Code shows the server and its 22 tools.</p>
+
+  <h3>OpenAI Codex CLI</h3>
+  <p>Add a block to <code>~/.codex/config.toml</code>:</p>
+  <pre><code>[mcp_servers.notepatra]
+command = "notepatra-mcp"
+args = ["--socket"]</code></pre>
+
+  <h3>OpenAI Agents SDK</h3>
+  <p>Use the SDK's stdio server class (Python shown):</p>
+  <pre><code>from agents import Agent, Runner
+from agents.mcp import MCPServerStdio
+
+async with MCPServerStdio(
+    params={"command": "notepatra-mcp", "args": ["--socket"]},
+) as notepatra:
+    agent = Agent(
+        name="Editor assistant",
+        instructions="Help the user work with what they have open in Notepatra.",
+        mcp_servers=[notepatra],
+    )
+    result = await Runner.run(agent, "What tabs do I have open?")</code></pre>
+
+  <h3>Any other MCP client</h3>
+  <p>Anything that can launch a stdio MCP server works — Cursor, Windsurf, VS Code, or your own client. Configure it to run the command <code>notepatra-mcp</code> with the argument <code>--socket</code>. The server identifies itself as <code>notepatra-mcp</code> and advertises the <code>tools</code>, <code>resources</code>, and <code>prompts</code> capabilities.</p>
+  <p>Tip: running <code>notepatra-mcp</code> <em>without</em> <code>--socket</code> starts it against a built-in mock editor — handy for testing a client integration without Notepatra running.</p>
+
+  <h2 id="resources-prompts" class="anchor-target">Resources and prompts</h2>
+  <p>Beyond tools, the server exposes two other MCP capabilities:</p>
+  <h3>Resources</h3>
+  <ul>
+    <li><code>notepatra://tab/N</code> — each open tab, as plain text. <code>resources/list</code> enumerates them with their titles.</li>
+    <li><code>notepatra://note/&lt;basename&gt;</code> — each Noter note, as plain text. If two notes share a basename, the colliding ones are addressed by their URI-encoded full path instead, so every note stays reachable.</li>
+  </ul>
+  <p>Clients that support MCP resources (Claude Desktop's attachment picker, for example) can pull a tab or note straight into the conversation without a tool call.</p>
+  <h3>Prompts</h3>
+  <table>
+    <thead><tr><th>Prompt</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>review-current-file</code></td><td>Code-review the file open in the active tab — embeds its live contents and language.</td></tr>
+      <tr><td><code>explain-selection</code></td><td>Explain the text currently selected in the editor.</td></tr>
+      <tr><td><code>summarize-notes</code></td><td>Summarize your Noter notes (embeds up to the 3 most recent).</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="limitations" class="anchor-target">Limitations — the honest list</h2>
+  <ul>
+    <li><strong>The editor must be running.</strong> With <code>--socket</code>, tools need a live Notepatra to talk to; if it isn't running, they return the clean error "Notepatra is not running (start the editor first)" rather than hanging.</li>
+    <li><strong>Writes need a visible window.</strong> The approval card must appear somewhere; with no visible window, writes are denied with <code>approval unavailable</code>. That is deliberate — see the <a href="#approval">approval model</a>.</li>
+    <li><strong>Cloud-only connector surfaces can't reach it.</strong> ChatGPT connectors and claude.ai web connectors only speak to servers reachable at a public URL. A desktop editor on your machine is not that, so those surfaces cannot use <code>notepatra-mcp</code>. Use the desktop or CLI clients above instead.</li>
+    <li><strong>Windows named-pipe transport is not shipped yet.</strong> The v0.1.118 sidecar connects to the editor over Unix domain sockets, so <code>--socket</code> works on Linux and macOS first. On Windows the write-side plumbing exists in the editor, but the sidecar's named-pipe client is a stub that returns a clear "not available on Windows yet" error; it lands in a future release. The mock mode (no <code>--socket</code>) works everywhere.</li>
+    <li><strong>Large reads are capped.</strong> <code>read_tab</code> truncates at 5 MB (and says so with a marker in the text); <code>search_project</code> returns at most 200 matches per search.</li>
+    <li><strong>Searches are literal.</strong> <code>find_in_tab</code> and <code>search_project</code> match literal substrings, not regular expressions.</li>
+  </ul>
+
+  <h2 id="faq" class="anchor-target">FAQ</h2>
+  <h3>Is my data sent anywhere?</h3>
+  <p>Not by Notepatra. <code>notepatra-mcp</code> makes no network connections: it talks to your AI client over stdio (pipes between two processes on your machine) and to the editor over a local per-user socket. Nothing leaves the machine through this path. One honest caveat that applies to every MCP server: whatever your <em>assistant</em> reads through these tools becomes part of its conversation, and goes wherever that client sends its conversations — a local model stays local, a cloud model does not. Choose the client and model accordingly.</p>
+  <h3>Can the AI edit my files without me noticing?</h3>
+  <p>No. The only tools that can change a buffer or touch disk are the four write tools, and each call requires you to click Approve on a card inside the editor within 120 seconds. No response means denied.</p>
+  <h3>Is this the same as Notepatra's built-in AI Assistant?</h3>
+  <p>No — they're complementary. The AI Assistant dock (Ctrl+Shift+A) is Notepatra talking to a model you configure. MCP is the reverse direction: an external assistant you already use (Claude, Codex, ...) talking to Notepatra. Neither requires the other.</p>
+  <h3>Does it work with the Lite build?</h3>
+  <p>Yes. The MCP bridge is part of the editor from v0.1.118 on both editions, and <code>app_info</code> reports which edition is running.</p>
+  <h3>Which tab is index 0?</h3>
+  <p>Tab indices are zero-based, exactly as shown in the tab bar — including the Welcome tab when it's open. Use <code>list_open_tabs</code> first rather than guessing indices.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <p>Notepatra is free software under GPL-3.0. MCP support described on this page ships in v0.1.118.</p>
+  <p><a href="/">Home</a> · <a href="/docs.html">Documentation</a> · <a href="https://github.com/singhpratech/notepatra">GitHub</a></p>
+</footer>
+
+</body>
+</html>

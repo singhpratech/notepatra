@@ -1575,9 +1575,10 @@ MainWindow::MainWindow(bool standaloneNoSession)
     // File change watcher — detects external modifications
     setupFileWatcher();
 
-    // v0.1.118 — MCP bridge: read-only editor access for the AI sidecar over
-    // a dedicated QLocalServer (single-instance name + "-mcp"). Primary only;
-    // standalone windows never serve it.
+    // v0.1.118 — MCP bridge: editor access for the AI sidecar over a
+    // dedicated QLocalServer (single-instance name + "-mcp"). Read verbs
+    // answer directly; write verbs run only after the human approves the
+    // bridge's in-window card. Primary only; standalone windows never serve it.
     if (!m_standaloneNoSession) {
         McpEditorHost host;
         host.tabCount = [this] { return m_tabs->count(); };
@@ -1708,6 +1709,80 @@ MainWindow::MainWindow(bool standaloneNoSession)
             return out;
         };
         host.notesRoot = [] { return NotesPanel::defaultNotesFolder(); };
+        // ── v0.1.118 WRITE tier — each lambda reuses the SAME Editor/save
+        //    path the equivalent menu action uses, wrapped in one undo step.
+        //    The bridge calls them only after the human clicks Approve. ──
+        host.approvalParent = [this]() -> QWidget * { return this; };
+        host.hasSelection = [this](int i) {
+            auto *ed = m_tabs->editorAt(i);
+            return ed && ed->hasSelectedText();
+        };
+        host.insertText = [this](int i, int line, int col,
+                                 const QString &text) {
+            auto *ed = m_tabs->editorAt(i);
+            if (!ed) return false;
+            ed->beginUndoAction();
+            if (line >= 1) {
+                if (line - 1 >= ed->lines()) {
+                    ed->endUndoAction();
+                    return false;
+                }
+                // Clamp col to the line's text length (EOL chars excluded)
+                // so an over-long col lands at line end, never on the next
+                // line past the \n.
+                const QString lineText = ed->text(line - 1);
+                int len = lineText.size();
+                while (len > 0 && (lineText.at(len - 1) == QLatin1Char('\n') ||
+                                   lineText.at(len - 1) == QLatin1Char('\r')))
+                    --len;
+                ed->insertAt(text, line - 1, qBound(0, col - 1, len));
+            } else {
+                ed->insert(text); // at cursor
+            }
+            ed->endUndoAction();
+            return true;
+        };
+        host.replaceSelection = [this](int i, const QString &text) {
+            auto *ed = m_tabs->editorAt(i);
+            if (!ed || !ed->hasSelectedText()) return false;
+            ed->beginUndoAction();
+            ed->replaceSelectedText(text);
+            ed->endUndoAction();
+            return true;
+        };
+        host.applyEdit = [this](int i, const QString &find,
+                                const QString &replace, bool all) {
+            auto *ed = m_tabs->editorAt(i);
+            if (!ed) return -1;
+            int count = 0;
+            ed->beginUndoAction();
+            // Literal (non-regex), case-sensitive, NO wrap: the scan always
+            // terminates at EOF even when `replace` contains `find`.
+            bool found = ed->findFirst(find, false, true, false, false, true,
+                                       0, 0, false);
+            while (found) {
+                ed->replace(replace);
+                ++count;
+                if (!all) break;
+                found = ed->findNext();
+            }
+            ed->endUndoAction();
+            return count;
+        };
+        host.saveTab = [this](int i) {
+            auto *ed = m_tabs->editorAt(i);
+            // Untitled tabs are refused by the bridge before this runs; the
+            // re-check keeps a Save As dialog impossible on any path.
+            if (!ed || ed->filePath().isEmpty()) return false;
+            if (!ed->saveFile()) return false;
+            updateTabTitle(i);
+            ed->updateGitGutter();
+            if (m_fileWatcher) {
+                const QString path = ed->filePath();
+                m_fileTimestamps[path] = QFileInfo(path).lastModified();
+            }
+            return true;
+        };
         new McpBridge(std::move(host), this);
     }
 }

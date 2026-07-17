@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// MCP bridge protocol test. Offscreen-safe, guiless (no widgets, no
-// QMessageBox paths), Windows-safe (no POSIX headers). Drives a real
-// QLocalServer round-trip against a fake editor host.
+// MCP bridge protocol test. Offscreen-safe, Windows-safe (no POSIX
+// headers), no QMessageBox paths. Drives a real QLocalServer round-trip
+// against a fake editor host. Widget-hosting (QTEST_MAIN, not guiless):
+// the write tier's human-approval card is a real QFrame this test finds
+// and clicks programmatically.
 //
 // Server and client live in the SAME event loop, so every wait is a
 // QTest::qWait pump loop with a hard timeout — never a blocking
@@ -13,11 +15,15 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QFrame>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLabel>
 #include <QLocalSocket>
+#include <QPushButton>
 #include <QTemporaryDir>
+#include <QWidget>
 
 #include "mcp_bridge.h"
 
@@ -51,6 +57,9 @@ private:
     QString m_notesRoot;
     int m_compareCount = 0;
     int m_lastGotoLine = -1;
+    // v0.1.118 write-tier fake state.
+    QWidget *m_hostWindow = nullptr;
+    QVector<int> m_savedTabs;
 
     McpEditorHost makeHost() {
         McpEditorHost h;
@@ -126,6 +135,63 @@ private:
             return kind.toUpper() + QLatin1Char(':') + text;
         };
         h.notesRoot = [this] { return m_notesRoot; };
+        // ── v0.1.118 write tier ──
+        h.approvalParent = [this]() -> QWidget * { return m_hostWindow; };
+        h.hasSelection = [this](int) { return !m_selection.isEmpty(); };
+        h.insertText = [this](int idx, int line, int col,
+                              const QString &text) {
+            if (idx < 0 || idx >= m_fakeTabs.size()) return false;
+            QString &buf = m_fakeTabs[idx].text;
+            int pos = buf.size(); // fake cursor: end of buffer
+            if (line >= 1) {
+                int cur = 1, off = 0;
+                while (cur < line) {
+                    const int nl = buf.indexOf(QLatin1Char('\n'), off);
+                    if (nl < 0) return false; // line out of range
+                    off = nl + 1;
+                    ++cur;
+                }
+                int lineEnd = buf.indexOf(QLatin1Char('\n'), off);
+                if (lineEnd < 0) lineEnd = buf.size();
+                pos = qMin(off + (col - 1), lineEnd);
+            }
+            buf.insert(pos, text);
+            m_fakeTabs[idx].modified = true;
+            return true;
+        };
+        h.replaceSelection = [this](int idx, const QString &text) {
+            if (idx < 0 || idx >= m_fakeTabs.size() || m_selection.isEmpty())
+                return false;
+            QString &buf = m_fakeTabs[idx].text;
+            const int at = buf.indexOf(m_selection);
+            if (at < 0) return false;
+            buf.replace(at, m_selection.size(), text);
+            m_selection.clear();
+            return true;
+        };
+        h.applyEdit = [this](int idx, const QString &find,
+                             const QString &repl, bool all) {
+            if (idx < 0 || idx >= m_fakeTabs.size()) return -1;
+            QString &buf = m_fakeTabs[idx].text;
+            int count = 0, from = 0;
+            while (true) {
+                const int at = buf.indexOf(find, from);
+                if (at < 0) break;
+                buf.replace(at, find.size(), repl);
+                ++count;
+                from = at + repl.size();
+                if (!all) break;
+            }
+            return count;
+        };
+        h.saveTab = [this](int idx) {
+            if (idx < 0 || idx >= m_fakeTabs.size() ||
+                m_fakeTabs[idx].path.isEmpty())
+                return false;
+            m_savedTabs.append(idx);
+            m_fakeTabs[idx].modified = false;
+            return true;
+        };
         return h;
     }
 
@@ -187,6 +253,71 @@ private:
         return readObj(s);
     }
 
+    // ── v0.1.118 write-tier helpers ──
+
+    // Fire-and-forget request: write verbs don't answer until the human
+    // decides, so the caller reads the response separately.
+    void sendRequest(QLocalSocket &s, int id, const QString &verb,
+                     const QJsonObject &args = QJsonObject()) {
+        QJsonObject req;
+        req[QStringLiteral("id")] = id;
+        req[QStringLiteral("verb")] = verb;
+        req[QStringLiteral("args")] = args;
+        sendLine(s, QJsonDocument(req).toJson(QJsonDocument::Compact));
+    }
+
+    QFrame *findCard() const {
+        return m_hostWindow
+                   ? m_hostWindow->findChild<QFrame *>(
+                         QStringLiteral("mcpApprovalCard"))
+                   : nullptr;
+    }
+
+    QFrame *waitForCard(int timeoutMs = kWaitMs) {
+        QElapsedTimer t;
+        t.start();
+        while (t.elapsed() < timeoutMs) {
+            if (QFrame *c = findCard()) return c;
+            QTest::qWait(10);
+        }
+        return nullptr;
+    }
+
+    // Waits for a card whose description label contains `needle` — needed
+    // when one card replaces another and a plain findChild could still see
+    // the deleteLater'd predecessor.
+    QFrame *waitForCardContaining(const QString &needle,
+                                  int timeoutMs = kWaitMs) {
+        QElapsedTimer t;
+        t.start();
+        while (t.elapsed() < timeoutMs) {
+            const auto cards = m_hostWindow->findChildren<QFrame *>(
+                QStringLiteral("mcpApprovalCard"));
+            for (QFrame *c : cards) {
+                auto *d = c->findChild<QLabel *>(
+                    QStringLiteral("mcpApprovalDesc"));
+                if (d && d->text().contains(needle)) return c;
+            }
+            QTest::qWait(10);
+        }
+        return nullptr;
+    }
+
+    bool waitForCardGone(int timeoutMs = kWaitMs) {
+        QElapsedTimer t;
+        t.start();
+        while (t.elapsed() < timeoutMs) {
+            const auto cards = m_hostWindow->findChildren<QFrame *>(
+                QStringLiteral("mcpApprovalCard"));
+            bool anyVisible = false;
+            for (QFrame *c : cards)
+                if (c->isVisible()) anyVisible = true;
+            if (!anyVisible) return true;
+            QTest::qWait(10);
+        }
+        return false;
+    }
+
 private slots:
     void init() {
         m_fakeTabs = {
@@ -204,6 +335,10 @@ private slots:
         m_notesRoot.clear();
         m_compareCount = 0;
         m_lastGotoLine = -1;
+        m_savedTabs.clear();
+        m_hostWindow = new QWidget;
+        m_hostWindow->resize(640, 420);
+        m_hostWindow->show();
         m_name = QStringLiteral("notepatra-mcp-selftest-%1-%2")
                      .arg(QCoreApplication::applicationPid())
                      .arg(++m_seq);
@@ -214,6 +349,8 @@ private slots:
     void cleanup() {
         delete m_bridge;
         m_bridge = nullptr;
+        delete m_hostWindow;
+        m_hostWindow = nullptr;
     }
 
     void greeting_arrives_first() {
@@ -945,7 +1082,360 @@ private slots:
                     .toString()
                     .contains(QLatin1String("too large")));
     }
+
+    // ── v0.1.118 WRITE tier — human-approval-gated verbs ─────────────
+
+    void insert_text_approve_applies_mutation() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject args;
+        args[QStringLiteral("text")] = QStringLiteral("XYZ-");
+        args[QStringLiteral("tab_index")] = 0;
+        args[QStringLiteral("line")] = 1;
+        args[QStringLiteral("col")] = 1;
+        sendRequest(s, 60, QStringLiteral("insert_text"), args);
+        QFrame *card = waitForCard();
+        QVERIFY(card);
+        auto *desc = card->findChild<QLabel *>(
+            QStringLiteral("mcpApprovalDesc"));
+        QVERIFY(desc);
+        QVERIFY(desc->text().contains(
+            QLatin1String("AI tool (MCP) requests")));
+        QVERIFY(desc->text().contains(
+            QLatin1String("insert 4 chars into 'notes.txt'")));
+        auto *prev = card->findChild<QLabel *>(
+            QStringLiteral("mcpApprovalPreview"));
+        QVERIFY(prev);
+        QVERIFY(prev->text().contains(QLatin1String("XYZ-")));
+        // Held: no response, no mutation until the human decides.
+        QTest::qWait(150);
+        QVERIFY(!s.canReadLine());
+        QVERIFY(!m_fakeTabs[0].text.startsWith(QLatin1String("XYZ-")));
+        // The card is focus-neutral: it must never steal the editor's keys.
+        QCOMPARE(card->focusPolicy(), Qt::NoFocus);
+        auto *approve = card->findChild<QPushButton *>(
+            QStringLiteral("mcpApproveBtn"));
+        auto *deny = card->findChild<QPushButton *>(
+            QStringLiteral("mcpDenyBtn"));
+        QVERIFY(approve);
+        QVERIFY(deny);
+        QCOMPARE(approve->focusPolicy(), Qt::NoFocus);
+        QCOMPARE(deny->focusPolicy(), Qt::NoFocus);
+        approve->click();
+        const QJsonObject resp = readObj(s);
+        QCOMPARE(resp.value(QLatin1String("id")).toInt(), 60);
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        QCOMPARE(resp.value(QLatin1String("result"))
+                     .toObject()
+                     .value(QLatin1String("tab_index"))
+                     .toInt(),
+                 0);
+        QVERIFY(m_fakeTabs[0].text.startsWith(
+            QLatin1String("XYZ-hello world")));
+        QVERIFY(waitForCardGone());
+    }
+
+    void insert_text_deny_leaves_buffer_untouched() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QString before = m_fakeTabs[0].text;
+        QJsonObject args;
+        args[QStringLiteral("text")] = QStringLiteral("nope");
+        args[QStringLiteral("tab_index")] = 0;
+        sendRequest(s, 61, QStringLiteral("insert_text"), args);
+        QFrame *card = waitForCard();
+        QVERIFY(card);
+        auto *desc = card->findChild<QLabel *>(
+            QStringLiteral("mcpApprovalDesc"));
+        QVERIFY(desc);
+        QVERIFY(desc->text().contains(QLatin1String("at the cursor")));
+        auto *deny = card->findChild<QPushButton *>(
+            QStringLiteral("mcpDenyBtn"));
+        QVERIFY(deny);
+        deny->click();
+        const QJsonObject resp = readObj(s);
+        QCOMPARE(resp.value(QLatin1String("id")).toInt(), 61);
+        QCOMPARE(resp.value(QLatin1String("ok")).toBool(), false);
+        QCOMPARE(resp.value(QLatin1String("error")).toString(),
+                 QStringLiteral("denied by user"));
+        QCOMPARE(m_fakeTabs[0].text, before);
+        QVERIFY(waitForCardGone());
+    }
+
+    void insert_text_missing_text_fails_without_card() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QJsonObject resp = call(s, 62, QStringLiteral("insert_text"));
+        QCOMPARE(resp.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(!resp.value(QLatin1String("error")).toString().isEmpty());
+        QTest::qWait(100);
+        QVERIFY(!findCard());
+    }
+
+    void replace_selection_approve_and_no_selection() {
+        m_selection = QStringLiteral("hello");
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject args;
+        args[QStringLiteral("text")] = QStringLiteral("goodbye");
+        args[QStringLiteral("tab_index")] = 0;
+        sendRequest(s, 63, QStringLiteral("replace_selection"), args);
+        QFrame *card = waitForCard();
+        QVERIFY(card);
+        auto *desc = card->findChild<QLabel *>(
+            QStringLiteral("mcpApprovalDesc"));
+        QVERIFY(desc);
+        QVERIFY(desc->text().contains(
+            QLatin1String("replace the selection in 'notes.txt'")));
+        auto *approve = card->findChild<QPushButton *>(
+            QStringLiteral("mcpApproveBtn"));
+        QVERIFY(approve);
+        approve->click();
+        const QJsonObject resp = readObj(s);
+        QCOMPARE(resp.value(QLatin1String("id")).toInt(), 63);
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        QVERIFY(m_fakeTabs[0].text.startsWith(
+            QLatin1String("goodbye world")));
+        QVERIFY(waitForCardGone());
+        // No selection left → fails fast, and NO card ever appears.
+        const QJsonObject bad = call(s, 64,
+                                     QStringLiteral("replace_selection"),
+                                     args);
+        QCOMPARE(bad.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(bad.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String("no selection")));
+        QTest::qWait(100);
+        QVERIFY(!findCard());
+    }
+
+    void apply_edit_first_all_and_no_match() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        // First occurrence only.
+        QJsonObject args;
+        args[QStringLiteral("find")] = QStringLiteral("l");
+        args[QStringLiteral("replace")] = QStringLiteral("L");
+        args[QStringLiteral("tab_index")] = 0;
+        sendRequest(s, 65, QStringLiteral("apply_edit"), args);
+        QFrame *card = waitForCardContaining(QStringLiteral("the first"));
+        QVERIFY(card);
+        auto *approve = card->findChild<QPushButton *>(
+            QStringLiteral("mcpApproveBtn"));
+        QVERIFY(approve);
+        approve->click();
+        QJsonObject resp = readObj(s);
+        QCOMPARE(resp.value(QLatin1String("id")).toInt(), 65);
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        QCOMPARE(resp.value(QLatin1String("result"))
+                     .toObject()
+                     .value(QLatin1String("count"))
+                     .toInt(),
+                 1);
+        QVERIFY(m_fakeTabs[0].text.startsWith(QLatin1String("heLlo")));
+        // Every occurrence. Text is now
+        // "heLlo world\nSecond Line with Needle\n" → three 'o's.
+        QJsonObject allArgs;
+        allArgs[QStringLiteral("find")] = QStringLiteral("o");
+        allArgs[QStringLiteral("replace")] = QStringLiteral("0");
+        allArgs[QStringLiteral("all")] = true;
+        allArgs[QStringLiteral("tab_index")] = 0;
+        sendRequest(s, 66, QStringLiteral("apply_edit"), allArgs);
+        card = waitForCardContaining(QStringLiteral("every"));
+        QVERIFY(card);
+        approve = card->findChild<QPushButton *>(
+            QStringLiteral("mcpApproveBtn"));
+        QVERIFY(approve);
+        approve->click();
+        resp = readObj(s);
+        QCOMPARE(resp.value(QLatin1String("id")).toInt(), 66);
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        QCOMPARE(resp.value(QLatin1String("result"))
+                     .toObject()
+                     .value(QLatin1String("count"))
+                     .toInt(),
+                 3);
+        QVERIFY(!m_fakeTabs[0].text.contains(QLatin1Char('o')));
+        QVERIFY(waitForCardGone());
+        // No match → fails fast, no card, no human bothered.
+        QJsonObject miss;
+        miss[QStringLiteral("find")] = QStringLiteral("zzz-not-here");
+        miss[QStringLiteral("replace")] = QStringLiteral("x");
+        miss[QStringLiteral("tab_index")] = 0;
+        const QJsonObject bad = call(s, 67, QStringLiteral("apply_edit"),
+                                     miss);
+        QCOMPARE(bad.value(QLatin1String("ok")).toBool(), false);
+        QCOMPARE(bad.value(QLatin1String("error")).toString(),
+                 QStringLiteral("no match"));
+        QTest::qWait(100);
+        QVERIFY(!findCard());
+    }
+
+    void save_tab_approve_and_untitled_refusal() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject args;
+        args[QStringLiteral("tab_index")] = 0;
+        sendRequest(s, 68, QStringLiteral("save_tab"), args);
+        QFrame *card = waitForCard();
+        QVERIFY(card);
+        auto *desc = card->findChild<QLabel *>(
+            QStringLiteral("mcpApprovalDesc"));
+        QVERIFY(desc);
+        QVERIFY(desc->text().contains(
+            QLatin1String("save 'notes.txt' to disk")));
+        auto *prev = card->findChild<QLabel *>(
+            QStringLiteral("mcpApprovalPreview"));
+        QVERIFY(prev);
+        QCOMPARE(prev->text(),
+                 QDir::toNativeSeparators(QStringLiteral("/fake/notes.txt")));
+        auto *approve = card->findChild<QPushButton *>(
+            QStringLiteral("mcpApproveBtn"));
+        QVERIFY(approve);
+        approve->click();
+        const QJsonObject resp = readObj(s);
+        QCOMPARE(resp.value(QLatin1String("id")).toInt(), 68);
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        QCOMPARE(resp.value(QLatin1String("result"))
+                     .toObject()
+                     .value(QLatin1String("saved"))
+                     .toBool(),
+                 true);
+        QCOMPARE(m_savedTabs, QVector<int>{0});
+        QVERIFY(waitForCardGone());
+        // Untitled tab: refused up front — never a Save As dialog, no card.
+        QJsonObject untitled;
+        untitled[QStringLiteral("tab_index")] = 1;
+        const QJsonObject bad = call(s, 69, QStringLiteral("save_tab"),
+                                     untitled);
+        QCOMPARE(bad.value(QLatin1String("ok")).toBool(), false);
+        QCOMPARE(bad.value(QLatin1String("error")).toString(),
+                 QStringLiteral("needs Save As"));
+        QTest::qWait(100);
+        QVERIFY(!findCard());
+        QCOMPARE(m_savedTabs.size(), 1);
+    }
+
+    void approval_times_out_to_deny() {
+        m_bridge->setApprovalTimeoutMs(200);
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QString before = m_fakeTabs[0].text;
+        QJsonObject args;
+        args[QStringLiteral("text")] = QStringLiteral("late");
+        args[QStringLiteral("tab_index")] = 0;
+        sendRequest(s, 70, QStringLiteral("insert_text"), args);
+        QVERIFY(waitForCard());
+        // Nobody clicks: the timeout auto-denies.
+        const QJsonObject resp = readObj(s);
+        QCOMPARE(resp.value(QLatin1String("id")).toInt(), 70);
+        QCOMPARE(resp.value(QLatin1String("ok")).toBool(), false);
+        QCOMPARE(resp.value(QLatin1String("error")).toString(),
+                 QStringLiteral("approval timed out"));
+        QCOMPARE(m_fakeTabs[0].text, before);
+        QVERIFY(waitForCardGone());
+    }
+
+    void disconnect_while_pending_dismisses_card() {
+        const QString before = m_fakeTabs[0].text;
+        {
+            QLocalSocket s;
+            QVERIFY(connectClient(s));
+            readGreeting(s);
+            QJsonObject args;
+            args[QStringLiteral("text")] = QStringLiteral("ghost");
+            args[QStringLiteral("tab_index")] = 0;
+            sendRequest(s, 71, QStringLiteral("insert_text"), args);
+            QVERIFY(waitForCard());
+            s.abort(); // peer vanishes while the card is on screen
+        }
+        QVERIFY(waitForCardGone());
+        QCOMPARE(m_fakeTabs[0].text, before); // nothing executed
+        // The bridge still serves a fresh client afterwards.
+        QLocalSocket s2;
+        QVERIFY(connectClient(s2));
+        readGreeting(s2);
+        const QJsonObject resp = call(s2, 72,
+                                      QStringLiteral("list_open_tabs"));
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+    }
+
+    void approvals_queue_fifo_one_card_at_a_time() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject first;
+        first[QStringLiteral("text")] = QStringLiteral("first");
+        first[QStringLiteral("tab_index")] = 0;
+        sendRequest(s, 73, QStringLiteral("insert_text"), first);
+        QJsonObject second;
+        second[QStringLiteral("text")] = QStringLiteral("second");
+        second[QStringLiteral("tab_index")] = 0;
+        sendRequest(s, 74, QStringLiteral("insert_text"), second);
+        // FIFO: the first request's card shows first — and alone.
+        QFrame *card = waitForCardContaining(QStringLiteral("5 chars"));
+        QVERIFY(card);
+        int visibleCards = 0;
+        const auto cards = m_hostWindow->findChildren<QFrame *>(
+            QStringLiteral("mcpApprovalCard"));
+        for (QFrame *c : cards)
+            if (c->isVisible()) ++visibleCards;
+        QCOMPARE(visibleCards, 1);
+        auto *approve = card->findChild<QPushButton *>(
+            QStringLiteral("mcpApproveBtn"));
+        QVERIFY(approve);
+        approve->click();
+        QJsonObject resp = readObj(s);
+        QCOMPARE(resp.value(QLatin1String("id")).toInt(), 73);
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        // The second card follows automatically; deny it.
+        card = waitForCardContaining(QStringLiteral("6 chars"));
+        QVERIFY(card);
+        auto *deny = card->findChild<QPushButton *>(
+            QStringLiteral("mcpDenyBtn"));
+        QVERIFY(deny);
+        deny->click();
+        resp = readObj(s);
+        QCOMPARE(resp.value(QLatin1String("id")).toInt(), 74);
+        QCOMPARE(resp.value(QLatin1String("ok")).toBool(), false);
+        QCOMPARE(resp.value(QLatin1String("error")).toString(),
+                 QStringLiteral("denied by user"));
+        QVERIFY(m_fakeTabs[0].text.contains(QLatin1String("first")));
+        QVERIFY(!m_fakeTabs[0].text.contains(QLatin1String("second")));
+    }
+
+    void read_verbs_bypass_approval_gate() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject args;
+        args[QStringLiteral("text")] = QStringLiteral("hold");
+        args[QStringLiteral("tab_index")] = 0;
+        sendRequest(s, 75, QStringLiteral("insert_text"), args);
+        QVERIFY(waitForCard());
+        // A read verb on the SAME socket answers immediately while the
+        // write sits behind the card.
+        const QJsonObject read = call(s, 76,
+                                      QStringLiteral("list_open_tabs"));
+        QCOMPARE(read.value(QLatin1String("id")).toInt(), 76);
+        QVERIFY(read.value(QLatin1String("ok")).toBool());
+        QVERIFY(findCard()); // still pending
+        auto *deny = findCard()->findChild<QPushButton *>(
+            QStringLiteral("mcpDenyBtn"));
+        QVERIFY(deny);
+        deny->click();
+        const QJsonObject resp = readObj(s);
+        QCOMPARE(resp.value(QLatin1String("id")).toInt(), 75);
+        QCOMPARE(resp.value(QLatin1String("ok")).toBool(), false);
+    }
 };
 
-QTEST_GUILESS_MAIN(TestMcpBridge)
+QTEST_MAIN(TestMcpBridge)
 #include "test_mcp_bridge.moc"

@@ -7,15 +7,23 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QDirIterator>
+#include <QEvent>
 #include <QFile>
 #include <QFileInfo>
+#include <QFrame>
 #include <QFutureWatcher>
+#include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QJsonValue>
+#include <QLabel>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QPointer>
+#include <QPushButton>
 #include <QSet>
+#include <QTimer>
+#include <QVBoxLayout>
+#include <QWidget>
 #include <QtConcurrent/QtConcurrentRun>
 
 #ifndef NOTEPATRA_VERSION
@@ -39,6 +47,14 @@ constexpr int kResultLinePreviewChars = 512;
 constexpr int kMaxFindMatches = 500;
 // read_note plaintext source cap (v0.1.118).
 constexpr qint64 kMaxNoteBytes = 2 * 1024 * 1024;
+// Approval-card preview / in-description elision caps (v0.1.118 write tier).
+constexpr int kApprovalPreviewChars = 200;
+constexpr int kApprovalDescChars = 60;
+
+QString elideForCard(const QString &s, int cap) {
+    if (s.size() <= cap) return s;
+    return s.left(cap) + QChar(0x2026);
+}
 
 // Edition axis from build_flavor.h — same booleans the updater's asset
 // picker trusts, so the bridge can never disagree with the binary.
@@ -163,6 +179,23 @@ McpBridge::McpBridge(McpEditorHost host, QObject *parent,
                  qPrintable(m_serverName),
                  qPrintable(m_server->errorString()));
     }
+    m_approvalTimer = new QTimer(this);
+    m_approvalTimer->setSingleShot(true);
+    connect(m_approvalTimer, &QTimer::timeout, this, [this]() {
+        resolveActiveApproval(false, QStringLiteral("approval timed out"));
+    });
+}
+
+McpBridge::~McpBridge() {
+    // The card is a child of the HOST widget, not of the bridge — take it
+    // down with us so no orphan Approve button outlives its plumbing.
+    dismissActiveCard();
+}
+
+void McpBridge::setApprovalTimeoutMs(int ms) {
+    m_approvalTimeoutMs = qMax(1, ms);
+    if (m_approvalTimer && m_approvalTimer->isActive())
+        m_approvalTimer->start(m_approvalTimeoutMs);
 }
 
 bool McpBridge::isListening() const {
@@ -177,6 +210,9 @@ void McpBridge::onNewConnection() {
                 [this, client]() { onReadyRead(client); });
         connect(client, &QLocalSocket::disconnected, this, [this, client]() {
             m_buffers.remove(client);
+            // A vanished peer can never approve anything: dismiss its card,
+            // drop its queued writes, execute NOTHING.
+            dropClientApprovals(client);
             client->deleteLater();
         });
         // Greeting first — proof-of-life before any request handling.
@@ -261,6 +297,14 @@ void McpBridge::handleLine(QLocalSocket *client, const QByteArray &line) {
         verbListNotes(client, id);
     else if (verb == QLatin1String("read_note"))
         verbReadNote(client, id, args);
+    else if (verb == QLatin1String("insert_text"))
+        verbInsertText(client, id, args);
+    else if (verb == QLatin1String("replace_selection"))
+        verbReplaceSelection(client, id, args);
+    else if (verb == QLatin1String("apply_edit"))
+        verbApplyEdit(client, id, args);
+    else if (verb == QLatin1String("save_tab"))
+        verbSaveTab(client, id, args);
     else
         sendError(client, id,
                   QStringLiteral("unknown verb: %1").arg(verb));
@@ -772,4 +816,412 @@ void McpBridge::verbReadNote(QLocalSocket *client, int id,
     // Same HTML→plaintext conversion as Noter's search prewarm.
     result[QStringLiteral("text")] = NotesStorage::plainTextForSearch(html);
     sendResult(client, id, result);
+}
+
+// ── v0.1.118 WRITE tier — human-approval-gated buffer mutations ─────────
+//
+// Contract: a write verb NEVER executes when it arrives. Validation errors
+// answer immediately; anything that would mutate is parked in a FIFO queue
+// and shown to the human as ONE non-modal in-window card at a time. Only a
+// click on Approve runs the mutation (on the GUI thread); Deny, the
+// timeout, or a peer disconnect all resolve to "nothing happened".
+
+int McpBridge::resolveWriteTab(const QJsonObject &args, QString *err) const {
+    const int n = m_host.tabCount ? m_host.tabCount() : 0;
+    const int idx = args.contains(QLatin1String("tab_index"))
+                        ? args.value(QLatin1String("tab_index")).toInt(-1)
+                        : (m_host.currentTabIndex ? m_host.currentTabIndex()
+                                                  : -1);
+    if (idx < 0 || idx >= n) {
+        if (err)
+            *err = QStringLiteral("tab index out of range: %1").arg(idx);
+        return -1;
+    }
+    return idx;
+}
+
+QString McpBridge::tabLabel(int idx) const {
+    const QString t = m_host.tabTitle ? m_host.tabTitle(idx) : QString();
+    return t.isEmpty() ? QStringLiteral("tab %1").arg(idx) : t;
+}
+
+void McpBridge::verbInsertText(QLocalSocket *client, int id,
+                               const QJsonObject &args) {
+    if (!m_host.insertText) {
+        sendError(client, id,
+                  QStringLiteral("insert_text not supported by host"));
+        return;
+    }
+    const QString text = args.value(QLatin1String("text")).toString();
+    if (text.isEmpty()) {
+        sendError(client, id, QStringLiteral("missing text"));
+        return;
+    }
+    QString err;
+    const int idx = resolveWriteTab(args, &err);
+    if (idx < 0) {
+        sendError(client, id, err);
+        return;
+    }
+    int line = -1, col = -1;
+    if (args.contains(QLatin1String("line"))) {
+        line = args.value(QLatin1String("line")).toInt(0);
+        col = args.contains(QLatin1String("col"))
+                  ? args.value(QLatin1String("col")).toInt(0)
+                  : 1;
+        if (line < 1 || col < 1) {
+            sendError(client, id,
+                      QStringLiteral("line and col must be >= 1"));
+            return;
+        }
+    }
+    const QString desc = line >= 1
+        ? QStringLiteral("insert %1 chars into '%2' at line %3, col %4")
+              .arg(text.size()).arg(tabLabel(idx)).arg(line).arg(col)
+        : QStringLiteral("insert %1 chars into '%2' at the cursor")
+              .arg(text.size()).arg(tabLabel(idx));
+    enqueueApproval(client, id, desc,
+                    elideForCard(text, kApprovalPreviewChars),
+                    [this, idx, line, col, text](QString *execErr) {
+        if (!m_host.insertText(idx, line, col, text)) {
+            *execErr = QStringLiteral("could not insert");
+            return QJsonObject();
+        }
+        QJsonObject r;
+        r[QStringLiteral("tab_index")] = idx;
+        return r;
+    });
+}
+
+void McpBridge::verbReplaceSelection(QLocalSocket *client, int id,
+                                     const QJsonObject &args) {
+    if (!m_host.replaceSelection) {
+        sendError(client, id,
+                  QStringLiteral("replace_selection not supported by host"));
+        return;
+    }
+    if (!args.contains(QLatin1String("text"))) {
+        sendError(client, id, QStringLiteral("missing text"));
+        return;
+    }
+    const QString text = args.value(QLatin1String("text")).toString();
+    QString err;
+    const int idx = resolveWriteTab(args, &err);
+    if (idx < 0) {
+        sendError(client, id, err);
+        return;
+    }
+    // Fail fast: never ask the human to approve a no-op.
+    if (m_host.hasSelection && !m_host.hasSelection(idx)) {
+        sendError(client, id, QStringLiteral("no selection"));
+        return;
+    }
+    const QString desc =
+        QStringLiteral("replace the selection in '%1' with %2 chars")
+            .arg(tabLabel(idx)).arg(text.size());
+    enqueueApproval(client, id, desc,
+                    text.isEmpty() ? QStringLiteral("(delete the selection)")
+                                   : elideForCard(text, kApprovalPreviewChars),
+                    [this, idx, text](QString *execErr) {
+        // Re-checked at execute time: the selection may have vanished while
+        // the card was waiting for a click.
+        if (!m_host.replaceSelection(idx, text)) {
+            *execErr = QStringLiteral("no selection");
+            return QJsonObject();
+        }
+        QJsonObject r;
+        r[QStringLiteral("tab_index")] = idx;
+        return r;
+    });
+}
+
+void McpBridge::verbApplyEdit(QLocalSocket *client, int id,
+                              const QJsonObject &args) {
+    if (!m_host.applyEdit) {
+        sendError(client, id,
+                  QStringLiteral("apply_edit not supported by host"));
+        return;
+    }
+    const QString find = args.value(QLatin1String("find")).toString();
+    if (find.isEmpty()) {
+        sendError(client, id, QStringLiteral("missing find"));
+        return;
+    }
+    if (!args.contains(QLatin1String("replace"))) {
+        sendError(client, id, QStringLiteral("missing replace"));
+        return;
+    }
+    const QString replace = args.value(QLatin1String("replace")).toString();
+    const bool all = args.value(QLatin1String("all")).toBool(false);
+    QString err;
+    const int idx = resolveWriteTab(args, &err);
+    if (idx < 0) {
+        sendError(client, id, err);
+        return;
+    }
+    // Literal, case-sensitive pre-check: a no-match request fails fast
+    // without burning a human decision.
+    const QString text = m_host.tabText ? m_host.tabText(idx) : QString();
+    if (!text.contains(find)) {
+        sendError(client, id, QStringLiteral("no match"));
+        return;
+    }
+    const QString desc =
+        QStringLiteral("replace %1 '%2' with '%3' in '%4'")
+            .arg(all ? QStringLiteral("every") : QStringLiteral("the first"),
+                 elideForCard(find, kApprovalDescChars),
+                 elideForCard(replace, kApprovalDescChars), tabLabel(idx));
+    const QString preview =
+        elideForCard(find, kApprovalPreviewChars / 2) +
+        QStringLiteral("\n-> ") +
+        elideForCard(replace, kApprovalPreviewChars / 2);
+    enqueueApproval(client, id, desc, preview,
+                    [this, idx, find, replace, all](QString *execErr) {
+        const int count = m_host.applyEdit(idx, find, replace, all);
+        if (count < 0) {
+            *execErr = QStringLiteral("could not apply edit");
+            return QJsonObject();
+        }
+        if (count == 0) { // buffer changed while the card was pending
+            *execErr = QStringLiteral("no match");
+            return QJsonObject();
+        }
+        QJsonObject r;
+        r[QStringLiteral("count")] = count;
+        return r;
+    });
+}
+
+void McpBridge::verbSaveTab(QLocalSocket *client, int id,
+                            const QJsonObject &args) {
+    if (!m_host.saveTab) {
+        sendError(client, id,
+                  QStringLiteral("save_tab not supported by host"));
+        return;
+    }
+    QString err;
+    const int idx = resolveWriteTab(args, &err);
+    if (idx < 0) {
+        sendError(client, id, err);
+        return;
+    }
+    const QString path = m_host.tabPath ? m_host.tabPath(idx) : QString();
+    if (path.isEmpty()) {
+        // Untitled tab: this verb NEVER opens a Save As dialog.
+        sendError(client, id, QStringLiteral("needs Save As"));
+        return;
+    }
+    const QString desc =
+        QStringLiteral("save '%1' to disk").arg(tabLabel(idx));
+    enqueueApproval(client, id, desc, QDir::toNativeSeparators(path),
+                    [this, idx](QString *execErr) {
+        const QString nowPath = m_host.tabPath ? m_host.tabPath(idx)
+                                               : QString();
+        if (nowPath.isEmpty()) { // became untitled while pending
+            *execErr = QStringLiteral("needs Save As");
+            return QJsonObject();
+        }
+        if (!m_host.saveTab(idx)) {
+            *execErr = QStringLiteral("could not save: %1")
+                           .arg(QDir::toNativeSeparators(nowPath));
+            return QJsonObject();
+        }
+        QJsonObject r;
+        r[QStringLiteral("saved")] = true;
+        r[QStringLiteral("tab_index")] = idx;
+        return r;
+    });
+}
+
+void McpBridge::enqueueApproval(QLocalSocket *client, int id,
+                                const QString &description,
+                                const QString &preview,
+                                std::function<QJsonObject(QString *)> execute) {
+    PendingWrite pw;
+    pw.client = client;
+    pw.id = id;
+    pw.description = description;
+    pw.preview = preview;
+    pw.execute = std::move(execute);
+    m_approvalQueue.append(pw);
+    showNextApproval();
+}
+
+void McpBridge::showNextApproval() {
+    if (m_approvalActive) return; // one card at a time, FIFO
+    while (!m_approvalQueue.isEmpty()) {
+        const PendingWrite &front = m_approvalQueue.constFirst();
+        if (!front.client ||
+            front.client->state() != QLocalSocket::ConnectedState) {
+            m_approvalQueue.removeFirst(); // nobody left to answer
+            continue;
+        }
+        QWidget *parent =
+            m_host.approvalParent ? m_host.approvalParent() : nullptr;
+        if (!parent) {
+            // No surface to ask a human on: refuse. A write NEVER runs
+            // unapproved — there is no headless fallback by design.
+            const PendingWrite pw = m_approvalQueue.takeFirst();
+            sendError(pw.client, pw.id,
+                      QStringLiteral("approval unavailable"));
+            continue;
+        }
+        m_approvalActive = true;
+        showApprovalCard(parent, front);
+        m_approvalTimer->start(m_approvalTimeoutMs);
+        return;
+    }
+}
+
+// Non-modal banner overlaid on the host widget, styled after the AI panel's
+// write-approval card (accent left border, muted preview, Approve/Deny).
+// Palette-derived colors so Light, Dark, and Monokai all render sanely.
+void McpBridge::showApprovalCard(QWidget *parent, const PendingWrite &pw) {
+    dismissActiveCard();
+    m_cardParent = parent;
+    parent->installEventFilter(this);
+
+    const QPalette pal = parent->palette();
+    const QColor baseC = pal.color(QPalette::Base);
+    const QColor textC = pal.color(QPalette::Text);
+    const QColor accentC = pal.color(QPalette::Highlight);
+    const QColor borderC = pal.color(QPalette::Mid);
+    const QColor mutedC((baseC.red() + textC.red()) / 2,
+                        (baseC.green() + textC.green()) / 2,
+                        (baseC.blue() + textC.blue()) / 2);
+
+    auto *card = new QFrame(parent);
+    card->setObjectName(QStringLiteral("mcpApprovalCard"));
+    card->setFocusPolicy(Qt::NoFocus);
+    card->setStyleSheet(QStringLiteral(
+        "#mcpApprovalCard { background:%1; border:1px solid %2; "
+        "border-left:3px solid %3; border-radius:8px; }")
+        .arg(baseC.name(), borderC.name(), accentC.name()));
+    auto *lay = new QVBoxLayout(card);
+    lay->setContentsMargins(10, 8, 10, 8);
+    lay->setSpacing(6);
+
+    auto *hdr = new QLabel(card);
+    hdr->setObjectName(QStringLiteral("mcpApprovalDesc"));
+    hdr->setTextFormat(Qt::PlainText);
+    hdr->setWordWrap(true);
+    hdr->setText(QStringLiteral("AI tool (MCP) requests: %1")
+                     .arg(pw.description));
+    hdr->setStyleSheet(QStringLiteral(
+        "color:%1; background:transparent; font-weight:600;")
+        .arg(textC.name()));
+    lay->addWidget(hdr);
+
+    if (!pw.preview.isEmpty()) {
+        auto *prev = new QLabel(card);
+        prev->setObjectName(QStringLiteral("mcpApprovalPreview"));
+        prev->setTextFormat(Qt::PlainText);
+        prev->setWordWrap(true);
+        prev->setText(pw.preview);
+        prev->setStyleSheet(QStringLiteral(
+            "color:%1; background:transparent; font-family:'JetBrains Mono',"
+            "'Cascadia Code','Consolas',monospace; font-size:11px;")
+            .arg(mutedC.name()));
+        lay->addWidget(prev);
+    }
+
+    auto *btnRow = new QHBoxLayout;
+    btnRow->setSpacing(6);
+    auto *approveBtn = new QPushButton(tr("Approve"), card);
+    approveBtn->setObjectName(QStringLiteral("mcpApproveBtn"));
+    auto *denyBtn = new QPushButton(tr("Deny"), card);
+    denyBtn->setObjectName(QStringLiteral("mcpDenyBtn"));
+    // The card must never steal keyboard focus from the editor: mouse-only.
+    approveBtn->setFocusPolicy(Qt::NoFocus);
+    denyBtn->setFocusPolicy(Qt::NoFocus);
+    approveBtn->setStyleSheet(QStringLiteral(
+        "QPushButton{background:%1;color:%2;border:1px solid %1;"
+        "border-radius:6px;padding:4px 10px;font-weight:600;}")
+        .arg(accentC.name(), pal.color(QPalette::HighlightedText).name()));
+    denyBtn->setStyleSheet(QStringLiteral(
+        "QPushButton{background:%1;color:%2;border:1px solid %3;"
+        "border-radius:6px;padding:4px 10px;}")
+        .arg(pal.color(QPalette::Button).name(),
+             pal.color(QPalette::ButtonText).name(), borderC.name()));
+    btnRow->addWidget(approveBtn);
+    btnRow->addStretch(1);
+    btnRow->addWidget(denyBtn);
+    lay->addLayout(btnRow);
+
+    connect(approveBtn, &QPushButton::clicked, this,
+            [this]() { resolveActiveApproval(true, QString()); });
+    connect(denyBtn, &QPushButton::clicked, this, [this]() {
+        resolveActiveApproval(false, QStringLiteral("denied by user"));
+    });
+
+    m_card = card;
+    positionCard();
+    card->show();
+    card->raise();
+}
+
+void McpBridge::resolveActiveApproval(bool approved,
+                                      const QString &denyMessage) {
+    if (!m_approvalActive || m_approvalQueue.isEmpty()) return;
+    m_approvalTimer->stop();
+    const PendingWrite pw = m_approvalQueue.takeFirst();
+    m_approvalActive = false;
+    dismissActiveCard();
+    if (pw.client && pw.client->state() == QLocalSocket::ConnectedState) {
+        if (approved) {
+            QString err;
+            const QJsonObject result =
+                pw.execute ? pw.execute(&err) : QJsonObject();
+            if (err.isEmpty()) sendResult(pw.client, pw.id, result);
+            else sendError(pw.client, pw.id, err);
+        } else {
+            sendError(pw.client, pw.id, denyMessage);
+        }
+    }
+    showNextApproval();
+}
+
+void McpBridge::dismissActiveCard() {
+    if (m_cardParent) m_cardParent->removeEventFilter(this);
+    m_cardParent.clear();
+    if (m_card) {
+        m_card->hide();
+        // deleteLater, never delete: we may be inside the card's own
+        // button-clicked signal right now.
+        m_card->deleteLater();
+        m_card.clear();
+    }
+}
+
+void McpBridge::dropClientApprovals(QLocalSocket *client) {
+    bool droppedActive = false;
+    for (int i = m_approvalQueue.size() - 1; i >= 0; --i) {
+        QLocalSocket *c = m_approvalQueue.at(i).client.data();
+        if (c == client || !c) {
+            if (i == 0 && m_approvalActive) droppedActive = true;
+            m_approvalQueue.removeAt(i);
+        }
+    }
+    if (droppedActive) {
+        m_approvalTimer->stop();
+        m_approvalActive = false;
+        dismissActiveCard();
+        showNextApproval();
+    }
+}
+
+void McpBridge::positionCard() {
+    if (!m_card || !m_cardParent) return;
+    const int margin = 12;
+    const int w = qMax(280, m_cardParent->width() - 2 * margin);
+    m_card->setFixedWidth(w);
+    m_card->adjustSize();
+    m_card->move(qMax(0, (m_cardParent->width() - w) / 2), 8);
+    m_card->raise();
+}
+
+bool McpBridge::eventFilter(QObject *watched, QEvent *event) {
+    if (watched == m_cardParent && event->type() == QEvent::Resize)
+        positionCard();
+    return QObject::eventFilter(watched, event);
 }

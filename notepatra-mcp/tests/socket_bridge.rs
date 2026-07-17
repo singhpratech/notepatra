@@ -249,6 +249,90 @@ fn invalid_greeting_is_rejected_before_any_send() {
 }
 
 #[test]
+fn write_verbs_wait_out_the_approval_window() {
+    let (path, handle) = spawn_bridge(|stream| {
+        let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+        let mut stream = stream;
+        writeln!(stream, "{GREETING}").unwrap();
+        for _ in 0..4 {
+            let mut line = String::new();
+            if reader.read_line(&mut line).unwrap() == 0 {
+                return;
+            }
+            let req: Value = serde_json::from_str(&line).unwrap();
+            let result = match req["verb"].as_str().unwrap() {
+                "insert_text" => {
+                    assert_eq!(
+                        req["args"],
+                        json!({ "text": "hi", "tab_index": 1, "line": 2, "col": 3 })
+                    );
+                    // Longer than the base timeout, within the approval
+                    // window: proves write verbs get the long timeout.
+                    std::thread::sleep(Duration::from_millis(300));
+                    json!({ "ok": true, "tab_index": 1 })
+                }
+                "replace_selection" => {
+                    assert_eq!(req["args"], json!({ "text": "x" }));
+                    json!({ "ok": true })
+                }
+                "apply_edit" => {
+                    // "all" is always sent explicitly.
+                    assert_eq!(
+                        req["args"],
+                        json!({ "find": "a", "replace": "b", "all": false, "tab_index": 0 })
+                    );
+                    json!({ "ok": true, "count": 2 })
+                }
+                "save_tab" => {
+                    assert_eq!(req["args"], json!({}));
+                    json!({ "ok": true })
+                }
+                other => panic!("unexpected verb {other}"),
+            };
+            let resp = json!({ "id": req["id"], "ok": true, "result": result });
+            writeln!(stream, "{resp}").unwrap();
+        }
+    });
+    let mut ed = SocketEditor::with_socket_path(path.to_str().unwrap())
+        .with_timeouts(Duration::from_millis(100), Duration::from_millis(100))
+        .with_approval_timeout(Duration::from_secs(2));
+    let v = ed
+        .insert_text("hi", Some(1), Some(2), Some(3))
+        .expect("insert_text survives the approval wait");
+    assert_eq!(v, json!({ "ok": true, "tab_index": 1 }));
+    let v = ed.replace_selection("x", None).expect("replace_selection");
+    assert_eq!(v, json!({ "ok": true }));
+    let v = ed.apply_edit("a", "b", Some(0), false).expect("apply_edit");
+    assert_eq!(v["count"], 2);
+    let v = ed.save_tab(None).expect("save_tab");
+    assert_eq!(v, json!({ "ok": true }));
+    finish(path, handle);
+}
+
+#[test]
+fn approval_denial_and_timeout_errors_pass_through_verbatim() {
+    // One connection per error: the client drops the connection after any
+    // error round-trip, and the fake bridge accepts only once.
+    for expected in ["denied by user", "approval timed out"] {
+        let (path, handle) = spawn_bridge(move |stream| {
+            let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+            let mut stream = stream;
+            writeln!(stream, "{GREETING}").unwrap();
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            let req: Value = serde_json::from_str(&line).unwrap();
+            assert_eq!(req["verb"], "save_tab");
+            let resp = json!({ "id": req["id"], "ok": false, "error": expected });
+            writeln!(stream, "{resp}").unwrap();
+        });
+        let mut ed = editor_for(&path);
+        let err = ed.save_tab(None).unwrap_err();
+        assert_eq!(err.0, expected);
+        finish(path, handle);
+    }
+}
+
+#[test]
 fn bridge_error_response_maps_to_transport_error() {
     let (path, handle) = spawn_bridge(|stream| {
         let mut reader = BufReader::new(stream.try_clone().expect("clone"));

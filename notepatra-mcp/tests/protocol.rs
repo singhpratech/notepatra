@@ -1,16 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Full JSON-RPC round-trips through the server loop with in-memory I/O.
 
+use std::sync::Mutex;
+
 use notepatra_mcp::server::{Server, LATEST_PROTOCOL_VERSION};
-use notepatra_mcp::transport::mock::MockEditor;
+use notepatra_mcp::transport::mock::{ApprovalMode, MockEditor};
 use serde_json::{json, Value};
 
-/// Feeds newline-delimited messages through Server::run and parses the
-/// newline-delimited responses.
-fn run_lines(lines: &[String]) -> Vec<Value> {
+/// Serializes the tests that read or write the NOTEPATRA_MCP_VERSION env
+/// var (Server::new reads it, set_var is process-global).
+static VERSION_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+/// Feeds newline-delimited messages through Server::run (over the given
+/// editor) and parses the newline-delimited responses.
+fn run_lines_with(editor: MockEditor, lines: &[String]) -> Vec<Value> {
     let input = lines.join("\n") + "\n";
     let mut out: Vec<u8> = Vec::new();
-    let mut server = Server::new(MockEditor::default());
+    let mut server = Server::new(editor);
     server
         .run(input.as_bytes(), &mut out)
         .expect("server loop failed");
@@ -19,6 +25,10 @@ fn run_lines(lines: &[String]) -> Vec<Value> {
         .lines()
         .map(|l| serde_json::from_str(l).expect("response line is not valid JSON"))
         .collect()
+}
+
+fn run_lines(lines: &[String]) -> Vec<Value> {
+    run_lines_with(MockEditor::default(), lines)
 }
 
 fn initialize_line(id: u64, protocol_version: &str) -> String {
@@ -43,6 +53,7 @@ fn call_line(id: u64, tool: &str, arguments: Value) -> String {
 
 #[test]
 fn initialize_handshake() {
+    let _guard = VERSION_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let responses = run_lines(&[
         initialize_line(1, LATEST_PROTOCOL_VERSION),
         json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }).to_string(),
@@ -53,7 +64,8 @@ fn initialize_handshake() {
     assert_eq!(responses[0]["id"], 1);
     assert_eq!(r["protocolVersion"], LATEST_PROTOCOL_VERSION);
     assert_eq!(r["serverInfo"]["name"], "notepatra-mcp");
-    assert_eq!(r["serverInfo"]["version"], "0.1.0");
+    // Default version comes from Cargo.toml (no env override).
+    assert_eq!(r["serverInfo"]["version"], "0.1.118");
     assert!(r["capabilities"]["tools"].is_object());
     assert!(r["capabilities"]["resources"].is_object());
     assert!(r["capabilities"]["prompts"].is_object());
@@ -109,7 +121,11 @@ fn tools_list_shape() {
             "format_sql",
             "format_html",
             "list_notes",
-            "read_note"
+            "read_note",
+            "insert_text",
+            "replace_selection",
+            "apply_edit",
+            "save_tab"
         ]
     );
     for tool in tools {
@@ -417,10 +433,11 @@ fn resources_list_exposes_tabs_and_notes() {
     assert_eq!(resources.len(), 7);
     assert_eq!(resources[0]["uri"], "notepatra://tab/0");
     assert_eq!(resources[0]["name"], "main.rs");
-    // Note URIs embed the note's absolute file path, as list_notes reports it.
+    // Note URIs are root-relative: the basename of the absolute path that
+    // list_notes reports (full-path fallback only on basename collisions).
     assert_eq!(
         resources[3]["uri"],
-        "notepatra://note//home/user/Documents/Notepatra/Noter/standup-2026-07-15.html"
+        "notepatra://note/standup-2026-07-15.html"
     );
     assert_eq!(resources[3]["name"], "Standup 2026-07-15");
     for r in resources {
@@ -435,7 +452,7 @@ fn resources_read_round_trips_tab_and_note() {
         request_line(
             2,
             "resources/read",
-            json!({ "uri": "notepatra://note//home/user/Documents/Notepatra/Noter/meeting-design.html" }),
+            json!({ "uri": "notepatra://note/meeting-design.html" }),
         ),
     ]);
     let tab = &responses[0]["result"]["contents"][0];
@@ -443,10 +460,7 @@ fn resources_read_round_trips_tab_and_note() {
     assert_eq!(tab["mimeType"], "text/plain");
     assert!(tab["text"].as_str().unwrap().contains("Release notes"));
     let note = &responses[1]["result"]["contents"][0];
-    assert_eq!(
-        note["uri"],
-        "notepatra://note//home/user/Documents/Notepatra/Noter/meeting-design.html"
-    );
+    assert_eq!(note["uri"], "notepatra://note/meeting-design.html");
     assert!(note["text"].as_str().unwrap().contains("dark theme parity"));
 }
 
@@ -549,4 +563,294 @@ fn unknown_prompt_is_invalid_params_error() {
         .as_str()
         .unwrap()
         .contains("unknown prompt: no-such-prompt"));
+}
+
+// ---------------------------------------------------------------------------
+// Write tools (v0.1.118) — approval-gated in the editor
+// ---------------------------------------------------------------------------
+
+const APPROVAL_SENTENCE: &str = "Requires the user to click Approve on a card inside Notepatra; \
+     the call blocks until they respond (up to 2 minutes) and returns an error if denied \
+     or timed out.";
+
+#[test]
+fn write_tool_descriptions_state_the_approval_gate() {
+    let responses =
+        run_lines(&[json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }).to_string()]);
+    let tools = responses[0]["result"]["tools"].as_array().unwrap();
+    assert_eq!(tools.len(), 22);
+    let write_tools = ["insert_text", "replace_selection", "apply_edit", "save_tab"];
+    for tool in tools {
+        let name = tool["name"].as_str().unwrap();
+        let description = tool["description"].as_str().unwrap();
+        if write_tools.contains(&name) {
+            assert!(
+                description.contains(APPROVAL_SENTENCE),
+                "{name} must state the approval gate: {description}"
+            );
+        } else {
+            assert!(
+                !description.contains("click Approve"),
+                "read tool {name} must not claim an approval gate"
+            );
+        }
+    }
+    // search_project documents the server-side result cap.
+    let search = tools
+        .iter()
+        .find(|t| t["name"] == "search_project")
+        .unwrap();
+    assert!(search["description"]
+        .as_str()
+        .unwrap()
+        .contains("caps results at 200"));
+}
+
+#[test]
+fn write_tools_happy_paths() {
+    let responses = run_lines(&[
+        call_line(
+            1,
+            "insert_text",
+            json!({ "text": "// header\n", "tab_index": 0, "line": 1, "col": 1 }),
+        ),
+        call_line(2, "read_tab", json!({ "tab_index": 0 })),
+        call_line(
+            3,
+            "replace_selection",
+            json!({ "text": "eprintln!(\"replaced\");" }),
+        ),
+        call_line(4, "read_tab", json!({ "tab_index": 0 })),
+        call_line(
+            5,
+            "apply_edit",
+            json!({ "find": "lexer", "replace": "parser", "tab_index": 1 }),
+        ),
+        call_line(
+            6,
+            "apply_edit",
+            json!({ "find": "- ", "replace": "* ", "tab_index": 1, "all": true }),
+        ),
+        call_line(7, "read_tab", json!({ "tab_index": 1 })),
+        call_line(8, "save_tab", json!({ "tab_index": 1 })),
+        call_line(9, "list_open_tabs", json!({})),
+    ]);
+    for r in &responses {
+        assert_eq!(r["result"]["isError"], false, "unexpected error in {r}");
+    }
+    // insert_text echoes the resolved tab.
+    let inserted = json_of(&responses[0]);
+    assert_eq!(inserted["ok"], true);
+    assert_eq!(inserted["tab_index"], 0);
+    assert!(text_of(&responses[1]).starts_with("// header\nfn main()"));
+    // replace_selection swaps the selected text in the active tab.
+    assert_eq!(json_of(&responses[2]), json!({ "ok": true }));
+    let after_replace = text_of(&responses[3]);
+    assert!(after_replace.contains("eprintln!(\"replaced\");"));
+    assert!(!after_replace.contains("println!(\"hello"));
+    // apply_edit: first-only by default, all:true replaces every occurrence.
+    let first_only = json_of(&responses[4]);
+    assert_eq!(first_only["ok"], true);
+    assert_eq!(first_only["count"], 1);
+    let all = json_of(&responses[5]);
+    assert_eq!(all["ok"], true);
+    assert_eq!(all["count"], 2);
+    let notes_tab = text_of(&responses[6]);
+    assert!(notes_tab.contains("parser edge case"));
+    assert!(notes_tab.contains("* fix"));
+    assert!(notes_tab.contains("* ship"));
+    // save_tab clears the modified flag (the user-visible contract).
+    assert_eq!(json_of(&responses[7]), json!({ "ok": true }));
+    let tabs = json_of(&responses[8]);
+    assert_eq!(tabs[1]["modified"], false);
+}
+
+#[test]
+fn denied_write_tools_return_the_verbatim_error() {
+    let mut editor = MockEditor::default();
+    editor.set_approval(ApprovalMode::Deny);
+    let responses = run_lines_with(
+        editor,
+        &[
+            call_line(1, "insert_text", json!({ "text": "x" })),
+            call_line(2, "replace_selection", json!({ "text": "x" })),
+            call_line(3, "apply_edit", json!({ "find": "a", "replace": "b" })),
+            call_line(4, "save_tab", json!({})),
+            // Read tools are NOT approval-gated: they keep working on deny.
+            call_line(5, "read_tab", json!({ "tab_index": 0 })),
+        ],
+    );
+    for r in &responses[..4] {
+        assert_eq!(r["result"]["isError"], true, "expected isError in {r}");
+        assert_eq!(text_of(r), "denied by user");
+        assert!(r.get("error").is_none());
+    }
+    assert_eq!(responses[4]["result"]["isError"], false);
+}
+
+#[test]
+fn timed_out_approvals_return_the_verbatim_error() {
+    let mut editor = MockEditor::default();
+    editor.set_approval(ApprovalMode::Timeout);
+    let responses = run_lines_with(
+        editor,
+        &[
+            call_line(1, "insert_text", json!({ "text": "x" })),
+            call_line(2, "replace_selection", json!({ "text": "x" })),
+            call_line(3, "apply_edit", json!({ "find": "a", "replace": "b" })),
+            call_line(4, "save_tab", json!({})),
+        ],
+    );
+    for r in &responses {
+        assert_eq!(r["result"]["isError"], true, "expected isError in {r}");
+        assert_eq!(text_of(r), "approval timed out");
+    }
+}
+
+#[test]
+fn write_tools_malformed_arguments_are_invalid_params_errors() {
+    let responses = run_lines(&[
+        call_line(1, "insert_text", json!({})), // missing text
+        call_line(2, "insert_text", json!({ "text": "x", "line": 0 })), // line < 1
+        call_line(3, "insert_text", json!({ "text": "x", "col": 0 })), // col < 1
+        call_line(4, "insert_text", json!({ "text": 7 })), // mistyped
+        call_line(5, "replace_selection", json!({})), // missing text
+        call_line(6, "apply_edit", json!({ "find": "a" })), // missing replace
+        call_line(
+            7,
+            "apply_edit",
+            json!({ "find": "a", "replace": "b", "all": 1 }),
+        ), // mistyped all
+        call_line(8, "save_tab", json!({ "tab_index": -1 })), // negative
+        call_line(9, "save_tab", json!({ "bogus": true })), // extra key
+    ]);
+    for r in &responses {
+        assert_eq!(r["error"]["code"], -32602, "expected -32602 in {r}");
+    }
+}
+
+#[test]
+fn write_tool_errors_on_bad_tabs_are_iserror_results() {
+    let responses = run_lines(&[
+        call_line(1, "insert_text", json!({ "text": "x", "tab_index": 99 })),
+        call_line(2, "save_tab", json!({ "tab_index": 99 })),
+    ]);
+    for r in &responses {
+        assert_eq!(r["result"]["isError"], true, "expected isError in {r}");
+        assert!(text_of(r).contains("no tab at index 99"));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// E2E-report gap fixes (v0.1.118)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn truncated_reads_carry_the_marker_in_tool_and_resource_text() {
+    let mut editor = MockEditor::default();
+    editor.simulate_truncated_tab(0);
+    let responses = run_lines_with(
+        editor,
+        &[
+            call_line(1, "read_tab", json!({ "tab_index": 0 })),
+            request_line(2, "resources/read", json!({ "uri": "notepatra://tab/0" })),
+            // An untruncated tab must NOT carry the marker.
+            call_line(3, "read_tab", json!({ "tab_index": 1 })),
+        ],
+    );
+    assert!(text_of(&responses[0]).ends_with("\n[truncated at 5 MB]"));
+    assert!(responses[1]["result"]["contents"][0]["text"]
+        .as_str()
+        .unwrap()
+        .ends_with("\n[truncated at 5 MB]"));
+    assert!(!text_of(&responses[2]).contains("[truncated at 5 MB]"));
+}
+
+#[test]
+fn duplicate_note_basenames_fall_back_to_encoded_full_paths() {
+    let mut editor = MockEditor::default();
+    editor.add_note(
+        "Standup (archived)",
+        "/home/user/Documents/Notepatra/Noter/archive/standup-2026-07-15.html",
+        "archived standup\n",
+    );
+    let archived_uri = format!(
+        "notepatra://note/{}",
+        "/home/user/Documents/Notepatra/Noter/archive/standup-2026-07-15.html".replace('/', "%2F")
+    );
+    let original_uri = format!(
+        "notepatra://note/{}",
+        "/home/user/Documents/Notepatra/Noter/standup-2026-07-15.html".replace('/', "%2F")
+    );
+    let responses = run_lines_with(
+        editor,
+        &[
+            request_line(1, "resources/list", json!({})),
+            request_line(2, "resources/read", json!({ "uri": archived_uri.clone() })),
+            request_line(3, "resources/read", json!({ "uri": original_uri.clone() })),
+            // The ambiguous basename URI resolves to neither collided note.
+            request_line(
+                4,
+                "resources/read",
+                json!({ "uri": "notepatra://note/standup-2026-07-15.html" }),
+            ),
+        ],
+    );
+    let resources = responses[0]["result"]["resources"].as_array().unwrap();
+    // 3 tabs + 5 notes.
+    assert_eq!(resources.len(), 8);
+    let uris: Vec<&str> = resources
+        .iter()
+        .map(|r| r["uri"].as_str().unwrap())
+        .collect();
+    assert!(uris.contains(&original_uri.as_str()), "uris: {uris:?}");
+    assert!(uris.contains(&archived_uri.as_str()), "uris: {uris:?}");
+    assert!(
+        !uris.contains(&"notepatra://note/standup-2026-07-15.html"),
+        "colliding basename must not be listed bare: {uris:?}"
+    );
+    // Non-colliding notes keep their basename URIs.
+    assert!(uris.contains(&"notepatra://note/release-checklist.html"));
+    assert!(responses[1]["result"]["contents"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("archived standup"));
+    assert!(responses[2]["result"]["contents"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("shipped lexer fix"));
+    assert_eq!(responses[3]["error"]["code"], -32002);
+}
+
+#[test]
+fn serverinfo_version_env_override_wins() {
+    let _guard = VERSION_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::set_var("NOTEPATRA_MCP_VERSION", "9.9.9-test");
+    let responses = run_lines(&[initialize_line(1, LATEST_PROTOCOL_VERSION)]);
+    std::env::remove_var("NOTEPATRA_MCP_VERSION");
+    assert_eq!(
+        responses[0]["result"]["serverInfo"]["version"],
+        "9.9.9-test"
+    );
+}
+
+#[test]
+fn search_project_clamps_max_results_to_200() {
+    // 250 matching lines in a fresh tab; asking for 1000 must clamp to the
+    // editor's 200-result cap and flag truncation.
+    let body = (0..250)
+        .map(|i| format!("zz {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let responses = run_lines(&[
+        call_line(1, "new_tab", json!({ "text": body })),
+        call_line(
+            2,
+            "search_project",
+            json!({ "query": "zz", "max_results": 1000 }),
+        ),
+    ]);
+    let hits = json_of(&responses[1]);
+    assert_eq!(hits["results"].as_array().unwrap().len(), 200);
+    assert_eq!(hits["truncated"], true);
 }

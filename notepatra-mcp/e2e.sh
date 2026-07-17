@@ -189,7 +189,8 @@ check("initialize", r.get("protocolVersion") == "2025-06-18"
 
 # 2: tools/list — all 18 tools present
 tools = [t["name"] for t in (result(2) or {}).get("tools", [])]
-check("tools/list (18 tools)", len(tools) == 18 and "read_note" in tools
+check("tools/list (22 tools)", len(tools) == 22 and "read_note" in tools
+      and "insert_text" in tools and "save_tab" in tools
       and "open_file" in tools, str(tools))
 
 # 3: list_open_tabs — our document is an open tab
@@ -243,7 +244,7 @@ res = (result(9) or {}).get("resources", [])
 uris = [r.get("uri", "") for r in res]
 check("resources/list",
       f"notepatra://tab/{doc_idx}" in uris
-      and any(u == "notepatra://note/" + note_file for u in uris),
+      and any(u == "notepatra://note/" + os.path.basename(note_file) for u in uris),
       str(uris))
 
 # 10: resources/read (document tab)

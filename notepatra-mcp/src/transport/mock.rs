@@ -10,12 +10,31 @@ use super::{
 /// find_in_tab stops after this many matches and sets `truncated`.
 const FIND_IN_TAB_CAP: usize = 500;
 
+/// Verbatim bridge error when the user clicks Deny on the approval card.
+pub const DENIED_BY_USER: &str = "denied by user";
+/// Verbatim bridge error when the approval card times out (120 s).
+pub const APPROVAL_TIMED_OUT: &str = "approval timed out";
+
+/// Simulated outcome of the in-editor approval card for the write tools.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ApprovalMode {
+    /// The user clicks Approve (default: keeps happy paths friction-free).
+    #[default]
+    Approve,
+    /// The user clicks Deny — every write verb fails with [`DENIED_BY_USER`].
+    Deny,
+    /// The card times out — every write verb fails with
+    /// [`APPROVAL_TIMED_OUT`] (no real waiting: tests stay fast).
+    Timeout,
+}
+
 struct MockTab {
     title: String,
     path: Option<String>,
     content: String,
     modified: bool,
     language: String,
+    truncated: bool,
 }
 
 struct MockNote {
@@ -31,6 +50,7 @@ pub struct MockEditor {
     /// (tab index, selected text)
     selection: (usize, String),
     notes: Vec<MockNote>,
+    approval: ApprovalMode,
 }
 
 fn language_for(path: &str) -> String {
@@ -53,6 +73,7 @@ impl Default for MockEditor {
                     content: "fn main() {\n    println!(\"hello from notepatra\");\n}\n".into(),
                     modified: false,
                     language: "Rust".into(),
+                    truncated: false,
                 },
                 MockTab {
                     title: "NOTES.md".into(),
@@ -61,6 +82,7 @@ impl Default for MockEditor {
                         .into(),
                     modified: true,
                     language: "Markdown".into(),
+                    truncated: false,
                 },
                 MockTab {
                     title: "Untitled 1".into(),
@@ -68,6 +90,7 @@ impl Default for MockEditor {
                     content: "scratch buffer\n".into(),
                     modified: false,
                     language: "Plain Text".into(),
+                    truncated: false,
                 },
             ],
             selection: (0, "println!(\"hello from notepatra\");".into()),
@@ -99,6 +122,7 @@ impl Default for MockEditor {
                     text: "old ideas\n".into(),
                 },
             ],
+            approval: ApprovalMode::Approve,
         }
     }
 }
@@ -128,6 +152,38 @@ impl MockEditor {
     /// Resolves an optional index against the active tab.
     fn resolve(&self, tab_index: Option<usize>) -> Result<usize, TransportError> {
         self.check_index(tab_index.unwrap_or(self.selection.0))
+    }
+
+    /// Test hook: simulate the user's response to the in-editor approval
+    /// card for all subsequent write tools (default: Approve).
+    pub fn set_approval(&mut self, mode: ApprovalMode) {
+        self.approval = mode;
+    }
+
+    /// Test hook: mark a tab so reads report `truncated: true` (the real
+    /// editor caps read_tab at 5 MB).
+    pub fn simulate_truncated_tab(&mut self, index: usize) {
+        self.tabs[index].truncated = true;
+    }
+
+    /// Test hook: add a Noter note (used to exercise basename collisions in
+    /// resource URIs).
+    pub fn add_note(&mut self, title: &str, file: &str, text: &str) {
+        self.notes.push(MockNote {
+            title: title.to_string(),
+            file: file.to_string(),
+            modified_iso: "2026-07-16T00:00:00Z".into(),
+            text: text.to_string(),
+        });
+    }
+
+    /// The simulated approval-card outcome every write verb goes through.
+    fn check_approval(&self) -> Result<(), TransportError> {
+        match self.approval {
+            ApprovalMode::Approve => Ok(()),
+            ApprovalMode::Deny => Err(TransportError(DENIED_BY_USER.into())),
+            ApprovalMode::Timeout => Err(TransportError(APPROVAL_TIMED_OUT.into())),
+        }
     }
 
     /// Next "Untitled N" label: scan the max existing N, never recount by
@@ -160,6 +216,7 @@ impl EditorTransport for MockEditor {
             content: String::new(),
             modified: false,
             language: language_for(path),
+            truncated: false,
         });
         Ok(self.tabs.len() - 1)
     }
@@ -182,7 +239,7 @@ impl EditorTransport for MockEditor {
             title: t.title.clone(),
             path: t.path.clone(),
             text: t.content.clone(),
-            truncated: false,
+            truncated: t.truncated,
         })
     }
 
@@ -281,6 +338,7 @@ impl EditorTransport for MockEditor {
             content: text.unwrap_or_default().to_string(),
             modified: text.is_some_and(|t| !t.is_empty()),
             language: "Plain Text".into(),
+            truncated: false,
         });
         Ok(json!({ "tab_index": self.tabs.len() - 1 }))
     }
@@ -358,5 +416,101 @@ impl EditorTransport for MockEditor {
             .find(|n| n.file == file)
             .map(|n| json!({ "title": n.title, "text": n.text }))
             .ok_or_else(|| TransportError(format!("no note named {file:?}")))
+    }
+
+    // Write verbs: each one first passes through the simulated approval card
+    // (approve by default; deny/timeout via `set_approval`).
+
+    fn insert_text(
+        &mut self,
+        text: &str,
+        tab_index: Option<usize>,
+        line: Option<usize>,
+        col: Option<usize>,
+    ) -> Result<Value, TransportError> {
+        self.check_approval()?;
+        let i = self.resolve(tab_index)?;
+        let t = &mut self.tabs[i];
+        match line {
+            // No explicit position: the cursor stand-in is end-of-document.
+            None => t.content.push_str(text),
+            Some(l) => {
+                let mut lines: Vec<String> = t.content.split('\n').map(String::from).collect();
+                if l > lines.len() {
+                    return Err(TransportError(format!("no line {l} in tab {i}")));
+                }
+                let target = &mut lines[l - 1];
+                // 1-based column, clamped to the line end (bridge semantics).
+                let cpos = col
+                    .unwrap_or(1)
+                    .saturating_sub(1)
+                    .min(target.chars().count());
+                let byte = target
+                    .char_indices()
+                    .nth(cpos)
+                    .map_or(target.len(), |(b, _)| b);
+                target.insert_str(byte, text);
+                t.content = lines.join("\n");
+            }
+        }
+        t.modified = true;
+        Ok(json!({ "ok": true, "tab_index": i }))
+    }
+
+    fn replace_selection(
+        &mut self,
+        text: &str,
+        tab_index: Option<usize>,
+    ) -> Result<Value, TransportError> {
+        self.check_approval()?;
+        let i = self.resolve(tab_index)?;
+        // The mock models the selection as (tab, text): swap the first
+        // occurrence of the selected text and select the replacement.
+        let sel_text = self.selection.1.clone();
+        let t = &mut self.tabs[i];
+        if !sel_text.is_empty() {
+            if let Some(pos) = t.content.find(&sel_text) {
+                t.content.replace_range(pos..pos + sel_text.len(), text);
+            }
+        }
+        t.modified = true;
+        self.selection = (i, text.to_string());
+        Ok(json!({ "ok": true }))
+    }
+
+    fn apply_edit(
+        &mut self,
+        find: &str,
+        replace: &str,
+        tab_index: Option<usize>,
+        all: bool,
+    ) -> Result<Value, TransportError> {
+        self.check_approval()?;
+        let i = self.resolve(tab_index)?;
+        if find.is_empty() {
+            return Err(TransportError("find must not be empty".into()));
+        }
+        let t = &mut self.tabs[i];
+        let count = if all {
+            t.content.matches(find).count()
+        } else {
+            usize::from(t.content.contains(find))
+        };
+        if count > 0 {
+            t.content = if all {
+                t.content.replace(find, replace)
+            } else {
+                t.content.replacen(find, replace, 1)
+            };
+            t.modified = true;
+        }
+        Ok(json!({ "ok": true, "count": count }))
+    }
+
+    fn save_tab(&mut self, tab_index: Option<usize>) -> Result<Value, TransportError> {
+        self.check_approval()?;
+        let i = self.resolve(tab_index)?;
+        self.tabs[i].modified = false;
+        Ok(json!({ "ok": true }))
     }
 }

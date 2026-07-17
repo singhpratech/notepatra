@@ -4,6 +4,16 @@ use serde_json::{json, Map, Value};
 use crate::transport::{EditorTransport, TabSelector};
 
 const DEFAULT_MAX_RESULTS: usize = 50;
+/// Server-side cap mirrored from the C++ bridge: search_project never
+/// returns more than this many matches, so larger requests are clamped
+/// client-side instead of asking for results that cannot come back.
+const MAX_RESULTS_CAP: usize = 200;
+
+/// Mandatory sentence on every write tool's description: these tools are
+/// gated behind an in-editor human approval card.
+const APPROVAL_NOTE: &str = "Requires the user to click Approve on a card inside Notepatra; \
+     the call blocks until they respond (up to 2 minutes) and returns an error if denied \
+     or timed out.";
 
 pub enum CallOutcome {
     /// Tool succeeded; string becomes the text content block.
@@ -78,12 +88,12 @@ pub fn definitions() -> Value {
         },
         {
             "name": "search_project",
-            "description": "Search ALL open tabs plus files under the workspace folder for a literal substring (case-insensitive); returns matching lines with file path and line number. Use to locate text when you don't know which tab or file it is in; use find_in_tab for a single tab.",
+            "description": "Search ALL open tabs plus files under the workspace folder for a literal substring (case-insensitive); returns matching lines with file path and line number. The editor caps results at 200 per search; larger max_results values are clamped to 200. Use to locate text when you don't know which tab or file it is in; use find_in_tab for a single tab.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "Literal text to search for" },
-                    "max_results": { "type": "integer", "minimum": 1, "description": "Maximum matches to return (default 50)" }
+                    "max_results": { "type": "integer", "minimum": 1, "description": "Maximum matches to return (default 50; values above 200 are clamped to the editor's 200-result cap)" }
                 },
                 "required": ["query"],
                 "additionalProperties": false
@@ -192,6 +202,74 @@ pub fn definitions() -> Value {
                 "required": ["file"],
                 "additionalProperties": false
             }
+        },
+        {
+            "name": "insert_text",
+            "description": format!(
+                "Insert text into an open tab (default: the active tab) at the cursor, \
+                 or at an explicit 1-based line/column. {APPROVAL_NOTE}"
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "description": "The text to insert" },
+                    "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" },
+                    "line": { "type": "integer", "minimum": 1, "description": "1-based line to insert at (default: current cursor position)" },
+                    "col": { "type": "integer", "minimum": 1, "description": "1-based column to insert at (default: start of the line)" }
+                },
+                "required": ["text"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "replace_selection",
+            "description": format!(
+                "Replace the currently selected text in a tab (default: the active tab) \
+                 with new text. {APPROVAL_NOTE}"
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "description": "The replacement text" },
+                    "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" }
+                },
+                "required": ["text"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "apply_edit",
+            "description": format!(
+                "Find-and-replace a literal string in one open tab (default: the active \
+                 tab): replaces the first occurrence, or every occurrence with all=true, \
+                 and returns the replacement count. {APPROVAL_NOTE}"
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "find": { "type": "string", "description": "Literal text to find" },
+                    "replace": { "type": "string", "description": "Replacement text" },
+                    "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" },
+                    "all": { "type": "boolean", "description": "Replace every occurrence (default false: first occurrence only)" }
+                },
+                "required": ["find", "replace"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "save_tab",
+            "description": format!(
+                "Save an open tab (default: the active tab) to its file on disk. \
+                 {APPROVAL_NOTE}"
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" }
+                },
+                "required": [],
+                "additionalProperties": false
+            }
         }
     ])
 }
@@ -220,6 +298,10 @@ pub fn call(
         "format_html" => format_text(transport, args, "html"),
         "list_notes" => no_arg_json(args, || transport.list_notes()),
         "read_note" => read_note(transport, args),
+        "insert_text" => insert_text(transport, args),
+        "replace_selection" => replace_selection(transport, args),
+        "apply_edit" => apply_edit(transport, args),
+        "save_tab" => save_tab(transport, args),
         other => CallOutcome::UnknownTool(other.to_string()),
     }
 }
@@ -274,6 +356,26 @@ fn optional_index(args: &Map<String, Value>, key: &str) -> Result<Option<usize>,
         Some(v) => v.as_u64().map(|n| Some(n as usize)).ok_or_else(|| {
             CallOutcome::InvalidParams(format!("{key} must be a non-negative integer"))
         }),
+    }
+}
+
+/// Optional 1-based integer (line/column numbers).
+fn optional_one_based(args: &Map<String, Value>, key: &str) -> Result<Option<usize>, CallOutcome> {
+    match optional_index(args, key)? {
+        Some(0) => Err(CallOutcome::InvalidParams(format!(
+            "{key} must be an integer >= 1"
+        ))),
+        v => Ok(v),
+    }
+}
+
+fn optional_bool(args: &Map<String, Value>, key: &str, default: bool) -> Result<bool, CallOutcome> {
+    match args.get(key) {
+        None => Ok(default),
+        Some(Value::Bool(b)) => Ok(*b),
+        Some(_) => Err(CallOutcome::InvalidParams(format!(
+            "{key} must be a boolean"
+        ))),
     }
 }
 
@@ -354,7 +456,9 @@ fn read_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> C
         },
     };
     match transport.read_tab(selector) {
-        Ok(content) => CallOutcome::Ok(content.text),
+        // Surface the wire's truncated flag in the text itself — MCP text
+        // content has no side channel for it.
+        Ok(content) => CallOutcome::Ok(content.text_with_marker()),
         Err(e) => CallOutcome::ToolError(e.0),
     }
 }
@@ -374,6 +478,9 @@ fn search_project(transport: &mut dyn EditorTransport, args: &Map<String, Value>
             _ => return CallOutcome::InvalidParams("max_results must be an integer >= 1".into()),
         },
     };
+    // Clamp to the editor's server-side cap rather than requesting results
+    // that can never come back.
+    let max_results = max_results.min(MAX_RESULTS_CAP);
     match transport.search_project(query, max_results) {
         Ok(results) => json_text(&results),
         Err(e) => CallOutcome::ToolError(e.0),
@@ -495,4 +602,83 @@ fn read_note(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> 
         Err(e) => return e,
     };
     to_outcome(transport.read_note(file))
+}
+
+// Write tools: approval-gated in the editor. "denied by user" and "approval
+// timed out" arrive as transport errors and pass through VERBATIM as
+// isError tool results via to_outcome.
+
+fn insert_text(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["text", "tab_index", "line", "col"]) {
+        return e;
+    }
+    let text = match required_str(args, "text") {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let tab_index = match optional_index(args, "tab_index") {
+        Ok(i) => i,
+        Err(e) => return e,
+    };
+    let line = match optional_one_based(args, "line") {
+        Ok(l) => l,
+        Err(e) => return e,
+    };
+    let col = match optional_one_based(args, "col") {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
+    to_outcome(transport.insert_text(text, tab_index, line, col))
+}
+
+fn replace_selection(
+    transport: &mut dyn EditorTransport,
+    args: &Map<String, Value>,
+) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["text", "tab_index"]) {
+        return e;
+    }
+    let text = match required_str(args, "text") {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let tab_index = match optional_index(args, "tab_index") {
+        Ok(i) => i,
+        Err(e) => return e,
+    };
+    to_outcome(transport.replace_selection(text, tab_index))
+}
+
+fn apply_edit(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["find", "replace", "tab_index", "all"]) {
+        return e;
+    }
+    let find = match required_str(args, "find") {
+        Ok(f) => f,
+        Err(e) => return e,
+    };
+    let replace = match required_str(args, "replace") {
+        Ok(r) => r,
+        Err(e) => return e,
+    };
+    let tab_index = match optional_index(args, "tab_index") {
+        Ok(i) => i,
+        Err(e) => return e,
+    };
+    let all = match optional_bool(args, "all", false) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    to_outcome(transport.apply_edit(find, replace, tab_index, all))
+}
+
+fn save_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["tab_index"]) {
+        return e;
+    }
+    let tab_index = match optional_index(args, "tab_index") {
+        Ok(i) => i,
+        Err(e) => return e,
+    };
+    to_outcome(transport.save_tab(tab_index))
 }

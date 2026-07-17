@@ -367,6 +367,7 @@
       <li><a href="#ai-interaction-log">AI Interaction Log</a></li>
       <li><a href="#noter">Noter — meeting notes</a></li>
       <li><a href="#diagram">Diagram tool (.npd)</a></li>
+      <li><a href="#mcp">MCP server (coming in v0.1.118)</a></li>
     </ul>
 
     <div class="section-label">Reference</div>
@@ -1703,6 +1704,34 @@ icon db :database "DB"  <span class="cm">rich-icon node</span></code></pre>
 
   <h3>Canvas &amp; export</h3>
   <p>Drag to pan, scroll to zoom, double-click to fit. Export the rendered diagram with the <strong>Export</strong> button: <strong>PNG / JPEG / PDF</strong> on every build, plus <strong>SVG / HTML</strong> where your Qt has the Svg module and <strong>WebP</strong> where it has the WebP image plugin — the menu shows exactly what your build supports, and unavailable formats are hidden rather than writing a broken file. The headless <code>npd_render &lt;file.npd&gt; &lt;out.{png|jpeg|webp|svg|pdf|html}&gt;</code> utility renders any <code>.npd</code> without launching the GUI (output format taken from the extension) — it is a build-from-source developer utility, not packaged in releases.</p>
+
+  <!-- ══════════════ MCP ══════════════ -->
+
+  <h2 id="mcp" class="anchor-target">MCP server — your editor, readable by your AI (coming in v0.1.118)</h2>
+  <div class="callout info">
+    <strong>Next release.</strong> MCP support ships in v0.1.118. The current release, v0.1.117, does not include it. Full details, per-client setup snippets, and the FAQ live on the dedicated <a href="/mcp.html">MCP page</a>.
+  </div>
+  <p>From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a standalone stdio JSON-RPC 2.0 <a href="https://modelcontextprotocol.io">Model Context Protocol</a> server (protocol revision <code>2025-06-18</code>; <code>2025-03-26</code> and <code>2024-11-05</code> also accepted) that connects external AI assistants to the running editor over a dedicated per-user local socket. Pass <code>--socket</code> to target the live editor; without it the server runs against a built-in mock editor for protocol testing. It works with Claude Desktop, Claude Code, OpenAI Codex CLI, the OpenAI Agents SDK, and any spec-compliant stdio MCP client (Cursor, Windsurf, VS Code).</p>
+  <p>The server exposes <strong>22 tools</strong> in three tiers:</p>
+  <table>
+    <thead><tr><th>Tier</th><th>Tools</th><th>Gate</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Read</strong> (10)</td><td><code>list_open_tabs</code>, <code>read_tab</code>, <code>get_selection</code>, <code>get_status</code>, <code>app_info</code>, <code>list_recent_files</code>, <code>find_in_tab</code>, <code>search_project</code>, <code>list_notes</code>, <code>read_note</code></td><td>None — observation only</td></tr>
+      <tr><td><strong>Act</strong> (8)</td><td><code>open_file</code>, <code>new_tab</code>, <code>goto_line</code>, <code>set_language</code>, <code>compare_tabs</code>, <code>format_json</code>, <code>format_sql</code>, <code>format_html</code></td><td>None — visible, non-destructive editor actions</td></tr>
+      <tr><td><strong>Write</strong> (4)</td><td><code>insert_text</code>, <code>replace_selection</code>, <code>apply_edit</code>, <code>save_tab</code></td><td><strong>Human approval card</strong> — see below</td></tr>
+    </tbody>
+  </table>
+  <p><strong>The write-approval model.</strong> The four write tools never execute on arrival. Each request shows a non-modal approval card inside the editor window with a preview and <strong>Approve</strong> / <strong>Deny</strong> buttons. No response within 120 seconds auto-denies (<code>approval timed out</code>); an explicit Deny returns <code>denied by user</code> to the assistant. Pending writes queue one card at a time (FIFO), and there is no headless fallback: without a visible window the write is denied with <code>approval unavailable</code>. The gate lives in the editor process, not in the sidecar, so no MCP client can write without a human click.</p>
+  <p>Beyond tools, the server publishes MCP <strong>resources</strong> — every open tab as <code>notepatra://tab/N</code> and every Noter note as <code>notepatra://note/&lt;basename&gt;</code> — and three <strong>prompts</strong>: <code>review-current-file</code>, <code>explain-selection</code>, and <code>summarize-notes</code>.</p>
+  <p>Quick start with the two CLI-first clients (from v0.1.118):</p>
+  <pre><code># Claude Code (Anthropic)
+claude mcp add notepatra -- notepatra-mcp --socket
+
+# Codex CLI (OpenAI) — add to ~/.codex/config.toml
+[mcp_servers.notepatra]
+command = "notepatra-mcp"
+args = ["--socket"]</code></pre>
+  <p>Honest limitations: the editor must be running (otherwise tools return "Notepatra is not running"); cloud-only connector surfaces (ChatGPT connectors, claude.ai web connectors) need URL-reachable servers and cannot reach a desktop editor; and the Windows named-pipe transport is not shipped yet — <code>--socket</code> works on Linux and macOS first, with Windows in a future release. Privacy: the sidecar makes no network connections — stdio to the client, local socket to the editor. See the <a href="/mcp.html">full MCP page</a> for setup snippets for every client and the complete FAQ.</p>
 
   <!-- ══════════════ Reference ══════════════ -->
 
