@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Notepatra MCP — Your editor, readable by your AI</title>
-<meta name="description" content="Notepatra's MCP server (coming in v0.1.118): 22 tools that let Claude, Codex, and any spec-compliant MCP client read your open tabs, search your workspace, and — only with your explicit per-action approval — edit and save. Local socket + stdio, nothing leaves your machine.">
+<meta name="description" content="Notepatra's MCP server (new in v0.1.118): 22 tools that let Claude, Codex, and any spec-compliant MCP client read your open tabs, search your workspace, and — only with your explicit per-action approval — edit and save. Local socket + stdio, nothing leaves your machine.">
 <link rel="canonical" href="https://notepatra.org/mcp.html">
 <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png">
 
@@ -213,7 +213,7 @@
   <div class="topbar-left">
     <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">MCP · coming in v0.1.118</span>
+    <span class="tag">MCP · new in v0.1.118</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
@@ -229,7 +229,7 @@
   <p class="lead">From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a Model Context Protocol server that lets Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client see what you have open, search your workspace, and — only with your explicit per-action approval — edit and save. Everything runs over stdio and a local socket. Nothing leaves your machine.</p>
 
   <div class="callout info">
-    <strong>Release status.</strong> MCP support ships in v0.1.118, the next release. The current release, v0.1.117, does not include it. Everything on this page describes v0.1.118.
+    <strong>Release status.</strong> MCP support ships in v0.1.118, the current release. Everything on this page describes v0.1.118.
   </div>
 
   <nav class="pagenav">
@@ -316,6 +316,22 @@
 
   <h2 id="setup" class="anchor-target">Setup — pick your client</h2>
   <p>The server binary is <code>notepatra-mcp</code>. All snippets below pass <code>--socket</code>, which connects it to the running editor; make sure <code>notepatra-mcp</code> is on your <code>PATH</code> (or use its absolute path), and have Notepatra running when the assistant calls a tool.</p>
+
+  <h3>Get <code>notepatra-mcp</code></h3>
+  <p>From v0.1.118, every <a href="https://github.com/singhpratech/notepatra/releases/latest">GitHub release</a> ships prebuilt <code>notepatra-mcp</code> binaries — cosign-signed like every other release artifact:</p>
+  <ul>
+    <li><code>notepatra-mcp-linux-x64.tar.gz</code></li>
+    <li><code>notepatra-mcp-linux-arm64.tar.gz</code></li>
+    <li><code>notepatra-mcp-macos-arm64.tar.gz</code></li>
+  </ul>
+  <p>Extract, <code>chmod +x notepatra-mcp</code>, and put it somewhere on your <code>PATH</code>:</p>
+  <pre><code>tar xzf notepatra-mcp-linux-x64.tar.gz
+chmod +x notepatra-mcp
+sudo mv notepatra-mcp /usr/local/bin/</code></pre>
+  <p>Or build it from source — the sidecar lives in <code>notepatra-mcp/</code> in the repo and needs only stable Rust, no other dependencies:</p>
+  <pre><code>cd notepatra-mcp
+cargo build --release   # binary at target/release/notepatra-mcp</code></pre>
+  <p>There is no Windows binary yet — the Windows named-pipe transport lands in a future release (see <a href="#limitations">limitations</a>).</p>
 
   <table>
     <thead><tr><th>Client</th><th>Vendor ecosystem</th><th>How it connects</th><th>Works with Notepatra?</th></tr></thead>

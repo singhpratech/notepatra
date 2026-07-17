@@ -67,11 +67,25 @@ jobs:
           cd build
           QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 
+      # v0.1.118 — MCP sidecar. x64 is the canonical unit-test run (arm and
+      # macOS jobs only build it); ships as notepatra-mcp-linux-x64.tar.gz.
+      - name: Build and test MCP server
+        run: |
+          cd notepatra-mcp
+          cargo build --release
+          cargo test --release
+
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-linux-x64
           path: build/notepatra
+
+      - name: Upload MCP server artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: notepatra-mcp-linux-x64
+          path: notepatra-mcp/target/release/notepatra-mcp
 
       # v0.1.64 — "Full" flavor (bundles QtWebEngine). The lite binary
       # above is the default download; users who want inline Vega-Lite
@@ -230,6 +244,16 @@ jobs:
         with:
           name: notepatra-linux-arm64
           path: build/notepatra
+
+      # v0.1.118 — MCP sidecar (build only; unit tests run in the x64 job).
+      - name: Build MCP server
+        run: cd notepatra-mcp && cargo build --release
+
+      - name: Upload MCP server artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: notepatra-mcp-linux-arm64
+          path: notepatra-mcp/target/release/notepatra-mcp
 
       # v0.1.64 — Full flavor for ARM. Same dual-output pattern as x64.
       - name: Build C++ (full flavor — WebEngine bundled)
@@ -846,6 +870,18 @@ jobs:
         with:
           name: notepatra-macos-arm64-full
           path: build-full/Notepatra-full.dmg
+
+      # v0.1.118 — MCP sidecar (build only; unit tests run in the linux x64
+      # job). No Windows MCP artifact yet — the named-pipe transport is a
+      # stub, so shipping a binary there would be dishonest.
+      - name: Build MCP server
+        run: cd notepatra-mcp && cargo build --release
+
+      - name: Upload MCP server artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: notepatra-mcp-macos-arm64
+          path: notepatra-mcp/target/release/notepatra-mcp
 
   build-windows:
     # PINNED (v0.1.113) for determinism: both windows-latest AND windows-2025
@@ -2213,6 +2249,18 @@ jobs:
           chmod +x notepatra-linux-arm64/notepatra || true
           tar czf notepatra-linux-x64.tar.gz -C notepatra-linux-x64 notepatra
           tar czf notepatra-linux-arm64.tar.gz -C notepatra-linux-arm64 notepatra
+          # v0.1.118 — MCP sidecar tarballs (Linux x64/arm64 + macOS arm64;
+          # no Windows binary — named-pipe transport not shipped yet). Hard
+          # requirement: if a job uploaded the dir, the binary must be in it.
+          for P in linux-x64 linux-arm64 macos-arm64; do
+            if [ -d "notepatra-mcp-$P" ]; then
+              test -f "notepatra-mcp-$P/notepatra-mcp" || { echo "::error::notepatra-mcp-$P artifact dir missing the binary"; exit 1; }
+              chmod +x "notepatra-mcp-$P/notepatra-mcp"
+              tar czf "notepatra-mcp-$P.tar.gz" -C "notepatra-mcp-$P" notepatra-mcp
+            else
+              echo "::error::expected MCP artifact dir notepatra-mcp-$P is missing"; exit 1
+            fi
+          done
           # v0.1.64 — Linux "full" flavor tarballs (bundles QtWebEngine for
           # inline Vega-Lite chart rendering). LINUX ONLY for the foreseeable
           # future — Charts Pack is downloaded on-demand on macOS/Windows
@@ -2330,6 +2378,8 @@ jobs:
           #   sha256sum -c SHA256SUMS
           for f in notepatra-linux-x64.tar.gz notepatra-linux-arm64.tar.gz \
                    notepatra-linux-x64-full.tar.gz notepatra-linux-arm64-full.tar.gz \
+                   notepatra-mcp-linux-x64.tar.gz notepatra-mcp-linux-arm64.tar.gz \
+                   notepatra-mcp-macos-arm64.tar.gz \
                    notepatra-macos-arm64.dmg notepatra-macos-arm64-full.dmg \
                    notepatra-windows-x64.zip notepatra-windows-x64-full.zip notepatra-setup-*.exe notepatra-*.msi notepatra-full-*.msi \
                    notepatra_*_amd64.deb notepatra_*_arm64.deb \
@@ -2386,6 +2436,8 @@ jobs:
           # ties the signature to this repo + workflow + commit SHA.
           for f in notepatra-linux-x64.tar.gz notepatra-linux-arm64.tar.gz \
                    notepatra-linux-x64-full.tar.gz notepatra-linux-arm64-full.tar.gz \
+                   notepatra-mcp-linux-x64.tar.gz notepatra-mcp-linux-arm64.tar.gz \
+                   notepatra-mcp-macos-arm64.tar.gz \
                    notepatra-macos-arm64.dmg notepatra-macos-arm64-full.dmg \
                    notepatra-windows-x64.zip notepatra-windows-x64-full.zip notepatra-setup-*.exe notepatra-*.msi notepatra-full-*.msi \
                    notepatra_*_amd64.deb notepatra_*_arm64.deb \
@@ -2409,6 +2461,9 @@ jobs:
             notepatra-linux-arm64.tar.gz
             notepatra-linux-x64-full.tar.gz
             notepatra-linux-arm64-full.tar.gz
+            notepatra-mcp-linux-x64.tar.gz
+            notepatra-mcp-linux-arm64.tar.gz
+            notepatra-mcp-macos-arm64.tar.gz
             notepatra-macos-arm64.dmg
             notepatra-macos-arm64-full.dmg
             notepatra-windows-x64.zip
@@ -2432,6 +2487,9 @@ jobs:
             notepatra-linux-arm64.tar.gz
             notepatra-linux-x64-full.tar.gz
             notepatra-linux-arm64-full.tar.gz
+            notepatra-mcp-*.tar.gz
+            notepatra-mcp-*.tar.gz.sig
+            notepatra-mcp-*.tar.gz.pem
             notepatra-macos-arm64.dmg
             notepatra-macos-arm64-full.dmg
             notepatra-windows-x64.zip

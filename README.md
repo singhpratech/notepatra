@@ -3,11 +3,15 @@
   <h1 align="center"><a href="https://notepatra.org" style="text-decoration:none;color:inherit;">Notepatra</a></h1>
   <p align="center"><em>The first code editor built for the AI era.</em></p>
   <p align="center">
-    <strong>C++ + Rust</strong> · <strong>~12 MB bare native executable</strong> · <strong>Zero Electron</strong> · <strong>238 file types</strong> · <strong>82 language lexers</strong> · <strong>Local AI formatters</strong>
+    <strong>C++ + Rust</strong> · <strong>~12 MB bare native executable</strong> · <strong>Zero Electron</strong> · <strong>238 file types</strong> · <strong>82 language lexers</strong> · <strong>Local AI formatters</strong> · <strong>MCP server</strong>
+  </p>
+  <p align="center">
+    <strong>New in v0.1.118:</strong> <a href="https://notepatra.org/mcp.html"><code>notepatra-mcp</code></a> — connect Claude Desktop, Claude Code, OpenAI Codex, and any MCP client to the running editor. 22 tools; every write human-approved in-window; nothing leaves your machine.
   </p>
   <p align="center">
     <a href="https://notepatra.org">Website</a> ·
     <a href="https://github.com/singhpratech/notepatra/releases/latest">Download</a> ·
+    <a href="#ai-assistants-mcp--new-in-v01118">MCP</a> ·
     <a href="#features">Features</a> ·
     <a href="#the-story">The Story</a> ·
     <a href="#install">Install</a> ·
@@ -47,7 +51,7 @@ Not a port. Not a wrapper. Something new — **for everyone**.
 
 I asked: **what would a small native code editor look like if it was built today, in 2026, when AI is part of every developer's workflow, and ran natively on Linux + macOS + Windows from one codebase?**
 
-The answer: a tiny native executable — ~12 MB bare (~12.4 MB on Linux x64) on every platform — with a Rust-powered core, Scintilla editing engine, and local-first AI integration (cloud backends optional). v0.1.117 downloads: 4.4 MB Linux x64 (tarball, Qt from the system), 27.7 MB on macOS (DMG with bundled Qt), 32.8–42.7 MB on Windows (MSI/zip/setup.exe with bundled Qt DLLs). An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your AI to figure it out — local by default, six cloud backends one click away when you want a frontier model. No telemetry. No subscription. No mandatory API key.
+The answer: a tiny native executable — ~12 MB bare (~12.2 MB on Linux x64) on every platform — with a Rust-powered core, Scintilla editing engine, and local-first AI integration (cloud backends optional). v0.1.118 downloads: 4.4 MB Linux x64 (tarball, Qt from the system), 27.7 MB on macOS (DMG with bundled Qt), 32.8–42.7 MB on Windows (MSI/zip/setup.exe with bundled Qt DLLs). An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your AI to figure it out — local by default, six cloud backends one click away when you want a frontier model. No telemetry. No subscription. No mandatory API key.
 
 Notepatra started on Linux — because that's where the gap was. But great tools shouldn't have borders. **Notepatra runs on Linux, Windows, and macOS.** Same codebase. Same features. No one gets left behind.
 
@@ -231,7 +235,7 @@ A first-class diagramming surface that **renders in the default binary on every 
 | | Middle-click | Close tab |
 | | Double-click empty | New tab |
 
-### AI assistants (MCP) — coming in v0.1.118
+### AI assistants (MCP) — new in v0.1.118
 
 From v0.1.118, Notepatra ships **`notepatra-mcp`** — a stdio JSON-RPC 2.0 [Model Context Protocol](https://modelcontextprotocol.io) server that connects external AI assistants (Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client) to the running editor over a local socket. Nothing leaves your machine: stdio to the client, local socket to the editor, no network connections.
 
@@ -281,7 +285,7 @@ Full tool reference, Claude Desktop / Agents SDK snippets, security model, and h
 **Why this hybrid?**
 - **C++** because Qt and QScintilla are C++ — zero friction for UI
 - **Rust** because file I/O, text processing, and parsing must never crash — Rust's ownership system guarantees memory safety
-- **Result**: the speed of C++, the safety of Rust. The bare executable is **~12 MB** on every platform (~12.4 MB Linux x64, similar on macOS / Windows). Latest v0.1.117 download sizes: **4.4 MB** Linux x64 tar.gz · **4.1 MB** Linux ARM64 tar.gz · **27.7 MB** macOS DMG (with bundled Qt) · **42.7 MB** Windows MSI · **32.8 MB** Windows NSIS · **37.4 MB** Windows portable zip. _Installed footprint on Windows is ~75-85 MB after the MSI extracts bundled Qt + QScintilla DLLs — normal for any Qt-based installer._
+- **Result**: the speed of C++, the safety of Rust. The bare executable is **~12 MB** on every platform (~12.2 MB Linux x64, similar on macOS / Windows). Latest v0.1.118 download sizes: **4.4 MB** Linux x64 tar.gz · **4.1 MB** Linux ARM64 tar.gz · **27.7 MB** macOS DMG (with bundled Qt) · **42.7 MB** Windows MSI · **32.8 MB** Windows NSIS · **37.4 MB** Windows portable zip. _Installed footprint on Windows is ~75-85 MB after the MSI extracts bundled Qt + QScintilla DLLs — normal for any Qt-based installer._
 
 ---
 
@@ -301,7 +305,7 @@ irm https://notepatra.org/install.ps1 | iex
 
 That's it. Auto-detects your OS, downloads the right binary, installs it, adds to PATH, creates shortcuts.
 
-### Or download manually — [Latest release: v0.1.117](https://github.com/singhpratech/notepatra/releases/latest)
+### Or download manually — [Latest release: v0.1.118](https://github.com/singhpratech/notepatra/releases/latest)
 
 | Platform | Download | Size | What's inside |
 |---|---|---|---|
@@ -316,7 +320,7 @@ That's it. Auto-detects your OS, downloads the right binary, installs it, adds t
 
 > **Lite vs Full.** The downloads above are the default **Lite** build. Each release also ships an opt-in **Full** variant (`-full`) that bundles the **DuckDB** query engine on every platform — plus, on **Linux and Windows**, the QtWebEngine inline Vega-Lite chart renderer (the `generate_chart` tool). **macOS Full is DuckDB-only**: Homebrew `qt@5` no longer ships QtWebEngine and there is no Apple-Silicon Qt5 WebEngine, so inline Vega charts are a Linux/Windows Full feature. The native fenced `` ```chart `` (QtCharts) renderer and the `.npd` diagram tool work on **every** platform in **both** flavors.
 
-**Why are the download sizes different?** Bare `notepatra` executable is **~12 MB** on each platform (~12.4 MB Linux x64 — slightly smaller on Windows/macOS than on Linux because clang + MSVC emit denser code than gcc). On Linux, Qt5 is a standard system package (`apt install qtbase5-dev libqscintilla2-qt5-dev`), so the download is just the binary (~4.4 MB compressed). On macOS and Windows, Qt isn't pre-installed, so we bundle the Qt frameworks / DLLs alongside the executable for portability — same approach Krita, Kdenlive, and every cross-platform Qt app uses. Even with Qt bundled, Notepatra installs at ~12–85 MB depending on platform vs 300+ MB for VS Code.
+**Why are the download sizes different?** Bare `notepatra` executable is **~12 MB** on each platform (~12.2 MB Linux x64 — slightly smaller on Windows/macOS than on Linux because clang + MSVC emit denser code than gcc). On Linux, Qt5 is a standard system package (`apt install qtbase5-dev libqscintilla2-qt5-dev`), so the download is just the binary (~4.4 MB compressed). On macOS and Windows, Qt isn't pre-installed, so we bundle the Qt frameworks / DLLs alongside the executable for portability — same approach Krita, Kdenlive, and every cross-platform Qt app uses. Even with Qt bundled, Notepatra installs at ~12–85 MB depending on platform vs 300+ MB for VS Code.
 
 > macOS Intel: not shipped pre-built. Apple stopped selling Intel Macs in 2023 and the GitHub Actions `macos-13` runner has been unreliable. Intel Mac users — `git clone` and run `./build.sh`. Builds in ~3 minutes.
 
@@ -326,11 +330,11 @@ For one-time-install-then-every-user-sees-it on a shared machine, or silent push
 
 | OS | Artefact | Silent admin install |
 |---|---|---|
-| 🪟 **Windows** | [`notepatra-x.x.x.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-0.1.117.msi /quiet` — installs to `C:\Program Files\Notepatra\`, adds system PATH, registers HKCR file associations, all-users Start Menu. WiX-built, MajorUpgrade-aware, SCCM-friendly. |
+| 🪟 **Windows** | [`notepatra-x.x.x.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-0.1.118.msi /quiet` — installs to `C:\Program Files\Notepatra\`, adds system PATH, registers HKCR file associations, all-users Start Menu. WiX-built, MajorUpgrade-aware, SCCM-friendly. |
 | 🍎 **macOS** | [`Notepatra.dmg`](https://github.com/singhpratech/notepatra/releases/latest) | Mount + `sudo cp -R "/Volumes/Notepatra/Notepatra.app" /Applications/` from a deployment script. Or open the DMG manually and drag to `/Applications` (admin password). Notarised + stapled. |
-| 🐧 **Debian / Ubuntu / Mint / Pop!_OS** (x64 + ARM64) | [`notepatra_0.1.117_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra_0.1.117_amd64.deb` — installs to `/opt/notepatra/` + symlink at `/usr/bin/notepatra`, hicolor icons, `.desktop` registration. ARM64: replace `amd64` → `arm64`. |
-| 🐧 **Fedora / RHEL / CentOS Stream / Rocky / Alma** (x64 + ARM64) | [`notepatra-0.1.117-1.x86_64.rpm`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo dnf install ./notepatra-0.1.117-1.x86_64.rpm` — same layout as the .deb. ARM64: replace `x86_64` → `aarch64`. Bundles QScintilla 2.14.1 alongside the binary because Fedora ships an incompatible packaging. |
-| 🐧 **Arch / openSUSE Tumbleweed / Manjaro / EndeavourOS / other glibc 2.38+** | [`Notepatra-0.1.117-x86_64.AppImage`](https://github.com/singhpratech/notepatra/releases/latest) | `chmod +x Notepatra-0.1.117-x86_64.AppImage && sudo cp Notepatra-0.1.117-x86_64.AppImage /opt/notepatra.AppImage && sudo ln -s /opt/notepatra.AppImage /usr/local/bin/notepatra`. Requires glibc 2.38+ (Ubuntu 24.04+, Fedora 40+, Arch, Tumbleweed). Older distros: use the .deb / .rpm. |
+| 🐧 **Debian / Ubuntu / Mint / Pop!_OS** (x64 + ARM64) | [`notepatra_0.1.118_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra_0.1.118_amd64.deb` — installs to `/opt/notepatra/` + symlink at `/usr/bin/notepatra`, hicolor icons, `.desktop` registration. ARM64: replace `amd64` → `arm64`. |
+| 🐧 **Fedora / RHEL / CentOS Stream / Rocky / Alma** (x64 + ARM64) | [`notepatra-0.1.118-1.x86_64.rpm`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo dnf install ./notepatra-0.1.118-1.x86_64.rpm` — same layout as the .deb. ARM64: replace `x86_64` → `aarch64`. Bundles QScintilla 2.14.1 alongside the binary because Fedora ships an incompatible packaging. |
+| 🐧 **Arch / openSUSE Tumbleweed / Manjaro / EndeavourOS / other glibc 2.38+** | [`Notepatra-0.1.118-x86_64.AppImage`](https://github.com/singhpratech/notepatra/releases/latest) | `chmod +x Notepatra-0.1.118-x86_64.AppImage && sudo cp Notepatra-0.1.118-x86_64.AppImage /opt/notepatra.AppImage && sudo ln -s /opt/notepatra.AppImage /usr/local/bin/notepatra`. Requires glibc 2.38+ (Ubuntu 24.04+, Fedora 40+, Arch, Tumbleweed). Older distros: use the .deb / .rpm. |
 
 > All artefacts ship with cosign `.sig` + `.pem` for keyless Sigstore verification and SLSA build provenance. See **[Verify your download](#verify-your-download)** below.
 
@@ -340,9 +344,9 @@ For teams that **can't or won't send code to public LLM endpoints** — regulate
 
 | OS | Artefact | Silent admin install |
 |---|---|---|
-| 🪟 **Windows** | [`notepatra-local-ai-0.1.117.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-local-ai-0.1.117.msi /quiet` — installs to `C:\Program Files\Notepatra Local AI\`, distinct UpgradeCode so SCCM treats it as its own product. Add/Remove Programs shows "Notepatra Local AI". |
-| 🐧 **Debian/Ubuntu x64** | [`notepatra-local-ai_0.1.117_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.117_amd64.deb` |
-| 🐧 **Debian/Ubuntu ARM64** | [`notepatra-local-ai_0.1.117_arm64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.117_arm64.deb` |
+| 🪟 **Windows** | [`notepatra-local-ai-0.1.118.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-local-ai-0.1.118.msi /quiet` — installs to `C:\Program Files\Notepatra Local AI\`, distinct UpgradeCode so SCCM treats it as its own product. Add/Remove Programs shows "Notepatra Local AI". |
+| 🐧 **Debian/Ubuntu x64** | [`notepatra-local-ai_0.1.118_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.118_amd64.deb` |
+| 🐧 **Debian/Ubuntu ARM64** | [`notepatra-local-ai_0.1.118_arm64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.118_arm64.deb` |
 
 **The binary physically cannot reach `api.openai.com`, `api.anthropic.com`, `openrouter.ai`, `api.mistral.ai`, `generativelanguage.googleapis.com`, or any other public LLM endpoint.** Every `QNetworkAccessManager` request goes through an allowlist that only accepts:
 
@@ -354,7 +358,7 @@ For teams that **can't or won't send code to public LLM endpoints** — regulate
 
 Local Ollama, local llama.cpp, self-hosted Ollama on the LAN, and any other OpenAI-compatible server you have installed locally or on your private network — **all continue to work** in the cloud-free build. Only public-cloud LLM endpoints are blocked. The cloud-URL paste box is stripped from the UI as well, so users can't even type a public host. Auditors can confirm by running `strings notepatra | grep -c openai.com` — zero hits.
 
-On Linux the two flavors share the same `notepatra` binary name on disk; `apt` Conflicts ensures only one of `notepatra` / `notepatra-local-ai` is installed at a time, swap transactionally with `sudo apt install ./notepatra-local-ai_0.1.117_amd64.deb`. On Windows the two MSIs are independent products (different UpgradeCode + ProductName + install dir) so they can coexist if needed; admins typically push one or the other based on policy. `notepatra --version` self-identifies the build by name — only the bare lite build carries an edition suffix: `Notepatra Lite v0.1.117` for the lite build and `Notepatra v0.1.117` for the full build (DuckDB bundled), plus `Notepatra Local AI Lite v0.1.117` / `Notepatra Local AI v0.1.117` for the cloud-free (local-ai) builds; the same name shows in the window title bar and the About dialog.
+On Linux the two flavors share the same `notepatra` binary name on disk; `apt` Conflicts ensures only one of `notepatra` / `notepatra-local-ai` is installed at a time, swap transactionally with `sudo apt install ./notepatra-local-ai_0.1.118_amd64.deb`. On Windows the two MSIs are independent products (different UpgradeCode + ProductName + install dir) so they can coexist if needed; admins typically push one or the other based on policy. `notepatra --version` self-identifies the build by name — only the bare lite build carries an edition suffix: `Notepatra Lite v0.1.118` for the lite build and `Notepatra v0.1.118` for the full build (DuckDB bundled), plus `Notepatra Local AI Lite v0.1.118` / `Notepatra Local AI v0.1.118` for the cloud-free (local-ai) builds; the same name shows in the window title bar and the About dialog.
 
 ### Verify your download
 
@@ -579,7 +583,7 @@ cl /LD myplugin.cpp /Fe:myplugin.dll
 | **Kate / Gedit** | ~30 MB | ✓ | ✗ | ✗ | ✓ | ✓ | ✗ | ✗ | ✓ |
 | **Notepatra** | **4.1 / 27.5 / 42.7 MB** | ✓ C++/Rust | ✓ Ollama | ✓ regex + AI | ✓ Rust mmap | ✓ | ✓ | ✓ | ✓ GPL-3 |
 
-> *Notepatra download sizes are Linux x64 tar.gz / macOS DMG / Windows MSI from v0.1.117. Linux is just the binary (Qt is system-installed). macOS and Windows include bundled Qt. The bare `notepatra` executable inside is ~12 MB on every platform (Linux 12.4 MB, similar on macOS / Windows). Compressed download is much smaller because tar.gz / DMG / MSI all compress the binary plus shared libraries.*
+> *Notepatra download sizes are Linux x64 tar.gz / macOS DMG / Windows MSI from v0.1.118. Linux is just the binary (Qt is system-installed). macOS and Windows include bundled Qt. The bare `notepatra` executable inside is ~12 MB on every platform (Linux 12.2 MB, similar on macOS / Windows). Compressed download is much smaller because tar.gz / DMG / MSI all compress the binary plus shared libraries.*
 
 ---
 
@@ -616,6 +620,7 @@ Notepatra follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic 
 
 | Version | Date | Highlights |
 |---|---|---|
+| [**v0.1.118**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.118) | 2026-07-17 | **MCP support — your editor, readable by your AI.** New standalone **`notepatra-mcp`** sidecar: a spec-compliant stdio JSON-RPC 2.0 [Model Context Protocol](https://modelcontextprotocol.io) server exposing **22 tools in three tiers** — read (10), act (8), and write (4) — plus open tabs / Noter notes as MCP resources and 3 ready-made prompts. Works with **Claude Desktop, Claude Code, OpenAI Codex CLI, the OpenAI Agents SDK**, and any spec-compliant stdio MCP client. **Every write is human-gated:** an Approve/Deny card inside the editor window, 120 s auto-deny, FIFO one-at-a-time, no headless bypass — the gate lives in the editor process, so no MCP client can write without a human click. Local socket + stdio only, no network connections; Linux/macOS first (Windows named-pipe transport in a future release). Prebuilt `notepatra-mcp` binaries ship as cosign-signed release artifacts; new docs page [notepatra.org/mcp.html](https://notepatra.org/mcp.html). Bare-binary size claim corrected 12.4 → 12.2 MB. Full ctest 68/68 + 47 sidecar cargo tests + live E2E 17/17. |
 | [**v0.1.117**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.117) | 2026-07-17 | **The honesty release — a 32-agent adversarial audit of every component, every confirmed defect fixed, ~4,100 LOC of dead code removed. No new deps, same bare binary (slightly smaller).** **Find & Replace tells the truth:** Find in Files finally shows its results (they were written to a never-shown widget), whole-word is honored by Count / Replace All / Find in Files, line numbers are right in non-ASCII files, and dead controls are hidden until they work. **Noter export unlocked:** notes export as PDF / Markdown from the right-click menu (the exporter was fully built and tested — it just had no UI entry point); resizable pop-out with visible pin state; Dark/Monokai-correct dialogs. **UTF-32 files with emoji no longer corrupt on save** (byte-level round-trip regression-tested). Terminal gained a real Stop button; tab colors survive reorder; image attach is no longer gated by a hardcoded model list. **~150 Rust-core unit tests promoted into CI + release gates**; git-panel test resurrected; full ctest **70/70**. New for AI assistants: [llms.txt](https://notepatra.org/llms.txt) + crawler-friendly robots.txt + CITATION.cff. |
 | [**v0.1.116**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.116) | 2026-07-06 | **Two focused, adversarially-verified fixes — no new features, same bare binary, no new deps.** **Compare view is readable again:** the changed-**word** inline-diff highlight used a heavy red/green fill that buried the text; it's now a soft wash with a crisp red/green outline, **WCAG AA in Light / Dark / Monokai**. **The updater picks the right edition:** the release-asset picker previously scored every installer variant equally, so GitHub asset order could hand you the wrong edition; it now **deterministically selects the installer matching this build's edition** (Lite/Full × cloud/local-AI) across Windows / macOS / Linux. Full ctest **70/70**, every fix red-state proven. |
 | [**v0.1.115**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.115) | 2026-07-05 | **Security, robustness & quality hardening — the AI coding assistant regrades B → A- and the Data analyst C+ → A-. No new features, same bare binary, no new deps.** Read-only database access is now enforced in **three real layers** — engine-level DuckDB `READ_ONLY`, a structural SQL classifier that **replaces the old bypassable leading-keyword prefix gate**, and PostgreSQL/MySQL session read-only — and any data mutation now raises a **human approval card** (the model can no longer self-approve via `confirm:true`). Query **cancel/timeout genuinely interrupts a running DuckDB query** (`duckdb_interrupt`) and a row-cap prevents OOM. The AI tool registry is **mode-aware** (the read-only *Ask* segment and *Data* mode can't write files), Compose runs a **host-enforced dry-run**, edits are **atomic via `QSaveFile`** (a failed write can't destroy your original), and *approve all* is scoped per action kind. Truncated model output is now a distinct **"Response cut off — Retry"** state. Testing: the previously-**phantom** read-only-gate test (was git-excluded and never compiled) is now real and CI-run (143 assertions), plus new write-gate (44) and async-DB (30) suites; full ctest **70/70** (up from 67), every fix red-state proven, and a 5-agent adversarial fleet caught and closed a fix-introduced regression. |

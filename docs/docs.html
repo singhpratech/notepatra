@@ -299,11 +299,12 @@
   <div class="topbar-left">
     <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">v0.1.117 docs</span>
+    <span class="tag">v0.1.118 docs</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
     <a href="/docs.html">Docs</a>
+    <a href="/mcp.html">MCP</a>
     <a href="https://github.com/singhpratech/notepatra/releases/latest">Download</a>
     <a href="https://github.com/singhpratech/notepatra">GitHub</a>
   </nav>
@@ -367,7 +368,7 @@
       <li><a href="#ai-interaction-log">AI Interaction Log</a></li>
       <li><a href="#noter">Noter — meeting notes</a></li>
       <li><a href="#diagram">Diagram tool (.npd)</a></li>
-      <li><a href="#mcp">MCP server (coming in v0.1.118)</a></li>
+      <li><a href="#mcp">MCP server (new in v0.1.118)</a></li>
     </ul>
 
     <div class="section-label">Reference</div>
@@ -397,13 +398,13 @@
   <!-- ══════════════ Getting started ══════════════ -->
 
   <h2 id="introduction" class="anchor-target">Introduction</h2>
-  <p>Notepatra is a <strong>native</strong> code editor written in C++17 with a Rust core for the heavy-lifting (memory-mapped file I/O, Aho-Corasick search, Myers diff, formatters). It targets <strong>Linux x64 / ARM64, macOS Apple Silicon, and Windows x64</strong>. The bare executable is ~12 MB (12.4 MB on Linux x64) on each platform; downloads range 4.1 MB (Linux ARM64) to ~42.7 MB (Windows MSI with Qt DLLs bundled).</p>
+  <p>Notepatra is a <strong>native</strong> code editor written in C++17 with a Rust core for the heavy-lifting (memory-mapped file I/O, Aho-Corasick search, Myers diff, formatters). It targets <strong>Linux x64 / ARM64, macOS Apple Silicon, and Windows x64</strong>. The bare executable is ~12 MB (12.2 MB on Linux x64) on each platform; downloads range 4.1 MB (Linux ARM64) to ~42.7 MB (Windows MSI with Qt DLLs bundled).</p>
   <p>Unlike Electron-based editors, Notepatra does not ship a browser runtime. It uses Qt5 + QScintilla — a battle-tested Scintilla-based editor engine — so 238 file types, 82 language lexers, brace matching, folding, and code completion are built in.</p>
   <p>Unlike cloud-first editors, Notepatra's AI is <strong>local-first</strong>. The AI dock dropdown ships <strong>six backends</strong>: <a href="https://ollama.com">Ollama</a> (default · <code>localhost:11434</code>), <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>'s llama-server (loads any GGUF directly · <code>localhost:8080</code>), <a href="https://openrouter.ai">OpenRouter</a> (cloud · 100+ models — Claude, GPT, Gemini, Grok, Kimi, …), <a href="https://ollama.com/cloud">Ollama Cloud</a> (cloud · gpt-oss:120b, qwen3-coder:480b, deepseek-v3.1:671b), <a href="https://openai.com">OpenAI</a> direct, and <a href="https://azure.microsoft.com/en-us/products/ai-services/openai-service">Azure OpenAI</a> (enterprise). The <code>llama.cpp</code> entry also accepts a user-configured base URL via Settings → Preferences → AI, so it can reach any OpenAI-compatible HTTP server you've installed. Nothing leaves your computer unless you pick a cloud backend. No mandatory API keys, no subscription, no telemetry.</p>
   <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock (with a workspace open and a tool-capable model) and the model gets up to 13 native tools — file tools <code>read_file</code>, <code>list_dir</code>, <code>write_file</code>, <code>search</code>, <code>apply_diff</code>; data tools <code>query_sql</code>, <code>csv_query</code>, <code>generate_chart</code>; and read-only git tools <code>git_status</code>, <code>git_diff</code>, <code>git_log</code>, <code>git_branch_list</code>, <code>git_show</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
 
   <div class="callout info">
-    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.117 (July 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
+    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.118 (July 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
   </div>
 
   <h2 id="install" class="anchor-target">Install</h2>
@@ -586,7 +587,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
   <!-- ══════════════ Lite vs Full + packs (v0.1.64+) ══════════════ -->
 
   <h2 id="lite-vs-full" class="anchor-target">Lite mode vs Full mode (v0.1.64+)</h2>
-  <p>Starting in v0.1.64, Notepatra ships two build flavors per release. <strong>Lite</strong> is the default download — a bare ~12.4 MB binary with no heavy dependencies bundled. <strong>Full</strong> is the opt-in flavor. On every platform it bundles the <strong>DuckDB</strong> query engine (v1.1.3) next to the binary; on <strong>Linux and Windows</strong> it additionally bundles QtWebEngine for inline Vega-Lite chart rendering. <strong>macOS Full is DuckDB-only</strong> — Homebrew's <code>qt@5</code> no longer ships QtWebEngine (and there is no Apple-Silicon Qt5 WebEngine), so inline Vega charts stay a Linux/Windows Full feature; the native fenced <code>```chart</code> renderer (QtCharts) still works everywhere. On Linux the <code>-full</code> tarball links <code>libQt5WebEngineWidgets</code> from your distro (install <code>qtwebengine5-dev</code> / <code>qt5-qtwebengine</code>) and ships <code>libduckdb.so</code> alongside the binary. Heavy features go through <strong>packs</strong> that you install on demand, the way DuckDB ships a tiny core plus optional extensions (<code>httpfs</code>, <code>parquet</code>, <code>spatial</code>, etc.).</p>
+  <p>Starting in v0.1.64, Notepatra ships two build flavors per release. <strong>Lite</strong> is the default download — a bare ~12.2 MB binary with no heavy dependencies bundled. <strong>Full</strong> is the opt-in flavor. On every platform it bundles the <strong>DuckDB</strong> query engine (v1.1.3) next to the binary; on <strong>Linux and Windows</strong> it additionally bundles QtWebEngine for inline Vega-Lite chart rendering. <strong>macOS Full is DuckDB-only</strong> — Homebrew's <code>qt@5</code> no longer ships QtWebEngine (and there is no Apple-Silicon Qt5 WebEngine), so inline Vega charts stay a Linux/Windows Full feature; the native fenced <code>```chart</code> renderer (QtCharts) still works everywhere. On Linux the <code>-full</code> tarball links <code>libQt5WebEngineWidgets</code> from your distro (install <code>qtwebengine5-dev</code> / <code>qt5-qtwebengine</code>) and ships <code>libduckdb.so</code> alongside the binary. Heavy features go through <strong>packs</strong> that you install on demand, the way DuckDB ships a tiny core plus optional extensions (<code>httpfs</code>, <code>parquet</code>, <code>spatial</code>, etc.).</p>
 
   <h3>Why this split?</h3>
   <p>v0.1.63 bundled QtWebEngine into every release for one specific feature — the AI Data Analyst's inline chart card. Most users will never trigger a chart, but every install paid the disk + download cost. v0.1.64 flipped the default: lite by default, charts move to an optional pack. Same architecture mirrors how Cursor / VS Code / Sublime add language servers and renderers — small core, install what you need.</p>
@@ -618,7 +619,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
     <li><strong>macOS:</strong> <code>~/Library/Application Support/notepatra/plugins/&lt;pack&gt;/</code></li>
     <li><strong>Windows:</strong> <code>%APPDATA%/notepatra/plugins/&lt;pack&gt;/</code></li>
   </ul>
-  <p>As of v0.1.117, the Full flavor ships the <em>charts</em> pack bundled on Linux and Windows (it's the same binary — the pack is "installed" if WebEngine was linked at compile time; macOS Full is DuckDB-only and has no inline Vega renderer). The in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation path is scaffolded but not yet wired (still queued as of v0.1.117), so today packs are added by swapping in the Full binary rather than downloaded inside the app.</p>
+  <p>As of v0.1.118, the Full flavor ships the <em>charts</em> pack bundled on Linux and Windows (it's the same binary — the pack is "installed" if WebEngine was linked at compile time; macOS Full is DuckDB-only and has no inline Vega renderer). The in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation path is scaffolded but not yet wired (still queued as of v0.1.118), so today packs are added by swapping in the Full binary rather than downloaded inside the app.</p>
 
   <table>
     <thead>
@@ -635,7 +636,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
         <td><code>pdf</code></td>
         <td>≈ 12 MB</td>
         <td>Rasterises PDFs to PNG pages so vision-capable AI models can read them. Powered by Poppler-Qt5.</td>
-        <td>Still queued (not shipped as of v0.1.117). Until then, dropping a PDF into the AI dock extracts its text via <code>pdftotext</code> (poppler-utils) when available and attaches that as context.</td>
+        <td>Still queued (not shipped as of v0.1.118). Until then, dropping a PDF into the AI dock extracts its text via <code>pdftotext</code> (poppler-utils) when available and attaches that as context.</td>
       </tr>
     </tbody>
   </table>
@@ -684,7 +685,7 @@ make -j$(nproc)
     <li><strong>Do I lose anything by staying on Lite?</strong> No — every editor / lexer / AI / Git / data / plugin feature works identically. The only difference is that <code>generate_chart</code> tool results paint as a "Chart rendering requires the Charts Pack" card instead of as an inline rendered chart. You can still see the spec via [View JSON instead] and copy it elsewhere.</li>
     <li><strong>Can I downgrade Full → Lite?</strong> Yes. Just download the Lite tarball and replace the binary. Your config / chat history / connections are preserved (they live under <code>~/.config/notepatra</code>, not inside the binary).</li>
     <li><strong>Will the chart spec data be lost if I'm on Lite?</strong> No — the AI's tool result is preserved in your chat history just like any other tool result. If you upgrade to Full later, opening the same chat shows the rendered chart for those past results.</li>
-    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.117. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
+    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.118. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
   </ul>
 
   <h2 id="ui-overview" class="anchor-target">UI overview</h2>
@@ -746,7 +747,7 @@ make -j$(nproc)
   <p>The detected encoding label ("UTF-16 LE BOM", "UTF-32 BE BOM", …) travels with the tab, and on save the matching BOM bytes are written back in front of the encoded content. Opening a UTF-16 LE BOM file and pressing <span class="kbd">Ctrl+S</span> writes it back as UTF-16 LE with its BOM intact — the BOM is never silently dropped.</p>
 
   <h2 id="languages-lexers" class="anchor-target">Languages &amp; lexers</h2>
-  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.117 (covering 238 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
+  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.118 (covering 238 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
   <p><strong>Core (Qt-bundled):</strong> Python, JavaScript/TypeScript/JSX, CoffeeScript, C/C++, C#, D, Java/Kotlin, HTML/PHP, CSS/SCSS/LESS, XML, JSON, SQL (ANSI / T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite), Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Matlab, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile.</p>
   <p><strong>v0.1.55 additions (32 dedicated lexers, keyword tables verified against official specs):</strong> Dart · Solidity · Zig · Vala · Hack · Julia · R · Protobuf · F# · HCL/Terraform · Thrift · GraphQL · GDScript · Nim · Cython · Mojo · Crystal · Elixir · Scala · Groovy · Apex · Jinja · Liquid · Twig · Dockerfile · Fish · Nushell · TOML · DotEnv · Gitignore · JSON5 · BibTeX. Each ships with comment / uncomment / block-comment syntax (Ctrl+/ for line, Ctrl+Shift+Q for block) and proper file-extension routing — <code>.dart</code>, <code>.zig</code>, <code>.jl</code>, <code>.toml</code>, <code>.ex</code>, <code>Cargo.toml</code>, <code>Dockerfile</code>, <code>.gitignore</code>, <code>.env</code>, <code>.fish</code>, <code>.json5</code>, <code>.tf</code>, etc. now point at their dedicated lexers instead of falling back to the closest-fit generic.</p>
 
@@ -1707,9 +1708,9 @@ icon db :database "DB"  <span class="cm">rich-icon node</span></code></pre>
 
   <!-- ══════════════ MCP ══════════════ -->
 
-  <h2 id="mcp" class="anchor-target">MCP server — your editor, readable by your AI (coming in v0.1.118)</h2>
+  <h2 id="mcp" class="anchor-target">MCP server — your editor, readable by your AI (new in v0.1.118)</h2>
   <div class="callout info">
-    <strong>Next release.</strong> MCP support ships in v0.1.118. The current release, v0.1.117, does not include it. Full details, per-client setup snippets, and the FAQ live on the dedicated <a href="/mcp.html">MCP page</a>.
+    <strong>New in v0.1.118.</strong> MCP support ships in v0.1.118, the current release. Full details, per-client setup snippets, and the FAQ live on the dedicated <a href="/mcp.html">MCP page</a>.
   </div>
   <p>From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a standalone stdio JSON-RPC 2.0 <a href="https://modelcontextprotocol.io">Model Context Protocol</a> server (protocol revision <code>2025-06-18</code>; <code>2025-03-26</code> and <code>2024-11-05</code> also accepted) that connects external AI assistants to the running editor over a dedicated per-user local socket. Pass <code>--socket</code> to target the live editor; without it the server runs against a built-in mock editor for protocol testing. It works with Claude Desktop, Claude Code, OpenAI Codex CLI, the OpenAI Agents SDK, and any spec-compliant stdio MCP client (Cursor, Windsurf, VS Code).</p>
   <p>The server exposes <strong>22 tools</strong> in three tiers:</p>
@@ -1820,7 +1821,7 @@ Examples:
   notepatra --theme Dark          Start in dark mode
   notepatra *.json                Open multiple files</code></pre>
 
-  <p><strong>Single instance.</strong> As of v0.1.117, launching <code>notepatra file.txt</code> while Notepatra is already running hands the file to the existing window (raised and focused) and exits — after the running instance proves it's alive, so an open can never be silently swallowed. If the running instance is hung or busy for more than ~3&nbsp;seconds, you get a visible <em>temporary window</em> with just your files instead: it never touches your saved session, and it prompts Save&nbsp;/&nbsp;Discard&nbsp;/&nbsp;Cancel per modified tab when closed. <code>--new</code> opens the same kind of session-independent window on purpose. <code>--line N</code> always targets the <em>first</em> file listed. Files that don't exist produce a notice in the running window rather than disappearing silently.</p>
+  <p><strong>Single instance.</strong> As of v0.1.118, launching <code>notepatra file.txt</code> while Notepatra is already running hands the file to the existing window (raised and focused) and exits — after the running instance proves it's alive, so an open can never be silently swallowed. If the running instance is hung or busy for more than ~3&nbsp;seconds, you get a visible <em>temporary window</em> with just your files instead: it never touches your saved session, and it prompts Save&nbsp;/&nbsp;Discard&nbsp;/&nbsp;Cancel per modified tab when closed. <code>--new</code> opens the same kind of session-independent window on purpose. <code>--line N</code> always targets the <em>first</em> file listed. Files that don't exist produce a notice in the running window rather than disappearing silently.</p>
 
   <h2 id="file-layout" class="anchor-target">Config file layout</h2>
   <p>All persistent state lives under:</p>
@@ -1938,7 +1939,7 @@ sha256sum -c SHA256SUMS --ignore-missing</code></pre>
   <p>The default download is <strong>Lite</strong>: the complete editor — all 82 lexers, the AI dock, diagrams, formatters, Git, terminal — with no browser engine bundled, which is why the bare binary stays ~12 MB. <strong>Full</strong> bundles the DuckDB engine on every platform, and — on <strong>Linux and Windows</strong> — adds QtWebEngine so the <code>generate_chart</code> AI tool can render interactive Vega-Lite charts inline. (<strong>macOS Full is DuckDB-only</strong>: Homebrew <code>qt@5</code> no longer ships QtWebEngine and there is no Apple-Silicon Qt5 WebEngine, so inline Vega charts are a Linux/Windows feature.) Everything else is identical. Most people want Lite; reach for Full only if you need the DuckDB engine or WebEngine-rendered Vega charts — the native QtCharts inline charts and the <code>.npd</code> diagram renderer work in <em>both</em> flavors on <em>every</em> platform. See <a href="#lite-vs-full">Lite mode vs Full mode</a>.</p>
 
   <h4>How big is it, really?</h4>
-  <p>The bare executable is ~12 MB (~12.4 MB on Linux x64) on every platform — no Electron, no bundled browser runtime. Download sizes differ because Linux links Qt from your distro while macOS and Windows bundle it: roughly 4.4 MB (Linux x64 tar.gz), 27.7 MB (macOS DMG with Qt), 42.7 MB (Windows MSI with the Qt DLLs). The GitHub release page is always canonical for exact bytes.</p>
+  <p>The bare executable is ~12 MB (~12.2 MB on Linux x64) on every platform — no Electron, no bundled browser runtime. Download sizes differ because Linux links Qt from your distro while macOS and Windows bundle it: roughly 4.4 MB (Linux x64 tar.gz), 27.7 MB (macOS DMG with Qt), 42.7 MB (Windows MSI with the Qt DLLs). The GitHub release page is always canonical for exact bytes.</p>
 
   <h4>Does my code go to the cloud? Is there any telemetry?</h4>
   <p>No telemetry, no analytics, no account — the editor starts fully offline. Every outbound connection is one you trigger: (1) your selected AI backend — a <em>local</em> Ollama (<code>localhost:11434</code>) or llama-server (<code>localhost:8080</code>) by default, or whichever URL you set on the llama.cpp entry; (2) <code>git push/pull</code> from the Git panel; (3) the REST client when you send a request; (4) one GitHub-API call at launch if the update check is enabled. Cloud AI backends (Ollama Cloud / OpenRouter / OpenAI / Azure OpenAI) are <strong>opt-in</strong> from the dropdown and use <em>your</em> key — your code leaves the machine only when you pick one and send it. All of this is verifiable with <code>strace</code>, and the built-in AI Interaction Log records exactly what was sent so you never have to take our word for it.</p>

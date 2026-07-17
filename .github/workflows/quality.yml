@@ -32,3 +32,13 @@ jobs:
 
       - name: Run tests
         run: cd rust-core && cargo test --release
+
+      # v0.1.118 — same three gates for the MCP sidecar crate.
+      - name: Check formatting (notepatra-mcp)
+        run: cd notepatra-mcp && cargo fmt --check
+
+      - name: Run clippy (notepatra-mcp)
+        run: cd notepatra-mcp && cargo clippy --all-targets -- -D warnings
+
+      - name: Run tests (notepatra-mcp)
+        run: cd notepatra-mcp && cargo test --release

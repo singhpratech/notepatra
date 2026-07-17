@@ -191,6 +191,18 @@ if [ -d rust-core ]; then
     fi
 fi
 
+# cargo test — the notepatra-mcp sidecar suites (protocol + socket bridge),
+# mirroring the rust-core gate above. Runs only where the sidecar exists.
+if [ -d notepatra-mcp ]; then
+    if (cd notepatra-mcp && cargo test --release) >/dev/null 2>&1; then
+        echo "  ✓ cargo test clean (notepatra-mcp sidecar suites)"
+        PASSED=$((PASSED + 1))
+    else
+        echo "  ✗ cargo test: failures present (re-run inside notepatra-mcp/ to see them)"
+        FAILED+=("cargo test (notepatra-mcp)")
+    fi
+fi
+
 echo
 echo "── tag ──"
 if git rev-parse "$TAG" >/dev/null 2>&1; then
