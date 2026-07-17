@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.117 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.118 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -2480,6 +2480,32 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_gitpanel.cpp")
     notepatra_add_qt_test(test_gitpanel)
     set_tests_properties(test_gitpanel PROPERTIES LABELS "unit;git;panel")
     message(STATUS "Regression test enabled — target: test_gitpanel")
+endif()
+
+# ── MCP bridge protocol test (v0.1.118) ──
+# Offscreen-safe: fake editor host + real QLocalServer round-trip. Links
+# Widgets because the write tier's human-approval card is a real QFrame the
+# test clicks programmatically. singleinstance.cpp is only for the
+# server-name derivation; the handshake is covered by test_single_instance.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_bridge.cpp")
+    add_executable(test_mcp_bridge
+        test_mcp_bridge.cpp
+        src/mcp_bridge.cpp
+        src/singleinstance.cpp
+        # v0.1.118 — list_notes/read_note go through the real NotesStorage
+        # layer (QtCore-only; notes_template.cpp resolves shellHtml).
+        src/notes_storage.cpp
+        src/notes_template.cpp
+    )
+    target_include_directories(test_mcp_bridge PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_definitions(test_mcp_bridge PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_link_libraries(test_mcp_bridge PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::Concurrent
+        Qt5::Test)
+    notepatra_add_qt_test(test_mcp_bridge)
+    set_tests_properties(test_mcp_bridge PROPERTIES LABELS "unit;mcp;ipc")
+    message(STATUS "Regression test enabled — target: test_mcp_bridge")
 endif()
 
 # v0.2 Coding-mode revamp — smoke test for EditPlanList + DiffView. Builds

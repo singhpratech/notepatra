@@ -7,6 +7,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.118] — 2026-07-17
+
+**MCP support — your editor, readable by your AI. New standalone `notepatra-mcp` sidecar (stdio JSON-RPC 2.0 Model Context Protocol server) + a hardened local-socket bridge in the editor: 22 tools in three tiers, with every write gated behind a human Approve/Deny card inside the editor window. Local socket + stdio only.**
+
+### Added
+- **`notepatra-mcp` sidecar** (notepatra-mcp/, Rust, serde-only): spec-compliant stdio MCP server — protocol revision `2025-06-18`, with `2025-03-26` / `2024-11-05` accepted from older clients. `--socket` targets the running editor over a dedicated per-user local socket; without it, a built-in mock editor serves the full protocol for client testing.
+- **22 tools in three tiers:** read (10: `list_open_tabs`, `read_tab`, `get_selection`, `get_status`, `app_info`, `list_recent_files`, `find_in_tab`, `search_project`, `list_notes`, `read_note`), act (8: `open_file`, `new_tab`, `goto_line`, `set_language`, `compare_tabs`, `format_json`, `format_sql`, `format_html`), write (4, human-gated: `insert_text`, `replace_selection`, `apply_edit`, `save_tab`).
+- **MCP resources** — every open tab as `notepatra://tab/N`, every Noter note as `notepatra://note/<basename>` (collisions fall back to URI-encoded full paths) — and **3 prompts**: `review-current-file`, `explain-selection`, `summarize-notes`.
+- **Editor bridge** (src/mcp_bridge.cpp): dedicated `-mcp` QLocalServer opened on launch, greeting-first handshake, 16 verbs, hardened parsing; wire contract byte-exact against the sidecar.
+- Works with **Claude Desktop, Claude Code, OpenAI Codex CLI, the OpenAI Agents SDK**, and any spec-compliant stdio MCP client; cloud-only connector surfaces (ChatGPT / claude.ai web connectors) documented as unable to reach a desktop editor.
+- **Prebuilt release artifacts:** `notepatra-mcp-linux-x64.tar.gz`, `notepatra-mcp-linux-arm64.tar.gz`, `notepatra-mcp-macos-arm64.tar.gz` — cosign-signed like every other artifact. Linux/macOS first; the Windows named-pipe client is a stub with a clear error until a future release.
+- **New docs page** [notepatra.org/mcp.html](https://notepatra.org/mcp.html): tool reference, per-client setup, approval model, limitations, FAQ; MCP sections added to README, docs.html, llms.txt, and the site.
+
+### Security
+- **Write tier is human-gated in the editor process:** the four write tools show a non-modal Approve/Deny card inside the Notepatra window, auto-deny after 120 s, queue FIFO one card at a time, drop on client disconnect, and have **no headless bypass** — no visible window means `approval unavailable`. The gate lives in the C++ bridge, not the sidecar, so no MCP client can write without a human click.
+
+### Fixed
+- **Bare-binary size claim corrected 12.4 → 12.2 MB** (Linux x64, measured from the shipped artifact — the v0.1.117 dead-code removal shrank the binary past the advertised number).
+
+### Testing / CI
+- 47 sidecar cargo tests (protocol + socket-bridge suites) and `test_mcp_bridge` (315 assertions) in ctest; full offscreen suite 68/68; live end-to-end script (real editor + real sidecar; write approval exercised in the C++ suite) 17/17.
+- `release-check.sh` gains a `cargo test` gate for notepatra-mcp; `stale-text-check.sh` derives the MCP tool count from the sidecar dispatch table and asserts every docs surface matches.
+
+---
+
 ## [0.1.117] — 2026-07-17
 
 **The honesty release — a 32-agent adversarial audit of every component; every confirmed defect fixed; ~4,100 LOC of dead code removed; ~150 dormant Rust tests promoted into CI. No new deps, same bare binary (slightly smaller).**

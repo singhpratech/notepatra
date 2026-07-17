@@ -98,6 +98,11 @@ public:
     // top-level window, so findChild<NoterPopOut*>() can't reach it.
     NoterPopOut *popOutForTesting() const { return m_popOut; }
 
+    // Noter storage root (~/Documents/Notepatra/Noter). Public + static
+    // (v0.1.118) so the MCP bridge host lambda in mainwindow.cpp reuses
+    // the SAME path convention without constructing any Noter UI.
+    static QString defaultNotesFolder();
+
     // Run the AI extraction over the note body + show the preview
     // dialog. Wired to the ✨ Extract button AND Ctrl+Alt+E.
     void endMeetingSweep();
@@ -350,7 +355,6 @@ private:
 
     // Helpers
     void ensureNotesFolder();
-    static QString defaultNotesFolder();
     QString slugifyTitle(const QString &title) const;
 
     // ── widgets ────────────────────────────────────────────────────

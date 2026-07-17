@@ -48,9 +48,9 @@
       "operatingSystem": ["Linux", "Windows", "macOS"],
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
-      "description": "Native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. Bare executable is ~12 MB across platforms (12.4 MB on Linux x64); full downloads are 4.4 MB (Linux x64 tar.gz), 27.7 MB (macOS DMG with bundled Qt), 42.7 MB (Windows MSI with bundled Qt DLLs). 238 file types. 82 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server (examples redacted). Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.117",
-      "fileSize": "12.4 MB",
+      "description": "Native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. Bare executable is ~12 MB across platforms (12.2 MB on Linux x64); full downloads are 4.4 MB (Linux x64 tar.gz), 27.7 MB (macOS DMG with bundled Qt), 42.7 MB (Windows MSI with bundled Qt DLLs). 238 file types. 82 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server (examples redacted). Free forever. Linux, Windows, macOS.",
+      "softwareVersion": "0.1.118",
+      "fileSize": "12.2 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
       "softwareRequirements": "Qt5; optional AI backend selected by the user (Ollama or llama.cpp locally, or any OpenAI-compatible server reachable via the llama.cpp dropdown entry's user-configured URL)",
@@ -127,7 +127,7 @@
           "name": "What is Notepatra?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. It runs on Linux, macOS Apple Silicon, and Windows, has a ~12 MB bare native executable (~12.4 MB on Linux x64), supports 238 file types with 82 language lexers, and includes AI-powered formatters that fix broken JSON, HTML, and brackets. The AI panel ships six dropdown backends — two local (Ollama, llama.cpp) and four cloud (Ollama Cloud, OpenRouter, OpenAI, Azure OpenAI) — and the llama.cpp entry also accepts a user-configured base URL for any OpenAI-compatible server."
+            "text": "Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. It runs on Linux, macOS Apple Silicon, and Windows, has a ~12 MB bare native executable (~12.2 MB on Linux x64), supports 238 file types with 82 language lexers, and includes AI-powered formatters that fix broken JSON, HTML, and brackets. The AI panel ships six dropdown backends — two local (Ollama, llama.cpp) and four cloud (Ollama Cloud, OpenRouter, OpenAI, Azure OpenAI) — and the llama.cpp entry also accepts a user-configured base URL for any OpenAI-compatible server."
           }
         },
         {
@@ -143,7 +143,7 @@
           "name": "What makes Notepatra different from other code editors?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra is its own editor — a native Qt5 + QScintilla app with an original C++17/Rust core. It runs natively on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase, with a ~12 MB bare executable (~12.4 MB on Linux x64). Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. The Data Analyst mode works out of the box on CSV files and an in-memory SQLite engine; the Full download bundles the DuckDB v1.1.3 engine on every platform (Lite has CSV + SQLite only). The Composer tab adds a multi-file Edit Plan, `@file` mentions, Ctrl+I inline edit, AI-driven git tools (read-only: status / diff / log / branch / show), and multi-cursor editing. No Electron runtime, no telemetry, no mandatory account."
+            "text": "Notepatra is its own editor — a native Qt5 + QScintilla app with an original C++17/Rust core. It runs natively on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase, with a ~12 MB bare executable (~12.2 MB on Linux x64). Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. The Data Analyst mode works out of the box on CSV files and an in-memory SQLite engine; the Full download bundles the DuckDB v1.1.3 engine on every platform (Lite has CSV + SQLite only). The Composer tab adds a multi-file Edit Plan, `@file` mentions, Ctrl+I inline edit, AI-driven git tools (read-only: status / diff / log / branch / show), and multi-cursor editing. No Electron runtime, no telemetry, no mandatory account."
           }
         },
         {
@@ -151,7 +151,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~12 MB across every platform (12.4 MB on Linux x64). Latest v0.1.117 download sizes: 4.4 MB Linux x64 tar.gz, 4.1 MB Linux ARM64 tar.gz, 27.7 MB macOS DMG (with bundled Qt), 42.7 MB Windows MSI / 32.8 MB NSIS / 37.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~12.4 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~12 MB across every platform (12.2 MB on Linux x64). Latest v0.1.118 download sizes: 4.4 MB Linux x64 tar.gz, 4.1 MB Linux ARM64 tar.gz, 27.7 MB macOS DMG (with bundled Qt), 42.7 MB Windows MSI / 32.8 MB NSIS / 37.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~12.2 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
           }
         },
         {
@@ -167,7 +167,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 238 file types with 82 language lexers as of v0.1.117: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 238 file types with 82 language lexers as of v0.1.118: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.117">
-        Download v0.1.117 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.118">
+        Download v0.1.118 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1297,6 +1297,7 @@
                 Notepatra
             </a>
             <div class="nav-links">
+                <a href="mcp.html">MCP</a>
                 <a href="#ai">AI</a>
                 <a href="#features">Features</a>
                 <a href="#plugins">Plugins</a>
@@ -1312,9 +1313,9 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.117 · Now Available · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.118 · Now Available · MCP server for AI assistants · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
-        <p>Tiny native binary (~12 MB bare, ~4.4 MB compressed on Linux). C++ and Rust. 238 file types · 82 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints.</p>
+        <p>Tiny native binary (~12 MB bare, ~4.4 MB compressed on Linux). C++ and Rust. 238 file types · 82 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints. <strong>New in v0.1.118:</strong> <a href="/mcp.html" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">MCP support</a> — connect Claude, Codex, or any MCP client straight to your editor.</p>
 
         <div class="install-box">
             <div class="install-tabs">
@@ -1330,6 +1331,9 @@
         <div class="hero-buttons">
             <a href="#download" class="btn btn-primary">
                 Download Binaries
+            </a>
+            <a href="/mcp.html" class="btn btn-secondary">
+                MCP for AI assistants
             </a>
             <a href="https://github.com/singhpratech/notepatra" class="btn btn-secondary">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.21 11.39.6.11.79-.26.79-.58v-2.23c-3.34.73-4.03-1.41-4.03-1.41-.55-1.39-1.33-1.76-1.33-1.76-1.09-.74.08-.73.08-.73 1.2.09 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.5 1 .1-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 016.02 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 011.23 3.22c0 4.61-2.81 5.63-5.48 5.92.42.36.81 1.1.81 2.22v3.29c0 .32.18.7.8.58A12.01 12.01 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
@@ -1399,7 +1403,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.117</div>
+        <div class="section-label">Download v0.1.118</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1467,7 +1471,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.117 →
+                Get Notepatra v0.1.118 →
               </a>
             </div>
 
@@ -1510,7 +1514,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.117 →
+                Get Notepatra Local AI v0.1.118 →
               </a>
             </div>
           </div>
@@ -1660,9 +1664,16 @@
         <div class="section-desc">Built on QScintilla — a battle-tested Scintilla-based editor engine. Hot-path file I/O and search use Rust for memory safety on untrusted input.</div>
 
         <div class="features-grid">
-            <!-- AI Assistant promoted to slot 1 — the headline feature,
-                 also highlighted with a Clay-orange border halo so it
-                 visually leads the grid. -->
+            <!-- MCP — the v0.1.118 headline, promoted to slot 1 so the
+                 grid leads with it. Same Clay-orange halo as the other
+                 star features. -->
+            <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
+                <div class="feature-icon fi-orange">🔌</div>
+                <h3>MCP — your editor, readable by your AI <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW IN v0.1.118</span></h3>
+                <p>A built-in <strong>Model Context Protocol server</strong> (<code>notepatra-mcp</code>) connects the assistants you already use — <strong>Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK</strong>, and any spec-compliant MCP client — to the running editor. <strong>22 tools in three tiers:</strong> read (tabs, selection, search, Noter notes), act (open, compare, format, navigate), and write — where <em>every</em> edit or save shows an <strong>Approve / Deny card inside the editor</strong> and does nothing until you click Approve (auto-deny after 120 s, no headless bypass). Local socket + stdio only — nothing leaves your machine. <a href="/mcp.html" style="color: var(--c-accent);">Read the MCP docs →</a></p>
+            </div>
+            <!-- AI Assistant at slot 2 — highlighted with a Clay-orange
+                 border halo so it stays visually strong. -->
             <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
                 <div class="feature-icon fi-orange">🤖</div>
                 <h3>AI Assistant (Ctrl+Shift+A) <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
@@ -2005,45 +2016,61 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.117 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.118 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-07-17</span>
-                        <span>· <strong>The honesty release</strong>: a 32-agent adversarial audit of every component, every confirmed defect fixed, ~4,100 lines of dead code removed, and 150 Rust unit tests promoted into CI. No new dependencies, same bare binary (slightly smaller). Full ctest 70/70.</span>
+                        <span>· <strong>MCP support</strong>: Notepatra now ships <code>notepatra-mcp</code> — a Model Context Protocol server that connects Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client to the running editor. 22 tools in three tiers; every write human-gated by an in-editor Approve / Deny card. Local socket + stdio only — nothing leaves your machine.</span>
                         <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>Fixed — Find &amp; Replace tells the truth</h5>
+                        <h5>New — MCP server: your editor, readable by your AI</h5>
                         <ul>
-                            <li><strong>Find in Files now shows its results</strong> — matches stream into the results panel (they were previously discarded into a never-shown widget). "Match whole word" is now honored by Count, Replace All, and Find in Files; Find All line numbers are correct in non-ASCII documents; Replace All with zero matches no longer marks the document modified; controls that did nothing (direction, in-selection, dot-matches-newline) are hidden until they work.</li>
+                            <li><strong>22 tools in three tiers</strong> — read (10: tabs, selection, status, in-tab + project search, Noter notes), act (8: open file, new tab, go to line, set language, compare tabs, format JSON/SQL/HTML), and write (4: insert text, replace selection, find-and-replace, save). Every open tab and Noter note is also published as an MCP resource (<code>notepatra://tab/N</code>, <code>notepatra://note/…</code>), plus three ready-made prompts.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>Noter — export unlocked, pop-out polished</h5>
+                        <h5>Security — every write is human-approved</h5>
                         <ul>
-                            <li>Notes can be exported as <strong>PDF or Markdown</strong> from the right-click menu (the exporter existed and was fully tested — it just had no UI entry point). The pop-out window is now resizable, its always-on-top pin shows its state, dialogs follow Dark/Monokai themes, and a slim edge button restores a hidden sidebar.</li>
+                            <li>The four write tools never execute on arrival: each request shows a non-modal <strong>Approve / Deny card inside the editor window</strong>, auto-denies after 120 seconds, queues one card at a time, and has <strong>no headless bypass</strong>. The gate lives in the editor process itself — no MCP client can write without a human clicking Approve.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>Fixed — editor &amp; shell</h5>
+                        <h5>Works with the assistants you already use</h5>
                         <ul>
-                            <li>UTF-32 files containing emoji / non-BMP characters no longer corrupt on save (byte-level round-trip now regression-tested). "Double-click to close tab" works; manual tab colors follow their tab through reorder/close; the terminal gained a real <strong>Stop</strong> button; Welcome's "Open folder…" gives visible feedback; Mark is reachable from the Search menu.</li>
+                            <li><strong>Claude Desktop, Claude Code, OpenAI Codex CLI, the OpenAI Agents SDK</strong> — and any spec-compliant stdio MCP client. Prebuilt <code>notepatra-mcp</code> binaries ship as cosign-signed release artifacts for Linux x64 / ARM64 and macOS Apple Silicon; Windows named-pipe transport lands in a future release. Per-client setup snippets on <a href="/mcp.html">the MCP page</a>.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>Leaner and better tested</h5>
+                        <h5>Honesty</h5>
                         <ul>
-                            <li>~4,100 lines of dead code removed (abandoned Noter panel designs, unused embed renderers, a phantom test). ~150 Rust-core unit tests now run in CI and gate every release; the git panel test was resurrected and fixed. Image attachments are no longer blocked by a hardcoded model list; charts and the merge helper are readable in every theme. New: <a href="https://notepatra.org/llms.txt">llms.txt</a> for AI assistants and a citation file for researchers.</li>
+                            <li>Bare-binary size claim corrected from 12.4 to <strong>12.2 MB</strong> on Linux x64 (measured from the shipped release artifact). Full offscreen ctest 68/68, 47 sidecar cargo tests, live editor-plus-sidecar end-to-end 17/17.</li>
                         </ul>
                     </div>
                 </div>
                 <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.117">Release page</a>
+                    <a href="/mcp.html">MCP docs</a>
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.118">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.117">Commits</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.118">Commits</a>
                 </div>
             </div>
+
+            <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.117"
+               class="version-card-link"
+               style="display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px;
+                      padding:16px 24px; background:var(--c-surface);
+                      border:1px solid var(--c-border); border-radius:14px;
+                      text-decoration:none; min-width:0;
+                      transition:border-color .15s;"
+               onmouseover="this.style.borderColor='var(--green)';"
+               onmouseout="this.style.borderColor='var(--c-border)';">
+                <span style="font-weight:700; color:var(--c-text); font-size:15px; white-space:nowrap;">v0.1.117</span>
+                <span style="color:var(--c-text-muted); font-size:13px; white-space:nowrap;">2026-07-17</span>
+                <span style="flex:1 1 260px; min-width:0; color:var(--c-text-muted); font-size:13px; white-space:normal;">The honesty release — a 32-agent adversarial audit of every component, every confirmed defect fixed, ~4,100 lines of dead code removed, and ~150 Rust unit tests promoted into CI. No new dependencies, same bare binary (slightly smaller).</span>
+                <span style="color:var(--green); font-weight:600; font-size:13px; white-space:nowrap;">Release page →</span>
+            </a>
 
             <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.116"
                class="version-card-link"
@@ -2072,21 +2099,6 @@
                 <span style="font-weight:700; color:var(--c-text); font-size:15px; white-space:nowrap;">v0.1.115</span>
                 <span style="color:var(--c-text-muted); font-size:13px; white-space:nowrap;">2026-07-05</span>
                 <span style="flex:1 1 260px; min-width:0; color:var(--c-text-muted); font-size:13px; white-space:normal;">Security &amp; robustness hardening — read-only database safety at three independent layers, mode-gated atomic AI file writes, and genuine query cancel/timeout. AI coding assistant B → A-, Data-analyst C+ → A-. Full ctest 70/70.</span>
-                <span style="color:var(--green); font-weight:600; font-size:13px; white-space:nowrap;">Release page →</span>
-            </a>
-
-            <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.114"
-               class="version-card-link"
-               style="display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px;
-                      padding:16px 24px; background:var(--c-surface);
-                      border:1px solid var(--c-border); border-radius:14px;
-                      text-decoration:none; min-width:0;
-                      transition:border-color .15s;"
-               onmouseover="this.style.borderColor='var(--green)';"
-               onmouseout="this.style.borderColor='var(--c-border)';">
-                <span style="font-weight:700; color:var(--c-text); font-size:15px; white-space:nowrap;">v0.1.114</span>
-                <span style="color:var(--c-text-muted); font-size:13px; white-space:nowrap;">2026-06-11</span>
-                <span style="flex:1 1 260px; min-width:0; color:var(--c-text-muted); font-size:13px; white-space:normal;">Opening files made bulletproof — the ghost-open class killed, session safety hardened, and the File → Close All freeze fixed. Full ctest 67/67.</span>
                 <span style="color:var(--green); font-weight:600; font-size:13px; white-space:nowrap;">Release page →</span>
             </a>
 
@@ -2143,7 +2155,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~12 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.117: 238 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (the Full download bundles the DuckDB v1.1.3 engine on every platform), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
+                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~12 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.118: 238 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (the Full download bundles the DuckDB v1.1.3 engine on every platform), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2155,7 +2167,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~12 MB</strong> (12.4 MB on Linux x64) across every platform. Latest v0.1.117 download sizes: <strong>4.4 MB</strong> Linux x64 tar.gz · <strong>4.1 MB</strong> Linux ARM64 tar.gz · <strong>27.7 MB</strong> macOS DMG · <strong>42.7 MB</strong> Windows MSI / <strong>32.8 MB</strong> NSIS / <strong>37.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~12 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~12 MB</strong> (12.2 MB on Linux x64) across every platform. Latest v0.1.118 download sizes: <strong>4.4 MB</strong> Linux x64 tar.gz · <strong>4.1 MB</strong> Linux ARM64 tar.gz · <strong>27.7 MB</strong> macOS DMG · <strong>42.7 MB</strong> Windows MSI / <strong>32.8 MB</strong> NSIS / <strong>37.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~12 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -2163,7 +2175,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.117 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.118 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>What file encodings are supported?</h3>

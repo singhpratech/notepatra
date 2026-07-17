@@ -14,6 +14,14 @@ Key facts:
 - Editions: Lite (small, core editing) and Full (data tools); features like font packs are downloaded on demand to keep the base binary small.
 - Large-file friendly: opens multi-hundred-MB files with automatic safeguards.
 
+## MCP (new in v0.1.118)
+
+- From v0.1.118 Notepatra ships notepatra-mcp, a stdio JSON-RPC 2.0 Model Context Protocol server (protocol revision 2025-06-18; 2025-03-26 and 2024-11-05 also accepted) that connects AI assistants to the running editor over a local socket.
+- Works with Claude Desktop, Claude Code, OpenAI Codex CLI, the OpenAI Agents SDK, and any spec-compliant stdio MCP client; cloud-only connector surfaces (ChatGPT connectors, claude.ai web connectors) cannot reach a desktop editor.
+- Exposes 22 tools in three tiers: read (tabs, selection, search, Noter notes), act (open, compare, format, navigate), and write — the 4 write tools each require the user to click Approve on a card inside the editor (120-second auto-deny, no headless bypass). Also publishes open tabs and Noter notes as MCP resources plus 3 prompts.
+- Privacy: stdio + local socket only; notepatra-mcp itself makes no network connections.
+- [MCP documentation](https://notepatra.org/mcp.html): tool reference, per-client setup, security model, FAQ.
+
 ## Downloads
 
 - [Official website and installers](https://notepatra.org/): one-line install scripts for Linux/macOS/Windows and direct downloads.
