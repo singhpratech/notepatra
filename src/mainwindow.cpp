@@ -13,6 +13,7 @@
 #include "ai_log_dialog.h"
 #include "ai_interaction_log.h"
 #include "fontpack_dialog.h"
+#include "mcp_bridge.h"
 #include <QPointer>
 #include <QScopeGuard>
 #include <numeric>
@@ -1573,6 +1574,142 @@ MainWindow::MainWindow(bool standaloneNoSession)
 
     // File change watcher — detects external modifications
     setupFileWatcher();
+
+    // v0.1.118 — MCP bridge: read-only editor access for the AI sidecar over
+    // a dedicated QLocalServer (single-instance name + "-mcp"). Primary only;
+    // standalone windows never serve it.
+    if (!m_standaloneNoSession) {
+        McpEditorHost host;
+        host.tabCount = [this] { return m_tabs->count(); };
+        host.tabTitle = [this](int i) { return m_tabs->tabText(i); };
+        host.tabPath = [this](int i) {
+            auto *ed = m_tabs->editorAt(i);
+            return ed ? ed->filePath() : QString();
+        };
+        host.tabModified = [this](int i) {
+            auto *ed = m_tabs->editorAt(i);
+            return ed && ed->isModified();
+        };
+        host.tabText = [this](int i) {
+            auto *ed = m_tabs->editorAt(i);
+            return ed ? ed->text() : QString();
+        };
+        host.openFile = [this](const QString &p) {
+            openFile(p);   // same internal path the single-instance handoff uses
+            const QString abs = QFileInfo(p).absoluteFilePath();
+            for (int i = 0; i < m_tabs->count(); ++i) {
+                auto *ed = m_tabs->editorAt(i);
+                if (ed && ed->filePath() == abs) return i;
+            }
+            return -1;
+        };
+        host.selection = [this](int *tabIndex) {
+            if (tabIndex) *tabIndex = m_tabs->currentIndex();
+            auto *ed = currentEditor();
+            return ed ? ed->selectedText() : QString();
+        };
+        host.workspaceRoot = [this] {
+            return m_explorer ? m_explorer->rootPath() : QString();
+        };
+        // ── v0.1.118 expansive wave — every lambda routes through the SAME
+        //    code path the equivalent menu/status-bar surface uses. ──
+        host.currentTabIndex = [this] { return m_tabs->currentIndex(); };
+        host.tabLanguage = [this](int i) {
+            auto *ed = m_tabs->editorAt(i);
+            return ed ? ed->language() : QString();
+        };
+        host.tabEncoding = [this](int i) {
+            auto *ed = m_tabs->editorAt(i);
+            return ed ? ed->encoding() : QString();
+        };
+        host.cursorPosition = [this](int *line, int *col) {
+            int l = 0, c = 0;
+            if (auto *ed = currentEditor()) {
+                ed->getCursorPosition(&l, &c);
+                ++l; ++c; // status-bar convention: 1-based
+            }
+            if (line) *line = l;
+            if (col) *col = c;
+        };
+        host.recentFiles = [] { return Config::instance().recentFiles; };
+        host.newTab = [this](const QString &text) {
+            Editor *ed = newFile(); // same path as Ctrl+N
+            if (!ed) return -1;
+            if (!text.isEmpty()) {
+                Editor::ScopedBulkLoad bulk(ed); // no change-history churn
+                ed->setText(text);
+            }
+            return m_tabs->currentIndex(); // newFile() focuses the new tab
+        };
+        host.gotoLine = [this](int tabIndex, int line) {
+            if (tabIndex < 0 || tabIndex >= m_tabs->count()) return false;
+            auto *ed = m_tabs->editorAt(tabIndex);
+            if (!ed) return false;
+            m_tabs->setCurrentIndex(tabIndex);
+            ed->gotoLine(line); // 1-based; ensures the line is visible
+            ed->setFocus();
+            return true;
+        };
+        host.setLanguage = [this](int tabIndex, const QString &lang) {
+            auto *ed = m_tabs->editorAt(tabIndex);
+            if (!ed) return false;
+            // Validate through the same factory the Language menu feeds.
+            QsciLexer *probe = createLexerForLanguage(lang, nullptr);
+            if (!probe) return false;
+            delete probe;
+            ed->setLanguage(lang);
+            if (m_tabs->currentIndex() == tabIndex)
+                m_statusBar->updateLanguage(lang);
+            return true;
+        };
+        host.compareTabs = [this](int a, int b) {
+            // Same code path as Tools → Compare Two Open Tabs, with
+            // explicit indices instead of current/next.
+            if (a < 0 || b < 0 || a >= m_tabs->count() ||
+                b >= m_tabs->count() || a == b)
+                return false;
+            auto *left = m_tabs->editorAt(a);
+            auto *right = m_tabs->editorAt(b);
+            if (!left || !right) return false;
+            const QString leftName = left->filePath().isEmpty()
+                ? m_tabs->tabText(a)
+                : QFileInfo(left->filePath()).fileName();
+            const QString rightName = right->filePath().isEmpty()
+                ? m_tabs->tabText(b)
+                : QFileInfo(right->filePath()).fileName();
+            auto *dlg = new CompareDialog(left->text(), leftName,
+                                          right->text(), rightName, this);
+            dlg->setAttribute(Qt::WA_DeleteOnClose);
+            dlg->show(); // non-modal, user closes it — visibly reversible
+            return true;
+        };
+        host.formatText = [](const QString &kind, const QString &text,
+                             QString *errorOut) -> QString {
+            // Pure function over the SAME rustbridge calls fmtpanel /
+            // sqlfmtpanel use. Never touches any buffer.
+            QString out;
+            try {
+                if (kind == QLatin1String("json"))
+                    out = RustCore::formatJson(text);
+                else if (kind == QLatin1String("sql"))
+                    out = RustCore::formatSql(text);
+                else if (kind == QLatin1String("html"))
+                    out = RustCore::formatHtml(text);
+            } catch (const std::exception &e) {
+                if (errorOut)
+                    *errorOut = QString::fromUtf8(e.what());
+                return QString();
+            } catch (...) {
+                if (errorOut) *errorOut = QStringLiteral("formatter failed");
+                return QString();
+            }
+            if (out.isEmpty() && errorOut)
+                *errorOut = QStringLiteral("formatter returned empty output");
+            return out;
+        };
+        host.notesRoot = [] { return NotesPanel::defaultNotesFolder(); };
+        new McpBridge(std::move(host), this);
+    }
 }
 
 Editor *MainWindow::currentEditor() {

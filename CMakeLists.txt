@@ -2482,6 +2482,30 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_gitpanel.cpp")
     message(STATUS "Regression test enabled — target: test_gitpanel")
 endif()
 
+# ── MCP bridge protocol test (v0.1.118) ──
+# Offscreen-safe, guiless: fake editor host + real QLocalServer round-trip.
+# Links singleinstance.cpp only for the server-name derivation; the
+# single-instance handshake itself is covered by test_single_instance.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_bridge.cpp")
+    add_executable(test_mcp_bridge
+        test_mcp_bridge.cpp
+        src/mcp_bridge.cpp
+        src/singleinstance.cpp
+        # v0.1.118 — list_notes/read_note go through the real NotesStorage
+        # layer (QtCore-only; notes_template.cpp resolves shellHtml).
+        src/notes_storage.cpp
+        src/notes_template.cpp
+    )
+    target_include_directories(test_mcp_bridge PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_definitions(test_mcp_bridge PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_link_libraries(test_mcp_bridge PRIVATE
+        Qt5::Core Qt5::Network Qt5::Concurrent Qt5::Test)
+    notepatra_add_qt_test(test_mcp_bridge)
+    set_tests_properties(test_mcp_bridge PROPERTIES LABELS "unit;mcp;ipc")
+    message(STATUS "Regression test enabled — target: test_mcp_bridge")
+endif()
+
 # v0.2 Coding-mode revamp — smoke test for EditPlanList + DiffView. Builds
 # only the two new sources plus rustbridge (the Rust diff path) so it stays
 # cheap and never accidentally links aipanel.cpp (which would drag in the

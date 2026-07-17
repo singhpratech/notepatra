@@ -1,0 +1,13 @@
+[package]
+name = "notepatra-mcp"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "Model Context Protocol (MCP) stdio server for the Notepatra editor"
+
+# Standalone on purpose: must never join a parent workspace or affect the app build.
+[workspace]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
