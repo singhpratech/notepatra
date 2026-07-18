@@ -12,6 +12,8 @@
 
 #include <QtTest>
 #include <QCoreApplication>
+#include <QDateTime>
+#include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
@@ -22,6 +24,7 @@
 #include <QLabel>
 #include <QLocalSocket>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QTemporaryDir>
 #include <QWidget>
 
@@ -36,6 +39,7 @@ struct FakeTab {
     QString text;
     bool modified = false;
     QString language = QStringLiteral("Plain Text");
+    bool isDiagram = false;   // v0.1.119 — .npd diagram tab
 };
 } // namespace
 
@@ -60,6 +64,22 @@ private:
     // v0.1.118 write-tier fake state.
     QWidget *m_hostWindow = nullptr;
     QVector<int> m_savedTabs;
+    // v0.1.119 depth-wave fake state.
+    QJsonArray m_reminders;         // raw reminders the host would return
+    bool m_gitFail = false;         // runGit returns an error
+    bool m_gitHuge = false;         // runGit returns > 256 KB
+    QString m_openedNote;           // last open_note target
+    QString m_lastCreatedTitle;
+    QString m_lastCreatedBody;
+    QString m_lastCreatedPath;
+    QString m_appendedTo;
+    QString m_appendedText;
+    QString m_reminderFile;
+    QDateTime m_reminderDue;
+    QString m_exportedPath;
+    QString m_exportedFormat;
+    int m_sqlRows = 3;              // rows the fake runSql returns for a SELECT
+    int m_sqlCellLen = 0;          // when >0, the "name" cell is this many chars
 
     McpEditorHost makeHost() {
         McpEditorHost h;
@@ -190,6 +210,97 @@ private:
                 return false;
             m_savedTabs.append(idx);
             m_fakeTabs[idx].modified = false;
+            return true;
+        };
+        // ── v0.1.119 depth wave ──
+        h.reminders = [this] { return m_reminders; };
+        h.runGit = [this](const QString &sub, const QJsonObject &args,
+                          QString *err) -> QString {
+            if (m_gitFail) {
+                if (err) *err = QStringLiteral("not_a_repo: not a git checkout");
+                return QString();
+            }
+            if (m_gitHuge)
+                return QString(300 * 1024, QLatin1Char('x'));
+            // Echo the fixed subcommand + the args the bridge forwarded so a
+            // test can prove path/limit/ref reach the git layer verbatim.
+            return QStringLiteral("git-%1|path=%2|limit=%3|ref=%4")
+                .arg(sub,
+                     args.value(QLatin1String("path")).toString(),
+                     QString::number(
+                         args.value(QLatin1String("limit")).toInt(-1)),
+                     args.value(QLatin1String("ref")).toString());
+        };
+        h.diagramSource = [this](int i, QString *out) -> bool {
+            if (i < 0 || i >= m_fakeTabs.size() || !m_fakeTabs[i].isDiagram)
+                return false;
+            if (out) *out = m_fakeTabs[i].text;
+            return true;
+        };
+        h.runSql = [this](const QString &sql, const QString &csvPath,
+                          QString *err) -> QJsonObject {
+            // Faithful-enough stand-in for DbConnections::classifySql: reject
+            // any statement carrying a DML/DDL verb (this is what catches
+            // UPDATE / DELETE and the WITH ... DELETE trap), accept the rest.
+            static const QRegularExpression dml(
+                QStringLiteral("\\b(insert|update|delete|drop|create|alter|"
+                               "replace|truncate|attach|copy)\\b"),
+                QRegularExpression::CaseInsensitiveOption);
+            if (dml.match(sql).hasMatch()) {
+                if (err)
+                    *err = QStringLiteral(
+                        "query rejected: statement is not read-only");
+                return QJsonObject();
+            }
+            QJsonArray cols;
+            cols.append(QStringLiteral("id"));
+            cols.append(QStringLiteral("name"));
+            QJsonArray rows;
+            for (int i = 0; i < m_sqlRows; ++i) {
+                QJsonArray r;
+                r.append(QString::number(i));
+                r.append(m_sqlCellLen > 0
+                             ? QString(m_sqlCellLen, QLatin1Char('X'))
+                             : QStringLiteral("row%1").arg(i));
+                rows.append(r);
+            }
+            QJsonObject out;
+            out[QStringLiteral("columns")] = cols;
+            out[QStringLiteral("rows")] = rows;
+            out[QStringLiteral("truncated")] = false;
+            out[QStringLiteral("engine")] =
+                csvPath.isEmpty() ? QStringLiteral("sqlite")
+                                  : QStringLiteral("duckdb");
+            return out;
+        };
+        h.openNote = [this](const QString &absFile, QString *) -> QString {
+            m_openedNote = absFile;
+            return QFileInfo(absFile).completeBaseName();
+        };
+        h.createNote = [this](const QString &title, const QString &body,
+                              QString *) -> QString {
+            m_lastCreatedTitle = title;
+            m_lastCreatedBody = body;
+            m_lastCreatedPath = m_notesRoot +
+                QStringLiteral("/Inbox/created-%1.html").arg(title);
+            return m_lastCreatedPath;
+        };
+        h.appendNote = [this](const QString &absFile, const QString &text,
+                              QString *) -> bool {
+            m_appendedTo = absFile;
+            m_appendedText = text;
+            return true;
+        };
+        h.setReminder = [this](const QString &absFile, const QDateTime &due,
+                               QString *) -> bool {
+            m_reminderFile = absFile;
+            m_reminderDue = due;
+            return true;
+        };
+        h.exportDiagram = [this](int, const QString &path,
+                                 const QString &format, QString *) -> bool {
+            m_exportedPath = path;
+            m_exportedFormat = format;
             return true;
         };
         return h;
@@ -336,6 +447,21 @@ private slots:
         m_compareCount = 0;
         m_lastGotoLine = -1;
         m_savedTabs.clear();
+        m_reminders = QJsonArray();
+        m_gitFail = false;
+        m_gitHuge = false;
+        m_openedNote.clear();
+        m_lastCreatedTitle.clear();
+        m_lastCreatedBody.clear();
+        m_lastCreatedPath.clear();
+        m_appendedTo.clear();
+        m_appendedText.clear();
+        m_reminderFile.clear();
+        m_reminderDue = QDateTime();
+        m_exportedPath.clear();
+        m_exportedFormat.clear();
+        m_sqlRows = 3;
+        m_sqlCellLen = 0;
         m_hostWindow = new QWidget;
         m_hostWindow->resize(640, 420);
         m_hostWindow->show();
@@ -1434,6 +1560,717 @@ private slots:
         const QJsonObject resp = readObj(s);
         QCOMPARE(resp.value(QLatin1String("id")).toInt(), 75);
         QCOMPARE(resp.value(QLatin1String("ok")).toBool(), false);
+    }
+
+    // ══ v0.1.119 depth wave ═══════════════════════════════════════════
+
+    void list_reminders_buckets_and_empty() {
+        // No reminders → ok, empty array (documented, never an error).
+        {
+            QLocalSocket s;
+            QVERIFY(connectClient(s));
+            readGreeting(s);
+            const QJsonObject resp =
+                call(s, 100, QStringLiteral("list_reminders"));
+            QVERIFY(resp.value(QLatin1String("ok")).toBool());
+            QCOMPARE(resp.value(QLatin1String("result"))
+                         .toObject()
+                         .value(QLatin1String("reminders"))
+                         .toArray()
+                         .size(),
+                     0);
+        }
+        // One reminder per bucket; the bridge computes the bucket itself.
+        const QDateTime now = QDateTime::currentDateTime();
+        auto add = [this](const QString &file, const QString &title,
+                          const QDateTime &due) {
+            QJsonObject o;
+            o[QStringLiteral("note_file")] = file;
+            o[QStringLiteral("note_title")] = title;
+            o[QStringLiteral("due_iso")] = due.toUTC().toString(Qt::ISODate);
+            m_reminders.append(o);
+        };
+        add(QStringLiteral("/n/a.html"), QStringLiteral("OverdueOne"),
+            QDateTime(QDate(2000, 1, 1), QTime(9, 0)));
+        add(QStringLiteral("/n/b.html"), QStringLiteral("TodayOne"),
+            QDateTime(now.date(), QTime(23, 59, 59)));
+        add(QStringLiteral("/n/c.html"), QStringLiteral("WeekOne"),
+            now.addDays(3));
+        add(QStringLiteral("/n/d.html"), QStringLiteral("LaterOne"),
+            now.addDays(400));
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QJsonObject resp =
+            call(s, 101, QStringLiteral("list_reminders"));
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        const QJsonArray rem = resp.value(QLatin1String("result"))
+                                   .toObject()
+                                   .value(QLatin1String("reminders"))
+                                   .toArray();
+        QCOMPARE(rem.size(), 4);
+        auto bucketOf = [&](const QString &title) -> QString {
+            for (const QJsonValue &v : rem) {
+                const QJsonObject o = v.toObject();
+                if (o.value(QLatin1String("note_title")).toString() == title)
+                    return o.value(QLatin1String("bucket")).toString();
+            }
+            return QString();
+        };
+        for (const QJsonValue &v : rem) {
+            const QJsonObject o = v.toObject();
+            QVERIFY(!o.value(QLatin1String("note_file")).toString().isEmpty());
+            QVERIFY(!o.value(QLatin1String("due_iso")).toString().isEmpty());
+        }
+        QCOMPARE(bucketOf(QStringLiteral("OverdueOne")),
+                 QStringLiteral("Overdue"));
+        QCOMPARE(bucketOf(QStringLiteral("TodayOne")),
+                 QStringLiteral("Today"));
+        QCOMPARE(bucketOf(QStringLiteral("WeekOne")),
+                 QStringLiteral("This week"));
+        QCOMPARE(bucketOf(QStringLiteral("LaterOne")),
+                 QStringLiteral("Later"));
+    }
+
+    void git_verbs_route_args() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        auto out = [](const QJsonObject &r) {
+            return r.value(QLatin1String("result"))
+                .toObject()
+                .value(QLatin1String("output"))
+                .toString();
+        };
+        QJsonObject r = call(s, 110, QStringLiteral("git_status"));
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QVERIFY(out(r).contains(QLatin1String("git-status")));
+        QJsonObject dargs;
+        dargs[QStringLiteral("path")] = QStringLiteral("src/x.cpp");
+        r = call(s, 111, QStringLiteral("git_diff"), dargs);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QVERIFY(out(r).contains(QLatin1String("git-diff")));
+        QVERIFY(out(r).contains(QLatin1String("path=src/x.cpp")));
+        QJsonObject largs;
+        largs[QStringLiteral("limit")] = 5;
+        r = call(s, 112, QStringLiteral("git_log"), largs);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QVERIFY(out(r).contains(QLatin1String("git-log")));
+        QVERIFY(out(r).contains(QLatin1String("limit=5")));
+        QJsonObject sargs;
+        sargs[QStringLiteral("ref")] = QStringLiteral("HEAD~2");
+        r = call(s, 113, QStringLiteral("git_show"), sargs);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QVERIFY(out(r).contains(QLatin1String("ref=HEAD~2")));
+        r = call(s, 114, QStringLiteral("git_branch"));
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QVERIFY(out(r).contains(QLatin1String("git-branch")));
+    }
+
+    void git_error_surfaces() {
+        m_gitFail = true;
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QJsonObject r = call(s, 115, QStringLiteral("git_status"));
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String("not_a_repo")));
+    }
+
+    void git_output_caps_at_256kb() {
+        m_gitHuge = true;
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QJsonObject r = call(s, 116, QStringLiteral("git_log"));
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        const QJsonObject res = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res.value(QLatin1String("truncated")).toBool(), true);
+        const QString o = res.value(QLatin1String("output")).toString();
+        QVERIFY(o.contains(QLatin1String("truncated at 256 KB")));
+        QVERIFY(o.size() <= 256 * 1024 + 64);
+    }
+
+    void validate_npd_source_valid_and_invalid() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject good;
+        good[QStringLiteral("source")] =
+            QStringLiteral("node a (Start)\nnode b [Process]\n");
+        QJsonObject r = call(s, 120, QStringLiteral("validate_npd"), good);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QJsonObject res = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res.value(QLatin1String("valid")).toBool(), true);
+        QCOMPARE(res.value(QLatin1String("errors")).toArray().size(), 0);
+        // An icon node without a ':name' is a parse error (real parser rule).
+        QJsonObject bad;
+        bad[QStringLiteral("source")] =
+            QStringLiteral("node a (Start)\nicon x \"NoColon\"\n");
+        r = call(s, 121, QStringLiteral("validate_npd"), bad);
+        QVERIFY(r.value(QLatin1String("ok")).toBool()); // verb itself succeeds
+        res = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res.value(QLatin1String("valid")).toBool(), false);
+        const QJsonArray errs = res.value(QLatin1String("errors")).toArray();
+        QVERIFY(errs.size() >= 1);
+        const QJsonObject e0 = errs.at(0).toObject();
+        QVERIFY(e0.contains(QLatin1String("line")));
+        QVERIFY(e0.value(QLatin1String("line")).toInt() >= 1);
+        QVERIFY(!e0.value(QLatin1String("message")).toString().isEmpty());
+    }
+
+    void validate_npd_by_tab_and_bad_args() {
+        m_fakeTabs.append({QStringLiteral("chart.npd"), QString(),
+                           QStringLiteral("node a (Start)\n"), false,
+                           QStringLiteral("Plain Text"), true});
+        const int di = m_fakeTabs.size() - 1;
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject args;
+        args[QStringLiteral("tab_index")] = di;
+        QJsonObject r = call(s, 122, QStringLiteral("validate_npd"), args);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(r.value(QLatin1String("result"))
+                     .toObject()
+                     .value(QLatin1String("valid"))
+                     .toBool(),
+                 true);
+        // Non-diagram tab → error.
+        QJsonObject nd;
+        nd[QStringLiteral("tab_index")] = 0;
+        r = call(s, 123, QStringLiteral("validate_npd"), nd);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String("not a diagram")));
+        // Out of range.
+        QJsonObject oob;
+        oob[QStringLiteral("tab_index")] = 99;
+        r = call(s, 124, QStringLiteral("validate_npd"), oob);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        // Neither source nor tab_index.
+        r = call(s, 125, QStringLiteral("validate_npd"));
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String("missing source or tab_index")));
+    }
+
+    void run_sql_select_and_engine() {
+        m_sqlRows = 3;
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("sql")] = QStringLiteral("SELECT id, name FROM t");
+        QJsonObject r = call(s, 130, QStringLiteral("run_sql"), a);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QJsonObject res = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res.value(QLatin1String("columns")).toArray().size(), 2);
+        QCOMPARE(res.value(QLatin1String("rows")).toArray().size(), 3);
+        QCOMPARE(res.value(QLatin1String("truncated")).toBool(), false);
+        QCOMPARE(res.value(QLatin1String("engine")).toString(),
+                 QStringLiteral("sqlite"));
+        // csv_path → duckdb engine reported.
+        a[QStringLiteral("csv_path")] = QStringLiteral("/tmp/data.csv");
+        r = call(s, 131, QStringLiteral("run_sql"), a);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(r.value(QLatin1String("result"))
+                     .toObject()
+                     .value(QLatin1String("engine"))
+                     .toString(),
+                 QStringLiteral("duckdb"));
+    }
+
+    void run_sql_rejects_non_readonly() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QStringList bad = {
+            QStringLiteral("UPDATE t SET x=1"),
+            QStringLiteral("DELETE FROM t"),
+            QStringLiteral("WITH c AS (SELECT 1) DELETE FROM t"), // WITH-DML trap
+            QStringLiteral("DROP TABLE t"),
+        };
+        int id = 140;
+        for (const QString &q : bad) {
+            QJsonObject a;
+            a[QStringLiteral("sql")] = q;
+            const QJsonObject r = call(s, id++, QStringLiteral("run_sql"), a);
+            QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+            QVERIFY(!r.value(QLatin1String("error")).toString().isEmpty());
+        }
+        // Missing sql.
+        const QJsonObject miss = call(s, id++, QStringLiteral("run_sql"));
+        QCOMPARE(miss.value(QLatin1String("ok")).toBool(), false);
+    }
+
+    void run_sql_caps_at_200_rows() {
+        m_sqlRows = 250;
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("sql")] = QStringLiteral("SELECT * FROM big");
+        const QJsonObject r = call(s, 150, QStringLiteral("run_sql"), a);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        const QJsonObject res = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res.value(QLatin1String("rows")).toArray().size(), 200);
+        QCOMPARE(res.value(QLatin1String("truncated")).toBool(), true);
+    }
+
+    // Per-cell char cap: a single cell longer than kMaxSqlCells (1024) is
+    // truncated with a marker, so one cell can't exfiltrate a whole file.
+    void run_sql_caps_cell_length() {
+        m_sqlRows = 1;
+        m_sqlCellLen = 5000;   // > 1024
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("sql")] = QStringLiteral("SELECT * FROM big");
+        const QJsonObject r = call(s, 151, QStringLiteral("run_sql"), a);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        const QJsonObject res = r.value(QLatin1String("result")).toObject();
+        const QJsonArray rows = res.value(QLatin1String("rows")).toArray();
+        QCOMPARE(rows.size(), 1);
+        const QString cell = rows.at(0).toArray().at(1).toString();
+        QVERIFY2(cell.size() < 5000, "cell was not truncated");
+        QVERIFY2(cell.endsWith(QStringLiteral("[truncated]")),
+                 "truncation marker missing");
+        // 1024 kept chars + ellipsis + "[truncated]".
+        QCOMPARE(cell.size(), 1024 + 1 + int(qstrlen("[truncated]")));
+        QVERIFY(res.value(QLatin1String("truncated")).toBool());
+    }
+
+    void open_note_and_containment() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        m_notesRoot = dir.path();
+        const QString note =
+            writeNote(dir.path() + QStringLiteral("/Inbox/a.html"),
+                      QStringLiteral("Alpha"), QStringLiteral("body"));
+        QVERIFY(!note.isEmpty());
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("file")] = note;
+        QJsonObject r = call(s, 160, QStringLiteral("open_note"), a);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(r.value(QLatin1String("result"))
+                     .toObject()
+                     .value(QLatin1String("opened"))
+                     .toBool(),
+                 true);
+        QCOMPARE(m_openedNote, QFileInfo(note).canonicalFilePath());
+        // Escape outside root → rejected, host untouched.
+        QTemporaryDir outside;
+        QVERIFY(outside.isValid());
+        const QString stray = outside.path() + QStringLiteral("/evil.html");
+        {
+            QFile f(stray);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("<html></html>");
+        }
+        m_openedNote.clear();
+        QJsonObject bad;
+        bad[QStringLiteral("file")] = stray;
+        r = call(s, 161, QStringLiteral("open_note"), bad);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String("not a note file")));
+        QVERIFY(m_openedNote.isEmpty());
+        // Missing file arg.
+        r = call(s, 162, QStringLiteral("open_note"));
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+    }
+
+    void create_note_approve_and_validation() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("title")] = QStringLiteral("Meeting X");
+        a[QStringLiteral("body")] = QStringLiteral("line one\nline two");
+        sendRequest(s, 170, QStringLiteral("create_note"), a);
+        QFrame *card = waitForCard();
+        QVERIFY(card);
+        auto *desc =
+            card->findChild<QLabel *>(QStringLiteral("mcpApprovalDesc"));
+        QVERIFY(desc);
+        QVERIFY(desc->text().contains(
+            QLatin1String("create note 'Meeting X'")));
+        QVERIFY(desc->text().contains(QLatin1String("chars)")));
+        // Held: no response, no host mutation until Approve.
+        QTest::qWait(120);
+        QVERIFY(!s.canReadLine());
+        QVERIFY(m_lastCreatedTitle.isEmpty());
+        card->findChild<QPushButton *>(QStringLiteral("mcpApproveBtn"))->click();
+        const QJsonObject r = readObj(s);
+        QCOMPARE(r.value(QLatin1String("id")).toInt(), 170);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        const QJsonObject res = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res.value(QLatin1String("title")).toString(),
+                 QStringLiteral("Meeting X"));
+        QVERIFY(!res.value(QLatin1String("file")).toString().isEmpty());
+        QCOMPARE(m_lastCreatedTitle, QStringLiteral("Meeting X"));
+        QCOMPARE(m_lastCreatedBody, QStringLiteral("line one\nline two"));
+        QVERIFY(waitForCardGone());
+        // Missing title → fails fast, NO card.
+        QJsonObject noTitle;
+        noTitle[QStringLiteral("body")] = QStringLiteral("x");
+        const QJsonObject bad =
+            call(s, 171, QStringLiteral("create_note"), noTitle);
+        QCOMPARE(bad.value(QLatin1String("ok")).toBool(), false);
+        QTest::qWait(80);
+        QVERIFY(!findCard());
+    }
+
+    void append_note_approve_deny_escape() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        m_notesRoot = dir.path();
+        const QString note =
+            writeNote(dir.path() + QStringLiteral("/Inbox/n.html"),
+                      QStringLiteral("NoteA"), QStringLiteral("b"));
+        QVERIFY(!note.isEmpty());
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("file")] = note;
+        a[QStringLiteral("text")] = QStringLiteral("appended text"); // 13 chars
+        sendRequest(s, 180, QStringLiteral("append_note"), a);
+        QFrame *card = waitForCard();
+        QVERIFY(card);
+        auto *desc =
+            card->findChild<QLabel *>(QStringLiteral("mcpApprovalDesc"));
+        QVERIFY(desc);
+        QVERIFY(desc->text().contains(
+            QLatin1String("append 13 chars to 'NoteA'")));
+        card->findChild<QPushButton *>(QStringLiteral("mcpApproveBtn"))->click();
+        const QJsonObject r = readObj(s);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(m_appendedText, QStringLiteral("appended text"));
+        QCOMPARE(m_appendedTo, QFileInfo(note).canonicalFilePath());
+        QVERIFY(waitForCardGone());
+        // Escape → rejected, NO card, host untouched.
+        QTemporaryDir outside;
+        QVERIFY(outside.isValid());
+        const QString stray = outside.path() + QStringLiteral("/e.html");
+        {
+            QFile f(stray);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("<html></html>");
+        }
+        m_appendedTo.clear();
+        QJsonObject esc;
+        esc[QStringLiteral("file")] = stray;
+        esc[QStringLiteral("text")] = QStringLiteral("x");
+        QJsonObject bad = call(s, 181, QStringLiteral("append_note"), esc);
+        QCOMPARE(bad.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(bad.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String("not a note file")));
+        QVERIFY(m_appendedTo.isEmpty());
+        QTest::qWait(80);
+        QVERIFY(!findCard());
+        // Missing text → no card.
+        QJsonObject noText;
+        noText[QStringLiteral("file")] = note;
+        bad = call(s, 182, QStringLiteral("append_note"), noText);
+        QCOMPARE(bad.value(QLatin1String("ok")).toBool(), false);
+    }
+
+    void set_reminder_approve_and_validation() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        m_notesRoot = dir.path();
+        const QString note =
+            writeNote(dir.path() + QStringLiteral("/Inbox/r.html"),
+                      QStringLiteral("RemNote"), QStringLiteral("b"));
+        QVERIFY(!note.isEmpty());
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QDateTime future = QDateTime::currentDateTime().addDays(2);
+        QJsonObject a;
+        a[QStringLiteral("file")] = note;
+        a[QStringLiteral("due_iso")] = future.toString(Qt::ISODate);
+        sendRequest(s, 190, QStringLiteral("set_reminder"), a);
+        QFrame *card = waitForCard();
+        QVERIFY(card);
+        auto *desc =
+            card->findChild<QLabel *>(QStringLiteral("mcpApprovalDesc"));
+        QVERIFY(desc);
+        QVERIFY(desc->text().contains(
+            QLatin1String("set reminder on 'RemNote' for")));
+        card->findChild<QPushButton *>(QStringLiteral("mcpApproveBtn"))->click();
+        const QJsonObject r = readObj(s);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(m_reminderFile, QFileInfo(note).canonicalFilePath());
+        QVERIFY(m_reminderDue.isValid());
+        QVERIFY(waitForCardGone());
+        // Past due → rejected, no card.
+        QJsonObject past;
+        past[QStringLiteral("file")] = note;
+        past[QStringLiteral("due_iso")] =
+            QDateTime::currentDateTime().addDays(-1).toString(Qt::ISODate);
+        QJsonObject bad = call(s, 191, QStringLiteral("set_reminder"), past);
+        QCOMPARE(bad.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(bad.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String("future")));
+        QTest::qWait(80);
+        QVERIFY(!findCard());
+        // Invalid due_iso.
+        QJsonObject inv;
+        inv[QStringLiteral("file")] = note;
+        inv[QStringLiteral("due_iso")] = QStringLiteral("not-a-date");
+        bad = call(s, 192, QStringLiteral("set_reminder"), inv);
+        QCOMPARE(bad.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(bad.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String("invalid due_iso")));
+        // Missing due_iso.
+        QJsonObject nod;
+        nod[QStringLiteral("file")] = note;
+        bad = call(s, 193, QStringLiteral("set_reminder"), nod);
+        QCOMPARE(bad.value(QLatin1String("ok")).toBool(), false);
+    }
+
+    void export_diagram_approve_and_validation() {
+        m_fakeTabs.append({QStringLiteral("d.npd"), QString(),
+                           QStringLiteral("node a (Start)\n"), false,
+                           QStringLiteral("Plain Text"), true});
+        const int di = m_fakeTabs.size() - 1;
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString outPath = dir.path() + QStringLiteral("/out.png");
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("tab_index")] = di;
+        a[QStringLiteral("path")] = outPath;
+        a[QStringLiteral("format")] = QStringLiteral("png");
+        sendRequest(s, 200, QStringLiteral("export_diagram"), a);
+        QFrame *card = waitForCard();
+        QVERIFY(card);
+        auto *desc =
+            card->findChild<QLabel *>(QStringLiteral("mcpApprovalDesc"));
+        QVERIFY(desc);
+        QVERIFY(desc->text().contains(QLatin1String("export 'd.npd' to")));
+        card->findChild<QPushButton *>(QStringLiteral("mcpApproveBtn"))->click();
+        const QJsonObject r = readObj(s);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(m_exportedFormat, QStringLiteral("png"));
+        QCOMPARE(QDir::fromNativeSeparators(m_exportedPath), outPath);
+        QVERIFY(waitForCardGone());
+        // Non-diagram tab → error, no card.
+        QJsonObject nd;
+        nd[QStringLiteral("tab_index")] = 0;
+        nd[QStringLiteral("path")] = outPath;
+        nd[QStringLiteral("format")] = QStringLiteral("png");
+        QJsonObject bad = call(s, 201, QStringLiteral("export_diagram"), nd);
+        QCOMPARE(bad.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(bad.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String("not a diagram")));
+        // Relative path → error.
+        QJsonObject rel;
+        rel[QStringLiteral("tab_index")] = di;
+        rel[QStringLiteral("path")] = QStringLiteral("out.png");
+        rel[QStringLiteral("format")] = QStringLiteral("png");
+        bad = call(s, 202, QStringLiteral("export_diagram"), rel);
+        QCOMPARE(bad.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(bad.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String("absolute")));
+        // Missing parent directory → error.
+        QJsonObject nopar;
+        nopar[QStringLiteral("tab_index")] = di;
+        nopar[QStringLiteral("path")] =
+            dir.path() + QStringLiteral("/nope/out.png");
+        nopar[QStringLiteral("format")] = QStringLiteral("png");
+        bad = call(s, 203, QStringLiteral("export_diagram"), nopar);
+        QCOMPARE(bad.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(bad.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String("parent directory")));
+        // Unsupported format → error.
+        QJsonObject badfmt;
+        badfmt[QStringLiteral("tab_index")] = di;
+        badfmt[QStringLiteral("path")] = outPath;
+        badfmt[QStringLiteral("format")] = QStringLiteral("gif");
+        bad = call(s, 204, QStringLiteral("export_diagram"), badfmt);
+        QCOMPARE(bad.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(bad.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String("unsupported format")));
+        QTest::qWait(80);
+        QVERIFY(!findCard());
+    }
+
+    // Approval card flags an overwrite of an existing destination file
+    // (display text only — the executed path is unchanged).
+    void export_diagram_card_flags_overwrite() {
+        m_fakeTabs.append({QStringLiteral("d.npd"), QString(),
+                           QStringLiteral("node a (Start)\n"), false,
+                           QStringLiteral("Plain Text"), true});
+        const int di = m_fakeTabs.size() - 1;
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString outPath = dir.path() + QStringLiteral("/exists.png");
+        {   // pre-create the destination so it's an OVERWRITE
+            QFile f(outPath);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("stale");
+        }
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("tab_index")] = di;
+        a[QStringLiteral("path")] = outPath;
+        a[QStringLiteral("format")] = QStringLiteral("png");
+        sendRequest(s, 205, QStringLiteral("export_diagram"), a);
+        QFrame *card = waitForCard();
+        QVERIFY(card);
+        auto *desc =
+            card->findChild<QLabel *>(QStringLiteral("mcpApprovalDesc"));
+        QVERIFY(desc);
+        QVERIFY2(desc->text().contains(
+                     QLatin1String("OVERWRITE existing file:")),
+                 qPrintable(desc->text()));
+        card->findChild<QPushButton *>(QStringLiteral("mcpApproveBtn"))->click();
+        const QJsonObject r = readObj(s);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        // The EXECUTED path is the exact absolute path, not the card string.
+        QCOMPARE(QDir::fromNativeSeparators(m_exportedPath), outPath);
+        QVERIFY(waitForCardGone());
+    }
+
+    void find_in_tab_regex_flag() {
+        // tab 0 text: "hello world\nSecond Line with Needle\n".
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("query")] = QStringLiteral("S.*Needle");
+        a[QStringLiteral("index")] = 0;
+        a[QStringLiteral("regex")] = true;
+        QJsonObject r = call(s, 210, QStringLiteral("find_in_tab"), a);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(r.value(QLatin1String("result"))
+                     .toObject()
+                     .value(QLatin1String("matches"))
+                     .toArray()
+                     .size(),
+                 1);
+        // The SAME text as a literal (regex off) matches nothing.
+        QJsonObject lit;
+        lit[QStringLiteral("query")] = QStringLiteral("S.*Needle");
+        lit[QStringLiteral("index")] = 0;
+        r = call(s, 211, QStringLiteral("find_in_tab"), lit);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(r.value(QLatin1String("result"))
+                     .toObject()
+                     .value(QLatin1String("matches"))
+                     .toArray()
+                     .size(),
+                 0);
+        // Invalid pattern → fail-fast error.
+        QJsonObject bad;
+        bad[QStringLiteral("query")] = QStringLiteral("(unterminated");
+        bad[QStringLiteral("index")] = 0;
+        bad[QStringLiteral("regex")] = true;
+        r = call(s, 212, QStringLiteral("find_in_tab"), bad);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String("invalid regex")));
+    }
+
+    void search_project_regex_flag() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        {
+            QFile f(dir.path() + QStringLiteral("/a.txt"));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("alpha\nfoo123bar\n");
+        }
+        m_root = dir.path();
+        m_fakeTabs.clear(); // only the file leg should match
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("query")] = QStringLiteral("foo[0-9]+bar");
+        a[QStringLiteral("regex")] = true;
+        QJsonObject r = call(s, 220, QStringLiteral("search_project"), a);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        const QJsonArray results = r.value(QLatin1String("result"))
+                                       .toObject()
+                                       .value(QLatin1String("results"))
+                                       .toArray();
+        bool saw = false;
+        for (const QJsonValue &v : results)
+            if (v.toObject()
+                    .value(QLatin1String("text"))
+                    .toString()
+                    .contains(QLatin1String("foo123bar")))
+                saw = true;
+        QVERIFY(saw);
+        // Invalid pattern rejected BEFORE any worker is dispatched.
+        QJsonObject bad;
+        bad[QStringLiteral("query")] = QStringLiteral("[unterminated");
+        bad[QStringLiteral("regex")] = true;
+        r = call(s, 221, QStringLiteral("search_project"), bad);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String("invalid regex")));
+    }
+
+    void new_verbs_report_not_supported_without_host() {
+        // A bridge with a bare host refuses each host-backed verb with a
+        // clear error — and the WRITE verbs never show a card.
+        McpEditorHost bare;
+        bare.tabCount = [] { return 0; };
+        const QString name = QStringLiteral("notepatra-mcp-bare-%1-%2")
+                                 .arg(QCoreApplication::applicationPid())
+                                 .arg(++m_seq);
+        McpBridge bridge(bare, this, name);
+        QVERIFY(bridge.isListening());
+        QLocalSocket s;
+        s.connectToServer(name);
+        QElapsedTimer t;
+        t.start();
+        while (s.state() != QLocalSocket::ConnectedState &&
+               t.elapsed() < kWaitMs)
+            QTest::qWait(10);
+        QVERIFY(s.state() == QLocalSocket::ConnectedState);
+        readGreeting(s);
+        const QStringList verbs = {
+            QStringLiteral("git_status"),   QStringLiteral("run_sql"),
+            QStringLiteral("open_note"),    QStringLiteral("create_note"),
+            QStringLiteral("append_note"),  QStringLiteral("set_reminder"),
+            QStringLiteral("export_diagram")};
+        int id = 230;
+        for (const QString &v : verbs) {
+            QJsonObject args;
+            args[QStringLiteral("sql")] = QStringLiteral("SELECT 1");
+            args[QStringLiteral("title")] = QStringLiteral("t");
+            const QJsonObject r = call(s, id++, v, args);
+            QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+            QVERIFY(!r.value(QLatin1String("error")).toString().isEmpty());
+        }
     }
 };
 

@@ -34,7 +34,7 @@ cd "$(dirname "$0")/.."
 LEXER_COUNT=82
 FILE_EXT_COUNT=238
 BACKEND_COUNT=6
-MCP_TOOL_COUNT=22
+MCP_TOOL_COUNT=35
 BACKEND_LIST="Ollama / llama.cpp / OpenRouter / Ollama Cloud / OpenAI / Azure OpenAI"
 # BARE_BIN_MB removed v0.1.86 — verify-download-sizes.sh now downloads the
 # actual artifact and asserts byte count + stripped-vs-not, which is strictly
@@ -259,8 +259,11 @@ check_phrase "index.html sticky-CTA aria-label" \
     docs/index.html 'aria-label="Download Notepatra v__V__"'
 check_phrase "index.html sticky-CTA visible text" \
     docs/index.html 'Download v__V__ ↓'
-check_phrase "index.html hero-badge div" \
-    docs/index.html 'hero-badge">v__V__ · Now Available'
+# v0.1.118 — user directive: the hero badge keeps this EXACT tagline
+# (MCP stays prominent), only the version bumps, for the foreseeable
+# future. Pin the full string so a sweep can't quietly reword it.
+check_phrase "index.html hero-badge div (full MCP tagline pinned)" \
+    docs/index.html 'hero-badge">v__V__ · Now Available · MCP server for AI assistants · Linux · Windows · macOS'
 check_phrase "index.html download section label" \
     docs/index.html 'section-label">Download v__V__</'
 check_phrase "index.html 'Get Notepatra v…' download button" \

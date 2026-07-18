@@ -7,6 +7,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.119] — 2026-07-18
+
+**MCP depth — 35 tools. The `notepatra-mcp` sidecar grows from 22 to 35 tools in three tiers (Read 18 / Act 9 / Write 8): read-only Git, read-only SQL, Noter reminders and `.npd` validation, plus approval-gated write verbs for creating/appending notes, setting reminders, and exporting diagrams. Windows named-pipe transport is now supported. `run_sql` is SELECT-only and, on the Full/DuckDB edition, engine-sandboxed.**
+
+### Added
+- **13 new MCP tools** (new totals: Read 18 / Act 9 / Write 8 = 35):
+  - **Read (no approval):** `list_reminders`, read-only Git (`git_status`, `git_diff`, `git_log`, `git_show`, `git_branch`), `validate_npd`, and `run_sql` (SELECT-only).
+  - **Act (visible, no approval):** `open_note`.
+  - **Write (human-approved):** `create_note`, `append_note`, `set_reminder`, `export_diagram`.
+- **Regex search:** `find_in_tab` and `search_project` gained an optional `{regex: true}` flag (Qt-compatible pattern; invalid patterns rejected with a clear error).
+- **Windows named-pipe transport** — the sidecar connects to the running editor over `\\.\pipe\<name>`, so `--socket` works on Linux, macOS, and Windows alike (the Windows client was a stub in v0.1.118). Prebuilt Windows sidecar binaries are not yet in the signed bundle — build from source or `cargo install notepatra-mcp`.
+
+### Security
+- **The approval gate extends to the 4 new write verbs** (`create_note`, `append_note`, `set_reminder`, `export_diagram`): same in-editor Approve/Deny card, 120 s auto-deny, FIFO, no headless bypass, gate in the editor process.
+- **`run_sql` is SELECT-only** via the SQL classifier and, on the Full/DuckDB edition, runs in an engine sandbox: the file is materialized into an in-memory table, then `SET enable_external_access=false` (one-way) is issued before the untrusted SQL runs, so it cannot read host files even via `read_text` / `read_csv_auto` / `glob` / replacement scans; `csv_path` is confined to the open workspace, and results are row- and cell-capped. An adversarial security pass hardened `run_sql` before ship.
+
+### Testing / CI
+- Full offscreen ctest **71/71**, Lite **68/68**, **60** sidecar cargo tests, and a live editor-plus-sidecar end-to-end run across all **35** tools. `stale-text-check.sh` MCP tool count bumped to 35 (still derived from the sidecar dispatch table).
+
+### Notes
+- The 13 new tools live in the separate `notepatra-mcp` sidecar, so the bare **Lite editor binary is unchanged at 12.4 MB** on Linux x64.
+
+---
+
 ## [0.1.118] — 2026-07-17
 
 **MCP support — your editor, readable by your AI. New standalone `notepatra-mcp` sidecar (stdio JSON-RPC 2.0 Model Context Protocol server) + a hardened local-socket bridge in the editor: 22 tools in three tiers, with every write gated behind a human Approve/Deny card inside the editor window. Local socket + stdio only.**
@@ -24,7 +48,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 - **Write tier is human-gated in the editor process:** the four write tools show a non-modal Approve/Deny card inside the Notepatra window, auto-deny after 120 s, queue FIFO one card at a time, drop on client disconnect, and have **no headless bypass** — no visible window means `approval unavailable`. The gate lives in the C++ bridge, not the sidecar, so no MCP client can write without a human click.
 
 ### Fixed
-- **Bare-binary size re-measured from this release's artifact: 12.4 MB** (Linux x64 — v0.1.117's dead-code removal briefly hit 12.2 MB; the in-editor MCP bridge adds ~0.2 MB back).
+- **Bare-binary size claim corrected 12.4 → 12.2 MB** (Linux x64, measured from the shipped artifact — the v0.1.117 dead-code removal shrank the binary past the advertised number).
 
 ### Testing / CI
 - 47 sidecar cargo tests (protocol + socket-bridge suites) and `test_mcp_bridge` (315 assertions) in ctest; full offscreen suite 68/68; live end-to-end script (real editor + real sidecar; write approval exercised in the C++ suite) 17/17.

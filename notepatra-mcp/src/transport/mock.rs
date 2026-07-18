@@ -10,6 +10,41 @@ use super::{
 /// find_in_tab stops after this many matches and sets `truncated`.
 const FIND_IN_TAB_CAP: usize = 500;
 
+/// Mock Noter root: create_note echoes note paths under this directory so
+/// `notepatra-mcp` (no --socket) demos the full write surface believably.
+const MOCK_NOTER_ROOT: &str = "/home/user/Documents/Notepatra/Noter";
+
+/// Minimal, dependency-free pattern check standing in for the editor's Qt
+/// regex validation: rejects unbalanced `()[]{}` and a dangling trailing
+/// backslash. Enough to exercise the "server rejects invalid patterns"
+/// contract without pulling in a regex crate.
+fn validate_regex(pattern: &str) -> Result<(), TransportError> {
+    let invalid = || TransportError("invalid regular expression pattern".into());
+    let mut stack: Vec<char> = Vec::new();
+    let mut escaped = false;
+    for ch in pattern.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '(' | '[' | '{' => stack.push(ch),
+            ')' if stack.pop() == Some('(') => {}
+            ']' if stack.pop() == Some('[') => {}
+            '}' if stack.pop() == Some('{') => {}
+            // A closer that didn't match its opener (the guard's pop already
+            // consumed the mismatched element, which is fine — we bail here).
+            ')' | ']' | '}' => return Err(invalid()),
+            _ => {}
+        }
+    }
+    if escaped || !stack.is_empty() {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
 /// Verbatim bridge error when the user clicks Deny on the approval card.
 pub const DENIED_BY_USER: &str = "denied by user";
 /// Verbatim bridge error when the approval card times out (120 s).
@@ -44,12 +79,20 @@ struct MockNote {
     text: String,
 }
 
+struct MockReminder {
+    file: String,
+    title: String,
+    due_iso: String,
+    bucket: &'static str,
+}
+
 /// In-memory fake editor used by default and in tests.
 pub struct MockEditor {
     tabs: Vec<MockTab>,
     /// (tab index, selected text)
     selection: (usize, String),
     notes: Vec<MockNote>,
+    reminders: Vec<MockReminder>,
     approval: ApprovalMode,
 }
 
@@ -120,6 +163,34 @@ impl Default for MockEditor {
                     file: "/home/user/Documents/Notepatra/Noter/old-scratch.html".into(),
                     modified_iso: "2026-06-01T08:00:00Z".into(),
                     text: "old ideas\n".into(),
+                },
+            ],
+            // One reminder in each of the four temporal buckets so
+            // list_reminders demos the full bucketing without a real clock.
+            reminders: vec![
+                MockReminder {
+                    file: "/home/user/Documents/Notepatra/Noter/release-checklist.html".into(),
+                    title: "Release checklist".into(),
+                    due_iso: "2026-07-16T09:00:00Z".into(),
+                    bucket: "Overdue",
+                },
+                MockReminder {
+                    file: "/home/user/Documents/Notepatra/Noter/standup-2026-07-15.html".into(),
+                    title: "Standup 2026-07-15".into(),
+                    due_iso: "2026-07-17T17:00:00Z".into(),
+                    bucket: "Today",
+                },
+                MockReminder {
+                    file: "/home/user/Documents/Notepatra/Noter/meeting-design.html".into(),
+                    title: "Meeting with design".into(),
+                    due_iso: "2026-07-20T15:00:00Z".into(),
+                    bucket: "This week",
+                },
+                MockReminder {
+                    file: "/home/user/Documents/Notepatra/Noter/old-scratch.html".into(),
+                    title: "Old scratch".into(),
+                    due_iso: "2026-08-30T08:00:00Z".into(),
+                    bucket: "Later",
                 },
             ],
             approval: ApprovalMode::Approve,
@@ -247,7 +318,15 @@ impl EditorTransport for MockEditor {
         &self,
         query: &str,
         max_results: usize,
+        regex: bool,
     ) -> Result<SearchResults, TransportError> {
+        // The real regex engine lives in the editor (Qt QRegularExpression);
+        // the mock only validates the pattern so callers can exercise the
+        // "server rejects invalid patterns" contract, then falls back to
+        // case-insensitive substring matching (mock simplification).
+        if regex {
+            validate_regex(query)?;
+        }
         // Bridge semantics: hits carry the tab's file path ("" for untitled
         // buffers), 1-based line numbers, and a truncation flag.
         let mut results = Vec::new();
@@ -314,7 +393,15 @@ impl EditorTransport for MockEditor {
         }))
     }
 
-    fn find_in_tab(&self, tab_index: Option<usize>, query: &str) -> Result<Value, TransportError> {
+    fn find_in_tab(
+        &self,
+        tab_index: Option<usize>,
+        query: &str,
+        regex: bool,
+    ) -> Result<Value, TransportError> {
+        if regex {
+            validate_regex(query)?;
+        }
         let i = self.resolve(tab_index)?;
         let mut matches = Vec::new();
         let mut truncated = false;
@@ -512,5 +599,232 @@ impl EditorTransport for MockEditor {
         let i = self.resolve(tab_index)?;
         self.tabs[i].modified = false;
         Ok(json!({ "ok": true }))
+    }
+
+    // ── v0.1.119 read verbs ────────────────────────────────────────────
+
+    fn list_reminders(&self) -> Result<Value, TransportError> {
+        let reminders: Vec<Value> = self
+            .reminders
+            .iter()
+            .map(|r| {
+                json!({
+                    "note_file": r.file,
+                    "note_title": r.title,
+                    "due_iso": r.due_iso,
+                    "bucket": r.bucket,
+                })
+            })
+            .collect();
+        Ok(json!({ "reminders": reminders }))
+    }
+
+    // The git verbs return the raw `git` CLI text under a single `output`
+    // key (the C++ bridge shells out and passes stdout through verbatim).
+
+    fn git_status(&self) -> Result<Value, TransportError> {
+        Ok(json!({
+            "output": "On branch v0119-mcp-depth\n\
+                       Changes to be committed:\n\tmodified:   src/tools.rs\n\
+                       Changes not staged for commit:\n\tmodified:   src/transport/socket.rs\n\
+                       Untracked files:\n\tnotes/scratch.md\n",
+        }))
+    }
+
+    fn git_diff(&self, path: Option<&str>) -> Result<Value, TransportError> {
+        let target = path.unwrap_or("src/tools.rs");
+        let output = format!(
+            "diff --git a/{target} b/{target}\n\
+             --- a/{target}\n\
+             +++ b/{target}\n\
+             @@ -1,3 +1,4 @@\n\
+             \x20// SPDX-License-Identifier: GPL-3.0-or-later\n\
+             +// v0.1.119: MCP depth\n\
+             \x20use serde_json::Value;\n"
+        );
+        Ok(json!({ "output": output }))
+    }
+
+    fn git_log(&self, limit: usize) -> Result<Value, TransportError> {
+        let all = [
+            "4d32cc8 ci: harden NSIS install fallback",
+            "0a180a9 docs: bare-binary size bump",
+            "1859cab v0.1.116: Compare readability",
+        ];
+        // Mirror `git log -n <limit> --oneline`: one line per commit.
+        let output = all
+            .iter()
+            .take(limit)
+            .copied()
+            .collect::<Vec<_>>()
+            .join("\n");
+        Ok(json!({ "output": format!("{output}\n") }))
+    }
+
+    fn git_show(&self, git_ref: &str) -> Result<Value, TransportError> {
+        Ok(json!({
+            "output": format!(
+                "commit {git_ref}\nAuthor: Prateek Singh\nDate: 2026-07-17\n\n\
+                 \x20   ci: harden NSIS install fallback — retry choco + fail fast\n\n\
+                 diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml\n\
+                 @@ -10,2 +10,3 @@\n\
+                 +      # {git_ref}: retry + fail fast\n"
+            ),
+        }))
+    }
+
+    fn git_branch(&self) -> Result<Value, TransportError> {
+        Ok(json!({
+            "output": "  main\n* v0119-mcp-depth\n",
+        }))
+    }
+
+    fn validate_npd(
+        &self,
+        tab_index: Option<usize>,
+        source: Option<&str>,
+    ) -> Result<Value, TransportError> {
+        // The tool layer guarantees exactly one selector is present.
+        let text = match (tab_index, source) {
+            (Some(i), None) => self.tabs[self.check_index(i)?].content.clone(),
+            (None, Some(s)) => s.to_string(),
+            _ => {
+                return Err(TransportError(
+                    "provide exactly one of tab_index or source".into(),
+                ))
+            }
+        };
+        // Believable stand-in for the editor's npd parser: a line beginning
+        // with "!!" is treated as a malformed directive (one error case).
+        let mut errors = Vec::new();
+        for (n, line) in text.lines().enumerate() {
+            if line.trim_start().starts_with("!!") {
+                // Bridge error shape: {line, message} (no column).
+                errors.push(json!({
+                    "line": n + 1,
+                    "message": "unknown directive",
+                }));
+            }
+        }
+        Ok(json!({ "valid": errors.is_empty(), "errors": errors }))
+    }
+
+    fn run_sql(&self, sql: &str, _csv_path: Option<&str>) -> Result<Value, TransportError> {
+        // The editor enforces SELECT-only; the mock mirrors that rejection so
+        // the "non-read statements are rejected" contract is observable.
+        let head = sql
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_ascii_uppercase();
+        if head != "SELECT" && head != "WITH" {
+            return Err(TransportError(
+                "only read-only SELECT statements are allowed".into(),
+            ));
+        }
+        Ok(json!({
+            "columns": [ "id", "name" ],
+            "rows": [ [1, "alpha"], [2, "bravo"] ],
+            "truncated": false,
+            "engine": "duckdb",
+        }))
+    }
+
+    // ── v0.1.119 act verb ──────────────────────────────────────────────
+
+    fn open_note(&mut self, file: &str) -> Result<Value, TransportError> {
+        if !self.notes.iter().any(|n| n.file == file) {
+            return Err(TransportError(format!("no note named {file:?}")));
+        }
+        // Opening a note surfaces it as a new tab in the editor.
+        let title = self
+            .notes
+            .iter()
+            .find(|n| n.file == file)
+            .map(|n| n.title.clone())
+            .unwrap_or_default();
+        self.tabs.push(MockTab {
+            title: title.clone(),
+            path: Some(file.to_string()),
+            content: String::new(),
+            modified: false,
+            language: "HTML".into(),
+            truncated: false,
+        });
+        // Bridge result shape: {opened, title}.
+        Ok(json!({ "opened": true, "title": title }))
+    }
+
+    // ── v0.1.119 write verbs — approval-gated ──────────────────────────
+
+    fn create_note(&mut self, title: &str, body: &str) -> Result<Value, TransportError> {
+        self.check_approval()?;
+        // Echo a plausible slugged .html path under the mock Noter root.
+        let slug: String = title
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() {
+                    c.to_ascii_lowercase()
+                } else {
+                    '-'
+                }
+            })
+            .collect();
+        let slug = slug.trim_matches('-').to_string();
+        let file = format!("{MOCK_NOTER_ROOT}/{slug}.html");
+        self.notes.push(MockNote {
+            title: title.to_string(),
+            file: file.clone(),
+            modified_iso: "2026-07-17T00:00:00Z".into(),
+            text: body.to_string(),
+        });
+        // Bridge result shape: {file, title}.
+        Ok(json!({ "file": file, "title": title }))
+    }
+
+    fn append_note(&mut self, file: &str, text: &str) -> Result<Value, TransportError> {
+        self.check_approval()?;
+        let note = self
+            .notes
+            .iter_mut()
+            .find(|n| n.file == file)
+            .ok_or_else(|| TransportError(format!("no note named {file:?}")))?;
+        note.text.push_str(text);
+        // Bridge result shape: {file}.
+        Ok(json!({ "file": file }))
+    }
+
+    fn set_reminder(&mut self, file: &str, due_iso: &str) -> Result<Value, TransportError> {
+        self.check_approval()?;
+        let note = self
+            .notes
+            .iter()
+            .find(|n| n.file == file)
+            .ok_or_else(|| TransportError(format!("no note named {file:?}")))?;
+        self.reminders.push(MockReminder {
+            file: file.to_string(),
+            title: note.title.clone(),
+            due_iso: due_iso.to_string(),
+            bucket: "Later",
+        });
+        // Bridge result shape: {file, due_iso}.
+        Ok(json!({ "file": file, "due_iso": due_iso }))
+    }
+
+    fn export_diagram(
+        &mut self,
+        tab_index: usize,
+        path: &str,
+        format: &str,
+    ) -> Result<Value, TransportError> {
+        self.check_approval()?;
+        self.check_index(tab_index)?;
+        if format != "png" && format != "pdf" {
+            return Err(TransportError(format!(
+                "unsupported export format {format:?} (expected png or pdf)"
+            )));
+        }
+        // Bridge result shape: {path}.
+        Ok(json!({ "path": path }))
     }
 }

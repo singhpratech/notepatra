@@ -441,6 +441,69 @@ int main(int argc, char **argv) {
         check("rejected query => nonempty reason", !bad.reason.isEmpty());
     }
 
+    // ── restrictFilesystem gate (v0.1.119 MCP run_sql arbitrary-file-read fix).
+    //    DuckDB's file-reading table functions are read-only by SQL semantics,
+    //    so the BASE classifier passes them. The MCP path calls
+    //    classifySql(sql, /*restrictFilesystem=*/true) to reject call-form use;
+    //    the desktop data-analyst leaves it false so a power user is unaffected.
+    std::printf("== restrictFilesystem: DuckDB file-reader denylist "
+                "(MCP run_sql only) ==\n");
+    {
+        auto rejectedRF = [](const QString &sql) {
+            const SqlVerdict v = classifySql(sql, /*restrictFilesystem=*/true);
+            return !(v.singleStatement && v.readOnly);
+        };
+        // Each file reader is REJECTED on the MCP (restrictFilesystem) path.
+        check("read_text rejected",
+              rejectedRF("SELECT * FROM read_text('/etc/passwd')"));
+        check("read_csv_auto rejected",
+              rejectedRF("SELECT * FROM read_csv_auto('/etc/passwd')"));
+        check("read_blob rejected",
+              rejectedRF("SELECT * FROM read_blob('/x')"));
+        check("read_parquet rejected",
+              rejectedRF("SELECT * FROM read_parquet('/x')"));
+        check("read_json_auto rejected",
+              rejectedRF("SELECT * FROM read_json_auto('/x')"));
+        check("glob rejected",
+              rejectedRF("SELECT * FROM glob('/home/**')"));
+        // Comment/case-obfuscated call form: stripSqlNoise blanks the comment,
+        // structTokens still sees READ_TEXT immediately-followed-by '('.
+        check("comment/case-obfuscated Read_Text rejected",
+              rejectedRF("SELECT * FROM Read_Text /*x*/('/etc/passwd')"));
+
+        // Exact rejection reason string surfaced to the MCP error path.
+        {
+            const SqlVerdict v = classifySql(
+                "SELECT * FROM read_text('/etc/passwd')", true);
+            check("rejection reason names the function",
+                  v.reason == QStringLiteral(
+                      "filesystem-reading function 'READ_TEXT' is not allowed"));
+        }
+
+        // SCOPING PROOF: the SAME query is an allowed read on the desktop
+        // (restrictFilesystem=false) and rejected on the MCP path (true).
+        {
+            const SqlVerdict off =
+                classifySql("SELECT * FROM read_csv_auto('x.csv')", false);
+            check("desktop UNCHANGED: read_csv_auto is readOnly (RF=false)",
+                  off.singleStatement && off.readOnly);
+            check("MCP path: read_csv_auto rejected (RF=true)",
+                  rejectedRF("SELECT * FROM read_csv_auto('x.csv')"));
+        }
+
+        // A column / string literal named like a function stays SAFE even
+        // under restrictFilesystem — only call-form (name '(') is a reader.
+        {
+            const SqlVerdict col = classifySql("SELECT read_text FROM t", true);
+            check("column named read_text still allowed (RF=true)",
+                  col.singleStatement && col.readOnly);
+            const SqlVerdict lit =
+                classifySql("SELECT 'read_text(' FROM t", true);
+            check("string literal 'read_text(' still allowed (RF=true)",
+                  lit.singleStatement && lit.readOnly);
+        }
+    }
+
     // ── Perf ceiling: prove the classifier stays LINEAR and that a huge string
     //    literal packed with write keywords is both (a) inert and (b) not a
     //    catastrophic-backtracking sink. A future ReDoS-style rewrite of

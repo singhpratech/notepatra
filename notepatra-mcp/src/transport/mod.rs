@@ -120,6 +120,33 @@ impl std::error::Error for TransportError {}
 /// * `replace_selection` → `{ok:true}`
 /// * `apply_edit` → `{ok:true,count:N}`
 /// * `save_tab` → `{ok:true}`
+///
+/// v0.1.119 ("MCP depth") adds 13 verbs. All pass the editor's JSON result
+/// through verbatim. Shapes below are BYTE-EXACT from the C++ bridge doc
+/// comment in src/mcp_bridge.cpp (the single source of truth, reconciled
+/// 2026-07-17):
+///
+/// Read tier:
+/// * `list_reminders` → `{reminders:[{note_file,note_title,due_iso,bucket}]}`
+///   where `bucket` is one of `"Overdue"|"Today"|"This week"|"Later"` (the
+///   bridge computes the bucket against LOCAL time; capitalization exact)
+/// * `git_status` / `git_diff` (args `{path?}`) / `git_log`
+///   (args `{limit?}`, default 20, capped at 100) / `git_show` (args `{ref}`)
+///   / `git_branch` — each returns `{output:str}` (raw `git` CLI text)
+/// * `validate_npd` (args `{tab_index}` XOR `{source}` — the bridge keeps the
+///   `tab_index` key here, NOT `index`) → `{valid:bool,errors:[{line,message}]}`
+/// * `run_sql` (args `{sql,csv_path?}`, SELECT-only — the editor rejects any
+///   non-read statement) → `{columns:[str],rows:[[…]],truncated:bool,engine:str}`
+///
+/// Act tier:
+/// * `open_note` (args `{file}`) → `{opened:bool,title:str}`
+///
+/// Write tier (same human-approval card + verbatim deny/timeout errors as the
+/// v0.1.118 write verbs):
+/// * `create_note` (args `{title,body}`) → `{file:str,title:str}`
+/// * `append_note` (args `{file,text}`) → `{file:str}`
+/// * `set_reminder` (args `{file,due_iso}`) → `{file:str,due_iso:str}`
+/// * `export_diagram` (args `{tab_index,path,format}`) → `{path:str}`
 pub trait EditorTransport {
     /// Returns the tab index the file landed in.
     fn open_file(&mut self, path: &str) -> Result<usize, TransportError>;
@@ -129,6 +156,7 @@ pub trait EditorTransport {
         &self,
         query: &str,
         max_results: usize,
+        regex: bool,
     ) -> Result<SearchResults, TransportError>;
     fn get_selection(&self) -> Result<Selection, TransportError>;
 
@@ -136,7 +164,12 @@ pub trait EditorTransport {
     fn get_status(&self) -> Result<Value, TransportError>;
     fn app_info(&self) -> Result<Value, TransportError>;
     fn list_recent_files(&self) -> Result<Value, TransportError>;
-    fn find_in_tab(&self, tab_index: Option<usize>, query: &str) -> Result<Value, TransportError>;
+    fn find_in_tab(
+        &self,
+        tab_index: Option<usize>,
+        query: &str,
+        regex: bool,
+    ) -> Result<Value, TransportError>;
     fn new_tab(&mut self, text: Option<&str>) -> Result<Value, TransportError>;
     fn goto_line(&mut self, line: usize, tab_index: Option<usize>)
         -> Result<Value, TransportError>;
@@ -171,4 +204,38 @@ pub trait EditorTransport {
         all: bool,
     ) -> Result<Value, TransportError>;
     fn save_tab(&mut self, tab_index: Option<usize>) -> Result<Value, TransportError>;
+
+    // v0.1.119 read verbs — verbatim JSON passthrough (shapes documented on
+    // the trait doc comment above; the C++ bridge is the source of truth).
+    fn list_reminders(&self) -> Result<Value, TransportError>;
+    fn git_status(&self) -> Result<Value, TransportError>;
+    fn git_diff(&self, path: Option<&str>) -> Result<Value, TransportError>;
+    fn git_log(&self, limit: usize) -> Result<Value, TransportError>;
+    fn git_show(&self, git_ref: &str) -> Result<Value, TransportError>;
+    fn git_branch(&self) -> Result<Value, TransportError>;
+    /// Exactly one of `tab_index` / `source` is `Some` (enforced by the tool
+    /// layer); the bridge validates a .npd document and reports parse errors.
+    fn validate_npd(
+        &self,
+        tab_index: Option<usize>,
+        source: Option<&str>,
+    ) -> Result<Value, TransportError>;
+    /// SELECT-only: the editor rejects any non-read statement with a verbatim
+    /// error that passes straight through.
+    fn run_sql(&self, sql: &str, csv_path: Option<&str>) -> Result<Value, TransportError>;
+
+    // v0.1.119 act verb — opens a Noter note in a tab (not approval-gated).
+    fn open_note(&mut self, file: &str) -> Result<Value, TransportError>;
+
+    // v0.1.119 write verbs — human-approval-gated in the editor, same as the
+    // v0.1.118 write tier ("denied by user" / "approval timed out" verbatim).
+    fn create_note(&mut self, title: &str, body: &str) -> Result<Value, TransportError>;
+    fn append_note(&mut self, file: &str, text: &str) -> Result<Value, TransportError>;
+    fn set_reminder(&mut self, file: &str, due_iso: &str) -> Result<Value, TransportError>;
+    fn export_diagram(
+        &mut self,
+        tab_index: usize,
+        path: &str,
+        format: &str,
+    ) -> Result<Value, TransportError>;
 }

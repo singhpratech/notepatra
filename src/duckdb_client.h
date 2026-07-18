@@ -148,15 +148,43 @@ public:
     // Convenience: load a CSV file as a virtual table named `tableName`
     // (default: derived from filename) using DuckDB's auto-detect reader.
     // Subsequent queries can SELECT from `tableName`.
+    //
+    // `materialize` (default false = existing desktop behaviour) controls the
+    // ingestion shape. false → a CREATE VIEW that RE-SCANS the file on every
+    // query (cheap, lazy). true → a CREATE TABLE AS that reads the file EXACTLY
+    // ONCE into an in-memory table. The materializing form exists for the MCP
+    // filesystem sandbox: it lets trusted code read the source while external
+    // access is still enabled, then call disableExternalAccess() so the
+    // untrusted query can still `SELECT * FROM data` (a real table) but can no
+    // longer touch the disk. A view would re-scan on query and break under the
+    // lockdown, so the sandbox MUST use materialize=true.
     bool registerCsv(const QString &csvPath,
                      const QString &tableName = QString(),
-                     QString *outError = nullptr);
+                     QString *outError = nullptr,
+                     bool materialize = false);
     bool registerParquet(const QString &parquetPath,
                          const QString &tableName = QString(),
-                         QString *outError = nullptr);
+                         QString *outError = nullptr,
+                         bool materialize = false);
     bool registerJson(const QString &jsonPath,
                       const QString &tableName = QString(),
-                      QString *outError = nullptr);
+                      QString *outError = nullptr,
+                      bool materialize = false);
+
+    // Engine-level filesystem lockdown for the MCP run_sql sandbox. Issues
+    // `SET enable_external_access=false`, which DuckDB documents as a one-way
+    // switch (it cannot be re-enabled on the same connection) — exactly the
+    // property we want. After this call the engine itself REFUSES every
+    // local-file / http / S3 access: the replacement scan (SELECT * FROM
+    // '/path'), read_text/read_csv_auto/read_blob/read_parquet/read_json/glob,
+    // COPY, ATTACH — all fail with "Permission Error: … disabled through
+    // configuration". Must be called AFTER any legitimate ingestion (the file
+    // is read once during registerCsv(materialize=true)); anything read after
+    // is blocked. Empirically verified against vendor/duckdb libduckdb.so
+    // (v1.1.3): blocks replacement scan + quoted read_text + read_csv_auto +
+    // read_blob + glob while `SELECT * FROM data` (a materialized table) still
+    // returns rows.
+    bool disableExternalAccess(QString *outError = nullptr);
 
 private:
     // Internal exec paths — see duckdb_client.cpp. execCapped wraps a plain

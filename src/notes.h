@@ -85,6 +85,12 @@ public:
     // notes root or absolute. Persists the previous note first.
     void openNoteFile(const QString &absolutePath);
 
+    // v0.1.119 — minimal MCP exposure: rebuild the sidebar from disk after an
+    // out-of-band write (create_note / append_note / set_reminder made through
+    // the MCP bridge while this panel is open). Thin public wrapper over the
+    // private refreshSidebar().
+    void refreshFromDisk();
+
     // Persist current edits to disk. Atomic write via .tmp + rename.
     // Called by the autosave timer (every 5s while dirty), and on
     // tab/window close.

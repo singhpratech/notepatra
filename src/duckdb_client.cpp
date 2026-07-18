@@ -437,16 +437,26 @@ static QString deriveTableName(const QString &filePath, const QString &explicitN
     return base;
 }
 
+// Build the ingestion DDL for a file-backed table function. `materialize`
+// selects CREATE TABLE AS (reads the file exactly once — required by the MCP
+// sandbox so the source survives the subsequent enable_external_access
+// lockdown) vs the default CREATE VIEW (lazy re-scan — the desktop behaviour).
+static QString ingestSql(const QString &name, const QString &reader,
+                         const QString &escapedPath, bool materialize) {
+    return QString(materialize
+                       ? "CREATE OR REPLACE TABLE %1 AS SELECT * FROM %2('%3');"
+                       : "CREATE OR REPLACE VIEW %1 AS SELECT * FROM %2('%3');")
+        .arg(name, reader, escapedPath);
+}
+
 bool Client::registerCsv(const QString &csvPath,
                          const QString &tableName,
-                         QString *outError) {
+                         QString *outError,
+                         bool materialize) {
     const QString name = deriveTableName(csvPath, tableName);
     QString p = csvPath;
     p.replace(QChar('\''), QStringLiteral("''"));
-    const QString sql = QString(
-        "CREATE OR REPLACE VIEW %1 AS SELECT * FROM read_csv_auto('%2');")
-        .arg(name, p);
-    ResultSet rs = exec(sql, 0);
+    ResultSet rs = exec(ingestSql(name, "read_csv_auto", p, materialize), 0);
     if (!rs.errorMessage.isEmpty()) {
         if (outError) *outError = rs.errorMessage;
         return false;
@@ -456,14 +466,12 @@ bool Client::registerCsv(const QString &csvPath,
 
 bool Client::registerParquet(const QString &parquetPath,
                              const QString &tableName,
-                             QString *outError) {
+                             QString *outError,
+                             bool materialize) {
     const QString name = deriveTableName(parquetPath, tableName);
     QString p = parquetPath;
     p.replace(QChar('\''), QStringLiteral("''"));
-    const QString sql = QString(
-        "CREATE OR REPLACE VIEW %1 AS SELECT * FROM read_parquet('%2');")
-        .arg(name, p);
-    ResultSet rs = exec(sql, 0);
+    ResultSet rs = exec(ingestSql(name, "read_parquet", p, materialize), 0);
     if (!rs.errorMessage.isEmpty()) {
         if (outError) *outError = rs.errorMessage;
         return false;
@@ -473,14 +481,24 @@ bool Client::registerParquet(const QString &parquetPath,
 
 bool Client::registerJson(const QString &jsonPath,
                           const QString &tableName,
-                          QString *outError) {
+                          QString *outError,
+                          bool materialize) {
     const QString name = deriveTableName(jsonPath, tableName);
     QString p = jsonPath;
     p.replace(QChar('\''), QStringLiteral("''"));
-    const QString sql = QString(
-        "CREATE OR REPLACE VIEW %1 AS SELECT * FROM read_json_auto('%2');")
-        .arg(name, p);
-    ResultSet rs = exec(sql, 0);
+    ResultSet rs = exec(ingestSql(name, "read_json_auto", p, materialize), 0);
+    if (!rs.errorMessage.isEmpty()) {
+        if (outError) *outError = rs.errorMessage;
+        return false;
+    }
+    return true;
+}
+
+bool Client::disableExternalAccess(QString *outError) {
+    // One-way engine lockdown: after this, DuckDB refuses every local-file /
+    // network access (replacement scan, read_*/glob table functions, COPY,
+    // ATTACH). SET is non-wrappable so exec() routes it through execRaw.
+    ResultSet rs = exec(QStringLiteral("SET enable_external_access=false"), 0);
     if (!rs.errorMessage.isEmpty()) {
         if (outError) *outError = rs.errorMessage;
         return false;
@@ -542,13 +560,16 @@ bool Client::configureS3(const QString &, const QString &, const QString &,
     if (outError) *outError = kStubError;
     return false;
 }
-bool Client::registerCsv(const QString &, const QString &, QString *outError) {
+bool Client::registerCsv(const QString &, const QString &, QString *outError, bool) {
     if (outError) *outError = kStubError; return false;
 }
-bool Client::registerParquet(const QString &, const QString &, QString *outError) {
+bool Client::registerParquet(const QString &, const QString &, QString *outError, bool) {
     if (outError) *outError = kStubError; return false;
 }
-bool Client::registerJson(const QString &, const QString &, QString *outError) {
+bool Client::registerJson(const QString &, const QString &, QString *outError, bool) {
+    if (outError) *outError = kStubError; return false;
+}
+bool Client::disableExternalAccess(QString *outError) {
     if (outError) *outError = kStubError; return false;
 }
 

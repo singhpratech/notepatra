@@ -22,9 +22,23 @@
 //! * Editor unreachable (connect refused / socket missing) surfaces as the
 //!   clean tool error "Notepatra is not running (start the editor first)".
 //!
-//! Unix only for now; the Windows named-pipe client is a cfg-gated stub.
+//! Transports: Unix domain socket (`std::os::unix::net::UnixStream`, native
+//! read timeouts) and, since v0.1.119, the Windows named pipe at
+//! `\\.\pipe\<name>` opened as a byte-stream file (`std::fs::OpenOptions`).
+//! Because `std::fs::File` exposes no per-read timeout on Windows, the pipe
+//! client runs a dedicated reader thread and enforces the same 5s/15s/130s
+//! windows with `mpsc::recv_timeout`. No extra dependencies — std only.
+//!
+//! ASSUMPTION (flag for C++ reconciliation): the Windows endpoint name equals
+//! Qt's `QLocalServer` name verbatim under the `\\.\pipe\` prefix, and the
+//! HOME-equivalent used for the SHA-1 name derivation is what
+//! `QDir::homePath()` returns on Windows — `%USERPROFILE%` with FORWARD
+//! slashes. The Rust side hashes `$USERPROFILE` verbatim; if Qt normalizes
+//! separators differently the two names would diverge. Runtime behavior on
+//! Windows is UNVERIFIED here (Linux dev host); only cross-compilation is
+//! checked.
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::cell::RefCell;
 use std::time::Duration;
 
@@ -45,8 +59,18 @@ const SEARCH_TIMEOUT: Duration = Duration::from_secs(15);
 const APPROVAL_TIMEOUT: Duration = Duration::from_secs(130);
 
 /// The approval-gated write verbs (must match the C++ bridge's card-gated
-/// verb set exactly).
-const WRITE_VERBS: [&str; 4] = ["insert_text", "replace_selection", "apply_edit", "save_tab"];
+/// verb set exactly). v0.1.119 adds create_note/append_note/set_reminder/
+/// export_diagram to the v0.1.118 quartet.
+const WRITE_VERBS: [&str; 8] = [
+    "insert_text",
+    "replace_selection",
+    "apply_edit",
+    "save_tab",
+    "create_note",
+    "append_note",
+    "set_reminder",
+    "export_diagram",
+];
 
 /// Mirrors `SingleInstance::serverName()` in src/singleinstance.cpp.
 pub fn server_name(home_dir: &str) -> String {
@@ -75,13 +99,22 @@ pub struct SocketEditor {
     base_timeout: Duration,
     search_timeout: Duration,
     approval_timeout: Duration,
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     conn: RefCell<Option<Conn>>,
 }
 
 impl SocketEditor {
     /// Targets the current user's bridge socket (derived from the home dir).
     pub fn new() -> Self {
+        // The name derivation hashes the same string Qt's
+        // SingleInstance::serverName() hashes: `QDir::homePath()`. On Windows
+        // that is %USERPROFILE% with FORWARD slashes, so normalize before
+        // hashing (flag: reconcile with the C++ derivation if it differs).
+        #[cfg(windows)]
+        let home = std::env::var("USERPROFILE")
+            .unwrap_or_default()
+            .replace('\\', "/");
+        #[cfg(not(windows))]
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_default();
@@ -95,7 +128,7 @@ impl SocketEditor {
             base_timeout: DEFAULT_TIMEOUT,
             search_timeout: SEARCH_TIMEOUT,
             approval_timeout: APPROVAL_TIMEOUT,
-            #[cfg(unix)]
+            #[cfg(any(unix, windows))]
             conn: RefCell::new(None),
         }
     }
@@ -120,8 +153,10 @@ impl SocketEditor {
 
     /// One blocking request/response round-trip; lazily connects (greeting
     /// validated first) and drops the connection on any failure so the next
-    /// call reconnects from scratch.
-    #[cfg(unix)]
+    /// call reconnects from scratch. Same code path on Unix (domain socket)
+    /// and Windows (named pipe) — the platform difference lives entirely in
+    /// [`Conn`].
+    #[cfg(any(unix, windows))]
     fn call(&self, verb: &str, args: Value) -> Result<Value, TransportError> {
         let timeout = if verb == "search_project" {
             self.search_timeout
@@ -146,13 +181,14 @@ impl SocketEditor {
         }
     }
 
-    #[cfg(not(unix))]
+    /// Genuinely unsupported platforms (neither Unix nor Windows, e.g. wasm):
+    /// there is no local IPC endpoint to reach the editor over.
+    #[cfg(not(any(unix, windows)))]
     fn call(&self, _verb: &str, _args: Value) -> Result<Value, TransportError> {
         Err(TransportError(format!(
-            "the Notepatra MCP bridge is not available on Windows yet — \
-             Windows named-pipe transport lands in a future release. \
-             Until then, run notepatra-mcp without --socket to use the built-in \
-             mock editor (expected pipe: {})",
+            "the Notepatra MCP bridge socket is not supported on this platform; \
+             run notepatra-mcp without --socket to use the built-in mock editor \
+             (expected endpoint: {})",
             self.path
         )))
     }
@@ -163,6 +199,62 @@ impl Default for SocketEditor {
         Self::new()
     }
 }
+
+// ── Shared wire helpers (both transports) ──────────────────────────────────
+
+/// Validates the editor's proof-of-life greeting line (JSON with
+/// `notepatra_mcp:1`). Shared by both transports so the greeting law is
+/// enforced identically on Unix and Windows.
+#[cfg(any(unix, windows))]
+fn validate_greeting(line: &str) -> Result<(), TransportError> {
+    let v: Value = serde_json::from_str(line).map_err(|_| {
+        TransportError("unexpected greeting from the editor bridge socket (not valid JSON)".into())
+    })?;
+    if v.get("notepatra_mcp").and_then(Value::as_u64) != Some(1) {
+        return Err(TransportError(
+            "unexpected greeting from the editor bridge socket \
+             (missing notepatra_mcp:1 — wrong socket or incompatible editor)"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Serializes one newline-terminated request line.
+#[cfg(any(unix, windows))]
+fn build_request(id: u64, verb: &str, args: &Value) -> Result<String, TransportError> {
+    let mut line = serde_json::to_string(&json!({ "id": id, "verb": verb, "args": args }))
+        .map_err(|e| TransportError(format!("request serialization failed: {e}")))?;
+    line.push('\n');
+    Ok(line)
+}
+
+/// Parses a response line, checking the id and unwrapping the `ok`/`result`/
+/// `error` envelope (errors pass through verbatim).
+#[cfg(any(unix, windows))]
+fn parse_response(resp: &str, id: u64, verb: &str) -> Result<Value, TransportError> {
+    let v: Value = serde_json::from_str(resp)
+        .map_err(|_| TransportError(format!("malformed response from the editor for {verb}")))?;
+    if v.get("id").and_then(Value::as_u64) != Some(id) {
+        return Err(TransportError(format!(
+            "editor response id mismatch for {verb} (expected {id})"
+        )));
+    }
+    match v.get("ok").and_then(Value::as_bool) {
+        Some(true) => Ok(v.get("result").cloned().unwrap_or(Value::Null)),
+        Some(false) => Err(TransportError(
+            v.get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("editor reported an unspecified error")
+                .to_string(),
+        )),
+        None => Err(TransportError(format!(
+            "malformed response from the editor for {verb} (missing \"ok\")"
+        ))),
+    }
+}
+
+// ── Unix domain socket transport ───────────────────────────────────────────
 
 #[cfg(unix)]
 struct Conn {
@@ -184,18 +276,7 @@ impl Conn {
         // Proof-of-life: the editor speaks first. Nothing is sent until the
         // greeting has been read and validated.
         let greeting = read_line_from(&mut reader, "the editor's greeting")?;
-        let v: Value = serde_json::from_str(&greeting).map_err(|_| {
-            TransportError(
-                "unexpected greeting from the editor bridge socket (not valid JSON)".into(),
-            )
-        })?;
-        if v.get("notepatra_mcp").and_then(Value::as_u64) != Some(1) {
-            return Err(TransportError(
-                "unexpected greeting from the editor bridge socket \
-                 (missing notepatra_mcp:1 — wrong socket or incompatible editor)"
-                    .into(),
-            ));
-        }
+        validate_greeting(&greeting)?;
         Ok(Self { reader, next_id: 1 })
     }
 
@@ -213,35 +294,14 @@ impl Conn {
             .get_ref()
             .set_read_timeout(Some(timeout))
             .map_err(|e| TransportError(format!("cannot set socket timeout: {e}")))?;
-        let mut line = serde_json::to_string(&json!({ "id": id, "verb": verb, "args": args }))
-            .map_err(|e| TransportError(format!("request serialization failed: {e}")))?;
-        line.push('\n');
+        let line = build_request(id, verb, &args)?;
         let mut writer = self.reader.get_ref();
         writer
             .write_all(line.as_bytes())
             .and_then(|()| writer.flush())
             .map_err(|e| TransportError(format!("editor connection lost while sending: {e}")))?;
         let resp = read_line_from(&mut self.reader, &format!("the {verb} response"))?;
-        let v: Value = serde_json::from_str(&resp).map_err(|_| {
-            TransportError(format!("malformed response from the editor for {verb}"))
-        })?;
-        if v.get("id").and_then(Value::as_u64) != Some(id) {
-            return Err(TransportError(format!(
-                "editor response id mismatch for {verb} (expected {id})"
-            )));
-        }
-        match v.get("ok").and_then(Value::as_bool) {
-            Some(true) => Ok(v.get("result").cloned().unwrap_or(Value::Null)),
-            Some(false) => Err(TransportError(
-                v.get("error")
-                    .and_then(Value::as_str)
-                    .unwrap_or("editor reported an unspecified error")
-                    .to_string(),
-            )),
-            None => Err(TransportError(format!(
-                "malformed response from the editor for {verb} (missing \"ok\")"
-            ))),
-        }
+        parse_response(&resp, id, verb)
     }
 }
 
@@ -269,6 +329,127 @@ fn read_line_from(
         Err(e) => Err(TransportError(format!(
             "editor connection failed while waiting for {what}: {e}"
         ))),
+    }
+}
+
+// ── Windows named-pipe transport (v0.1.119) ────────────────────────────────
+//
+// `std::fs::File` over a named pipe is a byte stream with no per-read timeout,
+// so a dedicated reader thread pumps lines into a channel and the caller uses
+// `recv_timeout` to honor the same 5s/15s/130s windows the Unix path gets from
+// `set_read_timeout`. std-only; no winapi. UNVERIFIED at runtime (built and
+// checked on Linux via `--target x86_64-pc-windows-gnu`).
+
+/// One item from the pipe reader thread.
+#[cfg(windows)]
+enum LineMsg {
+    /// A complete newline-delimited line.
+    Line(String),
+    /// The editor closed its end (read returned 0).
+    Eof,
+    /// The read failed; carries the OS error text.
+    Err(String),
+}
+
+#[cfg(windows)]
+struct Conn {
+    /// Write half of the pipe (the reader thread owns a cloned read half).
+    writer: std::fs::File,
+    rx: std::sync::mpsc::Receiver<LineMsg>,
+    /// Detached on drop; the thread exits when the pipe closes.
+    _reader: std::thread::JoinHandle<()>,
+    next_id: u64,
+}
+
+#[cfg(windows)]
+impl Conn {
+    fn establish(path: &str, timeout: Duration) -> Result<Self, TransportError> {
+        use std::fs::OpenOptions;
+        use std::io::{BufRead, BufReader};
+        use std::sync::mpsc;
+
+        // A named pipe is opened for both directions as a plain file. A
+        // missing/unavailable pipe means the editor isn't running (or isn't
+        // serving the bridge) — the same clean error as a refused Unix socket.
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .map_err(|_| TransportError(NOT_RUNNING.to_string()))?;
+        let read_half = file
+            .try_clone()
+            .map_err(|e| TransportError(format!("cannot clone pipe handle: {e}")))?;
+
+        let (tx, rx) = mpsc::channel::<LineMsg>();
+        let reader = std::thread::spawn(move || {
+            let mut buf = BufReader::new(read_half);
+            loop {
+                let mut line = String::new();
+                match buf.read_line(&mut line) {
+                    Ok(0) => {
+                        let _ = tx.send(LineMsg::Eof);
+                        break;
+                    }
+                    Ok(_) => {
+                        // Receiver gone (Conn dropped) — stop pumping.
+                        if tx.send(LineMsg::Line(line)).is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.send(LineMsg::Err(e.to_string()));
+                        break;
+                    }
+                }
+            }
+        });
+
+        let conn = Self {
+            writer: file,
+            rx,
+            _reader: reader,
+            next_id: 1,
+        };
+        // Proof-of-life: read + validate the greeting BEFORE sending anything.
+        let greeting = conn.recv_line(timeout, "the editor's greeting")?;
+        validate_greeting(&greeting)?;
+        Ok(conn)
+    }
+
+    /// Blocks up to `timeout` for the next line from the reader thread.
+    fn recv_line(&self, timeout: Duration, what: &str) -> Result<String, TransportError> {
+        use std::sync::mpsc::RecvTimeoutError;
+        match self.rx.recv_timeout(timeout) {
+            Ok(LineMsg::Line(l)) => Ok(l),
+            Ok(LineMsg::Eof) | Err(RecvTimeoutError::Disconnected) => Err(TransportError(format!(
+                "the editor closed the connection while waiting for {what}"
+            ))),
+            Ok(LineMsg::Err(e)) => Err(TransportError(format!(
+                "editor connection failed while waiting for {what}: {e}"
+            ))),
+            Err(RecvTimeoutError::Timeout) => Err(TransportError(format!(
+                "timed out waiting for {what} from the editor"
+            ))),
+        }
+    }
+
+    fn round_trip(
+        &mut self,
+        verb: &str,
+        args: Value,
+        timeout: Duration,
+    ) -> Result<Value, TransportError> {
+        use std::io::Write;
+
+        let id = self.next_id;
+        self.next_id += 1;
+        let line = build_request(id, verb, &args)?;
+        self.writer
+            .write_all(line.as_bytes())
+            .and_then(|()| self.writer.flush())
+            .map_err(|e| TransportError(format!("editor connection lost while sending: {e}")))?;
+        let resp = self.recv_line(timeout, &format!("the {verb} response"))?;
+        parse_response(&resp, id, verb)
     }
 }
 
@@ -353,12 +534,15 @@ impl EditorTransport for SocketEditor {
         &self,
         query: &str,
         max_results: usize,
+        regex: bool,
     ) -> Result<SearchResults, TransportError> {
         // Wire result: {"results":[{path,line,text}],"truncated":bool}.
-        let v = self.call(
-            "search_project",
-            json!({ "query": query, "max_results": max_results }),
-        )?;
+        // "regex" is sent only when true so the wire stays minimal.
+        let mut args = json!({ "query": query, "max_results": max_results });
+        if regex {
+            args["regex"] = json!(true);
+        }
+        let v = self.call("search_project", args)?;
         let results = v
             .get("results")
             .and_then(Value::as_array)
@@ -411,11 +595,20 @@ impl EditorTransport for SocketEditor {
         self.call("list_recent_files", json!({}))
     }
 
-    fn find_in_tab(&self, tab_index: Option<usize>, query: &str) -> Result<Value, TransportError> {
+    fn find_in_tab(
+        &self,
+        tab_index: Option<usize>,
+        query: &str,
+        regex: bool,
+    ) -> Result<Value, TransportError> {
         // The bridge reads the tab from "index" (NOT "tab_index") here.
         let mut args = json!({ "query": query });
         if let Some(i) = tab_index {
             args["index"] = json!(i);
+        }
+        // "regex" is sent only when true so the wire stays minimal.
+        if regex {
+            args["regex"] = json!(true);
         }
         self.call("find_in_tab", args)
     }
@@ -529,6 +722,95 @@ impl EditorTransport for SocketEditor {
             None => json!({}),
         };
         self.call("save_tab", args)
+    }
+
+    // v0.1.119 read verbs — pass the editor's JSON through verbatim.
+
+    fn list_reminders(&self) -> Result<Value, TransportError> {
+        self.call("list_reminders", json!({}))
+    }
+
+    fn git_status(&self) -> Result<Value, TransportError> {
+        self.call("git_status", json!({}))
+    }
+
+    fn git_diff(&self, path: Option<&str>) -> Result<Value, TransportError> {
+        let args = match path {
+            Some(p) => json!({ "path": p }),
+            None => json!({}),
+        };
+        self.call("git_diff", args)
+    }
+
+    fn git_log(&self, limit: usize) -> Result<Value, TransportError> {
+        self.call("git_log", json!({ "limit": limit }))
+    }
+
+    fn git_show(&self, git_ref: &str) -> Result<Value, TransportError> {
+        self.call("git_show", json!({ "ref": git_ref }))
+    }
+
+    fn git_branch(&self) -> Result<Value, TransportError> {
+        self.call("git_branch", json!({}))
+    }
+
+    fn validate_npd(
+        &self,
+        tab_index: Option<usize>,
+        source: Option<&str>,
+    ) -> Result<Value, TransportError> {
+        // Exactly one selector is set (enforced by the tool layer). Wire keys
+        // match the tool's arg names ("tab_index" / "source").
+        let args = match (tab_index, source) {
+            (Some(i), None) => json!({ "tab_index": i }),
+            (None, Some(s)) => json!({ "source": s }),
+            _ => {
+                return Err(TransportError(
+                    "provide exactly one of tab_index or source".into(),
+                ))
+            }
+        };
+        self.call("validate_npd", args)
+    }
+
+    fn run_sql(&self, sql: &str, csv_path: Option<&str>) -> Result<Value, TransportError> {
+        let mut args = json!({ "sql": sql });
+        if let Some(p) = csv_path {
+            args["csv_path"] = json!(p);
+        }
+        self.call("run_sql", args)
+    }
+
+    // v0.1.119 act verb.
+
+    fn open_note(&mut self, file: &str) -> Result<Value, TransportError> {
+        self.call("open_note", json!({ "file": file }))
+    }
+
+    // v0.1.119 write verbs — approval-gated (long timeout via `call`).
+
+    fn create_note(&mut self, title: &str, body: &str) -> Result<Value, TransportError> {
+        self.call("create_note", json!({ "title": title, "body": body }))
+    }
+
+    fn append_note(&mut self, file: &str, text: &str) -> Result<Value, TransportError> {
+        self.call("append_note", json!({ "file": file, "text": text }))
+    }
+
+    fn set_reminder(&mut self, file: &str, due_iso: &str) -> Result<Value, TransportError> {
+        self.call("set_reminder", json!({ "file": file, "due_iso": due_iso }))
+    }
+
+    fn export_diagram(
+        &mut self,
+        tab_index: usize,
+        path: &str,
+        format: &str,
+    ) -> Result<Value, TransportError> {
+        self.call(
+            "export_diagram",
+            json!({ "tab_index": tab_index, "path": path, "format": format }),
+        )
     }
 }
 

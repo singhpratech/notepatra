@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.118 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.119 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -2496,6 +2496,9 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_bridge.cpp")
         # layer (QtCore-only; notes_template.cpp resolves shellHtml).
         src/notes_storage.cpp
         src/notes_template.cpp
+        # v0.1.119 — validate_npd calls the REAL parse-only entry point
+        # Npd::parse (pure QtCore, no widgets).
+        src/diagram/npd_parser.cpp
     )
     target_include_directories(test_mcp_bridge PRIVATE ${CMAKE_SOURCE_DIR}/src)
     target_compile_definitions(test_mcp_bridge PRIVATE
