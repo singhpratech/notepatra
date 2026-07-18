@@ -1872,6 +1872,7 @@
                 <tr>
                     <th>Editor</th>
                     <th>Size</th>
+                    <th>MCP Server</th>
                     <th>AI Built-in</th>
                     <th>JSON Fixer</th>
                     <th>Diagrams</th>
@@ -1896,10 +1897,12 @@
                     <td class="check">✓</td>
                     <td class="check">✓</td>
                     <td class="check">✓</td>
+                    <td class="check">✓</td>
                 </tr>
                 <tr>
                     <td>Notepad++</td>
                     <td>9 MB</td>
+                    <td class="cross">✗</td>
                     <td class="cross">✗</td>
                     <td class="cross">Plugin</td>
                     <td class="cross">✗</td>
@@ -1913,6 +1916,7 @@
                 <tr>
                     <td>VS Code</td>
                     <td>300 MB</td>
+                    <td class="cross">Client only</td>
                     <td class="cross">Extension</td>
                     <td class="cross">Extension</td>
                     <td class="cross">Extension</td>
@@ -1930,6 +1934,7 @@
                     <td class="cross">✗</td>
                     <td class="cross">✗</td>
                     <td class="cross">✗</td>
+                    <td class="cross">✗</td>
                     <td class="check">✓</td>
                     <td class="check">✓</td>
                     <td class="check">✓</td>
@@ -1939,6 +1944,7 @@
                 <tr>
                     <td>Kate</td>
                     <td>40 MB</td>
+                    <td class="cross">✗</td>
                     <td class="cross">✗</td>
                     <td class="cross">✗</td>
                     <td class="cross">✗</td>
@@ -1954,6 +1960,7 @@
                     <td>3 MB</td>
                     <td class="cross">✗</td>
                     <td class="cross">✗</td>
+                    <td class="cross">✗</td>
                     <td class="cross">Plugin</td>
                     <td class="cross">✗</td>
                     <td class="check">✓</td>
@@ -1964,7 +1971,7 @@
                 </tr>
             </tbody>
         </table>
-        <p style="margin-top: 12px; font-size: 12px; color: var(--text-dim);"><sup>†</sup> Notepad++ also opens large files; the ✗ marks "out-of-the-box, no plugins."</p>
+        <p style="margin-top: 12px; font-size: 12px; color: var(--text-dim);"><sup>†</sup> Notepad++ also opens large files; the ✗ marks "out-of-the-box, no plugins." MCP Server = the editor ships a Model Context Protocol server exposing itself to AI assistants; VS Code can <em>consume</em> MCP servers (client) but does not expose the editor as one.</p>
     </section>
 
     <!-- Security -->
