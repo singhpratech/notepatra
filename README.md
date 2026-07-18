@@ -263,7 +263,7 @@ command = "notepatra-mcp"
 args = ["--socket"]
 ```
 
-Full tool reference, Claude Desktop / Agents SDK snippets, security model, and honest limitations (editor must be running; Windows named-pipe transport lands in a later release; cloud-only connector surfaces can't reach a desktop editor): [docs/mcp.html](docs/mcp.html) / [notepatra.org/mcp.html](https://notepatra.org/mcp.html).
+Full tool reference, Claude Desktop / Agents SDK snippets, security model, and honest limitations (editor must be running; prebuilt Windows sidecar zip + one-click .mcpb bundle ship from the next release — until then Windows uses cargo install notepatra-mcp; cloud-only connector surfaces can't reach a desktop editor): [docs/mcp.html](docs/mcp.html) / [notepatra.org/mcp.html](https://notepatra.org/mcp.html).
 
 ---
 

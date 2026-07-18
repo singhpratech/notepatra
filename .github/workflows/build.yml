@@ -872,8 +872,8 @@ jobs:
           path: build-full/Notepatra-full.dmg
 
       # v0.1.118 — MCP sidecar (build only; unit tests run in the linux x64
-      # job). No Windows MCP artifact yet — the named-pipe transport is a
-      # stub, so shipping a binary there would be dishonest.
+      # job). The pipe transport is real since v0.1.119 and the Windows job
+      # now ships the .exe.
       - name: Build MCP server
         run: cd notepatra-mcp && cargo build --release
 
@@ -1081,6 +1081,17 @@ jobs:
       - name: Build Rust core
         shell: cmd
         run: cd rust-core && cargo build --release
+
+      # MCP sidecar (Windows, x86_64-pc-windows-msvc — the runner default).
+      # Named-pipe transport shipped in v0.1.119 (src/transport/socket.rs
+      # cfg(windows)), so a prebuilt Windows binary is honest now. Canonical
+      # unit tests run in the linux x64 job; we ALSO run tests here because
+      # this is the only job that compiles the cfg(windows) pipe code —
+      # tests/socket_bridge.rs is #![cfg(unix)] and compiles to empty, the
+      # protocol + mock-transport suites are OS-neutral.
+      - name: Build and test MCP server
+        shell: cmd
+        run: cd notepatra-mcp && cargo build --release && cargo test --release
 
       - name: Build C++ with CMake (MSVC)
         shell: pwsh
@@ -2125,6 +2136,12 @@ jobs:
           path: notepatra-*-full.msi
           if-no-files-found: ignore
 
+      - name: Upload MCP server artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: notepatra-mcp-windows-x64
+          path: notepatra-mcp/target/release/notepatra-mcp.exe
+
       # ─── Failure diagnostics — must be LAST so it sees failures from any prior step ───
       - name: Upload build logs on failure
         if: failure()
@@ -2250,8 +2267,8 @@ jobs:
           tar czf notepatra-linux-x64.tar.gz -C notepatra-linux-x64 notepatra
           tar czf notepatra-linux-arm64.tar.gz -C notepatra-linux-arm64 notepatra
           # v0.1.118 — MCP sidecar tarballs (Linux x64/arm64 + macOS arm64;
-          # no Windows binary — named-pipe transport not shipped yet). Hard
-          # requirement: if a job uploaded the dir, the binary must be in it.
+          # Windows ships as a .zip below). Hard requirement: if a job
+          # uploaded the dir, the binary must be in it.
           for P in linux-x64 linux-arm64 macos-arm64; do
             if [ -d "notepatra-mcp-$P" ]; then
               test -f "notepatra-mcp-$P/notepatra-mcp" || { echo "::error::notepatra-mcp-$P artifact dir missing the binary"; exit 1; }
@@ -2261,6 +2278,12 @@ jobs:
               echo "::error::expected MCP artifact dir notepatra-mcp-$P is missing"; exit 1
             fi
           done
+          # MCP sidecar Windows zip (zip, not tar — Windows convention).
+          # NOTE the name is notepatra-mcp-windows-x64.zip — distinct from the
+          # editor's notepatra-windows-x64.zip; every downstream list references
+          # it by EXACT filename (prefix-collision lesson, 01d8f08).
+          test -f notepatra-mcp-windows-x64/notepatra-mcp.exe || { echo "::error::notepatra-mcp-windows-x64 artifact dir missing notepatra-mcp.exe"; exit 1; }
+          (cd notepatra-mcp-windows-x64 && zip ../notepatra-mcp-windows-x64.zip notepatra-mcp.exe)
           # v0.1.64 — Linux "full" flavor tarballs (bundles QtWebEngine for
           # inline Vega-Lite chart rendering). LINUX ONLY for the foreseeable
           # future — Charts Pack is downloaded on-demand on macOS/Windows
@@ -2371,6 +2394,24 @@ jobs:
         with:
           path: src
 
+      - name: Build .mcpb bundle (Claude Desktop one-click)
+        run: |
+          # .mcpb = zip of manifest.json + per-platform sidecar binaries.
+          # Tag-gated for free: this whole release job runs only on
+          # startsWith(github.ref, 'refs/tags/v').
+          TAG="${GITHUB_REF##*/}"
+          python3 src/notepatra-mcp/mcpb/build-mcpb.py \
+            --manifest src/notepatra-mcp/mcpb/manifest.json \
+            --cargo-toml src/notepatra-mcp/Cargo.toml \
+            --expect-version "${TAG#v}" \
+            --require-all \
+            --binary linux-x64=notepatra-mcp-linux-x64/notepatra-mcp \
+            --binary linux-arm64=notepatra-mcp-linux-arm64/notepatra-mcp \
+            --binary darwin-arm64=notepatra-mcp-macos-arm64/notepatra-mcp \
+            --binary win32-x64=notepatra-mcp-windows-x64/notepatra-mcp.exe \
+            --out notepatra-mcp.mcpb
+          unzip -l notepatra-mcp.mcpb
+
       - name: Generate SHA-256 checksums
         run: |
           # Generate a single SHA256SUMS file in the standard format that
@@ -2380,6 +2421,7 @@ jobs:
                    notepatra-linux-x64-full.tar.gz notepatra-linux-arm64-full.tar.gz \
                    notepatra-mcp-linux-x64.tar.gz notepatra-mcp-linux-arm64.tar.gz \
                    notepatra-mcp-macos-arm64.tar.gz \
+                   notepatra-mcp-windows-x64.zip notepatra-mcp.mcpb \
                    notepatra-macos-arm64.dmg notepatra-macos-arm64-full.dmg \
                    notepatra-windows-x64.zip notepatra-windows-x64-full.zip notepatra-setup-*.exe notepatra-*.msi notepatra-full-*.msi \
                    notepatra_*_amd64.deb notepatra_*_arm64.deb \
@@ -2438,6 +2480,7 @@ jobs:
                    notepatra-linux-x64-full.tar.gz notepatra-linux-arm64-full.tar.gz \
                    notepatra-mcp-linux-x64.tar.gz notepatra-mcp-linux-arm64.tar.gz \
                    notepatra-mcp-macos-arm64.tar.gz \
+                   notepatra-mcp-windows-x64.zip notepatra-mcp.mcpb \
                    notepatra-macos-arm64.dmg notepatra-macos-arm64-full.dmg \
                    notepatra-windows-x64.zip notepatra-windows-x64-full.zip notepatra-setup-*.exe notepatra-*.msi notepatra-full-*.msi \
                    notepatra_*_amd64.deb notepatra_*_arm64.deb \
@@ -2464,6 +2507,8 @@ jobs:
             notepatra-mcp-linux-x64.tar.gz
             notepatra-mcp-linux-arm64.tar.gz
             notepatra-mcp-macos-arm64.tar.gz
+            notepatra-mcp-windows-x64.zip
+            notepatra-mcp.mcpb
             notepatra-macos-arm64.dmg
             notepatra-macos-arm64-full.dmg
             notepatra-windows-x64.zip
@@ -2490,6 +2535,12 @@ jobs:
             notepatra-mcp-*.tar.gz
             notepatra-mcp-*.tar.gz.sig
             notepatra-mcp-*.tar.gz.pem
+            notepatra-mcp-windows-x64.zip
+            notepatra-mcp-windows-x64.zip.sig
+            notepatra-mcp-windows-x64.zip.pem
+            notepatra-mcp.mcpb
+            notepatra-mcp.mcpb.sig
+            notepatra-mcp.mcpb.pem
             notepatra-macos-arm64.dmg
             notepatra-macos-arm64-full.dmg
             notepatra-windows-x64.zip

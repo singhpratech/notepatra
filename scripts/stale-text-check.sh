@@ -197,6 +197,33 @@ else
     echo "  ⓘ notepatra-mcp/src/tools.rs not present on this branch — skipping MCP tool-count gate"
 fi
 
+echo ""
+echo "── MCP distribution wiring (Windows sidecar zip + .mcpb bundle) ──"
+if [[ -f notepatra-mcp/mcpb/manifest.json ]]; then
+    mcpb_v=$(python3 -c "import json;print(json.load(open('notepatra-mcp/mcpb/manifest.json'))['version'])" 2>/dev/null || echo INVALID)
+    cargo_v=$(grep -m1 -oE '^version = "[0-9]+\.[0-9]+\.[0-9]+"' notepatra-mcp/Cargo.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+    # Must equal the project $VERSION too: CI's .mcpb step runs with
+    #   --expect-version "${TAG#v}", which hard-aborts the WHOLE release job
+    #   AFTER the tag is public if the sidecar/manifest lag the tag. Comparing
+    #   only manifest==Cargo lets both lag together and stay green. Tying both
+    #   to $VERSION (derived from CMakeLists) makes release-check.sh catch the
+    #   skew BEFORE tagging.
+    if [[ "$mcpb_v" != "INVALID" && "$mcpb_v" == "$cargo_v" && "$mcpb_v" == "$VERSION" ]]; then
+        printf "  ✓ mcpb/manifest.json + Cargo.toml version %s matches project VERSION\n" "$mcpb_v"
+        PASS=$((PASS + 1))
+    else
+        printf "  ✗ version skew: manifest '%s' / Cargo.toml '%s' / project VERSION '%s' must all match (or invalid JSON)\n" "$mcpb_v" "$cargo_v" "$VERSION"
+        FAIL=$((FAIL + 1))
+    fi
+    assert_contains "build.yml packages notepatra-mcp-windows-x64.zip" .github/workflows/build.yml "notepatra-mcp-windows-x64.zip"
+    assert_contains "build.yml builds + attaches notepatra-mcp.mcpb" .github/workflows/build.yml "notepatra-mcp.mcpb"
+    assert_contains "mcp.html mentions the Windows sidecar zip" docs/mcp.html "notepatra-mcp-windows-x64.zip"
+    assert_contains "mcp.html mentions the .mcpb bundle" docs/mcp.html "notepatra-mcp.mcpb"
+    assert_contains "README mentions the .mcpb bundle" README.md ".mcpb"
+else
+    echo "  ⓘ notepatra-mcp/mcpb/manifest.json not present on this branch — skipping"
+fi
+
 echo
 echo "── stale version-ref sweep (user-facing phrases must point at v$VERSION) ──"
 # This section catches the v0.1.82 → v0.1.83 drift: when a release bumps the

@@ -360,12 +360,12 @@ sudo mv notepatra-mcp /usr/local/bin/</code></pre>
   <p>Or build it from source — the sidecar lives in <code>notepatra-mcp/</code> in the repo and needs only stable Rust, no other dependencies:</p>
   <pre><code>cd notepatra-mcp
 cargo build --release   # binary at target/release/notepatra-mcp</code></pre>
-  <p>Windows is supported from v0.1.119: the sidecar connects to the running editor over a named pipe (<code>\\.\pipe\…</code>), so <code>--socket</code> works there too. Prebuilt Windows binaries aren't in the signed release bundle yet, so on Windows install it with <code>cargo install notepatra-mcp</code> or build from source (above).</p>
+  <p>Windows is supported from v0.1.119: the sidecar connects to the running editor over a named pipe (<code>\\.\pipe\…</code>), so <code>--socket</code> works there too. Starting with the next release the signed bundle also adds a prebuilt Windows binary (<code>notepatra-mcp-windows-x64.zip</code>, cosign-signed like the others) and a one-click Claude Desktop bundle (<code>notepatra-mcp.mcpb</code> — install it from Claude Desktop's Settings → Extensions). Until then, on Windows install with <code>cargo install notepatra-mcp</code> or build from source (above); <code>cargo install</code> remains a fully supported path on every platform.</p>
 
   <table>
     <thead><tr><th>Client</th><th>Vendor ecosystem</th><th>How it connects</th><th>Works with Notepatra?</th></tr></thead>
     <tbody>
-      <tr><td>Claude Desktop</td><td>Anthropic</td><td>stdio, via <code>claude_desktop_config.json</code></td><td>Yes</td></tr>
+      <tr><td>Claude Desktop</td><td>Anthropic</td><td>stdio, via <code>claude_desktop_config.json</code> — or one-click via the <code>notepatra-mcp.mcpb</code> bundle from the next release</td><td>Yes</td></tr>
       <tr><td>Claude Code</td><td>Anthropic</td><td>stdio, via <code>claude mcp add</code></td><td>Yes</td></tr>
       <tr><td>Codex CLI</td><td>OpenAI</td><td>stdio, via <code>config.toml</code></td><td>Yes</td></tr>
       <tr><td>OpenAI Agents SDK</td><td>OpenAI</td><td>stdio, via <code>MCPServerStdio</code></td><td>Yes</td></tr>
@@ -440,7 +440,7 @@ async with MCPServerStdio(
     <li><strong>The editor must be running.</strong> With <code>--socket</code>, tools need a live Notepatra to talk to; if it isn't running, they return the clean error "Notepatra is not running (start the editor first)" rather than hanging.</li>
     <li><strong>Writes need a visible window.</strong> The approval card must appear somewhere; with no visible window, writes are denied with <code>approval unavailable</code>. That is deliberate — see the <a href="#approval">approval model</a>.</li>
     <li><strong>Cloud-only connector surfaces can't reach it.</strong> ChatGPT connectors and claude.ai web connectors only speak to servers reachable at a public URL. A desktop editor on your machine is not that, so those surfaces cannot use <code>notepatra-mcp</code>. Use the desktop or CLI clients above instead.</li>
-    <li><strong>Windows named-pipe transport (new in v0.1.119).</strong> The sidecar now connects to the running editor over a Windows named pipe (<code>\\.\pipe\…</code>), so <code>--socket</code> works on Linux, macOS, and Windows alike. The one remaining gap: prebuilt Windows binaries aren't in the signed release bundle yet, so on Windows you install with <code>cargo install notepatra-mcp</code> or build from source.</li>
+    <li><strong>Windows named-pipe transport (new in v0.1.119).</strong> The sidecar now connects to the running editor over a Windows named pipe (<code>\\.\pipe\…</code>), so <code>--socket</code> works on Linux, macOS, and Windows alike. Prebuilt Windows binaries (<code>notepatra-mcp-windows-x64.zip</code>) and the one-click <code>notepatra-mcp.mcpb</code> bundle ship starting with the next release; until then, on Windows install with <code>cargo install notepatra-mcp</code> or build from source.</li>
     <li><strong>Large reads are capped.</strong> <code>read_tab</code> truncates at 5 MB (and says so with a marker in the text); <code>search_project</code> returns at most 200 matches per search.</li>
     <li><strong>Search defaults to literal.</strong> <code>find_in_tab</code> and <code>search_project</code> match a literal substring by default; pass <code>{regex: true}</code> for a regular-expression search (an invalid pattern is rejected with a clear error).</li>
   </ul>

@@ -1,0 +1,26 @@
+{
+  "manifest_version": "0.3",
+  "name": "notepatra-mcp",
+  "display_name": "Notepatra",
+  "version": "0.1.119",
+  "description": "Notepatra editor MCP server — 48 tools; every write human-approved in the editor; local-only.",
+  "author": { "name": "Notepatra project", "url": "https://notepatra.org/" },
+  "repository": { "type": "git", "url": "https://github.com/singhpratech/notepatra" },
+  "homepage": "https://notepatra.org/",
+  "documentation": "https://notepatra.org/mcp.html",
+  "license": "GPL-3.0-or-later",
+  "keywords": ["editor", "notepatra", "notes", "sql", "git", "diagrams"],
+  "server": {
+    "type": "binary",
+    "entry_point": "server/linux-x64/notepatra-mcp",
+    "mcp_config": {
+      "command": "${__dirname}/server/linux-x64/notepatra-mcp",
+      "args": ["--socket"],
+      "platform_overrides": {
+        "win32":  { "command": "${__dirname}/server/win32-x64/notepatra-mcp.exe" },
+        "darwin": { "command": "${__dirname}/server/darwin-arm64/notepatra-mcp" }
+      }
+    }
+  },
+  "compatibility": { "platforms": ["darwin", "win32", "linux"] }
+}
