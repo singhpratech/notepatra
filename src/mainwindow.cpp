@@ -276,6 +276,7 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include <QHeaderView>
 #include <QDateTime>
 #include <QFileInfo>
+#include <QHash>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QMenuBar>
@@ -329,6 +330,99 @@ static QString mcpInjectNoteBody(QString html, const QString &text) {
     if (at < 0) return html + block;
     html.insert(at, block);
     return html;
+}
+
+// SSOT for the Language surface: the menu, MCP set_language resolution, and
+// list_languages all read these lists — add a language in ONE place.
+static const QStringList &commonLanguageTokens() {
+    static const QStringList list = {
+        QStringLiteral("Bash"), QStringLiteral("C"), QStringLiteral("C#"),
+        QStringLiteral("C++"), QStringLiteral("CSS"), QStringLiteral("HTML"),
+        QStringLiteral("Java"), QStringLiteral("JavaScript"),
+        QStringLiteral("JSON"), QStringLiteral("Lua"),
+        QStringLiteral("Markdown"), QStringLiteral("Perl"),
+        QStringLiteral("Python"), QStringLiteral("Ruby"),
+        QStringLiteral("SQL"), QStringLiteral("XML"), QStringLiteral("YAML")};
+    return list;
+}
+
+static const QStringList &moreLanguageTokens() {
+    static const QStringList list = [] {
+        QStringList l = {
+            QStringLiteral("ASM"), QStringLiteral("Apex"), QStringLiteral("AVS"),
+            QStringLiteral("Batch"), QStringLiteral("BibTeX"),
+            QStringLiteral("CMake"), QStringLiteral("CoffeeScript"),
+            QStringLiteral("Crystal"), QStringLiteral("Cython"),
+            QStringLiteral("D"), QStringLiteral("Dart"), QStringLiteral("Diff"),
+            QStringLiteral("Dockerfile"), QStringLiteral("DotEnv"),
+            QStringLiteral("Elixir"), QStringLiteral("F#"), QStringLiteral("Fish"),
+            QStringLiteral("Fortran"), QStringLiteral("Fortran77"),
+            QStringLiteral("GDScript"), QStringLiteral("Gitignore"),
+            QStringLiteral("Go"), QStringLiteral("GraphQL"), QStringLiteral("Groovy"),
+            QStringLiteral("Hack"), QStringLiteral("HCL"), QStringLiteral("IDL"),
+            QStringLiteral("IntelHex"), QStringLiteral("Jinja"),
+            QStringLiteral("JSON5"), QStringLiteral("Julia"),
+            QStringLiteral("Kotlin"), QStringLiteral("Liquid"),
+            QStringLiteral("Makefile"), QStringLiteral("MASM"),
+            QStringLiteral("Matlab"), QStringLiteral("Mojo"),
+            QStringLiteral("NASM"), QStringLiteral("Nim"), QStringLiteral("Nushell"),
+            QStringLiteral("Octave"), QStringLiteral("Pascal"), QStringLiteral("PO"),
+            QStringLiteral("PostScript"), QStringLiteral("POV"),
+            QStringLiteral("PowerShell"), QStringLiteral("Properties"),
+            QStringLiteral("Protobuf"), QStringLiteral("R"), QStringLiteral("Rust"),
+            QStringLiteral("Scala"), QStringLiteral("Solidity"),
+            QStringLiteral("Spice"), QStringLiteral("SRecord"),
+            QStringLiteral("Swift"), QStringLiteral("TCL"), QStringLiteral("TeX"),
+            QStringLiteral("Thrift"), QStringLiteral("TOML"), QStringLiteral("Twig"),
+            QStringLiteral("TypeScript"), QStringLiteral("Vala"),
+            QStringLiteral("Verilog"), QStringLiteral("VHDL"), QStringLiteral("Zig")};
+        l.sort(Qt::CaseInsensitive);
+        return l;
+    }();
+    return list;
+}
+
+static const QStringList &allKnownLanguageTokens() {
+    static const QStringList list = QStringList()
+        << QStringLiteral("Plain Text") << commonLanguageTokens()
+        << moreLanguageTokens();
+    return list;
+}
+
+// Canonicalizes an agent-supplied language token; "" when unknown.
+static QString resolveLanguageToken(const QString &input) {
+    const QString token = input.trimmed();
+    if (token.isEmpty()) return QString();
+    // (a) exact factory success — accepts every token the menu can set.
+    if (QsciLexer *probe = createLexerForLanguage(token, nullptr)) {
+        delete probe;
+        return token;
+    }
+    // (b) case-insensitive match against the canonical set.
+    for (const QString &l : allKnownLanguageTokens())
+        if (l.compare(token, Qt::CaseInsensitive) == 0) return l;
+    // (c) common agent aliases.
+    static const QHash<QString, QString> aliases = {
+        {QStringLiteral("python"), QStringLiteral("Python")},
+        {QStringLiteral("py"), QStringLiteral("Python")},
+        {QStringLiteral("js"), QStringLiteral("JavaScript")},
+        {QStringLiteral("ts"), QStringLiteral("TypeScript")},
+        {QStringLiteral("cpp"), QStringLiteral("C++")},
+        {QStringLiteral("c++"), QStringLiteral("C++")},
+        {QStringLiteral("csharp"), QStringLiteral("C#")},
+        {QStringLiteral("c#"), QStringLiteral("C#")},
+        {QStringLiteral("sh"), QStringLiteral("Bash")},
+        {QStringLiteral("shell"), QStringLiteral("Bash")},
+        {QStringLiteral("bash"), QStringLiteral("Bash")},
+        {QStringLiteral("yml"), QStringLiteral("YAML")},
+        {QStringLiteral("yaml"), QStringLiteral("YAML")},
+        {QStringLiteral("md"), QStringLiteral("Markdown")},
+        {QStringLiteral("golang"), QStringLiteral("Go")},
+        {QStringLiteral("go"), QStringLiteral("Go")},
+        {QStringLiteral("rs"), QStringLiteral("Rust")},
+        {QStringLiteral("rb"), QStringLiteral("Ruby")},
+        {QStringLiteral("kt"), QStringLiteral("Kotlin")}};
+    return aliases.value(token.toLower());
 }
 
 static void drawAiFeatureGlyph(QPainter &painter, const QRectF &rect) {
@@ -1640,9 +1734,18 @@ MainWindow::MainWindow(bool standaloneNoSession)
             auto *ed = currentEditor();
             return ed ? ed->selectedText() : QString();
         };
-        host.workspaceRoot = [this] {
-            return m_explorer ? m_explorer->rootPath() : QString();
+        // Explorer root, else the current file's directory (git resolves the
+        // enclosing repo from there); "" only when neither exists.
+        auto effectiveWorkspaceRoot = [this]() -> QString {
+            QString root = m_explorer ? m_explorer->rootPath() : QString();
+            if (root.isEmpty()) {
+                if (auto *ed = currentEditor())
+                    if (!ed->filePath().isEmpty())
+                        root = QFileInfo(ed->filePath()).absolutePath();
+            }
+            return root;
         };
+        host.workspaceRoot = effectiveWorkspaceRoot;
         // ── v0.1.118 expansive wave — every lambda routes through the SAME
         //    code path the equivalent menu/status-bar surface uses. ──
         host.currentTabIndex = [this] { return m_tabs->currentIndex(); };
@@ -1740,6 +1843,11 @@ MainWindow::MainWindow(bool standaloneNoSession)
             return out;
         };
         host.notesRoot = [] { return NotesPanel::defaultNotesFolder(); };
+        // ── Phase 0A — language SSOT surface for the MCP bridge. ──
+        host.knownLanguages = [] { return allKnownLanguageTokens(); };
+        host.resolveLanguage = [](const QString &in) {
+            return resolveLanguageToken(in);
+        };
         // ── v0.1.118 WRITE tier — each lambda reuses the SAME Editor/save
         //    path the equivalent menu action uses, wrapped in one undo step.
         //    The bridge calls them only after the human clicks Approve. ──
@@ -1839,17 +1947,22 @@ MainWindow::MainWindow(bool standaloneNoSession)
             return arr;
         };
         // READ: read-only git — reuses git_tools.cpp (no new QProcess path).
-        host.runGit = [this](const QString &sub, const QJsonObject &args,
-                             QString *err) -> QString {
-            // Same anchor the AI Composer git tools use: Explorer root, else
-            // the current file's directory.
-            QString root = m_explorer ? m_explorer->rootPath() : QString();
-            if (root.isEmpty()) {
-                if (auto *ed = currentEditor())
-                    if (!ed->filePath().isEmpty())
-                        root = QFileInfo(ed->filePath()).absolutePath();
-            }
-            if (root.isEmpty()) {
+        host.runGit = [this, effectiveWorkspaceRoot](
+                          const QString &sub, const QJsonObject &args,
+                          QString *err) -> QString {
+            // Candidate roots: the workspace (Explorer) folder first, then the
+            // current file's directory — so git "just works" on an open repo
+            // file even when the workspace folder isn't itself a repository.
+            QStringList roots;
+            const QString wsRoot = effectiveWorkspaceRoot();
+            if (!wsRoot.isEmpty()) roots << wsRoot;
+            if (auto *ed = currentEditor())
+                if (!ed->filePath().isEmpty()) {
+                    const QString fdir =
+                        QFileInfo(ed->filePath()).absolutePath();
+                    if (!roots.contains(fdir)) roots << fdir;
+                }
+            if (roots.isEmpty()) {
                 if (err) *err = QStringLiteral("no workspace folder open");
                 return QString();
             }
@@ -1863,21 +1976,28 @@ MainWindow::MainWindow(bool standaloneNoSession)
             AiTools::ToolCall call;
             call.name = QStringLiteral("git_") + sub;
             call.args = a;
-            AiTools::ToolResult res;
-            if (sub == QLatin1String("status"))
-                res = GitTools::executeGitStatus(call, root);
-            else if (sub == QLatin1String("diff"))
-                res = GitTools::executeGitDiff(call, root);
-            else if (sub == QLatin1String("log"))
-                res = GitTools::executeGitLog(call, root);
-            else if (sub == QLatin1String("show"))
-                res = GitTools::executeGitShow(call, root);
-            else if (sub == QLatin1String("branch"))
-                res = GitTools::executeGitBranchList(call, root);
-            else {
-                if (err) *err = QStringLiteral("unknown git subcommand");
-                return QString();
-            }
+            auto runOnce = [&](const QString &root) -> AiTools::ToolResult {
+                if (sub == QLatin1String("status"))
+                    return GitTools::executeGitStatus(call, root);
+                if (sub == QLatin1String("diff"))
+                    return GitTools::executeGitDiff(call, root);
+                if (sub == QLatin1String("log"))
+                    return GitTools::executeGitLog(call, root);
+                if (sub == QLatin1String("show"))
+                    return GitTools::executeGitShow(call, root);
+                if (sub == QLatin1String("branch"))
+                    return GitTools::executeGitBranchList(call, root);
+                AiTools::ToolResult e;
+                e.isError = true;
+                e.content =
+                    QStringLiteral("{\"message\":\"unknown git subcommand\"}");
+                return e;
+            };
+            // Workspace root wins when it is a repo; otherwise fall through to
+            // the file's repo so an agent editing a repo file always gets git.
+            AiTools::ToolResult res = runOnce(roots.first());
+            for (int i = 1; i < roots.size() && res.isError; ++i)
+                res = runOnce(roots.at(i));
             if (res.isError) {
                 const QJsonObject body =
                     QJsonDocument::fromJson(res.content.toUtf8()).object();
@@ -1928,6 +2048,8 @@ MainWindow::MainWindow(bool standaloneNoSession)
                 // directory canonicalizing cleanly). When no folder root is open
                 // the root is empty and resolveSafePath rejects everything —
                 // matching the git verbs' behavior.
+                // Deliberately NOT the workspaceRoot fallback: csv sandbox root
+                // stays folder-open-only.
                 const QString wsRoot =
                     m_explorer ? m_explorer->rootPath() : QString();
                 QString csvCanon;
@@ -2096,6 +2218,21 @@ MainWindow::MainWindow(bool standaloneNoSession)
                 return false;
             }
             return true;
+        };
+        // ACT: create a Diagram tab via the same helper the menu uses.
+        host.createDiagram = [this](const QString &source, const QString &title) {
+            return newDiagramTab(source, title);
+        };
+        // WRITE: replace a DiagramEditor's .npd source (canvas re-renders).
+        host.setDiagramSource = [this](int i, const QString &src) -> bool {
+            auto *de = qobject_cast<DiagramEditor *>(m_tabs->widget(i));
+            if (!de) return false;
+            de->setNpdText(src);
+            return true;
+        };
+        // ACT: reveal/focus the Noter tab — same path as the "+ Noter" UI.
+        host.openNoter = [this]() -> bool {
+            return ensureNoterTab() != nullptr;
         };
         new McpBridge(std::move(host), this);
     }
@@ -3390,16 +3527,8 @@ void MainWindow::buildMenus() {
             diagAct->setChecked(false);
             return;
         }
-        if (!diag) {
-            diag = new DiagramEditor;
-            exitAiFullscreenIfActive();
-            existingIdx = m_tabs->addTab(diag, "Diagram");
-            connect(diag, &DiagramEditor::titleChanged, this, [this, diag](const QString &t) {
-                const int idx = m_tabs->indexOf(diag);
-                if (idx >= 0) m_tabs->setTabText(idx, t);
-            });
-        }
-        m_tabs->setCurrentIndex(existingIdx);
+        if (!diag) existingIdx = newDiagramTab(QString(), QString());
+        else m_tabs->setCurrentIndex(existingIdx);
         diagAct->setChecked(true);
     });
 
@@ -3539,9 +3668,8 @@ void MainWindow::buildMenus() {
     lang->addSeparator();
 
     // Common languages — flat, alphabetical for predictable scanning.
-    for (const auto &l : {"Bash", "C", "C#", "C++", "CSS", "HTML", "Java",
-                          "JavaScript", "JSON", "Lua", "Markdown", "Perl",
-                          "Python", "Ruby", "SQL", "XML", "YAML"}) {
+    // SSOT: commonLanguageTokens() (also feeds MCP list_languages).
+    for (const QString &l : commonLanguageTokens()) {
         lang->addAction(l, this, [this, E, l]() {
             if (auto *e = E()) { e->setLanguage(l); m_statusBar->updateLanguage(l); }
         });
@@ -3571,24 +3699,10 @@ void MainWindow::buildMenus() {
     lang->addSeparator();
 
     // More Languages — the long tail. Single alphabetical submenu listing
-    // everything else. Adding a new language is one line: append to the
-    // initializer list.
+    // everything else. Adding a new language is one line: append to
+    // moreLanguageTokens() (pre-sorted; also feeds MCP list_languages).
     auto *moreLang = lang->addMenu("More Languages");
-    QStringList more = {
-        "ASM", "Apex", "AVS", "Batch", "BibTeX",
-        "CMake", "CoffeeScript", "Crystal", "Cython",
-        "D", "Dart", "Diff", "Dockerfile", "DotEnv",
-        "Elixir", "F#", "Fish", "Fortran", "Fortran77",
-        "GDScript", "Gitignore", "Go", "GraphQL", "Groovy",
-        "Hack", "HCL", "IDL", "IntelHex", "Jinja", "JSON5", "Julia",
-        "Kotlin", "Liquid", "Makefile", "MASM", "Matlab", "Mojo",
-        "NASM", "Nim", "Nushell", "Octave", "Pascal", "PO",
-        "PostScript", "POV", "PowerShell", "Properties", "Protobuf",
-        "R", "Rust", "Scala", "Solidity", "Spice", "SRecord", "Swift",
-        "TCL", "TeX", "Thrift", "TOML", "Twig", "TypeScript",
-        "Vala", "Verilog", "VHDL", "Zig",
-    };
-    more.sort(Qt::CaseInsensitive);
+    const QStringList &more = moreLanguageTokens();
     for (const QString &l : more) {
         moreLang->addAction(l, this, [this, E, l]() {
             if (auto *e = E()) { e->setLanguage(l); m_statusBar->updateLanguage(l); }
@@ -5085,6 +5199,23 @@ NotesPanel *MainWindow::ensureNoterTab() {
     m_tabs->setCurrentIndex(idx);
     if (m_noterAct) m_noterAct->setChecked(true);
     return noter;
+}
+
+// One diagram-tab creation path — the Features->Diagram menu action and the
+// MCP create_diagram verb both call this (no duplicated creation logic).
+int MainWindow::newDiagramTab(const QString &source, const QString &title) {
+    auto *diag = new DiagramEditor;
+    if (!source.isEmpty()) diag->setNpdText(source);
+    exitAiFullscreenIfActive();
+    const int idx = m_tabs->addTab(diag, title.isEmpty()
+                                             ? QStringLiteral("Diagram") : title);
+    connect(diag, &DiagramEditor::titleChanged, this,
+            [this, diag](const QString &t) {
+        const int i = m_tabs->indexOf(diag);
+        if (i >= 0) m_tabs->setTabText(i, t);
+    });
+    m_tabs->setCurrentIndex(idx);
+    return idx;
 }
 
 void MainWindow::buildToolbar() {

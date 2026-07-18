@@ -38,12 +38,25 @@
 //                                                                  (v0.1.119)
 //   run_sql    {sql,csv_path?}              → {columns:[...],rows:[[...]],
 //                                              truncated,engine}   (v0.1.119)
+//   list_languages {}                       → {languages:[...]}    (p0a)
+//   get_capabilities {}                     → {edition,platform,version,
+//                                              features:{duckdb,webengine,
+//                                              noter}}              (p0a)
+//                                             (the Rust sidecar augments the
+//                                              tool result with tool_count
+//                                              and tiers — derived there)
+//   get_diagram_source {tab_index}          → {source}             (phase 1)
 //
 // ACT tier — visible, non-destructive, NO approval card.
 //   new_tab     {text?}                     → {tab_index}
 //   goto_line   {line,tab_index?}           → {ok,tab_index,line}
 //   set_language{language,tab_index?}       → {ok,tab_index,language}
+//                                             (language echoes the RESOLVED
+//                                              canonical token since p0a)
 //   open_note   {file}                      → {opened,title}       (v0.1.119)
+//   create_diagram {source?,title?}         → {tab_index,valid,
+//                                              errors:[{line,message}]}  (phase 1)
+//   open_noter  {}                          → {opened}             (phase 1)
 //
 // WRITE tier — held behind the in-window human-approval card; a mutation
 // runs ONLY on Approve (Deny / timeout / disconnect ⇒ nothing happened).
@@ -55,6 +68,8 @@
 //   append_note {file,text}                  → {file}              (v0.1.119)
 //   set_reminder{file,due_iso}               → {file,due_iso}      (v0.1.119)
 //   export_diagram {tab_index,path,format("png"|"pdf")} → {path}   (v0.1.119)
+//   set_diagram_source {tab_index,source}   → {ok,tab_index,valid,
+//                                              errors:[{line,message}]}  (phase 1)
 //
 // NOTE: write verbs take "tab_index"; read tab-arg verbs keep their existing
 // keys ("index" for read_tab/find_in_tab). This asymmetry is deliberate and
@@ -120,6 +135,7 @@ constexpr int kMaxSqlRows = 200;                   // run_sql row cap
 constexpr int kMaxSqlCells = 1024;                 // per-cell char cap
 constexpr int kAppendNoteMaxChars = 1 * 1024 * 1024;
 constexpr int kCreateNoteMaxChars = 1 * 1024 * 1024;
+constexpr int kDiagramSourceMaxChars = 1 * 1024 * 1024; // create/set_diagram_source
 
 QString elideForCard(const QString &s, int cap) {
     if (s.size() <= cap) return s;
@@ -422,6 +438,10 @@ void McpBridge::handleLine(QLocalSocket *client, const QByteArray &line) {
         verbValidateNpd(client, id, args);
     else if (verb == QLatin1String("run_sql"))
         verbRunSql(client, id, args);
+    else if (verb == QLatin1String("list_languages"))
+        verbListLanguages(client, id);
+    else if (verb == QLatin1String("get_capabilities"))
+        verbGetCapabilities(client, id);
     else if (verb == QLatin1String("open_note"))
         verbOpenNote(client, id, args);
     else if (verb == QLatin1String("create_note"))
@@ -432,6 +452,14 @@ void McpBridge::handleLine(QLocalSocket *client, const QByteArray &line) {
         verbSetReminder(client, id, args);
     else if (verb == QLatin1String("export_diagram"))
         verbExportDiagram(client, id, args);
+    else if (verb == QLatin1String("create_diagram"))
+        verbCreateDiagram(client, id, args);
+    else if (verb == QLatin1String("get_diagram_source"))
+        verbGetDiagramSource(client, id, args);
+    else if (verb == QLatin1String("set_diagram_source"))
+        verbSetDiagramSource(client, id, args);
+    else if (verb == QLatin1String("open_noter"))
+        verbOpenNoter(client, id);
     else
         sendError(client, id,
                   QStringLiteral("unknown verb: %1").arg(verb));
@@ -826,15 +854,26 @@ void McpBridge::verbSetLanguage(QLocalSocket *client, int id,
                   QStringLiteral("tab index out of range: %1").arg(idx));
         return;
     }
-    if (!m_host.setLanguage(idx, lang)) {
+    // Resolve to the canonical menu token; a null resolver (test hosts)
+    // falls back to the raw token so old fakes keep working.
+    QString resolved = lang;
+    if (m_host.resolveLanguage) {
+        resolved = m_host.resolveLanguage(lang);
+        if (resolved.isEmpty()) {
+            sendError(client, id,
+                      QStringLiteral("unknown language: %1").arg(lang));
+            return;
+        }
+    }
+    if (!m_host.setLanguage(idx, resolved)) {
         sendError(client, id,
-                  QStringLiteral("unknown language: %1").arg(lang));
+                  QStringLiteral("unknown language: %1").arg(resolved));
         return;
     }
     QJsonObject result;
     result[QStringLiteral("ok")] = true;
     result[QStringLiteral("tab_index")] = idx;
-    result[QStringLiteral("language")] = lang;
+    result[QStringLiteral("language")] = resolved; // honest: what was set
     sendResult(client, id, result);
 }
 
@@ -1276,6 +1315,31 @@ void McpBridge::verbGit(QLocalSocket *client, int id, const QJsonObject &args,
 
 // Parse-only .npd validation. NEVER touches a tab/canvas — Npd::parse is a
 // pure QtCore function the bridge links directly.
+// Npd::parse + "line N: msg" split, shared by validate_npd / create_diagram /
+// set_diagram_source.
+static QJsonObject npdValidationJson(const QString &source) {
+    const Npd::Diagram d = Npd::parse(source);
+    static const QRegularExpression rx(QStringLiteral("^line (\\d+): (.*)$"));
+    QJsonArray errors;
+    for (const QString &e : d.errors) {
+        int line = 0;
+        QString message = e;
+        const QRegularExpressionMatch m = rx.match(e);
+        if (m.hasMatch()) {
+            line = m.captured(1).toInt();
+            message = m.captured(2);
+        }
+        QJsonObject o;
+        o[QStringLiteral("line")] = line;
+        o[QStringLiteral("message")] = message;
+        errors.append(o);
+    }
+    QJsonObject r;
+    r[QStringLiteral("valid")] = d.ok();
+    r[QStringLiteral("errors")] = errors;
+    return r;
+}
+
 void McpBridge::verbValidateNpd(QLocalSocket *client, int id,
                                 const QJsonObject &args) {
     QString source;
@@ -1299,26 +1363,7 @@ void McpBridge::verbValidateNpd(QLocalSocket *client, int id,
         sendError(client, id, QStringLiteral("missing source or tab_index"));
         return;
     }
-    const Npd::Diagram d = Npd::parse(source);
-    static const QRegularExpression rx(QStringLiteral("^line (\\d+): (.*)$"));
-    QJsonArray errors;
-    for (const QString &e : d.errors) {
-        int line = 0;
-        QString message = e;
-        const QRegularExpressionMatch m = rx.match(e);
-        if (m.hasMatch()) {
-            line = m.captured(1).toInt();
-            message = m.captured(2);
-        }
-        QJsonObject o;
-        o[QStringLiteral("line")] = line;
-        o[QStringLiteral("message")] = message;
-        errors.append(o);
-    }
-    QJsonObject result;
-    result[QStringLiteral("valid")] = d.ok();
-    result[QStringLiteral("errors")] = errors;
-    sendResult(client, id, result);
+    sendResult(client, id, npdValidationJson(source));
 }
 
 // SELECT-only query. The host lambda routes SQL through the real
@@ -1377,6 +1422,42 @@ void McpBridge::verbRunSql(QLocalSocket *client, int id,
     result[QStringLiteral("rows")] = rows;
     result[QStringLiteral("truncated")] = truncated;
     result[QStringLiteral("engine")] = r.value(QLatin1String("engine")).toString();
+    sendResult(client, id, result);
+}
+
+// ── Phase 0A read tier ─────────────────────────────────────────────────
+
+void McpBridge::verbListLanguages(QLocalSocket *client, int id) {
+    QJsonArray langs;
+    if (m_host.knownLanguages) {
+        const QStringList list = m_host.knownLanguages();
+        for (const QString &l : list) langs.append(l);
+    }
+    QJsonObject result;
+    result[QStringLiteral("languages")] = langs;
+    sendResult(client, id, result);
+}
+
+// Edition/platform/version/features from THIS binary's build state; the
+// Rust sidecar adds tool_count and tiers (it owns the tool surface).
+void McpBridge::verbGetCapabilities(QLocalSocket *client, int id) {
+    QJsonObject features;
+#ifdef NOTEPATRA_HAVE_DUCKDB
+    features[QStringLiteral("duckdb")] = true;
+#else
+    features[QStringLiteral("duckdb")] = false;
+#endif
+#ifdef NOTEPATRA_WITH_WEBENGINE
+    features[QStringLiteral("webengine")] = true;
+#else
+    features[QStringLiteral("webengine")] = false;
+#endif
+    features[QStringLiteral("noter")] = static_cast<bool>(m_host.notesRoot);
+    QJsonObject result;
+    result[QStringLiteral("edition")] = QLatin1String(editionName());
+    result[QStringLiteral("platform")] = QLatin1String(platformName());
+    result[QStringLiteral("version")] = QStringLiteral(NOTEPATRA_VERSION);
+    result[QStringLiteral("features")] = features;
     sendResult(client, id, result);
 }
 
@@ -1617,6 +1698,130 @@ void McpBridge::verbExportDiagram(QLocalSocket *client, int id,
         r[QStringLiteral("path")] = QDir::toNativeSeparators(path);
         return r;
     });
+}
+
+// ── Phase 1 — diagram control + Noter panel ─────────────────────────────
+
+// ACT: creates the tab even when the source is invalid .npd (the canvas
+// shows its own parse state); valid/errors ride along so the agent knows.
+void McpBridge::verbCreateDiagram(QLocalSocket *client, int id,
+                                  const QJsonObject &args) {
+    if (!m_host.createDiagram) {
+        sendError(client, id,
+                  QStringLiteral("create_diagram not supported by host"));
+        return;
+    }
+    const QString source = args.value(QLatin1String("source")).toString();
+    if (source.size() > kDiagramSourceMaxChars) {
+        sendError(client, id, QStringLiteral("source too large"));
+        return;
+    }
+    const QString title = args.value(QLatin1String("title")).toString();
+    const int idx = m_host.createDiagram(source, title);
+    if (idx < 0) {
+        sendError(client, id, QStringLiteral("could not create diagram tab"));
+        return;
+    }
+    // Validate the tab's REAL content (covers the empty-source case too).
+    QString actual = source;
+    if (m_host.diagramSource) m_host.diagramSource(idx, &actual);
+    QJsonObject result = npdValidationJson(actual);
+    result[QStringLiteral("tab_index")] = idx;
+    sendResult(client, id, result);
+}
+
+void McpBridge::verbGetDiagramSource(QLocalSocket *client, int id,
+                                     const QJsonObject &args) {
+    if (!args.contains(QLatin1String("tab_index"))) {
+        sendError(client, id, QStringLiteral("missing tab_index"));
+        return;
+    }
+    const int n = m_host.tabCount ? m_host.tabCount() : 0;
+    const int idx = args.value(QLatin1String("tab_index")).toInt(-1);
+    if (idx < 0 || idx >= n) {
+        sendError(client, id,
+                  QStringLiteral("tab index out of range: %1").arg(idx));
+        return;
+    }
+    QString src;
+    if (!m_host.diagramSource || !m_host.diagramSource(idx, &src)) {
+        sendError(client, id,
+                  QStringLiteral("tab %1 is not a diagram (.npd) tab").arg(idx));
+        return;
+    }
+    QJsonObject result;
+    result[QStringLiteral("source")] = src;
+    sendResult(client, id, result);
+}
+
+void McpBridge::verbSetDiagramSource(QLocalSocket *client, int id,
+                                     const QJsonObject &args) {
+    if (!m_host.setDiagramSource) {
+        sendError(client, id,
+                  QStringLiteral("set_diagram_source not supported by host"));
+        return;
+    }
+    if (!args.contains(QLatin1String("source"))) {
+        sendError(client, id, QStringLiteral("missing source"));
+        return;
+    }
+    const QString source = args.value(QLatin1String("source")).toString();
+    if (source.size() > kDiagramSourceMaxChars) {
+        sendError(client, id, QStringLiteral("source too large"));
+        return;
+    }
+    if (!args.contains(QLatin1String("tab_index"))) {
+        sendError(client, id, QStringLiteral("missing tab_index"));
+        return;
+    }
+    const int n = m_host.tabCount ? m_host.tabCount() : 0;
+    const int idx = args.value(QLatin1String("tab_index")).toInt(-1);
+    if (idx < 0 || idx >= n) {
+        sendError(client, id,
+                  QStringLiteral("tab index out of range: %1").arg(idx));
+        return;
+    }
+    // Fail fast when the tab isn't a diagram — never queue a doomed approval.
+    QString probe;
+    if (!m_host.diagramSource || !m_host.diagramSource(idx, &probe)) {
+        sendError(client, id,
+                  QStringLiteral("tab %1 is not a diagram (.npd) tab").arg(idx));
+        return;
+    }
+    const QString desc =
+        QStringLiteral("REPLACE the diagram source of '%1' with %2 chars "
+                       "(the canvas re-renders)")
+            .arg(elideForCard(tabLabel(idx), kApprovalDescChars))
+            .arg(source.size());
+    enqueueApproval(client, id, desc,
+                    elideForCard(source, kApprovalPreviewChars),
+                    [this, idx, source](QString *execErr) {
+        // Re-checked at execute time: the tab may have changed while pending.
+        if (!m_host.setDiagramSource(idx, source)) {
+            *execErr = QStringLiteral("tab %1 is not a diagram (.npd) tab")
+                           .arg(idx);
+            return QJsonObject();
+        }
+        QJsonObject r = npdValidationJson(source);
+        r[QStringLiteral("ok")] = true;
+        r[QStringLiteral("tab_index")] = idx;
+        return r;
+    });
+}
+
+void McpBridge::verbOpenNoter(QLocalSocket *client, int id) {
+    if (!m_host.openNoter) {
+        sendError(client, id,
+                  QStringLiteral("open_noter not supported by host"));
+        return;
+    }
+    if (!m_host.openNoter()) {
+        sendError(client, id, QStringLiteral("could not open Noter"));
+        return;
+    }
+    QJsonObject result;
+    result[QStringLiteral("opened")] = true;
+    sendResult(client, id, result);
 }
 
 void McpBridge::enqueueApproval(QLocalSocket *client, int id,

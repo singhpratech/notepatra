@@ -544,3 +544,99 @@ fn bridge_error_response_maps_to_transport_error() {
     assert_eq!(err.0, "no note named \"x.md\"");
     finish(path, handle);
 }
+
+#[test]
+fn p0a_read_verbs_send_empty_args_and_parse_replies() {
+    let (path, handle) = spawn_bridge(|stream| {
+        let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+        let mut stream = stream;
+        writeln!(stream, "{GREETING}").unwrap();
+        for expected_id in 1..=2u64 {
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            let req: Value = serde_json::from_str(&line).unwrap();
+            assert_eq!(req["id"], expected_id);
+            assert_eq!(req["args"], json!({}), "both p0a verbs are no-arg");
+            let result = match req["verb"].as_str().unwrap() {
+                "list_languages" => json!({ "languages": ["Plain Text", "Python", "C++"] }),
+                // Exact bridge shape (src/mcp_bridge.cpp verbGetCapabilities):
+                // no tool_count / tiers on the wire — the tool layer adds them.
+                "get_capabilities" => json!({
+                    "edition": "Full", "platform": "linux", "version": "0.1.119",
+                    "features": { "duckdb": true, "webengine": true, "noter": true }
+                }),
+                other => panic!("unexpected verb {other}"),
+            };
+            let resp = json!({ "id": expected_id, "ok": true, "result": result });
+            writeln!(stream, "{resp}").unwrap();
+        }
+    });
+    let ed = editor_for(&path);
+    let langs = ed.list_languages().expect("list_languages round-trip");
+    assert_eq!(langs["languages"][1], "Python");
+    let caps = ed.get_capabilities().expect("get_capabilities round-trip");
+    assert_eq!(caps["edition"], "Full");
+    assert_eq!(caps["features"]["duckdb"], true);
+    assert!(caps.get("tool_count").is_none()); // wire shape has no tool_count
+    finish(path, handle);
+}
+
+#[test]
+fn phase1_verbs_send_exact_arg_keys() {
+    let (path, handle) = spawn_bridge(|stream| {
+        let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+        let mut stream = stream;
+        writeln!(stream, "{GREETING}").unwrap();
+        for _ in 0..5 {
+            let mut line = String::new();
+            if reader.read_line(&mut line).unwrap() == 0 {
+                return;
+            }
+            let req: Value = serde_json::from_str(&line).unwrap();
+            let result = match req["verb"].as_str().unwrap() {
+                "create_diagram" => {
+                    // Optional keys present only when supplied.
+                    assert!(
+                        req["args"] == json!({})
+                            || req["args"] == json!({ "source": "diagram flow\n", "title": "flow" })
+                    );
+                    json!({ "tab_index": 4, "valid": true, "errors": [] })
+                }
+                "get_diagram_source" => {
+                    assert_eq!(req["args"], json!({ "tab_index": 4 }));
+                    json!({ "source": "diagram flow\n" })
+                }
+                "set_diagram_source" => {
+                    assert_eq!(
+                        req["args"],
+                        json!({ "tab_index": 4, "source": "diagram er\n" })
+                    );
+                    json!({ "ok": true, "tab_index": 4, "valid": true, "errors": [] })
+                }
+                "open_noter" => {
+                    assert_eq!(req["args"], json!({}));
+                    json!({ "opened": true })
+                }
+                other => panic!("unexpected verb {other}"),
+            };
+            let resp = json!({ "id": req["id"], "ok": true, "result": result });
+            writeln!(stream, "{resp}").unwrap();
+        }
+    });
+    let mut ed = SocketEditor::with_socket_path(path.to_str().unwrap())
+        .with_timeouts(Duration::from_secs(1), Duration::from_secs(1))
+        .with_approval_timeout(Duration::from_secs(2));
+    let created = ed
+        .create_diagram(Some("diagram flow\n"), Some("flow"))
+        .expect("create_diagram");
+    assert_eq!(created["tab_index"], 4);
+    ed.create_diagram(None, None).expect("create_diagram bare");
+    let src = ed.get_diagram_source(4).expect("get_diagram_source");
+    assert_eq!(src["source"], "diagram flow\n");
+    let set = ed
+        .set_diagram_source(4, "diagram er\n")
+        .expect("set_diagram_source");
+    assert_eq!(set["ok"], true);
+    assert_eq!(ed.open_noter().expect("open_noter")["opened"], true);
+    finish(path, handle);
+}

@@ -6,7 +6,7 @@
     <strong>C++ + Rust</strong> · <strong>~12 MB bare native executable</strong> · <strong>Zero Electron</strong> · <strong>238 file types</strong> · <strong>82 language lexers</strong> · <strong>Local AI formatters</strong> · <strong>MCP server</strong>
   </p>
   <p align="center">
-    <strong>New in v0.1.119:</strong> <a href="https://notepatra.org/mcp.html"><code>notepatra-mcp</code></a> — connect Claude Desktop, Claude Code, OpenAI Codex, and any MCP client to the running editor. 35 tools (Git, read-only SQL, Noter notes); every write human-approved in-window; nothing leaves your machine.
+    <strong>New in v0.1.119:</strong> <a href="https://notepatra.org/mcp.html"><code>notepatra-mcp</code></a> — connect Claude Desktop, Claude Code, OpenAI Codex, and any MCP client to the running editor. 41 tools (Git, read-only SQL, Noter notes); every write human-approved in-window; nothing leaves your machine.
   </p>
   <p align="center">
     <a href="https://notepatra.org">Website</a> ·
@@ -239,13 +239,13 @@ A first-class diagramming surface that **renders in the default binary on every 
 
 From v0.1.118, Notepatra ships **`notepatra-mcp`** — a stdio JSON-RPC 2.0 [Model Context Protocol](https://modelcontextprotocol.io) server that connects external AI assistants (Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client) to the running editor over a local socket. Nothing leaves your machine: stdio to the client, local socket to the editor, no network connections.
 
-**35 tools in three tiers** (as of v0.1.119):
+**41 tools in three tiers** (as of v0.1.119):
 
 | Tier | Tools | Gate |
 |---|---|---|
-| **Read** (18) | tabs, selection, status, recent files, in-tab + project search, Noter notes, reminders, read-only Git (status / diff / log / show / branch), `.npd` validation, read-only SQL (`run_sql`) | None — observation only |
-| **Act** (9) | open file, new tab, go to line, set language, compare tabs, format JSON/SQL/HTML, open note | None — visible, non-destructive |
-| **Write** (8) | insert text, replace selection, find-and-replace, save, create note, append note, set reminder, export diagram | **Approve/Deny card inside the editor** — 120 s auto-deny, FIFO one card at a time, no headless bypass |
+| **Read** (21) | tabs, selection, status, recent files, in-tab + project search, Noter notes, reminders, read-only Git (status / diff / log / show / branch), `.npd` validation, read-only SQL (`run_sql`), language list (`list_languages`), capability probe (`get_capabilities`), `.npd` source read (`get_diagram_source`) | None — observation only |
+| **Act** (11) | open file, new tab, go to line, set language, compare tabs, format JSON/SQL/HTML, open note, create diagram, open Noter | None — visible, non-destructive |
+| **Write** (9) | insert text, replace selection, find-and-replace, save, create note, append note, set reminder, export diagram, set diagram source | **Approve/Deny card inside the editor** — 120 s auto-deny, FIFO one card at a time, no headless bypass |
 
 `find_in_tab` and `search_project` also take an optional `regex` flag. `run_sql` is **SELECT-only** (rejected by the SQL classifier otherwise) and, on the Full/DuckDB edition, runs in an engine sandbox — the target file is materialized into an in-memory table, then DuckDB's external filesystem access is disabled (`enable_external_access=false`) before the untrusted query runs, so it cannot read host files. Since v0.1.119 the sidecar also supports Windows over a named pipe.
 

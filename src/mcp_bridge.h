@@ -121,6 +121,22 @@ struct McpEditorHost {
     std::function<bool(int tabIndex, const QString &path,
                        const QString &format, QString *err)>
         exportDiagram;
+
+    // ── Phase 0A. Optional like everything above: unset ⇒ error/empty,
+    //    never crash. ──
+    // Canonicalize an agent language token ("python"→"Python"); "" = unknown.
+    std::function<QString(const QString &)> resolveLanguage;
+    // Canonical Language-menu tokens (SSOT: allKnownLanguageTokens()).
+    std::function<QStringList()> knownLanguages;
+
+    // ── Phase 1: diagram control + Noter panel. Optional like everything
+    //    above: unset ⇒ clear error, never crash. ──
+    // ACT: create a Diagram tab (optionally pre-filled), focus it; → index, -1 on failure.
+    std::function<int(const QString &source, const QString &title)> createDiagram;
+    // WRITE: replace the .npd source of the DiagramEditor at tab i; false = not a diagram.
+    std::function<bool(int, const QString &)> setDiagramSource;
+    // ACT: open/focus the Noter panel tab (same path as the "+ Noter" UI).
+    std::function<bool()> openNoter;
 };
 
 // Editor-side MCP bridge: a dedicated QLocalServer, deliberately separate from
@@ -187,6 +203,9 @@ private:
                  const QString &sub);
     void verbValidateNpd(QLocalSocket *client, int id, const QJsonObject &args);
     void verbRunSql(QLocalSocket *client, int id, const QJsonObject &args);
+    // ── Phase 0A read tier ──
+    void verbListLanguages(QLocalSocket *client, int id);
+    void verbGetCapabilities(QLocalSocket *client, int id);
     // ACT tier.
     void verbOpenNote(QLocalSocket *client, int id, const QJsonObject &args);
     // WRITE tier — human-approval-gated.
@@ -195,6 +214,11 @@ private:
     void verbSetReminder(QLocalSocket *client, int id, const QJsonObject &args);
     void verbExportDiagram(QLocalSocket *client, int id,
                            const QJsonObject &args);
+    // ── Phase 1 ──
+    void verbCreateDiagram(QLocalSocket *client, int id, const QJsonObject &args);   // ACT
+    void verbGetDiagramSource(QLocalSocket *client, int id, const QJsonObject &args); // READ
+    void verbSetDiagramSource(QLocalSocket *client, int id, const QJsonObject &args); // WRITE (card)
+    void verbOpenNoter(QLocalSocket *client, int id);                                 // ACT
 
     // One held write request: the response is sent only after the human
     // decides (or the timeout / a disconnect decides for them).

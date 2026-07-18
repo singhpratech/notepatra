@@ -137,6 +137,10 @@ impl std::error::Error for TransportError {}
 ///   `tab_index` key here, NOT `index`) → `{valid:bool,errors:[{line,message}]}`
 /// * `run_sql` (args `{sql,csv_path?}`, SELECT-only — the editor rejects any
 ///   non-read statement) → `{columns:[str],rows:[[…]],truncated:bool,engine:str}`
+/// * `list_languages` → `{languages:[str]}` (canonical Language-menu tokens)   (p0a)
+/// * `get_capabilities` → `{edition,platform,version,features:{duckdb,webengine,noter}}`
+///   (p0a; the TOOL layer augments the result with `tool_count` and `tiers`
+///   before it reaches the client — the sidecar owns the tool surface)
 ///
 /// Act tier:
 /// * `open_note` (args `{file}`) → `{opened:bool,title:str}`
@@ -147,6 +151,16 @@ impl std::error::Error for TransportError {}
 /// * `append_note` (args `{file,text}`) → `{file:str}`
 /// * `set_reminder` (args `{file,due_iso}`) → `{file:str,due_iso:str}`
 /// * `export_diagram` (args `{tab_index,path,format}`) → `{path:str}`
+///
+/// Phase 1 (diagram control + Noter panel):
+/// * `create_diagram` (args `{source?,title?}`) → `{tab_index,valid,errors:[{line,message}]}`
+///   (ACT — the tab is created even when the source is invalid .npd)
+/// * `get_diagram_source` (args `{tab_index}`) → `{source}` (READ; errors when
+///   the tab is not a DiagramEditor)
+/// * `open_noter` → `{opened:true}` (ACT — reveals/focuses the Noter tab)
+/// * `set_diagram_source` (args `{tab_index,source}`) →
+///   `{ok:true,tab_index,valid,errors}` (WRITE — same approval card + verbatim
+///   deny/timeout errors as the other write verbs)
 pub trait EditorTransport {
     /// Returns the tab index the file landed in.
     fn open_file(&mut self, path: &str) -> Result<usize, TransportError>;
@@ -224,6 +238,10 @@ pub trait EditorTransport {
     /// error that passes straight through.
     fn run_sql(&self, sql: &str, csv_path: Option<&str>) -> Result<Value, TransportError>;
 
+    // Phase 0A read verbs — verbatim JSON passthrough.
+    fn list_languages(&self) -> Result<Value, TransportError>;
+    fn get_capabilities(&self) -> Result<Value, TransportError>;
+
     // v0.1.119 act verb — opens a Noter note in a tab (not approval-gated).
     fn open_note(&mut self, file: &str) -> Result<Value, TransportError>;
 
@@ -238,4 +256,19 @@ pub trait EditorTransport {
         path: &str,
         format: &str,
     ) -> Result<Value, TransportError>;
+
+    // Phase 1 — diagram control + Noter panel.
+    fn create_diagram(
+        &mut self,
+        source: Option<&str>,
+        title: Option<&str>,
+    ) -> Result<Value, TransportError>;
+    fn get_diagram_source(&self, tab_index: usize) -> Result<Value, TransportError>;
+    /// Approval-gated in the editor, like the other write verbs.
+    fn set_diagram_source(
+        &mut self,
+        tab_index: usize,
+        source: &str,
+    ) -> Result<Value, TransportError>;
+    fn open_noter(&mut self) -> Result<Value, TransportError>;
 }

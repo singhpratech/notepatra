@@ -60,8 +60,8 @@ const APPROVAL_TIMEOUT: Duration = Duration::from_secs(130);
 
 /// The approval-gated write verbs (must match the C++ bridge's card-gated
 /// verb set exactly). v0.1.119 adds create_note/append_note/set_reminder/
-/// export_diagram to the v0.1.118 quartet.
-const WRITE_VERBS: [&str; 8] = [
+/// export_diagram to the v0.1.118 quartet; phase 1 adds set_diagram_source.
+const WRITE_VERBS: [&str; 9] = [
     "insert_text",
     "replace_selection",
     "apply_edit",
@@ -70,6 +70,7 @@ const WRITE_VERBS: [&str; 8] = [
     "append_note",
     "set_reminder",
     "export_diagram",
+    "set_diagram_source",
 ];
 
 /// Mirrors `SingleInstance::serverName()` in src/singleinstance.cpp.
@@ -781,6 +782,16 @@ impl EditorTransport for SocketEditor {
         self.call("run_sql", args)
     }
 
+    // Phase 0A read verbs.
+
+    fn list_languages(&self) -> Result<Value, TransportError> {
+        self.call("list_languages", json!({}))
+    }
+
+    fn get_capabilities(&self) -> Result<Value, TransportError> {
+        self.call("get_capabilities", json!({}))
+    }
+
     // v0.1.119 act verb.
 
     fn open_note(&mut self, file: &str) -> Result<Value, TransportError> {
@@ -811,6 +822,43 @@ impl EditorTransport for SocketEditor {
             "export_diagram",
             json!({ "tab_index": tab_index, "path": path, "format": format }),
         )
+    }
+
+    // Phase 1 verbs — verbatim JSON passthrough.
+
+    fn create_diagram(
+        &mut self,
+        source: Option<&str>,
+        title: Option<&str>,
+    ) -> Result<Value, TransportError> {
+        // Optional keys are sent only when present so the wire stays minimal.
+        let mut args = json!({});
+        if let Some(s) = source {
+            args["source"] = json!(s);
+        }
+        if let Some(t) = title {
+            args["title"] = json!(t);
+        }
+        self.call("create_diagram", args)
+    }
+
+    fn get_diagram_source(&self, tab_index: usize) -> Result<Value, TransportError> {
+        self.call("get_diagram_source", json!({ "tab_index": tab_index }))
+    }
+
+    fn set_diagram_source(
+        &mut self,
+        tab_index: usize,
+        source: &str,
+    ) -> Result<Value, TransportError> {
+        self.call(
+            "set_diagram_source",
+            json!({ "tab_index": tab_index, "source": source }),
+        )
+    }
+
+    fn open_noter(&mut self) -> Result<Value, TransportError> {
+        self.call("open_noter", json!({}))
     }
 }
 

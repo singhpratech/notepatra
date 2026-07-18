@@ -69,6 +69,7 @@ private:
     bool m_gitFail = false;         // runGit returns an error
     bool m_gitHuge = false;         // runGit returns > 256 KB
     QString m_openedNote;           // last open_note target
+    bool m_noterOpened = false;     // open_noter fired
     QString m_lastCreatedTitle;
     QString m_lastCreatedBody;
     QString m_lastCreatedPath;
@@ -155,6 +156,23 @@ private:
             return kind.toUpper() + QLatin1Char(':') + text;
         };
         h.notesRoot = [this] { return m_notesRoot; };
+        // ── Phase 0A ──
+        h.knownLanguages = [] {
+            return QStringList{QStringLiteral("Plain Text"),
+                               QStringLiteral("Python"), QStringLiteral("JSON"),
+                               QStringLiteral("C++"), QStringLiteral("SQL")};
+        };
+        h.resolveLanguage = [](const QString &in) -> QString {
+            static const QStringList known = {
+                QStringLiteral("Plain Text"), QStringLiteral("Python"),
+                QStringLiteral("JSON"), QStringLiteral("C++"),
+                QStringLiteral("SQL")};
+            for (const QString &k : known)
+                if (k.compare(in, Qt::CaseInsensitive) == 0) return k;
+            if (in.compare(QStringLiteral("py"), Qt::CaseInsensitive) == 0)
+                return QStringLiteral("Python");
+            return QString();
+        };
         // ── v0.1.118 write tier ──
         h.approvalParent = [this]() -> QWidget * { return m_hostWindow; };
         h.hasSelection = [this](int) { return !m_selection.isEmpty(); };
@@ -301,6 +319,25 @@ private:
                                  const QString &format, QString *) -> bool {
             m_exportedPath = path;
             m_exportedFormat = format;
+            return true;
+        };
+        // ── Phase 1 ──
+        h.createDiagram = [this](const QString &src, const QString &title) {
+            m_fakeTabs.append({title.isEmpty() ? QStringLiteral("Diagram")
+                                               : title,
+                               QString(), src, false,
+                               QStringLiteral("Plain Text"), true});
+            m_currentIndex = m_fakeTabs.size() - 1;
+            return m_currentIndex;
+        };
+        h.setDiagramSource = [this](int i, const QString &src) {
+            if (i < 0 || i >= m_fakeTabs.size() || !m_fakeTabs[i].isDiagram)
+                return false;
+            m_fakeTabs[i].text = src;
+            return true;
+        };
+        h.openNoter = [this]() {
+            m_noterOpened = true;
             return true;
         };
         return h;
@@ -451,6 +488,7 @@ private slots:
         m_gitFail = false;
         m_gitHuge = false;
         m_openedNote.clear();
+        m_noterOpened = false;
         m_lastCreatedTitle.clear();
         m_lastCreatedBody.clear();
         m_lastCreatedPath.clear();
@@ -1001,6 +1039,68 @@ private slots:
                     .toString()
                     .contains(QLatin1String("unknown language")));
         QCOMPARE(m_fakeTabs[0].language, QStringLiteral("Python")); // untouched
+    }
+
+    void set_language_resolves_case_and_alias() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        // Lowercase resolves to the canonical token, echoed honestly.
+        QJsonObject args;
+        args[QStringLiteral("language")] = QStringLiteral("python");
+        QJsonObject resp = call(s, 240, QStringLiteral("set_language"), args);
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        QCOMPARE(resp.value(QLatin1String("result")).toObject()
+                     .value(QLatin1String("language")).toString(),
+                 QStringLiteral("Python"));
+        QCOMPARE(m_fakeTabs[0].language, QStringLiteral("Python"));
+        // Alias path.
+        args[QStringLiteral("language")] = QStringLiteral("py");
+        resp = call(s, 241, QStringLiteral("set_language"), args);
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        QCOMPARE(resp.value(QLatin1String("result")).toObject()
+                     .value(QLatin1String("language")).toString(),
+                 QStringLiteral("Python"));
+        // Unknown still fails fast with the contract message.
+        args[QStringLiteral("language")] = QStringLiteral("klingon");
+        resp = call(s, 242, QStringLiteral("set_language"), args);
+        QCOMPARE(resp.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(resp.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("unknown language")));
+    }
+
+    void list_languages_shape() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QJsonObject resp = call(s, 243, QStringLiteral("list_languages"));
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        const QJsonArray langs = resp.value(QLatin1String("result")).toObject()
+                                     .value(QLatin1String("languages")).toArray();
+        QCOMPARE(langs.size(), 5);
+        QCOMPARE(langs.at(0).toString(), QStringLiteral("Plain Text"));
+        QCOMPARE(langs.at(1).toString(), QStringLiteral("Python"));
+    }
+
+    void get_capabilities_shape() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QJsonObject resp =
+            call(s, 244, QStringLiteral("get_capabilities"));
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        const QJsonObject r = resp.value(QLatin1String("result")).toObject();
+        const QString edition = r.value(QLatin1String("edition")).toString();
+        QVERIFY(edition == QLatin1String("Full") ||
+                edition == QLatin1String("Lite"));
+        QVERIFY(!r.value(QLatin1String("version")).toString().isEmpty());
+        const QJsonObject f = r.value(QLatin1String("features")).toObject();
+        QVERIFY(f.value(QLatin1String("duckdb")).isBool());
+        QVERIFY(f.value(QLatin1String("webengine")).isBool());
+        QCOMPARE(f.value(QLatin1String("noter")).toBool(), true); // host has notesRoot
+        // The bridge NEVER sends tool_count/tiers — the sidecar owns those.
+        QVERIFY(!r.contains(QLatin1String("tool_count")));
+        QVERIFY(!r.contains(QLatin1String("tiers")));
     }
 
     void compare_tabs_opens_view() {
@@ -2156,6 +2256,148 @@ private slots:
         QVERIFY(waitForCardGone());
     }
 
+    void create_diagram_creates_tab_and_reports_validity() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const int before = m_fakeTabs.size();
+        QJsonObject a;
+        a[QStringLiteral("source")] = QStringLiteral("node a (Start)\n");
+        a[QStringLiteral("title")] = QStringLiteral("flow.npd");
+        QJsonObject r = call(s, 300, QStringLiteral("create_diagram"), a);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QJsonObject res = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res.value(QLatin1String("tab_index")).toInt(), before);
+        QCOMPARE(res.value(QLatin1String("valid")).toBool(), true);
+        QCOMPARE(res.value(QLatin1String("errors")).toArray().size(), 0);
+        QVERIFY(m_fakeTabs.at(before).isDiagram);   // exportable by export_diagram
+        QCOMPARE(m_fakeTabs.at(before).title, QStringLiteral("flow.npd"));
+        QCOMPARE(m_currentIndex, before);           // focused
+        // Invalid source STILL creates the tab, with errors reported.
+        QJsonObject b;
+        b[QStringLiteral("source")] =
+            QStringLiteral("node a (Start)\nicon x \"NoColon\"\n");
+        r = call(s, 301, QStringLiteral("create_diagram"), b);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        res = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res.value(QLatin1String("tab_index")).toInt(), before + 1);
+        QCOMPARE(res.value(QLatin1String("valid")).toBool(), false);
+        QVERIFY(res.value(QLatin1String("errors")).toArray().size() >= 1);
+        // No source: tab still created; valid/errors keys always present.
+        r = call(s, 302, QStringLiteral("create_diagram"));
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        res = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res.value(QLatin1String("tab_index")).toInt(), before + 2);
+        QVERIFY(res.contains(QLatin1String("valid")));
+        QVERIFY(res.contains(QLatin1String("errors")));
+    }
+
+    void get_diagram_source_round_trip() {
+        m_fakeTabs.append({QStringLiteral("d.npd"), QString(),
+                           QStringLiteral("node a (Start)\n"), false,
+                           QStringLiteral("Plain Text"), true});
+        const int di = m_fakeTabs.size() - 1;
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("tab_index")] = di;
+        QJsonObject r = call(s, 310, QStringLiteral("get_diagram_source"), a);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(r.value(QLatin1String("result")).toObject()
+                     .value(QLatin1String("source")).toString(),
+                 QStringLiteral("node a (Start)\n"));
+        // Non-diagram tab → error.
+        QJsonObject nd;
+        nd[QStringLiteral("tab_index")] = 0;
+        r = call(s, 311, QStringLiteral("get_diagram_source"), nd);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("not a diagram")));
+        // Out of range and missing tab_index → errors.
+        QJsonObject oob;
+        oob[QStringLiteral("tab_index")] = 99;
+        r = call(s, 312, QStringLiteral("get_diagram_source"), oob);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        r = call(s, 313, QStringLiteral("get_diagram_source"));
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("missing tab_index")));
+    }
+
+    void set_diagram_source_approve_deny_and_validation() {
+        m_fakeTabs.append({QStringLiteral("d.npd"), QString(),
+                           QStringLiteral("node a (Start)\n"), false,
+                           QStringLiteral("Plain Text"), true});
+        const int di = m_fakeTabs.size() - 1;
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        // Approve → source replaced, result carries ok/valid.
+        QJsonObject a;
+        a[QStringLiteral("tab_index")] = di;
+        a[QStringLiteral("source")] = QStringLiteral("node b [Process]\n");
+        sendRequest(s, 320, QStringLiteral("set_diagram_source"), a);
+        QFrame *card = waitForCard();
+        QVERIFY(card);
+        auto *desc =
+            card->findChild<QLabel *>(QStringLiteral("mcpApprovalDesc"));
+        QVERIFY(desc);
+        QVERIFY(desc->text().contains(
+            QLatin1String("REPLACE the diagram source of 'd.npd'")));
+        // Held: no mutation before Approve.
+        QCOMPARE(m_fakeTabs.at(di).text, QStringLiteral("node a (Start)\n"));
+        card->findChild<QPushButton *>(QStringLiteral("mcpApproveBtn"))->click();
+        QJsonObject r = readObj(s);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QJsonObject res = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res.value(QLatin1String("ok")).toBool(), true);
+        QCOMPARE(res.value(QLatin1String("tab_index")).toInt(), di);
+        QCOMPARE(res.value(QLatin1String("valid")).toBool(), true);
+        QCOMPARE(m_fakeTabs.at(di).text, QStringLiteral("node b [Process]\n"));
+        QVERIFY(waitForCardGone());
+        // Deny → verbatim error, source unchanged.
+        QJsonObject d;
+        d[QStringLiteral("tab_index")] = di;
+        d[QStringLiteral("source")] = QStringLiteral("node c (Other)\n");
+        sendRequest(s, 321, QStringLiteral("set_diagram_source"), d);
+        card = waitForCard();
+        QVERIFY(card);
+        card->findChild<QPushButton *>(QStringLiteral("mcpDenyBtn"))->click();
+        r = readObj(s);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QCOMPARE(r.value(QLatin1String("error")).toString(),
+                 QStringLiteral("denied by user"));
+        QCOMPARE(m_fakeTabs.at(di).text, QStringLiteral("node b [Process]\n"));
+        QVERIFY(waitForCardGone());
+        // Non-diagram tab → immediate error, NO card.
+        QJsonObject nd;
+        nd[QStringLiteral("tab_index")] = 0;
+        nd[QStringLiteral("source")] = QStringLiteral("x");
+        r = call(s, 322, QStringLiteral("set_diagram_source"), nd);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("not a diagram")));
+        // Missing source → immediate error, NO card.
+        QJsonObject ns;
+        ns[QStringLiteral("tab_index")] = di;
+        r = call(s, 323, QStringLiteral("set_diagram_source"), ns);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QTest::qWait(80);
+        QVERIFY(!findCard());
+    }
+
+    void open_noter_reveals_panel() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QJsonObject r = call(s, 330, QStringLiteral("open_noter"));
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(r.value(QLatin1String("result")).toObject()
+                     .value(QLatin1String("opened")).toBool(), true);
+        QVERIFY(m_noterOpened);
+    }
+
     void find_in_tab_regex_flag() {
         // tab 0 text: "hello world\nSecond Line with Needle\n".
         QLocalSocket s;
@@ -2261,7 +2503,8 @@ private slots:
             QStringLiteral("git_status"),   QStringLiteral("run_sql"),
             QStringLiteral("open_note"),    QStringLiteral("create_note"),
             QStringLiteral("append_note"),  QStringLiteral("set_reminder"),
-            QStringLiteral("export_diagram")};
+            QStringLiteral("export_diagram"), QStringLiteral("create_diagram"),
+            QStringLiteral("set_diagram_source"), QStringLiteral("open_noter")};
         int id = 230;
         for (const QString &v : verbs) {
             QJsonObject args;
@@ -2271,6 +2514,16 @@ private slots:
             QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
             QVERIFY(!r.value(QLatin1String("error")).toString().isEmpty());
         }
+        // p0a verbs degrade to empty/false on a bare host, never error.
+        QJsonObject r = call(s, id++, QStringLiteral("list_languages"));
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(r.value(QLatin1String("result")).toObject()
+                     .value(QLatin1String("languages")).toArray().size(), 0);
+        r = call(s, id++, QStringLiteral("get_capabilities"));
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(r.value(QLatin1String("result")).toObject()
+                     .value(QLatin1String("features")).toObject()
+                     .value(QLatin1String("noter")).toBool(), false);
     }
 };
 
