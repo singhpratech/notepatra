@@ -46,6 +46,18 @@ struct Record {
     QString password;   // stored obscured at rest — see obfuscatePassword
     QString options;    // optional connection-options string
 
+    // v0.1.119 — engine-level filesystem sandbox for the MCP run_sql path.
+    // TRANSIENT / runtime-only (never serialized — see toJson/fromJson): set
+    // true ONLY by MainWindow's host.runSql so the untrusted MCP query cannot
+    // become an arbitrary-host-file-read primitive via DuckDB's replacement
+    // scan (SELECT * FROM '/etc/passwd') or its read_text/read_csv_auto/
+    // read_blob/glob table functions. When true, openDuckDbForRecord
+    // MATERIALIZES any CSV/Parquet/JSON source into a real in-memory table
+    // (file read exactly once) and then issues `SET enable_external_access=
+    // false` so the engine refuses every subsequent local-file access. Default
+    // false keeps every existing desktop caller byte-for-byte unchanged.
+    bool sandboxFilesystem = false;
+
     QJsonObject toJson() const;
     static Record fromJson(const QJsonObject &o);
 };
@@ -94,7 +106,14 @@ struct SqlVerdict {
                                    // verdict for the human-approval gate
     QString reason;                // why it was rejected (empty if readOnly)
 };
-SqlVerdict classifySql(const QString &sql);
+// `restrictFilesystem` (default false) additionally rejects call-form use of
+// DuckDB filesystem-reading table functions (read_text/read_csv_auto/
+// read_blob/read_parquet/glob/…). It is set true ONLY on the MCP run_sql
+// path, where the sandbox must not become an arbitrary-file-read primitive.
+// The desktop data-analyst leaves it false so a power user can still type
+// read_csv_auto('x.csv') directly. Legit CSV ingestion (Client::registerCsv)
+// never goes through classifySql, so this only affects user-typed SQL.
+SqlVerdict classifySql(const QString &sql, bool restrictFilesystem = false);
 
 // Convenience wrappers over classifySql.
 //   isReadOnlyQuery: safe to run in the default (no-approval) path.

@@ -123,6 +123,33 @@ int main(int argc, char *argv[]) {
               && err == "not_found");
     }
 
+    // ── run_sql csv_path confinement (v0.1.119 MCP fix) ──────────────
+    // The MCP run_sql host lambda confines csv_path with the SAME predicate:
+    //   AiTools::resolveSafePath(csvPath, wsRoot, ...) && QFileInfo(c).isFile()
+    // Pin that exact contract so csv_path can't become a file-read escape.
+    {
+        writeFile(ws + "/data.csv", "id,name\n1,a\n");
+        QDir(ws).mkpath("subdir");
+        auto csvAllowed = [&](const QString &p) {
+            QString c, e;
+            return AiTools::resolveSafePath(p, ws, &c, &e)
+                   && QFileInfo(c).isFile();
+        };
+        check("csv_path: in-workspace regular file allowed",
+              csvAllowed("data.csv"));
+        check("csv_path: ../../etc/passwd traversal rejected",
+              !csvAllowed("../../etc/passwd"));
+        check("csv_path: absolute /etc/passwd rejected",
+              !csvAllowed("/etc/passwd"));
+        check("csv_path: a directory (not a regular file) rejected",
+              !csvAllowed("subdir"));
+        check("csv_path: empty-workspace-root rejects everything",
+              [&] { QString c, e;
+                    return !(AiTools::resolveSafePath("data.csv", QString(),
+                                                      &c, &e)
+                             && QFileInfo(c).isFile()); }());
+    }
+
     // ── Layer 3: execute — read_file end-to-end ──────────────────────
     {
         AiTools::ToolCall call;

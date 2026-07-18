@@ -138,6 +138,9 @@ RESP=$TMP_HOME/responses.jsonl
     echo '{"jsonrpc":"2.0","id":9,"method":"resources/list"}'
     printf '{"jsonrpc":"2.0","id":10,"method":"resources/read","params":{"uri":"notepatra://tab/%s"}}\n' "$DOC_IDX"
     echo '{"jsonrpc":"2.0","id":11,"method":"prompts/get","params":{"name":"explain-selection"}}'
+    # v0.1.119 read verb against the live bridge: a fresh HOME has no reminders
+    # set, so this must return a well-formed (empty) reminders array.
+    echo '{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"list_reminders","arguments":{}}}'
 } | HOME=$TMP_HOME "$MCP_BIN" --socket > "$RESP" 2>"$TMP_HOME/mcp.log"
 
 if [ -s "$RESP" ]; then
@@ -187,11 +190,14 @@ check("initialize", r.get("protocolVersion") == "2025-06-18"
       and r.get("serverInfo", {}).get("name") == "notepatra-mcp",
       json.dumps(resp.get(1)))
 
-# 2: tools/list — all 18 tools present
+# 2: tools/list — all 35 tools present (22 from v0.1.118 + 13 from v0.1.119).
+# tools/list is served by the Rust sidecar itself, so the count is independent
+# of which verbs the live editor bridge implements.
 tools = [t["name"] for t in (result(2) or {}).get("tools", [])]
-check("tools/list (22 tools)", len(tools) == 22 and "read_note" in tools
+check("tools/list (35 tools)", len(tools) == 35 and "read_note" in tools
       and "insert_text" in tools and "save_tab" in tools
-      and "open_file" in tools, str(tools))
+      and "open_file" in tools and "list_reminders" in tools
+      and "git_status" in tools and "export_diagram" in tools, str(tools))
 
 # 3: list_open_tabs — our document is an open tab
 t = tool_text(3)
@@ -261,6 +267,14 @@ check("prompts/get explain-selection",
       bool(msgs) and msgs[0]["role"] == "user"
       and "Explain the following text" in msgs[0]["content"]["text"],
       json.dumps(resp.get(11)))
+
+# 12: tools/call list_reminders (v0.1.119) — live bridge returns a
+# well-formed reminders array (empty for a fresh HOME with no reminders set)
+t = tool_text(12)
+rem = json.loads(t) if t else None
+check("tools/call list_reminders (v0.1.119)",
+      isinstance(rem, dict) and isinstance(rem.get("reminders"), list),
+      t or json.dumps(resp.get(12)))
 
 sys.exit(1 if failed else 0)
 PYEOF

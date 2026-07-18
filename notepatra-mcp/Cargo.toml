@@ -1,9 +1,15 @@
 [package]
 name = "notepatra-mcp"
-version = "0.1.118"
+version = "0.1.119"
 edition = "2021"
 license = "GPL-3.0-or-later"
-description = "Model Context Protocol (MCP) stdio server for the Notepatra editor"
+description = "Model Context Protocol (MCP) stdio server for the Notepatra editor — 35 tools, human-approved writes, local-only"
+repository = "https://github.com/singhpratech/notepatra"
+homepage = "https://notepatra.org/"
+documentation = "https://notepatra.org/mcp.html"
+readme = "README.md"
+keywords = ["mcp", "mcp-server", "editor", "ai", "notepatra"]
+categories = ["command-line-utilities", "development-tools"]
 
 # Standalone on purpose: must never join a parent workspace or affect the app build.
 [workspace]

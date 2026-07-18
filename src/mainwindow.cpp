@@ -258,8 +258,15 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include "ollamastatus.h"
 #include "notes.h"
 #include "notes_reminder.h"
+#include "notes_todos.h"
+#include "notes_storage.h"
 #include <QSystemTrayIcon>
 #include "diagram/diagram_editor.h"
+#include "diagram/diagram_view.h"
+// v0.1.119 — MCP depth verbs reuse the real app code paths.
+#include "git_tools.h"
+#include "ai_tools.h"
+#include "dbconnections.h"
 #include "tool_colors.h"
 #include <QRegularExpression>
 #include <QFileDialog>
@@ -298,6 +305,30 @@ static QAction *findActionByPrefix(QObject *root, const QString &prefix) {
         if (action && action->text().startsWith(prefix)) return action;
     }
     return nullptr;
+}
+
+// v0.1.119 — inject plain text as escaped <p> paragraphs into a Noter note's
+// HTML body (used by the MCP create_note / append_note verbs). Insertion is
+// before </main> (the notes-body region), else before </body>. Text is
+// HTML-escaped and split per line so NotesStorage::saveNote's validate-body
+// (QXmlStreamReader) always sees well-formed markup — no bare entities.
+static QString mcpInjectNoteBody(QString html, const QString &text) {
+    if (text.isEmpty()) return html;
+    QString block;
+    const QStringList lines = text.split(QLatin1Char('\n'));
+    for (const QString &raw : lines) {
+        QString e = raw;
+        e.replace(QLatin1Char('&'), QLatin1String("&amp;"));
+        e.replace(QLatin1Char('<'), QLatin1String("&lt;"));
+        e.replace(QLatin1Char('>'), QLatin1String("&gt;"));
+        block += QStringLiteral("<p class=\"p\">%1</p>").arg(e);
+    }
+    int at = html.lastIndexOf(QStringLiteral("</main>"), -1, Qt::CaseInsensitive);
+    if (at < 0)
+        at = html.lastIndexOf(QStringLiteral("</body>"), -1, Qt::CaseInsensitive);
+    if (at < 0) return html + block;
+    html.insert(at, block);
+    return html;
 }
 
 static void drawAiFeatureGlyph(QPainter &painter, const QRectF &rect) {
@@ -1780,6 +1811,289 @@ MainWindow::MainWindow(bool standaloneNoSession)
             if (m_fileWatcher) {
                 const QString path = ed->filePath();
                 m_fileTimestamps[path] = QFileInfo(path).lastModified();
+            }
+            return true;
+        };
+        // ── v0.1.119 depth wave — each lambda reuses the SAME real code path
+        //    the equivalent feature uses (git_tools, DbConnections classifier
+        //    + runQuery, NotesStorage/NotesTodos, DiagramView export). ──
+        // READ: Noter reminders (unbucketed; the bridge buckets them).
+        host.reminders = [this]() -> QJsonArray {
+            ensureNoterReminderService(); // idempotent; guarantees m_noterTodos
+            QJsonArray arr;
+            if (!m_noterTodos) return arr;
+            const QVector<TodoRow> rows = m_noterTodos->allScheduledReminders();
+            for (const TodoRow &r : rows) {
+                if (!r.reminderAt.isValid()) continue;
+                QJsonObject o;
+                o[QStringLiteral("note_file")] =
+                    QDir::toNativeSeparators(r.sourceFile);
+                o[QStringLiteral("note_title")] =
+                    r.meetingTitle.isEmpty()
+                        ? QFileInfo(r.sourceFile).fileName()
+                        : r.meetingTitle;
+                o[QStringLiteral("due_iso")] =
+                    r.reminderAt.toUTC().toString(Qt::ISODate);
+                arr.append(o);
+            }
+            return arr;
+        };
+        // READ: read-only git — reuses git_tools.cpp (no new QProcess path).
+        host.runGit = [this](const QString &sub, const QJsonObject &args,
+                             QString *err) -> QString {
+            // Same anchor the AI Composer git tools use: Explorer root, else
+            // the current file's directory.
+            QString root = m_explorer ? m_explorer->rootPath() : QString();
+            if (root.isEmpty()) {
+                if (auto *ed = currentEditor())
+                    if (!ed->filePath().isEmpty())
+                        root = QFileInfo(ed->filePath()).absolutePath();
+            }
+            if (root.isEmpty()) {
+                if (err) *err = QStringLiteral("no workspace folder open");
+                return QString();
+            }
+            QJsonObject a = args;
+            if (sub == QLatin1String("log") &&
+                a.contains(QLatin1String("limit")))
+                a[QStringLiteral("max_count")] = a.value(QLatin1String("limit"));
+            if (sub == QLatin1String("show") &&
+                a.contains(QLatin1String("ref")))
+                a[QStringLiteral("commit")] = a.value(QLatin1String("ref"));
+            AiTools::ToolCall call;
+            call.name = QStringLiteral("git_") + sub;
+            call.args = a;
+            AiTools::ToolResult res;
+            if (sub == QLatin1String("status"))
+                res = GitTools::executeGitStatus(call, root);
+            else if (sub == QLatin1String("diff"))
+                res = GitTools::executeGitDiff(call, root);
+            else if (sub == QLatin1String("log"))
+                res = GitTools::executeGitLog(call, root);
+            else if (sub == QLatin1String("show"))
+                res = GitTools::executeGitShow(call, root);
+            else if (sub == QLatin1String("branch"))
+                res = GitTools::executeGitBranchList(call, root);
+            else {
+                if (err) *err = QStringLiteral("unknown git subcommand");
+                return QString();
+            }
+            if (res.isError) {
+                const QJsonObject body =
+                    QJsonDocument::fromJson(res.content.toUtf8()).object();
+                QString msg = body.value(QLatin1String("message")).toString();
+                if (msg.isEmpty())
+                    msg = res.errorKind.isEmpty()
+                              ? QStringLiteral("git error")
+                              : res.errorKind;
+                if (err) *err = msg;
+                return QString();
+            }
+            return res.content;
+        };
+        // READ: .npd source of a diagram tab (for validate_npd tab_index).
+        host.diagramSource = [this](int i, QString *out) -> bool {
+            auto *de = qobject_cast<DiagramEditor *>(m_tabs->widget(i));
+            if (!de) return false;
+            if (out) *out = de->npdText();
+            return true;
+        };
+        // READ: SELECT-only SQL through the REAL classifier + runQuery.
+        host.runSql = [this](const QString &sql, const QString &csvPath,
+                             QString *err) -> QJsonObject {
+            // restrictFilesystem=true: the MCP sandbox must never become an
+            // arbitrary-file-read primitive via DuckDB's read_text/read_csv_auto/
+            // read_blob/… table functions (all read-only SQL, so the base
+            // classifier passes them). The desktop data-analyst calls classifySql
+            // WITHOUT this flag, so a power user typing read_csv_auto('x.csv')
+            // in the SQL console is unaffected.
+            const DbConnections::SqlVerdict v =
+                DbConnections::classifySql(sql, /*restrictFilesystem=*/true);
+            if (!(v.singleStatement && v.readOnly)) {
+                if (err)
+                    *err = v.reason.isEmpty()
+                        ? QStringLiteral("query is not read-only (SELECT only)")
+                        : QStringLiteral("query rejected: %1").arg(v.reason);
+                return QJsonObject();
+            }
+            DbConnections::Record rec;
+            QString engine;
+            if (!csvPath.isEmpty()) {
+#ifdef NOTEPATRA_HAVE_DUCKDB
+                // Confine csv_path to the workspace root the git verbs use
+                // (FileExplorer::rootPath), via the SAME resolveSafePath helper:
+                // canonicalize + symlink-escape rejection + credential deny-list.
+                // Also require an EXISTING regular file (resolveSafePath already
+                // rejects non-existent paths; the isFile() guard blocks a
+                // directory canonicalizing cleanly). When no folder root is open
+                // the root is empty and resolveSafePath rejects everything —
+                // matching the git verbs' behavior.
+                const QString wsRoot =
+                    m_explorer ? m_explorer->rootPath() : QString();
+                QString csvCanon;
+                if (!AiTools::resolveSafePath(csvPath, wsRoot, &csvCanon,
+                                              nullptr)
+                    || !QFileInfo(csvCanon).isFile()) {
+                    if (err) *err = QStringLiteral("csv_path is not an allowed file");
+                    return QJsonObject();
+                }
+                rec.driver = QStringLiteral("DUCKDB");
+                rec.database = csvCanon;
+                // Engine-level filesystem sandbox — the AUTHORITATIVE control
+                // that stops this MCP path becoming an arbitrary-host-file-read
+                // primitive. openDuckDbForRecord materializes the CSV into an
+                // in-memory table (one read) then issues `SET
+                // enable_external_access=false`, so the untrusted SQL can query
+                // `data` but the DuckDB replacement scan (SELECT * FROM
+                // '/etc/passwd') and read_text/read_csv_auto/read_blob/glob all
+                // fail at the engine — the classifier denylist is now only
+                // defense-in-depth.
+                rec.sandboxFilesystem = true;
+                engine = QStringLiteral("duckdb");
+#else
+                if (err)
+                    *err = QStringLiteral(
+                        "CSV queries require the Full edition (DuckDB)");
+                return QJsonObject();
+#endif
+            } else {
+                rec.driver = QStringLiteral("QSQLITE");
+                rec.database = QStringLiteral(":memory:");
+                engine = QStringLiteral("sqlite");
+            }
+            // Fetch one past the bridge's 200-row cap so truncation is exact;
+            // allowMutation=false is the second, engine-level read-only gate.
+            const DbConnections::QueryResult qr =
+                DbConnections::runQuery(rec, sql, 201, false, nullptr);
+            if (!qr.ok) {
+                if (err)
+                    *err = qr.error.isEmpty() ? QStringLiteral("query failed")
+                                              : qr.error;
+                return QJsonObject();
+            }
+            QJsonArray cols;
+            for (const QString &c : qr.columns) cols.append(c);
+            QJsonArray rows;
+            for (const QVector<QString> &row : qr.rows) {
+                QJsonArray jr;
+                for (const QString &cell : row) jr.append(cell);
+                rows.append(jr);
+            }
+            QJsonObject out;
+            out[QStringLiteral("columns")] = cols;
+            out[QStringLiteral("rows")] = rows;
+            out[QStringLiteral("truncated")] = qr.truncated;
+            out[QStringLiteral("engine")] = engine;
+            return out;
+        };
+        // ACT: open a Noter note in the Noter tab (path already root-confined).
+        host.openNote = [this](const QString &absFile,
+                               QString *err) -> QString {
+            NotesPanel *noter = ensureNoterTab();
+            if (!noter) {
+                if (err) *err = QStringLiteral("could not open Noter");
+                return QString();
+            }
+            int idx = -1;
+            findNoterPanel(&idx);
+            if (idx >= 0) m_tabs->setCurrentIndex(idx);
+            noter->openNoteFile(absFile);
+            NotesStorage storage(NotesPanel::defaultNotesFolder());
+            return storage.displayTitleForFile(absFile);
+        };
+        // WRITE: create a Noter note the way Noter does (Inbox, shell HTML).
+        host.createNote = [this](const QString &title, const QString &body,
+                                 QString *err) -> QString {
+            const QString root = NotesPanel::defaultNotesFolder();
+            const QString inbox = root + QStringLiteral("/Inbox");
+            QDir().mkpath(inbox);
+            NotesStorage storage(root);
+            const QDateTime now = QDateTime::currentDateTime();
+            QString html = storage.newNoteHtml(title, now, QStringList());
+            html = mcpInjectNoteBody(html, body);
+            html = NotesStorage::withTitleMeta(html, title);
+            const QString stamp =
+                now.toString(QStringLiteral("yyyy-MM-dd-hhmmss"));
+            QString abs;
+            for (int seq = 1; seq < 1000; ++seq) {
+                abs = inbox + QLatin1Char('/') +
+                      QStringLiteral("%1-noter-%2.html")
+                          .arg(stamp)
+                          .arg(seq, 2, 10, QLatin1Char('0'));
+                if (!QFileInfo::exists(abs)) break;
+            }
+            QString saveErr;
+            if (!storage.saveNote(abs, html, &saveErr)) {
+                if (err)
+                    *err = saveErr.isEmpty()
+                               ? QStringLiteral("could not save note")
+                               : saveErr;
+                return QString();
+            }
+            if (NotesPanel *np = findNoterPanel()) np->refreshFromDisk();
+            return QFileInfo(abs).absoluteFilePath();
+        };
+        // WRITE: append a paragraph to an existing note (root-confined).
+        host.appendNote = [this](const QString &absFile, const QString &text,
+                                 QString *err) -> bool {
+            NotesStorage storage(NotesPanel::defaultNotesFolder());
+            QString readErr;
+            QString html = storage.readNote(absFile, &readErr);
+            if (html.isEmpty()) {
+                if (err)
+                    *err = readErr.isEmpty()
+                               ? QStringLiteral("could not read note")
+                               : readErr;
+                return false;
+            }
+            html = mcpInjectNoteBody(html, text);
+            QString saveErr;
+            if (!storage.saveNote(absFile, html, &saveErr)) {
+                if (err)
+                    *err = saveErr.isEmpty()
+                               ? QStringLiteral("could not save note")
+                               : saveErr;
+                return false;
+            }
+            storage.invalidateTitleCache(absFile);
+            if (NotesPanel *np = findNoterPanel()) np->refreshFromDisk();
+            return true;
+        };
+        // WRITE: bind a reminder to a note exactly like the UI does.
+        host.setReminder = [this](const QString &absFile, const QDateTime &due,
+                                  QString *err) -> bool {
+            ensureNoterReminderService();
+            if (!m_noterTodos) {
+                if (err) *err = QStringLiteral("reminder store unavailable");
+                return false;
+            }
+            NotesStorage storage(NotesPanel::defaultNotesFolder());
+            QString title = storage.displayTitleForFile(absFile);
+            if (title.isEmpty()) title = QFileInfo(absFile).fileName();
+            const QString rid =
+                m_noterTodos->setNoteReminder(absFile, title, due);
+            if (rid.isEmpty()) {
+                if (err) *err = QStringLiteral("could not set reminder");
+                return false;
+            }
+            if (NotesPanel *np = findNoterPanel()) np->refreshFromDisk();
+            return true;
+        };
+        // WRITE: render an open .npd tab off-screen via DiagramView::exportTo.
+        host.exportDiagram = [this](int i, const QString &path,
+                                    const QString &format,
+                                    QString *err) -> bool {
+            auto *de = qobject_cast<DiagramEditor *>(m_tabs->widget(i));
+            if (!de) {
+                if (err) *err = QStringLiteral("not a diagram tab");
+                return false;
+            }
+            DiagramView view; // off-screen; same route as npd_render_qt.cpp
+            view.resize(1000, 800);
+            view.setSource(de->npdText());
+            if (!view.exportTo(format, path)) {
+                if (err) *err = QStringLiteral("export failed");
+                return false;
             }
             return true;
         };

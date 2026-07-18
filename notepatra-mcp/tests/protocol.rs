@@ -125,9 +125,24 @@ fn tools_list_shape() {
             "insert_text",
             "replace_selection",
             "apply_edit",
-            "save_tab"
+            "save_tab",
+            // v0.1.119 — 13 new tools (read / act / write tiers)
+            "list_reminders",
+            "git_status",
+            "git_diff",
+            "git_log",
+            "git_show",
+            "git_branch",
+            "validate_npd",
+            "run_sql",
+            "open_note",
+            "create_note",
+            "append_note",
+            "set_reminder",
+            "export_diagram"
         ]
     );
+    assert_eq!(names.len(), 35);
     for tool in tools {
         assert!(tool["description"].as_str().is_some_and(|d| !d.is_empty()));
         let schema = &tool["inputSchema"];
@@ -578,8 +593,17 @@ fn write_tool_descriptions_state_the_approval_gate() {
     let responses =
         run_lines(&[json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }).to_string()]);
     let tools = responses[0]["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 22);
-    let write_tools = ["insert_text", "replace_selection", "apply_edit", "save_tab"];
+    assert_eq!(tools.len(), 35);
+    let write_tools = [
+        "insert_text",
+        "replace_selection",
+        "apply_edit",
+        "save_tab",
+        "create_note",
+        "append_note",
+        "set_reminder",
+        "export_diagram",
+    ];
     for tool in tools {
         let name = tool["name"].as_str().unwrap();
         let description = tool["description"].as_str().unwrap();
@@ -832,6 +856,329 @@ fn serverinfo_version_env_override_wins() {
         responses[0]["result"]["serverInfo"]["version"],
         "9.9.9-test"
     );
+}
+
+// ---------------------------------------------------------------------------
+// v0.1.119 "MCP depth" — 13 new tools + regex flag
+// ---------------------------------------------------------------------------
+
+const RELEASE_NOTE: &str = "/home/user/Documents/Notepatra/Noter/release-checklist.html";
+
+#[test]
+fn v0119_read_tools_happy_paths() {
+    let responses = run_lines(&[
+        call_line(1, "list_reminders", json!({})),
+        call_line(2, "git_status", json!({})),
+        call_line(3, "git_diff", json!({})),
+        call_line(4, "git_diff", json!({ "path": "src/tools.rs" })),
+        call_line(5, "git_log", json!({})),
+        call_line(6, "git_log", json!({ "limit": 2 })),
+        call_line(7, "git_show", json!({ "ref": "4d32cc8" })),
+        call_line(8, "git_branch", json!({})),
+        call_line(9, "validate_npd", json!({ "source": "node a\nnode b\n" })),
+        call_line(10, "run_sql", json!({ "sql": "SELECT id, name FROM t" })),
+    ]);
+    for r in &responses {
+        assert_eq!(r["result"]["isError"], false, "unexpected error in {r}");
+    }
+    // list_reminders: four temporal buckets, each bound to a note file
+    // (bridge keys: note_file / note_title).
+    let reminders = json_of(&responses[0]);
+    let list = reminders["reminders"].as_array().unwrap();
+    assert_eq!(list.len(), 4);
+    let buckets: Vec<&str> = list.iter().map(|r| r["bucket"].as_str().unwrap()).collect();
+    assert_eq!(buckets, ["Overdue", "Today", "This week", "Later"]);
+    assert!(list[0]["note_file"].as_str().unwrap().ends_with(".html"));
+    assert!(list[0]["note_title"].as_str().is_some());
+    assert!(list[0]["due_iso"].as_str().unwrap().contains('T'));
+    // git verbs: raw CLI text under a single "output" key.
+    assert!(json_of(&responses[1])["output"]
+        .as_str()
+        .unwrap()
+        .contains("branch"));
+    assert!(json_of(&responses[2])["output"]
+        .as_str()
+        .unwrap()
+        .contains("diff --git"));
+    assert!(json_of(&responses[3])["output"]
+        .as_str()
+        .unwrap()
+        .contains("src/tools.rs"));
+    // git_log: default limit returns text; limit=2 caps to two lines.
+    assert!(!json_of(&responses[4])["output"]
+        .as_str()
+        .unwrap()
+        .is_empty());
+    let log2 = json_of(&responses[5]);
+    assert_eq!(log2["output"].as_str().unwrap().trim().lines().count(), 2);
+    // git_show: echoes the ref inside the output text.
+    assert!(json_of(&responses[6])["output"]
+        .as_str()
+        .unwrap()
+        .contains("4d32cc8"));
+    // git_branch: output lists branches.
+    assert!(json_of(&responses[7])["output"]
+        .as_str()
+        .unwrap()
+        .contains("main"));
+    // validate_npd on clean source: valid, no errors.
+    let npd = json_of(&responses[8]);
+    assert_eq!(npd["valid"], true);
+    assert!(npd["errors"].as_array().unwrap().is_empty());
+    // run_sql SELECT: columns + rows + truncated + engine.
+    let sql = json_of(&responses[9]);
+    assert_eq!(sql["columns"], json!(["id", "name"]));
+    assert_eq!(sql["truncated"], false);
+    assert!(sql["engine"].as_str().is_some());
+    assert_eq!(sql["rows"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn validate_npd_reports_parse_errors_and_reads_a_tab() {
+    let responses = run_lines(&[
+        // Source with a malformed "!!" directive on line 2.
+        call_line(
+            1,
+            "validate_npd",
+            json!({ "source": "ok line\n!! bad directive\n" }),
+        ),
+        // Also works against an open tab (the mock's main.rs at index 0).
+        call_line(2, "validate_npd", json!({ "tab_index": 0 })),
+    ]);
+    let npd = json_of(&responses[0]);
+    assert_eq!(npd["valid"], false);
+    let errors = npd["errors"].as_array().unwrap();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0]["line"], 2);
+    assert_eq!(errors[0]["message"], "unknown directive");
+    // Reading a tab's (valid) content parses clean.
+    assert_eq!(json_of(&responses[1])["valid"], true);
+}
+
+#[test]
+fn validate_npd_requires_exactly_one_selector() {
+    let responses = run_lines(&[
+        call_line(1, "validate_npd", json!({})), // neither
+        call_line(2, "validate_npd", json!({ "tab_index": 0, "source": "x" })), // both
+    ]);
+    for r in &responses {
+        assert_eq!(r["error"]["code"], -32602, "expected -32602 in {r}");
+    }
+}
+
+#[test]
+fn run_sql_rejects_non_select_statements() {
+    let responses = run_lines(&[
+        call_line(1, "run_sql", json!({ "sql": "UPDATE t SET x = 1" })),
+        call_line(2, "run_sql", json!({ "sql": "DROP TABLE t" })),
+    ]);
+    for r in &responses {
+        assert_eq!(r["result"]["isError"], true, "expected isError in {r}");
+        assert!(text_of(r).contains("SELECT"));
+    }
+}
+
+#[test]
+fn open_note_opens_a_tab_and_errors_on_unknown() {
+    let responses = run_lines(&[
+        call_line(1, "open_note", json!({ "file": RELEASE_NOTE })),
+        call_line(2, "open_note", json!({ "file": "/no/such/note.html" })),
+    ]);
+    let opened = json_of(&responses[0]);
+    assert_eq!(opened["opened"], true);
+    // Bridge shape: {opened, title}.
+    assert!(opened["title"].as_str().is_some());
+    assert_eq!(responses[1]["result"]["isError"], true);
+    assert!(text_of(&responses[1]).contains("no note named"));
+}
+
+#[test]
+fn v0119_write_tools_happy_paths() {
+    let responses = run_lines(&[
+        call_line(
+            1,
+            "create_note",
+            json!({ "title": "New Note", "body": "hello body" }),
+        ),
+        call_line(
+            2,
+            "append_note",
+            json!({ "file": RELEASE_NOTE, "text": "\n- one more" }),
+        ),
+        call_line(
+            3,
+            "set_reminder",
+            json!({ "file": RELEASE_NOTE, "due_iso": "2026-07-20T09:00:00Z" }),
+        ),
+        call_line(
+            4,
+            "export_diagram",
+            json!({ "tab_index": 0, "path": "/tmp/out.png", "format": "png" }),
+        ),
+        // The created note now exists and is readable.
+        call_line(5, "list_reminders", json!({})),
+    ]);
+    for r in &responses {
+        assert_eq!(r["result"]["isError"], false, "unexpected error in {r}");
+    }
+    // Bridge write-verb result shapes (v0.1.119, byte-exact with mcp_bridge).
+    let created = json_of(&responses[0]);
+    assert!(created["file"].as_str().unwrap().ends_with(".html"));
+    assert!(created["file"].as_str().unwrap().contains("Noter"));
+    assert_eq!(created["title"], "New Note");
+    assert_eq!(json_of(&responses[1]), json!({ "file": RELEASE_NOTE }));
+    assert_eq!(
+        json_of(&responses[2]),
+        json!({ "file": RELEASE_NOTE, "due_iso": "2026-07-20T09:00:00Z" })
+    );
+    assert_eq!(json_of(&responses[3]), json!({ "path": "/tmp/out.png" }));
+    // set_reminder added a fifth reminder.
+    assert_eq!(
+        json_of(&responses[4])["reminders"]
+            .as_array()
+            .unwrap()
+            .len(),
+        5
+    );
+}
+
+#[test]
+fn v0119_write_tool_descriptions_state_the_approval_gate() {
+    // Belt-and-suspenders alongside the count test: the four new write tools
+    // carry the exact approval sentence.
+    let responses =
+        run_lines(&[json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }).to_string()]);
+    let tools = responses[0]["result"]["tools"].as_array().unwrap();
+    for name in [
+        "create_note",
+        "append_note",
+        "set_reminder",
+        "export_diagram",
+    ] {
+        let tool = tools.iter().find(|t| t["name"] == name).unwrap();
+        assert!(
+            tool["description"]
+                .as_str()
+                .unwrap()
+                .contains(APPROVAL_SENTENCE),
+            "{name} must state the approval gate"
+        );
+    }
+    // The new read/act tools must NOT claim an approval gate.
+    for name in ["list_reminders", "git_status", "run_sql", "open_note"] {
+        let tool = tools.iter().find(|t| t["name"] == name).unwrap();
+        assert!(
+            !tool["description"]
+                .as_str()
+                .unwrap()
+                .contains("click Approve"),
+            "{name} must not claim an approval gate"
+        );
+    }
+}
+
+#[test]
+fn v0119_write_tools_denied_and_timed_out_pass_through_verbatim() {
+    for (mode, expected) in [
+        (ApprovalMode::Deny, "denied by user"),
+        (ApprovalMode::Timeout, "approval timed out"),
+    ] {
+        let mut editor = MockEditor::default();
+        editor.set_approval(mode);
+        let responses = run_lines_with(
+            editor,
+            &[
+                call_line(1, "create_note", json!({ "title": "t", "body": "b" })),
+                call_line(
+                    2,
+                    "append_note",
+                    json!({ "file": RELEASE_NOTE, "text": "x" }),
+                ),
+                call_line(
+                    3,
+                    "set_reminder",
+                    json!({ "file": RELEASE_NOTE, "due_iso": "2026-07-20T09:00:00Z" }),
+                ),
+                call_line(
+                    4,
+                    "export_diagram",
+                    json!({ "tab_index": 0, "path": "/tmp/o.pdf", "format": "pdf" }),
+                ),
+            ],
+        );
+        for r in &responses {
+            assert_eq!(r["result"]["isError"], true, "expected isError in {r}");
+            assert_eq!(text_of(r), expected);
+        }
+    }
+}
+
+#[test]
+fn v0119_write_tools_malformed_arguments_are_invalid_params() {
+    let responses = run_lines(&[
+        call_line(1, "create_note", json!({ "title": "t" })), // missing body
+        call_line(2, "append_note", json!({ "file": RELEASE_NOTE })), // missing text
+        call_line(3, "set_reminder", json!({ "file": RELEASE_NOTE })), // missing due_iso
+        call_line(
+            4,
+            "export_diagram",
+            json!({ "tab_index": 0, "path": "/tmp/o.gif", "format": "gif" }),
+        ), // bad format
+        call_line(
+            5,
+            "export_diagram",
+            json!({ "path": "/tmp/o.png", "format": "png" }),
+        ), // missing tab_index
+        call_line(6, "git_show", json!({})),                  // missing ref
+        call_line(7, "git_log", json!({ "limit": 0 })),       // < 1
+        call_line(8, "run_sql", json!({})),                   // missing sql
+        call_line(9, "open_note", json!({ "file": 3 })),      // mistyped
+        call_line(10, "list_reminders", json!({ "bogus": 1 })), // extra key
+    ]);
+    for r in &responses {
+        assert_eq!(r["error"]["code"], -32602, "expected -32602 in {r}");
+    }
+}
+
+#[test]
+fn regex_flag_is_validated_on_find_and_search() {
+    let responses = run_lines(&[
+        // Valid regex flag: accepted (mock falls back to substring matching).
+        call_line(
+            1,
+            "find_in_tab",
+            json!({ "query": "main", "tab_index": 0, "regex": true }),
+        ),
+        call_line(
+            2,
+            "search_project",
+            json!({ "query": "lexer", "regex": true }),
+        ),
+        // Invalid patterns: the server rejects them as tool errors.
+        call_line(
+            3,
+            "find_in_tab",
+            json!({ "query": "unbalanced(", "tab_index": 0, "regex": true }),
+        ),
+        call_line(
+            4,
+            "search_project",
+            json!({ "query": "bad[", "regex": true }),
+        ),
+        // regex:false (default) never validates — a bare "(" is a literal.
+        call_line(
+            5,
+            "find_in_tab",
+            json!({ "query": "(", "tab_index": 0, "regex": false }),
+        ),
+    ]);
+    assert_eq!(responses[0]["result"]["isError"], false);
+    assert_eq!(responses[1]["result"]["isError"], false);
+    assert_eq!(responses[2]["result"]["isError"], true);
+    assert!(text_of(&responses[2]).contains("invalid regular expression"));
+    assert_eq!(responses[3]["result"]["isError"], true);
+    assert!(text_of(&responses[3]).contains("invalid regular expression"));
+    assert_eq!(responses[4]["result"]["isError"], false);
 }
 
 #[test]

@@ -515,6 +515,25 @@ static const QSet<QString> &sideEffectFunctions() {
     return k;
 }
 
+// DuckDB filesystem-READING table functions (Full edition). These are
+// read-only by SQL semantics, so the read-only classifier passes them — but
+// on the MCP run_sql path that makes the sandbox an arbitrary-file-read
+// primitive (SELECT * FROM read_text('/home/user/.ssh/id_rsa')). Rejected
+// ONLY when restrictFilesystem is true (the MCP path), matched call-form only
+// (name immediately followed by '(') so a column/string named the same stays
+// safe. Legit ingestion (Client::registerCsv) builds its view in TRUSTED code
+// that never calls classifySql, so this denylist never touches ingestion.
+static const QSet<QString> &fileReadingFunctions() {
+    static const QSet<QString> k = {
+        "READ_CSV", "READ_CSV_AUTO", "READ_TEXT", "READ_TEXT_AUTO",
+        "READ_BLOB", "READ_PARQUET", "READ_JSON", "READ_JSON_AUTO",
+        "READ_JSON_OBJECTS", "READ_NDJSON", "GLOB", "SNIFF_CSV",
+        "PARQUET_METADATA", "PARQUET_SCHEMA", "PARQUET_FILE_METADATA",
+        "PARQUET_KV_METADATA"
+    };
+    return k;
+}
+
 // Data-modifying / side-effecting keywords. If any appears as a token in a
 // (comment/literal-stripped) statement it is not read-only — this is what
 // catches DML embedded in a CTE or behind EXPLAIN.
@@ -586,7 +605,8 @@ static const QSet<QString> &settablePragmas() {
 // Classify one already-stripped statement. Sets *mutation / *readOnly and, on
 // rejection, *why.
 static void classifyOneStatement(const QString &stmt, bool *mutation,
-                                 bool *readOnly, QString *why) {
+                                 bool *readOnly, QString *why,
+                                 bool restrictFilesystem = false) {
     const QStringList toks = wordTokens(stmt);
     const QVector<StructToken> stoks = structTokens(stmt);
     *mutation = false;
@@ -616,6 +636,16 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
             if (why) *why = QStringLiteral(
                 "call to the side-effecting function '%1' requires approval")
                 .arg(tk.text);
+            return;
+        }
+        // MCP run_sql path only: DuckDB filesystem-reading functions are a
+        // read-only SQL construct the classifier would otherwise pass, but
+        // they leak arbitrary files. Reject call-form use; a column/string
+        // literal of the same name (callsFunction==false) stays safe.
+        if (restrictFilesystem && tk.callsFunction
+            && fileReadingFunctions().contains(tk.text)) {
+            if (why) *why = QStringLiteral(
+                "filesystem-reading function '%1' is not allowed").arg(tk.text);
             return;
         }
         if (tk.text == QStringLiteral("NEXT") && idx + 2 < stoks.size()
@@ -704,7 +734,7 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
     *readOnly = true;
 }
 
-SqlVerdict classifySql(const QString &sql) {
+SqlVerdict classifySql(const QString &sql, bool restrictFilesystem) {
     SqlVerdict v;
     const QStringList stmts = splitStatements(stripSqlNoise(sql));
     if (stmts.isEmpty()) {
@@ -719,7 +749,7 @@ SqlVerdict classifySql(const QString &sql) {
     for (const QString &st : stmts) {
         bool mut = false, ro = false;
         QString why;
-        classifyOneStatement(st, &mut, &ro, &why);
+        classifyOneStatement(st, &mut, &ro, &why, restrictFilesystem);
         if (mut) anyMutation = true;
         if (!ro) {
             allReadOnly = false;
@@ -837,17 +867,24 @@ bool openDuckDbForRecord(const Record &r, bool allowMutation,
         registerJson = dbField;
     }  // else: leave as :memory: and let user reference via SQL
 
+    // v0.1.119 — MCP filesystem sandbox. When set, ingest by MATERIALIZING the
+    // source into a real in-memory table (read the file exactly once) so that,
+    // after the engine-level lockdown below, the untrusted query can still
+    // `SELECT * FROM data` but can no longer reach the disk. A VIEW would
+    // re-scan the file on query and fail once external access is off.
+    const bool sandbox = r.sandboxFilesystem;
+
     QString openErr;
     if (!client.open(openPath, &openErr, openReadOnly))
         return fail(openErr, QStringLiteral("open_failed"));
     if (!registerCsv.isEmpty()
-        && !client.registerCsv(registerCsv, "data", &openErr))
+        && !client.registerCsv(registerCsv, "data", &openErr, sandbox))
         return fail(openErr, QStringLiteral("open_failed"));
     if (!registerParquet.isEmpty()
-        && !client.registerParquet(registerParquet, "data", &openErr))
+        && !client.registerParquet(registerParquet, "data", &openErr, sandbox))
         return fail(openErr, QStringLiteral("open_failed"));
     if (!registerJson.isEmpty()
-        && !client.registerJson(registerJson, "data", &openErr))
+        && !client.registerJson(registerJson, "data", &openErr, sandbox))
         return fail(openErr, QStringLiteral("open_failed"));
     if (isS3) {
         // r.options encodes: region;access_key_id;secret;session_token
@@ -856,6 +893,12 @@ bool openDuckDbForRecord(const Record &r, bool allowMutation,
                                 parts.value(2), parts.value(3), &openErr))
             return fail(openErr, QStringLiteral("open_failed"));
     }
+    // Lock down the engine LAST — after every legitimate ingestion has read its
+    // file. This is the authoritative control that closes the MCP run_sql
+    // arbitrary-file-read hole (replacement scan + quoted read_text/read_csv_auto
+    // /read_blob/glob), independent of the SQL string classifier.
+    if (sandbox && !client.disableExternalAccess(&openErr))
+        return fail(openErr, QStringLiteral("open_failed"));
     return true;
 }
 #endif  // NOTEPATRA_HAVE_DUCKDB

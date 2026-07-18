@@ -2730,6 +2730,12 @@ void NotesPanel::openNoteFile(const QString &absolutePath) {
     refreshSidebar();
 }
 
+// v0.1.119 — minimal public wrapper so the MCP bridge (via MainWindow) can
+// refresh an open panel after an out-of-band create/append/set-reminder.
+void NotesPanel::refreshFromDisk() {
+    refreshSidebar();
+}
+
 // M2c — the Stay / Discard / Save-a-copy… guard shared by every
 // navigate-away path. Returns false when the caller must ABORT (Stay, or a
 // cancelled/failed "Save a copy…") so the dirty delta stays in the editor.

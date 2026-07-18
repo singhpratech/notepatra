@@ -92,8 +92,9 @@ pub fn definitions() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "query": { "type": "string", "description": "Literal text to search for" },
-                    "max_results": { "type": "integer", "minimum": 1, "description": "Maximum matches to return (default 50; values above 200 are clamped to the editor's 200-result cap)" }
+                    "query": { "type": "string", "description": "Literal text to search for (or a regular expression when regex is true)" },
+                    "max_results": { "type": "integer", "minimum": 1, "description": "Maximum matches to return (default 50; values above 200 are clamped to the editor's 200-result cap)" },
+                    "regex": { "type": "boolean", "description": "When true, query is a Qt-compatible regular expression; the server rejects an invalid pattern (default false: literal substring)" }
                 },
                 "required": ["query"],
                 "additionalProperties": false
@@ -126,7 +127,8 @@ pub fn definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" },
-                    "query": { "type": "string", "description": "Literal text to search for" }
+                    "query": { "type": "string", "description": "Literal text to search for (or a regular expression when regex is true)" },
+                    "regex": { "type": "boolean", "description": "When true, query is a Qt-compatible regular expression; the server rejects an invalid pattern (default false: literal substring)" }
                 },
                 "required": ["query"],
                 "additionalProperties": false
@@ -270,6 +272,163 @@ pub fn definitions() -> Value {
                 "required": [],
                 "additionalProperties": false
             }
+        },
+        // ── v0.1.119 read tier ──────────────────────────────────────────
+        {
+            "name": "list_reminders",
+            "description": "List the user's Noter reminders, each tagged with a time bucket (Overdue, Today, This week, or Later), the note file it is bound to, and its due time. Use to see what the user has scheduled before acting on it.",
+            "inputSchema": no_args_schema()
+        },
+        {
+            "name": "git_status",
+            "description": "Get the Git status of the workspace repository: current branch, ahead/behind counts, and staged, unstaged, and untracked paths. Use to see what has changed before diffing or committing.",
+            "inputSchema": no_args_schema()
+        },
+        {
+            "name": "git_diff",
+            "description": "Get the Git diff of the workspace repository (all changes, or just one path). Use after git_status to inspect exactly what changed.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "Restrict the diff to this repo-relative or absolute path (default: the whole working tree)" }
+                },
+                "required": [],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "git_log",
+            "description": "List recent Git commits (hash, author, date, subject), most recent first. Use to review history before referencing a commit with git_show.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "limit": { "type": "integer", "minimum": 1, "description": "How many commits to return (default 20; values above 100 are clamped to 100)" }
+                },
+                "required": [],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "git_show",
+            "description": "Show one Git commit by ref (hash, branch, or tag): author, date, message, and diff. Use to inspect a specific commit found via git_log.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "ref": { "type": "string", "description": "Commit reference: a hash, branch, or tag" }
+                },
+                "required": ["ref"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "git_branch",
+            "description": "List the workspace repository's local branches and which one is currently checked out. Use to orient before referencing branches.",
+            "inputSchema": no_args_schema()
+        },
+        {
+            "name": "validate_npd",
+            "description": "Validate a Notepatra Diagram (.npd) document and return whether it parses plus any errors with line and column. Provide exactly one of tab_index (validate an open tab) or source (validate a string). Use before export_diagram to confirm the diagram is well-formed.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based index of an open tab holding the .npd source" },
+                    "source": { "type": "string", "description": "The .npd document text to validate directly" }
+                },
+                "required": [],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "run_sql",
+            "description": "Run a read-only SQL query against the editor's data engine and return columns and rows. SELECT-only: any non-read statement (INSERT/UPDATE/DELETE/DDL) is rejected by the editor and returns an error. Optionally query a CSV file by path instead of the open database.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "sql": { "type": "string", "description": "A read-only SQL SELECT (or WITH) statement; non-read statements are rejected by the editor" },
+                    "csv_path": { "type": "string", "description": "Absolute path of a CSV file to query instead of the open database (default: the editor's current data source)" }
+                },
+                "required": ["sql"],
+                "additionalProperties": false
+            }
+        },
+        // ── v0.1.119 act tier ───────────────────────────────────────────
+        {
+            "name": "open_note",
+            "description": "Open a Noter note in the editor by its file path (as returned by list_notes or list_reminders). Use to bring a note on screen for the user to read or edit.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string", "description": "Absolute note file path (ends in .html)" }
+                },
+                "required": ["file"],
+                "additionalProperties": false
+            }
+        },
+        // ── v0.1.119 write tier ─────────────────────────────────────────
+        {
+            "name": "create_note",
+            "description": format!(
+                "Create a new Noter note with a title and body and return its file path. \
+                 {APPROVAL_NOTE}"
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string", "description": "The note's title" },
+                    "body": { "type": "string", "description": "The note's initial body text" }
+                },
+                "required": ["title", "body"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "append_note",
+            "description": format!(
+                "Append text to an existing Noter note, identified by its file path. \
+                 {APPROVAL_NOTE}"
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string", "description": "Absolute note file path from list_notes (ends in .html)" },
+                    "text": { "type": "string", "description": "Text to append to the note" }
+                },
+                "required": ["file", "text"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "set_reminder",
+            "description": format!(
+                "Set a reminder on a Noter note (identified by its file path) for a due time. \
+                 {APPROVAL_NOTE}"
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string", "description": "Absolute note file path from list_notes (ends in .html)" },
+                    "due_iso": { "type": "string", "description": "The reminder's due time as an ISO 8601 timestamp (e.g. 2026-07-20T15:00:00Z)" }
+                },
+                "required": ["file", "due_iso"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "export_diagram",
+            "description": format!(
+                "Export the Notepatra Diagram (.npd) in an open tab to an image or PDF at a path on disk. \
+                 {APPROVAL_NOTE}"
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based index of the tab holding the .npd diagram" },
+                    "path": { "type": "string", "description": "Absolute output path for the exported file" },
+                    "format": { "type": "string", "enum": ["png", "pdf"], "description": "Export format: png or pdf" }
+                },
+                "required": ["tab_index", "path", "format"],
+                "additionalProperties": false
+            }
         }
     ])
 }
@@ -302,6 +461,20 @@ pub fn call(
         "replace_selection" => replace_selection(transport, args),
         "apply_edit" => apply_edit(transport, args),
         "save_tab" => save_tab(transport, args),
+        // v0.1.119
+        "list_reminders" => no_arg_json(args, || transport.list_reminders()),
+        "git_status" => no_arg_json(args, || transport.git_status()),
+        "git_diff" => git_diff(transport, args),
+        "git_log" => git_log(transport, args),
+        "git_show" => git_show(transport, args),
+        "git_branch" => no_arg_json(args, || transport.git_branch()),
+        "validate_npd" => validate_npd(transport, args),
+        "run_sql" => run_sql(transport, args),
+        "open_note" => open_note(transport, args),
+        "create_note" => create_note(transport, args),
+        "append_note" => append_note(transport, args),
+        "set_reminder" => set_reminder(transport, args),
+        "export_diagram" => export_diagram(transport, args),
         other => CallOutcome::UnknownTool(other.to_string()),
     }
 }
@@ -464,7 +637,7 @@ fn read_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> C
 }
 
 fn search_project(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["query", "max_results"]) {
+    if let Err(e) = reject_extras(args, &["query", "max_results", "regex"]) {
         return e;
     }
     let query = match required_str(args, "query") {
@@ -478,10 +651,14 @@ fn search_project(transport: &mut dyn EditorTransport, args: &Map<String, Value>
             _ => return CallOutcome::InvalidParams("max_results must be an integer >= 1".into()),
         },
     };
+    let regex = match optional_bool(args, "regex", false) {
+        Ok(r) => r,
+        Err(e) => return e,
+    };
     // Clamp to the editor's server-side cap rather than requesting results
     // that can never come back.
     let max_results = max_results.min(MAX_RESULTS_CAP);
-    match transport.search_project(query, max_results) {
+    match transport.search_project(query, max_results, regex) {
         Ok(results) => json_text(&results),
         Err(e) => CallOutcome::ToolError(e.0),
     }
@@ -498,7 +675,7 @@ fn get_selection(transport: &mut dyn EditorTransport, args: &Map<String, Value>)
 }
 
 fn find_in_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["tab_index", "query"]) {
+    if let Err(e) = reject_extras(args, &["tab_index", "query", "regex"]) {
         return e;
     }
     let query = match required_str(args, "query") {
@@ -509,7 +686,11 @@ fn find_in_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -
         Ok(i) => i,
         Err(e) => return e,
     };
-    to_outcome(transport.find_in_tab(tab_index, query))
+    let regex = match optional_bool(args, "regex", false) {
+        Ok(r) => r,
+        Err(e) => return e,
+    };
+    to_outcome(transport.find_in_tab(tab_index, query, regex))
 }
 
 fn new_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
@@ -681,4 +862,170 @@ fn save_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> C
         Err(e) => return e,
     };
     to_outcome(transport.save_tab(tab_index))
+}
+
+// ── v0.1.119 read-tier handlers ─────────────────────────────────────────────
+
+/// git_log's `limit`: 1..=100, default 20 (mirrors the tool description).
+const GIT_LOG_DEFAULT_LIMIT: usize = 20;
+const GIT_LOG_MAX_LIMIT: usize = 100;
+
+fn git_diff(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["path"]) {
+        return e;
+    }
+    let path = match optional_str(args, "path") {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    to_outcome(transport.git_diff(path))
+}
+
+fn git_log(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["limit"]) {
+        return e;
+    }
+    let limit = match args.get("limit") {
+        None => GIT_LOG_DEFAULT_LIMIT,
+        Some(v) => match v.as_u64() {
+            Some(n) if n >= 1 => (n as usize).min(GIT_LOG_MAX_LIMIT),
+            _ => return CallOutcome::InvalidParams("limit must be an integer >= 1".into()),
+        },
+    };
+    to_outcome(transport.git_log(limit))
+}
+
+fn git_show(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["ref"]) {
+        return e;
+    }
+    let git_ref = match required_str(args, "ref") {
+        Ok(r) => r,
+        Err(e) => return e,
+    };
+    to_outcome(transport.git_show(git_ref))
+}
+
+fn validate_npd(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["tab_index", "source"]) {
+        return e;
+    }
+    // Exactly one selector, mirroring read_tab's index-or-title contract.
+    match (args.get("tab_index"), args.get("source")) {
+        (Some(_), Some(_)) => {
+            return CallOutcome::InvalidParams(
+                "provide exactly one of tab_index or source, not both".into(),
+            )
+        }
+        (None, None) => {
+            return CallOutcome::InvalidParams("provide tab_index or source".into());
+        }
+        _ => {}
+    }
+    let tab_index = match optional_index(args, "tab_index") {
+        Ok(i) => i,
+        Err(e) => return e,
+    };
+    let source = match optional_str(args, "source") {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    to_outcome(transport.validate_npd(tab_index, source))
+}
+
+fn run_sql(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["sql", "csv_path"]) {
+        return e;
+    }
+    let sql = match required_str(args, "sql") {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    let csv_path = match optional_str(args, "csv_path") {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    to_outcome(transport.run_sql(sql, csv_path))
+}
+
+// ── v0.1.119 act-tier handler ───────────────────────────────────────────────
+
+fn open_note(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["file"]) {
+        return e;
+    }
+    let file = match required_str(args, "file") {
+        Ok(f) => f,
+        Err(e) => return e,
+    };
+    to_outcome(transport.open_note(file))
+}
+
+// ── v0.1.119 write-tier handlers (approval-gated in the editor) ──────────────
+
+fn create_note(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["title", "body"]) {
+        return e;
+    }
+    let title = match required_str(args, "title") {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let body = match required_str(args, "body") {
+        Ok(b) => b,
+        Err(e) => return e,
+    };
+    to_outcome(transport.create_note(title, body))
+}
+
+fn append_note(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["file", "text"]) {
+        return e;
+    }
+    let file = match required_str(args, "file") {
+        Ok(f) => f,
+        Err(e) => return e,
+    };
+    let text = match required_str(args, "text") {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    to_outcome(transport.append_note(file, text))
+}
+
+fn set_reminder(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["file", "due_iso"]) {
+        return e;
+    }
+    let file = match required_str(args, "file") {
+        Ok(f) => f,
+        Err(e) => return e,
+    };
+    let due_iso = match required_str(args, "due_iso") {
+        Ok(d) => d,
+        Err(e) => return e,
+    };
+    to_outcome(transport.set_reminder(file, due_iso))
+}
+
+fn export_diagram(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["tab_index", "path", "format"]) {
+        return e;
+    }
+    let tab_index = match required_index(args, "tab_index") {
+        Ok(i) => i,
+        Err(e) => return e,
+    };
+    let path = match required_str(args, "path") {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    let format = match required_str(args, "format") {
+        Ok(f) => f,
+        Err(e) => return e,
+    };
+    if format != "png" && format != "pdf" {
+        return CallOutcome::InvalidParams("format must be \"png\" or \"pdf\"".into());
+    }
+    to_outcome(transport.export_diagram(tab_index, path, format))
 }

@@ -3,6 +3,7 @@
 #define MCP_BRIDGE_H
 
 #include <QByteArray>
+#include <QDateTime>
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -60,6 +61,66 @@ struct McpEditorHost {
     // Literal (non-regex) find/replace; → occurrence count, -1 on failure.
     std::function<int(int, const QString &, const QString &, bool)> applyEdit;
     std::function<bool(int)> saveTab;             // path-ful tabs only
+
+    // ── v0.1.119 depth wave. Same rule as above: every field is optional;
+    //    an unset field makes the verb answer with a clear "not supported by
+    //    host" error, never crash. mainwindow.cpp builds each lambda over the
+    //    REAL app code path (git_tools, DbConnections classifier + runQuery,
+    //    NotesStorage/NotesTodos, DiagramView). The bridge stays widget-free
+    //    and never links those heavy TUs — only the pure Npd::parse. ──
+
+    // READ tier — answered immediately, no card.
+    // Raw (unbucketed) Noter reminders: [{note_file, note_title, due_iso}].
+    // The bridge computes the Overdue/Today/This week/Later bucket itself so
+    // the wire contract is stable regardless of the UI's grouping code.
+    std::function<QJsonArray()> reminders;
+    // ONE fixed read-only git subcommand (chosen by the bridge, NEVER the
+    // client): sub ∈ {status,diff,log,show,branch}. Returns the git_tools
+    // payload text; *err set (non-empty) on failure. Reuses GitTools — no
+    // new QProcess path, no way to reach a write subcommand.
+    std::function<QString(const QString &sub, const QJsonObject &args,
+                          QString *err)>
+        runGit;
+    // If tab i is an .npd diagram tab: sets *outSource to its source and
+    // returns true; false otherwise (non-diagram tab / out of range).
+    std::function<bool(int, QString *)> diagramSource;
+    // SELECT-only query through the Data-Analyst engine. The caller has
+    // ALREADY been classified read-only by the bridge; the host re-asserts
+    // it (runQuery allowMutation=false) as defense in depth. Returns
+    // {columns:[...], rows:[[...]], truncated:bool, engine:"..."}; *err on
+    // failure. csvPath "" ⇒ in-memory SQLite; else the CSV is the source.
+    std::function<QJsonObject(const QString &sql, const QString &csvPath,
+                              QString *err)>
+        runSql;
+
+    // ACT tier — visible, non-destructive, NO approval card.
+    // Open a Noter note (already confirmed inside the Noter root by the
+    // bridge) in the Noter tab UI. Returns the note's display title; *err
+    // on failure.
+    std::function<QString(const QString &absFile, QString *err)> openNote;
+
+    // WRITE tier — human-approval-gated, same enqueueApproval flow.
+    // Create a Noter note the way Noter does (HTML shell, Inbox folder,
+    // unique <stamp>-noter-NN.html name). Returns the new absolute path;
+    // *err on failure.
+    std::function<QString(const QString &title, const QString &body,
+                          QString *err)>
+        createNote;
+    // Append a paragraph of text to an existing note's body (path already
+    // Noter-root-confined by the bridge). false + *err on failure.
+    std::function<bool(const QString &absFile, const QString &text,
+                       QString *err)>
+        appendNote;
+    // Bind a reminder to a note exactly like the UI (same SQLite storage,
+    // fires a desktop notification on its poll). false + *err on failure.
+    std::function<bool(const QString &absFile, const QDateTime &due,
+                       QString *err)>
+        setReminder;
+    // Render an open .npd tab to path in format ("png"|"pdf") via the real
+    // DiagramView export path. false + *err on failure.
+    std::function<bool(int tabIndex, const QString &path,
+                       const QString &format, QString *err)>
+        exportDiagram;
 };
 
 // Editor-side MCP bridge: a dedicated QLocalServer, deliberately separate from
@@ -118,6 +179,22 @@ private:
                               const QJsonObject &args);
     void verbApplyEdit(QLocalSocket *client, int id, const QJsonObject &args);
     void verbSaveTab(QLocalSocket *client, int id, const QJsonObject &args);
+    // ── v0.1.119 depth wave ──
+    // READ tier.
+    void verbListReminders(QLocalSocket *client, int id);
+    // sub is the bridge-fixed git subcommand token; the client never picks it.
+    void verbGit(QLocalSocket *client, int id, const QJsonObject &args,
+                 const QString &sub);
+    void verbValidateNpd(QLocalSocket *client, int id, const QJsonObject &args);
+    void verbRunSql(QLocalSocket *client, int id, const QJsonObject &args);
+    // ACT tier.
+    void verbOpenNote(QLocalSocket *client, int id, const QJsonObject &args);
+    // WRITE tier — human-approval-gated.
+    void verbCreateNote(QLocalSocket *client, int id, const QJsonObject &args);
+    void verbAppendNote(QLocalSocket *client, int id, const QJsonObject &args);
+    void verbSetReminder(QLocalSocket *client, int id, const QJsonObject &args);
+    void verbExportDiagram(QLocalSocket *client, int id,
+                           const QJsonObject &args);
 
     // One held write request: the response is sent only after the human
     // decides (or the timeout / a disconnect decides for them).
@@ -132,6 +209,11 @@ private:
 
     int resolveWriteTab(const QJsonObject &args, QString *err) const;
     QString tabLabel(int idx) const;
+    // Resolve args["file"] to a canonical .html path that PROVABLY sits
+    // inside the Noter root (../ escapes and out-of-root absolutes are
+    // rejected). Returns "" + *err on any failure. Shared by read_note and
+    // the v0.1.119 note verbs so the containment law lives in one place.
+    QString resolveNotePath(const QJsonObject &args, QString *err) const;
     void enqueueApproval(QLocalSocket *client, int id,
                          const QString &description, const QString &preview,
                          std::function<QJsonObject(QString *)> execute);

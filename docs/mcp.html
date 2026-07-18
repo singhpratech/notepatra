@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Notepatra MCP — Your editor, readable by your AI</title>
-<meta name="description" content="Notepatra's MCP server (new in v0.1.118): 22 tools that let Claude, Codex, and any spec-compliant MCP client read your open tabs, search your workspace, and — only with your explicit per-action approval — edit and save. Local socket + stdio, nothing leaves your machine.">
+<meta name="description" content="Notepatra's MCP server (new in v0.1.118, 35 tools as of v0.1.119): tools that let Claude, Codex, and any spec-compliant MCP client read your open tabs, search your workspace, run read-only SQL, inspect Git — and, only with your explicit per-action approval, edit, save, and create Noter notes. Local socket + stdio, nothing leaves your machine.">
 <link rel="canonical" href="https://notepatra.org/mcp.html">
 <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png">
 
@@ -226,16 +226,16 @@
 <main class="content">
 
   <h1>Your editor, readable by your AI</h1>
-  <p class="lead">From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a Model Context Protocol server that lets Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client see what you have open, search your workspace, and — only with your explicit per-action approval — edit and save. Everything runs over stdio and a local socket. Nothing leaves your machine.</p>
+  <p class="lead">From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a Model Context Protocol server that lets Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client see what you have open, search your workspace, run read-only SQL over your data files, read your Git status and Noter notes, and — only with your explicit per-action approval — edit, save, and create notes. Everything runs over stdio and a local socket. Nothing leaves your machine.</p>
 
   <div class="callout info">
-    <strong>Release status.</strong> MCP support ships in v0.1.118, the current release. Everything on this page describes v0.1.118.
+    <strong>Release status.</strong> MCP first shipped in v0.1.118; the current release is v0.1.119, which expands the server to <strong>35 tools</strong> (Git, read-only SQL, Noter write verbs, diagram export) and adds Windows named-pipe support. Everything on this page describes v0.1.119.
   </div>
 
   <nav class="pagenav">
     On this page:
     <a href="#what-it-is">What it is</a> ·
-    <a href="#tools">The 22 tools</a> ·
+    <a href="#tools">The 35 tools</a> ·
     <a href="#approval">Write approval</a> ·
     <a href="#setup">Setup per client</a> ·
     <a href="#resources-prompts">Resources &amp; prompts</a> ·
@@ -252,15 +252,15 @@
   <ul>
     <li><strong>Transport:</strong> a stdio JSON-RPC 2.0 MCP server. It speaks MCP protocol revision <code>2025-06-18</code> and also accepts <code>2025-03-26</code> and <code>2024-11-05</code> from older clients.</li>
     <li><strong>Editor connection:</strong> pass <code>--socket</code> and the server talks to the running editor over a dedicated per-user local socket (a Unix domain socket; the editor opens it on launch). Without <code>--socket</code>, the server runs against a built-in mock editor, so you can exercise the protocol without Notepatra running.</li>
-    <li><strong>Capabilities:</strong> tools (22 of them), resources (your open tabs and Noter notes), and prompts (three ready-made ones).</li>
+    <li><strong>Capabilities:</strong> tools (35 of them), resources (your open tabs and Noter notes), and prompts (three ready-made ones).</li>
     <li><strong>Safety:</strong> reads never need permission; every write shows an approval card inside the editor window and does nothing until you click Approve. Details <a href="#approval">below</a>.</li>
   </ul>
   <p>In practice: ask your assistant "what do I have open?", "find where the config is parsed", "diff these two tabs", "format this JSON and put it in a new tab" — and it drives the actual editor on your screen.</p>
 
-  <h2 id="tools" class="anchor-target">The tool surface — 22 tools, three tiers</h2>
-  <p><code>notepatra-mcp</code> exposes 22 tools, grouped in three tiers by what they can touch. Read tools observe. Act tools drive visible, non-destructive editor actions. Write tools change buffer contents or disk — and every one of those is gated behind a human approval card.</p>
+  <h2 id="tools" class="anchor-target">The tool surface — 35 tools, three tiers</h2>
+  <p><code>notepatra-mcp</code> exposes 35 tools, grouped in three tiers by what they can touch. Read tools observe. Act tools drive visible, non-destructive editor actions. Write tools change buffer contents or disk — and every one of those is gated behind a human approval card.</p>
 
-  <h3>Tier 1 — Read (10 tools, no approval needed)</h3>
+  <h3>Tier 1 — Read (18 tools, no approval needed)</h3>
   <table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
@@ -270,14 +270,25 @@
       <tr><td><code>get_status</code></td><td>Editor state: active tab, file path, language, encoding, cursor position.</td></tr>
       <tr><td><code>app_info</code></td><td>Application info: name, version, edition (Lite/Full), platform.</td></tr>
       <tr><td><code>list_recent_files</code></td><td>List recently opened file paths.</td></tr>
-      <tr><td><code>find_in_tab</code></td><td>Find a literal substring inside one open tab (default: the active tab).</td></tr>
-      <tr><td><code>search_project</code></td><td>Search all open tabs plus files under the workspace folder for a literal substring, case-insensitive (capped at 200 matches).</td></tr>
+      <tr><td><code>find_in_tab</code></td><td>Find text inside one open tab (default: the active tab) — a literal substring, or a regular expression with <code>{regex: true}</code>.</td></tr>
+      <tr><td><code>search_project</code></td><td>Search all open tabs plus files under the workspace folder, case-insensitive (capped at 200 matches) — a literal substring, or a regular expression with <code>{regex: true}</code>.</td></tr>
       <tr><td><code>list_notes</code></td><td>List Noter notes with title, file name, and last-modified time.</td></tr>
       <tr><td><code>read_note</code></td><td>Read one Noter note by its file path.</td></tr>
+      <tr><td><code>list_reminders</code></td><td>List your Noter reminders with note title, due time, and bucket (overdue / today / upcoming).</td></tr>
+      <tr><td><code>git_status</code></td><td>Read-only <code>git status</code> for the workspace repository.</td></tr>
+      <tr><td><code>git_diff</code></td><td>Read-only <code>git diff</code>, optionally scoped to one path.</td></tr>
+      <tr><td><code>git_log</code></td><td>Read-only <code>git log</code> (recent commits; default 20, capped at 100).</td></tr>
+      <tr><td><code>git_show</code></td><td>Read-only <code>git show</code> for a commit or ref.</td></tr>
+      <tr><td><code>git_branch</code></td><td>Read-only list of branches in the workspace repository.</td></tr>
+      <tr><td><code>validate_npd</code></td><td>Validate a Notepatra diagram (<code>.npd</code>) — a tab or supplied source; returns parse errors with line numbers.</td></tr>
+      <tr><td><code>run_sql</code></td><td>Run a read-only <code>SELECT</code> over a CSV / Parquet / JSON file (or the active tab) and return columns + rows. SELECT-only and sandboxed — see the note below.</td></tr>
     </tbody>
   </table>
 
-  <h3>Tier 2 — Act (8 tools, visible and non-destructive)</h3>
+  <div class="callout success">
+    <strong>How <code>run_sql</code> stays safe.</strong> Every query is checked by the SQL classifier and rejected unless it is a pure <code>SELECT</code> — no <code>INSERT</code>, <code>UPDATE</code>, <code>ATTACH</code>, <code>COPY</code>, or DDL ever runs. On the Full (DuckDB) edition there is a second wall: the target CSV / Parquet / JSON is first materialized into an in-memory table, then DuckDB's external filesystem access is turned off (<code>SET enable_external_access=false</code>) <em>before</em> the untrusted SQL executes — so the query cannot reach host files even through <code>read_text</code>, <code>read_csv_auto</code>, <code>glob</code>, or a replacement scan. The <code>csv_path</code> argument is confined to your open workspace. Results are row- and cell-capped so a single answer can't exfiltrate a whole file.</div>
+
+  <h3>Tier 2 — Act (9 tools, visible and non-destructive)</h3>
   <table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
@@ -289,10 +300,11 @@
       <tr><td><code>format_json</code></td><td>Format JSON text and return the result (fails on invalid JSON).</td></tr>
       <tr><td><code>format_sql</code></td><td>Format SQL text and return the result.</td></tr>
       <tr><td><code>format_html</code></td><td>Format HTML text and return the result.</td></tr>
+      <tr><td><code>open_note</code></td><td>Open one Noter note in the editor by its file path.</td></tr>
     </tbody>
   </table>
 
-  <h3>Tier 3 — Write, with approval (4 tools, human-gated)</h3>
+  <h3>Tier 3 — Write, with approval (8 tools, human-gated)</h3>
   <table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
@@ -300,11 +312,15 @@
       <tr><td><code>replace_selection</code></td><td>Replace the currently selected text with new text.</td></tr>
       <tr><td><code>apply_edit</code></td><td>Literal find-and-replace in one open tab — first occurrence, or all of them.</td></tr>
       <tr><td><code>save_tab</code></td><td>Save an open tab to its file on disk.</td></tr>
+      <tr><td><code>create_note</code></td><td>Create a new Noter note with a title and body.</td></tr>
+      <tr><td><code>append_note</code></td><td>Append text to an existing Noter note.</td></tr>
+      <tr><td><code>set_reminder</code></td><td>Set a due-time reminder on a Noter note.</td></tr>
+      <tr><td><code>export_diagram</code></td><td>Export a diagram tab to a PNG or PDF file on disk.</td></tr>
     </tbody>
   </table>
 
   <h2 id="approval" class="anchor-target">The write-approval model</h2>
-  <p>The four write tools <strong>never execute on arrival</strong>. Each incoming write request shows a non-modal approval card inside the Notepatra window — it does not steal focus or block your typing — describing what the assistant wants to do, with a preview of the text involved and two buttons: <strong>Approve</strong> and <strong>Deny</strong>.</p>
+  <p>The eight write tools <strong>never execute on arrival</strong>. Each incoming write request shows a non-modal approval card inside the Notepatra window — it does not steal focus or block your typing — describing what the assistant wants to do, with a preview of the text involved and two buttons: <strong>Approve</strong> and <strong>Deny</strong>.</p>
   <ul>
     <li><strong>Nothing happens until you click Approve.</strong> The tool call blocks; the assistant just waits.</li>
     <li><strong>120-second auto-deny.</strong> If you don't respond within two minutes, the request is denied automatically and the assistant receives the error <code>approval timed out</code>.</li>
@@ -331,7 +347,7 @@ sudo mv notepatra-mcp /usr/local/bin/</code></pre>
   <p>Or build it from source — the sidecar lives in <code>notepatra-mcp/</code> in the repo and needs only stable Rust, no other dependencies:</p>
   <pre><code>cd notepatra-mcp
 cargo build --release   # binary at target/release/notepatra-mcp</code></pre>
-  <p>There is no Windows binary yet — the Windows named-pipe transport lands in a future release (see <a href="#limitations">limitations</a>).</p>
+  <p>Windows is supported from v0.1.119: the sidecar connects to the running editor over a named pipe (<code>\\.\pipe\…</code>), so <code>--socket</code> works there too. Prebuilt Windows binaries aren't in the signed release bundle yet, so on Windows install it with <code>cargo install notepatra-mcp</code> or build from source (above).</p>
 
   <table>
     <thead><tr><th>Client</th><th>Vendor ecosystem</th><th>How it connects</th><th>Works with Notepatra?</th></tr></thead>
@@ -361,7 +377,7 @@ cargo build --release   # binary at target/release/notepatra-mcp</code></pre>
   <h3>Claude Code</h3>
   <p>One command:</p>
   <pre><code>claude mcp add notepatra -- notepatra-mcp --socket</code></pre>
-  <p>Then <code>/mcp</code> inside Claude Code shows the server and its 22 tools.</p>
+  <p>Then <code>/mcp</code> inside Claude Code shows the server and its 35 tools.</p>
 
   <h3>OpenAI Codex CLI</h3>
   <p>Add a block to <code>~/.codex/config.toml</code>:</p>
@@ -411,16 +427,16 @@ async with MCPServerStdio(
     <li><strong>The editor must be running.</strong> With <code>--socket</code>, tools need a live Notepatra to talk to; if it isn't running, they return the clean error "Notepatra is not running (start the editor first)" rather than hanging.</li>
     <li><strong>Writes need a visible window.</strong> The approval card must appear somewhere; with no visible window, writes are denied with <code>approval unavailable</code>. That is deliberate — see the <a href="#approval">approval model</a>.</li>
     <li><strong>Cloud-only connector surfaces can't reach it.</strong> ChatGPT connectors and claude.ai web connectors only speak to servers reachable at a public URL. A desktop editor on your machine is not that, so those surfaces cannot use <code>notepatra-mcp</code>. Use the desktop or CLI clients above instead.</li>
-    <li><strong>Windows named-pipe transport is not shipped yet.</strong> The v0.1.118 sidecar connects to the editor over Unix domain sockets, so <code>--socket</code> works on Linux and macOS first. On Windows the write-side plumbing exists in the editor, but the sidecar's named-pipe client is a stub that returns a clear "not available on Windows yet" error; it lands in a future release. The mock mode (no <code>--socket</code>) works everywhere.</li>
+    <li><strong>Windows named-pipe transport (new in v0.1.119).</strong> The sidecar now connects to the running editor over a Windows named pipe (<code>\\.\pipe\…</code>), so <code>--socket</code> works on Linux, macOS, and Windows alike. The one remaining gap: prebuilt Windows binaries aren't in the signed release bundle yet, so on Windows you install with <code>cargo install notepatra-mcp</code> or build from source.</li>
     <li><strong>Large reads are capped.</strong> <code>read_tab</code> truncates at 5 MB (and says so with a marker in the text); <code>search_project</code> returns at most 200 matches per search.</li>
-    <li><strong>Searches are literal.</strong> <code>find_in_tab</code> and <code>search_project</code> match literal substrings, not regular expressions.</li>
+    <li><strong>Search defaults to literal.</strong> <code>find_in_tab</code> and <code>search_project</code> match a literal substring by default; pass <code>{regex: true}</code> for a regular-expression search (an invalid pattern is rejected with a clear error).</li>
   </ul>
 
   <h2 id="faq" class="anchor-target">FAQ</h2>
   <h3>Is my data sent anywhere?</h3>
   <p>Not by Notepatra. <code>notepatra-mcp</code> makes no network connections: it talks to your AI client over stdio (pipes between two processes on your machine) and to the editor over a local per-user socket. Nothing leaves the machine through this path. One honest caveat that applies to every MCP server: whatever your <em>assistant</em> reads through these tools becomes part of its conversation, and goes wherever that client sends its conversations — a local model stays local, a cloud model does not. Choose the client and model accordingly.</p>
   <h3>Can the AI edit my files without me noticing?</h3>
-  <p>No. The only tools that can change a buffer or touch disk are the four write tools, and each call requires you to click Approve on a card inside the editor within 120 seconds. No response means denied.</p>
+  <p>No. The only tools that can change a buffer or touch disk are the eight write tools, and each call requires you to click Approve on a card inside the editor within 120 seconds. No response means denied.</p>
   <h3>Is this the same as Notepatra's built-in AI Assistant?</h3>
   <p>No — they're complementary. The AI Assistant dock (Ctrl+Shift+A) is Notepatra talking to a model you configure. MCP is the reverse direction: an external assistant you already use (Claude, Codex, ...) talking to Notepatra. Neither requires the other.</p>
   <h3>Does it work with the Lite build?</h3>
@@ -431,7 +447,7 @@ async with MCPServerStdio(
 </main>
 
 <footer class="doc-footer">
-  <p>Notepatra is free software under GPL-3.0. MCP support described on this page ships in v0.1.118.</p>
+  <p>Notepatra is free software under GPL-3.0. The MCP features described on this page ship in v0.1.119.</p>
   <p><a href="/">Home</a> · <a href="/docs.html">Documentation</a> · <a href="https://github.com/singhpratech/notepatra">GitHub</a></p>
 </footer>
 

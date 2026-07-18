@@ -40,6 +40,7 @@
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QString>
 #include <QStringList>
 #include <QTemporaryDir>
@@ -236,6 +237,110 @@ int main(int argc, char **argv) {
         check("mutation on default path -> not ok", !qr.ok);
         check("mutation rejected with errorKind non_select",
               qr.errorKind == QStringLiteral("non_select"));
+    }
+
+    // ── 5. MCP filesystem sandbox (v0.1.119 arbitrary-file-read fix) ────────
+    //   The MCP run_sql path sets Record::sandboxFilesystem=true. Then
+    //   openDuckDbForRecord materializes the CSV into an in-memory TABLE and
+    //   issues `SET enable_external_access=false`, so the ENGINE — not the SQL
+    //   string classifier — refuses every host-file read. This is the
+    //   authoritative control: it blocks the two bypasses that beat the
+    //   classifier (the replacement scan `SELECT * FROM '/path'`, which has no
+    //   function name to deny, and the quoted `"read_text"('/path')` form,
+    //   whose quoted identifier stripSqlNoise blanks before the denylist scan).
+    //   Both attacks pass classifySql (read-only SQL) and reach the engine, so
+    //   this proves the ENGINE stops them, not the parser.
+    std::printf("== [5] MCP sandbox: enable_external_access=false blocks file reads, "
+                "materialized CSV still queryable ==\n");
+    {
+        QTemporaryDir dir;
+        check("sandbox: temp dir created", dir.isValid());
+        // A real, readable CSV. We target THIS file with the attacks so a
+        // non-blocked engine would genuinely leak its bytes — the block
+        // assertions are therefore meaningful (the file exists + is readable).
+        const QString csvPath = dir.path() + QStringLiteral("/data.csv");
+        {
+            QFile f(csvPath);
+            check("sandbox: write CSV", f.open(QIODevice::WriteOnly));
+            f.write("id,name\n1,alice\n2,bob\n3,carol\n");
+            f.close();
+        }
+
+        // Sandboxed record — mirrors what MainWindow::host.runSql builds.
+        DbConnections::Record sb;
+        sb.name = QStringLiteral("mcp_sandbox");
+        sb.driver = QStringLiteral("DUCKDB");
+        sb.database = csvPath;
+        sb.sandboxFilesystem = true;   // the flag under test
+
+        // (B) LEGIT PATH STILL WORKS — the regression gate. The materialized
+        //     `data` table survives the lockdown and returns the real rows.
+        {
+            DbConnections::QueryResult qr = DbConnections::runQuery(
+                sb, QStringLiteral("SELECT * FROM data LIMIT 5"),
+                /*maxRows=*/10, /*allowMutation=*/false);
+            check("(B) sandbox: SELECT * FROM data ok", qr.ok);
+            check("(B) sandbox: data returns 3 rows", qr.rowsReturned == 3);
+            check("(B) sandbox: first row is alice",
+                  qr.rows.size() == 3 && qr.rows[0].value(1) == QStringLiteral("alice"));
+
+            DbConnections::QueryResult cnt = DbConnections::runQuery(
+                sb, QStringLiteral("SELECT count(*) FROM data"),
+                /*maxRows=*/10, /*allowMutation=*/false);
+            check("(B) sandbox: COUNT(*) ok", cnt.ok);
+            check("(B) sandbox: COUNT(*) == 3",
+                  cnt.rows.size() == 1 && cnt.rows[0].value(0) == QStringLiteral("3"));
+        }
+
+        // (A) ATTACKS BLOCKED — every host-file read fails, leaking nothing.
+        //     Target csvPath itself (guaranteed readable) so a hole would leak.
+        {
+            auto esc = [](QString s) { return s.replace('\'', QStringLiteral("''")); };
+            const QString p = esc(csvPath);
+            struct { const char *label; QString sql; } attacks[] = {
+                {"replacement scan SELECT * FROM '<file>'",
+                 QStringLiteral("SELECT * FROM '%1'").arg(p)},
+                {"quoted \"read_text\"('<file>')",
+                 QStringLiteral("SELECT content FROM \"read_text\"('%1')").arg(p)},
+                {"quoted \"read_csv_auto\"('<file>')",
+                 QStringLiteral("SELECT * FROM \"read_csv_auto\"('%1')").arg(p)},
+                {"quoted \"read_blob\"('<file>')",
+                 QStringLiteral("SELECT * FROM \"read_blob\"('%1')").arg(p)},
+                {"quoted \"glob\"('<dir>/*')",
+                 QStringLiteral("SELECT * FROM \"glob\"('%1/*')").arg(esc(dir.path()))},
+            };
+            for (const auto &a : attacks) {
+                DbConnections::QueryResult qr = DbConnections::runQuery(
+                    sb, a.sql, /*maxRows=*/10, /*allowMutation=*/false);
+                char buf[192];
+                std::snprintf(buf, sizeof(buf),
+                              "(A) sandbox BLOCKS: %s (ok=false, 0 rows)", a.label);
+                check(buf, !qr.ok && qr.rowsReturned == 0);
+            }
+        }
+
+        // (C) DESKTOP UNCHANGED — the SAME CSV, sandboxFilesystem=false (default
+        //     desktop path): file reading STILL works. The VIEW-based ingestion
+        //     path is unaffected, and a desktop user's read_csv_auto('<file>')
+        //     still resolves and returns rows.
+        {
+            DbConnections::Record ds;
+            ds.name = QStringLiteral("desktop");
+            ds.driver = QStringLiteral("DUCKDB");
+            ds.database = csvPath;           // sandboxFilesystem stays false
+            DbConnections::QueryResult viewq = DbConnections::runQuery(
+                ds, QStringLiteral("SELECT * FROM data"),
+                /*maxRows=*/10, /*allowMutation=*/false);
+            check("(C) desktop: VIEW ingestion SELECT * FROM data ok",
+                  viewq.ok && viewq.rowsReturned == 3);
+
+            QString rp = csvPath; rp.replace('\'', QStringLiteral("''"));
+            DbConnections::QueryResult direct = DbConnections::runQuery(
+                ds, QStringLiteral("SELECT * FROM read_csv_auto('%1')").arg(rp),
+                /*maxRows=*/10, /*allowMutation=*/false);
+            check("(C) desktop: direct read_csv_auto('<file>') STILL works",
+                  direct.ok && direct.rowsReturned == 3);
+        }
     }
 
     // ── 1. MID-FLIGHT INTERRUPT — the perf-bound that proves the token bites ─
