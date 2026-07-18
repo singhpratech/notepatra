@@ -562,7 +562,7 @@ fn p0a_read_verbs_send_empty_args_and_parse_replies() {
                 // Exact bridge shape (src/mcp_bridge.cpp verbGetCapabilities):
                 // no tool_count / tiers on the wire — the tool layer adds them.
                 "get_capabilities" => json!({
-                    "edition": "Full", "platform": "linux", "version": "0.1.119",
+                    "edition": "Full", "platform": "linux", "version": "0.1.120",
                     "features": { "duckdb": true, "webengine": true, "noter": true }
                 }),
                 other => panic!("unexpected verb {other}"),

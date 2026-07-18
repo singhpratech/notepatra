@@ -7,6 +7,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.120] — 2026-07-18
+
+**MCP full control — 48 tools + a remote gateway. The `notepatra-mcp` sidecar grows from 35 to 48 tools (Read 24 / Act 13 / Write 11), making every sub-app AI-drivable (Diagram, Noter, Data-analyst, Charts) with capability discovery. A new opt-in, loopback-only remote gateway pairs a client over an authenticated channel with fail-closed scopes; writes still require a physical Approve click in the editor. Windows gets a prebuilt signed sidecar zip and a one-click `.mcpb` bundle.**
+
+### Added
+- **13 new MCP tools** (new totals: Read 24 / Act 13 / Write 11 = 48):
+  - **Diagram control:** `create_diagram` (Act), `get_diagram_source` (Read), `set_diagram_source` (Write).
+  - **Data-analyst:** `list_connections`, `run_query`, `list_tables` (Read), `open_data_analyst` (Act), `export_query_results` (Write) — reaches saved PostgreSQL / MySQL / SQL Server / SQLite / DuckDB connections that `run_sql` cannot.
+  - **Charts (Full):** `render_chart` (Act), `export_chart` (Write).
+  - **Noter:** `open_noter` (Act).
+  - **Discovery:** `list_languages`, `get_capabilities` (Read).
+- **Remote gateway** (opt-in, feature-gated `remote`, loopback-only): `serve` / `pair` / `connect` modes; 8-digit HMAC pairing → 256-bit bearer token (SHA-256 stored, `0600`); fail-closed scopes (`read_only` / `read_act` / `write_request`) enforced at dispatch; `tools/list` filtered by scope. The default `cargo install` build stays crypto-free (hmac/sha2 behind the feature); the editor never listens on the network; writes forward to the local Approve card — no remote bypass.
+- **Windows prebuilt sidecar** `notepatra-mcp-windows-x64.zip` (signed; no Rust toolchain needed) and a one-click **`.mcpb`** Claude Desktop bundle (`notepatra-mcp.mcpb`), both covered by SHA-256 checksums, cosign signatures, and SLSA provenance.
+
+### Changed
+- `set_language` resolves case-insensitively + common aliases (`python` → `Python`, `cpp` → `C++`, …) and echoes the canonical name it applied.
+- `git_*` and `search_project` fall back to the active file's directory when no workspace folder is open, so Git works on any open repository file.
+
+### Security
+- `run_query` (Read-tier, card-less) reaches saved named connections, so its read-only classifier's file-read denylist now spans SQLite / MySQL (`LOAD_FILE`) / PostgreSQL (`pg_read_server_files`, `pg_ls_dir`, `pg_stat_file`, …) / DuckDB, guarded by a five-engine regression test. Read-only SQL is never an arbitrary-file-read primitive.
+- The new write verbs (`set_diagram_source`, `export_query_results`, `export_chart`) go through the same in-editor Approve/Deny card (120 s auto-deny, no headless bypass); the gate lives in the editor process.
+
 ## [0.1.119] — 2026-07-18
 
 **MCP depth — 35 tools. The `notepatra-mcp` sidecar grows from 22 to 35 tools in three tiers (Read 18 / Act 9 / Write 8): read-only Git, read-only SQL, Noter reminders and `.npd` validation, plus approval-gated write verbs for creating/appending notes, setting reminders, and exporting diagrams. Windows named-pipe transport is now supported. `run_sql` is SELECT-only and, on the Full/DuckDB edition, engine-sandboxed.**
