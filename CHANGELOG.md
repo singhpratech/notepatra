@@ -24,7 +24,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 - **Write tier is human-gated in the editor process:** the four write tools show a non-modal Approve/Deny card inside the Notepatra window, auto-deny after 120 s, queue FIFO one card at a time, drop on client disconnect, and have **no headless bypass** — no visible window means `approval unavailable`. The gate lives in the C++ bridge, not the sidecar, so no MCP client can write without a human click.
 
 ### Fixed
-- **Bare-binary size claim corrected 12.4 → 12.2 MB** (Linux x64, measured from the shipped artifact — the v0.1.117 dead-code removal shrank the binary past the advertised number).
+- **Bare-binary size re-measured from this release's artifact: 12.4 MB** (Linux x64 — v0.1.117's dead-code removal briefly hit 12.2 MB; the in-editor MCP bridge adds ~0.2 MB back).
 
 ### Testing / CI
 - 47 sidecar cargo tests (protocol + socket-bridge suites) and `test_mcp_bridge` (315 assertions) in ctest; full offscreen suite 68/68; live end-to-end script (real editor + real sidecar; write approval exercised in the C++ suite) 17/17.

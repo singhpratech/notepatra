@@ -48,9 +48,9 @@
       "operatingSystem": ["Linux", "Windows", "macOS"],
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
-      "description": "Native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. Bare executable is ~12 MB across platforms (12.2 MB on Linux x64); full downloads are 4.4 MB (Linux x64 tar.gz), 27.7 MB (macOS DMG with bundled Qt), 42.7 MB (Windows MSI with bundled Qt DLLs). 238 file types. 82 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server (examples redacted). Free forever. Linux, Windows, macOS.",
+      "description": "Native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. Bare executable is ~12 MB across platforms (12.4 MB on Linux x64); full downloads are 4.4 MB (Linux x64 tar.gz), 27.7 MB (macOS DMG with bundled Qt), 42.7 MB (Windows MSI with bundled Qt DLLs). 238 file types. 82 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server (examples redacted). Free forever. Linux, Windows, macOS.",
       "softwareVersion": "0.1.118",
-      "fileSize": "12.2 MB",
+      "fileSize": "12.4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
       "softwareRequirements": "Qt5; optional AI backend selected by the user (Ollama or llama.cpp locally, or any OpenAI-compatible server reachable via the llama.cpp dropdown entry's user-configured URL)",
@@ -127,7 +127,7 @@
           "name": "What is Notepatra?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. It runs on Linux, macOS Apple Silicon, and Windows, has a ~12 MB bare native executable (~12.2 MB on Linux x64), supports 238 file types with 82 language lexers, and includes AI-powered formatters that fix broken JSON, HTML, and brackets. The AI panel ships six dropdown backends — two local (Ollama, llama.cpp) and four cloud (Ollama Cloud, OpenRouter, OpenAI, Azure OpenAI) — and the llama.cpp entry also accepts a user-configured base URL for any OpenAI-compatible server."
+            "text": "Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. It runs on Linux, macOS Apple Silicon, and Windows, has a ~12 MB bare native executable (~12.4 MB on Linux x64), supports 238 file types with 82 language lexers, and includes AI-powered formatters that fix broken JSON, HTML, and brackets. The AI panel ships six dropdown backends — two local (Ollama, llama.cpp) and four cloud (Ollama Cloud, OpenRouter, OpenAI, Azure OpenAI) — and the llama.cpp entry also accepts a user-configured base URL for any OpenAI-compatible server."
           }
         },
         {
@@ -143,7 +143,7 @@
           "name": "What makes Notepatra different from other code editors?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra is its own editor — a native Qt5 + QScintilla app with an original C++17/Rust core. It runs natively on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase, with a ~12 MB bare executable (~12.2 MB on Linux x64). Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. The Data Analyst mode works out of the box on CSV files and an in-memory SQLite engine; the Full download bundles the DuckDB v1.1.3 engine on every platform (Lite has CSV + SQLite only). The Composer tab adds a multi-file Edit Plan, `@file` mentions, Ctrl+I inline edit, AI-driven git tools (read-only: status / diff / log / branch / show), and multi-cursor editing. No Electron runtime, no telemetry, no mandatory account."
+            "text": "Notepatra is its own editor — a native Qt5 + QScintilla app with an original C++17/Rust core. It runs natively on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase, with a ~12 MB bare executable (~12.4 MB on Linux x64). Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. The Data Analyst mode works out of the box on CSV files and an in-memory SQLite engine; the Full download bundles the DuckDB v1.1.3 engine on every platform (Lite has CSV + SQLite only). The Composer tab adds a multi-file Edit Plan, `@file` mentions, Ctrl+I inline edit, AI-driven git tools (read-only: status / diff / log / branch / show), and multi-cursor editing. No Electron runtime, no telemetry, no mandatory account."
           }
         },
         {
@@ -151,7 +151,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~12 MB across every platform (12.2 MB on Linux x64). Latest v0.1.118 download sizes: 4.4 MB Linux x64 tar.gz, 4.1 MB Linux ARM64 tar.gz, 27.7 MB macOS DMG (with bundled Qt), 42.7 MB Windows MSI / 32.8 MB NSIS / 37.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~12.2 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~12 MB across every platform (12.4 MB on Linux x64). Latest v0.1.118 download sizes: 4.4 MB Linux x64 tar.gz, 4.1 MB Linux ARM64 tar.gz, 27.7 MB macOS DMG (with bundled Qt), 42.7 MB Windows MSI / 32.8 MB NSIS / 37.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~12.4 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
           }
         },
         {
@@ -2052,7 +2052,7 @@
                     <div class="version-section">
                         <h5>Honesty</h5>
                         <ul>
-                            <li>Bare-binary size claim corrected from 12.4 to <strong>12.2 MB</strong> on Linux x64 (measured from the shipped release artifact). Full offscreen ctest 68/68, 47 sidecar cargo tests, live editor-plus-sidecar end-to-end 17/17.</li>
+                            <li>Bare-binary size re-measured from the shipped v0.1.118 artifact: <strong>12.4 MB</strong> on Linux x64 (the in-editor MCP bridge adds ~0.2 MB over v0.1.117's 12.2). Full offscreen ctest 68/68, 47 sidecar cargo tests, live editor-plus-sidecar end-to-end 17/17.</li>
                         </ul>
                     </div>
                 </div>
@@ -2174,7 +2174,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~12 MB</strong> (12.2 MB on Linux x64) across every platform. Latest v0.1.118 download sizes: <strong>4.4 MB</strong> Linux x64 tar.gz · <strong>4.1 MB</strong> Linux ARM64 tar.gz · <strong>27.7 MB</strong> macOS DMG · <strong>42.7 MB</strong> Windows MSI / <strong>32.8 MB</strong> NSIS / <strong>37.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~12 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~12 MB</strong> (12.4 MB on Linux x64) across every platform. Latest v0.1.118 download sizes: <strong>4.4 MB</strong> Linux x64 tar.gz · <strong>4.1 MB</strong> Linux ARM64 tar.gz · <strong>27.7 MB</strong> macOS DMG · <strong>42.7 MB</strong> Windows MSI / <strong>32.8 MB</strong> NSIS / <strong>37.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~12 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
