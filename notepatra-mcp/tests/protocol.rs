@@ -147,10 +147,18 @@ fn tools_list_shape() {
             "create_diagram",
             "get_diagram_source",
             "set_diagram_source",
-            "open_noter"
+            "open_noter",
+            // phase 2 — data-analyst + charts
+            "list_connections",
+            "run_query",
+            "list_tables",
+            "open_data_analyst",
+            "render_chart",
+            "export_query_results",
+            "export_chart"
         ]
     );
-    assert_eq!(names.len(), 41);
+    assert_eq!(names.len(), 48);
     for tool in tools {
         assert!(tool["description"].as_str().is_some_and(|d| !d.is_empty()));
         let schema = &tool["inputSchema"];
@@ -601,7 +609,7 @@ fn write_tool_descriptions_state_the_approval_gate() {
     let responses =
         run_lines(&[json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }).to_string()]);
     let tools = responses[0]["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 41);
+    assert_eq!(tools.len(), 48);
     let write_tools = [
         "insert_text",
         "replace_selection",
@@ -612,6 +620,8 @@ fn write_tool_descriptions_state_the_approval_gate() {
         "set_reminder",
         "export_diagram",
         "set_diagram_source",
+        "export_query_results",
+        "export_chart",
     ];
     for tool in tools {
         let name = tool["name"].as_str().unwrap();
@@ -1236,10 +1246,10 @@ fn p0a_list_languages_and_get_capabilities() {
             .unwrap();
     let expected = notepatra_mcp::tools::definitions().as_array().unwrap().len();
     assert_eq!(caps["tool_count"], expected as u64);
-    assert_eq!(caps["tool_count"], 41);
-    assert_eq!(caps["tiers"]["read"], 21);
-    assert_eq!(caps["tiers"]["act"], 11);
-    assert_eq!(caps["tiers"]["write"], 9);
+    assert_eq!(caps["tool_count"], 48);
+    assert_eq!(caps["tiers"]["read"], 24);
+    assert_eq!(caps["tiers"]["act"], 13);
+    assert_eq!(caps["tiers"]["write"], 11);
     assert!(caps["features"]["duckdb"].is_boolean());
     assert!(caps["features"]["webengine"].is_boolean());
     assert!(caps["features"]["noter"].is_boolean());
@@ -1321,6 +1331,109 @@ fn phase1_malformed_arguments_are_invalid_params() {
         call_line(2, "set_diagram_source", json!({ "tab_index": 0 })),    // missing source
         call_line(3, "create_diagram", json!({ "source": 7 })),           // mistyped
         call_line(4, "open_noter", json!({ "bogus": true })),             // extra key
+    ]);
+    for r in &responses {
+        assert_eq!(r["error"]["code"], -32602, "expected -32602 in {r}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 — data-analyst + charts (7 new tools, 41 → 48)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn phase2_data_tools_happy_paths() {
+    let responses = run_lines(&[
+        call_line(1, "list_connections", json!({})),
+        call_line(2, "run_query", json!({ "connection_name": "demo", "sql": "SELECT id, name FROM t" })),
+        call_line(3, "list_tables", json!({ "connection_name": "demo" })),
+        call_line(4, "open_data_analyst", json!({})),
+    ]);
+    for r in &responses {
+        assert_eq!(r["result"]["isError"], false, "unexpected error in {r}");
+    }
+    // list_connections: sanitized entry, NO password leak.
+    let conns = json_of(&responses[0]);
+    let list = conns["connections"].as_array().unwrap();
+    assert_eq!(list[0]["name"], "demo");
+    assert_eq!(list[0]["read_only"], true);
+    assert!(list[0].get("password").is_none());
+    // run_query over a saved connection: columns + rows + engine.
+    let q = json_of(&responses[1]);
+    assert_eq!(q["columns"], json!(["id", "name"]));
+    assert_eq!(q["rows"].as_array().unwrap().len(), 2);
+    assert!(q["engine"].as_str().is_some());
+    // list_tables.
+    let t = json_of(&responses[2]);
+    assert!(t["tables"].as_array().unwrap().contains(&json!("invoices")));
+    // open_data_analyst.
+    assert_eq!(json_of(&responses[3])["opened"], true);
+}
+
+#[test]
+fn phase2_run_query_rejects_mutations_and_unknown_connections() {
+    let responses = run_lines(&[
+        call_line(1, "run_query", json!({ "connection_name": "demo", "sql": "UPDATE t SET x = 1" })),
+        call_line(2, "run_query", json!({ "connection_name": "nope", "sql": "SELECT 1" })),
+    ]);
+    assert_eq!(responses[0]["result"]["isError"], true);
+    assert!(text_of(&responses[0]).contains("SELECT"));
+    assert_eq!(responses[1]["result"]["isError"], true);
+    assert!(text_of(&responses[1]).contains("no connection named"));
+}
+
+#[test]
+fn phase2_render_chart_returns_id() {
+    let responses = run_lines(&[call_line(
+        1,
+        "render_chart",
+        json!({ "spec": { "mark": "bar" }, "title": "sales" }),
+    )]);
+    assert_eq!(responses[0]["result"]["isError"], false);
+    let c = json_of(&responses[0]);
+    assert!(c["chart_id"].as_str().is_some());
+    assert_eq!(c["rendered"], true);
+}
+
+#[test]
+fn phase2_write_tools_approval_gate() {
+    // Approve (default): both write verbs succeed.
+    let responses = run_lines(&[
+        call_line(1, "export_query_results", json!({
+            "connection_name": "demo", "sql": "SELECT 1", "path": "/tmp/out.csv", "format": "csv"
+        })),
+        call_line(2, "export_chart", json!({
+            "spec": { "mark": "bar" }, "path": "/tmp/chart.png", "format": "png"
+        })),
+    ]);
+    let eqr = json_of(&responses[0]);
+    assert_eq!(eqr["ok"], true);
+    assert_eq!(eqr["path"], "/tmp/out.csv");
+    assert_eq!(json_of(&responses[1])["path"], "/tmp/chart.png");
+    // Deny: both fail with the verbatim editor error.
+    let mut editor = MockEditor::default();
+    editor.set_approval(ApprovalMode::Deny);
+    let denied = run_lines_with(editor, &[
+        call_line(1, "export_query_results", json!({
+            "connection_name": "demo", "sql": "SELECT 1", "path": "/tmp/out.csv", "format": "csv"
+        })),
+        call_line(2, "export_chart", json!({
+            "spec": { "mark": "bar" }, "path": "/tmp/chart.png", "format": "png"
+        })),
+    ]);
+    for r in &denied {
+        assert_eq!(r["result"]["isError"], true);
+        assert_eq!(text_of(r), "denied by user");
+    }
+}
+
+#[test]
+fn phase2_malformed_arguments_are_invalid_params() {
+    let responses = run_lines(&[
+        call_line(1, "run_query", json!({ "connection_name": "demo" })),      // missing sql
+        call_line(2, "export_chart", json!({ "spec": { "mark": "bar" }, "path": "/tmp/x.gif", "format": "gif" })),
+        call_line(3, "render_chart", json!({ "spec": "not-an-object" })),     // spec not object
+        call_line(4, "export_chart", json!({ "spec": { "mark": "bar" }, "path": "/tmp/x.png", "format": "png", "scale": 9 })),
     ]);
     for r in &responses {
         assert_eq!(r["error"]["code"], -32602, "expected -32602 in {r}");

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Notepatra MCP — Your editor, readable by your AI</title>
-<meta name="description" content="Notepatra's MCP server (new in v0.1.118, 41 tools as of v0.1.119): tools that let Claude, Codex, and any spec-compliant MCP client read your open tabs, search your workspace, run read-only SQL, inspect Git — and, only with your explicit per-action approval, edit, save, and create Noter notes. Local socket + stdio, nothing leaves your machine.">
+<meta name="description" content="Notepatra's MCP server (new in v0.1.118, 48 tools as of v0.1.119): tools that let Claude, Codex, and any spec-compliant MCP client read your open tabs, search your workspace, run read-only SQL, inspect Git — and, only with your explicit per-action approval, edit, save, and create Noter notes. Local socket + stdio, nothing leaves your machine.">
 <link rel="canonical" href="https://notepatra.org/mcp.html">
 <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png">
 
@@ -229,13 +229,13 @@
   <p class="lead">From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a Model Context Protocol server that lets Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client see what you have open, search your workspace, run read-only SQL over your data files, read your Git status and Noter notes, and — only with your explicit per-action approval — edit, save, and create notes. Everything runs over stdio and a local socket. Nothing leaves your machine.</p>
 
   <div class="callout info">
-    <strong>Release status.</strong> MCP first shipped in v0.1.118; the current release is v0.1.119, which expands the server to <strong>41 tools</strong> (Git, read-only SQL, Noter write verbs, diagram export) and adds Windows named-pipe support. Everything on this page describes v0.1.119.
+    <strong>Release status.</strong> MCP first shipped in v0.1.118; the current release is v0.1.119, which expands the server to <strong>48 tools</strong> (Git, read-only SQL, Noter write verbs, diagram export) and adds Windows named-pipe support. Everything on this page describes v0.1.119.
   </div>
 
   <nav class="pagenav">
     On this page:
     <a href="#what-it-is">What it is</a> ·
-    <a href="#tools">The 41 tools</a> ·
+    <a href="#tools">The 48 tools</a> ·
     <a href="#approval">Write approval</a> ·
     <a href="#setup">Setup per client</a> ·
     <a href="#resources-prompts">Resources &amp; prompts</a> ·
@@ -252,15 +252,15 @@
   <ul>
     <li><strong>Transport:</strong> a stdio JSON-RPC 2.0 MCP server. It speaks MCP protocol revision <code>2025-06-18</code> and also accepts <code>2025-03-26</code> and <code>2024-11-05</code> from older clients.</li>
     <li><strong>Editor connection:</strong> pass <code>--socket</code> and the server talks to the running editor over a dedicated per-user local socket (a Unix domain socket; the editor opens it on launch). Without <code>--socket</code>, the server runs against a built-in mock editor, so you can exercise the protocol without Notepatra running.</li>
-    <li><strong>Capabilities:</strong> tools (41 of them), resources (your open tabs and Noter notes), and prompts (three ready-made ones).</li>
+    <li><strong>Capabilities:</strong> tools (48 of them), resources (your open tabs and Noter notes), and prompts (three ready-made ones).</li>
     <li><strong>Safety:</strong> reads never need permission; every write shows an approval card inside the editor window and does nothing until you click Approve. Details <a href="#approval">below</a>.</li>
   </ul>
   <p>In practice: ask your assistant "what do I have open?", "find where the config is parsed", "diff these two tabs", "format this JSON and put it in a new tab" — and it drives the actual editor on your screen.</p>
 
-  <h2 id="tools" class="anchor-target">The tool surface — 41 tools, three tiers</h2>
-  <p><code>notepatra-mcp</code> exposes 41 tools, grouped in three tiers by what they can touch. Read tools observe. Act tools drive visible, non-destructive editor actions. Write tools change buffer contents or disk — and every one of those is gated behind a human approval card.</p>
+  <h2 id="tools" class="anchor-target">The tool surface — 48 tools, three tiers</h2>
+  <p><code>notepatra-mcp</code> exposes 48 tools, grouped in three tiers by what they can touch. Read tools observe. Act tools drive visible, non-destructive editor actions. Write tools change buffer contents or disk — and every one of those is gated behind a human approval card.</p>
 
-  <h3>Tier 1 — Read (21 tools, no approval needed)</h3>
+  <h3>Tier 1 — Read (24 tools, no approval needed)</h3>
   <table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
@@ -285,13 +285,16 @@
       <tr><td><code>list_languages</code></td><td>List the canonical language names <code>set_language</code> accepts (as shown in the Language menu).</td></tr>
       <tr><td><code>get_capabilities</code></td><td>Editor capability profile: edition, platform, version, tool count and tiers, and feature flags (DuckDB, WebEngine, Noter).</td></tr>
       <tr><td><code>get_diagram_source</code></td><td>Read the <code>.npd</code> source of an open Diagram tab.</td></tr>
+      <tr><td><code>list_connections</code></td><td>List your saved database connections (name, driver, database) — never passwords.</td></tr>
+      <tr><td><code>run_query</code></td><td>Run a read-only <code>SELECT</code> against a saved named connection (PostgreSQL / MySQL / SQL Server / SQLite / DuckDB) — what <code>run_sql</code> cannot reach; mutations rejected. Full edition (DuckDB) for DuckDB-driver connections.</td></tr>
+      <tr><td><code>list_tables</code></td><td>List the user tables available over a saved named connection.</td></tr>
     </tbody>
   </table>
 
   <div class="callout success">
     <strong>How <code>run_sql</code> stays safe.</strong> Every query is checked by the SQL classifier and rejected unless it is a pure <code>SELECT</code> — no <code>INSERT</code>, <code>UPDATE</code>, <code>ATTACH</code>, <code>COPY</code>, or DDL ever runs. On the Full (DuckDB) edition there is a second wall: the target CSV / Parquet / JSON is first materialized into an in-memory table, then DuckDB's external filesystem access is turned off (<code>SET enable_external_access=false</code>) <em>before</em> the untrusted SQL executes — so the query cannot reach host files even through <code>read_text</code>, <code>read_csv_auto</code>, <code>glob</code>, or a replacement scan. The <code>csv_path</code> argument is confined to your open workspace. Results are row- and cell-capped so a single answer can't exfiltrate a whole file.</div>
 
-  <h3>Tier 2 — Act (11 tools, visible and non-destructive)</h3>
+  <h3>Tier 2 — Act (13 tools, visible and non-destructive)</h3>
   <table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
@@ -306,10 +309,12 @@
       <tr><td><code>open_note</code></td><td>Open one Noter note in the editor by its file path.</td></tr>
       <tr><td><code>create_diagram</code></td><td>Create a new Diagram (<code>.npd</code>) tab — optionally pre-filled — and focus it; reports parse validity.</td></tr>
       <tr><td><code>open_noter</code></td><td>Open or focus the Noter panel tab.</td></tr>
+      <tr><td><code>open_data_analyst</code></td><td>Reveal and focus the AI dock in Data Analyst mode.</td></tr>
+      <tr><td><code>render_chart</code></td><td>Render a chart inline in the Data Analyst transcript (Vega-Lite or the simplified <code>{type,x,y,data}</code> form). Full edition (WebEngine) only.</td></tr>
     </tbody>
   </table>
 
-  <h3>Tier 3 — Write, with approval (9 tools, human-gated)</h3>
+  <h3>Tier 3 — Write, with approval (11 tools, human-gated)</h3>
   <table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
@@ -322,11 +327,13 @@
       <tr><td><code>set_reminder</code></td><td>Set a due-time reminder on a Noter note.</td></tr>
       <tr><td><code>export_diagram</code></td><td>Export a diagram tab to a PNG or PDF file on disk.</td></tr>
       <tr><td><code>set_diagram_source</code></td><td>Replace the entire <code>.npd</code> source of a Diagram tab; the canvas re-renders.</td></tr>
+      <tr><td><code>export_query_results</code></td><td>Run a read-only <code>SELECT</code> against a saved connection and write the results to a CSV or JSON file.</td></tr>
+      <tr><td><code>export_chart</code></td><td>Render a chart off-screen and export it to a PNG / SVG / HTML / spec file. Full edition (WebEngine) only.</td></tr>
     </tbody>
   </table>
 
   <h2 id="approval" class="anchor-target">The write-approval model</h2>
-  <p>The nine write tools <strong>never execute on arrival</strong>. Each incoming write request shows a non-modal approval card inside the Notepatra window — it does not steal focus or block your typing — describing what the assistant wants to do, with a preview of the text involved and two buttons: <strong>Approve</strong> and <strong>Deny</strong>.</p>
+  <p>The eleven write tools <strong>never execute on arrival</strong>. Each incoming write request shows a non-modal approval card inside the Notepatra window — it does not steal focus or block your typing — describing what the assistant wants to do, with a preview of the text involved and two buttons: <strong>Approve</strong> and <strong>Deny</strong>.</p>
   <ul>
     <li><strong>Nothing happens until you click Approve.</strong> The tool call blocks; the assistant just waits.</li>
     <li><strong>120-second auto-deny.</strong> If you don't respond within two minutes, the request is denied automatically and the assistant receives the error <code>approval timed out</code>.</li>
@@ -383,7 +390,7 @@ cargo build --release   # binary at target/release/notepatra-mcp</code></pre>
   <h3>Claude Code</h3>
   <p>One command:</p>
   <pre><code>claude mcp add notepatra -- notepatra-mcp --socket</code></pre>
-  <p>Then <code>/mcp</code> inside Claude Code shows the server and its 41 tools.</p>
+  <p>Then <code>/mcp</code> inside Claude Code shows the server and its 48 tools.</p>
 
   <h3>OpenAI Codex CLI</h3>
   <p>Add a block to <code>~/.codex/config.toml</code>:</p>
@@ -442,7 +449,7 @@ async with MCPServerStdio(
   <h3>Is my data sent anywhere?</h3>
   <p>Not by Notepatra. <code>notepatra-mcp</code> makes no network connections: it talks to your AI client over stdio (pipes between two processes on your machine) and to the editor over a local per-user socket. Nothing leaves the machine through this path. One honest caveat that applies to every MCP server: whatever your <em>assistant</em> reads through these tools becomes part of its conversation, and goes wherever that client sends its conversations — a local model stays local, a cloud model does not. Choose the client and model accordingly.</p>
   <h3>Can the AI edit my files without me noticing?</h3>
-  <p>No. The only tools that can change a buffer or touch disk are the nine write tools, and each call requires you to click Approve on a card inside the editor within 120 seconds. No response means denied.</p>
+  <p>No. The only tools that can change a buffer or touch disk are the eleven write tools, and each call requires you to click Approve on a card inside the editor within 120 seconds. No response means denied.</p>
   <h3>Is this the same as Notepatra's built-in AI Assistant?</h3>
   <p>No — they're complementary. The AI Assistant dock (Ctrl+Shift+A) is Notepatra talking to a model you configure. MCP is the reverse direction: an external assistant you already use (Claude, Codex, ...) talking to Notepatra. Neither requires the other.</p>
   <h3>Does it work with the Lite build?</h3>

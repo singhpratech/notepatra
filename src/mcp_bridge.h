@@ -137,6 +137,25 @@ struct McpEditorHost {
     std::function<bool(int, const QString &)> setDiagramSource;
     // ACT: open/focus the Noter panel tab (same path as the "+ Noter" UI).
     std::function<bool()> openNoter;
+
+    // ── Phase 2: Data-analyst + Charts. Optional: unset ⇒ clear error. ──
+    // READ: sanitized saved connections [{name,driver,database,read_only}] — never credentials.
+    std::function<QJsonArray()> listConnections;
+    // READ: SELECT-only query on a SAVED connection via classifySql + runQuery(allowMutation=false).
+    std::function<QJsonObject(const QString &name, const QString &sql,
+                              int maxRows, QString *err)> runNamedQuery;
+    // READ: user tables over a saved connection; *err on open failure.
+    std::function<QJsonArray(const QString &name, QString *err)> listTables;
+    // Pure static classification (DbConnections::classifySql, restrictFilesystem=true); false ⇒ *reason.
+    std::function<bool(const QString &sql, QString *reason)> classifySqlReadOnly;
+    // ACT: reveal the AI dock in Data Analyst mode.
+    std::function<bool()> openDataAnalyst;
+    // ACT: inline chart card in the Data transcript → {chart_id,rendered}; *err on failure/Lite.
+    std::function<QJsonObject(const QJsonObject &spec, const QString &title,
+                              QString *err)> renderChart;
+    // WRITE: off-screen render + write chart bytes to path; false + *err on failure/Lite.
+    std::function<bool(const QJsonObject &spec, const QString &path,
+                       const QString &format, int scale, QString *err)> exportChart;
 };
 
 // Editor-side MCP bridge: a dedicated QLocalServer, deliberately separate from
@@ -219,6 +238,14 @@ private:
     void verbGetDiagramSource(QLocalSocket *client, int id, const QJsonObject &args); // READ
     void verbSetDiagramSource(QLocalSocket *client, int id, const QJsonObject &args); // WRITE (card)
     void verbOpenNoter(QLocalSocket *client, int id);                                 // ACT
+    // ── Phase 2: Data-analyst + Charts ──
+    void verbListConnections(QLocalSocket *client, int id);                            // READ
+    void verbRunQuery(QLocalSocket *client, int id, const QJsonObject &args);          // READ
+    void verbListTables(QLocalSocket *client, int id, const QJsonObject &args);        // READ
+    void verbOpenDataAnalyst(QLocalSocket *client, int id);                            // ACT
+    void verbRenderChart(QLocalSocket *client, int id, const QJsonObject &args);       // ACT
+    void verbExportQueryResults(QLocalSocket *client, int id, const QJsonObject &args); // WRITE (card)
+    void verbExportChart(QLocalSocket *client, int id, const QJsonObject &args);       // WRITE (card)
 
     // One held write request: the response is sent only after the human
     // decides (or the timeout / a disconnect decides for them).

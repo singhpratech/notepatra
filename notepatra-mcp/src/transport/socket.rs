@@ -61,7 +61,7 @@ const APPROVAL_TIMEOUT: Duration = Duration::from_secs(130);
 /// The approval-gated write verbs (must match the C++ bridge's card-gated
 /// verb set exactly). v0.1.119 adds create_note/append_note/set_reminder/
 /// export_diagram to the v0.1.118 quartet; phase 1 adds set_diagram_source.
-const WRITE_VERBS: [&str; 9] = [
+const WRITE_VERBS: [&str; 11] = [
     "insert_text",
     "replace_selection",
     "apply_edit",
@@ -71,6 +71,9 @@ const WRITE_VERBS: [&str; 9] = [
     "set_reminder",
     "export_diagram",
     "set_diagram_source",
+    // phase 2
+    "export_query_results",
+    "export_chart",
 ];
 
 /// Mirrors `SingleInstance::serverName()` in src/singleinstance.cpp.
@@ -859,6 +862,80 @@ impl EditorTransport for SocketEditor {
 
     fn open_noter(&mut self) -> Result<Value, TransportError> {
         self.call("open_noter", json!({}))
+    }
+
+    // Phase 2 — data-analyst + charts. Optional keys are sent only when
+    // present so the wire stays minimal (mirrors create_diagram).
+
+    fn list_connections(&self) -> Result<Value, TransportError> {
+        self.call("list_connections", json!({}))
+    }
+
+    fn run_query(
+        &self,
+        connection_name: &str,
+        sql: &str,
+        max_rows: Option<usize>,
+    ) -> Result<Value, TransportError> {
+        let mut args = json!({ "connection_name": connection_name, "sql": sql });
+        if let Some(n) = max_rows {
+            args["max_rows"] = json!(n);
+        }
+        self.call("run_query", args)
+    }
+
+    fn list_tables(&self, connection_name: &str) -> Result<Value, TransportError> {
+        self.call("list_tables", json!({ "connection_name": connection_name }))
+    }
+
+    fn open_data_analyst(&mut self) -> Result<Value, TransportError> {
+        self.call("open_data_analyst", json!({}))
+    }
+
+    fn render_chart(
+        &mut self,
+        spec: &Value,
+        title: Option<&str>,
+    ) -> Result<Value, TransportError> {
+        let mut args = json!({ "spec": spec.clone() });
+        if let Some(t) = title {
+            args["title"] = json!(t);
+        }
+        self.call("render_chart", args)
+    }
+
+    fn export_query_results(
+        &mut self,
+        connection_name: &str,
+        sql: &str,
+        path: &str,
+        format: &str,
+        max_rows: Option<usize>,
+    ) -> Result<Value, TransportError> {
+        let mut args = json!({
+            "connection_name": connection_name,
+            "sql": sql,
+            "path": path,
+            "format": format,
+        });
+        if let Some(n) = max_rows {
+            args["max_rows"] = json!(n);
+        }
+        self.call("export_query_results", args)
+    }
+
+    fn export_chart(
+        &mut self,
+        spec: &Value,
+        path: &str,
+        format: &str,
+        scale: Option<usize>,
+    ) -> Result<Value, TransportError> {
+        let mut args = json!({ "spec": spec.clone(), "path": path, "format": format });
+        if let Some(s) = scale {
+            args["scale"] = json!(s);
+        }
+        self.call("export_chart", args)
     }
 }
 

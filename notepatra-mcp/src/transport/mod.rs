@@ -161,6 +161,27 @@ impl std::error::Error for TransportError {}
 /// * `set_diagram_source` (args `{tab_index,source}`) →
 ///   `{ok:true,tab_index,valid,errors}` (WRITE — same approval card + verbatim
 ///   deny/timeout errors as the other write verbs)
+///
+/// Phase 2 (data-analyst + charts) — verbatim JSON passthrough:
+///
+/// Read tier:
+/// * `list_connections` → `{connections:[{name,driver,database,read_only}]}`
+///   (never passwords)
+/// * `run_query` (args `{connection_name,sql,max_rows?}`) →
+///   `{columns:[str],rows:[[…]],truncated:bool,engine:str}` — SELECT-only over
+///   a SAVED connection; mutations are rejected by the editor
+/// * `list_tables` (args `{connection_name}`) → `{tables:[str]}`
+///
+/// Act tier:
+/// * `open_data_analyst` → `{opened:true}`
+/// * `render_chart` (args `{spec,title?}`) → `{chart_id:str,rendered:bool}`;
+///   Lite editions error with `"charts require the Full edition (WebEngine)"`
+///
+/// Write tier (same human-approval card + verbatim deny/timeout errors):
+/// * `export_query_results` (args `{connection_name,sql,path,format,max_rows?}`)
+///   → `{ok:true,path:str,rows:int}`
+/// * `export_chart` (args `{spec,path,format,scale?}`) → `{path:str}`;
+///   Full/WebEngine only (same gate error as render_chart)
 pub trait EditorTransport {
     /// Returns the tab index the file landed in.
     fn open_file(&mut self, path: &str) -> Result<usize, TransportError>;
@@ -271,4 +292,34 @@ pub trait EditorTransport {
         source: &str,
     ) -> Result<Value, TransportError>;
     fn open_noter(&mut self) -> Result<Value, TransportError>;
+
+    // Phase 2 — data-analyst + charts (verbatim JSON passthrough).
+    fn list_connections(&self) -> Result<Value, TransportError>;
+    fn run_query(
+        &self,
+        connection_name: &str,
+        sql: &str,
+        max_rows: Option<usize>,
+    ) -> Result<Value, TransportError>;
+    fn list_tables(&self, connection_name: &str) -> Result<Value, TransportError>;
+    fn open_data_analyst(&mut self) -> Result<Value, TransportError>;
+    fn render_chart(&mut self, spec: &Value, title: Option<&str>)
+        -> Result<Value, TransportError>;
+    /// Approval-gated in the editor, like the other write verbs.
+    fn export_query_results(
+        &mut self,
+        connection_name: &str,
+        sql: &str,
+        path: &str,
+        format: &str,
+        max_rows: Option<usize>,
+    ) -> Result<Value, TransportError>;
+    /// Approval-gated in the editor, like the other write verbs.
+    fn export_chart(
+        &mut self,
+        spec: &Value,
+        path: &str,
+        format: &str,
+        scale: Option<usize>,
+    ) -> Result<Value, TransportError>;
 }

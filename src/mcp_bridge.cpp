@@ -46,6 +46,11 @@
 //                                              tool result with tool_count
 //                                              and tiers — derived there)
 //   get_diagram_source {tab_index}          → {source}             (phase 1)
+//   list_connections {}                     → {connections:[{name,driver,
+//                                              database,read_only}]} (phase 2)
+//   run_query  {connection_name,sql,max_rows?(=200,cap 200)}
+//                                           → {columns,rows,truncated,engine} (phase 2)
+//   list_tables{connection_name}            → {tables:[...]}         (phase 2)
 //
 // ACT tier — visible, non-destructive, NO approval card.
 //   new_tab     {text?}                     → {tab_index}
@@ -57,6 +62,9 @@
 //   create_diagram {source?,title?}         → {tab_index,valid,
 //                                              errors:[{line,message}]}  (phase 1)
 //   open_noter  {}                          → {opened}             (phase 1)
+//   open_data_analyst {}                    → {opened}             (phase 2)
+//   render_chart {spec,title?}              → {chart_id,rendered}   (phase 2,
+//                                              Full/WebEngine only)
 //
 // WRITE tier — held behind the in-window human-approval card; a mutation
 // runs ONLY on Approve (Deny / timeout / disconnect ⇒ nothing happened).
@@ -70,6 +78,11 @@
 //   export_diagram {tab_index,path,format("png"|"pdf")} → {path}   (v0.1.119)
 //   set_diagram_source {tab_index,source}   → {ok,tab_index,valid,
 //                                              errors:[{line,message}]}  (phase 1)
+//   export_query_results {connection_name,sql,path,format("csv"|"json"),
+//                         max_rows?(=10000,cap 100000)} → {ok,path,rows} (phase 2)
+//   export_chart {spec,path,format("png"|"svg"|"html"|"spec"),scale?(=2,1..4)}
+//                                           → {path}                 (phase 2,
+//                                              Full/WebEngine only)
 //
 // NOTE: write verbs take "tab_index"; read tab-arg verbs keep their existing
 // keys ("index" for read_tab/find_in_tab). This asymmetry is deliberate and
@@ -136,6 +149,10 @@ constexpr int kMaxSqlCells = 1024;                 // per-cell char cap
 constexpr int kAppendNoteMaxChars = 1 * 1024 * 1024;
 constexpr int kCreateNoteMaxChars = 1 * 1024 * 1024;
 constexpr int kDiagramSourceMaxChars = 1 * 1024 * 1024; // create/set_diagram_source
+// Phase 2 — data-analyst + charts.
+constexpr int kExportRowsDefault = 10000;   // export_query_results default cap
+constexpr int kExportRowsMax = 100000;      // export_query_results hard cap
+constexpr int kChartScaleDefault = 2;       // export_chart png scale
 
 QString elideForCard(const QString &s, int cap) {
     if (s.size() <= cap) return s;
@@ -260,6 +277,75 @@ QJsonObject scanWorkspace(const QString &root, const QString &query,
     result[QStringLiteral("results")] = hitsToJson(hits);
     result[QStringLiteral("truncated")] = truncated;
     return result;
+}
+
+// Defensive re-cap of a {columns,rows,truncated,engine} result: clamp to
+// kMaxSqlRows and truncate any string cell over kMaxSqlCells (shared by
+// run_sql and the phase-2 run_query so both enforce the same wire ceiling).
+void capSqlResultRows(QJsonObject &result) {
+    QJsonArray rows = result.value(QLatin1String("rows")).toArray();
+    bool truncated = result.value(QLatin1String("truncated")).toBool(false);
+    if (rows.size() > kMaxSqlRows) {
+        QJsonArray capped;
+        for (int i = 0; i < kMaxSqlRows; ++i) capped.append(rows.at(i));
+        rows = capped;
+        truncated = true;
+    }
+    for (int ri = 0; ri < rows.size(); ++ri) {
+        QJsonArray row = rows.at(ri).toArray();
+        bool changed = false;
+        for (int ci = 0; ci < row.size(); ++ci) {
+            const QString cell = row.at(ci).toString();
+            if (cell.size() > kMaxSqlCells) {
+                row.replace(ci, cell.left(kMaxSqlCells) + QChar(0x2026)
+                                    + QStringLiteral("[truncated]"));
+                changed = true;
+            }
+        }
+        if (changed) {
+            rows.replace(ri, row);
+            truncated = true;
+        }
+    }
+    result[QStringLiteral("rows")] = rows;
+    result[QStringLiteral("truncated")] = truncated;
+}
+
+// One CSV cell: quote when it carries a comma/quote/newline (RFC-4180).
+QString csvCell(const QString &s) {
+    if (s.contains(QLatin1Char('"')) || s.contains(QLatin1Char(',')) ||
+        s.contains(QLatin1Char('\n')) || s.contains(QLatin1Char('\r'))) {
+        QString q = s;
+        q.replace(QLatin1String("\""), QLatin1String("\"\""));
+        return QLatin1Char('"') + q + QLatin1Char('"');
+    }
+    return s;
+}
+
+// Serialize a {columns,rows} query result to CSV bytes (\n endings, UTF-8).
+QByteArray sqlResultToCsv(const QJsonObject &r) {
+    const QJsonArray cols = r.value(QLatin1String("columns")).toArray();
+    const QJsonArray rows = r.value(QLatin1String("rows")).toArray();
+    QString out;
+    QStringList header;
+    for (const QJsonValue &c : cols) header << csvCell(c.toString());
+    out += header.join(QLatin1Char(',')) + QLatin1Char('\n');
+    for (const QJsonValue &rv : rows) {
+        const QJsonArray row = rv.toArray();
+        QStringList cells;
+        for (const QJsonValue &cell : row) cells << csvCell(cell.toString());
+        out += cells.join(QLatin1Char(',')) + QLatin1Char('\n');
+    }
+    return out.toUtf8();
+}
+
+// Serialize a {columns,rows,engine} query result to pretty JSON bytes.
+QByteArray sqlResultToJson(const QJsonObject &r) {
+    QJsonObject o;
+    o[QStringLiteral("columns")] = r.value(QLatin1String("columns")).toArray();
+    o[QStringLiteral("rows")] = r.value(QLatin1String("rows")).toArray();
+    o[QStringLiteral("engine")] = r.value(QLatin1String("engine")).toString();
+    return QJsonDocument(o).toJson(QJsonDocument::Indented);
 }
 } // namespace
 
@@ -460,6 +546,20 @@ void McpBridge::handleLine(QLocalSocket *client, const QByteArray &line) {
         verbSetDiagramSource(client, id, args);
     else if (verb == QLatin1String("open_noter"))
         verbOpenNoter(client, id);
+    else if (verb == QLatin1String("list_connections"))
+        verbListConnections(client, id);
+    else if (verb == QLatin1String("run_query"))
+        verbRunQuery(client, id, args);
+    else if (verb == QLatin1String("list_tables"))
+        verbListTables(client, id, args);
+    else if (verb == QLatin1String("open_data_analyst"))
+        verbOpenDataAnalyst(client, id);
+    else if (verb == QLatin1String("render_chart"))
+        verbRenderChart(client, id, args);
+    else if (verb == QLatin1String("export_query_results"))
+        verbExportQueryResults(client, id, args);
+    else if (verb == QLatin1String("export_chart"))
+        verbExportChart(client, id, args);
     else
         sendError(client, id,
                   QStringLiteral("unknown verb: %1").arg(verb));
@@ -1389,39 +1489,14 @@ void McpBridge::verbRunSql(QLocalSocket *client, int id,
         sendError(client, id, err);
         return;
     }
-    QJsonArray rows = r.value(QLatin1String("rows")).toArray();
-    bool truncated = r.value(QLatin1String("truncated")).toBool(false);
-    if (rows.size() > kMaxSqlRows) { // defensive re-cap in the bridge
-        QJsonArray capped;
-        for (int i = 0; i < kMaxSqlRows; ++i) capped.append(rows.at(i));
-        rows = capped;
-        truncated = true;
-    }
-    // Per-cell char cap (defense in depth): a single cell must not be able to
-    // exfiltrate a whole file (e.g. read_text over a huge file that slipped a
-    // gate). Truncate each string cell to kMaxSqlCells and mark it.
-    for (int ri = 0; ri < rows.size(); ++ri) {
-        QJsonArray row = rows.at(ri).toArray();
-        bool changed = false;
-        for (int ci = 0; ci < row.size(); ++ci) {
-            const QString cell = row.at(ci).toString();
-            if (cell.size() > kMaxSqlCells) {
-                row.replace(ci, cell.left(kMaxSqlCells)
-                                    + QChar(0x2026)
-                                    + QStringLiteral("[truncated]"));
-                changed = true;
-            }
-        }
-        if (changed) {
-            rows.replace(ri, row);
-            truncated = true;
-        }
-    }
     QJsonObject result;
     result[QStringLiteral("columns")] = r.value(QLatin1String("columns")).toArray();
-    result[QStringLiteral("rows")] = rows;
-    result[QStringLiteral("truncated")] = truncated;
+    result[QStringLiteral("rows")] = r.value(QLatin1String("rows")).toArray();
+    result[QStringLiteral("truncated")] = r.value(QLatin1String("truncated")).toBool(false);
     result[QStringLiteral("engine")] = r.value(QLatin1String("engine")).toString();
+    // Defensive re-cap (row + per-cell): a single cell must not exfiltrate a
+    // whole file (e.g. read_text over a huge file that slipped a gate).
+    capSqlResultRows(result);
     sendResult(client, id, result);
 }
 
@@ -1659,7 +1734,8 @@ void McpBridge::verbExportDiagram(QLocalSocket *client, int id,
         return;
     }
     const QString path =
-        QDir::fromNativeSeparators(args.value(QLatin1String("path")).toString());
+        QDir::cleanPath(
+            QDir::fromNativeSeparators(args.value(QLatin1String("path")).toString()));
     if (path.isEmpty()) {
         sendError(client, id, QStringLiteral("missing path"));
         return;
@@ -1822,6 +1898,297 @@ void McpBridge::verbOpenNoter(QLocalSocket *client, int id) {
     QJsonObject result;
     result[QStringLiteral("opened")] = true;
     sendResult(client, id, result);
+}
+
+// ── Phase 2 — Data-analyst + Charts ─────────────────────────────────────
+
+void McpBridge::verbListConnections(QLocalSocket *client, int id) {
+    QJsonArray out = m_host.listConnections ? m_host.listConnections()
+                                            : QJsonArray();
+    QJsonObject result;
+    result[QStringLiteral("connections")] = out;
+    sendResult(client, id, result);
+}
+
+// READ: SELECT-only query on a SAVED named connection (what run_sql cannot
+// reach). The host lambda re-classifies + runs with allowMutation=false; the
+// bridge re-caps rows/cells with the shared helper.
+void McpBridge::verbRunQuery(QLocalSocket *client, int id,
+                             const QJsonObject &args) {
+    if (!m_host.runNamedQuery) {
+        sendError(client, id,
+                  QStringLiteral("run_query not supported by host"));
+        return;
+    }
+    const QString name =
+        args.value(QLatin1String("connection_name")).toString();
+    if (name.trimmed().isEmpty()) {
+        sendError(client, id, QStringLiteral("missing connection_name"));
+        return;
+    }
+    const QString sql = args.value(QLatin1String("sql")).toString();
+    if (sql.trimmed().isEmpty()) {
+        sendError(client, id, QStringLiteral("missing sql"));
+        return;
+    }
+    const int maxRows = qBound(
+        1, args.value(QLatin1String("max_rows")).toInt(kMaxSqlRows),
+        kMaxSqlRows);
+    QString err;
+    const QJsonObject r = m_host.runNamedQuery(name, sql, maxRows, &err);
+    if (!err.isEmpty()) {
+        sendError(client, id, err);
+        return;
+    }
+    QJsonObject result;
+    result[QStringLiteral("columns")] =
+        r.value(QLatin1String("columns")).toArray();
+    result[QStringLiteral("rows")] = r.value(QLatin1String("rows")).toArray();
+    result[QStringLiteral("truncated")] =
+        r.value(QLatin1String("truncated")).toBool(false);
+    result[QStringLiteral("engine")] =
+        r.value(QLatin1String("engine")).toString();
+    capSqlResultRows(result);
+    sendResult(client, id, result);
+}
+
+void McpBridge::verbListTables(QLocalSocket *client, int id,
+                               const QJsonObject &args) {
+    if (!m_host.listTables) {
+        sendError(client, id,
+                  QStringLiteral("list_tables not supported by host"));
+        return;
+    }
+    const QString name =
+        args.value(QLatin1String("connection_name")).toString();
+    if (name.trimmed().isEmpty()) {
+        sendError(client, id, QStringLiteral("missing connection_name"));
+        return;
+    }
+    QString err;
+    const QJsonArray tables = m_host.listTables(name, &err);
+    if (!err.isEmpty()) {
+        sendError(client, id, err);
+        return;
+    }
+    QJsonObject result;
+    result[QStringLiteral("tables")] = tables;
+    sendResult(client, id, result);
+}
+
+void McpBridge::verbOpenDataAnalyst(QLocalSocket *client, int id) {
+    if (!m_host.openDataAnalyst) {
+        sendError(client, id,
+                  QStringLiteral("open_data_analyst not supported by host"));
+        return;
+    }
+    if (!m_host.openDataAnalyst()) {
+        sendError(client, id, QStringLiteral("could not open Data Analyst"));
+        return;
+    }
+    QJsonObject result;
+    result[QStringLiteral("opened")] = true;
+    sendResult(client, id, result);
+}
+
+// ACT (no card): insert an inline chart card into the Data transcript. The
+// unset-field message IS the friendly Full/WebEngine gate (Lite leaves the
+// field unset), so gating is answered immediately with no card.
+void McpBridge::verbRenderChart(QLocalSocket *client, int id,
+                                const QJsonObject &args) {
+    if (!m_host.renderChart) {
+        sendError(client, id,
+                  QStringLiteral("charts require the Full edition (WebEngine)"));
+        return;
+    }
+    const QJsonValue specV = args.value(QLatin1String("spec"));
+    if (!specV.isObject() || specV.toObject().isEmpty()) {
+        sendError(client, id, QStringLiteral("missing spec (object)"));
+        return;
+    }
+    const QString title = args.value(QLatin1String("title")).toString();
+    QString err;
+    const QJsonObject r = m_host.renderChart(specV.toObject(), title, &err);
+    if (!err.isEmpty()) {
+        sendError(client, id, err);
+        return;
+    }
+    QJsonObject result;
+    result[QStringLiteral("chart_id")] = r.value(QLatin1String("chart_id"));
+    result[QStringLiteral("rendered")] = r.value(QLatin1String("rendered"));
+    sendResult(client, id, result);
+}
+
+// WRITE (card): run the read-only query, serialize to CSV/JSON, write to the
+// requested path. Containment is the human approval card (which names the
+// cleaned absolute destination) plus absolute-path + existing-parent checks —
+// same posture as export_diagram. Fail fast on every doomed case BEFORE a card.
+void McpBridge::verbExportQueryResults(QLocalSocket *client, int id,
+                                       const QJsonObject &args) {
+    if (!m_host.runNamedQuery) {
+        sendError(client, id,
+                  QStringLiteral("export_query_results not supported by host"));
+        return;
+    }
+    const QString name =
+        args.value(QLatin1String("connection_name")).toString();
+    if (name.trimmed().isEmpty()) {
+        sendError(client, id, QStringLiteral("missing connection_name"));
+        return;
+    }
+    const QString sql = args.value(QLatin1String("sql")).toString();
+    if (sql.trimmed().isEmpty()) {
+        sendError(client, id, QStringLiteral("missing sql"));
+        return;
+    }
+    QString format = args.value(QLatin1String("format")).toString().toLower();
+    if (format.isEmpty()) format = QStringLiteral("csv");
+    if (format != QLatin1String("csv") && format != QLatin1String("json")) {
+        sendError(client, id,
+                  QStringLiteral("unsupported format: %1 (csv|json)").arg(format));
+        return;
+    }
+    const int maxRows = qBound(
+        1, args.value(QLatin1String("max_rows")).toInt(kExportRowsDefault),
+        kExportRowsMax);
+    const QString path =
+        QDir::cleanPath(
+            QDir::fromNativeSeparators(args.value(QLatin1String("path")).toString()));
+    if (path.isEmpty()) {
+        sendError(client, id, QStringLiteral("missing path"));
+        return;
+    }
+    const QFileInfo fi(path);
+    if (!fi.isAbsolute()) {
+        sendError(client, id, QStringLiteral("path must be absolute"));
+        return;
+    }
+    if (!QFileInfo(fi.absolutePath()).isDir()) {
+        sendError(client, id,
+                  QStringLiteral("parent directory does not exist: %1")
+                      .arg(QDir::toNativeSeparators(fi.absolutePath())));
+        return;
+    }
+    // Fail fast: a mutation SQL or an unknown connection never queues a card.
+    if (m_host.classifySqlReadOnly) {
+        QString reason;
+        if (!m_host.classifySqlReadOnly(sql, &reason)) {
+            sendError(client, id, QStringLiteral("query rejected: %1").arg(reason));
+            return;
+        }
+    }
+    if (m_host.listConnections) {
+        const QJsonArray conns = m_host.listConnections();
+        bool found = false;
+        for (const QJsonValue &c : conns) {
+            if (c.toObject().value(QLatin1String("name")).toString() == name) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            sendError(client, id,
+                      QStringLiteral("no connection named: %1").arg(name));
+            return;
+        }
+    }
+    const bool overwrites = QFileInfo(path).isFile();
+    const QString shownPath = sanitizeForCard(QDir::toNativeSeparators(path));
+    const QString shownDest = overwrites
+        ? QStringLiteral("OVERWRITE existing file: ") + shownPath
+        : shownPath;
+    const QString desc =
+        QStringLiteral("export query results from '%1' to %2")
+            .arg(elideForCard(name, kApprovalDescChars), shownDest);
+    enqueueApproval(client, id, desc, elideForCard(sql, kApprovalPreviewChars),
+                    [this, name, sql, maxRows, path, format](QString *execErr) {
+        QString e;
+        const QJsonObject r = m_host.runNamedQuery(name, sql, maxRows, &e);
+        if (!e.isEmpty()) {
+            *execErr = e;
+            return QJsonObject();
+        }
+        const QByteArray bytes = (format == QLatin1String("csv"))
+                                     ? sqlResultToCsv(r)
+                                     : sqlResultToJson(r);
+        QFile f(path);
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            *execErr = QStringLiteral("could not write: %1")
+                           .arg(QDir::toNativeSeparators(path));
+            return QJsonObject();
+        }
+        f.write(bytes);
+        f.close();
+        QJsonObject out;
+        out[QStringLiteral("ok")] = true;
+        out[QStringLiteral("path")] = QDir::toNativeSeparators(path);
+        out[QStringLiteral("rows")] = r.value(QLatin1String("rows")).toArray().size();
+        return out;
+    });
+}
+
+// WRITE (card): off-screen render + async export → file. Full/WebEngine only;
+// the unset-field message IS the friendly gate, so Lite fails fast pre-card.
+void McpBridge::verbExportChart(QLocalSocket *client, int id,
+                                const QJsonObject &args) {
+    if (!m_host.exportChart) {
+        sendError(client, id,
+                  QStringLiteral("charts require the Full edition (WebEngine)"));
+        return;
+    }
+    const QJsonValue specV = args.value(QLatin1String("spec"));
+    if (!specV.isObject() || specV.toObject().isEmpty()) {
+        sendError(client, id, QStringLiteral("missing spec (object)"));
+        return;
+    }
+    QString format = args.value(QLatin1String("format")).toString().toLower();
+    if (format.isEmpty()) format = QStringLiteral("png");
+    if (format != QLatin1String("png") && format != QLatin1String("svg") &&
+        format != QLatin1String("html") && format != QLatin1String("spec")) {
+        sendError(client, id,
+                  QStringLiteral("unsupported format: %1 (png|svg|html|spec)")
+                      .arg(format));
+        return;
+    }
+    const int scale = qBound(
+        1, args.value(QLatin1String("scale")).toInt(kChartScaleDefault), 4);
+    const QString path =
+        QDir::cleanPath(
+            QDir::fromNativeSeparators(args.value(QLatin1String("path")).toString()));
+    if (path.isEmpty()) {
+        sendError(client, id, QStringLiteral("missing path"));
+        return;
+    }
+    const QFileInfo fi(path);
+    if (!fi.isAbsolute()) {
+        sendError(client, id, QStringLiteral("path must be absolute"));
+        return;
+    }
+    if (!QFileInfo(fi.absolutePath()).isDir()) {
+        sendError(client, id,
+                  QStringLiteral("parent directory does not exist: %1")
+                      .arg(QDir::toNativeSeparators(fi.absolutePath())));
+        return;
+    }
+    const bool overwrites = QFileInfo(path).isFile();
+    const QString shownPath = sanitizeForCard(QDir::toNativeSeparators(path));
+    const QString shownDest = overwrites
+        ? QStringLiteral("OVERWRITE existing file: ") + shownPath
+        : shownPath;
+    const QString desc = QStringLiteral("export a chart as %1 to %2")
+                             .arg(format.toUpper(), shownDest);
+    const QJsonObject spec = specV.toObject();
+    enqueueApproval(client, id, desc, shownDest,
+                    [this, spec, path, format, scale](QString *execErr) {
+        QString e;
+        if (!m_host.exportChart(spec, path, format, scale, &e)) {
+            *execErr = e.isEmpty() ? QStringLiteral("chart export failed") : e;
+            return QJsonObject();
+        }
+        QJsonObject r;
+        r[QStringLiteral("path")] = QDir::toNativeSeparators(path);
+        return r;
+    });
 }
 
 void McpBridge::enqueueApproval(QLocalSocket *client, int id,

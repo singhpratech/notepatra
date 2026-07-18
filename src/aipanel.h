@@ -30,6 +30,7 @@ class QCompleter;
 class QDragEnterEvent;
 class QDropEvent;
 class EditPlanList;
+class VegaChartRenderer;
 
 // v0.1.67 — friend hook for the chat-history regression test. Lets
 // test_ai_chat_history.cpp read the three per-mode vectors directly and
@@ -70,6 +71,15 @@ public:
     // text + tab list. This avoids staleness without a stream of signals.
     using ContextProvider = std::function<void(AIPanel *)>;
     void setContextProvider(ContextProvider provider) { m_contextProvider = std::move(provider); }
+
+    // v0.1.120 (MCP phase 2) — switch the panel to Data Analyst mode (checks
+    // m_dataMode, whose toggled handler unchecks the siblings + applies).
+    void showDataMode();
+    // v0.1.120 (MCP phase 2) — insert an inline Vega-Lite chart card into the
+    // transcript (factored out of the generate_chart tool-result path).
+    // Returns the renderer (chartId()/isLiteStub()); never null on success.
+    VegaChartRenderer *addChartCard(const QJsonObject &vegaLiteSpec,
+                                    const QString &title);
 
     // Exposed for unit tests — pure function that assembles the
     // "workspace awareness" block the AI sees before the user's prompt.

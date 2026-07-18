@@ -87,6 +87,12 @@ struct MockReminder {
     bucket: &'static str,
 }
 
+struct MockConnection {
+    name: &'static str,
+    driver: &'static str,
+    database: &'static str,
+}
+
 /// In-memory fake editor used by default and in tests.
 pub struct MockEditor {
     tabs: Vec<MockTab>,
@@ -94,6 +100,7 @@ pub struct MockEditor {
     selection: (usize, String),
     notes: Vec<MockNote>,
     reminders: Vec<MockReminder>,
+    connections: Vec<MockConnection>,
     approval: ApprovalMode,
 }
 
@@ -214,6 +221,13 @@ impl Default for MockEditor {
                     bucket: "Later",
                 },
             ],
+            // One saved connection so the phase-2 data verbs demo believably
+            // offline (in-memory SQLite; no real database needed).
+            connections: vec![MockConnection {
+                name: "demo",
+                driver: "QSQLITE",
+                database: ":memory:",
+            }],
             approval: ApprovalMode::Approve,
         }
     }
@@ -923,5 +937,105 @@ impl EditorTransport for MockEditor {
     fn open_noter(&mut self) -> Result<Value, TransportError> {
         // Bridge result shape: {opened}.
         Ok(json!({ "opened": true }))
+    }
+
+    // ── Phase 2 — data-analyst + charts ────────────────────────────────
+
+    fn list_connections(&self) -> Result<Value, TransportError> {
+        let connections: Vec<Value> = self
+            .connections
+            .iter()
+            .map(|c| {
+                json!({
+                    "name": c.name,
+                    "driver": c.driver,
+                    "database": c.database,
+                    "read_only": true,
+                })
+            })
+            .collect();
+        Ok(json!({ "connections": connections }))
+    }
+
+    fn run_query(
+        &self,
+        connection_name: &str,
+        sql: &str,
+        _max_rows: Option<usize>,
+    ) -> Result<Value, TransportError> {
+        if !self.connections.iter().any(|c| c.name == connection_name) {
+            return Err(TransportError(format!(
+                "no connection named: {connection_name}"
+            )));
+        }
+        // Same SELECT-only contract as run_sql's mock (observable rejection).
+        let head = sql
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_ascii_uppercase();
+        if head != "SELECT" && head != "WITH" {
+            return Err(TransportError(
+                "only read-only SELECT statements are allowed".into(),
+            ));
+        }
+        Ok(json!({
+            "columns": [ "id", "name" ],
+            "rows": [ ["1", "alpha"], ["2", "bravo"] ],
+            "truncated": false,
+            "engine": "sqlite",
+        }))
+    }
+
+    fn list_tables(&self, connection_name: &str) -> Result<Value, TransportError> {
+        if !self.connections.iter().any(|c| c.name == connection_name) {
+            return Err(TransportError(format!(
+                "no connection named: {connection_name}"
+            )));
+        }
+        Ok(json!({ "tables": ["invoices", "customers"] }))
+    }
+
+    fn open_data_analyst(&mut self) -> Result<Value, TransportError> {
+        Ok(json!({ "opened": true }))
+    }
+
+    fn render_chart(
+        &mut self,
+        _spec: &Value,
+        _title: Option<&str>,
+    ) -> Result<Value, TransportError> {
+        // The mock pretends the charts pack is present even though its
+        // capability flag reports webengine:false — capabilities describe the
+        // editor, while the mock is a demo surface that answers every verb.
+        Ok(json!({ "chart_id": "mock-chart-1", "rendered": true }))
+    }
+
+    fn export_query_results(
+        &mut self,
+        connection_name: &str,
+        _sql: &str,
+        path: &str,
+        _format: &str,
+        _max_rows: Option<usize>,
+    ) -> Result<Value, TransportError> {
+        self.check_approval()?;
+        if !self.connections.iter().any(|c| c.name == connection_name) {
+            return Err(TransportError(format!(
+                "no connection named: {connection_name}"
+            )));
+        }
+        Ok(json!({ "ok": true, "path": path, "rows": 2 }))
+    }
+
+    fn export_chart(
+        &mut self,
+        _spec: &Value,
+        path: &str,
+        _format: &str,
+        _scale: Option<usize>,
+    ) -> Result<Value, TransportError> {
+        self.check_approval()?;
+        Ok(json!({ "path": path }))
     }
 }

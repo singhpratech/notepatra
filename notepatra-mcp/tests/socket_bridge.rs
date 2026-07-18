@@ -640,3 +640,82 @@ fn phase1_verbs_send_exact_arg_keys() {
     assert_eq!(ed.open_noter().expect("open_noter")["opened"], true);
     finish(path, handle);
 }
+
+#[test]
+fn phase2_verbs_send_exact_arg_keys() {
+    let (path, handle) = spawn_bridge(|stream| {
+        let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+        let mut stream = stream;
+        writeln!(stream, "{GREETING}").unwrap();
+        for _ in 0..7 {
+            let mut line = String::new();
+            if reader.read_line(&mut line).unwrap() == 0 {
+                return;
+            }
+            let req: Value = serde_json::from_str(&line).unwrap();
+            let result = match req["verb"].as_str().unwrap() {
+                "list_connections" => {
+                    assert_eq!(req["args"], json!({}));
+                    json!({ "connections": [] })
+                }
+                "run_query" => {
+                    assert_eq!(
+                        req["args"],
+                        json!({ "connection_name": "demo", "sql": "SELECT 1", "max_rows": 50 })
+                    );
+                    json!({ "columns": [], "rows": [], "truncated": false, "engine": "sqlite" })
+                }
+                "list_tables" => {
+                    assert_eq!(req["args"], json!({ "connection_name": "demo" }));
+                    json!({ "tables": ["t"] })
+                }
+                "open_data_analyst" => {
+                    assert_eq!(req["args"], json!({}));
+                    json!({ "opened": true })
+                }
+                "render_chart" => {
+                    // No title key when None.
+                    assert_eq!(req["args"], json!({ "spec": { "mark": "bar" } }));
+                    assert!(req["args"].get("title").is_none());
+                    json!({ "chart_id": "c1", "rendered": true })
+                }
+                "export_query_results" => {
+                    assert_eq!(
+                        req["args"],
+                        json!({
+                            "connection_name": "demo", "sql": "SELECT 1",
+                            "path": "/tmp/o.csv", "format": "csv"
+                        })
+                    );
+                    json!({ "ok": true, "path": "/tmp/o.csv", "rows": 1 })
+                }
+                "export_chart" => {
+                    // No scale key when None.
+                    assert_eq!(
+                        req["args"],
+                        json!({ "spec": { "mark": "bar" }, "path": "/tmp/c.png", "format": "png" })
+                    );
+                    assert!(req["args"].get("scale").is_none());
+                    json!({ "path": "/tmp/c.png" })
+                }
+                other => panic!("unexpected verb {other}"),
+            };
+            let resp = json!({ "id": req["id"], "ok": true, "result": result });
+            writeln!(stream, "{resp}").unwrap();
+        }
+    });
+    let mut ed = SocketEditor::with_socket_path(path.to_str().unwrap())
+        .with_timeouts(Duration::from_secs(1), Duration::from_secs(1))
+        .with_approval_timeout(Duration::from_secs(2));
+    ed.list_connections().expect("list_connections");
+    ed.run_query("demo", "SELECT 1", Some(50)).expect("run_query");
+    ed.list_tables("demo").expect("list_tables");
+    ed.open_data_analyst().expect("open_data_analyst");
+    let spec = json!({ "mark": "bar" });
+    ed.render_chart(&spec, None).expect("render_chart");
+    ed.export_query_results("demo", "SELECT 1", "/tmp/o.csv", "csv", None)
+        .expect("export_query_results");
+    ed.export_chart(&spec, "/tmp/c.png", "png", None)
+        .expect("export_chart");
+    finish(path, handle);
+}

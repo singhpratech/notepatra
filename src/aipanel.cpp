@@ -6121,89 +6121,7 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
         const QJsonObject spec = body.value("spec").toObject();
         const QString chartId = body.value("chart_id").toString();
         const QString title   = body.value("title").toString();
-        const AiPalette palChart = aiPalette();
-
-        // Outer card frame: 1px border + 8px padding per the v0.1.63 spec.
-        auto *card = new QFrame(m_chatContent);
-        card->setObjectName("chartCard");
-        card->setStyleSheet(QString(
-            "#chartCard { background: %1; border: 1px solid %2; "
-            "border-radius: 8px; padding: 0px; }"
-            "QLabel#chartTitle { color: %3; font-size: 11px; "
-            "font-weight: 600; letter-spacing: 0.4px; "
-            "padding: 6px 10px 0px 10px; background: transparent; }")
-            .arg(palChart.assistBg, palChart.assistBorder, palChart.muted));
-        auto *cardLay = new QVBoxLayout(card);
-        cardLay->setContentsMargins(8, 8, 8, 8);
-        cardLay->setSpacing(4);
-
-        if (!title.isEmpty()) {
-            auto *titleLbl = new QLabel(title, card);
-            titleLbl->setObjectName("chartTitle");
-            titleLbl->setWordWrap(true);
-            cardLay->addWidget(titleLbl);
-        }
-
-        auto *renderer = new VegaChartRenderer(card);
-        cardLay->addWidget(renderer);
-
-        // Error row sits hidden until the JS shell reports a parse /
-        // runtime failure. Connecting the lambda by-value to `card`
-        // means it survives the dispatch loop returning.
-        auto *errLbl = new QLabel(card);
-        errLbl->setStyleSheet(QString(
-            "color: %1; font-size: 10px; font-style: italic;").arg(palChart.errBorder));
-        errLbl->setWordWrap(true);
-        errLbl->setVisible(false);
-        cardLay->addWidget(errLbl);
-        QObject::connect(renderer, &VegaChartRenderer::renderError, errLbl,
-                         [errLbl](const QString &msg) {
-                             errLbl->setText(QStringLiteral("⚠ Chart error: ") + msg);
-                             errLbl->setVisible(true);
-                         });
-
-        // v0.1.64 — lite-mode (no WebEngine) "Charts Pack required" actions.
-        // The renderer emits installRequested when the user clicks the
-        // primary button; we hand off to AIPanel::openChartsPackInstall(),
-        // which routes the user to the matching "full" GitHub Release
-        // asset for their OS. viewJsonRequested appends the Vega-Lite
-        // spec as a fenced code block under the card so users can copy
-        // it into a standalone Vega-Lite editor.
-        QObject::connect(renderer, &VegaChartRenderer::installRequested,
-                         this, &AIPanel::openChartsPackInstall);
-        QObject::connect(renderer, &VegaChartRenderer::viewJsonRequested,
-                         this, [this, cardLay](const QJsonObject &liteSpec) {
-            const QString json = QString::fromUtf8(
-                QJsonDocument(liteSpec).toJson(QJsonDocument::Indented));
-            const AiPalette p = aiPalette();
-            auto *jsonBlock = new QLabel(cardLay->parentWidget());
-            jsonBlock->setTextFormat(Qt::PlainText);
-            jsonBlock->setTextInteractionFlags(Qt::TextSelectableByMouse);
-            jsonBlock->setText(json);
-            jsonBlock->setWordWrap(false);
-            jsonBlock->setStyleSheet(QString(
-                "background: %1; color: %2; border: 1px solid %3; "
-                "border-radius: 4px; padding: 6px 8px; "
-                "font-family: 'JetBrains Mono', 'Cascadia Code', "
-                "'Consolas', monospace; font-size: 11px;")
-                .arg(p.codeBg, p.codeFg, p.assistBorder));
-            cardLay->addWidget(jsonBlock);
-        });
-
-        // Wrap in a margin row, matching the bubble cadence.
-        auto *row = new QWidget(m_chatContent);
-        row->setStyleSheet(QStringLiteral("background: transparent;"));
-        auto *rowLay = new QVBoxLayout(row);
-        rowLay->setContentsMargins(0, 0, 0, 12);
-        rowLay->setSpacing(0);
-        rowLay->addWidget(card);
-        m_chatLayout->insertWidget(m_chatLayout->count() - 1, row);
-
-        // Feed the spec in. setSpec stashes it if the WebEngine page
-        // isn't ready yet and replays on loadFinished. In lite-mode the
-        // stub renderer simply stashes the spec for [View JSON instead].
-        renderer->setSpec(spec);
-
+        VegaChartRenderer *renderer = addChartCard(spec, title);
         resultSummary = renderer->isLiteStub()
                             ? QStringLiteral("charts pack required (id=") + chartId + ")"
                             : QStringLiteral("rendered (id=") + chartId + ")";
@@ -8165,6 +8083,93 @@ void AIPanel::updateInputAvailability() {
 // In-app HTTP download + dynamic-load ships in v0.1.65 once we have the
 // Qt plugin shim + macOS/Windows CI runner test coverage that's the only
 // reliable way to verify the install actually works across platforms.
+// v0.1.120 (MCP phase 2) — reveal Data Analyst mode. The m_dataMode toggled
+// handler unchecks Chat/Coding and runs applyModeWithCancel(); just set it.
+void AIPanel::showDataMode() {
+    if (m_dataMode && !m_dataMode->isChecked()) m_dataMode->setChecked(true);
+}
+
+// v0.1.120 (MCP phase 2) — factored out of the generate_chart tool-result
+// path so the MCP render_chart verb reuses the exact same inline card.
+VegaChartRenderer *AIPanel::addChartCard(const QJsonObject &vegaLiteSpec,
+                                         const QString &title) {
+    const AiPalette palChart = aiPalette();
+
+    // Outer card frame: 1px border + 8px padding per the v0.1.63 spec.
+    auto *card = new QFrame(m_chatContent);
+    card->setObjectName("chartCard");
+    card->setStyleSheet(QString(
+        "#chartCard { background: %1; border: 1px solid %2; "
+        "border-radius: 8px; padding: 0px; }"
+        "QLabel#chartTitle { color: %3; font-size: 11px; "
+        "font-weight: 600; letter-spacing: 0.4px; "
+        "padding: 6px 10px 0px 10px; background: transparent; }")
+        .arg(palChart.assistBg, palChart.assistBorder, palChart.muted));
+    auto *cardLay = new QVBoxLayout(card);
+    cardLay->setContentsMargins(8, 8, 8, 8);
+    cardLay->setSpacing(4);
+
+    if (!title.isEmpty()) {
+        auto *titleLbl = new QLabel(title, card);
+        titleLbl->setObjectName("chartTitle");
+        titleLbl->setWordWrap(true);
+        cardLay->addWidget(titleLbl);
+    }
+
+    auto *renderer = new VegaChartRenderer(card);
+    cardLay->addWidget(renderer);
+
+    // Error row sits hidden until the JS shell reports a parse / runtime
+    // failure. Connecting the lambda by-value to `card` means it survives.
+    auto *errLbl = new QLabel(card);
+    errLbl->setStyleSheet(QString(
+        "color: %1; font-size: 10px; font-style: italic;").arg(palChart.errBorder));
+    errLbl->setWordWrap(true);
+    errLbl->setVisible(false);
+    cardLay->addWidget(errLbl);
+    QObject::connect(renderer, &VegaChartRenderer::renderError, errLbl,
+                     [errLbl](const QString &msg) {
+                         errLbl->setText(QStringLiteral("⚠ Chart error: ") + msg);
+                         errLbl->setVisible(true);
+                     });
+
+    // v0.1.64 — lite-mode (no WebEngine) "Charts Pack required" actions.
+    QObject::connect(renderer, &VegaChartRenderer::installRequested,
+                     this, &AIPanel::openChartsPackInstall);
+    QObject::connect(renderer, &VegaChartRenderer::viewJsonRequested,
+                     this, [this, cardLay](const QJsonObject &liteSpec) {
+        const QString json = QString::fromUtf8(
+            QJsonDocument(liteSpec).toJson(QJsonDocument::Indented));
+        const AiPalette p = aiPalette();
+        auto *jsonBlock = new QLabel(cardLay->parentWidget());
+        jsonBlock->setTextFormat(Qt::PlainText);
+        jsonBlock->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        jsonBlock->setText(json);
+        jsonBlock->setWordWrap(false);
+        jsonBlock->setStyleSheet(QString(
+            "background: %1; color: %2; border: 1px solid %3; "
+            "border-radius: 4px; padding: 6px 8px; "
+            "font-family: 'JetBrains Mono', 'Cascadia Code', "
+            "'Consolas', monospace; font-size: 11px;")
+            .arg(p.codeBg, p.codeFg, p.assistBorder));
+        cardLay->addWidget(jsonBlock);
+    });
+
+    // Wrap in a margin row, matching the bubble cadence.
+    auto *row = new QWidget(m_chatContent);
+    row->setStyleSheet(QStringLiteral("background: transparent;"));
+    auto *rowLay = new QVBoxLayout(row);
+    rowLay->setContentsMargins(0, 0, 0, 12);
+    rowLay->setSpacing(0);
+    rowLay->addWidget(card);
+    m_chatLayout->insertWidget(m_chatLayout->count() - 1, row);
+
+    // Feed the spec in. setSpec stashes it if the WebEngine page isn't ready
+    // yet and replays on loadFinished; in lite-mode the stub just stashes it.
+    renderer->setSpec(vegaLiteSpec);
+    return renderer;
+}
+
 void AIPanel::openChartsPackInstall() {
     // Compose the canonical Releases-tag URL. The user lands on a page
     // that lists both flavors side by side; they pick the "full" one.
