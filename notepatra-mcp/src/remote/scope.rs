@@ -87,7 +87,9 @@ pub fn filter_tools_list(scope: Scope, resp: &mut Value) {
             let name = t.get("name").and_then(Value::as_str).unwrap_or("");
             // An untiered name (shouldn't happen — partition-tested) is hidden
             // rather than advertised, matching the fail-closed dispatch rule.
-            tier_of(name).map(|tier| scope.allows(tier)).unwrap_or(false)
+            tier_of(name)
+                .map(|tier| scope.allows(tier))
+                .unwrap_or(false)
         });
     }
 }
@@ -136,7 +138,12 @@ mod tests {
             let mut r = full.clone();
             filter_tools_list(scope, &mut r);
             let n = r["result"]["tools"].as_array().unwrap().len();
-            assert_eq!(n, want, "scope {} filtered to {n}, want {want}", scope.as_str());
+            assert_eq!(
+                n,
+                want,
+                "scope {} filtered to {n}, want {want}",
+                scope.as_str()
+            );
         }
         // Concretely: 24 / 37 / 48.
         assert_eq!(READ_TOOLS.len(), 24);

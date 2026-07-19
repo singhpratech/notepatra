@@ -13,27 +13,61 @@ const MAX_RESULTS_CAP: usize = 200;
 /// tests/protocol.rs asserts the three lists partition definitions() exactly,
 /// so a new tool that isn't tiered here fails the suite.
 pub const READ_TOOLS: &[&str] = &[
-    "list_open_tabs", "read_tab", "get_selection", "get_status", "app_info",
-    "list_recent_files", "find_in_tab", "search_project", "list_notes",
-    "read_note", "list_reminders", "git_status", "git_diff", "git_log",
-    "git_show", "git_branch", "validate_npd", "run_sql", "list_languages",
-    "get_capabilities", "get_diagram_source",
+    "list_open_tabs",
+    "read_tab",
+    "get_selection",
+    "get_status",
+    "app_info",
+    "list_recent_files",
+    "find_in_tab",
+    "search_project",
+    "list_notes",
+    "read_note",
+    "list_reminders",
+    "git_status",
+    "git_diff",
+    "git_log",
+    "git_show",
+    "git_branch",
+    "validate_npd",
+    "run_sql",
+    "list_languages",
+    "get_capabilities",
+    "get_diagram_source",
     // phase 2
-    "list_connections", "run_query", "list_tables",
+    "list_connections",
+    "run_query",
+    "list_tables",
 ];
 pub const ACT_TOOLS: &[&str] = &[
-    "open_file", "new_tab", "goto_line", "set_language", "compare_tabs",
-    "format_json", "format_sql", "format_html", "open_note",
-    "create_diagram", "open_noter",
+    "open_file",
+    "new_tab",
+    "goto_line",
+    "set_language",
+    "compare_tabs",
+    "format_json",
+    "format_sql",
+    "format_html",
+    "open_note",
+    "create_diagram",
+    "open_noter",
     // phase 2
-    "open_data_analyst", "render_chart",
+    "open_data_analyst",
+    "render_chart",
 ];
 pub const WRITE_TOOLS: &[&str] = &[
-    "insert_text", "replace_selection", "apply_edit", "save_tab",
-    "create_note", "append_note", "set_reminder", "export_diagram",
+    "insert_text",
+    "replace_selection",
+    "apply_edit",
+    "save_tab",
+    "create_note",
+    "append_note",
+    "set_reminder",
+    "export_diagram",
     "set_diagram_source",
     // phase 2
-    "export_query_results", "export_chart",
+    "export_query_results",
+    "export_chart",
 ];
 
 /// Mandatory sentence on every write tool's description: these tools are
@@ -1320,7 +1354,9 @@ fn required_object<'a>(
 ) -> Result<&'a Map<String, Value>, CallOutcome> {
     match args.get(key) {
         Some(Value::Object(o)) => Ok(o),
-        Some(_) => Err(CallOutcome::InvalidParams(format!("{key} must be an object"))),
+        Some(_) => Err(CallOutcome::InvalidParams(format!(
+            "{key} must be an object"
+        ))),
         None => Err(CallOutcome::InvalidParams(format!("{key} is required"))),
     }
 }
@@ -1378,7 +1414,10 @@ fn export_query_results(
     transport: &mut dyn EditorTransport,
     args: &Map<String, Value>,
 ) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["connection_name", "sql", "path", "format", "max_rows"]) {
+    if let Err(e) = reject_extras(
+        args,
+        &["connection_name", "sql", "path", "format", "max_rows"],
+    ) {
         return e;
     }
     let connection_name = match required_str(args, "connection_name") {

@@ -3111,6 +3111,104 @@ private slots:
         QVERIFY(!QFileInfo::exists(denyPng));
         QVERIFY(waitForCardGone());
     }
+
+    // ── Endpoint publication (v0.1.119). The sidecar can't GUESS the socket
+    //    path: on macOS Qt binds a bare name under NSTemporaryDirectory(), not
+    //    $TMPDIR. The editor therefore publishes the bound endpoint and the
+    //    sidecar reads it. Every section here passes an explicit directory
+    //    override so the real user config dir is never touched. ──
+    void endpoint_file_is_published() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString name = m_name + QStringLiteral("-pub");
+        auto *b = new McpBridge(makeHost(), this, name, dir.path());
+        QVERIFY(b->isListening());
+
+        const QString path = dir.path() + QStringLiteral("/mcp-endpoint.json");
+        QVERIFY(QFileInfo::exists(path));
+        QCOMPARE(b->endpointFilePath(), path);
+
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QByteArray bytes = f.readAll();
+        f.close();
+        // Compact object + trailing newline, no BOM.
+        QVERIFY(bytes.endsWith('\n'));
+        QVERIFY(!bytes.startsWith("\xEF\xBB\xBF"));
+        QJsonParseError err{};
+        const QJsonDocument doc = QJsonDocument::fromJson(bytes, &err);
+        QCOMPARE(err.error, QJsonParseError::NoError);
+        QVERIFY(doc.isObject());
+        const QJsonObject o = doc.object();
+
+        QCOMPARE(o.value(QLatin1String("notepatra_mcp_endpoint")).toInt(), 1);
+        const QString value = o.value(QLatin1String("value")).toString();
+        QVERIFY(!value.isEmpty());
+        QCOMPARE(value, b->fullServerName());
+        QCOMPARE(o.value(QLatin1String("name")).toString(), name);
+        QCOMPARE(qint64(o.value(QLatin1String("pid")).toDouble()),
+                 QCoreApplication::applicationPid());
+#ifdef Q_OS_WIN
+        QCOMPARE(o.value(QLatin1String("kind")).toString(),
+                 QStringLiteral("named_pipe"));
+        QVERIFY(value.startsWith(QLatin1String("\\\\.\\pipe\\")));
+#else
+        QCOMPARE(o.value(QLatin1String("kind")).toString(),
+                 QStringLiteral("unix_socket"));
+        QVERIFY(value.startsWith(QLatin1Char('/')));
+#endif
+        delete b;
+    }
+
+    void endpoint_file_removed_on_destroy() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        auto *b = new McpBridge(makeHost(), this,
+                                m_name + QStringLiteral("-unpub"), dir.path());
+        QVERIFY(b->isListening());
+        const QString path = dir.path() + QStringLiteral("/mcp-endpoint.json");
+        QVERIFY(QFileInfo::exists(path));
+        delete b;
+        // Clean shutdown removes it; only a crash may leave it stale (by
+        // design — the reader's connect attempt is the liveness test).
+        QVERIFY(!QFileInfo::exists(path));
+    }
+
+    void endpoint_not_published_when_bind_fails() {
+        // A bridge that never bound must publish NOTHING — an endpoint file
+        // naming a socket this instance does not serve would send the sidecar
+        // to a dead address and defeat the whole discovery mechanism.
+        //
+        // Forcing the failure needs a name that CANNOT bind, not a duplicate
+        // name: measured on Qt 5.15/Linux, a second listen() on a live peer's
+        // name SUCCEEDS (Qt replaces the socket file), so a duplicate proves
+        // nothing here. An absolute path under a directory that does not exist
+        // fails with ENOENT on Unix; on Windows an embedded backslash is
+        // illegal in the pipe-name portion of \\.\pipe\<name>.
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+#ifdef Q_OS_WIN
+        const QString bad = QStringLiteral("notepatra\\mcp\\selftest\\bad");
+#else
+        const QString bad = dir.path() +
+                            QStringLiteral("/no-such-subdir/np-mcp.sock");
+#endif
+        auto *b = new McpBridge(makeHost(), this, bad, dir.path());
+        // Publication is a biconditional with the bind: asserting it in BOTH
+        // directions keeps this section honest even if some platform manages
+        // to bind the name above.
+        QCOMPARE(!b->endpointFilePath().isEmpty(), b->isListening());
+        QCOMPARE(QFileInfo::exists(dir.path() +
+                                   QStringLiteral("/mcp-endpoint.json")),
+                 b->isListening());
+#ifndef Q_OS_WIN
+        // Verified locally: ENOENT really does defeat the bind on Unix. The
+        // Windows arm rests on the biconditional above only — the pipe-name
+        // rule was not exercised on real Windows here.
+        QVERIFY(!b->isListening());
+#endif
+        delete b;
+    }
 };
 
 // Custom main (behaviourally identical to QTEST_MAIN for a widget test) with

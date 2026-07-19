@@ -167,12 +167,22 @@ public:
     static QString defaultServerName();
 
     // serverName override is for tests; production passes nothing.
+    // endpointDirForTests redirects the published endpoint file (see
+    // publishEndpoint) away from the real user config dir — tests MUST pass it
+    // whenever they pass a serverName, otherwise nothing is published at all.
     explicit McpBridge(McpEditorHost host, QObject *parent = nullptr,
-                       const QString &serverName = QString());
+                       const QString &serverName = QString(),
+                       const QString &endpointDirForTests = QString());
     ~McpBridge() override;
 
     bool isListening() const;
     QString serverName() const { return m_serverName; }
+    // The endpoint we ACTUALLY bound. On macOS Qt rewrites a bare name into
+    // NSTemporaryDirectory() (/private/var/folders/…/T/), which is why the
+    // sidecar can never merely guess this — it has to be published.
+    QString fullServerName() const;
+    // "" when this instance published no endpoint file.
+    QString endpointFilePath() const { return m_endpointFile; }
 
     // Test hook: shrink the human-approval timeout (production default 120 s).
     void setApprovalTimeoutMs(int ms);
@@ -275,9 +285,17 @@ private:
     void dropClientApprovals(QLocalSocket *client);
     void positionCard();
 
+    // Endpoint discovery: write/remove <dir>/mcp-endpoint.json describing the
+    // bound socket so the sidecar reads the truth instead of guessing it.
+    void publishEndpoint(const QString &dir);
+    void unpublishEndpoint();
+
     McpEditorHost m_host;
     QLocalServer *m_server = nullptr;
     QString m_serverName;
+    // Absolute path of the endpoint file THIS instance wrote; empty when it
+    // published nothing (so the dtor never deletes another instance's file).
+    QString m_endpointFile;
     QHash<QLocalSocket *, QByteArray> m_buffers;
 
     // FIFO approval queue; the front entry is the one on screen when

@@ -12,13 +12,13 @@
   "keywords": ["editor", "notepatra", "notes", "sql", "git", "diagrams"],
   "server": {
     "type": "binary",
-    "entry_point": "server/linux-x64/notepatra-mcp",
+    "entry_point": "server/linux/run.sh",
     "mcp_config": {
-      "command": "${__dirname}/server/linux-x64/notepatra-mcp",
+      "command": "${__dirname}/server/linux/run.sh",
       "args": ["--socket"],
       "platform_overrides": {
         "win32":  { "command": "${__dirname}/server/win32-x64/notepatra-mcp.exe" },
-        "darwin": { "command": "${__dirname}/server/darwin-arm64/notepatra-mcp" }
+        "darwin": { "command": "${__dirname}/server/darwin/notepatra-mcp" }
       }
     }
   },

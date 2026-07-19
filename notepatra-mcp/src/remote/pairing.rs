@@ -132,7 +132,13 @@ impl PairingState {
         let mut nonce = [0u8; 32];
         random_bytes(&mut nonce);
         let nonce_hex = to_hex(&nonce);
-        self.pending.insert(pair_id.clone(), Pending { nonce, created: now });
+        self.pending.insert(
+            pair_id.clone(),
+            Pending {
+                nonce,
+                created: now,
+            },
+        );
         Ok((pair_id, nonce_hex))
     }
 
@@ -158,8 +164,8 @@ impl PairingState {
             return Err(PairError::BadMac);
         };
 
-        let mut mac = HmacSha256::new_from_slice(self.code.as_bytes())
-            .expect("HMAC accepts any key length");
+        let mut mac =
+            HmacSha256::new_from_slice(self.code.as_bytes()).expect("HMAC accepts any key length");
         mac.update(&pending.nonce);
         if mac.verify_slice(&mac_bytes).is_ok() {
             // Single-use: consume the whole session, drop all pending nonces.
@@ -190,7 +196,7 @@ pub fn client_mac(code: &str, nonce_hex: &str) -> Option<String> {
 }
 
 fn hex_to_bytes(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return None;
     }
     (0..s.len())
@@ -206,7 +212,12 @@ mod tests {
     const CODE: &str = "48211937";
 
     fn fresh() -> PairingState {
-        PairingState::with_code(CODE.into(), Scope::WriteRequest, DEFAULT_TTL, DEFAULT_ATTEMPTS)
+        PairingState::with_code(
+            CODE.into(),
+            Scope::WriteRequest,
+            DEFAULT_TTL,
+            DEFAULT_ATTEMPTS,
+        )
     }
 
     // Drives a full correct handshake, returning the granted scope.
@@ -220,7 +231,10 @@ mod tests {
     #[test]
     fn correct_code_issues_token_scope() {
         let mut st = fresh();
-        assert_eq!(pair_ok(&mut st, Scope::WriteRequest), Ok(Scope::WriteRequest));
+        assert_eq!(
+            pair_ok(&mut st, Scope::WriteRequest),
+            Ok(Scope::WriteRequest)
+        );
     }
 
     #[test]
@@ -237,7 +251,10 @@ mod tests {
         let now = Instant::now();
         let (pid, nonce) = st.start(now).unwrap();
         let bad = client_mac("00000000", &nonce).unwrap();
-        assert_eq!(st.complete(&pid, &bad, Scope::ReadOnly, now), Err(PairError::BadMac));
+        assert_eq!(
+            st.complete(&pid, &bad, Scope::ReadOnly, now),
+            Err(PairError::BadMac)
+        );
         // Correct code still works afterward (attempts remain).
         assert!(pair_ok(&mut st, Scope::ReadOnly).is_ok());
     }
@@ -249,7 +266,10 @@ mod tests {
         for _ in 0..DEFAULT_ATTEMPTS {
             let (pid, nonce) = st.start(now).unwrap();
             let bad = client_mac("00000000", &nonce).unwrap();
-            assert_eq!(st.complete(&pid, &bad, Scope::ReadOnly, now), Err(PairError::BadMac));
+            assert_eq!(
+                st.complete(&pid, &bad, Scope::ReadOnly, now),
+                Err(PairError::BadMac)
+            );
         }
         // Session is now closed: even the correct code is rejected.
         let now2 = Instant::now();

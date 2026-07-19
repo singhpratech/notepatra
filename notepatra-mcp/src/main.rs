@@ -7,9 +7,8 @@ fn main() -> std::io::Result<()> {
     // when they are the first argument, so every existing invocation — no args,
     // `--socket`, anything else — reaches the unchanged stdio path below,
     // byte-for-byte identical to HEAD.
-    match std::env::args().nth(1).as_deref() {
-        Some(mode @ ("serve" | "pair" | "connect")) => return run_remote_mode(mode),
-        _ => {}
+    if let Some(mode @ ("serve" | "pair" | "connect")) = std::env::args().nth(1).as_deref() {
+        return run_remote_mode(mode);
     }
 
     // `--socket` targets the running editor over its dedicated MCP bridge

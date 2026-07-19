@@ -3,6 +3,7 @@ use std::fmt;
 
 use serde_json::Value;
 
+pub mod endpoint;
 pub mod mock;
 pub mod socket;
 
@@ -303,8 +304,7 @@ pub trait EditorTransport {
     ) -> Result<Value, TransportError>;
     fn list_tables(&self, connection_name: &str) -> Result<Value, TransportError>;
     fn open_data_analyst(&mut self) -> Result<Value, TransportError>;
-    fn render_chart(&mut self, spec: &Value, title: Option<&str>)
-        -> Result<Value, TransportError>;
+    fn render_chart(&mut self, spec: &Value, title: Option<&str>) -> Result<Value, TransportError>;
     /// Approval-gated in the editor, like the other write verbs.
     fn export_query_results(
         &mut self,

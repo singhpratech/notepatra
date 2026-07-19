@@ -7,9 +7,15 @@
 //!
 //! * Endpoint name: `"notepatra-" + first 16 hex of SHA-1(UTF-8 home dir) +
 //!   "-mcp"` — the single-instance name (`SingleInstance::serverName()`) plus
-//!   an `-mcp` suffix, so each user gets a distinct bridge. Qt materializes it
-//!   at `$TMPDIR/<name>` (default `/tmp/<name>`) on Unix and as the named pipe
-//!   `\\.\pipe\<name>` on Windows.
+//!   an `-mcp` suffix, so each user gets a distinct bridge.
+//! * Endpoint DISCOVERY (v0.1.120): the editor publishes its actually-bound
+//!   endpoint to `<config_root>/mcp-endpoint.json` once `listen()` succeeds,
+//!   and that value is dialed FIRST (see [`super::endpoint`]). The computed
+//!   guess `$TMPDIR/<name>` (Unix) / `\\.\pipe\<name>` (Windows) is only the
+//!   FALLBACK, for editors older than v0.1.120. The guess is not merely
+//!   redundant-but-correct: on macOS Qt binds under `NSTemporaryDirectory()`
+//!   (`/private/var/folders/.../T/`), which `$TMPDIR||/tmp` does not
+//!   reproduce, so publication is the only thing that makes macOS work.
 //! * Greeting before payload (proof-of-life law): on accept, the editor sends
 //!   ONE greeting line `{"notepatra_mcp":1,"app":"Notepatra","version":...}`.
 //!   The client MUST read and validate it before sending anything — receiving
@@ -29,14 +35,15 @@
 //! client runs a dedicated reader thread and enforces the same 5s/15s/130s
 //! windows with `mpsc::recv_timeout`. No extra dependencies — std only.
 //!
-//! ASSUMPTION (flag for C++ reconciliation): the Windows endpoint name equals
-//! Qt's `QLocalServer` name verbatim under the `\\.\pipe\` prefix, and the
-//! HOME-equivalent used for the SHA-1 name derivation is what
-//! `QDir::homePath()` returns on Windows — `%USERPROFILE%` with FORWARD
-//! slashes. The Rust side hashes `$USERPROFILE` verbatim; if Qt normalizes
-//! separators differently the two names would diverge. Runtime behavior on
-//! Windows is UNVERIFIED here (Linux dev host); only cross-compilation is
-//! checked.
+//! ASSUMPTION (flag for C++ reconciliation), now only load-bearing for the
+//! FALLBACK guess: the Windows endpoint name equals Qt's `QLocalServer` name
+//! verbatim under the `\\.\pipe\` prefix, and the HOME-equivalent used for the
+//! SHA-1 name derivation is what `QDir::homePath()` returns on Windows —
+//! `%USERPROFILE%` with FORWARD slashes. The Rust side hashes `$USERPROFILE`
+//! verbatim; if Qt normalizes separators differently the two names diverge —
+//! but a v0.1.120+ editor publishes its real endpoint, so the guess is never
+//! reached. Runtime behavior on Windows is UNVERIFIED here (Linux dev host);
+//! only cross-compilation is checked.
 
 #[cfg(any(unix, windows))]
 use std::cell::RefCell;
@@ -45,8 +52,8 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 use super::{
-    EditorTransport, SearchHit, SearchResults, Selection, TabContent, TabInfo, TabSelector,
-    TransportError,
+    endpoint, EditorTransport, SearchHit, SearchResults, Selection, TabContent, TabInfo,
+    TabSelector, TransportError,
 };
 
 /// Exact user-facing message when the bridge socket cannot be reached.
@@ -99,7 +106,10 @@ pub fn socket_path(name: &str) -> String {
 }
 
 pub struct SocketEditor {
-    path: String,
+    /// Endpoints to dial, in order (published first, then the guess). Always
+    /// non-empty; `candidates[0]` is what [`SocketEditor::socket_path`]
+    /// reports.
+    candidates: Vec<String>,
     base_timeout: Duration,
     search_timeout: Duration,
     approval_timeout: Duration,
@@ -108,7 +118,8 @@ pub struct SocketEditor {
 }
 
 impl SocketEditor {
-    /// Targets the current user's bridge socket (derived from the home dir).
+    /// Targets the current user's bridge: the endpoint the editor published,
+    /// falling back to the endpoint computed from the home dir.
     pub fn new() -> Self {
         // The name derivation hashes the same string Qt's
         // SingleInstance::serverName() hashes: `QDir::homePath()`. On Windows
@@ -122,13 +133,29 @@ impl SocketEditor {
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_default();
-        Self::with_socket_path(socket_path(&mcp_server_name(&home)))
+        // One cheap file read — no watching, no retries — so discovery can
+        // never delay or hang startup.
+        Self::with_candidates(endpoint::candidates(
+            endpoint::published_endpoint(),
+            socket_path(&mcp_server_name(&home)),
+        ))
     }
 
-    /// Targets an explicit socket path (tests use this with a fake bridge).
+    /// Targets an explicit socket path, BYPASSING discovery (`--socket-path`
+    /// and tests with a fake bridge). Exactly one candidate, so an explicit
+    /// path can never silently fall through to some other editor.
     pub fn with_socket_path(path: impl Into<String>) -> Self {
+        Self::with_candidates(vec![path.into()])
+    }
+
+    /// Targets an ordered candidate list; the first one that CONNECTS wins.
+    pub fn with_candidates(paths: Vec<String>) -> Self {
+        assert!(
+            !paths.is_empty(),
+            "SocketEditor needs at least one candidate endpoint"
+        );
         Self {
-            path: path.into(),
+            candidates: paths,
             base_timeout: DEFAULT_TIMEOUT,
             search_timeout: SEARCH_TIMEOUT,
             approval_timeout: APPROVAL_TIMEOUT,
@@ -151,8 +178,31 @@ impl SocketEditor {
         self
     }
 
+    /// The preferred endpoint (first candidate) — what diagnostics report.
     pub fn socket_path(&self) -> &str {
-        &self.path
+        &self.candidates[0]
+    }
+
+    /// Dials the candidates in order and returns the first LIVE bridge.
+    ///
+    /// Only a failed CONNECT advances to the next candidate — that is the
+    /// staleness test (a published endpoint left behind by a crashed editor
+    /// simply refuses). If a candidate connects but its greeting is missing or
+    /// wrong, that error surfaces immediately: something is listening there
+    /// speaking the wrong protocol, and quietly dialing on would mask it.
+    #[cfg(any(unix, windows))]
+    fn establish(&self) -> Result<Conn, TransportError> {
+        for path in &self.candidates {
+            match Conn::connect(path, self.base_timeout) {
+                Ok(mut conn) => {
+                    conn.handshake(self.base_timeout)?;
+                    return Ok(conn);
+                }
+                Err(e) if e.fatal => return Err(e.err),
+                Err(_) => continue,
+            }
+        }
+        Err(TransportError(NOT_RUNNING.to_string()))
     }
 
     /// One blocking request/response round-trip; lazily connects (greeting
@@ -173,7 +223,7 @@ impl SocketEditor {
         };
         let mut guard = self.conn.borrow_mut();
         if guard.is_none() {
-            *guard = Some(Conn::establish(&self.path, self.base_timeout)?);
+            *guard = Some(self.establish()?);
         }
         let conn = guard.as_mut().expect("connection just established");
         match conn.round_trip(verb, args, timeout) {
@@ -193,7 +243,7 @@ impl SocketEditor {
             "the Notepatra MCP bridge socket is not supported on this platform; \
              run notepatra-mcp without --socket to use the built-in mock editor \
              (expected endpoint: {})",
-            self.path
+            self.socket_path()
         )))
     }
 }
@@ -205,6 +255,34 @@ impl Default for SocketEditor {
 }
 
 // ── Shared wire helpers (both transports) ──────────────────────────────────
+
+/// A connect-phase failure. `fatal` distinguishes "nothing is listening here"
+/// (keep trying the next candidate) from a genuine local failure such as an
+/// un-clonable handle, which no other candidate can fix and which must not be
+/// laundered into the generic NOT_RUNNING message.
+#[cfg(any(unix, windows))]
+struct ConnectError {
+    err: TransportError,
+    fatal: bool,
+}
+
+#[cfg(any(unix, windows))]
+impl ConnectError {
+    /// The endpoint is unreachable — try the next candidate.
+    fn unreachable() -> Self {
+        Self {
+            err: TransportError(NOT_RUNNING.to_string()),
+            fatal: false,
+        }
+    }
+
+    fn fatal(msg: String) -> Self {
+        Self {
+            err: TransportError(msg),
+            fatal: true,
+        }
+    }
+}
 
 /// Validates the editor's proof-of-life greeting line (JSON with
 /// `notepatra_mcp:1`). Shared by both transports so the greeting law is
@@ -268,20 +346,29 @@ struct Conn {
 
 #[cfg(unix)]
 impl Conn {
-    fn establish(path: &str, timeout: Duration) -> Result<Self, TransportError> {
+    /// Connect phase ONLY — no bytes are read. Failing here means this
+    /// candidate is dead, so the caller may move on to the next one.
+    fn connect(path: &str, timeout: Duration) -> Result<Self, ConnectError> {
         use std::os::unix::net::UnixStream;
 
-        let stream =
-            UnixStream::connect(path).map_err(|_| TransportError(NOT_RUNNING.to_string()))?;
+        let stream = UnixStream::connect(path).map_err(|_| ConnectError::unreachable())?;
         stream
             .set_read_timeout(Some(timeout))
-            .map_err(|e| TransportError(format!("cannot set socket timeout: {e}")))?;
-        let mut reader = std::io::BufReader::new(stream);
-        // Proof-of-life: the editor speaks first. Nothing is sent until the
-        // greeting has been read and validated.
-        let greeting = read_line_from(&mut reader, "the editor's greeting")?;
-        validate_greeting(&greeting)?;
-        Ok(Self { reader, next_id: 1 })
+            .map_err(|e| ConnectError::fatal(format!("cannot set socket timeout: {e}")))?;
+        Ok(Self {
+            reader: std::io::BufReader::new(stream),
+            next_id: 1,
+        })
+    }
+
+    /// Proof-of-life: the editor speaks first. Nothing is sent until the
+    /// greeting has been read and validated. Kept separate from
+    /// [`Conn::connect`] so a live peer that greets wrongly is reported rather
+    /// than skipped over.
+    fn handshake(&mut self, _timeout: Duration) -> Result<(), TransportError> {
+        // The read timeout was already armed by `connect`.
+        let greeting = read_line_from(&mut self.reader, "the editor's greeting")?;
+        validate_greeting(&greeting)
     }
 
     fn round_trip(
@@ -367,7 +454,10 @@ struct Conn {
 
 #[cfg(windows)]
 impl Conn {
-    fn establish(path: &str, timeout: Duration) -> Result<Self, TransportError> {
+    /// Connect phase ONLY (open the pipe + start the reader thread); no
+    /// protocol bytes are consumed, so a failure here just means this
+    /// candidate is dead and the caller may try the next one.
+    fn connect(path: &str, _timeout: Duration) -> Result<Self, ConnectError> {
         use std::fs::OpenOptions;
         use std::io::{BufRead, BufReader};
         use std::sync::mpsc;
@@ -379,10 +469,10 @@ impl Conn {
             .read(true)
             .write(true)
             .open(path)
-            .map_err(|_| TransportError(NOT_RUNNING.to_string()))?;
+            .map_err(|_| ConnectError::unreachable())?;
         let read_half = file
             .try_clone()
-            .map_err(|e| TransportError(format!("cannot clone pipe handle: {e}")))?;
+            .map_err(|e| ConnectError::fatal(format!("cannot clone pipe handle: {e}")))?;
 
         let (tx, rx) = mpsc::channel::<LineMsg>();
         let reader = std::thread::spawn(move || {
@@ -408,16 +498,20 @@ impl Conn {
             }
         });
 
-        let conn = Self {
+        Ok(Self {
             writer: file,
             rx,
             _reader: reader,
             next_id: 1,
-        };
-        // Proof-of-life: read + validate the greeting BEFORE sending anything.
-        let greeting = conn.recv_line(timeout, "the editor's greeting")?;
-        validate_greeting(&greeting)?;
-        Ok(conn)
+        })
+    }
+
+    /// Proof-of-life: read + validate the greeting BEFORE sending anything.
+    /// Separate from [`Conn::connect`] so a live peer that greets wrongly is
+    /// reported rather than skipped over.
+    fn handshake(&mut self, timeout: Duration) -> Result<(), TransportError> {
+        let greeting = self.recv_line(timeout, "the editor's greeting")?;
+        validate_greeting(&greeting)
     }
 
     /// Blocks up to `timeout` for the next line from the reader thread.
@@ -892,11 +986,7 @@ impl EditorTransport for SocketEditor {
         self.call("open_data_analyst", json!({}))
     }
 
-    fn render_chart(
-        &mut self,
-        spec: &Value,
-        title: Option<&str>,
-    ) -> Result<Value, TransportError> {
+    fn render_chart(&mut self, spec: &Value, title: Option<&str>) -> Result<Value, TransportError> {
         let mut args = json!({ "spec": spec.clone() });
         if let Some(t) = title {
             args["title"] = json!(t);

@@ -123,7 +123,11 @@ fn pair_happy_path_then_write_reaches_backend() {
 
     // A write verb at write_request scope is FORWARDED — the mock approves by
     // default (raises no card) and returns ok, proving it reached the backend.
-    let (s, resp) = rpc(&h.base, Some(token), call(1, "insert_text", json!({ "text": "hi" })));
+    let (s, resp) = rpc(
+        &h.base,
+        Some(token),
+        call(1, "insert_text", json!({ "text": "hi" })),
+    );
     assert_eq!(s, 200);
     assert!(resp.get("error").is_none(), "unexpected error: {resp}");
     assert_eq!(resp["result"]["isError"], false, "resp: {resp}");
@@ -141,18 +145,39 @@ fn no_token_is_read_only_and_write_is_denied() {
     );
     assert_eq!(s, 200);
     let tools = resp["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 24, "read_only should see exactly the read tier");
+    assert_eq!(
+        tools.len(),
+        24,
+        "read_only should see exactly the read tier"
+    );
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert!(names.contains(&"read_tab"));
-    assert!(!names.contains(&"insert_text"), "write tool leaked into read_only list");
-    assert!(!names.contains(&"open_file"), "act tool leaked into read_only list");
+    assert!(
+        !names.contains(&"insert_text"),
+        "write tool leaked into read_only list"
+    );
+    assert!(
+        !names.contains(&"open_file"),
+        "act tool leaked into read_only list"
+    );
 
     // A read verb works unauthenticated.
-    let (_s, r) = rpc(&h.base, None, call(2, "read_tab", json!({ "tab_index": 0 })));
-    assert_eq!(r["result"]["isError"], false, "read_tab should succeed: {r}");
+    let (_s, r) = rpc(
+        &h.base,
+        None,
+        call(2, "read_tab", json!({ "tab_index": 0 })),
+    );
+    assert_eq!(
+        r["result"]["isError"], false,
+        "read_tab should succeed: {r}"
+    );
 
     // A write verb is rejected at DISPATCH with -32001, backend untouched.
-    let (_s, w) = rpc(&h.base, None, call(3, "insert_text", json!({ "text": "x" })));
+    let (_s, w) = rpc(
+        &h.base,
+        None,
+        call(3, "insert_text", json!({ "text": "x" })),
+    );
     assert_eq!(w["error"]["code"], -32001, "expected scope denial: {w}");
     assert!(w.get("result").is_none());
 }
@@ -166,7 +191,10 @@ fn garbage_bearer_degrades_to_read_only() {
         Some("deadbeefdeadbeef"),
         call(1, "insert_text", json!({ "text": "x" })),
     );
-    assert_eq!(w["error"]["code"], -32001, "invalid token must not elevate: {w}");
+    assert_eq!(
+        w["error"]["code"], -32001,
+        "invalid token must not elevate: {w}"
+    );
 }
 
 #[test]
@@ -181,11 +209,17 @@ fn read_act_token_allows_act_denies_write() {
         Some(&token),
         call(1, "open_file", json!({ "path": "/tmp/np-x.txt" })),
     );
-    assert_eq!(a["result"]["isError"], false, "open_file should be allowed: {a}");
+    assert_eq!(
+        a["result"]["isError"], false,
+        "open_file should be allowed: {a}"
+    );
 
     // save_tab is WRITE → denied at read_act.
     let (_s, w) = rpc(&h.base, Some(&token), call(2, "save_tab", json!({})));
-    assert_eq!(w["error"]["code"], -32001, "save_tab must be denied at read_act: {w}");
+    assert_eq!(
+        w["error"]["code"], -32001,
+        "save_tab must be denied at read_act: {w}"
+    );
 }
 
 #[test]
@@ -221,7 +255,11 @@ fn server_persists_only_hashed_token() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(&server_file).unwrap().permissions().mode() & 0o777;
+        let mode = std::fs::metadata(&server_file)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
         assert_eq!(mode, 0o600, "server token file must be 0600");
     }
 }
@@ -246,7 +284,10 @@ fn requested_scope_capped_by_serve_max_scope() {
     ));
     let (status, body) = do_pair(&h.base, CODE, Scope::WriteRequest);
     assert_eq!(status, 200, "{body}");
-    assert_eq!(body["scope"], "read_only", "granted scope must be min(requested, max)");
+    assert_eq!(
+        body["scope"], "read_only",
+        "granted scope must be min(requested, max)"
+    );
 }
 
 #[test]
@@ -255,8 +296,15 @@ fn require_token_refuses_unauthenticated_reads() {
     // a valid token, and a notification is silently dropped (204).
     let h = start_opts(default_pairing(), true);
 
-    let (_s, r) = rpc(&h.base, None, call(1, "read_tab", json!({ "tab_index": 0 })));
-    assert_eq!(r["error"]["code"], -32001, "unauthenticated read must be refused: {r}");
+    let (_s, r) = rpc(
+        &h.base,
+        None,
+        call(1, "read_tab", json!({ "tab_index": 0 })),
+    );
+    assert_eq!(
+        r["error"]["code"], -32001,
+        "unauthenticated read must be refused: {r}"
+    );
     assert!(r.get("result").is_none());
 
     let (s, w) = rpc(
@@ -265,12 +313,22 @@ fn require_token_refuses_unauthenticated_reads() {
         call(2, "insert_text", json!({ "text": "x" })),
     );
     assert_eq!(s, 200);
-    assert_eq!(w["error"]["code"], -32001, "invalid token must be refused: {w}");
+    assert_eq!(
+        w["error"]["code"], -32001,
+        "invalid token must be refused: {w}"
+    );
 
     // A VALID token still works (read here; writes still hit the local card).
     let token = h.tokens.issue(Scope::ReadOnly).unwrap();
-    let (_s, ok) = rpc(&h.base, Some(&token), call(3, "read_tab", json!({ "tab_index": 0 })));
-    assert_eq!(ok["result"]["isError"], false, "authed read must pass: {ok}");
+    let (_s, ok) = rpc(
+        &h.base,
+        Some(&token),
+        call(3, "read_tab", json!({ "tab_index": 0 })),
+    );
+    assert_eq!(
+        ok["result"]["isError"], false,
+        "authed read must pass: {ok}"
+    );
 }
 
 #[test]

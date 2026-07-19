@@ -598,7 +598,8 @@ fn phase1_verbs_send_exact_arg_keys() {
                     // Optional keys present only when supplied.
                     assert!(
                         req["args"] == json!({})
-                            || req["args"] == json!({ "source": "diagram flow\n", "title": "flow" })
+                            || req["args"]
+                                == json!({ "source": "diagram flow\n", "title": "flow" })
                     );
                     json!({ "tab_index": 4, "valid": true, "errors": [] })
                 }
@@ -708,7 +709,8 @@ fn phase2_verbs_send_exact_arg_keys() {
         .with_timeouts(Duration::from_secs(1), Duration::from_secs(1))
         .with_approval_timeout(Duration::from_secs(2));
     ed.list_connections().expect("list_connections");
-    ed.run_query("demo", "SELECT 1", Some(50)).expect("run_query");
+    ed.run_query("demo", "SELECT 1", Some(50))
+        .expect("run_query");
     ed.list_tables("demo").expect("list_tables");
     ed.open_data_analyst().expect("open_data_analyst");
     let spec = json!({ "mark": "bar" });

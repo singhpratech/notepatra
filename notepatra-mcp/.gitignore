@@ -1,1 +1,5 @@
 /target
+# Byproducts of the CI "flavor assertion" step (build.yml), which runs with
+# this directory as its cwd. Harmless locally, but they must never be committed.
+/flavor.txt
+/flavor.err

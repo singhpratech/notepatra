@@ -84,7 +84,10 @@ impl HttpRequest {
     /// The bearer token from `Authorization: Bearer <token>`, if present.
     pub fn bearer(&self) -> Option<&str> {
         self.header("authorization")
-            .and_then(|v| v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer ")))
+            .and_then(|v| {
+                v.strip_prefix("Bearer ")
+                    .or_else(|| v.strip_prefix("bearer "))
+            })
             .map(str::trim)
     }
 

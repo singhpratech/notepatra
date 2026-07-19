@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Token storage. The SERVER persists ONLY the SHA-256 of each issued token;
 //! the plaintext lives only on the pairing CLIENT. Both files are 0600 (dir
-//! 0700) on Unix; Windows relies on per-user %APPDATA% ACLs (documented no-op).
-//! No token is ever logged or placed in argv.
+//! 0700) on Unix. On Windows the per-user %APPDATA% ACLs already exclude other
+//! users; on top of that, `icacls` strips inheritance and re-grants only the
+//! owning account (best-effort, failures ignored — same posture as the Unix
+//! `let _ = set_permissions`). No token is ever logged or placed in argv.
 
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
@@ -13,43 +15,11 @@ use serde_json::{json, Value};
 use super::scope::Scope;
 use super::{random_hex, sha256_hex};
 
-/// Config root (parent of the `mcp-remote` dir). `NOTEPATRA_MCP_CONFIG_DIR`
-/// overrides everything (tests point it at a tempdir); otherwise the platform
-/// per-user config dir, mirroring the C++ `Config::appConfigDir()` layout
-/// (exact casing reconciled in 3b when the editor mints the gateway secret —
-/// 3a's files are sidecar-private, so the choice is not yet load-bearing).
-pub fn config_root() -> PathBuf {
-    if let Ok(d) = std::env::var("NOTEPATRA_MCP_CONFIG_DIR") {
-        return PathBuf::from(d);
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let base = std::env::var("APPDATA").unwrap_or_else(|_| ".".into());
-        return PathBuf::from(base).join("Notepatra");
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-        return PathBuf::from(home)
-            .join("Library")
-            .join("Application Support")
-            .join("Notepatra");
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        if let Ok(x) = std::env::var("XDG_CONFIG_HOME") {
-            if !x.is_empty() {
-                return PathBuf::from(x).join("notepatra");
-            }
-        }
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-        return PathBuf::from(home).join(".config").join("notepatra");
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        PathBuf::from(".").join("notepatra")
-    }
-}
+/// Config root (parent of the `mcp-remote` dir). The definition moved to the
+/// UNGATED [`crate::config_dir`] once endpoint discovery — a DEFAULT-build
+/// concern — needed the same directory; re-exported here so
+/// `remote::token::config_root` keeps working for the gateway.
+pub use crate::config_dir::config_root;
 
 /// One authorized token record, server side.
 #[derive(Debug, Clone)]
@@ -147,7 +117,9 @@ impl TokenStore {
             if v.get("url").and_then(Value::as_str) == Some(url) {
                 if let (Some(t), Some(s)) = (
                     v.get("token").and_then(Value::as_str),
-                    v.get("scope").and_then(Value::as_str).and_then(Scope::parse),
+                    v.get("scope")
+                        .and_then(Value::as_str)
+                        .and_then(Scope::parse),
                 ) {
                     found = Some(ClientToken {
                         token: t.to_string(),
@@ -194,7 +166,29 @@ fn set_dir_private(dir: &Path) {
     use std::os::unix::fs::PermissionsExt;
     let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o700));
 }
-#[cfg(not(unix))]
+/// Windows defense-in-depth: `%APPDATA%` is already per-user, but an explicit
+/// ACL removes inherited grants (BUILTIN\Users, Everyone) that a customized
+/// profile root can still propagate. `icacls` ships with Windows, so this
+/// costs ZERO new dependencies — the alternative is a winapi crate, which the
+/// std-only rule forbids. Best-effort by design: any failure leaves the
+/// inherited (per-user) ACL in place, exactly as the Unix arm ignores a failed
+/// `set_permissions`.
+#[cfg(windows)]
+fn set_dir_private(dir: &Path) {
+    let Ok(user) = std::env::var("USERNAME") else {
+        return;
+    };
+    // /inheritance:r drops inherited ACEs; /grant:r replaces (not appends) the
+    // user's ACE. (OI)(CI)F = full control, inherited by files and subdirs.
+    let _ = std::process::Command::new("icacls")
+        .arg(dir)
+        .arg("/inheritance:r")
+        .arg("/grant:r")
+        .arg(format!("{user}:(OI)(CI)F"))
+        .output();
+}
+
+#[cfg(not(any(unix, windows)))]
 fn set_dir_private(_dir: &Path) {}
 
 #[cfg(unix)]
@@ -202,7 +196,22 @@ fn set_file_private(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
     let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
 }
-#[cfg(not(unix))]
+/// File counterpart of [`set_dir_private`] — no inheritance flags, since a
+/// file has nothing to propagate to.
+#[cfg(windows)]
+fn set_file_private(path: &Path) {
+    let Ok(user) = std::env::var("USERNAME") else {
+        return;
+    };
+    let _ = std::process::Command::new("icacls")
+        .arg(path)
+        .arg("/inheritance:r")
+        .arg("/grant:r")
+        .arg(format!("{user}:F"))
+        .output();
+}
+
+#[cfg(not(any(unix, windows)))]
 fn set_file_private(_path: &Path) {}
 
 #[cfg(test)]
@@ -211,7 +220,11 @@ mod tests {
 
     fn tmp() -> PathBuf {
         let mut p = std::env::temp_dir();
-        p.push(format!("np-mcp-tok-{}-{}", std::process::id(), random_hex(6)));
+        p.push(format!(
+            "np-mcp-tok-{}-{}",
+            std::process::id(),
+            random_hex(6)
+        ));
         p
     }
 
@@ -221,7 +234,10 @@ mod tests {
         let token = store.issue(Scope::WriteRequest).unwrap();
         let raw = fs::read_to_string(store.authorized_path()).unwrap();
         // Plaintext token must NOT appear in the server file; its hash must.
-        assert!(!raw.contains(&token), "plaintext token leaked into server file");
+        assert!(
+            !raw.contains(&token),
+            "plaintext token leaked into server file"
+        );
         assert!(raw.contains(&sha256_hex(token.as_bytes())));
     }
 
@@ -260,5 +276,45 @@ mod tests {
         }
         let dmode = fs::metadata(&store.dir).unwrap().permissions().mode() & 0o777;
         assert_eq!(dmode, 0o700);
+    }
+
+    /// Windows counterpart of `files_are_0600`. Two assertions: the ACL work
+    /// must not break normal I/O (a botched `icacls` could lock the process
+    /// out of its own files), and when `icacls` is queryable the resulting ACL
+    /// must not list the broad principals that inheritance would have added.
+    /// Skips the ACL assertion when `icacls` itself is unavailable so a locked
+    /// down CI image reports a pass, not a spurious failure.
+    #[cfg(windows)]
+    #[test]
+    fn windows_acls_do_not_break_io_and_drop_broad_principals() {
+        let store = TokenStore::at(tmp()).unwrap();
+        let t = store.issue(Scope::ReadAct).unwrap();
+        store
+            .store_client("http://127.0.0.1:9", "tok", Scope::ReadOnly)
+            .unwrap();
+        assert_eq!(store.lookup(&t).unwrap(), Some(Scope::ReadAct));
+        assert_eq!(
+            store
+                .load_client("http://127.0.0.1:9")
+                .unwrap()
+                .unwrap()
+                .token,
+            "tok"
+        );
+
+        let path = store.authorized_path();
+        if let Ok(out) = std::process::Command::new("icacls").arg(&path).output() {
+            if out.status.success() {
+                let acl = String::from_utf8_lossy(&out.stdout);
+                assert!(
+                    !acl.contains("BUILTIN\\Users"),
+                    "inherited BUILTIN\\Users ACE survived: {acl}"
+                );
+                assert!(
+                    !acl.contains("Everyone"),
+                    "Everyone ACE present on a token file: {acl}"
+                );
+            }
+        }
     }
 }

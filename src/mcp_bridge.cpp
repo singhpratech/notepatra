@@ -90,6 +90,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 #include "mcp_bridge.h"
 #include "build_flavor.h"
+#include "config.h"
 #include "diagram/npd_parser.h"
 #include "notes_storage.h"
 #include "singleinstance.h"
@@ -112,6 +113,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QSet>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -354,7 +356,8 @@ QString McpBridge::defaultServerName() {
 }
 
 McpBridge::McpBridge(McpEditorHost host, QObject *parent,
-                     const QString &serverName)
+                     const QString &serverName,
+                     const QString &endpointDirForTests)
     : QObject(parent), m_host(std::move(host)),
       m_serverName(serverName.isEmpty() ? defaultServerName() : serverName) {
     m_server = new QLocalServer(this);
@@ -376,6 +379,19 @@ McpBridge::McpBridge(McpEditorHost host, QObject *parent,
     if (m_server->isListening()) {
         connect(m_server, &QLocalServer::newConnection,
                 this, &McpBridge::onNewConnection);
+        // Publish the endpoint only once we know what we actually bound —
+        // after the stale-probe/relisten dance above, never before.
+        //
+        // A test-named bridge with no directory override publishes NOTHING:
+        // several existing tests construct bridges with custom names and must
+        // not stomp the real user's mcp-endpoint.json (which a live editor may
+        // own while the suite runs).
+        if (serverName.isEmpty())
+            publishEndpoint(endpointDirForTests.isEmpty()
+                                ? Config::appConfigDir()
+                                : endpointDirForTests);
+        else if (!endpointDirForTests.isEmpty())
+            publishEndpoint(endpointDirForTests);
     } else {
         qWarning("Notepatra MCP bridge: bind failed on %s: %s",
                  qPrintable(m_serverName),
@@ -392,6 +408,64 @@ McpBridge::~McpBridge() {
     // The card is a child of the HOST widget, not of the bridge — take it
     // down with us so no orphan Approve button outlives its plumbing.
     dismissActiveCard();
+    unpublishEndpoint();
+}
+
+QString McpBridge::fullServerName() const {
+    return m_server ? m_server->fullServerName() : QString();
+}
+
+// Write <dir>/mcp-endpoint.json: the sidecar's ONLY reliable way to learn where
+// we bound. Guessing $TMPDIR/<name> is wrong on macOS, where Qt resolves a bare
+// server name under NSTemporaryDirectory() (/private/var/folders/…/T/), so the
+// sidecar reported "Notepatra is not running" against a perfectly live editor.
+//
+// Failure here is never fatal — the sidecar still falls back to its guess, and
+// on Linux that guess is correct — so we warn and carry on.
+void McpBridge::publishEndpoint(const QString &dir) {
+    if (dir.isEmpty() || !m_server) return;
+    const QString path = dir + QStringLiteral("/mcp-endpoint.json");
+
+    QJsonObject o;
+    o[QStringLiteral("notepatra_mcp_endpoint")] = 1;
+#ifdef Q_OS_WIN
+    o[QStringLiteral("kind")] = QStringLiteral("named_pipe");
+#else
+    o[QStringLiteral("kind")] = QStringLiteral("unix_socket");
+#endif
+    // Verbatim: an absolute socket path on Unix, \\.\pipe\<name> on Windows.
+    o[QStringLiteral("value")] = m_server->fullServerName();
+    // name/pid/version are DIAGNOSTICS only — the reader must never gate on
+    // pid liveness; the connect attempt is the liveness test.
+    o[QStringLiteral("name")] = m_serverName;
+    o[QStringLiteral("pid")] =
+        static_cast<double>(QCoreApplication::applicationPid());
+    o[QStringLiteral("version")] = QStringLiteral(NOTEPATRA_VERSION);
+
+    // Atomic: a reader must never observe a half-written object. Compact + a
+    // trailing newline, UTF-8, no BOM.
+    QSaveFile f(path);
+    if (!f.open(QIODevice::WriteOnly) ||
+        f.write(QJsonDocument(o).toJson(QJsonDocument::Compact) + '\n') < 0 ||
+        !f.commit()) {
+        qWarning("Notepatra MCP bridge: could not publish endpoint file %s",
+                 qPrintable(path));
+        return;
+    }
+    // 0600 — the socket path is a capability. A no-op on Windows, where the
+    // per-user %APPDATA% ACL already covers it (same posture as the sidecar's
+    // token files).
+    QFile::setPermissions(path,
+                          QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    m_endpointFile = path;
+}
+
+// Remove only what THIS instance wrote. A crash leaves a stale file by design:
+// the reader tolerates it because a failed connect falls through to the guess.
+void McpBridge::unpublishEndpoint() {
+    if (m_endpointFile.isEmpty()) return;
+    QFile::remove(m_endpointFile);
+    m_endpointFile.clear();
 }
 
 void McpBridge::setApprovalTimeoutMs(int ms) {

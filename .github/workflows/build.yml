@@ -67,13 +67,34 @@ jobs:
           cd build
           QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 
-      # v0.1.118 — MCP sidecar. x64 is the canonical unit-test run (arm and
-      # macOS jobs only build it); ships as notepatra-mcp-linux-x64.tar.gz.
+      # v0.1.118 — MCP sidecar; ships as notepatra-mcp-linux-x64.tar.gz.
+      #
+      # ORDERING LAW (all four platform jobs): `cargo test --features remote`
+      # REBUILDS target/release/notepatra-mcp WITH remote compiled in, because
+      # cargo unifies the bin's features when it builds the integration tests
+      # that depend on it. So the LAST cargo invocation before the upload must
+      # be a plain `cargo build --release`, and we then assert the flavor —
+      # otherwise we would silently ship a crypto-linked sidecar.
       - name: Build and test MCP server
         run: |
           cd notepatra-mcp
-          cargo build --release
           cargo test --release
+          cargo test --release --features remote
+          cargo build --release
+          # Flavor assertion. `serve` is remote-only: a std-only build prints
+          # "built without remote support" and exits 2 immediately.
+          #
+          # MUST be time-capped and backgrounded, NOT `OUT=$(... serve)`: on a
+          # remote-ENABLED build `serve` binds a port and blocks forever, so a
+          # command substitution would wait on an EOF that never comes and hang
+          # the job — in precisely the failure case this exists to catch. A
+          # hang is not a red state. Capped at 10s, then killed, then we judge
+          # by what it printed. </dev/null so it can never wait on stdin.
+          ./target/release/notepatra-mcp serve </dev/null >flavor.txt 2>&1 & PID=$!
+          for _ in $(seq 1 20); do kill -0 $PID 2>/dev/null || break; sleep 0.5; done
+          kill -9 $PID 2>/dev/null || true
+          wait $PID 2>/dev/null || true
+          grep -q "built without remote support" flavor.txt || { echo "::error::shipped sidecar unexpectedly has remote support compiled in"; cat flavor.txt; exit 1; }
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -245,9 +266,23 @@ jobs:
           name: notepatra-linux-arm64
           path: build/notepatra
 
-      # v0.1.118 — MCP sidecar (build only; unit tests run in the x64 job).
-      - name: Build MCP server
-        run: cd notepatra-mcp && cargo build --release
+      # v0.1.118 — MCP sidecar. Runs the full default + remote suites natively
+      # on arm64 rather than trusting the x64 job: pointer-width and alignment
+      # differences are exactly what a cross-arch suite exists to catch.
+      # Same ordering law as the x64 job — plain build LAST, then assert flavor.
+      - name: Build and test MCP server
+        run: |
+          cd notepatra-mcp
+          cargo test --release
+          cargo test --release --features remote
+          cargo build --release
+          # Time-capped flavor assertion — see the x64 job for why this cannot
+          # be a plain command substitution.
+          ./target/release/notepatra-mcp serve </dev/null >flavor.txt 2>&1 & PID=$!
+          for _ in $(seq 1 20); do kill -0 $PID 2>/dev/null || break; sleep 0.5; done
+          kill -9 $PID 2>/dev/null || true
+          wait $PID 2>/dev/null || true
+          grep -q "built without remote support" flavor.txt || { echo "::error::shipped sidecar unexpectedly has remote support compiled in"; cat flavor.txt; exit 1; }
 
       - name: Upload MCP server artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -871,17 +906,53 @@ jobs:
           name: notepatra-macos-arm64-full
           path: build-full/Notepatra-full.dmg
 
-      # v0.1.118 — MCP sidecar (build only; unit tests run in the linux x64
-      # job). The pipe transport is real since v0.1.119 and the Windows job
-      # now ships the .exe.
-      - name: Build MCP server
-        run: cd notepatra-mcp && cargo build --release
+      # v0.1.118 — MCP sidecar. As of v0.1.119 ALL FOUR platform jobs run both
+      # the default (std-only) and the remote-feature suites natively; there is
+      # no longer a single "canonical" test job. macOS additionally lipo's an
+      # arm64+x86_64 universal binary, because .mcpb declares ONE `darwin` entry
+      # and Claude Desktop on Intel Macs would otherwise get an unrunnable
+      # slice. The universal binary is consumed ONLY by the .mcpb — the
+      # standalone notepatra-mcp-macos-arm64.tar.gz stays arm64-thin so the
+      # released filename keeps meaning what it says.
+      #
+      # Same ordering law as the linux jobs: `cargo test --features remote`
+      # rebuilds the bin WITH remote, so the plain `cargo build --release` must
+      # come last, and the flavor assertion proves it did.
+      - name: Build and test MCP server (arm64 + x86_64 universal)
+        run: |
+          cd notepatra-mcp
+          cargo test --release
+          cargo test --release --features remote
+          rustup target add x86_64-apple-darwin
+          cargo build --release
+          cargo build --release --target x86_64-apple-darwin
+          # Time-capped flavor assertion — see the linux x64 job for why this
+          # cannot be a plain command substitution.
+          ./target/release/notepatra-mcp serve </dev/null >flavor.txt 2>&1 & PID=$!
+          for _ in $(seq 1 20); do kill -0 $PID 2>/dev/null || break; sleep 0.5; done
+          kill -9 $PID 2>/dev/null || true
+          wait $PID 2>/dev/null || true
+          grep -q "built without remote support" flavor.txt || { echo "::error::shipped sidecar unexpectedly has remote support compiled in"; cat flavor.txt; exit 1; }
+          lipo -create -output target/notepatra-mcp-universal target/release/notepatra-mcp target/x86_64-apple-darwin/release/notepatra-mcp
+          lipo -archs target/notepatra-mcp-universal | grep -q x86_64 || { echo "::error::universal sidecar missing x86_64 slice"; exit 1; }
+          lipo -archs target/notepatra-mcp-universal | grep -q arm64 || { echo "::error::universal sidecar missing arm64 slice"; exit 1; }
+          # Prove the x86_64 slice actually RUNS, not just that it links —
+          # </dev/null so the stdio server sees EOF and exits instead of
+          # blocking the job forever. Rosetta is absent on some hosted images,
+          # so this is a warning, never a hard failure.
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then arch -x86_64 ./target/x86_64-apple-darwin/release/notepatra-mcp </dev/null >/dev/null && echo "x86_64 slice executed under Rosetta"; else echo "::warning::Rosetta unavailable — x86_64 slice not smoke-executed"; fi
 
       - name: Upload MCP server artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-mcp-macos-arm64
           path: notepatra-mcp/target/release/notepatra-mcp
+
+      - name: Upload MCP server universal artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: notepatra-mcp-macos-universal
+          path: notepatra-mcp/target/notepatra-mcp-universal
 
   build-windows:
     # PINNED (v0.1.113) for determinism: both windows-latest AND windows-2025
@@ -1089,9 +1160,29 @@ jobs:
       # this is the only job that compiles the cfg(windows) pipe code —
       # tests/socket_bridge.rs is #![cfg(unix)] and compiles to empty, the
       # protocol + mock-transport suites are OS-neutral.
+      # Ordering law (see the linux x64 job): the remote-feature test run
+      # rebuilds the bin WITH remote compiled in, so the plain build comes LAST.
       - name: Build and test MCP server
         shell: cmd
-        run: cd notepatra-mcp && cargo build --release && cargo test --release
+        run: cd notepatra-mcp && cargo build --release && cargo test --release && cargo test --release --features remote && cargo build --release
+
+      # Separate step because the assertion needs pwsh string matching, and cmd
+      # has no clean equivalent. `serve` on a std-only build exits 2 after
+      # printing this, so we match on the text rather than the exit code.
+      - name: Assert shipped MCP server is std-only
+        shell: pwsh
+        working-directory: notepatra-mcp
+        run: |
+          # Start-Process + WaitForExit(10s) rather than `$out = & ... | Out-String`
+          # for the same reason as the Unix jobs: a remote-ENABLED build's
+          # `serve` binds a port and never returns, and the pipeline would block
+          # forever instead of failing. Kill at 10s, then judge by the output.
+          $p = Start-Process -FilePath .\target\release\notepatra-mcp.exe -ArgumentList 'serve' `
+                 -RedirectStandardOutput flavor.txt -RedirectStandardError flavor.err `
+                 -PassThru -NoNewWindow
+          if (-not $p.WaitForExit(10000)) { $p.Kill(); $p.WaitForExit() }
+          $out = ((Get-Content flavor.txt -Raw -ErrorAction SilentlyContinue) + (Get-Content flavor.err -Raw -ErrorAction SilentlyContinue))
+          if ($out -notmatch 'built without remote support') { Write-Host '::error::shipped sidecar unexpectedly has remote support compiled in'; Write-Host $out; exit 1 }
 
       - name: Build C++ with CMake (MSVC)
         shell: pwsh
@@ -2447,7 +2538,7 @@ jobs:
             --require-all \
             --binary linux-x64=notepatra-mcp-linux-x64/notepatra-mcp \
             --binary linux-arm64=notepatra-mcp-linux-arm64/notepatra-mcp \
-            --binary darwin-arm64=notepatra-mcp-macos-arm64/notepatra-mcp \
+            --binary darwin=notepatra-mcp-macos-universal/notepatra-mcp-universal \
             --binary win32-x64=notepatra-mcp-windows-x64/notepatra-mcp.exe \
             --out notepatra-mcp.mcpb
           unzip -l notepatra-mcp.mcpb

@@ -127,12 +127,21 @@ fn pair(args: &[String]) -> io::Result<()> {
     if start.status != 200 {
         eprintln!(
             "notepatra-mcp pair: start rejected: {}",
-            start_body.get("error").and_then(Value::as_str).unwrap_or("unknown")
+            start_body
+                .get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
         );
         std::process::exit(1);
     }
-    let pair_id = start_body.get("pair_id").and_then(Value::as_str).unwrap_or("");
-    let nonce = start_body.get("nonce").and_then(Value::as_str).unwrap_or("");
+    let pair_id = start_body
+        .get("pair_id")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let nonce = start_body
+        .get("nonce")
+        .and_then(Value::as_str)
+        .unwrap_or("");
 
     // 2) prove knowledge of the code via HMAC(code, nonce).
     let Some(mac) = pairing::client_mac(&code, nonce) else {

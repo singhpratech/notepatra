@@ -232,7 +232,13 @@ fn rpc<T: EditorTransport + Send + 'static>(
     let line = match std::str::from_utf8(&req.body) {
         Ok(s) => s,
         Err(_) => {
-            return http::write_response(w, 400, "Bad Request", b"{\"error\":\"body not UTF-8\"}", true)
+            return http::write_response(
+                w,
+                400,
+                "Bad Request",
+                b"{\"error\":\"body not UTF-8\"}",
+                true,
+            )
         }
     };
 

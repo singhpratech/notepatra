@@ -1231,9 +1231,12 @@ fn p0a_list_languages_and_get_capabilities() {
     ]);
     // list_languages: canonical tokens, exact case.
     assert_eq!(responses[1]["result"]["isError"], false);
-    let langs: Value =
-        serde_json::from_str(responses[1]["result"]["content"][0]["text"].as_str().unwrap())
-            .unwrap();
+    let langs: Value = serde_json::from_str(
+        responses[1]["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
     let arr = langs["languages"].as_array().unwrap();
     assert_eq!(arr[0], "Plain Text");
     assert!(arr.iter().any(|l| l == "Python"));
@@ -1241,10 +1244,16 @@ fn p0a_list_languages_and_get_capabilities() {
     // get_capabilities: editor fields pass through; tool_count and tiers are
     // injected by the tool layer and MUST match the definitions list.
     assert_eq!(responses[2]["result"]["isError"], false);
-    let caps: Value =
-        serde_json::from_str(responses[2]["result"]["content"][0]["text"].as_str().unwrap())
-            .unwrap();
-    let expected = notepatra_mcp::tools::definitions().as_array().unwrap().len();
+    let caps: Value = serde_json::from_str(
+        responses[2]["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    let expected = notepatra_mcp::tools::definitions()
+        .as_array()
+        .unwrap()
+        .len();
     assert_eq!(caps["tool_count"], expected as u64);
     assert_eq!(caps["tool_count"], 48);
     assert_eq!(caps["tiers"]["read"], 24);
@@ -1254,7 +1263,7 @@ fn p0a_list_languages_and_get_capabilities() {
     assert!(caps["features"]["webengine"].is_boolean());
     assert!(caps["features"]["noter"].is_boolean());
     assert_eq!(caps["edition"], "Lite"); // mock's canned edition
-    // Extra argument → -32602 (additionalProperties: false enforced).
+                                         // Extra argument → -32602 (additionalProperties: false enforced).
     assert_eq!(responses[3]["error"]["code"], -32602);
 }
 
@@ -1283,9 +1292,17 @@ fn p0a_tier_lists_partition_the_tool_surface() {
 fn phase1_diagram_and_noter_tools() {
     let responses = run_lines(&[
         initialize_line(1, LATEST_PROTOCOL_VERSION),
-        call_line(2, "create_diagram", json!({ "source": "diagram flow\n", "title": "flow" })),
+        call_line(
+            2,
+            "create_diagram",
+            json!({ "source": "diagram flow\n", "title": "flow" }),
+        ),
         call_line(3, "get_diagram_source", json!({ "tab_index": 3 })),
-        call_line(4, "set_diagram_source", json!({ "tab_index": 3, "source": "diagram er\n" })),
+        call_line(
+            4,
+            "set_diagram_source",
+            json!({ "tab_index": 3, "source": "diagram er\n" }),
+        ),
         call_line(5, "get_diagram_source", json!({ "tab_index": 3 })),
         call_line(6, "get_diagram_source", json!({ "tab_index": 0 })), // not a diagram
         call_line(7, "create_diagram", json!({ "source": "!!bad\n" })), // invalid still creates
@@ -1316,7 +1333,11 @@ fn phase1_set_diagram_source_is_approval_gated_but_create_is_not() {
         editor,
         &[
             call_line(1, "create_diagram", json!({ "source": "diagram flow\n" })), // ACT: unaffected
-            call_line(2, "set_diagram_source", json!({ "tab_index": 3, "source": "x" })),
+            call_line(
+                2,
+                "set_diagram_source",
+                json!({ "tab_index": 3, "source": "x" }),
+            ),
         ],
     );
     assert_eq!(responses[0]["result"]["isError"], false);
@@ -1327,10 +1348,10 @@ fn phase1_set_diagram_source_is_approval_gated_but_create_is_not() {
 #[test]
 fn phase1_malformed_arguments_are_invalid_params() {
     let responses = run_lines(&[
-        call_line(1, "get_diagram_source", json!({})),                    // missing tab_index
-        call_line(2, "set_diagram_source", json!({ "tab_index": 0 })),    // missing source
-        call_line(3, "create_diagram", json!({ "source": 7 })),           // mistyped
-        call_line(4, "open_noter", json!({ "bogus": true })),             // extra key
+        call_line(1, "get_diagram_source", json!({})), // missing tab_index
+        call_line(2, "set_diagram_source", json!({ "tab_index": 0 })), // missing source
+        call_line(3, "create_diagram", json!({ "source": 7 })), // mistyped
+        call_line(4, "open_noter", json!({ "bogus": true })), // extra key
     ]);
     for r in &responses {
         assert_eq!(r["error"]["code"], -32602, "expected -32602 in {r}");
@@ -1345,7 +1366,11 @@ fn phase1_malformed_arguments_are_invalid_params() {
 fn phase2_data_tools_happy_paths() {
     let responses = run_lines(&[
         call_line(1, "list_connections", json!({})),
-        call_line(2, "run_query", json!({ "connection_name": "demo", "sql": "SELECT id, name FROM t" })),
+        call_line(
+            2,
+            "run_query",
+            json!({ "connection_name": "demo", "sql": "SELECT id, name FROM t" }),
+        ),
         call_line(3, "list_tables", json!({ "connection_name": "demo" })),
         call_line(4, "open_data_analyst", json!({})),
     ]);
@@ -1373,8 +1398,16 @@ fn phase2_data_tools_happy_paths() {
 #[test]
 fn phase2_run_query_rejects_mutations_and_unknown_connections() {
     let responses = run_lines(&[
-        call_line(1, "run_query", json!({ "connection_name": "demo", "sql": "UPDATE t SET x = 1" })),
-        call_line(2, "run_query", json!({ "connection_name": "nope", "sql": "SELECT 1" })),
+        call_line(
+            1,
+            "run_query",
+            json!({ "connection_name": "demo", "sql": "UPDATE t SET x = 1" }),
+        ),
+        call_line(
+            2,
+            "run_query",
+            json!({ "connection_name": "nope", "sql": "SELECT 1" }),
+        ),
     ]);
     assert_eq!(responses[0]["result"]["isError"], true);
     assert!(text_of(&responses[0]).contains("SELECT"));
@@ -1399,12 +1432,20 @@ fn phase2_render_chart_returns_id() {
 fn phase2_write_tools_approval_gate() {
     // Approve (default): both write verbs succeed.
     let responses = run_lines(&[
-        call_line(1, "export_query_results", json!({
-            "connection_name": "demo", "sql": "SELECT 1", "path": "/tmp/out.csv", "format": "csv"
-        })),
-        call_line(2, "export_chart", json!({
-            "spec": { "mark": "bar" }, "path": "/tmp/chart.png", "format": "png"
-        })),
+        call_line(
+            1,
+            "export_query_results",
+            json!({
+                "connection_name": "demo", "sql": "SELECT 1", "path": "/tmp/out.csv", "format": "csv"
+            }),
+        ),
+        call_line(
+            2,
+            "export_chart",
+            json!({
+                "spec": { "mark": "bar" }, "path": "/tmp/chart.png", "format": "png"
+            }),
+        ),
     ]);
     let eqr = json_of(&responses[0]);
     assert_eq!(eqr["ok"], true);
@@ -1413,14 +1454,25 @@ fn phase2_write_tools_approval_gate() {
     // Deny: both fail with the verbatim editor error.
     let mut editor = MockEditor::default();
     editor.set_approval(ApprovalMode::Deny);
-    let denied = run_lines_with(editor, &[
-        call_line(1, "export_query_results", json!({
-            "connection_name": "demo", "sql": "SELECT 1", "path": "/tmp/out.csv", "format": "csv"
-        })),
-        call_line(2, "export_chart", json!({
-            "spec": { "mark": "bar" }, "path": "/tmp/chart.png", "format": "png"
-        })),
-    ]);
+    let denied = run_lines_with(
+        editor,
+        &[
+            call_line(
+                1,
+                "export_query_results",
+                json!({
+                    "connection_name": "demo", "sql": "SELECT 1", "path": "/tmp/out.csv", "format": "csv"
+                }),
+            ),
+            call_line(
+                2,
+                "export_chart",
+                json!({
+                    "spec": { "mark": "bar" }, "path": "/tmp/chart.png", "format": "png"
+                }),
+            ),
+        ],
+    );
     for r in &denied {
         assert_eq!(r["result"]["isError"], true);
         assert_eq!(text_of(r), "denied by user");
@@ -1430,10 +1482,18 @@ fn phase2_write_tools_approval_gate() {
 #[test]
 fn phase2_malformed_arguments_are_invalid_params() {
     let responses = run_lines(&[
-        call_line(1, "run_query", json!({ "connection_name": "demo" })),      // missing sql
-        call_line(2, "export_chart", json!({ "spec": { "mark": "bar" }, "path": "/tmp/x.gif", "format": "gif" })),
-        call_line(3, "render_chart", json!({ "spec": "not-an-object" })),     // spec not object
-        call_line(4, "export_chart", json!({ "spec": { "mark": "bar" }, "path": "/tmp/x.png", "format": "png", "scale": 9 })),
+        call_line(1, "run_query", json!({ "connection_name": "demo" })), // missing sql
+        call_line(
+            2,
+            "export_chart",
+            json!({ "spec": { "mark": "bar" }, "path": "/tmp/x.gif", "format": "gif" }),
+        ),
+        call_line(3, "render_chart", json!({ "spec": "not-an-object" })), // spec not object
+        call_line(
+            4,
+            "export_chart",
+            json!({ "spec": { "mark": "bar" }, "path": "/tmp/x.png", "format": "png", "scale": 9 }),
+        ),
     ]);
     for r in &responses {
         assert_eq!(r["error"]["code"], -32602, "expected -32602 in {r}");

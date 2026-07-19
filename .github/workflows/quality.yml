@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - 'rust-core/**'
+      - 'notepatra-mcp/**'
       - '.github/workflows/quality.yml'
   pull_request:
     branches: [main]
     paths:
       - 'rust-core/**'
+      - 'notepatra-mcp/**'
       - '.github/workflows/quality.yml'
 
 jobs:
@@ -37,8 +39,17 @@ jobs:
       - name: Check formatting (notepatra-mcp)
         run: cd notepatra-mcp && cargo fmt --check
 
+      # --all-features so the optional "remote" cfg (hmac/sha2/getrandom) is
+      # linted too — without it the entire remote/ tree is cfg'd out and its
+      # warnings never reach the gate. The SHIPPED binary stays std-only; the
+      # feature is a CI/dev-time build only.
       - name: Run clippy (notepatra-mcp)
-        run: cd notepatra-mcp && cargo clippy --all-targets -- -D warnings
+        run: cd notepatra-mcp && cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Run tests (notepatra-mcp)
         run: cd notepatra-mcp && cargo test --release
+
+      # Same reason as clippy above: the remote-gated tests are compiled out of
+      # the default run, so they need their own invocation or they rot silently.
+      - name: Run tests (notepatra-mcp, remote feature)
+        run: cd notepatra-mcp && cargo test --release --features remote
