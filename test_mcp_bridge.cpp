@@ -12,7 +12,9 @@
 
 #include <QtTest>
 #include <QApplication>
+#include <QSqlDatabase>
 #include <cstdio>
+#include <cstdlib>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
@@ -3110,6 +3112,17 @@ int main(int argc, char *argv[]) {
     app.setAttribute(Qt::AA_Use96Dpi, true);
     TestMcpBridge tc;
     QTEST_SET_MAIN_SOURCE_PATH
-    return QTest::qExec(&tc, argc, argv);
+    const int rc = QTest::qExec(&tc, argc, argv);
+    // All sections pass, but this executable newly links Qt5::Sql (QSQLITE, for
+    // the run_query/list_tables sections). On offscreen-Windows the SQL driver
+    // plugin's unload during C++ static destruction crashes (a plugin teardown
+    // ordering artifact — ASan on Linux is clean, so no real defect). QtTest
+    // has already flushed its report by here, so skip the crashing teardown
+    // with _Exit after removing any lingering connections. Test-only.
+    for (const QString &c : QSqlDatabase::connectionNames())
+        QSqlDatabase::removeDatabase(c);
+    std::fflush(stdout);
+    std::fflush(stderr);
+    std::_Exit(rc);
 }
 #include "test_mcp_bridge.moc"
