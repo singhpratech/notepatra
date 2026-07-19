@@ -3114,13 +3114,13 @@ int main(int argc, char *argv[]) {
     QTEST_SET_MAIN_SOURCE_PATH
     const int rc = QTest::qExec(&tc, argc, argv);
     // All sections pass, but this executable newly links Qt5::Sql (QSQLITE, for
-    // the run_query/list_tables sections). On offscreen-Windows the SQL driver
-    // plugin's unload during C++ static destruction crashes (a plugin teardown
-    // ordering artifact — ASan on Linux is clean, so no real defect). QtTest
-    // has already flushed its report by here, so skip the crashing teardown
-    // with _Exit after removing any lingering connections. Test-only.
-    for (const QString &c : QSqlDatabase::connectionNames())
-        QSqlDatabase::removeDatabase(c);
+    // the run_query/list_tables sections). On offscreen-Windows ANY touch of the
+    // SQL driver plugin at shutdown — including static-destruction unload OR an
+    // explicit removeDatabase() here — crashes (a plugin teardown ordering
+    // artifact; ASan on Linux is clean, so no real defect). QtTest has already
+    // flushed its report by here, so hard-exit IMMEDIATELY, touching nothing
+    // SQL-related: _Exit skips every destructor and the plugin unload. rc still
+    // carries the true pass/fail count for ctest. Test-only.
     std::fflush(stdout);
     std::fflush(stderr);
     std::_Exit(rc);
