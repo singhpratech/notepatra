@@ -48,6 +48,20 @@ struct FakeTab {
     QString language = QStringLiteral("Plain Text");
     bool isDiagram = false;   // v0.1.119 — .npd diagram tab
 };
+
+// Crash-proof progress tracker. ctest DISCARDS a crashed test's captured stdout
+// on Windows, so section progress is appended to the file named by
+// NP_MCP_PROGRESS with an fopen/fprintf/fflush/fclose per line — it survives an
+// access violation. No-op when the env var is unset (i.e. everywhere but CI).
+void npWriteProgress(const char *phase, const char *detail) {
+    const QByteArray pf = qgetenv("NP_MCP_PROGRESS");
+    if (pf.isEmpty()) return;
+    if (FILE *f = fopen(pf.constData(), "a")) {
+        fprintf(f, "%s %s\n", phase, detail ? detail : "(none)");
+        fflush(f);
+        fclose(f);
+    }
+}
 } // namespace
 
 class TestMcpBridge : public QObject {
@@ -674,24 +688,22 @@ private slots:
     }
 
     void cleanup() {
+        // Record the section's VERDICT, not merely that it finished: cleanup()
+        // runs after a failed QVERIFY too, so a bare "LEAVE" would not prove the
+        // section passed. CI only tolerates a teardown crash when every ENTER
+        // has a matching LEAVE and there is no FAILED line.
+        const bool failed = QTest::currentTestFailed();
         delete m_bridge;
         m_bridge = nullptr;
         delete m_hostWindow;
         m_hostWindow = nullptr;
-        writeProgress("LEAVE");
+        writeProgress(failed ? "FAILED" : "LEAVE");
     }
 
     // Crash-localizer helper (see init()). Writes "<phase> <section>" to the
     // file named by NP_MCP_PROGRESS, flushed + closed. No-op when unset.
     static void writeProgress(const char *phase) {
-        const QByteArray pf = qgetenv("NP_MCP_PROGRESS");
-        if (pf.isEmpty()) return;
-        if (FILE *f = fopen(pf.constData(), "a")) {
-            const char *fn = QTest::currentTestFunction();
-            fprintf(f, "%s %s\n", phase, fn ? fn : "(none)");
-            fflush(f);
-            fclose(f);
-        }
+        npWriteProgress(phase, QTest::currentTestFunction());
     }
 
     void greeting_arrives_first() {
@@ -2792,13 +2804,6 @@ private slots:
     }
 
     void run_query_select_via_real_sqlite() {
-#ifdef Q_OS_WIN
-        QSKIP("QSQLITE driver plugin teardown crashes this offscreen-Windows "
-              "test executable at process exit (a Qt plugin-unload artifact, "
-              "not a defect — the real-DB path is covered on Linux and the "
-              "verb's read-only/denylist logic is covered by the fake-host "
-              "sections here); skip so the plugin never loads on Windows.");
-#endif
         if (!QSqlDatabase::isDriverAvailable(QStringLiteral("QSQLITE")))
             QSKIP("QSQLITE driver not present");
         QTemporaryDir dir;
@@ -2833,10 +2838,6 @@ private slots:
     }
 
     void list_tables_roundtrip_and_unknown_connection() {
-#ifdef Q_OS_WIN
-        QSKIP("QSQLITE driver plugin teardown crashes this offscreen-Windows "
-              "test executable at exit; covered on Linux.");
-#endif
         if (!QSqlDatabase::isDriverAvailable(QStringLiteral("QSQLITE")))
             QSKIP("QSQLITE driver not present");
         QTemporaryDir dir;
@@ -2897,10 +2898,6 @@ private slots:
     }
 
     void export_query_results_approve_writes_csv_deny_writes_nothing() {
-#ifdef Q_OS_WIN
-        QSKIP("QSQLITE driver plugin teardown crashes this offscreen-Windows "
-              "test executable at exit; covered on Linux.");
-#endif
         if (!QSqlDatabase::isDriverAvailable(QStringLiteral("QSQLITE")))
             QSKIP("QSQLITE driver not present");
         QTemporaryDir dir;
@@ -3128,14 +3125,16 @@ int main(int argc, char *argv[]) {
     TestMcpBridge tc;
     QTEST_SET_MAIN_SOURCE_PATH
     const int rc = QTest::qExec(&tc, argc, argv);
-    // All sections pass, but this executable newly links Qt5::Sql (QSQLITE, for
-    // the run_query/list_tables sections). On offscreen-Windows ANY touch of the
-    // SQL driver plugin at shutdown — including static-destruction unload OR an
-    // explicit removeDatabase() here — crashes (a plugin teardown ordering
-    // artifact; ASan on Linux is clean, so no real defect). QtTest has already
-    // flushed its report by here, so hard-exit IMMEDIATELY, touching nothing
-    // SQL-related: _Exit skips every destructor and the plugin unload. rc still
-    // carries the true pass/fail count for ctest. Test-only.
+    // Marker: proves qExec's own finalization completed. If the progress file
+    // ends at the last LEAVE with no QEXEC_RETURNED, the crash is INSIDE qExec's
+    // teardown; if it appears, the crash is after it (static destruction).
+    npWriteProgress("QEXEC_RETURNED", rc == 0 ? "rc=0" : "rc=nonzero");
+    // Every section passes on offscreen-Windows CI, yet the process still dies
+    // after the last cleanup() — a platform teardown artifact, not a defect
+    // (Linux ASan is clean, 75/75). Skipping every destructor with _Exit removes
+    // the static-destruction phase from the equation; rc still carries the true
+    // pass/fail count for ctest. Test-only. NOTE: skipping the QSQLITE sections
+    // did NOT stop the crash, so the SQL driver plugin is ruled out as the cause.
     std::fflush(stdout);
     std::fflush(stderr);
     std::_Exit(rc);
