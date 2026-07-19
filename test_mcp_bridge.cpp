@@ -615,6 +615,11 @@ private:
 
 private slots:
     void init() {
+        // Crash-localizer: on offscreen-Windows CI a hard access violation
+        // makes ctest discard the test's captured output, hiding which section
+        // died. Append each section to a file (env NP_MCP_PROGRESS) flushed +
+        // closed so it survives the crash; the CI step prints it. No-op locally.
+        writeProgress("ENTER");
         m_fakeTabs = {
             {QStringLiteral("notes.txt"), QStringLiteral("/fake/notes.txt"),
              QStringLiteral("hello world\nSecond Line with Needle\n"), false},
@@ -671,6 +676,20 @@ private slots:
         m_bridge = nullptr;
         delete m_hostWindow;
         m_hostWindow = nullptr;
+        writeProgress("LEAVE");
+    }
+
+    // Crash-localizer helper (see init()). Writes "<phase> <section>" to the
+    // file named by NP_MCP_PROGRESS, flushed + closed. No-op when unset.
+    static void writeProgress(const char *phase) {
+        const QByteArray pf = qgetenv("NP_MCP_PROGRESS");
+        if (pf.isEmpty()) return;
+        if (FILE *f = fopen(pf.constData(), "a")) {
+            const char *fn = QTest::currentTestFunction();
+            fprintf(f, "%s %s\n", phase, fn ? fn : "(none)");
+            fflush(f);
+            fclose(f);
+        }
     }
 
     void greeting_arrives_first() {

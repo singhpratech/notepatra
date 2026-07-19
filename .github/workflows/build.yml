@@ -1725,8 +1725,18 @@ jobs:
 
           # Add Qt + bundled QScintilla DLLs to PATH so CTest can load them.
           $env:PATH = "$qtRoot\bin;$PWD\..\notepatra-win;$env:PATH"
+          # Crash-localizer for test_mcp_bridge: ctest discards a crashed test's
+          # captured output on Windows, so the test appends each section to this
+          # file (survives the access violation); we print it below on failure.
+          $env:NP_MCP_PROGRESS = "$env:RUNNER_TEMP\mcp_progress.log"
+          if (Test-Path $env:NP_MCP_PROGRESS) { Remove-Item $env:NP_MCP_PROGRESS }
           ctest --output-on-failure -C Release
-          if ($LASTEXITCODE -ne 0) {
+          $ctestExit = $LASTEXITCODE
+          if (Test-Path $env:NP_MCP_PROGRESS) {
+            Write-Host "=== test_mcp_bridge section progress (last ENTER without LEAVE = crashing section) ==="
+            Get-Content $env:NP_MCP_PROGRESS | ForEach-Object { Write-Host $_ }
+          }
+          if ($ctestExit -ne 0) {
             Write-Host "::error::Windows regression suite FAILED"
             exit 1
           }
