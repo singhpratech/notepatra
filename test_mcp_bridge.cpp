@@ -11,6 +11,8 @@
 // waitFor* on the client (that would starve the server side).
 
 #include <QtTest>
+#include <QApplication>
+#include <cstdio>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
@@ -3078,5 +3080,17 @@ private slots:
     }
 };
 
-QTEST_MAIN(TestMcpBridge)
+// Custom main (behaviourally identical to QTEST_MAIN for a widget test) with
+// UNBUFFERED stdio: on offscreen-Windows CI this test can hit a hard crash
+// whose buffered QtTest output is otherwise lost, hiding which section died.
+// Unbuffered output makes the last "PASS : …" line survive, localizing it.
+int main(int argc, char *argv[]) {
+    setvbuf(stdout, nullptr, _IONBF, 0);
+    setvbuf(stderr, nullptr, _IONBF, 0);
+    QApplication app(argc, argv);
+    app.setAttribute(Qt::AA_Use96Dpi, true);
+    TestMcpBridge tc;
+    QTEST_SET_MAIN_SOURCE_PATH
+    return QTest::qExec(&tc, argc, argv);
+}
 #include "test_mcp_bridge.moc"
