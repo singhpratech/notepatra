@@ -1664,12 +1664,12 @@
         <div class="section-desc">Built on QScintilla — a battle-tested Scintilla-based editor engine. Hot-path file I/O and search use Rust for memory safety on untrusted input.</div>
 
         <div class="features-grid">
-            <!-- MCP — the v0.1.118 headline, promoted to slot 1 so the
+            <!-- MCP — the v0.1.118 headline (expanded to 48 tools in v0.1.120), promoted to slot 1 so the
                  grid leads with it. Same Clay-orange halo as the other
                  star features. -->
             <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
                 <div class="feature-icon fi-orange">🔌</div>
-                <h3>MCP — your editor, readable by your AI <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW IN v0.1.118</span></h3>
+                <h3>MCP — your editor, readable by your AI <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">48 TOOLS · v0.1.120</span></h3>
                 <p>A built-in <strong>Model Context Protocol server</strong> (<code>notepatra-mcp</code>) connects the assistants you already use — <strong>Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK</strong>, and any spec-compliant MCP client — to the running editor. <strong>48 tools in three tiers</strong>: read (tabs, selection, search, Noter notes, reminders, read-only Git and SQL, diagram source, saved-connection list/query/tables), act (open, compare, format, navigate, open notes, create diagram, open Noter panel, open Data Analyst, render chart), and write (edit, save, create/append notes, set reminders, replace diagram source, export diagrams, export query results, export chart) — where <em>every</em> write shows an <strong>Approve / Deny card inside the editor</strong> and does nothing until you click Approve (auto-deny after 120 s, no headless bypass). Local socket + stdio only — nothing leaves your machine. <a href="/mcp.html" style="color: var(--c-accent);">Read the MCP docs →</a></p>
             </div>
             <!-- AI Assistant at slot 2 — highlighted with a Clay-orange
@@ -2052,6 +2052,21 @@
                     <a href="https://github.com/singhpratech/notepatra/commits/v0.1.120">Commits</a>
                 </div>
             </div>
+
+            <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.119"
+               class="version-card-link"
+               style="display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px;
+                      padding:16px 24px; background:var(--c-surface);
+                      border:1px solid var(--c-border); border-radius:14px;
+                      text-decoration:none; min-width:0;
+                      transition:border-color .15s;"
+               onmouseover="this.style.borderColor='var(--green)';"
+               onmouseout="this.style.borderColor='var(--c-border)';">
+                <span style="font-weight:700; color:var(--c-text); font-size:15px; white-space:nowrap;">v0.1.119</span>
+                <span style="color:var(--c-text-muted); font-size:13px; white-space:nowrap;">2026-07-18</span>
+                <span style="flex:1 1 260px; min-width:0; color:var(--c-text-muted); font-size:13px; white-space:normal;">MCP depth &mdash; 35 tools (Read 18 / Act 9 / Write 8): read-only Git and SQL, Noter reminders, <code>.npd</code> validation, regex search, and approval-gated note/reminder/diagram write verbs. Adds Windows named-pipe transport.</span>
+                <span style="color:var(--green); font-weight:600; font-size:13px; white-space:nowrap;">Release page &rarr;</span>
+            </a>
 
             <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.118"
                class="version-card-link"

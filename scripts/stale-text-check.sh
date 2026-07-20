@@ -387,7 +387,7 @@ echo "── installer-filename pinning (README admin/fleet install commands) �
 # install commands meant for the current user). Skip lines inside the
 # CHANGELOG-style release history that document old versions.
 stale_installers=$(grep -vE 'releases/tag/v0\.1\.' README.md \
-    | grep -hoE 'notepatra(-local-ai)?[-_][^"`]*?0\.1\.[0-9]+(_amd64|_arm64|-1\.x86_64|-1\.aarch64|-x86_64|-aarch64)?\.(msi|deb|rpm|AppImage|tar\.gz|zip|dmg|exe)' \
+    | grep -hoiE 'notepatra(-local-ai)?[-_][^"`]*?0\.1\.[0-9]+(_amd64|_arm64|-1\.x86_64|-1\.aarch64|-x86_64|-aarch64)?\.(msi|deb|rpm|AppImage|tar\.gz|zip|dmg|exe)' \
     | grep -oE "0\.1\.[0-9]+" \
     | sort -u \
     | grep -v "^$VERSION$" || true)
@@ -616,6 +616,44 @@ if command -v ctest >/dev/null 2>&1 && [ -d build ]; then
     fi
 else
     echo "  ⓘ no build/ dir or ctest unavailable — skipping suite-count gate (release-check builds first)"
+fi
+
+echo "── no HOLES in the version-card history on the site ──"
+# v0.1.119 shipped and the website never got a card: the list ran 115, 116,
+# 117, 118, then jumped straight to 120. A reader could not tell 119 had
+# happened at all. Nothing caught it, because every other gate checks the
+# CURRENT version — none checked the history for GAPS.
+#
+# The site deliberately shows a ROLLING WINDOW of recent releases, so this
+# does not demand a card for every release ever. It asserts only that, between
+# the oldest and newest card actually displayed, no release is skipped.
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    cards=$(grep -oE 'releases/tag/v0\.1\.[0-9]+"' docs/index.html \
+        | grep -oE '0\.1\.[0-9]+' | sort -u -t. -k3 -n || true)
+    if [[ -z "$cards" ]]; then
+        echo "  ⓘ no version cards found in index.html — skipping gap gate"
+    else
+        oldest=$(echo "$cards" | head -1 | cut -d. -f3)
+        newest=$(echo "$cards" | tail -1 | cut -d. -f3)
+        published=$(gh release list -R singhpratech/notepatra --limit 40 2>/dev/null \
+            | grep -oE 'v0\.1\.[0-9]+' | grep -oE '[0-9]+$' | sort -un || true)
+        holes=""
+        for n in $published; do
+            (( n >= oldest && n <= newest )) || continue
+            echo "$cards" | grep -qx "0.1.$n" || holes="$holes v0.1.$n"
+        done
+        if [[ -z "$holes" ]]; then
+            printf "  ✓ version-card history has no gaps (v0.1.%s → v0.1.%s)\n" "$oldest" "$newest"
+            PASS=$((PASS + 1))
+        else
+            echo "  ✗ published release(s) MISSING a version card inside the displayed range:$holes"
+            echo "      file: docs/index.html  (range shown: v0.1.$oldest → v0.1.$newest)"
+            echo "      a shipped release the website skips is invisible to users"
+            FAIL=$((FAIL + 1))
+        fi
+    fi
+else
+    echo "  ⓘ gh unavailable/unauthenticated — skipping version-card gap gate"
 fi
 
 echo
