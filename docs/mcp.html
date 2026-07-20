@@ -447,7 +447,20 @@ async with MCPServerStdio(
 
   <h2 id="faq" class="anchor-target">FAQ</h2>
   <h3>Is my data sent anywhere?</h3>
-  <p>Not by Notepatra. <code>notepatra-mcp</code> makes no network connections: it talks to your AI client over stdio (pipes between two processes on your machine) and to the editor over a local per-user socket. Nothing leaves the machine through this path. One honest caveat that applies to every MCP server: whatever your <em>assistant</em> reads through these tools becomes part of its conversation, and goes wherever that client sends its conversations — a local model stays local, a cloud model does not. Choose the client and model accordingly.</p>
+  <p>Not by Notepatra. The <code>notepatra-mcp</code> binary you install makes no network connections: it talks to your AI client over stdio (pipes between two processes on your machine) and to the editor over a local per-user socket. Nothing leaves the machine through this path — and the shipped binary is not merely configured that way, it is compiled without networking at all. Every CI job runs the released binary and fails the build unless it reports <code>built without remote support</code>. One honest caveat that applies to every MCP server: whatever your <em>assistant</em> reads through these tools becomes part of its conversation, and goes wherever that client sends its conversations — a local model stays local, a cloud model does not. Choose the client and model accordingly.</p>
+  <h3>What is the remote gateway in v0.1.120, and does it weaken any of this?</h3>
+  <p>v0.1.120 adds an <strong>opt-in</strong> remote gateway, and it is off unless you deliberately build it: the code sits behind a
+  <code>remote</code> Cargo feature that is <em>not</em> in the default feature set, so <code>cargo install notepatra-mcp</code> and every
+  signed release binary contain no gateway and no networking or crypto dependencies at all. If you do build it
+  (<code>cargo build --features remote</code>), <code>serve</code> binds <strong>loopback only</strong> — <code>127.0.0.1</code>, never a LAN or public
+  interface — and a client must complete an 8-digit one-time HMAC pairing to receive a 256-bit bearer token, of which only the SHA-256
+  is stored, mode <code>0600</code>. Scopes are <strong>fail-closed</strong>: a client is read-only unless it paired for more, calls above its
+  scope are rejected at dispatch, and <code>tools/list</code> is filtered to the tiers it is allowed. A missing or invalid token never
+  elevates.</p>
+  <p><strong>The approval gate is unchanged, and there is no remote approval.</strong> A remote write request is only forwarded to the
+  editor, which raises the same Approve / Deny card on <em>your</em> screen. Nobody can approve a write from the far end of the
+  connection, and there is no headless bypass. The editor itself never listens on the network — only the opt-in sidecar gateway binds
+  a socket. Until LAN support and TLS land, use an SSH tunnel rather than exposing the port.</p>
   <h3>Can the AI edit my files without me noticing?</h3>
   <p>No. The only tools that can change a buffer or touch disk are the eleven write tools, and each call requires you to click Approve on a card inside the editor within 120 seconds. No response means denied.</p>
   <h3>Is this the same as Notepatra's built-in AI Assistant?</h3>
