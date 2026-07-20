@@ -577,11 +577,25 @@ private:
         sendLine(s, QJsonDocument(req).toJson(QJsonDocument::Compact));
     }
 
+    // Returns the LIVE card — the visible one — never a stale predecessor.
+    //
+    // Why visibility matters: a dismissed card is hidden and then deleteLater()'d,
+    // so between those two events the object is still a child of the host window.
+    // A plain findChild<QFrame*>("mcpApprovalCard") returns the FIRST match, which
+    // in that window is the DEAD card. Clicking its buttons resolves nothing, the
+    // new request is never approved, and the test sees ok=false or an empty error.
+    // On Linux the pending deleteLater drains inside waitForCardGone()'s qWait, so
+    // the stale card is gone by the next call and the bug is invisible; on
+    // offscreen-Windows it survives, which is why three write-verb tests failed
+    // there and only there. Filtering on isVisible() makes the helper correct on
+    // both instead of accidentally correct on one.
     QFrame *findCard() const {
-        return m_hostWindow
-                   ? m_hostWindow->findChild<QFrame *>(
-                         QStringLiteral("mcpApprovalCard"))
-                   : nullptr;
+        if (!m_hostWindow) return nullptr;
+        const auto cards = m_hostWindow->findChildren<QFrame *>(
+            QStringLiteral("mcpApprovalCard"));
+        for (QFrame *c : cards)
+            if (c->isVisible()) return c;
+        return nullptr;
     }
 
     QFrame *waitForCard(int timeoutMs = kWaitMs) {
@@ -605,6 +619,7 @@ private:
             const auto cards = m_hostWindow->findChildren<QFrame *>(
                 QStringLiteral("mcpApprovalCard"));
             for (QFrame *c : cards) {
+                if (!c->isVisible()) continue;  // skip a dismissed predecessor
                 auto *d = c->findChild<QLabel *>(
                     QStringLiteral("mcpApprovalDesc"));
                 if (d && d->text().contains(needle)) return c;
@@ -3117,6 +3132,47 @@ private slots:
     //    $TMPDIR. The editor therefore publishes the bound endpoint and the
     //    sidecar reads it. Every section here passes an explicit directory
     //    override so the real user config dir is never touched. ──
+    // Regression pin for the Windows-only failure of three write-verb tests.
+    //
+    // A dismissed approval card is hidden and then deleteLater()'d. In the gap
+    // between those two events it is STILL a child of the host window, so a
+    // helper that grabs the first "mcpApprovalCard" child gets the DEAD one and
+    // clicks buttons that resolve nothing. Linux drained the pending delete
+    // inside waitForCardGone()'s event loop and never saw it; offscreen-Windows
+    // did, and set_diagram_source / export_query_results / export_chart all
+    // failed there with ok=false or an empty error.
+    //
+    // This reproduces the condition deterministically on every platform by
+    // planting a hidden decoy card FIRST, so the fix cannot silently regress.
+    void find_card_skips_a_dismissed_predecessor() {
+        // A dismissed card that has not been deleted yet.
+        auto *stale = new QFrame(m_hostWindow);
+        stale->setObjectName(QStringLiteral("mcpApprovalCard"));
+        stale->hide();
+        QVERIFY(!stale->isVisible());
+        // With no live card, the stale one must NOT be mistaken for one.
+        QCOMPARE(findCard(), nullptr);
+
+        // Now a real request raises a live card; the helper must return THAT.
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("tab_index")] = 0;
+        a[QStringLiteral("text")] = QStringLiteral("x");
+        sendRequest(s, 900, QStringLiteral("insert_text"), a);
+        QFrame *live = waitForCard();
+        QVERIFY(live);
+        QVERIFY(live != stale);
+        QVERIFY(live->isVisible());
+        QCOMPARE(findCard(), live);
+        live->findChild<QPushButton *>(QStringLiteral("mcpDenyBtn"))->click();
+        const QJsonObject r = readObj(s);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QCOMPARE(r.value(QLatin1String("error")).toString(),
+                 QStringLiteral("denied by user"));
+    }
+
     void endpoint_file_is_published() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
