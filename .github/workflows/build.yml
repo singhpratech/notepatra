@@ -14,6 +14,8 @@ concurrency:
 jobs:
   build-linux:
     runs-on: ubuntu-24.04
+    # Fail fast instead of burning the 360-minute default on a wedge.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -215,6 +217,8 @@ jobs:
 
   build-linux-arm:
     runs-on: ubuntu-24.04-arm
+    # Fail fast instead of burning the 360-minute default on a wedge.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -373,6 +377,8 @@ jobs:
 
   build-macos-arm:
     runs-on: macos-14
+    # Fail fast instead of burning the 360-minute default on a wedge.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -469,6 +475,8 @@ jobs:
           echo "✓ macOS Full binary built (DuckDB engine; WebEngine N/A on brew qt@5)"
 
       - name: Build and run regression suite
+        # ctest's blanket TIMEOUT 600 is per-TEST, not per-step: a systemic wedge across ~48 tests still runs for hours without this.
+        timeout-minutes: 45
         run: |
           # Reuse the same Qt5/QScintilla discovery the main build did by
           # reconfiguring the existing build tree with -DBUILD_TESTING=ON.
@@ -968,6 +976,13 @@ jobs:
     # runner image from moving under us again. Durable path later: KDE-patched
     # Qt 5.15 or the Qt6 migration (see project_qt6_migration_assessment).
     runs-on: windows-2025
+    # HANG CONTAINMENT (v0.1.120). Without a job ceiling a wedge anywhere —
+    # QScintilla nmake, CMake, NSIS/WiX, an exe probe blocked on a modal
+    # Windows error box, or the regression suite — runs to GitHub's
+    # 360-minute default and reports NOTHING. This is the outermost net;
+    # the per-step ceilings below name the culprit, and the in-test
+    # watchdogs name the individual test.
+    timeout-minutes: 90
     permissions:
       contents: read
       issues: write
@@ -1165,10 +1180,37 @@ jobs:
       # protocol + mock-transport suites are OS-neutral.
       # Ordering law (see the linux x64 job): the remote-feature test run
       # rebuilds the bin WITH remote compiled in, so the plain build comes LAST.
+      # `--test-threads=1` (v0.1.120): tests/pipe_bridge.rs drives REAL named
+      # pipes, and under the default parallel harness a hang cannot be pinned on
+      # a test — absence of an "ok" line only means "not finished yet", which is
+      # exactly how a previous incident burned two ~80-minute cycles. Serial
+      # order makes the stdout log alone name the culprit. These suites are
+      # ~3 s total, so serializing costs nothing.
       - name: Build and test MCP server
         timeout-minutes: 25
         shell: cmd
-        run: cd notepatra-mcp && cargo build --release && cargo test --release && cargo test --release --features remote && cargo build --release
+        run: cd notepatra-mcp && del /q "%TEMP%\np-*-tracker.log" 2>nul & cargo build --release && cargo test --release -- --test-threads=1 && cargo test --release --features remote -- --test-threads=1 && cargo build --release
+
+      # Every transport suite (named pipe, unix socket, loopback gateway) arms a
+      # watchdog that ABORTS on a hang, and abort DISCARDS libtest's captured
+      # output — so the culprit's name is written to a file instead. Globbed,
+      # not hard-coded to one suite: the previous version only knew about
+      # np-pipe-bridge-tracker.log, so a hang in the remote-gateway suite would
+      # have printed "no tracker file" and named nothing.
+      # `always()` because the only run that matters is the failing one.
+      - name: Transport test trackers (localize a hang)
+        if: always()
+        shell: cmd
+        run: |
+          if exist "%TEMP%\np-*-tracker.log" (
+            for %%F in ("%TEMP%\np-*-tracker.log") do (
+              echo === %%~nxF ===
+              type "%%F"
+            )
+            echo === an ENTER with no matching LEAVE is the test that hung ===
+          ) else (
+            echo no tracker file — no transport suite reached its first test
+          )
 
       # Separate step because the assertion needs pwsh string matching, and cmd
       # has no clean equivalent. `serve` on a std-only build exits 2 after
@@ -1430,6 +1472,8 @@ jobs:
           }
 
       - name: Diagnose notepatra.exe imports + Qt plugin loading
+        # Launches notepatra.exe: a Qt plugin-load stall or a modal error box would otherwise hang here forever.
+        timeout-minutes: 5
         shell: pwsh
         run: |
           # Write all diagnostic output to BOTH stdout AND diag.log so the
@@ -1732,6 +1776,8 @@ jobs:
           Write-Host "✓ All critical files present in Full bundle"
 
       - name: Smoke-test the binary (--version output check)
+        # This step EXPECTS a DLL_PROCESS_DETACH crash, which can raise a modal WER/missing-DLL box that blocks cmd /c forever.
+        timeout-minutes: 5
         shell: pwsh
         run: |
           # Run notepatra.exe --version via cmd.exe with file redirection.
@@ -1786,6 +1832,8 @@ jobs:
           }
 
       - name: Build and run regression suite
+        # ctest's blanket TIMEOUT 600 is per-TEST, not per-step: a systemic wedge across ~48 tests still runs for hours without this.
+        timeout-minutes: 45
         shell: pwsh
         run: |
           # Reconfigure the existing build tree with -DBUILD_TESTING=ON so the
@@ -2278,14 +2326,28 @@ jobs:
           path: notepatra-mcp/target/release/notepatra-mcp.exe
 
       # ─── Failure diagnostics — must be LAST so it sees failures from any prior step ───
-      - name: Upload build logs on failure
-        if: failure()
+      # `always()`, NOT `failure()`: a job CANCEL or a job TIMEOUT does not fire
+      # `failure()`, so the one run whose logs matter most — the wedged one —
+      # used to upload nothing. ctest.log and mcp_progress.log are included
+      # because they name WHICH test was running; previously they were printed
+      # only from inside the regression step, so if that step was the thing that
+      # hung, the operator learned nothing at all.
+      - name: Upload build logs
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: windows-build-logs
           path: |
             cmake-configure.log
             cmake-build.log
+            ${{ runner.temp }}/ctest.log
+            ${{ runner.temp }}/mcp_progress.log
+            # Rust's env::temp_dir() is %TEMP% (C:\Users\runneradmin\AppData\
+            # Local\Temp), which on Windows runners is NOT runner.temp
+            # (D:\a\_temp) — globbing runner.temp here would silently upload
+            # nothing. The printed "Transport test trackers" step already uses
+            # %TEMP% correctly; this makes the artifact agree with it.
+            ${{ env.TEMP }}/np-*-tracker.log
           if-no-files-found: ignore
 
       - name: Post Windows failure diagnostics to issue #1
@@ -2385,6 +2447,8 @@ jobs:
     # Was previously ubuntu-latest, which would silently roll forward and
     # could shift cosign / SLSA action runtime expectations under our feet.
     runs-on: ubuntu-24.04
+    # Fail fast instead of burning the 360-minute default on a wedge.
+    timeout-minutes: 30
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write    # publish the release

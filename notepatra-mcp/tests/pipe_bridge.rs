@@ -2,8 +2,11 @@
 //! Drives SocketEditor against a fake C++ bridge on a REAL Windows named pipe:
 //! a std-thread server speaking the greeting + newline-delimited verb protocol.
 //! The unix twin lives in tests/socket_bridge.rs; this file is the only place
-//! the `#[cfg(windows)]` `Conn` (reader thread + `mpsc::recv_timeout`) is
-//! exercised at runtime — the Windows CI job runs `cargo test --release`.
+//! the `#[cfg(windows)]` `Conn` (command-gated read worker +
+//! `mpsc::recv_timeout`) is exercised at runtime — the Windows CI job runs
+//! `cargo test --release`. It earned its keep in v0.1.120 by catching a
+//! first-request deadlock in the SHIPPED Windows transport that nothing else
+//! covers (the C++ suite tests the server half only).
 //!
 //! std alone cannot CREATE a named pipe, only open one, so the server half is
 //! three lines of `extern "system"` against kernel32 — always linked on
@@ -20,8 +23,14 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::windows::io::FromRawHandle;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::thread::JoinHandle;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
+
+mod common;
+use common::{finish, Bridge, Watchdog};
+
+/// Names this suite's tracker file (`np-pipe-bridge-tracker.log`).
+const SUITE: &str = "pipe-bridge";
 
 use notepatra_mcp::transport::socket::{SocketEditor, NOT_RUNNING};
 use notepatra_mcp::transport::{EditorTransport, TabSelector};
@@ -52,47 +61,6 @@ const PIPE_BYTE_MODE_WAIT: u32 = 0x0;
 const PIPE_BUF_BYTES: u32 = 64 * 1024;
 const INVALID_HANDLE_VALUE: isize = -1;
 
-/// Fails the whole test binary FAST if a test overruns, instead of letting it
-/// hang. Every blocking primitive here — `ConnectNamedPipe`, the server thread's
-/// `read_line`, and the `join` that waits on them — blocks FOREVER if the peer
-/// never shows up, and a hung CI job is far worse than a failing one: it burns
-/// to the 6-hour limit and reports nothing (a hang is not a red). The watchdog
-/// converts every such hang into a loud, immediate failure naming the test.
-///
-/// `abort()` rather than `panic!` on purpose: the panic would land on the
-/// watchdog's own thread, where libtest cannot attribute it to the test and the
-/// blocked thread would keep the binary alive regardless.
-struct Watchdog(std::sync::Arc<std::sync::atomic::AtomicBool>);
-
-impl Watchdog {
-    fn new(secs: u64, label: &'static str) -> Self {
-        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let flag = done.clone();
-        std::thread::spawn(move || {
-            let deadline = Instant::now() + Duration::from_secs(secs);
-            while Instant::now() < deadline {
-                if flag.load(Ordering::Relaxed) {
-                    return;
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            eprintln!(
-                "pipe_bridge: {label} exceeded {secs}s — a named-pipe call is \
-                 BLOCKED (no peer attached). Aborting so CI reports a failure \
-                 rather than hanging."
-            );
-            std::process::abort();
-        });
-        Self(done)
-    }
-}
-
-impl Drop for Watchdog {
-    fn drop(&mut self) {
-        self.0.store(true, Ordering::Relaxed);
-    }
-}
-
 /// Unique pipe name for this process + call. Pipe names live in a global
 /// kernel namespace, so the pid keeps concurrent CI jobs from colliding.
 fn unique_pipe_name() -> String {
@@ -104,9 +72,14 @@ fn unique_pipe_name() -> String {
 /// Creates the pipe instance BEFORE returning (so the client's open can never
 /// race the server thread's startup), then runs `behavior` on the connected
 /// pipe once a client attaches.
-fn spawn_pipe_bridge(
-    behavior: impl FnOnce(std::fs::File) + Send + 'static,
-) -> (String, JoinHandle<()>) {
+///
+/// HONEST RESIDUAL: `ConnectNamedPipe` and the server closure's `read_line` are
+/// synchronous and std-only, so neither can carry a native deadline. Their
+/// deadline is enforced one level up, by [`finish`]'s `recv_timeout` and by the
+/// [`Watchdog`]. Overlapped I/O would add unsafe surface for no extra safety —
+/// the pipe already exists before this function returns, so the client's open
+/// cannot race it, and a client that never arrives is now a fast NAMED failure.
+fn spawn_pipe_bridge(behavior: impl FnOnce(std::fs::File) + Send + 'static) -> (String, Bridge) {
     let name = unique_pipe_name();
     let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
     let handle = unsafe {
@@ -127,6 +100,7 @@ fn spawn_pipe_bridge(
         "CreateNamedPipeW({name}) failed: {}",
         std::io::Error::last_os_error()
     );
+    let (done_tx, done) = mpsc::channel::<()>();
     let join = std::thread::spawn(move || {
         // Any return is "proceed": a 0 return with ERROR_PIPE_CONNECTED means
         // the client got in between create and connect, and a genuine failure
@@ -134,8 +108,12 @@ fn spawn_pipe_bridge(
         unsafe { ConnectNamedPipe(handle, core::ptr::null_mut()) };
         let file = unsafe { std::fs::File::from_raw_handle(handle as *mut _) };
         behavior(file);
+        // LAST act: unblocks `finish`. On a panic this send never happens, but
+        // `done_tx` drops during unwind and `finish` treats Disconnected as
+        // "finished" so the panic is re-raised by the join.
+        let _ = done_tx.send(());
     });
-    (name, join)
+    (name, Bridge::new(join, done))
 }
 
 fn editor_for(pipe: &str) -> SocketEditor {
@@ -145,8 +123,8 @@ fn editor_for(pipe: &str) -> SocketEditor {
 
 #[test]
 fn greeting_then_round_trips_with_sequential_ids() {
-    let _wd = Watchdog::new(30, "greeting_then_round_trips_with_sequential_ids");
-    let (pipe, handle) = spawn_pipe_bridge(|file| {
+    let _wd = Watchdog::new(SUITE, "greeting_then_round_trips_with_sequential_ids");
+    let (pipe, bridge) = spawn_pipe_bridge(|file| {
         let mut reader = BufReader::new(file.try_clone().expect("clone pipe handle"));
         let mut file = file;
         // Greeting before payload: the bridge speaks first.
@@ -181,12 +159,12 @@ fn greeting_then_round_trips_with_sequential_ids() {
     // the reader thread survives between round-trips.
     let index = ed.open_file("/tmp/x.txt").expect("open_file round-trip");
     assert_eq!(index, 4);
-    handle.join().expect("bridge thread panicked");
+    finish(bridge, "greeting_then_round_trips_with_sequential_ids");
 }
 
 #[test]
 fn missing_pipe_is_not_running() {
-    let _wd = Watchdog::new(30, "missing_pipe_is_not_running");
+    let _wd = Watchdog::new(SUITE, "missing_pipe_is_not_running");
     // Never created: opening it must surface the clean tool error, not an
     // OS-error string leaking into the agent's transcript.
     let pipe = format!(r"\\.\pipe\np-mcp-definitely-absent-{}", std::process::id());
@@ -199,8 +177,8 @@ fn missing_pipe_is_not_running() {
 
 #[test]
 fn invalid_greeting_rejected() {
-    let _wd = Watchdog::new(30, "invalid_greeting_rejected");
-    let (pipe, handle) = spawn_pipe_bridge(|file| {
+    let _wd = Watchdog::new(SUITE, "invalid_greeting_rejected");
+    let (pipe, bridge) = spawn_pipe_bridge(|file| {
         let mut reader = BufReader::new(file.try_clone().expect("clone pipe handle"));
         let mut file = file;
         writeln!(file, r#"{{"hello":true}}"#).unwrap();
@@ -218,16 +196,16 @@ fn invalid_greeting_rejected() {
         err.0
     );
     drop(ed); // closes the client handle so the bridge's read sees EOF
-    handle.join().expect("bridge thread panicked");
+    finish(bridge, "invalid_greeting_rejected");
 }
 
 #[test]
 fn response_timeout_enforced() {
-    let _wd = Watchdog::new(30, "response_timeout_enforced");
+    let _wd = Watchdog::new(SUITE, "response_timeout_enforced");
     // The Windows path has no socket read timeout — it fakes one with a reader
     // thread plus `recv_timeout`. This pins that plumbing: a bridge that reads
     // the request and then goes silent must fail FAST, never hang the agent.
-    let (pipe, handle) = spawn_pipe_bridge(|file| {
+    let (pipe, bridge) = spawn_pipe_bridge(|file| {
         let mut reader = BufReader::new(file.try_clone().expect("clone pipe handle"));
         let mut file = file;
         writeln!(file, "{GREETING}").unwrap();
@@ -250,13 +228,13 @@ fn response_timeout_enforced() {
         elapsed < Duration::from_millis(2500),
         "recv_timeout did not fire: took {elapsed:?} against a 1 s timeout"
     );
-    handle.join().expect("bridge thread panicked");
+    finish(bridge, "response_timeout_enforced");
 }
 
 #[test]
 fn editor_close_detected() {
-    let _wd = Watchdog::new(30, "editor_close_detected");
-    let (pipe, handle) = spawn_pipe_bridge(|file| {
+    let _wd = Watchdog::new(SUITE, "editor_close_detected");
+    let (pipe, bridge) = spawn_pipe_bridge(|file| {
         let mut file = file;
         writeln!(file, "{GREETING}").unwrap();
         // Returning drops the server handle: the editor went away mid-session.
@@ -278,5 +256,5 @@ fn editor_close_detected() {
         "a closed pipe must fail immediately, not time out: {}",
         err.0
     );
-    handle.join().expect("bridge thread panicked");
+    finish(bridge, "editor_close_detected");
 }

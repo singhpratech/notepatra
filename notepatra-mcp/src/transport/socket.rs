@@ -426,12 +426,58 @@ fn read_line_from(
 // ── Windows named-pipe transport (v0.1.119) ────────────────────────────────
 //
 // `std::fs::File` over a named pipe is a byte stream with no per-read timeout,
-// so a dedicated reader thread pumps lines into a channel and the caller uses
-// `recv_timeout` to honor the same 5s/15s/130s windows the Unix path gets from
-// `set_read_timeout`. std-only; no winapi. UNVERIFIED at runtime (built and
-// checked on Linux via `--target x86_64-pc-windows-gnu`).
+// so reads are delegated to a worker thread and the caller uses `recv_timeout`
+// to honor the same 5s/15s/130s windows the Unix path gets from
+// `set_read_timeout`. std-only; no winapi.
+//
+// WHY THE WORKER IS COMMAND-GATED (v0.1.120 — fixes a shipped deadlock):
+// The pipe is opened WITHOUT `FILE_FLAG_OVERLAPPED`, and `try_clone` duplicates
+// the handle but NOT the underlying kernel file object. A synchronous file
+// object serializes every I/O request against it, so a thread parked in
+// `ReadFile` holds that lock and the next `WriteFile` — even from another
+// thread, even in the opposite direction — waits behind it. (This is precisely
+// why MSDN requires overlapped I/O to read and write a pipe simultaneously.)
+// The original design kept the reader thread ALWAYS parked in `read_line`, so
+// the first request write after the greeting blocked forever: never sent, never
+// answered, and not covered by any timeout because the block was on the
+// un-timeboxed write. It also meant `drop` could not close the client's handles
+// (the parked read still owned the cloned one), so the peer never saw EOF.
+//
+// The worker below idles blocked on a COMMAND channel, never in `ReadFile`. It
+// performs exactly one `read_line` per command and returns to channel-idle.
+// The half-duplex protocol is therefore enforced structurally: a write is only
+// ever issued while the file object has no pending read, and `drop` on an idle
+// worker closes the command channel, the worker exits at once, and every client
+// handle is released so the peer sees EOF promptly.
+//
+// Residual, bounded: a read ABANDONED by timeout leaves the worker in
+// `ReadFile` on that connection's file object. `Conn::dead` then refuses any
+// further write on this connection, and `SocketEditor::call` already drops the
+// `Conn` and reconnects with a FRESH file object on any error — so a stale
+// worker can never block a future write. It exits when the editor finally
+// answers or closes. Runtime behavior on Windows is reasoned from the
+// documented synchronous-file-object semantics, not observed on this host.
+//
+// WHY WRITES GET A WORKER TOO (v0.1.120 — closes the last unbounded wait):
+// `Conn::dead` bounds only the STALE-WORKER case. It does not bound a FULL PIPE
+// BUFFER. The pipe is byte-mode, so unblocking a writer requires the peer to
+// drain; if the editor is alive but its Qt event loop is not reading — exactly
+// the approval-card / modal-dialog state this transport exists to serve — a
+// request larger than QLocalServer's buffer parks `WriteFile` forever. That is
+// not hypothetical: `text`, `source`, `sql` and Vega `spec` payloads
+// (insert_text, apply_edit, set_diagram_source, run_sql, render_chart,
+// export_chart, format_text) routinely exceed 64 KB. The greeting
+// proof-of-life law does not help, because the stall begins AFTER the greeting.
+//
+// std exposes no write timeout for a `File`, so the write is delegated to its
+// own command-gated worker and the caller bounds it with `recv_timeout` — the
+// mirror image of the read path, reusing the SAME per-verb timeout (so a write
+// waiting behind an approval card gets the long window, not the short one).
+// The residual matches the read side exactly: an abandoned write leaves that
+// worker in `WriteFile`, the connection is marked `dead`, and the caller
+// reconnects on a fresh file object.
 
-/// One item from the pipe reader thread.
+/// One item from the pipe read worker.
 #[cfg(windows)]
 enum LineMsg {
     /// A complete newline-delimited line.
@@ -444,19 +490,32 @@ enum LineMsg {
 
 #[cfg(windows)]
 struct Conn {
-    /// Write half of the pipe (the reader thread owns a cloned read half).
-    writer: std::fs::File,
-    rx: std::sync::mpsc::Receiver<LineMsg>,
-    /// Detached on drop; the thread exits when the pipe closes.
+    /// One send == "write these bytes and flush". The write worker owns the
+    /// write half of the pipe; dropping this releases an idle worker (and with
+    /// it that handle).
+    write_tx: std::sync::mpsc::Sender<Vec<u8>>,
+    /// One result per `write_tx` send.
+    write_rx: std::sync::mpsc::Receiver<Result<(), String>>,
+    /// Detached; exits as soon as `write_tx` drops while it is idle.
+    _writer: std::thread::JoinHandle<()>,
+    /// One send == "perform exactly one `read_line`". Dropping it is what
+    /// releases an idle worker (and with it the cloned read handle).
+    cmd_tx: std::sync::mpsc::Sender<()>,
+    line_rx: std::sync::mpsc::Receiver<LineMsg>,
+    /// Detached; exits as soon as `cmd_tx` drops while it is idle.
     _reader: std::thread::JoinHandle<()>,
+    /// Set once a read or write has failed or been abandoned: a worker may
+    /// still be parked in `ReadFile`/`WriteFile` on this file object, so no
+    /// further I/O may be issued here. The caller reconnects instead.
+    dead: bool,
     next_id: u64,
 }
 
 #[cfg(windows)]
 impl Conn {
-    /// Connect phase ONLY (open the pipe + start the reader thread); no
-    /// protocol bytes are consumed, so a failure here just means this
-    /// candidate is dead and the caller may try the next one.
+    /// Connect phase ONLY (open the pipe + start the read worker); no protocol
+    /// bytes are consumed — and no read is even ISSUED — so a failure here just
+    /// means this candidate is dead and the caller may try the next one.
     fn connect(path: &str, _timeout: Duration) -> Result<Self, ConnectError> {
         use std::fs::OpenOptions;
         use std::io::{BufRead, BufReader};
@@ -474,34 +533,61 @@ impl Conn {
             .try_clone()
             .map_err(|e| ConnectError::fatal(format!("cannot clone pipe handle: {e}")))?;
 
-        let (tx, rx) = mpsc::channel::<LineMsg>();
-        let reader = std::thread::spawn(move || {
-            let mut buf = BufReader::new(read_half);
-            loop {
-                let mut line = String::new();
-                match buf.read_line(&mut line) {
-                    Ok(0) => {
-                        let _ = tx.send(LineMsg::Eof);
-                        break;
-                    }
-                    Ok(_) => {
-                        // Receiver gone (Conn dropped) — stop pumping.
-                        if tx.send(LineMsg::Line(line)).is_err() {
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        let _ = tx.send(LineMsg::Err(e.to_string()));
-                        break;
-                    }
+        // Write worker: idles on the channel, never inside `WriteFile`, so a
+        // stalled peer parks IT rather than the caller. Owns the write half —
+        // dropping `write_tx` closes that handle once the worker is idle.
+        let (write_tx, write_cmd_rx) = mpsc::channel::<Vec<u8>>();
+        let (write_res_tx, write_rx) = mpsc::channel::<Result<(), String>>();
+        let writer = std::thread::spawn(move || {
+            use std::io::Write;
+            let mut file = file;
+            while let Ok(bytes) = write_cmd_rx.recv() {
+                let res = file
+                    .write_all(&bytes)
+                    .and_then(|()| file.flush())
+                    .map_err(|e| e.to_string());
+                // A failed write is terminal for this connection, and a send
+                // failure means the Conn is gone: either way, stop.
+                let terminal = res.is_err();
+                if write_res_tx.send(res).is_err() || terminal {
+                    break;
                 }
             }
         });
 
+        let (cmd_tx, cmd_rx) = mpsc::channel::<()>();
+        let (line_tx, line_rx) = mpsc::channel::<LineMsg>();
+        let reader = std::thread::spawn(move || {
+            // The BufReader lives across commands so bytes read ahead of a
+            // newline are not lost between round-trips.
+            let mut buf = BufReader::new(read_half);
+            // Idle HERE — on the channel, never inside ReadFile.
+            while cmd_rx.recv().is_ok() {
+                let mut line = String::new();
+                let msg = match buf.read_line(&mut line) {
+                    Ok(0) => LineMsg::Eof,
+                    Ok(_) => LineMsg::Line(line),
+                    Err(e) => LineMsg::Err(e.to_string()),
+                };
+                // Anything but a line is terminal for this connection, and a
+                // send failure means the Conn is gone: either way, stop.
+                let terminal = !matches!(msg, LineMsg::Line(_));
+                if line_tx.send(msg).is_err() || terminal {
+                    break;
+                }
+            }
+            // Falling out of the loop drops `buf`, closing the cloned read
+            // handle — the other half of "the peer sees EOF promptly".
+        });
+
         Ok(Self {
-            writer: file,
-            rx,
+            write_tx,
+            write_rx,
+            _writer: writer,
+            cmd_tx,
+            line_rx,
             _reader: reader,
+            dead: false,
             next_id: 1,
         })
     }
@@ -514,21 +600,69 @@ impl Conn {
         validate_greeting(&greeting)
     }
 
-    /// Blocks up to `timeout` for the next line from the reader thread.
-    fn recv_line(&self, timeout: Duration, what: &str) -> Result<String, TransportError> {
+    /// Commands exactly one read and blocks up to `timeout` for its result.
+    /// Any non-success marks the connection dead (see [`Conn::dead`]).
+    fn recv_line(&mut self, timeout: Duration, what: &str) -> Result<String, TransportError> {
         use std::sync::mpsc::RecvTimeoutError;
-        match self.rx.recv_timeout(timeout) {
-            Ok(LineMsg::Line(l)) => Ok(l),
-            Ok(LineMsg::Eof) | Err(RecvTimeoutError::Disconnected) => Err(TransportError(format!(
+
+        let closed = |what: &str| {
+            TransportError(format!(
                 "the editor closed the connection while waiting for {what}"
-            ))),
-            Ok(LineMsg::Err(e)) => Err(TransportError(format!(
-                "editor connection failed while waiting for {what}: {e}"
-            ))),
-            Err(RecvTimeoutError::Timeout) => Err(TransportError(format!(
-                "timed out waiting for {what} from the editor"
-            ))),
+            ))
+        };
+        if self.cmd_tx.send(()).is_err() {
+            // The worker already exited (terminal read result).
+            self.dead = true;
+            return Err(closed(what));
         }
+        let out = match self.line_rx.recv_timeout(timeout) {
+            Ok(LineMsg::Line(l)) => return Ok(l),
+            Ok(LineMsg::Eof) | Err(RecvTimeoutError::Disconnected) => closed(what),
+            Ok(LineMsg::Err(e)) => TransportError(format!(
+                "editor connection failed while waiting for {what}: {e}"
+            )),
+            Err(RecvTimeoutError::Timeout) => {
+                TransportError(format!("timed out waiting for {what} from the editor"))
+            }
+        };
+        self.dead = true;
+        Err(out)
+    }
+
+    /// Hands `bytes` to the write worker and blocks up to `timeout` for the
+    /// result. Any non-success marks the connection dead (see [`Conn::dead`]).
+    ///
+    /// The deadline is the caller's per-verb window, so a large write parked
+    /// behind an approval card gets the same long budget as the response it is
+    /// waiting on — a write is never the reason an approved edit fails.
+    fn send_line(
+        &mut self,
+        bytes: Vec<u8>,
+        timeout: Duration,
+        verb: &str,
+    ) -> Result<(), TransportError> {
+        use std::sync::mpsc::RecvTimeoutError;
+
+        let lost = |detail: &str| {
+            TransportError(format!("editor connection lost while sending: {detail}"))
+        };
+        if self.write_tx.send(bytes).is_err() {
+            // The worker already exited (a previous write failed).
+            self.dead = true;
+            return Err(lost("the write worker is gone"));
+        }
+        let out = match self.write_rx.recv_timeout(timeout) {
+            Ok(Ok(())) => return Ok(()),
+            Ok(Err(e)) => lost(&e),
+            Err(RecvTimeoutError::Disconnected) => lost("the write worker is gone"),
+            Err(RecvTimeoutError::Timeout) => TransportError(format!(
+                "timed out sending the {verb} request to the editor: it is not \
+                 reading its side of the pipe (its window may be blocked by a \
+                 dialog)"
+            )),
+        };
+        self.dead = true;
+        Err(out)
     }
 
     fn round_trip(
@@ -537,15 +671,18 @@ impl Conn {
         args: Value,
         timeout: Duration,
     ) -> Result<Value, TransportError> {
-        use std::io::Write;
-
+        // Belt-and-braces on the invariant `call` already upholds: never write
+        // to a connection whose worker may still be parked in ReadFile.
+        if self.dead {
+            return Err(TransportError(
+                "editor connection lost while sending: the previous request did not complete"
+                    .into(),
+            ));
+        }
         let id = self.next_id;
         self.next_id += 1;
         let line = build_request(id, verb, &args)?;
-        self.writer
-            .write_all(line.as_bytes())
-            .and_then(|()| self.writer.flush())
-            .map_err(|e| TransportError(format!("editor connection lost while sending: {e}")))?;
+        self.send_line(line.into_bytes(), timeout, verb)?;
         let resp = self.recv_line(timeout, &format!("the {verb} response"))?;
         parse_response(&resp, id, verb)
     }

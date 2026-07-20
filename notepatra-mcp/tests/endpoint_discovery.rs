@@ -11,8 +11,14 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-use std::thread::JoinHandle;
+use std::sync::mpsc;
 use std::time::Duration;
+
+mod common;
+use common::{finish, Bridge, Watchdog};
+
+/// Names this suite's tracker file (`np-endpoint-discovery-tracker.log`).
+const SUITE: &str = "endpoint-discovery";
 
 use notepatra_mcp::transport::endpoint::published_endpoint;
 use notepatra_mcp::transport::socket::{SocketEditor, NOT_RUNNING};
@@ -29,13 +35,25 @@ fn temp_socket_path() -> PathBuf {
 
 /// Binds a listener, then serves the greeting + one `app_info` request on the
 /// first accepted connection. Mirrors the helper in tests/socket_bridge.rs.
-fn spawn_bridge(path: &PathBuf) -> JoinHandle<()> {
+///
+/// HONEST RESIDUAL: `listener.accept()` is unbounded (std has no accept
+/// timeout), so a regression that stops the client connecting would park this
+/// thread forever. Its deadline is enforced one level up — by [`finish`]'s
+/// `recv_timeout` and by the [`Watchdog`] — so that regression is a fast NAMED
+/// failure instead of a job-length hang.
+fn spawn_bridge(path: &PathBuf) -> Bridge {
     let _ = std::fs::remove_file(path);
     let listener = UnixListener::bind(path).expect("bind fake bridge socket");
-    std::thread::spawn(move || {
+    let (done_tx, done) = mpsc::channel::<()>();
+    let handle = std::thread::spawn(move || {
         let (stream, _) = listener.accept().expect("accept");
         serve_app_info(stream);
-    })
+        // LAST act: unblocks `finish`. On a panic this send never happens, but
+        // `done_tx` drops during unwind and `finish` treats Disconnected as
+        // "finished", so the panic is re-raised by the join.
+        let _ = done_tx.send(());
+    });
+    Bridge::new(handle, done)
 }
 
 fn serve_app_info(stream: UnixStream) {
@@ -61,6 +79,10 @@ fn serve_app_info(stream: UnixStream) {
 /// test threads clobber each other's env.
 #[test]
 fn endpoint_file_is_discovered_and_stale_entries_fall_through() {
+    let _wd = Watchdog::new(
+        SUITE,
+        "endpoint_file_is_discovered_and_stale_entries_fall_through",
+    );
     // (a) A private config dir that the editor would have written into.
     let config_dir = std::env::temp_dir().join(format!("np-mcp-epcfg-{}", std::process::id()));
     std::fs::create_dir_all(&config_dir).expect("create config dir");
@@ -71,7 +93,7 @@ fn endpoint_file_is_discovered_and_stale_entries_fall_through() {
     // exactly the macOS situation the published file exists to solve.
     let live = temp_socket_path();
     let live_str = live.to_str().unwrap().to_string();
-    let handle = spawn_bridge(&live);
+    let bridge = spawn_bridge(&live);
 
     // (c) Publication is read back verbatim.
     let record = json!({
@@ -94,7 +116,10 @@ fn endpoint_file_is_discovered_and_stale_entries_fall_through() {
     .with_timeouts(Duration::from_secs(1), Duration::from_secs(1));
     let info = ed.app_info().expect("live later candidate must be reached");
     assert_eq!(info["name"], "Notepatra");
-    handle.join().expect("bridge thread panicked");
+    finish(
+        bridge,
+        "endpoint_file_is_discovered_and_stale_entries_fall_through",
+    );
     let _ = std::fs::remove_file(&live);
 
     // (e) Every candidate dead → the EXACT user-facing message, not a

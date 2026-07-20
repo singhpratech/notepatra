@@ -6,7 +6,32 @@
 //! honors keep-alive so a `connect` front-end can reuse its socket.
 
 use std::io::{self, BufRead, BufReader, Write};
-use std::net::TcpStream;
+use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+use std::time::Duration;
+
+// ── Client deadlines ───────────────────────────────────────────────────────
+//
+// Every socket op below carries one. A blocking read with no timeout is not a
+// slow test, it is a HANG: the integration suite that drives this client runs
+// on the Windows CI job, where an unbounded `read_line` waiting on a wedged
+// gateway handler burns the whole job budget and reports nothing. A deadline
+// turns that into a fast, attributable red.
+
+/// TCP connect ceiling. The gateway is loopback-only, so a healthy connect is
+/// sub-millisecond; this only bounds a listener that accepted the SYN and then
+/// went away.
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Response ceiling. Deliberately GENEROUS: a remote tool call can legitimately
+/// sit behind the local approval card a human has not answered yet. It is set
+/// above the transport's own 130 s approval window on purpose, so the inner
+/// timeout fires first and the agent gets the specific "approval timed out"
+/// message rather than this generic one.
+pub const READ_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// Request-send ceiling. Unblocking a write needs the peer to drain; a gateway
+/// that stops reading must fail here rather than park the caller forever.
+pub const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Hard ceiling on an inbound request body. The gateway's JSON-RPC requests are
 /// small (tool RESPONSES, which can be large, are written OUT, never read here),
@@ -156,7 +181,7 @@ pub fn post_json(
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "url must start with http://"))?
         .trim_end_matches('/');
 
-    let mut stream = TcpStream::connect(hostport)?;
+    let mut stream = connect_with_deadline(hostport)?;
     let mut head = format!(
         "POST {path} HTTP/1.1\r\n\
          Host: {hostport}\r\n\
@@ -169,11 +194,70 @@ pub fn post_json(
         head.push_str(&format!("Authorization: Bearer {t}\r\n"));
     }
     head.push_str("\r\n");
-    stream.write_all(head.as_bytes())?;
-    stream.write_all(body)?;
-    stream.flush()?;
+    stream
+        .write_all(head.as_bytes())
+        .and_then(|()| stream.write_all(body))
+        .and_then(|()| stream.flush())
+        .map_err(|e| explain_timeout(e, "sending the request to"))?;
 
     read_response(&mut BufReader::new(stream))
+        .map_err(|e| explain_timeout(e, "waiting for a response from"))
+}
+
+/// Rewrites a bare socket-timeout errno into something an operator can act on.
+///
+/// std surfaces an elapsed `SO_RCVTIMEO`/`SO_SNDTIMEO` as `WouldBlock`, which
+/// prints as "Resource temporarily unavailable (os error 11)" — technically
+/// true and completely useless in a CI log. A deadline that fires must say WHAT
+/// timed out and for how long, or it just trades a silent hang for a cryptic
+/// red.
+fn explain_timeout(e: io::Error, what: &str) -> io::Error {
+    match e.kind() {
+        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => io::Error::new(
+            io::ErrorKind::TimedOut,
+            format!(
+                "timed out {what} the gateway: it accepted the connection but \
+                 never completed the exchange (a wedged handler). Deadlines: \
+                 connect {CONNECT_TIMEOUT:?}, write {WRITE_TIMEOUT:?}, read \
+                 {READ_TIMEOUT:?}."
+            ),
+        ),
+        _ => e,
+    }
+}
+
+/// Connects to `hostport` with a bounded connect, then arms read AND write
+/// deadlines before a single byte is exchanged.
+///
+/// `TcpStream::connect` is NOT used: it takes a `ToSocketAddrs` and applies no
+/// deadline. `connect_timeout` takes a resolved `SocketAddr`, so resolution
+/// happens here and each candidate address is tried in turn (a host may resolve
+/// to both v4 and v6; only the last error is worth reporting).
+///
+/// HONEST RESIDUAL: `to_socket_addrs` performs DNS, and std exposes no timeout
+/// for it. For this client that is not a live risk — the gateway is
+/// loopback-only, so the input is a literal `127.0.0.1:port` that resolves
+/// without touching the network. Bounding DNS would need a resolver thread and
+/// buys nothing here.
+fn connect_with_deadline(hostport: &str) -> io::Result<TcpStream> {
+    let addrs: Vec<SocketAddr> = hostport.to_socket_addrs()?.collect();
+    let mut last_err = None;
+    for addr in &addrs {
+        match TcpStream::connect_timeout(addr, CONNECT_TIMEOUT) {
+            Ok(s) => {
+                s.set_read_timeout(Some(READ_TIMEOUT))?;
+                s.set_write_timeout(Some(WRITE_TIMEOUT))?;
+                return Ok(s);
+            }
+            Err(e) => last_err = Some(e),
+        }
+    }
+    Err(last_err.unwrap_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("no address resolved for {hostport}"),
+        )
+    }))
 }
 
 fn read_response<R: BufRead>(r: &mut R) -> io::Result<HttpResponse> {

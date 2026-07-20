@@ -17,6 +17,12 @@ on:
 jobs:
   rust-quality:
     runs-on: ubuntu-24.04
+    # HANG CONTAINMENT (v0.1.120). tests/socket_bridge.rs drives REAL unix
+    # sockets: a SocketEditor regression that stops the client connecting would
+    # park an accept() forever. That is now bounded in-test (bounded join +
+    # watchdog abort), but a job ceiling is the outermost net — without one a
+    # wedge here runs to GitHub's 360-minute default and reports nothing.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -33,6 +39,7 @@ jobs:
         run: cd rust-core && cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Run tests
+        timeout-minutes: 15
         run: cd rust-core && cargo test --release
 
       # v0.1.118 — same three gates for the MCP sidecar crate.
@@ -47,9 +54,29 @@ jobs:
         run: cd notepatra-mcp && cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Run tests (notepatra-mcp)
+        timeout-minutes: 10
         run: cd notepatra-mcp && cargo test --release
 
       # Same reason as clippy above: the remote-gated tests are compiled out of
       # the default run, so they need their own invocation or they rot silently.
       - name: Run tests (notepatra-mcp, remote feature)
+        timeout-minutes: 10
         run: cd notepatra-mcp && cargo test --release --features remote
+
+      # A watchdog abort DISCARDS libtest's captured output, so the hung test's
+      # name survives only in its tracker file. `always()` because the run that
+      # matters is the failing one.
+      - name: Transport test trackers (localize a hang)
+        if: always()
+        run: |
+          shopt -s nullglob
+          files=("${TMPDIR:-/tmp}"/np-*-tracker.log)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "no tracker file — no transport suite reached its first test"
+          else
+            for f in "${files[@]}"; do
+              echo "=== $(basename "$f") ==="
+              cat "$f"
+            done
+            echo "=== an ENTER with no matching LEAVE is the test that hung ==="
+          fi

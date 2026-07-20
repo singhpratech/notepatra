@@ -16,6 +16,12 @@ use notepatra_mcp::server::Server;
 use notepatra_mcp::transport::mock::MockEditor;
 use serde_json::{json, Value};
 
+mod common;
+use common::Watchdog;
+
+/// Names this suite's tracker file (`np-remote-gateway-tracker.log`).
+const SUITE: &str = "remote-gateway";
+
 const CODE: &str = "13572468";
 
 static SEQ: AtomicU64 = AtomicU64::new(0);
@@ -52,6 +58,13 @@ fn start_opts(pairing: PairingState, require_token: bool) -> Harness {
     let server = Arc::new(Mutex::new(Server::new(MockEditor::default())));
     let pairing = Arc::new(Mutex::new(pairing));
 
+    // Detached on purpose: `accept_loop` blocks in `listener.incoming()` for
+    // the life of the harness and is reaped at process exit — there is nothing
+    // to join. The hang risk here was never this thread but the CLIENT half:
+    // `http::post_json` used to read with no deadline, so a wedged handler
+    // parked the TEST thread forever. That is now bounded twice over — by the
+    // socket timeouts in `remote::http` (fast, attributable red) and by the
+    // `Watchdog` each test arms (backstop abort that NAMES the test).
     let (s, t, p) = (server.clone(), tokens.clone(), pairing.clone());
     std::thread::spawn(move || {
         let _ = accept_loop(listener, s, t, p, require_token);
@@ -115,6 +128,7 @@ fn do_pair(base: &str, code: &str, scope: Scope) -> (u16, Value) {
 
 #[test]
 fn pair_happy_path_then_write_reaches_backend() {
+    let _wd = Watchdog::new(SUITE, "pair_happy_path_then_write_reaches_backend");
     let h = start(default_pairing());
     let (status, body) = do_pair(&h.base, CODE, Scope::WriteRequest);
     assert_eq!(status, 200, "pairing failed: {body}");
@@ -135,6 +149,7 @@ fn pair_happy_path_then_write_reaches_backend() {
 
 #[test]
 fn no_token_is_read_only_and_write_is_denied() {
+    let _wd = Watchdog::new(SUITE, "no_token_is_read_only_and_write_is_denied");
     let h = start(default_pairing());
 
     // tools/list is filtered to the read tier (24 tools).
@@ -184,6 +199,7 @@ fn no_token_is_read_only_and_write_is_denied() {
 
 #[test]
 fn garbage_bearer_degrades_to_read_only() {
+    let _wd = Watchdog::new(SUITE, "garbage_bearer_degrades_to_read_only");
     let h = start(default_pairing());
     // An invalid token behaves exactly like no token (brief's degrade rule).
     let (_s, w) = rpc(
@@ -199,6 +215,7 @@ fn garbage_bearer_degrades_to_read_only() {
 
 #[test]
 fn read_act_token_allows_act_denies_write() {
+    let _wd = Watchdog::new(SUITE, "read_act_token_allows_act_denies_write");
     let h = start(default_pairing());
     // Seed a read_act token directly (same store the gateway reads).
     let token = h.tokens.issue(Scope::ReadAct).unwrap();
@@ -224,6 +241,7 @@ fn read_act_token_allows_act_denies_write() {
 
 #[test]
 fn notification_yields_204_no_body() {
+    let _wd = Watchdog::new(SUITE, "notification_yields_204_no_body");
     let h = start(default_pairing());
     let resp = http::post_json(
         &h.base,
@@ -240,6 +258,7 @@ fn notification_yields_204_no_body() {
 
 #[test]
 fn server_persists_only_hashed_token() {
+    let _wd = Watchdog::new(SUITE, "server_persists_only_hashed_token");
     let h = start(default_pairing());
     let (status, body) = do_pair(&h.base, CODE, Scope::WriteRequest);
     assert_eq!(status, 200);
@@ -266,6 +285,7 @@ fn server_persists_only_hashed_token() {
 
 #[test]
 fn wrong_code_pairing_is_rejected() {
+    let _wd = Watchdog::new(SUITE, "wrong_code_pairing_is_rejected");
     let h = start(default_pairing());
     let (status, body) = do_pair(&h.base, "00000000", Scope::WriteRequest);
     assert_eq!(status, 401, "wrong code must not issue a token: {body}");
@@ -274,6 +294,7 @@ fn wrong_code_pairing_is_rejected() {
 
 #[test]
 fn requested_scope_capped_by_serve_max_scope() {
+    let _wd = Watchdog::new(SUITE, "requested_scope_capped_by_serve_max_scope");
     // serve started with --max-scope read_only: a write_request request is
     // capped to read_only even with a correct code.
     let h = start(PairingState::with_code(
@@ -292,6 +313,7 @@ fn requested_scope_capped_by_serve_max_scope() {
 
 #[test]
 fn require_token_refuses_unauthenticated_reads() {
+    let _wd = Watchdog::new(SUITE, "require_token_refuses_unauthenticated_reads");
     // --require-token removes the read floor: even a READ verb is denied without
     // a valid token, and a notification is silently dropped (204).
     let h = start_opts(default_pairing(), true);
@@ -333,6 +355,7 @@ fn require_token_refuses_unauthenticated_reads() {
 
 #[test]
 fn loopback_only_bind() {
+    let _wd = Watchdog::new(SUITE, "loopback_only_bind");
     assert!(bind_loopback("0.0.0.0:0".parse().unwrap()).is_err());
     assert!(bind_loopback("127.0.0.1:0".parse().unwrap()).is_ok());
 }

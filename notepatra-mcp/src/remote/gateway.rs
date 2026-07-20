@@ -108,6 +108,14 @@ fn handle_conn<T: EditorTransport + Send + 'static>(
     stream: TcpStream,
     ctx: Ctx<T>,
 ) -> io::Result<()> {
+    // Bound the SEND side: a client that stops draining must not park this
+    // handler forever holding a connection slot. The RECEIVE side is left
+    // unbounded on purpose — blocking in `HttpRequest::read` between keep-alive
+    // requests is the correct idle state for a persistent connection, and a
+    // read deadline here would tear down healthy idle sockets. This runs on a
+    // detached per-connection thread, so an idle read costs a parked thread,
+    // never a stalled caller.
+    stream.set_write_timeout(Some(http::WRITE_TIMEOUT))?;
     let mut writer = stream.try_clone()?;
     let mut reader = BufReader::new(stream);
     loop {
