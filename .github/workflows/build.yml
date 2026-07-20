@@ -378,7 +378,7 @@ jobs:
   build-macos-arm:
     runs-on: macos-14
     # Fail fast instead of burning the 360-minute default on a wedge.
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -476,7 +476,7 @@ jobs:
 
       - name: Build and run regression suite
         # ctest's blanket TIMEOUT 600 is per-TEST, not per-step: a systemic wedge across ~48 tests still runs for hours without this.
-        timeout-minutes: 45
+        timeout-minutes: 75
         run: |
           # Reuse the same Qt5/QScintilla discovery the main build did by
           # reconfiguring the existing build tree with -DBUILD_TESTING=ON.
@@ -982,7 +982,7 @@ jobs:
     # 360-minute default and reports NOTHING. This is the outermost net;
     # the per-step ceilings below name the culprit, and the in-test
     # watchdogs name the individual test.
-    timeout-minutes: 90
+    timeout-minutes: 180
     permissions:
       contents: read
       issues: write
@@ -1833,7 +1833,12 @@ jobs:
 
       - name: Build and run regression suite
         # ctest's blanket TIMEOUT 600 is per-TEST, not per-step: a systemic wedge across ~48 tests still runs for hours without this.
-        timeout-minutes: 45
+        # 90, not 45: this step legitimately takes ~67 min on Windows (the MSVC
+        # + Qt test-target build dominates; ctest itself is ~3 min). A ceiling
+        # set near the median KILLS HEALTHY RUNS — a 45 did exactly that once.
+        # These ceilings exist to turn an hours-long wedge into minutes, so set
+        # them ABOVE the observed p99, never near the average.
+        timeout-minutes: 90
         shell: pwsh
         run: |
           # Reconfigure the existing build tree with -DBUILD_TESTING=ON so the
