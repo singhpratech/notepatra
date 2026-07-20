@@ -3222,19 +3222,37 @@ int main(int argc, char *argv[]) {
     app.setAttribute(Qt::AA_Use96Dpi, true);
     TestMcpBridge tc;
     QTEST_SET_MAIN_SOURCE_PATH
-    const int rc = QTest::qExec(&tc, argc, argv);
-    // Marker: proves qExec's own finalization completed. If the progress file
-    // ends at the last LEAVE with no QEXEC_RETURNED, the crash is INSIDE qExec's
-    // teardown; if it appears, the crash is after it (static destruction).
+
+    // Mirror QtTest's full report into a FILE as well as stdout.
+    //
+    // Why: on Windows CI, ctest printed NOTHING for this test even with
+    // --output-on-failure — no PASS lines, no failing QCOMPARE, no line number.
+    // Three sections were failing and the log could not say WHICH assertion or
+    // why, which costs a whole ~90-minute cycle per guess. QtTest's own `-o
+    // <file>,txt` logger writes independently of ctest's capture, so the CI step
+    // can cat it unconditionally. Only active when NP_MCP_PROGRESS is set, i.e.
+    // in CI — a local run is untouched.
+    QVector<char *> args(argv, argv + argc);
+    QByteArray logArg;
+    const QByteArray progress = qgetenv("NP_MCP_PROGRESS");
+    if (!progress.isEmpty()) {
+        logArg = progress + ".qtest.txt,txt";
+        args << const_cast<char *>("-o") << logArg.data();
+    }
+    int argcOut = args.size();
+    const int rc = QTest::qExec(&tc, argcOut, args.data());
+
+    // Proves qExec's own finalization completed. Kept: it is what established
+    // that there was never a teardown crash here at all — every section runs and
+    // qExec returns normally. The earlier "crash" reading came from a marker
+    // that wrote LEAVE even for a FAILED section.
     npWriteProgress("QEXEC_RETURNED", rc == 0 ? "rc=0" : "rc=nonzero");
-    // Every section passes on offscreen-Windows CI, yet the process still dies
-    // after the last cleanup() — a platform teardown artifact, not a defect
-    // (Linux ASan is clean, 75/75). Skipping every destructor with _Exit removes
-    // the static-destruction phase from the equation; rc still carries the true
-    // pass/fail count for ctest. Test-only. NOTE: skipping the QSQLITE sections
-    // did NOT stop the crash, so the SQL driver plugin is ruled out as the cause.
     std::fflush(stdout);
     std::fflush(stderr);
-    std::_Exit(rc);
+    // Plain return, NOT std::_Exit. _Exit was added on the theory that this
+    // executable crashed during static destruction; the tracker has since shown
+    // qExec returning cleanly with a real failure count, so there is nothing to
+    // skip — and hard-exiting is a plausible reason ctest captured no output.
+    return rc;
 }
 #include "test_mcp_bridge.moc"

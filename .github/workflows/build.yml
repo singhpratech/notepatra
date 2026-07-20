@@ -1896,26 +1896,26 @@ jobs:
             Write-Host "=== sections entered=$enters passed=$leaves failed=$sectionFailures ==="
           }
 
-          # Narrow, sound tolerance for the offscreen-Windows teardown crash.
-          # test_mcp_bridge passes every section here (and 75/75 clean under
-          # Linux ASan) but the PROCESS still dies after the final cleanup() — a
-          # platform teardown artifact. ctest discards a crashed test's stdout on
-          # Windows, so the verdict comes from the crash-proof progress file.
-          # This forgives ONLY that exact shape: test_mcp_bridge is the sole
-          # failing test AND every section that started also finished AND no
-          # section recorded a failure. A real assertion failure writes a FAILED
-          # line, and a mid-section crash leaves an unmatched ENTER — both still
-          # fail the build loudly. Remove this once Qt/the runner image stops
-          # crashing at teardown.
-          if ($ctestExit -ne 0) {
-            $failed = @(Select-String -Path $ctestLog -Pattern '^\s*\d+ - (\S+) \(' |
-                        ForEach-Object { $_.Matches[0].Groups[1].Value })
-            $onlyMcpBridge = ($failed.Count -eq 1 -and $failed[0] -eq 'test_mcp_bridge')
-            if ($onlyMcpBridge -and $enters -gt 0 -and $leaves -eq $enters -and $sectionFailures -eq 0) {
-              Write-Host "::warning::test_mcp_bridge crashed at process teardown AFTER passing all $enters sections (known offscreen-Windows artifact) — tolerated."
-              $ctestExit = 0
-            }
+          # QtTest's own report, written by `-o <file>,txt` from the test's
+          # main(). ctest printed NOTHING for this test even with
+          # --output-on-failure — no PASS lines, no failing QCOMPARE, no line
+          # number — so three failing sections cost a full cycle each just to
+          # identify. This file is independent of ctest's capture and carries
+          # actual-vs-expected plus file:line for every failure.
+          $qtestLog = "$env:NP_MCP_PROGRESS.qtest.txt"
+          if (Test-Path $qtestLog) {
+            Write-Host "=== test_mcp_bridge QtTest report (failures with actual/expected + line) ==="
+            Select-String -Path $qtestLog -Pattern '^(FAIL!|XFAIL|Totals:)' -Context 0,4 |
+              ForEach-Object { Write-Host $_.Line; $_.Context.PostContext | ForEach-Object { Write-Host "    $_" } }
           }
+
+          # NO tolerance clause here, deliberately. One previously existed, for a
+          # "teardown crash" that turned out not to exist: the marker it relied
+          # on wrote LEAVE even for a FAILED section, so three genuinely failing
+          # tests read as "all sections passed, crashes at exit". With the marker
+          # recording QTest::currentTestFailed(), the tracker reports
+          # entered=76 passed=73 failed=3 and qExec returns normally — there is
+          # no crash to forgive. Any failure here is a real failure; fail loudly.
           if ($ctestExit -ne 0) {
             Write-Host "::error::Windows regression suite FAILED"
             exit 1
