@@ -15,7 +15,7 @@ jobs:
   build-linux:
     runs-on: ubuntu-24.04
     # Fail fast instead of burning the 360-minute default on a wedge.
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -218,7 +218,7 @@ jobs:
   build-linux-arm:
     runs-on: ubuntu-24.04-arm
     # Fail fast instead of burning the 360-minute default on a wedge.
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -1833,12 +1833,14 @@ jobs:
 
       - name: Build and run regression suite
         # ctest's blanket TIMEOUT 600 is per-TEST, not per-step: a systemic wedge across ~48 tests still runs for hours without this.
-        # 90, not 45: this step legitimately takes ~67 min on Windows (the MSVC
-        # + Qt test-target build dominates; ctest itself is ~3 min). A ceiling
-        # set near the median KILLS HEALTHY RUNS — a 45 did exactly that once.
-        # These ceilings exist to turn an hours-long wedge into minutes, so set
-        # them ABOVE the observed p99, never near the average.
-        timeout-minutes: 90
+        # 150, not 45: this step legitimately takes ~64 min on Windows (the
+        # MSVC + Qt test-target build dominates; ctest itself is ~3 min). A
+        # ceiling set near the median KILLS HEALTHY RUNS — a 45 did exactly
+        # that once, failing a job whose tests had all passed. These ceilings
+        # exist to turn an hours-long wedge into minutes, so set them at >=2x
+        # the observed maximum, never near the average. Runner performance
+        # varies run to run, and the suite only grows.
+        timeout-minutes: 150
         shell: pwsh
         run: |
           # Reconfigure the existing build tree with -DBUILD_TESTING=ON so the
