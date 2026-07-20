@@ -2018,24 +2018,38 @@
                 <div class="version-header">
                     <div class="version-tag">v0.1.120 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
-                        <span>2026-07-18</span>
-                        <span>· <strong>MCP distribution — prebuilt Windows sidecar + one-click Claude Desktop bundle</strong>: the <code>notepatra-mcp</code> server (48 tools) now ships a prebuilt, cosign-signed Windows binary (<code>notepatra-mcp-windows-x64.zip</code>) and a one-click <code>.mcpb</code> Claude Desktop bundle as release assets, alongside <code>cargo install notepatra-mcp</code> on every platform.</span>
+                        <span>2026-07-20</span>
+                        <span>· <strong>MCP full control — 48 tools, a remote gateway, and the sidecar finally works on Windows and macOS</strong>: <code>notepatra-mcp</code> grows from 35 to 48 tools (Read 24 / Act 13 / Write 11), making Diagram, Noter, Data-analyst and Charts AI-drivable; adds an opt-in loopback-only remote gateway; and fixes two defects that made the sidecar unusable outside Linux. Windows also gains a prebuilt signed sidecar zip and a one-click <code>.mcpb</code> bundle.</span>
                         <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>New — signed release distribution for the MCP sidecar</h5>
+                        <h5>New — 13 more MCP tools (35 → 48)</h5>
                         <ul>
-                            <li><strong>Prebuilt Windows sidecar</strong> — <code>notepatra-mcp-windows-x64.zip</code> ships as a cosign-signed release asset, so Windows users no longer have to build from source or run <code>cargo install</code> first.</li>
-                            <li><strong>One-click Claude Desktop bundle</strong> — <code>notepatra-mcp.mcpb</code> installs the sidecar straight from Claude Desktop's Settings → Extensions.</li>
-                            <li><code>cargo install notepatra-mcp</code> remains a fully supported install path on every platform.</li>
+                            <li><strong>Diagram control</strong> — <code>create_diagram</code>, <code>get_diagram_source</code>, <code>set_diagram_source</code>: an AI can draw and edit a rendered <code>.npd</code> diagram in-app, not just validate one.</li>
+                            <li><strong>Data-analyst</strong> — <code>list_connections</code>, <code>run_query</code>, <code>list_tables</code>, <code>open_data_analyst</code>, <code>export_query_results</code>: reaches your saved PostgreSQL / MySQL / SQL Server / SQLite / DuckDB connections, SELECT-only and row-capped.</li>
+                            <li><strong>Charts</strong> (Full) — <code>render_chart</code>, <code>export_chart</code>. <strong>Noter</strong> — <code>open_noter</code>. <strong>Discovery</strong> — <code>list_languages</code>, <code>get_capabilities</code>, so a client stops guessing.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>Unchanged — the 48-tool surface and the approval gate</h5>
+                        <h5>Fixed — the sidecar now actually works on Windows and macOS</h5>
                         <ul>
-                            <li>All 48 tools (Read / Act / Write) behave exactly as in v0.1.119; every write verb still goes through the in-editor <strong>Approve / Deny card</strong> (120 s auto-deny, no headless bypass), and <code>run_sql</code> stays SELECT-only with the DuckDB engine sandbox.</li>
+                            <li><strong>Windows named-pipe transport deadlocked on every verb.</strong> The pipe was opened without <code>FILE_FLAG_OVERLAPPED</code> and a reader thread parked permanently in <code>ReadFile</code>; a synchronous Windows file object serializes I/O, so that read blocked every write forever. Only the first request <em>after</em> the greeting hung — the greeting itself worked, which is why it looked healthy. Reads and writes are now gated on a command channel, making the deadlock impossible by construction.</li>
+                            <li><strong>macOS could not locate a running editor.</strong> The socket path was guessed as <code>$TMPDIR</code>, but Qt binds under <code>NSTemporaryDirectory()</code>. The editor now publishes its actual bound endpoint and the sidecar reads it, falling back to the old guess for older editors.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>New — remote gateway (opt-in, loopback-only) + Windows distribution</h5>
+                        <ul>
+                            <li>A feature-gated <code>remote</code> build adds <code>serve</code> / <code>pair</code> / <code>connect</code>: an 8-digit HMAC pairing issues a 256-bit bearer token, and scopes are fail-closed. <strong>The default build stays crypto-free</strong> — the gateway is not compiled in, and every CI job asserts the shipped binary reports "built without remote support". There is no remote approval: a remote write still raises the same local Approve card.</li>
+                            <li><strong>Prebuilt Windows sidecar</strong> <code>notepatra-mcp-windows-x64.zip</code> and a one-click <code>notepatra-mcp.mcpb</code> Claude Desktop bundle, both cosign-signed with SLSA provenance.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>Unchanged — the approval gate</h5>
+                        <ul>
+                            <li>Every write verb — including the new <code>set_diagram_source</code>, <code>export_query_results</code> and <code>export_chart</code> — goes through the in-editor <strong>Approve / Deny card</strong> (120 s auto-deny, FIFO one at a time, no headless bypass), and the gate lives in the editor process. <code>run_sql</code> and <code>run_query</code> stay SELECT-only.</li>
                         </ul>
                     </div>
                     <div class="version-section">
