@@ -76,6 +76,7 @@ jobs:
       # be a plain `cargo build --release`, and we then assert the flavor —
       # otherwise we would silently ship a crypto-linked sidecar.
       - name: Build and test MCP server
+        timeout-minutes: 25
         run: |
           cd notepatra-mcp
           cargo test --release
@@ -271,6 +272,7 @@ jobs:
       # differences are exactly what a cross-arch suite exists to catch.
       # Same ordering law as the x64 job — plain build LAST, then assert flavor.
       - name: Build and test MCP server
+        timeout-minutes: 25
         run: |
           cd notepatra-mcp
           cargo test --release
@@ -919,6 +921,7 @@ jobs:
       # rebuilds the bin WITH remote, so the plain `cargo build --release` must
       # come last, and the flavor assertion proves it did.
       - name: Build and test MCP server (arm64 + x86_64 universal)
+        timeout-minutes: 25
         run: |
           cd notepatra-mcp
           cargo test --release
@@ -1163,6 +1166,7 @@ jobs:
       # Ordering law (see the linux x64 job): the remote-feature test run
       # rebuilds the bin WITH remote compiled in, so the plain build comes LAST.
       - name: Build and test MCP server
+        timeout-minutes: 25
         shell: cmd
         run: cd notepatra-mcp && cargo build --release && cargo test --release && cargo test --release --features remote && cargo build --release
 

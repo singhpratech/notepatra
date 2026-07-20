@@ -52,6 +52,47 @@ const PIPE_BYTE_MODE_WAIT: u32 = 0x0;
 const PIPE_BUF_BYTES: u32 = 64 * 1024;
 const INVALID_HANDLE_VALUE: isize = -1;
 
+/// Fails the whole test binary FAST if a test overruns, instead of letting it
+/// hang. Every blocking primitive here — `ConnectNamedPipe`, the server thread's
+/// `read_line`, and the `join` that waits on them — blocks FOREVER if the peer
+/// never shows up, and a hung CI job is far worse than a failing one: it burns
+/// to the 6-hour limit and reports nothing (a hang is not a red). The watchdog
+/// converts every such hang into a loud, immediate failure naming the test.
+///
+/// `abort()` rather than `panic!` on purpose: the panic would land on the
+/// watchdog's own thread, where libtest cannot attribute it to the test and the
+/// blocked thread would keep the binary alive regardless.
+struct Watchdog(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl Watchdog {
+    fn new(secs: u64, label: &'static str) -> Self {
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = done.clone();
+        std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(secs);
+            while Instant::now() < deadline {
+                if flag.load(Ordering::Relaxed) {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            eprintln!(
+                "pipe_bridge: {label} exceeded {secs}s — a named-pipe call is \
+                 BLOCKED (no peer attached). Aborting so CI reports a failure \
+                 rather than hanging."
+            );
+            std::process::abort();
+        });
+        Self(done)
+    }
+}
+
+impl Drop for Watchdog {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
+
 /// Unique pipe name for this process + call. Pipe names live in a global
 /// kernel namespace, so the pid keeps concurrent CI jobs from colliding.
 fn unique_pipe_name() -> String {
@@ -104,6 +145,7 @@ fn editor_for(pipe: &str) -> SocketEditor {
 
 #[test]
 fn greeting_then_round_trips_with_sequential_ids() {
+    let _wd = Watchdog::new(30, "greeting_then_round_trips_with_sequential_ids");
     let (pipe, handle) = spawn_pipe_bridge(|file| {
         let mut reader = BufReader::new(file.try_clone().expect("clone pipe handle"));
         let mut file = file;
@@ -144,6 +186,7 @@ fn greeting_then_round_trips_with_sequential_ids() {
 
 #[test]
 fn missing_pipe_is_not_running() {
+    let _wd = Watchdog::new(30, "missing_pipe_is_not_running");
     // Never created: opening it must surface the clean tool error, not an
     // OS-error string leaking into the agent's transcript.
     let pipe = format!(r"\\.\pipe\np-mcp-definitely-absent-{}", std::process::id());
@@ -156,6 +199,7 @@ fn missing_pipe_is_not_running() {
 
 #[test]
 fn invalid_greeting_rejected() {
+    let _wd = Watchdog::new(30, "invalid_greeting_rejected");
     let (pipe, handle) = spawn_pipe_bridge(|file| {
         let mut reader = BufReader::new(file.try_clone().expect("clone pipe handle"));
         let mut file = file;
@@ -179,6 +223,7 @@ fn invalid_greeting_rejected() {
 
 #[test]
 fn response_timeout_enforced() {
+    let _wd = Watchdog::new(30, "response_timeout_enforced");
     // The Windows path has no socket read timeout — it fakes one with a reader
     // thread plus `recv_timeout`. This pins that plumbing: a bridge that reads
     // the request and then goes silent must fail FAST, never hang the agent.
@@ -210,6 +255,7 @@ fn response_timeout_enforced() {
 
 #[test]
 fn editor_close_detected() {
+    let _wd = Watchdog::new(30, "editor_close_detected");
     let (pipe, handle) = spawn_pipe_bridge(|file| {
         let mut file = file;
         writeln!(file, "{GREETING}").unwrap();
