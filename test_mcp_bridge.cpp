@@ -11,6 +11,10 @@
 // waitFor* on the client (that would starve the server side).
 
 #include <QtTest>
+#include <QApplication>
+#include <QSqlDatabase>
+#include <cstdio>
+#include <cstdlib>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
@@ -25,9 +29,12 @@
 #include <QLocalSocket>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QSqlDatabase>
+#include <QSqlQuery>
 #include <QTemporaryDir>
 #include <QWidget>
 
+#include "dbconnections.h"
 #include "mcp_bridge.h"
 
 namespace {
@@ -41,6 +48,20 @@ struct FakeTab {
     QString language = QStringLiteral("Plain Text");
     bool isDiagram = false;   // v0.1.119 — .npd diagram tab
 };
+
+// Crash-proof progress tracker. ctest DISCARDS a crashed test's captured stdout
+// on Windows, so section progress is appended to the file named by
+// NP_MCP_PROGRESS with an fopen/fprintf/fflush/fclose per line — it survives an
+// access violation. No-op when the env var is unset (i.e. everywhere but CI).
+void npWriteProgress(const char *phase, const char *detail) {
+    const QByteArray pf = qgetenv("NP_MCP_PROGRESS");
+    if (pf.isEmpty()) return;
+    if (FILE *f = fopen(pf.constData(), "a")) {
+        fprintf(f, "%s %s\n", phase, detail ? detail : "(none)");
+        fflush(f);
+        fclose(f);
+    }
+}
 } // namespace
 
 class TestMcpBridge : public QObject {
@@ -69,6 +90,7 @@ private:
     bool m_gitFail = false;         // runGit returns an error
     bool m_gitHuge = false;         // runGit returns > 256 KB
     QString m_openedNote;           // last open_note target
+    bool m_noterOpened = false;     // open_noter fired
     QString m_lastCreatedTitle;
     QString m_lastCreatedBody;
     QString m_lastCreatedPath;
@@ -80,6 +102,16 @@ private:
     QString m_exportedFormat;
     int m_sqlRows = 3;              // rows the fake runSql returns for a SELECT
     int m_sqlCellLen = 0;          // when >0, the "name" cell is this many chars
+    // ── Phase 2 fake state ──
+    QJsonArray m_connections;       // sanitized saved-connection list
+    QHash<QString, DbConnections::Record> m_namedRecords; // real records for run_query/list_tables
+    bool m_dataAnalystOpened = false;
+    bool m_hostHasWebEngine = false; // gated is the default posture
+    QJsonObject m_renderedSpec;
+    QString m_renderedTitle;
+    QString m_exportedChartPath;
+    QString m_exportedChartFormat;
+    int m_exportedChartScale = 0;
 
     McpEditorHost makeHost() {
         McpEditorHost h;
@@ -155,6 +187,23 @@ private:
             return kind.toUpper() + QLatin1Char(':') + text;
         };
         h.notesRoot = [this] { return m_notesRoot; };
+        // ── Phase 0A ──
+        h.knownLanguages = [] {
+            return QStringList{QStringLiteral("Plain Text"),
+                               QStringLiteral("Python"), QStringLiteral("JSON"),
+                               QStringLiteral("C++"), QStringLiteral("SQL")};
+        };
+        h.resolveLanguage = [](const QString &in) -> QString {
+            static const QStringList known = {
+                QStringLiteral("Plain Text"), QStringLiteral("Python"),
+                QStringLiteral("JSON"), QStringLiteral("C++"),
+                QStringLiteral("SQL")};
+            for (const QString &k : known)
+                if (k.compare(in, Qt::CaseInsensitive) == 0) return k;
+            if (in.compare(QStringLiteral("py"), Qt::CaseInsensitive) == 0)
+                return QStringLiteral("Python");
+            return QString();
+        };
         // ── v0.1.118 write tier ──
         h.approvalParent = [this]() -> QWidget * { return m_hostWindow; };
         h.hasSelection = [this](int) { return !m_selection.isEmpty(); };
@@ -303,7 +352,158 @@ private:
             m_exportedFormat = format;
             return true;
         };
+        // ── Phase 1 ──
+        h.createDiagram = [this](const QString &src, const QString &title) {
+            m_fakeTabs.append({title.isEmpty() ? QStringLiteral("Diagram")
+                                               : title,
+                               QString(), src, false,
+                               QStringLiteral("Plain Text"), true});
+            m_currentIndex = m_fakeTabs.size() - 1;
+            return m_currentIndex;
+        };
+        h.setDiagramSource = [this](int i, const QString &src) {
+            if (i < 0 || i >= m_fakeTabs.size() || !m_fakeTabs[i].isDiagram)
+                return false;
+            m_fakeTabs[i].text = src;
+            return true;
+        };
+        h.openNoter = [this]() {
+            m_noterOpened = true;
+            return true;
+        };
+        // ── Phase 2 ──
+        h.listConnections = [this] { return m_connections; };
+        h.classifySqlReadOnly = [](const QString &sql, QString *reason) {
+            const auto v = DbConnections::classifySql(sql, /*restrict=*/true);
+            if (v.singleStatement && v.readOnly) return true;
+            if (reason) *reason = v.reason;
+            return false;
+        };
+        h.runNamedQuery = [this](const QString &name, const QString &sql,
+                                 int maxRows, QString *err) -> QJsonObject {
+            const auto v = DbConnections::classifySql(sql, /*restrict=*/true);
+            if (!(v.singleStatement && v.readOnly)) {
+                if (err)
+                    *err = v.reason.isEmpty()
+                               ? QStringLiteral("query is not read-only (SELECT only)")
+                               : QStringLiteral("query rejected: %1").arg(v.reason);
+                return QJsonObject();
+            }
+            if (!m_namedRecords.contains(name)) {
+                if (err) *err = QStringLiteral("no connection named: %1").arg(name);
+                return QJsonObject();
+            }
+            const DbConnections::Record rec = m_namedRecords.value(name);
+            const DbConnections::QueryResult qr =
+                DbConnections::runQuery(rec, sql, maxRows, false, nullptr);
+            if (!qr.ok) {
+                if (err)
+                    *err = qr.error.isEmpty() ? QStringLiteral("query failed")
+                                              : qr.error;
+                return QJsonObject();
+            }
+            QJsonArray cols;
+            for (const QString &c : qr.columns) cols.append(c);
+            QJsonArray rows;
+            for (const QVector<QString> &row : qr.rows) {
+                QJsonArray jr;
+                for (const QString &cell : row) jr.append(cell);
+                rows.append(jr);
+            }
+            QJsonObject out;
+            out[QStringLiteral("columns")] = cols;
+            out[QStringLiteral("rows")] = rows;
+            out[QStringLiteral("truncated")] = qr.truncated;
+            out[QStringLiteral("engine")] =
+                rec.driver == QLatin1String("QSQLITE") ? QStringLiteral("sqlite")
+                                                       : QStringLiteral("odbc");
+            return out;
+        };
+        h.listTables = [this](const QString &name, QString *err) -> QJsonArray {
+            if (!m_namedRecords.contains(name)) {
+                if (err) *err = QStringLiteral("no connection named: %1").arg(name);
+                return QJsonArray();
+            }
+            bool ok = true;
+            const QStringList tables =
+                DbConnections::listTables(m_namedRecords.value(name), &ok);
+            if (!ok) {
+                if (err) *err = QStringLiteral("could not connect to: %1").arg(name);
+                return QJsonArray();
+            }
+            QJsonArray out;
+            for (const QString &t : tables) out.append(t);
+            return out;
+        };
+        h.openDataAnalyst = [this] {
+            m_dataAnalystOpened = true;
+            return true;
+        };
+        // Charts fields are set ONLY when the fake reports WebEngine — the
+        // unset-field path IS the friendly gate the bridge answers pre-card.
+        if (m_hostHasWebEngine) {
+            h.renderChart = [this](const QJsonObject &spec, const QString &title,
+                                   QString *) -> QJsonObject {
+                m_renderedSpec = spec;
+                m_renderedTitle = title;
+                return QJsonObject{{QStringLiteral("chart_id"),
+                                    QStringLiteral("test-chart-1")},
+                                   {QStringLiteral("rendered"), true}};
+            };
+            h.exportChart = [this](const QJsonObject &, const QString &path,
+                                   const QString &format, int scale,
+                                   QString *err) -> bool {
+                m_exportedChartPath = path;
+                m_exportedChartFormat = format;
+                m_exportedChartScale = scale;
+                QFile f(path);
+                if (!f.open(QIODevice::WriteOnly)) {
+                    if (err) *err = QStringLiteral("could not write");
+                    return false;
+                }
+                f.write("FAKECHART");
+                f.close();
+                return true;
+            };
+        }
         return h;
+    }
+
+    // Register a real QSQLITE connection record backed by a temp sqlite file
+    // with a table `t(id INTEGER, name TEXT)` pre-filled with `rows` rows.
+    QString makeSqliteFixture(QTemporaryDir &dir, const QString &connName,
+                              int rows) {
+        const QString dbPath = dir.path() + QStringLiteral("/") + connName +
+                               QStringLiteral(".db");
+        {
+            QSqlDatabase db =
+                QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"),
+                                          QStringLiteral("fixture-") + connName);
+            db.setDatabaseName(dbPath);
+            if (db.open()) {
+                QSqlQuery q(db);
+                q.exec(QStringLiteral("CREATE TABLE t(id INTEGER, name TEXT)"));
+                for (int i = 0; i < rows; ++i)
+                    q.exec(QStringLiteral("INSERT INTO t VALUES(%1, 'name%1')")
+                               .arg(i));
+                db.close();
+            }
+        }
+        QSqlDatabase::removeDatabase(QStringLiteral("fixture-") + connName);
+        DbConnections::Record rec;
+        rec.name = connName;
+        rec.driver = QStringLiteral("QSQLITE");
+        rec.database = dbPath;
+        m_namedRecords.insert(connName, rec);
+        return dbPath;
+    }
+
+    // Rebuild the bridge with a host that reports WebEngine (charts enabled).
+    void useWebEngineHost() {
+        delete m_bridge;
+        m_hostHasWebEngine = true;
+        m_bridge = new McpBridge(makeHost(), this, m_name);
+        QVERIFY(m_bridge->isListening());
     }
 
     // Write a minimal Noter-convention note (notepatra-title meta wins the
@@ -377,11 +577,25 @@ private:
         sendLine(s, QJsonDocument(req).toJson(QJsonDocument::Compact));
     }
 
+    // Returns the LIVE card — the visible one — never a stale predecessor.
+    //
+    // Why visibility matters: a dismissed card is hidden and then deleteLater()'d,
+    // so between those two events the object is still a child of the host window.
+    // A plain findChild<QFrame*>("mcpApprovalCard") returns the FIRST match, which
+    // in that window is the DEAD card. Clicking its buttons resolves nothing, the
+    // new request is never approved, and the test sees ok=false or an empty error.
+    // On Linux the pending deleteLater drains inside waitForCardGone()'s qWait, so
+    // the stale card is gone by the next call and the bug is invisible; on
+    // offscreen-Windows it survives, which is why three write-verb tests failed
+    // there and only there. Filtering on isVisible() makes the helper correct on
+    // both instead of accidentally correct on one.
     QFrame *findCard() const {
-        return m_hostWindow
-                   ? m_hostWindow->findChild<QFrame *>(
-                         QStringLiteral("mcpApprovalCard"))
-                   : nullptr;
+        if (!m_hostWindow) return nullptr;
+        const auto cards = m_hostWindow->findChildren<QFrame *>(
+            QStringLiteral("mcpApprovalCard"));
+        for (QFrame *c : cards)
+            if (c->isVisible()) return c;
+        return nullptr;
     }
 
     QFrame *waitForCard(int timeoutMs = kWaitMs) {
@@ -405,6 +619,7 @@ private:
             const auto cards = m_hostWindow->findChildren<QFrame *>(
                 QStringLiteral("mcpApprovalCard"));
             for (QFrame *c : cards) {
+                if (!c->isVisible()) continue;  // skip a dismissed predecessor
                 auto *d = c->findChild<QLabel *>(
                     QStringLiteral("mcpApprovalDesc"));
                 if (d && d->text().contains(needle)) return c;
@@ -431,6 +646,11 @@ private:
 
 private slots:
     void init() {
+        // Crash-localizer: on offscreen-Windows CI a hard access violation
+        // makes ctest discard the test's captured output, hiding which section
+        // died. Append each section to a file (env NP_MCP_PROGRESS) flushed +
+        // closed so it survives the crash; the CI step prints it. No-op locally.
+        writeProgress("ENTER");
         m_fakeTabs = {
             {QStringLiteral("notes.txt"), QStringLiteral("/fake/notes.txt"),
              QStringLiteral("hello world\nSecond Line with Needle\n"), false},
@@ -451,6 +671,7 @@ private slots:
         m_gitFail = false;
         m_gitHuge = false;
         m_openedNote.clear();
+        m_noterOpened = false;
         m_lastCreatedTitle.clear();
         m_lastCreatedBody.clear();
         m_lastCreatedPath.clear();
@@ -462,6 +683,15 @@ private slots:
         m_exportedFormat.clear();
         m_sqlRows = 3;
         m_sqlCellLen = 0;
+        m_connections = QJsonArray();
+        m_namedRecords.clear();
+        m_dataAnalystOpened = false;
+        m_hostHasWebEngine = false;
+        m_renderedSpec = QJsonObject();
+        m_renderedTitle.clear();
+        m_exportedChartPath.clear();
+        m_exportedChartFormat.clear();
+        m_exportedChartScale = 0;
         m_hostWindow = new QWidget;
         m_hostWindow->resize(640, 420);
         m_hostWindow->show();
@@ -473,10 +703,22 @@ private slots:
     }
 
     void cleanup() {
+        // Record the section's VERDICT, not merely that it finished: cleanup()
+        // runs after a failed QVERIFY too, so a bare "LEAVE" would not prove the
+        // section passed. CI only tolerates a teardown crash when every ENTER
+        // has a matching LEAVE and there is no FAILED line.
+        const bool failed = QTest::currentTestFailed();
         delete m_bridge;
         m_bridge = nullptr;
         delete m_hostWindow;
         m_hostWindow = nullptr;
+        writeProgress(failed ? "FAILED" : "LEAVE");
+    }
+
+    // Crash-localizer helper (see init()). Writes "<phase> <section>" to the
+    // file named by NP_MCP_PROGRESS, flushed + closed. No-op when unset.
+    static void writeProgress(const char *phase) {
+        npWriteProgress(phase, QTest::currentTestFunction());
     }
 
     void greeting_arrives_first() {
@@ -1001,6 +1243,68 @@ private slots:
                     .toString()
                     .contains(QLatin1String("unknown language")));
         QCOMPARE(m_fakeTabs[0].language, QStringLiteral("Python")); // untouched
+    }
+
+    void set_language_resolves_case_and_alias() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        // Lowercase resolves to the canonical token, echoed honestly.
+        QJsonObject args;
+        args[QStringLiteral("language")] = QStringLiteral("python");
+        QJsonObject resp = call(s, 240, QStringLiteral("set_language"), args);
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        QCOMPARE(resp.value(QLatin1String("result")).toObject()
+                     .value(QLatin1String("language")).toString(),
+                 QStringLiteral("Python"));
+        QCOMPARE(m_fakeTabs[0].language, QStringLiteral("Python"));
+        // Alias path.
+        args[QStringLiteral("language")] = QStringLiteral("py");
+        resp = call(s, 241, QStringLiteral("set_language"), args);
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        QCOMPARE(resp.value(QLatin1String("result")).toObject()
+                     .value(QLatin1String("language")).toString(),
+                 QStringLiteral("Python"));
+        // Unknown still fails fast with the contract message.
+        args[QStringLiteral("language")] = QStringLiteral("klingon");
+        resp = call(s, 242, QStringLiteral("set_language"), args);
+        QCOMPARE(resp.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(resp.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("unknown language")));
+    }
+
+    void list_languages_shape() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QJsonObject resp = call(s, 243, QStringLiteral("list_languages"));
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        const QJsonArray langs = resp.value(QLatin1String("result")).toObject()
+                                     .value(QLatin1String("languages")).toArray();
+        QCOMPARE(langs.size(), 5);
+        QCOMPARE(langs.at(0).toString(), QStringLiteral("Plain Text"));
+        QCOMPARE(langs.at(1).toString(), QStringLiteral("Python"));
+    }
+
+    void get_capabilities_shape() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QJsonObject resp =
+            call(s, 244, QStringLiteral("get_capabilities"));
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        const QJsonObject r = resp.value(QLatin1String("result")).toObject();
+        const QString edition = r.value(QLatin1String("edition")).toString();
+        QVERIFY(edition == QLatin1String("Full") ||
+                edition == QLatin1String("Lite"));
+        QVERIFY(!r.value(QLatin1String("version")).toString().isEmpty());
+        const QJsonObject f = r.value(QLatin1String("features")).toObject();
+        QVERIFY(f.value(QLatin1String("duckdb")).isBool());
+        QVERIFY(f.value(QLatin1String("webengine")).isBool());
+        QCOMPARE(f.value(QLatin1String("noter")).toBool(), true); // host has notesRoot
+        // The bridge NEVER sends tool_count/tiers — the sidecar owns those.
+        QVERIFY(!r.contains(QLatin1String("tool_count")));
+        QVERIFY(!r.contains(QLatin1String("tiers")));
     }
 
     void compare_tabs_opens_view() {
@@ -2156,6 +2460,148 @@ private slots:
         QVERIFY(waitForCardGone());
     }
 
+    void create_diagram_creates_tab_and_reports_validity() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const int before = m_fakeTabs.size();
+        QJsonObject a;
+        a[QStringLiteral("source")] = QStringLiteral("node a (Start)\n");
+        a[QStringLiteral("title")] = QStringLiteral("flow.npd");
+        QJsonObject r = call(s, 300, QStringLiteral("create_diagram"), a);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QJsonObject res = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res.value(QLatin1String("tab_index")).toInt(), before);
+        QCOMPARE(res.value(QLatin1String("valid")).toBool(), true);
+        QCOMPARE(res.value(QLatin1String("errors")).toArray().size(), 0);
+        QVERIFY(m_fakeTabs.at(before).isDiagram);   // exportable by export_diagram
+        QCOMPARE(m_fakeTabs.at(before).title, QStringLiteral("flow.npd"));
+        QCOMPARE(m_currentIndex, before);           // focused
+        // Invalid source STILL creates the tab, with errors reported.
+        QJsonObject b;
+        b[QStringLiteral("source")] =
+            QStringLiteral("node a (Start)\nicon x \"NoColon\"\n");
+        r = call(s, 301, QStringLiteral("create_diagram"), b);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        res = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res.value(QLatin1String("tab_index")).toInt(), before + 1);
+        QCOMPARE(res.value(QLatin1String("valid")).toBool(), false);
+        QVERIFY(res.value(QLatin1String("errors")).toArray().size() >= 1);
+        // No source: tab still created; valid/errors keys always present.
+        r = call(s, 302, QStringLiteral("create_diagram"));
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        res = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res.value(QLatin1String("tab_index")).toInt(), before + 2);
+        QVERIFY(res.contains(QLatin1String("valid")));
+        QVERIFY(res.contains(QLatin1String("errors")));
+    }
+
+    void get_diagram_source_round_trip() {
+        m_fakeTabs.append({QStringLiteral("d.npd"), QString(),
+                           QStringLiteral("node a (Start)\n"), false,
+                           QStringLiteral("Plain Text"), true});
+        const int di = m_fakeTabs.size() - 1;
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("tab_index")] = di;
+        QJsonObject r = call(s, 310, QStringLiteral("get_diagram_source"), a);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(r.value(QLatin1String("result")).toObject()
+                     .value(QLatin1String("source")).toString(),
+                 QStringLiteral("node a (Start)\n"));
+        // Non-diagram tab → error.
+        QJsonObject nd;
+        nd[QStringLiteral("tab_index")] = 0;
+        r = call(s, 311, QStringLiteral("get_diagram_source"), nd);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("not a diagram")));
+        // Out of range and missing tab_index → errors.
+        QJsonObject oob;
+        oob[QStringLiteral("tab_index")] = 99;
+        r = call(s, 312, QStringLiteral("get_diagram_source"), oob);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        r = call(s, 313, QStringLiteral("get_diagram_source"));
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("missing tab_index")));
+    }
+
+    void set_diagram_source_approve_deny_and_validation() {
+        m_fakeTabs.append({QStringLiteral("d.npd"), QString(),
+                           QStringLiteral("node a (Start)\n"), false,
+                           QStringLiteral("Plain Text"), true});
+        const int di = m_fakeTabs.size() - 1;
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        // Approve → source replaced, result carries ok/valid.
+        QJsonObject a;
+        a[QStringLiteral("tab_index")] = di;
+        a[QStringLiteral("source")] = QStringLiteral("node b [Process]\n");
+        sendRequest(s, 320, QStringLiteral("set_diagram_source"), a);
+        QFrame *card = waitForCard();
+        QVERIFY(card);
+        auto *desc =
+            card->findChild<QLabel *>(QStringLiteral("mcpApprovalDesc"));
+        QVERIFY(desc);
+        QVERIFY(desc->text().contains(
+            QLatin1String("REPLACE the diagram source of 'd.npd'")));
+        // Held: no mutation before Approve.
+        QCOMPARE(m_fakeTabs.at(di).text, QStringLiteral("node a (Start)\n"));
+        card->findChild<QPushButton *>(QStringLiteral("mcpApproveBtn"))->click();
+        QJsonObject r = readObj(s);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QJsonObject res = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res.value(QLatin1String("ok")).toBool(), true);
+        QCOMPARE(res.value(QLatin1String("tab_index")).toInt(), di);
+        QCOMPARE(res.value(QLatin1String("valid")).toBool(), true);
+        QCOMPARE(m_fakeTabs.at(di).text, QStringLiteral("node b [Process]\n"));
+        QVERIFY(waitForCardGone());
+        // Deny → verbatim error, source unchanged.
+        QJsonObject d;
+        d[QStringLiteral("tab_index")] = di;
+        d[QStringLiteral("source")] = QStringLiteral("node c (Other)\n");
+        sendRequest(s, 321, QStringLiteral("set_diagram_source"), d);
+        card = waitForCard();
+        QVERIFY(card);
+        card->findChild<QPushButton *>(QStringLiteral("mcpDenyBtn"))->click();
+        r = readObj(s);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QCOMPARE(r.value(QLatin1String("error")).toString(),
+                 QStringLiteral("denied by user"));
+        QCOMPARE(m_fakeTabs.at(di).text, QStringLiteral("node b [Process]\n"));
+        QVERIFY(waitForCardGone());
+        // Non-diagram tab → immediate error, NO card.
+        QJsonObject nd;
+        nd[QStringLiteral("tab_index")] = 0;
+        nd[QStringLiteral("source")] = QStringLiteral("x");
+        r = call(s, 322, QStringLiteral("set_diagram_source"), nd);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("not a diagram")));
+        // Missing source → immediate error, NO card.
+        QJsonObject ns;
+        ns[QStringLiteral("tab_index")] = di;
+        r = call(s, 323, QStringLiteral("set_diagram_source"), ns);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QTest::qWait(80);
+        QVERIFY(!findCard());
+    }
+
+    void open_noter_reveals_panel() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QJsonObject r = call(s, 330, QStringLiteral("open_noter"));
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(r.value(QLatin1String("result")).toObject()
+                     .value(QLatin1String("opened")).toBool(), true);
+        QVERIFY(m_noterOpened);
+    }
+
     void find_in_tab_regex_flag() {
         // tab 0 text: "hello world\nSecond Line with Needle\n".
         QLocalSocket s;
@@ -2261,7 +2707,14 @@ private slots:
             QStringLiteral("git_status"),   QStringLiteral("run_sql"),
             QStringLiteral("open_note"),    QStringLiteral("create_note"),
             QStringLiteral("append_note"),  QStringLiteral("set_reminder"),
-            QStringLiteral("export_diagram")};
+            QStringLiteral("export_diagram"), QStringLiteral("create_diagram"),
+            QStringLiteral("set_diagram_source"), QStringLiteral("open_noter"),
+            // phase 2 — every host-backed verb refuses on a bare host; the
+            // chart verbs answer with the friendly Full/WebEngine gate.
+            QStringLiteral("run_query"), QStringLiteral("list_tables"),
+            QStringLiteral("open_data_analyst"),
+            QStringLiteral("export_query_results"),
+            QStringLiteral("render_chart"), QStringLiteral("export_chart")};
         int id = 230;
         for (const QString &v : verbs) {
             QJsonObject args;
@@ -2271,8 +2724,591 @@ private slots:
             QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
             QVERIFY(!r.value(QLatin1String("error")).toString().isEmpty());
         }
+        // p0a verbs degrade to empty/false on a bare host, never error.
+        QJsonObject r = call(s, id++, QStringLiteral("list_languages"));
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(r.value(QLatin1String("result")).toObject()
+                     .value(QLatin1String("languages")).toArray().size(), 0);
+        r = call(s, id++, QStringLiteral("get_capabilities"));
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(r.value(QLatin1String("result")).toObject()
+                     .value(QLatin1String("features")).toObject()
+                     .value(QLatin1String("noter")).toBool(), false);
+    }
+
+    // ── Phase 2 — Data-analyst + Charts ─────────────────────────────
+
+    void list_connections_empty_and_sanitized() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        // Empty list when no connections are saved.
+        QJsonObject r = call(s, 300, QStringLiteral("list_connections"));
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(r.value(QLatin1String("result")).toObject()
+                     .value(QLatin1String("connections")).toArray().size(), 0);
+        // Populate one entry; keys are exactly name/driver/database/read_only.
+        QJsonObject c;
+        c[QStringLiteral("name")] = QStringLiteral("pg1");
+        c[QStringLiteral("driver")] = QStringLiteral("QPSQL");
+        c[QStringLiteral("database")] = QStringLiteral("analytics");
+        c[QStringLiteral("read_only")] = true;
+        m_connections.append(c);
+        r = call(s, 301, QStringLiteral("list_connections"));
+        const QJsonArray conns = r.value(QLatin1String("result")).toObject()
+                                     .value(QLatin1String("connections")).toArray();
+        QCOMPARE(conns.size(), 1);
+        const QJsonObject o = conns.at(0).toObject();
+        QCOMPARE(o.value(QLatin1String("name")).toString(), QStringLiteral("pg1"));
+        QCOMPARE(o.value(QLatin1String("read_only")).toBool(), true);
+        QVERIFY(!o.contains(QLatin1String("password")));
+    }
+
+    void run_query_rejects_mutations_without_a_card() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("connection_name")] = QStringLiteral("t1");
+        a[QStringLiteral("sql")] = QStringLiteral("DELETE FROM t");
+        const QJsonObject r = call(s, 310, QStringLiteral("run_query"), a);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(!r.value(QLatin1String("error")).toString().isEmpty());
+        // READ verb: never a card.
+        QTest::qWait(80);
+        QVERIFY(!findCard());
+    }
+
+    // Regression: run_query reaches saved MySQL/Postgres connections, so the
+    // restrictFilesystem denylist must cover their file-read functions, not
+    // just DuckDB's. Each is a read-only SELECT by SQL semantics but reads a
+    // server-side file — must be rejected pre-card ("Read-only SQL ≠ file-safe").
+    void run_query_rejects_filesystem_reads_across_engines() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QStringList banned = {
+            QStringLiteral("SELECT LOAD_FILE('/etc/passwd')"),        // MySQL
+            QStringLiteral("SELECT pg_read_server_files"),            // PG (col ok)
+            QStringLiteral("SELECT pg_stat_file('/etc/passwd')"),     // Postgres
+            QStringLiteral("SELECT pg_ls_dir('/')"),                  // Postgres
+            QStringLiteral("SELECT * FROM read_text('/etc/passwd')"), // DuckDB
+        };
+        int idn = 340;
+        for (const QString &sql : banned) {
+            QJsonObject a;
+            a[QStringLiteral("connection_name")] = QStringLiteral("t1");
+            a[QStringLiteral("sql")] = sql;
+            const QJsonObject r =
+                call(s, idn++, QStringLiteral("run_query"), a);
+            if (sql.contains(QStringLiteral("pg_read_server_files"))) {
+                // Bare column reference (no call form) is a benign read; it must
+                // NOT be rejected as a filesystem read. It fails later only for
+                // the unknown fixture connection, never as a fs-read.
+                const QString err =
+                    r.value(QLatin1String("error")).toString();
+                QVERIFY(!err.contains(QStringLiteral("filesystem")));
+            } else {
+                QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+                QVERIFY(!r.value(QLatin1String("error")).toString().isEmpty());
+            }
+        }
+        // READ verb: never a card, even on rejection.
+        QTest::qWait(80);
+        QVERIFY(!findCard());
+    }
+
+    void run_query_select_via_real_sqlite() {
+        if (!QSqlDatabase::isDriverAvailable(QStringLiteral("QSQLITE")))
+            QSKIP("QSQLITE driver not present");
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        makeSqliteFixture(dir, QStringLiteral("t1"), 3);
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("connection_name")] = QStringLiteral("t1");
+        a[QStringLiteral("sql")] = QStringLiteral("SELECT id, name FROM t");
+        QJsonObject r = call(s, 320, QStringLiteral("run_query"), a);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        const QJsonObject res = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res.value(QLatin1String("columns")).toArray().size(), 2);
+        QCOMPARE(res.value(QLatin1String("columns")).toArray().at(0).toString(),
+                 QStringLiteral("id"));
+        QCOMPARE(res.value(QLatin1String("rows")).toArray().size(), 3);
+        QCOMPARE(res.value(QLatin1String("engine")).toString(),
+                 QStringLiteral("sqlite"));
+        // 250 rows, no max_rows → exactly 200 rows + truncated.
+        QTemporaryDir dir2;
+        QVERIFY(dir2.isValid());
+        makeSqliteFixture(dir2, QStringLiteral("t2"), 250);
+        QJsonObject a2;
+        a2[QStringLiteral("connection_name")] = QStringLiteral("t2");
+        a2[QStringLiteral("sql")] = QStringLiteral("SELECT id, name FROM t");
+        r = call(s, 321, QStringLiteral("run_query"), a2);
+        const QJsonObject res2 = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res2.value(QLatin1String("rows")).toArray().size(), 200);
+        QCOMPARE(res2.value(QLatin1String("truncated")).toBool(), true);
+    }
+
+    void list_tables_roundtrip_and_unknown_connection() {
+        if (!QSqlDatabase::isDriverAvailable(QStringLiteral("QSQLITE")))
+            QSKIP("QSQLITE driver not present");
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        makeSqliteFixture(dir, QStringLiteral("t1"), 1);
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("connection_name")] = QStringLiteral("t1");
+        QJsonObject r = call(s, 330, QStringLiteral("list_tables"), a);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        const QJsonArray tables = r.value(QLatin1String("result")).toObject()
+                                      .value(QLatin1String("tables")).toArray();
+        bool sawT = false;
+        for (const QJsonValue &v : tables)
+            if (v.toString() == QLatin1String("t")) sawT = true;
+        QVERIFY(sawT);
+        // Unknown connection → error.
+        QJsonObject bad;
+        bad[QStringLiteral("connection_name")] = QStringLiteral("nope");
+        r = call(s, 331, QStringLiteral("list_tables"), bad);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("no connection named: nope")));
+    }
+
+    void open_data_analyst_flag_and_unset_host() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject r = call(s, 340, QStringLiteral("open_data_analyst"));
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(r.value(QLatin1String("result")).toObject()
+                     .value(QLatin1String("opened")).toBool(), true);
+        QVERIFY(m_dataAnalystOpened);
+        // Unset host field → clear error.
+        McpEditorHost bare;
+        bare.tabCount = [] { return 0; };
+        const QString name = QStringLiteral("notepatra-mcp-oda-%1-%2")
+                                 .arg(QCoreApplication::applicationPid())
+                                 .arg(++m_seq);
+        McpBridge bridge(bare, this, name);
+        QVERIFY(bridge.isListening());
+        QLocalSocket s2;
+        s2.connectToServer(name);
+        QElapsedTimer t;
+        t.start();
+        while (s2.state() != QLocalSocket::ConnectedState &&
+               t.elapsed() < kWaitMs)
+            QTest::qWait(10);
+        QVERIFY(s2.state() == QLocalSocket::ConnectedState);
+        readGreeting(s2);
+        r = call(s2, 341, QStringLiteral("open_data_analyst"));
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("not supported by host")));
+    }
+
+    void export_query_results_approve_writes_csv_deny_writes_nothing() {
+        if (!QSqlDatabase::isDriverAvailable(QStringLiteral("QSQLITE")))
+            QSKIP("QSQLITE driver not present");
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        makeSqliteFixture(dir, QStringLiteral("t1"), 3);
+        QJsonObject conn;
+        conn[QStringLiteral("name")] = QStringLiteral("t1");
+        conn[QStringLiteral("driver")] = QStringLiteral("QSQLITE");
+        conn[QStringLiteral("database")] = QStringLiteral("t1.db");
+        conn[QStringLiteral("read_only")] = true;
+        m_connections.append(conn);
+        const QString csvPath = dir.path() + QStringLiteral("/out.csv");
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        // Approve → CSV written.
+        QJsonObject a;
+        a[QStringLiteral("connection_name")] = QStringLiteral("t1");
+        a[QStringLiteral("sql")] = QStringLiteral("SELECT id, name FROM t");
+        a[QStringLiteral("path")] = csvPath;
+        a[QStringLiteral("format")] = QStringLiteral("csv");
+        sendRequest(s, 350, QStringLiteral("export_query_results"), a);
+        QFrame *card = waitForCard();
+        QVERIFY(card);
+        auto *desc = card->findChild<QLabel *>(QStringLiteral("mcpApprovalDesc"));
+        QVERIFY(desc);
+        QVERIFY(desc->text().contains(QLatin1String("t1")));
+        QVERIFY(desc->text().contains(QDir::toNativeSeparators(csvPath)));
+        card->findChild<QPushButton *>(QStringLiteral("mcpApproveBtn"))->click();
+        QJsonObject r = readObj(s);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(r.value(QLatin1String("result")).toObject()
+                     .value(QLatin1String("rows")).toInt(), 3);
+        QVERIFY(QFileInfo::exists(csvPath));
+        {
+            QFile f(csvPath);
+            QVERIFY(f.open(QIODevice::ReadOnly));
+            const QByteArray first = f.readLine().trimmed();
+            QCOMPARE(QString::fromUtf8(first), QStringLiteral("id,name"));
+        }
+        QVERIFY(waitForCardGone());
+        // JSON variant.
+        const QString jsonPath = dir.path() + QStringLiteral("/out.json");
+        QJsonObject aj = a;
+        aj[QStringLiteral("path")] = jsonPath;
+        aj[QStringLiteral("format")] = QStringLiteral("json");
+        sendRequest(s, 351, QStringLiteral("export_query_results"), aj);
+        QVERIFY(waitForCard());
+        findCard()->findChild<QPushButton *>(QStringLiteral("mcpApproveBtn"))->click();
+        r = readObj(s);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        {
+            QFile f(jsonPath);
+            QVERIFY(f.open(QIODevice::ReadOnly));
+            const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
+            QVERIFY(o.contains(QLatin1String("columns")));
+        }
+        QVERIFY(waitForCardGone());
+        // Deny → no file.
+        const QString denyPath = dir.path() + QStringLiteral("/deny.csv");
+        QJsonObject ad = a;
+        ad[QStringLiteral("path")] = denyPath;
+        sendRequest(s, 352, QStringLiteral("export_query_results"), ad);
+        QVERIFY(waitForCard());
+        findCard()->findChild<QPushButton *>(QStringLiteral("mcpDenyBtn"))->click();
+        r = readObj(s);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QCOMPARE(r.value(QLatin1String("error")).toString(),
+                 QStringLiteral("denied by user"));
+        QVERIFY(!QFileInfo::exists(denyPath));
+        QVERIFY(waitForCardGone());
+        // Fail-fast: bad format → error, no card.
+        QJsonObject bf = a;
+        bf[QStringLiteral("format")] = QStringLiteral("xml");
+        bf[QStringLiteral("path")] = dir.path() + QStringLiteral("/x.xml");
+        r = call(s, 353, QStringLiteral("export_query_results"), bf);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("unsupported format")));
+        // Relative path → error.
+        QJsonObject rel = a;
+        rel[QStringLiteral("path")] = QStringLiteral("out.csv");
+        r = call(s, 354, QStringLiteral("export_query_results"), rel);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("absolute")));
+        // Mutation SQL → rejected, no card.
+        QJsonObject mut = a;
+        mut[QStringLiteral("sql")] = QStringLiteral("DELETE FROM t");
+        mut[QStringLiteral("path")] = dir.path() + QStringLiteral("/m.csv");
+        r = call(s, 355, QStringLiteral("export_query_results"), mut);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("query rejected")));
+        // Unknown connection → error, no card.
+        QJsonObject unk = a;
+        unk[QStringLiteral("connection_name")] = QStringLiteral("nope");
+        unk[QStringLiteral("path")] = dir.path() + QStringLiteral("/u.csv");
+        r = call(s, 356, QStringLiteral("export_query_results"), unk);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("no connection named")));
+        QTest::qWait(80);
+        QVERIFY(!findCard());
+    }
+
+    void chart_verbs_webengine_gated() {
+        // Default host: renderChart/exportChart fields unset ⇒ the bridge
+        // answers the friendly Full/WebEngine gate PRE-CARD, no card ever.
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject spec;
+        spec[QStringLiteral("mark")] = QStringLiteral("bar");
+        QJsonObject rc;
+        rc[QStringLiteral("spec")] = spec;
+        QJsonObject r = call(s, 360, QStringLiteral("render_chart"), rc);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QCOMPARE(r.value(QLatin1String("error")).toString(),
+                 QStringLiteral("charts require the Full edition (WebEngine)"));
+        QJsonObject ec;
+        ec[QStringLiteral("spec")] = spec;
+        ec[QStringLiteral("path")] = QStringLiteral("/tmp/np-chart.png");
+        ec[QStringLiteral("format")] = QStringLiteral("png");
+        r = call(s, 361, QStringLiteral("export_chart"), ec);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QCOMPARE(r.value(QLatin1String("error")).toString(),
+                 QStringLiteral("charts require the Full edition (WebEngine)"));
+        QTest::qWait(80);
+        QVERIFY(!findCard());
+    }
+
+    void render_chart_happy_path_stubbed() {
+        useWebEngineHost();
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject spec;
+        spec[QStringLiteral("mark")] = QStringLiteral("bar");
+        QJsonObject a;
+        a[QStringLiteral("spec")] = spec;
+        a[QStringLiteral("title")] = QStringLiteral("sales");
+        const QJsonObject r = call(s, 370, QStringLiteral("render_chart"), a);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        const QJsonObject res = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res.value(QLatin1String("chart_id")).toString(),
+                 QStringLiteral("test-chart-1"));
+        QCOMPARE(res.value(QLatin1String("rendered")).toBool(), true);
+        QCOMPARE(m_renderedTitle, QStringLiteral("sales"));
+        // ACT: no card.
+        QTest::qWait(80);
+        QVERIFY(!findCard());
+    }
+
+    void export_chart_approve_and_deny_stubbed() {
+        useWebEngineHost();
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString pngPath = dir.path() + QStringLiteral("/chart.png");
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject spec;
+        spec[QStringLiteral("mark")] = QStringLiteral("bar");
+        QJsonObject a;
+        a[QStringLiteral("spec")] = spec;
+        a[QStringLiteral("path")] = pngPath;
+        a[QStringLiteral("format")] = QStringLiteral("png");
+        sendRequest(s, 380, QStringLiteral("export_chart"), a);
+        QFrame *card = waitForCard();
+        QVERIFY(card);
+        auto *desc = card->findChild<QLabel *>(QStringLiteral("mcpApprovalDesc"));
+        QVERIFY(desc);
+        QVERIFY(desc->text().contains(QLatin1String("export a chart as PNG")));
+        card->findChild<QPushButton *>(QStringLiteral("mcpApproveBtn"))->click();
+        QJsonObject r = readObj(s);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(QDir::fromNativeSeparators(
+                     r.value(QLatin1String("result")).toObject()
+                         .value(QLatin1String("path")).toString()),
+                 pngPath);
+        QVERIFY(QFileInfo::exists(pngPath));
+        {
+            QFile f(pngPath);
+            QVERIFY(f.open(QIODevice::ReadOnly));
+            QCOMPARE(f.readAll(), QByteArray("FAKECHART"));
+        }
+        QCOMPARE(m_exportedChartScale, 2); // default scale
+        QVERIFY(waitForCardGone());
+        // scale passthrough.
+        const QString png4 = dir.path() + QStringLiteral("/chart4.png");
+        QJsonObject a4 = a;
+        a4[QStringLiteral("path")] = png4;
+        a4[QStringLiteral("scale")] = 4;
+        sendRequest(s, 381, QStringLiteral("export_chart"), a4);
+        QVERIFY(waitForCard());
+        findCard()->findChild<QPushButton *>(QStringLiteral("mcpApproveBtn"))->click();
+        r = readObj(s);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(m_exportedChartScale, 4);
+        QVERIFY(waitForCardGone());
+        // Deny → no file.
+        const QString denyPng = dir.path() + QStringLiteral("/deny.png");
+        QJsonObject ad = a;
+        ad[QStringLiteral("path")] = denyPng;
+        sendRequest(s, 382, QStringLiteral("export_chart"), ad);
+        QVERIFY(waitForCard());
+        findCard()->findChild<QPushButton *>(QStringLiteral("mcpDenyBtn"))->click();
+        r = readObj(s);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(!QFileInfo::exists(denyPng));
+        QVERIFY(waitForCardGone());
+    }
+
+    // ── Endpoint publication (v0.1.119). The sidecar can't GUESS the socket
+    //    path: on macOS Qt binds a bare name under NSTemporaryDirectory(), not
+    //    $TMPDIR. The editor therefore publishes the bound endpoint and the
+    //    sidecar reads it. Every section here passes an explicit directory
+    //    override so the real user config dir is never touched. ──
+    // Regression pin for the Windows-only failure of three write-verb tests.
+    //
+    // A dismissed approval card is hidden and then deleteLater()'d. In the gap
+    // between those two events it is STILL a child of the host window, so a
+    // helper that grabs the first "mcpApprovalCard" child gets the DEAD one and
+    // clicks buttons that resolve nothing. Linux drained the pending delete
+    // inside waitForCardGone()'s event loop and never saw it; offscreen-Windows
+    // did, and set_diagram_source / export_query_results / export_chart all
+    // failed there with ok=false or an empty error.
+    //
+    // This reproduces the condition deterministically on every platform by
+    // planting a hidden decoy card FIRST, so the fix cannot silently regress.
+    void find_card_skips_a_dismissed_predecessor() {
+        // A dismissed card that has not been deleted yet.
+        auto *stale = new QFrame(m_hostWindow);
+        stale->setObjectName(QStringLiteral("mcpApprovalCard"));
+        stale->hide();
+        QVERIFY(!stale->isVisible());
+        // With no live card, the stale one must NOT be mistaken for one.
+        QCOMPARE(findCard(), nullptr);
+
+        // Now a real request raises a live card; the helper must return THAT.
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("tab_index")] = 0;
+        a[QStringLiteral("text")] = QStringLiteral("x");
+        sendRequest(s, 900, QStringLiteral("insert_text"), a);
+        QFrame *live = waitForCard();
+        QVERIFY(live);
+        QVERIFY(live != stale);
+        QVERIFY(live->isVisible());
+        QCOMPARE(findCard(), live);
+        live->findChild<QPushButton *>(QStringLiteral("mcpDenyBtn"))->click();
+        const QJsonObject r = readObj(s);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QCOMPARE(r.value(QLatin1String("error")).toString(),
+                 QStringLiteral("denied by user"));
+    }
+
+    void endpoint_file_is_published() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString name = m_name + QStringLiteral("-pub");
+        auto *b = new McpBridge(makeHost(), this, name, dir.path());
+        QVERIFY(b->isListening());
+
+        const QString path = dir.path() + QStringLiteral("/mcp-endpoint.json");
+        QVERIFY(QFileInfo::exists(path));
+        QCOMPARE(b->endpointFilePath(), path);
+
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QByteArray bytes = f.readAll();
+        f.close();
+        // Compact object + trailing newline, no BOM.
+        QVERIFY(bytes.endsWith('\n'));
+        QVERIFY(!bytes.startsWith("\xEF\xBB\xBF"));
+        QJsonParseError err{};
+        const QJsonDocument doc = QJsonDocument::fromJson(bytes, &err);
+        QCOMPARE(err.error, QJsonParseError::NoError);
+        QVERIFY(doc.isObject());
+        const QJsonObject o = doc.object();
+
+        QCOMPARE(o.value(QLatin1String("notepatra_mcp_endpoint")).toInt(), 1);
+        const QString value = o.value(QLatin1String("value")).toString();
+        QVERIFY(!value.isEmpty());
+        QCOMPARE(value, b->fullServerName());
+        QCOMPARE(o.value(QLatin1String("name")).toString(), name);
+        QCOMPARE(qint64(o.value(QLatin1String("pid")).toDouble()),
+                 QCoreApplication::applicationPid());
+#ifdef Q_OS_WIN
+        QCOMPARE(o.value(QLatin1String("kind")).toString(),
+                 QStringLiteral("named_pipe"));
+        QVERIFY(value.startsWith(QLatin1String("\\\\.\\pipe\\")));
+#else
+        QCOMPARE(o.value(QLatin1String("kind")).toString(),
+                 QStringLiteral("unix_socket"));
+        QVERIFY(value.startsWith(QLatin1Char('/')));
+#endif
+        delete b;
+    }
+
+    void endpoint_file_removed_on_destroy() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        auto *b = new McpBridge(makeHost(), this,
+                                m_name + QStringLiteral("-unpub"), dir.path());
+        QVERIFY(b->isListening());
+        const QString path = dir.path() + QStringLiteral("/mcp-endpoint.json");
+        QVERIFY(QFileInfo::exists(path));
+        delete b;
+        // Clean shutdown removes it; only a crash may leave it stale (by
+        // design — the reader's connect attempt is the liveness test).
+        QVERIFY(!QFileInfo::exists(path));
+    }
+
+    void endpoint_not_published_when_bind_fails() {
+        // A bridge that never bound must publish NOTHING — an endpoint file
+        // naming a socket this instance does not serve would send the sidecar
+        // to a dead address and defeat the whole discovery mechanism.
+        //
+        // Forcing the failure needs a name that CANNOT bind, not a duplicate
+        // name: measured on Qt 5.15/Linux, a second listen() on a live peer's
+        // name SUCCEEDS (Qt replaces the socket file), so a duplicate proves
+        // nothing here. An absolute path under a directory that does not exist
+        // fails with ENOENT on Unix; on Windows an embedded backslash is
+        // illegal in the pipe-name portion of \\.\pipe\<name>.
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+#ifdef Q_OS_WIN
+        const QString bad = QStringLiteral("notepatra\\mcp\\selftest\\bad");
+#else
+        const QString bad = dir.path() +
+                            QStringLiteral("/no-such-subdir/np-mcp.sock");
+#endif
+        auto *b = new McpBridge(makeHost(), this, bad, dir.path());
+        // Publication is a biconditional with the bind: asserting it in BOTH
+        // directions keeps this section honest even if some platform manages
+        // to bind the name above.
+        QCOMPARE(!b->endpointFilePath().isEmpty(), b->isListening());
+        QCOMPARE(QFileInfo::exists(dir.path() +
+                                   QStringLiteral("/mcp-endpoint.json")),
+                 b->isListening());
+#ifndef Q_OS_WIN
+        // Verified locally: ENOENT really does defeat the bind on Unix. The
+        // Windows arm rests on the biconditional above only — the pipe-name
+        // rule was not exercised on real Windows here.
+        QVERIFY(!b->isListening());
+#endif
+        delete b;
     }
 };
 
-QTEST_MAIN(TestMcpBridge)
+// Custom main (behaviourally identical to QTEST_MAIN for a widget test) with
+// UNBUFFERED stdio: on offscreen-Windows CI this test can hit a hard crash
+// whose buffered QtTest output is otherwise lost, hiding which section died.
+// Unbuffered output makes the last "PASS : …" line survive, localizing it.
+int main(int argc, char *argv[]) {
+    setvbuf(stdout, nullptr, _IONBF, 0);
+    setvbuf(stderr, nullptr, _IONBF, 0);
+    QApplication app(argc, argv);
+    app.setAttribute(Qt::AA_Use96Dpi, true);
+    TestMcpBridge tc;
+    QTEST_SET_MAIN_SOURCE_PATH
+
+    // Mirror QtTest's full report into a FILE as well as stdout.
+    //
+    // Why: on Windows CI, ctest printed NOTHING for this test even with
+    // --output-on-failure — no PASS lines, no failing QCOMPARE, no line number.
+    // Three sections were failing and the log could not say WHICH assertion or
+    // why, which costs a whole ~90-minute cycle per guess. QtTest's own `-o
+    // <file>,txt` logger writes independently of ctest's capture, so the CI step
+    // can cat it unconditionally. Only active when NP_MCP_PROGRESS is set, i.e.
+    // in CI — a local run is untouched.
+    QVector<char *> args(argv, argv + argc);
+    QByteArray logArg;
+    const QByteArray progress = qgetenv("NP_MCP_PROGRESS");
+    if (!progress.isEmpty()) {
+        logArg = progress + ".qtest.txt,txt";
+        args << const_cast<char *>("-o") << logArg.data();
+    }
+    int argcOut = args.size();
+    const int rc = QTest::qExec(&tc, argcOut, args.data());
+
+    // Proves qExec's own finalization completed. Kept: it is what established
+    // that there was never a teardown crash here at all — every section runs and
+    // qExec returns normally. The earlier "crash" reading came from a marker
+    // that wrote LEAVE even for a FAILED section.
+    npWriteProgress("QEXEC_RETURNED", rc == 0 ? "rc=0" : "rc=nonzero");
+    std::fflush(stdout);
+    std::fflush(stderr);
+    // Plain return, NOT std::_Exit. _Exit was added on the theory that this
+    // executable crashed during static destruction; the tracker has since shown
+    // qExec returning cleanly with a real failure count, so there is nothing to
+    // skip — and hard-exiting is a plausible reason ctest captured no output.
+    return rc;
+}
 #include "test_mcp_bridge.moc"

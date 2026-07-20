@@ -190,14 +190,18 @@ check("initialize", r.get("protocolVersion") == "2025-06-18"
       and r.get("serverInfo", {}).get("name") == "notepatra-mcp",
       json.dumps(resp.get(1)))
 
-# 2: tools/list — all 35 tools present (22 from v0.1.118 + 13 from v0.1.119).
+# 2: tools/list — all 48 tools present (22 from v0.1.118 + 13 from v0.1.119 + 2 from p0a + 4 from phase 1 + 7 from phase 2).
 # tools/list is served by the Rust sidecar itself, so the count is independent
 # of which verbs the live editor bridge implements.
 tools = [t["name"] for t in (result(2) or {}).get("tools", [])]
-check("tools/list (35 tools)", len(tools) == 35 and "read_note" in tools
+check("tools/list (48 tools)", len(tools) == 48 and "read_note" in tools
       and "insert_text" in tools and "save_tab" in tools
       and "open_file" in tools and "list_reminders" in tools
-      and "git_status" in tools and "export_diagram" in tools, str(tools))
+      and "git_status" in tools and "export_diagram" in tools
+      and "list_languages" in tools and "get_capabilities" in tools
+      and "create_diagram" in tools and "open_noter" in tools
+      and "list_connections" in tools and "run_query" in tools
+      and "export_chart" in tools, str(tools))
 
 # 3: list_open_tabs — our document is an open tab
 t = tool_text(3)

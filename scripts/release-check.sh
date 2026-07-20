@@ -125,7 +125,14 @@ echo "── full-flavor build sanity (WebEngine code path) ──"
 # If no, emit a loud warning — CI runners HAVE WebEngine, so a missing
 # local install means we're shipping blind.
 WEBENGINE_PROBE_LOG=/tmp/release-webengine-probe.log
-if dpkg -l libqt5webengine5-dev libqt5webenginewidgets5 2>/dev/null | grep -q '^ii' \
+# Probe by what actually MATTERS — the CMake package + the header — not by a
+# dpkg package NAME. The old check looked for "libqt5webengine5-dev", which is
+# not the Debian package that ships these headers (it is "qtwebengine5-dev"),
+# so it reported "NOT installed" on a machine that had WebEngine all along and
+# silently skipped the very build it exists to verify. A checker bug reads
+# exactly like the defect it is supposed to catch.
+if [ -f /usr/lib/"$(uname -m)"-linux-gnu/cmake/Qt5WebEngineWidgets/Qt5WebEngineWidgetsConfig.cmake ] \
+   || dpkg -l qtwebengine5-dev libqt5webenginewidgets5 2>/dev/null | grep -q '^ii' \
    || (echo 'find_package(Qt5 REQUIRED COMPONENTS WebEngineWidgets)' | cmake -DCMAKE_BUILD_TYPE=Release -P /dev/stdin >/dev/null 2>&1); then
     rm -rf build-full && mkdir -p build-full
     if (cd build-full && cmake .. -DCMAKE_BUILD_TYPE=Release -DNOTEPATRA_WITH_WEBENGINE=ON >"$WEBENGINE_PROBE_LOG" 2>&1 \
@@ -136,11 +143,12 @@ if dpkg -l libqt5webengine5-dev libqt5webenginewidgets5 2>/dev/null | grep -q '^
         tail -25 "$WEBENGINE_PROBE_LOG" | sed 's/^/    /'
     fi
 else
-    echo "  ⚠ libqt5webengine5-dev NOT installed locally — CANNOT verify the WebEngine"
+    echo "  ⚠ Qt5WebEngineWidgets NOT found locally — CANNOT verify the WebEngine"
     echo "    code path compiles. CI runners DO have WebEngine, so a regression in"
     echo "    src/charts/vega_chart_renderer.cpp (or anything else inside"
     echo "    #ifdef NOTEPATRA_WITH_WEBENGINE) will fail CI silently like v0.1.63 did."
     echo "    Install with:   sudo apt-get install qtwebengine5-dev libqt5webenginewidgets5"
+    echo "    (note: the dev headers come from qtwebengine5-dev, NOT libqt5webengine5-dev)"
     # Don't fail the gate — devs without WebEngine should still be able to cut
     # releases, but the warning makes the risk visible.
 fi

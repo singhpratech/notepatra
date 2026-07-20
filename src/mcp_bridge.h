@@ -121,6 +121,41 @@ struct McpEditorHost {
     std::function<bool(int tabIndex, const QString &path,
                        const QString &format, QString *err)>
         exportDiagram;
+
+    // ── Phase 0A. Optional like everything above: unset ⇒ error/empty,
+    //    never crash. ──
+    // Canonicalize an agent language token ("python"→"Python"); "" = unknown.
+    std::function<QString(const QString &)> resolveLanguage;
+    // Canonical Language-menu tokens (SSOT: allKnownLanguageTokens()).
+    std::function<QStringList()> knownLanguages;
+
+    // ── Phase 1: diagram control + Noter panel. Optional like everything
+    //    above: unset ⇒ clear error, never crash. ──
+    // ACT: create a Diagram tab (optionally pre-filled), focus it; → index, -1 on failure.
+    std::function<int(const QString &source, const QString &title)> createDiagram;
+    // WRITE: replace the .npd source of the DiagramEditor at tab i; false = not a diagram.
+    std::function<bool(int, const QString &)> setDiagramSource;
+    // ACT: open/focus the Noter panel tab (same path as the "+ Noter" UI).
+    std::function<bool()> openNoter;
+
+    // ── Phase 2: Data-analyst + Charts. Optional: unset ⇒ clear error. ──
+    // READ: sanitized saved connections [{name,driver,database,read_only}] — never credentials.
+    std::function<QJsonArray()> listConnections;
+    // READ: SELECT-only query on a SAVED connection via classifySql + runQuery(allowMutation=false).
+    std::function<QJsonObject(const QString &name, const QString &sql,
+                              int maxRows, QString *err)> runNamedQuery;
+    // READ: user tables over a saved connection; *err on open failure.
+    std::function<QJsonArray(const QString &name, QString *err)> listTables;
+    // Pure static classification (DbConnections::classifySql, restrictFilesystem=true); false ⇒ *reason.
+    std::function<bool(const QString &sql, QString *reason)> classifySqlReadOnly;
+    // ACT: reveal the AI dock in Data Analyst mode.
+    std::function<bool()> openDataAnalyst;
+    // ACT: inline chart card in the Data transcript → {chart_id,rendered}; *err on failure/Lite.
+    std::function<QJsonObject(const QJsonObject &spec, const QString &title,
+                              QString *err)> renderChart;
+    // WRITE: off-screen render + write chart bytes to path; false + *err on failure/Lite.
+    std::function<bool(const QJsonObject &spec, const QString &path,
+                       const QString &format, int scale, QString *err)> exportChart;
 };
 
 // Editor-side MCP bridge: a dedicated QLocalServer, deliberately separate from
@@ -132,12 +167,22 @@ public:
     static QString defaultServerName();
 
     // serverName override is for tests; production passes nothing.
+    // endpointDirForTests redirects the published endpoint file (see
+    // publishEndpoint) away from the real user config dir — tests MUST pass it
+    // whenever they pass a serverName, otherwise nothing is published at all.
     explicit McpBridge(McpEditorHost host, QObject *parent = nullptr,
-                       const QString &serverName = QString());
+                       const QString &serverName = QString(),
+                       const QString &endpointDirForTests = QString());
     ~McpBridge() override;
 
     bool isListening() const;
     QString serverName() const { return m_serverName; }
+    // The endpoint we ACTUALLY bound. On macOS Qt rewrites a bare name into
+    // NSTemporaryDirectory() (/private/var/folders/…/T/), which is why the
+    // sidecar can never merely guess this — it has to be published.
+    QString fullServerName() const;
+    // "" when this instance published no endpoint file.
+    QString endpointFilePath() const { return m_endpointFile; }
 
     // Test hook: shrink the human-approval timeout (production default 120 s).
     void setApprovalTimeoutMs(int ms);
@@ -187,6 +232,9 @@ private:
                  const QString &sub);
     void verbValidateNpd(QLocalSocket *client, int id, const QJsonObject &args);
     void verbRunSql(QLocalSocket *client, int id, const QJsonObject &args);
+    // ── Phase 0A read tier ──
+    void verbListLanguages(QLocalSocket *client, int id);
+    void verbGetCapabilities(QLocalSocket *client, int id);
     // ACT tier.
     void verbOpenNote(QLocalSocket *client, int id, const QJsonObject &args);
     // WRITE tier — human-approval-gated.
@@ -195,6 +243,19 @@ private:
     void verbSetReminder(QLocalSocket *client, int id, const QJsonObject &args);
     void verbExportDiagram(QLocalSocket *client, int id,
                            const QJsonObject &args);
+    // ── Phase 1 ──
+    void verbCreateDiagram(QLocalSocket *client, int id, const QJsonObject &args);   // ACT
+    void verbGetDiagramSource(QLocalSocket *client, int id, const QJsonObject &args); // READ
+    void verbSetDiagramSource(QLocalSocket *client, int id, const QJsonObject &args); // WRITE (card)
+    void verbOpenNoter(QLocalSocket *client, int id);                                 // ACT
+    // ── Phase 2: Data-analyst + Charts ──
+    void verbListConnections(QLocalSocket *client, int id);                            // READ
+    void verbRunQuery(QLocalSocket *client, int id, const QJsonObject &args);          // READ
+    void verbListTables(QLocalSocket *client, int id, const QJsonObject &args);        // READ
+    void verbOpenDataAnalyst(QLocalSocket *client, int id);                            // ACT
+    void verbRenderChart(QLocalSocket *client, int id, const QJsonObject &args);       // ACT
+    void verbExportQueryResults(QLocalSocket *client, int id, const QJsonObject &args); // WRITE (card)
+    void verbExportChart(QLocalSocket *client, int id, const QJsonObject &args);       // WRITE (card)
 
     // One held write request: the response is sent only after the human
     // decides (or the timeout / a disconnect decides for them).
@@ -224,9 +285,17 @@ private:
     void dropClientApprovals(QLocalSocket *client);
     void positionCard();
 
+    // Endpoint discovery: write/remove <dir>/mcp-endpoint.json describing the
+    // bound socket so the sidecar reads the truth instead of guessing it.
+    void publishEndpoint(const QString &dir);
+    void unpublishEndpoint();
+
     McpEditorHost m_host;
     QLocalServer *m_server = nullptr;
     QString m_serverName;
+    // Absolute path of the endpoint file THIS instance wrote; empty when it
+    // published nothing (so the dtor never deletes another instance's file).
+    QString m_endpointFile;
     QHash<QLocalSocket *, QByteArray> m_buffers;
 
     // FIFO approval queue; the front entry is the one on screen when

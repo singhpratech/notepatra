@@ -515,21 +515,30 @@ static const QSet<QString> &sideEffectFunctions() {
     return k;
 }
 
-// DuckDB filesystem-READING table functions (Full edition). These are
-// read-only by SQL semantics, so the read-only classifier passes them — but
-// on the MCP run_sql path that makes the sandbox an arbitrary-file-read
-// primitive (SELECT * FROM read_text('/home/user/.ssh/id_rsa')). Rejected
-// ONLY when restrictFilesystem is true (the MCP path), matched call-form only
-// (name immediately followed by '(') so a column/string named the same stays
-// safe. Legit ingestion (Client::registerCsv) builds its view in TRUSTED code
-// that never calls classifySql, so this denylist never touches ingestion.
+// Filesystem-READING functions across engines (DuckDB, MySQL, Postgres).
+// These are read-only by SQL semantics, so the read-only classifier passes
+// them — but on the MCP path (run_sql AND the phase-2 run_query verb, which
+// reaches saved MySQL/Postgres/DuckDB connections with no in-panel approval)
+// that makes any of them an arbitrary server-side-file-read primitive
+// (SELECT read_text('…') / SELECT LOAD_FILE('/etc/passwd') /
+// SELECT pg_read_server_files, pg_stat_file('…')). Rejected ONLY when
+// restrictFilesystem is true (the MCP path), matched call-form only (name
+// immediately followed by '(') so a column/string named the same stays safe.
+// Legit ingestion (Client::registerCsv) builds its view in TRUSTED code that
+// never calls classifySql, so this denylist never touches ingestion.
 static const QSet<QString> &fileReadingFunctions() {
     static const QSet<QString> k = {
+        // DuckDB
         "READ_CSV", "READ_CSV_AUTO", "READ_TEXT", "READ_TEXT_AUTO",
         "READ_BLOB", "READ_PARQUET", "READ_JSON", "READ_JSON_AUTO",
         "READ_JSON_OBJECTS", "READ_NDJSON", "GLOB", "SNIFF_CSV",
         "PARQUET_METADATA", "PARQUET_SCHEMA", "PARQUET_FILE_METADATA",
-        "PARQUET_KV_METADATA"
+        "PARQUET_KV_METADATA",
+        // MySQL — reads a server-side file with FILE privilege.
+        "LOAD_FILE",
+        // Postgres — server-side file/dir read + metadata leakage.
+        "PG_READ_SERVER_FILES", "PG_LS_DIR", "PG_STAT_FILE",
+        "PG_LS_LOGDIR", "PG_LS_WALDIR", "PG_LS_TMPDIR", "PG_LS_ARCHIVE_STATUSDIR"
     };
     return k;
 }
@@ -808,8 +817,15 @@ QStringList listTables(const Record &r, bool *outOk) {
         // current DB (which the connection string's DATABASE= selects).
         sql = QStringLiteral(
             "SELECT name FROM sys.tables ORDER BY name");
+    } else if (r.driver.compare(QStringLiteral("DUCKDB"), Qt::CaseInsensitive) == 0) {
+        // DuckDB routes through runQuery's native path below. Exclude the
+        // system catalogues so only user tables/views surface.
+        sql = QStringLiteral(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema NOT IN ('information_schema','pg_catalog') "
+            "ORDER BY table_name");
     } else {
-        return tables;  // DuckDB handled separately via runQuery if needed.
+        return tables;  // unknown driver — caller reports the failure.
     }
 
     QueryResult q = runQuery(r, sql, 500, /*allowMutation=*/false);

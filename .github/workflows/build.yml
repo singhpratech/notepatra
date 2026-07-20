@@ -14,6 +14,8 @@ concurrency:
 jobs:
   build-linux:
     runs-on: ubuntu-24.04
+    # Fail fast instead of burning the 360-minute default on a wedge.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -67,13 +69,35 @@ jobs:
           cd build
           QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 
-      # v0.1.118 — MCP sidecar. x64 is the canonical unit-test run (arm and
-      # macOS jobs only build it); ships as notepatra-mcp-linux-x64.tar.gz.
+      # v0.1.118 — MCP sidecar; ships as notepatra-mcp-linux-x64.tar.gz.
+      #
+      # ORDERING LAW (all four platform jobs): `cargo test --features remote`
+      # REBUILDS target/release/notepatra-mcp WITH remote compiled in, because
+      # cargo unifies the bin's features when it builds the integration tests
+      # that depend on it. So the LAST cargo invocation before the upload must
+      # be a plain `cargo build --release`, and we then assert the flavor —
+      # otherwise we would silently ship a crypto-linked sidecar.
       - name: Build and test MCP server
+        timeout-minutes: 25
         run: |
           cd notepatra-mcp
-          cargo build --release
           cargo test --release
+          cargo test --release --features remote
+          cargo build --release
+          # Flavor assertion. `serve` is remote-only: a std-only build prints
+          # "built without remote support" and exits 2 immediately.
+          #
+          # MUST be time-capped and backgrounded, NOT `OUT=$(... serve)`: on a
+          # remote-ENABLED build `serve` binds a port and blocks forever, so a
+          # command substitution would wait on an EOF that never comes and hang
+          # the job — in precisely the failure case this exists to catch. A
+          # hang is not a red state. Capped at 10s, then killed, then we judge
+          # by what it printed. </dev/null so it can never wait on stdin.
+          ./target/release/notepatra-mcp serve </dev/null >flavor.txt 2>&1 & PID=$!
+          for _ in $(seq 1 20); do kill -0 $PID 2>/dev/null || break; sleep 0.5; done
+          kill -9 $PID 2>/dev/null || true
+          wait $PID 2>/dev/null || true
+          grep -q "built without remote support" flavor.txt || { echo "::error::shipped sidecar unexpectedly has remote support compiled in"; cat flavor.txt; exit 1; }
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -193,6 +217,8 @@ jobs:
 
   build-linux-arm:
     runs-on: ubuntu-24.04-arm
+    # Fail fast instead of burning the 360-minute default on a wedge.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -245,9 +271,24 @@ jobs:
           name: notepatra-linux-arm64
           path: build/notepatra
 
-      # v0.1.118 — MCP sidecar (build only; unit tests run in the x64 job).
-      - name: Build MCP server
-        run: cd notepatra-mcp && cargo build --release
+      # v0.1.118 — MCP sidecar. Runs the full default + remote suites natively
+      # on arm64 rather than trusting the x64 job: pointer-width and alignment
+      # differences are exactly what a cross-arch suite exists to catch.
+      # Same ordering law as the x64 job — plain build LAST, then assert flavor.
+      - name: Build and test MCP server
+        timeout-minutes: 25
+        run: |
+          cd notepatra-mcp
+          cargo test --release
+          cargo test --release --features remote
+          cargo build --release
+          # Time-capped flavor assertion — see the x64 job for why this cannot
+          # be a plain command substitution.
+          ./target/release/notepatra-mcp serve </dev/null >flavor.txt 2>&1 & PID=$!
+          for _ in $(seq 1 20); do kill -0 $PID 2>/dev/null || break; sleep 0.5; done
+          kill -9 $PID 2>/dev/null || true
+          wait $PID 2>/dev/null || true
+          grep -q "built without remote support" flavor.txt || { echo "::error::shipped sidecar unexpectedly has remote support compiled in"; cat flavor.txt; exit 1; }
 
       - name: Upload MCP server artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -336,6 +377,8 @@ jobs:
 
   build-macos-arm:
     runs-on: macos-14
+    # Fail fast instead of burning the 360-minute default on a wedge.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -432,6 +475,8 @@ jobs:
           echo "✓ macOS Full binary built (DuckDB engine; WebEngine N/A on brew qt@5)"
 
       - name: Build and run regression suite
+        # ctest's blanket TIMEOUT 600 is per-TEST, not per-step: a systemic wedge across ~48 tests still runs for hours without this.
+        timeout-minutes: 75
         run: |
           # Reuse the same Qt5/QScintilla discovery the main build did by
           # reconfiguring the existing build tree with -DBUILD_TESTING=ON.
@@ -871,17 +916,54 @@ jobs:
           name: notepatra-macos-arm64-full
           path: build-full/Notepatra-full.dmg
 
-      # v0.1.118 — MCP sidecar (build only; unit tests run in the linux x64
-      # job). No Windows MCP artifact yet — the named-pipe transport is a
-      # stub, so shipping a binary there would be dishonest.
-      - name: Build MCP server
-        run: cd notepatra-mcp && cargo build --release
+      # v0.1.118 — MCP sidecar. As of v0.1.119 ALL FOUR platform jobs run both
+      # the default (std-only) and the remote-feature suites natively; there is
+      # no longer a single "canonical" test job. macOS additionally lipo's an
+      # arm64+x86_64 universal binary, because .mcpb declares ONE `darwin` entry
+      # and Claude Desktop on Intel Macs would otherwise get an unrunnable
+      # slice. The universal binary is consumed ONLY by the .mcpb — the
+      # standalone notepatra-mcp-macos-arm64.tar.gz stays arm64-thin so the
+      # released filename keeps meaning what it says.
+      #
+      # Same ordering law as the linux jobs: `cargo test --features remote`
+      # rebuilds the bin WITH remote, so the plain `cargo build --release` must
+      # come last, and the flavor assertion proves it did.
+      - name: Build and test MCP server (arm64 + x86_64 universal)
+        timeout-minutes: 25
+        run: |
+          cd notepatra-mcp
+          cargo test --release
+          cargo test --release --features remote
+          rustup target add x86_64-apple-darwin
+          cargo build --release
+          cargo build --release --target x86_64-apple-darwin
+          # Time-capped flavor assertion — see the linux x64 job for why this
+          # cannot be a plain command substitution.
+          ./target/release/notepatra-mcp serve </dev/null >flavor.txt 2>&1 & PID=$!
+          for _ in $(seq 1 20); do kill -0 $PID 2>/dev/null || break; sleep 0.5; done
+          kill -9 $PID 2>/dev/null || true
+          wait $PID 2>/dev/null || true
+          grep -q "built without remote support" flavor.txt || { echo "::error::shipped sidecar unexpectedly has remote support compiled in"; cat flavor.txt; exit 1; }
+          lipo -create -output target/notepatra-mcp-universal target/release/notepatra-mcp target/x86_64-apple-darwin/release/notepatra-mcp
+          lipo -archs target/notepatra-mcp-universal | grep -q x86_64 || { echo "::error::universal sidecar missing x86_64 slice"; exit 1; }
+          lipo -archs target/notepatra-mcp-universal | grep -q arm64 || { echo "::error::universal sidecar missing arm64 slice"; exit 1; }
+          # Prove the x86_64 slice actually RUNS, not just that it links —
+          # </dev/null so the stdio server sees EOF and exits instead of
+          # blocking the job forever. Rosetta is absent on some hosted images,
+          # so this is a warning, never a hard failure.
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then arch -x86_64 ./target/x86_64-apple-darwin/release/notepatra-mcp </dev/null >/dev/null && echo "x86_64 slice executed under Rosetta"; else echo "::warning::Rosetta unavailable — x86_64 slice not smoke-executed"; fi
 
       - name: Upload MCP server artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: notepatra-mcp-macos-arm64
           path: notepatra-mcp/target/release/notepatra-mcp
+
+      - name: Upload MCP server universal artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: notepatra-mcp-macos-universal
+          path: notepatra-mcp/target/notepatra-mcp-universal
 
   build-windows:
     # PINNED (v0.1.113) for determinism: both windows-latest AND windows-2025
@@ -894,6 +976,13 @@ jobs:
     # runner image from moving under us again. Durable path later: KDE-patched
     # Qt 5.15 or the Qt6 migration (see project_qt6_migration_assessment).
     runs-on: windows-2025
+    # HANG CONTAINMENT (v0.1.120). Without a job ceiling a wedge anywhere —
+    # QScintilla nmake, CMake, NSIS/WiX, an exe probe blocked on a modal
+    # Windows error box, or the regression suite — runs to GitHub's
+    # 360-minute default and reports NOTHING. This is the outermost net;
+    # the per-step ceilings below name the culprit, and the in-test
+    # watchdogs name the individual test.
+    timeout-minutes: 180
     permissions:
       contents: read
       issues: write
@@ -1081,6 +1170,65 @@ jobs:
       - name: Build Rust core
         shell: cmd
         run: cd rust-core && cargo build --release
+
+      # MCP sidecar (Windows, x86_64-pc-windows-msvc — the runner default).
+      # Named-pipe transport shipped in v0.1.119 (src/transport/socket.rs
+      # cfg(windows)), so a prebuilt Windows binary is honest now. Canonical
+      # unit tests run in the linux x64 job; we ALSO run tests here because
+      # this is the only job that compiles the cfg(windows) pipe code —
+      # tests/socket_bridge.rs is #![cfg(unix)] and compiles to empty, the
+      # protocol + mock-transport suites are OS-neutral.
+      # Ordering law (see the linux x64 job): the remote-feature test run
+      # rebuilds the bin WITH remote compiled in, so the plain build comes LAST.
+      # `--test-threads=1` (v0.1.120): tests/pipe_bridge.rs drives REAL named
+      # pipes, and under the default parallel harness a hang cannot be pinned on
+      # a test — absence of an "ok" line only means "not finished yet", which is
+      # exactly how a previous incident burned two ~80-minute cycles. Serial
+      # order makes the stdout log alone name the culprit. These suites are
+      # ~3 s total, so serializing costs nothing.
+      - name: Build and test MCP server
+        timeout-minutes: 25
+        shell: cmd
+        run: cd notepatra-mcp && del /q "%TEMP%\np-*-tracker.log" 2>nul & cargo build --release && cargo test --release -- --test-threads=1 && cargo test --release --features remote -- --test-threads=1 && cargo build --release
+
+      # Every transport suite (named pipe, unix socket, loopback gateway) arms a
+      # watchdog that ABORTS on a hang, and abort DISCARDS libtest's captured
+      # output — so the culprit's name is written to a file instead. Globbed,
+      # not hard-coded to one suite: the previous version only knew about
+      # np-pipe-bridge-tracker.log, so a hang in the remote-gateway suite would
+      # have printed "no tracker file" and named nothing.
+      # `always()` because the only run that matters is the failing one.
+      - name: Transport test trackers (localize a hang)
+        if: always()
+        shell: cmd
+        run: |
+          if exist "%TEMP%\np-*-tracker.log" (
+            for %%F in ("%TEMP%\np-*-tracker.log") do (
+              echo === %%~nxF ===
+              type "%%F"
+            )
+            echo === an ENTER with no matching LEAVE is the test that hung ===
+          ) else (
+            echo no tracker file — no transport suite reached its first test
+          )
+
+      # Separate step because the assertion needs pwsh string matching, and cmd
+      # has no clean equivalent. `serve` on a std-only build exits 2 after
+      # printing this, so we match on the text rather than the exit code.
+      - name: Assert shipped MCP server is std-only
+        shell: pwsh
+        working-directory: notepatra-mcp
+        run: |
+          # Start-Process + WaitForExit(10s) rather than `$out = & ... | Out-String`
+          # for the same reason as the Unix jobs: a remote-ENABLED build's
+          # `serve` binds a port and never returns, and the pipeline would block
+          # forever instead of failing. Kill at 10s, then judge by the output.
+          $p = Start-Process -FilePath .\target\release\notepatra-mcp.exe -ArgumentList 'serve' `
+                 -RedirectStandardOutput flavor.txt -RedirectStandardError flavor.err `
+                 -PassThru -NoNewWindow
+          if (-not $p.WaitForExit(10000)) { $p.Kill(); $p.WaitForExit() }
+          $out = ((Get-Content flavor.txt -Raw -ErrorAction SilentlyContinue) + (Get-Content flavor.err -Raw -ErrorAction SilentlyContinue))
+          if ($out -notmatch 'built without remote support') { Write-Host '::error::shipped sidecar unexpectedly has remote support compiled in'; Write-Host $out; exit 1 }
 
       - name: Build C++ with CMake (MSVC)
         shell: pwsh
@@ -1324,6 +1472,8 @@ jobs:
           }
 
       - name: Diagnose notepatra.exe imports + Qt plugin loading
+        # Launches notepatra.exe: a Qt plugin-load stall or a modal error box would otherwise hang here forever.
+        timeout-minutes: 5
         shell: pwsh
         run: |
           # Write all diagnostic output to BOTH stdout AND diag.log so the
@@ -1626,6 +1776,8 @@ jobs:
           Write-Host "✓ All critical files present in Full bundle"
 
       - name: Smoke-test the binary (--version output check)
+        # This step EXPECTS a DLL_PROCESS_DETACH crash, which can raise a modal WER/missing-DLL box that blocks cmd /c forever.
+        timeout-minutes: 5
         shell: pwsh
         run: |
           # Run notepatra.exe --version via cmd.exe with file redirection.
@@ -1680,6 +1832,15 @@ jobs:
           }
 
       - name: Build and run regression suite
+        # ctest's blanket TIMEOUT 600 is per-TEST, not per-step: a systemic wedge across ~48 tests still runs for hours without this.
+        # 150, not 45: this step legitimately takes ~64 min on Windows (the
+        # MSVC + Qt test-target build dominates; ctest itself is ~3 min). A
+        # ceiling set near the median KILLS HEALTHY RUNS — a 45 did exactly
+        # that once, failing a job whose tests had all passed. These ceilings
+        # exist to turn an hours-long wedge into minutes, so set them at >=2x
+        # the observed maximum, never near the average. Runner performance
+        # varies run to run, and the suite only grows.
+        timeout-minutes: 150
         shell: pwsh
         run: |
           # Reconfigure the existing build tree with -DBUILD_TESTING=ON so the
@@ -1714,8 +1875,48 @@ jobs:
 
           # Add Qt + bundled QScintilla DLLs to PATH so CTest can load them.
           $env:PATH = "$qtRoot\bin;$PWD\..\notepatra-win;$env:PATH"
-          ctest --output-on-failure -C Release
-          if ($LASTEXITCODE -ne 0) {
+          # Crash-localizer for test_mcp_bridge: ctest discards a crashed test's
+          # captured output on Windows, so the test appends each section to this
+          # file (survives the access violation); we print it below on failure.
+          $env:NP_MCP_PROGRESS = "$env:RUNNER_TEMP\mcp_progress.log"
+          if (Test-Path $env:NP_MCP_PROGRESS) { Remove-Item $env:NP_MCP_PROGRESS }
+          $ctestLog = "$env:RUNNER_TEMP\ctest.log"
+          ctest --output-on-failure -C Release 2>&1 | Tee-Object -FilePath $ctestLog
+          $ctestExit = $LASTEXITCODE
+
+          $enters = 0; $leaves = 0; $sectionFailures = 0
+          if (Test-Path $env:NP_MCP_PROGRESS) {
+            Write-Host "=== test_mcp_bridge section progress (ENTER without LEAVE = crashing section) ==="
+            Get-Content $env:NP_MCP_PROGRESS | ForEach-Object {
+              Write-Host $_
+              if ($_ -like 'ENTER *')  { $enters++ }
+              if ($_ -like 'LEAVE *')  { $leaves++ }
+              if ($_ -like 'FAILED *') { $sectionFailures++ }
+            }
+            Write-Host "=== sections entered=$enters passed=$leaves failed=$sectionFailures ==="
+          }
+
+          # QtTest's own report, written by `-o <file>,txt` from the test's
+          # main(). ctest printed NOTHING for this test even with
+          # --output-on-failure — no PASS lines, no failing QCOMPARE, no line
+          # number — so three failing sections cost a full cycle each just to
+          # identify. This file is independent of ctest's capture and carries
+          # actual-vs-expected plus file:line for every failure.
+          $qtestLog = "$env:NP_MCP_PROGRESS.qtest.txt"
+          if (Test-Path $qtestLog) {
+            Write-Host "=== test_mcp_bridge QtTest report (failures with actual/expected + line) ==="
+            Select-String -Path $qtestLog -Pattern '^(FAIL!|XFAIL|Totals:)' -Context 0,4 |
+              ForEach-Object { Write-Host $_.Line; $_.Context.PostContext | ForEach-Object { Write-Host "    $_" } }
+          }
+
+          # NO tolerance clause here, deliberately. One previously existed, for a
+          # "teardown crash" that turned out not to exist: the marker it relied
+          # on wrote LEAVE even for a FAILED section, so three genuinely failing
+          # tests read as "all sections passed, crashes at exit". With the marker
+          # recording QTest::currentTestFailed(), the tracker reports
+          # entered=76 passed=73 failed=3 and qExec returns normally — there is
+          # no crash to forgive. Any failure here is a real failure; fail loudly.
+          if ($ctestExit -ne 0) {
             Write-Host "::error::Windows regression suite FAILED"
             exit 1
           }
@@ -2125,15 +2326,35 @@ jobs:
           path: notepatra-*-full.msi
           if-no-files-found: ignore
 
+      - name: Upload MCP server artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: notepatra-mcp-windows-x64
+          path: notepatra-mcp/target/release/notepatra-mcp.exe
+
       # ─── Failure diagnostics — must be LAST so it sees failures from any prior step ───
-      - name: Upload build logs on failure
-        if: failure()
+      # `always()`, NOT `failure()`: a job CANCEL or a job TIMEOUT does not fire
+      # `failure()`, so the one run whose logs matter most — the wedged one —
+      # used to upload nothing. ctest.log and mcp_progress.log are included
+      # because they name WHICH test was running; previously they were printed
+      # only from inside the regression step, so if that step was the thing that
+      # hung, the operator learned nothing at all.
+      - name: Upload build logs
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: windows-build-logs
           path: |
             cmake-configure.log
             cmake-build.log
+            ${{ runner.temp }}/ctest.log
+            ${{ runner.temp }}/mcp_progress.log
+            # Rust's env::temp_dir() is %TEMP% (C:\Users\runneradmin\AppData\
+            # Local\Temp), which on Windows runners is NOT runner.temp
+            # (D:\a\_temp) — globbing runner.temp here would silently upload
+            # nothing. The printed "Transport test trackers" step already uses
+            # %TEMP% correctly; this makes the artifact agree with it.
+            ${{ env.TEMP }}/np-*-tracker.log
           if-no-files-found: ignore
 
       - name: Post Windows failure diagnostics to issue #1
@@ -2233,6 +2454,8 @@ jobs:
     # Was previously ubuntu-latest, which would silently roll forward and
     # could shift cosign / SLSA action runtime expectations under our feet.
     runs-on: ubuntu-24.04
+    # Fail fast instead of burning the 360-minute default on a wedge.
+    timeout-minutes: 30
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write    # publish the release
@@ -2250,8 +2473,8 @@ jobs:
           tar czf notepatra-linux-x64.tar.gz -C notepatra-linux-x64 notepatra
           tar czf notepatra-linux-arm64.tar.gz -C notepatra-linux-arm64 notepatra
           # v0.1.118 — MCP sidecar tarballs (Linux x64/arm64 + macOS arm64;
-          # no Windows binary — named-pipe transport not shipped yet). Hard
-          # requirement: if a job uploaded the dir, the binary must be in it.
+          # Windows ships as a .zip below). Hard requirement: if a job
+          # uploaded the dir, the binary must be in it.
           for P in linux-x64 linux-arm64 macos-arm64; do
             if [ -d "notepatra-mcp-$P" ]; then
               test -f "notepatra-mcp-$P/notepatra-mcp" || { echo "::error::notepatra-mcp-$P artifact dir missing the binary"; exit 1; }
@@ -2261,6 +2484,12 @@ jobs:
               echo "::error::expected MCP artifact dir notepatra-mcp-$P is missing"; exit 1
             fi
           done
+          # MCP sidecar Windows zip (zip, not tar — Windows convention).
+          # NOTE the name is notepatra-mcp-windows-x64.zip — distinct from the
+          # editor's notepatra-windows-x64.zip; every downstream list references
+          # it by EXACT filename (prefix-collision lesson, 01d8f08).
+          test -f notepatra-mcp-windows-x64/notepatra-mcp.exe || { echo "::error::notepatra-mcp-windows-x64 artifact dir missing notepatra-mcp.exe"; exit 1; }
+          (cd notepatra-mcp-windows-x64 && zip ../notepatra-mcp-windows-x64.zip notepatra-mcp.exe)
           # v0.1.64 — Linux "full" flavor tarballs (bundles QtWebEngine for
           # inline Vega-Lite chart rendering). LINUX ONLY for the foreseeable
           # future — Charts Pack is downloaded on-demand on macOS/Windows
@@ -2371,6 +2600,24 @@ jobs:
         with:
           path: src
 
+      - name: Build .mcpb bundle (Claude Desktop one-click)
+        run: |
+          # .mcpb = zip of manifest.json + per-platform sidecar binaries.
+          # Tag-gated for free: this whole release job runs only on
+          # startsWith(github.ref, 'refs/tags/v').
+          TAG="${GITHUB_REF##*/}"
+          python3 src/notepatra-mcp/mcpb/build-mcpb.py \
+            --manifest src/notepatra-mcp/mcpb/manifest.json \
+            --cargo-toml src/notepatra-mcp/Cargo.toml \
+            --expect-version "${TAG#v}" \
+            --require-all \
+            --binary linux-x64=notepatra-mcp-linux-x64/notepatra-mcp \
+            --binary linux-arm64=notepatra-mcp-linux-arm64/notepatra-mcp \
+            --binary darwin=notepatra-mcp-macos-universal/notepatra-mcp-universal \
+            --binary win32-x64=notepatra-mcp-windows-x64/notepatra-mcp.exe \
+            --out notepatra-mcp.mcpb
+          unzip -l notepatra-mcp.mcpb
+
       - name: Generate SHA-256 checksums
         run: |
           # Generate a single SHA256SUMS file in the standard format that
@@ -2380,6 +2627,7 @@ jobs:
                    notepatra-linux-x64-full.tar.gz notepatra-linux-arm64-full.tar.gz \
                    notepatra-mcp-linux-x64.tar.gz notepatra-mcp-linux-arm64.tar.gz \
                    notepatra-mcp-macos-arm64.tar.gz \
+                   notepatra-mcp-windows-x64.zip notepatra-mcp.mcpb \
                    notepatra-macos-arm64.dmg notepatra-macos-arm64-full.dmg \
                    notepatra-windows-x64.zip notepatra-windows-x64-full.zip notepatra-setup-*.exe notepatra-*.msi notepatra-full-*.msi \
                    notepatra_*_amd64.deb notepatra_*_arm64.deb \
@@ -2438,6 +2686,7 @@ jobs:
                    notepatra-linux-x64-full.tar.gz notepatra-linux-arm64-full.tar.gz \
                    notepatra-mcp-linux-x64.tar.gz notepatra-mcp-linux-arm64.tar.gz \
                    notepatra-mcp-macos-arm64.tar.gz \
+                   notepatra-mcp-windows-x64.zip notepatra-mcp.mcpb \
                    notepatra-macos-arm64.dmg notepatra-macos-arm64-full.dmg \
                    notepatra-windows-x64.zip notepatra-windows-x64-full.zip notepatra-setup-*.exe notepatra-*.msi notepatra-full-*.msi \
                    notepatra_*_amd64.deb notepatra_*_arm64.deb \
@@ -2464,6 +2713,8 @@ jobs:
             notepatra-mcp-linux-x64.tar.gz
             notepatra-mcp-linux-arm64.tar.gz
             notepatra-mcp-macos-arm64.tar.gz
+            notepatra-mcp-windows-x64.zip
+            notepatra-mcp.mcpb
             notepatra-macos-arm64.dmg
             notepatra-macos-arm64-full.dmg
             notepatra-windows-x64.zip
@@ -2490,6 +2741,12 @@ jobs:
             notepatra-mcp-*.tar.gz
             notepatra-mcp-*.tar.gz.sig
             notepatra-mcp-*.tar.gz.pem
+            notepatra-mcp-windows-x64.zip
+            notepatra-mcp-windows-x64.zip.sig
+            notepatra-mcp-windows-x64.zip.pem
+            notepatra-mcp.mcpb
+            notepatra-mcp.mcpb.sig
+            notepatra-mcp.mcpb.pem
             notepatra-macos-arm64.dmg
             notepatra-macos-arm64-full.dmg
             notepatra-windows-x64.zip

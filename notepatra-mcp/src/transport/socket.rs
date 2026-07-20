@@ -7,9 +7,15 @@
 //!
 //! * Endpoint name: `"notepatra-" + first 16 hex of SHA-1(UTF-8 home dir) +
 //!   "-mcp"` — the single-instance name (`SingleInstance::serverName()`) plus
-//!   an `-mcp` suffix, so each user gets a distinct bridge. Qt materializes it
-//!   at `$TMPDIR/<name>` (default `/tmp/<name>`) on Unix and as the named pipe
-//!   `\\.\pipe\<name>` on Windows.
+//!   an `-mcp` suffix, so each user gets a distinct bridge.
+//! * Endpoint DISCOVERY (v0.1.120): the editor publishes its actually-bound
+//!   endpoint to `<config_root>/mcp-endpoint.json` once `listen()` succeeds,
+//!   and that value is dialed FIRST (see [`super::endpoint`]). The computed
+//!   guess `$TMPDIR/<name>` (Unix) / `\\.\pipe\<name>` (Windows) is only the
+//!   FALLBACK, for editors older than v0.1.120. The guess is not merely
+//!   redundant-but-correct: on macOS Qt binds under `NSTemporaryDirectory()`
+//!   (`/private/var/folders/.../T/`), which `$TMPDIR||/tmp` does not
+//!   reproduce, so publication is the only thing that makes macOS work.
 //! * Greeting before payload (proof-of-life law): on accept, the editor sends
 //!   ONE greeting line `{"notepatra_mcp":1,"app":"Notepatra","version":...}`.
 //!   The client MUST read and validate it before sending anything — receiving
@@ -29,14 +35,15 @@
 //! client runs a dedicated reader thread and enforces the same 5s/15s/130s
 //! windows with `mpsc::recv_timeout`. No extra dependencies — std only.
 //!
-//! ASSUMPTION (flag for C++ reconciliation): the Windows endpoint name equals
-//! Qt's `QLocalServer` name verbatim under the `\\.\pipe\` prefix, and the
-//! HOME-equivalent used for the SHA-1 name derivation is what
-//! `QDir::homePath()` returns on Windows — `%USERPROFILE%` with FORWARD
-//! slashes. The Rust side hashes `$USERPROFILE` verbatim; if Qt normalizes
-//! separators differently the two names would diverge. Runtime behavior on
-//! Windows is UNVERIFIED here (Linux dev host); only cross-compilation is
-//! checked.
+//! ASSUMPTION (flag for C++ reconciliation), now only load-bearing for the
+//! FALLBACK guess: the Windows endpoint name equals Qt's `QLocalServer` name
+//! verbatim under the `\\.\pipe\` prefix, and the HOME-equivalent used for the
+//! SHA-1 name derivation is what `QDir::homePath()` returns on Windows —
+//! `%USERPROFILE%` with FORWARD slashes. The Rust side hashes `$USERPROFILE`
+//! verbatim; if Qt normalizes separators differently the two names diverge —
+//! but a v0.1.120+ editor publishes its real endpoint, so the guess is never
+//! reached. Runtime behavior on Windows is UNVERIFIED here (Linux dev host);
+//! only cross-compilation is checked.
 
 #[cfg(any(unix, windows))]
 use std::cell::RefCell;
@@ -45,8 +52,8 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 use super::{
-    EditorTransport, SearchHit, SearchResults, Selection, TabContent, TabInfo, TabSelector,
-    TransportError,
+    endpoint, EditorTransport, SearchHit, SearchResults, Selection, TabContent, TabInfo,
+    TabSelector, TransportError,
 };
 
 /// Exact user-facing message when the bridge socket cannot be reached.
@@ -60,8 +67,8 @@ const APPROVAL_TIMEOUT: Duration = Duration::from_secs(130);
 
 /// The approval-gated write verbs (must match the C++ bridge's card-gated
 /// verb set exactly). v0.1.119 adds create_note/append_note/set_reminder/
-/// export_diagram to the v0.1.118 quartet.
-const WRITE_VERBS: [&str; 8] = [
+/// export_diagram to the v0.1.118 quartet; phase 1 adds set_diagram_source.
+const WRITE_VERBS: [&str; 11] = [
     "insert_text",
     "replace_selection",
     "apply_edit",
@@ -70,6 +77,10 @@ const WRITE_VERBS: [&str; 8] = [
     "append_note",
     "set_reminder",
     "export_diagram",
+    "set_diagram_source",
+    // phase 2
+    "export_query_results",
+    "export_chart",
 ];
 
 /// Mirrors `SingleInstance::serverName()` in src/singleinstance.cpp.
@@ -95,7 +106,10 @@ pub fn socket_path(name: &str) -> String {
 }
 
 pub struct SocketEditor {
-    path: String,
+    /// Endpoints to dial, in order (published first, then the guess). Always
+    /// non-empty; `candidates[0]` is what [`SocketEditor::socket_path`]
+    /// reports.
+    candidates: Vec<String>,
     base_timeout: Duration,
     search_timeout: Duration,
     approval_timeout: Duration,
@@ -104,7 +118,8 @@ pub struct SocketEditor {
 }
 
 impl SocketEditor {
-    /// Targets the current user's bridge socket (derived from the home dir).
+    /// Targets the current user's bridge: the endpoint the editor published,
+    /// falling back to the endpoint computed from the home dir.
     pub fn new() -> Self {
         // The name derivation hashes the same string Qt's
         // SingleInstance::serverName() hashes: `QDir::homePath()`. On Windows
@@ -118,13 +133,29 @@ impl SocketEditor {
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_default();
-        Self::with_socket_path(socket_path(&mcp_server_name(&home)))
+        // One cheap file read — no watching, no retries — so discovery can
+        // never delay or hang startup.
+        Self::with_candidates(endpoint::candidates(
+            endpoint::published_endpoint(),
+            socket_path(&mcp_server_name(&home)),
+        ))
     }
 
-    /// Targets an explicit socket path (tests use this with a fake bridge).
+    /// Targets an explicit socket path, BYPASSING discovery (`--socket-path`
+    /// and tests with a fake bridge). Exactly one candidate, so an explicit
+    /// path can never silently fall through to some other editor.
     pub fn with_socket_path(path: impl Into<String>) -> Self {
+        Self::with_candidates(vec![path.into()])
+    }
+
+    /// Targets an ordered candidate list; the first one that CONNECTS wins.
+    pub fn with_candidates(paths: Vec<String>) -> Self {
+        assert!(
+            !paths.is_empty(),
+            "SocketEditor needs at least one candidate endpoint"
+        );
         Self {
-            path: path.into(),
+            candidates: paths,
             base_timeout: DEFAULT_TIMEOUT,
             search_timeout: SEARCH_TIMEOUT,
             approval_timeout: APPROVAL_TIMEOUT,
@@ -147,8 +178,31 @@ impl SocketEditor {
         self
     }
 
+    /// The preferred endpoint (first candidate) — what diagnostics report.
     pub fn socket_path(&self) -> &str {
-        &self.path
+        &self.candidates[0]
+    }
+
+    /// Dials the candidates in order and returns the first LIVE bridge.
+    ///
+    /// Only a failed CONNECT advances to the next candidate — that is the
+    /// staleness test (a published endpoint left behind by a crashed editor
+    /// simply refuses). If a candidate connects but its greeting is missing or
+    /// wrong, that error surfaces immediately: something is listening there
+    /// speaking the wrong protocol, and quietly dialing on would mask it.
+    #[cfg(any(unix, windows))]
+    fn establish(&self) -> Result<Conn, TransportError> {
+        for path in &self.candidates {
+            match Conn::connect(path, self.base_timeout) {
+                Ok(mut conn) => {
+                    conn.handshake(self.base_timeout)?;
+                    return Ok(conn);
+                }
+                Err(e) if e.fatal => return Err(e.err),
+                Err(_) => continue,
+            }
+        }
+        Err(TransportError(NOT_RUNNING.to_string()))
     }
 
     /// One blocking request/response round-trip; lazily connects (greeting
@@ -169,7 +223,7 @@ impl SocketEditor {
         };
         let mut guard = self.conn.borrow_mut();
         if guard.is_none() {
-            *guard = Some(Conn::establish(&self.path, self.base_timeout)?);
+            *guard = Some(self.establish()?);
         }
         let conn = guard.as_mut().expect("connection just established");
         match conn.round_trip(verb, args, timeout) {
@@ -189,7 +243,7 @@ impl SocketEditor {
             "the Notepatra MCP bridge socket is not supported on this platform; \
              run notepatra-mcp without --socket to use the built-in mock editor \
              (expected endpoint: {})",
-            self.path
+            self.socket_path()
         )))
     }
 }
@@ -201,6 +255,34 @@ impl Default for SocketEditor {
 }
 
 // ── Shared wire helpers (both transports) ──────────────────────────────────
+
+/// A connect-phase failure. `fatal` distinguishes "nothing is listening here"
+/// (keep trying the next candidate) from a genuine local failure such as an
+/// un-clonable handle, which no other candidate can fix and which must not be
+/// laundered into the generic NOT_RUNNING message.
+#[cfg(any(unix, windows))]
+struct ConnectError {
+    err: TransportError,
+    fatal: bool,
+}
+
+#[cfg(any(unix, windows))]
+impl ConnectError {
+    /// The endpoint is unreachable — try the next candidate.
+    fn unreachable() -> Self {
+        Self {
+            err: TransportError(NOT_RUNNING.to_string()),
+            fatal: false,
+        }
+    }
+
+    fn fatal(msg: String) -> Self {
+        Self {
+            err: TransportError(msg),
+            fatal: true,
+        }
+    }
+}
 
 /// Validates the editor's proof-of-life greeting line (JSON with
 /// `notepatra_mcp:1`). Shared by both transports so the greeting law is
@@ -264,20 +346,29 @@ struct Conn {
 
 #[cfg(unix)]
 impl Conn {
-    fn establish(path: &str, timeout: Duration) -> Result<Self, TransportError> {
+    /// Connect phase ONLY — no bytes are read. Failing here means this
+    /// candidate is dead, so the caller may move on to the next one.
+    fn connect(path: &str, timeout: Duration) -> Result<Self, ConnectError> {
         use std::os::unix::net::UnixStream;
 
-        let stream =
-            UnixStream::connect(path).map_err(|_| TransportError(NOT_RUNNING.to_string()))?;
+        let stream = UnixStream::connect(path).map_err(|_| ConnectError::unreachable())?;
         stream
             .set_read_timeout(Some(timeout))
-            .map_err(|e| TransportError(format!("cannot set socket timeout: {e}")))?;
-        let mut reader = std::io::BufReader::new(stream);
-        // Proof-of-life: the editor speaks first. Nothing is sent until the
-        // greeting has been read and validated.
-        let greeting = read_line_from(&mut reader, "the editor's greeting")?;
-        validate_greeting(&greeting)?;
-        Ok(Self { reader, next_id: 1 })
+            .map_err(|e| ConnectError::fatal(format!("cannot set socket timeout: {e}")))?;
+        Ok(Self {
+            reader: std::io::BufReader::new(stream),
+            next_id: 1,
+        })
+    }
+
+    /// Proof-of-life: the editor speaks first. Nothing is sent until the
+    /// greeting has been read and validated. Kept separate from
+    /// [`Conn::connect`] so a live peer that greets wrongly is reported rather
+    /// than skipped over.
+    fn handshake(&mut self, _timeout: Duration) -> Result<(), TransportError> {
+        // The read timeout was already armed by `connect`.
+        let greeting = read_line_from(&mut self.reader, "the editor's greeting")?;
+        validate_greeting(&greeting)
     }
 
     fn round_trip(
@@ -335,12 +426,58 @@ fn read_line_from(
 // ── Windows named-pipe transport (v0.1.119) ────────────────────────────────
 //
 // `std::fs::File` over a named pipe is a byte stream with no per-read timeout,
-// so a dedicated reader thread pumps lines into a channel and the caller uses
-// `recv_timeout` to honor the same 5s/15s/130s windows the Unix path gets from
-// `set_read_timeout`. std-only; no winapi. UNVERIFIED at runtime (built and
-// checked on Linux via `--target x86_64-pc-windows-gnu`).
+// so reads are delegated to a worker thread and the caller uses `recv_timeout`
+// to honor the same 5s/15s/130s windows the Unix path gets from
+// `set_read_timeout`. std-only; no winapi.
+//
+// WHY THE WORKER IS COMMAND-GATED (v0.1.120 — fixes a shipped deadlock):
+// The pipe is opened WITHOUT `FILE_FLAG_OVERLAPPED`, and `try_clone` duplicates
+// the handle but NOT the underlying kernel file object. A synchronous file
+// object serializes every I/O request against it, so a thread parked in
+// `ReadFile` holds that lock and the next `WriteFile` — even from another
+// thread, even in the opposite direction — waits behind it. (This is precisely
+// why MSDN requires overlapped I/O to read and write a pipe simultaneously.)
+// The original design kept the reader thread ALWAYS parked in `read_line`, so
+// the first request write after the greeting blocked forever: never sent, never
+// answered, and not covered by any timeout because the block was on the
+// un-timeboxed write. It also meant `drop` could not close the client's handles
+// (the parked read still owned the cloned one), so the peer never saw EOF.
+//
+// The worker below idles blocked on a COMMAND channel, never in `ReadFile`. It
+// performs exactly one `read_line` per command and returns to channel-idle.
+// The half-duplex protocol is therefore enforced structurally: a write is only
+// ever issued while the file object has no pending read, and `drop` on an idle
+// worker closes the command channel, the worker exits at once, and every client
+// handle is released so the peer sees EOF promptly.
+//
+// Residual, bounded: a read ABANDONED by timeout leaves the worker in
+// `ReadFile` on that connection's file object. `Conn::dead` then refuses any
+// further write on this connection, and `SocketEditor::call` already drops the
+// `Conn` and reconnects with a FRESH file object on any error — so a stale
+// worker can never block a future write. It exits when the editor finally
+// answers or closes. Runtime behavior on Windows is reasoned from the
+// documented synchronous-file-object semantics, not observed on this host.
+//
+// WHY WRITES GET A WORKER TOO (v0.1.120 — closes the last unbounded wait):
+// `Conn::dead` bounds only the STALE-WORKER case. It does not bound a FULL PIPE
+// BUFFER. The pipe is byte-mode, so unblocking a writer requires the peer to
+// drain; if the editor is alive but its Qt event loop is not reading — exactly
+// the approval-card / modal-dialog state this transport exists to serve — a
+// request larger than QLocalServer's buffer parks `WriteFile` forever. That is
+// not hypothetical: `text`, `source`, `sql` and Vega `spec` payloads
+// (insert_text, apply_edit, set_diagram_source, run_sql, render_chart,
+// export_chart, format_text) routinely exceed 64 KB. The greeting
+// proof-of-life law does not help, because the stall begins AFTER the greeting.
+//
+// std exposes no write timeout for a `File`, so the write is delegated to its
+// own command-gated worker and the caller bounds it with `recv_timeout` — the
+// mirror image of the read path, reusing the SAME per-verb timeout (so a write
+// waiting behind an approval card gets the long window, not the short one).
+// The residual matches the read side exactly: an abandoned write leaves that
+// worker in `WriteFile`, the connection is marked `dead`, and the caller
+// reconnects on a fresh file object.
 
-/// One item from the pipe reader thread.
+/// One item from the pipe read worker.
 #[cfg(windows)]
 enum LineMsg {
     /// A complete newline-delimited line.
@@ -353,17 +490,33 @@ enum LineMsg {
 
 #[cfg(windows)]
 struct Conn {
-    /// Write half of the pipe (the reader thread owns a cloned read half).
-    writer: std::fs::File,
-    rx: std::sync::mpsc::Receiver<LineMsg>,
-    /// Detached on drop; the thread exits when the pipe closes.
+    /// One send == "write these bytes and flush". The write worker owns the
+    /// write half of the pipe; dropping this releases an idle worker (and with
+    /// it that handle).
+    write_tx: std::sync::mpsc::Sender<Vec<u8>>,
+    /// One result per `write_tx` send.
+    write_rx: std::sync::mpsc::Receiver<Result<(), String>>,
+    /// Detached; exits as soon as `write_tx` drops while it is idle.
+    _writer: std::thread::JoinHandle<()>,
+    /// One send == "perform exactly one `read_line`". Dropping it is what
+    /// releases an idle worker (and with it the cloned read handle).
+    cmd_tx: std::sync::mpsc::Sender<()>,
+    line_rx: std::sync::mpsc::Receiver<LineMsg>,
+    /// Detached; exits as soon as `cmd_tx` drops while it is idle.
     _reader: std::thread::JoinHandle<()>,
+    /// Set once a read or write has failed or been abandoned: a worker may
+    /// still be parked in `ReadFile`/`WriteFile` on this file object, so no
+    /// further I/O may be issued here. The caller reconnects instead.
+    dead: bool,
     next_id: u64,
 }
 
 #[cfg(windows)]
 impl Conn {
-    fn establish(path: &str, timeout: Duration) -> Result<Self, TransportError> {
+    /// Connect phase ONLY (open the pipe + start the read worker); no protocol
+    /// bytes are consumed — and no read is even ISSUED — so a failure here just
+    /// means this candidate is dead and the caller may try the next one.
+    fn connect(path: &str, _timeout: Duration) -> Result<Self, ConnectError> {
         use std::fs::OpenOptions;
         use std::io::{BufRead, BufReader};
         use std::sync::mpsc;
@@ -375,62 +528,141 @@ impl Conn {
             .read(true)
             .write(true)
             .open(path)
-            .map_err(|_| TransportError(NOT_RUNNING.to_string()))?;
+            .map_err(|_| ConnectError::unreachable())?;
         let read_half = file
             .try_clone()
-            .map_err(|e| TransportError(format!("cannot clone pipe handle: {e}")))?;
+            .map_err(|e| ConnectError::fatal(format!("cannot clone pipe handle: {e}")))?;
 
-        let (tx, rx) = mpsc::channel::<LineMsg>();
-        let reader = std::thread::spawn(move || {
-            let mut buf = BufReader::new(read_half);
-            loop {
-                let mut line = String::new();
-                match buf.read_line(&mut line) {
-                    Ok(0) => {
-                        let _ = tx.send(LineMsg::Eof);
-                        break;
-                    }
-                    Ok(_) => {
-                        // Receiver gone (Conn dropped) — stop pumping.
-                        if tx.send(LineMsg::Line(line)).is_err() {
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        let _ = tx.send(LineMsg::Err(e.to_string()));
-                        break;
-                    }
+        // Write worker: idles on the channel, never inside `WriteFile`, so a
+        // stalled peer parks IT rather than the caller. Owns the write half —
+        // dropping `write_tx` closes that handle once the worker is idle.
+        let (write_tx, write_cmd_rx) = mpsc::channel::<Vec<u8>>();
+        let (write_res_tx, write_rx) = mpsc::channel::<Result<(), String>>();
+        let writer = std::thread::spawn(move || {
+            use std::io::Write;
+            let mut file = file;
+            while let Ok(bytes) = write_cmd_rx.recv() {
+                let res = file
+                    .write_all(&bytes)
+                    .and_then(|()| file.flush())
+                    .map_err(|e| e.to_string());
+                // A failed write is terminal for this connection, and a send
+                // failure means the Conn is gone: either way, stop.
+                let terminal = res.is_err();
+                if write_res_tx.send(res).is_err() || terminal {
+                    break;
                 }
             }
         });
 
-        let conn = Self {
-            writer: file,
-            rx,
+        let (cmd_tx, cmd_rx) = mpsc::channel::<()>();
+        let (line_tx, line_rx) = mpsc::channel::<LineMsg>();
+        let reader = std::thread::spawn(move || {
+            // The BufReader lives across commands so bytes read ahead of a
+            // newline are not lost between round-trips.
+            let mut buf = BufReader::new(read_half);
+            // Idle HERE — on the channel, never inside ReadFile.
+            while cmd_rx.recv().is_ok() {
+                let mut line = String::new();
+                let msg = match buf.read_line(&mut line) {
+                    Ok(0) => LineMsg::Eof,
+                    Ok(_) => LineMsg::Line(line),
+                    Err(e) => LineMsg::Err(e.to_string()),
+                };
+                // Anything but a line is terminal for this connection, and a
+                // send failure means the Conn is gone: either way, stop.
+                let terminal = !matches!(msg, LineMsg::Line(_));
+                if line_tx.send(msg).is_err() || terminal {
+                    break;
+                }
+            }
+            // Falling out of the loop drops `buf`, closing the cloned read
+            // handle — the other half of "the peer sees EOF promptly".
+        });
+
+        Ok(Self {
+            write_tx,
+            write_rx,
+            _writer: writer,
+            cmd_tx,
+            line_rx,
             _reader: reader,
+            dead: false,
             next_id: 1,
-        };
-        // Proof-of-life: read + validate the greeting BEFORE sending anything.
-        let greeting = conn.recv_line(timeout, "the editor's greeting")?;
-        validate_greeting(&greeting)?;
-        Ok(conn)
+        })
     }
 
-    /// Blocks up to `timeout` for the next line from the reader thread.
-    fn recv_line(&self, timeout: Duration, what: &str) -> Result<String, TransportError> {
+    /// Proof-of-life: read + validate the greeting BEFORE sending anything.
+    /// Separate from [`Conn::connect`] so a live peer that greets wrongly is
+    /// reported rather than skipped over.
+    fn handshake(&mut self, timeout: Duration) -> Result<(), TransportError> {
+        let greeting = self.recv_line(timeout, "the editor's greeting")?;
+        validate_greeting(&greeting)
+    }
+
+    /// Commands exactly one read and blocks up to `timeout` for its result.
+    /// Any non-success marks the connection dead (see [`Conn::dead`]).
+    fn recv_line(&mut self, timeout: Duration, what: &str) -> Result<String, TransportError> {
         use std::sync::mpsc::RecvTimeoutError;
-        match self.rx.recv_timeout(timeout) {
-            Ok(LineMsg::Line(l)) => Ok(l),
-            Ok(LineMsg::Eof) | Err(RecvTimeoutError::Disconnected) => Err(TransportError(format!(
+
+        let closed = |what: &str| {
+            TransportError(format!(
                 "the editor closed the connection while waiting for {what}"
-            ))),
-            Ok(LineMsg::Err(e)) => Err(TransportError(format!(
-                "editor connection failed while waiting for {what}: {e}"
-            ))),
-            Err(RecvTimeoutError::Timeout) => Err(TransportError(format!(
-                "timed out waiting for {what} from the editor"
-            ))),
+            ))
+        };
+        if self.cmd_tx.send(()).is_err() {
+            // The worker already exited (terminal read result).
+            self.dead = true;
+            return Err(closed(what));
         }
+        let out = match self.line_rx.recv_timeout(timeout) {
+            Ok(LineMsg::Line(l)) => return Ok(l),
+            Ok(LineMsg::Eof) | Err(RecvTimeoutError::Disconnected) => closed(what),
+            Ok(LineMsg::Err(e)) => TransportError(format!(
+                "editor connection failed while waiting for {what}: {e}"
+            )),
+            Err(RecvTimeoutError::Timeout) => {
+                TransportError(format!("timed out waiting for {what} from the editor"))
+            }
+        };
+        self.dead = true;
+        Err(out)
+    }
+
+    /// Hands `bytes` to the write worker and blocks up to `timeout` for the
+    /// result. Any non-success marks the connection dead (see [`Conn::dead`]).
+    ///
+    /// The deadline is the caller's per-verb window, so a large write parked
+    /// behind an approval card gets the same long budget as the response it is
+    /// waiting on — a write is never the reason an approved edit fails.
+    fn send_line(
+        &mut self,
+        bytes: Vec<u8>,
+        timeout: Duration,
+        verb: &str,
+    ) -> Result<(), TransportError> {
+        use std::sync::mpsc::RecvTimeoutError;
+
+        let lost = |detail: &str| {
+            TransportError(format!("editor connection lost while sending: {detail}"))
+        };
+        if self.write_tx.send(bytes).is_err() {
+            // The worker already exited (a previous write failed).
+            self.dead = true;
+            return Err(lost("the write worker is gone"));
+        }
+        let out = match self.write_rx.recv_timeout(timeout) {
+            Ok(Ok(())) => return Ok(()),
+            Ok(Err(e)) => lost(&e),
+            Err(RecvTimeoutError::Disconnected) => lost("the write worker is gone"),
+            Err(RecvTimeoutError::Timeout) => TransportError(format!(
+                "timed out sending the {verb} request to the editor: it is not \
+                 reading its side of the pipe (its window may be blocked by a \
+                 dialog)"
+            )),
+        };
+        self.dead = true;
+        Err(out)
     }
 
     fn round_trip(
@@ -439,15 +671,18 @@ impl Conn {
         args: Value,
         timeout: Duration,
     ) -> Result<Value, TransportError> {
-        use std::io::Write;
-
+        // Belt-and-braces on the invariant `call` already upholds: never write
+        // to a connection whose worker may still be parked in ReadFile.
+        if self.dead {
+            return Err(TransportError(
+                "editor connection lost while sending: the previous request did not complete"
+                    .into(),
+            ));
+        }
         let id = self.next_id;
         self.next_id += 1;
         let line = build_request(id, verb, &args)?;
-        self.writer
-            .write_all(line.as_bytes())
-            .and_then(|()| self.writer.flush())
-            .map_err(|e| TransportError(format!("editor connection lost while sending: {e}")))?;
+        self.send_line(line.into_bytes(), timeout, verb)?;
         let resp = self.recv_line(timeout, &format!("the {verb} response"))?;
         parse_response(&resp, id, verb)
     }
@@ -781,6 +1016,16 @@ impl EditorTransport for SocketEditor {
         self.call("run_sql", args)
     }
 
+    // Phase 0A read verbs.
+
+    fn list_languages(&self) -> Result<Value, TransportError> {
+        self.call("list_languages", json!({}))
+    }
+
+    fn get_capabilities(&self) -> Result<Value, TransportError> {
+        self.call("get_capabilities", json!({}))
+    }
+
     // v0.1.119 act verb.
 
     fn open_note(&mut self, file: &str) -> Result<Value, TransportError> {
@@ -811,6 +1056,113 @@ impl EditorTransport for SocketEditor {
             "export_diagram",
             json!({ "tab_index": tab_index, "path": path, "format": format }),
         )
+    }
+
+    // Phase 1 verbs — verbatim JSON passthrough.
+
+    fn create_diagram(
+        &mut self,
+        source: Option<&str>,
+        title: Option<&str>,
+    ) -> Result<Value, TransportError> {
+        // Optional keys are sent only when present so the wire stays minimal.
+        let mut args = json!({});
+        if let Some(s) = source {
+            args["source"] = json!(s);
+        }
+        if let Some(t) = title {
+            args["title"] = json!(t);
+        }
+        self.call("create_diagram", args)
+    }
+
+    fn get_diagram_source(&self, tab_index: usize) -> Result<Value, TransportError> {
+        self.call("get_diagram_source", json!({ "tab_index": tab_index }))
+    }
+
+    fn set_diagram_source(
+        &mut self,
+        tab_index: usize,
+        source: &str,
+    ) -> Result<Value, TransportError> {
+        self.call(
+            "set_diagram_source",
+            json!({ "tab_index": tab_index, "source": source }),
+        )
+    }
+
+    fn open_noter(&mut self) -> Result<Value, TransportError> {
+        self.call("open_noter", json!({}))
+    }
+
+    // Phase 2 — data-analyst + charts. Optional keys are sent only when
+    // present so the wire stays minimal (mirrors create_diagram).
+
+    fn list_connections(&self) -> Result<Value, TransportError> {
+        self.call("list_connections", json!({}))
+    }
+
+    fn run_query(
+        &self,
+        connection_name: &str,
+        sql: &str,
+        max_rows: Option<usize>,
+    ) -> Result<Value, TransportError> {
+        let mut args = json!({ "connection_name": connection_name, "sql": sql });
+        if let Some(n) = max_rows {
+            args["max_rows"] = json!(n);
+        }
+        self.call("run_query", args)
+    }
+
+    fn list_tables(&self, connection_name: &str) -> Result<Value, TransportError> {
+        self.call("list_tables", json!({ "connection_name": connection_name }))
+    }
+
+    fn open_data_analyst(&mut self) -> Result<Value, TransportError> {
+        self.call("open_data_analyst", json!({}))
+    }
+
+    fn render_chart(&mut self, spec: &Value, title: Option<&str>) -> Result<Value, TransportError> {
+        let mut args = json!({ "spec": spec.clone() });
+        if let Some(t) = title {
+            args["title"] = json!(t);
+        }
+        self.call("render_chart", args)
+    }
+
+    fn export_query_results(
+        &mut self,
+        connection_name: &str,
+        sql: &str,
+        path: &str,
+        format: &str,
+        max_rows: Option<usize>,
+    ) -> Result<Value, TransportError> {
+        let mut args = json!({
+            "connection_name": connection_name,
+            "sql": sql,
+            "path": path,
+            "format": format,
+        });
+        if let Some(n) = max_rows {
+            args["max_rows"] = json!(n);
+        }
+        self.call("export_query_results", args)
+    }
+
+    fn export_chart(
+        &mut self,
+        spec: &Value,
+        path: &str,
+        format: &str,
+        scale: Option<usize>,
+    ) -> Result<Value, TransportError> {
+        let mut args = json!({ "spec": spec.clone(), "path": path, "format": format });
+        if let Some(s) = scale {
+            args["scale"] = json!(s);
+        }
+        self.call("export_chart", args)
     }
 }
 

@@ -70,6 +70,7 @@ struct MockTab {
     modified: bool,
     language: String,
     truncated: bool,
+    is_diagram: bool,
 }
 
 struct MockNote {
@@ -86,6 +87,12 @@ struct MockReminder {
     bucket: &'static str,
 }
 
+struct MockConnection {
+    name: &'static str,
+    driver: &'static str,
+    database: &'static str,
+}
+
 /// In-memory fake editor used by default and in tests.
 pub struct MockEditor {
     tabs: Vec<MockTab>,
@@ -93,7 +100,25 @@ pub struct MockEditor {
     selection: (usize, String),
     notes: Vec<MockNote>,
     reminders: Vec<MockReminder>,
+    connections: Vec<MockConnection>,
     approval: ApprovalMode,
+}
+
+/// Believable stand-in for the editor's npd parser: a line beginning with
+/// "!!" is treated as a malformed directive. Shared by validate_npd,
+/// create_diagram and set_diagram_source so their `errors` shapes match.
+fn mock_npd_errors(text: &str) -> Vec<Value> {
+    let mut errors = Vec::new();
+    for (n, line) in text.lines().enumerate() {
+        if line.trim_start().starts_with("!!") {
+            // Bridge error shape: {line, message} (no column).
+            errors.push(json!({
+                "line": n + 1,
+                "message": "unknown directive",
+            }));
+        }
+    }
+    errors
 }
 
 fn language_for(path: &str) -> String {
@@ -117,6 +142,7 @@ impl Default for MockEditor {
                     modified: false,
                     language: "Rust".into(),
                     truncated: false,
+                    is_diagram: false,
                 },
                 MockTab {
                     title: "NOTES.md".into(),
@@ -126,6 +152,7 @@ impl Default for MockEditor {
                     modified: true,
                     language: "Markdown".into(),
                     truncated: false,
+                    is_diagram: false,
                 },
                 MockTab {
                     title: "Untitled 1".into(),
@@ -134,6 +161,7 @@ impl Default for MockEditor {
                     modified: false,
                     language: "Plain Text".into(),
                     truncated: false,
+                    is_diagram: false,
                 },
             ],
             selection: (0, "println!(\"hello from notepatra\");".into()),
@@ -193,6 +221,13 @@ impl Default for MockEditor {
                     bucket: "Later",
                 },
             ],
+            // One saved connection so the phase-2 data verbs demo believably
+            // offline (in-memory SQLite; no real database needed).
+            connections: vec![MockConnection {
+                name: "demo",
+                driver: "QSQLITE",
+                database: ":memory:",
+            }],
             approval: ApprovalMode::Approve,
         }
     }
@@ -288,6 +323,7 @@ impl EditorTransport for MockEditor {
             modified: false,
             language: language_for(path),
             truncated: false,
+            is_diagram: false,
         });
         Ok(self.tabs.len() - 1)
     }
@@ -426,6 +462,7 @@ impl EditorTransport for MockEditor {
             modified: text.is_some_and(|t| !t.is_empty()),
             language: "Plain Text".into(),
             truncated: false,
+            is_diagram: false,
         });
         Ok(json!({ "tab_index": self.tabs.len() - 1 }))
     }
@@ -694,18 +731,7 @@ impl EditorTransport for MockEditor {
                 ))
             }
         };
-        // Believable stand-in for the editor's npd parser: a line beginning
-        // with "!!" is treated as a malformed directive (one error case).
-        let mut errors = Vec::new();
-        for (n, line) in text.lines().enumerate() {
-            if line.trim_start().starts_with("!!") {
-                // Bridge error shape: {line, message} (no column).
-                errors.push(json!({
-                    "line": n + 1,
-                    "message": "unknown directive",
-                }));
-            }
-        }
+        let errors = mock_npd_errors(&text);
         Ok(json!({ "valid": errors.is_empty(), "errors": errors }))
     }
 
@@ -730,6 +756,27 @@ impl EditorTransport for MockEditor {
         }))
     }
 
+    // ── Phase 0A read verbs ────────────────────────────────────────────
+
+    fn list_languages(&self) -> Result<Value, TransportError> {
+        // Canonical-token subset mirroring the editor's Language menu.
+        Ok(json!({ "languages": [
+            "Plain Text", "Bash", "C", "C#", "C++", "CSS", "HTML", "Java",
+            "JavaScript", "JSON", "Lua", "Markdown", "Perl", "Python",
+            "Ruby", "Rust", "SQL", "XML", "YAML",
+        ]}))
+    }
+
+    fn get_capabilities(&self) -> Result<Value, TransportError> {
+        // Bridge shape only — the tool layer adds tool_count and tiers.
+        Ok(json!({
+            "edition": "Lite",
+            "platform": std::env::consts::OS,
+            "version": "0.1.119",
+            "features": { "duckdb": false, "webengine": false, "noter": true },
+        }))
+    }
+
     // ── v0.1.119 act verb ──────────────────────────────────────────────
 
     fn open_note(&mut self, file: &str) -> Result<Value, TransportError> {
@@ -750,6 +797,7 @@ impl EditorTransport for MockEditor {
             modified: false,
             language: "HTML".into(),
             truncated: false,
+            is_diagram: false,
         });
         // Bridge result shape: {opened, title}.
         Ok(json!({ "opened": true, "title": title }))
@@ -825,6 +873,169 @@ impl EditorTransport for MockEditor {
             )));
         }
         // Bridge result shape: {path}.
+        Ok(json!({ "path": path }))
+    }
+
+    // ── Phase 1 verbs ──────────────────────────────────────────────────
+
+    fn create_diagram(
+        &mut self,
+        source: Option<&str>,
+        title: Option<&str>,
+    ) -> Result<Value, TransportError> {
+        let src = source.unwrap_or("").to_string();
+        let errors = mock_npd_errors(&src);
+        self.tabs.push(MockTab {
+            title: title.unwrap_or("Diagram").to_string(),
+            path: None,
+            content: src,
+            modified: false,
+            language: "Plain Text".into(),
+            truncated: false,
+            is_diagram: true,
+        });
+        Ok(json!({
+            "tab_index": self.tabs.len() - 1,
+            "valid": errors.is_empty(),
+            "errors": errors,
+        }))
+    }
+
+    fn get_diagram_source(&self, tab_index: usize) -> Result<Value, TransportError> {
+        let i = self.check_index(tab_index)?;
+        if !self.tabs[i].is_diagram {
+            return Err(TransportError(format!(
+                "tab {i} is not a diagram (.npd) tab"
+            )));
+        }
+        Ok(json!({ "source": self.tabs[i].content }))
+    }
+
+    fn set_diagram_source(
+        &mut self,
+        tab_index: usize,
+        source: &str,
+    ) -> Result<Value, TransportError> {
+        self.check_approval()?;
+        let i = self.check_index(tab_index)?;
+        if !self.tabs[i].is_diagram {
+            return Err(TransportError(format!(
+                "tab {i} is not a diagram (.npd) tab"
+            )));
+        }
+        self.tabs[i].content = source.to_string();
+        self.tabs[i].modified = true;
+        let errors = mock_npd_errors(source);
+        Ok(json!({
+            "ok": true,
+            "tab_index": i,
+            "valid": errors.is_empty(),
+            "errors": errors,
+        }))
+    }
+
+    fn open_noter(&mut self) -> Result<Value, TransportError> {
+        // Bridge result shape: {opened}.
+        Ok(json!({ "opened": true }))
+    }
+
+    // ── Phase 2 — data-analyst + charts ────────────────────────────────
+
+    fn list_connections(&self) -> Result<Value, TransportError> {
+        let connections: Vec<Value> = self
+            .connections
+            .iter()
+            .map(|c| {
+                json!({
+                    "name": c.name,
+                    "driver": c.driver,
+                    "database": c.database,
+                    "read_only": true,
+                })
+            })
+            .collect();
+        Ok(json!({ "connections": connections }))
+    }
+
+    fn run_query(
+        &self,
+        connection_name: &str,
+        sql: &str,
+        _max_rows: Option<usize>,
+    ) -> Result<Value, TransportError> {
+        if !self.connections.iter().any(|c| c.name == connection_name) {
+            return Err(TransportError(format!(
+                "no connection named: {connection_name}"
+            )));
+        }
+        // Same SELECT-only contract as run_sql's mock (observable rejection).
+        let head = sql
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_ascii_uppercase();
+        if head != "SELECT" && head != "WITH" {
+            return Err(TransportError(
+                "only read-only SELECT statements are allowed".into(),
+            ));
+        }
+        Ok(json!({
+            "columns": [ "id", "name" ],
+            "rows": [ ["1", "alpha"], ["2", "bravo"] ],
+            "truncated": false,
+            "engine": "sqlite",
+        }))
+    }
+
+    fn list_tables(&self, connection_name: &str) -> Result<Value, TransportError> {
+        if !self.connections.iter().any(|c| c.name == connection_name) {
+            return Err(TransportError(format!(
+                "no connection named: {connection_name}"
+            )));
+        }
+        Ok(json!({ "tables": ["invoices", "customers"] }))
+    }
+
+    fn open_data_analyst(&mut self) -> Result<Value, TransportError> {
+        Ok(json!({ "opened": true }))
+    }
+
+    fn render_chart(
+        &mut self,
+        _spec: &Value,
+        _title: Option<&str>,
+    ) -> Result<Value, TransportError> {
+        // The mock pretends the charts pack is present even though its
+        // capability flag reports webengine:false — capabilities describe the
+        // editor, while the mock is a demo surface that answers every verb.
+        Ok(json!({ "chart_id": "mock-chart-1", "rendered": true }))
+    }
+
+    fn export_query_results(
+        &mut self,
+        connection_name: &str,
+        _sql: &str,
+        path: &str,
+        _format: &str,
+        _max_rows: Option<usize>,
+    ) -> Result<Value, TransportError> {
+        self.check_approval()?;
+        if !self.connections.iter().any(|c| c.name == connection_name) {
+            return Err(TransportError(format!(
+                "no connection named: {connection_name}"
+            )));
+        }
+        Ok(json!({ "ok": true, "path": path, "rows": 2 }))
+    }
+
+    fn export_chart(
+        &mut self,
+        _spec: &Value,
+        path: &str,
+        _format: &str,
+        _scale: Option<usize>,
+    ) -> Result<Value, TransportError> {
+        self.check_approval()?;
         Ok(json!({ "path": path }))
     }
 }

@@ -46,6 +46,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QDesktopServices>
+#include <QEventLoop>
 #include <QSettings>
 #include <QTimer>
 #include <QUrl>
@@ -268,6 +269,10 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include "ai_tools.h"
 #include "dbconnections.h"
 #include "tool_colors.h"
+// v0.1.120 — MCP phase 2 chart verbs (both safe in Lite; the renderer paints
+// an "install charts pack" stub without WebEngine).
+#include "chart_spec_to_vega.h"
+#include "charts/vega_chart_renderer.h"
 #include <QRegularExpression>
 #include <QFileDialog>
 #include <QFileSystemModel>
@@ -276,6 +281,7 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include <QHeaderView>
 #include <QDateTime>
 #include <QFileInfo>
+#include <QHash>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QMenuBar>
@@ -329,6 +335,117 @@ static QString mcpInjectNoteBody(QString html, const QString &text) {
     if (at < 0) return html + block;
     html.insert(at, block);
     return html;
+}
+
+#ifdef NOTEPATRA_WITH_WEBENGINE
+// MCP render_chart/export_chart accept either a Vega-Lite v5 spec or the
+// simplified {type,x,y,data} form; translate the latter. Empty result + *err
+// on an unsupported/malformed simplified spec.
+static QJsonObject mcpChartToVegaLite(const QJsonObject &spec, QString *err) {
+    const bool isVegaLite = spec.contains(QLatin1String("mark")) ||
+                            spec.contains(QLatin1String("$schema")) ||
+                            spec.contains(QLatin1String("encoding"));
+    if (isVegaLite) return spec;
+    QString terr;
+    const QJsonObject vl = ChartSpecToVega::translate(
+        spec, ChartSpecToVega::Theme{false, QStringLiteral("Light")}, &terr);
+    if (vl.isEmpty() && err)
+        *err = terr.isEmpty() ? QStringLiteral("unsupported chart spec") : terr;
+    return vl;
+}
+#endif
+
+// SSOT for the Language surface: the menu, MCP set_language resolution, and
+// list_languages all read these lists — add a language in ONE place.
+static const QStringList &commonLanguageTokens() {
+    static const QStringList list = {
+        QStringLiteral("Bash"), QStringLiteral("C"), QStringLiteral("C#"),
+        QStringLiteral("C++"), QStringLiteral("CSS"), QStringLiteral("HTML"),
+        QStringLiteral("Java"), QStringLiteral("JavaScript"),
+        QStringLiteral("JSON"), QStringLiteral("Lua"),
+        QStringLiteral("Markdown"), QStringLiteral("Perl"),
+        QStringLiteral("Python"), QStringLiteral("Ruby"),
+        QStringLiteral("SQL"), QStringLiteral("XML"), QStringLiteral("YAML")};
+    return list;
+}
+
+static const QStringList &moreLanguageTokens() {
+    static const QStringList list = [] {
+        QStringList l = {
+            QStringLiteral("ASM"), QStringLiteral("Apex"), QStringLiteral("AVS"),
+            QStringLiteral("Batch"), QStringLiteral("BibTeX"),
+            QStringLiteral("CMake"), QStringLiteral("CoffeeScript"),
+            QStringLiteral("Crystal"), QStringLiteral("Cython"),
+            QStringLiteral("D"), QStringLiteral("Dart"), QStringLiteral("Diff"),
+            QStringLiteral("Dockerfile"), QStringLiteral("DotEnv"),
+            QStringLiteral("Elixir"), QStringLiteral("F#"), QStringLiteral("Fish"),
+            QStringLiteral("Fortran"), QStringLiteral("Fortran77"),
+            QStringLiteral("GDScript"), QStringLiteral("Gitignore"),
+            QStringLiteral("Go"), QStringLiteral("GraphQL"), QStringLiteral("Groovy"),
+            QStringLiteral("Hack"), QStringLiteral("HCL"), QStringLiteral("IDL"),
+            QStringLiteral("IntelHex"), QStringLiteral("Jinja"),
+            QStringLiteral("JSON5"), QStringLiteral("Julia"),
+            QStringLiteral("Kotlin"), QStringLiteral("Liquid"),
+            QStringLiteral("Makefile"), QStringLiteral("MASM"),
+            QStringLiteral("Matlab"), QStringLiteral("Mojo"),
+            QStringLiteral("NASM"), QStringLiteral("Nim"), QStringLiteral("Nushell"),
+            QStringLiteral("Octave"), QStringLiteral("Pascal"), QStringLiteral("PO"),
+            QStringLiteral("PostScript"), QStringLiteral("POV"),
+            QStringLiteral("PowerShell"), QStringLiteral("Properties"),
+            QStringLiteral("Protobuf"), QStringLiteral("R"), QStringLiteral("Rust"),
+            QStringLiteral("Scala"), QStringLiteral("Solidity"),
+            QStringLiteral("Spice"), QStringLiteral("SRecord"),
+            QStringLiteral("Swift"), QStringLiteral("TCL"), QStringLiteral("TeX"),
+            QStringLiteral("Thrift"), QStringLiteral("TOML"), QStringLiteral("Twig"),
+            QStringLiteral("TypeScript"), QStringLiteral("Vala"),
+            QStringLiteral("Verilog"), QStringLiteral("VHDL"), QStringLiteral("Zig")};
+        l.sort(Qt::CaseInsensitive);
+        return l;
+    }();
+    return list;
+}
+
+static const QStringList &allKnownLanguageTokens() {
+    static const QStringList list = QStringList()
+        << QStringLiteral("Plain Text") << commonLanguageTokens()
+        << moreLanguageTokens();
+    return list;
+}
+
+// Canonicalizes an agent-supplied language token; "" when unknown.
+static QString resolveLanguageToken(const QString &input) {
+    const QString token = input.trimmed();
+    if (token.isEmpty()) return QString();
+    // (a) exact factory success — accepts every token the menu can set.
+    if (QsciLexer *probe = createLexerForLanguage(token, nullptr)) {
+        delete probe;
+        return token;
+    }
+    // (b) case-insensitive match against the canonical set.
+    for (const QString &l : allKnownLanguageTokens())
+        if (l.compare(token, Qt::CaseInsensitive) == 0) return l;
+    // (c) common agent aliases.
+    static const QHash<QString, QString> aliases = {
+        {QStringLiteral("python"), QStringLiteral("Python")},
+        {QStringLiteral("py"), QStringLiteral("Python")},
+        {QStringLiteral("js"), QStringLiteral("JavaScript")},
+        {QStringLiteral("ts"), QStringLiteral("TypeScript")},
+        {QStringLiteral("cpp"), QStringLiteral("C++")},
+        {QStringLiteral("c++"), QStringLiteral("C++")},
+        {QStringLiteral("csharp"), QStringLiteral("C#")},
+        {QStringLiteral("c#"), QStringLiteral("C#")},
+        {QStringLiteral("sh"), QStringLiteral("Bash")},
+        {QStringLiteral("shell"), QStringLiteral("Bash")},
+        {QStringLiteral("bash"), QStringLiteral("Bash")},
+        {QStringLiteral("yml"), QStringLiteral("YAML")},
+        {QStringLiteral("yaml"), QStringLiteral("YAML")},
+        {QStringLiteral("md"), QStringLiteral("Markdown")},
+        {QStringLiteral("golang"), QStringLiteral("Go")},
+        {QStringLiteral("go"), QStringLiteral("Go")},
+        {QStringLiteral("rs"), QStringLiteral("Rust")},
+        {QStringLiteral("rb"), QStringLiteral("Ruby")},
+        {QStringLiteral("kt"), QStringLiteral("Kotlin")}};
+    return aliases.value(token.toLower());
 }
 
 static void drawAiFeatureGlyph(QPainter &painter, const QRectF &rect) {
@@ -1640,9 +1757,18 @@ MainWindow::MainWindow(bool standaloneNoSession)
             auto *ed = currentEditor();
             return ed ? ed->selectedText() : QString();
         };
-        host.workspaceRoot = [this] {
-            return m_explorer ? m_explorer->rootPath() : QString();
+        // Explorer root, else the current file's directory (git resolves the
+        // enclosing repo from there); "" only when neither exists.
+        auto effectiveWorkspaceRoot = [this]() -> QString {
+            QString root = m_explorer ? m_explorer->rootPath() : QString();
+            if (root.isEmpty()) {
+                if (auto *ed = currentEditor())
+                    if (!ed->filePath().isEmpty())
+                        root = QFileInfo(ed->filePath()).absolutePath();
+            }
+            return root;
         };
+        host.workspaceRoot = effectiveWorkspaceRoot;
         // ── v0.1.118 expansive wave — every lambda routes through the SAME
         //    code path the equivalent menu/status-bar surface uses. ──
         host.currentTabIndex = [this] { return m_tabs->currentIndex(); };
@@ -1740,6 +1866,11 @@ MainWindow::MainWindow(bool standaloneNoSession)
             return out;
         };
         host.notesRoot = [] { return NotesPanel::defaultNotesFolder(); };
+        // ── Phase 0A — language SSOT surface for the MCP bridge. ──
+        host.knownLanguages = [] { return allKnownLanguageTokens(); };
+        host.resolveLanguage = [](const QString &in) {
+            return resolveLanguageToken(in);
+        };
         // ── v0.1.118 WRITE tier — each lambda reuses the SAME Editor/save
         //    path the equivalent menu action uses, wrapped in one undo step.
         //    The bridge calls them only after the human clicks Approve. ──
@@ -1839,17 +1970,22 @@ MainWindow::MainWindow(bool standaloneNoSession)
             return arr;
         };
         // READ: read-only git — reuses git_tools.cpp (no new QProcess path).
-        host.runGit = [this](const QString &sub, const QJsonObject &args,
-                             QString *err) -> QString {
-            // Same anchor the AI Composer git tools use: Explorer root, else
-            // the current file's directory.
-            QString root = m_explorer ? m_explorer->rootPath() : QString();
-            if (root.isEmpty()) {
-                if (auto *ed = currentEditor())
-                    if (!ed->filePath().isEmpty())
-                        root = QFileInfo(ed->filePath()).absolutePath();
-            }
-            if (root.isEmpty()) {
+        host.runGit = [this, effectiveWorkspaceRoot](
+                          const QString &sub, const QJsonObject &args,
+                          QString *err) -> QString {
+            // Candidate roots: the workspace (Explorer) folder first, then the
+            // current file's directory — so git "just works" on an open repo
+            // file even when the workspace folder isn't itself a repository.
+            QStringList roots;
+            const QString wsRoot = effectiveWorkspaceRoot();
+            if (!wsRoot.isEmpty()) roots << wsRoot;
+            if (auto *ed = currentEditor())
+                if (!ed->filePath().isEmpty()) {
+                    const QString fdir =
+                        QFileInfo(ed->filePath()).absolutePath();
+                    if (!roots.contains(fdir)) roots << fdir;
+                }
+            if (roots.isEmpty()) {
                 if (err) *err = QStringLiteral("no workspace folder open");
                 return QString();
             }
@@ -1863,21 +1999,28 @@ MainWindow::MainWindow(bool standaloneNoSession)
             AiTools::ToolCall call;
             call.name = QStringLiteral("git_") + sub;
             call.args = a;
-            AiTools::ToolResult res;
-            if (sub == QLatin1String("status"))
-                res = GitTools::executeGitStatus(call, root);
-            else if (sub == QLatin1String("diff"))
-                res = GitTools::executeGitDiff(call, root);
-            else if (sub == QLatin1String("log"))
-                res = GitTools::executeGitLog(call, root);
-            else if (sub == QLatin1String("show"))
-                res = GitTools::executeGitShow(call, root);
-            else if (sub == QLatin1String("branch"))
-                res = GitTools::executeGitBranchList(call, root);
-            else {
-                if (err) *err = QStringLiteral("unknown git subcommand");
-                return QString();
-            }
+            auto runOnce = [&](const QString &root) -> AiTools::ToolResult {
+                if (sub == QLatin1String("status"))
+                    return GitTools::executeGitStatus(call, root);
+                if (sub == QLatin1String("diff"))
+                    return GitTools::executeGitDiff(call, root);
+                if (sub == QLatin1String("log"))
+                    return GitTools::executeGitLog(call, root);
+                if (sub == QLatin1String("show"))
+                    return GitTools::executeGitShow(call, root);
+                if (sub == QLatin1String("branch"))
+                    return GitTools::executeGitBranchList(call, root);
+                AiTools::ToolResult e;
+                e.isError = true;
+                e.content =
+                    QStringLiteral("{\"message\":\"unknown git subcommand\"}");
+                return e;
+            };
+            // Workspace root wins when it is a repo; otherwise fall through to
+            // the file's repo so an agent editing a repo file always gets git.
+            AiTools::ToolResult res = runOnce(roots.first());
+            for (int i = 1; i < roots.size() && res.isError; ++i)
+                res = runOnce(roots.at(i));
             if (res.isError) {
                 const QJsonObject body =
                     QJsonDocument::fromJson(res.content.toUtf8()).object();
@@ -1928,6 +2071,8 @@ MainWindow::MainWindow(bool standaloneNoSession)
                 // directory canonicalizing cleanly). When no folder root is open
                 // the root is empty and resolveSafePath rejects everything —
                 // matching the git verbs' behavior.
+                // Deliberately NOT the workspaceRoot fallback: csv sandbox root
+                // stays folder-open-only.
                 const QString wsRoot =
                     m_explorer ? m_explorer->rootPath() : QString();
                 QString csvCanon;
@@ -2097,6 +2242,228 @@ MainWindow::MainWindow(bool standaloneNoSession)
             }
             return true;
         };
+        // ACT: create a Diagram tab via the same helper the menu uses.
+        host.createDiagram = [this](const QString &source, const QString &title) {
+            return newDiagramTab(source, title);
+        };
+        // WRITE: replace a DiagramEditor's .npd source (canvas re-renders).
+        host.setDiagramSource = [this](int i, const QString &src) -> bool {
+            auto *de = qobject_cast<DiagramEditor *>(m_tabs->widget(i));
+            if (!de) return false;
+            de->setNpdText(src);
+            return true;
+        };
+        // ACT: reveal/focus the Noter tab — same path as the "+ Noter" UI.
+        host.openNoter = [this]() -> bool {
+            return ensureNoterTab() != nullptr;
+        };
+        // ── Phase 2: Data-analyst + Charts ──
+        // READ: sanitized saved-connection list — name/driver/database only,
+        // never credentials.
+        host.listConnections = [] {
+            QJsonArray out;
+            const QVector<DbConnections::Record> recs = DbConnections::loadAll();
+            for (const DbConnections::Record &r : recs) {
+                QJsonObject o;
+                o[QStringLiteral("name")] = r.name;
+                o[QStringLiteral("driver")] = r.driver;
+                o[QStringLiteral("database")] = r.database;
+                // The MCP surface is read-only by construction (allowMutation
+                // is false everywhere it can reach a named connection).
+                o[QStringLiteral("read_only")] = true;
+                out.append(o);
+            }
+            return out;
+        };
+        // Pure classification for the bridge's export fail-fast.
+        host.classifySqlReadOnly = [](const QString &sql, QString *reason) {
+            const DbConnections::SqlVerdict v =
+                DbConnections::classifySql(sql, /*restrictFilesystem=*/true);
+            if (v.singleStatement && v.readOnly) return true;
+            if (reason)
+                *reason = v.reason.isEmpty()
+                              ? QStringLiteral("query is not read-only (SELECT only)")
+                              : v.reason;
+            return false;
+        };
+        // READ: SELECT-only query on a SAVED connection (what run_sql can't reach).
+        host.runNamedQuery = [](const QString &name, const QString &sql,
+                                int maxRows, QString *err) -> QJsonObject {
+            const DbConnections::SqlVerdict v =
+                DbConnections::classifySql(sql, /*restrictFilesystem=*/true);
+            if (!(v.singleStatement && v.readOnly)) {
+                if (err)
+                    *err = v.reason.isEmpty()
+                               ? QStringLiteral("query is not read-only (SELECT only)")
+                               : QStringLiteral("query rejected: %1").arg(v.reason);
+                return QJsonObject();
+            }
+            DbConnections::Record rec;
+            if (!DbConnections::findByName(name, &rec)) {
+                if (err) *err = QStringLiteral("no connection named: %1").arg(name);
+                return QJsonObject();
+            }
+            if (rec.driver == QLatin1String("DUCKDB")) {
+#ifdef NOTEPATRA_HAVE_DUCKDB
+                rec.sandboxFilesystem = true; // engine-level file-read lockdown
+#else
+                if (err)
+                    *err = QStringLiteral(
+                        "this connection requires the Full edition (DuckDB)");
+                return QJsonObject();
+#endif
+            }
+            const DbConnections::QueryResult qr =
+                DbConnections::runQuery(rec, sql, maxRows, /*allowMutation=*/false,
+                                        nullptr);
+            if (!qr.ok) {
+                if (err)
+                    *err = qr.error.isEmpty() ? QStringLiteral("query failed")
+                                              : qr.error;
+                return QJsonObject();
+            }
+            QJsonArray cols;
+            for (const QString &c : qr.columns) cols.append(c);
+            QJsonArray rows;
+            for (const QVector<QString> &row : qr.rows) {
+                QJsonArray jr;
+                for (const QString &cell : row) jr.append(cell);
+                rows.append(jr);
+            }
+            QString engine = QStringLiteral("odbc");
+            if (rec.driver == QLatin1String("QSQLITE"))
+                engine = QStringLiteral("sqlite");
+            else if (rec.driver == QLatin1String("QPSQL"))
+                engine = QStringLiteral("postgres");
+            else if (rec.driver == QLatin1String("QMYSQL"))
+                engine = QStringLiteral("mysql");
+            else if (rec.driver == QLatin1String("DUCKDB"))
+                engine = QStringLiteral("duckdb");
+            QJsonObject out;
+            out[QStringLiteral("columns")] = cols;
+            out[QStringLiteral("rows")] = rows;
+            out[QStringLiteral("truncated")] = qr.truncated;
+            out[QStringLiteral("engine")] = engine;
+            return out;
+        };
+        // READ: table list over a saved connection.
+        host.listTables = [](const QString &name, QString *err) -> QJsonArray {
+            DbConnections::Record rec;
+            if (!DbConnections::findByName(name, &rec)) {
+                if (err) *err = QStringLiteral("no connection named: %1").arg(name);
+                return QJsonArray();
+            }
+            if (rec.driver == QLatin1String("DUCKDB")) {
+#ifdef NOTEPATRA_HAVE_DUCKDB
+                rec.sandboxFilesystem = true; // engine-level file-read lockdown
+#else
+                if (err)
+                    *err = QStringLiteral(
+                        "this connection requires the Full edition (DuckDB)");
+                return QJsonArray();
+#endif
+            }
+            bool ok = true;
+            const QStringList tables = DbConnections::listTables(rec, &ok);
+            if (!ok) {
+                if (err) *err = QStringLiteral("could not connect to: %1").arg(name);
+                return QJsonArray();
+            }
+            QJsonArray out;
+            for (const QString &t : tables) out.append(t);
+            return out;
+        };
+        // ACT: reveal the AI dock in Data Analyst mode.
+        host.openDataAnalyst = [this]() -> bool {
+            if (!m_aiDockPanel) return false;
+            showAiDockForInvocation();
+            m_aiDockPanel->showDataMode();
+            return true;
+        };
+#ifdef NOTEPATRA_WITH_WEBENGINE
+        // ACT: inline chart card in the Data transcript (Full/WebEngine only).
+        host.renderChart = [this](const QJsonObject &spec, const QString &title,
+                                  QString *err) -> QJsonObject {
+            const QJsonObject vl = mcpChartToVegaLite(spec, err);
+            if (vl.isEmpty()) return QJsonObject();
+            if (!m_aiDockPanel) {
+                if (err) *err = QStringLiteral("AI panel unavailable");
+                return QJsonObject();
+            }
+            showAiDockForInvocation();
+            m_aiDockPanel->showDataMode();
+            VegaChartRenderer *r = m_aiDockPanel->addChartCard(vl, title);
+            QJsonObject out;
+            out[QStringLiteral("chart_id")] = r->chartId();
+            out[QStringLiteral("rendered")] = !r->isLiteStub();
+            return out;
+        };
+        // WRITE: off-screen render + async export → file (Full/WebEngine only).
+        host.exportChart = [this](const QJsonObject &spec, const QString &path,
+                                  const QString &format, int scale,
+                                  QString *err) -> bool {
+            const QJsonObject vl = mcpChartToVegaLite(spec, err);
+            if (vl.isEmpty()) return false;
+            VegaChartRenderer renderer;
+            renderer.setAttribute(Qt::WA_DontShowOnScreen);
+            renderer.resize(900, 600);
+            renderer.show(); // realizes the WebEngine page off-screen
+            // Bounded wait for the first render before exporting.
+            {
+                QEventLoop loop;
+                bool done = false;
+                QObject::connect(&renderer, &VegaChartRenderer::renderReady,
+                                 &loop, [&] { done = true; loop.quit(); });
+                QObject::connect(&renderer, &VegaChartRenderer::renderError,
+                                 &loop, [&](const QString &m) {
+                                     if (err) *err = m;
+                                     loop.quit();
+                                 });
+                QTimer::singleShot(20000, &loop, [&] { loop.quit(); });
+                renderer.setSpec(vl);
+                if (!done) loop.exec();
+                if (!done) {
+                    if (err && err->isEmpty())
+                        *err = QStringLiteral("chart render timed out");
+                    return false;
+                }
+            }
+            QByteArray bytes;
+            {
+                QEventLoop loop;
+                bool got = false;
+                auto cb = [&](const QByteArray &b) {
+                    bytes = b;
+                    got = true;
+                    loop.quit();
+                };
+                if (format == QLatin1String("png"))
+                    renderer.exportPngAsync(scale, cb);
+                else if (format == QLatin1String("svg"))
+                    renderer.exportSvgAsync(cb);
+                else if (format == QLatin1String("html"))
+                    renderer.exportHtmlAsync(cb);
+                else
+                    renderer.exportSpecAsync(cb);
+                QTimer::singleShot(20000, &loop, [&] { loop.quit(); });
+                if (!got) loop.exec();
+            }
+            if (bytes.isEmpty()) {
+                if (err && err->isEmpty())
+                    *err = QStringLiteral("chart export produced no data");
+                return false;
+            }
+            QFile f(path);
+            if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                if (err) *err = QStringLiteral("could not write: %1")
+                                    .arg(QDir::toNativeSeparators(path));
+                return false;
+            }
+            f.write(bytes);
+            f.close();
+            return true;
+        };
+#endif
         new McpBridge(std::move(host), this);
     }
 }
@@ -3390,16 +3757,8 @@ void MainWindow::buildMenus() {
             diagAct->setChecked(false);
             return;
         }
-        if (!diag) {
-            diag = new DiagramEditor;
-            exitAiFullscreenIfActive();
-            existingIdx = m_tabs->addTab(diag, "Diagram");
-            connect(diag, &DiagramEditor::titleChanged, this, [this, diag](const QString &t) {
-                const int idx = m_tabs->indexOf(diag);
-                if (idx >= 0) m_tabs->setTabText(idx, t);
-            });
-        }
-        m_tabs->setCurrentIndex(existingIdx);
+        if (!diag) existingIdx = newDiagramTab(QString(), QString());
+        else m_tabs->setCurrentIndex(existingIdx);
         diagAct->setChecked(true);
     });
 
@@ -3539,9 +3898,8 @@ void MainWindow::buildMenus() {
     lang->addSeparator();
 
     // Common languages — flat, alphabetical for predictable scanning.
-    for (const auto &l : {"Bash", "C", "C#", "C++", "CSS", "HTML", "Java",
-                          "JavaScript", "JSON", "Lua", "Markdown", "Perl",
-                          "Python", "Ruby", "SQL", "XML", "YAML"}) {
+    // SSOT: commonLanguageTokens() (also feeds MCP list_languages).
+    for (const QString &l : commonLanguageTokens()) {
         lang->addAction(l, this, [this, E, l]() {
             if (auto *e = E()) { e->setLanguage(l); m_statusBar->updateLanguage(l); }
         });
@@ -3571,24 +3929,10 @@ void MainWindow::buildMenus() {
     lang->addSeparator();
 
     // More Languages — the long tail. Single alphabetical submenu listing
-    // everything else. Adding a new language is one line: append to the
-    // initializer list.
+    // everything else. Adding a new language is one line: append to
+    // moreLanguageTokens() (pre-sorted; also feeds MCP list_languages).
     auto *moreLang = lang->addMenu("More Languages");
-    QStringList more = {
-        "ASM", "Apex", "AVS", "Batch", "BibTeX",
-        "CMake", "CoffeeScript", "Crystal", "Cython",
-        "D", "Dart", "Diff", "Dockerfile", "DotEnv",
-        "Elixir", "F#", "Fish", "Fortran", "Fortran77",
-        "GDScript", "Gitignore", "Go", "GraphQL", "Groovy",
-        "Hack", "HCL", "IDL", "IntelHex", "Jinja", "JSON5", "Julia",
-        "Kotlin", "Liquid", "Makefile", "MASM", "Matlab", "Mojo",
-        "NASM", "Nim", "Nushell", "Octave", "Pascal", "PO",
-        "PostScript", "POV", "PowerShell", "Properties", "Protobuf",
-        "R", "Rust", "Scala", "Solidity", "Spice", "SRecord", "Swift",
-        "TCL", "TeX", "Thrift", "TOML", "Twig", "TypeScript",
-        "Vala", "Verilog", "VHDL", "Zig",
-    };
-    more.sort(Qt::CaseInsensitive);
+    const QStringList &more = moreLanguageTokens();
     for (const QString &l : more) {
         moreLang->addAction(l, this, [this, E, l]() {
             if (auto *e = E()) { e->setLanguage(l); m_statusBar->updateLanguage(l); }
@@ -5085,6 +5429,23 @@ NotesPanel *MainWindow::ensureNoterTab() {
     m_tabs->setCurrentIndex(idx);
     if (m_noterAct) m_noterAct->setChecked(true);
     return noter;
+}
+
+// One diagram-tab creation path — the Features->Diagram menu action and the
+// MCP create_diagram verb both call this (no duplicated creation logic).
+int MainWindow::newDiagramTab(const QString &source, const QString &title) {
+    auto *diag = new DiagramEditor;
+    if (!source.isEmpty()) diag->setNpdText(source);
+    exitAiFullscreenIfActive();
+    const int idx = m_tabs->addTab(diag, title.isEmpty()
+                                             ? QStringLiteral("Diagram") : title);
+    connect(diag, &DiagramEditor::titleChanged, this,
+            [this, diag](const QString &t) {
+        const int i = m_tabs->indexOf(diag);
+        if (i >= 0) m_tabs->setTabText(i, t);
+    });
+    m_tabs->setCurrentIndex(idx);
+    return idx;
 }
 
 void MainWindow::buildToolbar() {

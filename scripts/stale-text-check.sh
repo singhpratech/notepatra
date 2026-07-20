@@ -34,7 +34,7 @@ cd "$(dirname "$0")/.."
 LEXER_COUNT=82
 FILE_EXT_COUNT=238
 BACKEND_COUNT=6
-MCP_TOOL_COUNT=35
+MCP_TOOL_COUNT=48
 BACKEND_LIST="Ollama / llama.cpp / OpenRouter / Ollama Cloud / OpenAI / Azure OpenAI"
 # BARE_BIN_MB removed v0.1.86 — verify-download-sizes.sh now downloads the
 # actual artifact and asserts byte count + stripped-vs-not, which is strictly
@@ -195,6 +195,33 @@ if [[ -f notepatra-mcp/src/tools.rs ]]; then
         docs/index.html "$MCP_TOOL_COUNT tools"
 else
     echo "  ⓘ notepatra-mcp/src/tools.rs not present on this branch — skipping MCP tool-count gate"
+fi
+
+echo ""
+echo "── MCP distribution wiring (Windows sidecar zip + .mcpb bundle) ──"
+if [[ -f notepatra-mcp/mcpb/manifest.json ]]; then
+    mcpb_v=$(python3 -c "import json;print(json.load(open('notepatra-mcp/mcpb/manifest.json'))['version'])" 2>/dev/null || echo INVALID)
+    cargo_v=$(grep -m1 -oE '^version = "[0-9]+\.[0-9]+\.[0-9]+"' notepatra-mcp/Cargo.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+    # Must equal the project $VERSION too: CI's .mcpb step runs with
+    #   --expect-version "${TAG#v}", which hard-aborts the WHOLE release job
+    #   AFTER the tag is public if the sidecar/manifest lag the tag. Comparing
+    #   only manifest==Cargo lets both lag together and stay green. Tying both
+    #   to $VERSION (derived from CMakeLists) makes release-check.sh catch the
+    #   skew BEFORE tagging.
+    if [[ "$mcpb_v" != "INVALID" && "$mcpb_v" == "$cargo_v" && "$mcpb_v" == "$VERSION" ]]; then
+        printf "  ✓ mcpb/manifest.json + Cargo.toml version %s matches project VERSION\n" "$mcpb_v"
+        PASS=$((PASS + 1))
+    else
+        printf "  ✗ version skew: manifest '%s' / Cargo.toml '%s' / project VERSION '%s' must all match (or invalid JSON)\n" "$mcpb_v" "$cargo_v" "$VERSION"
+        FAIL=$((FAIL + 1))
+    fi
+    assert_contains "build.yml packages notepatra-mcp-windows-x64.zip" .github/workflows/build.yml "notepatra-mcp-windows-x64.zip"
+    assert_contains "build.yml builds + attaches notepatra-mcp.mcpb" .github/workflows/build.yml "notepatra-mcp.mcpb"
+    assert_contains "mcp.html mentions the Windows sidecar zip" docs/mcp.html "notepatra-mcp-windows-x64.zip"
+    assert_contains "mcp.html mentions the .mcpb bundle" docs/mcp.html "notepatra-mcp.mcpb"
+    assert_contains "README mentions the .mcpb bundle" README.md ".mcpb"
+else
+    echo "  ⓘ notepatra-mcp/mcpb/manifest.json not present on this branch — skipping"
 fi
 
 echo
@@ -360,7 +387,7 @@ echo "── installer-filename pinning (README admin/fleet install commands) �
 # install commands meant for the current user). Skip lines inside the
 # CHANGELOG-style release history that document old versions.
 stale_installers=$(grep -vE 'releases/tag/v0\.1\.' README.md \
-    | grep -hoE 'notepatra(-local-ai)?[-_][^"`]*?0\.1\.[0-9]+(_amd64|_arm64|-1\.x86_64|-1\.aarch64|-x86_64|-aarch64)?\.(msi|deb|rpm|AppImage|tar\.gz|zip|dmg|exe)' \
+    | grep -hoiE 'notepatra(-local-ai)?[-_][^"`]*?0\.1\.[0-9]+(_amd64|_arm64|-1\.x86_64|-1\.aarch64|-x86_64|-aarch64)?\.(msi|deb|rpm|AppImage|tar\.gz|zip|dmg|exe)' \
     | grep -oE "0\.1\.[0-9]+" \
     | sort -u \
     | grep -v "^$VERSION$" || true)
@@ -589,6 +616,44 @@ if command -v ctest >/dev/null 2>&1 && [ -d build ]; then
     fi
 else
     echo "  ⓘ no build/ dir or ctest unavailable — skipping suite-count gate (release-check builds first)"
+fi
+
+echo "── no HOLES in the version-card history on the site ──"
+# v0.1.119 shipped and the website never got a card: the list ran 115, 116,
+# 117, 118, then jumped straight to 120. A reader could not tell 119 had
+# happened at all. Nothing caught it, because every other gate checks the
+# CURRENT version — none checked the history for GAPS.
+#
+# The site deliberately shows a ROLLING WINDOW of recent releases, so this
+# does not demand a card for every release ever. It asserts only that, between
+# the oldest and newest card actually displayed, no release is skipped.
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    cards=$(grep -oE 'releases/tag/v0\.1\.[0-9]+"' docs/index.html \
+        | grep -oE '0\.1\.[0-9]+' | sort -u -t. -k3 -n || true)
+    if [[ -z "$cards" ]]; then
+        echo "  ⓘ no version cards found in index.html — skipping gap gate"
+    else
+        oldest=$(echo "$cards" | head -1 | cut -d. -f3)
+        newest=$(echo "$cards" | tail -1 | cut -d. -f3)
+        published=$(gh release list -R singhpratech/notepatra --limit 40 2>/dev/null \
+            | grep -oE 'v0\.1\.[0-9]+' | grep -oE '[0-9]+$' | sort -un || true)
+        holes=""
+        for n in $published; do
+            (( n >= oldest && n <= newest )) || continue
+            echo "$cards" | grep -qx "0.1.$n" || holes="$holes v0.1.$n"
+        done
+        if [[ -z "$holes" ]]; then
+            printf "  ✓ version-card history has no gaps (v0.1.%s → v0.1.%s)\n" "$oldest" "$newest"
+            PASS=$((PASS + 1))
+        else
+            echo "  ✗ published release(s) MISSING a version card inside the displayed range:$holes"
+            echo "      file: docs/index.html  (range shown: v0.1.$oldest → v0.1.$newest)"
+            echo "      a shipped release the website skips is invisible to users"
+            FAIL=$((FAIL + 1))
+        fi
+    fi
+else
+    echo "  ⓘ gh unavailable/unauthenticated — skipping version-card gap gate"
 fi
 
 echo

@@ -292,6 +292,7 @@ private:
     void ensureNoterReminderService();
     NotesPanel *findNoterPanel(int *indexOut = nullptr) const;
     NotesPanel *ensureNoterTab();
+    int newDiagramTab(const QString &source, const QString &title); // Features->Diagram + MCP create_diagram
     void onNoterTrayMessageClicked();
 
     // Macro recording/playback

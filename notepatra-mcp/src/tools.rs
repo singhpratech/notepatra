@@ -9,6 +9,67 @@ const DEFAULT_MAX_RESULTS: usize = 50;
 /// client-side instead of asking for results that cannot come back.
 const MAX_RESULTS_CAP: usize = 200;
 
+/// Tier partition of the tool surface. get_capabilities reports these sizes;
+/// tests/protocol.rs asserts the three lists partition definitions() exactly,
+/// so a new tool that isn't tiered here fails the suite.
+pub const READ_TOOLS: &[&str] = &[
+    "list_open_tabs",
+    "read_tab",
+    "get_selection",
+    "get_status",
+    "app_info",
+    "list_recent_files",
+    "find_in_tab",
+    "search_project",
+    "list_notes",
+    "read_note",
+    "list_reminders",
+    "git_status",
+    "git_diff",
+    "git_log",
+    "git_show",
+    "git_branch",
+    "validate_npd",
+    "run_sql",
+    "list_languages",
+    "get_capabilities",
+    "get_diagram_source",
+    // phase 2
+    "list_connections",
+    "run_query",
+    "list_tables",
+];
+pub const ACT_TOOLS: &[&str] = &[
+    "open_file",
+    "new_tab",
+    "goto_line",
+    "set_language",
+    "compare_tabs",
+    "format_json",
+    "format_sql",
+    "format_html",
+    "open_note",
+    "create_diagram",
+    "open_noter",
+    // phase 2
+    "open_data_analyst",
+    "render_chart",
+];
+pub const WRITE_TOOLS: &[&str] = &[
+    "insert_text",
+    "replace_selection",
+    "apply_edit",
+    "save_tab",
+    "create_note",
+    "append_note",
+    "set_reminder",
+    "export_diagram",
+    "set_diagram_source",
+    // phase 2
+    "export_query_results",
+    "export_chart",
+];
+
 /// Mandatory sentence on every write tool's description: these tools are
 /// gated behind an in-editor human approval card.
 const APPROVAL_NOTE: &str = "Requires the user to click Approve on a card inside Notepatra; \
@@ -429,6 +490,155 @@ pub fn definitions() -> Value {
                 "required": ["tab_index", "path", "format"],
                 "additionalProperties": false
             }
+        },
+        // ── p0a read tier ───────────────────────────────────────────────
+        {
+            "name": "list_languages",
+            "description": "List the canonical language names Notepatra's syntax highlighting accepts (exactly as shown in the Language menu). Use before set_language when unsure of the exact name.",
+            "inputSchema": no_args_schema()
+        },
+        {
+            "name": "get_capabilities",
+            "description": "Get the editor's capability profile: edition (Lite/Full), platform, version, tool count, tool tiers, and feature flags (duckdb, webengine, noter). Use to self-diagnose what this Notepatra build supports before relying on edition-specific tools like run_sql over CSV.",
+            "inputSchema": no_args_schema()
+        },
+        // ── phase 1: diagram control + Noter panel ─────────────────────
+        {
+            "name": "create_diagram",
+            "description": "Create a new Notepatra Diagram (.npd) tab in the editor, optionally pre-filled with source, and focus it. The tab is created even if the source has parse errors (the canvas shows its parse state); the result reports valid plus any errors with line numbers. Use set_diagram_source to edit it and export_diagram to render it to a file.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "source": { "type": "string", "description": "Initial .npd document text (default: an empty diagram)" },
+                    "title": { "type": "string", "description": "Tab title (default \"Diagram\")" }
+                },
+                "required": [],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "get_diagram_source",
+            "description": "Read the .npd source of an open Diagram tab by index. Errors if the tab is not a Diagram tab; use list_open_tabs to find it.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based index of the Diagram tab" }
+                },
+                "required": ["tab_index"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "set_diagram_source",
+            "description": format!(
+                "Replace the entire .npd source of an open Diagram tab; the canvas \
+                 re-renders immediately and the result reports valid plus any parse \
+                 errors. {APPROVAL_NOTE}"
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based index of the Diagram tab" },
+                    "source": { "type": "string", "description": "The new .npd document text (replaces the whole source)" }
+                },
+                "required": ["tab_index", "source"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "open_noter",
+            "description": "Open (or focus) the Noter panel tab in the editor — the same surface the user gets from the Noter menu. Use before pointing the user at their notes.",
+            "inputSchema": no_args_schema()
+        },
+        // ── phase 2: data-analyst + charts ─────────────────────────────
+        {
+            "name": "list_connections",
+            "description": "List the user's SAVED database connections (name, driver, database, read_only) — never passwords. These are the named PostgreSQL / MySQL / SQL Server / SQLite / DuckDB connections managed in the Data Analyst panel, which run_query can read but run_sql cannot reach. Use before run_query or list_tables to discover which connections exist.",
+            "inputSchema": no_args_schema()
+        },
+        {
+            "name": "run_query",
+            "description": "Run a read-only SQL query against a SAVED named connection (PostgreSQL / MySQL / SQL Server / SQLite / DuckDB) and return columns and rows. SELECT-only: mutations (INSERT/UPDATE/DELETE/DDL) are rejected by the editor. Passwords are never involved. Unlike run_sql, which only reaches the built-in scratch engine, this reaches the user's real saved databases. DuckDB-driver connections require the Full edition.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "connection_name": { "type": "string", "description": "Name of a saved connection (see list_connections)" },
+                    "sql": { "type": "string", "description": "A read-only SQL SELECT (or WITH) statement; non-read statements are rejected by the editor" },
+                    "max_rows": { "type": "integer", "minimum": 1, "description": "Maximum rows to return (default 200; clamped to the editor's 200-row cap)" }
+                },
+                "required": ["connection_name", "sql"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "list_tables",
+            "description": "List the user tables available over a saved named connection (see list_connections). Use to discover the schema before writing a run_query SELECT.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "connection_name": { "type": "string", "description": "Name of a saved connection (see list_connections)" }
+                },
+                "required": ["connection_name"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "open_data_analyst",
+            "description": "Reveal and focus the editor's AI dock in Data Analyst mode — the surface for querying saved connections and rendering charts. Use to bring the Data Analyst on screen for the user.",
+            "inputSchema": no_args_schema()
+        },
+        {
+            "name": "render_chart",
+            "description": "Render a chart inline in the Data Analyst transcript and return its id. The spec may be a Vega-Lite v5 spec, or the simplified {type,x,y,data} form the editor translates. Requires the Full edition (WebEngine); the Lite edition returns an error.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "spec": { "type": "object", "description": "A Vega-Lite v5 spec, or the simplified {type,x,y,data} form the editor translates" },
+                    "title": { "type": "string", "description": "Optional title shown above the chart card" }
+                },
+                "required": ["spec"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "export_query_results",
+            "description": format!(
+                "Run a read-only SELECT against a saved named connection and write the \
+                 results to a file on disk as CSV or JSON. Mutations are rejected. \
+                 {APPROVAL_NOTE}"
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "connection_name": { "type": "string", "description": "Name of a saved connection (see list_connections)" },
+                    "sql": { "type": "string", "description": "A read-only SQL SELECT (or WITH) statement" },
+                    "path": { "type": "string", "description": "Absolute output path for the exported file" },
+                    "format": { "type": "string", "enum": ["csv", "json"], "description": "Serialization format: csv or json" },
+                    "max_rows": { "type": "integer", "minimum": 1, "description": "Maximum rows to export (default 10000; capped at 100000)" }
+                },
+                "required": ["connection_name", "sql", "path", "format"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "export_chart",
+            "description": format!(
+                "Render a chart off-screen and export it to a file on disk as PNG, SVG, \
+                 self-contained HTML, or the Vega-Lite spec JSON. The spec may be a \
+                 Vega-Lite v5 spec or the simplified {{type,x,y,data}} form. Requires the \
+                 Full edition (WebEngine). {APPROVAL_NOTE}"
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "spec": { "type": "object", "description": "A Vega-Lite v5 spec, or the simplified {type,x,y,data} form the editor translates" },
+                    "path": { "type": "string", "description": "Absolute output path for the exported file" },
+                    "format": { "type": "string", "enum": ["png", "svg", "html", "spec"], "description": "Export format: png, svg, html, or spec (Vega-Lite JSON)" },
+                    "scale": { "type": "integer", "minimum": 1, "maximum": 4, "description": "PNG raster scale factor 1-4 (default 2; ignored for non-png formats)" }
+                },
+                "required": ["spec", "path", "format"],
+                "additionalProperties": false
+            }
         }
     ])
 }
@@ -475,6 +685,22 @@ pub fn call(
         "append_note" => append_note(transport, args),
         "set_reminder" => set_reminder(transport, args),
         "export_diagram" => export_diagram(transport, args),
+        // p0a
+        "list_languages" => no_arg_json(args, || transport.list_languages()),
+        "get_capabilities" => get_capabilities(transport, args),
+        // phase 1
+        "create_diagram" => create_diagram(transport, args),
+        "get_diagram_source" => get_diagram_source(transport, args),
+        "set_diagram_source" => set_diagram_source(transport, args),
+        "open_noter" => open_noter(transport, args),
+        // phase 2
+        "list_connections" => no_arg_json(args, || transport.list_connections()),
+        "run_query" => run_query(transport, args),
+        "list_tables" => list_tables(transport, args),
+        "open_data_analyst" => no_arg_json(args, || transport.open_data_analyst()),
+        "render_chart" => render_chart(transport, args),
+        "export_query_results" => export_query_results(transport, args),
+        "export_chart" => export_chart(transport, args),
         other => CallOutcome::UnknownTool(other.to_string()),
     }
 }
@@ -1028,4 +1254,233 @@ fn export_diagram(transport: &mut dyn EditorTransport, args: &Map<String, Value>
         return CallOutcome::InvalidParams("format must be \"png\" or \"pdf\"".into());
     }
     to_outcome(transport.export_diagram(tab_index, path, format))
+}
+
+// ── p0a read-tier handlers ──────────────────────────────────────────────────
+
+fn get_capabilities(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &[]) {
+        return e;
+    }
+    match transport.get_capabilities() {
+        Ok(mut v) => {
+            // tool_count and tiers are DERIVED here, where the tool surface
+            // lives — the editor cannot know the sidecar's tool list.
+            if let Value::Object(m) = &mut v {
+                let count = definitions().as_array().map_or(0, |a| a.len());
+                m.insert("tool_count".into(), json!(count));
+                m.insert(
+                    "tiers".into(),
+                    json!({
+                        "read": READ_TOOLS.len(),
+                        "act": ACT_TOOLS.len(),
+                        "write": WRITE_TOOLS.len(),
+                    }),
+                );
+            }
+            json_text(&v)
+        }
+        Err(e) => CallOutcome::ToolError(e.0),
+    }
+}
+
+// ── Phase 1 handlers ────────────────────────────────────────────────────────
+
+fn create_diagram(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["source", "title"]) {
+        return e;
+    }
+    let source = match optional_str(args, "source") {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    let title = match optional_str(args, "title") {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    to_outcome(transport.create_diagram(source, title))
+}
+
+fn get_diagram_source(
+    transport: &mut dyn EditorTransport,
+    args: &Map<String, Value>,
+) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["tab_index"]) {
+        return e;
+    }
+    let tab_index = match required_index(args, "tab_index") {
+        Ok(i) => i,
+        Err(e) => return e,
+    };
+    to_outcome(transport.get_diagram_source(tab_index))
+}
+
+// Approval-gated in the editor; deny/timeout errors pass through verbatim.
+fn set_diagram_source(
+    transport: &mut dyn EditorTransport,
+    args: &Map<String, Value>,
+) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["tab_index", "source"]) {
+        return e;
+    }
+    let tab_index = match required_index(args, "tab_index") {
+        Ok(i) => i,
+        Err(e) => return e,
+    };
+    let source = match required_str(args, "source") {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    to_outcome(transport.set_diagram_source(tab_index, source))
+}
+
+fn open_noter(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &[]) {
+        return e;
+    }
+    to_outcome(transport.open_noter())
+}
+
+// ── Phase 2 handlers — data-analyst + charts ────────────────────────────────
+
+/// run_query's `max_rows` cap mirrors the editor's 200-row ceiling.
+const RUN_QUERY_ROWS_CAP: usize = 200;
+/// export_query_results hard cap (mirrors the bridge's kExportRowsMax).
+const EXPORT_ROWS_CAP: usize = 100_000;
+
+fn required_object<'a>(
+    args: &'a Map<String, Value>,
+    key: &str,
+) -> Result<&'a Map<String, Value>, CallOutcome> {
+    match args.get(key) {
+        Some(Value::Object(o)) => Ok(o),
+        Some(_) => Err(CallOutcome::InvalidParams(format!(
+            "{key} must be an object"
+        ))),
+        None => Err(CallOutcome::InvalidParams(format!("{key} is required"))),
+    }
+}
+
+fn run_query(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["connection_name", "sql", "max_rows"]) {
+        return e;
+    }
+    let connection_name = match required_str(args, "connection_name") {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
+    let sql = match required_str(args, "sql") {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    let max_rows = match args.get("max_rows") {
+        None => None,
+        Some(v) => match v.as_u64() {
+            Some(n) if n >= 1 => Some((n as usize).min(RUN_QUERY_ROWS_CAP)),
+            _ => return CallOutcome::InvalidParams("max_rows must be an integer >= 1".into()),
+        },
+    };
+    to_outcome(transport.run_query(connection_name, sql, max_rows))
+}
+
+fn list_tables(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["connection_name"]) {
+        return e;
+    }
+    let connection_name = match required_str(args, "connection_name") {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
+    to_outcome(transport.list_tables(connection_name))
+}
+
+fn render_chart(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["spec", "title"]) {
+        return e;
+    }
+    if let Err(e) = required_object(args, "spec") {
+        return e;
+    }
+    let spec = args.get("spec").cloned().unwrap_or(Value::Null);
+    let title = match optional_str(args, "title") {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    to_outcome(transport.render_chart(&spec, title))
+}
+
+// Approval-gated in the editor; deny/timeout errors pass through verbatim.
+fn export_query_results(
+    transport: &mut dyn EditorTransport,
+    args: &Map<String, Value>,
+) -> CallOutcome {
+    if let Err(e) = reject_extras(
+        args,
+        &["connection_name", "sql", "path", "format", "max_rows"],
+    ) {
+        return e;
+    }
+    let connection_name = match required_str(args, "connection_name") {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
+    let sql = match required_str(args, "sql") {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    let path = match required_str(args, "path") {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    let format = match required_str(args, "format") {
+        Ok(f) => f,
+        Err(e) => return e,
+    };
+    if format != "csv" && format != "json" {
+        return CallOutcome::InvalidParams("format must be \"csv\" or \"json\"".into());
+    }
+    let max_rows = match args.get("max_rows") {
+        None => None,
+        Some(v) => match v.as_u64() {
+            Some(n) if n >= 1 => Some((n as usize).min(EXPORT_ROWS_CAP)),
+            _ => return CallOutcome::InvalidParams("max_rows must be an integer >= 1".into()),
+        },
+    };
+    to_outcome(transport.export_query_results(connection_name, sql, path, format, max_rows))
+}
+
+// Approval-gated in the editor; deny/timeout errors pass through verbatim.
+fn export_chart(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["spec", "path", "format", "scale"]) {
+        return e;
+    }
+    if let Err(e) = required_object(args, "spec") {
+        return e;
+    }
+    let spec = args.get("spec").cloned().unwrap_or(Value::Null);
+    let path = match required_str(args, "path") {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    let format = match required_str(args, "format") {
+        Ok(f) => f,
+        Err(e) => return e,
+    };
+    if !["png", "svg", "html", "spec"].contains(&format) {
+        return CallOutcome::InvalidParams(
+            "format must be \"png\", \"svg\", \"html\", or \"spec\"".into(),
+        );
+    }
+    let scale = match args.get("scale") {
+        None => None,
+        Some(v) => match v.as_u64() {
+            Some(n) if (1..=4).contains(&n) => Some(n as usize),
+            _ => {
+                return CallOutcome::InvalidParams(
+                    "scale must be an integer between 1 and 4".into(),
+                )
+            }
+        },
+    };
+    to_outcome(transport.export_chart(&spec, path, format, scale))
 }

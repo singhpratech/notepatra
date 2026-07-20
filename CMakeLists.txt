@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.119 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.120 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -2499,13 +2499,16 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_bridge.cpp")
         # v0.1.119 — validate_npd calls the REAL parse-only entry point
         # Npd::parse (pure QtCore, no widgets).
         src/diagram/npd_parser.cpp
+        # phase 2 — run_query/list_tables exercise the REAL classifier + QSQLITE
+        # runQuery (compiled with NO NOTEPATRA_HAVE_DUCKDB, so no DuckDB link).
+        src/dbconnections.cpp
     )
     target_include_directories(test_mcp_bridge PRIVATE ${CMAKE_SOURCE_DIR}/src)
     target_compile_definitions(test_mcp_bridge PRIVATE
         NOTEPATRA_VERSION="${PROJECT_VERSION}")
     target_link_libraries(test_mcp_bridge PRIVATE
         Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::Concurrent
-        Qt5::Test)
+        Qt5::Sql Qt5::Test)
     notepatra_add_qt_test(test_mcp_bridge)
     set_tests_properties(test_mcp_bridge PROPERTIES LABELS "unit;mcp;ipc")
     message(STATUS "Regression test enabled — target: test_mcp_bridge")

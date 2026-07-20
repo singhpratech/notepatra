@@ -1,19 +1,19 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.singhpratech/notepatra-mcp",
-  "description": "Notepatra editor MCP server — 35 tools; every write human-approved in the editor; local-only.",
+  "description": "Notepatra editor MCP server — 48 tools; every write human-approved in the editor; local-only.",
   "repository": {
     "url": "https://github.com/singhpratech/notepatra",
     "source": "github"
   },
-  "version": "0.1.119",
+  "version": "0.1.120",
   "websiteUrl": "https://notepatra.org/mcp.html",
   "packages": [
     {
       "registryType": "cargo",
       "registryBaseUrl": "https://crates.io",
       "identifier": "notepatra-mcp",
-      "version": "0.1.119",
+      "version": "0.1.120",
       "transport": {
         "type": "stdio"
       },

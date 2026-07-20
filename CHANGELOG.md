@@ -7,6 +7,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.120] — 2026-07-20
+
+**MCP full control — 48 tools + a remote gateway, and the sidecar now actually works on Windows and macOS. The `notepatra-mcp` sidecar grows from 35 to 48 tools (Read 24 / Act 13 / Write 11), making every sub-app AI-drivable (Diagram, Noter, Data-analyst, Charts) with capability discovery. A new opt-in, loopback-only remote gateway pairs a client over an authenticated channel with fail-closed scopes; writes still require a physical Approve click in the editor. Windows gets a prebuilt signed sidecar zip and a one-click `.mcpb` bundle.**
+
+### Added
+- **13 new MCP tools** (new totals: Read 24 / Act 13 / Write 11 = 48):
+  - **Diagram control:** `create_diagram` (Act), `get_diagram_source` (Read), `set_diagram_source` (Write).
+  - **Data-analyst:** `list_connections`, `run_query`, `list_tables` (Read), `open_data_analyst` (Act), `export_query_results` (Write) — reaches saved PostgreSQL / MySQL / SQL Server / SQLite / DuckDB connections that `run_sql` cannot.
+  - **Charts (Full):** `render_chart` (Act), `export_chart` (Write).
+  - **Noter:** `open_noter` (Act).
+  - **Discovery:** `list_languages`, `get_capabilities` (Read).
+- **Remote gateway** (opt-in, feature-gated `remote`, loopback-only): `serve` / `pair` / `connect` modes; 8-digit HMAC pairing → 256-bit bearer token (SHA-256 stored, `0600`); fail-closed scopes (`read_only` / `read_act` / `write_request`) enforced at dispatch; `tools/list` filtered by scope. The default `cargo install` build stays crypto-free (hmac/sha2 behind the feature); the editor never listens on the network; writes forward to the local Approve card — no remote bypass.
+- **Windows prebuilt sidecar** `notepatra-mcp-windows-x64.zip` (signed; no Rust toolchain needed) and a one-click **`.mcpb`** Claude Desktop bundle (`notepatra-mcp.mcpb`), both covered by SHA-256 checksums, cosign signatures, and SLSA provenance.
+
+### Fixed
+- **The Windows named-pipe transport deadlocked on every verb — the sidecar had never completed a tool call on Windows.** The pipe was opened without `FILE_FLAG_OVERLAPPED` and a reader thread parked permanently in `ReadFile`; because a synchronous Windows file object serializes I/O, that parked read blocked every outgoing write indefinitely, and the write carried no timeout so the read timeout never engaged. Only the first request *after* the greeting hung — the greeting itself worked, since the bridge speaks unprompted, which is why the transport looked healthy. Reads and writes are now gated on a command channel so a write is only ever issued while the reader is idle, making the deadlock impossible by construction. This also fixes an EOF-starvation and handle/thread leak on teardown (`Drop` closed only the writer), and a latent hang when a >64 KB payload was written to an editor busy showing an approval dialog. Caught by the new Windows named-pipe test suite.
+- **The sidecar could not find a running editor on macOS.** The socket path was computed as `$TMPDIR||/tmp` + name, but Qt binds under `NSTemporaryDirectory()` (`/private/var/folders/…/T/`), so the sidecar reported "Notepatra is not running" against a running editor. The editor now publishes its actual bound endpoint to `<config>/mcp-endpoint.json` (atomic, `0600`) and the sidecar dials that first, falling back to the computed guess — so older editors keep working in both directions.
+- `.mcpb` bundles selected the wrong binary on two platforms: all of `darwin` mapped to the arm64 build (a hard exec failure on Intel Macs, which Rosetta cannot translate), and `linux-arm64` was packed but had no selector, so ARM64 Linux got the x64 binary. macOS now ships a lipo'd universal binary with per-slice assertions, and Linux dispatches on `uname -m`.
+
+### Changed
+- `set_language` resolves case-insensitively + common aliases (`python` → `Python`, `cpp` → `C++`, …) and echoes the canonical name it applied.
+- `git_*` and `search_project` fall back to the active file's directory when no workspace folder is open, so Git works on any open repository file.
+- The sidecar's Windows named-pipe transport and the remote gateway are now covered by real runtime tests, and `cargo test` (both feature sets) runs on all four platform jobs instead of Linux x64 alone.
+
+### Security
+- `run_query` (Read-tier, card-less) reaches saved named connections, so its read-only classifier's file-read denylist now spans SQLite / MySQL (`LOAD_FILE`) / PostgreSQL (`pg_read_server_files`, `pg_ls_dir`, `pg_stat_file`, …) / DuckDB, guarded by a five-engine regression test. Read-only SQL is never an arbitrary-file-read primitive.
+- The new write verbs (`set_diagram_source`, `export_query_results`, `export_chart`) go through the same in-editor Approve/Deny card (120 s auto-deny, no headless bypass); the gate lives in the editor process.
+- Remote-gateway token files are now ACL-restricted on Windows (`icacls /inheritance:r`), matching the `0600` posture already applied on Unix — previously they inherited broad directory permissions.
+
 ## [0.1.119] — 2026-07-18
 
 **MCP depth — 35 tools. The `notepatra-mcp` sidecar grows from 22 to 35 tools in three tiers (Read 18 / Act 9 / Write 8): read-only Git, read-only SQL, Noter reminders and `.npd` validation, plus approval-gated write verbs for creating/appending notes, setting reminders, and exporting diagrams. Windows named-pipe transport is now supported. `run_sql` is SELECT-only and, on the Full/DuckDB edition, engine-sandboxed.**

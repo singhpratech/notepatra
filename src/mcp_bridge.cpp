@@ -38,12 +38,33 @@
 //                                                                  (v0.1.119)
 //   run_sql    {sql,csv_path?}              → {columns:[...],rows:[[...]],
 //                                              truncated,engine}   (v0.1.119)
+//   list_languages {}                       → {languages:[...]}    (p0a)
+//   get_capabilities {}                     → {edition,platform,version,
+//                                              features:{duckdb,webengine,
+//                                              noter}}              (p0a)
+//                                             (the Rust sidecar augments the
+//                                              tool result with tool_count
+//                                              and tiers — derived there)
+//   get_diagram_source {tab_index}          → {source}             (phase 1)
+//   list_connections {}                     → {connections:[{name,driver,
+//                                              database,read_only}]} (phase 2)
+//   run_query  {connection_name,sql,max_rows?(=200,cap 200)}
+//                                           → {columns,rows,truncated,engine} (phase 2)
+//   list_tables{connection_name}            → {tables:[...]}         (phase 2)
 //
 // ACT tier — visible, non-destructive, NO approval card.
 //   new_tab     {text?}                     → {tab_index}
 //   goto_line   {line,tab_index?}           → {ok,tab_index,line}
 //   set_language{language,tab_index?}       → {ok,tab_index,language}
+//                                             (language echoes the RESOLVED
+//                                              canonical token since p0a)
 //   open_note   {file}                      → {opened,title}       (v0.1.119)
+//   create_diagram {source?,title?}         → {tab_index,valid,
+//                                              errors:[{line,message}]}  (phase 1)
+//   open_noter  {}                          → {opened}             (phase 1)
+//   open_data_analyst {}                    → {opened}             (phase 2)
+//   render_chart {spec,title?}              → {chart_id,rendered}   (phase 2,
+//                                              Full/WebEngine only)
 //
 // WRITE tier — held behind the in-window human-approval card; a mutation
 // runs ONLY on Approve (Deny / timeout / disconnect ⇒ nothing happened).
@@ -55,6 +76,13 @@
 //   append_note {file,text}                  → {file}              (v0.1.119)
 //   set_reminder{file,due_iso}               → {file,due_iso}      (v0.1.119)
 //   export_diagram {tab_index,path,format("png"|"pdf")} → {path}   (v0.1.119)
+//   set_diagram_source {tab_index,source}   → {ok,tab_index,valid,
+//                                              errors:[{line,message}]}  (phase 1)
+//   export_query_results {connection_name,sql,path,format("csv"|"json"),
+//                         max_rows?(=10000,cap 100000)} → {ok,path,rows} (phase 2)
+//   export_chart {spec,path,format("png"|"svg"|"html"|"spec"),scale?(=2,1..4)}
+//                                           → {path}                 (phase 2,
+//                                              Full/WebEngine only)
 //
 // NOTE: write verbs take "tab_index"; read tab-arg verbs keep their existing
 // keys ("index" for read_tab/find_in_tab). This asymmetry is deliberate and
@@ -62,6 +90,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 #include "mcp_bridge.h"
 #include "build_flavor.h"
+#include "config.h"
 #include "diagram/npd_parser.h"
 #include "notes_storage.h"
 #include "singleinstance.h"
@@ -84,6 +113,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QSet>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -120,6 +150,11 @@ constexpr int kMaxSqlRows = 200;                   // run_sql row cap
 constexpr int kMaxSqlCells = 1024;                 // per-cell char cap
 constexpr int kAppendNoteMaxChars = 1 * 1024 * 1024;
 constexpr int kCreateNoteMaxChars = 1 * 1024 * 1024;
+constexpr int kDiagramSourceMaxChars = 1 * 1024 * 1024; // create/set_diagram_source
+// Phase 2 — data-analyst + charts.
+constexpr int kExportRowsDefault = 10000;   // export_query_results default cap
+constexpr int kExportRowsMax = 100000;      // export_query_results hard cap
+constexpr int kChartScaleDefault = 2;       // export_chart png scale
 
 QString elideForCard(const QString &s, int cap) {
     if (s.size() <= cap) return s;
@@ -245,6 +280,75 @@ QJsonObject scanWorkspace(const QString &root, const QString &query,
     result[QStringLiteral("truncated")] = truncated;
     return result;
 }
+
+// Defensive re-cap of a {columns,rows,truncated,engine} result: clamp to
+// kMaxSqlRows and truncate any string cell over kMaxSqlCells (shared by
+// run_sql and the phase-2 run_query so both enforce the same wire ceiling).
+void capSqlResultRows(QJsonObject &result) {
+    QJsonArray rows = result.value(QLatin1String("rows")).toArray();
+    bool truncated = result.value(QLatin1String("truncated")).toBool(false);
+    if (rows.size() > kMaxSqlRows) {
+        QJsonArray capped;
+        for (int i = 0; i < kMaxSqlRows; ++i) capped.append(rows.at(i));
+        rows = capped;
+        truncated = true;
+    }
+    for (int ri = 0; ri < rows.size(); ++ri) {
+        QJsonArray row = rows.at(ri).toArray();
+        bool changed = false;
+        for (int ci = 0; ci < row.size(); ++ci) {
+            const QString cell = row.at(ci).toString();
+            if (cell.size() > kMaxSqlCells) {
+                row.replace(ci, cell.left(kMaxSqlCells) + QChar(0x2026)
+                                    + QStringLiteral("[truncated]"));
+                changed = true;
+            }
+        }
+        if (changed) {
+            rows.replace(ri, row);
+            truncated = true;
+        }
+    }
+    result[QStringLiteral("rows")] = rows;
+    result[QStringLiteral("truncated")] = truncated;
+}
+
+// One CSV cell: quote when it carries a comma/quote/newline (RFC-4180).
+QString csvCell(const QString &s) {
+    if (s.contains(QLatin1Char('"')) || s.contains(QLatin1Char(',')) ||
+        s.contains(QLatin1Char('\n')) || s.contains(QLatin1Char('\r'))) {
+        QString q = s;
+        q.replace(QLatin1String("\""), QLatin1String("\"\""));
+        return QLatin1Char('"') + q + QLatin1Char('"');
+    }
+    return s;
+}
+
+// Serialize a {columns,rows} query result to CSV bytes (\n endings, UTF-8).
+QByteArray sqlResultToCsv(const QJsonObject &r) {
+    const QJsonArray cols = r.value(QLatin1String("columns")).toArray();
+    const QJsonArray rows = r.value(QLatin1String("rows")).toArray();
+    QString out;
+    QStringList header;
+    for (const QJsonValue &c : cols) header << csvCell(c.toString());
+    out += header.join(QLatin1Char(',')) + QLatin1Char('\n');
+    for (const QJsonValue &rv : rows) {
+        const QJsonArray row = rv.toArray();
+        QStringList cells;
+        for (const QJsonValue &cell : row) cells << csvCell(cell.toString());
+        out += cells.join(QLatin1Char(',')) + QLatin1Char('\n');
+    }
+    return out.toUtf8();
+}
+
+// Serialize a {columns,rows,engine} query result to pretty JSON bytes.
+QByteArray sqlResultToJson(const QJsonObject &r) {
+    QJsonObject o;
+    o[QStringLiteral("columns")] = r.value(QLatin1String("columns")).toArray();
+    o[QStringLiteral("rows")] = r.value(QLatin1String("rows")).toArray();
+    o[QStringLiteral("engine")] = r.value(QLatin1String("engine")).toString();
+    return QJsonDocument(o).toJson(QJsonDocument::Indented);
+}
 } // namespace
 
 QString McpBridge::defaultServerName() {
@@ -252,7 +356,8 @@ QString McpBridge::defaultServerName() {
 }
 
 McpBridge::McpBridge(McpEditorHost host, QObject *parent,
-                     const QString &serverName)
+                     const QString &serverName,
+                     const QString &endpointDirForTests)
     : QObject(parent), m_host(std::move(host)),
       m_serverName(serverName.isEmpty() ? defaultServerName() : serverName) {
     m_server = new QLocalServer(this);
@@ -274,6 +379,19 @@ McpBridge::McpBridge(McpEditorHost host, QObject *parent,
     if (m_server->isListening()) {
         connect(m_server, &QLocalServer::newConnection,
                 this, &McpBridge::onNewConnection);
+        // Publish the endpoint only once we know what we actually bound —
+        // after the stale-probe/relisten dance above, never before.
+        //
+        // A test-named bridge with no directory override publishes NOTHING:
+        // several existing tests construct bridges with custom names and must
+        // not stomp the real user's mcp-endpoint.json (which a live editor may
+        // own while the suite runs).
+        if (serverName.isEmpty())
+            publishEndpoint(endpointDirForTests.isEmpty()
+                                ? Config::appConfigDir()
+                                : endpointDirForTests);
+        else if (!endpointDirForTests.isEmpty())
+            publishEndpoint(endpointDirForTests);
     } else {
         qWarning("Notepatra MCP bridge: bind failed on %s: %s",
                  qPrintable(m_serverName),
@@ -290,6 +408,64 @@ McpBridge::~McpBridge() {
     // The card is a child of the HOST widget, not of the bridge — take it
     // down with us so no orphan Approve button outlives its plumbing.
     dismissActiveCard();
+    unpublishEndpoint();
+}
+
+QString McpBridge::fullServerName() const {
+    return m_server ? m_server->fullServerName() : QString();
+}
+
+// Write <dir>/mcp-endpoint.json: the sidecar's ONLY reliable way to learn where
+// we bound. Guessing $TMPDIR/<name> is wrong on macOS, where Qt resolves a bare
+// server name under NSTemporaryDirectory() (/private/var/folders/…/T/), so the
+// sidecar reported "Notepatra is not running" against a perfectly live editor.
+//
+// Failure here is never fatal — the sidecar still falls back to its guess, and
+// on Linux that guess is correct — so we warn and carry on.
+void McpBridge::publishEndpoint(const QString &dir) {
+    if (dir.isEmpty() || !m_server) return;
+    const QString path = dir + QStringLiteral("/mcp-endpoint.json");
+
+    QJsonObject o;
+    o[QStringLiteral("notepatra_mcp_endpoint")] = 1;
+#ifdef Q_OS_WIN
+    o[QStringLiteral("kind")] = QStringLiteral("named_pipe");
+#else
+    o[QStringLiteral("kind")] = QStringLiteral("unix_socket");
+#endif
+    // Verbatim: an absolute socket path on Unix, \\.\pipe\<name> on Windows.
+    o[QStringLiteral("value")] = m_server->fullServerName();
+    // name/pid/version are DIAGNOSTICS only — the reader must never gate on
+    // pid liveness; the connect attempt is the liveness test.
+    o[QStringLiteral("name")] = m_serverName;
+    o[QStringLiteral("pid")] =
+        static_cast<double>(QCoreApplication::applicationPid());
+    o[QStringLiteral("version")] = QStringLiteral(NOTEPATRA_VERSION);
+
+    // Atomic: a reader must never observe a half-written object. Compact + a
+    // trailing newline, UTF-8, no BOM.
+    QSaveFile f(path);
+    if (!f.open(QIODevice::WriteOnly) ||
+        f.write(QJsonDocument(o).toJson(QJsonDocument::Compact) + '\n') < 0 ||
+        !f.commit()) {
+        qWarning("Notepatra MCP bridge: could not publish endpoint file %s",
+                 qPrintable(path));
+        return;
+    }
+    // 0600 — the socket path is a capability. A no-op on Windows, where the
+    // per-user %APPDATA% ACL already covers it (same posture as the sidecar's
+    // token files).
+    QFile::setPermissions(path,
+                          QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    m_endpointFile = path;
+}
+
+// Remove only what THIS instance wrote. A crash leaves a stale file by design:
+// the reader tolerates it because a failed connect falls through to the guess.
+void McpBridge::unpublishEndpoint() {
+    if (m_endpointFile.isEmpty()) return;
+    QFile::remove(m_endpointFile);
+    m_endpointFile.clear();
 }
 
 void McpBridge::setApprovalTimeoutMs(int ms) {
@@ -422,6 +598,10 @@ void McpBridge::handleLine(QLocalSocket *client, const QByteArray &line) {
         verbValidateNpd(client, id, args);
     else if (verb == QLatin1String("run_sql"))
         verbRunSql(client, id, args);
+    else if (verb == QLatin1String("list_languages"))
+        verbListLanguages(client, id);
+    else if (verb == QLatin1String("get_capabilities"))
+        verbGetCapabilities(client, id);
     else if (verb == QLatin1String("open_note"))
         verbOpenNote(client, id, args);
     else if (verb == QLatin1String("create_note"))
@@ -432,6 +612,28 @@ void McpBridge::handleLine(QLocalSocket *client, const QByteArray &line) {
         verbSetReminder(client, id, args);
     else if (verb == QLatin1String("export_diagram"))
         verbExportDiagram(client, id, args);
+    else if (verb == QLatin1String("create_diagram"))
+        verbCreateDiagram(client, id, args);
+    else if (verb == QLatin1String("get_diagram_source"))
+        verbGetDiagramSource(client, id, args);
+    else if (verb == QLatin1String("set_diagram_source"))
+        verbSetDiagramSource(client, id, args);
+    else if (verb == QLatin1String("open_noter"))
+        verbOpenNoter(client, id);
+    else if (verb == QLatin1String("list_connections"))
+        verbListConnections(client, id);
+    else if (verb == QLatin1String("run_query"))
+        verbRunQuery(client, id, args);
+    else if (verb == QLatin1String("list_tables"))
+        verbListTables(client, id, args);
+    else if (verb == QLatin1String("open_data_analyst"))
+        verbOpenDataAnalyst(client, id);
+    else if (verb == QLatin1String("render_chart"))
+        verbRenderChart(client, id, args);
+    else if (verb == QLatin1String("export_query_results"))
+        verbExportQueryResults(client, id, args);
+    else if (verb == QLatin1String("export_chart"))
+        verbExportChart(client, id, args);
     else
         sendError(client, id,
                   QStringLiteral("unknown verb: %1").arg(verb));
@@ -826,15 +1028,26 @@ void McpBridge::verbSetLanguage(QLocalSocket *client, int id,
                   QStringLiteral("tab index out of range: %1").arg(idx));
         return;
     }
-    if (!m_host.setLanguage(idx, lang)) {
+    // Resolve to the canonical menu token; a null resolver (test hosts)
+    // falls back to the raw token so old fakes keep working.
+    QString resolved = lang;
+    if (m_host.resolveLanguage) {
+        resolved = m_host.resolveLanguage(lang);
+        if (resolved.isEmpty()) {
+            sendError(client, id,
+                      QStringLiteral("unknown language: %1").arg(lang));
+            return;
+        }
+    }
+    if (!m_host.setLanguage(idx, resolved)) {
         sendError(client, id,
-                  QStringLiteral("unknown language: %1").arg(lang));
+                  QStringLiteral("unknown language: %1").arg(resolved));
         return;
     }
     QJsonObject result;
     result[QStringLiteral("ok")] = true;
     result[QStringLiteral("tab_index")] = idx;
-    result[QStringLiteral("language")] = lang;
+    result[QStringLiteral("language")] = resolved; // honest: what was set
     sendResult(client, id, result);
 }
 
@@ -1276,6 +1489,31 @@ void McpBridge::verbGit(QLocalSocket *client, int id, const QJsonObject &args,
 
 // Parse-only .npd validation. NEVER touches a tab/canvas — Npd::parse is a
 // pure QtCore function the bridge links directly.
+// Npd::parse + "line N: msg" split, shared by validate_npd / create_diagram /
+// set_diagram_source.
+static QJsonObject npdValidationJson(const QString &source) {
+    const Npd::Diagram d = Npd::parse(source);
+    static const QRegularExpression rx(QStringLiteral("^line (\\d+): (.*)$"));
+    QJsonArray errors;
+    for (const QString &e : d.errors) {
+        int line = 0;
+        QString message = e;
+        const QRegularExpressionMatch m = rx.match(e);
+        if (m.hasMatch()) {
+            line = m.captured(1).toInt();
+            message = m.captured(2);
+        }
+        QJsonObject o;
+        o[QStringLiteral("line")] = line;
+        o[QStringLiteral("message")] = message;
+        errors.append(o);
+    }
+    QJsonObject r;
+    r[QStringLiteral("valid")] = d.ok();
+    r[QStringLiteral("errors")] = errors;
+    return r;
+}
+
 void McpBridge::verbValidateNpd(QLocalSocket *client, int id,
                                 const QJsonObject &args) {
     QString source;
@@ -1299,26 +1537,7 @@ void McpBridge::verbValidateNpd(QLocalSocket *client, int id,
         sendError(client, id, QStringLiteral("missing source or tab_index"));
         return;
     }
-    const Npd::Diagram d = Npd::parse(source);
-    static const QRegularExpression rx(QStringLiteral("^line (\\d+): (.*)$"));
-    QJsonArray errors;
-    for (const QString &e : d.errors) {
-        int line = 0;
-        QString message = e;
-        const QRegularExpressionMatch m = rx.match(e);
-        if (m.hasMatch()) {
-            line = m.captured(1).toInt();
-            message = m.captured(2);
-        }
-        QJsonObject o;
-        o[QStringLiteral("line")] = line;
-        o[QStringLiteral("message")] = message;
-        errors.append(o);
-    }
-    QJsonObject result;
-    result[QStringLiteral("valid")] = d.ok();
-    result[QStringLiteral("errors")] = errors;
-    sendResult(client, id, result);
+    sendResult(client, id, npdValidationJson(source));
 }
 
 // SELECT-only query. The host lambda routes SQL through the real
@@ -1344,39 +1563,50 @@ void McpBridge::verbRunSql(QLocalSocket *client, int id,
         sendError(client, id, err);
         return;
     }
-    QJsonArray rows = r.value(QLatin1String("rows")).toArray();
-    bool truncated = r.value(QLatin1String("truncated")).toBool(false);
-    if (rows.size() > kMaxSqlRows) { // defensive re-cap in the bridge
-        QJsonArray capped;
-        for (int i = 0; i < kMaxSqlRows; ++i) capped.append(rows.at(i));
-        rows = capped;
-        truncated = true;
-    }
-    // Per-cell char cap (defense in depth): a single cell must not be able to
-    // exfiltrate a whole file (e.g. read_text over a huge file that slipped a
-    // gate). Truncate each string cell to kMaxSqlCells and mark it.
-    for (int ri = 0; ri < rows.size(); ++ri) {
-        QJsonArray row = rows.at(ri).toArray();
-        bool changed = false;
-        for (int ci = 0; ci < row.size(); ++ci) {
-            const QString cell = row.at(ci).toString();
-            if (cell.size() > kMaxSqlCells) {
-                row.replace(ci, cell.left(kMaxSqlCells)
-                                    + QChar(0x2026)
-                                    + QStringLiteral("[truncated]"));
-                changed = true;
-            }
-        }
-        if (changed) {
-            rows.replace(ri, row);
-            truncated = true;
-        }
-    }
     QJsonObject result;
     result[QStringLiteral("columns")] = r.value(QLatin1String("columns")).toArray();
-    result[QStringLiteral("rows")] = rows;
-    result[QStringLiteral("truncated")] = truncated;
+    result[QStringLiteral("rows")] = r.value(QLatin1String("rows")).toArray();
+    result[QStringLiteral("truncated")] = r.value(QLatin1String("truncated")).toBool(false);
     result[QStringLiteral("engine")] = r.value(QLatin1String("engine")).toString();
+    // Defensive re-cap (row + per-cell): a single cell must not exfiltrate a
+    // whole file (e.g. read_text over a huge file that slipped a gate).
+    capSqlResultRows(result);
+    sendResult(client, id, result);
+}
+
+// ── Phase 0A read tier ─────────────────────────────────────────────────
+
+void McpBridge::verbListLanguages(QLocalSocket *client, int id) {
+    QJsonArray langs;
+    if (m_host.knownLanguages) {
+        const QStringList list = m_host.knownLanguages();
+        for (const QString &l : list) langs.append(l);
+    }
+    QJsonObject result;
+    result[QStringLiteral("languages")] = langs;
+    sendResult(client, id, result);
+}
+
+// Edition/platform/version/features from THIS binary's build state; the
+// Rust sidecar adds tool_count and tiers (it owns the tool surface).
+void McpBridge::verbGetCapabilities(QLocalSocket *client, int id) {
+    QJsonObject features;
+#ifdef NOTEPATRA_HAVE_DUCKDB
+    features[QStringLiteral("duckdb")] = true;
+#else
+    features[QStringLiteral("duckdb")] = false;
+#endif
+#ifdef NOTEPATRA_WITH_WEBENGINE
+    features[QStringLiteral("webengine")] = true;
+#else
+    features[QStringLiteral("webengine")] = false;
+#endif
+    features[QStringLiteral("noter")] = static_cast<bool>(m_host.notesRoot);
+    QJsonObject result;
+    result[QStringLiteral("edition")] = QLatin1String(editionName());
+    result[QStringLiteral("platform")] = QLatin1String(platformName());
+    result[QStringLiteral("version")] = QStringLiteral(NOTEPATRA_VERSION);
+    result[QStringLiteral("features")] = features;
     sendResult(client, id, result);
 }
 
@@ -1578,7 +1808,8 @@ void McpBridge::verbExportDiagram(QLocalSocket *client, int id,
         return;
     }
     const QString path =
-        QDir::fromNativeSeparators(args.value(QLatin1String("path")).toString());
+        QDir::cleanPath(
+            QDir::fromNativeSeparators(args.value(QLatin1String("path")).toString()));
     if (path.isEmpty()) {
         sendError(client, id, QStringLiteral("missing path"));
         return;
@@ -1611,6 +1842,421 @@ void McpBridge::verbExportDiagram(QLocalSocket *client, int id,
         QString e;
         if (!m_host.exportDiagram(idx, path, format, &e)) {
             *execErr = e.isEmpty() ? QStringLiteral("export failed") : e;
+            return QJsonObject();
+        }
+        QJsonObject r;
+        r[QStringLiteral("path")] = QDir::toNativeSeparators(path);
+        return r;
+    });
+}
+
+// ── Phase 1 — diagram control + Noter panel ─────────────────────────────
+
+// ACT: creates the tab even when the source is invalid .npd (the canvas
+// shows its own parse state); valid/errors ride along so the agent knows.
+void McpBridge::verbCreateDiagram(QLocalSocket *client, int id,
+                                  const QJsonObject &args) {
+    if (!m_host.createDiagram) {
+        sendError(client, id,
+                  QStringLiteral("create_diagram not supported by host"));
+        return;
+    }
+    const QString source = args.value(QLatin1String("source")).toString();
+    if (source.size() > kDiagramSourceMaxChars) {
+        sendError(client, id, QStringLiteral("source too large"));
+        return;
+    }
+    const QString title = args.value(QLatin1String("title")).toString();
+    const int idx = m_host.createDiagram(source, title);
+    if (idx < 0) {
+        sendError(client, id, QStringLiteral("could not create diagram tab"));
+        return;
+    }
+    // Validate the tab's REAL content (covers the empty-source case too).
+    QString actual = source;
+    if (m_host.diagramSource) m_host.diagramSource(idx, &actual);
+    QJsonObject result = npdValidationJson(actual);
+    result[QStringLiteral("tab_index")] = idx;
+    sendResult(client, id, result);
+}
+
+void McpBridge::verbGetDiagramSource(QLocalSocket *client, int id,
+                                     const QJsonObject &args) {
+    if (!args.contains(QLatin1String("tab_index"))) {
+        sendError(client, id, QStringLiteral("missing tab_index"));
+        return;
+    }
+    const int n = m_host.tabCount ? m_host.tabCount() : 0;
+    const int idx = args.value(QLatin1String("tab_index")).toInt(-1);
+    if (idx < 0 || idx >= n) {
+        sendError(client, id,
+                  QStringLiteral("tab index out of range: %1").arg(idx));
+        return;
+    }
+    QString src;
+    if (!m_host.diagramSource || !m_host.diagramSource(idx, &src)) {
+        sendError(client, id,
+                  QStringLiteral("tab %1 is not a diagram (.npd) tab").arg(idx));
+        return;
+    }
+    QJsonObject result;
+    result[QStringLiteral("source")] = src;
+    sendResult(client, id, result);
+}
+
+void McpBridge::verbSetDiagramSource(QLocalSocket *client, int id,
+                                     const QJsonObject &args) {
+    if (!m_host.setDiagramSource) {
+        sendError(client, id,
+                  QStringLiteral("set_diagram_source not supported by host"));
+        return;
+    }
+    if (!args.contains(QLatin1String("source"))) {
+        sendError(client, id, QStringLiteral("missing source"));
+        return;
+    }
+    const QString source = args.value(QLatin1String("source")).toString();
+    if (source.size() > kDiagramSourceMaxChars) {
+        sendError(client, id, QStringLiteral("source too large"));
+        return;
+    }
+    if (!args.contains(QLatin1String("tab_index"))) {
+        sendError(client, id, QStringLiteral("missing tab_index"));
+        return;
+    }
+    const int n = m_host.tabCount ? m_host.tabCount() : 0;
+    const int idx = args.value(QLatin1String("tab_index")).toInt(-1);
+    if (idx < 0 || idx >= n) {
+        sendError(client, id,
+                  QStringLiteral("tab index out of range: %1").arg(idx));
+        return;
+    }
+    // Fail fast when the tab isn't a diagram — never queue a doomed approval.
+    QString probe;
+    if (!m_host.diagramSource || !m_host.diagramSource(idx, &probe)) {
+        sendError(client, id,
+                  QStringLiteral("tab %1 is not a diagram (.npd) tab").arg(idx));
+        return;
+    }
+    const QString desc =
+        QStringLiteral("REPLACE the diagram source of '%1' with %2 chars "
+                       "(the canvas re-renders)")
+            .arg(elideForCard(tabLabel(idx), kApprovalDescChars))
+            .arg(source.size());
+    enqueueApproval(client, id, desc,
+                    elideForCard(source, kApprovalPreviewChars),
+                    [this, idx, source](QString *execErr) {
+        // Re-checked at execute time: the tab may have changed while pending.
+        if (!m_host.setDiagramSource(idx, source)) {
+            *execErr = QStringLiteral("tab %1 is not a diagram (.npd) tab")
+                           .arg(idx);
+            return QJsonObject();
+        }
+        QJsonObject r = npdValidationJson(source);
+        r[QStringLiteral("ok")] = true;
+        r[QStringLiteral("tab_index")] = idx;
+        return r;
+    });
+}
+
+void McpBridge::verbOpenNoter(QLocalSocket *client, int id) {
+    if (!m_host.openNoter) {
+        sendError(client, id,
+                  QStringLiteral("open_noter not supported by host"));
+        return;
+    }
+    if (!m_host.openNoter()) {
+        sendError(client, id, QStringLiteral("could not open Noter"));
+        return;
+    }
+    QJsonObject result;
+    result[QStringLiteral("opened")] = true;
+    sendResult(client, id, result);
+}
+
+// ── Phase 2 — Data-analyst + Charts ─────────────────────────────────────
+
+void McpBridge::verbListConnections(QLocalSocket *client, int id) {
+    QJsonArray out = m_host.listConnections ? m_host.listConnections()
+                                            : QJsonArray();
+    QJsonObject result;
+    result[QStringLiteral("connections")] = out;
+    sendResult(client, id, result);
+}
+
+// READ: SELECT-only query on a SAVED named connection (what run_sql cannot
+// reach). The host lambda re-classifies + runs with allowMutation=false; the
+// bridge re-caps rows/cells with the shared helper.
+void McpBridge::verbRunQuery(QLocalSocket *client, int id,
+                             const QJsonObject &args) {
+    if (!m_host.runNamedQuery) {
+        sendError(client, id,
+                  QStringLiteral("run_query not supported by host"));
+        return;
+    }
+    const QString name =
+        args.value(QLatin1String("connection_name")).toString();
+    if (name.trimmed().isEmpty()) {
+        sendError(client, id, QStringLiteral("missing connection_name"));
+        return;
+    }
+    const QString sql = args.value(QLatin1String("sql")).toString();
+    if (sql.trimmed().isEmpty()) {
+        sendError(client, id, QStringLiteral("missing sql"));
+        return;
+    }
+    const int maxRows = qBound(
+        1, args.value(QLatin1String("max_rows")).toInt(kMaxSqlRows),
+        kMaxSqlRows);
+    QString err;
+    const QJsonObject r = m_host.runNamedQuery(name, sql, maxRows, &err);
+    if (!err.isEmpty()) {
+        sendError(client, id, err);
+        return;
+    }
+    QJsonObject result;
+    result[QStringLiteral("columns")] =
+        r.value(QLatin1String("columns")).toArray();
+    result[QStringLiteral("rows")] = r.value(QLatin1String("rows")).toArray();
+    result[QStringLiteral("truncated")] =
+        r.value(QLatin1String("truncated")).toBool(false);
+    result[QStringLiteral("engine")] =
+        r.value(QLatin1String("engine")).toString();
+    capSqlResultRows(result);
+    sendResult(client, id, result);
+}
+
+void McpBridge::verbListTables(QLocalSocket *client, int id,
+                               const QJsonObject &args) {
+    if (!m_host.listTables) {
+        sendError(client, id,
+                  QStringLiteral("list_tables not supported by host"));
+        return;
+    }
+    const QString name =
+        args.value(QLatin1String("connection_name")).toString();
+    if (name.trimmed().isEmpty()) {
+        sendError(client, id, QStringLiteral("missing connection_name"));
+        return;
+    }
+    QString err;
+    const QJsonArray tables = m_host.listTables(name, &err);
+    if (!err.isEmpty()) {
+        sendError(client, id, err);
+        return;
+    }
+    QJsonObject result;
+    result[QStringLiteral("tables")] = tables;
+    sendResult(client, id, result);
+}
+
+void McpBridge::verbOpenDataAnalyst(QLocalSocket *client, int id) {
+    if (!m_host.openDataAnalyst) {
+        sendError(client, id,
+                  QStringLiteral("open_data_analyst not supported by host"));
+        return;
+    }
+    if (!m_host.openDataAnalyst()) {
+        sendError(client, id, QStringLiteral("could not open Data Analyst"));
+        return;
+    }
+    QJsonObject result;
+    result[QStringLiteral("opened")] = true;
+    sendResult(client, id, result);
+}
+
+// ACT (no card): insert an inline chart card into the Data transcript. The
+// unset-field message IS the friendly Full/WebEngine gate (Lite leaves the
+// field unset), so gating is answered immediately with no card.
+void McpBridge::verbRenderChart(QLocalSocket *client, int id,
+                                const QJsonObject &args) {
+    if (!m_host.renderChart) {
+        sendError(client, id,
+                  QStringLiteral("charts require the Full edition (WebEngine)"));
+        return;
+    }
+    const QJsonValue specV = args.value(QLatin1String("spec"));
+    if (!specV.isObject() || specV.toObject().isEmpty()) {
+        sendError(client, id, QStringLiteral("missing spec (object)"));
+        return;
+    }
+    const QString title = args.value(QLatin1String("title")).toString();
+    QString err;
+    const QJsonObject r = m_host.renderChart(specV.toObject(), title, &err);
+    if (!err.isEmpty()) {
+        sendError(client, id, err);
+        return;
+    }
+    QJsonObject result;
+    result[QStringLiteral("chart_id")] = r.value(QLatin1String("chart_id"));
+    result[QStringLiteral("rendered")] = r.value(QLatin1String("rendered"));
+    sendResult(client, id, result);
+}
+
+// WRITE (card): run the read-only query, serialize to CSV/JSON, write to the
+// requested path. Containment is the human approval card (which names the
+// cleaned absolute destination) plus absolute-path + existing-parent checks —
+// same posture as export_diagram. Fail fast on every doomed case BEFORE a card.
+void McpBridge::verbExportQueryResults(QLocalSocket *client, int id,
+                                       const QJsonObject &args) {
+    if (!m_host.runNamedQuery) {
+        sendError(client, id,
+                  QStringLiteral("export_query_results not supported by host"));
+        return;
+    }
+    const QString name =
+        args.value(QLatin1String("connection_name")).toString();
+    if (name.trimmed().isEmpty()) {
+        sendError(client, id, QStringLiteral("missing connection_name"));
+        return;
+    }
+    const QString sql = args.value(QLatin1String("sql")).toString();
+    if (sql.trimmed().isEmpty()) {
+        sendError(client, id, QStringLiteral("missing sql"));
+        return;
+    }
+    QString format = args.value(QLatin1String("format")).toString().toLower();
+    if (format.isEmpty()) format = QStringLiteral("csv");
+    if (format != QLatin1String("csv") && format != QLatin1String("json")) {
+        sendError(client, id,
+                  QStringLiteral("unsupported format: %1 (csv|json)").arg(format));
+        return;
+    }
+    const int maxRows = qBound(
+        1, args.value(QLatin1String("max_rows")).toInt(kExportRowsDefault),
+        kExportRowsMax);
+    const QString path =
+        QDir::cleanPath(
+            QDir::fromNativeSeparators(args.value(QLatin1String("path")).toString()));
+    if (path.isEmpty()) {
+        sendError(client, id, QStringLiteral("missing path"));
+        return;
+    }
+    const QFileInfo fi(path);
+    if (!fi.isAbsolute()) {
+        sendError(client, id, QStringLiteral("path must be absolute"));
+        return;
+    }
+    if (!QFileInfo(fi.absolutePath()).isDir()) {
+        sendError(client, id,
+                  QStringLiteral("parent directory does not exist: %1")
+                      .arg(QDir::toNativeSeparators(fi.absolutePath())));
+        return;
+    }
+    // Fail fast: a mutation SQL or an unknown connection never queues a card.
+    if (m_host.classifySqlReadOnly) {
+        QString reason;
+        if (!m_host.classifySqlReadOnly(sql, &reason)) {
+            sendError(client, id, QStringLiteral("query rejected: %1").arg(reason));
+            return;
+        }
+    }
+    if (m_host.listConnections) {
+        const QJsonArray conns = m_host.listConnections();
+        bool found = false;
+        for (const QJsonValue &c : conns) {
+            if (c.toObject().value(QLatin1String("name")).toString() == name) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            sendError(client, id,
+                      QStringLiteral("no connection named: %1").arg(name));
+            return;
+        }
+    }
+    const bool overwrites = QFileInfo(path).isFile();
+    const QString shownPath = sanitizeForCard(QDir::toNativeSeparators(path));
+    const QString shownDest = overwrites
+        ? QStringLiteral("OVERWRITE existing file: ") + shownPath
+        : shownPath;
+    const QString desc =
+        QStringLiteral("export query results from '%1' to %2")
+            .arg(elideForCard(name, kApprovalDescChars), shownDest);
+    enqueueApproval(client, id, desc, elideForCard(sql, kApprovalPreviewChars),
+                    [this, name, sql, maxRows, path, format](QString *execErr) {
+        QString e;
+        const QJsonObject r = m_host.runNamedQuery(name, sql, maxRows, &e);
+        if (!e.isEmpty()) {
+            *execErr = e;
+            return QJsonObject();
+        }
+        const QByteArray bytes = (format == QLatin1String("csv"))
+                                     ? sqlResultToCsv(r)
+                                     : sqlResultToJson(r);
+        QFile f(path);
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            *execErr = QStringLiteral("could not write: %1")
+                           .arg(QDir::toNativeSeparators(path));
+            return QJsonObject();
+        }
+        f.write(bytes);
+        f.close();
+        QJsonObject out;
+        out[QStringLiteral("ok")] = true;
+        out[QStringLiteral("path")] = QDir::toNativeSeparators(path);
+        out[QStringLiteral("rows")] = r.value(QLatin1String("rows")).toArray().size();
+        return out;
+    });
+}
+
+// WRITE (card): off-screen render + async export → file. Full/WebEngine only;
+// the unset-field message IS the friendly gate, so Lite fails fast pre-card.
+void McpBridge::verbExportChart(QLocalSocket *client, int id,
+                                const QJsonObject &args) {
+    if (!m_host.exportChart) {
+        sendError(client, id,
+                  QStringLiteral("charts require the Full edition (WebEngine)"));
+        return;
+    }
+    const QJsonValue specV = args.value(QLatin1String("spec"));
+    if (!specV.isObject() || specV.toObject().isEmpty()) {
+        sendError(client, id, QStringLiteral("missing spec (object)"));
+        return;
+    }
+    QString format = args.value(QLatin1String("format")).toString().toLower();
+    if (format.isEmpty()) format = QStringLiteral("png");
+    if (format != QLatin1String("png") && format != QLatin1String("svg") &&
+        format != QLatin1String("html") && format != QLatin1String("spec")) {
+        sendError(client, id,
+                  QStringLiteral("unsupported format: %1 (png|svg|html|spec)")
+                      .arg(format));
+        return;
+    }
+    const int scale = qBound(
+        1, args.value(QLatin1String("scale")).toInt(kChartScaleDefault), 4);
+    const QString path =
+        QDir::cleanPath(
+            QDir::fromNativeSeparators(args.value(QLatin1String("path")).toString()));
+    if (path.isEmpty()) {
+        sendError(client, id, QStringLiteral("missing path"));
+        return;
+    }
+    const QFileInfo fi(path);
+    if (!fi.isAbsolute()) {
+        sendError(client, id, QStringLiteral("path must be absolute"));
+        return;
+    }
+    if (!QFileInfo(fi.absolutePath()).isDir()) {
+        sendError(client, id,
+                  QStringLiteral("parent directory does not exist: %1")
+                      .arg(QDir::toNativeSeparators(fi.absolutePath())));
+        return;
+    }
+    const bool overwrites = QFileInfo(path).isFile();
+    const QString shownPath = sanitizeForCard(QDir::toNativeSeparators(path));
+    const QString shownDest = overwrites
+        ? QStringLiteral("OVERWRITE existing file: ") + shownPath
+        : shownPath;
+    const QString desc = QStringLiteral("export a chart as %1 to %2")
+                             .arg(format.toUpper(), shownDest);
+    const QJsonObject spec = specV.toObject();
+    enqueueApproval(client, id, desc, shownDest,
+                    [this, spec, path, format, scale](QString *execErr) {
+        QString e;
+        if (!m_host.exportChart(spec, path, format, scale, &e)) {
+            *execErr = e.isEmpty() ? QStringLiteral("chart export failed") : e;
             return QJsonObject();
         }
         QJsonObject r;

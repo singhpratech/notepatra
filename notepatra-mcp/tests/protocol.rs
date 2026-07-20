@@ -65,7 +65,7 @@ fn initialize_handshake() {
     assert_eq!(r["protocolVersion"], LATEST_PROTOCOL_VERSION);
     assert_eq!(r["serverInfo"]["name"], "notepatra-mcp");
     // Default version comes from Cargo.toml (no env override).
-    assert_eq!(r["serverInfo"]["version"], "0.1.119");
+    assert_eq!(r["serverInfo"]["version"], "0.1.120");
     assert!(r["capabilities"]["tools"].is_object());
     assert!(r["capabilities"]["resources"].is_object());
     assert!(r["capabilities"]["prompts"].is_object());
@@ -139,10 +139,26 @@ fn tools_list_shape() {
             "create_note",
             "append_note",
             "set_reminder",
-            "export_diagram"
+            "export_diagram",
+            // p0a
+            "list_languages",
+            "get_capabilities",
+            // phase 1
+            "create_diagram",
+            "get_diagram_source",
+            "set_diagram_source",
+            "open_noter",
+            // phase 2 — data-analyst + charts
+            "list_connections",
+            "run_query",
+            "list_tables",
+            "open_data_analyst",
+            "render_chart",
+            "export_query_results",
+            "export_chart"
         ]
     );
-    assert_eq!(names.len(), 35);
+    assert_eq!(names.len(), 48);
     for tool in tools {
         assert!(tool["description"].as_str().is_some_and(|d| !d.is_empty()));
         let schema = &tool["inputSchema"];
@@ -593,7 +609,7 @@ fn write_tool_descriptions_state_the_approval_gate() {
     let responses =
         run_lines(&[json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }).to_string()]);
     let tools = responses[0]["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 35);
+    assert_eq!(tools.len(), 48);
     let write_tools = [
         "insert_text",
         "replace_selection",
@@ -603,6 +619,9 @@ fn write_tool_descriptions_state_the_approval_gate() {
         "append_note",
         "set_reminder",
         "export_diagram",
+        "set_diagram_source",
+        "export_query_results",
+        "export_chart",
     ];
     for tool in tools {
         let name = tool["name"].as_str().unwrap();
@@ -1200,4 +1219,283 @@ fn search_project_clamps_max_results_to_200() {
     let hits = json_of(&responses[1]);
     assert_eq!(hits["results"].as_array().unwrap().len(), 200);
     assert_eq!(hits["truncated"], true);
+}
+
+#[test]
+fn p0a_list_languages_and_get_capabilities() {
+    let responses = run_lines(&[
+        initialize_line(1, LATEST_PROTOCOL_VERSION),
+        call_line(2, "list_languages", json!({})),
+        call_line(3, "get_capabilities", json!({})),
+        call_line(4, "get_capabilities", json!({ "bogus": 1 })),
+    ]);
+    // list_languages: canonical tokens, exact case.
+    assert_eq!(responses[1]["result"]["isError"], false);
+    let langs: Value = serde_json::from_str(
+        responses[1]["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    let arr = langs["languages"].as_array().unwrap();
+    assert_eq!(arr[0], "Plain Text");
+    assert!(arr.iter().any(|l| l == "Python"));
+    assert!(arr.iter().any(|l| l == "C++"));
+    // get_capabilities: editor fields pass through; tool_count and tiers are
+    // injected by the tool layer and MUST match the definitions list.
+    assert_eq!(responses[2]["result"]["isError"], false);
+    let caps: Value = serde_json::from_str(
+        responses[2]["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    let expected = notepatra_mcp::tools::definitions()
+        .as_array()
+        .unwrap()
+        .len();
+    assert_eq!(caps["tool_count"], expected as u64);
+    assert_eq!(caps["tool_count"], 48);
+    assert_eq!(caps["tiers"]["read"], 24);
+    assert_eq!(caps["tiers"]["act"], 13);
+    assert_eq!(caps["tiers"]["write"], 11);
+    assert!(caps["features"]["duckdb"].is_boolean());
+    assert!(caps["features"]["webengine"].is_boolean());
+    assert!(caps["features"]["noter"].is_boolean());
+    assert_eq!(caps["edition"], "Lite"); // mock's canned edition
+                                         // Extra argument → -32602 (additionalProperties: false enforced).
+    assert_eq!(responses[3]["error"]["code"], -32602);
+}
+
+#[test]
+fn p0a_tier_lists_partition_the_tool_surface() {
+    use notepatra_mcp::tools::{definitions, ACT_TOOLS, READ_TOOLS, WRITE_TOOLS};
+    let defs = definitions();
+    let names: std::collections::BTreeSet<String> = defs
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap().to_string())
+        .collect();
+    let mut tiered: Vec<&str> = Vec::new();
+    tiered.extend(READ_TOOLS);
+    tiered.extend(ACT_TOOLS);
+    tiered.extend(WRITE_TOOLS);
+    // No tool in two tiers, no tool untiered, no phantom tier entry.
+    assert_eq!(tiered.len(), names.len());
+    let tiered_set: std::collections::BTreeSet<String> =
+        tiered.iter().map(|s| s.to_string()).collect();
+    assert_eq!(tiered_set, names);
+}
+
+#[test]
+fn phase1_diagram_and_noter_tools() {
+    let responses = run_lines(&[
+        initialize_line(1, LATEST_PROTOCOL_VERSION),
+        call_line(
+            2,
+            "create_diagram",
+            json!({ "source": "diagram flow\n", "title": "flow" }),
+        ),
+        call_line(3, "get_diagram_source", json!({ "tab_index": 3 })),
+        call_line(
+            4,
+            "set_diagram_source",
+            json!({ "tab_index": 3, "source": "diagram er\n" }),
+        ),
+        call_line(5, "get_diagram_source", json!({ "tab_index": 3 })),
+        call_line(6, "get_diagram_source", json!({ "tab_index": 0 })), // not a diagram
+        call_line(7, "create_diagram", json!({ "source": "!!bad\n" })), // invalid still creates
+        call_line(8, "open_noter", json!({})),
+    ]);
+    let created = json_of(&responses[1]);
+    assert_eq!(created["tab_index"], 3);
+    assert_eq!(created["valid"], true);
+    assert_eq!(json_of(&responses[2])["source"], "diagram flow\n");
+    let set = json_of(&responses[3]);
+    assert_eq!(set["ok"], true);
+    assert_eq!(set["tab_index"], 3);
+    assert_eq!(set["valid"], true);
+    assert_eq!(json_of(&responses[4])["source"], "diagram er\n");
+    assert_eq!(responses[5]["result"]["isError"], true);
+    assert!(text_of(&responses[5]).contains("not a diagram"));
+    let bad = json_of(&responses[6]);
+    assert_eq!(bad["valid"], false);
+    assert!(bad["errors"].as_array().is_some_and(|e| !e.is_empty()));
+    assert_eq!(json_of(&responses[7])["opened"], true);
+}
+
+#[test]
+fn phase1_set_diagram_source_is_approval_gated_but_create_is_not() {
+    let mut editor = MockEditor::default();
+    editor.set_approval(ApprovalMode::Deny);
+    let responses = run_lines_with(
+        editor,
+        &[
+            call_line(1, "create_diagram", json!({ "source": "diagram flow\n" })), // ACT: unaffected
+            call_line(
+                2,
+                "set_diagram_source",
+                json!({ "tab_index": 3, "source": "x" }),
+            ),
+        ],
+    );
+    assert_eq!(responses[0]["result"]["isError"], false);
+    assert_eq!(responses[1]["result"]["isError"], true);
+    assert_eq!(text_of(&responses[1]), "denied by user");
+}
+
+#[test]
+fn phase1_malformed_arguments_are_invalid_params() {
+    let responses = run_lines(&[
+        call_line(1, "get_diagram_source", json!({})), // missing tab_index
+        call_line(2, "set_diagram_source", json!({ "tab_index": 0 })), // missing source
+        call_line(3, "create_diagram", json!({ "source": 7 })), // mistyped
+        call_line(4, "open_noter", json!({ "bogus": true })), // extra key
+    ]);
+    for r in &responses {
+        assert_eq!(r["error"]["code"], -32602, "expected -32602 in {r}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 — data-analyst + charts (7 new tools, 41 → 48)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn phase2_data_tools_happy_paths() {
+    let responses = run_lines(&[
+        call_line(1, "list_connections", json!({})),
+        call_line(
+            2,
+            "run_query",
+            json!({ "connection_name": "demo", "sql": "SELECT id, name FROM t" }),
+        ),
+        call_line(3, "list_tables", json!({ "connection_name": "demo" })),
+        call_line(4, "open_data_analyst", json!({})),
+    ]);
+    for r in &responses {
+        assert_eq!(r["result"]["isError"], false, "unexpected error in {r}");
+    }
+    // list_connections: sanitized entry, NO password leak.
+    let conns = json_of(&responses[0]);
+    let list = conns["connections"].as_array().unwrap();
+    assert_eq!(list[0]["name"], "demo");
+    assert_eq!(list[0]["read_only"], true);
+    assert!(list[0].get("password").is_none());
+    // run_query over a saved connection: columns + rows + engine.
+    let q = json_of(&responses[1]);
+    assert_eq!(q["columns"], json!(["id", "name"]));
+    assert_eq!(q["rows"].as_array().unwrap().len(), 2);
+    assert!(q["engine"].as_str().is_some());
+    // list_tables.
+    let t = json_of(&responses[2]);
+    assert!(t["tables"].as_array().unwrap().contains(&json!("invoices")));
+    // open_data_analyst.
+    assert_eq!(json_of(&responses[3])["opened"], true);
+}
+
+#[test]
+fn phase2_run_query_rejects_mutations_and_unknown_connections() {
+    let responses = run_lines(&[
+        call_line(
+            1,
+            "run_query",
+            json!({ "connection_name": "demo", "sql": "UPDATE t SET x = 1" }),
+        ),
+        call_line(
+            2,
+            "run_query",
+            json!({ "connection_name": "nope", "sql": "SELECT 1" }),
+        ),
+    ]);
+    assert_eq!(responses[0]["result"]["isError"], true);
+    assert!(text_of(&responses[0]).contains("SELECT"));
+    assert_eq!(responses[1]["result"]["isError"], true);
+    assert!(text_of(&responses[1]).contains("no connection named"));
+}
+
+#[test]
+fn phase2_render_chart_returns_id() {
+    let responses = run_lines(&[call_line(
+        1,
+        "render_chart",
+        json!({ "spec": { "mark": "bar" }, "title": "sales" }),
+    )]);
+    assert_eq!(responses[0]["result"]["isError"], false);
+    let c = json_of(&responses[0]);
+    assert!(c["chart_id"].as_str().is_some());
+    assert_eq!(c["rendered"], true);
+}
+
+#[test]
+fn phase2_write_tools_approval_gate() {
+    // Approve (default): both write verbs succeed.
+    let responses = run_lines(&[
+        call_line(
+            1,
+            "export_query_results",
+            json!({
+                "connection_name": "demo", "sql": "SELECT 1", "path": "/tmp/out.csv", "format": "csv"
+            }),
+        ),
+        call_line(
+            2,
+            "export_chart",
+            json!({
+                "spec": { "mark": "bar" }, "path": "/tmp/chart.png", "format": "png"
+            }),
+        ),
+    ]);
+    let eqr = json_of(&responses[0]);
+    assert_eq!(eqr["ok"], true);
+    assert_eq!(eqr["path"], "/tmp/out.csv");
+    assert_eq!(json_of(&responses[1])["path"], "/tmp/chart.png");
+    // Deny: both fail with the verbatim editor error.
+    let mut editor = MockEditor::default();
+    editor.set_approval(ApprovalMode::Deny);
+    let denied = run_lines_with(
+        editor,
+        &[
+            call_line(
+                1,
+                "export_query_results",
+                json!({
+                    "connection_name": "demo", "sql": "SELECT 1", "path": "/tmp/out.csv", "format": "csv"
+                }),
+            ),
+            call_line(
+                2,
+                "export_chart",
+                json!({
+                    "spec": { "mark": "bar" }, "path": "/tmp/chart.png", "format": "png"
+                }),
+            ),
+        ],
+    );
+    for r in &denied {
+        assert_eq!(r["result"]["isError"], true);
+        assert_eq!(text_of(r), "denied by user");
+    }
+}
+
+#[test]
+fn phase2_malformed_arguments_are_invalid_params() {
+    let responses = run_lines(&[
+        call_line(1, "run_query", json!({ "connection_name": "demo" })), // missing sql
+        call_line(
+            2,
+            "export_chart",
+            json!({ "spec": { "mark": "bar" }, "path": "/tmp/x.gif", "format": "gif" }),
+        ),
+        call_line(3, "render_chart", json!({ "spec": "not-an-object" })), // spec not object
+        call_line(
+            4,
+            "export_chart",
+            json!({ "spec": { "mark": "bar" }, "path": "/tmp/x.png", "format": "png", "scale": 9 }),
+        ),
+    ]);
+    for r in &responses {
+        assert_eq!(r["error"]["code"], -32602, "expected -32602 in {r}");
+    }
 }
