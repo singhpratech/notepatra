@@ -96,3 +96,10 @@ eval/data-analyst/.eval_checkpoint.jsonl
 eval/data-analyst/report.html
 eval/data-analyst/report.json
 eval/**/__pycache__/
+
+# Stray local scratch files (pre-existing, 2026-07-09) — an accidental README
+# duplicate and an empty saved "new tab". Ignored, not deleted: they are the
+# user's local files, and ignoring keeps them out of commits + satisfies the
+# release-check "clean tree" gate without touching them.
+/README (copy).md
+/tests/new 3test.md
