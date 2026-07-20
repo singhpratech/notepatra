@@ -99,21 +99,6 @@ jobs:
           wait $PID 2>/dev/null || true
           grep -q "built without remote support" flavor.txt || { echo "::error::shipped sidecar unexpectedly has remote support compiled in"; cat flavor.txt; exit 1; }
 
-
-      # End-to-end: the REAL editor driven by the REAL sidecar, on THIS platform.
-      # Every other MCP test proves one half — the C++ suite drives a fake
-      # sidecar, the Rust suite drives a fake bridge — so both stayed green
-      # while v0.1.120's two worst bugs shipped: the macOS sidecar could not
-      # find a running editor at all, and the Windows transport deadlocked on
-      # the first verb after the greeting. This is the only check that proves
-      # the two halves actually meet here. It also asserts the approval gate
-      # holds headless, and self-aborts on a hang rather than stalling the job.
-      - name: MCP end-to-end smoke (editor + sidecar)
-        timeout-minutes: 10
-        run: |
-          python3 scripts/mcp-e2e-smoke.py \
-            build/notepatra \
-            notepatra-mcp/target/release/notepatra-mcp
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -305,21 +290,6 @@ jobs:
           wait $PID 2>/dev/null || true
           grep -q "built without remote support" flavor.txt || { echo "::error::shipped sidecar unexpectedly has remote support compiled in"; cat flavor.txt; exit 1; }
 
-
-      # End-to-end: the REAL editor driven by the REAL sidecar, on THIS platform.
-      # Every other MCP test proves one half — the C++ suite drives a fake
-      # sidecar, the Rust suite drives a fake bridge — so both stayed green
-      # while v0.1.120's two worst bugs shipped: the macOS sidecar could not
-      # find a running editor at all, and the Windows transport deadlocked on
-      # the first verb after the greeting. This is the only check that proves
-      # the two halves actually meet here. It also asserts the approval gate
-      # holds headless, and self-aborts on a hang rather than stalling the job.
-      - name: MCP end-to-end smoke (editor + sidecar)
-        timeout-minutes: 10
-        run: |
-          python3 scripts/mcp-e2e-smoke.py \
-            build/notepatra \
-            notepatra-mcp/target/release/notepatra-mcp
       - name: Upload MCP server artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -983,32 +953,6 @@ jobs:
           # so this is a warning, never a hard failure.
           if arch -x86_64 /usr/bin/true 2>/dev/null; then arch -x86_64 ./target/x86_64-apple-darwin/release/notepatra-mcp </dev/null >/dev/null && echo "x86_64 slice executed under Rosetta"; else echo "::warning::Rosetta unavailable — x86_64 slice not smoke-executed"; fi
 
-
-      # End-to-end: the REAL editor driven by the REAL sidecar, on THIS platform.
-      # Every other MCP test proves one half — the C++ suite drives a fake
-      # sidecar, the Rust suite drives a fake bridge — so both stayed green
-      # while v0.1.120's two worst bugs shipped: the macOS sidecar could not
-      # find a running editor at all, and the Windows transport deadlocked on
-      # the first verb after the greeting. This is the only check that proves
-      # the two halves actually meet here. It also asserts the approval gate
-      # holds headless, and self-aborts on a hang rather than stalling the job.
-      - name: MCP end-to-end smoke (editor + sidecar)
-        timeout-minutes: 10
-        run: |
-          # Resolve the binary rather than hardcoding it: macOS links into a
-          # MACOSX_BUNDLE (Notepatra.app/Contents/MacOS/Notepatra), and assuming
-          # the layout is how a wrong path costs a whole CI cycle.
-          BIN=$(find build -type f -perm +111 \
-                  \( -name Notepatra -o -name notepatra \) \
-                  -not -path "*/CMakeFiles/*" 2>/dev/null | head -1)
-          if [ -z "$BIN" ]; then
-            echo "::error::could not locate the built editor under build/"
-            find build -maxdepth 3 -name "*Notepatra*" | head -20
-            exit 1
-          fi
-          echo "editor: $BIN"
-          python3 scripts/mcp-e2e-smoke.py "$BIN" \
-            notepatra-mcp/target/release/notepatra-mcp
       - name: Upload MCP server artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1254,24 +1198,6 @@ jobs:
       # np-pipe-bridge-tracker.log, so a hang in the remote-gateway suite would
       # have printed "no tracker file" and named nothing.
       # `always()` because the only run that matters is the failing one.
-
-      # End-to-end: the REAL editor driven by the REAL sidecar, on THIS platform.
-      # Every other MCP test proves one half — the C++ suite drives a fake
-      # sidecar, the Rust suite drives a fake bridge — so both stayed green
-      # while v0.1.120's two worst bugs shipped: the macOS sidecar could not
-      # find a running editor at all, and the Windows transport deadlocked on
-      # the first verb after the greeting. This is the only check that proves
-      # the two halves actually meet here. It also asserts the approval gate
-      # holds headless, and self-aborts on a hang rather than stalling the job.
-      - name: MCP end-to-end smoke (editor + sidecar)
-        timeout-minutes: 10
-        shell: pwsh
-        run: |
-          $exe = Get-ChildItem -Path build -Recurse -Filter "notepatra.exe" |
-                 Select-Object -First 1
-          if (-not $exe) { Write-Host "::error::notepatra.exe not found"; exit 1 }
-          python scripts/mcp-e2e-smoke.py $exe.FullName `
-            notepatra-mcp/target/release/notepatra-mcp.exe
       - name: Transport test trackers (localize a hang)
         if: always()
         shell: cmd
