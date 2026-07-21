@@ -299,7 +299,7 @@
   <div class="topbar-left">
     <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">v0.1.120 docs</span>
+    <span class="tag">v0.1.121 docs</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
@@ -404,7 +404,7 @@
   <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock (with a workspace open and a tool-capable model) and the model gets up to 13 native tools — file tools <code>read_file</code>, <code>list_dir</code>, <code>write_file</code>, <code>search</code>, <code>apply_diff</code>; data tools <code>query_sql</code>, <code>csv_query</code>, <code>generate_chart</code>; and read-only git tools <code>git_status</code>, <code>git_diff</code>, <code>git_log</code>, <code>git_branch_list</code>, <code>git_show</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
 
   <div class="callout info">
-    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.120 (July 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
+    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.121 (July 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
   </div>
 
   <h2 id="install" class="anchor-target">Install</h2>
@@ -1710,15 +1710,15 @@ icon db :database "DB"  <span class="cm">rich-icon node</span></code></pre>
 
   <h2 id="mcp" class="anchor-target">MCP server — your editor, readable by your AI (since v0.1.118)</h2>
   <div class="callout info">
-    <strong>New in v0.1.118, expanded to 48 tools (saved-connection SQL + charts).</strong> Full details, per-client setup snippets, and the FAQ live on the dedicated <a href="/mcp.html">MCP page</a>.
+    <strong>New in v0.1.118, expanded to 49 tools (saved-connection SQL + charts).</strong> Full details, per-client setup snippets, and the FAQ live on the dedicated <a href="/mcp.html">MCP page</a>.
   </div>
   <p>From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a standalone stdio JSON-RPC 2.0 <a href="https://modelcontextprotocol.io">Model Context Protocol</a> server (protocol revision <code>2025-06-18</code>; <code>2025-03-26</code> and <code>2024-11-05</code> also accepted) that connects external AI assistants to the running editor over a dedicated per-user local connection (a Unix domain socket on Linux/macOS, or — added in v0.1.119 and working from v0.1.120, which fixed a deadlock that blocked every verb — a Windows named pipe). Pass <code>--socket</code> to target the live editor; without it the server runs against a built-in mock editor for protocol testing. It works with Claude Desktop, Claude Code, OpenAI Codex CLI, the OpenAI Agents SDK, and any spec-compliant stdio MCP client (Cursor, Windsurf, VS Code).</p>
-  <p>The server exposes <strong>48 tools</strong> in three tiers:</p>
+  <p>The server exposes <strong>49 tools</strong> in three tiers:</p>
   <table>
     <thead><tr><th>Tier</th><th>Tools</th><th>Gate</th></tr></thead>
     <tbody>
       <tr><td><strong>Read</strong> (24)</td><td><code>list_open_tabs</code>, <code>read_tab</code>, <code>get_selection</code>, <code>get_status</code>, <code>app_info</code>, <code>list_recent_files</code>, <code>find_in_tab</code>, <code>search_project</code>, <code>list_notes</code>, <code>read_note</code>, <code>list_reminders</code>, <code>git_status</code>, <code>git_diff</code>, <code>git_log</code>, <code>git_show</code>, <code>git_branch</code>, <code>validate_npd</code>, <code>run_sql</code>, <code>list_languages</code>, <code>get_capabilities</code>, <code>get_diagram_source</code>, <code>list_connections</code>, <code>run_query</code>, <code>list_tables</code></td><td>None — observation only</td></tr>
-      <tr><td><strong>Act</strong> (13)</td><td><code>open_file</code>, <code>new_tab</code>, <code>goto_line</code>, <code>set_language</code>, <code>compare_tabs</code>, <code>format_json</code>, <code>format_sql</code>, <code>format_html</code>, <code>open_note</code>, <code>create_diagram</code>, <code>open_noter</code>, <code>open_data_analyst</code>, <code>render_chart</code></td><td>None — visible, non-destructive editor actions</td></tr>
+      <tr><td><strong>Act</strong> (14)</td><td><code>open_file</code>, <code>new_tab</code>, <code>goto_line</code>, <code>select_range</code>, <code>set_language</code>, <code>compare_tabs</code>, <code>format_json</code>, <code>format_sql</code>, <code>format_html</code>, <code>open_note</code>, <code>create_diagram</code>, <code>open_noter</code>, <code>open_data_analyst</code>, <code>render_chart</code></td><td>None — visible, non-destructive editor actions</td></tr>
       <tr><td><strong>Write</strong> (11)</td><td><code>insert_text</code>, <code>replace_selection</code>, <code>apply_edit</code>, <code>save_tab</code>, <code>create_note</code>, <code>append_note</code>, <code>set_reminder</code>, <code>export_diagram</code>, <code>set_diagram_source</code>, <code>export_query_results</code>, <code>export_chart</code></td><td><strong>Human approval card</strong> — see below</td></tr>
     </tbody>
   </table>

@@ -7,6 +7,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.121] — 2026-07-21
+
+**MCP design hardening — 6 fixes found by live-driving all 48 verbs against a running v0.1.120 editor. The read-only Welcome tab (index 0) is no longer a silent trap: `list_open_tabs` now reports an `editable` flag on every tab and the read/insert/compare/save verbs gate on it. `save_tab` gains an optional Save-As `path` so an AI can persist a `new_tab`; a new `select_range` verb (48 → 49 tools; Read 24 / Act 14 / Write 11) makes `replace_selection` usable; `git_*` falls back to the editor's startup directory; generic errors become specific and actionable; and inline/exported charts now render on Qt 5.15 WebEngine.**
+
+### Added
+- **`select_range`** (Act tier) — select a range of text in a tab by line/column or character offset, so the existing `replace_selection` write verb has a selection to act on. Tool count 48 → 49; tiers now **Read 24 / Act 14 / Write 11**.
+- **`save_tab` gains an optional `path`** (Save-As) so an AI can persist a `new_tab`'s content to disk. It stays a Write-tier, approval-gated verb — the path is validated before the approval card, and the destination is shown on the card.
+
+### Fixed
+- **The Welcome tab (index 0) was a silent trap.** `list_open_tabs` now marks every tab with an `editable` (bool) flag, and the read / insert / compare / save verbs gate on it — an AI that lands on the read-only Welcome tab now gets a specific error instead of a silent no-op.
+- **`git_*` verbs fall back to the editor's startup working directory**, so Git works when Notepatra was launched from inside a repository with no workspace open (previously they reported "not a git repository").
+- **Specific, actionable error messages replace generic ones** — "could not insert", "could not open compare view", and "needs Save As" now explain what went wrong and what to do.
+- **Charts render on Qt 5.15 WebEngine.** The chart bundle now polyfills `Object.hasOwn` and `structuredClone` before the Vega scripts load, because Qt 5.15's WebEngine (Chromium ~87) lacks them — this had been breaking all chart rendering there (`render_chart` returned `rendered: true` while drawing nothing; `export_chart` surfaced `e.isString`).
+
+### Security
+- The Save-As `save_tab` and every other write verb still go through the same in-editor Approve/Deny card (120 s auto-deny, one card at a time, no headless bypass); the gate lives in the editor process. `select_range` is Act-tier and non-destructive.
+
 ## [0.1.120] — 2026-07-20
 
 **MCP full control — 48 tools + a remote gateway, and the sidecar now actually works on Windows and macOS. The `notepatra-mcp` sidecar grows from 35 to 48 tools (Read 24 / Act 13 / Write 11), making every sub-app AI-drivable (Diagram, Noter, Data-analyst, Charts) with capability discovery. A new opt-in, loopback-only remote gateway pairs a client over an authenticated channel with fail-closed scopes; writes still require a physical Approve click in the editor. Windows gets a prebuilt signed sidecar zip and a one-click `.mcpb` bundle.**

@@ -64,8 +64,9 @@ fn initialize_handshake() {
     assert_eq!(responses[0]["id"], 1);
     assert_eq!(r["protocolVersion"], LATEST_PROTOCOL_VERSION);
     assert_eq!(r["serverInfo"]["name"], "notepatra-mcp");
-    // Default version comes from Cargo.toml (no env override).
-    assert_eq!(r["serverInfo"]["version"], "0.1.120");
+    // Default version comes from Cargo.toml (no env override). Derive it from
+    // CARGO_PKG_VERSION so a version bump never leaves this test stale again.
+    assert_eq!(r["serverInfo"]["version"], env!("CARGO_PKG_VERSION"));
     assert!(r["capabilities"]["tools"].is_object());
     assert!(r["capabilities"]["resources"].is_object());
     assert!(r["capabilities"]["prompts"].is_object());

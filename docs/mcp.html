@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Notepatra MCP — Your editor, readable by your AI</title>
-<meta name="description" content="Notepatra's MCP server (introduced v0.1.118, 48 tools as of v0.1.120): tools that let Claude, Codex, and any spec-compliant MCP client read your open tabs, search your workspace, run read-only SQL, inspect Git — and, only with your explicit per-action approval, edit, save, and create Noter notes. Local socket + stdio, nothing leaves your machine.">
+<meta name="description" content="Notepatra's MCP server (introduced v0.1.118, 49 tools as of v0.1.121): tools that let Claude, Codex, and any spec-compliant MCP client read your open tabs, search your workspace, run read-only SQL, inspect Git — and, only with your explicit per-action approval, edit, save, and create Noter notes. Local socket + stdio, nothing leaves your machine.">
 <link rel="canonical" href="https://notepatra.org/mcp.html">
 <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png">
 
@@ -213,7 +213,7 @@
   <div class="topbar-left">
     <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">MCP · v0.1.120 · 48 tools</span>
+    <span class="tag">MCP · v0.1.121 · 49 tools</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
@@ -229,13 +229,13 @@
   <p class="lead">From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a Model Context Protocol server that lets Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client see what you have open, search your workspace, run read-only SQL over your data files, read your Git status and Noter notes, and — only with your explicit per-action approval — edit, save, and create notes. Everything runs over stdio and a local socket. Nothing leaves your machine.</p>
 
   <div class="callout info">
-    <strong>Release status.</strong> MCP first shipped in v0.1.118; the current release is v0.1.120. The server provides <strong>48 tools</strong> (Git, read-only SQL, Noter write verbs, diagram export) and supports Windows named-pipe transport, and v0.1.120 adds a prebuilt, cosign-signed Windows sidecar (<code>notepatra-mcp-windows-x64.zip</code>) plus a one-click <code>notepatra-mcp.mcpb</code> Claude Desktop bundle as release assets. Everything on this page describes v0.1.120.
+    <strong>Release status.</strong> MCP first shipped in v0.1.118; the current release is v0.1.121. The server provides <strong>49 tools</strong> (Git, read-only SQL, Noter write verbs, diagram export) and supports Windows named-pipe transport, and v0.1.120 adds a prebuilt, cosign-signed Windows sidecar (<code>notepatra-mcp-windows-x64.zip</code>) plus a one-click <code>notepatra-mcp.mcpb</code> Claude Desktop bundle as release assets. Everything on this page describes v0.1.121.
   </div>
 
   <nav class="pagenav">
     On this page:
     <a href="#what-it-is">What it is</a> ·
-    <a href="#tools">The 48 tools</a> ·
+    <a href="#tools">The 49 tools</a> ·
     <a href="#approval">Write approval</a> ·
     <a href="#setup">Setup per client</a> ·
     <a href="#resources-prompts">Resources &amp; prompts</a> ·
@@ -257,8 +257,8 @@
   </ul>
   <p>In practice: ask your assistant "what do I have open?", "find where the config is parsed", "diff these two tabs", "format this JSON and put it in a new tab" — and it drives the actual editor on your screen.</p>
 
-  <h2 id="tools" class="anchor-target">The tool surface — 48 tools, three tiers</h2>
-  <p><code>notepatra-mcp</code> exposes 48 tools, grouped in three tiers by what they can touch. Read tools observe. Act tools drive visible, non-destructive editor actions. Write tools change buffer contents or disk — and every one of those is gated behind a human approval card.</p>
+  <h2 id="tools" class="anchor-target">The tool surface — 49 tools, three tiers</h2>
+  <p><code>notepatra-mcp</code> exposes 49 tools, grouped in three tiers by what they can touch. Read tools observe. Act tools drive visible, non-destructive editor actions. Write tools change buffer contents or disk — and every one of those is gated behind a human approval card.</p>
 
   <h3>Tier 1 — Read (24 tools, no approval needed)</h3>
   <table>
@@ -294,13 +294,14 @@
   <div class="callout success">
     <strong>How <code>run_sql</code> stays safe.</strong> Every query is checked by the SQL classifier and rejected unless it is a pure <code>SELECT</code> — no <code>INSERT</code>, <code>UPDATE</code>, <code>ATTACH</code>, <code>COPY</code>, or DDL ever runs. On the Full (DuckDB) edition there is a second wall: the target CSV / Parquet / JSON is first materialized into an in-memory table, then DuckDB's external filesystem access is turned off (<code>SET enable_external_access=false</code>) <em>before</em> the untrusted SQL executes — so the query cannot reach host files even through <code>read_text</code>, <code>read_csv_auto</code>, <code>glob</code>, or a replacement scan. The <code>csv_path</code> argument is confined to your open workspace. Results are row- and cell-capped so a single answer can't exfiltrate a whole file.</div>
 
-  <h3>Tier 2 — Act (13 tools, visible and non-destructive)</h3>
+  <h3>Tier 2 — Act (14 tools, visible and non-destructive)</h3>
   <table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td><code>open_file</code></td><td>Open a file in a new tab, or focus the tab that already has it.</td></tr>
       <tr><td><code>new_tab</code></td><td>Create a new untitled tab, optionally pre-filled with text.</td></tr>
       <tr><td><code>goto_line</code></td><td>Move the cursor to a line in a tab — for pointing you at a location.</td></tr>
+      <tr><td><code>select_range</code></td><td>Select a range of text in a tab by line/column or character offset, so <code>replace_selection</code> has a selection to act on.</td></tr>
       <tr><td><code>set_language</code></td><td>Set a tab's syntax-highlighting language. Accepts friendly aliases (<code>python</code>, <code>js</code>, <code>cpp</code>, <code>go</code>) and resolves them to the canonical name.</td></tr>
       <tr><td><code>compare_tabs</code></td><td>Open Notepatra's side-by-side Compare view for two open tabs.</td></tr>
       <tr><td><code>format_json</code></td><td>Format JSON text and return the result (fails on invalid JSON).</td></tr>
@@ -390,7 +391,7 @@ cargo build --release   # binary at target/release/notepatra-mcp</code></pre>
   <h3>Claude Code</h3>
   <p>One command:</p>
   <pre><code>claude mcp add notepatra -- notepatra-mcp --socket</code></pre>
-  <p>Then <code>/mcp</code> inside Claude Code shows the server and its 48 tools.</p>
+  <p>Then <code>/mcp</code> inside Claude Code shows the server and its 49 tools.</p>
 
   <h3>OpenAI Codex CLI</h3>
   <p>Add a block to <code>~/.codex/config.toml</code>:</p>
