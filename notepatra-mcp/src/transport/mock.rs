@@ -71,6 +71,9 @@ struct MockTab {
     language: String,
     truncated: bool,
     is_diagram: bool,
+    // v0.1.121 (issue #1): false for tabs that are not editable text buffers
+    // (a Diagram canvas here); surfaced as `editable` in list_open_tabs.
+    editable: bool,
 }
 
 struct MockNote {
@@ -143,6 +146,7 @@ impl Default for MockEditor {
                     language: "Rust".into(),
                     truncated: false,
                     is_diagram: false,
+                    editable: true,
                 },
                 MockTab {
                     title: "NOTES.md".into(),
@@ -153,6 +157,7 @@ impl Default for MockEditor {
                     language: "Markdown".into(),
                     truncated: false,
                     is_diagram: false,
+                    editable: true,
                 },
                 MockTab {
                     title: "Untitled 1".into(),
@@ -162,6 +167,7 @@ impl Default for MockEditor {
                     language: "Plain Text".into(),
                     truncated: false,
                     is_diagram: false,
+                    editable: true,
                 },
             ],
             selection: (0, "println!(\"hello from notepatra\");".into()),
@@ -241,6 +247,7 @@ impl MockEditor {
             title: t.title.clone(),
             path: t.path.clone(),
             modified: t.modified,
+            editable: t.editable,
         }
     }
 
@@ -324,6 +331,7 @@ impl EditorTransport for MockEditor {
             language: language_for(path),
             truncated: false,
             is_diagram: false,
+            editable: true,
         });
         Ok(self.tabs.len() - 1)
     }
@@ -463,6 +471,7 @@ impl EditorTransport for MockEditor {
             language: "Plain Text".into(),
             truncated: false,
             is_diagram: false,
+            editable: true,
         });
         Ok(json!({ "tab_index": self.tabs.len() - 1 }))
     }
@@ -478,6 +487,42 @@ impl EditorTransport for MockEditor {
         }
         self.selection.0 = i;
         Ok(json!({ "ok": true, "tab_index": i, "line": line }))
+    }
+
+    fn select_range(
+        &mut self,
+        tab_index: Option<usize>,
+        start_line: usize,
+        start_col: usize,
+        end_line: usize,
+        end_col: usize,
+    ) -> Result<Value, TransportError> {
+        let i = self.resolve(tab_index)?;
+        let lines: Vec<&str> = self.tabs[i].content.split('\n').collect();
+        if start_line < 1 || end_line < 1 || start_line > lines.len() || end_line > lines.len() {
+            return Err(TransportError(format!(
+                "could not select range in tab {i} (line out of range?)"
+            )));
+        }
+        // Flatten (line,col) to a char offset (col clamped to the line, EOL
+        // counted as one char between lines) so the selection mirrors the span.
+        let offset = |line: usize, col: usize| -> usize {
+            let mut off = 0;
+            for l in &lines[..line - 1] {
+                off += l.chars().count() + 1; // + newline
+            }
+            off + (col - 1).min(lines[line - 1].chars().count())
+        };
+        let a = offset(start_line, start_col);
+        let b = offset(end_line, end_col);
+        if b < a {
+            return Err(TransportError(format!(
+                "could not select range in tab {i} (end before start?)"
+            )));
+        }
+        let sel: String = self.tabs[i].content.chars().skip(a).take(b - a).collect();
+        self.selection = (i, sel);
+        Ok(json!({ "ok": true, "tab_index": i }))
     }
 
     fn set_language(
@@ -631,9 +676,29 @@ impl EditorTransport for MockEditor {
         Ok(json!({ "ok": true, "count": count }))
     }
 
-    fn save_tab(&mut self, tab_index: Option<usize>) -> Result<Value, TransportError> {
+    fn save_tab(
+        &mut self,
+        tab_index: Option<usize>,
+        path: Option<&str>,
+    ) -> Result<Value, TransportError> {
         self.check_approval()?;
         let i = self.resolve(tab_index)?;
+        // v0.1.121 (issue #4): a path is a "Save As" — the editor validates it
+        // (absolute + parent exists) before this runs; the mock adopts it and
+        // renames the tab from the basename.
+        if let Some(p) = path {
+            if !p.starts_with('/') {
+                return Err(TransportError(format!(
+                    "save_tab path must be absolute: {p}"
+                )));
+            }
+            self.tabs[i].path = Some(p.to_string());
+            self.tabs[i].title = p.rsplit('/').next().unwrap_or(p).to_string();
+        } else if self.tabs[i].path.is_none() {
+            return Err(TransportError(
+                "save_tab needs a path: this tab has never been saved (pass \"path\")".into(),
+            ));
+        }
         self.tabs[i].modified = false;
         Ok(json!({ "ok": true }))
     }
@@ -798,6 +863,7 @@ impl EditorTransport for MockEditor {
             language: "HTML".into(),
             truncated: false,
             is_diagram: false,
+            editable: true,
         });
         // Bridge result shape: {opened, title}.
         Ok(json!({ "opened": true, "title": title }))
@@ -893,6 +959,8 @@ impl EditorTransport for MockEditor {
             language: "Plain Text".into(),
             truncated: false,
             is_diagram: true,
+            // A Diagram canvas is not an editable text buffer (issue #1).
+            editable: false,
         });
         Ok(json!({
             "tab_index": self.tabs.len() - 1,

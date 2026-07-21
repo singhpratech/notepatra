@@ -1728,6 +1728,11 @@ MainWindow::MainWindow(bool standaloneNoSession)
     // answer directly; write verbs run only after the human approves the
     // bridge's in-window card. Primary only; standalone windows never serve it.
     if (!m_standaloneNoSession) {
+        // Capture the launch directory now (before anything can chdir): the
+        // git verbs use it as a last-resort repo root so an agent that starts
+        // Notepatra from inside a checkout still gets git even with no folder
+        // open and only untitled tabs (issue #3).
+        m_startupCwd = QDir::currentPath();
         McpEditorHost host;
         host.tabCount = [this] { return m_tabs->count(); };
         host.tabTitle = [this](int i) { return m_tabs->tabText(i); };
@@ -1742,6 +1747,13 @@ MainWindow::MainWindow(bool standaloneNoSession)
         host.tabText = [this](int i) {
             auto *ed = m_tabs->editorAt(i);
             return ed ? ed->text() : QString();
+        };
+        // v0.1.121 (issue #1): only tabs backed by a real Editor are editable
+        // text buffers. editorAt() is nullptr for the Welcome page, a Diagram
+        // canvas, and the Noter panel — exactly the tabs an agent must not
+        // read_tab / insert_text / save_tab against.
+        host.tabEditable = [this](int i) {
+            return m_tabs->editorAt(i) != nullptr;
         };
         host.openFile = [this](const QString &p) {
             openFile(p);   // same internal path the single-instance handoff uses
@@ -1805,6 +1817,34 @@ MainWindow::MainWindow(bool standaloneNoSession)
             if (!ed) return false;
             m_tabs->setCurrentIndex(tabIndex);
             ed->gotoLine(line); // 1-based; ensures the line is visible
+            ed->setFocus();
+            return true;
+        };
+        // v0.1.121 (issue #5): move the selection to a 1-based range. Cols are
+        // clamped to each line's text length (EOL excluded) so an over-long
+        // col lands at line end, never on the next line.
+        host.selectRange = [this](int tabIndex, int startLine, int startCol,
+                                  int endLine, int endCol) {
+            auto *ed = m_tabs->editorAt(tabIndex);
+            if (!ed) return false;
+            const int lineCount = ed->lines();
+            const int lineFrom = startLine - 1;
+            const int lineTo = endLine - 1;
+            if (lineFrom < 0 || lineFrom >= lineCount || lineTo < 0 ||
+                lineTo >= lineCount)
+                return false;
+            auto clampCol = [ed](int line, int col1based) {
+                const QString t = ed->text(line);
+                int len = t.size();
+                while (len > 0 &&
+                       (t.at(len - 1) == QLatin1Char('\n') ||
+                        t.at(len - 1) == QLatin1Char('\r')))
+                    --len;
+                return qBound(0, col1based - 1, len);
+            };
+            m_tabs->setCurrentIndex(tabIndex);
+            ed->setSelection(lineFrom, clampCol(lineFrom, startCol), lineTo,
+                             clampCol(lineTo, endCol));
             ed->setFocus();
             return true;
         };
@@ -1945,6 +1985,21 @@ MainWindow::MainWindow(bool standaloneNoSession)
             }
             return true;
         };
+        // v0.1.121 (issue #4): "Save As" to an explicit path the bridge has
+        // already validated (absolute, parent folder exists). Same headless
+        // path as host.saveTab — Editor::saveFile(path) — never a dialog.
+        host.saveTabAs = [this](int i, const QString &path) {
+            auto *ed = m_tabs->editorAt(i);
+            if (!ed || path.isEmpty()) return false;
+            if (!ed->saveFile(path)) return false;
+            updateTabTitle(i);
+            ed->updateGitGutter();
+            if (m_fileWatcher) {
+                const QString saved = ed->filePath();
+                m_fileTimestamps[saved] = QFileInfo(saved).lastModified();
+            }
+            return true;
+        };
         // ── v0.1.119 depth wave — each lambda reuses the SAME real code path
         //    the equivalent feature uses (git_tools, DbConnections classifier
         //    + runQuery, NotesStorage/NotesTodos, DiagramView export). ──
@@ -1985,6 +2040,12 @@ MainWindow::MainWindow(bool standaloneNoSession)
                         QFileInfo(ed->filePath()).absolutePath();
                     if (!roots.contains(fdir)) roots << fdir;
                 }
+            // Last resort (issue #3): the process launch directory, so git
+            // still resolves when no folder is open and every tab is untitled
+            // (an agent launched Notepatra from inside the repo). Appended
+            // LAST — the workspace and the file's own directory always win.
+            if (!m_startupCwd.isEmpty() && !roots.contains(m_startupCwd))
+                roots << m_startupCwd;
             if (roots.isEmpty()) {
                 if (err) *err = QStringLiteral("no workspace folder open");
                 return QString();

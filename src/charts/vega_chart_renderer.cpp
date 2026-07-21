@@ -115,6 +115,26 @@ const char *kVegaShellHtml = R"HTML(<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
+<!-- POLYFILLS — must run BEFORE the vega scripts. Qt 5.15's bundled WebEngine
+     is Chromium ~87, but the pinned vega bundles call Object.hasOwn (Chromium
+     93+) and structuredClone (Chromium 98+). Without these, vega core throws
+     during load, leaving vega.isString undefined, and vega-embed then dies
+     synchronously with "TypeError: e.isString is not a function" — which broke
+     BOTH render_chart and export_chart silently on Qt 5.15 (render returned
+     rendered:true but drew nothing). JSON round-trip is a sufficient
+     structuredClone for vega's specs (plain JSON-serialisable objects). -->
+<script>
+  if (typeof Object.hasOwn !== "function") {
+    Object.hasOwn = function (o, k) {
+      return Object.prototype.hasOwnProperty.call(Object(o), k);
+    };
+  }
+  if (typeof structuredClone !== "function") {
+    window.structuredClone = function (v) {
+      return v === undefined ? undefined : JSON.parse(JSON.stringify(v));
+    };
+  }
+</script>
 <script src="qrc:///vega/vega.min.js"></script>
 <script src="qrc:///vega/vega-lite.min.js"></script>
 <script src="qrc:///vega/vega-embed.min.js"></script>

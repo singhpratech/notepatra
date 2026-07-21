@@ -34,7 +34,7 @@ cd "$(dirname "$0")/.."
 LEXER_COUNT=82
 FILE_EXT_COUNT=238
 BACKEND_COUNT=6
-MCP_TOOL_COUNT=48
+MCP_TOOL_COUNT=49
 BACKEND_LIST="Ollama / llama.cpp / OpenRouter / Ollama Cloud / OpenAI / Azure OpenAI"
 # BARE_BIN_MB removed v0.1.86 — verify-download-sizes.sh now downloads the
 # actual artifact and asserts byte count + stripped-vs-not, which is strictly

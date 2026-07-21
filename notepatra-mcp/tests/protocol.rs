@@ -64,8 +64,9 @@ fn initialize_handshake() {
     assert_eq!(responses[0]["id"], 1);
     assert_eq!(r["protocolVersion"], LATEST_PROTOCOL_VERSION);
     assert_eq!(r["serverInfo"]["name"], "notepatra-mcp");
-    // Default version comes from Cargo.toml (no env override).
-    assert_eq!(r["serverInfo"]["version"], "0.1.120");
+    // Default version comes from Cargo.toml (no env override). Derive it from
+    // CARGO_PKG_VERSION so a version bump never leaves this test stale again.
+    assert_eq!(r["serverInfo"]["version"], env!("CARGO_PKG_VERSION"));
     assert!(r["capabilities"]["tools"].is_object());
     assert!(r["capabilities"]["resources"].is_object());
     assert!(r["capabilities"]["prompts"].is_object());
@@ -115,6 +116,7 @@ fn tools_list_shape() {
             "find_in_tab",
             "new_tab",
             "goto_line",
+            "select_range",
             "set_language",
             "compare_tabs",
             "format_json",
@@ -158,7 +160,7 @@ fn tools_list_shape() {
             "export_chart"
         ]
     );
-    assert_eq!(names.len(), 48);
+    assert_eq!(names.len(), 49);
     for tool in tools {
         assert!(tool["description"].as_str().is_some_and(|d| !d.is_empty()));
         let schema = &tool["inputSchema"];
@@ -197,6 +199,10 @@ fn tools_call_happy_paths() {
     .unwrap();
     assert_eq!(tabs.as_array().unwrap().len(), 3);
     assert_eq!(tabs[1]["title"], "NOTES.md");
+    // v0.1.121 (issue #1): every entry carries the editable flag; the mock's
+    // text tabs are all editable.
+    assert_eq!(tabs[0]["editable"], true);
+    assert_eq!(tabs[1]["editable"], true);
     // read_tab by index returns the raw content.
     assert!(responses[2]["result"]["content"][0]["text"]
         .as_str()
@@ -609,7 +615,7 @@ fn write_tool_descriptions_state_the_approval_gate() {
     let responses =
         run_lines(&[json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }).to_string()]);
     let tools = responses[0]["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 48);
+    assert_eq!(tools.len(), 49);
     let write_tools = [
         "insert_text",
         "replace_selection",
@@ -706,6 +712,62 @@ fn write_tools_happy_paths() {
     assert_eq!(json_of(&responses[7]), json!({ "ok": true }));
     let tabs = json_of(&responses[8]);
     assert_eq!(tabs[1]["modified"], false);
+}
+
+// v0.1.121 (issue #4): save_tab with a path is a "Save As" — the tab adopts
+// the new absolute path and basename title; a relative path is rejected.
+#[test]
+fn save_tab_with_path_is_a_save_as() {
+    let responses = run_lines(&[
+        call_line(
+            1,
+            "save_tab",
+            json!({ "tab_index": 2, "path": "/tmp/exported.txt" }),
+        ),
+        call_line(2, "list_open_tabs", json!({})),
+        call_line(
+            3,
+            "save_tab",
+            json!({ "tab_index": 2, "path": "relative/x.txt" }),
+        ),
+    ]);
+    assert_eq!(responses[0]["result"]["isError"], false);
+    let tabs = json_of(&responses[1]);
+    assert_eq!(tabs[2]["path"], "/tmp/exported.txt");
+    assert_eq!(tabs[2]["title"], "exported.txt");
+    // A relative path fails with the verbatim editor error.
+    assert_eq!(responses[2]["result"]["isError"], true);
+    assert!(text_of(&responses[2]).contains("must be absolute"));
+}
+
+// v0.1.121 (issue #5): select_range moves the selection (ACT, no card); a
+// following get_selection reflects the spanned text, and an out-of-range line
+// errors.
+#[test]
+fn select_range_moves_the_selection() {
+    let responses = run_lines(&[
+        call_line(
+            1,
+            "select_range",
+            json!({ "tab_index": 0, "start_line": 1, "start_col": 1,
+                    "end_line": 1, "end_col": 3 }),
+        ),
+        call_line(2, "get_selection", json!({})),
+        call_line(
+            3,
+            "select_range",
+            json!({ "tab_index": 0, "start_line": 99, "start_col": 1,
+                    "end_line": 99, "end_col": 2 }),
+        ),
+    ]);
+    assert_eq!(responses[0]["result"]["isError"], false);
+    // tab 0 content starts "fn main() {" — cols 1..3 (exclusive) select "fn".
+    let sel = json_of(&responses[1]);
+    assert_eq!(sel["tab_index"], 0);
+    assert_eq!(sel["text"], "fn");
+    // A line past the buffer end is a verbatim editor error.
+    assert_eq!(responses[2]["result"]["isError"], true);
+    assert!(text_of(&responses[2]).contains("could not select range"));
 }
 
 #[test]
@@ -1255,9 +1317,9 @@ fn p0a_list_languages_and_get_capabilities() {
         .unwrap()
         .len();
     assert_eq!(caps["tool_count"], expected as u64);
-    assert_eq!(caps["tool_count"], 48);
+    assert_eq!(caps["tool_count"], 49);
     assert_eq!(caps["tiers"]["read"], 24);
-    assert_eq!(caps["tiers"]["act"], 13);
+    assert_eq!(caps["tiers"]["act"], 14); // +select_range (v0.1.121)
     assert_eq!(caps["tiers"]["write"], 11);
     assert!(caps["features"]["duckdb"].is_boolean());
     assert!(caps["features"]["webengine"].is_boolean());

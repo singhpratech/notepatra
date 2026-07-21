@@ -29,6 +29,11 @@ struct McpEditorHost {
     std::function<QString(int)> tabPath;          // "" for non-file tabs
     std::function<bool(int)> tabModified;
     std::function<QString(int)> tabText;
+    // True when tab i is a real editable text buffer; false for the Welcome
+    // page, a Diagram canvas, the Noter panel, etc. An unset field means the
+    // host cannot distinguish, so the bridge treats every tab as editable
+    // (backward-compatible with older hosts / test fakes). (v0.1.121, issue #1)
+    std::function<bool(int)> tabEditable;
     std::function<int(const QString &)> openFile; // → tab index, -1 on failure
     std::function<QString(int *)> selection;      // text; *out = current tab index
     std::function<QString()> workspaceRoot;       // "" when no folder root is set
@@ -61,6 +66,10 @@ struct McpEditorHost {
     // Literal (non-regex) find/replace; → occurrence count, -1 on failure.
     std::function<int(int, const QString &, const QString &, bool)> applyEdit;
     std::function<bool(int)> saveTab;             // path-ful tabs only
+    // v0.1.121 (issue #4): "Save As" — write tab i to a NEW absolute path
+    // (the bridge has already validated it). Reuses Editor::saveFile(path);
+    // unset ⇒ save_tab with a "path" arg is refused as unsupported.
+    std::function<bool(int, const QString &)> saveTabAs;
 
     // ── v0.1.119 depth wave. Same rule as above: every field is optional;
     //    an unset field makes the verb answer with a clear "not supported by
@@ -94,6 +103,13 @@ struct McpEditorHost {
         runSql;
 
     // ACT tier — visible, non-destructive, NO approval card.
+    // v0.1.121 (issue #5): move the selection in tab i to the 1-based
+    // [startLine,startCol]..[endLine,endCol] range (cols clamped to each
+    // line). Returns false when the tab is not an editor or the range is out
+    // of bounds. No card — it only changes what is selected.
+    std::function<bool(int tabIndex, int startLine, int startCol, int endLine,
+                       int endCol)>
+        selectRange;
     // Open a Noter note (already confirmed inside the Noter root by the
     // bridge) in the Noter tab UI. Returns the note's display title; *err
     // on failure.
@@ -213,6 +229,7 @@ private:
     void verbFindInTab(QLocalSocket *client, int id, const QJsonObject &args);
     void verbNewTab(QLocalSocket *client, int id, const QJsonObject &args);
     void verbGotoLine(QLocalSocket *client, int id, const QJsonObject &args);
+    void verbSelectRange(QLocalSocket *client, int id, const QJsonObject &args);
     void verbSetLanguage(QLocalSocket *client, int id, const QJsonObject &args);
     void verbCompareTabs(QLocalSocket *client, int id, const QJsonObject &args);
     void verbFormatText(QLocalSocket *client, int id, const QJsonObject &args);
@@ -270,6 +287,13 @@ private:
 
     int resolveWriteTab(const QJsonObject &args, QString *err) const;
     QString tabLabel(int idx) const;
+    // True when the host reports tab idx as an editable text buffer (or the
+    // host cannot tell — see McpEditorHost::tabEditable). Verbs that read or
+    // mutate buffer text gate on this. (v0.1.121, issue #1)
+    bool tabIsEditable(int idx) const;
+    // Human-readable reason a tab is not editable, for verb error messages
+    // (v0.1.121, issue #6). Names the Welcome tab specially.
+    QString nonEditableReason(int idx) const;
     // Resolve args["file"] to a canonical .html path that PROVABLY sits
     // inside the Noter root (../ escapes and out-of-root absolutes are
     // rejected). Returns "" + *err on any failure. Shared by read_note and

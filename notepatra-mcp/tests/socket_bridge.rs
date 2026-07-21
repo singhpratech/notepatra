@@ -334,7 +334,7 @@ fn write_verbs_wait_out_the_approval_window() {
     assert_eq!(v, json!({ "ok": true }));
     let v = ed.apply_edit("a", "b", Some(0), false).expect("apply_edit");
     assert_eq!(v["count"], 2);
-    let v = ed.save_tab(None).expect("save_tab");
+    let v = ed.save_tab(None, None).expect("save_tab");
     assert_eq!(v, json!({ "ok": true }));
     cleanup(path, bridge, "write_verbs_wait_out_the_approval_window");
 }
@@ -360,7 +360,7 @@ fn approval_denial_and_timeout_errors_pass_through_verbatim() {
             writeln!(stream, "{resp}").unwrap();
         });
         let mut ed = editor_for(&path);
-        let err = ed.save_tab(None).unwrap_err();
+        let err = ed.save_tab(None, None).unwrap_err();
         assert_eq!(err.0, expected);
         cleanup(
             path,

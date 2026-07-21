@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The tools::definitions() json! array is large enough (48 tools) to exceed
+// The tools::definitions() json! array is large enough (49 tools) to exceed
 // the default macro recursion limit.
 #![recursion_limit = "512"]
 // UNGATED on purpose: the default std-only build needs the per-user config dir

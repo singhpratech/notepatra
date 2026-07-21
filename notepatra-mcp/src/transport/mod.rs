@@ -7,9 +7,12 @@ pub mod endpoint;
 pub mod mock;
 pub mod socket;
 
-/// One entry of `list_open_tabs` — wire shape `{index,title,path,modified}`.
-/// The editor always sends `path` as a string; `""` (untitled tab) maps to
-/// `None` here so tool output can omit it.
+/// One entry of `list_open_tabs` — wire shape
+/// `{index,title,path,modified,editable}`. The editor always sends `path` as a
+/// string; `""` (untitled tab) maps to `None` here so tool output can omit it.
+/// `editable` (v0.1.121) is `false` for tabs that are not editable text
+/// buffers (Welcome page, Diagram canvas, Noter panel); older editors omit it,
+/// so it defaults to `true` on the wire (see socket `tab_info_from`).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct TabInfo {
     pub index: usize,
@@ -17,6 +20,7 @@ pub struct TabInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     pub modified: bool,
+    pub editable: bool,
 }
 
 /// `read_tab` result — wire shape `{title,path,text}` plus `truncated:true`
@@ -120,7 +124,8 @@ impl std::error::Error for TransportError {}
 /// * `insert_text` → `{ok:true,tab_index:N}`
 /// * `replace_selection` → `{ok:true}`
 /// * `apply_edit` → `{ok:true,count:N}`
-/// * `save_tab` → `{ok:true}`
+/// * `save_tab` → `{saved:true,tab_index:N,path:str}` (the editor bridge; the
+///   mock returns `{ok:true}`). An optional `path` "Save As"es to a new file.
 ///
 /// v0.1.119 ("MCP depth") adds 13 verbs. All pass the editor's JSON result
 /// through verbatim. Shapes below are BYTE-EXACT from the C++ bridge doc
@@ -209,6 +214,16 @@ pub trait EditorTransport {
     fn new_tab(&mut self, text: Option<&str>) -> Result<Value, TransportError>;
     fn goto_line(&mut self, line: usize, tab_index: Option<usize>)
         -> Result<Value, TransportError>;
+    /// v0.1.121 (issue #5): move the selection to a 1-based line/column range
+    /// (ACT — no approval card). Result `{ok:true,tab_index}`.
+    fn select_range(
+        &mut self,
+        tab_index: Option<usize>,
+        start_line: usize,
+        start_col: usize,
+        end_line: usize,
+        end_col: usize,
+    ) -> Result<Value, TransportError>;
     fn set_language(
         &mut self,
         language: &str,
@@ -239,7 +254,14 @@ pub trait EditorTransport {
         tab_index: Option<usize>,
         all: bool,
     ) -> Result<Value, TransportError>;
-    fn save_tab(&mut self, tab_index: Option<usize>) -> Result<Value, TransportError>;
+    /// `path` (v0.1.121) turns this into a "Save As" to a NEW absolute path;
+    /// the editor validates it (absolute, parent folder exists) before showing
+    /// the approval card. `None` saves the tab to its existing file.
+    fn save_tab(
+        &mut self,
+        tab_index: Option<usize>,
+        path: Option<&str>,
+    ) -> Result<Value, TransportError>;
 
     // v0.1.119 read verbs — verbatim JSON passthrough (shapes documented on
     // the trait doc comment above; the C++ bridge is the source of truth).
