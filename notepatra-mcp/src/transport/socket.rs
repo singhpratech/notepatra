@@ -723,6 +723,9 @@ fn tab_info_from(v: &Value) -> Result<TabInfo, TransportError> {
             .get("modified")
             .and_then(Value::as_bool)
             .ok_or_else(|| malformed("modified"))?,
+        // v0.1.121: absent on editors older than the field, so default to
+        // editable rather than failing the whole list.
+        editable: v.get("editable").and_then(Value::as_bool).unwrap_or(true),
     })
 }
 
@@ -868,6 +871,26 @@ impl EditorTransport for SocketEditor {
         self.call("goto_line", args)
     }
 
+    fn select_range(
+        &mut self,
+        tab_index: Option<usize>,
+        start_line: usize,
+        start_col: usize,
+        end_line: usize,
+        end_col: usize,
+    ) -> Result<Value, TransportError> {
+        let mut args = json!({
+            "start_line": start_line,
+            "start_col": start_col,
+            "end_line": end_line,
+            "end_col": end_col,
+        });
+        if let Some(i) = tab_index {
+            args["tab_index"] = json!(i);
+        }
+        self.call("select_range", args)
+    }
+
     fn set_language(
         &mut self,
         language: &str,
@@ -951,11 +974,19 @@ impl EditorTransport for SocketEditor {
         self.call("apply_edit", args)
     }
 
-    fn save_tab(&mut self, tab_index: Option<usize>) -> Result<Value, TransportError> {
-        let args = match tab_index {
-            Some(i) => json!({ "tab_index": i }),
-            None => json!({}),
-        };
+    fn save_tab(
+        &mut self,
+        tab_index: Option<usize>,
+        path: Option<&str>,
+    ) -> Result<Value, TransportError> {
+        // Optional keys are sent only when present so the wire stays minimal.
+        let mut args = json!({});
+        if let Some(i) = tab_index {
+            args["tab_index"] = json!(i);
+        }
+        if let Some(p) = path {
+            args["path"] = json!(p);
+        }
         self.call("save_tab", args)
     }
 

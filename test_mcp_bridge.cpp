@@ -47,6 +47,7 @@ struct FakeTab {
     bool modified = false;
     QString language = QStringLiteral("Plain Text");
     bool isDiagram = false;   // v0.1.119 — .npd diagram tab
+    bool editable = true;     // v0.1.121 — false for Welcome/diagram/… tabs
 };
 
 // Crash-proof progress tracker. ctest DISCARDS a crashed test's captured stdout
@@ -85,6 +86,7 @@ private:
     // v0.1.118 write-tier fake state.
     QWidget *m_hostWindow = nullptr;
     QVector<int> m_savedTabs;
+    QString m_savedAsPath;          // v0.1.121 — last save_tab "Save As" path
     // v0.1.119 depth-wave fake state.
     QJsonArray m_reminders;         // raw reminders the host would return
     bool m_gitFail = false;         // runGit returns an error
@@ -120,6 +122,14 @@ private:
         h.tabPath = [this](int i) { return m_fakeTabs.value(i).path; };
         h.tabModified = [this](int i) { return m_fakeTabs.value(i).modified; };
         h.tabText = [this](int i) { return m_fakeTabs.value(i).text; };
+        // v0.1.121 (issue #1): a tab is editable unless the fixture says
+        // otherwise. value(i) default-constructs (editable=true) for an
+        // out-of-range index, matching the real host's nullptr→false only for
+        // in-range non-editor tabs.
+        h.tabEditable = [this](int i) {
+            return i >= 0 && i < m_fakeTabs.size() ? m_fakeTabs[i].editable
+                                                   : true;
+        };
         h.openFile = [this](const QString &p) -> int {
             QFile f(p);
             if (!f.open(QIODevice::ReadOnly)) return -1;
@@ -156,6 +166,31 @@ private:
             if (idx < 0 || idx >= m_fakeTabs.size() || line < 1) return false;
             m_currentIndex = idx;
             m_lastGotoLine = line;
+            return true;
+        };
+        // v0.1.121 (issue #5): flatten the 1-based range to char offsets, set
+        // m_selection to the spanned text so a following replace_selection
+        // works, and focus the tab.
+        h.selectRange = [this](int idx, int sl, int sc, int el, int ec) {
+            if (idx < 0 || idx >= m_fakeTabs.size()) return false;
+            const QString &buf = m_fakeTabs[idx].text;
+            auto offsetOf = [&buf](int line, int col) -> int {
+                int cur = 1, off = 0;
+                while (cur < line) {
+                    const int nl = buf.indexOf(QLatin1Char('\n'), off);
+                    if (nl < 0) return -1; // line out of range
+                    off = nl + 1;
+                    ++cur;
+                }
+                int lineEnd = buf.indexOf(QLatin1Char('\n'), off);
+                if (lineEnd < 0) lineEnd = buf.size();
+                return qMin(off + (col - 1), lineEnd);
+            };
+            const int a = offsetOf(sl, sc);
+            const int b = offsetOf(el, ec);
+            if (a < 0 || b < 0 || b < a) return false;
+            m_currentIndex = idx;
+            m_selection = buf.mid(a, b - a);
             return true;
         };
         h.setLanguage = [this](int idx, const QString &lang) {
@@ -259,6 +294,16 @@ private:
                 return false;
             m_savedTabs.append(idx);
             m_fakeTabs[idx].modified = false;
+            return true;
+        };
+        // v0.1.121 (issue #4): "Save As" — adopt the new path (the bridge has
+        // already validated it) and clear modified.
+        h.saveTabAs = [this](int idx, const QString &path) {
+            if (idx < 0 || idx >= m_fakeTabs.size()) return false;
+            m_fakeTabs[idx].path = path;
+            m_fakeTabs[idx].modified = false;
+            m_savedAsPath = path;
+            m_savedTabs.append(idx);
             return true;
         };
         // ── v0.1.119 depth wave ──
@@ -667,6 +712,7 @@ private slots:
         m_compareCount = 0;
         m_lastGotoLine = -1;
         m_savedTabs.clear();
+        m_savedAsPath.clear();
         m_reminders = QJsonArray();
         m_gitFail = false;
         m_gitHuge = false;
@@ -760,6 +806,40 @@ private slots:
         QCOMPARE(t1.value(QLatin1String("index")).toInt(), 1);
         QCOMPARE(t1.value(QLatin1String("path")).toString(), QString());
         QCOMPARE(t1.value(QLatin1String("modified")).toBool(), true);
+    }
+
+    // v0.1.121 (issue #1): a non-editable tab (Welcome page) is flagged in
+    // list_open_tabs and rejected by the buffer-reading verbs.
+    void welcome_tab_marked_non_editable() {
+        // Prepend a Welcome tab at index 0, as the real app does.
+        m_fakeTabs.prepend({QStringLiteral("Welcome"), QString(), QString(),
+                            false, QStringLiteral("Plain Text"),
+                            /*isDiagram=*/false, /*editable=*/false});
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QJsonObject resp = call(s, 200, QStringLiteral("list_open_tabs"));
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        const QJsonArray tabs = resp.value(QLatin1String("result"))
+                                    .toObject()
+                                    .value(QLatin1String("tabs"))
+                                    .toArray();
+        QCOMPARE(tabs.size(), 3);
+        const QJsonObject welcome = tabs.at(0).toObject();
+        QCOMPARE(welcome.value(QLatin1String("title")).toString(),
+                 QStringLiteral("Welcome"));
+        QCOMPARE(welcome.value(QLatin1String("editable")).toBool(), false);
+        // The editable text tabs are still marked editable.
+        QCOMPARE(tabs.at(1).toObject().value(QLatin1String("editable")).toBool(),
+                 true);
+        // read_tab against the Welcome tab is refused (no text buffer).
+        QJsonObject args;
+        args[QStringLiteral("index")] = 0;
+        const QJsonObject bad = call(s, 201, QStringLiteral("read_tab"), args);
+        QCOMPARE(bad.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(bad.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String("not an editable")));
     }
 
     void read_tab_by_index() {
@@ -1214,6 +1294,83 @@ private slots:
         QCOMPARE(bad.value(QLatin1String("ok")).toBool(), false);
     }
 
+    // v0.1.121 (issue #5): select_range moves the selection (ACT, no card) and
+    // a following replace_selection acts on exactly that span.
+    void select_range_then_replace() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        // tab 0 text starts "hello world\n..."; select the first word.
+        QJsonObject range;
+        range[QStringLiteral("tab_index")] = 0;
+        range[QStringLiteral("start_line")] = 1;
+        range[QStringLiteral("start_col")] = 1;
+        range[QStringLiteral("end_line")] = 1;
+        range[QStringLiteral("end_col")] = 6; // exclusive of col 6 → "hello"
+        const QJsonObject resp =
+            call(s, 230, QStringLiteral("select_range"), range);
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        QCOMPARE(resp.value(QLatin1String("result"))
+                     .toObject()
+                     .value(QLatin1String("ok"))
+                     .toBool(),
+                 true);
+        QCOMPARE(m_selection, QStringLiteral("hello"));
+        // No approval card for an ACT verb.
+        QTest::qWait(80);
+        QVERIFY(!findCard());
+        // Now replace exactly that selection (write tier, approved).
+        QJsonObject repl;
+        repl[QStringLiteral("text")] = QStringLiteral("HELLO");
+        repl[QStringLiteral("tab_index")] = 0;
+        sendRequest(s, 231, QStringLiteral("replace_selection"), repl);
+        QFrame *card = waitForCard();
+        QVERIFY(card);
+        auto *approve = card->findChild<QPushButton *>(
+            QStringLiteral("mcpApproveBtn"));
+        QVERIFY(approve);
+        approve->click();
+        const QJsonObject r2 = readObj(s);
+        QVERIFY(r2.value(QLatin1String("ok")).toBool());
+        QVERIFY(m_fakeTabs[0].text.startsWith(QLatin1String("HELLO world")));
+        QVERIFY(waitForCardGone());
+    }
+
+    // v0.1.121 (issue #5): a range past the end of the buffer, and a <1 arg,
+    // both fail — and never a card.
+    void select_range_out_of_range() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject oob;
+        oob[QStringLiteral("tab_index")] = 0;
+        oob[QStringLiteral("start_line")] = 99;
+        oob[QStringLiteral("start_col")] = 1;
+        oob[QStringLiteral("end_line")] = 99;
+        oob[QStringLiteral("end_col")] = 2;
+        const QJsonObject r1 =
+            call(s, 232, QStringLiteral("select_range"), oob);
+        QCOMPARE(r1.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r1.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String("could not select range")));
+        // A zero column is a validation error.
+        QJsonObject zero;
+        zero[QStringLiteral("tab_index")] = 0;
+        zero[QStringLiteral("start_line")] = 1;
+        zero[QStringLiteral("start_col")] = 0;
+        zero[QStringLiteral("end_line")] = 1;
+        zero[QStringLiteral("end_col")] = 1;
+        const QJsonObject r2 =
+            call(s, 233, QStringLiteral("select_range"), zero);
+        QCOMPARE(r2.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r2.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String(">= 1")));
+        QTest::qWait(80);
+        QVERIFY(!findCard());
+    }
+
     void set_language_routes_and_rejects() {
         QLocalSocket s;
         QVERIFY(connectClient(s));
@@ -1330,6 +1487,63 @@ private slots:
         resp = call(s, 42, QStringLiteral("compare_tabs"), args);
         QCOMPARE(resp.value(QLatin1String("ok")).toBool(), false);
         QCOMPARE(m_compareCount, 1); // no extra dialog was opened
+    }
+
+    // v0.1.121 (issue #6): inserting into the Welcome tab is refused up front
+    // with a Welcome-specific message and NEVER shows an approval card.
+    void insert_into_welcome_gives_specific_error() {
+        m_fakeTabs.prepend({QStringLiteral("Welcome"), QString(), QString(),
+                            false, QStringLiteral("Plain Text"),
+                            /*isDiagram=*/false, /*editable=*/false});
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject args;
+        args[QStringLiteral("text")] = QStringLiteral("hi");
+        args[QStringLiteral("tab_index")] = 0;
+        const QJsonObject resp =
+            call(s, 210, QStringLiteral("insert_text"), args);
+        QCOMPARE(resp.value(QLatin1String("ok")).toBool(), false);
+        QCOMPARE(resp.value(QLatin1String("error")).toString(),
+                 QStringLiteral(
+                     "tab 0 is the Welcome tab and is not an editable buffer"));
+        // Refused before the write tier — no card, ever.
+        QTest::qWait(100);
+        QVERIFY(!findCard());
+    }
+
+    // v0.1.121 (issue #6): compare_tabs distinguishes self-compare from a
+    // non-editable side, each with its own message.
+    void compare_self_and_noneditable() {
+        // Index 0 becomes a non-editable Welcome tab; the two text tabs shift
+        // to indices 1 and 2.
+        m_fakeTabs.prepend({QStringLiteral("Welcome"), QString(), QString(),
+                            false, QStringLiteral("Plain Text"),
+                            /*isDiagram=*/false, /*editable=*/false});
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        // Self-compare keeps its dedicated message.
+        QJsonObject self;
+        self[QStringLiteral("index_a")] = 1;
+        self[QStringLiteral("index_b")] = 1;
+        const QJsonObject r1 =
+            call(s, 211, QStringLiteral("compare_tabs"), self);
+        QCOMPARE(r1.value(QLatin1String("ok")).toBool(), false);
+        QCOMPARE(r1.value(QLatin1String("error")).toString(),
+                 QStringLiteral("cannot compare a tab with itself"));
+        // A non-editable side is rejected with the compare-specific message.
+        QJsonObject bad;
+        bad[QStringLiteral("index_a")] = 0; // Welcome
+        bad[QStringLiteral("index_b")] = 1;
+        const QJsonObject r2 =
+            call(s, 212, QStringLiteral("compare_tabs"), bad);
+        QCOMPARE(r2.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r2.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String(
+                        "requires two editable text tabs")));
+        QCOMPARE(m_compareCount, 0); // no dialog ever opened
     }
 
     void format_text_pure_function() {
@@ -1718,8 +1932,11 @@ private slots:
         auto *desc = card->findChild<QLabel *>(
             QStringLiteral("mcpApprovalDesc"));
         QVERIFY(desc);
+        // v0.1.121 (issue #4): the card names the exact destination path.
         QVERIFY(desc->text().contains(
-            QLatin1String("save 'notes.txt' to disk")));
+            QStringLiteral("save 'notes.txt' to %1")
+                .arg(QDir::toNativeSeparators(
+                    QStringLiteral("/fake/notes.txt")))));
         auto *prev = card->findChild<QLabel *>(
             QStringLiteral("mcpApprovalPreview"));
         QVERIFY(prev);
@@ -1732,24 +1949,84 @@ private slots:
         const QJsonObject resp = readObj(s);
         QCOMPARE(resp.value(QLatin1String("id")).toInt(), 68);
         QVERIFY(resp.value(QLatin1String("ok")).toBool());
-        QCOMPARE(resp.value(QLatin1String("result"))
-                     .toObject()
-                     .value(QLatin1String("saved"))
-                     .toBool(),
-                 true);
+        const QJsonObject saveResult =
+            resp.value(QLatin1String("result")).toObject();
+        QCOMPARE(saveResult.value(QLatin1String("saved")).toBool(), true);
+        QCOMPARE(saveResult.value(QLatin1String("path")).toString(),
+                 QDir::toNativeSeparators(QStringLiteral("/fake/notes.txt")));
         QCOMPARE(m_savedTabs, QVector<int>{0});
         QVERIFY(waitForCardGone());
-        // Untitled tab: refused up front — never a Save As dialog, no card.
+        // Untitled tab, no path: refused up front — no card.
         QJsonObject untitled;
         untitled[QStringLiteral("tab_index")] = 1;
         const QJsonObject bad = call(s, 69, QStringLiteral("save_tab"),
                                      untitled);
         QCOMPARE(bad.value(QLatin1String("ok")).toBool(), false);
         QCOMPARE(bad.value(QLatin1String("error")).toString(),
-                 QStringLiteral("needs Save As"));
+                 QStringLiteral("save_tab needs a path: this tab has never "
+                                "been saved (pass \"path\")"));
         QTest::qWait(100);
         QVERIFY(!findCard());
         QCOMPARE(m_savedTabs.size(), 1);
+    }
+
+    // v0.1.121 (issue #4): save_tab with an explicit absolute path is a
+    // "Save As": the card shows the destination and, on Approve, the tab
+    // adopts the new path.
+    void save_tab_with_path_persists() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString dest = dir.path() + QStringLiteral("/exported.txt");
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject args;
+        args[QStringLiteral("tab_index")] = 1; // the untitled tab
+        args[QStringLiteral("path")] = dest;
+        sendRequest(s, 220, QStringLiteral("save_tab"), args);
+        QFrame *card = waitForCard();
+        QVERIFY(card);
+        auto *desc = card->findChild<QLabel *>(
+            QStringLiteral("mcpApprovalDesc"));
+        QVERIFY(desc);
+        // Fresh path (does not exist yet) → no OVERWRITE flag, but the exact
+        // destination is shown.
+        QVERIFY(!desc->text().contains(QLatin1String("OVERWRITE")));
+        QVERIFY(desc->text().contains(QDir::toNativeSeparators(dest)));
+        auto *approve = card->findChild<QPushButton *>(
+            QStringLiteral("mcpApproveBtn"));
+        QVERIFY(approve);
+        approve->click();
+        const QJsonObject resp = readObj(s);
+        QCOMPARE(resp.value(QLatin1String("id")).toInt(), 220);
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        QCOMPARE(resp.value(QLatin1String("result"))
+                     .toObject()
+                     .value(QLatin1String("path"))
+                     .toString(),
+                 QDir::toNativeSeparators(dest));
+        QCOMPARE(m_savedAsPath, dest);
+        QCOMPARE(m_fakeTabs[1].path, dest); // the tab adopted the new path
+        QVERIFY(waitForCardGone());
+    }
+
+    // v0.1.121 (issue #4): a relative path is rejected BEFORE any card.
+    void save_tab_rejects_relative_path() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject args;
+        args[QStringLiteral("tab_index")] = 0;
+        args[QStringLiteral("path")] = QStringLiteral("relative/out.txt");
+        const QJsonObject resp =
+            call(s, 221, QStringLiteral("save_tab"), args);
+        QCOMPARE(resp.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(resp.value(QLatin1String("error"))
+                    .toString()
+                    .contains(QLatin1String("must be absolute")));
+        QTest::qWait(100);
+        QVERIFY(!findCard());
+        QVERIFY(m_savedAsPath.isEmpty());
     }
 
     void approval_times_out_to_deny() {

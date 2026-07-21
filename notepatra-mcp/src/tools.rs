@@ -43,6 +43,7 @@ pub const ACT_TOOLS: &[&str] = &[
     "open_file",
     "new_tab",
     "goto_line",
+    "select_range",
     "set_language",
     "compare_tabs",
     "format_json",
@@ -221,6 +222,22 @@ pub fn definitions() -> Value {
             }
         },
         {
+            "name": "select_range",
+            "description": "Set the editor's text selection to a 1-based line/column range in a tab (default: the active tab). Columns are clamped to each line's length. Use to highlight a span for the user, e.g. before replace_selection.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "start_line": { "type": "integer", "minimum": 1, "description": "1-based line where the selection starts" },
+                    "start_col": { "type": "integer", "minimum": 1, "description": "1-based column where the selection starts" },
+                    "end_line": { "type": "integer", "minimum": 1, "description": "1-based line where the selection ends" },
+                    "end_col": { "type": "integer", "minimum": 1, "description": "1-based column where the selection ends (exclusive)" },
+                    "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" }
+                },
+                "required": ["start_line", "start_col", "end_line", "end_col"],
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "set_language",
             "description": "Set the syntax-highlighting language of a tab (defaults to the active tab). Use after new_tab, or when a file is highlighted with the wrong language.",
             "inputSchema": {
@@ -322,13 +339,16 @@ pub fn definitions() -> Value {
         {
             "name": "save_tab",
             "description": format!(
-                "Save an open tab (default: the active tab) to its file on disk. \
-                 {APPROVAL_NOTE}"
+                "Save an open tab (default: the active tab) to disk. Pass path \
+                 to \"Save As\" to a new absolute file (its parent folder must \
+                 already exist); an untitled tab that has never been saved \
+                 requires path. {APPROVAL_NOTE}"
             ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" }
+                    "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" },
+                    "path": { "type": "string", "description": "Absolute path to save the tab to (\"Save As\"); its parent folder must exist. Omit to save to the tab's existing file." }
                 },
                 "required": [],
                 "additionalProperties": false
@@ -660,6 +680,7 @@ pub fn call(
         "find_in_tab" => find_in_tab(transport, args),
         "new_tab" => new_tab(transport, args),
         "goto_line" => goto_line(transport, args),
+        "select_range" => select_range(transport, args),
         "set_language" => set_language(transport, args),
         "compare_tabs" => compare_tabs(transport, args),
         "format_json" => format_text(transport, args, "json"),
@@ -765,6 +786,16 @@ fn optional_one_based(args: &Map<String, Value>, key: &str) -> Result<Option<usi
             "{key} must be an integer >= 1"
         ))),
         v => Ok(v),
+    }
+}
+
+/// Required 1-based integer (line/column numbers).
+fn required_one_based(args: &Map<String, Value>, key: &str) -> Result<usize, CallOutcome> {
+    match required_index(args, key)? {
+        0 => Err(CallOutcome::InvalidParams(format!(
+            "{key} must be an integer >= 1"
+        ))),
+        n => Ok(n),
     }
 }
 
@@ -946,6 +977,43 @@ fn goto_line(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> 
     to_outcome(transport.goto_line(line, tab_index))
 }
 
+// v0.1.121 (issue #5): ACT tier — moves the selection, no approval card.
+fn select_range(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(
+        args,
+        &[
+            "tab_index",
+            "start_line",
+            "start_col",
+            "end_line",
+            "end_col",
+        ],
+    ) {
+        return e;
+    }
+    let tab_index = match optional_index(args, "tab_index") {
+        Ok(i) => i,
+        Err(e) => return e,
+    };
+    let start_line = match required_one_based(args, "start_line") {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    let start_col = match required_one_based(args, "start_col") {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    let end_line = match required_one_based(args, "end_line") {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    let end_col = match required_one_based(args, "end_col") {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    to_outcome(transport.select_range(tab_index, start_line, start_col, end_line, end_col))
+}
+
 fn set_language(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
     if let Err(e) = reject_extras(args, &["language", "tab_index"]) {
         return e;
@@ -1080,14 +1148,18 @@ fn apply_edit(transport: &mut dyn EditorTransport, args: &Map<String, Value>) ->
 }
 
 fn save_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["tab_index"]) {
+    if let Err(e) = reject_extras(args, &["tab_index", "path"]) {
         return e;
     }
     let tab_index = match optional_index(args, "tab_index") {
         Ok(i) => i,
         Err(e) => return e,
     };
-    to_outcome(transport.save_tab(tab_index))
+    let path = match optional_str(args, "path") {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    to_outcome(transport.save_tab(tab_index, path))
 }
 
 // ── v0.1.119 read-tier handlers ─────────────────────────────────────────────

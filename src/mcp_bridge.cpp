@@ -12,7 +12,8 @@
 // tab (when present) owns index 0.
 //
 // READ tier — answered immediately.
-//   list_open_tabs {}                       → {tabs:[{index,title,path,modified}]}
+//   list_open_tabs {}                       → {tabs:[{index,title,path,modified,
+//                                              editable}]}   (editable: v0.1.121)
 //   read_tab    {index|title}               → {title,path,text,truncated?}
 //   get_selection {}                        → {text,tab_index}
 //   get_status  {}                          → {tab_index,title,path,language,
@@ -55,6 +56,9 @@
 // ACT tier — visible, non-destructive, NO approval card.
 //   new_tab     {text?}                     → {tab_index}
 //   goto_line   {line,tab_index?}           → {ok,tab_index,line}
+//   select_range{start_line,start_col,end_line,end_col,tab_index?}
+//                                           → {ok,tab_index}   (1-based line
+//                                              +col; v0.1.121)
 //   set_language{language,tab_index?}       → {ok,tab_index,language}
 //                                             (language echoes the RESOLVED
 //                                              canonical token since p0a)
@@ -71,7 +75,9 @@
 //   insert_text {text,tab_index?,line?,col?} → {tab_index}
 //   replace_selection {text,tab_index?}      → {tab_index}
 //   apply_edit  {find,replace,all?,tab_index?} → {count}
-//   save_tab    {tab_index?}                 → {saved,tab_index}
+//   save_tab    {tab_index?,path?}           → {saved,tab_index,path}
+//                                             (path = "Save As" to a NEW
+//                                              absolute path; v0.1.121)
 //   create_note {title,body}                 → {file,title}        (v0.1.119)
 //   append_note {file,text}                  → {file}              (v0.1.119)
 //   set_reminder{file,due_iso}               → {file,due_iso}      (v0.1.119)
@@ -563,6 +569,8 @@ void McpBridge::handleLine(QLocalSocket *client, const QByteArray &line) {
         verbNewTab(client, id, args);
     else if (verb == QLatin1String("goto_line"))
         verbGotoLine(client, id, args);
+    else if (verb == QLatin1String("select_range"))
+        verbSelectRange(client, id, args);
     else if (verb == QLatin1String("set_language"))
         verbSetLanguage(client, id, args);
     else if (verb == QLatin1String("compare_tabs"))
@@ -701,6 +709,10 @@ void McpBridge::verbListOpenTabs(QLocalSocket *client, int id) {
                                                    : QString();
         t[QStringLiteral("modified")] = m_host.tabModified
                                             ? m_host.tabModified(i) : false;
+        // v0.1.121 (issue #1): mark tabs that are not editable text buffers
+        // (Welcome page, Diagram canvas, Noter panel …) so an agent knows not
+        // to read_tab / insert_text / save_tab against them.
+        t[QStringLiteral("editable")] = tabIsEditable(i);
         tabs.append(t);
     }
     QJsonObject result;
@@ -734,6 +746,10 @@ void McpBridge::verbReadTab(QLocalSocket *client, int id,
     if (idx < 0 || idx >= n) {
         sendError(client, id,
                   QStringLiteral("tab index out of range: %1").arg(idx));
+        return;
+    }
+    if (!tabIsEditable(idx)) { // v0.1.121: Welcome/diagram/… have no text buffer
+        sendError(client, id, nonEditableReason(idx));
         return;
     }
     QString text = m_host.tabText ? m_host.tabText(idx) : QString();
@@ -1006,6 +1022,49 @@ void McpBridge::verbGotoLine(QLocalSocket *client, int id,
     sendResult(client, id, result);
 }
 
+// v0.1.121 (issue #5): move the selection to an explicit 1-based range. ACT
+// tier — it changes only what is selected, so there is NO approval card. The
+// host clamps columns and re-focuses the editor.
+void McpBridge::verbSelectRange(QLocalSocket *client, int id,
+                                const QJsonObject &args) {
+    if (!m_host.selectRange) {
+        sendError(client, id,
+                  QStringLiteral("select_range not supported by host"));
+        return;
+    }
+    QString err;
+    const int idx = resolveWriteTab(args, &err); // resolves tab_index/current
+    if (idx < 0) {
+        sendError(client, id, err);
+        return;
+    }
+    if (!tabIsEditable(idx)) {
+        sendError(client, id, nonEditableReason(idx));
+        return;
+    }
+    const int startLine = args.value(QLatin1String("start_line")).toInt(0);
+    const int startCol = args.value(QLatin1String("start_col")).toInt(0);
+    const int endLine = args.value(QLatin1String("end_line")).toInt(0);
+    const int endCol = args.value(QLatin1String("end_col")).toInt(0);
+    if (startLine < 1 || startCol < 1 || endLine < 1 || endCol < 1) {
+        sendError(client, id,
+                  QStringLiteral("start_line, start_col, end_line and end_col "
+                                 "must all be >= 1"));
+        return;
+    }
+    if (!m_host.selectRange(idx, startLine, startCol, endLine, endCol)) {
+        sendError(client, id,
+                  QStringLiteral("could not select range in tab %1 (line out "
+                                 "of range?)")
+                      .arg(idx));
+        return;
+    }
+    QJsonObject result;
+    result[QStringLiteral("ok")] = true;
+    result[QStringLiteral("tab_index")] = idx;
+    sendResult(client, id, result);
+}
+
 void McpBridge::verbSetLanguage(QLocalSocket *client, int id,
                                 const QJsonObject &args) {
     if (!m_host.setLanguage) {
@@ -1071,8 +1130,28 @@ void McpBridge::verbCompareTabs(QLocalSocket *client, int id,
                   QStringLiteral("cannot compare a tab with itself"));
         return;
     }
+    // v0.1.121 (issue #6): both sides must be editable text tabs — the
+    // Compare view has nothing to diff for a Welcome/diagram tab.
+    if (!tabIsEditable(a)) {
+        sendError(client, id,
+                  QStringLiteral("compare_tabs requires two editable text "
+                                 "tabs; tab %1 is not editable")
+                      .arg(a));
+        return;
+    }
+    if (!tabIsEditable(b)) {
+        sendError(client, id,
+                  QStringLiteral("compare_tabs requires two editable text "
+                                 "tabs; tab %1 is not editable")
+                      .arg(b));
+        return;
+    }
     if (!m_host.compareTabs(a, b)) {
-        sendError(client, id, QStringLiteral("could not open compare view"));
+        sendError(client, id,
+                  QStringLiteral("could not open compare view for tabs %1 "
+                                 "and %2")
+                      .arg(a)
+                      .arg(b));
         return;
     }
     QJsonObject result;
@@ -1233,6 +1312,28 @@ QString McpBridge::tabLabel(int idx) const {
     return t.isEmpty() ? QStringLiteral("tab %1").arg(idx) : t;
 }
 
+// A host that cannot classify tabs (older editor / test fake with no
+// tabEditable lambda) is trusted to have only editable text tabs, so every
+// existing wire contract keeps working unchanged. (v0.1.121, issue #1)
+bool McpBridge::tabIsEditable(int idx) const {
+    return !m_host.tabEditable || m_host.tabEditable(idx);
+}
+
+// v0.1.121 (issue #6): a specific, consistent reason string. The Welcome tab
+// (title "Welcome", the app's index-0 page) is named outright; any other
+// non-editable tab reports its title so the agent knows what it hit.
+QString McpBridge::nonEditableReason(int idx) const {
+    const QString title = m_host.tabTitle ? m_host.tabTitle(idx) : QString();
+    if (title == QLatin1String("Welcome"))
+        return QStringLiteral(
+                   "tab %1 is the Welcome tab and is not an editable buffer")
+            .arg(idx);
+    return QStringLiteral(
+               "tab %1 is not an editable text buffer (it is \"%2\")")
+        .arg(idx)
+        .arg(title);
+}
+
 void McpBridge::verbInsertText(QLocalSocket *client, int id,
                                const QJsonObject &args) {
     if (!m_host.insertText) {
@@ -1249,6 +1350,10 @@ void McpBridge::verbInsertText(QLocalSocket *client, int id,
     const int idx = resolveWriteTab(args, &err);
     if (idx < 0) {
         sendError(client, id, err);
+        return;
+    }
+    if (!tabIsEditable(idx)) { // v0.1.121: never a card for a non-editable tab
+        sendError(client, id, nonEditableReason(idx));
         return;
     }
     int line = -1, col = -1;
@@ -1272,7 +1377,11 @@ void McpBridge::verbInsertText(QLocalSocket *client, int id,
                     elideForCard(text, kApprovalPreviewChars),
                     [this, idx, line, col, text](QString *execErr) {
         if (!m_host.insertText(idx, line, col, text)) {
-            *execErr = QStringLiteral("could not insert");
+            // v0.1.121 (issue #6): name the tab and the likely cause.
+            *execErr = QStringLiteral(
+                           "could not insert into tab %1 (line/col out of "
+                           "range?)")
+                           .arg(idx);
             return QJsonObject();
         }
         QJsonObject r;
@@ -1297,6 +1406,10 @@ void McpBridge::verbReplaceSelection(QLocalSocket *client, int id,
     const int idx = resolveWriteTab(args, &err);
     if (idx < 0) {
         sendError(client, id, err);
+        return;
+    }
+    if (!tabIsEditable(idx)) { // v0.1.121
+        sendError(client, id, nonEditableReason(idx));
         return;
     }
     // Fail fast: never ask the human to approve a no-op.
@@ -1393,30 +1506,84 @@ void McpBridge::verbSaveTab(QLocalSocket *client, int id,
         sendError(client, id, err);
         return;
     }
-    const QString path = m_host.tabPath ? m_host.tabPath(idx) : QString();
-    if (path.isEmpty()) {
-        // Untitled tab: this verb NEVER opens a Save As dialog.
-        sendError(client, id, QStringLiteral("needs Save As"));
+    if (!tabIsEditable(idx)) { // v0.1.121
+        sendError(client, id, nonEditableReason(idx));
         return;
     }
-    const QString desc =
-        QStringLiteral("save '%1' to disk").arg(tabLabel(idx));
-    enqueueApproval(client, id, desc, QDir::toNativeSeparators(path),
-                    [this, idx](QString *execErr) {
-        const QString nowPath = m_host.tabPath ? m_host.tabPath(idx)
+    const QString currentPath = m_host.tabPath ? m_host.tabPath(idx)
                                                : QString();
-        if (nowPath.isEmpty()) { // became untitled while pending
-            *execErr = QStringLiteral("needs Save As");
-            return QJsonObject();
+    // v0.1.121 (issue #4): an optional "path" turns this into a Save As. The
+    // path is VALIDATED here, before any card is shown, so the human always
+    // sees the exact destination the write would hit.
+    const QString explicitPath = args.value(QLatin1String("path")).toString();
+    const bool saveAs = !explicitPath.isEmpty();
+    QString destPath;
+    if (saveAs) {
+        if (!m_host.saveTabAs) {
+            sendError(client, id,
+                      QStringLiteral(
+                          "save_tab with a path is not supported by host"));
+            return;
         }
-        if (!m_host.saveTab(idx)) {
+        if (!QDir::isAbsolutePath(explicitPath)) {
+            sendError(client, id,
+                      QStringLiteral("save_tab path must be absolute: %1")
+                          .arg(QDir::toNativeSeparators(explicitPath)));
+            return;
+        }
+        const QFileInfo fi(explicitPath);
+        // The parent folder must already exist — save_tab writes ONE file, it
+        // never creates directories.
+        if (!QDir(fi.absolutePath()).exists()) {
+            sendError(client, id,
+                      QStringLiteral(
+                          "save_tab path's folder does not exist: %1")
+                          .arg(QDir::toNativeSeparators(fi.absolutePath())));
+            return;
+        }
+        destPath = fi.absoluteFilePath();
+    } else if (!currentPath.isEmpty()) {
+        destPath = currentPath;
+    } else {
+        // Untitled tab and no path: this verb NEVER opens a Save As dialog.
+        sendError(client, id,
+                  QStringLiteral("save_tab needs a path: this tab has never "
+                                 "been saved (pass \"path\")"));
+        return;
+    }
+    // Card shows the destination; a pre-existing file is flagged OVERWRITE.
+    const bool overwrite = QFileInfo::exists(destPath);
+    const QString shownDest =
+        sanitizeForCard(QDir::toNativeSeparators(destPath));
+    const QString desc =
+        QStringLiteral("%1save '%2' to %3")
+            .arg(overwrite ? QStringLiteral("OVERWRITE — ") : QString(),
+                 tabLabel(idx), shownDest);
+    enqueueApproval(client, id, desc, shownDest,
+                    [this, idx, saveAs, destPath](QString *execErr) {
+        bool ok;
+        if (saveAs) {
+            ok = m_host.saveTabAs(idx, destPath);
+        } else {
+            // Re-check: the tab may have become untitled while the card waited.
+            const QString nowPath = m_host.tabPath ? m_host.tabPath(idx)
+                                                   : QString();
+            if (nowPath.isEmpty()) {
+                *execErr = QStringLiteral("save_tab needs a path: this tab has "
+                                          "never been saved (pass \"path\")");
+                return QJsonObject();
+            }
+            ok = m_host.saveTab(idx);
+        }
+        if (!ok) {
             *execErr = QStringLiteral("could not save: %1")
-                           .arg(QDir::toNativeSeparators(nowPath));
+                           .arg(QDir::toNativeSeparators(destPath));
             return QJsonObject();
         }
         QJsonObject r;
         r[QStringLiteral("saved")] = true;
         r[QStringLiteral("tab_index")] = idx;
+        r[QStringLiteral("path")] = QDir::toNativeSeparators(destPath);
         return r;
     });
 }

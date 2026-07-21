@@ -210,6 +210,11 @@ private:
     bool m_startupDone = false;
     QStringList m_startupFiles;
     int m_startupGotoLine = -1;
+    // The working directory the process was launched from, captured once at
+    // construction. The MCP git verbs fall back to it as a last-resort repo
+    // root so `git_status` works when an agent launches Notepatra from inside
+    // a checkout with no folder open and only untitled tabs (issue #3).
+    QString m_startupCwd;
     // D2 remote-open: raise/activate happens synchronously in
     // handleRemoteOpen; file loads queue here and run one event-loop turn
     // later so a paint lands between raise and load. While startup is
