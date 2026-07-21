@@ -618,6 +618,27 @@ else
     echo "  ⓘ no build/ dir or ctest unavailable — skipping suite-count gate (release-check builds first)"
 fi
 
+echo "── no stale \"new in vX\" freshness badges (X must be the current version) ──"
+# The MCP page badged itself "MCP · new in v0.1.118" two releases after 0.1.118,
+# and every other gate checked the CURRENT version's presence, not whether a
+# "new in" claim had gone STALE. "new in vX" is a freshness signal that decays;
+# "since vX" / "introduced in vX" / "added in vX" are historical and stay true.
+# So: any "new in v0.1.<N>" where N != the current version is stale by
+# construction. (This is about the literal phrase "new in"; "since v0.1.118"
+# etc. are fine and expected.)
+stale_new_in=$(grep -rhoE "new in v0\.1\.[0-9]+" docs/*.html 2>/dev/null \
+    | grep -oE "0\.1\.[0-9]+" | sort -u | grep -v "^$VERSION$" || true)
+if [[ -z "$stale_new_in" ]]; then
+    printf "  ✓ no \"new in vX\" badge names a stale version\n"
+    PASS=$((PASS + 1))
+else
+    echo "  ✗ stale \"new in v0.1.X\" freshness badge(s) in docs/*.html: $stale_new_in"
+    echo "      current version is $VERSION — reword older introductions as"
+    echo "      \"since v0.1.X\" / \"introduced in v0.1.X\", which do not decay"
+    grep -rnE "new in v0\.1\.[0-9]+" docs/*.html | grep -v "$VERSION" | sed 's/^/      /' | head -8
+    FAIL=$((FAIL + 1))
+fi
+
 echo "── no HOLES in the version-card history on the site ──"
 # v0.1.119 shipped and the website never got a card: the list ran 115, 116,
 # 117, 118, then jumped straight to 120. A reader could not tell 119 had
