@@ -2888,6 +2888,10 @@ void MainWindow::saveFileAs() {
     // intent ("save this Python file") is the default.
     QString preselected;
     const QString filters = buildSaveAsFilters(e->language(), &preselected);
+    // The current tab's language extension ("py", may be "") — the reliable
+    // default suffix, derived from what we KNOW the tab is, not from any
+    // dialog filter selection.
+    const QString defExt = firstExtensionFromFilter(preselected);
 
     // Start in the directory of the current file if there is one, else the
     // last directory a dialog used (falls back to home on a fresh install).
@@ -2901,25 +2905,26 @@ void MainWindow::saveFileAs() {
 
     QFileDialog dialog(this, QStringLiteral("Save As"), startPath);
     dialog.setAcceptMode(QFileDialog::AcceptSave);
-    // v0.1.88.1 — FORCE Qt's non-native dialog. The GTK / KDE / native Windows
-    // dialogs silently DROP the `filterSelected` signal AND return a stale
-    // `selectedNameFilter()` value after Accept. End result: user picks
-    // "JavaScript", types "foo", file lands as "foo.txt" because the dialog
-    // never told us they changed filters. Qt's own QFileDialog fires the
-    // signals reliably across every platform and has the same dropdown UX.
-    dialog.setOption(QFileDialog::DontUseNativeDialog, true);
+    // v0.1.123 — use the NATIVE OS Save dialog (Windows Explorer tree, native
+    // GTK / macOS panels), matching Open and every other Notepatra dialog.
+    // This replaces the Qt-own dialog forced since v0.1.88.1.
+    //
+    // v0.1.88.1's reason for going non-native was that native dialogs drop the
+    // `filterSelected` signal and return a stale `selectedNameFilter()` after
+    // Accept, so a mid-session filter change could save the wrong extension.
+    // We now sidestep that WITHOUT ever reading the selected filter:
+    //   * setDefaultSuffix(defExt) — native dialogs DO honour this; it supplies
+    //     the current tab's language extension when the user types none. On
+    //     Windows the native dialog also appends the picked filter's extension
+    //     itself, so changing the type in the dropdown still works there.
+    //   * a post-Accept net (below) appends defExt only if the path came back
+    //     with NO extension — it never overrides an extension the user typed.
     dialog.setNameFilter(filters);
-    if (!preselected.isEmpty()) {
-        dialog.selectNameFilter(preselected);
-        const QString ext = firstExtensionFromFilter(preselected);
-        if (!ext.isEmpty()) dialog.setDefaultSuffix(ext);
-    }
-    QObject::connect(&dialog, &QFileDialog::filterSelected,
-                     [&dialog](const QString &f) {
-                         dialog.setDefaultSuffix(firstExtensionFromFilter(f));
-                     });
+    if (!preselected.isEmpty()) dialog.selectNameFilter(preselected);
+    if (!defExt.isEmpty()) dialog.setDefaultSuffix(defExt);
 
-    // v0.1.88 UX — bigger geometry, sort by date modified desc.
+    // v0.1.88 UX — bigger geometry, detail view (no-ops on the native dialog,
+    // which manages its own sizing; still applies if Qt falls back to non-native).
     configureSaveDialogUx(dialog);
 
     if (dialog.exec() != QDialog::Accepted) return;
@@ -2928,9 +2933,13 @@ void MainWindow::saveFileAs() {
     QString path = chosen.first();
     if (path.isEmpty()) return;
 
-    // Post-Accept safety net — some Linux GTK builds and certain macOS
-    // states silently drop setDefaultSuffix. Belt-and-braces.
-    path = applySaveAsFilterSuffix(path, dialog.selectedNameFilter());
+    // Post-Accept safety net: some Linux GTK builds drop setDefaultSuffix and
+    // return a bare path. Append the current tab's language extension ONLY when
+    // the path has no extension at all — this can never turn "foo.js" into
+    // "foo.js.py", and it does NOT consult the (unreliable-on-native)
+    // selectedNameFilter().
+    if (!defExt.isEmpty() && QFileInfo(path).suffix().isEmpty())
+        path += QLatin1Char('.') + defExt;
 
     // v0.1.94 — surface failures. saveFile returns false on write/permission
     // errors and the user was previously left believing the file had saved.
@@ -2983,28 +2992,23 @@ void MainWindow::closeTab(int index) {
             }
             else {
                 // v0.1.87 — same filter-list treatment as saveFileAs().
+                // v0.1.123 — native dialog (Explorer tree), same suffix strategy
+                // as saveFileAs(): setDefaultSuffix + a bare-path-only net.
                 QString preselected;
                 const QString filters = buildSaveAsFilters(editor->language(), &preselected);
+                const QString defExt = firstExtensionFromFilter(preselected);
                 QFileDialog d(this, QStringLiteral("Save File"), Config::instance().lastDirOrHome());
                 d.setAcceptMode(QFileDialog::AcceptSave);
-                // v0.1.88.1 — see saveFileAs() for why native dialog is bypassed.
-                d.setOption(QFileDialog::DontUseNativeDialog, true);
                 d.setNameFilter(filters);
-                if (!preselected.isEmpty()) {
-                    d.selectNameFilter(preselected);
-                    const QString ext = firstExtensionFromFilter(preselected);
-                    if (!ext.isEmpty()) d.setDefaultSuffix(ext);
-                }
-                QObject::connect(&d, &QFileDialog::filterSelected,
-                                 [&d](const QString &f) {
-                                     d.setDefaultSuffix(firstExtensionFromFilter(f));
-                                 });
-                configureSaveDialogUx(d);  // v0.1.88 UX
+                if (!preselected.isEmpty()) d.selectNameFilter(preselected);
+                if (!defExt.isEmpty()) d.setDefaultSuffix(defExt);
+                configureSaveDialogUx(d);  // v0.1.88 UX (no-op on native)
                 if (d.exec() != QDialog::Accepted) return;
                 const QStringList chosen = d.selectedFiles();
                 if (chosen.isEmpty() || chosen.first().isEmpty()) return;
-                const QString finalPath =
-                    applySaveAsFilterSuffix(chosen.first(), d.selectedNameFilter());
+                QString finalPath = chosen.first();
+                if (!defExt.isEmpty() && QFileInfo(finalPath).suffix().isEmpty())
+                    finalPath += QLatin1Char('.') + defExt;
                 if (!editor->saveFile(finalPath)) {
                     QMessageBox::warning(this, QStringLiteral("Save failed"),
                         QStringLiteral("Could not write to:\n\n%1\n\n"

@@ -7,6 +7,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.123] — 2026-07-23
+
+**The "Save As" dialog now uses the native OS file dialog — the Windows Explorer tree everyone is used to. Save As was the only Notepatra dialog still forced to Qt's own plain "Look in:" list (no folder tree); it now uses the native Windows / macOS / Linux dialog, matching "Open", "Open Folder", and "Save a Copy As", which were already native. The 72-language file-type dropdown is preserved and extensions stay correct.**
+
+### Changed
+- **Save As and Save-on-close now use the native OS file dialog** (Windows Explorer with the folder tree; native macOS/Linux panels) instead of Qt's own non-native dialog forced since v0.1.88.1. This makes Save As consistent with every other Notepatra file dialog, which already used the native one.
+
+### Fixed
+- The extension-handling that made v0.1.88.1 go non-native is now solved without reading the dialog's (unreliable-on-native) selected filter: `setDefaultSuffix()` is driven by the **current tab's language**, and a post-Accept net appends that extension only when the returned path has none — so a bare name on a Python tab saves `.py`, and a typed extension is always honoured (never `foo.js.py`).
+
+### Verification
+- GUI-verified in the running app on Linux: the native GTK dialog opens with the places sidebar and the "Python" filter preselected; typing a bare name saved `renamed_by_test.py` on disk. The last-directory memory from v0.1.122 continues to work through the native dialog.
+
 ## [0.1.122] — 2026-07-23
 
 **Save & Open dialogs remember your last folder — on every platform (Windows, Linux, macOS). Saving a brand-new file, "Save a Copy As", "Open", and "Open Folder as Workspace" previously reopened at the home folder every time; they now start in the directory you last used, and it persists across restarts. "Save As" still prefers the current file's own folder when it has one — the remembered directory is only the fallback for untitled buffers and secondary dialogs, so existing behaviour is unchanged.**

@@ -49,7 +49,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. Bare executable is ~12 MB across platforms (12.4 MB on Linux x64); full downloads are 4.4 MB (Linux x64 tar.gz), 27.7 MB (macOS DMG with bundled Qt), 42.7 MB (Windows MSI with bundled Qt DLLs). 238 file types. 82 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server (examples redacted). Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.122",
+      "softwareVersion": "0.1.123",
       "fileSize": "12.4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -151,7 +151,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~12 MB across every platform (12.4 MB on Linux x64). Latest v0.1.122 download sizes: 4.4 MB Linux x64 tar.gz, 4.1 MB Linux ARM64 tar.gz, 27.7 MB macOS DMG (with bundled Qt), 42.7 MB Windows MSI / 32.8 MB NSIS / 37.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~12.4 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~12 MB across every platform (12.4 MB on Linux x64). Latest v0.1.123 download sizes: 4.4 MB Linux x64 tar.gz, 4.1 MB Linux ARM64 tar.gz, 27.7 MB macOS DMG (with bundled Qt), 42.7 MB Windows MSI / 32.8 MB NSIS / 37.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~12.4 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
           }
         },
         {
@@ -167,7 +167,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 238 file types with 82 language lexers as of v0.1.122: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 238 file types with 82 language lexers as of v0.1.123: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.122">
-        Download v0.1.122 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.123">
+        Download v0.1.123 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1313,7 +1313,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.122 · Now Available · MCP server for AI assistants · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.123 · Now Available · MCP server for AI assistants · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~12 MB bare, ~4.4 MB compressed on Linux). C++ and Rust. 238 file types · 82 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints. <strong>MCP:</strong> the <a href="/mcp.html" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">MCP server</a> ships a prebuilt signed Windows sidecar and a one-click Claude Desktop bundle — its 49 tools (Git, read-only SQL, saved-connection queries, charts, Noter notes) connect Claude, Codex, or any MCP client straight to your editor.</p>
 
@@ -1403,7 +1403,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.122</div>
+        <div class="section-label">Download v0.1.123</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1471,7 +1471,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.122 →
+                Get Notepatra v0.1.123 →
               </a>
             </div>
 
@@ -1514,7 +1514,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.122 →
+                Get Notepatra Local AI v0.1.123 →
               </a>
             </div>
           </div>
@@ -1669,7 +1669,7 @@
                  star features. -->
             <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
                 <div class="feature-icon fi-orange">🔌</div>
-                <h3>MCP — your editor, readable by your AI <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">49 TOOLS · v0.1.122</span></h3>
+                <h3>MCP — your editor, readable by your AI <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">49 TOOLS · v0.1.123</span></h3>
                 <p>A built-in <strong>Model Context Protocol server</strong> (<code>notepatra-mcp</code>) connects the assistants you already use — <strong>Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK</strong>, and any spec-compliant MCP client — to the running editor. <strong>49 tools in three tiers</strong>: read (tabs, selection, search, Noter notes, reminders, read-only Git and SQL, diagram source, saved-connection list/query/tables), act (open, compare, format, navigate, select range, open notes, create diagram, open Noter panel, open Data Analyst, render chart), and write (edit, save, create/append notes, set reminders, replace diagram source, export diagrams, export query results, export chart) — where <em>every</em> write shows an <strong>Approve / Deny card inside the editor</strong> and does nothing until you click Approve (auto-deny after 120 s, no headless bypass). Local socket + stdio only — nothing leaves your machine. <a href="/mcp.html" style="color: var(--c-accent);">Read the MCP docs →</a></p>
             </div>
             <!-- AI Assistant at slot 2 — highlighted with a Clay-orange
@@ -2016,7 +2016,38 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.122 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.123 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-07-23</span>
+                        <span>· <strong>The Save As dialog is now the native OS file dialog — the Windows Explorer tree everyone knows.</strong> "Save As" previously used Qt's own plain dialog (no folder tree); it now uses the native Windows / macOS / Linux dialog, matching "Open" and every other Notepatra dialog. Your 72-language file-type dropdown and correct extensions are preserved.</span>
+                        <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>Changed — native Save As dialog</h5>
+                        <ul>
+                            <li><strong>Save As now uses the native OS file dialog.</strong> On Windows that's the familiar Explorer dialog with the folder tree; on macOS and Linux it's the native save panel. It was the only dialog still forced to Qt's own plain "Look in:" list — now it matches "Open", "Open Folder", and "Save a Copy As", which were already native.</li>
+                            <li><strong>The 72-language file-type dropdown is preserved</strong>, and extensions stay correct: typing a bare name for a Python tab saves <code>.py</code>, and an explicit extension you type is always honoured.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>Why it was non-native before</h5>
+                        <ul>
+                            <li>Since v0.1.88.1, Save As was forced to Qt's own dialog because native dialogs dropped the "which file type did you pick" signal, which could save the wrong extension. That's now handled by driving the default extension from the current tab's language instead of the dialog's filter — so the native dialog is safe. Verified in the running app on Linux.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.123">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.123">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.122</div>
                     <div class="version-meta">
                         <span>2026-07-23</span>
                         <span>· <strong>Save &amp; Open dialogs remember your last folder — on every platform.</strong> Saving a new file, "Save a Copy As", "Open", and "Open Folder as Workspace" now start in the directory you last used, instead of always snapping back to your home folder. The bug affected Windows, Linux and macOS alike; the remembered folder persists across restarts.</span>
@@ -2046,46 +2077,20 @@
                 </div>
             </div>
 
-            <div class="version-card">
-                <div class="version-header">
-                    <div class="version-tag">v0.1.121</div>
-                    <div class="version-meta">
-                        <span>2026-07-21</span>
-                        <span>· <strong>MCP design hardening — 6 fixes from live-driving all 48 verbs against a running editor</strong>: <code>list_open_tabs</code> now marks every tab <code>editable</code> so the read-only Welcome tab (index 0) stops silently swallowing reads and writes; <code>save_tab</code> gains an optional Save-As <code>path</code> so an AI can persist a new tab; a new <code>select_range</code> verb (48 → 49 tools) finally makes <code>replace_selection</code> usable; <code>git_*</code> falls back to the editor's startup directory; error messages become specific and actionable; and inline/exported charts render on Qt 5.15 WebEngine.</span>
-                        <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
-                    </div>
-                </div>
-                <div class="version-changes">
-                    <div class="version-section">
-                        <h5>Fixed — MCP verbs, corrected against a live editor</h5>
-                        <ul>
-                            <li><strong>The Welcome tab (index 0) was a silent trap.</strong> <code>list_open_tabs</code> now reports an <code>editable</code> flag on every tab, and the read / insert / compare / save verbs gate on it — so an AI that lands on the read-only Welcome tab gets a specific, actionable error instead of a no-op.</li>
-                            <li><strong><code>git_*</code> works when launched from a repo.</strong> The Git verbs (<code>git_status</code> / <code>git_diff</code> / <code>git_log</code> / <code>git_show</code> / <code>git_branch</code>) now fall back to the editor's startup working directory, so Git works even when Notepatra was launched from inside a repository with no workspace open.</li>
-                            <li><strong>Specific error messages replace generic ones</strong> — "could not insert", "could not open compare view", and "needs Save As" now say what actually went wrong and what to do about it.</li>
-                            <li><strong>Charts render on Qt 5.15 WebEngine.</strong> The chart bundle now polyfills <code>Object.hasOwn</code> and <code>structuredClone</code> before the Vega scripts load, because Qt 5.15's WebEngine (Chromium ~87) lacks them — which had been breaking all chart rendering there (<code>render_chart</code> drew nothing; <code>export_chart</code> surfaced <code>e.isString</code>).</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>Added — one new verb, one new argument</h5>
-                        <ul>
-                            <li><strong><code>select_range</code></strong> (Act) — select a range of text in a tab by line/column or character offset, so the existing <code>replace_selection</code> write verb has a selection to act on. Tool count 48 → 49; tiers are now Read 24 / Act 14 / Write 11.</li>
-                            <li><strong><code>save_tab</code> gains an optional <code>path</code></strong> (Save-As) so an AI can persist a <code>new_tab</code>'s content to disk. It stays a Write-tier, approval-gated verb — the path is validated before the card, and the destination is shown on the Approve card.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>Unchanged — the approval gate</h5>
-                        <ul>
-                            <li>Every write verb — including a Save-As <code>save_tab</code> — still goes through the in-editor <strong>Approve / Deny card</strong> (120 s auto-deny, FIFO one at a time, no headless bypass), and the gate lives in the editor process. <code>select_range</code> is Act-tier and non-destructive.</li>
-                        </ul>
-                    </div>
-                </div>
-                <div class="version-actions">
-                    <a href="/mcp.html">MCP docs</a>
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.121">Release page</a>
-                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.121">Commits</a>
-                </div>
-            </div>
+            <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.121"
+               class="version-card-link"
+               style="display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px;
+                      padding:16px 24px; background:var(--c-surface);
+                      border:1px solid var(--c-border); border-radius:14px;
+                      text-decoration:none; min-width:0;
+                      transition:border-color .15s;"
+               onmouseover="this.style.borderColor='var(--green)';"
+               onmouseout="this.style.borderColor='var(--c-border)';">
+                <span style="font-weight:700; color:var(--c-text); font-size:15px; white-space:nowrap;">v0.1.121</span>
+                <span style="color:var(--c-text-muted); font-size:13px; white-space:nowrap;">2026-07-21</span>
+                <span style="flex:1 1 260px; min-width:0; color:var(--c-text-muted); font-size:13px; white-space:normal;">MCP design hardening &mdash; 6 fixes from live-driving all 48 verbs (48 &rarr; 49 tools): <code>editable</code> flag on every tab (Welcome-tab trap fixed), <code>save_tab</code> Save-As <code>path</code>, new <code>select_range</code> verb, <code>git_*</code> startup-dir fallback, specific error messages, and charts on Qt 5.15 WebEngine.</span>
+                <span style="color:var(--green); font-weight:600; font-size:13px; white-space:nowrap;">Release page &rarr;</span>
+            </a>
 
             <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.120"
                class="version-card-link"
@@ -2230,7 +2235,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~12 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.122: 238 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (the Full download bundles the DuckDB v1.1.3 engine on every platform), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
+                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~12 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.123: 238 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (the Full download bundles the DuckDB v1.1.3 engine on every platform), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2242,7 +2247,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~12 MB</strong> (12.4 MB on Linux x64) across every platform. Latest v0.1.122 download sizes: <strong>4.4 MB</strong> Linux x64 tar.gz · <strong>4.1 MB</strong> Linux ARM64 tar.gz · <strong>27.7 MB</strong> macOS DMG · <strong>42.7 MB</strong> Windows MSI / <strong>32.8 MB</strong> NSIS / <strong>37.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~12 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~12 MB</strong> (12.4 MB on Linux x64) across every platform. Latest v0.1.123 download sizes: <strong>4.4 MB</strong> Linux x64 tar.gz · <strong>4.1 MB</strong> Linux ARM64 tar.gz · <strong>27.7 MB</strong> macOS DMG · <strong>42.7 MB</strong> Windows MSI / <strong>32.8 MB</strong> NSIS / <strong>37.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~12 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -2250,7 +2255,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.122 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.123 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>What file encodings are supported?</h3>
