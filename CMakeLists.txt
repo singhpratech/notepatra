@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.121 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.122 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -630,6 +630,15 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_save_as_filters.cp
     notepatra_add_qt_test(test_save_as_filters)
     set_tests_properties(test_save_as_filters PROPERTIES LABELS "smoke;saveas")
     message(STATUS "Regression test enabled — target: test_save_as_filters")
+endif()
+
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_last_dir.cpp")
+    add_executable(test_last_dir test_last_dir.cpp)
+    target_include_directories(test_last_dir PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_last_dir PRIVATE Qt5::Core)
+    notepatra_add_qt_test(test_last_dir)
+    set_tests_properties(test_last_dir PROPERTIES LABELS "unit;saveas;lastdir")
+    message(STATUS "Regression test enabled — target: test_last_dir")
 endif()
 
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_lexers_v0125.cpp")

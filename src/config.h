@@ -223,6 +223,16 @@ public:
     QStringList recentFiles;
     int maxRecent = 15;
 
+    // Last directory a Save/Open dialog navigated to. Persisted so that a
+    // brand-new untitled buffer (which has no path of its own) and every
+    // secondary Save/Open dialog reopen where the user last was, instead
+    // of always snapping back to the home folder — the behaviour every
+    // other editor has and the one users expect. The main Save As still
+    // PREFERS the current file's own directory when it has one; lastDir is
+    // only the fallback for when there is no such context. Written on both
+    // successful opens and saves so either action seeds the next dialog.
+    QString lastDir;
+
     // v0.1.61 — file-explorer hidden-paths set. Right-click any tree
     // node → "Hide" appends to this list; the file-tree's filter proxy
     // refuses to show anything whose absolute path is in here. Persists
@@ -308,6 +318,8 @@ public:
         windowH = o.value("windowH").toInt(windowH);
         maximized = o.value("maximized").toBool(maximized);
 
+        lastDir = o.value("lastDir").toString(lastDir);
+
         recentFiles.clear();
         for (const auto &v : o.value("recentFiles").toArray())
             recentFiles.append(v.toString());
@@ -371,6 +383,8 @@ public:
         o["windowH"] = windowH;
         o["maximized"] = maximized;
 
+        o["lastDir"] = lastDir;
+
         QJsonArray arr;
         for (const auto &f : recentFiles) arr.append(f);
         o["recentFiles"] = arr;
@@ -388,6 +402,37 @@ public:
         recentFiles.removeAll(path);
         recentFiles.prepend(path);
         while (recentFiles.size() > maxRecent) recentFiles.removeLast();
+    }
+
+    // Record (in memory only) the folder a Save/Open dialog just used.
+    // Accepts either a directory or a full file path. Rejects empty or
+    // no-longer-existing locations so a deleted folder or an unplugged
+    // removable drive can never poison the next dialog's start directory.
+    // Does NOT persist — the caller saves (e.g. openFile already writes
+    // the config once); standalone callers use noteLastDir() instead.
+    void setLastDir(const QString &pathOrDir) {
+        if (pathOrDir.isEmpty()) return;
+        const QFileInfo fi(pathOrDir);
+        const QString dir = fi.isDir() ? fi.absoluteFilePath() : fi.absolutePath();
+        if (dir.isEmpty() || !QDir(dir).exists()) return;
+        lastDir = dir;
+    }
+
+    // Same as setLastDir() but persists immediately. Use from standalone
+    // Save/Open dialogs that don't otherwise rewrite the config.
+    void noteLastDir(const QString &pathOrDir) {
+        const QString before = lastDir;
+        setLastDir(pathOrDir);
+        if (lastDir != before) save();
+    }
+
+    // Directory to start a Save/Open dialog in when there is no better
+    // context (an untitled buffer, or a secondary dialog). Returns the
+    // remembered directory if it still exists, else the home folder — so
+    // the very first dialog on a fresh install behaves exactly as before.
+    QString lastDirOrHome() const {
+        if (!lastDir.isEmpty() && QDir(lastDir).exists()) return lastDir;
+        return QDir::homePath();
     }
 
     static QString configPath() {

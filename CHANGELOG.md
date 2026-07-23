@@ -7,6 +7,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.122] — 2026-07-23
+
+**Save & Open dialogs remember your last folder — on every platform (Windows, Linux, macOS). Saving a brand-new file, "Save a Copy As", "Open", and "Open Folder as Workspace" previously reopened at the home folder every time; they now start in the directory you last used, and it persists across restarts. "Save As" still prefers the current file's own folder when it has one — the remembered directory is only the fallback for untitled buffers and secondary dialogs, so existing behaviour is unchanged.**
+
+### Fixed
+- **Every Save/Open dialog now remembers the last-used directory.** A brand-new untitled buffer's Save As, "Save a Copy As", "Open", and "Open Folder as Workspace" all opened at `QDir::homePath()` on every invocation — so saving into a project folder and then saving the next file sent you back home. They now start in the remembered directory. The bug was cross-platform (Windows, Linux, macOS all used the same hardcoded fallback).
+- **Self-healing fallback.** A remembered directory that was deleted, or lived on a removable drive that's since been unplugged, is ignored — the dialog falls back to the home folder rather than failing. Empty/nonexistent paths never poison the next dialog.
+
+### Changed
+- The last directory is persisted in the app config (`lastDir`) and updated on every successful open and save, surviving a quit/relaunch. "Save As" continues to prefer the current file's own directory when the file has a path; `lastDir` is only the fallback.
+
+### Tests
+- New `test_last_dir` regression suite (72 suites total) pins the directory-extraction, deleted-folder guard, and home-fallback logic; red-state verified (reverting the fix makes it fail) and confirmed against the compiled Linux binary, including the real Save As dialog opening in the remembered folder.
+
 ## [0.1.121] — 2026-07-21
 
 **MCP design hardening — 6 fixes found by live-driving all 48 verbs against a running v0.1.120 editor. The read-only Welcome tab (index 0) is no longer a silent trap: `list_open_tabs` now reports an `editable` flag on every tab and the read/insert/compare/save verbs gate on it. `save_tab` gains an optional Save-As `path` so an AI can persist a `new_tab`; a new `select_range` verb (48 → 49 tools; Read 24 / Act 14 / Write 11) makes `replace_selection` usable; `git_*` falls back to the editor's startup directory; generic errors become specific and actionable; and inline/exported charts now render on Qt 5.15 WebEngine.**

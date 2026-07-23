@@ -2637,8 +2637,10 @@ void MainWindow::openFile(const QString &path) {
         m_fileTimestamps[absPath] = QFileInfo(absPath).lastModified();
     }
 
-    // Add to recent files
+    // Add to recent files + remember this folder for the next dialog.
+    // setLastDir() only mutates the member; the save() below persists both.
     Config::instance().addRecent(absPath);
+    Config::instance().setLastDir(absPath);
     Config::instance().save();
     updateRecentMenu();
 }
@@ -2887,9 +2889,10 @@ void MainWindow::saveFileAs() {
     QString preselected;
     const QString filters = buildSaveAsFilters(e->language(), &preselected);
 
-    // Start in the directory of the current file if there is one, else home.
+    // Start in the directory of the current file if there is one, else the
+    // last directory a dialog used (falls back to home on a fresh install).
     const QString startDir = e->filePath().isEmpty()
-        ? QDir::homePath()
+        ? Config::instance().lastDirOrHome()
         : QFileInfo(e->filePath()).absolutePath();
     const QString startName = QFileInfo(e->filePath().isEmpty()
         ? m_tabs->tabText(m_tabs->currentIndex()).remove(" *")
@@ -2939,6 +2942,7 @@ void MainWindow::saveFileAs() {
                 .arg(QDir::toNativeSeparators(path)));
         return;
     }
+    Config::instance().noteLastDir(path);
     m_tabs->setTabText(m_tabs->currentIndex(), QFileInfo(path).fileName());
     m_tabs->setTabToolTip(m_tabs->currentIndex(), QDir::toNativeSeparators(path));
     updateTitle();
@@ -2981,7 +2985,7 @@ void MainWindow::closeTab(int index) {
                 // v0.1.87 — same filter-list treatment as saveFileAs().
                 QString preselected;
                 const QString filters = buildSaveAsFilters(editor->language(), &preselected);
-                QFileDialog d(this, QStringLiteral("Save File"), QDir::homePath());
+                QFileDialog d(this, QStringLiteral("Save File"), Config::instance().lastDirOrHome());
                 d.setAcceptMode(QFileDialog::AcceptSave);
                 // v0.1.88.1 — see saveFileAs() for why native dialog is bypassed.
                 d.setOption(QFileDialog::DontUseNativeDialog, true);
@@ -3008,6 +3012,7 @@ void MainWindow::closeTab(int index) {
                             .arg(QDir::toNativeSeparators(finalPath)));
                     return;
                 }
+                Config::instance().noteLastDir(finalPath);
             }
         } else if (result == QMessageBox::Cancel) {
             return;
@@ -3112,12 +3117,14 @@ void MainWindow::buildMenus() {
     auto *file = mb->addMenu("&File");
     file->addAction("&New", this, [this]() { newFile(); }, QKeySequence("Ctrl+N"));
     file->addAction("&Open...", this, [this]() {
-        for (const auto &p : QFileDialog::getOpenFileNames(this, "Open", QDir::homePath(), "All Files (*)"))
+        // openFile() records lastDir for each file opened, seeding the next dialog.
+        for (const auto &p : QFileDialog::getOpenFileNames(this, "Open", Config::instance().lastDirOrHome(), "All Files (*)"))
             openFile(p);
     }, QKeySequence("Ctrl+O"));
     file->addAction("Open Folder as Workspace...", this, [this]() {
-        QString p = QFileDialog::getExistingDirectory(this, "Open Folder", QDir::homePath());
+        QString p = QFileDialog::getExistingDirectory(this, "Open Folder", Config::instance().lastDirOrHome());
         if (p.isEmpty()) return;
+        Config::instance().noteLastDir(p);
         m_explorer->setRoot(p);
         // v0.1.70 — explorer does NOT auto-show even in Coding mode. Setting
         // the workspace folder here primes the root only; user manually
@@ -3131,8 +3138,8 @@ void MainWindow::buildMenus() {
     file->addAction("Save &As...", this, [this]() { saveFileAs(); }, QKeySequence("Ctrl+Shift+S"));
     file->addAction("Save a Copy As...", this, [E]() {
         if (auto *e = E()) {
-            QString p = QFileDialog::getSaveFileName(nullptr, "Save a Copy As", QDir::homePath());
-            if (!p.isEmpty()) { QFile f(p); if (f.open(QIODevice::WriteOnly)) { f.write(e->text().toUtf8()); } }
+            QString p = QFileDialog::getSaveFileName(nullptr, "Save a Copy As", Config::instance().lastDirOrHome());
+            if (!p.isEmpty()) { QFile f(p); if (f.open(QIODevice::WriteOnly)) { f.write(e->text().toUtf8()); Config::instance().noteLastDir(p); } }
         }
     });
     file->addAction("Save All", this, [this]() {

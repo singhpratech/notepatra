@@ -1,6 +1,6 @@
 [package]
 name = "notepatra-mcp"
-version = "0.1.121"
+version = "0.1.122"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "Model Context Protocol (MCP) stdio server for the Notepatra editor — 48 tools, human-approved writes, local-only"
