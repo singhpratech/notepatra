@@ -104,3 +104,8 @@ eval/**/__pycache__/
 # release-check "clean tree" gate without touching them.
 /README (copy).md
 /tests/new 3test.md
+
+# Local drafts of the published pages under docs/ — working copies kept at the
+# repo root. Not the deployed site; docs/index.html and docs/enterprise.html are.
+/np.html
+/ent.html

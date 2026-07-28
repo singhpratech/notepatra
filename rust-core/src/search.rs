@@ -30,7 +30,10 @@ pub fn find_all(
             .case_insensitive(!case_sensitive)
             .build()
         {
-            Ok(re) => re.find_iter(haystack).map(|m| (m.start(), m.end())).collect(),
+            Ok(re) => re
+                .find_iter(haystack)
+                .map(|m| (m.start(), m.end()))
+                .collect(),
             Err(_) => Vec::new(),
         }
     } else if whole_word {
@@ -39,13 +42,18 @@ pub fn find_all(
             .case_insensitive(!case_sensitive)
             .build()
         {
-            Ok(re) => re.find_iter(haystack).map(|m| (m.start(), m.end())).collect(),
+            Ok(re) => re
+                .find_iter(haystack)
+                .map(|m| (m.start(), m.end()))
+                .collect(),
             Err(_) => Vec::new(),
         }
     } else if case_sensitive {
         // Aho-Corasick for fast literal search
         let ac = AhoCorasick::new([needle]).unwrap();
-        ac.find_iter(haystack).map(|m| (m.start(), m.end())).collect()
+        ac.find_iter(haystack)
+            .map(|m| (m.start(), m.end()))
+            .collect()
     } else {
         // Searches the ORIGINAL haystack with a case-insensitive regex over the
         // escaped needle. The previous implementation lowercased the whole
@@ -58,7 +66,10 @@ pub fn find_all(
             .case_insensitive(true)
             .build()
         {
-            Ok(re) => re.find_iter(haystack).map(|m| (m.start(), m.end())).collect(),
+            Ok(re) => re
+                .find_iter(haystack)
+                .map(|m| (m.start(), m.end()))
+                .collect(),
             Err(_) => Vec::new(),
         }
     };
@@ -184,8 +195,7 @@ mod tests {
         if result.positions.is_null() || result.count == 0 {
             return Vec::new();
         }
-        let starts =
-            unsafe { Vec::from_raw_parts(result.positions, result.count, result.count) };
+        let starts = unsafe { Vec::from_raw_parts(result.positions, result.count, result.count) };
         if !result.lengths.is_null() {
             drop(unsafe { Vec::from_raw_parts(result.lengths, result.count, result.count) });
         }
@@ -197,10 +207,8 @@ mod tests {
         if result.positions.is_null() || result.count == 0 {
             return Vec::new();
         }
-        let starts =
-            unsafe { Vec::from_raw_parts(result.positions, result.count, result.count) };
-        let lengths =
-            unsafe { Vec::from_raw_parts(result.lengths, result.count, result.count) };
+        let starts = unsafe { Vec::from_raw_parts(result.positions, result.count, result.count) };
+        let lengths = unsafe { Vec::from_raw_parts(result.lengths, result.count, result.count) };
         starts.into_iter().zip(lengths).collect()
     }
 
