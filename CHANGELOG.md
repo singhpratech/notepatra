@@ -7,6 +7,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.124] — 2026-07-28
+
+**Invisible characters are now visible — 527 of them, where Notepad++ draws 113 — and two Find/Replace bugs that were quietly destroying user text are fixed. A file containing a zero-width space used to look exactly like a file without one; Notepatra's only symbol support was whitespace dots and EOL markers, so every zero-width, bidirectional and exotic-space codepoint was undrawable.**
+
+### Added
+- **View → Show Symbol rebuilt to Notepad++'s eight-item structure**, with its labels in its order. The non-printing (49) and control/Unicode-EOL (64) tables are transcribed from Notepad++'s source byte-for-byte, abbreviations included — `ZWNBSP` for U+FEFF rather than "BOM", `OSPM` for U+1680, `SGCI` for U+0099.
+- **"Show Every Other Invisible Character"** — the 414 codepoints Notepad++'s fixed tables miss, so its blind spots are not inherited: variation selectors (U+FE0F and the 240 in plane 14), the TAG block U+E0020–E007F (a complete invisible ASCII alphabet), the Hangul fillers, the combining grapheme joiner, the Braille blank, and the rest of Unicode's format category. "Show All Characters" drives all five toggles, so it means what it says.
+- **Codepoint display mode** — blobs can read `U+200B` instead of `ZWSP`, matching Notepad++'s NPC display mode.
+- Show Symbol settings now **persist across restarts** and apply to every tab; previously none of them were saved. Defaults match Notepad++ (everything off except the control-character display).
+- Compare panes and the formatter output panels draw symbols too — two files differing only by an invisible character used to render as identical lines the diff insisted were different.
+
+### Fixed
+- **Replace All silently deleted any replacement containing `$`.** The replacement was handed to the regex engine as a substitution *template*, so `$100` parsed as capture group 100 and expanded to nothing; `$var`, `${HOME}` and `a$b` lost text the same way while the status bar reported success. Match case defaults to off, so this was the out-of-the-box path, and Replace All in All Opened Documents repeated it across every tab.
+- **Replace reported replacements it had not made, and overwrote unrelated selections.** On a freshly opened tab it printed "Replaced 1 occurrence" over an untouched buffer *and* skipped that match permanently; once armed it overwrote whatever was selected regardless of whether it matched. It now verifies the selection is genuinely a match before editing, and otherwise degrades to Find Next.
+- **Find in Files reported "0 hits" for files it never opened.** The default `*.*` filter reached Qt's literal wildcard matching, which demands a dot in the name, silently skipping `Makefile`, `Dockerfile`, `LICENSE` and `.gitignore`. `*.*` now means any file, as in Notepad++.
+- **Mark All highlighted the wrong spans.** Match offsets were computed into a lowercased *copy* of the document, and lowercasing is not length-preserving in UTF-8, so one such character shifted every later highlight with the error accumulating. Matches also assumed the pattern's length, which is wrong for every regex.
+- **Indent guides rendered as a white-on-black barber pole in Dark and Monokai.** Scintilla's reserved indent-guide style was never themed, so it kept its default black-on-white and the guide's background became the brightest thing on screen. Guides are on by default, so this reached every dark-theme user.
+
+### Verification
+Every fix was verified by reverting it and confirming the new tests go red, and that only the expected assertions fail. Symbol tests measure real laid-out pixel width rather than reading back what Scintilla stored — a representation round-trips perfectly while drawing nothing. Replace tests click the actual dialog buttons, because the engine-level tests passed on code that destroyed text once the dialog was in the loop. Rendering cost is not measurable: a 20,000-line document lays out in the same time with all 527 representations installed as with none. Full suite: 75 C++ test suites on the Full build (72 on Lite), plus 158 Rust tests.
+
+### Verifying this release
+Same as previous — SHA-256, cosign, SLSA. See SECURITY.md.
+
+
 ## [0.1.123] — 2026-07-23
 
 **The "Save As" dialog now uses the native OS file dialog — the Windows Explorer tree everyone is used to. Save As was the only Notepatra dialog still forced to Qt's own plain "Look in:" list (no folder tree); it now uses the native Windows / macOS / Linux dialog, matching "Open", "Open Folder", and "Save a Copy As", which were already native. The 72-language file-type dropdown is preserved and extensions stay correct.**

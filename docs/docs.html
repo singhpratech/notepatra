@@ -299,7 +299,7 @@
   <div class="topbar-left">
     <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">v0.1.123 docs</span>
+    <span class="tag">v0.1.124 docs</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
@@ -330,6 +330,7 @@
       <li><a href="#languages-lexers">Languages &amp; lexers</a></li>
       <li><a href="#themes-palette">Themes &amp; palette</a></li>
       <li><a href="#rulers-crosshair">Rulers &amp; crosshair</a></li>
+      <li><a href="#show-symbol">Show Symbol — invisible characters</a></li>
       <li><a href="#find-replace">Find &amp; replace</a></li>
       <li><a href="#project-search">Project Search</a></li>
       <li><a href="#macros">Macros</a></li>
@@ -404,7 +405,7 @@
   <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock (with a workspace open and a tool-capable model) and the model gets up to 13 native tools — file tools <code>read_file</code>, <code>list_dir</code>, <code>write_file</code>, <code>search</code>, <code>apply_diff</code>; data tools <code>query_sql</code>, <code>csv_query</code>, <code>generate_chart</code>; and read-only git tools <code>git_status</code>, <code>git_diff</code>, <code>git_log</code>, <code>git_branch_list</code>, <code>git_show</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
 
   <div class="callout info">
-    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.123 (July 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
+    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.124 (July 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
   </div>
 
   <h2 id="install" class="anchor-target">Install</h2>
@@ -619,7 +620,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
     <li><strong>macOS:</strong> <code>~/Library/Application Support/notepatra/plugins/&lt;pack&gt;/</code></li>
     <li><strong>Windows:</strong> <code>%APPDATA%/notepatra/plugins/&lt;pack&gt;/</code></li>
   </ul>
-  <p>As of v0.1.120, the Full flavor ships the <em>charts</em> pack bundled on Linux and Windows (it's the same binary — the pack is "installed" if WebEngine was linked at compile time; macOS Full is DuckDB-only and has no inline Vega renderer). The in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation path is scaffolded but not yet wired (still queued as of v0.1.123), so today packs are added by swapping in the Full binary rather than downloaded inside the app.</p>
+  <p>As of v0.1.120, the Full flavor ships the <em>charts</em> pack bundled on Linux and Windows (it's the same binary — the pack is "installed" if WebEngine was linked at compile time; macOS Full is DuckDB-only and has no inline Vega renderer). The in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation path is scaffolded but not yet wired (still queued as of v0.1.124), so today packs are added by swapping in the Full binary rather than downloaded inside the app.</p>
 
   <table>
     <thead>
@@ -636,7 +637,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
         <td><code>pdf</code></td>
         <td>≈ 12 MB</td>
         <td>Rasterises PDFs to PNG pages so vision-capable AI models can read them. Powered by Poppler-Qt5.</td>
-        <td>Still queued (not shipped as of v0.1.123). Until then, dropping a PDF into the AI dock extracts its text via <code>pdftotext</code> (poppler-utils) when available and attaches that as context.</td>
+        <td>Still queued (not shipped as of v0.1.124). Until then, dropping a PDF into the AI dock extracts its text via <code>pdftotext</code> (poppler-utils) when available and attaches that as context.</td>
       </tr>
     </tbody>
   </table>
@@ -685,7 +686,7 @@ make -j$(nproc)
     <li><strong>Do I lose anything by staying on Lite?</strong> No — every editor / lexer / AI / Git / data / plugin feature works identically. The only difference is that <code>generate_chart</code> tool results paint as a "Chart rendering requires the Charts Pack" card instead of as an inline rendered chart. You can still see the spec via [View JSON instead] and copy it elsewhere.</li>
     <li><strong>Can I downgrade Full → Lite?</strong> Yes. Just download the Lite tarball and replace the binary. Your config / chat history / connections are preserved (they live under <code>~/.config/notepatra</code>, not inside the binary).</li>
     <li><strong>Will the chart spec data be lost if I'm on Lite?</strong> No — the AI's tool result is preserved in your chat history just like any other tool result. If you upgrade to Full later, opening the same chat shows the rendered chart for those past results.</li>
-    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.123. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
+    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.124. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
   </ul>
 
   <h2 id="ui-overview" class="anchor-target">UI overview</h2>
@@ -747,7 +748,7 @@ make -j$(nproc)
   <p>The detected encoding label ("UTF-16 LE BOM", "UTF-32 BE BOM", …) travels with the tab, and on save the matching BOM bytes are written back in front of the encoded content. Opening a UTF-16 LE BOM file and pressing <span class="kbd">Ctrl+S</span> writes it back as UTF-16 LE with its BOM intact — the BOM is never silently dropped.</p>
 
   <h2 id="languages-lexers" class="anchor-target">Languages &amp; lexers</h2>
-  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.123 (covering 238 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
+  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.124 (covering 238 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
   <p><strong>Core (Qt-bundled):</strong> Python, JavaScript/TypeScript/JSX, CoffeeScript, C/C++, C#, D, Java/Kotlin, HTML/PHP, CSS/SCSS/LESS, XML, JSON, SQL (ANSI / T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite), Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Matlab, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile.</p>
   <p><strong>v0.1.55 additions (32 dedicated lexers, keyword tables verified against official specs):</strong> Dart · Solidity · Zig · Vala · Hack · Julia · R · Protobuf · F# · HCL/Terraform · Thrift · GraphQL · GDScript · Nim · Cython · Mojo · Crystal · Elixir · Scala · Groovy · Apex · Jinja · Liquid · Twig · Dockerfile · Fish · Nushell · TOML · DotEnv · Gitignore · JSON5 · BibTeX. Each ships with comment / uncomment / block-comment syntax (Ctrl+/ for line, Ctrl+Shift+Q for block) and proper file-extension routing — <code>.dart</code>, <code>.zig</code>, <code>.jl</code>, <code>.toml</code>, <code>.ex</code>, <code>Cargo.toml</code>, <code>Dockerfile</code>, <code>.gitignore</code>, <code>.env</code>, <code>.fish</code>, <code>.json5</code>, <code>.tf</code>, etc. now point at their dedicated lexers instead of falling back to the closest-fit generic.</p>
 
@@ -762,6 +763,43 @@ make -j$(nproc)
     <li><strong>Crosshair overlay</strong> — a thin line extending from the caret position to both edges of the editor, making the current line + column unmistakable. Toggle: <code>View → Crosshair</code>.</li>
   </ul>
 
+  <h2 id="show-symbol" class="anchor-target">Show Symbol — invisible characters (v0.1.124)</h2>
+  <p>A file containing a zero-width space looks exactly like a file without one. <code>View → Show Symbol</code> makes the invisible visible. Notepatra draws <strong>527 invisible codepoints</strong>: the <strong>113</strong> in Notepad++'s own tables (49 non-printing + 64 control / Unicode-EOL), transcribed byte-for-byte so the abbreviations match, plus <strong>414</strong> that Notepad++ does not cover.</p>
+
+  <h3>The menu — eight items, in Notepad++'s order</h3>
+  <table>
+    <thead><tr><th>Menu item</th><th>What it reveals</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Show Space and Tab</strong></td><td>Spaces as <code>·</code>, tabs as <code>⟶</code>.</td></tr>
+      <tr><td><strong>Show End of Line</strong></td><td><code>LF</code> / <code>CR</code> line-ending markers.</td></tr>
+      <tr><td><strong>Show Non-Printing Characters</strong></td><td>Notepad++'s 49-entry table — <code>ZWSP</code>, <code>NBSP</code>, <code>RLO</code>, <code>ZWNBSP</code>, and the rest. <strong>Off by default</strong>, matching Notepad++.</td></tr>
+      <tr><td><strong>Show Control Characters &amp; Unicode EOL</strong></td><td>Notepad++'s 64-entry table — the C0 and C1 control ranges plus <code>NEL</code>, <code>LS</code>, <code>PS</code>.</td></tr>
+      <tr><td><strong>Show Every Other Invisible Character</strong></td><td>The 414 codepoints Notepad++'s fixed tables miss (see below).</td></tr>
+      <tr><td><strong>Show All Characters</strong></td><td>Drives all five toggles above at once.</td></tr>
+      <tr><td colspan="2"><em>— separator —</em></td></tr>
+      <tr><td><strong>Show Indent Guide</strong></td><td>Vertical indentation guides. On by default; behaviour unchanged, but the setting is now persisted.</td></tr>
+      <tr><td><strong>Show Wrap Symbol</strong></td><td>Marker at each soft-wrapped line break. Behaviour unchanged, setting now persisted.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Going past Notepad++</h3>
+  <p>Notepad++'s tables are a fixed 113 codepoints, so anything outside them is invisible there too. <strong>Show Every Other Invisible Character</strong> covers the rest of Unicode's format category:</p>
+  <ul>
+    <li><strong>Variation selectors</strong> — U+FE0F and the 240 in plane 14. Routine in emoji, and a common source of "these two lines look identical but the diff disagrees".</li>
+    <li><strong>The TAG block</strong>, U+E0020–E007F — a complete invisible ASCII alphabet. Text encoded here is unreadable in any editor that does not draw it.</li>
+    <li><strong>Hangul fillers</strong> (U+3164, U+115F, U+1160) — they look like a plain space and are not one.</li>
+    <li>The combining grapheme joiner, the Braille blank, and the remaining format-category codepoints.</li>
+  </ul>
+  <p>The parity tables are untouched by this toggle, and range expansion skips anything Notepad++ already claims — so U+FEFF keeps its <code>ZWNBSP</code> spelling while U+FE0F gets ours.</p>
+
+  <h3>Abbreviation vs codepoint display</h3>
+  <p>Each drawn blob can show either the character's <strong>abbreviation</strong> (<code>ZWSP</code>, <code>NBSP</code>, <code>ZWNBSP</code>) or its <strong>codepoint</strong> (<code>U+200B</code>, <code>U+00A0</code>, <code>U+FEFF</code>) — the same two modes Notepad++ offers for NPC display. Abbreviations are the default; codepoints are useful when you need the exact value to paste into a bug report or a regex.</p>
+  <p>The abbreviations are Notepad++'s own, not colloquial ones: U+FEFF reads <code>ZWNBSP</code> rather than "BOM", U+1680 reads <code>OSPM</code>, U+0099 reads <code>SGCI</code>. Someone comparing the two editors sees the same four letters.</p>
+
+  <h3>Persistence and scope</h3>
+  <p>Every Show Symbol setting is <strong>saved in <code>config.json</code> and restored on the next launch</strong>, and applies to every open tab rather than just the active one. Before v0.1.124 none of them were saved. Defaults match Notepad++: everything off except the control-character display — so <strong>non-printing characters are off out of the box</strong>; turn them on from <code>View → Show Symbol</code>.</p>
+  <p>Symbols are drawn in the Compare panes and the formatter output panels too. Comparing two files that differ only by an invisible character used to show two identical-looking lines while the diff insisted they differed.</p>
+
   <h2 id="find-replace" class="anchor-target">Find &amp; replace</h2>
   <p>5-tab dialog: <strong>Find</strong>, <strong>Replace</strong>, <strong>Find in Files</strong>, <strong>Mark</strong>, <strong>Go to</strong>.</p>
   <ul>
@@ -771,6 +809,14 @@ make -j$(nproc)
     <li><strong>Find in Files</strong> walks a directory recursively (respects glob patterns), results land in the Search Results panel — double-click to jump to line.</li>
     <li><strong>Mark</strong> (also opens directly via <code>Search → Mark...</code>) highlights every occurrence of a pattern without moving the caret. On files larger than 50 MB the indicator fill is <strong>capped at 10,000 highlights</strong> (v0.1.88) so the redraw doesn't stall the UI — the result label reports e.g. "Marked first 10000 of 124312 occurrence(s) — capped for performance on large files".</li>
     <li><strong>Find / Replace All across all open tabs</strong> — one click.</li>
+  </ul>
+
+  <h3>Replacement-text and match semantics (v0.1.124)</h3>
+  <ul>
+    <li><strong><code>$</code> in the replacement is a literal dollar sign</strong> in Normal and Extended mode — including with <em>Whole word</em> ticked, which internally promotes the search to a regex. Before v0.1.124 the replacement was handed to the regex engine as a substitution <em>template</em> on that path, so <code>$100</code> parsed as capture group 100 and expanded to nothing; <code>$var</code>, <code>${HOME}</code> and <code>a$b</code> lost text the same way while the status bar still reported success. Replace All in All Opened Documents repeated it across every tab. In <strong>Regex</strong> mode <code>$1</code>-style capture references work as intended.</li>
+    <li><strong>Replace only edits a selection that is genuinely a match</strong>, and only reports a replacement that actually happened. If the selection is not a match — including on a freshly opened tab where nothing has been searched yet — Replace degrades to <em>Find Next</em> and says "Next match selected — press Replace again to replace it". This is Notepad++'s <code>processReplace()</code> contract. Previously it printed "Replaced 1 occurrence" over an untouched buffer <em>and</em> skipped that match permanently, and once armed it overwrote whatever happened to be selected whether or not it matched.</li>
+    <li><strong>Find in Files: <code>*.*</code> means <em>any</em> file</strong>, as it does in Notepad++. Qt's wildcard matching is literal, so the dialog's default <code>*.*</code> filter used to demand a dot in the name and silently skipped <code>Makefile</code>, <code>Dockerfile</code>, <code>LICENSE</code>, <code>README</code> and <code>.gitignore</code> — then reported "0 hits" for files it had never opened.</li>
+    <li><strong>Mark All highlights the right spans.</strong> Match offsets are computed against the document itself rather than a lowercased copy — lowercasing is not length-preserving in UTF-8, so a single such character used to shift every later highlight, with the error accumulating down the file. Each highlight is also the length of the actual match rather than the length of the search pattern, which matters for every regex.</li>
   </ul>
 
   <h2 id="project-search" class="anchor-target">Project Search (<span class="kbd">Ctrl+Shift+G</span>)</h2>
