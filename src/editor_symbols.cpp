@@ -2,6 +2,8 @@
 
 #include "editor_symbols.h"
 
+#include "config.h"
+
 #include <Qsci/qsciscintilla.h>
 
 #include <cstdint>
@@ -179,6 +181,16 @@ QByteArray utf8Of(char32_t cp) {
     return out;
 }
 
+QString labelFor(const Entry &e, DisplayMode mode) {
+    if (mode == Codepoint) {
+        // Minimum four digits, so U+0007 keeps the width the Unicode charts
+        // use; wider codepoints simply grow past it.
+        return QStringLiteral("U+%1").arg(uint(e.codepoint), 4, 16,
+                                          QLatin1Char('0')).toUpper();
+    }
+    return QString::fromLatin1(e.abbreviation);
+}
+
 bool hasScintillaBuiltIn(char32_t cp) {
     return cp <= 0x1F || cp == 0x7F;
 }
@@ -194,7 +206,7 @@ void forceRelayout(QsciScintilla *sci) {
     sci->SendScintilla(QsciScintillaBase::SCI_SETLAYOUTCACHE, (unsigned long)cur);
 }
 
-void apply(QsciScintilla *sci, Categories cats) {
+void apply(QsciScintilla *sci, Categories cats, DisplayMode mode) {
     if (!sci) return;
 
     for (const Entry &e : table()) {
@@ -209,8 +221,11 @@ void apply(QsciScintilla *sci, Categories cats) {
         if (u8.isEmpty() || u8.at(0) == '\0') continue;
 
         if (cats.testFlag(e.category)) {
+            // Held in a named local: the QByteArray must outlive the call, and
+            // .toLatin1().constData() on a temporary would dangle.
+            const QByteArray label = labelFor(e, mode).toLatin1();
             sci->SendScintilla(QsciScintillaBase::SCI_SETREPRESENTATION,
-                               u8.constData(), e.abbreviation);
+                               u8.constData(), label.constData());
         } else if (hasScintillaBuiltIn(e.codepoint)) {
             // Scintilla would draw its own mnemonic here, so "off" has to be an
             // explicit empty representation rather than no representation.
@@ -239,6 +254,16 @@ void apply(QsciScintilla *sci, Categories cats) {
     }
 
     forceRelayout(sci);
+}
+
+void applyFromConfig(QsciScintilla *sci) {
+    const auto &cfg = Config::instance();
+
+    Categories cats = NoSymbols;
+    if (cfg.showNonPrintingChars) cats |= NonPrinting;
+    if (cfg.showControlChars)     cats |= ControlAndUnicodeEol;
+
+    apply(sci, cats, cfg.npcDisplayMode == 1 ? Codepoint : Abbreviation);
 }
 
 }  // namespace EditorSymbols

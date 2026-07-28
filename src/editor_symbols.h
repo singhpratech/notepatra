@@ -73,6 +73,24 @@ struct Entry {
     Group       group;
 };
 
+// What the blob says. Notepad++ keys the same choice off its _npcMode enum.
+//
+// Notepad++ has a third mode, identity=0, which draws the character itself.
+// It is deliberately not offered here: for these codepoints "the character
+// itself" is by definition invisible, which is the exact problem this feature
+// exists to solve, so identity is indistinguishable from switching the
+// category off — a menu entry that silently undoes the menu.
+enum DisplayMode {
+    Abbreviation = 0,  // "ZWSP"   — Notepad++ _npcMode 1
+    Codepoint    = 1,  // "U+200B" — Notepad++ _npcMode 2
+};
+
+// The text drawn for `e` in `mode`. Codepoint form is uppercase hex, zero
+// padded to at least four digits, derived from Entry::codepoint rather than
+// stored — a third table column would be redundant data free to drift out of
+// step with the first.
+QString labelFor(const Entry &e, DisplayMode mode);
+
 // Both tables concatenated, in codepoint order within each category.
 //
 // TAB, LF and CR are deliberately absent even though they are C0: they belong
@@ -101,7 +119,15 @@ bool hasScintillaBuiltIn(char32_t cp);
 // representation there leaves them visible, so turning the category off has to
 // actively overwrite each one with an empty representation. Notepad++ hits the
 // same wall and solves it the same way.
-void apply(QsciScintilla *sci, Categories cats);
+void apply(QsciScintilla *sci, Categories cats, DisplayMode mode = Abbreviation);
+
+// apply() with the categories and mode the user has actually chosen.
+//
+// Lives here rather than on Editor because the views that need it most — the
+// Compare panes and the two formatter output panels — are plain QsciScintilla,
+// and routing them through Editor forced every test target that builds those
+// files to link the whole editor and its Rust core.
+void applyFromConfig(QsciScintilla *sci);
 
 // Force Scintilla to re-lay-out every line.
 //

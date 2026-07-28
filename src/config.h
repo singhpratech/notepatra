@@ -51,6 +51,11 @@ public:
     bool showControlChars = true;
     bool showWrapSymbol = false;
 
+    // What the non-printing blobs say: 0 = abbreviation ("ZWSP"), 1 = codepoint
+    // ("U+200B"). Mirrors Notepad++'s _npcMode, minus its identity mode — see
+    // EditorSymbols::DisplayMode for why that one is not offered.
+    int npcDisplayMode = 0;
+
     // Auto-complete
     bool autoComplete = true;
     int autoCompleteThreshold = 3;
@@ -272,6 +277,7 @@ public:
         showNonPrintingChars = o.value("showNonPrintingChars").toBool(showNonPrintingChars);
         showControlChars = o.value("showControlChars").toBool(showControlChars);
         showWrapSymbol = o.value("showWrapSymbol").toBool(showWrapSymbol);
+        npcDisplayMode = o.value("npcDisplayMode").toInt(npcDisplayMode);
         fontSize = o.value("fontSize").toInt(fontSize);
         fontFamily = o.value("fontFamily").toString(fontFamily);
         edgeColumn = o.value("edgeColumn").toInt(edgeColumn);
@@ -360,6 +366,7 @@ public:
         o["showNonPrintingChars"] = showNonPrintingChars;
         o["showControlChars"] = showControlChars;
         o["showWrapSymbol"] = showWrapSymbol;
+        o["npcDisplayMode"] = npcDisplayMode;
         o["fontSize"] = fontSize;
         o["fontFamily"] = fontFamily;
         o["edgeColumn"] = edgeColumn;

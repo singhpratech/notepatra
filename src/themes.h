@@ -66,6 +66,20 @@ inline Theme monokaiTheme() {
     return t;
 }
 
+// Colour for Scintilla's reserved STYLE_INDENTGUIDE. It is derived here
+// rather than stored as a per-theme hex because a guide is structure, not
+// content: it has to sit on the same axis as the theme's own paper/text
+// pair or it reads as a fourth colour. A third of the way from paper toward
+// the text colour is visible on every one of the three papers while staying
+// quieter than any lexer style.
+inline QColor indentGuideColor(const Theme &t) {
+    const qreal k = 0.35;
+    const QColor bg = t.editorBg, fg = t.editorFg;
+    return QColor(qRound(bg.red()   + (fg.red()   - bg.red())   * k),
+                  qRound(bg.green() + (fg.green() - bg.green()) * k),
+                  qRound(bg.blue()  + (fg.blue()  - bg.blue())  * k));
+}
+
 inline QMap<QString, Theme> allThemes() {
     QMap<QString, Theme> m;
     m["Light"] = lightTheme();

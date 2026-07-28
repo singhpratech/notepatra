@@ -562,6 +562,55 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_editor_symbols.cpp
     message(STATUS "Regression test enabled — target: test_editor_symbols")
 endif()
 
+# ── Indent guides keep the theme's colours (reserved STYLE_INDENTGUIDE) ─────
+# Links the REAL Editor: the claim under test is that Editor::applyTheme
+# reaches a reserved Scintilla style, and a test against a free helper would
+# pass even if the theme path never called it. The source list is Editor's
+# link closure only — no MainWindow, no AI/DB/chart stack.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_indent_guide_theme.cpp")
+    add_executable(test_indent_guide_theme
+        test_indent_guide_theme.cpp
+        ${CMAKE_SOURCE_DIR}/src/editor.cpp
+        ${CMAKE_SOURCE_DIR}/src/editor_symbols.cpp
+        ${CMAKE_SOURCE_DIR}/src/npp_palette.cpp
+        ${CMAKE_SOURCE_DIR}/src/lexerutils.cpp
+        ${CMAKE_SOURCE_DIR}/src/lexer_csv.cpp
+        ${CMAKE_SOURCE_DIR}/src/lexer_extras.cpp
+        ${CMAKE_SOURCE_DIR}/src/lexer_go.cpp
+        ${CMAKE_SOURCE_DIR}/src/lexer_kotlin.cpp
+        ${CMAKE_SOURCE_DIR}/src/lexer_plaintext.cpp
+        ${CMAKE_SOURCE_DIR}/src/lexer_powershell.cpp
+        ${CMAKE_SOURCE_DIR}/src/lexer_rust.cpp
+        ${CMAKE_SOURCE_DIR}/src/lexer_swift.cpp
+        ${CMAKE_SOURCE_DIR}/src/lexer_typescript.cpp
+        ${CMAKE_SOURCE_DIR}/src/rustbridge.cpp
+        ${CMAKE_SOURCE_DIR}/src/gitgutter.cpp
+        ${CMAKE_SOURCE_DIR}/src/git_hunk_apply.cpp
+        ${CMAKE_SOURCE_DIR}/src/gutter_hunk_popup.cpp
+        ${CMAKE_SOURCE_DIR}/src/diff_view.cpp)
+    add_dependencies(test_indent_guide_theme rust_core)
+    target_include_directories(test_indent_guide_theme PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE})
+    target_link_libraries(test_indent_guide_theme PRIVATE
+        Qt5::Widgets Qt5::Test ${QSCINTILLA_LIB} ${RUST_LIB})
+    if(WIN32)
+        target_compile_definitions(test_indent_guide_theme PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_indent_guide_theme PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32)
+    elseif(APPLE)
+        target_link_libraries(test_indent_guide_theme PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_indent_guide_theme PRIVATE pthread dl m)
+    endif()
+    notepatra_add_qt_test(test_indent_guide_theme)
+    set_tests_properties(test_indent_guide_theme PROPERTIES
+        LABELS "regression;editor;theme;indentguide")
+    message(STATUS "Regression test enabled — target: test_indent_guide_theme")
+endif()
+
 # ── Read-only SQL classifier gate (query_sql / csv_query security contract) ──
 # Links the REAL DbConnections::classifySql / isReadOnlyQuery / isMutation from
 # dbconnections.cpp (Qt-Core string logic; NOTEPATRA_HAVE_DUCKDB stays off for
@@ -2150,6 +2199,46 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_changehistory_stat
     message(STATUS "Regression test enabled — target: test_changehistory_statusbar")
 endif()
 
+# ─── Replace correctness: the two bugs that destroyed user text ─────────
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_replace_correctness.cpp")
+    set(REPL_CORRECT_SOURCES ${SOURCES})
+    list(FILTER REPL_CORRECT_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_replace_correctness
+        test_replace_correctness.cpp ${REPL_CORRECT_SOURCES} ${HEADERS})
+    add_dependencies(test_replace_correctness rust_core)
+    target_compile_definitions(test_replace_correctness PRIVATE NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_include_directories(test_replace_correctness PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include ${QSCINTILLA_INCLUDE})
+    target_link_libraries(test_replace_correctness PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB})
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_replace_correctness PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_replace_correctness PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_replace_correctness PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_replace_correctness PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_replace_correctness PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_replace_correctness PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_replace_correctness PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_replace_correctness PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_replace_correctness PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    notepatra_add_qt_test(test_replace_correctness)
+    set_tests_properties(test_replace_correctness PROPERTIES
+        LABELS "regression;findreplace;dataloss;v01124")
+    message(STATUS "Regression test enabled — target: test_replace_correctness")
+endif()
+
 # ─── v0.1.92 Find→Replace carry-forward regression ──────────────────────
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_findreplace_carry_forward.cpp")
     set(FR_CARRY_SOURCES ${SOURCES})
@@ -2703,6 +2792,9 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_fmtpanel_diff.cpp"
         test_fmtpanel_diff.cpp
         src/fmtpanel.cpp
         src/npp_palette.cpp
+        # EditorSymbols::applyFromConfig() is header-only, but apply() itself
+        # is not — these panels draw Show Symbol on their own Scintilla views.
+        src/editor_symbols.cpp
     )
     target_include_directories(test_fmtpanel_diff PRIVATE
         ${CMAKE_SOURCE_DIR}/src
@@ -2727,6 +2819,9 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_compare_widget.cpp
     add_executable(test_compare_widget
         test_compare_widget.cpp
         src/compare.cpp
+        # EditorSymbols::applyFromConfig() is header-only, but apply() itself
+        # is not — these panels draw Show Symbol on their own Scintilla views.
+        src/editor_symbols.cpp
         src/lexerutils.cpp
         src/npp_palette.cpp
         src/rustbridge.cpp

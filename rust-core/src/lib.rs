@@ -52,6 +52,10 @@ pub struct FileLoadResult {
 pub struct SearchResult {
     /// Array of match positions (byte offsets), caller frees with npc_free_matches
     pub positions: *mut size_t,
+    /// Byte length of each match, parallel to `positions`. Callers highlight a
+    /// range, and under a regex the match length is unrelated to the pattern
+    /// length — assuming otherwise made Mark All paint the wrong spans.
+    pub lengths: *mut size_t,
     /// Number of matches
     pub count: size_t,
 }
@@ -223,6 +227,7 @@ pub unsafe extern "C" fn npc_find_all(
         Err(_) => {
             return SearchResult {
                 positions: ptr::null_mut(),
+                lengths: ptr::null_mut(),
                 count: 0,
             }
         }
@@ -509,6 +514,13 @@ pub unsafe extern "C" fn npc_free_matches(result: SearchResult) {
     if !result.positions.is_null() && result.count > 0 {
         unsafe {
             let _ = Vec::from_raw_parts(result.positions, result.count, result.count);
+        }
+    }
+    // Two allocations in, two out. find_all boxes positions and lengths
+    // separately; freeing only the first leaks one usize per match forever.
+    if !result.lengths.is_null() && result.count > 0 {
+        unsafe {
+            let _ = Vec::from_raw_parts(result.lengths, result.count, result.count);
         }
     }
 }

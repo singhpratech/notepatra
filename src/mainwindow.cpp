@@ -3521,6 +3521,36 @@ void MainWindow::buildMenus() {
         applySymbolsEverywhere();
     });
 
+    // What the blobs above SAY. Notepad++ calls this the NPC display mode; its
+    // third option, "identity", is omitted because drawing an invisible
+    // character as itself is the same as turning the category off.
+    auto *npcModeMenu = symMenu->addMenu("Non-Printing Character Display");
+    auto *npcModeGroup = new QActionGroup(this);
+    npcModeGroup->setExclusive(true);
+
+    auto addNpcModeAction = [&](const char *label, const char *objName, int mode) {
+        auto *act = npcModeMenu->addAction(QString::fromLatin1(label));
+        act->setObjectName(QString::fromLatin1(objName));
+        act->setCheckable(true);
+        act->setActionGroup(npcModeGroup);
+        // Checked BEFORE connecting: doing it after fires toggled() during
+        // construction, which would write and save Config before the user has
+        // touched anything.
+        act->setChecked(Config::instance().npcDisplayMode == mode);
+        QObject::connect(act, &QAction::toggled, this,
+                         [applySymbolsEverywhere, mode](bool on) {
+            if (!on) return;   // the group also un-checks the previous action
+            Config::instance().npcDisplayMode = mode;
+            applySymbolsEverywhere();
+        });
+        return act;
+    };
+
+    addNpcModeAction("Abbreviation", "viewNpcModeAbbreviation", 0)
+        ->setToolTip("Draw U+200B as \"ZWSP\"");
+    addNpcModeAction("Codepoint", "viewNpcModeCodepoint", 1)
+        ->setToolTip("Draw U+200B as \"U+200B\"");
+
     symMenu->addSeparator();
 
     auto *actShowIndent = symMenu->addAction("Show Indent Guide");
@@ -7200,6 +7230,11 @@ void MainWindow::syncViewMenuToActiveEditor() {
     sync("viewShowControlChars",  cfg.showControlChars);
     sync("viewShowIndentGuide",   cfg.showIndentGuides);
     sync("viewShowWrapSymbol",    cfg.showWrapSymbol);
+
+    // Both are set explicitly: sync() blocks signals, so QActionGroup never
+    // sees the change and will not un-check the other one for us.
+    sync("viewNpcModeAbbreviation", cfg.npcDisplayMode != 1);
+    sync("viewNpcModeCodepoint",    cfg.npcDisplayMode == 1);
 
     // Derived: checked only when all four it drives are on.
     sync("viewShowAllCharacters", cfg.showWhitespace && cfg.showEol

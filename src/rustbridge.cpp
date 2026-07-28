@@ -98,22 +98,22 @@ QString convertWhitespace(const QString &text, int tabWidth, int mode) {
 
 // ── Search ──
 
-QVector<size_t> findAll(const QString &text, const QString &pattern,
-                        bool isRegex, bool caseSensitive, bool wholeWord) {
+QVector<Match> findAll(const QString &text, const QString &pattern,
+                       bool isRegex, bool caseSensitive, bool wholeWord) {
     QByteArray t = toUtf8(text);
     QByteArray p = toUtf8(pattern);
     SearchResult r = npc_find_all(t.constData(), t.size(), p.constData(),
                                   isRegex ? 1 : 0, caseSensitive ? 1 : 0,
                                   wholeWord ? 1 : 0);
-    QVector<size_t> positions;
+    QVector<Match> matches;
     if (r.positions && r.count > 0) {
-        positions.reserve(r.count);
+        matches.reserve(r.count);
         for (size_t i = 0; i < r.count; i++) {
-            positions.append(r.positions[i]);
+            matches.append(Match{ r.positions[i], r.lengths ? r.lengths[i] : 0 });
         }
         npc_free_matches(r);
     }
-    return positions;
+    return matches;
 }
 
 size_t countMatches(const QString &text, const QString &pattern,

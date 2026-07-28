@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "sqlfmtpanel.h"
-#include "editor.h"
+#include "editor_symbols.h"
 #include "rustbridge.h"
 #include "npp_palette.h"
 #include "fonts.h"
@@ -112,7 +112,7 @@ SqlFmtPanel::SqlFmtPanel(QWidget *parent) : QWidget(parent) {
     m_output->setUtf8(true);
     // Formatter output is a plain QsciScintilla, so it never runs
     // Editor::applySymbolSettings(); apply Show Symbol explicitly.
-    Editor::applySymbolsTo(m_output);
+    EditorSymbols::applyFromConfig(m_output);
     m_output->setMarginType(0, QsciScintilla::NumberMargin);
     m_output->setMarginWidth(0, "00000");
     m_output->setMarginLineNumbers(0, true);

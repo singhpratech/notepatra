@@ -8,6 +8,8 @@
 #include <QString>
 #include <QSet>
 
+#include "editor_symbols.h"
+
 class QContextMenuEvent;
 
 class Editor : public QsciScintilla {
@@ -134,7 +136,13 @@ public:
     // would show two identical-looking lines while the diff insists they
     // differ — which is precisely the situation this whole feature exists to
     // resolve.
-    static void applySymbolsTo(QsciScintilla *sci);
+    // Inline, and a pure forwarder: an out-of-line body in editor.cpp meant
+    // test_fmtpanel_diff and test_compare_widget could not link at all, since
+    // they build compare.cpp/fmtpanel.cpp but deliberately do not build the
+    // editor. Keep the real work in EditorSymbols.
+    static void applySymbolsTo(QsciScintilla *sci) {
+        EditorSymbols::applyFromConfig(sci);
+    }
     void goToMatchingBrace();
     void clearBraceHighlight();
 

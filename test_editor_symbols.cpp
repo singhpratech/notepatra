@@ -150,6 +150,52 @@ private slots:
                              .arg(cp, 4, 16, QLatin1Char('0'))));
     }
 
+    // ── display mode ──────────────────────────────────────────────────────
+    void labelForGivesTheAbbreviationOrTheCodepoint_data() {
+        QTest::addColumn<uint>("cp");
+        QTest::addColumn<QString>("abbrev");
+        QTest::addColumn<QString>("codepoint");
+        QTest::newRow("ZWSP")   << 0x200Bu << "ZWSP"   << "U+200B";
+        QTest::newRow("NBSP")   << 0x00A0u << "NBSP"   << "U+00A0";
+        QTest::newRow("ZWNBSP") << 0xFEFFu << "ZWNBSP" << "U+FEFF";
+        QTest::newRow("BEL")    << 0x0007u << "BEL"    << "U+0007";
+    }
+    void labelForGivesTheAbbreviationOrTheCodepoint() {
+        QFETCH(uint, cp);
+        QFETCH(QString, abbrev);
+        QFETCH(QString, codepoint);
+        for (const Entry &e : table()) {
+            if (uint(e.codepoint) != cp) continue;
+            QCOMPARE(labelFor(e, Abbreviation), abbrev);
+            // Uppercase hex, at least four digits — "U+00a0" and "U+A0" are
+            // both wrong, and both are what the obvious one-liner produces.
+            QCOMPARE(labelFor(e, Codepoint), codepoint);
+            return;
+        }
+        QFAIL(qPrintable(QStringLiteral("U+%1 missing from the table")
+                             .arg(cp, 4, 16, QLatin1Char('0'))));
+    }
+
+    // The mode has to reach Scintilla, not just labelFor(). "U+200B" is six
+    // characters against "ZWSP"'s four, so the blob must lay out wider —
+    // measured in real pixels, because a mode that is computed and then
+    // dropped on the floor round-trips through every non-rendering check.
+    void codepointModeActuallyRendersWiderThanAbbreviation() {
+        apply(m_sci, NonPrinting, Abbreviation);
+        const long abbrev = widthOf(0x200B);
+        QVERIFY2(abbrev > 0, "U+200B draws nothing in abbreviation mode");
+
+        apply(m_sci, NonPrinting, Codepoint);
+        const long codepoint = widthOf(0x200B);
+
+        QVERIFY2(codepoint > abbrev,
+                 qPrintable(QStringLiteral("codepoint mode laid out %1px vs "
+                                           "abbreviation's %2px — \"U+200B\" is "
+                                           "longer than \"ZWSP\", so the mode "
+                                           "never reached Scintilla")
+                                .arg(codepoint).arg(abbrev)));
+    }
+
     void utf8EncodingIsCorrect() {
         QCOMPARE(utf8Of(0x200B), QByteArray("\xE2\x80\x8B"));
         QCOMPARE(utf8Of(0x00A0), QByteArray("\xC2\xA0"));

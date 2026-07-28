@@ -660,7 +660,8 @@ void FindReplaceDialog::doFindAllCurrent() {
     // Map byte offsets to line numbers — findAll returns UTF-8 byte
     // offsets, so accumulate byte lengths, not UTF-16 code units.
     QVector<QPair<int, QString>> results;
-    for (auto pos : positions) {
+    for (const auto &match : positions) {
+        const size_t pos = match.start;
         int charPos = 0, lineNum = 0;
         for (int i = 0; i < lines.size(); i++) {
             int lineLen = lines[i].toUtf8().size() + 1;
@@ -721,7 +722,8 @@ void FindReplaceDialog::doFindAllOpened() {
         // Real path (empty for unsaved tabs) as data, tab text as label.
         sr->addFileSection(ed->filePath(), positions.size(), name);
 
-        for (auto pos : positions) {
+        for (const auto &match : positions) {
+            const size_t pos = match.start;
             int charPos = 0, lineNum = 0;
             for (int i = 0; i < lines.size(); i++) {
                 int lineLen = lines[i].toUtf8().size() + 1;
@@ -746,16 +748,51 @@ void FindReplaceDialog::doReplace() {
     QString repl = comboText(m_replInput);
     if (m_rModeExtended->isChecked()) repl = processExtended(repl);
 
-    bool didReplace = false;
-    if (e->hasSelectedText()) {
-        e->replace(repl);
-        didReplace = true;
-    }
-    // Find next
     QString text = comboText(m_replFindInput);
     if (m_rModeExtended->isChecked()) text = processExtended(text);
-    bool found = e->findFirst(text, m_rModeRegex->isChecked(), m_rMatchCase->isChecked(),
-                              m_rWholeWord->isChecked(), m_rWrapAround->isChecked(), true);
+
+    const bool isRegex   = m_rModeRegex->isChecked();
+    const bool matchCase = m_rMatchCase->isChecked();
+    const bool wholeWord = m_rWholeWord->isChecked();
+
+    // Replace only what is actually a match, and only report a replacement that
+    // actually happened. This is Notepad++'s processReplace() contract, and the
+    // previous code met neither half of it:
+    //
+    //   * didReplace was set from the mere EXISTENCE of a selection. But
+    //     QsciScintilla::replace() quietly does nothing unless a previous
+    //     findFirst() armed its internal find state — the situation in every
+    //     freshly opened tab. So "Replaced 1 occurrence" printed over an
+    //     untouched buffer, and because the code then advanced to the next
+    //     match, that occurrence was skipped for good.
+    //   * Once findFirst() HAD run, replace() targets the selection whatever it
+    //     contains, so replacing with an unrelated selection overwrote text the
+    //     user never searched for.
+    //
+    // Re-finding at the selection's own start both verifies the selection and
+    // arms the find state, which is what makes the following replace() real.
+    bool didReplace = false;
+    if (e->hasSelectedText()) {
+        const long selStart = e->SendScintilla(QsciScintilla::SCI_GETSELECTIONSTART);
+        const long selEnd   = e->SendScintilla(QsciScintilla::SCI_GETSELECTIONEND);
+        int selLine = 0, selIndex = 0, endLine = 0, endIndex = 0;
+        e->getSelection(&selLine, &selIndex, &endLine, &endIndex);
+
+        if (!text.isEmpty()
+            && e->findFirst(text, isRegex, matchCase, wholeWord,
+                            /*wrap*/ false, /*forward*/ true, selLine, selIndex)) {
+            const long foundStart = e->SendScintilla(QsciScintilla::SCI_GETSELECTIONSTART);
+            const long foundEnd   = e->SendScintilla(QsciScintilla::SCI_GETSELECTIONEND);
+            if (foundStart == selStart && foundEnd == selEnd) {
+                e->replace(repl);
+                didReplace = true;
+            }
+        }
+    }
+
+    // Find next
+    bool found = e->findFirst(text, isRegex, matchCase, wholeWord,
+                              m_rWrapAround->isChecked(), true);
     if (didReplace && found)
         setDialogStatus(QString("Replaced 1 occurrence — next match selected"));
     else if (didReplace)
@@ -873,10 +910,18 @@ void FindReplaceDialog::doFindInFiles() {
         m_fifMatchCase->isChecked() ? QRegularExpression::NoPatternOption
                                     : QRegularExpression::CaseInsensitiveOption);
 
+    // "*.*" is the legacy Windows "any file" pattern and it is what this dialog
+    // offers as its FIRST, default filter. Qt matches wildcards literally, so
+    // "*.*" demands a dot in the name — passing it straight to QDirIterator
+    // silently skipped Makefile, Dockerfile, LICENSE, README, .gitignore and
+    // every other extension-less file, then reported "0 hits" as though the
+    // text simply were not there. A search tool that confidently says "not
+    // found" about a file it never opened is worse than one that is slow.
+    // Notepad++ matches with PathMatchSpec, where "*.*" means any file.
     QStringList filters;
     for (const auto &f : filterStr.split(' ', Qt::SkipEmptyParts))
-        filters << f;
-    if (filters.isEmpty()) filters << "*.*";
+        filters << (f == QLatin1String("*.*") ? QStringLiteral("*") : f);
+    if (filters.isEmpty()) filters << QStringLiteral("*");
 
     QDir::Filters dirFilters = QDir::Files | QDir::NoDotAndDotDot;
     if (m_fifHidden->isChecked()) dirFilters |= QDir::Hidden;
@@ -971,7 +1016,6 @@ void FindReplaceDialog::doMarkAll() {
                                         m_markWholeWord->isChecked());
 
     QByteArray utf8 = e->text().toUtf8();
-    int needleLen = needle.toUtf8().size();
 
     // v0.1.87 — cap Mark All to 10000 indicators on very large files.
     // SCI_INDICATORFILLRANGE issues a paint invalidation per call; on a
@@ -984,8 +1028,11 @@ void FindReplaceDialog::doMarkAll() {
     const size_t drawCount = std::min<size_t>(cap, positions.size());
 
     for (size_t i = 0; i < drawCount; ++i) {
+        // Each match's OWN length. This used to paint needle.toUtf8().size()
+        // bytes at every hit, so marking `\d+` highlighted three characters
+        // regardless of how many digits actually matched.
         e->SendScintilla(QsciScintilla::SCI_INDICATORFILLRANGE,
-                         (int)positions[i], needleLen);
+                         (int)positions[i].start, (long)positions[i].length);
     }
 
     if (largeFile && positions.size() > cap) {

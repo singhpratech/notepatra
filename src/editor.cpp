@@ -776,10 +776,9 @@ void Editor::highlightAllOccurrences(const QString &word) {
     // Find all occurrences using Rust Aho-Corasick (fast)
     const auto positions = RustCore::findAll(docText, word, false, true, true);
 
-    const int wordLen = word.toUtf8().size();
     int filled = 0;
-    for (auto pos : positions) {
-        SendScintilla(SCI_INDICATORFILLRANGE, (long)pos, wordLen);
+    for (const auto &match : positions) {
+        SendScintilla(SCI_INDICATORFILLRANGE, (long)match.start, (long)match.length);
         if (++filled >= kOccurrenceMaxMatches) break;
     }
 }
@@ -1131,6 +1130,17 @@ void Editor::applyTheme(const QString &themeName) {
     setFoldMarginColors(theme.foldBg, theme.foldBg);
     setMatchedBraceBackgroundColor(theme.matchedBraceBg);
     setMatchedBraceForegroundColor(theme.matchedBraceFg);
+
+    // STYLE_INDENTGUIDE is a RESERVED style (37), outside the 0-31 range that
+    // the indexed lexer->setPaper(c, i) / setColor(c, i) calls in npp_palette
+    // can address — so nothing else in the codebase can reach it. Left alone
+    // it keeps Scintilla's built-in black-on-WHITE, and the guide paints its
+    // own background: a white column down #1E1E1E paper. The BACK must track
+    // the editor paper or it leaks; the FORE is the theme-derived low-contrast
+    // blend. Both are set for every theme, Light included, because the default
+    // is only accidentally right there.
+    SendScintilla(SCI_STYLESETBACK, STYLE_INDENTGUIDE, theme.editorBg);
+    SendScintilla(SCI_STYLESETFORE, STYLE_INDENTGUIDE, indentGuideColor(theme));
 
     if (auto *lex = lexer()) {
         lex->setDefaultPaper(theme.editorBg);
@@ -1856,20 +1866,6 @@ void Editor::toggleEol() {
     applySymbolSettings();
 }
 
-namespace {
-EditorSymbols::Categories symbolCategoriesFromConfig() {
-    const auto &cfg = Config::instance();
-    EditorSymbols::Categories cats = EditorSymbols::NoSymbols;
-    if (cfg.showNonPrintingChars) cats |= EditorSymbols::NonPrinting;
-    if (cfg.showControlChars)     cats |= EditorSymbols::ControlAndUnicodeEol;
-    return cats;
-}
-}  // namespace
-
-void Editor::applySymbolsTo(QsciScintilla *sci) {
-    EditorSymbols::apply(sci, symbolCategoriesFromConfig());
-}
-
 void Editor::applySymbolSettings() {
     const auto &cfg = Config::instance();
 
@@ -1888,7 +1884,7 @@ void Editor::applySymbolSettings() {
                   cfg.showWrapSymbol ? SC_WRAPVISUALFLAG_END
                                      : SC_WRAPVISUALFLAG_NONE);
 
-    EditorSymbols::apply(this, symbolCategoriesFromConfig());
+    EditorSymbols::applyFromConfig(this);
 }
 
 void Editor::clearBraceHighlight() {

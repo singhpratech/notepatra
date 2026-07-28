@@ -38,8 +38,19 @@ QString convertCase(const QString &text, int mode);
 QString convertWhitespace(const QString &text, int tabWidth, int mode);
 
 // Search
-QVector<size_t> findAll(const QString &text, const QString &pattern,
-                        bool isRegex, bool caseSensitive, bool wholeWord);
+//
+// A match is a RANGE, not a point. Callers used to highlight
+// pattern.toUtf8().size() bytes at each offset, which is wrong for every regex
+// (`\d+` is three pattern bytes and matches any number of digits) and wrong for
+// case-insensitive hits whose matched text differs in byte length from the
+// needle. Both offsets and lengths are UTF-8 byte counts into the original text.
+struct Match {
+    size_t start;
+    size_t length;
+};
+
+QVector<Match> findAll(const QString &text, const QString &pattern,
+                       bool isRegex, bool caseSensitive, bool wholeWord);
 size_t countMatches(const QString &text, const QString &pattern,
                     bool isRegex, bool caseSensitive);
 QString replaceAll(const QString &text, const QString &pattern,

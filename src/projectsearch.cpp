@@ -430,10 +430,10 @@ void ProjectSearchWorker::search(const Params &p) {
                 // appears at least once. Early exit on first miss saves
                 // running aho-corasick for tokens 2..N on most files.
                 bool allPresent = true;
-                QVector<QVector<size_t>> perTokenHits;
+                QVector<QVector<RustCore::Match>> perTokenHits;
                 perTokenHits.reserve(allWordsTokens.size());
                 for (const QString &tok : allWordsTokens) {
-                    QVector<size_t> tokHits =
+                    QVector<RustCore::Match> tokHits =
                         RustCore::findAll(body, tok, /*isRegex*/ false,
                                           p.caseSensitive, /*wholeWord*/ false);
                     if (tokHits.isEmpty()) { allPresent = false; break; }
@@ -441,9 +441,8 @@ void ProjectSearchWorker::search(const Params &p) {
                 }
                 if (allPresent) {
                     for (int ti = 0; ti < allWordsTokens.size(); ++ti) {
-                        const int tokBytes = allWordsTokens[ti].toUtf8().size();
-                        for (size_t bp : perTokenHits[ti]) {
-                            hits.append({bp, tokBytes});
+                        for (const RustCore::Match &m : perTokenHits[ti]) {
+                            hits.append({m.start, int(m.length)});
                         }
                     }
                     std::sort(hits.begin(), hits.end(),
@@ -452,11 +451,11 @@ void ProjectSearchWorker::search(const Params &p) {
                               });
                 }
             } else {
-                const QVector<size_t> posBytes =
+                const QVector<RustCore::Match> found =
                     RustCore::findAll(body, p.query, /*isRegex*/ false,
                                       p.caseSensitive, /*wholeWord*/ false);
-                const int queryBytes = p.query.toUtf8().size();
-                for (size_t bp : posBytes) hits.append({bp, queryBytes});
+                for (const RustCore::Match &m : found)
+                    hits.append({m.start, int(m.length)});
             }
 
             if (!hits.isEmpty()) {

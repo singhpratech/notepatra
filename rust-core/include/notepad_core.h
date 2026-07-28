@@ -28,6 +28,9 @@ typedef struct {
 
 typedef struct {
     size_t *positions;  /* Array of byte offsets */
+    size_t *lengths;    /* Byte length of each match, parallel to positions.
+                         * Under a regex the match length is unrelated to the
+                         * pattern length, so callers must not infer it. */
     size_t count;
 } SearchResult;
 
