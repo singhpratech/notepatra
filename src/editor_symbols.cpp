@@ -215,8 +215,16 @@ void apply(QsciScintilla *sci, Categories cats) {
             // Scintilla would draw its own mnemonic here, so "off" has to be an
             // explicit empty representation rather than no representation.
             // Without SCI_SETREPRESENTATIONAPPEARANCE we cannot ask for the
-            // Plain style, so a ~3px blob border survives instead of nothing at
-            // all. That is the closest this Scintilla can get.
+            // Plain style, so a ~3px blob border survives instead of nothing.
+            //
+            // That residue is the floor, not an oversight. Measured on
+            // "a<U+0001>b", where the plain "ab" baseline is 21px:
+            //   built-in "SOH" mnemonic ............ 61px
+            //   empty representation (this) ........ 24px   <- closest to gone
+            //   SCI_SETCONTROLCHARSYMBOL = space ... 38px
+            // Clearing instead would restore the mnemonic, i.e. the menu item
+            // would do nothing for C0. Don't "fix" this by reaching for
+            // controlCharSymbol; it measures worse.
             sci->SendScintilla(QsciScintillaBase::SCI_SETREPRESENTATION,
                                u8.constData(), "");
         } else {

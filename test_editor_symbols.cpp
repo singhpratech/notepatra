@@ -184,6 +184,24 @@ private slots:
                  qPrintable(QStringLiteral("these draw nothing: ") + invisible.join(", ")));
     }
 
+    // The other 64. C1 (U+0080-U+009F) has no Scintilla built-in, so unlike C0
+    // these are invisible unless this module draws them — the same failure mode
+    // as ZWSP, in a range nobody thinks to check.
+    void everyControlAndUnicodeEolCharacterBecomesVisible() {
+        apply(m_sci, ControlAndUnicodeEol);
+        QStringList invisible;
+        for (const Entry &e : table()) {
+            if (e.category != ControlAndUnicodeEol) continue;
+            if (e.codepoint == 0x0000) continue;   // unkeyable, see apply()
+            if (widthOf(e.codepoint) <= 0)
+                invisible << QStringLiteral("U+%1 (%2)")
+                                 .arg(uint(e.codepoint), 4, 16, QLatin1Char('0'))
+                                 .arg(QLatin1String(e.abbreviation));
+        }
+        QVERIFY2(invisible.isEmpty(),
+                 qPrintable(QStringLiteral("these draw nothing: ") + invisible.join(", ")));
+    }
+
     // ── the layout-cache trap ─────────────────────────────────────────────
     //
     // SCI_SETREPRESENTATION does not invalidate the line-layout cache in this
