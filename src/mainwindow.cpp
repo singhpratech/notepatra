@@ -3445,40 +3445,69 @@ void MainWindow::buildMenus() {
     // its sticky-state config field, (4) propagates to all open tabs.
     // QActions are tagged with objectName so syncViewMenuToActiveEditor()
     // can refresh them on tab switch.
+    // v0.1.124 — Show Symbol, rebuilt to Notepad++'s structure and semantics.
+    //
+    // The old menu had three items that poked the editor directly, persisted
+    // nothing, and could not show a single invisible Unicode character. A file
+    // containing U+200B looked identical to one without it. The two new items
+    // are the ones that close that gap; the rest is the same set Notepad++
+    // ships, in the same order, so a user moving between the two editors finds
+    // what they expect where they expect it.
+    //
+    // All state now lives in Config and is applied through
+    // Editor::applySymbolSettings(), so it propagates to every tab and
+    // survives a restart.
     auto *symMenu = view->addMenu("Show Symbol");
+
+    // Push the current Config to every open tab and refresh the checkmarks.
+    auto applySymbolsEverywhere = [this]() {
+        Config::instance().save();
+        for (int i = 0; i < m_tabs->count(); ++i)
+            if (auto *e = m_tabs->editorAt(i)) e->applySymbolSettings();
+        syncViewMenuToActiveEditor();
+    };
+
+    auto addSymbolToggle = [&](const char *label, const char *objName,
+                               bool Config::*field) {
+        auto *act = symMenu->addAction(QString::fromLatin1(label));
+        act->setObjectName(QString::fromLatin1(objName));
+        act->setCheckable(true);
+        act->setChecked(Config::instance().*field);
+        QObject::connect(act, &QAction::toggled, this,
+                         [applySymbolsEverywhere, field](bool on) {
+            Config::instance().*field = on;
+            applySymbolsEverywhere();
+        });
+        return act;
+    };
+
+    addSymbolToggle("Show Space and Tab", "viewShowWhitespace",
+                    &Config::showWhitespace);
+    addSymbolToggle("Show End of Line", "viewShowEol", &Config::showEol);
+    addSymbolToggle("Show Non-Printing Characters", "viewShowNonPrinting",
+                    &Config::showNonPrintingChars)
+        ->setToolTip("Reveal invisible Unicode characters such as ZWSP, NBSP "
+                     "and bidirectional controls");
+    addSymbolToggle("Show Control Characters && Unicode EOL", "viewShowControlChars",
+                    &Config::showControlChars)
+        ->setToolTip("Reveal C0/C1 control characters and NEL, LS and PS");
+
+    // "Show All Characters" is a fan-out, not a fifth independent setting —
+    // it drives the four above. Its own checkmark is derived in
+    // syncViewMenuToActiveEditor() so it reads as checked only when all four
+    // really are on.
     auto *actShowAll = symMenu->addAction("Show All Characters");
     actShowAll->setObjectName("viewShowAllCharacters");
     actShowAll->setCheckable(true);
-    QObject::connect(actShowAll, &QAction::toggled, this, [this](bool on) {
-        for (int i = 0; i < m_tabs->count(); ++i) {
-            if (auto *e = m_tabs->editorAt(i)) {
-                e->setWhitespaceVisibility(on ? QsciScintilla::WsVisible
-                                              : QsciScintilla::WsInvisible);
-                e->setEolVisibility(on);
-            }
-        }
+    QObject::connect(actShowAll, &QAction::toggled, this,
+                     [applySymbolsEverywhere](bool on) {
+        auto &cfg = Config::instance();
+        cfg.showWhitespace = cfg.showEol = on;
+        cfg.showNonPrintingChars = cfg.showControlChars = on;
+        applySymbolsEverywhere();
     });
+
     symMenu->addSeparator();
-
-    auto *actShowWs = symMenu->addAction("Show Whitespace and TAB");
-    actShowWs->setObjectName("viewShowWhitespace");
-    actShowWs->setCheckable(true);
-    QObject::connect(actShowWs, &QAction::toggled, this, [this](bool on) {
-        for (int i = 0; i < m_tabs->count(); ++i) {
-            if (auto *e = m_tabs->editorAt(i))
-                e->setWhitespaceVisibility(on ? QsciScintilla::WsVisible
-                                              : QsciScintilla::WsInvisible);
-        }
-    });
-
-    auto *actShowEol = symMenu->addAction("Show End of Line");
-    actShowEol->setObjectName("viewShowEol");
-    actShowEol->setCheckable(true);
-    QObject::connect(actShowEol, &QAction::toggled, this, [this](bool on) {
-        for (int i = 0; i < m_tabs->count(); ++i) {
-            if (auto *e = m_tabs->editorAt(i)) e->setEolVisibility(on);
-        }
-    });
 
     auto *actShowIndent = symMenu->addAction("Show Indent Guide");
     actShowIndent->setObjectName("viewShowIndentGuide");
@@ -3492,6 +3521,9 @@ void MainWindow::buildMenus() {
             if (auto *e = m_tabs->editorAt(i)) e->setIndentationGuides(on);
         }
     });
+
+    addSymbolToggle("Show Wrap Symbol", "viewShowWrapSymbol",
+                    &Config::showWrapSymbol);
 
     auto *zoomMenu = view->addMenu("Zoom");
     // v0.1.42 — zoom now persists to Config::fontSize via Editor's helpers
@@ -7143,19 +7175,25 @@ void MainWindow::syncViewMenuToActiveEditor() {
         }
     };
 
-    if (e) {
-        const bool ws = (e->whitespaceVisibility() != QsciScintilla::WsInvisible);
-        const bool eolVis = e->eolVisibility();
-        sync("viewShowAllCharacters", ws && eolVis);
-        sync("viewShowWhitespace",    ws);
-        sync("viewShowEol",           eolVis);
-        sync("viewShowIndentGuide",   e->indentationGuides());
-        sync("viewWordWrap",          e->wrapMode() != QsciScintilla::WrapNone);
-    } else {
-        sync("viewShowAllCharacters", false);
-        sync("viewShowWhitespace",    false);
-        sync("viewShowEol",           false);
-        sync("viewShowIndentGuide",   Config::instance().showIndentGuides);
-        sync("viewWordWrap",          Config::instance().wordWrap);
-    }
+    // v0.1.124 — the Show Symbol toggles are Config-backed and global, so they
+    // read from Config rather than from the active editor. Two of them
+    // (non-printing and control characters) have no getter on QsciScintilla at
+    // all, and deriving them from the editor was never possible.
+    const auto &cfg = Config::instance();
+    sync("viewShowWhitespace",    cfg.showWhitespace);
+    sync("viewShowEol",           cfg.showEol);
+    sync("viewShowNonPrinting",   cfg.showNonPrintingChars);
+    sync("viewShowControlChars",  cfg.showControlChars);
+    sync("viewShowIndentGuide",   cfg.showIndentGuides);
+    sync("viewShowWrapSymbol",    cfg.showWrapSymbol);
+
+    // Derived: checked only when all four it drives are on.
+    sync("viewShowAllCharacters", cfg.showWhitespace && cfg.showEol
+                                  && cfg.showNonPrintingChars
+                                  && cfg.showControlChars);
+
+    // Word wrap stays per-editor — it is a property of the view, not a
+    // global display preference.
+    if (e) sync("viewWordWrap", e->wrapMode() != QsciScintilla::WrapNone);
+    else   sync("viewWordWrap", cfg.wordWrap);
 }

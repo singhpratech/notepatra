@@ -11,6 +11,7 @@ build-v*/
 # v0.1.114 — ASan and release-test scratch dirs from the open-pipeline
 # deep-dive sessions.
 build-asan/
+build-symbols/
 build-reltest/
 build-nocloud/
 

@@ -40,6 +40,17 @@ public:
     bool showDocumentRulers = false;
     bool showCrosshair = false;
 
+    // View → Show Symbol. Notepad++ persists every one of these across
+    // restarts; Notepatra used to forget them the moment you closed it.
+    // Defaults match Notepad++'s: everything off except the control-character
+    // display, which is on because an unannounced U+0007 in a file is a
+    // problem you want to see without having to go looking for it.
+    bool showWhitespace = false;
+    bool showEol = false;
+    bool showNonPrintingChars = false;
+    bool showControlChars = true;
+    bool showWrapSymbol = false;
+
     // Auto-complete
     bool autoComplete = true;
     int autoCompleteThreshold = 3;
@@ -256,6 +267,11 @@ public:
         wordWrap = o.value("wordWrap").toBool(wordWrap);
         showLineNumbers = o.value("showLineNumbers").toBool(showLineNumbers);
         showIndentGuides = o.value("showIndentGuides").toBool(showIndentGuides);
+        showWhitespace = o.value("showWhitespace").toBool(showWhitespace);
+        showEol = o.value("showEol").toBool(showEol);
+        showNonPrintingChars = o.value("showNonPrintingChars").toBool(showNonPrintingChars);
+        showControlChars = o.value("showControlChars").toBool(showControlChars);
+        showWrapSymbol = o.value("showWrapSymbol").toBool(showWrapSymbol);
         fontSize = o.value("fontSize").toInt(fontSize);
         fontFamily = o.value("fontFamily").toString(fontFamily);
         edgeColumn = o.value("edgeColumn").toInt(edgeColumn);
@@ -339,6 +355,11 @@ public:
         o["wordWrap"] = wordWrap;
         o["showLineNumbers"] = showLineNumbers;
         o["showIndentGuides"] = showIndentGuides;
+        o["showWhitespace"] = showWhitespace;
+        o["showEol"] = showEol;
+        o["showNonPrintingChars"] = showNonPrintingChars;
+        o["showControlChars"] = showControlChars;
+        o["showWrapSymbol"] = showWrapSymbol;
         o["fontSize"] = fontSize;
         o["fontFamily"] = fontFamily;
         o["edgeColumn"] = edgeColumn;

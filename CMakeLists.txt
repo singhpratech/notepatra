@@ -541,6 +541,27 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_terminal_ansi.cpp"
     message(STATUS "Regression test enabled — target: test_terminal_ansi")
 endif()
 
+# ── Non-printing character display (Notepad++ "Show Symbol" parity) ─────────
+# Links only editor_symbols.cpp, not the app: the assertions measure real
+# laid-out pixel widths in a live QsciScintilla, and pulling in the Rust core
+# would make a fast, purely-visual test slow for no benefit.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_editor_symbols.cpp")
+    add_executable(test_editor_symbols
+        test_editor_symbols.cpp
+        ${CMAKE_SOURCE_DIR}/src/editor_symbols.cpp)
+    target_include_directories(test_editor_symbols PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${QSCINTILLA_INCLUDE})
+    target_link_libraries(test_editor_symbols PRIVATE
+        Qt5::Widgets Qt5::Test ${QSCINTILLA_LIB})
+    if(WIN32)
+        target_compile_definitions(test_editor_symbols PRIVATE QSCINTILLA_DLL)
+    endif()
+    notepatra_add_qt_test(test_editor_symbols)
+    set_tests_properties(test_editor_symbols PROPERTIES
+        LABELS "regression;editor;symbols;v01124")
+    message(STATUS "Regression test enabled — target: test_editor_symbols")
+endif()
+
 # ── Read-only SQL classifier gate (query_sql / csv_query security contract) ──
 # Links the REAL DbConnections::classifySql / isReadOnlyQuery / isMutation from
 # dbconnections.cpp (Qt-Core string logic; NOTEPATRA_HAVE_DUCKDB stays off for
@@ -2765,6 +2786,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_options_actually_w
         test_options_actually_work.cpp
         src/preferences.cpp
         src/editor.cpp
+        src/editor_symbols.cpp   # Editor::applySymbolSettings() links against it
         src/gitgutter.cpp
         src/git_hunk_apply.cpp
         src/gutter_hunk_popup.cpp

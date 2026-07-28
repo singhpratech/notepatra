@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "editor.h"
+#include "editor_symbols.h"
 #include "lexerutils.h"
 #include "rustbridge.h"
 #include "npp_palette.h"
@@ -446,6 +447,10 @@ void Editor::applyConfig() {
     setTabWidth(qMax(1, cfg.tabWidth));
     setIndentationGuides(cfg.showIndentGuides);
     setAutoIndent(cfg.autoIndent);
+
+    // Show Symbol state, so a newly-opened tab looks like every other tab and
+    // the setting survives a restart.
+    applySymbolSettings();
 
     // Wrap
     setWrapMode(cfg.wordWrap ? QsciScintilla::WrapWord : QsciScintilla::WrapNone);
@@ -1840,6 +1845,30 @@ void Editor::toggleWhitespace() {
 
 void Editor::toggleEol() {
     setEolVisibility(!eolVisibility());
+}
+
+void Editor::applySymbolSettings() {
+    const auto &cfg = Config::instance();
+
+    setWhitespaceVisibility(cfg.showWhitespace ? QsciScintilla::WsVisible
+                                               : QsciScintilla::WsInvisible);
+    setEolVisibility(cfg.showEol);
+
+    // Notepad++ draws whitespace dots at size 2; Scintilla's default of 1 is
+    // nearly invisible on a HiDPI display.
+    SendScintilla(SCI_SETWHITESPACESIZE, 2);
+
+    // Wrap symbol: the arrow at the right edge only, which is the single
+    // visual flag Notepad++ exposes.
+    SendScintilla(SCI_SETWRAPVISUALFLAGSLOCATION, SC_WRAPVISUALFLAGLOC_DEFAULT);
+    SendScintilla(SCI_SETWRAPVISUALFLAGS,
+                  cfg.showWrapSymbol ? SC_WRAPVISUALFLAG_END
+                                     : SC_WRAPVISUALFLAG_NONE);
+
+    EditorSymbols::Categories cats = EditorSymbols::NoSymbols;
+    if (cfg.showNonPrintingChars) cats |= EditorSymbols::NonPrinting;
+    if (cfg.showControlChars)     cats |= EditorSymbols::ControlAndUnicodeEol;
+    EditorSymbols::apply(this, cats);
 }
 
 void Editor::clearBraceHighlight() {

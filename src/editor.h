@@ -115,6 +115,16 @@ public:
     void toggleWordWrap();
     void toggleWhitespace();
     void toggleEol();
+
+    // v0.1.124 — View → Show Symbol, in one place.
+    //
+    // Reads every Show Symbol field from Config and applies it: whitespace
+    // dots, EOL markers, wrap symbol, and the two non-printing-character
+    // tables. Menu handlers set the Config field and call this on each tab, so
+    // there is exactly one code path from setting to pixels — the previous
+    // menu poked setWhitespaceVisibility() directly from three different
+    // lambdas and persisted none of it.
+    void applySymbolSettings();
     void goToMatchingBrace();
     void clearBraceHighlight();
 
