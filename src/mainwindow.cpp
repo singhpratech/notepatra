@@ -3458,12 +3458,26 @@ void MainWindow::buildMenus() {
     // Editor::applySymbolSettings(), so it propagates to every tab and
     // survives a restart.
     auto *symMenu = view->addMenu("Show Symbol");
+    // QMenu swallows QAction tooltips unless this is set, and the two new
+    // entries are the ones a user is least likely to guess from the label.
+    symMenu->setToolTipsVisible(true);
 
     // Push the current Config to every open tab and refresh the checkmarks.
     auto applySymbolsEverywhere = [this]() {
         Config::instance().save();
         for (int i = 0; i < m_tabs->count(); ++i)
             if (auto *e = m_tabs->editorAt(i)) e->applySymbolSettings();
+
+        // Secondary views are plain QsciScintilla, not Editor, so they never
+        // see applySymbolSettings(). Sweeping every live widget catches the
+        // Compare panes and the formatter output without this menu needing to
+        // know they exist — and Compare is the one that matters, since two
+        // files differing only by an invisible character would otherwise show
+        // as two identical lines flagged as different.
+        for (QWidget *w : QApplication::allWidgets())
+            if (auto *sci = qobject_cast<QsciScintilla *>(w))
+                if (!qobject_cast<Editor *>(w)) Editor::applySymbolsTo(sci);
+
         syncViewMenuToActiveEditor();
     };
 

@@ -379,8 +379,9 @@ void Editor::setupEditor() {
     setColor(QColor("#000000"));
     setMarginsBackgroundColor(QColor("#E4E4E4"));
     setMarginsForegroundColor(QColor("#2B91AF"));
-    setWhitespaceVisibility(QsciScintilla::WsInvisible);
-    setEolVisibility(false);
+    // Whitespace and EOL visibility are NOT set here — applyConfig() below owns
+    // them, along with the rest of View > Show Symbol. Setting them here too
+    // would just be a second, stale answer to the same question.
     setBackspaceUnindents(true);
     setTabIndents(true);
     setBraceMatching(QsciScintilla::StrictBraceMatch);
@@ -1837,14 +1838,36 @@ void Editor::toggleWordWrap() {
                     : QsciScintilla::WrapNone);
 }
 
+// These flip the Config field rather than the widget directly. Poking
+// QsciScintilla here would leave Config, the menu checkmark, and every other
+// tab disagreeing with what this editor is showing — the exact desync the
+// Show Symbol rework removed. The multi-tab path is MainWindow's menu handler.
 void Editor::toggleWhitespace() {
-    setWhitespaceVisibility(whitespaceVisibility() == QsciScintilla::WsInvisible
-                                ? QsciScintilla::WsVisible
-                                : QsciScintilla::WsInvisible);
+    auto &cfg = Config::instance();
+    cfg.showWhitespace = !cfg.showWhitespace;
+    cfg.save();
+    applySymbolSettings();
 }
 
 void Editor::toggleEol() {
-    setEolVisibility(!eolVisibility());
+    auto &cfg = Config::instance();
+    cfg.showEol = !cfg.showEol;
+    cfg.save();
+    applySymbolSettings();
+}
+
+namespace {
+EditorSymbols::Categories symbolCategoriesFromConfig() {
+    const auto &cfg = Config::instance();
+    EditorSymbols::Categories cats = EditorSymbols::NoSymbols;
+    if (cfg.showNonPrintingChars) cats |= EditorSymbols::NonPrinting;
+    if (cfg.showControlChars)     cats |= EditorSymbols::ControlAndUnicodeEol;
+    return cats;
+}
+}  // namespace
+
+void Editor::applySymbolsTo(QsciScintilla *sci) {
+    EditorSymbols::apply(sci, symbolCategoriesFromConfig());
 }
 
 void Editor::applySymbolSettings() {
@@ -1865,10 +1888,7 @@ void Editor::applySymbolSettings() {
                   cfg.showWrapSymbol ? SC_WRAPVISUALFLAG_END
                                      : SC_WRAPVISUALFLAG_NONE);
 
-    EditorSymbols::Categories cats = EditorSymbols::NoSymbols;
-    if (cfg.showNonPrintingChars) cats |= EditorSymbols::NonPrinting;
-    if (cfg.showControlChars)     cats |= EditorSymbols::ControlAndUnicodeEol;
-    EditorSymbols::apply(this, cats);
+    EditorSymbols::apply(this, symbolCategoriesFromConfig());
 }
 
 void Editor::clearBraceHighlight() {

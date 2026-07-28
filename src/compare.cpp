@@ -9,6 +9,7 @@
 // design language. The implementation here is a fresh Qt + Rust port.
 
 #include "compare.h"
+#include "editor.h"
 #include "lexerutils.h"
 #include "npp_palette.h"
 #include "rustbridge.h"
@@ -537,6 +538,11 @@ void CompareWidget::setupEditor(QsciScintilla *ed) {
     ed->setUtf8(true);
     ed->zoomTo(0);
     ed->setCaretWidth(0);
+
+    // Without this, comparing two files that differ only by an invisible
+    // character shows two identical-looking lines that the diff insists are
+    // different — the single most confusing thing this panel could do.
+    Editor::applySymbolsTo(ed);
 
     ed->setMarginType(0, QsciScintilla::TextMargin);
     ed->setMarginWidth(0, "00000");

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "fmtpanel.h"
+#include "editor.h"
 #include "npp_palette.h"
 #include "theme_detect.h"   // npIsDarkTheme / npResolvedThemeName
 #include "fonts.h"
@@ -180,6 +181,9 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
     m_output->setFont(mono);
     m_output->setMarginsFont(mono);
     m_output->setUtf8(true);
+    // Formatter output is a plain QsciScintilla, so it never runs
+    // Editor::applySymbolSettings(); apply Show Symbol explicitly.
+    Editor::applySymbolsTo(m_output);
     m_output->setMarginType(0, QsciScintilla::NumberMargin);
     m_output->setMarginWidth(0, "00000");
     m_output->setMarginLineNumbers(0, true);

@@ -125,6 +125,16 @@ public:
     // menu poked setWhitespaceVisibility() directly from three different
     // lambdas and persisted none of it.
     void applySymbolSettings();
+
+    // Show Symbol for views that are NOT Editors.
+    //
+    // The Compare panes and the formatter output panels are plain
+    // QsciScintilla, so they never run applySymbolSettings(). Compare is the
+    // case that stings: two files differing only by an invisible character
+    // would show two identical-looking lines while the diff insists they
+    // differ — which is precisely the situation this whole feature exists to
+    // resolve.
+    static void applySymbolsTo(QsciScintilla *sci);
     void goToMatchingBrace();
     void clearBraceHighlight();
 
