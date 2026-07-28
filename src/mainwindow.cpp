@@ -3506,10 +3506,19 @@ void MainWindow::buildMenus() {
                     &Config::showControlChars)
         ->setToolTip("Reveal C0/C1 control characters and NEL, LS and PS");
 
-    // "Show All Characters" is a fan-out, not a fifth independent setting —
-    // it drives the four above. Its own checkmark is derived in
-    // syncViewMenuToActiveEditor() so it reads as checked only when all four
-    // really are on.
+    // Past Notepad++. Its tables are a fixed 113 codepoints, so anything it
+    // does not list stays invisible there too — variation selectors, the
+    // Hangul fillers, and the TAG block used to hide unreadable text in a file.
+    addSymbolToggle("Show Every Other Invisible Character", "viewShowOtherInvisible",
+                    &Config::showOtherInvisible)
+        ->setToolTip("Everything Notepad++'s tables miss: variation selectors, "
+                     "tag characters, Hangul fillers and the rest of Unicode's "
+                     "format category");
+
+    // "Show All Characters" is a fan-out, not another independent setting —
+    // it drives the five above, so it means what it says. Its own checkmark is
+    // derived in syncViewMenuToActiveEditor() and reads as checked only when
+    // all five really are on.
     auto *actShowAll = symMenu->addAction("Show All Characters");
     actShowAll->setObjectName("viewShowAllCharacters");
     actShowAll->setCheckable(true);
@@ -3518,6 +3527,7 @@ void MainWindow::buildMenus() {
         auto &cfg = Config::instance();
         cfg.showWhitespace = cfg.showEol = on;
         cfg.showNonPrintingChars = cfg.showControlChars = on;
+        cfg.showOtherInvisible = on;
         applySymbolsEverywhere();
     });
 
@@ -7228,6 +7238,7 @@ void MainWindow::syncViewMenuToActiveEditor() {
     sync("viewShowEol",           cfg.showEol);
     sync("viewShowNonPrinting",   cfg.showNonPrintingChars);
     sync("viewShowControlChars",  cfg.showControlChars);
+    sync("viewShowOtherInvisible", cfg.showOtherInvisible);
     sync("viewShowIndentGuide",   cfg.showIndentGuides);
     sync("viewShowWrapSymbol",    cfg.showWrapSymbol);
 
@@ -7239,7 +7250,8 @@ void MainWindow::syncViewMenuToActiveEditor() {
     // Derived: checked only when all four it drives are on.
     sync("viewShowAllCharacters", cfg.showWhitespace && cfg.showEol
                                   && cfg.showNonPrintingChars
-                                  && cfg.showControlChars);
+                                  && cfg.showControlChars
+                                  && cfg.showOtherInvisible);
 
     // Word wrap stays per-editor — it is a property of the view, not a
     // global display preference.

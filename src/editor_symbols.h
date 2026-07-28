@@ -46,11 +46,20 @@ class QsciScintilla;
 
 namespace EditorSymbols {
 
-// The two user-facing toggles, matching Notepad++'s View > Show Symbol.
+// The first two mirror Notepad++'s View > Show Symbol exactly. The third goes
+// past it.
+//
+// Notepad++'s tables are a fixed 113 codepoints, so every invisible character
+// it does not list is invisible in Notepad++ too — including variation
+// selectors (U+FE0F), the Hangul fillers, and the Unicode TAG block
+// (U+E0020-E007F) that is used to smuggle unreadable text into a file. Matching
+// its tables byte-for-byte therefore inherits its blind spots, and "Show All
+// Characters" would be a promise the feature could not keep.
 enum Category {
     NoSymbols            = 0x00,
     NonPrinting          = 0x01,  // "Show Non-Printing Characters"      (49)
     ControlAndUnicodeEol = 0x02,  // "Show Control Characters & Unicode EOL" (64)
+    OtherInvisible       = 0x04,  // everything else that draws nothing
 };
 Q_DECLARE_FLAGS(Categories, Category)
 
@@ -64,11 +73,19 @@ enum Group {
     GroupC0,          // U+0000-U+001F and U+007F
     GroupC1,          // U+0080-U+009F
     GroupUnicodeEol,  // NEL, LS, PS
+    GroupVariation,   // variation selectors, incl. the 240 in plane 14
+    GroupTag,         // U+E0001, U+E0020-U+E007F — invisible smuggled text
+    GroupFiller,      // Hangul fillers, CGJ, Braille blank and friends
+    GroupOtherFormat, // the rest of Unicode's Cf category
 };
 
 struct Entry {
     char32_t    codepoint;
-    const char *abbreviation;  // what gets drawn, e.g. "ZWSP"
+    // What gets drawn, e.g. "ZWSP". NULL for the OtherInvisible ranges, where
+    // there are hundreds of codepoints and no Notepad++ spelling to match:
+    // labelFor() derives those (VS1..VS256, FVS1..3, TAG, else U+XXXX). Storing
+    // 400-odd literals would be data that can drift from the codepoint beside it.
+    const char *abbreviation;
     Category    category;
     Group       group;
 };

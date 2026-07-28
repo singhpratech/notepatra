@@ -51,6 +51,11 @@ public:
     bool showControlChars = true;
     bool showWrapSymbol = false;
 
+    // Everything invisible that Notepad++'s fixed 113-codepoint tables miss —
+    // variation selectors, the TAG block, Hangul fillers. No Notepad++
+    // equivalent, so it defaults off and "Show All Characters" turns it on.
+    bool showOtherInvisible = false;
+
     // What the non-printing blobs say: 0 = abbreviation ("ZWSP"), 1 = codepoint
     // ("U+200B"). Mirrors Notepad++'s _npcMode, minus its identity mode — see
     // EditorSymbols::DisplayMode for why that one is not offered.
@@ -277,6 +282,7 @@ public:
         showNonPrintingChars = o.value("showNonPrintingChars").toBool(showNonPrintingChars);
         showControlChars = o.value("showControlChars").toBool(showControlChars);
         showWrapSymbol = o.value("showWrapSymbol").toBool(showWrapSymbol);
+        showOtherInvisible = o.value("showOtherInvisible").toBool(showOtherInvisible);
         npcDisplayMode = o.value("npcDisplayMode").toInt(npcDisplayMode);
         fontSize = o.value("fontSize").toInt(fontSize);
         fontFamily = o.value("fontFamily").toString(fontFamily);
@@ -366,6 +372,7 @@ public:
         o["showNonPrintingChars"] = showNonPrintingChars;
         o["showControlChars"] = showControlChars;
         o["showWrapSymbol"] = showWrapSymbol;
+        o["showOtherInvisible"] = showOtherInvisible;
         o["npcDisplayMode"] = npcDisplayMode;
         o["fontSize"] = fontSize;
         o["fontFamily"] = fontFamily;

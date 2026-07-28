@@ -44,7 +44,15 @@ class TestEditorSymbols : public QObject {
     // U+FEFF as a byte-order mark and would hand the editor "ab" — making the
     // ZWNBSP case look invisible no matter what the code under test does.
     // Every codepoint in the table is inside the BMP.
-    static QString charFor(char32_t cp) { return QString(QChar(ushort(cp))); }
+    static QString charFor(char32_t cp) {
+        if (cp <= 0xFFFF) return QString(QChar(ushort(cp)));
+        // Plane 14 holds the tag block and VS17..VS256. QChar(ushort) would
+        // truncate them to an unrelated BMP character, and the test would
+        // cheerfully measure the wrong glyph.
+        const uint v = uint(cp) - 0x10000;
+        return QString(QChar(ushort(0xD800 + (v >> 10))))
+             + QChar(ushort(0xDC00 + (v & 0x3FF)));
+    }
 
     // Width contributed by `cp` when sandwiched between two plain letters.
     long widthOf(char32_t cp) {
@@ -246,6 +254,85 @@ private slots:
         }
         QVERIFY2(invisible.isEmpty(),
                  qPrintable(QStringLiteral("these draw nothing: ") + invisible.join(", ")));
+    }
+
+    // ── past Notepad++: the invisibles its tables do not list ─────────────
+    //
+    // These are the ones that made "Show All Characters" a promise the feature
+    // could not keep. Every codepoint below is invisible in Notepad++ too.
+    void notepadPlusPlusBlindSpotsAreCovered_data() {
+        QTest::addColumn<uint>("cp");
+        QTest::addColumn<QString>("what");
+        QTest::newRow("VS16 emoji selector") << 0xFE0Fu << "VS16";
+        QTest::newRow("VS1")                 << 0xFE00u << "VS1";
+        QTest::newRow("VS17 plane-14")       << 0xE0100u << "VS17";
+        QTest::newRow("TAG letter 'a'")      << 0xE0061u << "TAG";
+        QTest::newRow("TAG space")           << 0xE0020u << "TAG";
+        QTest::newRow("Hangul filler")       << 0x3164u << "U+3164";
+        QTest::newRow("Hangul choseong")     << 0x115Fu << "U+115F";
+        QTest::newRow("combining grapheme")  << 0x034Fu << "U+034F";
+        QTest::newRow("Braille blank")       << 0x2800u << "U+2800";
+        QTest::newRow("Mongolian FVS1")      << 0x180Bu << "FVS1";
+        QTest::newRow("unassigned U+2065")   << 0x2065u << "U+2065";
+        QTest::newRow("Arabic end of ayah")  << 0x06DDu << "U+06DD";
+    }
+    void notepadPlusPlusBlindSpotsAreCovered() {
+        QFETCH(uint, cp);
+        QFETCH(QString, what);
+
+        const Entry *found = nullptr;
+        for (const Entry &e : table())
+            if (uint(e.codepoint) == cp) { found = &e; break; }
+        QVERIFY2(found, qPrintable(QStringLiteral("U+%1 is in no table at all")
+                                       .arg(cp, 4, 16, QLatin1Char('0'))));
+        QCOMPARE(labelFor(*found, Abbreviation), what);
+
+        // And it must actually draw, not merely be listed.
+        //
+        // Compared against its own off-state rather than against zero: a few of
+        // these are not literally zero-width. U+2800 BRAILLE PATTERN BLANK is a
+        // real glyph that happens to be blank, and U+06DD carries a mark. What
+        // matters is that switching the category on makes them visible.
+        apply(m_sci, NoSymbols);
+        const long off = widthOf(cp);
+        apply(m_sci, allCategories());
+        const long on = widthOf(cp);
+        QVERIFY2(on > off,
+                 qPrintable(QStringLiteral("U+%1 renders identically on and off "
+                                           "(%2px vs %3px)")
+                                .arg(cp, 4, 16, QLatin1Char('0')).arg(on).arg(off)));
+    }
+
+    // The parity tables must stay exactly Notepad++'s size — the new category
+    // is additive, and quietly folding extra codepoints into NonPrinting would
+    // end the byte-for-byte match that makes the abbreviations worth having.
+    void theExtraCoverageDoesNotContaminateTheParityTables() {
+        int npc = 0, cc = 0, other = 0;
+        for (const Entry &e : table()) {
+            if (e.category == NonPrinting)               ++npc;
+            else if (e.category == ControlAndUnicodeEol) ++cc;
+            else if (e.category == OtherInvisible)       ++other;
+        }
+        QCOMPARE(npc, 49);
+        QCOMPARE(cc,  64);
+        QVERIFY2(other > 300,
+                 qPrintable(QStringLiteral("only %1 extra invisibles — the "
+                                           "ranges did not expand").arg(other)));
+    }
+
+    // A codepoint Notepad++ DOES list must keep its Notepad++ spelling, not be
+    // re-claimed by a range and relabelled "U+200B".
+    void notepadPlusPlusSpellingWinsOverTheRanges() {
+        for (const Entry &e : table()) {
+            if (e.codepoint != 0x180E) continue;   // MVS sits inside no range
+            QCOMPARE(e.category, NonPrinting);
+            QCOMPARE(labelFor(e, Abbreviation), QStringLiteral("MVS"));
+        }
+        // U+FE0F is ours; U+FEFF is Notepad++'s. They must not collide.
+        for (const Entry &e : table()) {
+            if (e.codepoint == 0xFEFF) QCOMPARE(e.category, NonPrinting);
+            if (e.codepoint == 0xFE0F) QCOMPARE(e.category, OtherInvisible);
+        }
     }
 
     // ── the layout-cache trap ─────────────────────────────────────────────

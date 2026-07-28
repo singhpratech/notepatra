@@ -6,6 +6,8 @@
 
 #include <Qsci/qsciscintilla.h>
 
+#include <QSet>
+
 #include <cstdint>
 
 namespace EditorSymbols {
@@ -139,20 +141,79 @@ const Entry kEntries[] = {
     { 0x2029, "PS",  ControlAndUnicodeEol, GroupUnicodeEol },
 };
 
+// Everything else in Unicode that occupies no visible width, expressed as
+// ranges because there are several hundred of them.
+//
+// Deliberately NOT merged into the tables above: those exist to match Notepad++
+// exactly, and this exists because that match is not enough. Anything already
+// listed above is skipped when the ranges are expanded, so the two can never
+// fight over the same codepoint.
+struct Range {
+    char32_t first;
+    char32_t last;
+    Group    group;
+};
+
+const Range kOtherInvisible[] = {
+    // ── Cf (Format) that Notepad++ does not list ──────────────────────────
+    { 0x0600,  0x0605,  GroupOtherFormat },  // Arabic number/year/footnote signs
+    { 0x06DD,  0x06DD,  GroupOtherFormat },  // Arabic end of ayah
+    { 0x0890,  0x0891,  GroupOtherFormat },  // Arabic pound/piastre marks
+    { 0x08E2,  0x08E2,  GroupOtherFormat },  // Arabic disputed end of ayah
+    { 0x110BD, 0x110BD, GroupOtherFormat },  // Kaithi number sign
+    { 0x110CD, 0x110CD, GroupOtherFormat },  // Kaithi number sign above
+    { 0x13430, 0x1343F, GroupOtherFormat },  // Egyptian hieroglyph format controls
+    { 0x1BCA0, 0x1BCA3, GroupOtherFormat },  // Shorthand format controls
+    { 0x1D173, 0x1D17A, GroupOtherFormat },  // Musical beam/slur/phrase controls
+    { 0x2065,  0x2065,  GroupOtherFormat },  // unassigned, inside the format block
+
+    // ── unassigned specials that still render as nothing ──────────────────
+    { 0xFFF0,  0xFFF8,  GroupOtherFormat },
+
+    // ── variation selectors ───────────────────────────────────────────────
+    { 0x180B,  0x180D,  GroupVariation },    // Mongolian free variation selectors
+    { 0xFE00,  0xFE0F,  GroupVariation },    // VS1-VS16, incl. the emoji selector
+    { 0xE0100, 0xE01EF, GroupVariation },    // VS17-VS256
+
+    // ── tag characters ────────────────────────────────────────────────────
+    //
+    // A full invisible ASCII alphabet. Text encoded here is unreadable in any
+    // editor that does not draw it, which is exactly why it is worth drawing.
+    { 0xE0001, 0xE0001, GroupTag },          // deprecated language tag
+    { 0xE0020, 0xE007F, GroupTag },          // TAG SPACE .. CANCEL TAG
+
+    // ── invisible fillers and joiners ─────────────────────────────────────
+    { 0x034F,  0x034F,  GroupFiller },       // combining grapheme joiner
+    { 0x115F,  0x1160,  GroupFiller },       // Hangul choseong/jungseong filler
+    { 0x17B4,  0x17B5,  GroupFiller },       // Khmer inherent vowels
+    { 0x2800,  0x2800,  GroupFiller },       // Braille pattern blank
+    { 0x3164,  0x3164,  GroupFiller },       // Hangul filler
+    { 0xFFA0,  0xFFA0,  GroupFiller },       // halfwidth Hangul filler
+};
+
 }  // namespace
 
 const QVector<Entry> &table() {
     static const QVector<Entry> t = [] {
         QVector<Entry> v;
-        v.reserve(int(sizeof(kEntries) / sizeof(kEntries[0])));
-        for (const Entry &e : kEntries) v.append(e);
+        QSet<char32_t> claimed;
+        for (const Entry &e : kEntries) {
+            v.append(e);
+            claimed.insert(e.codepoint);
+        }
+        for (const Range &r : kOtherInvisible) {
+            for (char32_t cp = r.first; cp <= r.last; ++cp) {
+                if (claimed.contains(cp)) continue;  // Notepad++'s spelling wins
+                v.append(Entry{ cp, nullptr, OtherInvisible, r.group });
+            }
+        }
         return v;
     }();
     return t;
 }
 
 Categories allCategories() {
-    return Categories(NonPrinting) | ControlAndUnicodeEol;
+    return Categories(NonPrinting) | ControlAndUnicodeEol | OtherInvisible;
 }
 
 QByteArray utf8Of(char32_t cp) {
@@ -182,13 +243,31 @@ QByteArray utf8Of(char32_t cp) {
 }
 
 QString labelFor(const Entry &e, DisplayMode mode) {
-    if (mode == Codepoint) {
-        // Minimum four digits, so U+0007 keeps the width the Unicode charts
-        // use; wider codepoints simply grow past it.
-        return QStringLiteral("U+%1").arg(uint(e.codepoint), 4, 16,
-                                          QLatin1Char('0')).toUpper();
+    const QString asCodepoint =
+        QStringLiteral("U+%1").arg(uint(e.codepoint), 4, 16,
+                                   QLatin1Char('0')).toUpper();
+    // Minimum four digits, so U+0007 keeps the width the Unicode charts use;
+    // wider codepoints simply grow past it.
+    if (mode == Codepoint) return asCodepoint;
+    if (e.abbreviation)    return QString::fromLatin1(e.abbreviation);
+
+    // Derived names for the OtherInvisible ranges. Variation selectors are
+    // numbered rather than spelled out because VS17..VS256 is 240 codepoints,
+    // and "VS16" tells the reader more than "U+FE0F" does.
+    switch (e.group) {
+    case GroupVariation:
+        if (e.codepoint >= 0x180B && e.codepoint <= 0x180D)
+            return QStringLiteral("FVS%1").arg(e.codepoint - 0x180B + 1);
+        if (e.codepoint >= 0xFE00 && e.codepoint <= 0xFE0F)
+            return QStringLiteral("VS%1").arg(e.codepoint - 0xFE00 + 1);
+        if (e.codepoint >= 0xE0100 && e.codepoint <= 0xE01EF)
+            return QStringLiteral("VS%1").arg(e.codepoint - 0xE0100 + 17);
+        return asCodepoint;
+    case GroupTag:
+        return QStringLiteral("TAG");
+    default:
+        return asCodepoint;
     }
-    return QString::fromLatin1(e.abbreviation);
 }
 
 bool hasScintillaBuiltIn(char32_t cp) {
@@ -262,6 +341,7 @@ void applyFromConfig(QsciScintilla *sci) {
     Categories cats = NoSymbols;
     if (cfg.showNonPrintingChars) cats |= NonPrinting;
     if (cfg.showControlChars)     cats |= ControlAndUnicodeEol;
+    if (cfg.showOtherInvisible)   cats |= OtherInvisible;
 
     apply(sci, cats, cfg.npcDisplayMode == 1 ? Codepoint : Abbreviation);
 }
