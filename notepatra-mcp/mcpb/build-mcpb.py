@@ -104,6 +104,22 @@ def main():
     dcmd = cfg.get("platform_overrides", {}).get("darwin", {}).get("command", "")
     if not dcmd.endswith("server/darwin/notepatra-mcp"):
         fail(f"manifest darwin override '{dcmd}' does not point at server/darwin/notepatra-mcp")
+    # win32 was the ONLY platform whose override was never checked — the same
+    # blind spot that let the Windows build go unverified everywhere else.
+    wcmd = cfg.get("platform_overrides", {}).get("win32", {}).get("command", "")
+    if not wcmd.endswith("server/win32-x64/notepatra-mcp.exe"):
+        fail(f"manifest win32 override '{wcmd}' does not point at server/win32-x64/notepatra-mcp.exe")
+    # Every platform must end up launching with --socket. Overrides that specify
+    # only `command` inherit the base args, so the effective args are the base
+    # ones unless a platform sets its own; assert on the resolved value rather
+    # than trusting that inheritance, because losing this flag silently swaps the
+    # real editor for the in-memory MOCK and every tool returns fabricated data.
+    base_args = cfg.get("args", [])
+    for plat, ov in list(cfg.get("platform_overrides", {}).items()) + [("<base>", {})]:
+        eff = ov.get("args", base_args)
+        if "--socket" not in eff:
+            fail(f"platform '{plat}' resolves to args {eff} — missing --socket, "
+                 f"so it would run the in-memory mock instead of the editor")
     if a.require_all:
         for plat in ALL_PLATFORMS:
             if not any(n.startswith(f"server/{plat}/") for n in names):

@@ -99,6 +99,9 @@ private:
 };
 
 FileExplorer::FileExplorer(QWidget *parent) : QWidget(parent) {
+    // Display placeholder ONLY — deliberately leaves m_rootExplicit false, so
+    // workspaceRoot() stays empty until the user opens a folder. Do not treat
+    // this as a workspace; see the comment on workspaceRoot() in the header.
     m_rootPath = QDir::homePath();
 
     auto *layout = new QVBoxLayout(this);
@@ -143,13 +146,29 @@ FileExplorer::FileExplorer(QWidget *parent) : QWidget(parent) {
     m_tree->setStyle(new SsmsBranchStyle(qApp->style()));
     layout->addWidget(m_tree);
 
-    connect(m_pathCombo, &QComboBox::currentTextChanged, this, [this](const QString &path) {
-        if (QFileInfo(path).isDir()) {
-            m_rootPath = path;
-            m_model->setRootPath(path);
-            m_tree->setRootIndex(m_proxy->mapFromSource(m_model->index(path)));
-        }
-    });
+    // Navigate on COMMIT only — a dropdown pick or Enter — never on
+    // currentTextChanged.
+    //
+    // currentTextChanged fires on every keystroke of an editable combo, so
+    // typing a path re-rooted the tree once per character AND, worse, latched
+    // m_rootExplicit on whatever prefix happened to be a directory. Typing a
+    // single "/" was enough to make "/" the user's "explicit workspace"
+    // permanently — which then anchors the AI file sandbox at the filesystem
+    // root and hands search_project the whole disk. The flag has no way back.
+    //
+    // Both signals below are user-commit events; neither can fire mid-typing.
+    auto navigateTo = [this](const QString &path) {
+        if (!QFileInfo(path).isDir()) return;
+        m_rootPath = path;
+        m_rootExplicit = true;  // a deliberate, committed choice
+        m_model->setRootPath(path);
+        m_tree->setRootIndex(m_proxy->mapFromSource(m_model->index(path)));
+    };
+    connect(m_pathCombo, QOverload<int>::of(&QComboBox::activated), this,
+            [this, navigateTo](int) { navigateTo(m_pathCombo->currentText()); });
+    if (auto *edit = m_pathCombo->lineEdit())
+        connect(edit, &QLineEdit::returnPressed, this,
+                [this, navigateTo] { navigateTo(m_pathCombo->currentText()); });
 
     connect(upBtn, &QPushButton::clicked, this, [this]() {
         QDir dir(m_rootPath);
@@ -204,6 +223,7 @@ FileExplorer::FileExplorer(QWidget *parent) : QWidget(parent) {
 void FileExplorer::setRoot(const QString &path) {
     if (QFileInfo(path).isDir()) {
         m_rootPath = path;
+        m_rootExplicit = true;  // Open Folder / restored workspace
         m_pathCombo->setCurrentText(QDir::toNativeSeparators(path));
     }
 }

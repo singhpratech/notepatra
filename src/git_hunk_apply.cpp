@@ -2,6 +2,8 @@
 
 #include "git_hunk_apply.h"
 
+#include "path_denylist.h"
+
 #include <QDir>
 #include <QFileInfo>
 #include <QProcess>
@@ -49,24 +51,12 @@ bool inlineResolveReadPath(const QString &absFilePath,
         return false;
     }
     // Hardcoded deny-list — never stage hunks against credentials / keys.
-    // Mirrors ai_tools.cpp::isHardDenied.
-    const QString lower = fileCanonical.toLower();
-    static const QStringList denyExt = {".pem", ".key", ".p12", ".pfx", ".jks"};
-    for (const QString &e : denyExt) {
-        if (lower.endsWith(e)) {
-            if (outErrorKind) *outErrorKind = "denied";
-            return false;
-        }
-    }
-    static const QStringList denySubstr = {
-        "/.ssh/", "/.gnupg/", "/.aws/", "/.netrc", "/.npmrc",
-        "/.docker/config.json", "id_rsa", "/etc/passwd", "/etc/shadow"
-    };
-    for (const QString &s : denySubstr) {
-        if (lower.contains(s)) {
-            if (outErrorKind) *outErrorKind = "denied";
-            return false;
-        }
+    // Shared with ai_tools.cpp and search_project via PathDenylist; this used
+    // to be a hand-maintained MIRROR of the ai_tools list and had already
+    // drifted from it in both directions.
+    if (PathDenylist::isSecretPath(fileCanonical)) {
+        if (outErrorKind) *outErrorKind = "denied";
+        return false;
     }
     if (outCanonical) *outCanonical = fileCanonical;
     return true;

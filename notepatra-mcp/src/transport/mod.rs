@@ -109,7 +109,10 @@ impl std::error::Error for TransportError {}
 /// * `list_recent_files` → `{files:[str]}`
 /// * `find_in_tab` → `{matches:[{line,text}],truncated}`
 /// * `new_tab` → `{tab_index}`
-/// * `goto_line` → `{ok,tab_index,line}`
+/// * `goto_line` → `{ok,tab_index,line,requested_line,clamped}` — `line` is
+///   where the cursor LANDED, not what was asked for: a line past end-of-file
+///   clamps to the last line and sets `clamped:true`. Check it before issuing a
+///   cursor-relative write.
 /// * `set_language` → `{ok,tab_index,language}`
 /// * `compare_tabs` → `{opened}`
 /// * `format_text` → `{text}`

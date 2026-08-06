@@ -210,7 +210,7 @@ pub fn definitions() -> Value {
         },
         {
             "name": "goto_line",
-            "description": "Move the editor cursor to a 1-based line number in a tab (defaults to the active tab). Use to point the user at a specific location, e.g. after finding a match.",
+            "description": "Move the editor cursor to a 1-based line number in a tab (defaults to the active tab). Use to point the user at a specific location, e.g. after finding a match. Lines past end-of-file are CLAMPED to the last line: the response's `line` is where the cursor actually landed and `clamped` is true, so check it before any cursor-relative write.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -779,23 +779,53 @@ fn optional_index(args: &Map<String, Value>, key: &str) -> Result<Option<usize>,
     }
 }
 
+/// The ONE message every 1-based-integer rejection uses.
+///
+/// These helpers used to delegate to `optional_index`/`required_index`, whose
+/// `as_u64()` rejected negatives with "must be a non-negative integer" before
+/// the `>= 1` check was ever reached. So `line: 0` and `line: -5` — the same
+/// mistake — came back with two different and mutually contradictory rules, one
+/// of which explicitly permits 0. Validating here keeps it to one sentence.
+fn one_based_error(key: &str) -> CallOutcome {
+    CallOutcome::InvalidParams(format!("{key} must be an integer >= 1"))
+}
+
+/// The C++ bridge reads these through QJsonValue::toInt(0), which yields 0 —
+/// and therefore the misleading "must be >= 1" — for anything above i32::MAX.
+/// Reject out of range here instead, with a message that names the real limit.
+const MAX_ONE_BASED: u64 = i32::MAX as u64;
+
+fn check_one_based(key: &str, n: u64) -> Result<usize, CallOutcome> {
+    if n == 0 {
+        return Err(one_based_error(key));
+    }
+    if n > MAX_ONE_BASED {
+        return Err(CallOutcome::InvalidParams(format!(
+            "{key} must be an integer >= 1 and <= {MAX_ONE_BASED}"
+        )));
+    }
+    Ok(n as usize)
+}
+
 /// Optional 1-based integer (line/column numbers).
 fn optional_one_based(args: &Map<String, Value>, key: &str) -> Result<Option<usize>, CallOutcome> {
-    match optional_index(args, key)? {
-        Some(0) => Err(CallOutcome::InvalidParams(format!(
-            "{key} must be an integer >= 1"
-        ))),
-        v => Ok(v),
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => match v.as_u64() {
+            None => Err(one_based_error(key)),
+            Some(n) => check_one_based(key, n).map(Some),
+        },
     }
 }
 
 /// Required 1-based integer (line/column numbers).
 fn required_one_based(args: &Map<String, Value>, key: &str) -> Result<usize, CallOutcome> {
-    match required_index(args, key)? {
-        0 => Err(CallOutcome::InvalidParams(format!(
-            "{key} must be an integer >= 1"
-        ))),
-        n => Ok(n),
+    match args.get(key) {
+        None => Err(CallOutcome::InvalidParams(format!("{key} is required"))),
+        Some(v) => match v.as_u64() {
+            None => Err(one_based_error(key)),
+            Some(n) => check_one_based(key, n),
+        },
     }
 }
 
@@ -965,9 +995,12 @@ fn goto_line(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> 
     if let Err(e) = reject_extras(args, &["line", "tab_index"]) {
         return e;
     }
-    let line = match required_index(args, "line") {
-        Ok(n) if n >= 1 => n,
-        Ok(_) => return CallOutcome::InvalidParams("line must be an integer >= 1".into()),
+    // required_one_based, NOT a hand-rolled required_index + `>= 1` check:
+    // select_range and insert_text already route every 1-based argument through
+    // the shared helper, and goto_line being the one exception is what produced
+    // two contradictory rules for the same mistake.
+    let line = match required_one_based(args, "line") {
+        Ok(n) => n,
         Err(e) => return e,
     };
     let tab_index = match optional_index(args, "tab_index") {

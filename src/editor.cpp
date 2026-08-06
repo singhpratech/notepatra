@@ -1335,9 +1335,21 @@ void Editor::onMarginClicked(int margin, int line, Qt::KeyboardModifiers) {
     }
 }
 
-void Editor::gotoLine(int line) {
-    setCursorPosition(line - 1, 0);
-    ensureLineVisible(line - 1);
+// Jump to a 1-based line, CLAMPED to the buffer. Returns the line actually
+// landed on, so callers can report the truth rather than echo the request.
+//
+// Unclamped, an out-of-range line was worse than a no-op: Scintilla rejects the
+// position and leaves the cursor at 0, so asking for line 99999 in a 4-line file
+// silently moved the cursor to the TOP. Over MCP that response still said
+// ok:true, and insert_text defaults to the cursor — so an assistant aiming at
+// the end of a file wrote at the beginning, with an approval card that looked
+// entirely legitimate.
+int Editor::gotoLine(int line) {
+    const int total = lines();
+    const int target = qBound(1, line, total > 0 ? total : 1);
+    setCursorPosition(target - 1, 0);
+    ensureLineVisible(target - 1);
+    return target;
 }
 
 void Editor::duplicateLine() {

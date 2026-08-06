@@ -47,6 +47,43 @@ public:
     // session.json or destroy its crash evidence.
     explicit MainWindow(bool standaloneNoSession = false);
     Editor *currentEditor();
+
+    // ── Workspace roots ──────────────────────────────────────────────────
+    //
+    // These are four DIFFERENT questions and a single answer cannot serve them.
+    // Collapsing them is what produced the original privacy bug, and collapsing
+    // them a second time (folder-else-current-file) reproduced it: with one file
+    // open in $HOME, "the current file's directory" IS $HOME, so a search that
+    // trusted it walked the whole profile again.
+    //
+    // Rule of thumb: anything that SCOPES A SEARCH OR A SANDBOX must use
+    // workspaceFolder() and must treat "" as a refusal to act — never as a cue
+    // to fall back to something broader.
+
+    /// The folder the user explicitly opened. "" when they never opened one.
+    /// The only safe root for scoping a filesystem walk or a sandbox.
+    QString workspaceFolder() const;
+
+    /// Directory of the FIRST file-backed tab, or "". Answers "does the user
+    /// have anything concrete open?" without caring which tab has focus — a
+    /// Terminal or Welcome tab being current must not mean "nothing is open".
+    QString firstOpenFileDir() const;
+
+    /// Folder to pre-fill a file dialog with. May fall back to the current
+    /// file's directory: the user SEES and can change this value, so a broad
+    /// default is a convenience here rather than a silent scope. Never use it
+    /// to bound a search.
+    QString suggestedDialogFolder() const;
+
+    /// The AI's project root, STICKY for the session.
+    ///
+    /// Latches the first non-empty root and keeps it until the user explicitly
+    /// opens a folder. It cannot be a function of the focused tab: AIPanel
+    /// treats any root change as a project switch — cancelling pending write
+    /// approvals and re-keying chat history by sha1(root) — so a per-tab root
+    /// made Ctrl+Tab silently swap the user's conversation, even between two
+    /// files in one repository.
+    QString aiWorkspaceRoot();
     void openFile(const QString &path);
     SearchResultsPanel *searchResults() { return m_searchResults; }
     QSplitter *vertSplitter() { return m_vertSplitter; }
@@ -274,6 +311,9 @@ private:
     // Resets on app restart; within one session, the picker shows once
     // per Coding entry and then stays out of the way.
     bool m_codingFolderPromptShown = false;
+    // Sticky AI project root — see aiWorkspaceRoot(). Latched once, then only
+    // replaced when the user explicitly opens a different folder.
+    QString m_aiWorkspaceLatched;
     // Push current workspace state (all open editor tabs, current file,
     // selection, workspace root) into an AIPanel so the model can reason
     // about cross-file questions like Cursor / Copilot.

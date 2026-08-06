@@ -298,9 +298,29 @@ set(HEADERS
 
 # ── Platform-specific resources ──
 if(WIN32)
-    # Windows: embed icon via .rc resource file
-    if(EXISTS "${CMAKE_SOURCE_DIR}/resources/notepatra.rc")
-        list(APPEND SOURCES resources/notepatra.rc)
+    # Windows: embed the icon AND the version resource via a GENERATED .rc.
+    #
+    # The .rc used to be a static file with FILEVERSION hardcoded to 0,1,0,0,
+    # so every Windows build reported 0.1.0 to winget / SCCM / Intune and to
+    # File Properties > Details, regardless of the real version. Generating it
+    # from project(Notepatra VERSION ...) makes that impossible to drift: there
+    # is exactly one place the version is written.
+    if(EXISTS "${CMAKE_SOURCE_DIR}/resources/notepatra.rc.in")
+        # VERSIONINFO needs a 4-part comma form (a,b,c,d); PROJECT_VERSION is
+        # 3-part dotted, so pad the build field with 0.
+        set(NOTEPATRA_RC_VERSION_COMMA
+            "${PROJECT_VERSION_MAJOR},${PROJECT_VERSION_MINOR},${PROJECT_VERSION_PATCH},0")
+        set(NOTEPATRA_RC_VERSION_DOT
+            "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}.0")
+        # The generated .rc lives in the build tree, where a bare
+        # "notepatra.ico" would not resolve — point at the source copy. RC
+        # wants forward or escaped slashes, so hand it a forward-slash path.
+        set(NOTEPATRA_ICON_PATH "${CMAKE_SOURCE_DIR}/resources/notepatra.ico")
+        configure_file(
+            "${CMAKE_SOURCE_DIR}/resources/notepatra.rc.in"
+            "${CMAKE_BINARY_DIR}/notepatra.rc"
+            @ONLY)
+        list(APPEND SOURCES "${CMAKE_BINARY_DIR}/notepatra.rc")
     endif()
 endif()
 
@@ -586,6 +606,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_indent_guide_theme
         ${CMAKE_SOURCE_DIR}/src/rustbridge.cpp
         ${CMAKE_SOURCE_DIR}/src/gitgutter.cpp
         ${CMAKE_SOURCE_DIR}/src/git_hunk_apply.cpp
+        ${CMAKE_SOURCE_DIR}/src/path_denylist.cpp
         ${CMAKE_SOURCE_DIR}/src/gutter_hunk_popup.cpp
         ${CMAKE_SOURCE_DIR}/src/diff_view.cpp)
     add_dependencies(test_indent_guide_theme rust_core)
@@ -1096,6 +1117,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_tools.cpp")
     add_executable(test_ai_tools
         test_ai_tools.cpp
         src/ai_tools.cpp
+        src/path_denylist.cpp
         src/git_tools.cpp
         src/csvanalyst.cpp
         src/dbconnections.cpp
@@ -1118,6 +1140,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_git_tools_e2e.cpp"
     add_executable(test_git_tools_e2e
         test_git_tools_e2e.cpp
         src/ai_tools.cpp
+        src/path_denylist.cpp
         src/git_tools.cpp
         src/csvanalyst.cpp
         src/dbconnections.cpp
@@ -1140,6 +1163,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_dataanalyst.cpp
         test_ai_dataanalyst.cpp
         src/ai_systemprompt.cpp
         src/ai_tools.cpp
+        src/path_denylist.cpp
         src/git_tools.cpp
         src/chartrender.cpp
         src/chart_modal.cpp
@@ -1837,6 +1861,19 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_single_instance.cp
     set_tests_properties(test_single_instance PROPERTIES
         LABELS "unit;singleinstance;d6" TIMEOUT 120)
     message(STATUS "Regression test enabled — target: test_single_instance")
+endif()
+
+# Workspace-root scoping. FileExplorer::workspaceRoot() must stay empty until
+# the user opens a folder — conflating it with the tree's display root (which
+# defaults to $HOME) made search_project walk the whole user profile and
+# disarmed the AI CSV sandbox guard.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_workspace_root.cpp")
+    add_executable(test_workspace_root test_workspace_root.cpp src/fileexplorer.cpp)
+    target_include_directories(test_workspace_root PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_workspace_root PRIVATE Qt5::Widgets Qt5::Test)
+    notepatra_add_qt_test(test_workspace_root)
+    set_tests_properties(test_workspace_root PROPERTIES LABELS "smoke;privacy;mcp")
+    message(STATUS "Regression test enabled — target: test_workspace_root")
 endif()
 
 # D7 (win-open-ghost) — CLI arg parse contract (the Windows wide-argv fix
@@ -2610,6 +2647,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_bridge.cpp")
     add_executable(test_mcp_bridge
         test_mcp_bridge.cpp
         src/mcp_bridge.cpp
+        src/path_denylist.cpp
         src/singleinstance.cpp
         # v0.1.118 — list_notes/read_note go through the real NotesStorage
         # layer (QtCore-only; notes_template.cpp resolves shellHtml).
@@ -2884,6 +2922,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_options_actually_w
         src/editor_symbols.cpp   # Editor::applySymbolSettings() links against it
         src/gitgutter.cpp
         src/git_hunk_apply.cpp
+        src/path_denylist.cpp
         src/gutter_hunk_popup.cpp
         src/diff_view.cpp
         src/lexerutils.cpp
@@ -3034,6 +3073,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_vega_chart.cpp")
     add_executable(test_vega_chart
         test_vega_chart.cpp
         src/ai_tools.cpp
+        src/path_denylist.cpp
         src/git_tools.cpp
         src/csvanalyst.cpp
         src/dbconnections.cpp

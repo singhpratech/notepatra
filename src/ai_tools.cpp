@@ -2,6 +2,8 @@
 
 #include "ai_tools.h"
 
+#include "path_denylist.h"
+
 #include "csvanalyst.h"
 #include "dbconnections.h"
 #include "git_tools.h"
@@ -47,65 +49,12 @@ namespace Limits {
 // ═══════════════════════════════════════════════════════════════════════
 
 bool isHardDenied(const QString &absPath) {
-    const QString p = absPath.toLower();
-
-    // Substring matches — credential / secret directories. Both forward-
-    // and back-slash variants so this works on Windows where canonical
-    // paths sometimes preserve backslashes from the OS API. Match on
-    // path SEGMENTS (with leading + trailing separators) so we don't
-    // false-positive on a project named "ssh" at the workspace root.
-    static const QStringList denyContains = {
-        "/.ssh/",   "\\.ssh\\",
-        "/.gnupg/", "\\.gnupg\\",
-        "/.aws/",   "\\.aws\\",
-        "/.netrc",  "\\.netrc",
-        "/etc/passwd", "/etc/shadow",
-        "/.npmrc",     // npm authToken
-        "/.pypirc",    // pypi credentials
-        "/.docker/config.json",
-    };
-    for (const QString &needle : denyContains) {
-        if (p.contains(needle)) return true;
-    }
-
-    // Suffix matches — private-key file extensions. *.pem and *.key are
-    // not always credentials (test fixtures sometimes use them) but the
-    // false-positive rate is low enough that "refuse and explain" is
-    // safer than "leak occasionally".
-    //
-    // v0.1.106: add Terraform variable / state files — *.tfvars routinely
-    // hold provider credentials and *.tfstate embeds resource secrets in
-    // plaintext.
-    static const QStringList denySuffix = {
-        ".pem", ".key", ".pfx", ".p12", ".tfvars", ".tfstate",
-    };
-    for (const QString &suf : denySuffix) {
-        if (p.endsWith(suf)) return true;
-    }
-
-    // Filename / segment patterns — id_rsa, id_ed25519, id_ecdsa, etc.
-    // Match on a leading path separator so a project named "secretsjson"
-    // or "myenv" at the workspace root doesn't false-positive.
-    //
-    // v0.1.106: add the dotenv family and secrets.json — the original
-    // deny-list never covered them, so read_file(".env") leaked its body
-    // verbatim to the backend.
-    static const QStringList denyFilename = {
-        "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
-        "authorized_keys", "known_hosts",
-        ".env", "secrets.json",
-    };
-    for (const QString &name : denyFilename) {
-        if (p.contains("/" + name) || p.contains("\\" + name)) return true;
-    }
-
-    // v0.1.106: the dotenv convention also covers <name>.env (app.env,
-    // database.env, prod.env) and *.env.<suffix> (app.env.bak), which the
-    // leading-"/.env" match above misses. Any path ending in ".env" or
-    // containing ".env." is overwhelmingly credential-bearing — deny it.
-    if (p.endsWith(".env") || p.contains(".env.")) return true;
-
-    return false;
+    // Delegates to PathDenylist — see src/path_denylist.h. This list used to
+    // live here AND in git_hunk_apply.cpp, and the two had drifted (this copy
+    // lacked *.jks; that one lacked the dotenv family, *.tfvars and the
+    // Windows separator variants). search_project consulted neither and could
+    // return matching LINES out of ~/.ssh/. One list, three callers.
+    return PathDenylist::isSecretPath(absPath);
 }
 
 bool resolveSafePath(const QString &pathArg,

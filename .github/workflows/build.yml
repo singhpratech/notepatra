@@ -1212,6 +1212,33 @@ jobs:
             echo no tracker file — no transport suite reached its first test
           )
 
+      # Read the PE version resource back off the built .exe.
+      #
+      # resources/notepatra.rc carried a hardcoded FILEVERSION 0,1,0,0 for 124
+      # releases, so winget / SCCM / Intune and File Properties reported 0.1.0
+      # on every machine ever. It is now generated from project(Notepatra
+      # VERSION ...) — and this gate is what keeps it that way, because nothing
+      # else on any platform can observe an embedded Windows resource.
+      - name: Assert PE FileVersion matches the project version
+        shell: pwsh
+        run: |
+          $cmakeVer = (Select-String -Path CMakeLists.txt `
+              -Pattern 'project\(Notepatra VERSION ([0-9]+\.[0-9]+\.[0-9]+)' `
+              | Select-Object -First 1).Matches.Groups[1].Value
+          if (-not $cmakeVer) { Write-Host "::error::could not read version from CMakeLists.txt"; exit 1 }
+          $expected = "$cmakeVer.0"
+          $exe = Get-ChildItem -Path build -Filter notepatra.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { Write-Host "::error::notepatra.exe not found under build/"; exit 1 }
+          $actual = (Get-Item $exe.FullName).VersionInfo.FileVersion
+          Write-Host "CMakeLists version : $cmakeVer"
+          Write-Host "expected FileVersion: $expected"
+          Write-Host "actual   FileVersion: $actual"
+          if ($actual -ne $expected) {
+            Write-Host "::error::PE FileVersion '$actual' != expected '$expected' — the .rc template did not substitute"
+            exit 1
+          }
+          Write-Host "OK: PE version resource matches the project version"
+
       # Separate step because the assertion needs pwsh string matching, and cmd
       # has no clean equivalent. `serve` on a std-only build exits 2 after
       # printing this, so we match on the text rather than the exit code.
