@@ -17,7 +17,7 @@ use common::{finish, Bridge, Watchdog};
 const SUITE: &str = "socket-bridge";
 
 use notepatra_mcp::transport::socket::{SocketEditor, NOT_RUNNING};
-use notepatra_mcp::transport::{EditorTransport, TabSelector};
+use notepatra_mcp::transport::{EditorTransport, TabRef, TabSelector};
 use serde_json::{json, Value};
 
 const GREETING: &str = r#"{"notepatra_mcp":1,"app":"Notepatra","version":"0.1.118"}"#;
@@ -143,7 +143,11 @@ fn wave1_typed_responses_parse() {
                             { "path": "/a.rs", "line": 3, "text": "let x = 1;" },
                             { "path": "", "line": 1, "text": "x marks the spot" },
                         ],
-                        "truncated": false
+                        "truncated": false,
+                        // v0.1.126 (NP-07): the bridge has sent these two
+                        // since v0.1.125 and this layer silently dropped them.
+                        "workspace_searched": true,
+                        "scope": "tabs_and_workspace"
                     })
                 }
                 "find_in_tab" => {
@@ -164,7 +168,7 @@ fn wave1_typed_responses_parse() {
     assert_eq!(tabs[0].title, "a.rs");
     assert!(tabs[0].modified);
     assert_eq!(tabs[1].path, None); // "" on the wire maps to None
-    let content = ed.read_tab(TabSelector::Index(1)).expect("read_tab");
+    let content = ed.read_tab(TabSelector::Index(1), None).expect("read_tab");
     assert_eq!(content.title, "Untitled 1");
     assert_eq!(content.path, None);
     assert_eq!(content.text, "scratch\n");
@@ -178,7 +182,17 @@ fn wave1_typed_responses_parse() {
     assert_eq!(found.results[0].line, 3);
     assert_eq!(found.results[1].path, "");
     assert!(!found.truncated);
-    let matches = ed.find_in_tab(Some(0), "x", false).expect("find_in_tab");
+    // NP-07: the coverage fields must survive the wire → struct hop. The
+    // struct declared only `results` and `truncated`, so serde discarded the
+    // rest and every client saw a project-wide search it could not verify.
+    assert!(
+        found.workspace_searched,
+        "workspace_searched was dropped between the bridge and the tool layer"
+    );
+    assert_eq!(found.scope, "tabs_and_workspace");
+    let matches = ed
+        .find_in_tab(TabRef::index(0), None, "x", false)
+        .expect("find_in_tab");
     assert_eq!(matches["matches"][0]["line"], 3);
     cleanup(path, bridge, "wave1_typed_responses_parse");
 }
@@ -327,14 +341,18 @@ fn write_verbs_wait_out_the_approval_window() {
         .with_timeouts(Duration::from_millis(100), Duration::from_millis(100))
         .with_approval_timeout(Duration::from_secs(2));
     let v = ed
-        .insert_text("hi", Some(1), Some(2), Some(3))
+        .insert_text("hi", TabRef::index(1), Some(2), Some(3))
         .expect("insert_text survives the approval wait");
     assert_eq!(v, json!({ "ok": true, "tab_index": 1 }));
-    let v = ed.replace_selection("x", None).expect("replace_selection");
+    let v = ed
+        .replace_selection("x", TabRef::default())
+        .expect("replace_selection");
     assert_eq!(v, json!({ "ok": true }));
-    let v = ed.apply_edit("a", "b", Some(0), false).expect("apply_edit");
+    let v = ed
+        .apply_edit("a", "b", TabRef::index(0), false)
+        .expect("apply_edit");
     assert_eq!(v["count"], 2);
-    let v = ed.save_tab(None, None).expect("save_tab");
+    let v = ed.save_tab(TabRef::default(), None).expect("save_tab");
     assert_eq!(v, json!({ "ok": true }));
     cleanup(path, bridge, "write_verbs_wait_out_the_approval_window");
 }
@@ -360,7 +378,7 @@ fn approval_denial_and_timeout_errors_pass_through_verbatim() {
             writeln!(stream, "{resp}").unwrap();
         });
         let mut ed = editor_for(&path);
-        let err = ed.save_tab(None, None).unwrap_err();
+        let err = ed.save_tab(TabRef::default(), None).unwrap_err();
         assert_eq!(err.0, expected);
         cleanup(
             path,
@@ -442,8 +460,9 @@ fn v0119_read_verbs_send_exact_arg_keys() {
     ed.git_log(20).expect("git_log");
     ed.git_show("HEAD").expect("git_show");
     ed.git_branch().expect("git_branch");
-    ed.validate_npd(Some(2), None).expect("validate_npd tab");
-    ed.validate_npd(None, Some("x"))
+    ed.validate_npd(TabRef::index(2), None)
+        .expect("validate_npd tab");
+    ed.validate_npd(TabRef::default(), Some("x"))
         .expect("validate_npd source");
     ed.run_sql("SELECT 1", None).expect("run_sql");
     ed.run_sql("SELECT 1", Some("/d.csv")).expect("run_sql csv");
@@ -508,7 +527,7 @@ fn v0119_act_and_write_verbs_send_exact_arg_keys() {
     ed.set_reminder("/n.html", "2026-07-20T09:00:00Z")
         .expect("set_reminder");
     let exported = ed
-        .export_diagram(1, "/o.png", "png")
+        .export_diagram(TabRef::index(1), "/o.png", "png")
         .expect("export_diagram");
     assert_eq!(exported["path"], "/o.png");
     cleanup(
@@ -565,8 +584,10 @@ fn regex_flag_is_serialized_only_when_true() {
         }
     });
     let ed = editor_for(&path);
-    ed.find_in_tab(Some(0), "a.*b", true).expect("regex find");
-    ed.find_in_tab(Some(0), "lit", false).expect("literal find");
+    ed.find_in_tab(TabRef::index(0), None, "a.*b", true)
+        .expect("regex find");
+    ed.find_in_tab(TabRef::index(0), None, "lit", false)
+        .expect("literal find");
     ed.search_project("a.*b", 50, true).expect("regex search");
     ed.search_project("lit", 50, false).expect("literal search");
     cleanup(path, bridge, "regex_flag_is_serialized_only_when_true");
@@ -688,10 +709,12 @@ fn phase1_verbs_send_exact_arg_keys() {
         .expect("create_diagram");
     assert_eq!(created["tab_index"], 4);
     ed.create_diagram(None, None).expect("create_diagram bare");
-    let src = ed.get_diagram_source(4).expect("get_diagram_source");
+    let src = ed
+        .get_diagram_source(TabRef::index(4))
+        .expect("get_diagram_source");
     assert_eq!(src["source"], "diagram flow\n");
     let set = ed
-        .set_diagram_source(4, "diagram er\n")
+        .set_diagram_source(TabRef::index(4), "diagram er\n")
         .expect("set_diagram_source");
     assert_eq!(set["ok"], true);
     assert_eq!(ed.open_noter().expect("open_noter")["opened"], true);

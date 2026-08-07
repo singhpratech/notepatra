@@ -48,6 +48,10 @@ struct FakeTab {
     QString language = QStringLiteral("Plain Text");
     bool isDiagram = false;   // v0.1.119 — .npd diagram tab
     bool editable = true;     // v0.1.121 — false for Welcome/diagram/… tabs
+    // v0.1.126 (NP-13) — stable identity, 0 until first observed. Lives in the
+    // struct so it MOVES WITH THE TAB when an earlier tab is removed, which is
+    // the whole property under test: the index shifts, the id does not.
+    qint64 id = 0;
 };
 
 // Crash-proof progress tracker. ctest DISCARDS a crashed test's captured stdout
@@ -70,6 +74,9 @@ class TestMcpBridge : public QObject {
 
 private:
     QVector<FakeTab> m_fakeTabs;
+    // v0.1.126 (NP-13) — monotonic source for FakeTab::id. Never reused, so a
+    // reopened file is a genuinely different tab.
+    qint64 m_nextFakeTabId = 0;
     QString m_selection;
     int m_currentIndex = 0;
     QString m_root;
@@ -129,6 +136,13 @@ private:
         h.tabEditable = [this](int i) {
             return i >= 0 && i < m_fakeTabs.size() ? m_fakeTabs[i].editable
                                                    : true;
+        };
+        // v0.1.126 (NP-13). Lazy stamp-on-first-ask, mirroring the real host's
+        // QWidget property so the fake cannot pass a test the app would fail.
+        h.tabId = [this](int i) -> qint64 {
+            if (i < 0 || i >= m_fakeTabs.size()) return -1;
+            if (m_fakeTabs[i].id == 0) m_fakeTabs[i].id = ++m_nextFakeTabId;
+            return m_fakeTabs[i].id;
         };
         h.openFile = [this](const QString &p) -> int {
             QFile f(p);
@@ -223,8 +237,18 @@ private:
         h.formatText = [](const QString &kind, const QString &text,
                           QString *err) -> QString {
             if (kind == QLatin1String("json")) {
-                if (!text.trimmed().startsWith(QLatin1Char('{'))) {
-                    if (err) *err = QStringLiteral("invalid json: expected object");
+                // v0.1.126 (NP-09): the fake used to accept anything starting
+                // with '{' and reject everything else — wrong in BOTH
+                // directions (it passed `{oops`, it failed `[1,2]`). The real
+                // host validates strictly before formatting; a fake looser
+                // than the thing it stands in for can only certify bugs.
+                QJsonParseError pe{};
+                QJsonDocument::fromJson(text.toUtf8(), &pe);
+                if (pe.error != QJsonParseError::NoError) {
+                    if (err)
+                        *err = QStringLiteral("invalid JSON: %1 at offset %2")
+                                   .arg(pe.errorString())
+                                   .arg(pe.offset);
                     return QString();
                 }
                 return QStringLiteral("FMT-JSON:") + text;
@@ -699,6 +723,23 @@ private:
         return false;
     }
 
+    // Whole write-verb round trip: request → live card → Approve → response.
+    // Returns an empty object if the card never appeared, so a caller that
+    // checks `ok` fails rather than hanging.
+    QJsonObject callAndApprove(QLocalSocket &s, int id, const QString &verb,
+                               const QJsonObject &args) {
+        sendRequest(s, id, verb, args);
+        QFrame *card = waitForCard();
+        if (!card) return QJsonObject();
+        auto *approve =
+            card->findChild<QPushButton *>(QStringLiteral("mcpApproveBtn"));
+        if (!approve) return QJsonObject();
+        approve->click();
+        const QJsonObject resp = readObj(s);
+        waitForCardGone();
+        return resp;
+    }
+
 private slots:
     void init() {
         // Crash-localizer: on offscreen-Windows CI a hard access violation
@@ -712,6 +753,7 @@ private slots:
             {QStringLiteral("Untitled 1"), QString(),
              QStringLiteral("alpha\nbeta NEEDLE gamma\n"), true},
         };
+        m_nextFakeTabId = 0;
         m_selection.clear();
         m_currentIndex = 0;
         m_root.clear();
@@ -867,7 +909,13 @@ private slots:
                  QStringLiteral("/fake/notes.txt"));
         QCOMPARE(r.value(QLatin1String("text")).toString(),
                  m_fakeTabs[0].text);
-        QVERIFY(!r.contains(QLatin1String("truncated")));
+        // v0.1.126 (NP-10): `truncated` is now ALWAYS present. It used to be
+        // omitted on the complete-read path, so a caller had to know that
+        // absent means false — an inference every other bulk verb spares it.
+        QVERIFY(r.contains(QLatin1String("truncated")));
+        QCOMPARE(r.value(QLatin1String("truncated")).toBool(), false);
+        QCOMPARE(r.value(QLatin1String("total_chars")).toInt(),
+                 m_fakeTabs[0].text.size());
     }
 
     void read_tab_by_title() {
@@ -914,6 +962,168 @@ private slots:
         const QJsonObject r = resp.value(QLatin1String("result")).toObject();
         QCOMPARE(r.value(QLatin1String("truncated")).toBool(), true);
         QCOMPARE(r.value(QLatin1String("text")).toString().size(), cap);
+    }
+
+    // ── v0.1.126 · NP-10 ──────────────────────────────────────────────
+    //
+    // The 5 MB ceiling was the ONLY bound: a 2.7 MB buffer came back whole and
+    // could fill an assistant's entire context in one call, with no way to ask
+    // for less. Every other bulk verb on the surface is negotiable
+    // (search_project max_results, run_sql max_rows); read_tab was not.
+    void read_tab_honours_max_bytes() {
+        m_fakeTabs[1].text = QString(10000, QLatin1Char('y'));
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+
+        QJsonObject args;
+        args[QStringLiteral("index")] = 1;
+        args[QStringLiteral("max_bytes")] = 100;
+        const QJsonObject r = call(s, 80, QStringLiteral("read_tab"), args)
+                                  .value(QLatin1String("result")).toObject();
+        QCOMPARE(r.value(QLatin1String("text")).toString().size(), 100);
+        QCOMPARE(r.value(QLatin1String("truncated")).toBool(), true);
+        // The caller must learn how much it did NOT get, or it cannot page.
+        QCOMPARE(r.value(QLatin1String("total_chars")).toInt(), 10000);
+
+        // A cap larger than the text is not a truncation.
+        QJsonObject big;
+        big[QStringLiteral("index")] = 1;
+        big[QStringLiteral("max_bytes")] = 99999;
+        const QJsonObject br = call(s, 81, QStringLiteral("read_tab"), big)
+                                   .value(QLatin1String("result")).toObject();
+        QCOMPARE(br.value(QLatin1String("text")).toString().size(), 10000);
+        QCOMPARE(br.value(QLatin1String("truncated")).toBool(), false);
+
+        // Nonsense caps are rejected, not clamped into silent success: a
+        // caller asking for 0 bytes has a bug it should hear about.
+        for (const int bad : {0, -5}) {
+            QJsonObject a;
+            a[QStringLiteral("index")] = 1;
+            a[QStringLiteral("max_bytes")] = bad;
+            QCOMPARE(call(s, 82, QStringLiteral("read_tab"), a)
+                         .value(QLatin1String("ok")).toBool(), false);
+        }
+        QJsonObject notInt;
+        notInt[QStringLiteral("index")] = 1;
+        notInt[QStringLiteral("max_bytes")] = QStringLiteral("100");
+        QCOMPARE(call(s, 83, QStringLiteral("read_tab"), notInt)
+                     .value(QLatin1String("ok")).toBool(), false);
+    }
+
+    // ── v0.1.126 · NP-11 ──────────────────────────────────────────────
+    //
+    // read_tab accepted `title`; find_in_tab answered the same argument with
+    // -32602 "unexpected argument". Two hand-written resolvers on neighbouring
+    // tools that had quietly drifted apart. There is one resolver now, so a
+    // selector accepted by either is accepted by both.
+    void tab_selectors_are_uniform_across_verbs() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+
+        QJsonObject byTitle;
+        byTitle[QStringLiteral("title")] = QStringLiteral("Untitled 1");
+        byTitle[QStringLiteral("query")] = QStringLiteral("NEEDLE");
+        const QJsonObject resp =
+            call(s, 84, QStringLiteral("find_in_tab"), byTitle);
+        QVERIFY2(resp.value(QLatin1String("ok")).toBool(),
+                 "find_in_tab must accept the title read_tab accepts");
+        QVERIFY(resp.value(QLatin1String("result")).toObject()
+                    .value(QLatin1String("matches")).toArray().size() > 0);
+
+        // An unknown title is still an error, on both verbs, worded the same.
+        QJsonObject bad;
+        bad[QStringLiteral("title")] = QStringLiteral("no-such-tab");
+        bad[QStringLiteral("query")] = QStringLiteral("x");
+        const QString findErr = call(s, 85, QStringLiteral("find_in_tab"), bad)
+                                    .value(QLatin1String("error")).toString();
+        QVERIFY(findErr.contains(QStringLiteral("no tab titled")));
+        QJsonObject bad2;
+        bad2[QStringLiteral("title")] = QStringLiteral("no-such-tab");
+        const QString readErr = call(s, 86, QStringLiteral("read_tab"), bad2)
+                                    .value(QLatin1String("error")).toString();
+        QCOMPARE(findErr, readErr);
+    }
+
+    // ── v0.1.126 · NP-13 ──────────────────────────────────────────────
+    //
+    // Write verbs addressed tabs by POSITION. Close a tab to the left and
+    // every later index silently re-points at a different document, so an
+    // assistant that read list_open_tabs and wrote a few seconds later could
+    // land its edit in the wrong file. Out-of-range was the lucky case; a
+    // shifted-but-valid index wrote silently, and the approval card was the
+    // only thing standing between that and a corrupted file.
+    void tab_ids_survive_the_index_shifting() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+
+        // A third tab, so removing the first leaves a shifted-but-VALID index.
+        m_fakeTabs.append({QStringLiteral("third.txt"),
+                           QStringLiteral("/fake/third.txt"),
+                           QStringLiteral("third body\n"), false});
+
+        const QJsonArray tabs = call(s, 87, QStringLiteral("list_open_tabs"),
+                                     QJsonObject())
+                                    .value(QLatin1String("result")).toObject()
+                                    .value(QLatin1String("tabs")).toArray();
+        QCOMPARE(tabs.size(), 3);
+        const QJsonObject third = tabs.at(2).toObject();
+        QVERIFY2(third.contains(QLatin1String("id")),
+                 "list_open_tabs must publish the stable selector");
+        const qint64 thirdId =
+            third.value(QLatin1String("id")).toVariant().toLongLong();
+        QCOMPARE(third.value(QLatin1String("index")).toInt(), 2);
+
+        // The user closes the first tab. Index 2 now names nothing; index 1
+        // names the document that used to be at 2.
+        m_fakeTabs.removeFirst();
+
+        QJsonObject byId;
+        byId[QStringLiteral("tab_id")] = thirdId;
+        const QJsonObject r = call(s, 88, QStringLiteral("read_tab"), byId)
+                                  .value(QLatin1String("result")).toObject();
+        QCOMPARE(r.value(QLatin1String("title")).toString(),
+                 QStringLiteral("third.txt"));
+        QCOMPARE(r.value(QLatin1String("id")).toVariant().toLongLong(),
+                 thirdId);
+
+        // Vacuity guard: the STALE INDEX really does resolve elsewhere now, so
+        // the assertion above is about identity and not about the two
+        // selectors happening to agree.
+        QJsonObject byStaleIndex;
+        byStaleIndex[QStringLiteral("index")] = 2;
+        QVERIFY2(!call(s, 89, QStringLiteral("read_tab"), byStaleIndex)
+                      .value(QLatin1String("ok")).toBool(),
+                 "guard: index 2 must now be out of range");
+        QJsonObject byShifted;
+        byShifted[QStringLiteral("index")] = 1;
+        QCOMPARE(call(s, 90, QStringLiteral("read_tab"), byShifted)
+                     .value(QLatin1String("result")).toObject()
+                     .value(QLatin1String("title")).toString(),
+                 QStringLiteral("third.txt"));
+
+        // A closed tab's id reports what actually happened, rather than a bad
+        // index the caller never supplied.
+        QJsonObject gone;
+        gone[QStringLiteral("tab_id")] = thirdId + 9999;
+        const QString err = call(s, 91, QStringLiteral("read_tab"), gone)
+                                .value(QLatin1String("error")).toString();
+        QVERIFY2(err.contains(QStringLiteral("was closed")),
+                 qPrintable(QStringLiteral("unhelpful stale-id error: ") + err));
+
+        // And the write tier takes the same selector — that is the tier the
+        // whole defect was about.
+        QJsonObject write;
+        write[QStringLiteral("tab_id")] = thirdId;
+        write[QStringLiteral("text")] = QStringLiteral("appended");
+        const QJsonObject wrote =
+            callAndApprove(s, 92, QStringLiteral("insert_text"), write);
+        QVERIFY2(wrote.value(QLatin1String("ok")).toBool(),
+                 "insert_text must accept tab_id");
+        QVERIFY2(m_fakeTabs[1].text.contains(QStringLiteral("appended")),
+                 "the write landed in the wrong document");
     }
 
     void open_file_roundtrip() {
@@ -1121,17 +1331,41 @@ private slots:
         QCOMPARE(hr.value(QLatin1String("scope")).toString(),
                  QStringLiteral("open_tabs_only"));
 
-        // (b) No workspace, query misses everything → an actionable error,
-        //     not a silent empty list.
+        // (b) No workspace, query misses everything → SUCCESS with an empty
+        //     result set and a notice. (v0.1.126, NP-08.)
+        //
+        // v0.1.125 failed the call here, reasoning that an empty list needed
+        // an actionable error. That was wrong, and the retest caught it: the
+        // same tabs, searched the same way, returned "No workspace folder is
+        // open" for a query that missed and a normal result for one that hit.
+        // Whether a folder is open is not a fact about the query. An assistant
+        // told the error reports "no workspace is open" when the truth is "not
+        // found", and pushes the user to open a folder to fix nothing.
+        //
+        // The notice keeps the actionability without misstating the outcome.
         QJsonObject missArgs;
         missArgs[QStringLiteral("query")] =
             QStringLiteral("zzz-no-such-token-zzz");
         const QJsonObject miss = call(s, 61, QStringLiteral("search_project"),
                                       missArgs);
-        QCOMPARE(miss.value(QLatin1String("ok")).toBool(), false);
-        QVERIFY2(miss.value(QLatin1String("error")).toString().contains(
+        QVERIFY2(miss.value(QLatin1String("ok")).toBool(),
+                 "zero matches is a successful search, not an error");
+        const QJsonObject mr = miss.value(QLatin1String("result")).toObject();
+        QCOMPARE(mr.value(QLatin1String("results")).toArray().size(), 0);
+        QCOMPARE(mr.value(QLatin1String("truncated")).toBool(), false);
+        QCOMPARE(mr.value(QLatin1String("workspace_searched")).toBool(), false);
+        QCOMPARE(mr.value(QLatin1String("scope")).toString(),
+                 QStringLiteral("open_tabs_only"));
+        QVERIFY2(mr.value(QLatin1String("notice")).toString().contains(
                      QStringLiteral("No workspace folder")),
-                 "the no-workspace error must say what to do about it");
+                 "the reduced scope must still be stated, as a notice");
+
+        // And the SHAPE must not depend on match luck: the hit response
+        // carries the same coverage fields the miss does.
+        QCOMPARE(hr.value(QLatin1String("workspace_searched")).toBool(),
+                 mr.value(QLatin1String("workspace_searched")).toBool());
+        QCOMPARE(hr.value(QLatin1String("scope")).toString(),
+                 mr.value(QLatin1String("scope")).toString());
     }
 
     // A workspace folder that has been deleted or renamed under us is NOT the
@@ -1162,17 +1396,22 @@ private slots:
         QCOMPARE(hr.value(QLatin1String("scope")).toString(),
                  QStringLiteral("open_tabs_only"));
 
-        // Without tab hits: an error naming the real cause, distinct from the
-        // "no workspace is open" wording so the two are not confusable.
+        // Without tab hits: still a success (NP-08), but the notice must name
+        // the REAL cause and stay distinct from the "no workspace is open"
+        // wording, so a caller can tell a vanished root from an unset one.
         QJsonObject missArgs;
         missArgs[QStringLiteral("query")] =
             QStringLiteral("zzz-no-such-token-zzz");
-        const QString err = call(s, 63, QStringLiteral("search_project"),
-                                 missArgs)
-                                .value(QLatin1String("error")).toString();
-        QVERIFY2(err.contains(QStringLiteral("no longer exists")),
-                 qPrintable(QStringLiteral("wrong error for a vanished root: ")
-                            + err));
+        const QJsonObject miss = call(s, 63, QStringLiteral("search_project"),
+                                      missArgs);
+        QVERIFY2(miss.value(QLatin1String("ok")).toBool(),
+                 "a vanished root still searched the tabs successfully");
+        const QJsonObject mr = miss.value(QLatin1String("result")).toObject();
+        QCOMPARE(mr.value(QLatin1String("workspace_searched")).toBool(), false);
+        const QString notice = mr.value(QLatin1String("notice")).toString();
+        QVERIFY2(notice.contains(QStringLiteral("no longer exists")),
+                 qPrintable(QStringLiteral("wrong notice for a vanished root: ")
+                            + notice));
     }
 
     // The happy path must claim the workspace leg — otherwise the two fields
@@ -1255,6 +1494,112 @@ private slots:
         QVERIFY2(sawReadme,
                  "guard: the non-secret file with the same token was missed, "
                  "so this test proves nothing about the deny-list");
+    }
+
+    // ── v0.1.126 · NP-05 ──────────────────────────────────────────────
+    //
+    // v0.1.125 put the deny-list on search_project's WORKSPACE WALK only. So
+    // the leak survived in the plainest possible form: ask for the key by
+    // name. open_file put ~/.ssh/id_rsa in a tab with isError:false, and
+    // read_tab then handed back the entire private key body.
+    //
+    // Guarding a discovery path while leaving the direct-request path open is
+    // not a guard. Every door into file content checks the same list now.
+    void credential_files_are_refused_by_every_read_door() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString keyPath = dir.path() + QStringLiteral("/id_rsa");
+        {
+            QFile f(keyPath);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("-----BEGIN OPENSSH PRIVATE KEY-----\n"
+                    "b3BlbnNzaC1rZXktdjEAAAAA-not-a-real-key\n"
+                    "-----END OPENSSH PRIVATE KEY-----\n");
+        }
+        const QString okPath = dir.path() + QStringLiteral("/plain.txt");
+        {
+            QFile f(okPath);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("-----BEGIN OPENSSH PRIVATE KEY-----\nlookalike\n");
+        }
+
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+
+        // (a) open_file refuses before the tab exists — opening it and then
+        //     refusing to read it would still put the key on screen.
+        QJsonObject openArgs;
+        openArgs[QStringLiteral("path")] = keyPath;
+        const QJsonObject openResp =
+            call(s, 70, QStringLiteral("open_file"), openArgs);
+        QCOMPARE(openResp.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY2(openResp.value(QLatin1String("error")).toString().contains(
+                     QStringLiteral("credential deny-list")),
+                 "open_file must say WHY it refused");
+        const int tabsAfter = m_fakeTabs.size();
+
+        // Vacuity guard: the identical call on a non-secret path must SUCCEED,
+        // or (a) would pass just as well against a bridge that refuses to open
+        // anything at all.
+        QJsonObject okArgs;
+        okArgs[QStringLiteral("path")] = okPath;
+        QVERIFY2(call(s, 71, QStringLiteral("open_file"), okArgs)
+                     .value(QLatin1String("ok")).toBool(),
+                 "guard: open_file must still open ordinary files");
+        QCOMPARE(m_fakeTabs.size(), tabsAfter + 1);
+
+        // (b) read_tab refuses even when the tab is ALREADY open — a file can
+        //     reach the editor by hand or by session restore, and the bytes
+        //     are no more ours to quote then.
+        m_fakeTabs.append({QStringLiteral("id_rsa"), keyPath,
+                           QStringLiteral("-----BEGIN OPENSSH PRIVATE KEY-----"
+                                          "\nsecret-body\n"), false});
+        const int keyTab = m_fakeTabs.size() - 1;
+        QJsonObject readArgs;
+        readArgs[QStringLiteral("index")] = keyTab;
+        const QJsonObject readResp =
+            call(s, 72, QStringLiteral("read_tab"), readArgs);
+        QCOMPARE(readResp.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY2(!QJsonDocument(readResp).toJson().contains("secret-body"),
+                 "the key body reached the wire inside the refusal");
+
+        // …and by title, which is a second selector into the same content.
+        QJsonObject titleArgs;
+        titleArgs[QStringLiteral("title")] = QStringLiteral("id_rsa");
+        QCOMPARE(call(s, 73, QStringLiteral("read_tab"), titleArgs)
+                     .value(QLatin1String("ok")).toBool(), false);
+
+        // (c) find_in_tab quotes matching LINES, so it is a content channel
+        //     too — a slower leak is still a leak.
+        QJsonObject findArgs;
+        findArgs[QStringLiteral("index")] = keyTab;
+        findArgs[QStringLiteral("query")] = QStringLiteral("secret");
+        const QJsonObject findResp =
+            call(s, 74, QStringLiteral("find_in_tab"), findArgs);
+        QCOMPARE(findResp.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY2(!QJsonDocument(findResp).toJson().contains("secret-body"),
+                 "find_in_tab returned the key line");
+
+        // (d) search_project's OPEN-TAB leg skips it too. v0.1.125 guarded the
+        //     disk and read the same file straight out of the buffer.
+        QJsonObject searchArgs;
+        searchArgs[QStringLiteral("query")] = QStringLiteral("secret-body");
+        const QJsonObject searchResp =
+            call(s, 75, QStringLiteral("search_project"), searchArgs);
+        QVERIFY2(searchResp.value(QLatin1String("ok")).toBool(),
+                 "the search itself still succeeds");
+        QVERIFY2(!QJsonDocument(searchResp).toJson().contains("secret-body"),
+                 "the open-tab leg leaked the credential buffer");
+
+        // Vacuity guard for (b)-(d): the same verbs against the lookalike tab
+        // must WORK, proving the refusals came from the deny-list and not from
+        // a bridge that had simply stopped answering.
+        QJsonObject sane;
+        sane[QStringLiteral("index")] = tabsAfter; // the plain.txt tab
+        QVERIFY2(call(s, 76, QStringLiteral("read_tab"), sane)
+                     .value(QLatin1String("ok")).toBool(),
+                 "guard: read_tab must still read ordinary tabs");
     }
 
     // `col` without `line` used to be silently DISCARDED — the insert went to
@@ -1815,13 +2160,34 @@ private slots:
                      .toString(),
                  QStringLiteral("SQL:select 1"));
         // Invalid input → the formatter's error message.
+        //
+        // v0.1.126 (NP-09): these are the retest's cases, all of which used to
+        // come back isError:false with REPAIRED text. `[1,2` -> `[1,2]` is the
+        // one that matters: a truncated file made syntactically valid and
+        // semantically invented. Formatting must fail on invalid JSON, which
+        // is what the tool's own description has always claimed.
         args[QStringLiteral("kind")] = QStringLiteral("json");
-        args[QStringLiteral("text")] = QStringLiteral("not json");
+        for (const QString &bad : {QStringLiteral("not json"),
+                                   QStringLiteral("{oops"),
+                                   QStringLiteral("[1,2"),
+                                   QStringLiteral("{\"a\":1,}")}) {
+            args[QStringLiteral("text")] = bad;
+            resp = call(s, 45, QStringLiteral("format_text"), args);
+            QVERIFY2(!resp.value(QLatin1String("ok")).toBool(),
+                     qPrintable(QStringLiteral("formatted invalid JSON: ")
+                                + bad));
+            QVERIFY(resp.value(QLatin1String("error"))
+                        .toString()
+                        .contains(QLatin1String("invalid JSON"),
+                                  Qt::CaseInsensitive));
+        }
+        // Vacuity guard: a valid ARRAY must still format. The old fake
+        // rejected anything not starting with '{', so "rejects bad JSON" would
+        // have passed against a validator that rejected half the good JSON too.
+        args[QStringLiteral("text")] = QStringLiteral("[1,2]");
         resp = call(s, 45, QStringLiteral("format_text"), args);
-        QCOMPARE(resp.value(QLatin1String("ok")).toBool(), false);
-        QVERIFY(resp.value(QLatin1String("error"))
-                    .toString()
-                    .contains(QLatin1String("invalid json")));
+        QVERIFY2(resp.value(QLatin1String("ok")).toBool(),
+                 "a valid JSON array must format");
         // Unknown kind; missing text.
         QJsonObject badKind;
         badKind[QStringLiteral("kind")] = QStringLiteral("yaml");

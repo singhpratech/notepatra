@@ -52,7 +52,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 use super::{
-    endpoint, EditorTransport, SearchHit, SearchResults, Selection, TabContent, TabInfo,
+    endpoint, EditorTransport, SearchHit, SearchResults, Selection, TabContent, TabInfo, TabRef,
     TabSelector, TransportError,
 };
 
@@ -730,6 +730,9 @@ fn tab_info_from(v: &Value) -> Result<TabInfo, TransportError> {
         // v0.1.121: absent on editors older than the field, so default to
         // editable rather than failing the whole list.
         editable: v.get("editable").and_then(Value::as_bool).unwrap_or(true),
+        // v0.1.126 (NP-13): absent on editors older than the field. `None`
+        // means "this editor has no stable ids", not "id 0".
+        id: v.get("id").and_then(Value::as_i64),
     })
 }
 
@@ -756,19 +759,37 @@ impl EditorTransport for SocketEditor {
             .collect()
     }
 
-    fn read_tab(&self, selector: TabSelector<'_>) -> Result<TabContent, TransportError> {
-        // Request takes "index" (NOT "tab_index") or "title"; result is
-        // {"title","path","text"} with "truncated":true only when capped.
-        let args = match selector {
+    fn read_tab(
+        &self,
+        selector: TabSelector<'_>,
+        max_bytes: Option<usize>,
+    ) -> Result<TabContent, TransportError> {
+        // Request takes "index" (NOT "tab_index"), "title" or "tab_id";
+        // result is {"title","path","text","truncated","total_chars"}.
+        let mut args = match selector {
             TabSelector::Index(i) => json!({ "index": i }),
             TabSelector::Title(t) => json!({ "title": t }),
+            TabSelector::Id(id) => json!({ "tab_id": id }),
         };
+        if let Some(n) = max_bytes {
+            args["max_bytes"] = json!(n);
+        }
         let v = self.call("read_tab", args)?;
+        let text = required_str(&v, "text")?;
         Ok(TabContent {
             title: required_str(&v, "title")?,
             path: path_field(&v, "path")?,
-            text: required_str(&v, "text")?,
+            // Editors before 0.1.126 sent neither field: `truncated` was
+            // omitted unless true, and `total_chars` did not exist. Falling
+            // back to the text length keeps the struct honest against those.
+            total_chars: v
+                .get("total_chars")
+                .and_then(Value::as_u64)
+                .map(|n| n as usize)
+                .unwrap_or(text.chars().count()),
             truncated: v.get("truncated").and_then(Value::as_bool).unwrap_or(false),
+            id: v.get("id").and_then(Value::as_i64),
+            text,
         })
     }
 
@@ -807,6 +828,19 @@ impl EditorTransport for SocketEditor {
                 .get("truncated")
                 .and_then(Value::as_bool)
                 .ok_or_else(|| malformed("truncated"))?,
+            // v0.1.126 (NP-07): these are what the bridge has always sent and
+            // this layer used to drop. Defaulted rather than required so an
+            // older editor still answers instead of failing the whole search.
+            workspace_searched: v
+                .get("workspace_searched")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            scope: v
+                .get("scope")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
+                .to_string(),
+            notice: v.get("notice").and_then(Value::as_str).map(str::to_owned),
         })
     }
 
@@ -839,14 +873,18 @@ impl EditorTransport for SocketEditor {
 
     fn find_in_tab(
         &self,
-        tab_index: Option<usize>,
+        tab: TabRef,
+        title: Option<&str>,
         query: &str,
         regex: bool,
     ) -> Result<Value, TransportError> {
         // The bridge reads the tab from "index" (NOT "tab_index") here.
         let mut args = json!({ "query": query });
-        if let Some(i) = tab_index {
-            args["index"] = json!(i);
+        tab.apply(&mut args, "index");
+        // NP-11: `title` is the selector read_tab always took; find_in_tab
+        // used to answer it with "unexpected argument".
+        if let Some(t) = title {
+            args["title"] = json!(t);
         }
         // "regex" is sent only when true so the wire stays minimal.
         if regex {
@@ -863,21 +901,15 @@ impl EditorTransport for SocketEditor {
         self.call("new_tab", args)
     }
 
-    fn goto_line(
-        &mut self,
-        line: usize,
-        tab_index: Option<usize>,
-    ) -> Result<Value, TransportError> {
+    fn goto_line(&mut self, line: usize, tab: TabRef) -> Result<Value, TransportError> {
         let mut args = json!({ "line": line });
-        if let Some(i) = tab_index {
-            args["tab_index"] = json!(i);
-        }
+        tab.apply(&mut args, "tab_index");
         self.call("goto_line", args)
     }
 
     fn select_range(
         &mut self,
-        tab_index: Option<usize>,
+        tab: TabRef,
         start_line: usize,
         start_col: usize,
         end_line: usize,
@@ -889,21 +921,13 @@ impl EditorTransport for SocketEditor {
             "end_line": end_line,
             "end_col": end_col,
         });
-        if let Some(i) = tab_index {
-            args["tab_index"] = json!(i);
-        }
+        tab.apply(&mut args, "tab_index");
         self.call("select_range", args)
     }
 
-    fn set_language(
-        &mut self,
-        language: &str,
-        tab_index: Option<usize>,
-    ) -> Result<Value, TransportError> {
+    fn set_language(&mut self, language: &str, tab: TabRef) -> Result<Value, TransportError> {
         let mut args = json!({ "language": language });
-        if let Some(i) = tab_index {
-            args["tab_index"] = json!(i);
-        }
+        tab.apply(&mut args, "tab_index");
         self.call("set_language", args)
     }
 
@@ -934,14 +958,12 @@ impl EditorTransport for SocketEditor {
     fn insert_text(
         &mut self,
         text: &str,
-        tab_index: Option<usize>,
+        tab: TabRef,
         line: Option<usize>,
         col: Option<usize>,
     ) -> Result<Value, TransportError> {
         let mut args = json!({ "text": text });
-        if let Some(i) = tab_index {
-            args["tab_index"] = json!(i);
-        }
+        tab.apply(&mut args, "tab_index");
         if let Some(l) = line {
             args["line"] = json!(l);
         }
@@ -951,15 +973,9 @@ impl EditorTransport for SocketEditor {
         self.call("insert_text", args)
     }
 
-    fn replace_selection(
-        &mut self,
-        text: &str,
-        tab_index: Option<usize>,
-    ) -> Result<Value, TransportError> {
+    fn replace_selection(&mut self, text: &str, tab: TabRef) -> Result<Value, TransportError> {
         let mut args = json!({ "text": text });
-        if let Some(i) = tab_index {
-            args["tab_index"] = json!(i);
-        }
+        tab.apply(&mut args, "tab_index");
         self.call("replace_selection", args)
     }
 
@@ -967,27 +983,19 @@ impl EditorTransport for SocketEditor {
         &mut self,
         find: &str,
         replace: &str,
-        tab_index: Option<usize>,
+        tab: TabRef,
         all: bool,
     ) -> Result<Value, TransportError> {
         // "all" is always sent explicitly so the wire shape is deterministic.
         let mut args = json!({ "find": find, "replace": replace, "all": all });
-        if let Some(i) = tab_index {
-            args["tab_index"] = json!(i);
-        }
+        tab.apply(&mut args, "tab_index");
         self.call("apply_edit", args)
     }
 
-    fn save_tab(
-        &mut self,
-        tab_index: Option<usize>,
-        path: Option<&str>,
-    ) -> Result<Value, TransportError> {
+    fn save_tab(&mut self, tab: TabRef, path: Option<&str>) -> Result<Value, TransportError> {
         // Optional keys are sent only when present so the wire stays minimal.
         let mut args = json!({});
-        if let Some(i) = tab_index {
-            args["tab_index"] = json!(i);
-        }
+        tab.apply(&mut args, "tab_index");
         if let Some(p) = path {
             args["path"] = json!(p);
         }
@@ -1024,16 +1032,16 @@ impl EditorTransport for SocketEditor {
         self.call("git_branch", json!({}))
     }
 
-    fn validate_npd(
-        &self,
-        tab_index: Option<usize>,
-        source: Option<&str>,
-    ) -> Result<Value, TransportError> {
+    fn validate_npd(&self, tab: TabRef, source: Option<&str>) -> Result<Value, TransportError> {
         // Exactly one selector is set (enforced by the tool layer). Wire keys
-        // match the tool's arg names ("tab_index" / "source").
-        let args = match (tab_index, source) {
-            (Some(i), None) => json!({ "tab_index": i }),
-            (None, Some(s)) => json!({ "source": s }),
+        // match the tool's arg names ("tab_index" / "tab_id" / "source").
+        let args = match (tab.is_unset(), source) {
+            (false, None) => {
+                let mut a = json!({});
+                tab.apply(&mut a, "tab_index");
+                a
+            }
+            (true, Some(s)) => json!({ "source": s }),
             _ => {
                 return Err(TransportError(
                     "provide exactly one of tab_index or source".into(),
@@ -1083,14 +1091,13 @@ impl EditorTransport for SocketEditor {
 
     fn export_diagram(
         &mut self,
-        tab_index: usize,
+        tab: TabRef,
         path: &str,
         format: &str,
     ) -> Result<Value, TransportError> {
-        self.call(
-            "export_diagram",
-            json!({ "tab_index": tab_index, "path": path, "format": format }),
-        )
+        let mut args = json!({ "path": path, "format": format });
+        tab.apply(&mut args, "tab_index");
+        self.call("export_diagram", args)
     }
 
     // Phase 1 verbs — verbatim JSON passthrough.
@@ -1111,19 +1118,16 @@ impl EditorTransport for SocketEditor {
         self.call("create_diagram", args)
     }
 
-    fn get_diagram_source(&self, tab_index: usize) -> Result<Value, TransportError> {
-        self.call("get_diagram_source", json!({ "tab_index": tab_index }))
+    fn get_diagram_source(&self, tab: TabRef) -> Result<Value, TransportError> {
+        let mut args = json!({});
+        tab.apply(&mut args, "tab_index");
+        self.call("get_diagram_source", args)
     }
 
-    fn set_diagram_source(
-        &mut self,
-        tab_index: usize,
-        source: &str,
-    ) -> Result<Value, TransportError> {
-        self.call(
-            "set_diagram_source",
-            json!({ "tab_index": tab_index, "source": source }),
-        )
+    fn set_diagram_source(&mut self, tab: TabRef, source: &str) -> Result<Value, TransportError> {
+        let mut args = json!({ "source": source });
+        tab.apply(&mut args, "tab_index");
+        self.call("set_diagram_source", args)
     }
 
     fn open_noter(&mut self) -> Result<Value, TransportError> {

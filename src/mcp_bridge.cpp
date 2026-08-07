@@ -11,19 +11,30 @@
 // line the peer receives. Tabs are addressed by 0-based index; the Welcome
 // tab (when present) owns index 0.
 //
+// v0.1.126: every verb that names a tab ALSO accepts "tab_id" — the stable id
+// published by list_open_tabs. An index is positional and re-points at a
+// different document the moment another tab closes, so a caller that holds a
+// selector across calls must hold the id. See McpBridge::resolveTab.
+//
 // READ tier — answered immediately.
-//   list_open_tabs {}                       → {tabs:[{index,title,path,modified,
-//                                              editable}]}   (editable: v0.1.121)
-//   read_tab    {index|title}               → {title,path,text,truncated?}
+//   list_open_tabs {}                       → {tabs:[{index,id,title,path,
+//                                              modified,editable}]}
+//                                              (editable: v0.1.121, id: v0.1.126)
+//   read_tab    {tab_id|index|title, max_bytes?} → {title,path,id?,text,
+//                                              truncated,total_chars}
 //   get_selection {}                        → {text,tab_index}
 //   get_status  {}                          → {tab_index,title,path,language,
 //                                              encoding,cursor_line,cursor_col,
 //                                              edition,version}
 //   app_info    {}                          → {name,version,edition,platform}
 //   list_recent_files {}                    → {files:[...]}
-//   find_in_tab {query,index?,regex?}       → {matches:[{line,text}],truncated}
+//   find_in_tab {query,tab_id?|index?|title?,regex?}
+//                                           → {matches:[{line,text}],truncated}
 //   search_project {query,max_results?,regex?} → {results:[{path,line,text}],
-//                                                 truncated}
+//                                              truncated,workspace_searched,
+//                                              scope,notice?}
+//                                              (zero matches is a SUCCESS with
+//                                               an empty results list)
 //   list_notes  {}                          → {notes:[{title,file,modified_iso}]}
 //   read_note   {file}                      → {title,text}
 //   compare_tabs{index_a,index_b}           → {opened}      (opens non-modal view)
@@ -97,7 +108,11 @@
 //
 // NOTE: write verbs take "tab_index"; read tab-arg verbs keep their existing
 // keys ("index" for read_tab/find_in_tab). This asymmetry is deliberate and
-// load-bearing — do not "unify" it.
+// load-bearing — do not "unify" it. "tab_id" (v0.1.126) is spelled the same
+// everywhere and takes precedence over either.
+//
+// Files matching PathDenylist::isSecretPath are refused by open_file,
+// read_tab and find_in_tab, and skipped by both legs of search_project.
 // ═══════════════════════════════════════════════════════════════════════
 #include "mcp_bridge.h"
 #include "build_flavor.h"
@@ -215,6 +230,31 @@ const char *platformName() {
 #else
     return "other";
 #endif
+}
+
+// v0.1.126 (NP-05): the credential deny-list guards EVERY door into file
+// content, not just the workspace walk below.
+//
+// search_project's filesystem leg has consulted PathDenylist since v0.1.125,
+// but open_file and read_tab did not — so an agent that asked for
+// ~/.ssh/id_rsa by name got the tab opened, then got the whole key body back
+// from read_tab with isError:false. Guarding the search leg alone only meant
+// the model had to ask for the file directly instead of stumbling on it.
+//
+// Returns a refusal message, or "" when the path is fine. The message names
+// the file but never quotes a byte of it.
+QString credentialRefusal(const QString &path) {
+    if (path.isEmpty()) return QString(); // untitled buffer — nothing on disk
+    const QFileInfo fi(path);
+    // Check the absolute form: a relative path would slip every segment-
+    // anchored rule in the deny-list.
+    const QString abs = fi.absoluteFilePath();
+    if (!PathDenylist::isSecretPath(abs)) return QString();
+    return QStringLiteral(
+               "refusing to read %1: it matches the credential deny-list "
+               "(SSH/GPG/AWS keys, .env, keystores, Terraform state). Open it "
+               "in the editor yourself if you need to see it.")
+        .arg(QDir::toNativeSeparators(fi.fileName()));
 }
 
 struct SearchHit {
@@ -721,6 +761,12 @@ void McpBridge::verbOpenFile(QLocalSocket *client, int id,
                       .arg(QDir::toNativeSeparators(path)));
         return;
     }
+    // NP-05: refuse BEFORE the tab exists. Opening it and refusing to read it
+    // would still put the file on screen and in the session's tab list.
+    if (const QString refusal = credentialRefusal(path); !refusal.isEmpty()) {
+        sendError(client, id, refusal);
+        return;
+    }
     const int idx = m_host.openFile ? m_host.openFile(path) : -1;
     if (idx < 0) {
         sendError(client, id,
@@ -750,6 +796,10 @@ void McpBridge::verbListOpenTabs(QLocalSocket *client, int id) {
         // (Welcome page, Diagram canvas, Noter panel …) so an agent knows not
         // to read_tab / insert_text / save_tab against them.
         t[QStringLiteral("editable")] = tabIsEditable(i);
+        // v0.1.126 (NP-13): the selector to hold on to. `index` above is only
+        // valid until the next tab closes.
+        if (const qint64 tid = tabIdOf(i); tid >= 0)
+            t[QStringLiteral("id")] = tid;
         tabs.append(t);
     }
     QJsonObject result;
@@ -759,46 +809,61 @@ void McpBridge::verbListOpenTabs(QLocalSocket *client, int id) {
 
 void McpBridge::verbReadTab(QLocalSocket *client, int id,
                             const QJsonObject &args) {
-    const int n = m_host.tabCount ? m_host.tabCount() : 0;
-    int idx = -1;
-    if (args.contains(QLatin1String("index"))) {
-        idx = args.value(QLatin1String("index")).toInt(-1);
-    } else if (args.contains(QLatin1String("title"))) {
-        const QString title = args.value(QLatin1String("title")).toString();
-        for (int i = 0; i < n; ++i) {
-            if (m_host.tabTitle && m_host.tabTitle(i) == title) {
-                idx = i;
-                break;
-            }
-        }
-        if (idx < 0) {
-            sendError(client, id,
-                      QStringLiteral("no tab titled: %1").arg(title));
-            return;
-        }
-    } else {
-        sendError(client, id, QStringLiteral("missing index or title"));
-        return;
-    }
-    if (idx < 0 || idx >= n) {
-        sendError(client, id,
-                  QStringLiteral("tab index out of range: %1").arg(idx));
+    QString err;
+    const int idx = resolveTab(args, "index", /*allowCurrent=*/false, &err);
+    if (idx < 0) {
+        sendError(client, id, err);
         return;
     }
     if (!tabIsEditable(idx)) { // v0.1.121: Welcome/diagram/… have no text buffer
         sendError(client, id, nonEditableReason(idx));
         return;
     }
+    const QString path = m_host.tabPath ? m_host.tabPath(idx) : QString();
+    // NP-05: open_file refuses credential files, but a tab can also reach the
+    // editor by hand, by session restore, or from the recent-files list — and
+    // whichever door it came through, its contents are not ours to hand to a
+    // model. The check belongs on the read, not only on the open.
+    if (const QString refusal = credentialRefusal(path); !refusal.isEmpty()) {
+        sendError(client, id, refusal);
+        return;
+    }
     QString text = m_host.tabText ? m_host.tabText(idx) : QString();
     QJsonObject result;
     result[QStringLiteral("title")] = m_host.tabTitle ? m_host.tabTitle(idx)
                                                       : QString();
-    result[QStringLiteral("path")] = m_host.tabPath ? m_host.tabPath(idx)
-                                                    : QString();
-    if (text.size() > kReadTabCapChars) {
-        text.truncate(kReadTabCapChars);
-        result[QStringLiteral("truncated")] = true;
+    result[QStringLiteral("path")] = path;
+    if (const qint64 tid = tabIdOf(idx); tid >= 0)
+        result[QStringLiteral("id")] = tid;
+
+    // v0.1.126 (NP-10): the caller may ask for less.
+    //
+    // The 5 MB ceiling always existed, but nothing under it was negotiable:
+    // a 2.7 MB buffer came back whole and could fill an assistant's entire
+    // context in one call, with no `truncated` field to even say it was
+    // complete. `truncated` is now always present — absent-means-false is a
+    // fact the caller had to infer, and every other bulk verb states it.
+    int cap = kReadTabCapChars;
+    if (args.contains(QLatin1String("max_bytes"))) {
+        const QJsonValue v = args.value(QLatin1String("max_bytes"));
+        if (!v.isDouble()) {
+            sendError(client, id,
+                      QStringLiteral("max_bytes must be an integer"));
+            return;
+        }
+        const int want = v.toInt(0);
+        if (want < 1) {
+            sendError(client, id,
+                      QStringLiteral("max_bytes must be >= 1"));
+            return;
+        }
+        cap = qMin(want, kReadTabCapChars);
     }
+    const int fullSize = text.size();
+    const bool truncated = fullSize > cap;
+    if (truncated) text.truncate(cap);
+    result[QStringLiteral("truncated")] = truncated;
+    result[QStringLiteral("total_chars")] = fullSize;
     result[QStringLiteral("text")] = text;
     sendResult(client, id, result);
 }
@@ -844,6 +909,11 @@ void McpBridge::verbSearchProject(QLocalSocket *client, int id,
     for (int i = 0; i < n && hits.size() < maxResults; ++i) {
         const QString path = m_host.tabPath ? m_host.tabPath(i) : QString();
         if (!path.isEmpty()) openPaths.insert(QFileInfo(path).absoluteFilePath());
+        // NP-05: the workspace leg has skipped credential files since
+        // v0.1.125, but a credential file that happens to be OPEN was read
+        // straight out of the tab buffer by this leg — the deny-list guarded
+        // the disk and left the buffer wide open.
+        if (!credentialRefusal(path).isEmpty()) continue;
         const QString text = m_host.tabText ? m_host.tabText(i) : QString();
         if (text.isEmpty()) continue;
         const QString hitPath = path; // "" for untitled tabs
@@ -882,17 +952,6 @@ void McpBridge::verbSearchProject(QLocalSocket *client, int id,
     // Every response now states which legs actually ran, and the caller can
     // trust that field instead of inferring from result count.
     const bool haveWorkspace = !root.isEmpty() && QFileInfo(root).isDir();
-    if (!haveWorkspace && hits.isEmpty()) {
-        sendError(client, id,
-                  root.isEmpty()
-                      ? QStringLiteral("No workspace folder is open, so there "
-                                       "is nothing to search beyond the open "
-                                       "tabs. Open a folder first.")
-                      : QStringLiteral("The workspace folder no longer exists, "
-                                       "so only open tabs could be searched. "
-                                       "Re-open the folder."));
-        return;
-    }
     if (!haveWorkspace || hits.size() >= maxResults) {
         QJsonObject result;
         result[QStringLiteral("results")] = hitsToJson(hits);
@@ -902,6 +961,24 @@ void McpBridge::verbSearchProject(QLocalSocket *client, int id,
         result[QStringLiteral("scope")] =
             haveWorkspace ? QStringLiteral("tabs_and_workspace")
                           : QStringLiteral("open_tabs_only");
+        // v0.1.126 (NP-08): "no workspace open" is a note about COVERAGE, not
+        // an error, and it must not depend on whether the query matched.
+        //
+        // v0.1.125 still failed the call outright when the open tabs happened
+        // to yield nothing — so "your string is not in these files" was
+        // reported as "you have no folder open". Those are different facts,
+        // and an assistant told the second one pushes the user to fix a
+        // problem that does not exist. Zero results is a successful search.
+        if (!haveWorkspace) {
+            result[QStringLiteral("notice")] =
+                root.isEmpty()
+                    ? QStringLiteral("No workspace folder is open, so only the "
+                                     "open tabs were searched. Open a folder "
+                                     "to search a project.")
+                    : QStringLiteral("The workspace folder no longer exists, "
+                                     "so only the open tabs were searched. "
+                                     "Re-open the folder.");
+        }
         sendResult(client, id, result);
         return;
     }
@@ -988,13 +1065,19 @@ void McpBridge::verbFindInTab(QLocalSocket *client, int id,
             return;
         }
     }
-    const int n = m_host.tabCount ? m_host.tabCount() : 0;
-    int idx = args.contains(QLatin1String("index"))
-                  ? args.value(QLatin1String("index")).toInt(-1)
-                  : (m_host.currentTabIndex ? m_host.currentTabIndex() : -1);
-    if (idx < 0 || idx >= n) {
-        sendError(client, id,
-                  QStringLiteral("tab index out of range: %1").arg(idx));
+    // NP-11: same selector set as read_tab — tab_id, index, or title.
+    QString err;
+    const int idx = resolveTab(args, "index", /*allowCurrent=*/true, &err);
+    if (idx < 0) {
+        sendError(client, id, err);
+        return;
+    }
+    // NP-05: a match list is a content channel — it quotes the matching
+    // lines. Refusing read_tab on a key while letting find_in_tab return the
+    // line the key material sits on would just be a slower leak.
+    const QString tabFile = m_host.tabPath ? m_host.tabPath(idx) : QString();
+    if (const QString refusal = credentialRefusal(tabFile); !refusal.isEmpty()) {
+        sendError(client, id, refusal);
         return;
     }
     const QString text = m_host.tabText ? m_host.tabText(idx) : QString();
@@ -1366,17 +1449,67 @@ void McpBridge::verbReadNote(QLocalSocket *client, int id,
 // timeout, or a peer disconnect all resolve to "nothing happened".
 
 int McpBridge::resolveWriteTab(const QJsonObject &args, QString *err) const {
+    return resolveTab(args, "tab_index", /*allowCurrent=*/true, err);
+}
+
+qint64 McpBridge::tabIdOf(int idx) const {
+    return m_host.tabId ? m_host.tabId(idx) : -1;
+}
+
+// See the header for the selector precedence. Every verb that names a tab
+// goes through here, so a selector accepted by one is accepted by all.
+int McpBridge::resolveTab(const QJsonObject &args, const char *indexKey,
+                          bool allowCurrent, QString *err) const {
     const int n = m_host.tabCount ? m_host.tabCount() : 0;
-    const int idx = args.contains(QLatin1String("tab_index"))
-                        ? args.value(QLatin1String("tab_index")).toInt(-1)
-                        : (m_host.currentTabIndex ? m_host.currentTabIndex()
-                                                  : -1);
-    if (idx < 0 || idx >= n) {
-        if (err)
-            *err = QStringLiteral("tab index out of range: %1").arg(idx);
+    const auto fail = [err](const QString &msg) {
+        if (err) *err = msg;
         return -1;
+    };
+
+    // 1. Stable id — checked first, because a caller that took the trouble to
+    //    hold one is explicitly asking not to be resolved positionally.
+    if (args.contains(QLatin1String("tab_id"))) {
+        const QJsonValue v = args.value(QLatin1String("tab_id"));
+        if (!v.isDouble())
+            return fail(QStringLiteral("tab_id must be an integer"));
+        const qint64 want = static_cast<qint64>(v.toDouble());
+        for (int i = 0; i < n; ++i)
+            if (tabIdOf(i) == want) return i;
+        // The id is gone, not merely out of range: say so plainly rather than
+        // reporting a bad index the caller never supplied.
+        return fail(QStringLiteral(
+                        "no open tab has id %1 — it was closed. Call "
+                        "list_open_tabs again for current ids.")
+                        .arg(want));
     }
-    return idx;
+
+    // 2. Positional index, under whichever key this verb family shipped with.
+    const QLatin1String key(indexKey);
+    if (args.contains(key)) {
+        const QJsonValue v = args.value(key);
+        if (!v.isDouble())
+            return fail(QStringLiteral("%1 must be an integer").arg(key));
+        const int idx = v.toInt(-1);
+        if (idx < 0 || idx >= n)
+            return fail(QStringLiteral("tab index out of range: %1").arg(idx));
+        return idx;
+    }
+
+    // 3. Title.
+    if (args.contains(QLatin1String("title"))) {
+        const QString title = args.value(QLatin1String("title")).toString();
+        for (int i = 0; i < n; ++i)
+            if (m_host.tabTitle && m_host.tabTitle(i) == title) return i;
+        return fail(QStringLiteral("no tab titled: %1").arg(title));
+    }
+
+    if (allowCurrent) {
+        const int idx = m_host.currentTabIndex ? m_host.currentTabIndex() : -1;
+        if (idx < 0 || idx >= n)
+            return fail(QStringLiteral("tab index out of range: %1").arg(idx));
+        return idx;
+    }
+    return fail(QStringLiteral("missing tab_id, %1 or title").arg(key));
 }
 
 QString McpBridge::tabLabel(int idx) const {

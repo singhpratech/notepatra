@@ -21,6 +21,10 @@ pub struct TabInfo {
     pub path: Option<String>,
     pub modified: bool,
     pub editable: bool,
+    /// Stable tab id (v0.1.126, NP-13). `None` against an editor older than
+    /// 0.1.126, which published no id at all — callers fall back to `index`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
 }
 
 /// `read_tab` result — wire shape `{title,path,text}` plus `truncated:true`
@@ -32,6 +36,11 @@ pub struct TabContent {
     pub path: Option<String>,
     pub text: String,
     pub truncated: bool,
+    /// Full length of the buffer before any cap, so a truncated caller knows
+    /// how much it did not get (v0.1.126, NP-10).
+    pub total_chars: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
 }
 
 /// Marker appended to tab text when the editor capped the read (the bridge
@@ -61,11 +70,27 @@ pub struct SearchHit {
     pub text: String,
 }
 
-/// `search_project` result — wire shape `{results:[SearchHit],truncated}`.
+/// `search_project` result — wire shape
+/// `{results:[SearchHit],truncated,workspace_searched,scope,notice?}`.
+///
+/// v0.1.126 (NP-07): the last three used to be DROPPED here. The C++ bridge
+/// has sent `workspace_searched` and `scope` since v0.1.125 — the changelog
+/// promised them and the editor delivered them — but this struct declared only
+/// two fields, so serde discarded the rest before the tool result was built
+/// and no client ever saw them. Two layers, one contract, and only one of them
+/// was updated.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SearchResults {
     pub results: Vec<SearchHit>,
     pub truncated: bool,
+    /// False means the workspace was never walked — open tabs only.
+    pub workspace_searched: bool,
+    /// `"tabs_and_workspace"` or `"open_tabs_only"`.
+    pub scope: String,
+    /// Why the scope was reduced, when it was. Zero results is a SUCCESS with
+    /// a notice, never an error (NP-08).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notice: Option<String>,
 }
 
 /// `get_selection` result — wire shape `{text,tab_index}`. The editor sends
@@ -80,6 +105,63 @@ pub struct Selection {
 pub enum TabSelector<'a> {
     Index(usize),
     Title(&'a str),
+    /// Stable id from `list_open_tabs` (v0.1.126, NP-13).
+    Id(i64),
+}
+
+/// Which tab a verb acts on, for the verbs that take an OPTIONAL target
+/// (absent = the focused tab).
+///
+/// v0.1.126 (NP-13). Every write verb used to address its target by
+/// `tab_index` alone. That index is positional: close a tab to its left and it
+/// silently re-points at a different document, so an assistant that read
+/// `list_open_tabs` and wrote a few seconds later could land its edit in the
+/// wrong file — and out-of-range was the LUCKY case, because a
+/// shifted-but-valid index wrote silently. `id` survives the shift.
+///
+/// Both fields unset means "the focused tab", which is the historical default.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TabRef {
+    pub index: Option<usize>,
+    pub id: Option<i64>,
+}
+
+impl TabRef {
+    pub fn index(i: usize) -> Self {
+        Self {
+            index: Some(i),
+            id: None,
+        }
+    }
+
+    pub fn id(id: i64) -> Self {
+        Self {
+            index: None,
+            id: Some(id),
+        }
+    }
+
+    pub fn is_unset(&self) -> bool {
+        self.index.is_none() && self.id.is_none()
+    }
+
+    /// Write the selector into a bridge args object. `index_key` is `"index"`
+    /// for the read verbs and `"tab_index"` for the write verbs — two
+    /// spellings that already shipped, so both stay. `tab_id` wins when set,
+    /// matching McpBridge::resolveTab's precedence exactly.
+    pub fn apply(&self, args: &mut Value, index_key: &str) {
+        if let Some(id) = self.id {
+            args["tab_id"] = Value::from(id);
+        } else if let Some(i) = self.index {
+            args[index_key] = Value::from(i);
+        }
+    }
+}
+
+impl From<Option<usize>> for TabRef {
+    fn from(index: Option<usize>) -> Self {
+        Self { index, id: None }
+    }
 }
 
 /// Editor-side failure; surfaces to MCP clients as an `isError: true` tool
@@ -192,10 +274,30 @@ impl std::error::Error for TransportError {}
 /// * `export_chart` (args `{spec,path,format,scale?}`) → `{path:str}`;
 ///   Full/WebEngine only (same gate error as render_chart)
 pub trait EditorTransport {
+    /// True when this transport FABRICATES its answers instead of talking to a
+    /// running editor (v0.1.126, NP-06).
+    ///
+    /// `notepatra-mcp` with no `--socket` serves an in-memory demo editor. That
+    /// is deliberate — it lets any MCP client exercise the protocol with
+    /// nothing installed — but nothing said so ON THE WIRE. `--help` warned
+    /// humans; the consumer is a language model that never reads `--help`. So
+    /// a config with a dropped `--socket` produced an assistant confidently
+    /// discussing three files that do not exist, and the failure looked
+    /// exactly like success. Every tool result now carries a marker.
+    fn is_mock(&self) -> bool {
+        false
+    }
+
     /// Returns the tab index the file landed in.
     fn open_file(&mut self, path: &str) -> Result<usize, TransportError>;
     fn list_open_tabs(&self) -> Result<Vec<TabInfo>, TransportError>;
-    fn read_tab(&self, selector: TabSelector<'_>) -> Result<TabContent, TransportError>;
+    /// `max_bytes` caps the returned text below the editor's own 5 MB ceiling
+    /// (v0.1.126, NP-10).
+    fn read_tab(
+        &self,
+        selector: TabSelector<'_>,
+        max_bytes: Option<usize>,
+    ) -> Result<TabContent, TransportError>;
     fn search_project(
         &self,
         query: &str,
@@ -208,30 +310,28 @@ pub trait EditorTransport {
     fn get_status(&self) -> Result<Value, TransportError>;
     fn app_info(&self) -> Result<Value, TransportError>;
     fn list_recent_files(&self) -> Result<Value, TransportError>;
+    /// `title` selects the tab by name, as `read_tab` has always allowed
+    /// (v0.1.126, NP-11).
     fn find_in_tab(
         &self,
-        tab_index: Option<usize>,
+        tab: TabRef,
+        title: Option<&str>,
         query: &str,
         regex: bool,
     ) -> Result<Value, TransportError>;
     fn new_tab(&mut self, text: Option<&str>) -> Result<Value, TransportError>;
-    fn goto_line(&mut self, line: usize, tab_index: Option<usize>)
-        -> Result<Value, TransportError>;
+    fn goto_line(&mut self, line: usize, tab: TabRef) -> Result<Value, TransportError>;
     /// v0.1.121 (issue #5): move the selection to a 1-based line/column range
     /// (ACT — no approval card). Result `{ok:true,tab_index}`.
     fn select_range(
         &mut self,
-        tab_index: Option<usize>,
+        tab: TabRef,
         start_line: usize,
         start_col: usize,
         end_line: usize,
         end_col: usize,
     ) -> Result<Value, TransportError>;
-    fn set_language(
-        &mut self,
-        language: &str,
-        tab_index: Option<usize>,
-    ) -> Result<Value, TransportError>;
+    fn set_language(&mut self, language: &str, tab: TabRef) -> Result<Value, TransportError>;
     fn compare_tabs(&mut self, index_a: usize, index_b: usize) -> Result<Value, TransportError>;
     fn format_text(&self, kind: &str, text: &str) -> Result<Value, TransportError>;
     fn list_notes(&self) -> Result<Value, TransportError>;
@@ -241,30 +341,22 @@ pub trait EditorTransport {
     fn insert_text(
         &mut self,
         text: &str,
-        tab_index: Option<usize>,
+        tab: TabRef,
         line: Option<usize>,
         col: Option<usize>,
     ) -> Result<Value, TransportError>;
-    fn replace_selection(
-        &mut self,
-        text: &str,
-        tab_index: Option<usize>,
-    ) -> Result<Value, TransportError>;
+    fn replace_selection(&mut self, text: &str, tab: TabRef) -> Result<Value, TransportError>;
     fn apply_edit(
         &mut self,
         find: &str,
         replace: &str,
-        tab_index: Option<usize>,
+        tab: TabRef,
         all: bool,
     ) -> Result<Value, TransportError>;
     /// `path` (v0.1.121) turns this into a "Save As" to a NEW absolute path;
     /// the editor validates it (absolute, parent folder exists) before showing
     /// the approval card. `None` saves the tab to its existing file.
-    fn save_tab(
-        &mut self,
-        tab_index: Option<usize>,
-        path: Option<&str>,
-    ) -> Result<Value, TransportError>;
+    fn save_tab(&mut self, tab: TabRef, path: Option<&str>) -> Result<Value, TransportError>;
 
     // v0.1.119 read verbs — verbatim JSON passthrough (shapes documented on
     // the trait doc comment above; the C++ bridge is the source of truth).
@@ -276,11 +368,7 @@ pub trait EditorTransport {
     fn git_branch(&self) -> Result<Value, TransportError>;
     /// Exactly one of `tab_index` / `source` is `Some` (enforced by the tool
     /// layer); the bridge validates a .npd document and reports parse errors.
-    fn validate_npd(
-        &self,
-        tab_index: Option<usize>,
-        source: Option<&str>,
-    ) -> Result<Value, TransportError>;
+    fn validate_npd(&self, tab: TabRef, source: Option<&str>) -> Result<Value, TransportError>;
     /// SELECT-only: the editor rejects any non-read statement with a verbatim
     /// error that passes straight through.
     fn run_sql(&self, sql: &str, csv_path: Option<&str>) -> Result<Value, TransportError>;
@@ -299,7 +387,7 @@ pub trait EditorTransport {
     fn set_reminder(&mut self, file: &str, due_iso: &str) -> Result<Value, TransportError>;
     fn export_diagram(
         &mut self,
-        tab_index: usize,
+        tab: TabRef,
         path: &str,
         format: &str,
     ) -> Result<Value, TransportError>;
@@ -310,13 +398,9 @@ pub trait EditorTransport {
         source: Option<&str>,
         title: Option<&str>,
     ) -> Result<Value, TransportError>;
-    fn get_diagram_source(&self, tab_index: usize) -> Result<Value, TransportError>;
+    fn get_diagram_source(&self, tab: TabRef) -> Result<Value, TransportError>;
     /// Approval-gated in the editor, like the other write verbs.
-    fn set_diagram_source(
-        &mut self,
-        tab_index: usize,
-        source: &str,
-    ) -> Result<Value, TransportError>;
+    fn set_diagram_source(&mut self, tab: TabRef, source: &str) -> Result<Value, TransportError>;
     fn open_noter(&mut self) -> Result<Value, TransportError>;
 
     // Phase 2 — data-analyst + charts (verbatim JSON passthrough).

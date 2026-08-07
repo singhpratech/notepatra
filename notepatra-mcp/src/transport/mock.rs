@@ -2,7 +2,7 @@
 use serde_json::{json, Value};
 
 use super::{
-    EditorTransport, SearchHit, SearchResults, Selection, TabContent, TabInfo, TabSelector,
+    EditorTransport, SearchHit, SearchResults, Selection, TabContent, TabInfo, TabRef, TabSelector,
     TransportError,
 };
 
@@ -74,6 +74,9 @@ struct MockTab {
     // v0.1.121 (issue #1): false for tabs that are not editable text buffers
     // (a Diagram canvas here); surfaced as `editable` in list_open_tabs.
     editable: bool,
+    // v0.1.126 (NP-13): stable identity, assigned at creation and never
+    // reused, so it survives an earlier tab being removed.
+    id: i64,
 }
 
 struct MockNote {
@@ -105,6 +108,9 @@ pub struct MockEditor {
     reminders: Vec<MockReminder>,
     connections: Vec<MockConnection>,
     approval: ApprovalMode,
+    /// Monotonic source for MockTab::id — never reused, so a closed tab's id
+    /// can never silently resolve to a different document (v0.1.126, NP-13).
+    next_tab_id: i64,
 }
 
 /// Believable stand-in for the editor's npd parser: a line beginning with
@@ -147,6 +153,7 @@ impl Default for MockEditor {
                     truncated: false,
                     is_diagram: false,
                     editable: true,
+                    id: 1,
                 },
                 MockTab {
                     title: "NOTES.md".into(),
@@ -158,6 +165,7 @@ impl Default for MockEditor {
                     truncated: false,
                     is_diagram: false,
                     editable: true,
+                    id: 2,
                 },
                 MockTab {
                     title: "Untitled 1".into(),
@@ -168,8 +176,11 @@ impl Default for MockEditor {
                     truncated: false,
                     is_diagram: false,
                     editable: true,
+                    id: 3,
                 },
             ],
+            // The three literal ids above are 1..3, so the counter starts past them.
+            next_tab_id: 4,
             selection: (0, "println!(\"hello from notepatra\");".into()),
             // `file` mirrors the bridge: the note's ABSOLUTE path (Noter
             // stores notes as .html under Documents/Notepatra/Noter).
@@ -248,7 +259,33 @@ impl MockEditor {
             path: t.path.clone(),
             modified: t.modified,
             editable: t.editable,
+            id: Some(t.id),
         }
+    }
+
+    /// Resolve any selector to an index, mirroring McpBridge::resolveTab's
+    /// precedence (v0.1.126, NP-11/NP-13).
+    fn resolve_selector(&self, selector: TabSelector<'_>) -> Result<usize, TransportError> {
+        match selector {
+            TabSelector::Index(i) => self.check_index(i),
+            TabSelector::Title(title) => self
+                .tabs
+                .iter()
+                .position(|t| t.title == title)
+                .ok_or_else(|| TransportError(format!("no tab titled {title:?}"))),
+            TabSelector::Id(id) => self.tabs.iter().position(|t| t.id == id).ok_or_else(|| {
+                TransportError(format!(
+                    "no open tab has id {id} — it was closed. Call \
+                     list_open_tabs again for current ids."
+                ))
+            }),
+        }
+    }
+
+    fn next_tab_id(&mut self) -> i64 {
+        let id = self.next_tab_id;
+        self.next_tab_id += 1;
+        id
     }
 
     fn check_index(&self, index: usize) -> Result<usize, TransportError> {
@@ -262,9 +299,14 @@ impl MockEditor {
         }
     }
 
-    /// Resolves an optional index against the active tab.
-    fn resolve(&self, tab_index: Option<usize>) -> Result<usize, TransportError> {
-        self.check_index(tab_index.unwrap_or(self.selection.0))
+    /// Resolves a [`TabRef`] against the active tab, with the same precedence
+    /// as McpBridge::resolveTab: id first, then index, then focused.
+    fn resolve(&self, tab: TabRef) -> Result<usize, TransportError> {
+        match (tab.id, tab.index) {
+            (Some(id), _) => self.resolve_selector(TabSelector::Id(id)),
+            (None, Some(i)) => self.check_index(i),
+            (None, None) => self.check_index(self.selection.0),
+        }
     }
 
     /// Test hook: simulate the user's response to the in-editor approval
@@ -314,6 +356,10 @@ impl MockEditor {
 }
 
 impl EditorTransport for MockEditor {
+    fn is_mock(&self) -> bool {
+        true
+    }
+
     fn open_file(&mut self, path: &str) -> Result<usize, TransportError> {
         if let Some(i) = self
             .tabs
@@ -323,6 +369,7 @@ impl EditorTransport for MockEditor {
             return Ok(i);
         }
         let title = path.rsplit('/').next().unwrap_or(path).to_string();
+        let new_id = self.next_tab_id();
         self.tabs.push(MockTab {
             title,
             path: Some(path.to_string()),
@@ -332,6 +379,7 @@ impl EditorTransport for MockEditor {
             truncated: false,
             is_diagram: false,
             editable: true,
+            id: new_id,
         });
         Ok(self.tabs.len() - 1)
     }
@@ -340,21 +388,26 @@ impl EditorTransport for MockEditor {
         Ok((0..self.tabs.len()).map(|i| self.info(i)).collect())
     }
 
-    fn read_tab(&self, selector: TabSelector<'_>) -> Result<TabContent, TransportError> {
-        let index = match selector {
-            TabSelector::Index(i) => self.check_index(i)?,
-            TabSelector::Title(title) => self
-                .tabs
-                .iter()
-                .position(|t| t.title == title)
-                .ok_or_else(|| TransportError(format!("no tab titled {title:?}")))?,
-        };
+    fn read_tab(
+        &self,
+        selector: TabSelector<'_>,
+        max_bytes: Option<usize>,
+    ) -> Result<TabContent, TransportError> {
+        let index = self.resolve_selector(selector)?;
         let t = &self.tabs[index];
+        let total_chars = t.content.chars().count();
+        // NP-10: honour the cap the caller asked for, on a char boundary.
+        let (text, capped) = match max_bytes {
+            Some(n) if total_chars > n => (t.content.chars().take(n).collect(), true),
+            _ => (t.content.clone(), false),
+        };
         Ok(TabContent {
             title: t.title.clone(),
             path: t.path.clone(),
-            text: t.content.clone(),
-            truncated: t.truncated,
+            text,
+            truncated: t.truncated || capped,
+            total_chars,
+            id: Some(t.id),
         })
     }
 
@@ -391,7 +444,14 @@ impl EditorTransport for MockEditor {
         // Same rule as the bridge: hitting the cap flags truncation even if
         // the very last match was the final one.
         let truncated = results.len() >= max_results;
-        Ok(SearchResults { results, truncated })
+        // The mock never walks a filesystem, so it is honest about that.
+        Ok(SearchResults {
+            results,
+            truncated,
+            workspace_searched: false,
+            scope: "open_tabs_only".into(),
+            notice: Some("Mock editor: only the in-memory demo tabs were searched.".into()),
+        })
     }
 
     fn get_selection(&self) -> Result<Selection, TransportError> {
@@ -414,16 +474,22 @@ impl EditorTransport for MockEditor {
             "cursor_line": 2,
             "cursor_col": 5,
             "edition": "Lite",
-            "version": "0.1.118",
+            "version": env!("CARGO_PKG_VERSION"),
+            "mock": true,
         }))
     }
 
     fn app_info(&self) -> Result<Value, TransportError> {
         Ok(json!({
             "name": "Notepatra",
-            "version": "0.1.118",
+            // NP-06: was hardcoded "0.1.118" — three releases stale, and
+            // reported as the running editor's version with a straight face.
+            // The mock has no editor, so it reports its OWN version and says
+            // outright that it is a mock.
+            "version": env!("CARGO_PKG_VERSION"),
             "edition": "Lite",
             "platform": std::env::consts::OS,
+            "mock": true,
         }))
     }
 
@@ -439,14 +505,19 @@ impl EditorTransport for MockEditor {
 
     fn find_in_tab(
         &self,
-        tab_index: Option<usize>,
+        tab: TabRef,
+        title: Option<&str>,
         query: &str,
         regex: bool,
     ) -> Result<Value, TransportError> {
         if regex {
             validate_regex(query)?;
         }
-        let i = self.resolve(tab_index)?;
+        // NP-11: `title` is the selector read_tab always took.
+        let i = match title {
+            Some(t) => self.resolve_selector(TabSelector::Title(t))?,
+            None => self.resolve(tab)?,
+        };
         let mut matches = Vec::new();
         let mut truncated = false;
         // Bridge semantics: case-insensitive substring, trimmed line text.
@@ -463,6 +534,7 @@ impl EditorTransport for MockEditor {
     }
 
     fn new_tab(&mut self, text: Option<&str>) -> Result<Value, TransportError> {
+        let new_id = self.next_tab_id();
         self.tabs.push(MockTab {
             title: self.next_untitled_title(),
             path: None,
@@ -472,16 +544,13 @@ impl EditorTransport for MockEditor {
             truncated: false,
             is_diagram: false,
             editable: true,
+            id: new_id,
         });
         Ok(json!({ "tab_index": self.tabs.len() - 1 }))
     }
 
-    fn goto_line(
-        &mut self,
-        line: usize,
-        tab_index: Option<usize>,
-    ) -> Result<Value, TransportError> {
-        let i = self.resolve(tab_index)?;
+    fn goto_line(&mut self, line: usize, tab: TabRef) -> Result<Value, TransportError> {
+        let i = self.resolve(tab)?;
         if line == 0 {
             return Err(TransportError("line numbers are 1-based".into()));
         }
@@ -506,13 +575,13 @@ impl EditorTransport for MockEditor {
 
     fn select_range(
         &mut self,
-        tab_index: Option<usize>,
+        tab: TabRef,
         start_line: usize,
         start_col: usize,
         end_line: usize,
         end_col: usize,
     ) -> Result<Value, TransportError> {
-        let i = self.resolve(tab_index)?;
+        let i = self.resolve(tab)?;
         let lines: Vec<&str> = self.tabs[i].content.split('\n').collect();
         if start_line < 1 || end_line < 1 || start_line > lines.len() || end_line > lines.len() {
             return Err(TransportError(format!(
@@ -540,12 +609,8 @@ impl EditorTransport for MockEditor {
         Ok(json!({ "ok": true, "tab_index": i }))
     }
 
-    fn set_language(
-        &mut self,
-        language: &str,
-        tab_index: Option<usize>,
-    ) -> Result<Value, TransportError> {
-        let i = self.resolve(tab_index)?;
+    fn set_language(&mut self, language: &str, tab: TabRef) -> Result<Value, TransportError> {
+        let i = self.resolve(tab)?;
         self.tabs[i].language = language.to_string();
         Ok(json!({ "ok": true, "tab_index": i, "language": language }))
     }
@@ -608,12 +673,12 @@ impl EditorTransport for MockEditor {
     fn insert_text(
         &mut self,
         text: &str,
-        tab_index: Option<usize>,
+        tab: TabRef,
         line: Option<usize>,
         col: Option<usize>,
     ) -> Result<Value, TransportError> {
         self.check_approval()?;
-        let i = self.resolve(tab_index)?;
+        let i = self.resolve(tab)?;
         let t = &mut self.tabs[i];
         match line {
             // No explicit position: the cursor stand-in is end-of-document.
@@ -641,13 +706,9 @@ impl EditorTransport for MockEditor {
         Ok(json!({ "ok": true, "tab_index": i }))
     }
 
-    fn replace_selection(
-        &mut self,
-        text: &str,
-        tab_index: Option<usize>,
-    ) -> Result<Value, TransportError> {
+    fn replace_selection(&mut self, text: &str, tab: TabRef) -> Result<Value, TransportError> {
         self.check_approval()?;
-        let i = self.resolve(tab_index)?;
+        let i = self.resolve(tab)?;
         // The mock models the selection as (tab, text): swap the first
         // occurrence of the selected text and select the replacement.
         let sel_text = self.selection.1.clone();
@@ -666,11 +727,11 @@ impl EditorTransport for MockEditor {
         &mut self,
         find: &str,
         replace: &str,
-        tab_index: Option<usize>,
+        tab: TabRef,
         all: bool,
     ) -> Result<Value, TransportError> {
         self.check_approval()?;
-        let i = self.resolve(tab_index)?;
+        let i = self.resolve(tab)?;
         if find.is_empty() {
             return Err(TransportError("find must not be empty".into()));
         }
@@ -691,13 +752,9 @@ impl EditorTransport for MockEditor {
         Ok(json!({ "ok": true, "count": count }))
     }
 
-    fn save_tab(
-        &mut self,
-        tab_index: Option<usize>,
-        path: Option<&str>,
-    ) -> Result<Value, TransportError> {
+    fn save_tab(&mut self, tab: TabRef, path: Option<&str>) -> Result<Value, TransportError> {
         self.check_approval()?;
-        let i = self.resolve(tab_index)?;
+        let i = self.resolve(tab)?;
         // v0.1.121 (issue #4): a path is a "Save As" — the editor validates it
         // (absolute + parent exists) before this runs; the mock adopts it and
         // renames the tab from the basename.
@@ -796,15 +853,11 @@ impl EditorTransport for MockEditor {
         }))
     }
 
-    fn validate_npd(
-        &self,
-        tab_index: Option<usize>,
-        source: Option<&str>,
-    ) -> Result<Value, TransportError> {
+    fn validate_npd(&self, tab: TabRef, source: Option<&str>) -> Result<Value, TransportError> {
         // The tool layer guarantees exactly one selector is present.
-        let text = match (tab_index, source) {
-            (Some(i), None) => self.tabs[self.check_index(i)?].content.clone(),
-            (None, Some(s)) => s.to_string(),
+        let text = match (tab.is_unset(), source) {
+            (false, None) => self.tabs[self.resolve(tab)?].content.clone(),
+            (true, Some(s)) => s.to_string(),
             _ => {
                 return Err(TransportError(
                     "provide exactly one of tab_index or source".into(),
@@ -870,6 +923,7 @@ impl EditorTransport for MockEditor {
             .find(|n| n.file == file)
             .map(|n| n.title.clone())
             .unwrap_or_default();
+        let new_id = self.next_tab_id();
         self.tabs.push(MockTab {
             title: title.clone(),
             path: Some(file.to_string()),
@@ -879,6 +933,7 @@ impl EditorTransport for MockEditor {
             truncated: false,
             is_diagram: false,
             editable: true,
+            id: new_id,
         });
         // Bridge result shape: {opened, title}.
         Ok(json!({ "opened": true, "title": title }))
@@ -942,12 +997,12 @@ impl EditorTransport for MockEditor {
 
     fn export_diagram(
         &mut self,
-        tab_index: usize,
+        tab: TabRef,
         path: &str,
         format: &str,
     ) -> Result<Value, TransportError> {
         self.check_approval()?;
-        self.check_index(tab_index)?;
+        self.resolve(tab)?;
         if format != "png" && format != "pdf" {
             return Err(TransportError(format!(
                 "unsupported export format {format:?} (expected png or pdf)"
@@ -966,6 +1021,7 @@ impl EditorTransport for MockEditor {
     ) -> Result<Value, TransportError> {
         let src = source.unwrap_or("").to_string();
         let errors = mock_npd_errors(&src);
+        let new_id = self.next_tab_id();
         self.tabs.push(MockTab {
             title: title.unwrap_or("Diagram").to_string(),
             path: None,
@@ -976,6 +1032,7 @@ impl EditorTransport for MockEditor {
             is_diagram: true,
             // A Diagram canvas is not an editable text buffer (issue #1).
             editable: false,
+            id: new_id,
         });
         Ok(json!({
             "tab_index": self.tabs.len() - 1,
@@ -984,8 +1041,8 @@ impl EditorTransport for MockEditor {
         }))
     }
 
-    fn get_diagram_source(&self, tab_index: usize) -> Result<Value, TransportError> {
-        let i = self.check_index(tab_index)?;
+    fn get_diagram_source(&self, tab: TabRef) -> Result<Value, TransportError> {
+        let i = self.resolve(tab)?;
         if !self.tabs[i].is_diagram {
             return Err(TransportError(format!(
                 "tab {i} is not a diagram (.npd) tab"
@@ -994,13 +1051,9 @@ impl EditorTransport for MockEditor {
         Ok(json!({ "source": self.tabs[i].content }))
     }
 
-    fn set_diagram_source(
-        &mut self,
-        tab_index: usize,
-        source: &str,
-    ) -> Result<Value, TransportError> {
+    fn set_diagram_source(&mut self, tab: TabRef, source: &str) -> Result<Value, TransportError> {
         self.check_approval()?;
-        let i = self.check_index(tab_index)?;
+        let i = self.resolve(tab)?;
         if !self.tabs[i].is_diagram {
             return Err(TransportError(format!(
                 "tab {i} is not a diagram (.npd) tab"

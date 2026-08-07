@@ -90,6 +90,10 @@ QString formatSqlCompact(const QString &text, int indentWidth = 4, bool uppercas
 
 // JSON
 QString formatJson(const QString &text, int indent = 4);
+// Strict validation — "" when the text is valid JSON, otherwise a parse error
+// with line/column. formatJson REPAIRS its input (that is the JSON panel's
+// job); callers with no human in the loop validate through here first.
+QString jsonParseError(const QString &text);
 QString minifyJson(const QString &text);
 QString fixJson(const QString &text);
 QString fixJsonReport(const QString &text);

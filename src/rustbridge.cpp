@@ -229,6 +229,10 @@ QString formatJson(const QString &text, int indent) {
     QByteArray b = text.toUtf8();
     return textFromResult(npc_format_json(b.constData(), b.size(), indent));
 }
+QString jsonParseError(const QString &text) {
+    QByteArray b = text.toUtf8();
+    return textFromResult(npc_json_parse_error(b.constData(), b.size()));
+}
 QString minifyJson(const QString &text) {
     QByteArray b = text.toUtf8();
     return textFromResult(npc_minify_json(b.constData(), b.size()));
