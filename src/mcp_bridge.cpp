@@ -55,7 +55,12 @@
 //
 // ACT tier — visible, non-destructive, NO approval card.
 //   new_tab     {text?}                     → {tab_index}
-//   goto_line   {line,tab_index?}           → {ok,tab_index,line}
+//   goto_line   {line,tab_index?}           → {ok,tab_index,line,
+//                                              requested_line,clamped}
+//                                             `line` = where the cursor
+//                                             LANDED (clamped to the
+//                                             buffer); clamped:true when it
+//                                             differs from requested_line.
 //   select_range{start_line,start_col,end_line,end_col,tab_index?}
 //                                           → {ok,tab_index}   (1-based line
 //                                              +col; v0.1.121)
@@ -99,6 +104,7 @@
 #include "config.h"
 #include "diagram/npd_parser.h"
 #include "notes_storage.h"
+#include "path_denylist.h"
 #include "singleinstance.h"
 
 #include <QCoreApplication>
@@ -253,7 +259,33 @@ QJsonObject scanWorkspace(const QString &root, const QString &query,
         }
         const QFileInfo fi = it.fileInfo();
         if (fi.size() > kMaxSearchFileBytes) continue;
+        // Skip VCS / dependency / build trees, the same set populateAiContext
+        // already excludes. These hold thousands of files that burn the scan
+        // budget for no user benefit, and .git in particular can echo the
+        // contents of files the user never opened.
+        {
+            const QString rel = QDir(root).relativeFilePath(path);
+            static const char *kSkipDirs[] = {".git/",   "node_modules/",
+                                              "build/",  "target/",
+                                              ".venv/",  "__pycache__/"};
+            bool skip = false;
+            for (const char *d : kSkipDirs) {
+                const QString seg = QLatin1String(d);
+                if (rel.startsWith(seg) || rel.contains(QLatin1Char('/') + seg)) {
+                    skip = true;
+                    break;
+                }
+            }
+            if (skip) continue;
+        }
         if (skipPaths.contains(fi.absoluteFilePath())) continue;
+        // The AI file tools refuse to READ ~/.ssh/id_rsa, *.pem, .aws/
+        // credentials and friends (AiTools::isHardDenied). search_project
+        // walks the same tree with no such check, so a one-word query could
+        // return the matching LINES out of exactly those files — the deny-list
+        // was guarding the front door while this verb held the back one open.
+        // Same list, same thread-safe pure function, applied per file.
+        if (PathDenylist::isSecretPath(fi.absoluteFilePath())) continue;
         QFile f(path);
         if (!f.open(QIODevice::ReadOnly)) continue;
         if (f.peek(8192).contains('\0')) continue; // binary-looking
@@ -284,6 +316,11 @@ QJsonObject scanWorkspace(const QString &root, const QString &query,
     QJsonObject result;
     result[QStringLiteral("results")] = hitsToJson(hits);
     result[QStringLiteral("truncated")] = truncated;
+    // Reaching here means the workspace really was walked. Every search_project
+    // response carries these two fields so the caller never has to infer scope
+    // from the result count.
+    result[QStringLiteral("workspace_searched")] = true;
+    result[QStringLiteral("scope")] = QStringLiteral("tabs_and_workspace");
     return result;
 }
 
@@ -832,11 +869,39 @@ void McpBridge::verbSearchProject(QLocalSocket *client, int id,
 
     const QString root = m_host.workspaceRoot ? m_host.workspaceRoot()
                                               : QString();
-    if (root.isEmpty() || !QFileInfo(root).isDir() ||
-        hits.size() >= maxResults) {
+    // Whether the workspace leg ran is a property of the WORKSPACE, never of
+    // whether the query happened to match an open tab.
+    //
+    // Gating the "no workspace" signal on `hits.isEmpty()` made the contract
+    // flip on match luck: miss the open tabs and you got a clear error, hit one
+    // and you got `{results:[...]}` shaped exactly like a completed project
+    // search — so a caller could not tell a searched project from an unsearched
+    // one. The `!isDir` case (folder deleted or renamed under us) was worse
+    // still: empty results, `truncated:false`, no error at all.
+    //
+    // Every response now states which legs actually ran, and the caller can
+    // trust that field instead of inferring from result count.
+    const bool haveWorkspace = !root.isEmpty() && QFileInfo(root).isDir();
+    if (!haveWorkspace && hits.isEmpty()) {
+        sendError(client, id,
+                  root.isEmpty()
+                      ? QStringLiteral("No workspace folder is open, so there "
+                                       "is nothing to search beyond the open "
+                                       "tabs. Open a folder first.")
+                      : QStringLiteral("The workspace folder no longer exists, "
+                                       "so only open tabs could be searched. "
+                                       "Re-open the folder."));
+        return;
+    }
+    if (!haveWorkspace || hits.size() >= maxResults) {
         QJsonObject result;
         result[QStringLiteral("results")] = hitsToJson(hits);
         result[QStringLiteral("truncated")] = hits.size() >= maxResults;
+        // False here means "open tabs only" — the workspace was never walked.
+        result[QStringLiteral("workspace_searched")] = haveWorkspace;
+        result[QStringLiteral("scope")] =
+            haveWorkspace ? QStringLiteral("tabs_and_workspace")
+                          : QStringLiteral("open_tabs_only");
         sendResult(client, id, result);
         return;
     }
@@ -1011,14 +1076,21 @@ void McpBridge::verbGotoLine(QLocalSocket *client, int id,
                   QStringLiteral("tab index out of range: %1").arg(idx));
         return;
     }
-    if (!m_host.gotoLine(idx, line)) {
+    const int landed = m_host.gotoLine(idx, line);
+    if (landed < 1) {
         sendError(client, id, QStringLiteral("could not move cursor"));
         return;
     }
     QJsonObject result;
     result[QStringLiteral("ok")] = true;
     result[QStringLiteral("tab_index")] = idx;
-    result[QStringLiteral("line")] = line;
+    // The line ACTUALLY landed on, which is not always the one requested: a
+    // line past end-of-file clamps to the last line. Echoing the request here
+    // was a lie that callers acted on — insert_text defaults to the cursor, so
+    // "ok, line 99999" meant a write at the top of the file.
+    result[QStringLiteral("line")] = landed;
+    result[QStringLiteral("requested_line")] = line;
+    result[QStringLiteral("clamped")] = (landed != line);
     sendResult(client, id, result);
 }
 
@@ -1357,6 +1429,18 @@ void McpBridge::verbInsertText(QLocalSocket *client, int id,
         return;
     }
     int line = -1, col = -1;
+    // `col` alone is meaningless and used to be silently DISCARDED: the insert
+    // then went to the cursor, so an assistant asking for column 1 of wherever
+    // it thought it was landed somewhere else entirely — behind an approval
+    // card whose text said "at the cursor" and was therefore truthful but
+    // unread. Reject it and say which argument is missing.
+    if (args.contains(QLatin1String("col")) &&
+        !args.contains(QLatin1String("line"))) {
+        sendError(client, id,
+                  QStringLiteral("col requires line — pass both, or neither "
+                                 "to insert at the cursor"));
+        return;
+    }
     if (args.contains(QLatin1String("line"))) {
         line = args.value(QLatin1String("line")).toInt(0);
         col = args.contains(QLatin1String("col"))

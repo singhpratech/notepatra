@@ -47,7 +47,11 @@ struct McpEditorHost {
     std::function<void(int *, int *)> cursorPosition; // 1-based line/col
     std::function<QStringList()> recentFiles;
     std::function<int(const QString &)> newTab;   // initial text ("" = empty) → index, -1 on failure
-    std::function<bool(int, int)> gotoLine;       // (tab index, 1-based line)
+    // (tab index, 1-based line) → the line ACTUALLY landed on after clamping
+    // to the buffer, or -1 if the tab could not be targeted at all. Returning
+    // the clamped line (not a bool) is what lets goto_line report the truth
+    // instead of echoing a request it did not honour.
+    std::function<int(int, int)> gotoLine;
     std::function<bool(int, const QString &)> setLanguage; // false = unknown language
     std::function<bool(int, int)> compareTabs;    // opens the Compare dialog (non-modal)
     std::function<QString(const QString &, const QString &, QString *)>

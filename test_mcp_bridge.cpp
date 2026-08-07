@@ -162,11 +162,21 @@ private:
             m_currentIndex = m_fakeTabs.size() - 1;
             return m_currentIndex;
         };
-        h.gotoLine = [this](int idx, int line) {
-            if (idx < 0 || idx >= m_fakeTabs.size() || line < 1) return false;
+        // Models the REAL Editor::gotoLine contract: clamp to the buffer and
+        // return the line actually landed on (-1 = could not target the tab).
+        //
+        // This stub used to return bool. Under the int-returning host hook that
+        // still COMPILES — true converts to 1 — so it would have reported
+        // "landed on line 1" for every successful jump and quietly asserted
+        // nothing about clamping. A stub that lies is worse than no stub.
+        h.gotoLine = [this](int idx, int line) -> int {
+            if (idx < 0 || idx >= m_fakeTabs.size() || line < 1) return -1;
+            const int total =
+                qMax(1, m_fakeTabs[idx].text.count(QLatin1Char('\n')) + 1);
+            const int landed = qBound(1, line, total);
             m_currentIndex = idx;
-            m_lastGotoLine = line;
-            return true;
+            m_lastGotoLine = landed;
+            return landed;
         };
         // v0.1.121 (issue #5): flatten the 1-based range to char offsets, set
         // m_selection to the spanned text so a following replace_selection
@@ -1079,6 +1089,199 @@ private slots:
         QCOMPARE(r.value(QLatin1String("truncated")).toBool(), true);
     }
 
+
+    // Scope is a property of the WORKSPACE, never of match luck.
+    //
+    // The old guard was `if (root.isEmpty() && hits.isEmpty()) error`. So with
+    // no folder open, a query that missed the open tabs produced a clear
+    // "open a folder first" error, while a query that happened to hit one
+    // produced `{results:[...],truncated:false}` — byte-identical in shape to a
+    // completed project-wide search. A caller could not distinguish "searched
+    // your project, found 2" from "searched 2 buffers, never touched disk",
+    // and would report the second as if it were the first.
+    //
+    // Every response now states which legs actually ran.
+    void search_project_reports_scope_regardless_of_hits() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QVERIFY2(m_root.isEmpty(), "fixture must start with no workspace");
+
+        // (a) No workspace, query HITS the open tabs → success, but the
+        //     response must admit the workspace leg never ran.
+        QJsonObject hitArgs;
+        hitArgs[QStringLiteral("query")] = QStringLiteral("needle");
+        const QJsonObject hit = call(s, 60, QStringLiteral("search_project"),
+                                     hitArgs);
+        QVERIFY2(hit.value(QLatin1String("ok")).toBool(),
+                 "an open-tab hit is still a valid result");
+        const QJsonObject hr = hit.value(QLatin1String("result")).toObject();
+        QVERIFY(hr.value(QLatin1String("results")).toArray().size() > 0);
+        QCOMPARE(hr.value(QLatin1String("workspace_searched")).toBool(), false);
+        QCOMPARE(hr.value(QLatin1String("scope")).toString(),
+                 QStringLiteral("open_tabs_only"));
+
+        // (b) No workspace, query misses everything → an actionable error,
+        //     not a silent empty list.
+        QJsonObject missArgs;
+        missArgs[QStringLiteral("query")] =
+            QStringLiteral("zzz-no-such-token-zzz");
+        const QJsonObject miss = call(s, 61, QStringLiteral("search_project"),
+                                      missArgs);
+        QCOMPARE(miss.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY2(miss.value(QLatin1String("error")).toString().contains(
+                     QStringLiteral("No workspace folder")),
+                 "the no-workspace error must say what to do about it");
+    }
+
+    // A workspace folder that has been deleted or renamed under us is NOT the
+    // same as no workspace, and neither one may masquerade as a real search.
+    // This case used to return `{results:[],truncated:false}` with no error at
+    // all: an assistant reading that concluded the project contained no match.
+    void search_project_survives_a_deleted_workspace_root() {
+        QString gone;
+        {
+            QTemporaryDir dir;
+            QVERIFY(dir.isValid());
+            gone = dir.path();
+        }   // dir removed here
+        QVERIFY2(!QFileInfo(gone).isDir(), "temp dir must really be gone");
+        m_root = gone;
+
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+
+        // With tab hits: succeeds, but must report the reduced scope.
+        QJsonObject hitArgs;
+        hitArgs[QStringLiteral("query")] = QStringLiteral("needle");
+        const QJsonObject hr = call(s, 62, QStringLiteral("search_project"),
+                                    hitArgs)
+                                   .value(QLatin1String("result")).toObject();
+        QCOMPARE(hr.value(QLatin1String("workspace_searched")).toBool(), false);
+        QCOMPARE(hr.value(QLatin1String("scope")).toString(),
+                 QStringLiteral("open_tabs_only"));
+
+        // Without tab hits: an error naming the real cause, distinct from the
+        // "no workspace is open" wording so the two are not confusable.
+        QJsonObject missArgs;
+        missArgs[QStringLiteral("query")] =
+            QStringLiteral("zzz-no-such-token-zzz");
+        const QString err = call(s, 63, QStringLiteral("search_project"),
+                                 missArgs)
+                                .value(QLatin1String("error")).toString();
+        QVERIFY2(err.contains(QStringLiteral("no longer exists")),
+                 qPrintable(QStringLiteral("wrong error for a vanished root: ")
+                            + err));
+    }
+
+    // The happy path must claim the workspace leg — otherwise the two fields
+    // above would be constant-false and prove nothing.
+    void search_project_claims_the_workspace_when_it_walked_it() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        {
+            QFile f(dir.path() + QStringLiteral("/found.txt"));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("nothing\nneedle here\n");
+        }
+        m_root = dir.path();
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject args;
+        args[QStringLiteral("query")] = QStringLiteral("needle");
+        const QJsonObject r = call(s, 64, QStringLiteral("search_project"),
+                                   args)
+                                  .value(QLatin1String("result")).toObject();
+        QCOMPARE(r.value(QLatin1String("workspace_searched")).toBool(), true);
+        QCOMPARE(r.value(QLatin1String("scope")).toString(),
+                 QStringLiteral("tabs_and_workspace"));
+    }
+
+
+    // search_project must honour the SAME credential deny-list as the AI file
+    // tools. It walked the workspace with no such check, so `read_file` would
+    // refuse ~/.ssh/id_rsa while a one-word search_project happily returned the
+    // matching LINES out of it — the deny-list guarded the front door and this
+    // verb held the back one open.
+    void search_project_never_returns_credential_file_contents() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QStringList secrets = {
+            QStringLiteral("id_rsa"),      QStringLiteral("server.pem"),
+            QStringLiteral(".env"),        QStringLiteral("prod.tfvars"),
+            QStringLiteral("keystore.jks"),
+        };
+        for (const QString &name : secrets) {
+            QFile f(dir.path() + QLatin1Char('/') + name);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("PASSWORD=needle-in-a-secret\n");
+        }
+        // Vacuity guard: an ordinary file with the SAME token must still be
+        // found, otherwise "no secret hits" could just mean the scan never ran.
+        {
+            QFile f(dir.path() + QStringLiteral("/readme.txt"));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("harmless needle-in-a-secret mention\n");
+        }
+        m_root = dir.path();
+
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject args;
+        args[QStringLiteral("query")] = QStringLiteral("needle-in-a-secret");
+        const QJsonObject r = call(s, 65, QStringLiteral("search_project"),
+                                   args)
+                                  .value(QLatin1String("result")).toObject();
+        const QJsonArray results = r.value(QLatin1String("results")).toArray();
+
+        QVERIFY2(r.value(QLatin1String("workspace_searched")).toBool(),
+                 "guard: the workspace leg must actually have run");
+        bool sawReadme = false;
+        for (const QJsonValue &v : results) {
+            const QJsonObject hit = v.toObject();
+            const QString p = hit.value(QLatin1String("path")).toString();
+            if (p.endsWith(QLatin1String("readme.txt"))) sawReadme = true;
+            for (const QString &name : secrets)
+                QVERIFY2(!p.endsWith(name),
+                         qPrintable(QStringLiteral("leaked contents of ")
+                                    + name));
+            QVERIFY2(!hit.value(QLatin1String("text")).toString().contains(
+                         QStringLiteral("PASSWORD=")),
+                     "a credential line reached the wire");
+        }
+        QVERIFY2(sawReadme,
+                 "guard: the non-secret file with the same token was missed, "
+                 "so this test proves nothing about the deny-list");
+    }
+
+    // `col` without `line` used to be silently DISCARDED — the insert went to
+    // the cursor instead, behind an approval card reading "at the cursor" that
+    // was truthful and therefore unremarkable. Silently relocating a write is
+    // the one thing an approval gate cannot protect the user from.
+    void insert_text_rejects_col_without_line() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject args;
+        args[QStringLiteral("tab_index")] = 0;
+        args[QStringLiteral("text")] = QStringLiteral("MARKER-zq7");
+        args[QStringLiteral("col")] = 3;   // no "line"
+        const QJsonObject resp = call(s, 66, QStringLiteral("insert_text"),
+                                      args);
+        QCOMPARE(resp.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY2(resp.value(QLatin1String("error")).toString().contains(
+                     QStringLiteral("col requires line")),
+                 qPrintable(QStringLiteral("wrong error: ")
+                            + resp.value(QLatin1String("error")).toString()));
+        // ...and it must be rejected BEFORE an approval card is raised, so the
+        // user is never asked to approve a write that cannot be honoured.
+        QCOMPARE(m_fakeTabs[0].text.contains(QStringLiteral("MARKER-zq7")),
+                 false);
+    }
+
     // ── v0.1.118 expansive wave ──────────────────────────────────────
 
     void get_status_shape() {
@@ -1292,6 +1495,47 @@ private slots:
         oob[QStringLiteral("tab_index")] = 99;
         bad = call(s, 36, QStringLiteral("goto_line"), oob);
         QCOMPARE(bad.value(QLatin1String("ok")).toBool(), false);
+    }
+
+    // A line past end-of-file must CLAMP and say so — never claim the requested
+    // line. Unclamped, Scintilla rejects the position and leaves the cursor at
+    // the TOP, while the response still read {"line":99999,"ok":true}. Because
+    // insert_text defaults to the cursor, an assistant aiming at the end of a
+    // file wrote at the beginning, behind an approval card that looked correct.
+    void goto_line_past_eof_clamps_and_reports_truth() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+
+        // Establish ground truth from the fake buffer rather than a literal, so
+        // the test cannot drift if the fixture text changes.
+        const int total =
+            qMax(1, m_fakeTabs[1].text.count(QLatin1Char('\n')) + 1);
+
+        QJsonObject args;
+        args[QStringLiteral("line")] = 99999;
+        args[QStringLiteral("tab_index")] = 1;
+        QJsonObject resp = call(s, 37, QStringLiteral("goto_line"), args);
+        QVERIFY(resp.value(QLatin1String("ok")).toBool());
+        const QJsonObject r = resp.value(QLatin1String("result")).toObject();
+
+        // The cursor really moved to the last line, not to line 1.
+        QCOMPARE(m_lastGotoLine, total);
+        // ...and the response reports where it LANDED, not what was asked.
+        QCOMPARE(r.value(QLatin1String("line")).toInt(), total);
+        QVERIFY2(r.value(QLatin1String("line")).toInt() != 99999,
+                 "goto_line echoed the requested line instead of the real one");
+        QCOMPARE(r.value(QLatin1String("requested_line")).toInt(), 99999);
+        QCOMPARE(r.value(QLatin1String("clamped")).toBool(), true);
+
+        // An in-range jump must NOT be flagged as clamped.
+        QJsonObject ok2;
+        ok2[QStringLiteral("line")] = 1;
+        ok2[QStringLiteral("tab_index")] = 1;
+        const QJsonObject r2 = call(s, 38, QStringLiteral("goto_line"), ok2)
+                                   .value(QLatin1String("result")).toObject();
+        QCOMPARE(r2.value(QLatin1String("line")).toInt(), 1);
+        QCOMPARE(r2.value(QLatin1String("clamped")).toBool(), false);
     }
 
     // v0.1.121 (issue #5): select_range moves the selection (ACT, no card) and

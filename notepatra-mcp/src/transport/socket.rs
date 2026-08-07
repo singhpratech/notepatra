@@ -141,9 +141,13 @@ impl SocketEditor {
         ))
     }
 
-    /// Targets an explicit socket path, BYPASSING discovery (`--socket-path`
-    /// and tests with a fake bridge). Exactly one candidate, so an explicit
-    /// path can never silently fall through to some other editor.
+    /// Targets an explicit socket path, BYPASSING discovery. Exactly one
+    /// candidate, so an explicit path can never silently fall through to some
+    /// other editor.
+    ///
+    /// Used by the tests' fake bridge. There is no `--socket-path` flag — an
+    /// earlier version of this comment named one, and main.rs now rejects
+    /// unknown flags outright, so passing it would exit 2.
     pub fn with_socket_path(path: impl Into<String>) -> Self {
         Self::with_candidates(vec![path.into()])
     }

@@ -454,6 +454,95 @@ fn wave2_malformed_arguments_are_invalid_params_errors() {
     }
 }
 
+/// goto_line must report where the cursor LANDED, never echo the request.
+///
+/// The mock is the default transport of the shipped binary, and every test in
+/// this file runs through it — so while it echoed the requested line, the Rust
+/// suite could pass with the NP-01 false report fully intact. It did, for the
+/// whole of the fix that was supposed to remove it.
+#[test]
+fn goto_line_past_eof_clamps_and_reports_where_it_landed() {
+    // Mock tab 0 is a 3-line Rust file; derive the count rather than hardcode.
+    let read = run_lines(&[call_line(1, "read_tab", json!({ "tab_index": 0 }))]);
+    let total = text_of(&read[0]).lines().count();
+    assert!(total > 0, "vacuity guard: mock tab 0 must have content");
+
+    let responses = run_lines(&[
+        call_line(2, "goto_line", json!({ "line": 99999, "tab_index": 0 })),
+        call_line(3, "goto_line", json!({ "line": 1, "tab_index": 0 })),
+    ]);
+
+    let past: Value = serde_json::from_str(text_of(&responses[0])).unwrap();
+    assert_eq!(
+        past["line"].as_u64(),
+        Some(total as u64),
+        "expected a clamp to the last line, got {past}"
+    );
+    assert_ne!(
+        past["line"].as_u64(),
+        Some(99999),
+        "goto_line echoed the requested line instead of the real one: {past}"
+    );
+    assert_eq!(past["requested_line"].as_u64(), Some(99999));
+    assert_eq!(past["clamped"].as_bool(), Some(true));
+
+    // An in-range jump must not be flagged as clamped.
+    let ok: Value = serde_json::from_str(text_of(&responses[1])).unwrap();
+    assert_eq!(ok["line"].as_u64(), Some(1));
+    assert_eq!(ok["clamped"].as_bool(), Some(false));
+}
+
+/// A 1-based argument must be rejected with ONE rule, whatever the bad value.
+///
+/// `required_one_based` used to delegate to `required_index`, whose `as_u64()`
+/// rejected negatives before the `>= 1` check ran. So the same mistake produced
+/// two contradictory sentences — `line: 0` got "must be an integer >= 1" while
+/// `line: -5` got "must be a non-negative integer", a rule that explicitly
+/// PERMITS the value the other one rejects. A caller cannot correct against
+/// guidance that disagrees with itself.
+#[test]
+fn one_based_arguments_have_a_single_consistent_rule() {
+    let responses = run_lines(&[
+        call_line(1, "goto_line", json!({ "line": 0 })),
+        call_line(2, "goto_line", json!({ "line": -5 })),
+        call_line(3, "goto_line", json!({ "line": 1.5 })),
+        call_line(4, "goto_line", json!({ "line": "3" })),
+    ]);
+
+    for r in &responses {
+        assert_eq!(r["error"]["code"], -32602, "expected -32602 in {r}");
+    }
+
+    let msgs: Vec<String> = responses
+        .iter()
+        .map(|r| {
+            r["error"]["message"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string()
+        })
+        .collect();
+
+    // Vacuity guard: prove the messages are real before comparing them, or an
+    // all-empty result set would satisfy the equality check below for free.
+    assert!(
+        msgs.iter().all(|m| m.contains("line")),
+        "expected each message to name the offending key, got {msgs:?}"
+    );
+    assert!(
+        msgs.iter().all(|m| m.contains(">= 1")),
+        "every 1-based rejection must state the >= 1 rule, got {msgs:?}"
+    );
+    assert!(
+        !msgs.iter().any(|m| m.contains("non-negative")),
+        "\"non-negative\" permits 0, which is exactly what this rejects: {msgs:?}"
+    );
+    assert!(
+        msgs.windows(2).all(|w| w[0] == w[1]),
+        "the same mistake must produce the same message, got {msgs:?}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Resources (spec 2025-06-18)
 // ---------------------------------------------------------------------------

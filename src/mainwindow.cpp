@@ -1321,8 +1321,25 @@ MainWindow::MainWindow(bool standaloneNoSession)
         // (or file) so the AI has something concrete to read/edit. One-
         // shot per session via m_codingFolderPromptShown — re-entering
         // Coding mode after dismissing doesn't re-pester.
-        if (on && !m_codingFolderPromptShown
-            && m_explorer->rootPath().isEmpty()) {
+        // Fire ONLY when the user genuinely has nothing to work on: no folder
+        // opened AND not a single file-backed tab anywhere.
+        //
+        // The tab scan matters: with a Terminal or Welcome tab focused, any
+        // "current file" check reads empty even though real files are open one
+        // tab over, and the dialog would contradict itself by demanding "a
+        // folder or file" while both are already there.
+        //
+        // Worth stating plainly: this prompt has never once fired in a shipped
+        // build. Its old gate was FileExplorer::rootPath().isEmpty(), and that
+        // defaults to $HOME, so the condition was permanently false. Fixing the
+        // workspace-root bug is what woke it up.
+        bool anyFileOpen = false;
+        for (int i = 0; m_tabs && i < m_tabs->count() && !anyFileOpen; ++i)
+            if (auto *ed = m_tabs->editorAt(i))
+                anyFileOpen = !ed->filePath().isEmpty();
+
+        if (on && !m_codingFolderPromptShown && !anyFileOpen
+            && workspaceFolder().isEmpty()) {
             m_codingFolderPromptShown = true;
             QMessageBox box(this);
             box.setWindowTitle(tr("Coding Mode — open something to work on"));
@@ -1769,18 +1786,11 @@ MainWindow::MainWindow(bool standaloneNoSession)
             auto *ed = currentEditor();
             return ed ? ed->selectedText() : QString();
         };
-        // Explorer root, else the current file's directory (git resolves the
-        // enclosing repo from there); "" only when neither exists.
-        auto effectiveWorkspaceRoot = [this]() -> QString {
-            QString root = m_explorer ? m_explorer->rootPath() : QString();
-            if (root.isEmpty()) {
-                if (auto *ed = currentEditor())
-                    if (!ed->filePath().isEmpty())
-                        root = QFileInfo(ed->filePath()).absolutePath();
-            }
-            return root;
-        };
-        host.workspaceRoot = effectiveWorkspaceRoot;
+        // STRICT folder-only. NOT a current-file fallback: with a single file
+        // open in $HOME that fallback resolves to $HOME, and search_project
+        // walks the user's entire profile — the exact leak this release fixes,
+        // reached through a one-file door instead of a no-file door.
+        host.workspaceRoot = [this] { return workspaceFolder(); };
         // ── v0.1.118 expansive wave — every lambda routes through the SAME
         //    code path the equivalent menu/status-bar surface uses. ──
         host.currentTabIndex = [this] { return m_tabs->currentIndex(); };
@@ -1811,14 +1821,15 @@ MainWindow::MainWindow(bool standaloneNoSession)
             }
             return m_tabs->currentIndex(); // newFile() focuses the new tab
         };
-        host.gotoLine = [this](int tabIndex, int line) {
-            if (tabIndex < 0 || tabIndex >= m_tabs->count()) return false;
+        host.gotoLine = [this](int tabIndex, int line) -> int {
+            if (tabIndex < 0 || tabIndex >= m_tabs->count()) return -1;
             auto *ed = m_tabs->editorAt(tabIndex);
-            if (!ed) return false;
+            if (!ed) return -1;
             m_tabs->setCurrentIndex(tabIndex);
-            ed->gotoLine(line); // 1-based; ensures the line is visible
+            // 1-based; clamps to the buffer and ensures the line is visible.
+            const int landed = ed->gotoLine(line);
             ed->setFocus();
-            return true;
+            return landed;
         };
         // v0.1.121 (issue #5): move the selection to a 1-based range. Cols are
         // clamped to each line's text length (EOL excluded) so an over-long
@@ -2025,14 +2036,13 @@ MainWindow::MainWindow(bool standaloneNoSession)
             return arr;
         };
         // READ: read-only git — reuses git_tools.cpp (no new QProcess path).
-        host.runGit = [this, effectiveWorkspaceRoot](
-                          const QString &sub, const QJsonObject &args,
-                          QString *err) -> QString {
+        host.runGit = [this](const QString &sub, const QJsonObject &args,
+                             QString *err) -> QString {
             // Candidate roots: the workspace (Explorer) folder first, then the
             // current file's directory — so git "just works" on an open repo
             // file even when the workspace folder isn't itself a repository.
             QStringList roots;
-            const QString wsRoot = effectiveWorkspaceRoot();
+            const QString wsRoot = workspaceFolder();
             if (!wsRoot.isEmpty()) roots << wsRoot;
             if (auto *ed = currentEditor())
                 if (!ed->filePath().isEmpty()) {
@@ -2135,7 +2145,7 @@ MainWindow::MainWindow(bool standaloneNoSession)
                 // Deliberately NOT the workspaceRoot fallback: csv sandbox root
                 // stays folder-open-only.
                 const QString wsRoot =
-                    m_explorer ? m_explorer->rootPath() : QString();
+                    m_explorer ? m_explorer->workspaceRoot() : QString();
                 QString csvCanon;
                 if (!AiTools::resolveSafePath(csvPath, wsRoot, &csvCanon,
                                               nullptr)
@@ -2531,6 +2541,44 @@ MainWindow::MainWindow(bool standaloneNoSession)
 
 Editor *MainWindow::currentEditor() {
     return m_tabs->currentEditor();
+}
+
+// See the header for why these are four functions and not one.
+
+QString MainWindow::workspaceFolder() const {
+    return m_explorer ? m_explorer->workspaceRoot() : QString();
+}
+
+QString MainWindow::firstOpenFileDir() const {
+    for (int i = 0; m_tabs && i < m_tabs->count(); ++i)
+        if (auto *ed = m_tabs->editorAt(i))
+            if (!ed->filePath().isEmpty())
+                return QFileInfo(ed->filePath()).absolutePath();
+    return QString();
+}
+
+QString MainWindow::suggestedDialogFolder() const {
+    const QString folder = workspaceFolder();
+    if (!folder.isEmpty()) return folder;
+    if (auto *ed = m_tabs ? m_tabs->currentEditor() : nullptr)
+        if (!ed->filePath().isEmpty())
+            return QFileInfo(ed->filePath()).absolutePath();
+    return firstOpenFileDir();
+}
+
+QString MainWindow::aiWorkspaceRoot() {
+    // An explicit folder always wins and re-latches — that IS the user saying
+    // "this is my project now", and re-keying the conversation is correct there.
+    const QString folder = workspaceFolder();
+    if (!folder.isEmpty()) {
+        m_aiWorkspaceLatched = folder;
+        return folder;
+    }
+    // Otherwise keep whatever we first settled on. Deriving this from the
+    // CURRENT tab made the root flap on every Ctrl+Tab.
+    if (m_aiWorkspaceLatched.isEmpty())
+        m_aiWorkspaceLatched = firstOpenFileDir();
+    return m_aiWorkspaceLatched;
 }
 
 // ── File operations ──
@@ -3735,8 +3783,8 @@ void MainWindow::buildMenus() {
         QString defaultFolder;
         if (auto *e = E(); e && !e->filePath().isEmpty())
             defaultFolder = QFileInfo(e->filePath()).path();
-        else if (m_explorer && !m_explorer->rootPath().isEmpty())
-            defaultFolder = m_explorer->rootPath();
+        else if (m_explorer && !m_explorer->workspaceRoot().isEmpty())
+            defaultFolder = m_explorer->workspaceRoot();
         if (!defaultFolder.isEmpty())
             ps->setFolder(defaultFolder);
         connect(ps, &ProjectSearch::openFileAtLine, this,
@@ -6434,7 +6482,21 @@ void MainWindow::dragEnterEvent(QDragEnterEvent *event) {
 
 void MainWindow::dropEvent(QDropEvent *event) {
     for (const QUrl &url : event->mimeData()->urls()) {
-        if (url.isLocalFile()) openFile(url.toLocalFile());
+        if (!url.isLocalFile()) continue;
+        const QString path = url.toLocalFile();
+        // A dropped DIRECTORY opens as the workspace, matching what the Coding
+        // Mode refusal has always told users to do ("drag a folder onto the
+        // window"). Until v0.1.125 that instruction was false: every drop went
+        // to openFile(), which rejects a directory — and the refusal only became
+        // reachable in this release, so the advice had never been exercised.
+        if (QFileInfo(path).isDir()) {
+            if (m_explorer) {
+                Config::instance().noteLastDir(path);
+                m_explorer->setRoot(path);
+            }
+            continue;
+        }
+        openFile(path);
     }
 }
 
@@ -6713,10 +6775,9 @@ void MainWindow::populateAiContext(AIPanel *panel) {
     //   2. Directory of the current file
     // This way the AI reasons about the project the user actually opened,
     // not just the folder containing whichever file happens to be active.
-    if (m_explorer && !m_explorer->rootPath().isEmpty())
-        workspace = m_explorer->rootPath();
-    else if (!curPath.isEmpty())
-        workspace = QFileInfo(curPath).absolutePath();
+    // Sticky for the session — see aiWorkspaceRoot(). A per-tab root cancelled
+    // pending write approvals and swapped the chat history on every tab switch.
+    workspace = aiWorkspaceRoot();
 
     // Walk the workspace root (shallow-but-recursive) to hand the AI a
     // codebase file listing. Lets the model reference files the user

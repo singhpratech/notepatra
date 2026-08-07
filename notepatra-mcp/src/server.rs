@@ -31,8 +31,12 @@ const NOTE_URI_PREFIX: &str = "notepatra://note/";
 pub struct Server<T: EditorTransport> {
     transport: T,
     /// serverInfo.version, resolved once at startup: NOTEPATRA_MCP_VERSION
-    /// (set by the editor when it spawns the sidecar) wins over this crate's
-    /// own version.
+    /// wins over this crate's own version if it is set.
+    ///
+    /// NOTE: nothing in the repo currently SETS that variable — the editor does
+    /// not spawn the sidecar (MCP clients launch it), so in every shipped
+    /// configuration this is CARGO_PKG_VERSION. The override is kept as an
+    /// escape hatch for a packager who ships a differently-versioned binary.
     version: String,
 }
 

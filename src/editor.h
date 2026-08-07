@@ -95,7 +95,8 @@ public:
     struct CommentSyntax { QString line; QString blockOpen; QString blockClose; };
     static CommentSyntax commentSyntaxFor(const QString &lang);
 
-    void gotoLine(int line);
+    // Clamped to [1, lines()]; returns the line actually landed on.
+    int gotoLine(int line);
     void updateGitGutter();
     void duplicateLine();
     void deleteLine();

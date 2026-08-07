@@ -3395,9 +3395,10 @@ void AIPanel::sendPrompt(const QString &action) {
         if (codingNow && m_workspaceRoot.isEmpty()) {
             appendErrorBubble(
                 "Coding Mode needs an open folder so I can read/edit your "
-                "files. Open one via File → Open Folder… (or drag a folder "
-                "onto the window), then ask again. If you just want to chat "
-                "about code in general (no file ops), switch to Chat mode.");
+                "files. Open one via File → Open Folder as Workspace... (or "
+                "drag a folder onto the window), then ask again. If you just "
+                "want to chat about code in general (no file ops), switch to "
+                "Chat mode.");
             return;
         }
         if (dataNow && DbConnections::loadAll().isEmpty()) {
@@ -6985,6 +6986,34 @@ void AIPanel::updateChatHistoryPath() {
     const QByteArray hash = QCryptographicHash::hash(
         m_workspaceRoot.toUtf8(), QCryptographicHash::Sha1).toHex();
     m_chatHistoryPath = historyDir + "/" + QString::fromLatin1(hash) + ".json";
+
+    // v0.1.125 migration — adopt history stranded under sha1($HOME).
+    //
+    // Until this release the workspace root silently fell back to the file
+    // tree's display folder, which defaults to the home directory. So for every
+    // user who never opened a folder, their entire conversation history was
+    // written under sha1($HOME). Now that the root is derived correctly, that
+    // file is unreachable and the AI panel looks like it forgot everything.
+    //
+    // Adopt it ONCE, and only when the new location does not already exist, so
+    // this can never overwrite a real conversation. Copy rather than move: if
+    // anything here is wrong the original is still on disk, and a stale extra
+    // file costs the user nothing while a deleted one costs them their history.
+    if (QFileInfo::exists(m_chatHistoryPath)) return;
+
+    const QString homeRoot = QDir::homePath();
+    if (m_workspaceRoot == homeRoot) return;  // already the legacy key
+
+    const QByteArray legacyHash = QCryptographicHash::hash(
+        homeRoot.toUtf8(), QCryptographicHash::Sha1).toHex();
+    const QString legacyPath =
+        historyDir + "/" + QString::fromLatin1(legacyHash) + ".json";
+    if (!QFileInfo::exists(legacyPath)) return;
+
+    if (QFile::copy(legacyPath, m_chatHistoryPath)) {
+        qInfo("chat history: adopted pre-v0.1.125 history from %s",
+              qUtf8Printable(QFileInfo(legacyPath).fileName()));
+    }
 }
 
 void AIPanel::scheduleChatSave() {

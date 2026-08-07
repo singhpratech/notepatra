@@ -17,9 +17,23 @@ class FileExplorer : public QWidget {
 public:
     explicit FileExplorer(QWidget *parent = nullptr);
     void setRoot(const QString &path);
-    // Expose the current root so MainWindow can seed the AI workspace
-    // context from it (so the AI knows *which* folder to reason about).
+    // The folder the TREE is currently displaying. Never empty — it starts at
+    // the home directory so the widget has something to render. Use this only
+    // for view concerns.
     QString rootPath() const { return m_rootPath; }
+
+    // The folder the user EXPLICITLY opened, or "" if they never opened one.
+    //
+    // These two are different questions and conflating them caused a privacy
+    // bug: search_project treated the display root as a workspace, so with no
+    // folder open it walked the user's entire home directory and returned
+    // line-level content from files they had never opened — including, in the
+    // report that found this, the transcript of the session driving the tool.
+    // Anything that decides "what is the user working on" MUST use this one,
+    // and must treat "" as "nothing is scoped", not as "start at home".
+    QString workspaceRoot() const {
+        return m_rootExplicit ? m_rootPath : QString();
+    }
 
     // v0.1.61 — hidden-path filter. Right-click any tree node to add it
     // to the hidden set; "Show hidden" empties the set. Persisted across
@@ -40,6 +54,9 @@ private:
     QTreeView *m_tree;
     QComboBox *m_pathCombo;
     QString m_rootPath;
+    // False until the user actually picks a folder. The ctor's home-directory
+    // seed does NOT set it — that is a placeholder for the view, not a choice.
+    bool m_rootExplicit = false;
 
     // v0.1.61 — proxy that filters out anything in m_hiddenPaths so the
     // tree view doesn't render hidden entries. Operates on absolute file

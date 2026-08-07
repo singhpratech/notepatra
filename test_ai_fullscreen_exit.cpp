@@ -610,6 +610,93 @@ int main(int argc, char *argv[]) {
                     reopenedW > 50);
     }
 
+
+    // ───────────────────────────────────────────────────────────────
+    // SCENARIO 18: the AI's project root is STABLE across tab switches.
+    //
+    // The AI root used to be recomputed per call as "explorer folder, else
+    // the CURRENT tab's directory". With no folder open that flapped on every
+    // Ctrl+Tab: the chat history is keyed on the root, so switching tabs
+    // silently swapped the conversation out from under the user and cancelled
+    // any pending write approval. aiWorkspaceRoot() latches once per session
+    // and only an EXPLICIT folder re-keys it.
+    // ───────────────────────────────────────────────────────────────
+    std::printf("\n-- Scenario 18: AI workspace root stable across tab switches --\n");
+    {
+        QTemporaryDir otherDir;
+        FileExplorer *explorer = mw.findChild<FileExplorer *>();
+        EXPECT_TRUE("S18 setup: FileExplorer located", explorer != nullptr);
+        EXPECT_TRUE("S18 setup: second temp dir valid", otherDir.isValid());
+
+        if (explorer && otherDir.isValid()) {
+            // Vacuity guard. Every "stayed the same" assertion below is
+            // meaningless if a folder is already open (then the root is
+            // pinned for the boring reason) or if the root is empty (then
+            // it trivially never changes). Both must be false to proceed.
+            EXPECT_TRUE("S18 guard: no explicit workspace folder is open",
+                        mw.workspaceFolder().isEmpty());
+
+            const QString firstRoot = mw.aiWorkspaceRoot();
+            EXPECT_TRUE("S18: root latched to the open file's directory",
+                        firstRoot == workDir.path());
+            EXPECT_FALSE("S18 guard: latched root is not empty",
+                         firstRoot.isEmpty());
+
+            // Open a file living in a DIFFERENT directory and focus it.
+            const QString fileD =
+                writeTempFile(otherDir.path(), "d.txt", "delta\n");
+            EXPECT_FALSE("S18 setup: wrote d.txt in the other dir",
+                         fileD.isEmpty());
+            mw.openFile(fileD);
+            QApplication::processEvents();
+
+            // Vacuity guard #2: prove the switch actually LANDED on the new
+            // directory. Without this, "root unchanged" would pass even if
+            // openFile had silently failed.
+            EXPECT_TRUE("S18 guard: current tab is now the other dir's file",
+                        mw.suggestedDialogFolder() == otherDir.path());
+            EXPECT_TRUE("S18: AI root UNCHANGED after opening a file "
+                        "elsewhere",
+                        mw.aiWorkspaceRoot() == firstRoot);
+
+            // ...and unchanged again after a plain Ctrl+Tab-style switch.
+            //
+            // The switch must END on the OTHER directory's tab. Switching away
+            // to a workDir tab and asserting there is vacuous: the pre-fix
+            // recompute-per-call also returns workDir from a workDir tab, so
+            // the assertion passed against the very bug it exists to catch.
+            const int otherTab = tabs->currentIndex();
+            int homeTab = -1;
+            for (int i = 0; i < tabs->count(); ++i) {
+                if (i == otherTab) continue;
+                tabs->setCurrentIndex(i);
+                QApplication::processEvents();
+                if (mw.suggestedDialogFolder() == workDir.path()) {
+                    homeTab = i;
+                    break;
+                }
+            }
+            EXPECT_TRUE("S18 guard: switched away to a workDir tab",
+                        homeTab >= 0);
+            tabs->setCurrentIndex(otherTab);        // Ctrl+Tab back
+            QApplication::processEvents();
+            EXPECT_TRUE("S18 guard: landed back on the other dir's tab",
+                        tabs->currentIndex() == otherTab
+                            && mw.suggestedDialogFolder() == otherDir.path());
+            EXPECT_TRUE("S18: AI root UNCHANGED after a tab switch",
+                        mw.aiWorkspaceRoot() == firstRoot);
+
+            // An EXPLICIT folder is the one thing that may re-key it — that
+            // is the user saying "this is my project now".
+            explorer->setRoot(otherDir.path());
+            QApplication::processEvents();
+            EXPECT_TRUE("S18 guard: explorer now reports an explicit folder",
+                        explorer->workspaceRoot() == otherDir.path());
+            EXPECT_TRUE("S18: opening a folder DOES re-latch the AI root",
+                        mw.aiWorkspaceRoot() == otherDir.path());
+        }
+    }
+
     // ───────────────────────────────────────────────────────────────
     std::printf("\n=== test_ai_fullscreen_exit: %d passed, %d failed ===\n",
                 g_passed, g_failed);

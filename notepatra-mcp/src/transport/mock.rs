@@ -485,8 +485,23 @@ impl EditorTransport for MockEditor {
         if line == 0 {
             return Err(TransportError("line numbers are 1-based".into()));
         }
+        // Clamp exactly as the C++ bridge does, and report the line LANDED on.
+        //
+        // This mock is the default transport of the shipped binary (no
+        // `--socket`) and every protocol test runs through it — so while it
+        // echoed the requested line it reproduced the NP-01 false report
+        // verbatim (`ok:true, line:99999` on a 4-line tab) and no Rust test
+        // could ever have observed the fixed response shape.
+        let total = self.tabs[i].content.lines().count().max(1);
+        let landed = line.min(total);
         self.selection.0 = i;
-        Ok(json!({ "ok": true, "tab_index": i, "line": line }))
+        Ok(json!({
+            "ok": true,
+            "tab_index": i,
+            "line": landed,
+            "requested_line": line,
+            "clamped": landed != line,
+        }))
     }
 
     fn select_range(

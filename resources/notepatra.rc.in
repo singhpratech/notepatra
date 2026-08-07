@@ -1,15 +1,20 @@
-// Windows resource script for Notepatra.
+// Windows resource script for Notepatra — GENERATED from
+// resources/notepatra.rc.in by CMake. Do not edit the generated copy.
+//
+// Until v0.1.125 this was a STATIC file carrying a hardcoded 0,1,0,0,
+// so every Windows build ever shipped reported version 0.1.0 to winget,
+// SCCM, Intune and File Properties, no matter what it actually was.
 // CMakeLists.txt picks this up via add_executable() on Windows targets and
 // passes it to MSVC's resource compiler.
 
 // IDI_ICON1 is what Windows Explorer uses as the .exe icon (lowest numbered
 // icon resource wins). Path is relative to this .rc file's location.
-IDI_ICON1 ICON "notepatra.ico"
+IDI_ICON1 ICON "@NOTEPATRA_ICON_PATH@"
 
 // Version info -- shows up in File Properties > Details on Windows.
 1 VERSIONINFO
-FILEVERSION     0,1,0,0
-PRODUCTVERSION  0,1,0,0
+FILEVERSION     @NOTEPATRA_RC_VERSION_COMMA@
+PRODUCTVERSION  @NOTEPATRA_RC_VERSION_COMMA@
 FILEFLAGSMASK   0x3fL
 FILEFLAGS       0x0L
 FILEOS          0x40004L  // VOS_NT_WINDOWS32
@@ -22,12 +27,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName",      "Prateek Singh"
             VALUE "FileDescription",  "Notepatra native code editor for the AI era"
-            VALUE "FileVersion",      "0.1.0.0"
+            VALUE "FileVersion",      "@NOTEPATRA_RC_VERSION_DOT@"
             VALUE "InternalName",     "notepatra"
             VALUE "LegalCopyright",   "Copyright 2026 Prateek Singh. GPL-3.0."
             VALUE "OriginalFilename", "notepatra.exe"
             VALUE "ProductName",      "Notepatra"
-            VALUE "ProductVersion",   "0.1.0"
+            VALUE "ProductVersion",   "@PROJECT_VERSION@"
         END
     END
     BLOCK "VarFileInfo"
