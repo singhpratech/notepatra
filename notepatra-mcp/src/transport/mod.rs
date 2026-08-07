@@ -23,8 +23,17 @@ pub struct TabInfo {
     pub editable: bool,
     /// Stable tab id (v0.1.126, NP-13). `None` against an editor older than
     /// 0.1.126, which published no id at all — callers fall back to `index`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    ///
+    /// v0.1.127 (NP-13): serialised as `tab_id`, matching the ARGUMENT name
+    /// every verb accepts. It shipped as `id` and the parameter as `tab_id`,
+    /// so a caller had to know the two were the same field — friction with no
+    /// upside. Both names are emitted for one release so a client written
+    /// against 0.1.126 does not break.
+    #[serde(rename = "tab_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<i64>,
+    /// Deprecated alias for [`TabInfo::id`], kept for v0.1.126 clients.
+    #[serde(rename = "id", skip_serializing_if = "Option::is_none")]
+    pub id_legacy: Option<i64>,
 }
 
 /// `read_tab` result — wire shape `{title,path,text}` plus `truncated:true`
@@ -43,17 +52,29 @@ pub struct TabContent {
     pub id: Option<i64>,
 }
 
-/// Marker appended to tab text when the editor capped the read (the bridge
-/// truncates `read_tab` at 5 MB).
-pub const TRUNCATION_MARKER: &str = "\n[truncated at 5 MB]";
+/// Marker appended to tab text when the read was capped.
+///
+/// v0.1.127 (NP-10): this used to be the fixed string "[truncated at 5 MB]",
+/// which was a lie in the common case — ask for `max_bytes: 100` and you were
+/// told the 5 MB ceiling had been hit. The tool result is plain text with no
+/// side channel, so the counts the bridge sends (`truncated`, `total_chars`)
+/// never reached the caller at all; the marker is where they have to live.
+pub fn truncation_marker(shown: usize, total: usize) -> String {
+    format!("\n[truncated: showing {shown} of {total} characters — re-read with a larger max_bytes, or from an offset]")
+}
 
 impl TabContent {
-    /// Tab text with [`TRUNCATION_MARKER`] appended when the editor capped
-    /// the read. Used by both the `read_tab` tool and `resources/read` so a
-    /// client always sees that content is incomplete.
+    /// Tab text with an accurate truncation marker appended when the read was
+    /// capped. Used by both the `read_tab` tool and `resources/read` so a
+    /// client always sees that content is incomplete — and, since v0.1.127,
+    /// exactly how incomplete.
     pub fn text_with_marker(&self) -> String {
         if self.truncated {
-            format!("{}{}", self.text, TRUNCATION_MARKER)
+            format!(
+                "{}{}",
+                self.text,
+                truncation_marker(self.text.chars().count(), self.total_chars)
+            )
         } else {
             self.text.clone()
         }

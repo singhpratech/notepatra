@@ -733,6 +733,7 @@ fn tab_info_from(v: &Value) -> Result<TabInfo, TransportError> {
         // v0.1.126 (NP-13): absent on editors older than the field. `None`
         // means "this editor has no stable ids", not "id 0".
         id: v.get("id").and_then(Value::as_i64),
+        id_legacy: v.get("id").and_then(Value::as_i64),
     })
 }
 

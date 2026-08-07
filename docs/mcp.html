@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Notepatra MCP — Your editor, readable by your AI</title>
-<meta name="description" content="Notepatra's MCP server (introduced v0.1.118, 49 tools as of v0.1.126): tools that let Claude, Codex, and any spec-compliant MCP client read your open tabs, search your workspace, run read-only SQL, inspect Git — and, only with your explicit per-action approval, edit, save, and create Noter notes. Local socket + stdio, nothing leaves your machine.">
+<meta name="description" content="Notepatra's MCP server (introduced v0.1.118, 49 tools as of v0.1.127): tools that let Claude, Codex, and any spec-compliant MCP client read your open tabs, search your workspace, run read-only SQL, inspect Git — and, only with your explicit per-action approval, edit, save, and create Noter notes. Local socket + stdio, nothing leaves your machine.">
 <link rel="canonical" href="https://notepatra.org/mcp.html">
 <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png">
 
@@ -213,7 +213,7 @@
   <div class="topbar-left">
     <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">MCP · v0.1.126 · 49 tools</span>
+    <span class="tag">MCP · v0.1.127 · 49 tools</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
@@ -229,16 +229,16 @@
   <p class="lead">From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a Model Context Protocol server that lets Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client see what you have open, search your workspace, run read-only SQL over your data files, read your Git status and Noter notes, and — only with your explicit per-action approval — edit, save, and create notes. Everything runs over stdio and a local socket. Nothing leaves your machine.</p>
 
   <div class="callout info">
-    <strong>Release status.</strong> MCP first shipped in v0.1.118; the current release is v0.1.126. The server provides <strong>49 tools</strong> (Git, read-only SQL, Noter write verbs, diagram export) and supports Windows named-pipe transport, and v0.1.120 adds a prebuilt, cosign-signed Windows sidecar (<code>notepatra-mcp-windows-x64.zip</code>) plus a one-click <code>notepatra-mcp.mcpb</code> Claude Desktop bundle as release assets. Everything on this page describes v0.1.126.
+    <strong>Release status.</strong> MCP first shipped in v0.1.118; the current release is v0.1.127. The server provides <strong>49 tools</strong> (Git, read-only SQL, Noter write verbs, diagram export) and supports Windows named-pipe transport, and v0.1.120 adds a prebuilt, cosign-signed Windows sidecar (<code>notepatra-mcp-windows-x64.zip</code>) plus a one-click <code>notepatra-mcp.mcpb</code> Claude Desktop bundle as release assets. Everything on this page describes v0.1.127.
     <br><br>
-    <strong>v0.1.125 and v0.1.126 were both MCP-only releases</strong>, driven by testing this server against a real editor on Windows rather than by new features. v0.1.125 fixed a credential leak in <code>search_project</code>, a <code>goto_line</code> that reported success from the wrong line, and a sidecar that hung on every mistyped argument. A retest then found that the credential fix covered only one of four read paths — see <a href="#v126">what changed in v0.1.126</a> below.
+    <strong>v0.1.125, v0.1.126 and v0.1.127 were all MCP-only releases</strong>, driven by testing this server against a real editor rather than by new features. v0.1.125 fixed a credential leak in <code>search_project</code>, a <code>goto_line</code> that reported success from the wrong line, and a sidecar that hung on every mistyped argument. A retest then found that the credential fix covered only one of four read paths — see <a href="#v127">what changed in v0.1.127</a> below.
   </div>
 
   <nav class="pagenav">
     On this page:
     <a href="#what-it-is">What it is</a> ·
     <a href="#tools">The 49 tools</a> ·
-    <a href="#v126">New in v0.1.126</a> ·
+    <a href="#v127">New in v0.1.127</a> ·
     <a href="#approval">Write approval</a> ·
     <a href="#setup">Setup per client</a> ·
     <a href="#resources-prompts">Resources &amp; prompts</a> ·
@@ -336,6 +336,27 @@
     </tbody>
   </table>
 
+  <h2 id="v127" class="anchor-target">What changed in v0.1.127</h2>
+  <p>Retesting v0.1.126 found a <strong>sixth</strong> credential door, and the interesting part is not the door — it is why there kept being another one.</p>
+
+  <div class="callout warning">
+    <strong>Five doors refused a private key; the sixth handed it over in chunks.</strong>
+    <code>select_range</code> accepted any range inside a credential file and <code>get_selection</code> returned it as text. <code>get_selection</code> had been exempted on the reasoning that a selection is human-made, so reading it back implies consent — but <code>select_range</code> lets the <em>client</em> choose the range, which makes that reasoning false.
+    <br><br>
+    <code>apply_edit</code> was a quieter form of the same thing: it reads the buffer as a match <em>oracle</em>, so "no match" versus an approval card naming the match reports what a file contains, one probe at a time, without ever returning a byte of text.
+  </div>
+
+  <h3>Why the fix is structural rather than a sixth guard</h3>
+  <p>Three consecutive releases shipped this same shape. v0.1.125 unified two hand-maintained copies of the deny <em>list</em>. v0.1.126 added the check to four verbs. The retest then found a fifth and a sixth.</p>
+  <p>Every one of those fixes was correct and none of them converged, because what kept going stale was not the list — it was the <strong>enumeration</strong>. Every new verb had to remember to ask, and the point of a security guard is that it does not depend on remembering.</p>
+  <p>Buffer text now leaves the editor through exactly one accessor, which refuses before it returns. <code>select_range</code> refuses to <em>stage</em> a selection over a credential file at all, so no future verb can inherit a leak that was already set up for it. And a test lints the bridge source and fails the build on any direct buffer read that bypasses the accessor — so a verb added next year cannot reintroduce the class without turning a test red.</p>
+
+  <h3>Two smaller corrections</h3>
+  <ul>
+    <li><strong>The truncation marker was lying about the cap.</strong> Ask <code>read_tab</code> for <code>max_bytes: 100</code> and the text still ended <code>[truncated at 5 MB]</code> — a constant left over from before the argument existed. It now reads <code>[truncated: showing 100 of 2688894 characters]</code>. The v0.1.126 notes also claimed <code>read_tab</code> "always reports <code>truncated</code> and <code>total_chars</code>"; that is true of the editor-to-sidecar wire and not of the tool result, which is plain text, so the marker is where those counts have to live.</li>
+    <li><strong><code>select_range</code> advertised <code>tab_id</code> and then rejected it</strong> with <code>-32602</code>, so a client generating calls from the published schema failed. One verb out of thirteen slipped the v0.1.126 sweep. A test now walks the entire tool list and asserts every advertised <code>tab_id</code> is genuinely accepted — a schema that lies is worse than a missing feature, because it makes correct clients fail. Separately, <code>list_open_tabs</code> published the field as <code>id</code> while every verb takes <code>tab_id</code>; both names are emitted for one release.</li>
+  </ul>
+
   <h2 id="v126" class="anchor-target">What changed in v0.1.126</h2>
   <p>v0.1.125 fixed a credential leak in <code>search_project</code>. A retest of that release found the fix covered <strong>one read path out of four</strong> — and eight other defects alongside it. Everything below is now the shipped behaviour.</p>
 
@@ -361,7 +382,7 @@
   <h3>Smaller corrections</h3>
   <ul>
     <li><code>search_project</code> now actually sends the <code>workspace_searched</code> and <code>scope</code> fields v0.1.125 promised — the editor had been sending them all along and the sidecar's own result struct discarded them.</li>
-    <li><code>read_tab</code> takes <code>max_bytes</code> and always reports <code>truncated</code> and <code>total_chars</code>, so a multi-megabyte buffer can be paged rather than filling your context in one call.</li>
+    <li><code>read_tab</code> takes <code>max_bytes</code>, and a capped read ends with a marker stating how much you got of how much there is, so a multi-megabyte buffer can be paged rather than filling your context in one call.</li>
     <li><code>find_in_tab</code> accepts <code>title</code>, which <code>read_tab</code> always accepted and <code>find_in_tab</code> rejected as an unexpected argument.</li>
     <li>An invalid pagination cursor on <code>tools/list</code> is rejected instead of ignored — returning the full list is indistinguishable from "your cursor was valid, here is page 2".</li>
   </ul>
@@ -507,12 +528,12 @@ async with MCPServerStdio(
   <p>Tab indices are zero-based, exactly as shown in the tab bar — including the Welcome tab when it's open. Use <code>list_open_tabs</code> first rather than guessing indices. Better still, use the <code>id</code> it returns: an index is positional and moves the moment a tab closes, while an id belongs to the document for as long as it is open.</p>
 
   <h3>What happened to the mock server?</h3>
-  <p>Running <code>notepatra-mcp</code> without <code>--socket</code> still starts an in-memory demo editor, so any MCP client can exercise the protocol with nothing installed. As of v0.1.126 it <strong>says so on the wire</strong>: every result carries a <code>[MOCK DATA]</code> block and <code>_meta.mock</code>, and <code>initialize</code> reports <code>serverInfo.mock</code>. Before that, a config file that had lost its <code>--socket</code> served fabricated tabs an assistant could not tell from your real ones.</p>
+  <p>Running <code>notepatra-mcp</code> without <code>--socket</code> still starts an in-memory demo editor, so any MCP client can exercise the protocol with nothing installed. As of v0.1.127 it <strong>says so on the wire</strong>: every result carries a <code>[MOCK DATA]</code> block and <code>_meta.mock</code>, and <code>initialize</code> reports <code>serverInfo.mock</code>. Before that, a config file that had lost its <code>--socket</code> served fabricated tabs an assistant could not tell from your real ones.</p>
 
 </main>
 
 <footer class="doc-footer">
-  <p>Notepatra is free software under GPL-3.0. The MCP features described on this page ship in v0.1.126.</p>
+  <p>Notepatra is free software under GPL-3.0. The MCP features described on this page ship in v0.1.127.</p>
   <p><a href="/">Home</a> · <a href="/docs.html">Documentation</a> · <a href="https://github.com/singhpratech/notepatra">GitHub</a></p>
 </footer>
 

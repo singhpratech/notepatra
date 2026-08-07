@@ -316,6 +316,28 @@ private:
                    bool allowCurrent, QString *err) const;
     // Stable id for a tab, or -1 when the host predates tabId.
     qint64 tabIdOf(int idx) const;
+
+    // ── The ONE way buffer text leaves the host. ──────────────────────
+    //
+    // v0.1.127 (NP-14). Three releases running, the same defect shape: a
+    // credential file readable through a verb nobody had added to the
+    // deny-list yet. v0.1.125 unified two divergent copies of the LIST;
+    // v0.1.126 added the check to four verbs; the retest then found a fifth
+    // and sixth (select_range + get_selection, which reads a key back in
+    // chunks). Enumerating callers by hand was not converging, because the
+    // enumeration is the thing that keeps going stale.
+    //
+    // So the check moves to where the text is FETCHED rather than where it is
+    // returned. Every verb that needs buffer contents calls this; none calls
+    // m_host.tabText directly. test_mcp_bridge lints for that invariant, so a
+    // verb added later cannot quietly reintroduce the class.
+    //
+    // Returns false and fills *refusal when the tab is credential-bearing.
+    bool tabTextFor(int idx, QString *out, QString *refusal) const;
+    // Same guarantee for the current selection, which is a buffer read by
+    // another name: select_range lets a CLIENT choose the range, so "the user
+    // selected it" was never consent.
+    bool selectionText(QString *out, int *tabIndex, QString *refusal) const;
     QString tabLabel(int idx) const;
     // True when the host reports tab idx as an editable text buffer (or the
     // host cannot tell — see McpEditorHost::tabEditable). Verbs that read or

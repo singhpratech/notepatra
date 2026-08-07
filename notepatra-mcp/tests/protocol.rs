@@ -947,12 +947,28 @@ fn truncated_reads_carry_the_marker_in_tool_and_resource_text() {
             call_line(3, "read_tab", json!({ "tab_index": 1 })),
         ],
     );
-    assert!(text_of(&responses[0]).ends_with("\n[truncated at 5 MB]"));
+    // v0.1.127 (NP-10): the marker states the REAL numbers. It used to be the
+    // fixed string "[truncated at 5 MB]", which was a lie whenever max_bytes
+    // was what actually capped the read — and the tool result is plain text,
+    // so the marker is the only place those counts can live.
+    let marked = text_of(&responses[0]);
+    assert!(
+        marked.contains("[truncated: showing "),
+        "no marker: {marked:?}"
+    );
+    assert!(
+        marked.contains(" characters"),
+        "marker lacks counts: {marked:?}"
+    );
+    assert!(
+        !marked.contains("5 MB"),
+        "marker still claims the 5 MB ceiling: {marked:?}"
+    );
     assert!(responses[1]["result"]["contents"][0]["text"]
         .as_str()
         .unwrap()
-        .ends_with("\n[truncated at 5 MB]"));
-    assert!(!text_of(&responses[2]).contains("[truncated at 5 MB]"));
+        .contains("[truncated: showing "));
+    assert!(!text_of(&responses[2]).contains("[truncated"));
 }
 
 #[test]
@@ -1752,15 +1768,32 @@ fn read_tab_can_be_capped_by_the_caller() {
         capped.starts_with("fn ma"),
         "max_bytes was ignored: {capped:?}"
     );
+    // NP-10: the marker must report the CAP that was applied, not the 5 MB
+    // ceiling. "showing 5 of 47" is actionable; "truncated at 5 MB" is false.
     assert!(
-        capped.contains("truncated"),
-        "a capped read must say it was capped: {capped:?}"
+        capped.contains("[truncated: showing 5 of "),
+        "the marker does not report the applied cap: {capped:?}"
+    );
+    assert!(
+        !capped.contains("5 MB"),
+        "the marker still claims the 5 MB ceiling: {capped:?}"
     );
     // Vacuity guard: uncapped, the same tab returns the whole buffer, so the
-    // assertion above is about max_bytes and not about a tab that is short.
+    // assertions above are about max_bytes and not about a tab that is short.
+    //
+    // Compare CONTENT, not string length: since v0.1.127 the marker is longer
+    // than this fixture's whole buffer, so a length comparison would fail on
+    // a correct implementation — it was measuring the marker, not the read.
     let whole = text_of(&responses[1]);
     assert!(whole.contains("hello from notepatra"));
-    assert!(whole.len() > capped.len());
+    assert!(
+        !capped.contains("hello from notepatra"),
+        "the capped read returned content past its cap: {capped:?}"
+    );
+    assert!(
+        !whole.contains("[truncated"),
+        "an uncapped read is not truncated"
+    );
     // Nonsense caps are rejected rather than silently clamped.
     assert_eq!(responses[2]["error"]["code"], -32602);
     assert_eq!(responses[3]["error"]["code"], -32602);
@@ -1868,4 +1901,56 @@ fn an_invalid_pagination_cursor_is_rejected() {
         .as_array()
         .expect("prompts list")
         .is_empty());
+}
+
+/// NP-13 (v0.1.127). `select_range`'s inputSchema advertised `tab_id` while
+/// its `reject_extras` allow-list omitted it, so a client generating calls
+/// from the published schema got `-32602 unexpected argument "tab_id"`.
+///
+/// The per-verb assertion below would only ever cover the verb someone
+/// remembered to write it for, so this walks the WHOLE tool list and checks
+/// every advertised property is actually accepted. A schema that lies is
+/// worse than a missing feature: it makes correct clients fail.
+#[test]
+fn every_advertised_tab_selector_is_actually_accepted() {
+    let responses = run_lines(&[json!({
+        "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}
+    })
+    .to_string()]);
+    let tools = responses[0]["result"]["tools"]
+        .as_array()
+        .expect("tools list");
+
+    let mut advertising = Vec::new();
+    for t in tools {
+        let name = t["name"].as_str().expect("tool name");
+        if t["inputSchema"]["properties"].get("tab_id").is_some() {
+            advertising.push(name.to_string());
+        }
+    }
+    // Vacuity guard: if no tool advertises tab_id, the loop below proves
+    // nothing and the whole test is a no-op.
+    assert!(
+        advertising.len() >= 10,
+        "expected most tab-taking tools to advertise tab_id, found {}: {advertising:?}",
+        advertising.len()
+    );
+
+    // Call each with tab_id and assert the ARGUMENT was not rejected. A tool
+    // error (isError) is fine — the tab may not suit that verb. What must not
+    // happen is -32602 naming tab_id, which is the schema contradicting the
+    // implementation.
+    let calls: Vec<String> = advertising
+        .iter()
+        .enumerate()
+        .map(|(i, name)| call_line(100 + i as u64, name, json!({ "tab_id": 1 })))
+        .collect();
+    let results = run_lines(&calls);
+    for (name, r) in advertising.iter().zip(results.iter()) {
+        let msg = r["error"]["message"].as_str().unwrap_or("");
+        assert!(
+            !msg.contains("unexpected argument \"tab_id\""),
+            "{name} advertises tab_id in its schema and then rejects it: {msg}"
+        );
+    }
 }

@@ -260,6 +260,7 @@ impl MockEditor {
             modified: t.modified,
             editable: t.editable,
             id: Some(t.id),
+            id_legacy: Some(t.id),
         }
     }
 

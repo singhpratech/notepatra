@@ -7,6 +7,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.127] — 2026-08-07
+
+**A sixth credential door, found by retesting v0.1.126 — and the reason there keeps being another one.** `select_range` let a client highlight any range of a private key and `get_selection` read it back, so the file was readable in chunks while five other doors correctly refused. This release stops adding guards to a hand-maintained list and moves the check to the one place buffer text is fetched.
+
+### Security
+- **`select_range` + `get_selection` returned credential-file contents** that `open_file`, `read_tab`, `find_in_tab`, `search_project` and `resources/read` all refused. `get_selection` was exempted on the reasoning that a selection is human-made, so reading it back implies consent — but `select_range` lets the *client* choose the range, which makes that reasoning false. `apply_edit` was a quieter form of the same thing: it reads the buffer as a match oracle, so "no match" versus an approval card naming the match reports what a file contains, one probe at a time, without ever returning text.
+- **The fix is structural, not a sixth guard.** Three consecutive releases shipped this same defect shape — v0.1.125 unified two divergent copies of the deny *list*, v0.1.126 added the check to four verbs, and the retest then found a fifth and sixth. Every fix was correct and none converged, because what kept going stale was the **enumeration**. Buffer text now leaves the host through exactly one accessor, `McpBridge::tabTextFor`, which refuses before returning; `select_range` refuses to *stage* a selection over a credential file at all. A test lints `mcp_bridge.cpp` and fails the build on any direct `m_host.tabText` / `m_host.selection` call, so a verb added later cannot quietly reintroduce the class.
+
+### Fixed
+- **`read_tab`'s truncation marker claimed a 5 MB cap whatever cap actually applied.** Ask for `max_bytes: 100` and the text still ended `[truncated at 5 MB]`. The tool result is plain text with no side channel, so the counts the bridge sends were never reaching the caller at all. The marker now reads `[truncated: showing N of M characters]`.
+- **`select_range` advertised `tab_id` in its `inputSchema` and then rejected it** with `-32602 unexpected argument`, so a client generating calls from the published schema failed. The v0.1.126 sweep matched only the single-line `reject_extras` form and `select_range` is the one written multi-line. A new test now walks the entire tool list and asserts every advertised `tab_id` is genuinely accepted, rather than trusting a per-verb check.
+- **`list_open_tabs` published the field as `id` while every verb takes `tab_id`.** Both names are emitted for one release so v0.1.126 clients keep working.
+
+### Corrected
+- The v0.1.126 notes said `read_tab` "always reports `truncated` and `total_chars`". That is true of the editor↔sidecar wire and **not** of the MCP tool result, which is plain text. The docs now describe the marker instead. The v0.1.126 entry below is left as shipped rather than quietly rewritten.
+
+### Internal
+- 98 C++ suites and 66 sidecar protocol tests; all three fixes red-state verified by restoring the pre-fix code. The lint and the behavioural test were confirmed to fail independently — the lint catches a raw call site even when no one has thought to test the verb it appears in.
+
+---
+
 ## [0.1.126] — 2026-08-07
 
 **A retest of v0.1.125 confirmed all four Windows fixes and found nine more defects underneath.** The severe one is the same leak from a different door: v0.1.125 taught `search_project` to skip credential files, but `open_file` and `read_tab` were never told, so an agent that asked for `~/.ssh/id_rsa` **by name** still got the whole key back. All nine are fixed. No new editor features.

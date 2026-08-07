@@ -820,15 +820,12 @@ void McpBridge::verbReadTab(QLocalSocket *client, int id,
         return;
     }
     const QString path = m_host.tabPath ? m_host.tabPath(idx) : QString();
-    // NP-05: open_file refuses credential files, but a tab can also reach the
-    // editor by hand, by session restore, or from the recent-files list — and
-    // whichever door it came through, its contents are not ours to hand to a
-    // model. The check belongs on the read, not only on the open.
-    if (const QString refusal = credentialRefusal(path); !refusal.isEmpty()) {
+    QString text;
+    QString refusal;
+    if (!tabTextFor(idx, &text, &refusal)) {
         sendError(client, id, refusal);
         return;
     }
-    QString text = m_host.tabText ? m_host.tabText(idx) : QString();
     QJsonObject result;
     result[QStringLiteral("title")] = m_host.tabTitle ? m_host.tabTitle(idx)
                                                       : QString();
@@ -869,9 +866,17 @@ void McpBridge::verbReadTab(QLocalSocket *client, int id,
 }
 
 void McpBridge::verbGetSelection(QLocalSocket *client, int id) {
+    // NP-14: this used to be exempt on the reasoning that a selection is
+    // human-made, so reading it back implies consent. select_range breaks
+    // that: the CLIENT chooses the range, so an agent could select a private
+    // key and read it out in chunks — five guarded doors and one open window.
     int tabIndex = -1;
-    const QString text = m_host.selection ? m_host.selection(&tabIndex)
-                                          : QString();
+    QString text;
+    QString refusal;
+    if (!selectionText(&text, &tabIndex, &refusal)) {
+        sendError(client, id, refusal);
+        return;
+    }
     QJsonObject result;
     result[QStringLiteral("text")] = text;
     result[QStringLiteral("tab_index")] = tabIndex;
@@ -912,9 +917,10 @@ void McpBridge::verbSearchProject(QLocalSocket *client, int id,
         // NP-05: the workspace leg has skipped credential files since
         // v0.1.125, but a credential file that happens to be OPEN was read
         // straight out of the tab buffer by this leg — the deny-list guarded
-        // the disk and left the buffer wide open.
-        if (!credentialRefusal(path).isEmpty()) continue;
-        const QString text = m_host.tabText ? m_host.tabText(i) : QString();
+        // the disk and left the buffer wide open. Skipping (not erroring) is
+        // right here: one unreadable file must not fail the whole search.
+        QString text;
+        if (!tabTextFor(i, &text, nullptr)) continue;
         if (text.isEmpty()) continue;
         const QString hitPath = path; // "" for untitled tabs
         int lineNo = 1;
@@ -1075,12 +1081,12 @@ void McpBridge::verbFindInTab(QLocalSocket *client, int id,
     // NP-05: a match list is a content channel — it quotes the matching
     // lines. Refusing read_tab on a key while letting find_in_tab return the
     // line the key material sits on would just be a slower leak.
-    const QString tabFile = m_host.tabPath ? m_host.tabPath(idx) : QString();
-    if (const QString refusal = credentialRefusal(tabFile); !refusal.isEmpty()) {
-        sendError(client, id, refusal);
+    QString text;
+    QString denied;
+    if (!tabTextFor(idx, &text, &denied)) {
+        sendError(client, id, denied);
         return;
     }
-    const QString text = m_host.tabText ? m_host.tabText(idx) : QString();
     QJsonArray matches;
     bool truncated = false;
     int lineNo = 1;
@@ -1188,13 +1194,24 @@ void McpBridge::verbSelectRange(QLocalSocket *client, int id,
         return;
     }
     QString err;
-    const int idx = resolveWriteTab(args, &err); // resolves tab_index/current
+    const int idx = resolveWriteTab(args, &err); // resolves tab_id/tab_index/current
     if (idx < 0) {
         sendError(client, id, err);
         return;
     }
     if (!tabIsEditable(idx)) {
         sendError(client, id, nonEditableReason(idx));
+        return;
+    }
+    // NP-14: refuse to STAGE the read, not just to return it. get_selection
+    // is guarded now, but leaving select_range open would still let a client
+    // move the user's cursor and highlight a private key inside their own
+    // editor window — and any future verb that reports selection state would
+    // inherit a leak that was already set up for it.
+    if (const QString denied =
+            credentialRefusal(m_host.tabPath ? m_host.tabPath(idx) : QString());
+        !denied.isEmpty()) {
+        sendError(client, id, denied);
         return;
     }
     const int startLine = args.value(QLatin1String("start_line")).toInt(0);
@@ -1456,6 +1473,40 @@ qint64 McpBridge::tabIdOf(int idx) const {
     return m_host.tabId ? m_host.tabId(idx) : -1;
 }
 
+// See the header for why this exists rather than a sixth per-verb check.
+bool McpBridge::tabTextFor(int idx, QString *out, QString *refusal) const {
+    const QString path = m_host.tabPath ? m_host.tabPath(idx) : QString();
+    const QString deny = credentialRefusal(path);
+    if (!deny.isEmpty()) {
+        if (refusal) *refusal = deny;
+        return false;
+    }
+    if (out) *out = m_host.tabText ? m_host.tabText(idx) : QString();
+    return true;
+}
+
+bool McpBridge::selectionText(QString *out, int *tabIndex,
+                              QString *refusal) const {
+    int idx = -1;
+    const QString text = m_host.selection ? m_host.selection(&idx) : QString();
+    if (tabIndex) *tabIndex = idx;
+    // A selection the host cannot attribute to a tab (idx < 0) has no path to
+    // check. That is the ONE case this cannot judge, so it is returned — the
+    // alternative is refusing every unattributed selection, which would break
+    // get_selection on hosts that do not track the owning tab at all.
+    const int n = m_host.tabCount ? m_host.tabCount() : 0;
+    if (idx >= 0 && idx < n) {
+        const QString path = m_host.tabPath ? m_host.tabPath(idx) : QString();
+        const QString deny = credentialRefusal(path);
+        if (!deny.isEmpty()) {
+            if (refusal) *refusal = deny;
+            return false;
+        }
+    }
+    if (out) *out = text;
+    return true;
+}
+
 // See the header for the selector precedence. Every verb that names a tab
 // goes through here, so a selector accepted by one is accepted by all.
 int McpBridge::resolveTab(const QJsonObject &args, const char *indexKey,
@@ -1679,7 +1730,17 @@ void McpBridge::verbApplyEdit(QLocalSocket *client, int id,
     }
     // Literal, case-sensitive pre-check: a no-match request fails fast
     // without burning a human decision.
-    const QString text = m_host.tabText ? m_host.tabText(idx) : QString();
+    //
+    // NP-14: this reads the buffer too, and it is an ORACLE — "no match" vs a
+    // card naming the match tells a caller what the file contains, one probe
+    // at a time, without ever returning the text. Editing a credential file
+    // is also the thing the deny-list exists to prevent.
+    QString text;
+    QString denied;
+    if (!tabTextFor(idx, &text, &denied)) {
+        sendError(client, id, denied);
+        return;
+    }
     if (!text.contains(find)) {
         sendError(client, id, QStringLiteral("no match"));
         return;
