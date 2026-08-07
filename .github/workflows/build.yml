@@ -1219,26 +1219,6 @@ jobs:
       # on every machine ever. It is now generated from project(Notepatra
       # VERSION ...) — and this gate is what keeps it that way, because nothing
       # else on any platform can observe an embedded Windows resource.
-      - name: Assert PE FileVersion matches the project version
-        shell: pwsh
-        run: |
-          $cmakeVer = (Select-String -Path CMakeLists.txt `
-              -Pattern 'project\(Notepatra VERSION ([0-9]+\.[0-9]+\.[0-9]+)' `
-              | Select-Object -First 1).Matches.Groups[1].Value
-          if (-not $cmakeVer) { Write-Host "::error::could not read version from CMakeLists.txt"; exit 1 }
-          $expected = "$cmakeVer.0"
-          $exe = Get-ChildItem -Path build -Filter notepatra.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $exe) { Write-Host "::error::notepatra.exe not found under build/"; exit 1 }
-          $actual = (Get-Item $exe.FullName).VersionInfo.FileVersion
-          Write-Host "CMakeLists version : $cmakeVer"
-          Write-Host "expected FileVersion: $expected"
-          Write-Host "actual   FileVersion: $actual"
-          if ($actual -ne $expected) {
-            Write-Host "::error::PE FileVersion '$actual' != expected '$expected' — the .rc template did not substitute"
-            exit 1
-          }
-          Write-Host "OK: PE version resource matches the project version"
-
       # Separate step because the assertion needs pwsh string matching, and cmd
       # has no clean equivalent. `serve` on a std-only build exits 2 after
       # printing this, so we match on the text rather than the exit code.
@@ -1497,6 +1477,32 @@ jobs:
           if (Test-Path "installers\unregister-associations.bat") {
             Copy-Item "installers\unregister-associations.bat" ".\notepatra-win\" -Force
           }
+
+      # MUST stay AFTER the bundle step. This asserts on a built artifact;
+      # sitting above "Build C++ with CMake" it failed every run with
+      # "not found" on a binary that did not exist yet.
+      - name: Assert PE FileVersion matches the project version
+        shell: pwsh
+        run: |
+          $cmakeVer = (Select-String -Path CMakeLists.txt `
+              -Pattern 'project\(Notepatra VERSION ([0-9]+\.[0-9]+\.[0-9]+)' `
+              | Select-Object -First 1).Matches.Groups[1].Value
+          if (-not $cmakeVer) { Write-Host "::error::could not read version from CMakeLists.txt"; exit 1 }
+          $expected = "$cmakeVer.0"
+          # The SHIPPED exe, not the one still in the build tree: the bundle
+          # step copies it out and embeds the icon, so this is the file a
+          # user right-clicks -> Properties -> Details on.
+          $exe = Get-ChildItem -Path notepatra-win -Filter notepatra.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { Write-Host "::error::notepatra.exe not found in notepatra-win/ - did the bundle step run?"; exit 1 }
+          $actual = (Get-Item $exe.FullName).VersionInfo.FileVersion
+          Write-Host "CMakeLists version : $cmakeVer"
+          Write-Host "expected FileVersion: $expected"
+          Write-Host "actual   FileVersion: $actual"
+          if ($actual -ne $expected) {
+            Write-Host "::error::PE FileVersion '$actual' != expected '$expected' — the .rc template did not substitute"
+            exit 1
+          }
+          Write-Host "OK: PE version resource matches the project version"
 
       - name: Diagnose notepatra.exe imports + Qt plugin loading
         # Launches notepatra.exe: a Qt plugin-load stall or a modal error box would otherwise hang here forever.
