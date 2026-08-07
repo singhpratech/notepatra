@@ -7,6 +7,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.126] — 2026-08-07
+
+**A retest of v0.1.125 confirmed all four Windows fixes and found nine more defects underneath.** The severe one is the same leak from a different door: v0.1.125 taught `search_project` to skip credential files, but `open_file` and `read_tab` were never told, so an agent that asked for `~/.ssh/id_rsa` **by name** still got the whole key back. All nine are fixed. No new editor features.
+
+### Security
+- **The credential deny-list guarded one door out of four.** `PathDenylist::isSecretPath` ran only in `search_project`'s filesystem walk. `open_file` opened `~/.ssh/id_rsa` with `isError:false` and `read_tab` returned the entire private key; `find_in_tab` returned the matching key lines; and `search_project`'s **open-tab leg** read the same file straight out of the buffer while the disk leg refused it. Guarding a discovery path while leaving the direct-request path open is not a guard. All four now route through the same list, and `open_file` refuses *before* the tab exists so the file never reaches the screen either.
+
+### Fixed
+- **`format_json` invented structure and reported success.** The MCP path called the JSON panel's auto-**fixer**: `[1,2` came back as `[1,2]`, `{oops` as `{\n oops`, `not json at all` with its spaces deleted — every one of them `isError:false`. A truncated config file became syntactically valid and semantically invented, so an assistant that formatted and wrote it back fabricated data the user never had. The MCP path now validates strictly first and fails with a parse position, which is what the tool's description has always claimed. The panel keeps its fixer: a human sees that repair and can undo it.
+- **A search with zero matches was reported as "No workspace folder is open".** Whether a folder is open is not a fact about the query, but the error fired only when the open tabs happened to miss — so the same tabs answered "not found" for one query and "you have no folder open" for another. Empty results is a successful search: `{results: [], truncated: false}` with the reduced scope carried in a `notice`.
+- **`search_project` never sent the `workspace_searched` and `scope` fields v0.1.125 promised.** The C++ bridge had sent them all along; the Rust `SearchResults` struct declared only `results` and `truncated`, so serde discarded the rest before the tool result was built. Two layers, one contract, one of them updated.
+- **Without `--socket` the server fabricated everything and said so only in `--help`** — which the consumer, a language model, never reads. Drop the flag from a config and the assistant confidently described three files that did not exist, on POSIX paths, on a Windows box, and reported the editor as 0.1.118. Every mock result now carries a `[MOCK DATA]` content block and `_meta.mock`, `initialize` reports `serverInfo.mock` plus instructions, and the mock reports its own real version.
+- **`find_in_tab` rejected a `title` that `read_tab` accepted** with `-32602 unexpected argument`. Two hand-written resolvers on neighbouring tools that had drifted; there is one resolver now.
+- **`tools/list` and `prompts/list` accepted an invalid pagination cursor and returned the full list**, which is indistinguishable from "your cursor was valid, here is page 2". This server never issues a `nextCursor`, so any cursor is invalid and gets `-32602`.
+
+### Changed
+- **Tabs have a stable `id`.** Every write verb addressed its target by positional `tab_index`, which re-points at a different document the moment a tab to its left closes — and out-of-range was the *lucky* case, because a shifted-but-valid index wrote silently with only the approval card standing in the way. `list_open_tabs` publishes an `id` that survives reordering, save-as and its neighbours closing, and every verb that names a tab accepts `tab_id`. `tab_index` still works.
+- **`read_tab` takes `max_bytes` and always reports `truncated` and `total_chars`.** The 5 MB ceiling was the only bound, so a 2.7 MB buffer came back whole and could fill an assistant's entire context in one call with no way to ask for less — while `search_project` and `run_sql` had been negotiable all along.
+
+### Internal
+- `rust-core` gains `json_parse_error` (strict, non-repairing, RFC 8259) alongside the existing repairing formatter, exported as `npc_json_parse_error`.
+- Nine new regression tests, each red-state verified by restoring the pre-fix code rather than negating a condition — including the mock-transport marker, which had to become a separate content block after a text prefix was found to corrupt every JSON-returning tool on the surface.
+- **Known gap:** the strict-JSON validator is unit-tested in `rust-core`, but its wiring into `MainWindow`'s `formatText` host lambda is verified by inspection — that lambda is not reachable from the bridge's fake host.
+
+---
+
 ## [0.1.125] — 2026-08-07
 
 **A one-word MCP search could return the contents of your SSH private key. Fixed, along with three other defects found by testing the MCP server on Windows — and the Windows binary finally reports its real version after 124 releases claiming 0.1.0.** No new editor features; every change is a fix.

@@ -639,6 +639,40 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+echo "── present-tense \"this IS the current version\" claims name the current version ──"
+# docs/mcp.html sat at v0.1.123 for three releases — through TWO releases that
+# were entirely about MCP — saying "the current release is v0.1.123" and
+# "Everything on this page describes v0.1.123". Every gate passed, because the
+# "new in vX" check above only matches the literal phrase "new in", and the
+# count gates only assert the tool NUMBER, which had not changed.
+#
+# The distinction that matters: "since v0.1.118" is history and stays true
+# forever; "the current release is v0.1.118" is a claim about NOW and rots the
+# moment you tag. Only the second kind belongs here.
+#
+# Each pattern captures the version it names. Any that is not $VERSION is stale.
+stale_current=""
+while IFS= read -r hit; do
+    [[ -z "$hit" ]] && continue
+    found=$(grep -oE "0\.1\.[0-9]+" <<<"$hit" | tail -1)
+    [[ "$found" == "$VERSION" ]] || stale_current+="$hit"$'\n'
+done < <(grep -rhnoE \
+    "(the current release is v?0\.1\.[0-9]+\
+|this page describes v?0\.1\.[0-9]+\
+|described on this page ship in v?0\.1\.[0-9]+\
+|TOOLS · v?0\.1\.[0-9]+\
+|class=\"tag\">[^<]*v?0\.1\.[0-9]+)" docs/*.html 2>/dev/null || true)
+if [[ -z "$stale_current" ]]; then
+    printf "  ✓ no present-tense \"current version\" claim names a stale version\n"
+    PASS=$((PASS + 1))
+else
+    echo "  ✗ present-tense version claim(s) in docs/*.html are stale (current is $VERSION):"
+    printf "%s" "$stale_current" | sed 's/^/      /' | head -8
+    echo "      Either bump them, or reword to a historical form (\"since v0.1.X\")"
+    echo "      if the sentence is about when something was introduced."
+    FAIL=$((FAIL + 1))
+fi
+
 echo "── no HOLES in the version-card history on the site ──"
 # v0.1.119 shipped and the website never got a card: the list ran 115, 116,
 # 117, 118, then jumped straight to 120. A reader could not tell 119 had

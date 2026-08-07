@@ -68,7 +68,7 @@ fn review_current_file(transport: &mut dyn EditorTransport) -> Result<(String, S
     if tab_index < 0 {
         return Err(GetError::Editor("no active tab in the editor".into()));
     }
-    let content = transport.read_tab(TabSelector::Index(tab_index as usize))?;
+    let content = transport.read_tab(TabSelector::Index(tab_index as usize), None)?;
     let language = status
         .get("language")
         .and_then(Value::as_str)

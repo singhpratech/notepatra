@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 use serde_json::{json, Map, Value};
 
-use crate::transport::{EditorTransport, TabSelector};
+use crate::transport::{EditorTransport, TabRef, TabSelector};
 
 const DEFAULT_MAX_RESULTS: usize = 50;
 /// Server-side cap mirrored from the C++ bridge: search_project never
@@ -132,17 +132,19 @@ pub fn definitions() -> Value {
         },
         {
             "name": "list_open_tabs",
-            "description": "List the tabs currently open in the editor with index, title, file path, and modified state. Use first to discover what the user has open before reading or comparing tabs.",
+            "description": "List the tabs currently open in the editor with id, index, title, file path, and modified state. Use first to discover what the user has open before reading or comparing tabs. Address later calls by `id` — it is stable, while `index` shifts whenever a tab closes.",
             "inputSchema": no_args_schema()
         },
         {
             "name": "read_tab",
-            "description": "Read the full text content of one open tab, selected by index or by title (provide exactly one). Use when you need a document's contents; use list_open_tabs first if you don't know the index.",
+            "description": "Read the text content of one open tab, selected by tab_id, tab_index or title (provide exactly one). Returns truncated and total_chars so you can tell a complete read from a capped one. Use max_bytes to read a large file in pieces rather than pulling megabytes into context. Refuses files on the credential deny-list (SSH/GPG/AWS keys, .env, keystores).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
+                    "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index" },
-                    "title": { "type": "string", "description": "Exact tab title" }
+                    "title": { "type": "string", "description": "Exact tab title" },
+                    "max_bytes": { "type": "integer", "minimum": 1, "description": "Cap the returned text at this many characters (default: the editor's 5 MB ceiling). Check truncated and total_chars in the result." }
                 },
                 "required": [],
                 "additionalProperties": false
@@ -150,7 +152,7 @@ pub fn definitions() -> Value {
         },
         {
             "name": "search_project",
-            "description": "Search ALL open tabs plus files under the workspace folder for a literal substring (case-insensitive); returns matching lines with file path and line number. The editor caps results at 200 per search; larger max_results values are clamped to 200. Use to locate text when you don't know which tab or file it is in; use find_in_tab for a single tab.",
+            "description": "Search ALL open tabs plus files under the workspace folder for a literal substring (case-insensitive); returns matching lines with file path and line number, plus workspace_searched and scope so you can tell a project-wide search from an open-tabs-only one. Zero matches is a successful search with an empty results list, not an error. The editor caps results at 200 per search; larger max_results values are clamped to 200. Use to locate text when you don't know which tab or file it is in; use find_in_tab for a single tab.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -188,7 +190,9 @@ pub fn definitions() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
+                    "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" },
+                    "title": { "type": "string", "description": "Exact tab title, as read_tab accepts" },
                     "query": { "type": "string", "description": "Literal text to search for (or a regular expression when regex is true)" },
                     "regex": { "type": "boolean", "description": "When true, query is a Qt-compatible regular expression; the server rejects an invalid pattern (default false: literal substring)" }
                 },
@@ -215,6 +219,7 @@ pub fn definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "line": { "type": "integer", "minimum": 1, "description": "1-based line number" },
+                    "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" }
                 },
                 "required": ["line"],
@@ -231,6 +236,7 @@ pub fn definitions() -> Value {
                     "start_col": { "type": "integer", "minimum": 1, "description": "1-based column where the selection starts" },
                     "end_line": { "type": "integer", "minimum": 1, "description": "1-based line where the selection ends" },
                     "end_col": { "type": "integer", "minimum": 1, "description": "1-based column where the selection ends (exclusive)" },
+                    "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" }
                 },
                 "required": ["start_line", "start_col", "end_line", "end_col"],
@@ -244,6 +250,7 @@ pub fn definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "language": { "type": "string", "description": "Language name as shown in Notepatra's Language menu (e.g. \"Python\", \"SQL\")" },
+                    "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" }
                 },
                 "required": ["language"],
@@ -293,6 +300,7 @@ pub fn definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "text": { "type": "string", "description": "The text to insert" },
+                    "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" },
                     "line": { "type": "integer", "minimum": 1, "description": "1-based line to insert at (default: current cursor position)" },
                     "col": { "type": "integer", "minimum": 1, "description": "1-based column to insert at (default: start of the line)" }
@@ -311,6 +319,7 @@ pub fn definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "text": { "type": "string", "description": "The replacement text" },
+                    "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" }
                 },
                 "required": ["text"],
@@ -329,6 +338,7 @@ pub fn definitions() -> Value {
                 "properties": {
                     "find": { "type": "string", "description": "Literal text to find" },
                     "replace": { "type": "string", "description": "Replacement text" },
+                    "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" },
                     "all": { "type": "boolean", "description": "Replace every occurrence (default false: first occurrence only)" }
                 },
@@ -347,6 +357,7 @@ pub fn definitions() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
+                    "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" },
                     "path": { "type": "string", "description": "Absolute path to save the tab to (\"Save As\"); its parent folder must exist. Omit to save to the tab's existing file." }
                 },
@@ -412,6 +423,7 @@ pub fn definitions() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
+                    "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based index of an open tab holding the .npd source" },
                     "source": { "type": "string", "description": "The .npd document text to validate directly" }
                 },
@@ -503,6 +515,7 @@ pub fn definitions() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
+                    "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based index of the tab holding the .npd diagram" },
                     "path": { "type": "string", "description": "Absolute output path for the exported file" },
                     "format": { "type": "string", "enum": ["png", "pdf"], "description": "Export format: png or pdf" }
@@ -542,6 +555,7 @@ pub fn definitions() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
+                    "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based index of the Diagram tab" }
                 },
                 "required": ["tab_index"],
@@ -558,6 +572,7 @@ pub fn definitions() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
+                    "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based index of the Diagram tab" },
                     "source": { "type": "string", "description": "The new .npd document text (replaces the whole source)" }
                 },
@@ -779,6 +794,40 @@ fn optional_index(args: &Map<String, Value>, key: &str) -> Result<Option<usize>,
     }
 }
 
+/// Parse the tab selector every verb shares (v0.1.126, NP-13).
+///
+/// `tab_id` is the stable identity from `list_open_tabs`; `tab_index` is the
+/// positional selector that already shipped. Both absent means "the focused
+/// tab". Supplying both is a caller bug worth reporting rather than silently
+/// resolving one of them.
+fn optional_tab_ref(args: &Map<String, Value>) -> Result<TabRef, CallOutcome> {
+    let index = optional_index(args, "tab_index")?;
+    let id = match args.get("tab_id") {
+        None => None,
+        Some(v) => Some(
+            v.as_i64()
+                .ok_or_else(|| CallOutcome::InvalidParams("tab_id must be an integer".into()))?,
+        ),
+    };
+    if index.is_some() && id.is_some() {
+        return Err(CallOutcome::InvalidParams(
+            "provide tab_id or tab_index, not both".into(),
+        ));
+    }
+    Ok(TabRef { index, id })
+}
+
+/// [`optional_tab_ref`] for the verbs where a target is mandatory.
+fn required_tab_ref(args: &Map<String, Value>) -> Result<TabRef, CallOutcome> {
+    let tab = optional_tab_ref(args)?;
+    if tab.is_unset() {
+        return Err(CallOutcome::InvalidParams(
+            "provide tab_id or tab_index".into(),
+        ));
+    }
+    Ok(tab)
+}
+
 /// The ONE message every 1-based-integer rejection uses.
 ///
 /// These helpers used to delegate to `optional_index`/`required_index`, whose
@@ -890,32 +939,51 @@ fn list_open_tabs(transport: &mut dyn EditorTransport, args: &Map<String, Value>
 }
 
 fn read_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["tab_index", "title"]) {
+    if let Err(e) = reject_extras(args, &["tab_index", "tab_id", "title", "max_bytes"]) {
         return e;
     }
-    let selector = match (args.get("tab_index"), args.get("title")) {
-        (Some(_), Some(_)) => {
-            return CallOutcome::InvalidParams(
-                "provide exactly one of tab_index or title, not both".into(),
-            )
+    let n_selectors = ["tab_index", "tab_id", "title"]
+        .iter()
+        .filter(|k| args.contains_key(**k))
+        .count();
+    if n_selectors > 1 {
+        return CallOutcome::InvalidParams(
+            "provide exactly one of tab_id, tab_index or title".into(),
+        );
+    }
+    let selector = if let Some(v) = args.get("tab_id") {
+        match v.as_i64() {
+            Some(id) => TabSelector::Id(id),
+            None => return CallOutcome::InvalidParams("tab_id must be an integer".into()),
         }
-        (None, None) => {
-            return CallOutcome::InvalidParams("provide tab_index or title".into());
-        }
-        (Some(v), None) => match v.as_u64() {
+    } else if let Some(v) = args.get("tab_index") {
+        match v.as_u64() {
             Some(i) => TabSelector::Index(i as usize),
             None => {
                 return CallOutcome::InvalidParams(
                     "tab_index must be a non-negative integer".into(),
                 )
             }
-        },
-        (None, Some(v)) => match v.as_str() {
+        }
+    } else if let Some(v) = args.get("title") {
+        match v.as_str() {
             Some(t) => TabSelector::Title(t),
             None => return CallOutcome::InvalidParams("title must be a string".into()),
+        }
+    } else {
+        return CallOutcome::InvalidParams("provide tab_id, tab_index or title".into());
+    };
+    // NP-10: the caller may ask for less than the editor's 5 MB ceiling. One
+    // read_tab used to be able to fill an assistant's whole context with no
+    // way to negotiate it down.
+    let max_bytes = match args.get("max_bytes") {
+        None => None,
+        Some(v) => match v.as_u64() {
+            Some(n) if n >= 1 => Some(n as usize),
+            _ => return CallOutcome::InvalidParams("max_bytes must be an integer >= 1".into()),
         },
     };
-    match transport.read_tab(selector) {
+    match transport.read_tab(selector, max_bytes) {
         // Surface the wire's truncated flag in the text itself — MCP text
         // content has no side channel for it.
         Ok(content) => CallOutcome::Ok(content.text_with_marker()),
@@ -962,22 +1030,31 @@ fn get_selection(transport: &mut dyn EditorTransport, args: &Map<String, Value>)
 }
 
 fn find_in_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["tab_index", "query", "regex"]) {
+    // NP-11: `title` was accepted by read_tab and rejected here with
+    // "unexpected argument" — the same selector, two answers.
+    if let Err(e) = reject_extras(args, &["tab_index", "tab_id", "title", "query", "regex"]) {
         return e;
     }
     let query = match required_str(args, "query") {
         Ok(q) => q,
         Err(e) => return e,
     };
-    let tab_index = match optional_index(args, "tab_index") {
-        Ok(i) => i,
+    let tab = match optional_tab_ref(args) {
+        Ok(t) => t,
         Err(e) => return e,
     };
+    let title = match optional_str(args, "title") {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    if title.is_some() && !tab.is_unset() {
+        return CallOutcome::InvalidParams("provide one of tab_id, tab_index or title".into());
+    }
     let regex = match optional_bool(args, "regex", false) {
         Ok(r) => r,
         Err(e) => return e,
     };
-    to_outcome(transport.find_in_tab(tab_index, query, regex))
+    to_outcome(transport.find_in_tab(tab, title, query, regex))
 }
 
 fn new_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
@@ -992,7 +1069,7 @@ fn new_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> Ca
 }
 
 fn goto_line(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["line", "tab_index"]) {
+    if let Err(e) = reject_extras(args, &["line", "tab_index", "tab_id"]) {
         return e;
     }
     // required_one_based, NOT a hand-rolled required_index + `>= 1` check:
@@ -1003,11 +1080,11 @@ fn goto_line(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> 
         Ok(n) => n,
         Err(e) => return e,
     };
-    let tab_index = match optional_index(args, "tab_index") {
-        Ok(i) => i,
+    let tab = match optional_tab_ref(args) {
+        Ok(t) => t,
         Err(e) => return e,
     };
-    to_outcome(transport.goto_line(line, tab_index))
+    to_outcome(transport.goto_line(line, tab))
 }
 
 // v0.1.121 (issue #5): ACT tier — moves the selection, no approval card.
@@ -1024,8 +1101,8 @@ fn select_range(transport: &mut dyn EditorTransport, args: &Map<String, Value>) 
     ) {
         return e;
     }
-    let tab_index = match optional_index(args, "tab_index") {
-        Ok(i) => i,
+    let tab = match optional_tab_ref(args) {
+        Ok(t) => t,
         Err(e) => return e,
     };
     let start_line = match required_one_based(args, "start_line") {
@@ -1044,22 +1121,22 @@ fn select_range(transport: &mut dyn EditorTransport, args: &Map<String, Value>) 
         Ok(n) => n,
         Err(e) => return e,
     };
-    to_outcome(transport.select_range(tab_index, start_line, start_col, end_line, end_col))
+    to_outcome(transport.select_range(tab, start_line, start_col, end_line, end_col))
 }
 
 fn set_language(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["language", "tab_index"]) {
+    if let Err(e) = reject_extras(args, &["language", "tab_index", "tab_id"]) {
         return e;
     }
     let language = match required_str(args, "language") {
         Ok(l) => l,
         Err(e) => return e,
     };
-    let tab_index = match optional_index(args, "tab_index") {
-        Ok(i) => i,
+    let tab = match optional_tab_ref(args) {
+        Ok(t) => t,
         Err(e) => return e,
     };
-    to_outcome(transport.set_language(language, tab_index))
+    to_outcome(transport.set_language(language, tab))
 }
 
 fn compare_tabs(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
@@ -1117,15 +1194,15 @@ fn read_note(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> 
 // isError tool results via to_outcome.
 
 fn insert_text(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["text", "tab_index", "line", "col"]) {
+    if let Err(e) = reject_extras(args, &["text", "tab_index", "tab_id", "line", "col"]) {
         return e;
     }
     let text = match required_str(args, "text") {
         Ok(t) => t,
         Err(e) => return e,
     };
-    let tab_index = match optional_index(args, "tab_index") {
-        Ok(i) => i,
+    let tab = match optional_tab_ref(args) {
+        Ok(t) => t,
         Err(e) => return e,
     };
     let line = match optional_one_based(args, "line") {
@@ -1136,29 +1213,29 @@ fn insert_text(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -
         Ok(c) => c,
         Err(e) => return e,
     };
-    to_outcome(transport.insert_text(text, tab_index, line, col))
+    to_outcome(transport.insert_text(text, tab, line, col))
 }
 
 fn replace_selection(
     transport: &mut dyn EditorTransport,
     args: &Map<String, Value>,
 ) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["text", "tab_index"]) {
+    if let Err(e) = reject_extras(args, &["text", "tab_index", "tab_id"]) {
         return e;
     }
     let text = match required_str(args, "text") {
         Ok(t) => t,
         Err(e) => return e,
     };
-    let tab_index = match optional_index(args, "tab_index") {
-        Ok(i) => i,
+    let tab = match optional_tab_ref(args) {
+        Ok(t) => t,
         Err(e) => return e,
     };
-    to_outcome(transport.replace_selection(text, tab_index))
+    to_outcome(transport.replace_selection(text, tab))
 }
 
 fn apply_edit(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["find", "replace", "tab_index", "all"]) {
+    if let Err(e) = reject_extras(args, &["find", "replace", "tab_index", "tab_id", "all"]) {
         return e;
     }
     let find = match required_str(args, "find") {
@@ -1169,30 +1246,30 @@ fn apply_edit(transport: &mut dyn EditorTransport, args: &Map<String, Value>) ->
         Ok(r) => r,
         Err(e) => return e,
     };
-    let tab_index = match optional_index(args, "tab_index") {
-        Ok(i) => i,
+    let tab = match optional_tab_ref(args) {
+        Ok(t) => t,
         Err(e) => return e,
     };
     let all = match optional_bool(args, "all", false) {
         Ok(a) => a,
         Err(e) => return e,
     };
-    to_outcome(transport.apply_edit(find, replace, tab_index, all))
+    to_outcome(transport.apply_edit(find, replace, tab, all))
 }
 
 fn save_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["tab_index", "path"]) {
+    if let Err(e) = reject_extras(args, &["tab_index", "tab_id", "path"]) {
         return e;
     }
-    let tab_index = match optional_index(args, "tab_index") {
-        Ok(i) => i,
+    let tab = match optional_tab_ref(args) {
+        Ok(t) => t,
         Err(e) => return e,
     };
     let path = match optional_str(args, "path") {
         Ok(p) => p,
         Err(e) => return e,
     };
-    to_outcome(transport.save_tab(tab_index, path))
+    to_outcome(transport.save_tab(tab, path))
 }
 
 // ── v0.1.119 read-tier handlers ─────────────────────────────────────────────
@@ -1238,7 +1315,7 @@ fn git_show(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> C
 }
 
 fn validate_npd(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["tab_index", "source"]) {
+    if let Err(e) = reject_extras(args, &["tab_index", "tab_id", "source"]) {
         return e;
     }
     // Exactly one selector, mirroring read_tab's index-or-title contract.
@@ -1253,15 +1330,15 @@ fn validate_npd(transport: &mut dyn EditorTransport, args: &Map<String, Value>) 
         }
         _ => {}
     }
-    let tab_index = match optional_index(args, "tab_index") {
-        Ok(i) => i,
+    let tab = match optional_tab_ref(args) {
+        Ok(t) => t,
         Err(e) => return e,
     };
     let source = match optional_str(args, "source") {
         Ok(s) => s,
         Err(e) => return e,
     };
-    to_outcome(transport.validate_npd(tab_index, source))
+    to_outcome(transport.validate_npd(tab, source))
 }
 
 fn run_sql(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
@@ -1340,11 +1417,11 @@ fn set_reminder(transport: &mut dyn EditorTransport, args: &Map<String, Value>) 
 }
 
 fn export_diagram(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["tab_index", "path", "format"]) {
+    if let Err(e) = reject_extras(args, &["tab_index", "tab_id", "path", "format"]) {
         return e;
     }
-    let tab_index = match required_index(args, "tab_index") {
-        Ok(i) => i,
+    let tab = match required_tab_ref(args) {
+        Ok(t) => t,
         Err(e) => return e,
     };
     let path = match required_str(args, "path") {
@@ -1358,7 +1435,7 @@ fn export_diagram(transport: &mut dyn EditorTransport, args: &Map<String, Value>
     if format != "png" && format != "pdf" {
         return CallOutcome::InvalidParams("format must be \"png\" or \"pdf\"".into());
     }
-    to_outcome(transport.export_diagram(tab_index, path, format))
+    to_outcome(transport.export_diagram(tab, path, format))
 }
 
 // ── p0a read-tier handlers ──────────────────────────────────────────────────
@@ -1410,14 +1487,14 @@ fn get_diagram_source(
     transport: &mut dyn EditorTransport,
     args: &Map<String, Value>,
 ) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["tab_index"]) {
+    if let Err(e) = reject_extras(args, &["tab_index", "tab_id"]) {
         return e;
     }
-    let tab_index = match required_index(args, "tab_index") {
-        Ok(i) => i,
+    let tab = match required_tab_ref(args) {
+        Ok(t) => t,
         Err(e) => return e,
     };
-    to_outcome(transport.get_diagram_source(tab_index))
+    to_outcome(transport.get_diagram_source(tab))
 }
 
 // Approval-gated in the editor; deny/timeout errors pass through verbatim.
@@ -1425,18 +1502,18 @@ fn set_diagram_source(
     transport: &mut dyn EditorTransport,
     args: &Map<String, Value>,
 ) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["tab_index", "source"]) {
+    if let Err(e) = reject_extras(args, &["tab_index", "tab_id", "source"]) {
         return e;
     }
-    let tab_index = match required_index(args, "tab_index") {
-        Ok(i) => i,
+    let tab = match required_tab_ref(args) {
+        Ok(t) => t,
         Err(e) => return e,
     };
     let source = match required_str(args, "source") {
         Ok(s) => s,
         Err(e) => return e,
     };
-    to_outcome(transport.set_diagram_source(tab_index, source))
+    to_outcome(transport.set_diagram_source(tab, source))
 }
 
 fn open_noter(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {

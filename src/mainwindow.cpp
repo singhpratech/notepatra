@@ -1772,6 +1772,24 @@ MainWindow::MainWindow(bool standaloneNoSession)
         host.tabEditable = [this](int i) {
             return m_tabs->editorAt(i) != nullptr;
         };
+        // v0.1.126 (NP-13): identity that outlives a reorder.
+        //
+        // The tab WIDGET is the document — it survives reordering, save-as and
+        // its neighbours closing, all of which move the index. Stamp a
+        // monotonic id on it the first time anyone asks, and the id is stable
+        // for that document's lifetime. Ids are never reused: a reopened file
+        // is a new tab and correctly gets a new one.
+        host.tabId = [this, nextTabId = std::make_shared<qint64>(1)](
+                         int i) -> qint64 {
+            QWidget *w = m_tabs->widget(i);
+            if (!w) return -1;
+            static const char kProp[] = "npMcpTabId";
+            const QVariant existing = w->property(kProp);
+            if (existing.isValid()) return existing.toLongLong();
+            const qint64 assigned = (*nextTabId)++;
+            w->setProperty(kProp, assigned);
+            return assigned;
+        };
         host.openFile = [this](const QString &p) {
             openFile(p);   // same internal path the single-instance handoff uses
             const QString abs = QFileInfo(p).absoluteFilePath();
@@ -1898,8 +1916,28 @@ MainWindow::MainWindow(bool standaloneNoSession)
             // sqlfmtpanel use. Never touches any buffer.
             QString out;
             try {
-                if (kind == QLatin1String("json"))
+                if (kind == QLatin1String("json")) {
+                    // v0.1.126 (NP-09): validate BEFORE formatting, on the MCP
+                    // path only.
+                    //
+                    // RustCore::formatJson is the JSON panel's auto-fixer: it
+                    // closes unbalanced brackets, strips trailing commas and
+                    // quotes bare keys. In the panel a human sees that happen
+                    // and can undo it. Over MCP nobody does — so `[1,2` came
+                    // back as `[1,2]` with isError:false, and an agent that
+                    // formatted a truncated file then wrote it back had
+                    // fabricated data the user never had. The tool's own
+                    // description has always said "Fails on invalid JSON";
+                    // this makes that true. The panel keeps its fixer.
+                    const QString parseErr = RustCore::jsonParseError(text);
+                    if (!parseErr.isEmpty()) {
+                        if (errorOut)
+                            *errorOut =
+                                QStringLiteral("invalid JSON: %1").arg(parseErr);
+                        return QString();
+                    }
                     out = RustCore::formatJson(text);
+                }
                 else if (kind == QLatin1String("sql"))
                     out = RustCore::formatSql(text);
                 else if (kind == QLatin1String("html"))

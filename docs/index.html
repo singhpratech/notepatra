@@ -49,7 +49,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. Bare executable is ~12 MB across platforms (12.6 MB on Linux x64); full downloads are 4.4 MB (Linux x64 tar.gz), 27.7 MB (macOS DMG with bundled Qt), 43.0 MB (Windows MSI with bundled Qt DLLs). 238 file types. 82 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server (examples redacted). Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.125",
+      "softwareVersion": "0.1.126",
       "fileSize": "12.6 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -151,7 +151,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~12 MB across every platform (12.6 MB on Linux x64). Latest v0.1.125 download sizes: 4.4 MB Linux x64 tar.gz, 4.1 MB Linux ARM64 tar.gz, 27.7 MB macOS DMG (with bundled Qt), 43.0 MB Windows MSI / 32.8 MB NSIS / 37.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~12.6 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~12 MB across every platform (12.6 MB on Linux x64). Latest v0.1.126 download sizes: 4.4 MB Linux x64 tar.gz, 4.1 MB Linux ARM64 tar.gz, 27.7 MB macOS DMG (with bundled Qt), 43.0 MB Windows MSI / 32.8 MB NSIS / 37.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~12.6 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
           }
         },
         {
@@ -167,7 +167,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 238 file types with 82 language lexers as of v0.1.125: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 238 file types with 82 language lexers as of v0.1.126: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.125">
-        Download v0.1.125 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.126">
+        Download v0.1.126 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1313,7 +1313,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.125 · Now Available · MCP server for AI assistants · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.126 · Now Available · MCP server for AI assistants · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~12 MB bare, ~4.4 MB compressed on Linux). C++ and Rust. 238 file types · 82 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints. <strong>MCP:</strong> the <a href="/mcp.html" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">MCP server</a> ships a prebuilt signed Windows sidecar and a one-click Claude Desktop bundle — its 49 tools (Git, read-only SQL, saved-connection queries, charts, Noter notes) connect Claude, Codex, or any MCP client straight to your editor.</p>
 
@@ -1403,7 +1403,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.125</div>
+        <div class="section-label">Download v0.1.126</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1471,7 +1471,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.125 →
+                Get Notepatra v0.1.126 →
               </a>
             </div>
 
@@ -1514,7 +1514,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.125 →
+                Get Notepatra Local AI v0.1.126 →
               </a>
             </div>
           </div>
@@ -1669,7 +1669,7 @@
                  star features. -->
             <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
                 <div class="feature-icon fi-orange">🔌</div>
-                <h3>MCP — your editor, readable by your AI <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">49 TOOLS · v0.1.123</span></h3>
+                <h3>MCP — your editor, readable by your AI <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">49 TOOLS · v0.1.126</span></h3>
                 <p>A built-in <strong>Model Context Protocol server</strong> (<code>notepatra-mcp</code>) connects the assistants you already use — <strong>Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK</strong>, and any spec-compliant MCP client — to the running editor. <strong>49 tools in three tiers</strong>: read (tabs, selection, search, Noter notes, reminders, read-only Git and SQL, diagram source, saved-connection list/query/tables), act (open, compare, format, navigate, select range, open notes, create diagram, open Noter panel, open Data Analyst, render chart), and write (edit, save, create/append notes, set reminders, replace diagram source, export diagrams, export query results, export chart) — where <em>every</em> write shows an <strong>Approve / Deny card inside the editor</strong> and does nothing until you click Approve (auto-deny after 120 s, no headless bypass). Local socket + stdio only — nothing leaves your machine. <a href="/mcp.html" style="color: var(--c-accent);">Read the MCP docs →</a></p>
             </div>
             <!-- AI Assistant at slot 2 — highlighted with a Clay-orange
@@ -2016,47 +2016,64 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.125 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.126 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
                         <span>2026-08-07</span>
-                        <span>· <strong>A one-word MCP search could return the contents of your SSH private key.</strong> Fixed, along with three other defects found by testing the MCP server on Windows — and the Windows binary finally reports its real version after 124 releases claiming 0.1.0. No new editor features; every change is a fix.</span>
+                        <span>· <strong>v0.1.126 taught <code>search_project</code> to skip credential files. It never told <code>open_file</code> or <code>read_tab</code>.</strong> A deep retest confirmed all four v0.1.126 Windows fixes on real hardware and found nine more defects underneath. No new editor features; every change is a fix to the MCP surface.</span>
                         <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>Security — the credential deny-list existed twice</h5>
+                        <h5>Security — the leak came back through a different door</h5>
                         <ul>
-                            <li><strong><code>read_file</code> refused <code>~/.ssh/id_rsa</code> while <code>search_project</code> returned its matching lines.</strong> Both consulted a deny-list of credential paths — but there were <strong>two</strong> copies, maintained by hand in different files, and they had drifted in <em>both</em> directions. <code>ai_tools.cpp</code> knew <code>*.tfvars</code>, <code>*.tfstate</code>, <code>.pypirc</code>, the <code>.env</code> family and <code>authorized_keys</code>; <code>git_hunk_apply.cpp</code> knew <code>*.jks</code> and an unanchored <code>id_rsa</code>. Neither was a superset of the other, so each caller enforced a different policy — and <code>search_project</code>, the third caller, consulted <strong>neither</strong>. <code>src/path_denylist.h</code> is now the single list, built as the <strong>union</strong>, with all three callers routed through it. The regression test caught exactly <code>keystore.jks</code> — the extension only the second copy had ever known about, which is the proof that taking the union mattered rather than picking a winner.</li>
-                            <li><strong><code>search_project</code> walked the entire home directory.</strong> <code>FileExplorer</code>'s constructor set <code>m_rootPath = QDir::homePath()</code> as a <em>display placeholder</em> — something to show in an empty sidebar — and four separate guards then read that value as "the workspace the user is working in", including the AI CSV sandbox and a security guard that had therefore never once closed. Display root and workspace root are different questions now: <code>workspaceRoot()</code> stays <strong>empty</strong> until you open a folder, and a workspace-less search covers open tabs only and says so, reporting <code>workspace_searched</code> and <code>scope</code> so a client cannot mistake a partial search for a complete one.</li>
+                            <li><strong>The deny-list guarded one door out of four.</strong> v0.1.126's fix was real, and it was the only place <code>PathDenylist::isSecretPath</code> ran: <code>search_project</code>'s filesystem walk. So the leak survived in the plainest possible form — stop searching, and just ask. <code>open_file</code> opened <code>~/.ssh/id_rsa</code> with <code>isError:false</code> and <code>read_tab</code> returned the entire private key body. <code>find_in_tab</code> returned the matching key <em>lines</em>, which is a content channel with extra steps. And <code>search_project</code>'s <strong>open-tab leg</strong> read the same file straight out of the buffer — the deny-list was guarding the disk while the identical bytes sat in a tab, unguarded. All four now check the same list, and <code>open_file</code> refuses <em>before</em> the tab exists, because opening a key and then declining to read it would still put it on screen.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>Fixed — writes that landed somewhere else</h5>
+                        <h5>Fixed — tools that reported success while returning the wrong answer</h5>
                         <ul>
-                            <li><strong><code>goto_line</code> past end-of-file reported success from the top of the document.</strong> Scintilla rejects an out-of-range position and leaves the cursor at line 1, while the response still read <code>{"line": 99999, "ok": true}</code>. Because <code>insert_text</code> defaults to the cursor, an assistant aiming at the end of a file wrote at the <strong>beginning</strong> — behind an approval card that looked correct. <code>Editor::gotoLine</code> clamps and returns where it actually landed; the verb reports <code>line</code>, <code>requested_line</code> and <code>clamped</code>.</li>
-                            <li><strong><code>insert_text</code> with <code>col</code> but no <code>line</code> silently dropped <code>col</code></strong> and wrote at the cursor. Silently relocating a write is the one failure an approval gate cannot protect you from — you approve the text, not the destination. It is an error now.</li>
-                            <li><strong>The AI workspace root flapped on every Ctrl+Tab</strong>, swapping chat history and cancelling pending write approvals mid-conversation. It is sticky per session now; opening a folder re-latches it. Chat history migrates from the old key by <em>copy</em>, not move, so nothing is lost either way.</li>
+                            <li><strong><code>format_json</code> invented structure and called it success.</strong> The MCP path called the JSON panel's auto-<em>fixer</em>, which is exactly right for the panel — a human sees the repair and can undo it. Over MCP nobody does: <code>[1,2</code> came back as <code>[1,2]</code>, <code>{oops</code> as <code>{\n  oops</code>, <code>not json at all</code> with its spaces deleted, every one of them <code>isError:false</code>. A truncated config file becomes <strong>syntactically valid and semantically invented</strong>, so an assistant that formats and writes it back has fabricated data the user never had. The MCP path validates strictly now, through a new non-repairing RFC 8259 check, and fails with the parse position — which is what the tool's description has always claimed. The panel keeps its fixer.</li>
+                            <li><strong>A search with zero matches was reported as "No workspace folder is open".</strong> Whether a folder is open is not a fact about your query, but the error fired only when the open tabs happened to miss — so the same tabs answered "not found" for one query and "you have no folder open" for another. An assistant told the second one pushes the user to open a folder to fix a problem that does not exist. Zero matches is a successful search now, with the reduced coverage carried in a <code>notice</code>.</li>
+                            <li><strong>The fields v0.1.126 promised never crossed the wire.</strong> The C++ bridge did send <code>workspace_searched</code> and <code>scope</code>. The Rust <code>SearchResults</code> struct declared only <code>results</code> and <code>truncated</code>, so serde discarded the rest before the tool result was built and no client ever saw either field. Two layers, one contract, one of them updated.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>Fixed — the sidecar hung on every bad argument</h5>
+                        <h5>Fixed — the mock server had no way to say it was a mock</h5>
                         <ul>
-                            <li><code>notepatra-mcp</code> is a stdio server: with no arguments it blocks reading stdin, which is correct when a client launched it and looks exactly like a crash when a human runs it in a terminal. Every unrecognised argument fell into that loop — <code>--version</code> printed nothing and hung, a mistyped subcommand like <code>sevre</code> hung the same way, and <strong><code>--sokcet</code> silently started the mock server</strong>, so the client received fabricated tabs that looked like a real editor. All now exit 2 with a message naming what you typed.</li>
+                            <li>Run <code>notepatra-mcp</code> without <code>--socket</code> and it answers from an in-memory demo editor. That is deliberate — any MCP client can exercise the protocol with nothing installed — but v0.1.126 said so only in <code>--help</code>, and the consumer here is a language model that never runs <code>--help</code>. Drop the flag from a config and the assistant confidently discusses three files that do not exist, on POSIX paths, on a Windows box, and reports the editor as 0.1.118. The failure is silent and shaped exactly like success. Every mock result now carries a <code>[MOCK DATA]</code> content block naming the fix, plus <code>_meta.mock</code> for code; <code>initialize</code> reports <code>serverInfo.mock</code>; and the mock reports its own real version. The marker is a <em>separate content block</em>, not a prefix — prefixing was the obvious implementation and it corrupted every JSON-returning tool on the surface.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>Fixed — Windows reported version 0.1.0 for 124 releases</h5>
+                        <h5>Changed — tabs have a stable id</h5>
                         <ul>
-                            <li>Every Windows build ever shipped told winget, SCCM, Intune and File Properties &rarr; Details that it was <strong>0.1.0</strong>, regardless of what it actually was — the <code>.rc</code> carried a hardcoded <code>0,1,0,0</code>. It is generated from <code>project(Notepatra VERSION …)</code> now, so there is exactly one place the version is written, and a CI step reads <code>VersionInfo.FileVersion</code> back off the shipped <code>.exe</code> and fails the build on a mismatch — it is a gate, not a warning.</li>
+                            <li>Every write verb addressed its target by <code>tab_index</code>. That index is positional: close a tab to its left and it re-points at a different document, underneath a caller with no way to notice. Out-of-range was the <em>lucky</em> case — you get an error; a shifted-but-still-valid index writes silently, with the approval card the only thing between that and a corrupted file. <code>list_open_tabs</code> now publishes an <code>id</code> that survives reordering, save-as and its neighbours closing, and every verb that names a tab accepts <code>tab_id</code>. Asking for an id that is gone says so, rather than reporting a bad index the caller never supplied. <code>tab_index</code> keeps working.</li>
+                            <li><strong><code>read_tab</code> takes <code>max_bytes</code></strong> and always reports <code>truncated</code> and <code>total_chars</code>. The 5 MB ceiling was the only bound, so a 2.7 MB buffer came back whole and could fill an assistant's entire context in one call — while <code>search_project</code> and <code>run_sql</code> had been negotiable all along.</li>
+                            <li><strong><code>find_in_tab</code> accepts <code>title</code></strong>, which <code>read_tab</code> always accepted and <code>find_in_tab</code> answered with <code>-32602 unexpected argument</code>. And an invalid pagination cursor is now rejected instead of ignored — returning the full list is indistinguishable from "your cursor was valid, here is page 2".</li>
                         </ul>
                     </div>
                     <div class="version-section">
                         <h5>Verification</h5>
                         <ul>
-                            <li>76 C++ suites and 91 Rust tests locally; 73 suites and 192 Rust assertions on Windows, including a real <code>QLocalServer</code> round-trip and the named-pipe integration test.</li>
-                            <li>Every new test was red-state verified by <strong>restoring the pre-fix code</strong>, not by negating a condition. That distinction earned its keep: a hand-written sabotage of <code>search_project</code> still produced the correct answer, which made a sound test look weak until the real pre-fix control flow was put back. The failure signatures then matched the original Windows bug reports exactly — <code>{"line": 99999, "clamped": false}</code>, <code>workspace_searched: true</code> with no workspace open, and "leaked contents of keystore.jks".</li>
+                            <li>76 C++ suites and 100 Rust tests locally, across both Cargo feature sets — the feature-conditional gap that hung four CI runners last release.</li>
+                            <li>Every new test red-state verified by <strong>restoring the pre-fix code</strong>, not by negating a condition. One gap stated plainly: the strict-JSON validator is unit-tested, but its wiring into <code>MainWindow</code>'s <code>formatText</code> host lambda is verified by inspection — that lambda is not reachable from the bridge's fake host.</li>
                         </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.126">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.126">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.125</div>
+                    <div class="version-meta">
+                        <span>2026-08-07</span>
+                        <span>· <strong>A one-word MCP search could return the contents of your SSH private key.</strong> Fixed, along with three other defects found by testing the MCP server on Windows — and the Windows binary finally reports its real version after 124 releases claiming 0.1.0. No new editor features; every change is a fix.</span>
+                        <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
                     </div>
                 </div>
                 <div class="version-actions">
@@ -2065,6 +2082,7 @@
                     <a href="https://github.com/singhpratech/notepatra/commits/v0.1.125">Commits</a>
                 </div>
             </div>
+
 
             <div class="version-card">
                 <div class="version-header">
@@ -2122,7 +2140,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~12 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.125: 238 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (the Full download bundles the DuckDB v1.1.3 engine on every platform), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
+                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~12 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.126: 238 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (the Full download bundles the DuckDB v1.1.3 engine on every platform), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2134,7 +2152,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~12 MB</strong> (12.6 MB on Linux x64) across every platform. v0.1.124 download sizes: <strong>4.4 MB</strong> Linux x64 tar.gz · <strong>4.1 MB</strong> Linux ARM64 tar.gz · <strong>27.7 MB</strong> macOS DMG · <strong>43.0 MB</strong> Windows MSI / <strong>32.8 MB</strong> NSIS / <strong>37.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~12 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~12 MB</strong> (12.6 MB on Linux x64) across every platform. v0.1.126 download sizes: <strong>4.4 MB</strong> Linux x64 tar.gz · <strong>4.1 MB</strong> Linux ARM64 tar.gz · <strong>27.7 MB</strong> macOS DMG · <strong>43.0 MB</strong> Windows MSI / <strong>32.8 MB</strong> NSIS / <strong>37.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~12 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -2142,7 +2160,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.125 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.126 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>What file encodings are supported?</h3>

@@ -34,6 +34,14 @@ struct McpEditorHost {
     // host cannot distinguish, so the bridge treats every tab as editable
     // (backward-compatible with older hosts / test fakes). (v0.1.121, issue #1)
     std::function<bool(int)> tabEditable;
+    // v0.1.126 (NP-13): identity that survives the tab list being reordered.
+    // A tab index is positional — close a tab to the left and every later
+    // index silently re-points at a different document, so an agent that read
+    // list_open_tabs and wrote a few seconds later could land its edit in the
+    // wrong file. This returns a per-document id that is stable for the life
+    // of the tab. An unset field means the host cannot supply one; the bridge
+    // then omits `id` and keeps working on indices alone.
+    std::function<qint64(int)> tabId;
     std::function<int(const QString &)> openFile; // → tab index, -1 on failure
     std::function<QString(int *)> selection;      // text; *out = current tab index
     std::function<QString()> workspaceRoot;       // "" when no folder root is set
@@ -290,6 +298,24 @@ private:
     };
 
     int resolveWriteTab(const QJsonObject &args, QString *err) const;
+    // v0.1.126 (NP-11 / NP-13): the ONE place a request names a tab.
+    //
+    // Accepts, in priority order:
+    //   tab_id   — the stable identity from list_open_tabs. Survives other
+    //              tabs closing; the only selector safe to hold across calls.
+    //   <indexKey> — positional. "index" for the read verbs, "tab_index" for
+    //              the write verbs: two spellings that already shipped and
+    //              that callers depend on, so both stay.
+    //   title    — first tab with that exact title.
+    // When nothing is given and `allowCurrent` is set, falls back to the
+    // focused tab. Returns -1 and fills *err otherwise.
+    //
+    // find_in_tab rejecting a `title` that read_tab accepted was pure drift
+    // between two hand-written resolvers; there is now only one.
+    int resolveTab(const QJsonObject &args, const char *indexKey,
+                   bool allowCurrent, QString *err) const;
+    // Stable id for a tab, or -1 when the host predates tabId.
+    qint64 tabIdOf(int idx) const;
     QString tabLabel(int idx) const;
     // True when the host reports tab idx as an editable text buffer (or the
     // host cannot tell — see McpEditorHost::tabEditable). Verbs that read or

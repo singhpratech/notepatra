@@ -191,12 +191,7 @@ fn tools_call_happy_paths() {
         assert_eq!(r["result"]["content"][0]["type"], "text");
     }
     // list_open_tabs: text payload is JSON with the three mock tabs.
-    let tabs: Value = serde_json::from_str(
-        responses[1]["result"]["content"][0]["text"]
-            .as_str()
-            .unwrap(),
-    )
-    .unwrap();
+    let tabs: Value = json_of(&responses[1]);
     assert_eq!(tabs.as_array().unwrap().len(), 3);
     assert_eq!(tabs[1]["title"], "NOTES.md");
     // v0.1.121 (issue #1): every entry carries the editable flag; the mock's
@@ -204,39 +199,20 @@ fn tools_call_happy_paths() {
     assert_eq!(tabs[0]["editable"], true);
     assert_eq!(tabs[1]["editable"], true);
     // read_tab by index returns the raw content.
-    assert!(responses[2]["result"]["content"][0]["text"]
-        .as_str()
-        .unwrap()
-        .contains("hello from notepatra"));
-    assert!(responses[3]["result"]["content"][0]["text"]
-        .as_str()
-        .unwrap()
-        .contains("Release notes"));
+    assert!(text_of(&responses[2]).contains("hello from notepatra"));
+    assert!(text_of(&responses[3]).contains("Release notes"));
     // search_project finds the mock NOTES.md line — bridge shape:
     // {"results":[{path,line,text}],"truncated"}.
-    let hits: Value = serde_json::from_str(
-        responses[4]["result"]["content"][0]["text"]
-            .as_str()
-            .unwrap(),
-    )
-    .unwrap();
+    let hits: Value = serde_json::from_str(text_of(&responses[4])).unwrap();
     assert_eq!(hits["results"][0]["path"], "/home/user/project/NOTES.md");
     assert_eq!(hits["results"][0]["line"], 3);
     assert_eq!(hits["truncated"], false);
     // get_selection returns tab index + text (no title on the wire).
-    let sel: Value = serde_json::from_str(
-        responses[5]["result"]["content"][0]["text"]
-            .as_str()
-            .unwrap(),
-    )
-    .unwrap();
+    let sel: Value = serde_json::from_str(text_of(&responses[5])).unwrap();
     assert_eq!(sel["tab_index"], 0);
     assert!(sel["text"].as_str().unwrap().contains("println!"));
     // open_file reports the new tab.
-    assert!(responses[6]["result"]["content"][0]["text"]
-        .as_str()
-        .unwrap()
-        .contains("/tmp/new_file.txt"));
+    assert!(text_of(&responses[6]).contains("/tmp/new_file.txt"));
 }
 
 #[test]
@@ -244,7 +220,7 @@ fn tool_level_error_is_iserror_result_not_protocol_error() {
     let responses = run_lines(&[call_line(1, "read_tab", json!({ "tab_index": 99 }))]);
     let r = &responses[0]["result"];
     assert_eq!(r["isError"], true);
-    assert!(r["content"][0]["text"].as_str().unwrap().contains("no tab"));
+    assert!(text_of(&responses[0]).contains("no tab"));
     assert!(responses[0].get("error").is_none());
 }
 
@@ -309,10 +285,29 @@ fn unknown_notification_is_ignored_and_eof_shuts_down() {
 // Wave-2 tools (v0.1.118)
 // ---------------------------------------------------------------------------
 
+/// The PAYLOAD text block.
+///
+/// v0.1.126 (NP-06): against the mock transport the server prepends a
+/// "[MOCK DATA]" content block, so the payload is the LAST block, not the
+/// first. Every test in this file runs on the mock, which is exactly the
+/// configuration that needed the marker.
 fn text_of(response: &Value) -> &str {
-    response["result"]["content"][0]["text"]
+    let blocks = response["result"]["content"]
+        .as_array()
+        .expect("content array");
+    blocks.last().expect("at least one content block")["text"]
         .as_str()
         .expect("text content block")
+}
+
+/// The mock warning that must precede every payload, and its absence is a
+/// regression: without it a dropped `--socket` is silent.
+fn mock_notice_of(response: &Value) -> Option<&str> {
+    let blocks = response["result"]["content"].as_array()?;
+    if blocks.len() < 2 {
+        return None;
+    }
+    blocks[0]["text"].as_str()
 }
 
 fn json_of(response: &Value) -> Value {
@@ -1382,12 +1377,7 @@ fn p0a_list_languages_and_get_capabilities() {
     ]);
     // list_languages: canonical tokens, exact case.
     assert_eq!(responses[1]["result"]["isError"], false);
-    let langs: Value = serde_json::from_str(
-        responses[1]["result"]["content"][0]["text"]
-            .as_str()
-            .unwrap(),
-    )
-    .unwrap();
+    let langs: Value = json_of(&responses[1]);
     let arr = langs["languages"].as_array().unwrap();
     assert_eq!(arr[0], "Plain Text");
     assert!(arr.iter().any(|l| l == "Python"));
@@ -1395,12 +1385,7 @@ fn p0a_list_languages_and_get_capabilities() {
     // get_capabilities: editor fields pass through; tool_count and tiers are
     // injected by the tool layer and MUST match the definitions list.
     assert_eq!(responses[2]["result"]["isError"], false);
-    let caps: Value = serde_json::from_str(
-        responses[2]["result"]["content"][0]["text"]
-            .as_str()
-            .unwrap(),
-    )
-    .unwrap();
+    let caps: Value = serde_json::from_str(text_of(&responses[2])).unwrap();
     let expected = notepatra_mcp::tools::definitions()
         .as_array()
         .unwrap()
@@ -1649,4 +1634,238 @@ fn phase2_malformed_arguments_are_invalid_params() {
     for r in &responses {
         assert_eq!(r["error"]["code"], -32602, "expected -32602 in {r}");
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// v0.1.126 — the second-wave defects from the 0.1.125 retest.
+// ═══════════════════════════════════════════════════════════════════════
+
+/// NP-06. Without `--socket` this server fabricates everything it returns.
+/// v0.1.125 said so only in `--help` — which the consumer, a language model,
+/// never reads — so every mock response was `isError:false` with no marker of
+/// any kind. Drop the `--socket` from a config and the assistant confidently
+/// discussed three files that did not exist, on POSIX paths, on a Windows box.
+#[test]
+fn mock_transport_labels_every_result_as_fabricated() {
+    let responses = run_lines(&[
+        initialize_line(1, LATEST_PROTOCOL_VERSION),
+        call_line(2, "list_open_tabs", json!({})),
+        call_line(3, "app_info", json!({})),
+        call_line(4, "read_tab", json!({ "tab_index": 99 })), // an ERROR result
+    ]);
+
+    // initialize is the first thing a client learns, so it says so there too.
+    assert_eq!(responses[0]["result"]["serverInfo"]["mock"], true);
+    assert!(responses[0]["result"]["instructions"]
+        .as_str()
+        .expect("instructions")
+        .contains("WITHOUT --socket"));
+
+    for r in &responses[1..] {
+        let notice = mock_notice_of(r).expect("every tool result carries the notice");
+        assert!(notice.contains("[MOCK DATA]"), "weak notice: {notice}");
+        assert!(notice.contains("--socket"), "notice must say how to fix it");
+        assert_eq!(
+            r["result"]["_meta"]["mock"], true,
+            "no machine-readable flag"
+        );
+    }
+
+    // The notice must not have corrupted the payload: a JSON result still
+    // parses. Prefixing the text (the obvious fix) would have broken every
+    // JSON-returning tool on the surface to fix a labelling problem.
+    let tabs = json_of(&responses[1]);
+    assert_eq!(tabs.as_array().expect("tabs array").len(), 3);
+
+    // And the mock no longer claims to be a three-releases-stale editor.
+    let info = json_of(&responses[2]);
+    assert_eq!(info["mock"], true);
+    assert_eq!(info["version"], env!("CARGO_PKG_VERSION"));
+}
+
+/// The real transport must NOT be labelled — otherwise the marker means
+/// nothing. There is no socket in a unit test, so this asserts the property
+/// that decides it.
+#[test]
+fn only_the_mock_transport_is_labelled() {
+    use notepatra_mcp::transport::socket::SocketEditor;
+    use notepatra_mcp::transport::EditorTransport;
+    assert!(MockEditor::default().is_mock());
+    assert!(
+        !SocketEditor::new().is_mock(),
+        "a real editor connection must never be labelled as mock data"
+    );
+}
+
+/// NP-07. The C++ bridge has sent `workspace_searched` and `scope` since
+/// v0.1.125 — the changelog promised them — but the Rust `SearchResults`
+/// struct declared only `results` and `truncated`, so serde dropped the rest
+/// before the tool result was built and no client ever saw them.
+#[test]
+fn search_project_reports_the_scope_it_actually_covered() {
+    let responses = run_lines(&[call_line(1, "search_project", json!({ "query": "hello" }))]);
+    let r = json_of(&responses[0]);
+    assert!(
+        r.get("workspace_searched").is_some(),
+        "workspace_searched was dropped again: {r}"
+    );
+    assert!(r.get("scope").is_some(), "scope was dropped again: {r}");
+    // The mock walks no filesystem and must say so rather than implying a
+    // project-wide search it never ran.
+    assert_eq!(r["workspace_searched"], false);
+    assert_eq!(r["scope"], "open_tabs_only");
+}
+
+/// NP-08. Zero matches is a successful search. Reporting it as an error — and
+/// specifically as "no workspace folder is open" — states a different fact
+/// about the world, and pushes the user to fix a problem that does not exist.
+#[test]
+fn a_search_with_no_matches_is_success_not_an_error() {
+    let responses = run_lines(&[call_line(
+        1,
+        "search_project",
+        json!({ "query": "zzz-no-such-token-zzz" }),
+    )]);
+    assert_eq!(
+        responses[0]["result"]["isError"], false,
+        "not-found was reported as an error: {}",
+        responses[0]
+    );
+    let r = json_of(&responses[0]);
+    assert_eq!(r["results"].as_array().expect("results array").len(), 0);
+    assert_eq!(r["truncated"], false);
+}
+
+/// NP-10. A 2.69 MB buffer came back whole with no `truncated` flag and no way
+/// to ask for less — one call could fill an assistant's entire context.
+#[test]
+fn read_tab_can_be_capped_by_the_caller() {
+    let responses = run_lines(&[
+        call_line(1, "read_tab", json!({ "tab_index": 0, "max_bytes": 5 })),
+        call_line(2, "read_tab", json!({ "tab_index": 0 })),
+        call_line(3, "read_tab", json!({ "tab_index": 0, "max_bytes": 0 })),
+        call_line(4, "read_tab", json!({ "tab_index": 0, "max_bytes": "5" })),
+    ]);
+    let capped = text_of(&responses[0]);
+    // The truncation marker is appended, so the TEXT is 5 chars plus it.
+    assert!(
+        capped.starts_with("fn ma"),
+        "max_bytes was ignored: {capped:?}"
+    );
+    assert!(
+        capped.contains("truncated"),
+        "a capped read must say it was capped: {capped:?}"
+    );
+    // Vacuity guard: uncapped, the same tab returns the whole buffer, so the
+    // assertion above is about max_bytes and not about a tab that is short.
+    let whole = text_of(&responses[1]);
+    assert!(whole.contains("hello from notepatra"));
+    assert!(whole.len() > capped.len());
+    // Nonsense caps are rejected rather than silently clamped.
+    assert_eq!(responses[2]["error"]["code"], -32602);
+    assert_eq!(responses[3]["error"]["code"], -32602);
+}
+
+/// NP-11. `title` was the selector `read_tab` always took, and `find_in_tab`
+/// answered it with -32602 "unexpected argument" — the same argument, two
+/// answers, on neighbouring tools.
+#[test]
+fn find_in_tab_accepts_the_selectors_read_tab_accepts() {
+    let responses = run_lines(&[
+        call_line(
+            1,
+            "find_in_tab",
+            json!({ "title": "NOTES.md", "query": "lexer" }),
+        ),
+        call_line(2, "read_tab", json!({ "title": "NOTES.md" })),
+        call_line(
+            3,
+            "find_in_tab",
+            json!({ "title": "no-such-tab", "query": "x" }),
+        ),
+    ]);
+    assert_eq!(
+        responses[0]["result"]["isError"], false,
+        "find_in_tab rejected a title read_tab accepts: {}",
+        responses[0]
+    );
+    let found = json_of(&responses[0]);
+    assert!(
+        !found["matches"].as_array().expect("matches").is_empty(),
+        "the title resolved to the wrong tab"
+    );
+    assert_eq!(responses[1]["result"]["isError"], false);
+    // An unknown title fails the same way on both.
+    assert_eq!(responses[2]["result"]["isError"], true);
+}
+
+/// NP-13. The write tier addressed tabs positionally, so an assistant that
+/// read `list_open_tabs` and wrote a few seconds later could land its edit in
+/// a different document — and out-of-range was the lucky case.
+#[test]
+fn tab_ids_are_published_and_accepted() {
+    let responses = run_lines(&[
+        call_line(1, "list_open_tabs", json!({})),
+        call_line(2, "read_tab", json!({ "tab_id": 2 })),
+        call_line(3, "read_tab", json!({ "tab_id": 99999 })),
+        call_line(4, "read_tab", json!({ "tab_id": 2, "tab_index": 0 })),
+    ]);
+    let tabs = json_of(&responses[0]);
+    let ids: Vec<i64> = tabs
+        .as_array()
+        .expect("tabs")
+        .iter()
+        .map(|t| t["id"].as_i64().expect("every tab publishes an id"))
+        .collect();
+    assert_eq!(ids.len(), 3);
+    assert!(
+        ids.iter().collect::<std::collections::HashSet<_>>().len() == 3,
+        "ids must be unique: {ids:?}"
+    );
+
+    // id 2 is the second mock tab, whatever its index happens to be.
+    assert_eq!(responses[1]["result"]["isError"], false);
+    assert!(text_of(&responses[1]).contains("Release notes"));
+
+    // A closed/unknown id reports what actually happened, rather than an index
+    // error about a number the caller never supplied.
+    assert_eq!(responses[2]["result"]["isError"], true);
+    assert!(
+        text_of(&responses[2]).contains("was closed"),
+        "unhelpful stale-id error: {}",
+        text_of(&responses[2])
+    );
+
+    // Two selectors at once is a caller bug worth reporting, not a coin flip.
+    assert_eq!(responses[3]["error"]["code"], -32602);
+}
+
+/// NP-12. This server returns every entry in one page and never issues a
+/// `nextCursor`, so any cursor a client sends is invalid. v0.1.125 ignored it
+/// and returned the full list — indistinguishable from "your cursor was valid,
+/// here is page 2", which makes a paginating client loop or double-count.
+#[test]
+fn an_invalid_pagination_cursor_is_rejected() {
+    let responses = run_lines(&[
+        json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list",
+                "params": { "cursor": "bogus-cursor" } })
+        .to_string(),
+        json!({ "jsonrpc": "2.0", "id": 2, "method": "prompts/list",
+                "params": { "cursor": "bogus-cursor" } })
+        .to_string(),
+        // Vacuity guard: the same calls WITHOUT a cursor must still work, or
+        // this would pass against a server that had simply stopped listing.
+        json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {} }).to_string(),
+        json!({ "jsonrpc": "2.0", "id": 4, "method": "prompts/list" }).to_string(),
+    ]);
+    assert_eq!(responses[0]["error"]["code"], -32602, "{}", responses[0]);
+    assert_eq!(responses[1]["error"]["code"], -32602, "{}", responses[1]);
+    assert!(!responses[2]["result"]["tools"]
+        .as_array()
+        .expect("tools list")
+        .is_empty());
+    assert!(!responses[3]["result"]["prompts"]
+        .as_array()
+        .expect("prompts list")
+        .is_empty());
 }

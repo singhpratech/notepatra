@@ -189,7 +189,7 @@ fn invalid_greeting_rejected() {
         assert_eq!(n, 0, "client sent a payload after a bad greeting: {line}");
     });
     let ed = editor_for(&pipe);
-    let err = ed.read_tab(TabSelector::Index(0)).unwrap_err();
+    let err = ed.read_tab(TabSelector::Index(0), None).unwrap_err();
     assert!(
         err.0.contains("unexpected greeting"),
         "unexpected error: {}",

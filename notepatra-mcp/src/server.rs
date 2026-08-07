@@ -110,13 +110,13 @@ impl<T: EditorTransport> Server<T> {
 
     fn handle_request(&mut self, method: &str, params: Option<&Value>, id: Value) -> Value {
         match method {
-            "initialize" => initialize(params, id, &self.version),
+            "initialize" => initialize(params, id, &self.version, self.transport.is_mock()),
             "ping" => result_response(id, json!({})),
-            "tools/list" => result_response(id, json!({ "tools": tools::definitions() })),
+            "tools/list" => list_page(params, id, json!({ "tools": tools::definitions() })),
             "tools/call" => self.tools_call(params, id),
             "resources/list" => self.resources_list(id),
             "resources/read" => self.resources_read(params, id),
-            "prompts/list" => result_response(id, json!({ "prompts": prompts::definitions() })),
+            "prompts/list" => list_page(params, id, json!({ "prompts": prompts::definitions() })),
             "prompts/get" => self.prompts_get(params, id),
             other => error_response(id, METHOD_NOT_FOUND, &format!("Method not found: {other}")),
         }
@@ -211,7 +211,7 @@ impl<T: EditorTransport> Server<T> {
             let Ok(index) = index.parse::<usize>() else {
                 return resource_not_found(id, &uri);
             };
-            match self.transport.read_tab(TabSelector::Index(index)) {
+            match self.transport.read_tab(TabSelector::Index(index), None) {
                 // resources/read has no structured truncation field, so the
                 // "[truncated at 5 MB]" marker rides in the text itself —
                 // same as the read_tab tool (kept simple on purpose).
@@ -281,15 +281,10 @@ impl<T: EditorTransport> Server<T> {
                 )
             }
         };
+        let mock = self.transport.is_mock();
         match tools::call(&mut self.transport, name, args) {
-            CallOutcome::Ok(text) => result_response(
-                id,
-                json!({ "content": [{ "type": "text", "text": text }], "isError": false }),
-            ),
-            CallOutcome::ToolError(text) => result_response(
-                id,
-                json!({ "content": [{ "type": "text", "text": text }], "isError": true }),
-            ),
+            CallOutcome::Ok(text) => result_response(id, tool_result(mock, text, false)),
+            CallOutcome::ToolError(text) => result_response(id, tool_result(mock, text, true)),
             CallOutcome::InvalidParams(msg) => {
                 error_response(id, INVALID_PARAMS, &format!("Invalid params: {msg}"))
             }
@@ -299,6 +294,71 @@ impl<T: EditorTransport> Server<T> {
         }
     }
 }
+
+/// Answer a `*/list` method, rejecting a pagination cursor we never issued
+/// (v0.1.126, NP-12).
+///
+/// This server returns every entry in one page and never sets `nextCursor`, so
+/// the only cursor a client can send is one it invented or one left over from
+/// a different server. v0.1.125 IGNORED it and returned the full list, which
+/// is indistinguishable from "your cursor was valid and this is page 2" — a
+/// paginating client would loop or silently double-count. MCP specifies
+/// -32602 for an invalid cursor, so say so.
+fn list_page(params: Option<&Value>, id: Value, result: Value) -> Value {
+    if let Some(Value::Object(p)) = params {
+        if let Some(c) = p.get("cursor") {
+            if !c.is_null() {
+                return error_response(
+                    id,
+                    INVALID_PARAMS,
+                    "Invalid params: unknown cursor — this server returns every \
+                     entry in a single page and never issues a nextCursor",
+                );
+            }
+        }
+    }
+    result_response(id, result)
+}
+
+/// Build a `tools/call` result, marking it when the data is fabricated
+/// (v0.1.126, NP-06).
+///
+/// Without `--socket` the server answers from an in-memory demo editor. That
+/// is a feature — any MCP client can exercise the protocol with nothing
+/// installed — but v0.1.125 said so only in `--help`, and the consumer here is
+/// a language model that never runs `--help`. Every mock response was
+/// `isError:false` with no marker of any kind, so a config that lost its
+/// `--socket` produced an assistant confidently describing three files that do
+/// not exist, on POSIX paths, on a Windows box. The failure was silent and
+/// shaped exactly like success.
+///
+/// The notice is its own CONTENT BLOCK rather than a prefix on the payload.
+/// Most of this surface returns JSON as text; prefixing would have corrupted
+/// every one of those results to fix a labelling problem. A separate block
+/// reaches the model (clients concatenate text blocks) and leaves the payload
+/// byte-identical. `_meta.mock` carries the same fact for code.
+fn tool_result(is_mock: bool, text: String, is_error: bool) -> Value {
+    if !is_mock {
+        return json!({
+            "content": [{ "type": "text", "text": text }],
+            "isError": is_error,
+        });
+    }
+    json!({
+        "content": [
+            { "type": "text", "text": MOCK_NOTICE },
+            { "type": "text", "text": text },
+        ],
+        "isError": is_error,
+        "_meta": { "mock": true },
+    })
+}
+
+pub const MOCK_NOTICE: &str =
+    "[MOCK DATA] No editor is connected. notepatra-mcp is running without \
+--socket, so everything in the next content block is FABRICATED demo content, \
+not the user's real files. Do not act on it or describe it as the user's data; \
+tell the user to add --socket to the server command.";
 
 /// Last path segment, tolerant of both separators (the bridge sends native
 /// separators — backslashes on Windows).
@@ -338,7 +398,7 @@ fn percent_decode(s: &str) -> Option<String> {
     String::from_utf8(bytes).ok()
 }
 
-fn initialize(params: Option<&Value>, id: Value, server_version: &str) -> Value {
+fn initialize(params: Option<&Value>, id: Value, server_version: &str, is_mock: bool) -> Value {
     let requested = params
         .and_then(|p| p.get("protocolVersion"))
         .and_then(Value::as_str);
@@ -355,7 +415,19 @@ fn initialize(params: Option<&Value>, id: Value, server_version: &str) -> Value 
             // listChanged is deliberately not advertised on any capability:
             // the server never emits list-change notifications.
             "capabilities": { "tools": {}, "resources": {}, "prompts": {} },
-            "serverInfo": { "name": SERVER_NAME, "version": server_version }
+            // NP-06: the very first thing a client learns should say whether
+            // it is talking to a real editor. `instructions` is the one field
+            // in `initialize` that many clients put into the model's context.
+            "serverInfo": { "name": SERVER_NAME, "version": server_version, "mock": is_mock },
+            "instructions": if is_mock {
+                "This server is running WITHOUT --socket: it is not connected to a \
+                 running Notepatra editor and every tool returns fabricated demo \
+                 data. Do not present any of it as the user's real files."
+            } else {
+                "Connected to a running Notepatra editor. Tabs are addressed by \
+                 `tab_id` (stable, from list_open_tabs) or `tab_index` \
+                 (positional, changes when tabs close) — prefer tab_id for writes."
+            }
         }),
     )
 }

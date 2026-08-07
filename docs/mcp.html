@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Notepatra MCP — Your editor, readable by your AI</title>
-<meta name="description" content="Notepatra's MCP server (introduced v0.1.118, 49 tools as of v0.1.123): tools that let Claude, Codex, and any spec-compliant MCP client read your open tabs, search your workspace, run read-only SQL, inspect Git — and, only with your explicit per-action approval, edit, save, and create Noter notes. Local socket + stdio, nothing leaves your machine.">
+<meta name="description" content="Notepatra's MCP server (introduced v0.1.118, 49 tools as of v0.1.126): tools that let Claude, Codex, and any spec-compliant MCP client read your open tabs, search your workspace, run read-only SQL, inspect Git — and, only with your explicit per-action approval, edit, save, and create Noter notes. Local socket + stdio, nothing leaves your machine.">
 <link rel="canonical" href="https://notepatra.org/mcp.html">
 <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png">
 
@@ -213,7 +213,7 @@
   <div class="topbar-left">
     <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">MCP · v0.1.123 · 49 tools</span>
+    <span class="tag">MCP · v0.1.126 · 49 tools</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
@@ -229,13 +229,16 @@
   <p class="lead">From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a Model Context Protocol server that lets Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client see what you have open, search your workspace, run read-only SQL over your data files, read your Git status and Noter notes, and — only with your explicit per-action approval — edit, save, and create notes. Everything runs over stdio and a local socket. Nothing leaves your machine.</p>
 
   <div class="callout info">
-    <strong>Release status.</strong> MCP first shipped in v0.1.118; the current release is v0.1.123. The server provides <strong>49 tools</strong> (Git, read-only SQL, Noter write verbs, diagram export) and supports Windows named-pipe transport, and v0.1.120 adds a prebuilt, cosign-signed Windows sidecar (<code>notepatra-mcp-windows-x64.zip</code>) plus a one-click <code>notepatra-mcp.mcpb</code> Claude Desktop bundle as release assets. Everything on this page describes v0.1.123.
+    <strong>Release status.</strong> MCP first shipped in v0.1.118; the current release is v0.1.126. The server provides <strong>49 tools</strong> (Git, read-only SQL, Noter write verbs, diagram export) and supports Windows named-pipe transport, and v0.1.120 adds a prebuilt, cosign-signed Windows sidecar (<code>notepatra-mcp-windows-x64.zip</code>) plus a one-click <code>notepatra-mcp.mcpb</code> Claude Desktop bundle as release assets. Everything on this page describes v0.1.126.
+    <br><br>
+    <strong>v0.1.125 and v0.1.126 were both MCP-only releases</strong>, driven by testing this server against a real editor on Windows rather than by new features. v0.1.125 fixed a credential leak in <code>search_project</code>, a <code>goto_line</code> that reported success from the wrong line, and a sidecar that hung on every mistyped argument. A retest then found that the credential fix covered only one of four read paths — see <a href="#v126">what changed in v0.1.126</a> below.
   </div>
 
   <nav class="pagenav">
     On this page:
     <a href="#what-it-is">What it is</a> ·
     <a href="#tools">The 49 tools</a> ·
+    <a href="#v126">New in v0.1.126</a> ·
     <a href="#approval">Write approval</a> ·
     <a href="#setup">Setup per client</a> ·
     <a href="#resources-prompts">Resources &amp; prompts</a> ·
@@ -264,14 +267,14 @@
   <table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>list_open_tabs</code></td><td>List the open tabs with index, title, file path, and modified state.</td></tr>
-      <tr><td><code>read_tab</code></td><td>Read the full text of one open tab, selected by index or by title.</td></tr>
+      <tr><td><code>list_open_tabs</code></td><td>List the open tabs with <strong>id</strong>, index, title, file path, and modified state. The <code>id</code> is stable; the <code>index</code> is not.</td></tr>
+      <tr><td><code>read_tab</code></td><td>Read the text of one open tab, selected by <code>tab_id</code>, index, or title. Takes <code>max_bytes</code> and reports <code>truncated</code> + <code>total_chars</code>, so a large buffer can be paged instead of swallowing your whole context.</td></tr>
       <tr><td><code>get_selection</code></td><td>Get the currently selected text, with the tab it belongs to.</td></tr>
       <tr><td><code>get_status</code></td><td>Editor state: active tab, file path, language, encoding, cursor position.</td></tr>
       <tr><td><code>app_info</code></td><td>Application info: name, version, edition (Lite/Full), platform.</td></tr>
       <tr><td><code>list_recent_files</code></td><td>List recently opened file paths.</td></tr>
-      <tr><td><code>find_in_tab</code></td><td>Find text inside one open tab (default: the active tab) — a literal substring, or a regular expression with <code>{regex: true}</code>.</td></tr>
-      <tr><td><code>search_project</code></td><td>Search all open tabs plus files under the workspace folder, case-insensitive (capped at 200 matches) — a literal substring, or a regular expression with <code>{regex: true}</code>.</td></tr>
+      <tr><td><code>find_in_tab</code></td><td>Find text inside one open tab (default: the active tab), selected by <code>tab_id</code>, index, or title — a literal substring, or a regular expression with <code>{regex: true}</code>.</td></tr>
+      <tr><td><code>search_project</code></td><td>Search all open tabs plus files under the workspace folder, case-insensitive (capped at 200 matches) — a literal substring, or a regular expression with <code>{regex: true}</code>. Reports <code>workspace_searched</code> and <code>scope</code>, so a tabs-only search can never pass for a project-wide one.</td></tr>
       <tr><td><code>list_notes</code></td><td>List Noter notes with title, file name, and last-modified time.</td></tr>
       <tr><td><code>read_note</code></td><td>Read one Noter note by its file path.</td></tr>
       <tr><td><code>list_reminders</code></td><td>List your Noter reminders with note title, due time, and bucket (overdue / today / upcoming).</td></tr>
@@ -332,6 +335,36 @@
       <tr><td><code>export_chart</code></td><td>Render a chart off-screen and export it to a PNG / SVG / HTML / spec file. Full edition (WebEngine) only.</td></tr>
     </tbody>
   </table>
+
+  <h2 id="v126" class="anchor-target">What changed in v0.1.126</h2>
+  <p>v0.1.125 fixed a credential leak in <code>search_project</code>. A retest of that release found the fix covered <strong>one read path out of four</strong> — and eight other defects alongside it. Everything below is now the shipped behaviour.</p>
+
+  <div class="callout warning">
+    <strong>The credential deny-list guarded one door.</strong> v0.1.125 taught <code>search_project</code>'s filesystem walk to skip credential files, and that was the only place the check ran. So the leak survived in the plainest possible form — stop searching and just ask:
+    <br><br>
+    <code>open_file {"path": ".../.ssh/id_rsa"}</code> opened it with <code>isError:false</code>, and <code>read_tab</code> returned the entire private key. <code>find_in_tab</code> returned the matching key lines. And <code>search_project</code>'s <em>open-tab leg</em> read the same file straight out of the buffer while its disk leg refused it.
+    <br><br>
+    All four now check the same list, and <code>open_file</code> refuses <em>before</em> the tab exists — opening a key and then declining to read it would still put it on your screen.
+  </div>
+
+  <h3>Tools that reported success while returning the wrong answer</h3>
+  <ul>
+    <li><strong><code>format_json</code> invented structure.</strong> The MCP path called the editor's JSON auto-<em>fixer</em>, which is right for the JSON panel — a human sees the repair and can undo it — and wrong here. <code>[1,2</code> came back as <code>[1,2]</code> with <code>isError:false</code>: a truncated config file made syntactically valid and semantically invented. Format-then-write-back would have fabricated data you never had. It validates strictly now and fails with a parse position.</li>
+    <li><strong>A search that simply missed reported "No workspace folder is open".</strong> Whether a folder is open is not a fact about your query, but the error only fired when the open tabs happened to contain nothing — so the same tabs answered "not found" for one query and "you have no folder open" for another. Zero matches is a successful search now, with the reduced coverage carried in a <code>notice</code>.</li>
+    <li><strong>Without <code>--socket</code>, everything was fabricated and nothing said so.</strong> Only <code>--help</code> warned, and the consumer is a model that never reads it. Every mock result now carries a <code>[MOCK DATA]</code> block and <code>_meta.mock</code>.</li>
+  </ul>
+
+  <h3>Tabs have a stable id</h3>
+  <p>Every write verb used to address its target by <code>tab_index</code>. That index is <strong>positional</strong>: close a tab to its left and it silently re-points at a different document, underneath a caller with no way to notice. Out-of-range was the <em>lucky</em> case — you get an error. A shifted-but-still-valid index writes silently, with the approval card the only thing in the way.</p>
+  <p><code>list_open_tabs</code> now publishes an <code>id</code> per tab that survives reordering, save-as, and its neighbours closing, and every verb that names a tab accepts <code>tab_id</code>. Asking for an id that is gone tells you it was closed, rather than reporting a bad index you never supplied. <code>tab_index</code> keeps working everywhere it did.</p>
+
+  <h3>Smaller corrections</h3>
+  <ul>
+    <li><code>search_project</code> now actually sends the <code>workspace_searched</code> and <code>scope</code> fields v0.1.125 promised — the editor had been sending them all along and the sidecar's own result struct discarded them.</li>
+    <li><code>read_tab</code> takes <code>max_bytes</code> and always reports <code>truncated</code> and <code>total_chars</code>, so a multi-megabyte buffer can be paged rather than filling your context in one call.</li>
+    <li><code>find_in_tab</code> accepts <code>title</code>, which <code>read_tab</code> always accepted and <code>find_in_tab</code> rejected as an unexpected argument.</li>
+    <li>An invalid pagination cursor on <code>tools/list</code> is rejected instead of ignored — returning the full list is indistinguishable from "your cursor was valid, here is page 2".</li>
+  </ul>
 
   <h2 id="approval" class="anchor-target">The write-approval model</h2>
   <p>The eleven write tools <strong>never execute on arrival</strong>. Each incoming write request shows a non-modal approval card inside the Notepatra window — it does not steal focus or block your typing — describing what the assistant wants to do, with a preview of the text involved and two buttons: <strong>Approve</strong> and <strong>Deny</strong>.</p>
@@ -442,7 +475,9 @@ async with MCPServerStdio(
     <li><strong>Writes need a visible window.</strong> The approval card must appear somewhere; with no visible window, writes are denied with <code>approval unavailable</code>. That is deliberate — see the <a href="#approval">approval model</a>.</li>
     <li><strong>Cloud-only connector surfaces can't reach it.</strong> ChatGPT connectors and claude.ai web connectors only speak to servers reachable at a public URL. A desktop editor on your machine is not that, so those surfaces cannot use <code>notepatra-mcp</code>. Use the desktop or CLI clients above instead.</li>
     <li><strong>Windows named-pipe transport (added v0.1.119, working from v0.1.120).</strong> The v0.1.119 implementation deadlocked on every verb, so Windows tool calls never completed; v0.1.120 fixes it. The sidecar connects to the running editor over a Windows named pipe (<code>\\.\pipe\…</code>), so <code>--socket</code> works on Linux, macOS, and Windows alike. Prebuilt Windows binaries (<code>notepatra-mcp-windows-x64.zip</code>) and the one-click <code>notepatra-mcp.mcpb</code> Claude Desktop bundle ship as v0.1.120 release assets; <code>cargo install notepatra-mcp</code> remains a fully supported alternative on every platform.</li>
-    <li><strong>Large reads are capped.</strong> <code>read_tab</code> truncates at 5 MB (and says so with a marker in the text); <code>search_project</code> returns at most 200 matches per search.</li>
+    <li><strong>Large reads are capped.</strong> <code>read_tab</code> truncates at 5 MB (and says so with a marker in the text) and accepts a smaller <code>max_bytes</code>; <code>search_project</code> returns at most 200 matches per search.</li>
+    <li><strong>Credential files are refused, and you cannot override it.</strong> <code>open_file</code>, <code>read_tab</code>, <code>find_in_tab</code> and both legs of <code>search_project</code> refuse anything matching the credential deny-list — SSH/GPG/AWS key directories, <code>id_rsa</code> anywhere on a path, <code>.env</code> files, <code>*.pem</code> / <code>*.key</code> / <code>*.pfx</code> / <code>*.p12</code> / <code>*.jks</code>, Terraform state. This constrains the MCP surface, not you: open the file yourself and the editor shows it normally. A legitimate <code>*.pem</code> test fixture will be refused, which is the intended trade — a refused read costs you one click, a leaked key does not.</li>
+    <li><strong>The <code>Deny</code> button is less tested than the timeout.</strong> Approval-card denial by 120-second timeout is verified repeatedly; denial by clicking Deny is exercised in the automated suite but has had less real-hands testing.</li>
     <li><strong>Search defaults to literal.</strong> <code>find_in_tab</code> and <code>search_project</code> match a literal substring by default; pass <code>{regex: true}</code> for a regular-expression search (an invalid pattern is rejected with a clear error).</li>
   </ul>
 
@@ -469,12 +504,15 @@ async with MCPServerStdio(
   <h3>Does it work with the Lite build?</h3>
   <p>Yes. The MCP bridge is part of the editor from v0.1.118 on both editions, and <code>app_info</code> reports which edition is running.</p>
   <h3>Which tab is index 0?</h3>
-  <p>Tab indices are zero-based, exactly as shown in the tab bar — including the Welcome tab when it's open. Use <code>list_open_tabs</code> first rather than guessing indices.</p>
+  <p>Tab indices are zero-based, exactly as shown in the tab bar — including the Welcome tab when it's open. Use <code>list_open_tabs</code> first rather than guessing indices. Better still, use the <code>id</code> it returns: an index is positional and moves the moment a tab closes, while an id belongs to the document for as long as it is open.</p>
+
+  <h3>What happened to the mock server?</h3>
+  <p>Running <code>notepatra-mcp</code> without <code>--socket</code> still starts an in-memory demo editor, so any MCP client can exercise the protocol with nothing installed. As of v0.1.126 it <strong>says so on the wire</strong>: every result carries a <code>[MOCK DATA]</code> block and <code>_meta.mock</code>, and <code>initialize</code> reports <code>serverInfo.mock</code>. Before that, a config file that had lost its <code>--socket</code> served fabricated tabs an assistant could not tell from your real ones.</p>
 
 </main>
 
 <footer class="doc-footer">
-  <p>Notepatra is free software under GPL-3.0. The MCP features described on this page ship in v0.1.120.</p>
+  <p>Notepatra is free software under GPL-3.0. The MCP features described on this page ship in v0.1.126.</p>
   <p><a href="/">Home</a> · <a href="/docs.html">Documentation</a> · <a href="https://github.com/singhpratech/notepatra">GitHub</a></p>
 </footer>
 

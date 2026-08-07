@@ -123,6 +123,9 @@ TextResult npc_format_sql_compact(const char *text, size_t len, int indent_width
 
 TextResult npc_format_json(const char *text, size_t len, int indent);
 TextResult npc_minify_json(const char *text, size_t len);
+/* Strict validation: empty text = valid JSON, otherwise a parse error with
+ * line/column. Never repairs, unlike npc_format_json. */
+TextResult npc_json_parse_error(const char *text, size_t len);
 TextResult npc_fix_json(const char *text, size_t len);
 TextResult npc_fix_json_report(const char *text, size_t len);
 

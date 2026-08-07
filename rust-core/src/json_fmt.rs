@@ -73,6 +73,32 @@ pub fn format_json(input: &str, indent: usize) -> String {
     manual_pretty_print(input, indent)
 }
 
+/// Strict RFC-8259 validation: `""` when `input` is valid JSON, otherwise a
+/// human-readable parse error carrying the position.
+///
+/// [`format_json`] deliberately REPAIRS what it is given — that is the whole
+/// point of the editor's JSON panel, where a human sees the result and can
+/// undo it. Over MCP there is no human in that loop: v0.1.125 turned `[1,2`
+/// into `[1,2]` and reported success, so a truncated config file came back
+/// syntactically valid and semantically invented. Callers that must not
+/// silently repair (the MCP `format_json` tool) validate first through here.
+///
+/// This never repairs and never allocates a parsed value beyond the check.
+pub fn json_parse_error(input: &str) -> String {
+    if input.len() > MAX_INPUT_BYTES {
+        return format!(
+            "input too large for the JSON parser ({} bytes, max {} bytes)",
+            input.len(),
+            MAX_INPUT_BYTES
+        );
+    }
+    match serde_json::from_str::<serde::de::IgnoredAny>(input) {
+        Ok(_) => String::new(),
+        // serde_json's Display already reads "expected value at line 1 column 5".
+        Err(e) => e.to_string(),
+    }
+}
+
 pub fn minify_json(input: &str) -> String {
     if input.len() > MAX_INPUT_BYTES {
         return input.to_string();
@@ -644,5 +670,59 @@ mod tests {
         let (out, _) = fix_json_with_report("][}{][}{[][");
         // Should produce SOME output (possibly still broken) without panic.
         assert!(!out.is_empty());
+    }
+
+    // ── v0.1.126 · NP-09 ─────────────────────────────────────────────
+    //
+    // These are the exact inputs from the v0.1.125 retest, where every one of
+    // them came back through the MCP `format_json` tool with isError:false.
+    // The worst was `[1,2` -> `[1,2]`: a truncated config file turned
+    // syntactically valid and semantically invented, so an assistant that
+    // formatted then wrote it back fabricated data the user never had.
+    #[test]
+    fn json_parse_error_refuses_what_the_fixer_would_invent() {
+        // The repairer's output is still what the JSON PANEL wants — assert
+        // that first, so this test also pins that we did not "fix" the panel.
+        assert_eq!(
+            format_json("[1,2", 2).replace(char::is_whitespace, ""),
+            "[1,2]"
+        );
+
+        for bad in [
+            "{oops",
+            "not json at all",
+            "[1,2",
+            "{\"a\":1,}",
+            "",
+            "{\"a\":}",
+        ] {
+            let err = json_parse_error(bad);
+            assert!(!err.is_empty(), "accepted invalid JSON: {bad:?}");
+            // serde_json reports a position; without one the caller cannot act.
+            assert!(
+                err.contains("line") || err.contains("column") || err.contains("EOF"),
+                "parse error carries no position: {err:?} for {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn json_parse_error_accepts_every_valid_shape() {
+        // Vacuity guard: a validator that refused everything would pass the
+        // test above. Top-level scalars are valid JSON per RFC 8259 and must
+        // not be collateral damage.
+        for good in [
+            "{}",
+            "[]",
+            "{\"a\": 1}",
+            "[1, 2]",
+            "\"bare string\"",
+            "42",
+            "true",
+            "null",
+            "{\"nested\": {\"deep\": [1, {\"x\": null}]}}",
+        ] {
+            assert_eq!(json_parse_error(good), "", "rejected valid JSON: {good:?}");
+        }
     }
 }

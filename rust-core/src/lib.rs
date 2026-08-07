@@ -430,6 +430,16 @@ pub unsafe extern "C" fn npc_format_json(
     text_to_result(json_fmt::format_json(input, indent as usize))
 }
 
+/// Strict JSON validation. Returns an empty string when the input is valid
+/// JSON, otherwise a parse error with line/column. Unlike npc_format_json this
+/// NEVER repairs — see json_fmt::json_parse_error for why the MCP surface
+/// needs a non-repairing check.
+#[no_mangle]
+pub unsafe extern "C" fn npc_json_parse_error(text: *const c_char, text_len: size_t) -> TextResult {
+    let input = unsafe { str_from_raw(text, text_len) };
+    text_to_result(json_fmt::json_parse_error(input))
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn npc_minify_json(text: *const c_char, text_len: size_t) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
