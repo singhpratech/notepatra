@@ -7,6 +7,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.125] — 2026-08-07
+
+**A one-word MCP search could return the contents of your SSH private key. Fixed, along with three other defects found by testing the MCP server on Windows — and the Windows binary finally reports its real version after 124 releases claiming 0.1.0.** No new editor features; every change is a fix.
+
+### Security
+- **`search_project` returned the contents of credential files.** `read_file` refused `~/.ssh/id_rsa` while a one-word search returned its matching lines. The credential deny-list existed in **two** hand-maintained copies that had drifted in *both* directions — `ai_tools.cpp` had `*.tfvars`/`*.tfstate`/`.pypirc`/the `.env` family/`authorized_keys`; `git_hunk_apply.cpp` had `*.jks` and an unanchored `id_rsa`; neither was a superset — and `search_project` consulted neither. `src/path_denylist.h` is now the single list, built as the union, with all three callers routed through it.
+- **`search_project` walked the user's entire home directory.** `FileExplorer`'s constructor set `m_rootPath = QDir::homePath()` as a display placeholder, and four guards read it as "the workspace" — including the AI CSV sandbox and a security guard that had therefore never once closed. `workspaceRoot()` now stays empty until a folder is opened; with no workspace, `search_project` searches open tabs only and reports `workspace_searched` and `scope` so a partial search cannot be mistaken for a complete one.
+
+### Fixed
+- **`goto_line` past end-of-file reported success from the top of the document.** Scintilla rejects an out-of-range position and leaves the cursor at line 1, while the response read `{"line": 99999, "ok": true}`. Since `insert_text` defaults to the cursor, an assistant aiming at the end of a file wrote at the beginning, behind an approval card that looked correct. `Editor::gotoLine` clamps and returns where it landed; the verb reports `line`, `requested_line` and `clamped`.
+- **`insert_text` with `col` but no `line` silently dropped `col`** and wrote at the cursor. Silently relocating a write is the one failure an approval gate cannot protect against — you approve the text, not the destination. It is an error now.
+- **The MCP sidecar hung on every unrecognised argument.** `--version` printed nothing and blocked on stdin; `--sokcet` silently started the **mock** server so the client received fabricated tabs that looked like a real editor; a mistyped subcommand like `sevre` fell through the same way. All exit 2 with a message naming what was typed.
+- **The AI workspace root flapped on every Ctrl+Tab**, swapping chat history and cancelling pending write approvals mid-conversation. It is sticky per session now; opening a folder re-latches it. `MainWindow` exposes four distinct accessors, because "what folder is the user working on" has four different right answers — scoping (empty means refuse), first open file's directory, save-dialog suggestion (may fall back broadly; the user sees and edits it), and the sticky AI session root.
+- **Windows binaries reported version 0.1.0 to winget, SCCM, Intune and File Properties → Details** for 124 releases — the `.rc` carried a hardcoded `0,1,0,0`. It is generated from `project(Notepatra VERSION …)` now, and a CI step reads `VersionInfo.FileVersion` back off the shipped `.exe` and fails the build on a mismatch.
+
+### Internal
+- Chat history migrates from the old `sha1($HOME)` key by **copy**, not move, so nothing is lost regardless of which key a session resolves to.
+- Every new test red-state verified by restoring the pre-fix code rather than negating a condition — a hand-written sabotage of `search_project` still produced the correct answer and made a sound test look weak. Failure signatures matched the original Windows reports: `{"line": 99999, "clamped": false}`, `workspace_searched: true` with no workspace, and "leaked contents of keystore.jks".
+- 76 C++ suites and 91 Rust tests locally; 73 suites and 192 Rust assertions on Windows, including a real `QLocalServer` round-trip and the named-pipe integration test.
+
+---
+
 ## [0.1.124] — 2026-07-28
 
 **Invisible characters are now visible — 527 of them, where Notepad++ draws 113 — and two Find/Replace bugs that were quietly destroying user text are fixed. A file containing a zero-width space used to look exactly like a file without one; Notepatra's only symbol support was whitespace dots and EOL markers, so every zero-width, bidirectional and exotic-space codepoint was undrawable.**

@@ -49,7 +49,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. Bare executable is ~12 MB across platforms (12.6 MB on Linux x64); full downloads are 4.4 MB (Linux x64 tar.gz), 27.7 MB (macOS DMG with bundled Qt), 43.0 MB (Windows MSI with bundled Qt DLLs). 238 file types. 82 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server (examples redacted). Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.124",
+      "softwareVersion": "0.1.125",
       "fileSize": "12.6 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -151,7 +151,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~12 MB across every platform (12.6 MB on Linux x64). Latest v0.1.124 download sizes: 4.4 MB Linux x64 tar.gz, 4.1 MB Linux ARM64 tar.gz, 27.7 MB macOS DMG (with bundled Qt), 43.0 MB Windows MSI / 32.8 MB NSIS / 37.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~12.6 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~12 MB across every platform (12.6 MB on Linux x64). Latest v0.1.125 download sizes: 4.4 MB Linux x64 tar.gz, 4.1 MB Linux ARM64 tar.gz, 27.7 MB macOS DMG (with bundled Qt), 43.0 MB Windows MSI / 32.8 MB NSIS / 37.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~12.6 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
           }
         },
         {
@@ -167,7 +167,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 238 file types with 82 language lexers as of v0.1.124: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 238 file types with 82 language lexers as of v0.1.125: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.124">
-        Download v0.1.124 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.125">
+        Download v0.1.125 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1313,7 +1313,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.124 · Now Available · MCP server for AI assistants · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.125 · Now Available · MCP server for AI assistants · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~12 MB bare, ~4.4 MB compressed on Linux). C++ and Rust. 238 file types · 82 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints. <strong>MCP:</strong> the <a href="/mcp.html" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">MCP server</a> ships a prebuilt signed Windows sidecar and a one-click Claude Desktop bundle — its 49 tools (Git, read-only SQL, saved-connection queries, charts, Noter notes) connect Claude, Codex, or any MCP client straight to your editor.</p>
 
@@ -1397,13 +1397,13 @@
         <div class="stat"><div class="stat-number"><span>238</span></div><div class="stat-label">File Types</div></div>
         <div class="stat"><div class="stat-number"><span>82</span></div><div class="stat-label">Language Lexers</div></div>
         <div class="stat"><div class="stat-number"><span>2</span> GB</div><div class="stat-label">Max File Size</div></div>
-        <div class="stat"><div class="stat-number"><span>75</span></div><div class="stat-label">Regression Suites</div></div>
+        <div class="stat"><div class="stat-number"><span>76</span></div><div class="stat-label">Regression Suites</div></div>
         <div class="stat"><div class="stat-number"><span>0</span></div><div class="stat-label">Electron</div></div>
     </div>
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.124</div>
+        <div class="section-label">Download v0.1.125</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1471,7 +1471,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.124 →
+                Get Notepatra v0.1.125 →
               </a>
             </div>
 
@@ -1514,7 +1514,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.124 →
+                Get Notepatra Local AI v0.1.125 →
               </a>
             </div>
           </div>
@@ -2016,46 +2016,63 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.124 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.125 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
-                        <span>2026-07-28</span>
-                        <span>· <strong>Invisible characters are now visible — 527 of them, where Notepad++ draws 113.</strong> A file containing a zero-width space used to look exactly like a file without one. <strong>View &rarr; Show Symbol</strong> is rebuilt to Notepad++'s eight-item structure, plus a toggle for the 414 codepoints its tables don't cover. Two Find/Replace bugs that were quietly destroying text are fixed.</span>
+                        <span>2026-08-07</span>
+                        <span>· <strong>A one-word MCP search could return the contents of your SSH private key.</strong> Fixed, along with three other defects found by testing the MCP server on Windows — and the Windows binary finally reports its real version after 124 releases claiming 0.1.0. No new editor features; every change is a fix.</span>
                         <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>Added — View → Show Symbol, rebuilt</h5>
+                        <h5>Security — the credential deny-list existed twice</h5>
                         <ul>
-                            <li><strong>Notepad++'s eight items, in its order:</strong> Show Space and Tab · Show End of Line · Show Non-Printing Characters · Show Control Characters &amp; Unicode EOL · Show Every Other Invisible Character · Show All Characters · <em>(separator)</em> · Show Indent Guide · Show Wrap Symbol.</li>
-                            <li><strong>The parity tables are transcribed from Notepad++'s source byte-for-byte</strong> — 49 non-printing entries and 64 control / Unicode-EOL entries, abbreviations included: <code>ZWNBSP</code> for U+FEFF rather than the colloquial "BOM", <code>OSPM</code> for U+1680, <code>SGCI</code> for U+0099. Someone comparing the two editors reads the same four letters.</li>
-                            <li><strong>"Show Every Other Invisible Character" goes past Notepad++</strong> — the 414 codepoints its fixed 113-entry tables do not list, so its blind spots aren't inherited: the variation selectors (U+FE0F and the 240 in plane 14), the TAG block U+E0020–E007F (a complete invisible ASCII alphabet), the Hangul fillers (U+3164, U+115F, U+1160), the combining grapheme joiner, the Braille blank, and the rest of Unicode's format category. Range expansion skips anything the parity tables already claim, so U+FEFF keeps its <code>ZWNBSP</code> spelling.</li>
-                            <li><strong>Codepoint display mode</strong> — blobs can read <code>U+200B</code> instead of <code>ZWSP</code>, matching Notepad++'s NPC display mode.</li>
-                            <li><strong>Settings persist across restarts</strong> and apply to every tab; previously none of them were saved. Defaults match Notepad++ — everything off except the control-character display, so <strong>non-printing characters are off out of the box</strong>; turn them on from View → Show Symbol.</li>
-                            <li>Compare panes and the formatter output panels draw symbols too. Two files differing only by an invisible character used to render as identical-looking lines the diff insisted were different.</li>
+                            <li><strong><code>read_file</code> refused <code>~/.ssh/id_rsa</code> while <code>search_project</code> returned its matching lines.</strong> Both consulted a deny-list of credential paths — but there were <strong>two</strong> copies, maintained by hand in different files, and they had drifted in <em>both</em> directions. <code>ai_tools.cpp</code> knew <code>*.tfvars</code>, <code>*.tfstate</code>, <code>.pypirc</code>, the <code>.env</code> family and <code>authorized_keys</code>; <code>git_hunk_apply.cpp</code> knew <code>*.jks</code> and an unanchored <code>id_rsa</code>. Neither was a superset of the other, so each caller enforced a different policy — and <code>search_project</code>, the third caller, consulted <strong>neither</strong>. <code>src/path_denylist.h</code> is now the single list, built as the <strong>union</strong>, with all three callers routed through it. The regression test caught exactly <code>keystore.jks</code> — the extension only the second copy had ever known about, which is the proof that taking the union mattered rather than picking a winner.</li>
+                            <li><strong><code>search_project</code> walked the entire home directory.</strong> <code>FileExplorer</code>'s constructor set <code>m_rootPath = QDir::homePath()</code> as a <em>display placeholder</em> — something to show in an empty sidebar — and four separate guards then read that value as "the workspace the user is working in", including the AI CSV sandbox and a security guard that had therefore never once closed. Display root and workspace root are different questions now: <code>workspaceRoot()</code> stays <strong>empty</strong> until you open a folder, and a workspace-less search covers open tabs only and says so, reporting <code>workspace_searched</code> and <code>scope</code> so a client cannot mistake a partial search for a complete one.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>Fixed — two bugs that destroyed text</h5>
+                        <h5>Fixed — writes that landed somewhere else</h5>
                         <ul>
-                            <li><strong>Replace All silently deleted any replacement containing <code>$</code>.</strong> The replacement string was handed to the regex engine, which reads it as a <em>substitution template</em> — so <code>$100</code> parsed as capture group 100 and expanded to nothing. <code>$var</code>, <code>${HOME}</code> and <code>a$b</code> lost text the same way while the status bar reported success. Match case defaults to off, so this was the out-of-the-box path, and Replace All in All Opened Documents repeated it across every tab.</li>
-                            <li><strong>Replace claimed work it had not done, and overwrote what it was not asked to.</strong> On a freshly opened tab it reported "Replaced 1 occurrence" over an untouched buffer <em>and</em> skipped that match permanently. Once armed, it overwrote whatever happened to be selected, whether or not it matched. It now verifies the selection really is a match before touching it, and otherwise degrades to Find Next — Notepad++'s own contract.</li>
+                            <li><strong><code>goto_line</code> past end-of-file reported success from the top of the document.</strong> Scintilla rejects an out-of-range position and leaves the cursor at line 1, while the response still read <code>{"line": 99999, "ok": true}</code>. Because <code>insert_text</code> defaults to the cursor, an assistant aiming at the end of a file wrote at the <strong>beginning</strong> — behind an approval card that looked correct. <code>Editor::gotoLine</code> clamps and returns where it actually landed; the verb reports <code>line</code>, <code>requested_line</code> and <code>clamped</code>.</li>
+                            <li><strong><code>insert_text</code> with <code>col</code> but no <code>line</code> silently dropped <code>col</code></strong> and wrote at the cursor. Silently relocating a write is the one failure an approval gate cannot protect you from — you approve the text, not the destination. It is an error now.</li>
+                            <li><strong>The AI workspace root flapped on every Ctrl+Tab</strong>, swapping chat history and cancelling pending write approvals mid-conversation. It is sticky per session now; opening a folder re-latches it. Chat history migrates from the old key by <em>copy</em>, not move, so nothing is lost either way.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>Also fixed</h5>
+                        <h5>Fixed — the sidecar hung on every bad argument</h5>
                         <ul>
-                            <li><strong>Find in Files reported "0 hits" for files it never opened.</strong> The default <code>*.*</code> filter went straight to Qt, whose wildcards are literal, so it demanded a dot in the name and silently skipped <code>Makefile</code>, <code>Dockerfile</code>, <code>LICENSE</code> and <code>.gitignore</code>. <code>*.*</code> now means any file, as it does in Notepad++.</li>
-                            <li><strong>Mark All highlighted the wrong spans.</strong> Offsets were computed into a lowercased <em>copy</em> of the document, and lowercasing is not length-preserving in UTF-8 — one such character shifted every later highlight, and the error accumulated. It also assumed each match was as long as the search pattern, which is wrong for every regex.</li>
-                            <li><strong>Indent guides were a white-on-black barber pole in Dark and Monokai.</strong> Scintilla's reserved indent-guide style was never themed, so it kept its default black-on-white and the guide's own background became the brightest thing on a dark screen. Guides are on by default, so this reached every dark-theme user.</li>
+                            <li><code>notepatra-mcp</code> is a stdio server: with no arguments it blocks reading stdin, which is correct when a client launched it and looks exactly like a crash when a human runs it in a terminal. Every unrecognised argument fell into that loop — <code>--version</code> printed nothing and hung, a mistyped subcommand like <code>sevre</code> hung the same way, and <strong><code>--sokcet</code> silently started the mock server</strong>, so the client received fabricated tabs that looked like a real editor. All now exit 2 with a message naming what you typed.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>Fixed — Windows reported version 0.1.0 for 124 releases</h5>
+                        <ul>
+                            <li>Every Windows build ever shipped told winget, SCCM, Intune and File Properties &rarr; Details that it was <strong>0.1.0</strong>, regardless of what it actually was — the <code>.rc</code> carried a hardcoded <code>0,1,0,0</code>. It is generated from <code>project(Notepatra VERSION …)</code> now, so there is exactly one place the version is written, and a CI step reads <code>VersionInfo.FileVersion</code> back off the shipped <code>.exe</code> and fails the build on a mismatch — it is a gate, not a warning.</li>
                         </ul>
                     </div>
                     <div class="version-section">
                         <h5>Verification</h5>
                         <ul>
-                            <li>Every fix was verified by reverting it and confirming the new tests fail — and that only the expected assertions fail. The symbol tests measure real laid-out pixel width rather than asking Scintilla what it stored, because a representation round-trips perfectly while drawing nothing. The Replace tests click the actual dialog buttons: the engine-level tests passed on code that ate text once the dialog was in the loop.</li>
-                            <li>Rendering cost is not measurable — a 20,000-line document lays out in the same time with all 527 representations installed as with none. Three new suites, 75 total on the Full build.</li>
+                            <li>76 C++ suites and 91 Rust tests locally; 73 suites and 192 Rust assertions on Windows, including a real <code>QLocalServer</code> round-trip and the named-pipe integration test.</li>
+                            <li>Every new test was red-state verified by <strong>restoring the pre-fix code</strong>, not by negating a condition. That distinction earned its keep: a hand-written sabotage of <code>search_project</code> still produced the correct answer, which made a sound test look weak until the real pre-fix control flow was put back. The failure signatures then matched the original Windows bug reports exactly — <code>{"line": 99999, "clamped": false}</code>, <code>workspace_searched: true</code> with no workspace open, and "leaked contents of keystore.jks".</li>
                         </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.125">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.125">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.124</div>
+                    <div class="version-meta">
+                        <span>2026-07-28</span>
+                        <span>· <strong>Invisible characters are now visible — 527 of them, where Notepad++ draws 113.</strong> A file containing a zero-width space used to look exactly like a file without one. <strong>View &rarr; Show Symbol</strong> is rebuilt to Notepad++'s eight-item structure, plus a toggle for the 414 codepoints its tables don't cover. Two Find/Replace bugs that were quietly destroying text are fixed.</span>
+                        <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
                     </div>
                 </div>
                 <div class="version-actions">
@@ -2065,58 +2082,6 @@
                 </div>
             </div>
 
-            <div class="version-card">
-                <div class="version-header">
-                    <div class="version-tag">v0.1.123</div>
-                    <div class="version-meta">
-                        <span>2026-07-23</span>
-                        <span>· <strong>The Save As dialog is now the native OS file dialog — the Windows Explorer tree everyone knows.</strong> "Save As" previously used Qt's own plain dialog (no folder tree); it now uses the native Windows / macOS / Linux dialog, matching "Open" and every other Notepatra dialog. Your 72-language file-type dropdown and correct extensions are preserved.</span>
-                        <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
-                    </div>
-                </div>
-                <div class="version-changes">
-                    <div class="version-section">
-                        <h5>Changed — native Save As dialog</h5>
-                        <ul>
-                            <li><strong>Save As now uses the native OS file dialog.</strong> On Windows that's the familiar Explorer dialog with the folder tree; on macOS and Linux it's the native save panel. It was the only dialog still forced to Qt's own plain "Look in:" list — now it matches "Open", "Open Folder", and "Save a Copy As", which were already native.</li>
-                            <li><strong>The 72-language file-type dropdown is preserved</strong>, and extensions stay correct: typing a bare name for a Python tab saves <code>.py</code>, and an explicit extension you type is always honoured.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>Why it was non-native before</h5>
-                        <ul>
-                            <li>Since v0.1.88.1, Save As was forced to Qt's own dialog because native dialogs dropped the "which file type did you pick" signal, which could save the wrong extension. That's now handled by driving the default extension from the current tab's language instead of the dialog's filter — so the native dialog is safe. Verified in the running app on Linux.</li>
-                        </ul>
-                    </div>
-                </div>
-                <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.123">Release page</a>
-                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.123">Commits</a>
-                </div>
-            </div>
-
-
-
-
-
-
-
-
-
-            <!-- Website release-detail policy (feedback_website_release_detail_policy):
-                 only the CURRENT release keeps a full-detail card above. The
-                 previous latest is demoted to the slim one-line link row directly
-                 beneath it (pointing at its GitHub release page); every older
-                 release lives on GitHub via the catch-all link below. When
-                 shipping the next version, demote this release the same way. -->
-
-            <!-- 100th-release MILESTONE — permanent slim card. Per the user
-                 (2026-05-25): the 100th release is a milestone; this slim card
-                 STAYS even as v0.1.102 / v0.1.102 / … roll through as the LATEST
-                 detail card above. Do NOT delete it on the next release — it is
-                 the ONE intentional exception to the single-latest-card policy.
-                 Full release reading still lives on GitHub (link below). -->
             <div class="version-card" style="text-align:center; padding:20px 28px;
                  border:1px solid var(--c-accent);
                  background:linear-gradient(135deg, rgba(204,120,92,0.10), rgba(204,120,92,0.02));">
@@ -2157,7 +2122,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~12 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.124: 238 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (the Full download bundles the DuckDB v1.1.3 engine on every platform), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
+                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~12 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.125: 238 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (the Full download bundles the DuckDB v1.1.3 engine on every platform), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2169,7 +2134,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~12 MB</strong> (12.6 MB on Linux x64) across every platform. Latest v0.1.124 download sizes: <strong>4.4 MB</strong> Linux x64 tar.gz · <strong>4.1 MB</strong> Linux ARM64 tar.gz · <strong>27.7 MB</strong> macOS DMG · <strong>43.0 MB</strong> Windows MSI / <strong>32.8 MB</strong> NSIS / <strong>37.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~12 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~12 MB</strong> (12.6 MB on Linux x64) across every platform. v0.1.124 download sizes: <strong>4.4 MB</strong> Linux x64 tar.gz · <strong>4.1 MB</strong> Linux ARM64 tar.gz · <strong>27.7 MB</strong> macOS DMG · <strong>43.0 MB</strong> Windows MSI / <strong>32.8 MB</strong> NSIS / <strong>37.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~12 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -2177,7 +2142,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.124 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.125 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>What file encodings are supported?</h3>
