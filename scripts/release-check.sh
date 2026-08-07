@@ -209,6 +209,36 @@ if [ -d notepatra-mcp ]; then
         echo "  ✗ cargo test: failures present (re-run inside notepatra-mcp/ to see them)"
         FAILED+=("cargo test (notepatra-mcp)")
     fi
+
+    # Cross-compile CHECK of the test targets for Windows.
+    #
+    # tests/pipe_bridge.rs is `#![cfg(windows)]` — the named-pipe twin of
+    # socket_bridge.rs — so it never compiles on Linux and never compiles in
+    # `cargo test` here. v0.1.126 changed a transport signature, updated the
+    # unix twin, and shipped a call site in the windows twin that could not
+    # build: the Windows CI job failed at 8 minutes on a one-argument
+    # read_tab. A local suite that is green because a file was never read is
+    # not evidence about that file.
+    #
+    # `cargo check --tests` for the Windows target compiles it in ~1s and
+    # reproduces the exact rustc error. Soft-skip when the target is absent
+    # (`rustup target add x86_64-pc-windows-gnu`) — this is a gate for the
+    # release machine, not a reason to block a contributor who lacks it.
+    if rustup target list --installed 2>/dev/null | grep -q x86_64-pc-windows-gnu; then
+        if (cd notepatra-mcp && cargo check --tests --target x86_64-pc-windows-gnu) \
+             >/dev/null 2>&1; then
+            echo "  ✓ cargo check --tests (windows target): cfg(windows) tests still compile"
+            PASSED=$((PASSED + 1))
+        else
+            echo "  ✗ cargo check --tests --target x86_64-pc-windows-gnu: FAILS"
+            echo "      cfg(windows)-only tests (tests/pipe_bridge.rs) do not compile."
+            echo "      Re-run inside notepatra-mcp/ to see the error."
+            FAILED+=("windows-target cargo check (notepatra-mcp)")
+        fi
+    else
+        echo "  ⚠ x86_64-pc-windows-gnu target not installed — cfg(windows) tests unchecked"
+        echo "      rustup target add x86_64-pc-windows-gnu"
+    fi
 fi
 
 echo
