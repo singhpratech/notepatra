@@ -1093,6 +1093,11 @@ fn select_range(transport: &mut dyn EditorTransport, args: &Map<String, Value>) 
         args,
         &[
             "tab_index",
+            // NP-13: the inputSchema advertised tab_id and this list omitted
+            // it, so a client following the published contract got -32602.
+            // The v0.1.126 sweep matched only the single-line reject_extras
+            // form; select_range is the one written multi-line.
+            "tab_id",
             "start_line",
             "start_col",
             "end_line",

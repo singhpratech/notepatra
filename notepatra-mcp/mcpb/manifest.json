@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "notepatra-mcp",
   "display_name": "Notepatra",
-  "version": "0.1.126",
+  "version": "0.1.127",
   "description": "Notepatra editor MCP server — 49 tools; every write human-approved in the editor; local-only.",
   "author": { "name": "Notepatra project", "url": "https://notepatra.org/" },
   "repository": { "type": "git", "url": "https://github.com/singhpratech/notepatra" },

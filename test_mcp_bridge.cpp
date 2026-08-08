@@ -4060,6 +4060,139 @@ private slots:
                  QStringLiteral("denied by user"));
     }
 
+    // ── v0.1.127 · NP-14 — the invariant, not another case ────────────
+    //
+    // Three consecutive releases shipped the same defect: a credential file
+    // readable through a verb that nobody had added to the deny-list yet.
+    // v0.1.125 unified two divergent copies of the LIST. v0.1.126 added the
+    // check to four verbs. The retest then found a fifth and a sixth
+    // (select_range + get_selection, which reads a key back in chunks).
+    //
+    // Every one of those fixes was correct and none of them converged,
+    // because the thing going stale was the ENUMERATION. So the check moved
+    // to where buffer text is fetched — McpBridge::tabTextFor — and this
+    // asserts that no verb bypasses it.
+    //
+    // A source-reading test is unusual. It is here because the per-verb tests
+    // below can only prove the verbs that exist today, and the defect has
+    // twice arrived through a verb that was not on anyone's list.
+    void no_verb_reads_buffer_text_without_the_credential_guard() {
+        QFile f(QStringLiteral(NOTEPATRA_SOURCE_DIR "/src/mcp_bridge.cpp"));
+        QVERIFY2(f.open(QIODevice::ReadOnly | QIODevice::Text),
+                 "cannot read mcp_bridge.cpp — the lint would silently pass");
+        const QStringList lines =
+            QString::fromUtf8(f.readAll()).split(QLatin1Char('\n'));
+
+        // The accessor bodies are the ONLY sanctioned call sites. They are
+        // identified by the function they sit in, so moving them around the
+        // file does not break the lint.
+        QString currentFn;
+        QStringList offenders;
+        int sanctioned = 0;
+        for (int i = 0; i < lines.size(); ++i) {
+            const QString &ln = lines.at(i);
+            if (ln.startsWith(QLatin1String("bool McpBridge::")) ||
+                ln.startsWith(QLatin1String("void McpBridge::")) ||
+                ln.startsWith(QLatin1String("int McpBridge::")) ||
+                ln.startsWith(QLatin1String("qint64 McpBridge::")) ||
+                ln.startsWith(QLatin1String("QString McpBridge::"))) {
+                currentFn = ln;
+            }
+            if (!ln.contains(QLatin1String("m_host.tabText(")) &&
+                !ln.contains(QLatin1String("m_host.selection(")))
+                continue;
+            const bool inAccessor =
+                currentFn.contains(QLatin1String("McpBridge::tabTextFor")) ||
+                currentFn.contains(QLatin1String("McpBridge::selectionText"));
+            if (inAccessor) {
+                ++sanctioned;
+                continue;
+            }
+            offenders << QStringLiteral("  mcp_bridge.cpp:%1: %2")
+                             .arg(i + 1)
+                             .arg(ln.trimmed());
+        }
+
+        // Vacuity guard: if the pattern matched nothing at all, the lint is
+        // asserting about a file it failed to parse, and would keep passing
+        // after someone renamed the host accessors.
+        QVERIFY2(sanctioned >= 2,
+                 "guard: the lint found no sanctioned call sites — it is not "
+                 "reading what it thinks it is reading");
+
+        if (!offenders.isEmpty()) {
+            const QString msg =
+                QStringLiteral(
+                    "buffer text is read outside tabTextFor/selectionText, so "
+                    "the credential deny-list can be bypassed:\n%1\n"
+                    "Route it through McpBridge::tabTextFor(idx, &text, &err).")
+                    .arg(offenders.join(QLatin1Char('\n')));
+            QFAIL(qPrintable(msg));
+        }
+    }
+
+    // NP-14 behaviourally: the sixth door the retest found.
+    void selection_verbs_refuse_a_credential_tab() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+
+        // A key opened the way the refusal message invites — by the user, not
+        // through MCP's open_file, which already refuses.
+        m_fakeTabs.append({QStringLiteral("id_rsa"),
+                           QStringLiteral("/home/u/.ssh/id_rsa"),
+                           QStringLiteral("-----BEGIN OPENSSH PRIVATE KEY-----"
+                                          "\nsecret-body\n"), false});
+        const int keyTab = m_fakeTabs.size() - 1;
+        m_currentIndex = keyTab;
+        m_selection = QStringLiteral("secret-body");
+
+        // get_selection must not hand back a selection that lives in a key.
+        const QJsonObject sel =
+            call(s, 100, QStringLiteral("get_selection"), QJsonObject());
+        QCOMPARE(sel.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY2(!QJsonDocument(sel).toJson().contains("secret-body"),
+                 "get_selection returned the key body");
+
+        // select_range must refuse to STAGE it, so no future verb inherits a
+        // selection that was already set up over a private key.
+        QJsonObject range;
+        range[QStringLiteral("tab_index")] = keyTab;
+        range[QStringLiteral("start_line")] = 1;
+        range[QStringLiteral("start_col")] = 1;
+        range[QStringLiteral("end_line")] = 2;
+        range[QStringLiteral("end_col")] = 5;
+        QCOMPARE(call(s, 101, QStringLiteral("select_range"), range)
+                     .value(QLatin1String("ok")).toBool(), false);
+
+        // apply_edit reads the buffer as a match ORACLE — "no match" versus a
+        // card naming the match reports what the file contains, one probe at
+        // a time, without ever returning text.
+        QJsonObject edit;
+        edit[QStringLiteral("tab_index")] = keyTab;
+        edit[QStringLiteral("find")] = QStringLiteral("secret");
+        edit[QStringLiteral("replace")] = QStringLiteral("x");
+        QCOMPARE(call(s, 102, QStringLiteral("apply_edit"), edit)
+                     .value(QLatin1String("ok")).toBool(), false);
+
+        // Vacuity guard: the same three verbs must WORK on an ordinary tab,
+        // or this would pass against a bridge that had stopped answering.
+        m_currentIndex = 0;
+        m_selection = QStringLiteral("hello");
+        QVERIFY2(call(s, 103, QStringLiteral("get_selection"), QJsonObject())
+                     .value(QLatin1String("ok")).toBool(),
+                 "guard: get_selection must still work on a normal tab");
+        QJsonObject okRange;
+        okRange[QStringLiteral("tab_index")] = 0;
+        okRange[QStringLiteral("start_line")] = 1;
+        okRange[QStringLiteral("start_col")] = 1;
+        okRange[QStringLiteral("end_line")] = 1;
+        okRange[QStringLiteral("end_col")] = 5;
+        QVERIFY2(call(s, 104, QStringLiteral("select_range"), okRange)
+                     .value(QLatin1String("ok")).toBool(),
+                 "guard: select_range must still work on a normal tab");
+    }
+
     void endpoint_file_is_published() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
