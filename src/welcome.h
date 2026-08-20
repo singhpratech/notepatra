@@ -20,8 +20,9 @@ class QVBoxLayout;
  *   • Hero block — "Welcome to Notepatra" + tagline + version
  *   • Quick actions — New File / Open File / Open Folder
  *   • Recent files list (clickable; reads from Config)
- *   • Feature showcase — 9 cards covering the inbuilt plugins (AI,
- *     Terminal, Compare, JSON/HTML/SQL, Git, REST, Brackets, Macros)
+ *   • Feature showcase — 11 cards covering the inbuilt plugins (AI,
+ *     Terminal, Compare, JSON/HTML/SQL, REST, Brackets, Noter,
+ *     Password Generator)
  *   • Keyboard shortcuts reference
  *   • Links to docs + the Ollama setup page
  *   • "Don't show again" checkbox that persists to Config

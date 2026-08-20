@@ -49,7 +49,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. Bare executable is ~12 MB across platforms (12.6 MB on Linux x64); full downloads are 4.4 MB (Linux x64 tar.gz), 27.7 MB (macOS DMG with bundled Qt), 43.0 MB (Windows MSI with bundled Qt DLLs). 238 file types. 82 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server (examples redacted). Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.127",
+      "softwareVersion": "0.1.128",
       "fileSize": "12.6 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -151,7 +151,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~12 MB across every platform (12.6 MB on Linux x64). Latest v0.1.127 download sizes: 4.4 MB Linux x64 tar.gz, 4.1 MB Linux ARM64 tar.gz, 27.7 MB macOS DMG (with bundled Qt), 43.0 MB Windows MSI / 32.8 MB NSIS / 37.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~12.6 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~12 MB across every platform (12.6 MB on Linux x64). Latest v0.1.128 download sizes: 4.4 MB Linux x64 tar.gz, 4.1 MB Linux ARM64 tar.gz, 27.7 MB macOS DMG (with bundled Qt), 43.0 MB Windows MSI / 32.8 MB NSIS / 37.4 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~12.6 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
           }
         },
         {
@@ -167,7 +167,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 238 file types with 82 language lexers as of v0.1.127: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 238 file types with 82 language lexers as of v0.1.128: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1284,8 +1284,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.127">
-        Download v0.1.127 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.128">
+        Download v0.1.128 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1313,7 +1313,7 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.127 · Now Available · MCP server for AI assistants · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.128 · Now Available · MCP server for AI assistants · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~12 MB bare, ~4.4 MB compressed on Linux). C++ and Rust. 238 file types · 82 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints. <strong>MCP:</strong> the <a href="/mcp.html" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">MCP server</a> ships a prebuilt signed Windows sidecar and a one-click Claude Desktop bundle — its 49 tools (Git, read-only SQL, saved-connection queries, charts, Noter notes) connect Claude, Codex, or any MCP client straight to your editor.</p>
 
@@ -1386,7 +1386,7 @@
             <div class="pillar">
                 <div class="pillar-glyph">✦</div>
                 <h3>Built-in tools.</h3>
-                <p>AI · Compare with word-level diff · Git · Terminal · JSON/HTML/SQL formatters · REST client · Macros. No plugins to hunt for. Works on first launch.</p>
+                <p>AI · Compare with word-level diff · Git · Terminal · JSON/HTML/SQL formatters · REST client · Macros · Password Generator. No plugins to hunt for. Works on first launch.</p>
             </div>
         </div>
     </section>
@@ -1397,13 +1397,13 @@
         <div class="stat"><div class="stat-number"><span>238</span></div><div class="stat-label">File Types</div></div>
         <div class="stat"><div class="stat-number"><span>82</span></div><div class="stat-label">Language Lexers</div></div>
         <div class="stat"><div class="stat-number"><span>2</span> GB</div><div class="stat-label">Max File Size</div></div>
-        <div class="stat"><div class="stat-number"><span>76</span></div><div class="stat-label">Regression Suites</div></div>
+        <div class="stat"><div class="stat-number"><span>78</span></div><div class="stat-label">Regression Suites</div></div>
         <div class="stat"><div class="stat-number"><span>0</span></div><div class="stat-label">Electron</div></div>
     </div>
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.127</div>
+        <div class="section-label">Download v0.1.128</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1471,7 +1471,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.127 →
+                Get Notepatra v0.1.128 →
               </a>
             </div>
 
@@ -1514,7 +1514,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.127 →
+                Get Notepatra Local AI v0.1.128 →
               </a>
             </div>
           </div>
@@ -1669,7 +1669,7 @@
                  star features. -->
             <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
                 <div class="feature-icon fi-orange">🔌</div>
-                <h3>MCP — your editor, readable by your AI <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">49 TOOLS · v0.1.127</span></h3>
+                <h3>MCP — your editor, readable by your AI <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">49 TOOLS · v0.1.128</span></h3>
                 <p>A built-in <strong>Model Context Protocol server</strong> (<code>notepatra-mcp</code>) connects the assistants you already use — <strong>Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK</strong>, and any spec-compliant MCP client — to the running editor. <strong>49 tools in three tiers</strong>: read (tabs, selection, search, Noter notes, reminders, read-only Git and SQL, diagram source, saved-connection list/query/tables), act (open, compare, format, navigate, select range, open notes, create diagram, open Noter panel, open Data Analyst, render chart), and write (edit, save, create/append notes, set reminders, replace diagram source, export diagrams, export query results, export chart) — where <em>every</em> write shows an <strong>Approve / Deny card inside the editor</strong> and does nothing until you click Approve (auto-deny after 120 s, no headless bypass). Local socket + stdio only — nothing leaves your machine. <a href="/mcp.html" style="color: var(--c-accent);">Read the MCP docs →</a></p>
             </div>
             <!-- AI Assistant at slot 2 — highlighted with a Clay-orange
@@ -1703,6 +1703,13 @@
                 <div class="feature-icon fi-purple">📐</div>
                 <h3>Diagram tool (.npd) <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
                 <p>Flow charts, ER diagrams and system designs from a tiny text DSL — the <code>.npd</code> source is the truth, the canvas is a live projection. <strong>Describe it in plain English and a local model writes it</strong> (review before it touches the canvas), start from a template, or type it yourself — <strong>Import Mermaid</strong> too. 5 shapes, ~55 hand-drawn icons, labelled + bidirectional arrows, 4 palettes (+ a default fallback), infinite pan/zoom. Export to <strong>PNG / JPEG / PDF</strong> on every build (plus SVG / HTML / WebP where your Qt supports them). Opens from the toolbar next to Noter. <em>Renders natively in the default binary — every platform, no WebEngine.</em></p>
+            </div>
+            <!-- Password Generator — the v0.1.128 headline. Same Clay-orange
+                 halo + NEW pill as the other headline features. -->
+            <div class="feature-card" style="border-color: rgba(204,120,92,0.35); box-shadow: 0 10px 30px rgba(204,120,92,0.10);">
+                <div class="feature-icon fi-purple">🔒</div>
+                <h3>Password Generator <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
+                <p>Two modes. <strong>Random characters</strong> — 4 to 256 long (default 20), from a-z, A-Z, 0-9, a 27-character symbol set and a free-text field for anything else, with optional <em>Exclude look-alikes</em> (drops <code>0 O 1 l I</code>) and <em>At least one from each set</em>. The symbol set deliberately leaves out the single quote, double quote, backslash, backtick, pipe and space, because those are the characters that break when a password is pasted into a shell command, a YAML file or a database connection string. <strong>Passphrase</strong> — 3 to 24 words (default 6) from a 2,048-word list compiled into the binary, so each word is worth exactly 11 bits and six words is 66 bits; pick a separator, capitalise, append two digits. The bits readout is the <strong>base-2 logarithm of how many distinct values your current settings can produce</strong>, not a heuristic score of how complicated the result looks — which is why ticking <em>At least one from each set</em> makes it drop slightly: the guarantee rules out every password that misses a set, so there are fewer to guess from. Randomness comes from <code>QRandomGenerator::system()</code>, the OS CSPRNG, with rejection sampling; the each-set rule is enforced by drawing again, never by placing and shuffling. Generate 1 to 100 at once, then Copy (taken back off the clipboard after 30 seconds, but only if it still holds that value), Insert into editor, or Open in new tab. The panel is not an editor, so a generated value is never written to <code>session.json</code>, never sent to an AI backend, and not readable by a connected MCP client. <em>Ships in every build including the default Lite binary — no dependency, no network, fully offline.</em></p>
             </div>
             <!-- AI Interaction Log — promoted to a prominent privacy /
                  transparency selling point in v0.1.97. Same halo treatment. -->
@@ -1857,6 +1864,13 @@
                 <div>
                     <h4>Hex Editor</h4>
                     <p>Color-coded hex dump. Offset, hex bytes, ASCII columns. View any binary file.</p>
+                </div>
+            </div>
+            <div class="plugin-card">
+                <div class="plugin-icon">***</div>
+                <div>
+                    <h4>Password Generator</h4>
+                    <p>Random characters or a passphrase from a built-in 2,048-word list, drawn from the operating system CSPRNG. The bits readout counts how many values your settings can produce, so it drops when you require one character from each set.</p>
                 </div>
             </div>
         </div>
@@ -2016,34 +2030,68 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.127 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.128 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
-                        <span>2026-08-07</span>
-                        <span>· <strong>Five doors refused a private key. The sixth handed it over in chunks.</strong> Retesting v0.1.126 found <code>select_range</code> + <code>get_selection</code> reading credential files — the third release running with the same defect shape. This one stops adding guards to a hand-maintained list.</span>
+                        <span>2026-08-20</span>
+                        <span>· <strong>Most password meters score how complicated the result looks. This one reports how many values it could have produced.</strong> One new built-in tool: a Password Generator that runs offline in every build, including the default Lite binary. No MCP verbs, no lexers and no dependency were added.</span>
                         <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>Security — the sixth door, and why there kept being another</h5>
+                        <h5>New — Password Generator</h5>
                         <ul>
-                            <li><strong><code>select_range</code> + <code>get_selection</code> returned credential-file contents</strong> that <code>open_file</code>, <code>read_tab</code>, <code>find_in_tab</code>, <code>search_project</code> and <code>resources/read</code> all correctly refused — so a private key was readable one selection at a time. <code>get_selection</code> had been exempted on the reasoning that a selection is human-made, so reading it back implies consent. <code>select_range</code> lets the <em>client</em> choose the range, which makes that reasoning false. <code>apply_edit</code> was a quieter form of the same thing: it reads the buffer as a match <em>oracle</em>, so "no match" versus a card naming the match reports what a file contains, one probe at a time, without returning any text.</li>
-                            <li><strong>The fix is structural, not a sixth guard.</strong> v0.1.125 unified two hand-maintained copies of the deny <em>list</em>; v0.1.126 added the check to four verbs; the retest found a fifth and sixth. Every fix was correct and none converged, because what kept going stale was the <strong>enumeration</strong> — every new verb had to remember to ask, and the point of a guard is that it does not depend on remembering. Buffer text now leaves the editor through exactly one accessor that refuses before returning, <code>select_range</code> will not even <em>stage</em> a selection over a credential file, and a test lints the bridge source and fails the build on any direct buffer read that bypasses the accessor.</li>
+                            <li><strong>Opens from the Built-in Tools toolbar</strong> — the button is labelled <strong>Password</strong> and sits third, immediately after <strong>AI</strong> — or from <strong>Tools &rarr; Password Generator — Random / Passphrase</strong>. It is a toggle: press it again while the <strong>Password Generator</strong> tab is focused and the tab closes.</li>
+                            <li><strong>Random characters</strong> — length 4 to 256, default 20, from a-z, A-Z, 0-9, a symbol set and a free-text <em>extra characters</em> field (whitespace and control characters are ignored). Optional <em>Exclude look-alikes</em> drops <code>0 O 1 l I</code>; <em>At least one from each set</em> is on by default. Default settings produce <strong>129 bits</strong>.</li>
+                            <li><strong>The 27 symbols are <code>! # $ % &amp; ( ) * + , - . / : ; &lt; = &gt; ? @ [ ] ^ _ { } ~</code></strong> — no single quote, double quote, backslash, backtick, pipe or space, because those are the characters that break when a password is pasted into a shell command, a YAML file or a database connection string.</li>
+                            <li><strong>Passphrase</strong> — 3 to 24 words, default 6, from a built-in 2,048-word list, so each word is worth exactly 11 bits and six words is 66 bits. The wordlist is compiled into the binary; no dictionary file is read at runtime. Separator is hyphen, period, underscore, space or none, with optional <em>Capitalise each word</em> and <em>Append two digits</em> (which adds log<sub>2</sub>(100) bits).</li>
+                            <li>Both modes generate <strong>1 to 100 independent values at once</strong>, with <strong>Generate</strong>, <strong>Copy</strong>, <strong>Insert into editor</strong> and <strong>Open in new tab</strong>. It adds no dependency — randomness comes from Qt Core — and there is no network, no download, no backend and no AI, so it works fully offline.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>Fixed — a marker that lied and a schema that lied</h5>
+                        <h5>The entropy readout, and why it goes down when you tighten the rules</h5>
                         <ul>
-                            <li><strong>The truncation marker claimed a 5 MB cap whatever cap applied.</strong> Ask <code>read_tab</code> for <code>max_bytes: 100</code> and the text still ended <code>[truncated at 5 MB]</code> — a constant from before the argument existed. It reads <code>[truncated: showing 100 of 2688894 characters]</code> now. The v0.1.126 notes also said <code>read_tab</code> "always reports <code>truncated</code> and <code>total_chars</code>"; that holds for the editor-to-sidecar wire and not for the tool result, which is plain text. The docs are corrected and the old entry left as shipped.</li>
-                            <li><strong><code>select_range</code> advertised <code>tab_id</code> in its schema and then rejected it</strong> with <code>-32602</code>, so a client generating calls from the published contract failed — one verb out of thirteen slipped the v0.1.126 sweep, the one written across multiple lines. A test now walks the whole tool list and asserts every advertised <code>tab_id</code> is genuinely accepted. <code>list_open_tabs</code> also published the field as <code>id</code> while every verb takes <code>tab_id</code>; both names ship for one release.</li>
+                            <li><strong>The bits figure is the base-2 logarithm of how many distinct values the current settings can produce.</strong> It is not a heuristic score of how complicated the result looks, which is what most password meters show.</li>
+                            <li><strong>With <em>At least one from each set</em> ticked, the figure is computed by inclusion-exclusion over the selected sets and therefore drops slightly.</strong> That is correct: the guarantee rules out every password that misses a set, so there are fewer possible passwords. Most generators advertise the unconstrained number while enforcing the constraint, which overstates the result.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>Randomness</h5>
+                        <ul>
+                            <li><strong><code>QRandomGenerator::system()</code>, Qt's cryptographic generator</strong> — never the seeded <code>global()</code> one. The provenance is worth stating exactly, because it is not the obvious reading: on x86-64 Qt fills from the CPU's <strong>RDRAND</strong> instruction first and falls back to the OS entropy pool (<code>getentropy</code>/<code>getrandom</code> on Linux, <code>RtlGenRandom</code> on Windows) only for what RDRAND declines to supply. Measured under <code>strace</code>: ~7 million draws issued <em>zero</em> <code>getrandom</code> syscalls. Keeping the CPU RNG out of a threat model means bypassing Qt — it cannot be configured.</li>
+                            <li><strong>Draws use rejection sampling</strong>, so no character is more likely than another merely because the alphabet size does not divide 2<sup>32</sup>.</li>
+                            <li><strong><em>At least one from each set</em> is enforced by drawing again until the constraint holds</strong>, not by placing one character from each set and shuffling. Placement would make some strings more likely than others and would make the bits figure a lie.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>Privacy — what is and is not true</h5>
+                        <ul>
+                            <li><strong>The panel is a plain widget, not an editor.</strong> Session save/restore, the AI-context sweep and the MCP read verbs are all gated on the tab being an editor, so a generated value is never written to <code>session.json</code>, never sent to an AI backend, and not readable by a connected MCP client. Verified by inspecting <code>session.json</code> with the panel open and focused: it recorded zero tabs.</li>
+                            <li><strong>Copy takes the value back off the system clipboard after 30 seconds</strong> — but only if the clipboard still holds that value, so it never clobbers something you copied in the meantime.</li>
+                            <li><strong>Nothing is written to disk.</strong> Memory is not wiped: Qt strings are copy-on-write and cannot be reliably wiped, so the tool does not claim otherwise.</li>
                         </ul>
                     </div>
                     <div class="version-section">
                         <h5>Verification</h5>
                         <ul>
-                            <li>98 C++ suites and 66 sidecar protocol tests, across both Cargo feature sets.</li>
-                            <li>Every fix red-state verified by restoring the pre-fix code. The two security tests were confirmed to fail <strong>independently</strong> — the source lint flags a raw buffer read even when nobody has thought to test the verb it appears in, which is the property that makes it worth having.</li>
+                            <li>Test suites go <strong>76 to 78 on the Full build</strong> (73 to 75 on Lite). The two new suites are <code>test_passwordgen</code> (core maths + CSPRNG) and <code>test_passwordgen_panel</code> (widgets). The full offscreen run is <strong>78/78 green</strong>.</li>
                         </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.128">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.128">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.127</div>
+                    <div class="version-meta">
+                        <span>2026-08-07</span>
+                        <span>· <strong>Five doors refused a private key. The sixth handed it over in chunks.</strong> Retesting v0.1.126 found <code>select_range</code> + <code>get_selection</code> reading credential files — the third release running with the same defect shape. This one stops adding guards to a hand-maintained list.</span>
+                        <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
                     </div>
                 </div>
                 <div class="version-actions">
@@ -2142,7 +2190,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~12 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.127: 238 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (the Full download bundles the DuckDB v1.1.3 engine on every platform), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
+                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~12 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.128: 238 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (the Full download bundles the DuckDB v1.1.3 engine on every platform), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2154,7 +2202,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~12 MB</strong> (12.6 MB on Linux x64) across every platform. v0.1.127 download sizes: <strong>4.4 MB</strong> Linux x64 tar.gz · <strong>4.1 MB</strong> Linux ARM64 tar.gz · <strong>27.7 MB</strong> macOS DMG · <strong>43.0 MB</strong> Windows MSI / <strong>32.8 MB</strong> NSIS / <strong>37.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~12 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~12 MB</strong> (12.6 MB on Linux x64) across every platform. v0.1.128 download sizes: <strong>4.4 MB</strong> Linux x64 tar.gz · <strong>4.1 MB</strong> Linux ARM64 tar.gz · <strong>27.7 MB</strong> macOS DMG · <strong>43.0 MB</strong> Windows MSI / <strong>32.8 MB</strong> NSIS / <strong>37.4 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~12 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -2162,7 +2210,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.127 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.128 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>What file encodings are supported?</h3>

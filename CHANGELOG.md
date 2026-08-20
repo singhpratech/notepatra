@@ -7,6 +7,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ---
 
+## [0.1.128] — 2026-08-20
+
+**A built-in password generator whose strength number is a count rather than an opinion.** Most generators show a heuristic score of how complicated the output *looks*; this one shows the base-2 logarithm of how many distinct values the current settings can produce — which is why it drops slightly when you tick "At least one from each set", because a guarantee rules out every password that misses a set. One new tool, no new dependency, and it ships in every build including the default Lite binary.
+
+### Added
+- **Password Generator** — a built-in tool on the Built-in Tools toolbar (the **Password** button, third, immediately after **AI**) or Tools → "Password Generator — Random / Passphrase". It is a toggle: press it again while the "Password Generator" tab is focused and the tab closes. Brand colour is fuchsia `#A21CAF`. Both modes generate 1 to 100 independent values at once, with Generate, Copy, Insert into editor and Open in new tab. No network, no download, no backend, no AI — it works fully offline, and randomness comes from Qt Core, so nothing was added to the dependency list.
+- **Random characters** — length 4 to 256 (default 20) over a-z, A-Z, 0-9 and Symbols, plus a free-text "extra characters" field for anything else (whitespace and control characters are ignored). Optional "Exclude look-alikes" drops `0 O 1 l I`; "At least one from each set" is on by default. Default settings report 129 bits.
+- **The symbol set is 27 characters** — `! # $ % & ( ) * + , - . / : ; < = > ? @ [ ] ^ _ { } ~` — and deliberately leaves out the single quote, double quote, backslash, backtick, pipe and space, because those are the characters that break when a password is pasted into a shell command, a YAML file or a database connection string.
+- **Passphrase** — 3 to 24 words (default 6) drawn from a built-in 2,048-word list, so each word is worth exactly 11 bits and six words is 66 bits. The wordlist is compiled into the binary; no dictionary file is read at runtime. Separator is hyphen, period, underscore, space or none, with optional "Capitalise each word" and optional "Append two digits", which adds log2(100) bits.
+- **The bits figure is computed by inclusion-exclusion when the each-set guarantee is on**, so it goes *down* rather than up. That is correct — the constraint shrinks the space of possible passwords — and it is the number most generators decline to show, advertising the unconstrained count while enforcing the constraint.
+- **Draws come from `QRandomGenerator::system()`**, Qt's cryptographic generator, never the seeded `global()` one — and the provenance is worth stating exactly, because it is not the obvious reading: on x86-64 Qt fills from the CPU's **RDRAND** instruction first and only falls back to the OS entropy pool (`getentropy`/`getrandom` on Linux, `RtlGenRandom` on Windows) for whatever RDRAND declines to supply. Measured under `strace` on a release build, ~7 million draws issued **zero** `getrandom` syscalls. Excluding the CPU RNG from a threat model means bypassing Qt; it cannot be configured. Draws use rejection sampling so no character is more likely than another merely because the alphabet size does not divide 2^32. The each-set guarantee is enforced by drawing again until it holds, **not** by placing one character from each set and shuffling — placement would make some strings more likely than others and would make the bits figure a lie.
+- **Nothing generated is written to disk.** The panel is a plain widget rather than an editor, and session save/restore, the AI-context sweep and the MCP read verbs are all gated on a tab being an editor, so a generated value is never written to `session.json`, never sent to an AI backend, and not readable by a connected MCP client. Copy places the value on the system clipboard and takes it back after 30 seconds — but only if the clipboard still holds that value, so it never clobbers something copied in the meantime.
+
+### Internal
+- 78 C++ suites on the Full build (74 on Lite), up from 76 and 72. The two new suites are **`test_passwordgen`** (the entropy maths and the CSPRNG draw paths) and **`test_passwordgen_panel`** (the widgets). Full offscreen `ctest` is 78/78 green.
+- No MCP verbs were added; the tool count stays 49. The session-privacy claim was verified by inspecting `session.json` with the Password Generator tab open and focused — it recorded zero tabs.
+
+---
+
 ## [0.1.127] — 2026-08-07
 
 **A sixth credential door, found by retesting v0.1.126 — and the reason there keeps being another one.** `select_range` let a client highlight any range of a private key and `get_selection` read it back, so the file was readable in chunks while five other doors correctly refused. This release stops adding guards to a hand-maintained list and moves the check to the one place buffer text is fetched.

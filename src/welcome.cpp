@@ -467,6 +467,11 @@ void WelcomeWidget::buildFeatureCards(QVBoxLayout *parent) {
         {"📝", "Noter (Ctrl+Alt+N)",
          "Meeting notes. AI Extract pulls a summary + action items; reminders fire while Notepatra runs (Noter tab not required), all in a central Reminders list. Local-first, no bots.",
          "Noter", hex("Noter")},
+        // ASCII glyph, not an emoji — an emoji codepoint tofus on Linux
+        // boxes without a colour-emoji font.
+        {"(*)", "Password Generator",
+         "Random characters or word passphrases from the system CSPRNG, with a real entropy readout. Fully offline · nothing written to disk · the clipboard clears itself after 30 seconds.",
+         "PasswordGenerator", hex("Password")},
     };
 
     int col = 0, row = 0;

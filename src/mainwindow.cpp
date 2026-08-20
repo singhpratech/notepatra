@@ -263,6 +263,7 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include "notes_storage.h"
 #include <QSystemTrayIcon>
 #include "diagram/diagram_editor.h"
+#include "passwordgen.h"
 #include "diagram/diagram_view.h"
 // v0.1.119 — MCP depth verbs reuse the real app code paths.
 #include "git_tools.h"
@@ -751,6 +752,32 @@ static void drawDiagramFeatureGlyph(QPainter &painter, const QRectF &rect) {
     painter.drawPath(head);
 }
 
+static void drawPasswordFeatureGlyph(QPainter &painter, const QRectF &rect) {
+    // A padlock: shackle arc above a rounded body with a keyhole. Drawn
+    // with primitives, never an emoji codepoint — an emoji glyph tofus on
+    // any Linux box without a colour-emoji font.
+    const qreal cx = rect.center().x();
+    const QRectF body(cx - 8.0, rect.center().y() - 2.0, 16.0, 12.5);
+
+    // Shackle — a half-ring whose ends meet the top of the body.
+    QRectF shackle(cx - 5.2, body.top() - 9.0, 10.4, 13.0);
+    painter.setPen(QPen(Qt::white, 2.0, Qt::SolidLine, Qt::RoundCap));
+    painter.setBrush(Qt::NoBrush);
+    painter.drawArc(shackle, 0 * 16, 180 * 16);
+
+    painter.setPen(QPen(Qt::white, 1.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(QColor(255, 255, 255, 40));
+    painter.drawRoundedRect(body, 2.6, 2.6);
+
+    // Keyhole — a dot with a short stem, so the lock reads at 16 px too.
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(Qt::white);
+    painter.drawEllipse(QPointF(cx, body.center().y() - 1.4), 1.8, 1.8);
+    painter.setPen(QPen(Qt::white, 1.6, Qt::SolidLine, Qt::RoundCap));
+    painter.drawLine(QPointF(cx, body.center().y() - 0.4),
+                     QPointF(cx, body.center().y() + 3.0));
+}
+
 static QIcon makeFeatureIcon(const QColor &base, const QString &iconKind, const QString &glyph = QString()) {
     // v0.1.51 — paint at native device-pixel resolution so the toolbar
     // icons stay crisp on Windows 150 % display zoom and other fractional
@@ -818,6 +845,8 @@ static QIcon makeFeatureIcon(const QColor &base, const QString &iconKind, const 
         drawGitFeatureGlyph(painter, rect);
     } else if (iconKind == "diagram") {
         drawDiagramFeatureGlyph(painter, rect);
+    } else if (iconKind == "password") {
+        drawPasswordFeatureGlyph(painter, rect);
     } else {
         QFont font = notepatraCodeFont(glyph.size() > 2 ? 8 : 10, QFont::Bold);
         painter.setFont(font);
@@ -946,6 +975,14 @@ ul { margin-top: 4px; }
 <li><b>Extract</b> (footer button or <code>Ctrl+Alt+E</code>) runs your configured AI backend over the note and returns a short <b>summary</b> plus <b>action items, decisions, questions and risks</b>. An action that mentions a time ("ship the build 10am tomorrow") comes back with that date/time pre-filled.</li>
 <li><b>Reminders:</b> right-click a note to set a reminder, or schedule action items straight from Extract (each with a calendar + time picker). Every reminder appears in the central <b>Reminders</b> section of the sidebar, grouped <i>Overdue / Today / This week / Later</i> — click to open the note, the pencil to change the time, the ✕ to delete. Desktop notifications fire at the due time whenever Notepatra is running — the Noter tab does not need to be open. Reminders that come due while Notepatra is closed arrive as a single catch-up notification on the next launch. Re-running Extract flags items already scheduled so you don't get duplicates.</li>
 <li><b>Noter shortcuts</b> (active while the Noter tab has focus): <code>Ctrl+Alt+M</code> new note, <code>Ctrl+Alt+J</code> jump to the note search box (quick-switch between notes), <code>Ctrl+Alt+E</code> Extract, <code>Ctrl+Alt+T</code> jump to the Reminders section in the sidebar, <code>Ctrl+Alt+B</code> show/hide the sidebar, <code>Ctrl+Alt+P</code> pop the current note out into its own window, <code>F4</code> toggle the checkbox on the current line. <code>Ctrl+Alt+N</code> toggles the Noter tab itself from anywhere.</li>
+</ul>
+
+<h3>Password Generator</h3>
+<ul>
+<li>The icon row (next to <b>AI</b>) or <b>Tools &gt; Password Generator</b> toggles it: pressing it again while the tab is focused closes it. It runs entirely offline — there is no wordlist download, no network call, and no backend.</li>
+<li><b>Two modes.</b> <i>Random characters</i> draws from a-z, A-Z, 0-9 and a shell-safe symbol set (quotes, backslash, backtick and pipe are left out so a password survives being pasted into a command line, a YAML file or a connection string); you can add your own characters, exclude the look-alikes <code>0 O 1 l I</code>, and require at least one character from every set. <i>Passphrase</i> joins words from a 2,048-word built-in list, so each word is worth exactly 11 bits.</li>
+<li><b>The bits figure is the real one.</b> It is the base-2 logarithm of how many distinct values the current settings can produce, not a guess at how complicated the result looks. Ticking <b>At least one from each set</b> makes the number drop slightly — that is correct, because the guarantee rules out every password that misses a set.</li>
+<li><b>Nothing is stored.</b> The tab is not an editor, so nothing it shows is written to <code>session.json</code>, sent to an AI backend, or readable by a connected MCP client. <b>Copy</b> puts the value on the system clipboard and takes it back after 30 seconds, unless you copied something else in the meantime. Use <b>Insert into editor</b> or <b>Open in new tab</b> when you do want it in a file.</li>
 </ul>
 
 <h2>Tools, Utilities, and Panels</h2>
@@ -1483,6 +1520,7 @@ MainWindow::MainWindow(bool standaloneNoSession)
 
     connect(m_tabs, &QTabWidget::tabCloseRequested, this, &MainWindow::closeTab);
     connect(m_tabs, &QTabWidget::currentChanged, this, [this](int) {
+        if (Editor *ed = m_tabs->currentEditor()) m_lastEditor = ed;
         if (m_macroRecording && m_macro) {
             m_macro->endRecording();
             m_savedMacro = m_macro->save();
@@ -4006,6 +4044,44 @@ void MainWindow::buildMenus() {
         diagAct->setChecked(true);
     });
 
+    // --- Password Generator ---
+    m_passwordAct = feat->addAction("Password Generator — Random / Passphrase");
+    m_passwordAct->setCheckable(true);
+    m_passwordAct->setStatusTip("Generate random passwords or word passphrases from the "
+                                "system CSPRNG, with a live entropy readout. Nothing is "
+                                "written to disk and the clipboard self-clears.");
+    connect(m_passwordAct, &QAction::triggered, this, [this]() {
+        // Same on/off toggle as Noter and Diagram: absent -> create+focus;
+        // present-not-current -> focus; present-and-current -> close.
+        PasswordGenPanel *gen = nullptr;
+        int existingIdx = -1;
+        for (int i = 0; i < m_tabs->count(); ++i) {
+            if (auto *pg = qobject_cast<PasswordGenPanel*>(m_tabs->widget(i))) {
+                gen = pg;
+                existingIdx = i;
+                break;
+            }
+        }
+        if (gen && existingIdx == m_tabs->currentIndex()) {
+            // The destroyed-connection wired in newPasswordTab() clears the
+            // checkmark, so every close path agrees — this one, Ctrl+W, the
+            // tab's X, and Close All.
+            m_tabs->removeTab(existingIdx);
+            delete gen;
+            if (m_tabs->count() == 0) newFile();
+            return;
+        }
+        if (!gen) {
+            newPasswordTab();
+            return;
+        }
+        // Focusing an already-open tab. trigger() has ALREADY flipped the
+        // action to unchecked on the way in, so without this the button
+        // sits dark next to an open tab.
+        m_tabs->setCurrentIndex(existingIdx);
+        m_passwordAct->setChecked(true);
+    });
+
     // --- Hex Editor ---
     feat->addAction("Hex Editor — View Binary", this, [this, E]() {
         auto *e = E();
@@ -5692,6 +5768,64 @@ int MainWindow::newDiagramTab(const QString &source, const QString &title) {
     return idx;
 }
 
+// One password-tab creation path. The panel is a plain QWidget, never an
+// Editor subclass — that is what keeps generated values out of
+// session.json, out of the AI context sweep, and unreadable over MCP,
+// all three of which gate on qobject_cast<Editor*>.
+int MainWindow::newPasswordTab() {
+    auto *gen = new PasswordGenPanel;
+    // Live Settings > Theme switch, matching every other panel — the
+    // app-wide stylesheet does not reach ordinary widgets.
+    connect(this, &MainWindow::themeChanged, gen, &PasswordGenPanel::onThemeChanged);
+    // Truthful menu/toolbar checked-state on EVERY close path, including
+    // Ctrl+W and Close All, which route through the generic closeTab().
+    if (m_passwordAct)
+        connect(gen, &QObject::destroyed, m_passwordAct,
+                [act = m_passwordAct]() { act->setChecked(false); });
+    connect(gen, &PasswordGenPanel::insertRequested, this,
+            [this](const QString &text) {
+        // NOT currentEditor(): the Password panel is the current tab
+        // whenever its own button is clickable, so that is always null.
+        Editor *target = m_lastEditor;
+        if (!target) {
+            for (int i = 0; i < m_tabs->count(); ++i) {
+                if (Editor *ed = m_tabs->editorAt(i)) { target = ed; break; }
+            }
+        }
+        if (!target) {
+            statusBar()->showMessage(tr("No editor tab to insert into — "
+                                        "open a file first."), 4000);
+            return;
+        }
+        target->insert(text);
+        const int idx = m_tabs->indexOf(target);
+        if (idx >= 0) m_tabs->setCurrentIndex(idx);
+        statusBar()->showMessage(
+            tr("Inserted into \"%1\". It is an editor buffer now — it will be "
+               "written to the session file if you leave it open.")
+                .arg(idx >= 0 ? m_tabs->tabText(idx) : QString()), 6000);
+    });
+    connect(gen, &PasswordGenPanel::newTabRequested, this,
+            [this](const QString &text) {
+        newFile();
+        if (auto *e = currentEditor()) e->setText(text);
+        statusBar()->showMessage(
+            tr("Opened as an editor tab. This is no longer covered by the "
+               "generator's guarantees — an unsaved buffer is written to the "
+               "session file and its contents reach the AI context."), 8000);
+    });
+    connect(gen, &PasswordGenPanel::statusMessage, this,
+            [this](const QString &text) { statusBar()->showMessage(text, 5000); });
+    exitAiFullscreenIfActive();
+    // The tab title is visible to any connected MCP client through
+    // list_open_tabs, so it stays a constant label and never carries a
+    // generated value.
+    const int idx = m_tabs->addTab(gen, QStringLiteral("Password Generator"));
+    m_tabs->setCurrentIndex(idx);
+    if (m_passwordAct) m_passwordAct->setChecked(true);
+    return idx;
+}
+
 void MainWindow::buildToolbar() {
     auto *featureTb = addToolBar("Built-in Tools");
     featureTb->setObjectName("featureShortcutBar");
@@ -5719,6 +5853,11 @@ void MainWindow::buildToolbar() {
     addFeatureShortcut(featureTb, findActionByPrefix(this, "AI Assistant"),
                        notepatraToolAccent("AI"), "ai", "AI",
                        "Toggle AI Assistant dock (Ctrl+Q) — ON / OFF",
+                       /*showCheckedState=*/true);
+    addFeatureShortcut(featureTb, findActionByPrefix(this, "Password Generator"),
+                       notepatraToolAccent("Password"), "password", "Password",
+                       "Toggle Password Generator — random or passphrase, "
+                       "offline — ON / OFF",
                        /*showCheckedState=*/true);
     addFeatureShortcut(featureTb, findActionByPrefix(this, "Terminal"),
                        notepatraToolAccent("Terminal"), "terminal", "Terminal",
@@ -7061,6 +7200,7 @@ void MainWindow::triggerMenuAction(const QString &actionId) {
         {"BracketTools",  "Bracket Tools"},
         {"RESTClient",    "REST Client"},
         {"Noter",         "Noter — Meeting Thinkpad"},
+        {"PasswordGenerator", "Password Generator"},
     };
     QString prefix = idToPrefix.value(actionId);
     if (prefix.isEmpty()) return;
