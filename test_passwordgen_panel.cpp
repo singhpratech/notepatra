@@ -17,9 +17,13 @@
 #include "src/config.h"
 
 #include <QApplication>
+#include <QAbstractButton>
+#include <QGroupBox>
+#include <QSlider>
 #include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
+#include <QPalette>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
@@ -202,9 +206,30 @@ int main(int argc, char **argv) {
         const QString ss = panel.styleSheet();
         check("\"System\" resolves to a real palette, not neither",
               ss.contains(QStringLiteral("#1E1E1E")) || ss.contains(QStringLiteral("#FAF9F5")));
-        check("the spin-box arrows are styled (styling the box hides them otherwise)",
-              ss.contains(QStringLiteral("QSpinBox::up-arrow")) &&
-              ss.contains(QStringLiteral("QComboBox::down-arrow")));
+        // Spin boxes and combos must stay OUT of the stylesheet: any rule
+        // matching them hands their arrows to the QSS engine, which needs
+        // an explicit image and renders the CSS triangle idiom as a solid
+        // box. They are themed by palette so the platform keeps drawing a
+        // real arrow on Linux, Windows and macOS alike.
+        check("no stylesheet rule targets the spin box or combo box",
+              !ss.contains(QStringLiteral("QSpinBox")) &&
+              !ss.contains(QStringLiteral("QComboBox")), ss.left(400));
+        QSpinBox *anySpin = panel.findChild<QSpinBox *>();
+        QComboBox *anyCombo = panel.findChild<QComboBox *>();
+        check("spin boxes are themed by palette instead",
+              anySpin && anySpin->palette().color(QPalette::Base) != QColor());
+        check("combo boxes are themed by palette instead",
+              anyCombo && anyCombo->palette().color(QPalette::Base) != QColor());
+        // And the palette must actually follow the theme.
+        Config::instance().theme = QStringLiteral("Dark");
+        panel.onThemeChanged();
+        const QColor darkBase = anySpin ? anySpin->palette().color(QPalette::Base) : QColor();
+        Config::instance().theme = QStringLiteral("Light");
+        panel.onThemeChanged();
+        const QColor lightBase = anySpin ? anySpin->palette().color(QPalette::Base) : QColor();
+        check("the field palette flips with the theme",
+              darkBase.isValid() && lightBase.isValid() && darkBase != lightBase,
+              QString("%1 vs %2").arg(darkBase.name(), lightBase.name()));
         Config::instance().theme = before;
         panel.onThemeChanged();
     }
@@ -256,6 +281,44 @@ int main(int argc, char **argv) {
         for (QCheckBox *c : classes) c->setChecked(true);
         check("restoring a set regenerates a value", !panel.currentText().isEmpty());
         check("and re-enables Copy", copy && copy->isEnabled());
+    }
+
+    std::printf("\n— discoverability ───────────────────────────────\n");
+    {
+        // Every control the user can touch has to explain itself on hover.
+        int missing = 0;
+        QStringList names;
+        for (QWidget *w : panel.findChildren<QWidget *>()) {
+            const bool interactive = qobject_cast<QAbstractButton *>(w) ||
+                                     qobject_cast<QSpinBox *>(w) ||
+                                     qobject_cast<QComboBox *>(w) ||
+                                     qobject_cast<QLineEdit *>(w) ||
+                                     qobject_cast<QSlider *>(w) ||
+                                     qobject_cast<QGroupBox *>(w) ||
+                                     qobject_cast<QPlainTextEdit *>(w);
+            if (!interactive) continue;
+            // Qt walks up to the parent when a widget has no tooltip of its
+            // own, so a QSpinBox's internal QLineEdit is covered by the spin
+            // box. Count a control as explained if it or an ancestor inside
+            // the panel carries text.
+            bool explained = false;
+            for (const QWidget *a = w; a && a != &panel; a = a->parentWidget())
+                if (!a->toolTip().trimmed().isEmpty()) { explained = true; break; }
+            if (!explained) {
+                ++missing;
+                if (auto *b = qobject_cast<QAbstractButton *>(w)) names << b->text();
+                else names << w->metaObject()->className();
+            }
+        }
+        check("every interactive control has a hover tooltip",
+              missing == 0, names.join(QStringLiteral(", ")));
+
+        // Labels that head a control should explain it too.
+        int labelled = 0;
+        for (QLabel *l : panel.findChildren<QLabel *>())
+            if (!l->toolTip().trimmed().isEmpty()) ++labelled;
+        check("the section labels carry explanations as well", labelled >= 4,
+              QString::number(labelled));
     }
 
     std::printf("\n— signals ────────────────────────────────────────\n");

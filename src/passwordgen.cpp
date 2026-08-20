@@ -15,7 +15,9 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QAbstractItemView>
 #include <QPainter>
+#include <QPalette>
 #include <QFontMetrics>
 #include <QScrollBar>
 #include <QPlainTextEdit>
@@ -132,6 +134,10 @@ PasswordGenPanel::PasswordGenPanel(QWidget *parent) : QWidget(parent) {
     // A blinking caret in front of the value reads as a literal '|'
     // character in the password. Nothing here is typed into.
     m_out->setCursorWidth(0);
+    m_out->setToolTip(tr("The generated value or values, one per line.\n\n"
+                         "Read-only. Values never wrap: a wrapped password is "
+                         "ambiguous about whether the break is a character, so a "
+                         "long one scrolls sideways instead."));
     m_out->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_out->setMinimumWidth(520);
 
@@ -155,6 +161,16 @@ PasswordGenPanel::PasswordGenPanel(QWidget *parent) : QWidget(parent) {
     m_bar->setFixedWidth(220);
     m_entropy = new QLabel;
     m_entropy->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    const QString bitsTip =
+        tr("How many bits of entropy these settings produce — the base-2 "
+           "logarithm of the number of distinct values they can generate.\n\n"
+           "This is a count, not a score. It does not look at the password on "
+           "screen and guess how complicated it seems; it measures the size of "
+           "the space it was drawn from.\n\n"
+           "Bands: under 40 very weak · 40-59 weak · 60-79 fair · "
+           "80-111 strong · 112+ excellent.");
+    m_entropy->setToolTip(bitsTip);
+    m_bar->setToolTip(bitsTip);
     meterRow->addWidget(m_bar, 0);
     meterRow->addWidget(m_entropy, 0);
     meterRow->addStretch(1);
@@ -165,6 +181,12 @@ PasswordGenPanel::PasswordGenPanel(QWidget *parent) : QWidget(parent) {
     m_modeChars  = new QRadioButton(tr("Random characters"));
     m_modePhrase = new QRadioButton(tr("Passphrase"));
     m_modeChars->setChecked(true);
+    m_modeChars->setToolTip(tr("Draw single characters from the sets you tick below.\n"
+                               "Highest entropy per character; hardest to type by hand."));
+    m_modePhrase->setToolTip(tr("Join whole words from a built-in 2,048-word list.\n"
+                                "Lower entropy per character but far easier to type, "
+                                "read aloud and remember. Each word is worth exactly "
+                                "11 bits."));
     modeRow->addWidget(m_modeChars);
     modeRow->addWidget(m_modePhrase);
     modeRow->addStretch(1);
@@ -188,6 +210,9 @@ PasswordGenPanel::PasswordGenPanel(QWidget *parent) : QWidget(parent) {
     auto *genBtn = new QPushButton(tr("Generate"));
     genBtn->setDefault(true);
     genBtn->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
+    genBtn->setToolTip(tr("Generate a fresh value with the current settings.\n\n"
+                          "Changing any setting also regenerates automatically, so "
+                          "what is on screen always matches the bits figure above."));
     m_insertBtn = new QPushButton(tr("Insert into editor"));
     m_insertBtn->setToolTip(tr("Insert at the caret of the editor tab you were last in.\n\n"
                                "Once it is in an editor buffer it is no longer covered by "
@@ -245,19 +270,30 @@ PasswordGenPanel::PasswordGenPanel(QWidget *parent) : QWidget(parent) {
 
 QWidget *PasswordGenPanel::buildCharactersGroup() {
     auto *box = new QGroupBox(tr("Characters"));
+    box->setToolTip(tr("Settings for the random-characters mode: how long the "
+                       "password is, and which characters it may be built from."));
     auto *v = new QVBoxLayout(box);
     // Match the frame inset by hand: QSS padding on a QGroupBox does
     // not move the layout, so the last row draws over the border.
     v->setContentsMargins(12, 14, 12, 12);
 
     auto *lenRow = new QHBoxLayout;
-    lenRow->addWidget(new QLabel(tr("Length")));
+    auto *lenLabel = new QLabel(tr("Length"));
+    const QString lenTip = tr("How many characters to generate, from %1 to %2.\n\n"
+                              "Length buys entropy faster than adding character "
+                              "sets does: one extra character is worth about "
+                              "6.5 bits at the default alphabet.")
+                               .arg(kMinLength).arg(kMaxLength);
+    lenLabel->setToolTip(lenTip);
+    lenRow->addWidget(lenLabel);
     m_length = new QSlider(Qt::Horizontal);
     m_length->setRange(kMinLength, kMaxLength);
     m_length->setValue(20);
+    m_length->setToolTip(lenTip);
     m_lengthBox = new QSpinBox;
     m_lengthBox->setRange(kMinLength, kMaxLength);
     m_lengthBox->setValue(20);
+    m_lengthBox->setToolTip(lenTip);
     connect(m_length,    QOverload<int>::of(&QSlider::valueChanged),
             m_lengthBox, &QSpinBox::setValue);
     connect(m_lengthBox, QOverload<int>::of(&QSpinBox::valueChanged),
@@ -271,6 +307,9 @@ QWidget *PasswordGenPanel::buildCharactersGroup() {
     m_upper   = new QCheckBox(tr("A-Z"));
     m_digits  = new QCheckBox(tr("0-9"));
     m_symbols = new QCheckBox(tr("Symbols"));
+    m_lower->setToolTip(tr("Include the 26 lowercase letters a-z."));
+    m_upper->setToolTip(tr("Include the 26 uppercase letters A-Z."));
+    m_digits->setToolTip(tr("Include the 10 digits 0-9."));
     for (QCheckBox *c : { m_lower, m_upper, m_digits, m_symbols }) {
         c->setChecked(true);
         classRow->addWidget(c);
@@ -280,7 +319,9 @@ QWidget *PasswordGenPanel::buildCharactersGroup() {
            "password survives being pasted into a shell command, a YAML "
            "file or a connection string.")
             .arg(classChars(Symbols, false)));
-    classRow->addWidget(new QLabel(tr("Also:")));
+    auto *alsoLabel = new QLabel(tr("Also:"));
+    alsoLabel->setToolTip(tr("Extra characters to draw from, beyond the sets above."));
+    classRow->addWidget(alsoLabel);
     m_extra = new QLineEdit;
     m_extra->setPlaceholderText(tr("extra characters"));
     m_extra->setMaximumWidth(160);
@@ -294,6 +335,12 @@ QWidget *PasswordGenPanel::buildCharactersGroup() {
 
     auto *optRow = new QHBoxLayout;
     m_noLookalikes = new QCheckBox(tr("Exclude look-alikes (0 O 1 l I)"));
+    m_noLookalikes->setToolTip(tr("Leave out the five glyphs that get misread off a "
+                                  "screen or a printout: zero, capital O, one, "
+                                  "lowercase L and capital i.\n\n"
+                                  "Costs a little entropy — the alphabet shrinks — "
+                                  "but worth it for anything you will read aloud or "
+                                  "type from paper."));
     m_requireEach  = new QCheckBox(tr("At least one from each set"));
     m_requireEach->setChecked(true);
     m_requireEach->setToolTip(
@@ -316,33 +363,57 @@ QWidget *PasswordGenPanel::buildCharactersGroup() {
 
 QWidget *PasswordGenPanel::buildPassphraseGroup() {
     auto *box = new QGroupBox(tr("Passphrase"));
+    box->setToolTip(tr("Settings for the passphrase mode: how many words to join, "
+                       "and how to join them."));
     auto *v = new QVBoxLayout(box);
     // Match the frame inset by hand: QSS padding on a QGroupBox does
     // not move the layout, so the last row draws over the border.
     v->setContentsMargins(12, 14, 12, 12);
 
     auto *row = new QHBoxLayout;
-    row->addWidget(new QLabel(tr("Words")));
+    auto *wordsLabel = new QLabel(tr("Words"));
+    const QString wordsTip = tr("How many words to join, from %1 to %2.\n\n"
+                                "Each word is worth exactly %3 bits, so the total is "
+                                "simply words × %3.")
+                                 .arg(kMinWords).arg(kMaxWords)
+                                 .arg(qRound(std::log2(double(wordlistSize()))));
+    wordsLabel->setToolTip(wordsTip);
+    row->addWidget(wordsLabel);
     m_words = new QSpinBox;
     m_words->setRange(kMinWords, kMaxWords);
     m_words->setValue(6);
+    m_words->setToolTip(wordsTip);
     row->addWidget(m_words);
 
     row->addSpacing(12);
-    row->addWidget(new QLabel(tr("Separator")));
+    auto *sepLabel = new QLabel(tr("Separator"));
+    const QString sepTip = tr("What to put between the words.\n\n"
+                              "The separator adds no entropy — it is fixed, not "
+                              "chosen at random — but it makes the phrase far easier "
+                              "to read and to type correctly.");
+    sepLabel->setToolTip(sepTip);
+    row->addWidget(sepLabel);
     m_separator = new QComboBox;
     m_separator->addItem(tr("hyphen  -"), QStringLiteral("-"));
     m_separator->addItem(tr("period  ."), QStringLiteral("."));
     m_separator->addItem(tr("underscore  _"), QStringLiteral("_"));
     m_separator->addItem(tr("space"), QStringLiteral(" "));
     m_separator->addItem(tr("none"), QString());
+    m_separator->setToolTip(sepTip);
     row->addWidget(m_separator);
     row->addStretch(1);
     v->addLayout(row);
 
     auto *opt = new QHBoxLayout;
     m_capitalise   = new QCheckBox(tr("Capitalise each word"));
+    m_capitalise->setToolTip(tr("Upper-case the first letter of every word.\n\n"
+                                "Adds no entropy — the change is applied to every "
+                                "word, so it is not a random choice — but some "
+                                "sites demand a capital letter."));
     m_appendDigits = new QCheckBox(tr("Append two digits"));
+    m_appendDigits->setToolTip(tr("Add a random two-digit group on the end.\n\n"
+                                  "Worth log2(100) ≈ 6.6 bits, and satisfies the "
+                                  "sites that insist on a digit."));
     opt->addWidget(m_capitalise);
     opt->addWidget(m_appendDigits);
     opt->addStretch(1);
@@ -530,35 +601,46 @@ void PasswordGenPanel::applyTheme() {
         "QPlainTextEdit { background: %3; color: %6; border: 1px solid %4;"
         "                 border-radius: 6px; padding: 6px 8px;"
         "                 selection-background-color: %5; selection-color: #FFFFFF; }"
-        "QLineEdit, QSpinBox, QComboBox { background: %3; color: %6; border: 1px solid %4;"
-        "                                 border-radius: 5px; padding: 3px 6px; }"
-        "QComboBox QAbstractItemView { background: %2; color: %6; border: 1px solid %4;"
-        "                              selection-background-color: %5; selection-color: #FFFFFF; }"
+        "QLineEdit { background: %3; color: %6; border: 1px solid %4;"
+        "            border-radius: 5px; padding: 3px 6px; }"
         "QPushButton { background: %2; color: %6; border: 1px solid %4;"
         "              border-radius: 6px; padding: 5px 12px; }"
         "QPushButton:hover { border-color: %5; }"
         "QPushButton:default { border: 1px solid %5; }"
         "QPushButton:disabled { color: %8; border-color: %4; }"
-        "QSpinBox::up-button, QSpinBox::down-button { subcontrol-origin: border;"
-        "    width: 16px; background: transparent; border-left: 1px solid %4; }"
-        "QSpinBox::up-button { subcontrol-position: top right; }"
-        "QSpinBox::down-button { subcontrol-position: bottom right; }"
-        "QSpinBox::up-arrow { width: 0; height: 0; border-left: 4px solid transparent;"
-        "    border-right: 4px solid transparent; border-bottom: 5px solid %6; }"
-        "QSpinBox::down-arrow { width: 0; height: 0; border-left: 4px solid transparent;"
-        "    border-right: 4px solid transparent; border-top: 5px solid %6; }"
-        "QSpinBox::up-arrow:disabled, QSpinBox::down-arrow:disabled { border-bottom-color: %8;"
-        "    border-top-color: %8; }"
-        "QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right;"
-        "    width: 18px; border-left: 1px solid %4; }"
-        "QComboBox::down-arrow { width: 0; height: 0; border-left: 4px solid transparent;"
-        "    border-right: 4px solid transparent; border-top: 5px solid %6; }"
         "QSlider::groove:horizontal { height: 4px; background: %4; border-radius: 2px; }"
         "QSlider::handle:horizontal { background: %5; width: 14px; margin: -6px 0;"
         "                             border-radius: 7px; }"
     ).arg(p.bg, p.card, p.input, p.border, p.accent, p.text, p.sub, p.muted));
     m_status->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(p.muted));
     m_entropy->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(p.sub));
+
+    // Spin boxes and combo boxes deliberately get a PALETTE, not a
+    // stylesheet. The moment a QSS rule matches them, Qt hands their
+    // sub-controls to the stylesheet engine, which then needs an explicit
+    // image for every arrow — and the CSS border-triangle idiom renders
+    // as a filled box, not a triangle. Leaving them to the platform style
+    // keeps a real arrow on Linux and the native glyph on Windows/macOS.
+    QPalette fieldPal = palette();
+    fieldPal.setColor(QPalette::Base,            QColor(p.input));
+    fieldPal.setColor(QPalette::Text,            QColor(p.text));
+    fieldPal.setColor(QPalette::Window,          QColor(p.card));
+    fieldPal.setColor(QPalette::WindowText,      QColor(p.text));
+    fieldPal.setColor(QPalette::Button,          QColor(p.input));
+    fieldPal.setColor(QPalette::ButtonText,      QColor(p.text));
+    fieldPal.setColor(QPalette::Highlight,       QColor(p.accent));
+    fieldPal.setColor(QPalette::HighlightedText, QColor("#FFFFFF"));
+    fieldPal.setColor(QPalette::Mid,             QColor(p.border));
+    fieldPal.setColor(QPalette::Dark,            QColor(p.border));
+    fieldPal.setColor(QPalette::Light,           QColor(p.card));
+    fieldPal.setColor(QPalette::Shadow,          QColor(p.border));
+    for (QWidget *w : findChildren<QWidget *>()) {
+        if (qobject_cast<QSpinBox *>(w) || qobject_cast<QComboBox *>(w)) {
+            w->setPalette(fieldPal);
+            if (auto *cb = qobject_cast<QComboBox *>(w))
+                if (QAbstractItemView *v = cb->view()) v->setPalette(fieldPal);
+        }
+    }
 
     // Styling ::indicator changes its width, but QCheckBox/QRadioButton
     // compute sizeHint() from the STYLE metric, not the stylesheet — so the

@@ -358,20 +358,24 @@ fn decode_with(det: DetectedEnc, data: &[u8]) -> String {
 }
 
 fn decode_utf32_le(data: &[u8]) -> String {
-    data.chunks_exact(4)
-        .filter_map(|c| {
-            let cp = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
-            char::from_u32(cp)
-        })
+    // as_chunks over chunks_exact: same full-4-byte chunks, trailing
+    // remainder still dropped, but the array type removes the manual
+    // indexing. clippy::chunks_exact_to_as_chunks (Rust 1.98) requires it.
+    data.as_chunks::<4>()
+        .0
+        .iter()
+        .filter_map(|c| char::from_u32(u32::from_le_bytes(*c)))
         .collect()
 }
 
 fn decode_utf32_be(data: &[u8]) -> String {
-    data.chunks_exact(4)
-        .filter_map(|c| {
-            let cp = u32::from_be_bytes([c[0], c[1], c[2], c[3]]);
-            char::from_u32(cp)
-        })
+    // as_chunks over chunks_exact: same full-4-byte chunks, trailing
+    // remainder still dropped, but the array type removes the manual
+    // indexing. clippy::chunks_exact_to_as_chunks (Rust 1.98) requires it.
+    data.as_chunks::<4>()
+        .0
+        .iter()
+        .filter_map(|c| char::from_u32(u32::from_be_bytes(*c)))
         .collect()
 }
 
