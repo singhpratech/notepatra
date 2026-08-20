@@ -17,6 +17,25 @@
 <title>Notepatra MCP — Your editor, readable by your AI</title>
 <meta name="description" content="Notepatra's MCP server (introduced v0.1.118, 49 tools as of v0.1.128): tools that let Claude, Codex, and any spec-compliant MCP client read your open tabs, search your workspace, run read-only SQL, inspect Git — and, only with your explicit per-action approval, edit, save, and create Noter notes. Local socket + stdio, nothing leaves your machine.">
 <link rel="canonical" href="https://notepatra.org/mcp.html">
+<!-- Open Graph / Twitter. og:image is same-origin on purpose: an
+     off-domain card is the same class of bug the favicon had. 1200x630
+     is what summary_large_image and every other scraper expect. -->
+<meta property="og:site_name" content="Notepatra">
+<meta property="og:locale" content="en_US">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://notepatra.org/mcp.html">
+<meta property="og:title" content="Notepatra MCP — Your editor, readable by your AI">
+<meta property="og:description" content="49 MCP tools that let Claude, Codex, and any spec-compliant client read your open tabs, search your workspace, run read-only SQL, and inspect Git — every write approved by you, in-window. Local socket + stdio; nothing leaves your machine.">
+<meta property="og:image" content="https://notepatra.org/og-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~12 MB native, zero Electron, 49-tool MCP server.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Notepatra MCP — Your editor, readable by your AI">
+<meta name="twitter:description" content="49 MCP tools that let Claude, Codex, and any spec-compliant client read your open tabs, search your workspace, run read-only SQL, and inspect Git — every write approved by you, in-window. Local socket + stdio; nothing leaves your machine.">
+<meta name="twitter:image" content="https://notepatra.org/og-card.png">
+<meta name="twitter:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~12 MB native, zero Electron, 49-tool MCP server.">
 
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://api.github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
