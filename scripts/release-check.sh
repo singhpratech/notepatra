@@ -9,6 +9,9 @@
 #   • docs/index.html stat card / hero / sticky CTA mention the tag
 #   • All 22+ test executables build (notepatra_all_tests target)
 #   • ctest passes
+#   • notepatra-mcp/Cargo.toml version matches the tag
+#   • crates.io already carries the PREVIOUS release (the sidecar publish
+#     is manual and silently rotted for 8 releases once already)
 #   • git working tree is clean
 #   • No vendored binary (vendor/, build/, etc.) is staged
 #
@@ -240,6 +243,47 @@ if [ -d notepatra-mcp ]; then
         echo "      rustup target add x86_64-pc-windows-gnu"
     fi
 fi
+
+echo
+echo "── crates.io ──"
+# The sidecar is published to crates.io as `notepatra-mcp`. Nothing in CI does
+# this, so it is a manual step — and a manual step that is not a gate is a step
+# that stops happening. It did: 0.1.118 and 0.1.119 went up on 2026-07-18 and
+# then the channel rotted for EIGHT releases, leaving `cargo install
+# notepatra-mcp` serving 0.1.119 — the one release whose Windows named-pipe
+# transport deadlocked on every verb and had never completed a tool call.
+#
+# The invariant that would have caught it on the very next release: by the time
+# you cut vN, the PREVIOUS tag must already be on crates.io. Checking for the
+# version being cut would be wrong — that one is published after the tag.
+prev_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+prev_ver="${prev_tag#v}"
+crate_ver="$(grep -m1 -oE '^version = "[0-9]+\.[0-9]+\.[0-9]+"' notepatra-mcp/Cargo.toml \
+             | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
+
+check "notepatra-mcp/Cargo.toml version matches the tag being cut" \
+      "[ \"$crate_ver\" = \"$VERSION\" ]"
+
+if [ -z "$prev_ver" ] || [ "$prev_ver" = "$VERSION" ]; then
+    echo "  ⚠ no earlier tag to compare against — crates.io currency unchecked"
+elif published="$(curl -fsSL --max-time 15 -A notepatra-release-check \
+                    https://crates.io/api/v1/crates/notepatra-mcp 2>/dev/null \
+                  | grep -oE '"max_version":"[0-9]+\.[0-9]+\.[0-9]+"' \
+                  | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')" && [ -n "$published" ]; then
+    # Hard-fail: a stale registry ships a known-broken sidecar to anyone
+    # running `cargo install`, and nothing else in the pipeline notices.
+    check "crates.io is current (published $published = previous tag $prev_ver)" \
+          "[ \"$published\" = \"$prev_ver\" ]"
+    if [ "$published" != "$prev_ver" ]; then
+        echo "      crates.io serves $published but the last release was $prev_ver."
+        echo "      cd notepatra-mcp && cargo publish   # then re-run this script"
+    fi
+else
+    # Soft-warn: offline or crates.io down is not a reason to block a release.
+    echo "  ⚠ could not reach crates.io — published sidecar version unverified"
+fi
+echo
+echo "  → after tagging: cd notepatra-mcp && cargo publish   (publishes $VERSION)"
 
 echo
 echo "── tag ──"

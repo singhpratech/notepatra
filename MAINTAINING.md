@@ -57,7 +57,7 @@ Written 2026-07-05 @ v0.1.114 (main @ fe35cf7). This is the institutional-knowle
 
 ## 5. Release process
 
-Flow (the `np-release` skill orchestrates this): bump `CMakeLists.txt` VERSION → `release_notes/vX.md` → append `CHANGELOG.md` → `scripts/release-check.sh` → PII sweep → commit → tag → push → watch CI → verify GitHub Release assets + Pages.
+Flow (the `np-release` skill orchestrates this): bump `CMakeLists.txt` VERSION **and `notepatra-mcp/Cargo.toml`** → `release_notes/vX.md` → append `CHANGELOG.md` → `scripts/release-check.sh` → PII sweep → commit → tag → push → watch CI → verify GitHub Release assets + Pages → **`cd notepatra-mcp && cargo publish`**.
 
 Gates in `scripts/` (release-check.sh calls most): `stale-text-check.sh` (canonical counts, capability claims, installer filenames), `verify-download-sizes.sh` (published bytes vs docs claims), `test-install-selection.sh` (lite/full artifact pick), `post-release-verify.sh`, `bump_version.sh`, `smoke-multiprocess.sh`.
 
@@ -75,6 +75,7 @@ CI traps:
 - **GitHub push protection** rejects anything key-shaped (`sk-…`, `ghp_…`) even all-zero fakes — build key-shaped test literals from concatenated fragments. Recovery: `reset --soft`, fix, re-commit, move tag.
 - `Closes #N` in a direct push does NOT close issues — only PR merges do; follow up with `gh issue close N`.
 - Install scripts **hard-fail** verification when the SHA/sig source is unreachable (Tier 1). Every new security check gets classified into exactly one tier first: hard-fail / soft-warn / skip-when-tool-missing.
+- **crates.io is a distribution surface and nobody was watching it.** `notepatra-mcp` 0.1.118/0.1.119 were published by hand on 2026-07-18, then the channel rotted for eight releases — `cargo install notepatra-mcp` served 0.1.119, the one release whose Windows named-pipe transport deadlocked on every verb and had never completed a tool call. `release-check.sh` now hard-fails when crates.io's `max_version` is not the previous tag (soft-warn when the registry is unreachable). Publishing is still manual and happens AFTER the tag; the gate catches the omission on the next release, not the current one.
 
 **User-pause rule:** "do not CI until I say" / "stop shipping" / "wait" = no push, no tag, no commit-to-main. Work locally, batch fixes, resume only on an explicit "ship it". Status questions do not unpause.
 
