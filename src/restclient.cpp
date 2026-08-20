@@ -176,7 +176,11 @@ void RestClient::applyPalette() {
             "border: 1px solid %3; border-radius: 6px; "
             "padding: 4px 10px; font-weight: 700; font-size: 13px; }"
             "QComboBox:hover { border-color: %4; }"
-            "QComboBox::drop-down { border: none; width: 20px; }"
+            // No ::drop-down rule. Styling that sub-control hands arrow
+            // painting to the stylesheet engine, which then draws nothing
+            // unless ::down-arrow supplies an image — so the method combo
+            // shipped with no arrow at all. Leaving it out keeps the
+            // rounded border and bold label AND the platform's own arrow.
             "QComboBox QAbstractItemView { background: %1; color: %5; "
             "selection-background-color: %6; border: 1px solid %3; }")
             .arg(pal.inputBg, pal.accent, pal.inputBorder,

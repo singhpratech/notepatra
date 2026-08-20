@@ -13,6 +13,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QFont>
 #include <QApplication>
 #include <QClipboard>
@@ -165,9 +166,14 @@ void SqlFmtPanel::applyPalette() {
     setStyleSheet(QString(
         "QWidget { background: %1; color: %2; }"
         "QLabel { background: transparent; color: %2; }"
-        "QComboBox, QSpinBox { background: %3; color: %4; border: 1px solid %5;"
-        "                     border-radius: 4px; padding: 2px 6px; min-height: 22px; }"
-        "QComboBox:focus, QSpinBox:focus { border: 1px solid %6; }"
+        // QSpinBox deliberately NOT listed here. A QSS rule on a spin box
+        // hands its up/down buttons to the stylesheet engine, which draws
+        // nothing without ::up-button/::down-button images — the Indent
+        // spinner shipped with no arrows. It is themed by palette below
+        // instead, so the platform style keeps drawing its own.
+        "QComboBox { background: %3; color: %4; border: 1px solid %5;"
+        "            border-radius: 4px; padding: 2px 6px; min-height: 22px; }"
+        "QComboBox:focus { border: 1px solid %6; }"
         "QComboBox QAbstractItemView { background: %3; color: %4; selection-background-color: %7; selection-color: %8; }"
         "QCheckBox { color: %2; spacing: 6px; }"
         "QCheckBox::indicator { width: 14px; height: 14px; border: 1px solid %5; background: %3; border-radius: 3px; }"
@@ -179,6 +185,21 @@ void SqlFmtPanel::applyPalette() {
           pal.inputBg, pal.inputFg, pal.inputBorder, pal.inputFocus,
           pal.selectionBg, pal.selectionFg,
           pal.btnBg, pal.btnFg, pal.btnBorder, pal.btnHover, pal.textMuted));
+
+    // Spin boxes are themed by palette, never by stylesheet — see the note
+    // in the block above. This keeps the native arrows on every platform.
+    for (QSpinBox *sb : findChildren<QSpinBox *>()) {
+        QPalette sp = sb->palette();
+        sp.setColor(QPalette::Base,       QColor(pal.inputBg));
+        sp.setColor(QPalette::Text,       QColor(pal.inputFg));
+        sp.setColor(QPalette::Button,     QColor(pal.inputBg));
+        sp.setColor(QPalette::ButtonText, QColor(pal.inputFg));
+        sp.setColor(QPalette::Window,     QColor(pal.bg));
+        sp.setColor(QPalette::WindowText, QColor(pal.text));
+        sp.setColor(QPalette::Mid,        QColor(pal.inputBorder));
+        sp.setColor(QPalette::Dark,       QColor(pal.inputBorder));
+        sb->setPalette(sp);
+    }
 
     if (m_header) {
         // padding 4px top/bottom (was 2px) so Windows bold-font descenders

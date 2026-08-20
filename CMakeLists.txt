@@ -3058,6 +3058,20 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_sqlfmt.cpp")
     message(STATUS "Regression test enabled — target: test_sqlfmt")
 endif()
 
+# ── QSS arrow lint (v0.1.128) ──
+# Source lint: a stylesheet must not delete a spin box's or combo's arrows.
+# Reads the real src/*.cpp, so a panel added later cannot reintroduce it.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_qss_arrows.cpp")
+    add_executable(test_qss_arrows test_qss_arrows.cpp)
+    target_include_directories(test_qss_arrows PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(test_qss_arrows PRIVATE Qt5::Core)
+    target_compile_definitions(test_qss_arrows PRIVATE
+        NOTEPATRA_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    notepatra_add_qt_test(test_qss_arrows)
+    set_tests_properties(test_qss_arrows PROPERTIES LABELS "unit;lint;theme" TIMEOUT 60)
+    message(STATUS "Regression test enabled — target: test_qss_arrows")
+endif()
+
 # ── Password Generator core (v0.1.128) ──
 # Pure Qt Core: alphabet composition, inclusion-exclusion entropy, and the
 # rejection-sampled CSPRNG draw. The statistical assertions use 6-sigma
