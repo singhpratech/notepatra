@@ -1223,10 +1223,13 @@ fn sha1(data: &[u8]) -> [u8; 20] {
         msg.push(0);
     }
     msg.extend_from_slice(&bit_len.to_be_bytes());
-    for chunk in msg.chunks_exact(64) {
+    // as_chunks, not chunks_exact: the padding above guarantees
+    // msg.len() % 64 == 0, so both yield the same blocks and the same
+    // (empty) remainder. clippy::chunks_exact_to_as_chunks, Rust 1.98.
+    for chunk in msg.as_chunks::<64>().0 {
         let mut w = [0u32; 80];
-        for (i, word) in chunk.chunks_exact(4).enumerate() {
-            w[i] = u32::from_be_bytes([word[0], word[1], word[2], word[3]]);
+        for (i, word) in chunk.as_chunks::<4>().0.iter().enumerate() {
+            w[i] = u32::from_be_bytes(*word);
         }
         for i in 16..80 {
             w[i] = (w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]).rotate_left(1);
@@ -1295,5 +1298,38 @@ mod tests {
         let ed = SocketEditor::with_socket_path("/nonexistent/notepatra-bridge.sock");
         let err = ed.list_open_tabs().unwrap_err();
         assert_eq!(err.0, NOT_RUNNING);
+    }
+}
+
+#[cfg(test)]
+mod sha1_known_answer {
+    use super::sha1;
+
+    fn hex(d: [u8; 20]) -> String {
+        d.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// FIPS 180-1 vectors. This hash derives the socket name, so a silent
+    /// change here would split the editor and the sidecar onto different
+    /// endpoints — a failure that looks like "editor not running".
+    #[test]
+    fn matches_the_published_vectors() {
+        assert_eq!(hex(sha1(b"")), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
+        assert_eq!(
+            hex(sha1(b"abc")),
+            "a9993e364706816aba3e25717850c26c9cd0d89d"
+        );
+        assert_eq!(
+            hex(sha1(
+                b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
+            )),
+            "84983e441c3bd26ebaae4aa1f95129e5e54670f1"
+        );
+        // 1,000,000 'a' — exercises many blocks, not just the padding path.
+        let million = vec![b'a'; 1_000_000];
+        assert_eq!(
+            hex(sha1(&million)),
+            "34aa973cd4c4daa4f61eeb2bdbad27316534016f"
+        );
     }
 }

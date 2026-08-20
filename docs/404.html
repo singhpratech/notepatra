@@ -1,10 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- First-party favicons. These MUST live on notepatra.org: Google's
+         favicon crawler wants a stable, same-origin, crawlable icon, and
+         /favicon.ico at the site root is the fallback it checks first.
+         Before v0.1.128 the only declaration pointed at raw.githubusercontent.com
+         — a different domain, a source-code CDN with a 5-minute cache — and
+         /favicon.ico 404'd, so search results fell back to a blank globe. -->
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>404 — Notepatra</title>
-    <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {

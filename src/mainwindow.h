@@ -4,6 +4,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QPointer>
 #include <QSplitter>
 #include <QFileSystemWatcher>
 #include <QDateTime>
@@ -338,6 +339,9 @@ private:
     NotesPanel *findNoterPanel(int *indexOut = nullptr) const;
     NotesPanel *ensureNoterTab();
     int newDiagramTab(const QString &source, const QString &title); // Features->Diagram + MCP create_diagram
+    QAction *m_passwordAct = nullptr;  // truthful checked-state
+    QPointer<Editor> m_lastEditor;     // last EDITOR tab; tool panels hand back to it
+    int newPasswordTab();                                          // Tools->Password Generator
     void onNoterTrayMessageClicked();
 
     // Macro recording/playback

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.127 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.128 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -3056,6 +3056,55 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_sqlfmt.cpp")
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     )
     message(STATUS "Regression test enabled — target: test_sqlfmt")
+endif()
+
+# ── QSS arrow lint (v0.1.128) ──
+# Source lint: a stylesheet must not delete a spin box's or combo's arrows.
+# Reads the real src/*.cpp, so a panel added later cannot reintroduce it.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_qss_arrows.cpp")
+    add_executable(test_qss_arrows test_qss_arrows.cpp)
+    target_include_directories(test_qss_arrows PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(test_qss_arrows PRIVATE Qt5::Core)
+    target_compile_definitions(test_qss_arrows PRIVATE
+        NOTEPATRA_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    notepatra_add_qt_test(test_qss_arrows)
+    set_tests_properties(test_qss_arrows PROPERTIES LABELS "unit;lint;theme" TIMEOUT 60)
+    message(STATUS "Regression test enabled — target: test_qss_arrows")
+endif()
+
+# ── Password Generator core (v0.1.128) ──
+# Pure Qt Core: alphabet composition, inclusion-exclusion entropy, and the
+# rejection-sampled CSPRNG draw. The statistical assertions use 6-sigma
+# envelopes so a correct generator cannot fail them by chance.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_passwordgen.cpp")
+    add_executable(test_passwordgen
+        test_passwordgen.cpp
+        src/passwordgen_core.cpp
+    )
+    target_include_directories(test_passwordgen PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(test_passwordgen PRIVATE Qt5::Core)
+    notepatra_add_qt_test(test_passwordgen)
+    set_tests_properties(test_passwordgen PROPERTIES
+        LABELS "unit;passwordgen" TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_passwordgen")
+endif()
+
+# ── Password Generator panel (v0.1.128) ──
+# Offscreen-safe: drives the real widgets and asserts the clipboard wipe
+# only reclaims a value the panel itself put there. Opens no modal.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_passwordgen_panel.cpp")
+    add_executable(test_passwordgen_panel
+        test_passwordgen_panel.cpp
+        src/passwordgen.cpp
+        src/passwordgen_core.cpp
+    )
+    target_include_directories(test_passwordgen_panel PRIVATE ${CMAKE_SOURCE_DIR})
+    target_link_libraries(test_passwordgen_panel PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Test)
+    notepatra_add_qt_test(test_passwordgen_panel)
+    set_tests_properties(test_passwordgen_panel PROPERTIES
+        LABELS "unit;passwordgen;panel" TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_passwordgen_panel")
 endif()
 
 # ── Install ──

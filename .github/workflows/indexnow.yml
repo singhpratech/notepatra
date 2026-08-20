@@ -29,24 +29,29 @@ jobs:
               "host": "notepatra.org",
               "key": "4e0be99a5f38f170e2721278d7f518f2",
               "keyLocation": "https://notepatra.org/4e0be99a5f38f170e2721278d7f518f2.txt",
+              # Real pages only. The eight "#download"/"#features" entries that
+              # used to sit here are the SAME page to a crawler — sitemap.xml
+              # rule 2 says exactly that about fragments, and it is no less
+              # true for IndexNow. docs.html, mcp.html and enterprise.html were
+              # live and indexable for releases and had never been submitted.
               "urlList": [
                 "https://notepatra.org/",
-                "https://notepatra.org/#download",
-                "https://notepatra.org/#features",
-                "https://notepatra.org/#ai",
-                "https://notepatra.org/#plugins",
-                "https://notepatra.org/#security",
-                "https://notepatra.org/#faq",
-                "https://notepatra.org/#versions",
-                "https://notepatra.org/sitemap.xml",
-                "https://notepatra.org/SHA256SUMS.v0.1.0.txt"
+                "https://notepatra.org/docs.html",
+                "https://notepatra.org/mcp.html",
+                "https://notepatra.org/enterprise.html",
+                "https://notepatra.org/sitemap.xml"
               ]
             }' && echo "✓ IndexNow ping accepted" || echo "::warning::IndexNow ping failed (non-critical)"
 
-      - name: Ping Google sitemap (best-effort, no auth)
+      - name: Note on Google (its ping endpoint no longer exists)
         run: |
           # Google deprecated this in 2023 — they recommend Search Console.
           # We try anyway because it's a free no-op if it fails.
-          curl -fsSL "https://www.google.com/ping?sitemap=https://notepatra.org/sitemap.xml" \
+          # Google retired the sitemap ping endpoint in June 2023; it now
+          # returns 404, so calling it was doing nothing. Google discovers
+          # the sitemap from robots.txt and re-crawls on its own schedule —
+          # the only manual lever is Search Console > Sitemaps / URL
+          # Inspection, which needs an authenticated human. IndexNow above
+          # still covers Bing, Yandex, Seznam and Naver.
             && echo "✓ Google sitemap ping accepted" \
             || echo "::warning::Google sitemap ping failed (expected since 2023; use Search Console)"
