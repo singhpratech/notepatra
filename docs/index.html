@@ -1315,7 +1315,7 @@
     <div class="hero">
         <div class="hero-badge">v0.1.128 · Now Available · MCP server for AI assistants · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
-        <p>Tiny native binary (~12 MB bare, ~4.4 MB compressed on Linux). C++ and Rust. 238 file types · 82 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints. <strong>MCP:</strong> the <a href="/mcp.html" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">MCP server</a> ships a prebuilt signed Windows sidecar and a one-click Claude Desktop bundle — its 49 tools (Git, read-only SQL, saved-connection queries, charts, Noter notes) connect Claude, Codex, or any MCP client straight to your editor.</p>
+        <p>Tiny native binary (~12 MB bare, ~4.4 MB compressed on Linux). C++ and Rust. 238 file types · 82 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints. <strong>New in v0.1.128:</strong> a built-in <a href="#features" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Password Generator</a> — random characters or word passphrases, fully offline, showing the real number of bits the settings can produce rather than a heuristic score. <strong>MCP:</strong> the <a href="/mcp.html" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">MCP server</a> ships a prebuilt signed Windows sidecar and a one-click Claude Desktop bundle — its 49 tools (Git, read-only SQL, saved-connection queries, charts, Noter notes) connect Claude, Codex, or any MCP client straight to your editor.</p>
 
         <div class="install-box">
             <div class="install-tabs">
@@ -1664,6 +1664,13 @@
         <div class="section-desc">Built on QScintilla — a battle-tested Scintilla-based editor engine. Hot-path file I/O and search use Rust for memory safety on untrusted input.</div>
 
         <div class="features-grid">
+            <!-- Password Generator — the v0.1.128 headline, in slot 1.
+                 Only the current release carries a NEW pill — see stale-text-check. -->
+            <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
+                <div class="feature-icon fi-purple">🔒</div>
+                <h3>Password Generator <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW IN v0.1.128</span> </h3>
+                <p>Two modes. <strong>Random characters</strong> — 4 to 256 long (default 20), from a-z, A-Z, 0-9, a 27-character symbol set and a free-text field for anything else, with optional <em>Exclude look-alikes</em> (drops <code>0 O 1 l I</code>) and <em>At least one from each set</em>. The symbol set deliberately leaves out the single quote, double quote, backslash, backtick, pipe and space, because those are the characters that break when a password is pasted into a shell command, a YAML file or a database connection string. <strong>Passphrase</strong> — 3 to 24 words (default 6) from a 2,048-word list compiled into the binary, so each word is worth exactly 11 bits and six words is 66 bits; pick a separator, capitalise, append two digits. The bits readout is the <strong>base-2 logarithm of how many distinct values your current settings can produce</strong>, not a heuristic score of how complicated the result looks — which is why ticking <em>At least one from each set</em> makes it drop slightly: the guarantee rules out every password that misses a set, so there are fewer to guess from. Randomness comes from <code>QRandomGenerator::system()</code>, the OS CSPRNG, with rejection sampling; the each-set rule is enforced by drawing again, never by placing and shuffling. Generate 1 to 100 at once, then Copy (taken back off the clipboard after 30 seconds, but only if it still holds that value), Insert into editor, or Open in new tab. The panel is not an editor, so a generated value is never written to <code>session.json</code>, never sent to an AI backend, and not readable by a connected MCP client. <em>Ships in every build including the default Lite binary — no dependency, no network, fully offline.</em></p>
+            </div>
             <!-- MCP — the v0.1.118 headline (expanded to 48 tools in v0.1.120), promoted to slot 1 so the
                  grid leads with it. Same Clay-orange halo as the other
                  star features. -->
@@ -1676,7 +1683,7 @@
                  border halo so it stays visually strong. -->
             <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
                 <div class="feature-icon fi-orange">🤖</div>
-                <h3>AI Assistant (Ctrl+Shift+A) <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
+                <h3>AI Assistant (Ctrl+Shift+A)</h3>
                 <p>Local-first AI. Two local dropdown backends: <strong>Ollama</strong> and <strong>llama.cpp</strong> (any GGUF). The llama.cpp entry accepts a user-configured URL, so it can reach anything that speaks OpenAI's <code>/v1/chat/completions</code> — any OpenAI-compatible server (those are separate programs you install, not bundled). Explain · Find Bugs · Refactor · Write Tests · Fix JSON · Add Comments · Optimize · Translate. <strong>No mandatory API key, no telemetry.</strong> Default is local — your code stays on your machine. Cloud LLMs (OpenAI, OpenRouter, Ollama Cloud, Azure OpenAI) are <em>opt-in</em> from the dropdown.</p>
             </div>
             <!-- Project Search at slot 2 — the second star feature.
@@ -1686,7 +1693,7 @@
                  users can't confuse the two. -->
             <div class="feature-card" style="border-color: rgba(204,120,92,0.35); box-shadow: 0 10px 30px rgba(204,120,92,0.10);">
                 <div class="feature-icon fi-orange">🔎</div>
-                <h3>Project Search (Ctrl+Shift+G) <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
+                <h3>Project Search (Ctrl+Shift+G)</h3>
                 <p>Recursive search across file <em>names</em> AND file <em>contents</em>, project-wide. Streams line by line so memory use stays flat regardless of file size — tested on 2 GB logs. Exact <code>line:col</code> coordinates, double-click a match to jump the caret to the exact character. Any text-based language. Skips binary files with a NUL-byte heuristic.</p>
             </div>
             <!-- Noter — local-first meeting-notes workspace. Highlighted
@@ -1694,28 +1701,21 @@
                  above, since Reminders + Extract are the v0.1.97 headline. -->
             <div class="feature-card" style="border-color: rgba(204,120,92,0.35); box-shadow: 0 10px 30px rgba(204,120,92,0.10);">
                 <div class="feature-icon fi-orange">🗒️</div>
-                <h3>Noter — meeting notes <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
+                <h3>Noter — meeting notes</h3>
                 <p>A local-first, two-pane notes workspace — notes list on the left, editor on the right. <strong>No accounts, no bots</strong>; notes live in plain files under <code>~/Documents/Notepatra/Noter/</code>. AI <strong>Extract</strong> (<code>Ctrl+Alt+E</code>) pulls a summary plus action items, decisions, questions, and risks. Set reminders on any note — or straight from Extract — and they're all collected in a central <strong>Reminders</strong> list (Overdue · Today · This week · Later) with desktop notifications at the due time while Notepatra is running.</p>
             </div>
             <!-- Diagram tool — the v0.1.102 flagship. Same Clay-orange star
                  halo + NEW pill as the other headline features. -->
             <div class="feature-card" style="border-color: rgba(204,120,92,0.35); box-shadow: 0 10px 30px rgba(204,120,92,0.10);">
                 <div class="feature-icon fi-purple">📐</div>
-                <h3>Diagram tool (.npd) <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
+                <h3>Diagram tool (.npd)</h3>
                 <p>Flow charts, ER diagrams and system designs from a tiny text DSL — the <code>.npd</code> source is the truth, the canvas is a live projection. <strong>Describe it in plain English and a local model writes it</strong> (review before it touches the canvas), start from a template, or type it yourself — <strong>Import Mermaid</strong> too. 5 shapes, ~55 hand-drawn icons, labelled + bidirectional arrows, 4 palettes (+ a default fallback), infinite pan/zoom. Export to <strong>PNG / JPEG / PDF</strong> on every build (plus SVG / HTML / WebP where your Qt supports them). Opens from the toolbar next to Noter. <em>Renders natively in the default binary — every platform, no WebEngine.</em></p>
-            </div>
-            <!-- Password Generator — the v0.1.128 headline. Same Clay-orange
-                 halo + NEW pill as the other headline features. -->
-            <div class="feature-card" style="border-color: rgba(204,120,92,0.35); box-shadow: 0 10px 30px rgba(204,120,92,0.10);">
-                <div class="feature-icon fi-purple">🔒</div>
-                <h3>Password Generator <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
-                <p>Two modes. <strong>Random characters</strong> — 4 to 256 long (default 20), from a-z, A-Z, 0-9, a 27-character symbol set and a free-text field for anything else, with optional <em>Exclude look-alikes</em> (drops <code>0 O 1 l I</code>) and <em>At least one from each set</em>. The symbol set deliberately leaves out the single quote, double quote, backslash, backtick, pipe and space, because those are the characters that break when a password is pasted into a shell command, a YAML file or a database connection string. <strong>Passphrase</strong> — 3 to 24 words (default 6) from a 2,048-word list compiled into the binary, so each word is worth exactly 11 bits and six words is 66 bits; pick a separator, capitalise, append two digits. The bits readout is the <strong>base-2 logarithm of how many distinct values your current settings can produce</strong>, not a heuristic score of how complicated the result looks — which is why ticking <em>At least one from each set</em> makes it drop slightly: the guarantee rules out every password that misses a set, so there are fewer to guess from. Randomness comes from <code>QRandomGenerator::system()</code>, the OS CSPRNG, with rejection sampling; the each-set rule is enforced by drawing again, never by placing and shuffling. Generate 1 to 100 at once, then Copy (taken back off the clipboard after 30 seconds, but only if it still holds that value), Insert into editor, or Open in new tab. The panel is not an editor, so a generated value is never written to <code>session.json</code>, never sent to an AI backend, and not readable by a connected MCP client. <em>Ships in every build including the default Lite binary — no dependency, no network, fully offline.</em></p>
             </div>
             <!-- AI Interaction Log — promoted to a prominent privacy /
                  transparency selling point in v0.1.97. Same halo treatment. -->
             <div class="feature-card" style="border-color: rgba(204,120,92,0.35); box-shadow: 0 10px 30px rgba(204,120,92,0.10);">
                 <div class="feature-icon fi-orange">🔍</div>
-                <h3>AI Interaction Log <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
+                <h3>AI Interaction Log</h3>
                 <p><strong>Audit exactly what your AI did — transparency, not just a promise.</strong> Every request <em>and</em> response to any backend — local (Ollama / llama.cpp) or cloud (OpenRouter / OpenAI / Azure / Ollama Cloud), including Noter's Extract — is recorded to a <strong>local SQLite log</strong> you can open and read: timestamp, backend, model, full prompt + response, tokens, latency. Entries auto-prune after 7 days; a credential scrubber masks API keys / tokens / PEM keys before writing. The viewer has filters, Export JSON, and Prune-now. On by default with one-click opt-out in Settings. <strong>Zero network egress — purely local.</strong> Open from <strong>Features → AI Interaction Log…</strong></p>
             </div>
             <div class="feature-card">
@@ -1725,7 +1725,7 @@
             </div>
             <div class="feature-card">
                 <div class="feature-icon fi-green">🔄</div>
-                <h3>Safe auto-update <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW</span></h3>
+                <h3>Safe auto-update</h3>
                 <p>Click <strong>Download</strong> in the in-app "update available" dialog and the right artifact for your OS + architecture is fetched, <strong>SHA-256 verified against the release's <code>SHA256SUMS</code></strong>, and handed to the native installer (MSI on Windows, DMG in Finder on macOS, file manager on Linux). <strong>Your current install is never touched by the updater</strong> — the OS installer does the swap under its own transactional rollback. Checksum mismatch, cancelled download, network drop, disk full — any failure leaves the running app exactly as it was.</p>
             </div>
             <div class="feature-card">
