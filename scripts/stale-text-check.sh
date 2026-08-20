@@ -673,6 +673,44 @@ else
     FAIL=$((FAIL + 1))
 fi
 
+echo "── release-card window: latest + ONE slim strip + the 100-releases milestone ──"
+# The user has corrected this FOUR times (v0.1.74, v0.1.96, v0.1.124, v0.1.128).
+# The site must show EXACTLY three cards and nothing older:
+#   • latest release      <div class="version-card latest">  full detail
+#   • previous release    <div class="version-card">         slim strip
+#   • 100-releases        <div class="version-card">         permanent
+# plus exactly one "See every release on GitHub" version-card-link footer.
+#
+# The gap gate below does NOT catch this — it only looks for holes WITHIN
+# whatever window is displayed, so a growing pile of slim cards passes it
+# happily. That is how eight of them accumulated unnoticed before v0.1.124,
+# and how three did again in v0.1.128. Shrinking the window is always safe.
+latest_cards=$(grep -c '<div class="version-card latest"' docs/index.html || true)
+plain_cards=$(grep -c '<div class="version-card"' docs/index.html || true)
+card_links=$(grep -c 'class="version-card-link"' docs/index.html || true)
+milestone=$(grep -c '100 releases' docs/index.html || true)
+
+card_ok=1
+[[ "$latest_cards" == "1" ]] || card_ok=0
+[[ "$plain_cards"  == "2" ]] || card_ok=0
+[[ "$card_links"   == "1" ]] || card_ok=0
+[[ "$milestone"    -ge "1" ]] || card_ok=0
+
+if [[ "$card_ok" == "1" ]]; then
+    printf "  ✓ exactly 3 release cards (1 latest + 1 slim + milestone) and 1 footer link\n"
+    PASS=$((PASS + 1))
+else
+    printf "  ✗ release-card window is wrong\n"
+    printf "      latest cards      : %s (want 1)\n" "$latest_cards"
+    printf "      plain cards       : %s (want 2 — previous release + 100-releases milestone)\n" "$plain_cards"
+    printf "      version-card-link : %s (want 1)\n" "$card_links"
+    printf "      milestone present : %s (want >=1)\n" "$milestone"
+    printf "      Delete every version card except the latest, the one immediately\n"
+    printf "      before it, and the 100-releases milestone. GitHub is the only\n"
+    printf "      path to the rest of the history.\n"
+    FAIL=$((FAIL + 1))
+fi
+
 echo "── no HOLES in the version-card history on the site ──"
 # v0.1.119 shipped and the website never got a card: the list ran 115, 116,
 # 117, 118, then jumped straight to 120. A reader could not tell 119 had
