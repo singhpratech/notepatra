@@ -1,12 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- First-party favicons. These MUST live on notepatra.org: Google's
+         favicon crawler wants a stable, same-origin, crawlable icon, and
+         /favicon.ico at the site root is the fallback it checks first.
+         Before v0.1.128 the only declaration pointed at raw.githubusercontent.com
+         — a different domain, a source-code CDN with a 5-minute cache — and
+         /favicon.ico 404'd, so search results fell back to a blank globe. -->
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Notepatra Documentation — The Code Editor for the AI Era</title>
 <meta name="description" content="Complete Notepatra documentation: installation, features, plugins, AI integration, keyboard shortcuts, compare/diff, configuration, building from source, verifying releases, troubleshooting.">
 <link rel="canonical" href="https://notepatra.org/docs.html">
-<link rel="icon" type="image/png" href="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png">
 
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://api.github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
