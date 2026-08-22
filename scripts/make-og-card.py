@@ -43,7 +43,7 @@ d.text((x, 292), "The code editor built for the AI era", font=f_tag, fill=TEXT2)
 
 # spec chips
 f_chip = F(bold, 23)
-chips = ["C++ + Rust", "~12 MB native", "Zero Electron", "49-tool MCP server"]
+chips = ["C++ + Rust", "~13 MB native", "Zero Electron", "49-tool MCP server"]
 cx, cy, ch = x, 362, 44
 for c in chips:
     w = d.textlength(c, font=f_chip)

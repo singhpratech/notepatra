@@ -29,12 +29,12 @@
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:image:type" content="image/png">
-    <meta property="og:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~12 MB native, zero Electron, 49-tool MCP server.">
+    <meta property="og:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~13 MB native, zero Electron, 49-tool MCP server.">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Notepatra for Enterprise — License, Supply Chain, IT/Legal Review">
     <meta name="twitter:description" content="Plain-English explainer for IT, legal, and procurement teams reviewing Notepatra. GPL-3.0 standalone app, no telemetry, no mandatory network calls, signed releases.">
     <meta name="twitter:image" content="https://notepatra.org/og-card.png">
-    <meta name="twitter:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~12 MB native, zero Electron, 49-tool MCP server.">
+    <meta name="twitter:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~13 MB native, zero Electron, 49-tool MCP server.">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -295,7 +295,7 @@
                 <tr><td>Supply chain</td><td>Each release page on GitHub publishes SHA-256 checksums, cosign signatures (recorded in the Sigstore Rekor transparency log), and SLSA build-provenance attestations. The releases are built from public source on GitHub Actions; bit-for-bit reproducible builds are planned but not yet implemented.</td></tr>
                 <tr><td>Code signing</td><td>SHA-256 + cosign on every release artifact at the time of writing. Operating-system code signing (Authenticode on Windows, Apple notarization on macOS) is on the roadmap; current builds are unsigned at the OS level but are cryptographically verifiable via cosign.</td></tr>
                 <tr><td>Platforms</td><td>Linux x64 / ARM64, macOS Apple Silicon, Windows x64</td></tr>
-                <tr><td>Footprint</td><td>Bare executable under 12 MB (~11.5 MB on Linux x64). Latest Lite (default) downloads: 4.1 MB (Linux x64 tar.gz), 27.5 MB (macOS DMG), 42.4 MB (Windows MSI); the opt-in Full download is larger (bundles DuckDB, plus WebEngine on Linux/Windows). Exact sizes vary release-to-release; the GitHub release page is canonical.</td></tr>
+                <tr><td>Footprint</td><td>Bare executable under 12 MB (~11.5 MB on Linux x64). Latest Lite (default) downloads: 4.4 MB (Linux x64 tar.gz), 27.5 MB (macOS DMG), 42.4 MB (Windows MSI); the opt-in Full download is larger (bundles DuckDB, plus WebEngine on Linux/Windows). Exact sizes vary release-to-release; the GitHub release page is canonical.</td></tr>
                 <tr><td>Updates</td><td>Manual. No auto-update daemon. No background service.</td></tr>
                 <tr><td>Plugins</td><td>Drop a <code>.so</code>/<code>.dylib</code>/<code>.dll</code> in <code>~/.config/notepatra/plugins/</code>. No remote plugin registry. No auto-install.</td></tr>
             </table>
