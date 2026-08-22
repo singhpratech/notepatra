@@ -397,6 +397,197 @@ private slots:
         }
     }
 
+    // v0.1.120: on a LIGHT palette a per-node colour is a TINT — soft fill, the
+    // colour at full strength on the border, and the normal dark palette text.
+    // A dark palette keeps the long-standing solid fill.
+    void colored_node_is_tinted_on_light_palettes() {
+        const QString src = QStringLiteral("palette paper\nnode a [Step] #1565c0\n");
+        const Npd::Diagram d = Npd::parse(src);
+        QVERIFY2(d.ok(), qPrintable(d.errors.join("; ")));
+        const auto lay = DiagramRender::computeLayout(d);
+        const auto paper = DiagramRender::palette(d.palette);
+
+        QImage img(int(lay.canvasW), int(lay.canvasH), QImage::Format_ARGB32);
+        img.fill(Qt::transparent);
+        QPainter p(&img); DiagramRender::paint(p, d, lay, paper); p.end();
+
+        const QRectF r = lay.nodeRects["a"];
+        // fill sampled well inside the border, above the label band
+        const QColor fill = QColor(img.pixel(qRound(r.center().x()),
+                                             qRound(r.top() + r.height() * 0.22)));
+        QVERIFY2(fill.lightness() > 180,
+                 qPrintable(QStringLiteral("tinted fill is not light: %1 (L=%2)")
+                                .arg(fill.name()).arg(fill.lightness())));
+        QVERIFY2(fill.blue() > fill.red() + 10, "tint lost the blue hue of #1565c0");
+
+        // the darkest pixel INSIDE the node (border excluded) is the label glyph
+        int darkest = 255;
+        const QRect inner = r.toRect().adjusted(6, 6, -6, -6);
+        for (int y = inner.top(); y <= inner.bottom(); ++y)
+            for (int x = inner.left(); x <= inner.right(); ++x)
+                darkest = qMin(darkest, QColor(img.pixel(x, y)).lightness());
+        QVERIFY2(darkest < 80, "label text is not dark on the tinted node");
+
+        // …and the dark palettes still flood-fill with the colour itself
+        const Npd::Diagram dark = Npd::parse(QStringLiteral("palette default\nnode a [Step] #1565c0\n"));
+        const auto dlay = DiagramRender::computeLayout(dark);
+        const auto dpal = DiagramRender::palette(dark.palette);
+        QImage dimg(int(dlay.canvasW), int(dlay.canvasH), QImage::Format_ARGB32);
+        dimg.fill(Qt::transparent);
+        QPainter dp(&dimg); DiagramRender::paint(dp, dark, dlay, dpal); dp.end();
+        const QRectF dr = dlay.nodeRects["a"];
+        const QColor dfill = QColor(dimg.pixel(qRound(dr.center().x()),
+                                               qRound(dr.top() + dr.height() * 0.22)));
+        QCOMPARE(dfill.name(), QStringLiteral("#1565c0"));
+    }
+
+    // v0.1.120: `direction LR` computes the TB layout and transposes it, so for
+    // `a -> b` the b rect sits to the RIGHT of a on one shared row, while the
+    // node boxes keep their own proportions (only positions flip).
+    void lr_direction_transposes_layout() {
+        const Npd::Diagram tb = Npd::parse(QStringLiteral("node a [A]\nnode b [B]\na -> b\n"));
+        const Npd::Diagram lr = Npd::parse(QStringLiteral("direction LR\nnode a [A]\nnode b [B]\na -> b\n"));
+        QVERIFY(tb.ok() && lr.ok());
+        const auto ltb = DiagramRender::computeLayout(tb);
+        const auto llr = DiagramRender::computeLayout(lr);
+
+        QVERIFY2(!ltb.lr, "TB layout claimed to be LR");
+        QVERIFY2(ltb.nodeRects["b"].top() > ltb.nodeRects["a"].bottom(), "TB stacked wrongly");
+
+        QVERIFY2(llr.lr, "LR layout not flagged");
+        QVERIFY2(llr.nodeRects["b"].left() > llr.nodeRects["a"].right(),
+                 "b is not to the right of a under `direction LR`");
+        QVERIFY2(qAbs(llr.nodeRects["b"].center().y() - llr.nodeRects["a"].center().y()) < 4.0,
+                 "LR siblings drifted off their shared row");
+        QCOMPARE(llr.nodeRects["a"].size(), ltb.nodeRects["a"].size());
+        QVERIFY2(llr.canvasW > llr.canvasH, "LR canvas is not wider than it is tall");
+
+        // the title still occupies the top band, not the left edge
+        const Npd::Diagram titled = Npd::parse(QStringLiteral(
+            "direction LR\ntitle \"T\"\nnode a [A]\nnode b [B]\na -> b\n"));
+        const auto lt = DiagramRender::computeLayout(titled);
+        QVERIFY2(lt.nodeRects["a"].top() > llr.nodeRects["a"].top(),
+                 "LR title band did not push the graph down");
+    }
+
+    // A group container wraps exactly its members (padded, with a label band on
+    // top) and leaves non-members outside.
+    void group_container_wraps_members() {
+        const Npd::Diagram d = Npd::parse(QStringLiteral(
+            "node a [A]\nnode b [B]\nnode c [C]\n"
+            "a -> b\na -> c\n"
+            "group \"Tier\" : b c\n"));
+        QVERIFY2(d.ok(), qPrintable(d.errors.join("; ")));
+        const auto lay = DiagramRender::computeLayout(d);
+        QCOMPARE(lay.groupRects.size(), 1);
+        const QRectF g = lay.groupRects.at(0);
+        QVERIFY2(g.contains(lay.nodeRects["b"]), "group does not contain member b");
+        QVERIFY2(g.contains(lay.nodeRects["c"]), "group does not contain member c");
+        QVERIFY2(!g.contains(lay.nodeRects["a"].center()), "group swallowed a non-member");
+        QVERIFY2(g.top() < lay.nodeRects["b"].top() - 20, "no label band above the members");
+        QVERIFY2(g.left() < lay.nodeRects["b"].left() && g.right() > lay.nodeRects["c"].right(),
+                 "group is not padded around its members");
+    }
+
+    // The light palettes are actually light — and the dark ones are byte-identical
+    // to what they have always been (no existing diagram may change).
+    void light_palettes_and_named_palettes_unchanged() {
+        const auto paper = DiagramRender::palette(QStringLiteral("paper"));
+        QVERIFY2(paper.bg.lightness() > 200, "paper background is not light");
+        QVERIFY2(paper.text.lightness() < 60, "paper text is not dark");
+        QCOMPARE(paper.bg.name(), QStringLiteral("#f5f4ee"));
+        QCOMPARE(paper.accent.name(), QStringLiteral("#cc785c"));
+
+        const auto slate = DiagramRender::palette(QStringLiteral("slate"));
+        QVERIFY2(slate.bg.lightness() > 200, "slate background is not light");
+        QCOMPARE(slate.accent.name(), QStringLiteral("#2f6fb3"));
+
+        QCOMPARE(DiagramRender::palette(QStringLiteral("ocean")).bg.name(), QStringLiteral("#0e1a29"));
+        QCOMPARE(DiagramRender::palette(QStringLiteral("forest")).bg.name(), QStringLiteral("#0e1f15"));
+        QCOMPARE(DiagramRender::palette(QStringLiteral("clay")).bg.name(), QStringLiteral("#241712"));
+        QCOMPARE(DiagramRender::palette(QStringLiteral("mono")).bg.name(), QStringLiteral("#15171a"));
+        QCOMPARE(DiagramRender::palette(QStringLiteral("default")).bg.name(), QStringLiteral("#12151b"));
+        QCOMPARE(DiagramRender::palette(QStringLiteral("nonsense")).bg.name(), QStringLiteral("#12151b"));
+    }
+
+    // `palette auto` (the default when no palette line is written) resolves from
+    // the HOST widget's theme — paper on a light host, default on a dark one.
+    void auto_palette_follows_host_theme() {
+        QCOMPARE(DiagramRender::palette(QStringLiteral("auto"), true).bg,
+                 DiagramRender::palette(QStringLiteral("default")).bg);
+        QCOMPARE(DiagramRender::palette(QStringLiteral("auto"), false).bg,
+                 DiagramRender::palette(QStringLiteral("paper")).bg);
+        // a NAMED palette ignores the host theme entirely
+        QCOMPARE(DiagramRender::palette(QStringLiteral("ocean"), false).bg,
+                 DiagramRender::palette(QStringLiteral("ocean")).bg);
+
+        // …and the widget really resolves it from its own QPalette: exported PNG
+        // corners are the resolved background.
+        QTemporaryDir tmp; QVERIFY(tmp.isValid());
+        const QString src = QStringLiteral("node a [Step]\n");   // no palette line → auto
+        auto corner = [&](const QColor &window, const QString &file) {
+            DiagramView v; v.resize(400, 300);
+            QPalette pal = v.palette(); pal.setColor(QPalette::Window, window); v.setPalette(pal);
+            v.setSource(src);
+            const QString path = tmp.filePath(file);
+            if (!v.exportTo(QStringLiteral("png"), path)) return QColor();
+            const QImage img(path);
+            return img.isNull() ? QColor() : QColor(img.pixel(2, 2));
+        };
+        const QColor onLight = corner(QColor("#ffffff"), QStringLiteral("auto-light.png"));
+        const QColor onDark  = corner(QColor("#101010"), QStringLiteral("auto-dark.png"));
+        QVERIFY2(onLight.isValid() && onDark.isValid(), "auto-palette export failed");
+        QVERIFY2(onLight.lightness() > 200, "auto on a light host did not render the paper ground");
+        QVERIFY2(onDark.lightness() < 80, "auto on a dark host did not render the dark ground");
+    }
+
+    // Dashed edges, a note card, a legend and a group all render and export
+    // without crashing, and the canvas grows to hold the extras.
+    void dashed_note_legend_group_render_and_export() {
+        const QString src = QStringLiteral(
+            "diagram flow\n"
+            "title \"Pipeline\"\n"
+            "palette paper\n"
+            "direction LR\n"
+            "node a (Start)\n"
+            "node b [Work]\n"
+            "node c ([Store])\n"
+            "a -> b\n"
+            "b -.-> c : async\n"
+            "group \"Core\" : b c\n"
+            "note b \"Retries three times with exponential backoff\"\n"
+            "legend dashed \"async hop\"\n"
+            "legend #cc785c \"hot path\"\n"
+            "textbox \"caption\"\n");
+        const Npd::Diagram d = Npd::parse(src);
+        QVERIFY2(d.ok(), qPrintable(d.errors.join("; ")));
+        QVERIFY(d.edges.at(1).dashed);
+
+        const auto lay = DiagramRender::computeLayout(d);
+        QCOMPARE(lay.noteRects.size(), 1);
+        QVERIFY2(!lay.noteRects.at(0).isEmpty(), "note got no geometry");
+        QVERIFY2(!lay.legendRect.isEmpty(), "legend got no geometry");
+        QVERIFY2(lay.noteRects.at(0).right() <= lay.canvasW,
+                 "canvas did not grow to fit the note");
+        QVERIFY2(lay.legendRect.right() <= lay.canvasW && lay.legendRect.bottom() <= lay.canvasH,
+                 "legend box falls off the canvas");
+        // no legend statement ⇒ no legend box at all
+        QVERIFY(DiagramRender::computeLayout(
+                    Npd::parse(QStringLiteral("node a [A]\n"))).legendRect.isEmpty());
+
+        QTemporaryDir tmp; QVERIFY(tmp.isValid());
+        DiagramView view; view.resize(900, 600);
+        view.setSource(src);
+        const QString png = tmp.filePath(QStringLiteral("rich.png"));
+        QVERIFY(view.exportTo(QStringLiteral("png"), png));
+        QVERIFY(QFileInfo(png).size() > 500);
+        if (DiagramView::supportedExportFormats().contains(QStringLiteral("SVG"), Qt::CaseInsensitive)) {
+            const QString svg = tmp.filePath(QStringLiteral("rich.svg"));
+            QVERIFY(view.exportTo(QStringLiteral("svg"), svg));
+            QVERIFY(QFileInfo(svg).size() > 500);
+        }
+    }
+
     // Colour is not gated on diagram type or shape: it works on database
     // cylinders (ER) and icon nodes (system) exactly as on flow boxes.
     void color_on_er_and_system_nodes() {

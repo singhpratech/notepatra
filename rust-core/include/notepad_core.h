@@ -149,6 +149,35 @@ void npc_free_text_result(TextResult result);
  * error_msg) remain CStrings and use npc_free_string. */
 void npc_free_file_text(char *text, size_t text_len);
 
+/* ═══════════ SSH Key Generator ═══════════ */
+
+/* ── v0.1.129 — SSH key generation + OS-entropy bytes (keygen.rs) ──────────
+ * All randomness: rand_core::OsRng (getrandom) — the OS CSPRNG, NOT RDRAND-
+ * first like QRandomGenerator::system(). Pure Rust (RustCrypto ssh-key).     */
+
+/* alg: 0 = Ed25519, 1 = ECDSA P-256, 2 = ECDSA P-384, 3 = RSA.
+ * bits: RSA only (2048 | 3072 | 4096); ignored otherwise.
+ * comment / passphrase: UTF-8, may be NULL or "". A non-empty passphrase
+ * encrypts the private key (OpenSSH format, aes256-ctr + bcrypt-pbkdf, 16 rounds,
+ * same as `ssh-keygen`). */
+typedef struct {
+    int    ok;                 /* 1 on success */
+    char  *private_pem;        /* "-----BEGIN OPENSSH PRIVATE KEY-----…", trailing \n */
+    size_t private_len;
+    char  *public_line;        /* "ssh-ed25519 AAAA… comment\n" (authorized_keys line) */
+    size_t public_len;
+    char  *fingerprint;        /* "SHA256:…" (base64, no padding) — same as ssh-keygen -l */
+    size_t fingerprint_len;
+    char  *error_msg;          /* CString, or NULL; free with npc_free_string */
+} SshKeyResult;
+SshKeyResult npc_ssh_keygen(int alg, int bits, const char *comment, const char *passphrase);
+/* Zero-fills every buffer before freeing (best effort — the C++ copies can't be). */
+void npc_free_ssh_key(SshKeyResult r);
+
+/* Fill `buf[0..len)` from the OS CSPRNG. Returns 1 on success, 0 on failure
+ * (buf untouched). For the password generator's draws. */
+int npc_random_bytes(unsigned char *buf, size_t len);
+
 #ifdef __cplusplus
 }
 #endif

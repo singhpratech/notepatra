@@ -4045,11 +4045,12 @@ void MainWindow::buildMenus() {
     });
 
     // --- Password Generator ---
-    m_passwordAct = feat->addAction("Password Generator — Random / Passphrase");
+    m_passwordAct = feat->addAction("Password Generator — Passwords / Passphrases / SSH keys");
     m_passwordAct->setCheckable(true);
-    m_passwordAct->setStatusTip("Generate random passwords or word passphrases from the "
-                                "system CSPRNG, with a live entropy readout. Nothing is "
-                                "written to disk and the clipboard self-clears.");
+    m_passwordAct->setStatusTip("Generate random passwords, word passphrases or SSH key pairs "
+                                "(Ed25519, ECDSA, RSA) from the OS random source, with a live "
+                                "entropy readout. Nothing is written to disk until you save "
+                                "a key, and the clipboard self-clears.");
     connect(m_passwordAct, &QAction::triggered, this, [this]() {
         // Same on/off toggle as Noter and Diagram: absent -> create+focus;
         // present-not-current -> focus; present-and-current -> close.

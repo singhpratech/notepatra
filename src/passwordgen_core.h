@@ -6,16 +6,10 @@
 // free function over Options so test_passwordgen.cpp can exercise the
 // character maths and the RNG without a QApplication.
 //
-// Randomness comes from QRandomGenerator::system(), Qt's cryptographic
-// generator — never the seeded global() one.
-//
-// Be precise about where those bytes come from, because it is not what
-// the obvious reading suggests: on x86-64 Qt fills from the CPU's RDRAND
-// instruction first, and only falls back to the OS entropy source
-// (getentropy/getrandom on Linux, RtlGenRandom on Windows) for whatever
-// RDRAND declines to supply. Measured here: ~7 million draws issued
-// exactly zero getrandom syscalls. Anyone who needs the CPU RNG out of
-// their threat model has to bypass Qt — there is no way to configure it.
+// Every draw goes through fillRandom(), which asks the Rust core for OS
+// entropy (getrandom/getentropy/RtlGenRandom via rand_core::OsRng). Only
+// if that call fails does it fall back to QRandomGenerator::system(),
+// which on x86-64 fills from the CPU's RDRAND instruction first.
 //
 // Draws use rejection sampling, so no character is more likely than
 // another just because the alphabet size does not divide 2^32.
@@ -125,6 +119,11 @@ QStringList generateMany(const Options &o, int count);
 // Uniform value in [0, n) drawn from the system CSPRNG with rejection
 // sampling. Exposed for tests. n == 0 returns 0.
 quint32 uniformBelow(quint32 n);
+
+// Fill n bytes from the OS random source, falling back to
+// QRandomGenerator::system() only when that source refuses. Exposed so a
+// test can assert every draw in this file routes through one place.
+void fillRandom(unsigned char *buf, int n);
 
 // Wordlist size, derived from the generated header — never hardcoded.
 int wordlistSize();

@@ -8,8 +8,8 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPolygonF>
-#include <QLinearGradient>
 #include <QFont>
+#include <QGuiApplication>
 #include <QFontMetrics>
 #include <QLineF>
 #include <QMap>
@@ -22,7 +22,12 @@ namespace DiagramRender {
 
 namespace {
 
-QFont uiFont(int px, bool bold=false){ QFont f("DejaVu Sans"); f.setPixelSize(px); f.setBold(bold); return f; }
+// The diagram types in the APPLICATION font, so it matches the rest of the UI
+// on every platform (the old hardcoded "DejaVu Sans" only existed on Linux).
+// Pixel sizes are kept, so geometry is unchanged where the family matches.
+QFont uiFont(int px, int weight = QFont::Normal){
+    QFont f = QGuiApplication::instance() ? QGuiApplication::font() : QFont();
+    f.setPixelSize(px); f.setWeight(weight); return f; }
 
 QString iconAlias(QString n){ n=n.toLower();
     static const QHash<QString,QString> a={
@@ -78,6 +83,12 @@ QSizeF sizeFor(const Npd::Node &n, const QFontMetrics &fm) {
 } // namespace
 
 Palette palette(const QString &n) {
+    // Light palettes. card2 mirrors card: the flat house style has no gradient,
+    // and keeping the field filled means nothing downstream sees a null colour.
+    if (n=="paper")  return {QColor("#F5F4EE"),QColor("#FFFFFF"),QColor("#FFFFFF"),QColor("#D4D1C4"),
+                             QColor("#141413"),QColor("#6B6A65"),QColor("#8E8C88"),QColor("#CC785C"),QColor("#141413")};
+    if (n=="slate")  return {QColor("#F4F6F8"),QColor("#FFFFFF"),QColor("#FFFFFF"),QColor("#CFD6DE"),
+                             QColor("#16202A"),QColor("#5B6B7A"),QColor("#7A8A99"),QColor("#2F6FB3"),QColor("#16202A")};
     if (n=="ocean")  return {QColor("#0e1a29"),QColor("#193149"),QColor("#13283c"),QColor("#3f86c4"),
                              QColor("#eaf3fb"),QColor("#9cc2e0"),QColor("#5aa0d6"),QColor("#7cc4ff"),QColor("#cfe6ff")};
     if (n=="forest") return {QColor("#0e1f15"),QColor("#1a3725"),QColor("#13301f"),QColor("#3f955f"),
@@ -88,6 +99,14 @@ Palette palette(const QString &n) {
                              QColor("#eef0f3"),QColor("#aeb6c0"),QColor("#8a939f"),QColor("#aab3bf"),QColor("#d4dae0")};
     return {QColor("#12151b"),QColor("#212835"),QColor("#1a1f29"),QColor("#4d6080"),
             QColor("#e7ecf3"),QColor("#9fadc4"),QColor("#6478a0"),QColor("#8fa6cc"),QColor("#cad6ea")};
+}
+
+Palette palette(const QString &n, bool hostIsDark) {
+    // Only "auto" (the parser default) consults the host theme; every named
+    // palette renders identically to the single-argument overload.
+    if (n == QLatin1String("auto"))
+        return palette(hostIsDark ? QStringLiteral("default") : QStringLiteral("paper"));
+    return palette(n);
 }
 
 void drawIcon(QPainter &p, const QString &rawName, const QRectF &b, const QColor &c) {
@@ -184,6 +203,10 @@ void drawIcon(QPainter &p, const QString &rawName, const QRectF &b, const QColor
 
 Layout computeLayout(const Npd::Diagram &d) {
     Layout lay;
+    // `direction LR` is laid out in TRANSPOSED space (node sizes swapped) and
+    // flipped at the end, so one layout engine serves both directions.
+    const bool lr = (d.direction == QLatin1String("LR"));
+    lay.lr = lr;
     QStringList ids; QHash<QString,Npd::Node> byId;
     for (const auto&n:d.nodes){ ids<<n.id; byId[n.id]=n; }
 
@@ -193,6 +216,14 @@ Layout computeLayout(const Npd::Diagram &d) {
             if(w>layer.value(e.to,0) && w<ids.size()+1){ layer[e.to]=w; ch=true; } } if(!ch) break; }
 
     QMap<int,QStringList> rows; for(const auto&id:ids) rows[layer.value(id,0)]<<id;
+
+    // Group membership drives the primary sort key so a group's members end up
+    // contiguous in every row they share; ungrouped nodes trail the clusters.
+    // With no groups every key is equal, so the ordering is exactly barycenter.
+    QHash<QString,int> gIdx;
+    for(int gi=0; gi<d.groups.size(); ++gi)
+        for(const auto&m:d.groups.at(gi).members) if(!gIdx.contains(m)) gIdx.insert(m,gi);
+    const int ungrouped = d.groups.size();
 
     QHash<QString,QVector<QString>> succ, pred;
     for(const auto&e:d.edges){ succ[e.from]<<e.to; pred[e.to]<<e.from; }
@@ -205,55 +236,158 @@ Layout computeLayout(const Npd::Diagram &d) {
             for(const auto&id:row){ const auto&nb=(sweep%2)?succ.value(id):pred.value(id);
                 if(nb.isEmpty()){ bc[id]=pos.value(id); continue; }
                 double s=0; for(const auto&m:nb) s+=pos.value(m,0); bc[id]=s/nb.size(); }
-            std::stable_sort(row.begin(),row.end(),[&](const QString&a,const QString&b){return bc[a]<bc[b];});
+            std::stable_sort(row.begin(),row.end(),[&](const QString&a,const QString&b){
+                const int ga=gIdx.value(a,ungrouped), gb=gIdx.value(b,ungrouped);
+                if(ga!=gb) return ga<gb;
+                return bc[a]<bc[b]; });
             reindex();
         }
     }
 
-    QFontMetrics fm(uiFont(15,true));
-    const qreal hGap=78, vGap=136, margin=70;
-    qreal yTop=margin+(d.title.isEmpty()?0:60);
+    QFontMetrics fm(uiFont(14,QFont::DemiBold));
+    // Tighter grid to match the flat house style (was 78 / 136).
+    const qreal hGap=64, vGap=96, margin=70;
+    const qreal noteMaxW=180, notePad=10, noteGap=26;
+    // Notes are laid out beside their node, so the row advance has to RESERVE
+    // their footprint — otherwise the card lands on whatever sits next to it.
+    QHash<QString,qreal> noteReserve;   // node id → extra layout-space advance
+    QHash<QString,QSizeF> noteSize;     // note text → card size (measured once)
+    if(!d.notes.isEmpty()){
+        QFontMetrics fmN(uiFont(12));
+        for(const auto&nt:d.notes){
+            const QRect tb=fmN.boundingRect(QRect(0,0,int(noteMaxW-2*notePad),10000),Qt::TextWordWrap,nt.text);
+            const QSizeF sz(std::min<qreal>(noteMaxW, tb.width()+2*notePad), tb.height()+2*notePad);
+            noteSize.insert(nt.text, sz);
+            // LR pins the card BELOW the node, so it eats vertical room — which
+            // is the layout-space X axis once the graph is transposed.
+            const qreal extent = lr ? sz.height() : sz.width();
+            const bool stacked = noteReserve.contains(nt.target);
+            const qreal already = noteReserve.value(nt.target,0);
+            noteReserve.insert(nt.target, already + noteGap + extent + (stacked ? 10.0 : 0.0));
+        }
+    }
+    const qreal titleBand = d.title.isEmpty()?0:60;
+    // In LR the title band is added AFTER the transpose, so it stays on top.
+    qreal yTop=margin+(lr?0:titleBand);
+    // Layout-space size: transposed for LR, so rows/gaps need no special case.
+    auto lsize=[&](const QString&id){ QSizeF s=sizeFor(byId[id],fm); return lr?QSizeF(s.height(),s.width()):s; };
     qreal widest=0; QMap<int,qreal> rowW;
-    for(auto it=rows.begin();it!=rows.end();++it){ qreal tw=0; for(const auto&id:it.value()) tw+=sizeFor(byId[id],fm).width(); tw+=hGap*(it.value().size()-1); rowW[it.key()]=tw; widest=std::max(widest,tw); }
+    for(auto it=rows.begin();it!=rows.end();++it){ qreal tw=0; for(const auto&id:it.value()) tw+=lsize(id).width()+noteReserve.value(id,0); tw+=hGap*(it.value().size()-1); rowW[it.key()]=tw; widest=std::max(widest,tw); }
     qreal canvasW=widest+2*margin;
-    if(!d.title.isEmpty()){ QFontMetrics fmT(uiFont(23,true)); canvasW=std::max(canvasW, fmT.horizontalAdvance(d.title)+2.0*margin); }
-    if(!d.textboxes.isEmpty()){ QFontMetrics fmC(uiFont(13)); canvasW=std::max(canvasW, fmC.horizontalAdvance(d.textboxes.join("   •   "))+2.0*margin+24); }
+    QFontMetrics fmT(uiFont(20,QFont::Bold)), fmC(uiFont(12));
+    if(!lr){
+        if(!d.title.isEmpty()) canvasW=std::max(canvasW, fmT.horizontalAdvance(d.title)+2.0*margin);
+        if(!d.textboxes.isEmpty()) canvasW=std::max(canvasW, fmC.horizontalAdvance(d.textboxes.join("   •   "))+2.0*margin+24);
+    }
     qreal y=yTop;
     for(auto it=rows.begin();it!=rows.end();++it){ qreal x=(canvasW-rowW[it.key()])/2.0; qreal rowH=0;
-        for(const auto&id:it.value()){ QSizeF s=sizeFor(byId[id],fm); lay.nodeRects[id]=QRectF(x,y,s.width(),s.height()); x+=s.width()+hGap; rowH=std::max(rowH,s.height()); }
+        for(const auto&id:it.value()){ QSizeF s=lsize(id); lay.nodeRects[id]=QRectF(x,y,s.width(),s.height()); x+=s.width()+noteReserve.value(id,0)+hGap; rowH=std::max(rowH,s.height()); }
         y+=rowH+vGap;
     }
+    qreal canvasH=y-vGap+margin+((!lr && !d.textboxes.isEmpty())?46:0);
+
+    if(lr){
+        // Flip layout space into scene space: (x,y,h,w) -> (y,x,w,h). Rows become
+        // columns, so the edge router's horizontal branch takes over by itself.
+        for(auto it=lay.nodeRects.begin(); it!=lay.nodeRects.end(); ++it){
+            const QRectF r=it.value();
+            it.value()=QRectF(r.y(), r.x()+titleBand, r.height(), r.width());
+        }
+        const qreal sceneW=canvasH, sceneH=canvasW+titleBand;
+        canvasW=sceneW; canvasH=sceneH;
+        if(!d.title.isEmpty()) canvasW=std::max(canvasW, fmT.horizontalAdvance(d.title)+2.0*margin);
+        if(!d.textboxes.isEmpty()){
+            canvasW=std::max(canvasW, fmC.horizontalAdvance(d.textboxes.join("   •   "))+2.0*margin+24);
+            canvasH+=46;
+        }
+    }
+
+    // ── group containers: the padded union of the member rects, label band on top ──
+    for(const auto&g:d.groups){
+        QRectF u; bool has=false;
+        for(const auto&m:g.members){ auto it=lay.nodeRects.find(m); if(it==lay.nodeRects.end()) continue;
+            u = has ? u.united(it.value()) : it.value(); has=true; }
+        lay.groupRects.append(has ? u.adjusted(-18,-40,18,18) : QRectF());
+    }
+
+    // ── notes: a wrapped card to the RIGHT of its node (BELOW it in LR) ──
+    {
+        QHash<QString,qreal> stack;   // several notes on one node stack outward
+        for(const auto&nt:d.notes){
+            auto it=lay.nodeRects.find(nt.target);
+            if(it==lay.nodeRects.end()){ lay.noteRects.append(QRectF()); continue; }
+            const QRectF nr=it.value();
+            const QSizeF sz=noteSize.value(nt.text);
+            const qreal w=sz.width(), h=sz.height();
+            const qreal off=stack.value(nt.target,0); stack[nt.target]=off+(lr?h:w)+10;
+            const QRectF r = lr ? QRectF(nr.center().x()-w/2, nr.bottom()+noteGap+off, w, h)
+                                : QRectF(nr.right()+noteGap+off, nr.center().y()-h/2, w, h);
+            lay.noteRects.append(r);
+            canvasW=std::max(canvasW, r.right()+30);
+            canvasH=std::max(canvasH, r.bottom()+30);
+        }
+    }
+
+    // ── legend: a compact box parked bottom-right, above any caption ──
+    if(!d.legend.isEmpty()){
+        QFontMetrics fmL(uiFont(12));
+        qreal tw=0; for(const auto&li:d.legend) tw=std::max<qreal>(tw, fmL.horizontalAdvance(li.text));
+        const qreal w=24+22+10+tw, h=18+20*d.legend.size();
+        canvasH+=h+18;
+        canvasW=std::max(canvasW, w+2*margin);
+        const qreal capBand = d.textboxes.isEmpty()?0:30;
+        // clamp, so a tiny diagram cannot park the box off the top-left edge
+        lay.legendRect=QRectF(std::max<qreal>(8.0, canvasW-margin-w),
+                              std::max<qreal>(8.0, canvasH-margin-capBand-h), w, h);
+    }
+
     lay.canvasW=canvasW;
-    lay.canvasH=y-vGap+margin+(d.textboxes.isEmpty()?0:46);
+    lay.canvasH=canvasH;
     lay.layer=layer;
     return lay;
 }
 
 void paint(QPainter &p, const Npd::Diagram &d, const Layout &lay, const Palette &pal) {
     const qreal margin=70, canvasW=lay.canvasW, canvasH=lay.canvasH;
+    const bool lr=lay.lr;
     const QHash<QString,QRectF> &geo = lay.nodeRects;
     p.setRenderHint(QPainter::Antialiasing); p.setRenderHint(QPainter::TextAntialiasing);
     p.fillRect(QRectF(0,0,canvasW,canvasH), pal.bg);
 
-    if(!d.title.isEmpty()){ p.setFont(uiFont(23,true)); p.setPen(pal.title);
+    if(!d.title.isEmpty()){ p.setFont(uiFont(20,QFont::Bold)); p.setPen(pal.title);
         p.drawText(QRectF(margin,20,canvasW-2*margin,42),Qt::AlignLeft|Qt::AlignVCenter,d.title); }
 
-    QHash<QString,QList<int>> downOut, topIn, upOut, botIn;
+    // ── groups first: they are a backdrop, so edges and nodes draw on top ──
+    for(int gi=0; gi<lay.groupRects.size() && gi<d.groups.size(); ++gi){
+        const QRectF gr=lay.groupRects.at(gi); if(gr.isEmpty()) continue;
+        QColor fill=pal.card; fill.setAlphaF(0.35);
+        p.setBrush(fill); p.setPen(QPen(pal.border,1)); p.drawRoundedRect(gr,12,12);
+        p.setFont(uiFont(12,QFont::Bold)); p.setPen(pal.sub);
+        p.drawText(QRectF(gr.left()+14,gr.top()+8,gr.width()-24,20),
+                   Qt::AlignLeft|Qt::AlignVCenter,d.groups.at(gi).label);
+    }
+
+    // Edge anchors fan out along the node border that faces the next layer —
+    // bottom/top in TB, right/left in LR.
+    QHash<QString,QList<int>> fwdOut, nearIn, backOut, farIn;
     for(int i=0;i<d.edges.size();++i){ const auto&e=d.edges[i];
         if(!geo.contains(e.from)||!geo.contains(e.to)) continue;
-        bool down = geo[e.to].center().y() >= geo[e.from].center().y();
-        if(down){ downOut[e.from]<<i; topIn[e.to]<<i; } else { upOut[e.from]<<i; botIn[e.to]<<i; } }
+        const bool fwd = lr ? (geo[e.to].center().x() >= geo[e.from].center().x())
+                            : (geo[e.to].center().y() >= geo[e.from].center().y());
+        if(fwd){ fwdOut[e.from]<<i; nearIn[e.to]<<i; } else { backOut[e.from]<<i; farIn[e.to]<<i; } }
     QHash<int,QPointF> sa, da;
-    auto spread=[&](QHash<QString,QList<int>>&grp, bool atBottom, bool keyIsSource, QHash<int,QPointF>&out){
+    auto spread=[&](QHash<QString,QList<int>>&grp, bool atFar, bool keyIsSource, QHash<int,QPointF>&out){
         for(auto it=grp.begin();it!=grp.end();++it){ QList<int> g=it.value(); QRectF r=geo[it.key()];
             std::sort(g.begin(),g.end(),[&](int x,int y){
-                qreal ax=(keyIsSource?geo[d.edges[x].to]:geo[d.edges[x].from]).center().x();
-                qreal ay=(keyIsSource?geo[d.edges[y].to]:geo[d.edges[y].from]).center().x(); return ax<ay; });
+                const QPointF ax=(keyIsSource?geo[d.edges[x].to]:geo[d.edges[x].from]).center();
+                const QPointF ay=(keyIsSource?geo[d.edges[y].to]:geo[d.edges[y].from]).center();
+                return lr ? ax.y()<ay.y() : ax.x()<ay.x(); });
             int m=g.size(); for(int k=0;k<m;++k){
-                qreal x=r.left()+r.width()*(k+1.0)/(m+1.0);
-                out[g[k]]=QPointF(x, atBottom?r.bottom():r.top()); } } };
-    spread(downOut,true,true,sa);  spread(topIn,false,false,da);
-    spread(upOut,false,true,sa);   spread(botIn,true,false,da);
+                const qreal t=(k+1.0)/(m+1.0);
+                out[g[k]] = lr ? QPointF(atFar?r.right():r.left(), r.top()+r.height()*t)
+                               : QPointF(r.left()+r.width()*t, atFar?r.bottom():r.top()); } } };
+    spread(fwdOut,true,true,sa);   spread(nearIn,false,false,da);
+    spread(backOut,false,true,sa); spread(farIn,true,false,da);
 
     p.setFont(uiFont(12));
     for(int i=0;i<d.edges.size();++i){ const auto&e=d.edges[i];
@@ -268,39 +402,51 @@ void paint(QPainter &p, const Npd::Diagram &d, const Layout &lay, const Palette 
             qreal mx=(p1.x()+p2.x())/2.0; qreal side = mx<=canvasW/2 ? -1 : 1;
             qreal bow=(span>1)? (105.0+45.0*(span-1)) * side : 0.0;
             c1={p1.x()+bow,p1.y()+dy}; c2={p2.x()+bow,p2.y()-dy}; }
-        else    { qreal dx=(p2.x()-p1.x())*0.45; c1={p1.x()+dx,p1.y()}; c2={p2.x()-dx,p2.y()}; }
+        else    { qreal dx=(p2.x()-p1.x())*0.45;
+            // Same bow trick sideways, so a long LR hop clears the columns it skips.
+            qreal my=(p1.y()+p2.y())/2.0; qreal side = my<=canvasH/2 ? -1 : 1;
+            qreal bow=(lr && span>1)? (105.0+45.0*(span-1)) * side : 0.0;
+            c1={p1.x()+dx,p1.y()+bow}; c2={p2.x()-dx,p2.y()+bow}; }
         QPainterPath path(p1); path.cubicTo(c1,c2,p2);
-        p.setPen(QPen(pal.edge,2,Qt::SolidLine,Qt::RoundCap)); p.setBrush(Qt::NoBrush); p.drawPath(path);
+        p.setPen(QPen(pal.edge,2,e.dashed?Qt::DashLine:Qt::SolidLine,Qt::RoundCap)); p.setBrush(Qt::NoBrush); p.drawPath(path);
         auto head=[&](QPointF tip,QPointF ctrl){ QLineF u(ctrl,tip); qreal ang=std::atan2(u.dy(),u.dx());
             const qreal L=13,s=0.42; QPointF h1(tip.x()-L*std::cos(ang-s),tip.y()-L*std::sin(ang-s));
             QPointF h2(tip.x()-L*std::cos(ang+s),tip.y()-L*std::sin(ang+s));
             QPolygonF t; t<<tip<<h1<<h2; p.setBrush(pal.edge); p.setPen(Qt::NoPen); p.drawPolygon(t); p.setBrush(Qt::NoBrush); };
         head(p2,c2); if(e.bidirectional) head(p1,c1);
         if(!e.label.isEmpty()){ QPointF mid=path.pointAtPercent(0.5);
-            QRectF lr=p.fontMetrics().boundingRect(e.label).adjusted(-7,-3,7,3); lr.moveCenter(mid);
-            p.setBrush(pal.bg); p.setPen(QPen(pal.border,1)); p.drawRoundedRect(lr,5,5);
-            p.setPen(pal.sub); p.drawText(lr,Qt::AlignCenter,e.label); }
+            QRectF lrl=p.fontMetrics().boundingRect(e.label).adjusted(-7,-3,7,3); lrl.moveCenter(mid);
+            p.setBrush(pal.bg); p.setPen(QPen(pal.border,1)); p.drawRoundedRect(lrl,5,5);
+            p.setPen(pal.sub); p.drawText(lrl,Qt::AlignCenter,e.label); }
     }
 
+    // A light ground (paper / slate / auto-resolved-light) tints a coloured node
+    // instead of flooding it, the way the note cards do; dark grounds keep the
+    // long-standing solid fill exactly as it was.
+    const bool lightGround = pal.bg.lightness() > 128;
+    auto over=[](const QColor &fg, const QColor &bg, qreal a){
+        return QColor(qRound(fg.red()*a+bg.red()*(1-a)), qRound(fg.green()*a+bg.green()*(1-a)),
+                      qRound(fg.blue()*a+bg.blue()*(1-a))); };
     for(const auto&n:d.nodes){ if(!geo.contains(n.id)) continue; QRectF r=geo[n.id];
-        // Per-node colour (opt-in): a valid n.color overrides the palette for THIS
-        // node, with a darker border and auto-contrast text/icon so it stays
-        // readable on any theme. An empty/invalid colour falls back to the palette.
-        QColor cTop=pal.card, cBot=pal.card2, cBorder=pal.border, cText=pal.text, cAccent=pal.accent;
+        // Flat by house style: card fill, a 1.5 px border, 8 px corners — no
+        // gradient, no drop shadow. Per-node colour (opt-in) overrides the
+        // palette for THIS node with a readable border + auto-contrast text.
+        QColor cFill=pal.card, cBorder=pal.border, cText=pal.text, cAccent=pal.accent;
         if(!n.color.isEmpty()){ QColor c(n.color); if(c.isValid()){
-            cTop=c.lighter(113); cBot=c.darker(104);
-            const qreal lum=0.299*c.redF()+0.587*c.greenF()+0.114*c.blueF();
-            // dark fills blend into the dark canvas → outline them with a LIGHTER
-            // border; light fills get a darker border for definition.
-            cBorder=(lum<0.22)?c.lighter(165):c.darker(150);
-            cText=(lum>0.62)?QColor(0x15,0x20,0x2b):QColor(0xff,0xff,0xff); cAccent=cText; } }
+            if(lightGround){
+                // 16% of the colour over the card: the hue reads, the text stays
+                // palette-dark, and the border carries the colour at full strength.
+                cFill=over(c,pal.card,0.16); cBorder=c; cText=pal.text; cAccent=c;
+            } else {
+                cFill=c;
+                const qreal lum=0.299*c.redF()+0.587*c.greenF()+0.114*c.blueF();
+                // dark fills blend into a dark canvas → outline them with a LIGHTER
+                // border; light fills get a darker border for definition.
+                cBorder=(lum<0.22)?c.lighter(165):c.darker(150);
+                cText=(lum>0.62)?QColor(0x15,0x20,0x2b):QColor(0xff,0xff,0xff); cAccent=cText;
+            } } }
 
-        p.setPen(Qt::NoPen); p.setBrush(QColor(0,0,0,70));
-        if(n.shape==Npd::Shape::Pill) p.drawRoundedRect(r.translated(0,3),r.height()/2,r.height()/2);
-        else if(n.shape!=Npd::Shape::Decision) p.drawRoundedRect(r.translated(0,3),10,10);
-
-        QLinearGradient g(r.topLeft(),r.bottomLeft()); g.setColorAt(0,cTop); g.setColorAt(1,cBot);
-        p.setBrush(g); p.setPen(QPen(cBorder,2));
+        p.setBrush(cFill); p.setPen(QPen(cBorder,1.5));
         switch(n.shape){
         case Npd::Shape::Pill: p.drawRoundedRect(r,r.height()/2,r.height()/2); break;
         case Npd::Shape::Decision:{ QPolygonF dia; dia<<QPointF(r.center().x(),r.top())<<QPointF(r.right(),r.center().y())
@@ -308,29 +454,64 @@ void paint(QPainter &p, const Npd::Diagram &d, const Layout &lay, const Palette 
         case Npd::Shape::Database:{ qreal e=15;
             p.drawEllipse(QRectF(r.left(),r.bottom()-e,r.width(),e));
             p.setPen(Qt::NoPen); p.drawRect(QRectF(r.left(),r.top()+e/2,r.width(),r.height()-e));
-            p.setPen(QPen(cBorder,2));
+            p.setPen(QPen(cBorder,1.5));
             p.drawLine(QPointF(r.left(),r.top()+e/2),QPointF(r.left(),r.bottom()-e/2));
             p.drawLine(QPointF(r.right(),r.top()+e/2),QPointF(r.right(),r.bottom()-e/2));
-            p.setBrush(g); p.drawEllipse(QRectF(r.left(),r.top(),r.width(),e));
+            p.setBrush(cFill); p.drawEllipse(QRectF(r.left(),r.top(),r.width(),e));
             break; }
-        case Npd::Shape::Icon: p.drawRoundedRect(r,12,12); break;
-        default: p.drawRoundedRect(r,10,10); break;
+        default: p.drawRoundedRect(r,8,8); break;
         }
         p.setPen(cText);
         if(n.shape==Npd::Shape::Icon){
             QString ic=n.icon.isEmpty()?QStringLiteral("process"):n.icon;
             drawIcon(p,ic,QRectF(r.center().x()-17,r.top()+12,34,34),cAccent);
-            p.setFont(uiFont(13,true)); p.setPen(cText);
+            p.setFont(uiFont(13,QFont::DemiBold)); p.setPen(cText);
             p.drawText(QRectF(r.left()+4,r.bottom()-30,r.width()-8,26),Qt::AlignCenter,n.label.isEmpty()?n.id:n.label);
         } else {
-            p.setFont(uiFont(15,true));
+            p.setFont(uiFont(14,QFont::DemiBold));
             p.drawText(r.adjusted(8,0,-8,0),Qt::AlignCenter|Qt::TextWordWrap,n.label.isEmpty()?n.id:n.label);
         }
         if(!n.hover.isEmpty()){ p.setBrush(cAccent); p.setPen(Qt::NoPen);
             p.drawEllipse(QPointF(r.right()-8,r.top()+8),3.2,3.2); }
     }
 
-    if(!d.textboxes.isEmpty()){ p.setFont(uiFont(13)); p.setPen(pal.sub);
+    // ── notes: tinted accent card + a dashed leader back to the node border ──
+    for(int ni=0; ni<lay.noteRects.size() && ni<d.notes.size(); ++ni){
+        const QRectF nr=lay.noteRects.at(ni); if(nr.isEmpty()) continue;
+        const auto it=geo.find(d.notes.at(ni).target); if(it==geo.end()) continue;
+        QColor lead=pal.accent; lead.setAlpha(150);
+        const QPointF from=borderPoint(it.value(), nr.center());
+        const QPointF to = lr ? QPointF(nr.center().x(),nr.top()) : QPointF(nr.left(),nr.center().y());
+        p.setBrush(Qt::NoBrush); p.setPen(QPen(lead,1,Qt::DashLine)); p.drawLine(from,to);
+        QColor fill=pal.accent; fill.setAlphaF(0.12);
+        p.setBrush(fill); p.setPen(QPen(pal.accent,1)); p.drawRoundedRect(nr,8,8);
+        p.setFont(uiFont(12)); p.setPen(pal.text);
+        p.drawText(nr.adjusted(10,8,-10,-6),Qt::AlignLeft|Qt::TextWordWrap,d.notes.at(ni).text);
+    }
+
+    // ── legend: swatch + meaning, only when the source declares one ──
+    if(!lay.legendRect.isEmpty()){
+        const QRectF lb=lay.legendRect;
+        p.setBrush(pal.card); p.setPen(QPen(pal.border,1)); p.drawRoundedRect(lb,8,8);
+        p.setFont(uiFont(12));
+        qreal ry=lb.top()+9;
+        for(const auto&li:d.legend){
+            const qreal sx=lb.left()+12, sy=ry+10;
+            if(li.swatch==QLatin1String("dashed")){
+                p.setBrush(Qt::NoBrush); p.setPen(QPen(pal.edge,1.6,Qt::DashLine));
+                p.drawLine(QPointF(sx,sy),QPointF(sx+22,sy));
+            } else {
+                QColor c(li.swatch); if(!c.isValid()) c=pal.accent;
+                p.setBrush(c); p.setPen(QPen(pal.border,1));
+                p.drawRoundedRect(QRectF(sx+4,ry+4,14,12),3,3);
+            }
+            p.setBrush(Qt::NoBrush); p.setPen(pal.sub);
+            p.drawText(QRectF(sx+32,ry,lb.width()-44,20),Qt::AlignLeft|Qt::AlignVCenter,li.text);
+            ry+=20;
+        }
+    }
+
+    if(!d.textboxes.isEmpty()){ p.setFont(uiFont(12)); p.setPen(pal.sub);
         p.drawText(QRectF(margin,canvasH-margin-22,canvasW-2*margin,26),Qt::AlignLeft,
                    QString::fromUtf8("“")+d.textboxes.join("   •   ")+QString::fromUtf8("”")); }
 }

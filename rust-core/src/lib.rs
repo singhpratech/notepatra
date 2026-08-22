@@ -13,11 +13,15 @@ mod file_io;
 mod hash;
 mod html_fmt;
 mod json_fmt;
+mod keygen;
 mod search;
 mod sql_fmt;
 mod text_ops;
 
 use libc::{c_char, c_int, size_t};
+
+// v0.1.129 — SSH key generation lives in keygen.rs; re-exported for the C ABI.
+pub use keygen::{npc_free_ssh_key, npc_random_bytes, npc_ssh_keygen, SshKeyResult};
 use std::ffi::{CStr, CString};
 use std::ptr;
 use std::slice;

@@ -11,6 +11,7 @@
 #include <QImageWriter>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPalette>
 #include <QPdfWriter>
 #include <QPageSize>
 #include <QToolTip>
@@ -25,7 +26,7 @@ DiagramView::DiagramView(QWidget *parent) : QWidget(parent) {
     setMinimumSize(220, 160);
     setMouseTracking(true);
     setCursor(Qt::OpenHandCursor);
-    m_pal = DiagramRender::palette(QStringLiteral("default"));
+    m_pal = DiagramRender::palette(QStringLiteral("auto"), hostIsDark());
 }
 
 DiagramView::~DiagramView() = default;
@@ -44,9 +45,15 @@ QStringList DiagramView::supportedExportFormats() {
     return f;
 }
 
+// The parser stores the raw `palette` token; "auto" is resolved HERE, where the
+// host widget's own theme is known — exports then use the resolved palette too.
+bool DiagramView::hostIsDark() const {
+    return palette().color(QPalette::Window).lightness() < 128;
+}
+
 void DiagramView::setSource(const QString &npdText) {
     m_diag = Npd::parse(npdText);
-    m_pal  = DiagramRender::palette(m_diag.palette);
+    m_pal  = DiagramRender::palette(m_diag.palette, hostIsDark());
     m_lay  = DiagramRender::computeLayout(m_diag);
     m_have = true;
     fitToView();

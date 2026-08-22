@@ -112,6 +112,9 @@ QString shapeName(Shape s) {
 Diagram parse(const QString &src) {
     Diagram d;
     QHash<QString, int> index;   // node id → position in d.nodes
+    // Source lines of the group/note statements, so the cross-reference checks
+    // below (which must run AFTER every node is known) still report a line.
+    QVector<int> groupLines, noteLines;
 
     auto nodeRef = [&](const QString &id) -> Node & {
         auto it = index.find(id);
@@ -139,7 +142,10 @@ Diagram parse(const QString &src) {
         const bool isKeyword =
             kw == QLatin1String("diagram") || kw == QLatin1String("title") ||
             kw == QLatin1String("palette") || kw == QLatin1String("textbox") ||
-            kw == QLatin1String("node")    || kw == QLatin1String("icon");
+            kw == QLatin1String("node")    || kw == QLatin1String("icon")   ||
+            kw == QLatin1String("direction") || kw == QLatin1String("layout") ||
+            kw == QLatin1String("group")   || kw == QLatin1String("note")   ||
+            kw == QLatin1String("legend");
 
         // ── edges: a non-keyword line with an arrow is an edge — or a CHAIN ──
         // `a -> b -> c` expands to a→b and b→c (it must NOT create one node named
@@ -166,13 +172,25 @@ Diagram parse(const QString &src) {
 
             QStringList nodes;        // node refs, in source order
             QVector<bool> bidirOps;   // bidirOps[k] joins nodes[k] → nodes[k+1]
+            QVector<bool> dashOps;    // dashOps[k]  — that hop is drawn dashed
             int pos = 0, last = 0;
             while (pos < chain.size()) {
-                if (chain.mid(pos, 3) == QLatin1String("<->")) {
-                    nodes.append(chain.mid(last, pos - last).trimmed()); bidirOps.append(true);
+                // 4-char dotted operators first, so "-.->" is not read as "->".
+                if (chain.mid(pos, 4) == QLatin1String("<.->")) {
+                    nodes.append(chain.mid(last, pos - last).trimmed());
+                    bidirOps.append(true); dashOps.append(true);
+                    pos += 4; last = pos;
+                } else if (chain.mid(pos, 4) == QLatin1String("-.->")) {
+                    nodes.append(chain.mid(last, pos - last).trimmed());
+                    bidirOps.append(false); dashOps.append(true);
+                    pos += 4; last = pos;
+                } else if (chain.mid(pos, 3) == QLatin1String("<->")) {
+                    nodes.append(chain.mid(last, pos - last).trimmed());
+                    bidirOps.append(true); dashOps.append(false);
                     pos += 3; last = pos;
                 } else if (chain.mid(pos, 2) == QLatin1String("->")) {
-                    nodes.append(chain.mid(last, pos - last).trimmed()); bidirOps.append(false);
+                    nodes.append(chain.mid(last, pos - last).trimmed());
+                    bidirOps.append(false); dashOps.append(false);
                     pos += 2; last = pos;
                 } else {
                     ++pos;
@@ -190,6 +208,7 @@ Diagram parse(const QString &src) {
                 e.from = nodes.at(k - 1);
                 e.to   = nodes.at(k);
                 e.bidirectional = bidirOps.at(k - 1);
+                e.dashed        = dashOps.at(k - 1);
                 if (k == nodes.size() - 1) e.label = unquote(edgeLabel);  // label rides the last hop
                 d.edges.append(e);
             }
@@ -208,6 +227,52 @@ Diagram parse(const QString &src) {
         } else if (kw == QLatin1String("palette")) {
             QString p; splitFirstToken(rest, p, rest);
             if (!p.isEmpty()) d.palette = p;
+        } else if (kw == QLatin1String("direction") || kw == QLatin1String("layout")) {
+            QString v; splitFirstToken(rest, v, rest);
+            const QString u = v.toUpper();
+            // TD is accepted as a Mermaid-flavoured spelling of TB.
+            if (u == QLatin1String("TB") || u == QLatin1String("TD")) d.direction = QStringLiteral("TB");
+            else if (u == QLatin1String("LR"))                        d.direction = QStringLiteral("LR");
+            else err(lineNo, QStringLiteral("unknown direction '%1' (expected TB|LR)").arg(v));
+        } else if (kw == QLatin1String("group")) {
+            // group "Label" : a b c   —  ids are space-separated, validated below
+            QString r = rest.trimmed(), label, idPart;
+            if (r.startsWith(QLatin1Char('"'))) {
+                const int close = r.indexOf(QLatin1Char('"'), 1);
+                if (close < 0) { err(lineNo, QStringLiteral("group label is missing a closing quote")); continue; }
+                label  = r.mid(1, close - 1);
+                idPart = r.mid(close + 1).trimmed();
+                if (!idPart.startsWith(QLatin1Char(':'))) { err(lineNo, QStringLiteral("group needs ':' before its member ids")); continue; }
+                idPart = idPart.mid(1);
+            } else {
+                const int colon = r.indexOf(QLatin1Char(':'));
+                if (colon < 0) { err(lineNo, QStringLiteral("group needs ':' before its member ids")); continue; }
+                label  = r.left(colon).trimmed();
+                idPart = r.mid(colon + 1);
+            }
+            const QStringList members = idPart.simplified().split(QLatin1Char(' '), Qt::SkipEmptyParts);
+            if (members.isEmpty()) { err(lineNo, QStringLiteral("group needs at least one member id")); continue; }
+            Group g; g.label = label; g.members = members;
+            groupLines.append(lineNo);
+            d.groups.append(g);
+        } else if (kw == QLatin1String("note")) {
+            QString id; splitFirstToken(rest, id, rest);
+            if (id.isEmpty()) { err(lineNo, QStringLiteral("note needs a node id")); continue; }
+            const QString text = unquote(rest);
+            if (text.isEmpty()) { err(lineNo, QStringLiteral("note needs some text")); continue; }
+            Note nt; nt.target = id; nt.text = text;
+            noteLines.append(lineNo);
+            d.notes.append(nt);
+        } else if (kw == QLatin1String("legend")) {
+            QString sw; splitFirstToken(rest, sw, rest);
+            const QString text = unquote(rest);
+            if (sw.isEmpty() || text.isEmpty()) { err(lineNo, QStringLiteral("legend needs a swatch and some text")); continue; }
+            if (sw.toLower() != QLatin1String("dashed") && !isHexColor(sw) && !isNamedColor(sw)) {
+                err(lineNo, QStringLiteral("legend swatch '%1' is not 'dashed', a #hex or a colour name").arg(sw));
+                continue;
+            }
+            LegendItem li; li.swatch = isHexColor(sw) ? sw : sw.toLower(); li.text = text;
+            d.legend.append(li);
         } else if (kw == QLatin1String("textbox")) {
             const QString t = unquote(rest);
             if (!t.isEmpty()) d.textboxes.append(t);
@@ -248,6 +313,28 @@ Diagram parse(const QString &src) {
             err(lineNo, QStringLiteral("unrecognized statement '%1'").arg(kw));
         }
     }
+
+    // ── cross-reference checks (run last: nodes may be declared after use) ──
+    // A group member must be a real node, and a node belongs to AT MOST one
+    // group — otherwise the container rectangles would have to overlap.
+    QHash<QString, int> owner;   // node id → index of the group that holds it
+    for (int gi = 0; gi < d.groups.size(); ++gi) {
+        const int ln = gi < groupLines.size() ? groupLines.at(gi) : 0;
+        for (const QString &m : d.groups.at(gi).members) {
+            if (!index.contains(m))
+                err(ln, QStringLiteral("group member '%1' is not a node").arg(m));
+            else if (owner.contains(m))
+                err(ln, QStringLiteral("node '%1' is already in group '%2'")
+                        .arg(m, d.groups.at(owner.value(m)).label));
+            else
+                owner.insert(m, gi);
+        }
+    }
+    for (int ni = 0; ni < d.notes.size(); ++ni) {
+        if (!index.contains(d.notes.at(ni).target))
+            err(ni < noteLines.size() ? noteLines.at(ni) : 0,
+                QStringLiteral("note target '%1' is not a node").arg(d.notes.at(ni).target));
+    }
     return d;
 }
 
@@ -256,6 +343,7 @@ QJsonObject toGraphJson(const Diagram &d) {
     root[QStringLiteral("type")]    = d.type;
     root[QStringLiteral("title")]   = d.title;
     root[QStringLiteral("palette")] = d.palette;
+    root[QStringLiteral("direction")] = d.direction;
 
     QJsonArray nodes;
     for (const Node &n : d.nodes) {
@@ -277,9 +365,42 @@ QJsonObject toGraphJson(const Diagram &d) {
         o[QStringLiteral("to")]   = e.to;
         if (!e.label.isEmpty())  o[QStringLiteral("label")] = e.label;
         if (e.bidirectional)     o[QStringLiteral("bidirectional")] = true;
+        if (e.dashed)            o[QStringLiteral("dashed")] = true;
         edges.append(o);
     }
     root[QStringLiteral("edges")] = edges;
+
+    if (!d.groups.isEmpty()) {
+        QJsonArray groups;
+        for (const Group &g : d.groups) {
+            QJsonObject o;
+            o[QStringLiteral("label")] = g.label;
+            QJsonArray ms; for (const QString &m : g.members) ms.append(m);
+            o[QStringLiteral("members")] = ms;
+            groups.append(o);
+        }
+        root[QStringLiteral("groups")] = groups;
+    }
+    if (!d.notes.isEmpty()) {
+        QJsonArray notes;
+        for (const Note &n : d.notes) {
+            QJsonObject o;
+            o[QStringLiteral("target")] = n.target;
+            o[QStringLiteral("text")]   = n.text;
+            notes.append(o);
+        }
+        root[QStringLiteral("notes")] = notes;
+    }
+    if (!d.legend.isEmpty()) {
+        QJsonArray legend;
+        for (const LegendItem &li : d.legend) {
+            QJsonObject o;
+            o[QStringLiteral("swatch")] = li.swatch;
+            o[QStringLiteral("text")]   = li.text;
+            legend.append(o);
+        }
+        root[QStringLiteral("legend")] = legend;
+    }
 
     QJsonArray boxes;
     for (const QString &t : d.textboxes) boxes.append(t);

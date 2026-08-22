@@ -44,7 +44,11 @@ int main(int argc, char **argv) {
         check("empty input is a clean parse", d.ok());
         check("empty input → 0 nodes", d.nodes.isEmpty());
         check("default type is flow", d.type == "flow");
-        check("default palette", d.palette == "default");
+        // v0.1.120: with no `palette` line the token is "auto" — the RAW string,
+        // because resolving it needs the host theme, which this pure layer never
+        // sees. The renderer turns it into paper (light host) or default (dark).
+        check("default palette token is auto", d.palette == "auto");
+        check("default direction is TB", d.direction == "TB");
 
         Diagram c = parse("# just a comment\n\n   \n# another\n");
         check("comments + blank lines → empty + clean", c.ok() && c.nodes.isEmpty());
@@ -62,6 +66,8 @@ int main(int argc, char **argv) {
         check("title (quoted)", parse("title \"User Login\"").title == "User Login");
         check("title (unquoted)", parse("title Bare Title").title == "Bare Title");
         check("palette", parse("palette ocean").palette == "ocean");
+        check("palette auto is stored raw", parse("palette auto").palette == "auto");
+        check("palette paper is stored raw", parse("palette paper").palette == "paper");
 
         Diagram tb = parse("textbox \"A caption.\"\ntextbox \"Two.\"");
         check("textbox accumulates", tb.textboxes.size() == 2 && tb.textboxes.at(0) == "A caption.");
@@ -172,6 +178,138 @@ int main(int argc, char **argv) {
         check("json has 1 edge", je.size() == 1);
         check("json edge label", je.at(0).toObject().value("label").toString() == "go");
         check("json textboxes", j.value("textboxes").toArray().size() == 1);
+    }
+
+    // ── direction (v0.1.120) ──
+    std::printf("\n— direction ──────────────────────────────────────\n");
+    {
+        check("direction LR", parse("direction LR").direction == "LR");
+        check("direction lr is case-insensitive", parse("direction lr").direction == "LR");
+        check("direction TB", parse("direction TB").direction == "TB");
+        check("direction TD is a TB alias", parse("direction TD").direction == "TB");
+        check("layout is an alias for direction", parse("layout LR").direction == "LR");
+        Diagram bad = parse("direction sideways");
+        check("unknown direction → error", !bad.ok());
+        check("unknown direction → stays TB", bad.direction == "TB");
+        // a `direction` line must never be mistaken for an edge/garbage
+        check("direction line does not create nodes", parse("direction LR").nodes.isEmpty());
+    }
+
+    // ── dashed edges (v0.1.120) ──
+    std::printf("\n— dashed edges ───────────────────────────────────\n");
+    {
+        Diagram d = parse("a -.-> b\nc <.-> e\nf -> g\n");
+        check("dashed chain is clean", d.ok(), d.errors.join("; "));
+        check("3 edges", d.edges.size() == 3, QString::number(d.edges.size()));
+        check("-.-> is dashed", d.edges.at(0).dashed && !d.edges.at(0).bidirectional);
+        check("-.-> endpoints", d.edges.at(0).from == "a" && d.edges.at(0).to == "b");
+        check("<.-> is dashed + bidirectional", d.edges.at(1).dashed && d.edges.at(1).bidirectional);
+        check("<.-> endpoints", d.edges.at(1).from == "c" && d.edges.at(1).to == "e");
+        check("plain -> stays solid", !d.edges.at(2).dashed);
+        check("dashed hop makes no stray node ids",
+              !nodeById(d, "a").id.isEmpty() && d.nodes.size() == 6, QString::number(d.nodes.size()));
+
+        Diagram lab = parse("a -.-> b : async\n");
+        check("dashed edge keeps its label", lab.edges.size() == 1 && lab.edges.at(0).label == "async");
+        check("dashed edge with a label is still dashed", lab.edges.at(0).dashed);
+
+        Diagram mix = parse("a -> b -.-> c\n");
+        check("mixed chain: solid then dashed",
+              mix.edges.size() == 2 && !mix.edges.at(0).dashed && mix.edges.at(1).dashed);
+
+        const QJsonObject j = toGraphJson(mix);
+        const QJsonArray je = j.value("edges").toArray();
+        check("json marks the dashed hop only",
+              !je.at(0).toObject().contains("dashed") && je.at(1).toObject().value("dashed").toBool());
+    }
+
+    // ── groups (v0.1.120) ──
+    std::printf("\n— groups ─────────────────────────────────────────\n");
+    {
+        Diagram d = parse(
+            "node a [A]\nnode b [B]\nnode c [C]\n"
+            "a -> b -> c\n"
+            "group \"Edge tier\" : a b\n");
+        check("group parses clean", d.ok(), d.errors.join("; "));
+        check("one group", d.groups.size() == 1, QString::number(d.groups.size()));
+        check("group label", d.groups.at(0).label == "Edge tier");
+        check("group members", d.groups.at(0).members == QStringList({"a","b"}));
+
+        // forward reference: nodes may be declared AFTER the group line
+        Diagram fwd = parse("group \"Later\" : a b\nnode a [A]\nnode b [B]\n");
+        check("group before the node declarations is clean", fwd.ok(), fwd.errors.join("; "));
+
+        // unknown member id → line error
+        Diagram unk = parse("node a [A]\ngroup \"G\" : a nope\n");
+        check("unknown group member → error", !unk.ok());
+        check("unknown group member error carries the line + id",
+              !unk.errors.isEmpty() && unk.errors.at(0).startsWith("line 2:")
+                  && unk.errors.at(0).contains("nope"),
+              unk.errors.isEmpty() ? "(no errors)" : unk.errors.at(0));
+
+        // a node may be in at most one group
+        Diagram dbl = parse("node a [A]\nnode b [B]\n"
+                            "group \"One\" : a\ngroup \"Two\" : a b\n");
+        check("double group membership → error", !dbl.ok());
+        check("double membership error names the first group",
+              !dbl.errors.isEmpty() && dbl.errors.at(0).startsWith("line 4:")
+                  && dbl.errors.at(0).contains("One"),
+              dbl.errors.isEmpty() ? "(no errors)" : dbl.errors.at(0));
+        check("both groups are still modelled", dbl.groups.size() == 2);
+
+        // malformed group lines
+        check("group with no ':' → error", !parse("node a [A]\ngroup \"G\" a\n").ok());
+        check("group with no members → error", !parse("node a [A]\ngroup \"G\" :\n").ok());
+        check("unquoted group label works",
+              parse("node a [A]\ngroup Tier one : a\n").groups.value(0).label == "Tier one");
+
+        // a group line whose label contains an arrow is still a group
+        Diagram arrow = parse("node a [A]\ngroup \"A -> B\" : a\n");
+        check("group label may contain an arrow", arrow.ok() && arrow.edges.isEmpty()
+              && arrow.groups.value(0).label == "A -> B", arrow.errors.join("; "));
+
+        const QJsonObject j = toGraphJson(d);
+        const QJsonArray jg = j.value("groups").toArray();
+        check("json carries the group", jg.size() == 1
+              && jg.at(0).toObject().value("label").toString() == "Edge tier"
+              && jg.at(0).toObject().value("members").toArray().size() == 2);
+    }
+
+    // ── notes (v0.1.120) ──
+    std::printf("\n— notes ──────────────────────────────────────────\n");
+    {
+        Diagram d = parse("node a [A]\nnote a \"Retries 3x with backoff\"\n");
+        check("note parses clean", d.ok(), d.errors.join("; "));
+        check("one note", d.notes.size() == 1);
+        check("note target", d.notes.at(0).target == "a");
+        check("note text", d.notes.at(0).text == "Retries 3x with backoff");
+        check("note does not create a node", d.nodes.size() == 1);
+
+        check("note with an unknown target → error", !parse("note ghost \"x\"").ok());
+        check("note with no text → error", !parse("node a [A]\nnote a\n").ok());
+        Diagram bad = parse("node a [A]\nnote nope \"x\"\n");
+        check("unknown note target error carries the line",
+              !bad.ok() && bad.errors.at(0).startsWith("line 2:"),
+              bad.errors.isEmpty() ? "(no errors)" : bad.errors.at(0));
+
+        const QJsonObject j = toGraphJson(d);
+        check("json carries the note", j.value("notes").toArray().size() == 1);
+    }
+
+    // ── legend (v0.1.120) ──
+    std::printf("\n— legend ─────────────────────────────────────────\n");
+    {
+        Diagram d = parse("node a [A]\nlegend dashed \"async\"\nlegend #cc785c \"hot path\"\nlegend green \"healthy\"\n");
+        check("legend parses clean", d.ok(), d.errors.join("; "));
+        check("three legend rows", d.legend.size() == 3, QString::number(d.legend.size()));
+        check("dashed swatch", d.legend.at(0).swatch == "dashed" && d.legend.at(0).text == "async");
+        check("hex swatch", d.legend.at(1).swatch == "#cc785c" && d.legend.at(1).text == "hot path");
+        check("named swatch", d.legend.at(2).swatch == "green");
+        check("legend creates no nodes", d.nodes.size() == 1);
+
+        check("legend with a junk swatch → error", !parse("legend wibble \"x\"").ok());
+        check("legend with no text → error", !parse("legend dashed").ok());
+        check("json carries the legend", toGraphJson(d).value("legend").toArray().size() == 3);
     }
 
     // ── shapeName mapping ──

@@ -5,7 +5,10 @@
 
 #include <QRandomGenerator>
 
+#include <notepad_core.h>
+
 #include <cmath>
+#include <cstring>
 
 namespace PasswordGen {
 
@@ -100,9 +103,21 @@ QString alphabet(const Options &o) {
     return disjointClasses(o).join(QString());
 }
 
+void fillRandom(unsigned char *buf, int n) {
+    if (!buf || n <= 0) return;
+    // One door for every draw in this file: the OS source first, Qt only
+    // when the OS source refuses.
+    if (npc_random_bytes(buf, size_t(n)) == 1) return;
+    QRandomGenerator::system()->generate(
+        reinterpret_cast<quint32 *>(buf),
+        reinterpret_cast<quint32 *>(buf + (n / 4) * 4));
+    // generate(begin,end) fills whole 32-bit words only; top up the tail.
+    for (int i = (n / 4) * 4; i < n; ++i)
+        buf[i] = static_cast<unsigned char>(QRandomGenerator::system()->generate() & 0xFF);
+}
+
 quint32 uniformBelow(quint32 n) {
     if (n <= 1) return 0;
-    auto *rng = QRandomGenerator::system();
     // Accept only from the largest prefix of [0, 2^32) whose size is a
     // multiple of n; anything above it would make small remainders more
     // likely than large ones.
@@ -115,7 +130,9 @@ quint32 uniformBelow(quint32 n) {
     // a hang is worse than one that no one can.
     quint32 x = 0;
     for (int i = 0; i < 1024; ++i) {
-        x = rng->generate();
+        unsigned char b[4];
+        fillRandom(b, 4);
+        std::memcpy(&x, b, sizeof(x));
         if (quint64(x) < limit) break;
     }
     return x % n;

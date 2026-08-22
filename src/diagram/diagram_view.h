@@ -60,6 +60,9 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent *) override;
 
 private:
+    // True when the host widget's window colour is dark — decides what the
+    // `palette auto` token resolves to (paper when light, default when dark).
+    bool hostIsDark() const;
     void fitToView();
     QPointF widgetToScene(const QPointF &w) const;
 
