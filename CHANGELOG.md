@@ -45,7 +45,7 @@ _Nothing yet._
 - **The 30-second clipboard wipe cannot reach a clipboard-history tool** — it only removes the value if the system clipboard still holds it.
 - **A `note` widens the row it sits in**, because the layout reserves room for the card beside (or below, under `direction LR`) its node.
 - **Mermaid bare ids inside a `subgraph` are not grouped yet** — a node appearing there only as a naked id is imported but left outside the generated `group`.
-- **`cargo audit` flags RUSTSEC-2023-0071 (`rsa` 0.9.10, pulled in by `ssh-key` 0.6.7 for the RSA key types)** — the Marvin attack, a timing sidechannel in RSA private-key operations (decryption/signing), with no fixed crate release available. Key *generation* is the only thing Notepatra asks of it; Ed25519 and ECDSA go through `ed25519-dalek` / `p256` / `p384` and do not touch it.
+- **RUSTSEC-2023-0071 (`rsa` 0.9.10, pulled in by `ssh-key` 0.6.7 for the RSA key types)** — the Marvin attack, a timing sidechannel in RSA private-key operations (decryption/signing), with no fixed crate release available. Key *generation* is the only thing Notepatra asks of it; Ed25519 and ECDSA go through `ed25519-dalek` / `p256` / `p384` and do not touch it. Carried as a documented ignore in `rust-core/.cargo/audit.toml`, to be re-evaluated when `rsa` 0.10 lands.
 
 ### Internal
 - Assertion counts this release: `test_passwordgen` 67, `test_passwordgen_panel` 99, `test_npd_parser` 117, `test_mermaid_import` 44, `test_diagram_view` 19 (new suite), and 175 Rust tests. Full offscreen `ctest` is **79/79 green** (76 on Lite). The suite count reached 79 with `test_qss_arrows`, measured from a configured tree rather than assumed.
