@@ -29,7 +29,7 @@ if ! command -v gh >/dev/null 2>&1; then
 fi
 
 if ! gh release view "$TAG" --json assets >/dev/null 2>&1; then
-    echo "  ⓘ release $TAG not yet published — skipping (gates the NEXT release)"
+    echo "  ⓘ release $TAG not yet published — skipping — the release job re-runs this after upload and opens an issue on drift"
     exit 0
 fi
 

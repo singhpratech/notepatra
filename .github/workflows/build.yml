@@ -2494,6 +2494,7 @@ jobs:
       contents: write    # publish the release
       id-token: write    # cosign keyless OIDC signing
       attestations: write  # SLSA build provenance
+      issues: write      # post-publish download-size drift issue
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -2839,3 +2840,35 @@ jobs:
           # if the file is missing (the resolve step above creates one).
           body_path: ${{ steps.notes.outputs.notes_file }}
           generate_release_notes: false
+
+      - name: Check documented download sizes against the published assets
+        # Size figures on README / docs can only be measured once the assets
+        # exist, so the pre-tag release-check necessarily carries the previous
+        # release's numbers. v0.1.129 shipped v0.1.128's bytes under a
+        # v0.1.129 label for 80 minutes. This step measures the truth and
+        # opens an issue with the exact figures when the docs drift.
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF##*/}"
+          cd src
+          if VERSION="${TAG#v}" bash scripts/verify-download-sizes.sh > ../dl-size.log 2>&1; then
+            cat ../dl-size.log
+            echo "✓ documented download sizes match $TAG assets"
+            exit 0
+          fi
+          cat ../dl-size.log
+          echo "::error::documented download sizes drift from the $TAG assets — see issue"
+          TITLE="$TAG: documented download sizes drift from the published assets"
+          BODY="$(printf '%s\n\n```\n%s\n```\n\nFix: update README.md, docs/*.html, docs/llms.txt and scripts/make-og-card.py (regenerate docs/og-card.png), then run `bash scripts/verify-download-sizes.sh` until 0 mismatches.\n\nRun: https://github.com/%s/actions/runs/%s' \
+                  "Measured by \`scripts/verify-download-sizes.sh\` right after the release assets were uploaded:" \
+                  "$(cat ../dl-size.log)" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")"
+          EXISTING=$(gh issue list --search "\"$TITLE\" in:title" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --label "release" --body "$BODY" \
+              || gh issue create --title "$TITLE" --body "$BODY"
+          fi
