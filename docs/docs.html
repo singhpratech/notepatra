@@ -1906,6 +1906,22 @@ textbox "Dashed hops are fire-and-forget."</code></pre>
   <h3>Canvas &amp; export</h3>
   <p>Drag to pan, scroll to zoom, double-click to fit. Export the rendered diagram with the <strong>Export</strong> button: <strong>PNG / JPEG / PDF</strong> on every build, plus <strong>SVG / HTML</strong> where your Qt has the Svg module and <strong>WebP</strong> where it has the WebP image plugin — the menu shows exactly what your build supports, and unavailable formats are hidden rather than writing a broken file. The headless <code>npd_render &lt;file.npd&gt; &lt;out.{png|jpeg|webp|svg|pdf|html}&gt;</code> utility renders any <code>.npd</code> without launching the GUI (output format taken from the extension) — it is a build-from-source developer utility, not packaged in releases.</p>
 
+  <h3 id="diagram-vs-mermaid" class="anchor-target">Why not just Mermaid?</h3>
+  <p>Mermaid is excellent and Notepatra <strong>imports Mermaid flowcharts</strong>, so nothing you already have is lost. What <code>.npd</code> adds is everything that needs an application rather than a browser:</p>
+  <table>
+    <thead><tr><th></th><th>Notepatra Diagram (<code>.npd</code>)</th><th>Mermaid</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Renderer</strong></td><td>Native Qt painter in C++ — no browser, no JavaScript, no WebView. Renders in the ~13 MB Lite build.</td><td>Needs a JS runtime: a browser tab, Electron, or a WebView.</td></tr>
+      <tr><td><strong>Offline</strong></td><td>Always. Nothing is fetched, ever.</td><td>Local renderers exist; the common paths (Live Editor, CDN script) are online.</td></tr>
+      <tr><td><strong>AI</strong></td><td><strong>AI Generate</strong> writes the <code>.npd</code> from a sentence with a local model, into a review pane first. Your MCP client can read, create, replace and <code>export_diagram</code> — behind Approve / Deny.</td><td>Nothing built in; you paste text between tools.</td></tr>
+      <tr><td><strong>Notes, legends, icons</strong></td><td><code>note</code> callouts pinned to a node, <code>legend</code> lines for what dashed or coloured means, ~55 built-in icons (gateway, card, queue, mail, cache…), free <code>textbox</code>.</td><td>Notes are <code>%%</code> comments or workarounds; icons need FontAwesome from a CDN.</td></tr>
+      <tr><td><strong>Theming</strong></td><td><code>palette auto</code> follows the app theme; <code>paper</code> / <code>slate</code> are designed for light grounds (tinted nodes), the dark palettes for dark.</td><td>One global theme via <code>%%{init}</code> config.</td></tr>
+      <tr><td><strong>Export</strong></td><td>PNG / JPEG / PDF on every build, SVG / HTML on Full — from the tab, or from an MCP tool without clicking.</td><td>CLI needs Puppeteer + Chromium; or the web editor.</td></tr>
+      <tr><td><strong>Import</strong></td><td>Mermaid <code>graph</code> / <code>flowchart</code>: direction, every node shape, <code>--&gt;</code>, <code>-.-&gt;</code>, <code>==&gt;</code>, <code>&lt;--&gt;</code>, edge labels, <code>subgraph</code> → <code>group</code>.</td><td>—</td></tr>
+      <tr><td><strong>Where Mermaid wins</strong></td><td>Flowchart, ER and system diagrams only. GitHub does not render <code>.npd</code> inline — export the PNG for your README.</td><td>Sequence, class, state, Gantt and more; GitHub and most wikis render it in Markdown.</td></tr>
+    </tbody>
+  </table>
+
   <div class="callout warning">
     <strong>Known limitations.</strong>
     <ul>
