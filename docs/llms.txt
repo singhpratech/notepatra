@@ -4,7 +4,7 @@
 
 Key facts:
 
-- Native Qt5 + QScintilla C++17 application with a Rust core (file I/O, search, diff, formatters) — not Electron; ~12 MB bare binary.
+- Native Qt5 + QScintilla C++17 application with a Rust core (file I/O, search, diff, formatters) — not Electron; ~13 MB bare binary.
 - Syntax highlighting: 82 language lexers covering 238 file extensions, with Light, Dark, and Monokai themes.
 - Robust encoding support: UTF-8/16/32 with BOM detection and round-trip, plus heuristics for BOM-less UTF-16 (PowerShell / SQL Server exports).
 - Rust-powered search and replace, project-wide search, and a ComparePlus-style side-by-side file compare with word-level diff.

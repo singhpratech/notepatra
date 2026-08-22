@@ -45,13 +45,8 @@ jobs:
 
       - name: Note on Google (its ping endpoint no longer exists)
         run: |
-          # Google deprecated this in 2023 — they recommend Search Console.
-          # We try anyway because it's a free no-op if it fails.
-          # Google retired the sitemap ping endpoint in June 2023; it now
-          # returns 404, so calling it was doing nothing. Google discovers
-          # the sitemap from robots.txt and re-crawls on its own schedule —
-          # the only manual lever is Search Console > Sitemaps / URL
-          # Inspection, which needs an authenticated human. IndexNow above
-          # still covers Bing, Yandex, Seznam and Naver.
-            && echo "✓ Google sitemap ping accepted" \
-            || echo "::warning::Google sitemap ping failed (expected since 2023; use Search Console)"
+          # Google retired the sitemap ping endpoint in June 2023 (it now
+          # returns 404). Google discovers the sitemap from robots.txt; the
+          # only manual lever is Search Console. IndexNow above still covers
+          # Bing, Yandex, Seznam and Naver.
+          echo "Google: no ping endpoint — use Search Console > Sitemaps"
