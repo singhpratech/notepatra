@@ -1,0 +1,8 @@
+# cargo-audit configuration for rust-core.
+[advisories]
+# RUSTSEC-2023-0071 — "Marvin" timing side-channel in the `rsa` crate (no
+# upstream fix). It affects RSA decryption/signing where an attacker can time
+# the operation. Notepatra only *generates* RSA keys (ssh-key → rsa), locally
+# and offline; it never decrypts or signs with them. Re-evaluate when rsa 0.10
+# lands.
+ignore = ["RUSTSEC-2023-0071"]

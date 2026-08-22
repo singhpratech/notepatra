@@ -10,7 +10,16 @@
 #include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
+#include <QDir>
+#include <QFile>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
+#include <QFutureWatcher>
+#include <QKeyEvent>
+#include <QPointer>
+#include <QStackedWidget>
+#include <QtConcurrent/QtConcurrentRun>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -19,6 +28,7 @@
 #include <QPainter>
 #include <QPalette>
 #include <QFontMetrics>
+#include <QScrollArea>
 #include <QScrollBar>
 #include <QPlainTextEdit>
 #include <QTextDocument>
@@ -29,6 +39,8 @@
 #include <QStyle>
 #include <QTimer>
 #include <QVBoxLayout>
+
+#include <notepad_core.h>
 
 #include <cmath>
 
@@ -56,6 +68,28 @@ void armClipboardWipe(const QString &owned) {
         t->deleteLater();
     });
     t->start(kClipboardClearMs);
+}
+
+// Runs on a pool thread. Copies every field out and frees the Rust result
+// before returning, so a tab closed mid-generation cannot leak it.
+SshKeyOut runSshKeygen(int alg, int bits, QByteArray comment, QByteArray passphrase) {
+    SshKeyOut out;
+    SshKeyResult r = npc_ssh_keygen(alg, bits,
+                                    comment.isEmpty() ? nullptr : comment.constData(),
+                                    passphrase.isEmpty() ? nullptr : passphrase.constData());
+    if (r.ok == 1 && r.private_pem && r.public_line) {
+        out.ok = true;
+        out.priv = QString::fromUtf8(r.private_pem, int(r.private_len));
+        out.pub  = QString::fromUtf8(r.public_line, int(r.public_len));
+        if (r.fingerprint) out.fp = QString::fromUtf8(r.fingerprint, int(r.fingerprint_len));
+    } else if (r.error_msg) {
+        out.err = QString::fromUtf8(r.error_msg);
+    }
+    // error_msg is a CString and npc_free_ssh_key deliberately leaves it
+    // alone; the key buffers are that call's job and only that call's.
+    if (r.error_msg) { npc_free_string(r.error_msg); r.error_msg = nullptr; }
+    npc_free_ssh_key(r);
+    return out;
 }
 
 }  // namespace
@@ -110,15 +144,37 @@ void StrengthBar::paintEvent(QPaintEvent *) {
 PasswordGenPanel::PasswordGenPanel(QWidget *parent) : QWidget(parent) {
     setObjectName(QStringLiteral("passwordGenPanel"));
 
-    // Controls sit in a fixed-width column: stretched across a 1500 px
-    // window the length slider and the readout become unreadable.
+    // The rail runs the full height of the tab; the pages sit in a
+    // fixed-width column, because stretched across a 1500 px window the
+    // length slider and the readout become unreadable.
     auto *outer = new QHBoxLayout(this);
-    outer->setContentsMargins(16, 14, 16, 14);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
+
+    m_rail = buildRail();
+    outer->addWidget(m_rail);
+
+    auto *rightWrap = new QWidget;
+    auto *rightLay = new QHBoxLayout(rightWrap);
+    rightLay->setContentsMargins(16, 14, 16, 14);
     auto *page = new QWidget;
     page->setMinimumWidth(660);
     page->setMaximumWidth(920);
-    outer->addWidget(page, 0, Qt::AlignTop);
-    outer->addStretch(1);
+    rightLay->addWidget(page, 0, Qt::AlignTop);
+    rightLay->addStretch(1);
+
+    // An SSH key with its private half revealed is taller than the tab, and
+    // without this the buttons draw on top of the key text.
+    auto *scroll = new QScrollArea;
+    scroll->setObjectName(QStringLiteral("pwScroll"));
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidget(rightWrap);
+    // The viewport fills its own background from the app palette, which
+    // would paint a light slab over the panel's themed one.
+    scroll->viewport()->setAutoFillBackground(false);
+    rightWrap->setAutoFillBackground(false);
+    outer->addWidget(scroll, 1);
 
     auto *root = new QVBoxLayout(page);
     root->setContentsMargins(0, 0, 0, 0);
@@ -146,13 +202,21 @@ PasswordGenPanel::PasswordGenPanel(QWidget *parent) : QWidget(parent) {
     m_copyBtn->setToolTip(tr("Copy to the clipboard. It is cleared again after "
                              "30 seconds unless you copy something else first."));
 
+    // Readout and meter belong to the two password pages; the SSH page
+    // has its own results block, so this whole strip hides there.
+    m_valueArea = new QWidget;
+    auto *valueLay = new QVBoxLayout(m_valueArea);
+    valueLay->setContentsMargins(0, 0, 0, 0);
+    valueLay->setSpacing(10);
+    root->addWidget(m_valueArea);
+
     auto *outRow = new QHBoxLayout;
     outRow->setSpacing(8);
     outRow->addWidget(m_out, 1);
     // Top, not centre: with a batch of 20 the button would otherwise drift
     // down the side of the list, away from the thing it acts on.
     outRow->addWidget(m_copyBtn, 0, Qt::AlignTop);
-    root->addLayout(outRow);
+    valueLay->addLayout(outRow);
     fitReadoutHeight(1);
 
     auto *meterRow = new QHBoxLayout;
@@ -174,39 +238,64 @@ PasswordGenPanel::PasswordGenPanel(QWidget *parent) : QWidget(parent) {
     meterRow->addWidget(m_bar, 0);
     meterRow->addWidget(m_entropy, 0);
     meterRow->addStretch(1);
-    root->addLayout(meterRow);
+    valueLay->addLayout(meterRow);
 
-    // ── Mode ───────────────────────────────────────────────────────
-    auto *modeRow = new QHBoxLayout;
-    m_modeChars  = new QRadioButton(tr("Random characters"));
-    m_modePhrase = new QRadioButton(tr("Passphrase"));
-    m_modeChars->setChecked(true);
-    m_modeChars->setToolTip(tr("Draw single characters from the sets you tick below.\n"
-                               "Highest entropy per character; hardest to type by hand."));
-    m_modePhrase->setToolTip(tr("Join whole words from a built-in 2,048-word list.\n"
-                                "Lower entropy per character but far easier to type, "
-                                "read aloud and remember. Each word is worth exactly "
-                                "11 bits."));
-    modeRow->addWidget(m_modeChars);
-    modeRow->addWidget(m_modePhrase);
-    modeRow->addStretch(1);
-    modeRow->addWidget(new QLabel(tr("How many:")));
+    // ── Pages ──────────────────────────────────────────────────────
+    const QString countTip = tr("Generate this many independent passwords at once.");
     m_count = new QSpinBox;
     m_count->setRange(1, kMaxCount);
     m_count->setValue(1);
-    m_count->setToolTip(tr("Generate this many independent passwords at once."));
-    connect(m_count, QOverload<int>::of(&QSpinBox::valueChanged),
+    m_count->setToolTip(countTip);
+    m_count2 = new QSpinBox;
+    m_count2->setRange(1, kMaxCount);
+    m_count2->setValue(1);
+    m_count2->setToolTip(countTip);
+    // One value, two spin boxes: setValue does not re-emit on an unchanged
+    // value, so the pair cannot loop. Only the first drives regenerate().
+    connect(m_count,  QOverload<int>::of(&QSpinBox::valueChanged), m_count2, &QSpinBox::setValue);
+    connect(m_count2, QOverload<int>::of(&QSpinBox::valueChanged), m_count,  &QSpinBox::setValue);
+    connect(m_count,  QOverload<int>::of(&QSpinBox::valueChanged),
             this, &PasswordGenPanel::regenerate);
-    modeRow->addWidget(m_count);
-    root->addLayout(modeRow);
 
     m_charsGroup  = buildCharactersGroup();
     m_phraseGroup = buildPassphraseGroup();
-    root->addWidget(m_charsGroup);
-    root->addWidget(m_phraseGroup);
+
+    auto countRow = [this](QSpinBox *box) {
+        auto *row = new QHBoxLayout;
+        auto *lab = new QLabel(tr("How many:"));
+        lab->setToolTip(box->toolTip());
+        row->addStretch(1);
+        row->addWidget(lab);
+        row->addWidget(box);
+        return row;
+    };
+
+    auto *pwPage = new QWidget;
+    auto *pwLay = new QVBoxLayout(pwPage);
+    pwLay->setContentsMargins(0, 0, 0, 0);
+    pwLay->setSpacing(10);
+    pwLay->addLayout(countRow(m_count));
+    pwLay->addWidget(m_charsGroup);
+
+    auto *phPage = new QWidget;
+    auto *phLay = new QVBoxLayout(phPage);
+    phLay->setContentsMargins(0, 0, 0, 0);
+    phLay->setSpacing(10);
+    phLay->addLayout(countRow(m_count2));
+    phLay->addWidget(m_phraseGroup);
+
+    m_stack = new QStackedWidget;
+    m_stack->addWidget(pwPage);
+    m_stack->addWidget(phPage);
+    m_stack->addWidget(buildSshPage());
+    root->addWidget(m_stack);
+    connect(m_stack, &QStackedWidget::currentChanged,
+            this, &PasswordGenPanel::syncEnabledState);
 
     // ── Actions ────────────────────────────────────────────────────
-    auto *btnRow = new QHBoxLayout;
+    m_actionRow = new QWidget;
+    auto *btnRow = new QHBoxLayout(m_actionRow);
+    btnRow->setContentsMargins(0, 0, 0, 0);
     auto *genBtn = new QPushButton(tr("Generate"));
     genBtn->setDefault(true);
     genBtn->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
@@ -228,7 +317,7 @@ PasswordGenPanel::PasswordGenPanel(QWidget *parent) : QWidget(parent) {
     btnRow->addWidget(m_insertBtn);
     btnRow->addWidget(m_newTabBtn);
     btnRow->addStretch(1);
-    root->addLayout(btnRow);
+    root->addWidget(m_actionRow);
 
     m_status = new QLabel;
     m_status->setWordWrap(true);
@@ -244,7 +333,11 @@ PasswordGenPanel::PasswordGenPanel(QWidget *parent) : QWidget(parent) {
             if (!c) return;
             const QString t = c->text();
             if (t.isEmpty() || t == m_clipboardOwned) return;
-            if (t != currentText()) return;   // the user copied something else
+            // The wipe is for secrets only. A public key is meant to be
+            // pasted into authorized_keys, so it must never be snatched back.
+            const bool secret = (!m_privateShown.isEmpty() && t == m_privateShown) ||
+                                (currentPage() != PageSsh && t == currentText());
+            if (!secret) return;
             m_clipboardOwned = t;
             armClipboardWipe(t);
         });
@@ -261,11 +354,117 @@ PasswordGenPanel::PasswordGenPanel(QWidget *parent) : QWidget(parent) {
         if (!t.isEmpty()) emit newTabRequested(t);
     });
 
-    connect(m_modeChars, &QRadioButton::toggled, this, &PasswordGenPanel::syncEnabledState);
+    m_sshWatcher = new QFutureWatcher<SshKeyOut>(this);
+    connect(m_sshWatcher, &QFutureWatcher<SshKeyOut>::finished,
+            this, &PasswordGenPanel::onSshKeyReady);
 
+    selectPage(PagePassword);
     applyTheme();
     syncEnabledState();
     regenerate();
+}
+
+// ── Rail ───────────────────────────────────────────────────────────────
+
+QWidget *PasswordGenPanel::buildRail() {
+    auto *rail = new QWidget;
+    rail->setObjectName(QStringLiteral("pwRail"));
+    rail->setFixedWidth(170);
+    rail->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+
+    auto *v = new QVBoxLayout(rail);
+    v->setContentsMargins(0, 12, 0, 12);
+    v->setSpacing(2);
+
+    struct Item { const char *label; const char *tip; };
+    const Item items[] = {
+        { QT_TR_NOOP("Password"),
+          QT_TR_NOOP("Draw single characters from the sets you tick.\n"
+                     "Highest entropy per character; hardest to type by hand.\n\n"
+                     "Alt+1") },
+        { QT_TR_NOOP("Passphrase"),
+          QT_TR_NOOP("Join whole words from a built-in word list.\n"
+                     "Lower entropy per character but far easier to type, "
+                     "read aloud and remember.\n\n"
+                     "Alt+2") },
+        { QT_TR_NOOP("SSH key"),
+          QT_TR_NOOP("Generate an OpenSSH key pair to put in authorized_keys.\n"
+                     "Nothing reaches the disk until you choose Save.\n\n"
+                     "Alt+3") },
+    };
+    for (int i = 0; i < 3; ++i) {
+        auto *b = new QPushButton(tr(items[i].label));
+        b->setObjectName(QStringLiteral("pwRailItem"));
+        b->setToolTip(tr(items[i].tip));
+        b->setCheckable(true);
+        b->setAutoExclusive(true);
+        b->setFlat(true);
+        b->setCursor(Qt::PointingHandCursor);
+        b->setFocusPolicy(Qt::StrongFocus);
+        b->setProperty("active", i == 0);
+        b->installEventFilter(this);
+        connect(b, &QPushButton::clicked, this, [this, i]() { selectPage(i); });
+        v->addWidget(b);
+        m_railItems.append(b);
+    }
+    m_railItems.at(0)->setChecked(true);
+    v->addStretch(1);
+    return rail;
+}
+
+void PasswordGenPanel::applyRailState() {
+    const int p = currentPage();
+    for (int i = 0; i < m_railItems.size(); ++i) {
+        QPushButton *b = m_railItems.at(i);
+        const bool on = (i == p);
+        if (b->property("active").toBool() != on) {
+            b->setProperty("active", on);
+            // A dynamic property only reaches the stylesheet after a repolish.
+            b->style()->unpolish(b);
+            b->style()->polish(b);
+            b->update();
+        }
+    }
+}
+
+void PasswordGenPanel::selectPage(int page) {
+    const int p = qBound(0, page, int(PageSsh));
+    for (int i = 0; i < m_railItems.size(); ++i)
+        if (m_railItems.at(i)->isChecked() != (i == p))
+            m_railItems.at(i)->setChecked(i == p);
+    if (m_stack && m_stack->currentIndex() != p) m_stack->setCurrentIndex(p);
+    applyRailState();
+}
+
+int PasswordGenPanel::currentPage() const {
+    return m_stack ? m_stack->currentIndex() : int(PagePassword);
+}
+
+bool PasswordGenPanel::eventFilter(QObject *o, QEvent *e) {
+    if (e->type() == QEvent::KeyPress && m_railItems.contains(qobject_cast<QPushButton *>(o))) {
+        auto *k = static_cast<QKeyEvent *>(e);
+        if (k->key() == Qt::Key_Down || k->key() == Qt::Key_Up) {
+            const int step = (k->key() == Qt::Key_Down) ? 1 : -1;
+            const int next = qBound(0, currentPage() + step, int(PageSsh));
+            selectPage(next);
+            m_railItems.at(next)->setFocus(Qt::TabFocusReason);
+            return true;
+        }
+    }
+    return QWidget::eventFilter(o, e);
+}
+
+void PasswordGenPanel::keyPressEvent(QKeyEvent *e) {
+    // Alt+1/2/3. Handled here rather than as a QShortcut so it still works
+    // when the focus sits inside a field on the page.
+    if (e->modifiers().testFlag(Qt::AltModifier) &&
+        e->key() >= Qt::Key_1 && e->key() <= Qt::Key_3) {
+        selectPage(e->key() - Qt::Key_1);
+        m_railItems.at(currentPage())->setFocus(Qt::ShortcutFocusReason);
+        e->accept();
+        return;
+    }
+    QWidget::keyPressEvent(e);
 }
 
 QWidget *PasswordGenPanel::buildCharactersGroup() {
@@ -437,15 +636,22 @@ QWidget *PasswordGenPanel::buildPassphraseGroup() {
 }
 
 void PasswordGenPanel::syncEnabledState() {
-    const bool chars = m_modeChars->isChecked();
-    m_charsGroup->setVisible(chars);
-    m_phraseGroup->setVisible(!chars);
-    refreshReadout();
+    applyRailState();
+    // The shared readout, meter, buttons and status line belong to the two
+    // password pages. The SSH page carries its own results block.
+    const bool value = currentPage() != PageSsh;
+    if (m_valueArea) m_valueArea->setVisible(value);
+    if (m_actionRow) m_actionRow->setVisible(value);
+    if (m_status)    m_status->setVisible(value);
+    // Regenerate rather than only refresh: the meter belongs to the page you
+    // just picked, and a stale value under a new bits figure is a lie.
+    if (value) regenerate();
+    else       syncSshEnabledState();
 }
 
 Options PasswordGenPanel::collectOptions() const {
     Options o;
-    o.mode = m_modeChars->isChecked() ? Mode::Characters : Mode::Passphrase;
+    o.mode = currentPage() == PagePassphrase ? Mode::Passphrase : Mode::Characters;
 
     o.length = m_lengthBox->value();
     o.classes = 0;
@@ -501,6 +707,7 @@ void PasswordGenPanel::refreshReadout() {
 // Acting on a value requires a value: the settings being valid is not
 // enough, because a failed generate leaves the readout empty.
 void PasswordGenPanel::updateActions() {
+    if (currentPage() == PageSsh) return;   // that page owns its own buttons
     const bool ready = validate(collectOptions()).isEmpty() && !currentText().isEmpty();
     m_copyBtn->setEnabled(ready);
     m_insertBtn->setEnabled(ready);
@@ -508,6 +715,9 @@ void PasswordGenPanel::updateActions() {
 }
 
 void PasswordGenPanel::regenerate() {
+    // An SSH key costs seconds and replaces a key the user may still need,
+    // so this page never regenerates behind their back.
+    if (currentPage() == PageSsh) return;
     refreshReadout();
     const Options o = collectOptions();
     if (!validate(o).isEmpty()) {
@@ -554,6 +764,10 @@ void PasswordGenPanel::fitReadoutHeight(int lines) {
 }
 
 QString PasswordGenPanel::currentText() const {
+    // On the SSH page this is the PUBLIC key line. The private key is never
+    // handed out through here — Insert, Open in new tab and the clipboard
+    // watcher all read this.
+    if (currentPage() == PageSsh) return m_sshPublicLine;
     return m_out->toPlainText();
 }
 
@@ -611,9 +825,27 @@ void PasswordGenPanel::applyTheme() {
         "QSlider::groove:horizontal { height: 4px; background: %4; border-radius: 2px; }"
         "QSlider::handle:horizontal { background: %5; width: 14px; margin: -6px 0;"
         "                             border-radius: 7px; }"
+        // The rail. An ID selector outranks the QPushButton rule above, so
+        // the items keep their flat look on all three themes.
+        "#pwRail { background: %2; border-right: 1px solid %4; }"
+        "#pwRailItem { background: transparent; color: %7; border: none;"
+        "              border-left: 3px solid transparent; text-align: left;"
+        "              padding: 9px 14px; }"
+        "#pwRailItem:hover { color: %6; }"
+        "#pwRailItem[active=\"true\"] { color: %5; border-left: 3px solid %5; }"
+        "#pwHint { color: %8; background: transparent; }"
+        "#pwWarn { color: #E06C5A; background: transparent; }"
     ).arg(p.bg, p.card, p.input, p.border, p.accent, p.text, p.sub, p.muted));
     m_status->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(p.muted));
     m_entropy->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(p.sub));
+
+    // A hidden child does not repolish itself when the sheet changes, so the
+    // SSH results block kept the previous theme's colours until it appeared.
+    for (QWidget *w : findChildren<QWidget *>()) {
+        w->style()->unpolish(w);
+        w->style()->polish(w);
+        w->update();
+    }
 
     // Spin boxes and combo boxes deliberately get a PALETTE, not a
     // stylesheet. The moment a QSS rule matches them, Qt hands their
@@ -651,6 +883,13 @@ void PasswordGenPanel::applyTheme() {
         b->ensurePolished();
         b->setMinimumWidth(b->sizeHint().width() + 6);
     }
+
+    // A fresh stylesheet drops the resolved [active] rule, so re-run it.
+    for (QPushButton *b : m_railItems) {
+        b->style()->unpolish(b);
+        b->style()->polish(b);
+        b->update();
+    }
 }
 
 void PasswordGenPanel::onThemeChanged() { applyTheme(); }
@@ -667,6 +906,518 @@ void PasswordGenPanel::copyToClipboard() {
     armClipboardWipe(t);
     emit statusMessage(tr("Copied — clipboard clears in %1 seconds.")
                            .arg(kClipboardClearMs / 1000));
+}
+
+// ── SSH key page ───────────────────────────────────────────────────────
+
+namespace {
+
+// alg, bits and the security one-liner, in the order the combo lists them.
+struct SshType { int alg; int bits; const char *label; const char *security; const char *tip; };
+
+const SshType kSshTypes[] = {
+    { 0, 0, QT_TR_NOOP("Ed25519 — recommended"),
+      QT_TR_NOOP("256-bit key, ~128-bit security"),
+      QT_TR_NOOP("The default for new keys. Small (one short line in "
+                 "authorized_keys), fast to sign with, and constant-time by "
+                 "construction. Supported by OpenSSH 6.5 and newer, which is "
+                 "everything shipped since 2014.") },
+    { 1, 0, QT_TR_NOOP("ECDSA P-256"),
+      QT_TR_NOOP("~128-bit security"),
+      QT_TR_NOOP("Pick this only when a policy names a NIST curve — a "
+                 "FIPS-constrained environment, or a smartcard that offers "
+                 "nothing else. Ed25519 is the better key everywhere else.") },
+    { 2, 0, QT_TR_NOOP("ECDSA P-384"),
+      QT_TR_NOOP("~192-bit security"),
+      QT_TR_NOOP("The larger NIST curve, for the same FIPS-constrained case "
+                 "as P-256 when a policy asks for more than 128-bit strength.") },
+    { 3, 3072, QT_TR_NOOP("RSA 3072"),
+      QT_TR_NOOP("~128-bit security"),
+      QT_TR_NOOP("Use RSA only for an old server or a hardware token that "
+                 "cannot do Ed25519. 3072 bits is the size that matches "
+                 "Ed25519's strength. Generating it takes a moment.") },
+    { 3, 4096, QT_TR_NOOP("RSA 4096"),
+      QT_TR_NOOP("~140-bit security"),
+      QT_TR_NOOP("Larger RSA, for the same old-server case. The extra bits "
+                 "buy little over 3072 and cost noticeably more time to "
+                 "generate and to verify on every connection.") },
+    { 3, 2048, QT_TR_NOOP("RSA 2048 — legacy"),
+      QT_TR_NOOP("~112-bit security"),
+      QT_TR_NOOP("The smallest RSA size still worth issuing, and only for "
+                 "hardware that refuses anything bigger. Below 112-bit "
+                 "strength; do not pick it for a key you will keep.") },
+};
+constexpr int kSshTypeCount = int(sizeof(kSshTypes) / sizeof(kSshTypes[0]));
+
+}  // namespace
+
+int PasswordGenPanel::sshAlg() const {
+    const int i = qBound(0, m_sshType->currentIndex(), kSshTypeCount - 1);
+    return kSshTypes[i].alg;
+}
+
+int PasswordGenPanel::sshBits() const {
+    const int i = qBound(0, m_sshType->currentIndex(), kSshTypeCount - 1);
+    return kSshTypes[i].bits;
+}
+
+QString PasswordGenPanel::sshDefaultFileName() const {
+    switch (sshAlg()) {
+    case 0:  return QStringLiteral("id_ed25519");
+    case 1:
+    case 2:  return QStringLiteral("id_ecdsa");
+    default: return QStringLiteral("id_rsa");
+    }
+}
+
+QWidget *PasswordGenPanel::buildSshPage() {
+    auto *page = new QWidget;
+    auto *v = new QVBoxLayout(page);
+    v->setContentsMargins(0, 0, 0, 0);
+    v->setSpacing(10);
+
+    auto *box = new QGroupBox(tr("SSH key"));
+    box->setToolTip(tr("Settings for a new OpenSSH key pair: which algorithm, "
+                       "what comment to label it with, and whether the private "
+                       "key is encrypted with a passphrase."));
+    auto *form = new QFormLayout(box);
+    form->setContentsMargins(12, 14, 12, 12);
+    form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+
+    m_sshType = new QComboBox;
+    for (int i = 0; i < kSshTypeCount; ++i) {
+        m_sshType->addItem(tr(kSshTypes[i].label));
+        m_sshType->setItemData(i, tr(kSshTypes[i].tip), Qt::ToolTipRole);
+    }
+    m_sshType->setToolTip(tr("Which signature algorithm the key uses. Hover an "
+                             "entry in the list for when to pick it.\n\n"
+                             "Ed25519 unless something forces your hand."));
+    auto *typeLabel = new QLabel(tr("Key type"));
+    typeLabel->setToolTip(m_sshType->toolTip());
+    form->addRow(typeLabel, m_sshType);
+
+    m_sshComment = new QLineEdit;
+    m_sshComment->setPlaceholderText(tr("optional — e.g. work-laptop"));
+    m_sshComment->setToolTip(tr("A label stored in the public key, and in every "
+                                "authorized_keys file you paste it into.\n\n"
+                                "ssh-keygen defaults this to user@host. This panel "
+                                "deliberately does not, so your username and machine "
+                                "name are not copied onto every server you use."));
+    auto *commentLabel = new QLabel(tr("Comment"));
+    commentLabel->setToolTip(m_sshComment->toolTip());
+    form->addRow(commentLabel, m_sshComment);
+
+    m_sshPass = new QLineEdit;
+    m_sshPass->setEchoMode(QLineEdit::Password);
+    m_sshPass->setToolTip(tr("Encrypts the private key on disk (aes256-ctr with "
+                             "bcrypt-pbkdf, the same as ssh-keygen).\n\n"
+                             "Without one, anyone who can read the file can log in "
+                             "as you."));
+    auto *passLabel = new QLabel(tr("Passphrase"));
+    passLabel->setToolTip(m_sshPass->toolTip());
+    form->addRow(passLabel, m_sshPass);
+
+    m_sshPass2 = new QLineEdit;
+    m_sshPass2->setEchoMode(QLineEdit::Password);
+    m_sshPass2->setToolTip(tr("Type the passphrase again. A key you cannot unlock "
+                              "is a key you have lost, so Generate stays off until "
+                              "these two match."));
+    auto *pass2Label = new QLabel(tr("Confirm"));
+    pass2Label->setToolTip(m_sshPass2->toolTip());
+    form->addRow(pass2Label, m_sshPass2);
+
+    m_sshShowPass = new QCheckBox(tr("Show"));
+    m_sshShowPass->setToolTip(tr("Reveal both passphrase fields so you can check "
+                                 "what you typed."));
+    form->addRow(QString(), m_sshShowPass);
+
+    auto *hint = new QLabel(tr("Leave empty for an unencrypted key — fine for "
+                               "automation, not for a laptop."));
+    hint->setObjectName(QStringLiteral("pwHint"));
+    hint->setWordWrap(true);
+    form->addRow(QString(), hint);
+    v->addWidget(box);
+
+    auto *genRow = new QHBoxLayout;
+    m_sshGenBtn = new QPushButton(tr("Generate key"));
+    m_sshGenBtn->setDefault(true);
+    m_sshGenBtn->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
+    m_sshGenBtn->setToolTip(tr("Generate a fresh key pair with the settings above.\n\n"
+                               "Unlike the password pages this never runs on its own: "
+                               "changing a setting clears the result instead, so a key "
+                               "you are still using cannot be replaced under you."));
+    genRow->addWidget(m_sshGenBtn);
+    genRow->addStretch(1);
+    v->addLayout(genRow);
+
+    // ── Results ────────────────────────────────────────────────────
+    m_sshResults = new QWidget;
+    auto *res = new QVBoxLayout(m_sshResults);
+    res->setContentsMargins(0, 0, 0, 0);
+    res->setSpacing(8);
+
+    auto *pubLabel = new QLabel(tr("Public key"));
+    pubLabel->setToolTip(tr("The authorized_keys line. This half is meant to be "
+                            "handed out — paste it into a server, a Git host or a "
+                            "colleague's message."));
+    res->addWidget(pubLabel);
+
+    m_sshPublic = new QPlainTextEdit;
+    m_sshPublic->setReadOnly(true);
+    m_sshPublic->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+    m_sshPublic->setFont(notepatraCodeFont(12));
+    m_sshPublic->setCursorWidth(0);
+    m_sshPublic->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
+    m_sshPublic->setToolTip(pubLabel->toolTip());
+    {
+        const QFontMetrics fm(m_sshPublic->font());
+        m_sshPublic->setFixedHeight(fm.lineSpacing() * 3 + 18);
+    }
+
+    m_sshCopyPubBtn = new QPushButton(tr("Copy public key"));
+    m_sshCopyPubBtn->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
+    m_sshCopyPubBtn->setToolTip(tr("Copy the authorized_keys line. This one is not "
+                                   "taken back off the clipboard — a public key is "
+                                   "meant to be pasted."));
+    m_sshInsertBtn = new QPushButton(tr("Insert into editor"));
+    m_sshInsertBtn->setToolTip(tr("Insert the PUBLIC key at the caret of the editor "
+                                  "tab you were last in. The private key is never "
+                                  "handed to an editor buffer."));
+    m_sshNewTabBtn = new QPushButton(tr("Open in new tab"));
+    m_sshNewTabBtn->setIcon(style()->standardIcon(QStyle::SP_FileIcon));
+    m_sshNewTabBtn->setToolTip(tr("Open the PUBLIC key as a new untitled editor tab. "
+                                  "The private key is never handed to an editor "
+                                  "buffer."));
+
+    auto *pubRow = new QHBoxLayout;
+    pubRow->setSpacing(8);
+    pubRow->addWidget(m_sshPublic, 1);
+    auto *pubBtns = new QVBoxLayout;
+    pubBtns->setSpacing(6);
+    pubBtns->addWidget(m_sshCopyPubBtn);
+    pubBtns->addWidget(m_sshInsertBtn);
+    pubBtns->addWidget(m_sshNewTabBtn);
+    pubBtns->addStretch(1);
+    pubRow->addLayout(pubBtns);
+    res->addLayout(pubRow);
+
+    auto *fpRow = new QHBoxLayout;
+    auto *fpLabel = new QLabel(tr("Fingerprint"));
+    const QString fpTip = tr("The SHA256 fingerprint, in the same form ssh-keygen -l "
+                            "prints. Compare it against what the server shows to be "
+                            "sure you installed the key you meant to.");
+    fpLabel->setToolTip(fpTip);
+    m_sshFingerprint = new QLabel;
+    m_sshFingerprint->setFont(notepatraCodeFont(11));
+    m_sshFingerprint->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_sshFingerprint->setToolTip(fpTip);
+    fpRow->addWidget(fpLabel);
+    fpRow->addWidget(m_sshFingerprint, 1);
+    res->addLayout(fpRow);
+
+    auto *privRow = new QHBoxLayout;
+    m_sshSaveBtn = new QPushButton(tr("Save private key…"));
+    m_sshSaveBtn->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
+    m_sshSaveBtn->setToolTip(tr("Write the private key and its .pub companion to "
+                                "disk. Nothing has reached the disk before this.\n\n"
+                                "An existing file is never overwritten — pick another "
+                                "name instead."));
+    m_sshShowPrivate = new QCheckBox(tr("Show private key"));
+    m_sshShowPrivate->setToolTip(tr("Reveal the private key text. It stays hidden by "
+                                    "default so it cannot end up in a screenshot or "
+                                    "a screen share by accident."));
+    privRow->addWidget(m_sshSaveBtn);
+    privRow->addWidget(m_sshShowPrivate);
+    privRow->addStretch(1);
+    res->addLayout(privRow);
+
+    m_sshPrivateBox = new QWidget;
+    auto *pv = new QVBoxLayout(m_sshPrivateBox);
+    pv->setContentsMargins(0, 0, 0, 0);
+    pv->setSpacing(6);
+    auto *warn = new QLabel(tr("Anyone who can read this can log in as you."));
+    warn->setObjectName(QStringLiteral("pwWarn"));
+    warn->setWordWrap(true);
+    pv->addWidget(warn);
+    m_sshPrivate = new QPlainTextEdit;
+    m_sshPrivate->setReadOnly(true);
+    m_sshPrivate->setFont(notepatraCodeFont(11));
+    m_sshPrivate->setCursorWidth(0);
+    m_sshPrivate->setLineWrapMode(QPlainTextEdit::NoWrap);
+    m_sshPrivate->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
+    m_sshPrivate->setMinimumHeight(150);
+    m_sshPrivate->setToolTip(tr("The private key, in OpenSSH format. Treat it the "
+                                "way you would treat a password."));
+    pv->addWidget(m_sshPrivate);
+    m_sshCopyPrivBtn = new QPushButton(tr("Copy private key"));
+    m_sshCopyPrivBtn->setToolTip(tr("Copy the private key. It is taken back off the "
+                                    "clipboard after %1 seconds unless you copy "
+                                    "something else first.")
+                                     .arg(kClipboardClearMs / 1000));
+    auto *cpRow = new QHBoxLayout;
+    cpRow->addWidget(m_sshCopyPrivBtn);
+    cpRow->addStretch(1);
+    pv->addLayout(cpRow);
+    m_sshPrivateBox->setVisible(false);
+    res->addWidget(m_sshPrivateBox);
+
+    m_sshResults->setVisible(false);
+    v->addWidget(m_sshResults);
+
+    m_sshStatus = new QLabel;
+    m_sshStatus->setObjectName(QStringLiteral("pwHint"));
+    m_sshStatus->setWordWrap(true);
+    v->addWidget(m_sshStatus);
+
+    m_sshSecurity = new QLabel;
+    m_sshSecurity->setObjectName(QStringLiteral("pwHint"));
+    m_sshSecurity->setWordWrap(true);
+    v->addWidget(m_sshSecurity);
+    v->addStretch(1);
+
+    // ── Wiring ─────────────────────────────────────────────────────
+    connect(m_sshGenBtn, &QPushButton::clicked, this, &PasswordGenPanel::generateSshKey);
+    connect(m_sshShowPass, &QCheckBox::toggled, this, [this](bool on) {
+        const QLineEdit::EchoMode m = on ? QLineEdit::Normal : QLineEdit::Password;
+        m_sshPass->setEchoMode(m);
+        m_sshPass2->setEchoMode(m);
+    });
+    connect(m_sshShowPrivate, &QCheckBox::toggled, this, [this](bool on) {
+        m_sshPrivateBox->setVisible(on && !m_sshPrivatePem.isEmpty());
+    });
+    // A changed setting invalidates the key on screen rather than quietly
+    // regenerating one the user may already have installed.
+    connect(m_sshType, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
+        clearSshResult();
+        setSshStatus(QString());
+        syncSshEnabledState();
+    });
+    for (QLineEdit *e : { m_sshComment, m_sshPass, m_sshPass2 })
+        connect(e, &QLineEdit::textChanged, this, [this]() {
+            clearSshResult();
+            setSshStatus(QString());
+            syncSshEnabledState();
+        });
+    connect(m_sshCopyPubBtn, &QPushButton::clicked, this, [this]() {
+        if (m_sshPublicLine.isEmpty()) return;
+        if (QClipboard *cb = QApplication::clipboard()) cb->setText(m_sshPublicLine);
+        emit statusMessage(tr("Public key copied."));
+    });
+    connect(m_sshInsertBtn, &QPushButton::clicked, this, [this]() {
+        if (!m_sshPublicLine.isEmpty()) emit insertRequested(m_sshPublicLine);
+    });
+    connect(m_sshNewTabBtn, &QPushButton::clicked, this, [this]() {
+        if (!m_sshPublicLine.isEmpty()) emit newTabRequested(m_sshPublicLine);
+    });
+    connect(m_sshCopyPrivBtn, &QPushButton::clicked, this, [this]() {
+        if (m_sshPrivatePem.isEmpty()) return;
+        QClipboard *cb = QApplication::clipboard();
+        if (!cb) return;
+        // Set before the clipboard so the watcher sees it as already armed.
+        m_clipboardOwned = m_sshPrivatePem;
+        cb->setText(m_sshPrivatePem);
+        armClipboardWipe(m_sshPrivatePem);
+        emit statusMessage(tr("Private key copied — clipboard clears in %1 seconds.")
+                               .arg(kClipboardClearMs / 1000));
+    });
+    connect(m_sshSaveBtn, &QPushButton::clicked, this, &PasswordGenPanel::saveSshPrivateKey);
+    return page;
+}
+
+void PasswordGenPanel::setSshStatus(const QString &text) {
+    m_sshStatusText = text;
+    if (m_sshStatus) m_sshStatus->setText(text);
+}
+
+void PasswordGenPanel::clearSshResult() {
+    // Best effort only: QString is copy-on-write, so overwriting one copy
+    // cannot promise the bytes are gone from memory.
+    m_sshPrivatePem.fill(QLatin1Char('\0'));
+    m_sshPrivatePem.clear();
+    m_privateShown.fill(QLatin1Char('\0'));
+    m_privateShown.clear();
+    m_sshPublicLine.clear();
+    m_sshFpText.clear();
+    if (m_sshPublic)      m_sshPublic->clear();
+    if (m_sshPrivate)     m_sshPrivate->clear();
+    if (m_sshFingerprint) m_sshFingerprint->clear();
+    if (m_sshPrivateBox)  m_sshPrivateBox->setVisible(false);
+    if (m_sshResults)     m_sshResults->setVisible(false);
+}
+
+void PasswordGenPanel::syncSshEnabledState() {
+    if (!m_sshGenBtn) return;
+    const bool match = m_sshPass->text() == m_sshPass2->text();
+    m_sshGenBtn->setText(m_sshBusy ? tr("Generating…") : tr("Generate key"));
+    m_sshGenBtn->setEnabled(!m_sshBusy && match);
+    for (QWidget *w : { static_cast<QWidget *>(m_sshType),
+                        static_cast<QWidget *>(m_sshComment),
+                        static_cast<QWidget *>(m_sshPass),
+                        static_cast<QWidget *>(m_sshPass2),
+                        static_cast<QWidget *>(m_sshShowPass),
+                        static_cast<QWidget *>(m_sshResults) })
+        w->setEnabled(!m_sshBusy);
+
+    const int i = qBound(0, m_sshType->currentIndex(), kSshTypeCount - 1);
+    m_sshSecurity->setText(
+        tr("Generated in Rust from the OS random source (getrandom). Nothing is "
+           "written to disk until you choose Save. An unencrypted private key is "
+           "only as secret as the file it lives in.\n\n%1: %2.")
+            .arg(tr(kSshTypes[i].label), tr(kSshTypes[i].security)));
+
+    if (m_sshBusy) return;
+    if (!match)
+        m_sshStatus->setText(tr("The passphrase and its confirmation do not match — "
+                                "Generate stays off until they do."));
+    else
+        m_sshStatus->setText(m_sshStatusText);
+}
+
+void PasswordGenPanel::generateSshKey() {
+    if (m_sshBusy) return;
+    if (m_sshPass->text() != m_sshPass2->text()) { syncSshEnabledState(); return; }
+    clearSshResult();
+
+    const int alg = sshAlg();
+    const int bits = sshBits();
+    const QByteArray comment = m_sshComment->text().trimmed().toUtf8();
+    const QByteArray pass = m_sshPass->text().toUtf8();
+
+    m_sshBusy = true;
+    setSshStatus(tr("Generating…"));
+    syncSshEnabledState();
+    // Off the GUI thread: an RSA 4096 key takes seconds. The worker captures
+    // only value types, so closing the tab mid-run cannot reach back here.
+    m_sshWatcher->setFuture(QtConcurrent::run(runSshKeygen, alg, bits, comment, pass));
+}
+
+void PasswordGenPanel::onSshKeyReady() {
+    m_sshBusy = false;
+    if (!m_sshWatcher->isFinished()) { syncSshEnabledState(); return; }
+    const SshKeyOut r = m_sshWatcher->result();
+    if (!r.ok) {
+        setSshStatus(r.err.isEmpty() ? tr("Key generation failed.") : r.err);
+        syncSshEnabledState();
+        return;
+    }
+    m_sshPrivatePem = r.priv;
+    m_privateShown  = r.priv;
+    m_sshPublicLine = r.pub.trimmed();
+    m_sshFpText     = r.fp.trimmed();
+    m_sshPublic->setPlainText(m_sshPublicLine);
+    m_sshPrivate->setPlainText(m_sshPrivatePem);
+    m_sshFingerprint->setText(m_sshFpText);
+    m_sshResults->setVisible(true);
+    m_sshPrivateBox->setVisible(m_sshShowPrivate->isChecked());
+    setSshStatus(tr("Key ready. Nothing has been written to disk."));
+    syncSshEnabledState();
+}
+
+bool PasswordGenPanel::writeSshKeyTo(const QString &path) {
+    if (m_sshPrivatePem.isEmpty()) {
+        setSshStatus(tr("Generate a key first."));
+        return false;
+    }
+    const QString pubPath = path + QStringLiteral(".pub");
+    if (QFile::exists(path) || QFile::exists(pubPath)) {
+        const QString clash = QFile::exists(path) ? path : pubPath;
+        setSshStatus(tr("%1 already exists. Pick another name — a key file is "
+                        "never overwritten.").arg(QDir::toNativeSeparators(clash)));
+        return false;
+    }
+
+    // Create the file empty, tighten the permissions, and only then let the
+    // key bytes land. The other order leaves a readable window.
+    QFile priv(path);
+    if (!priv.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
+        setSshStatus(tr("Could not create %1: %2")
+                         .arg(QDir::toNativeSeparators(path), priv.errorString()));
+        return false;
+    }
+    priv.close();
+#ifndef Q_OS_WIN
+    if (!priv.setPermissions(QFile::ReadOwner | QFile::WriteOwner)) {
+        priv.remove();
+        setSshStatus(tr("Could not restrict the permissions on %1, so nothing was "
+                        "written.").arg(QDir::toNativeSeparators(path)));
+        return false;
+    }
+#endif
+    if (!priv.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        priv.remove();
+        setSshStatus(tr("Could not write %1: %2")
+                         .arg(QDir::toNativeSeparators(path), priv.errorString()));
+        return false;
+    }
+    const QByteArray pem = m_sshPrivatePem.toUtf8();
+    if (priv.write(pem) != pem.size() || !priv.flush()) {
+        priv.close();
+        priv.remove();
+        setSshStatus(tr("Could not write %1: %2")
+                         .arg(QDir::toNativeSeparators(path), priv.errorString()));
+        return false;
+    }
+    priv.close();
+
+    QFile pub(pubPath);
+    if (!pub.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
+        setSshStatus(tr("Wrote %1 but could not create %2: %3")
+                         .arg(QDir::toNativeSeparators(path),
+                              QDir::toNativeSeparators(pubPath), pub.errorString()));
+        return false;
+    }
+    pub.close();
+#ifndef Q_OS_WIN
+    pub.setPermissions(QFile::ReadOwner | QFile::WriteOwner |
+                       QFile::ReadGroup | QFile::ReadOther);
+#endif
+    if (!pub.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        setSshStatus(tr("Wrote %1 but could not write %2: %3")
+                         .arg(QDir::toNativeSeparators(path),
+                              QDir::toNativeSeparators(pubPath), pub.errorString()));
+        return false;
+    }
+    QByteArray line = m_sshPublicLine.toUtf8();
+    if (!line.endsWith('\n')) line.append('\n');
+    pub.write(line);
+    pub.close();
+
+    QString msg = tr("Saved %1 and %2.")
+                      .arg(QDir::toNativeSeparators(path),
+                           QDir::toNativeSeparators(pubPath));
+#ifdef Q_OS_WIN
+    msg += QLatin1Char(' ') + tr("Check the file's permissions — OpenSSH refuses a "
+                                 "private key other users can read.");
+#endif
+    setSshStatus(msg);
+    emit statusMessage(msg);
+    return true;
+}
+
+void PasswordGenPanel::saveSshPrivateKey() {
+    if (m_sshPrivatePem.isEmpty()) {
+        setSshStatus(tr("Generate a key first."));
+        return;
+    }
+    // Start in ~/.ssh when it is already there; this panel creates no
+    // directories of its own.
+    QString dir = QDir::homePath() + QStringLiteral("/.ssh");
+    if (!QFileInfo(dir).isDir()) dir = QDir::homePath();
+
+    QFileDialog dlg(this, tr("Save private key"));
+    dlg.setAcceptMode(QFileDialog::AcceptSave);
+    dlg.setFileMode(QFileDialog::AnyFile);
+    dlg.setOption(QFileDialog::DontUseNativeDialog, true);
+    // We refuse an existing path ourselves with a clearer message than the
+    // dialog's overwrite prompt, which offers exactly the wrong answer.
+    dlg.setOption(QFileDialog::DontConfirmOverwrite, true);
+    dlg.setDirectory(dir);
+    dlg.setNameFilter(tr("All Files (*)"));
+    dlg.selectFile(sshDefaultFileName());
+    if (dlg.exec() != QDialog::Accepted) return;
+    const QStringList picked = dlg.selectedFiles();
+    if (picked.isEmpty()) return;
+    writeSshKeyTo(picked.first());
 }
 
 void PasswordGenPanel::clearClipboardIfUnchanged() {

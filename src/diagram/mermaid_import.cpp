@@ -4,6 +4,7 @@
 
 #include <QHash>
 #include <QRegularExpression>
+#include <QVector>
 #include <QStringList>
 
 namespace Npd {
@@ -71,11 +72,22 @@ QString mermaidToNpd(const QString &mermaid) {
     QStringList nodeDecls;             // ordered "node <id> <shape>"
     QHash<QString, int> declIndex;     // id → index in nodeDecls
     QStringList edgeLines;             // ordered ".npd" edge lines
+    // subgraph → .npd group. Members are collected as ids are seen inside the
+    // block; a node lands in the INNERMOST open subgraph and in only one group.
+    QStringList groupLabels;
+    QVector<QStringList> groupMembers;
+    QHash<QString, int> groupOf;       // node id → group index
+    QVector<int> openGroups;           // stack of indices of the open subgraphs
 
     auto registerNode = [&](const QString &token) -> QString {
         QString id, shape;
         const bool hasShape = parseNodeToken(token, id, shape);
         if (id.isEmpty()) return QString();
+        if (!openGroups.isEmpty() && !groupOf.contains(id)) {
+            const int gi = openGroups.last();
+            groupOf.insert(id, gi);
+            groupMembers[gi].append(id);
+        }
         if (hasShape) {
             const QString decl = QStringLiteral("node %1 %2").arg(id, shape);
             if (declIndex.contains(id))
@@ -92,32 +104,64 @@ QString mermaidToNpd(const QString &mermaid) {
     QRegularExpression pipeLabel(R"(\|([^|]*)\|)");
     // bare connector:  --  --- -->  ==>  -.->  <-->  --o  --x  (≥2 dashes/= /dots)
     QRegularExpression arrowCore(R"((<)?\s*(?:-{2,}|={2,}|-?\.-+|-\.+-?)\s*([>ox])?)");
-    QRegularExpression headerRe(R"(^\s*(graph|flowchart)\b)",
+    QRegularExpression headerRe(R"(^\s*(graph|flowchart)\b\s*([A-Za-z]{2})?)",
                                 QRegularExpression::CaseInsensitiveOption);
+    QRegularExpression subgraphRe(R"(^\s*subgraph\b\s*(.*)$)",
+                                  QRegularExpression::CaseInsensitiveOption);
+    QRegularExpression subTitleRe(R"(^\S+\s*\[(.*)\]$)");
+    QRegularExpression endRe(R"(^\s*end\s*$)", QRegularExpression::CaseInsensitiveOption);
     QRegularExpression dropRe(
-        R"(^\s*(subgraph|end|classDef|class|style|click|linkStyle|direction|%%).*)",
+        R"(^\s*(classDef|class|style|click|linkStyle|direction|%%).*)",
         QRegularExpression::CaseInsensitiveOption);
 
     QString diagType = QStringLiteral("flow");
+    QString direction;
     QString title;
 
     for (QString raw : mermaid.split('\n')) {
         QString line = raw.trimmed();
         if (line.isEmpty()) continue;
         if (line.startsWith("%%")) continue;          // mermaid comment
-        if (headerRe.match(line).hasMatch()) continue; // graph/flowchart TD …
+        {   // graph/flowchart TD … — the direction token carries over to .npd
+            const auto hm = headerRe.match(line);
+            if (hm.hasMatch()) {
+                const QString dir = hm.captured(2).toUpper();
+                if (dir == "LR" || dir == "RL") direction = QStringLiteral("LR");
+                else if (dir == "TD" || dir == "TB" || dir == "BT") direction = QStringLiteral("TB");
+                continue;
+            }
+        }
+        {   // subgraph Name … end  →  group "Name" : ids
+            const auto sm = subgraphRe.match(line);
+            if (sm.hasMatch()) {
+                QString label = unquote(sm.captured(1).trimmed());
+                const auto tm = subTitleRe.match(label);
+                if (tm.hasMatch()) label = unquote(tm.captured(1).trimmed());
+                label.remove(QLatin1Char('"'));   // the .npd group label is quoted
+                if (label.isEmpty()) label = QStringLiteral("Group");
+                groupLabels.append(label);
+                groupMembers.append(QStringList());
+                openGroups.append(groupLabels.size() - 1);
+                continue;
+            }
+            if (endRe.match(line).hasMatch()) {
+                if (!openGroups.isEmpty()) openGroups.removeLast();
+                continue;
+            }
+        }
         if (dropRe.match(line).hasMatch()) continue;   // unsupported constructs
         if (line.endsWith(';')) line.chop(1);
 
         // ── edge? ──
         QString from, to, label;
-        bool isEdge = false, bidir = false;
+        bool isEdge = false, bidir = false, dashed = false;
 
         auto dm = dashLabel.match(line);
         if (dm.hasMatch()) {
             from = dm.captured(1).trimmed();
             label = unquote(dm.captured(2));
             to = dm.captured(4).trimmed();
+            dashed = line.contains(QLatin1String("-."));
             isEdge = true;
         } else {
             QString work = line;
@@ -131,6 +175,7 @@ QString mermaidToNpd(const QString &mermaid) {
                 from = work.left(am.capturedStart()).trimmed();
                 to = work.mid(am.capturedEnd()).trimmed();
                 bidir = (am.captured(1) == "<");
+                dashed = am.captured(0).contains(QLatin1Char('.'));
                 if (!from.isEmpty() && !to.isEmpty()) isEdge = true;
             }
         }
@@ -139,7 +184,8 @@ QString mermaidToNpd(const QString &mermaid) {
             const QString a = registerNode(from);
             const QString b = registerNode(to);
             if (a.isEmpty() || b.isEmpty()) continue;
-            QString e = QStringLiteral("%1 %2 %3").arg(a, bidir ? "<->" : "->", b);
+            const QString op = dashed ? (bidir ? "<.->" : "-.->") : (bidir ? "<->" : "->");
+            QString e = QStringLiteral("%1 %2 %3").arg(a, op, b);
             if (!label.isEmpty()) e += " : " + label.simplified();
             edgeLines.append(e);
             continue;
@@ -157,10 +203,18 @@ QString mermaidToNpd(const QString &mermaid) {
     out << "# imported from Mermaid";
     out << "diagram " + diagType;
     if (!title.isEmpty()) out << "title \"" + title + "\"";
+    if (!direction.isEmpty()) out << "direction " + direction;
     out << QString();
     out += nodeDecls;
     if (!nodeDecls.isEmpty() && !edgeLines.isEmpty()) out << QString();
     out += edgeLines;
+    QStringList groupLines;
+    for (int gi = 0; gi < groupLabels.size(); ++gi) {
+        if (groupMembers.at(gi).isEmpty()) continue;   // empty subgraph → nothing to draw
+        groupLines << QStringLiteral("group \"%1\" : %2")
+                          .arg(groupLabels.at(gi), groupMembers.at(gi).join(QLatin1Char(' ')));
+    }
+    if (!groupLines.isEmpty()) { out << QString(); out += groupLines; }
     return out.join('\n') + "\n";
 }
 

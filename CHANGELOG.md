@@ -9,11 +9,48 @@ Format follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic Ver
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.1.129] — 2026-08-22
+
+**`ssh-keygen` puts your username and your machine's name into every key it makes; this one leaves the comment blank.** The Password Generator's two radio buttons become a left rail — Password / Passphrase / **SSH key** — and the new page generates a real OpenSSH pair locally, off the GUI thread, with the public line and its SHA256 fingerprint shown and the private key hidden until asked for. Separately, `.npd` diagrams are drawn flat, gain two light palettes and a theme-following default, and learn groups, notes, legends and dashed edges.
+
+### Added
+- **SSH key page in the Password Generator.** A left rail replaces the mode radios — **Password**, **Passphrase**, **SSH key**, each its own page, reachable with `Alt+1` / `Alt+2` / `Alt+3`. The menu entry is now Tools → "Password Generator — Passwords / Passphrases / SSH keys", and the Welcome card names the SSH page.
+- **Key types** — Ed25519 (recommended, the default), ECDSA P-256, ECDSA P-384, RSA 3072, RSA 4096, and RSA 2048 marked *legacy*. Each entry's tooltip says when it is the right pick.
+- **The comment field defaults to EMPTY, on purpose.** `ssh-keygen` defaults it to `user@host`, which copies your account name and your machine's name into every `authorized_keys` file the key is ever pasted into, on servers you do not control. Type a label if you want one; nothing is written there for you.
+- **Optional passphrase** encrypting the private key with `aes256-ctr` and `bcrypt-pbkdf` (16 rounds) — the same construction `ssh-keygen` writes, asserted by a test, so `ssh-add` and the rest of OpenSSH read the file directly.
+- **The public line and its SHA256 fingerprint are shown immediately; the private key stays off-screen** until "Show private key" is ticked. The 30-second clipboard wipe arms for the private key only — copying the public line does not arm it, because a public key is not a secret.
+- **"Save private key…" creates the file, sets it to `0600`, then writes**, so the key is never briefly world-readable. It refuses to overwrite an existing file and writes the `.pub` companion at `0644` beside it. The suggested filename follows the key type (`id_ed25519` / `id_ecdsa` / `id_rsa`).
+- **Generation runs off the GUI thread** — Ed25519 is effectively instant, RSA-4096 measured 1.6–5.9 s with the window still responsive.
+- **Diagram (`.npd`): `direction LR|TB`, dashed edges (`a -.-> b`, `a <.-> b`), `group "Label" : a b c`, `note <id> "text"`, and `legend dashed "…"` / `legend #hex "…"`.** Every id in a group must be a real node and a node belongs to one group only; the legend box appears only when at least one `legend` line exists. Mermaid import maps `-.->` and `subgraph … end`.
+- **Light diagram palettes `paper` and `slate`**, and **`palette auto` as the new default** — it follows the app theme (light → `paper`, dark → `default`) and re-renders on a theme change.
+
+### Changed
+- **Every password draw now goes through the OS random source** (`getrandom`) via the Rust core, and so do the SSH keys. `QRandomGenerator::system()` is now the fallback, not the source. This is a correction rather than an upgrade: on x86-64 Qt fills from the CPU's `RDRAND` first — ~7 million draws issued zero `getrandom` syscalls under `strace` — so "the OS CSPRNG" described something else before. Rejection sampling and the draw-again set guarantee are unchanged, so the bits figure means exactly what it meant in v0.1.128.
+- **Diagrams are drawn flat** — no gradient, no drop shadow, a 1.5 px border, the application font, and a tighter grid (hGap 64, vGap 96). A per-node colour renders as a tint on a light palette and as a solid fill with auto-contrast text on a dark one.
+- Binary grows about **0.6 MB** for the pure-Rust crypto (RustCrypto `ssh-key` 0.6.7). No new runtime dependency and no network.
+
 ### Fixed
 - **The same arrow defect in two older panels.** The SQL Formatter's *Indent* spinner had no up/down arrows at all, because its panel stylesheet listed `QSpinBox` as a selector; and the REST Client's method combo had no arrow, because it styled `QComboBox::drop-down` without supplying a `::down-arrow` image. Both are fixed the same way — the spinner is themed by palette, and the `::drop-down` rule is gone — so each keeps its existing look and gets the platform's own arrow back. A new source lint, `test_qss_arrows`, reads `src/*.cpp` and fails the build on any of the three shapes: a QSS selector naming a spin box, a `::drop-down` rule without a `::down-arrow`, and the CSS border-triangle idiom. `notes.cpp`'s combo rule was checked and is clean.
+- **RSA key size was silently ignored.** `PrivateKey::random` always produced 4096 bits whatever size was asked for; keys are now built through `RsaKeypair::random(bits)`.
+
+### Known issues
+- **Existing `.npd` files with no `palette` line change appearance** — they now resolve to `palette auto` and render light on a light theme. Add an explicit `palette default` (or any named dark palette) to pin the old look.
+- **`group`, `note`, `legend`, `direction` and `layout` are now reserved words** — a file using one as a node id must rename that id.
+- **Windows does not set the `0600` permission** on a saved private key; the call is POSIX and is skipped there. Check the file's permissions after saving.
+- **RSA-4096 takes 1.6–5.9 s** to generate. Ed25519 does not.
+- **The 30-second clipboard wipe cannot reach a clipboard-history tool** — it only removes the value if the system clipboard still holds it.
+- **A `note` widens the row it sits in**, because the layout reserves room for the card beside (or below, under `direction LR`) its node.
+- **Mermaid bare ids inside a `subgraph` are not grouped yet** — a node appearing there only as a naked id is imported but left outside the generated `group`.
+- **RUSTSEC-2023-0071 (`rsa` 0.9.10, pulled in by `ssh-key` 0.6.7 for the RSA key types)** — the Marvin attack, a timing sidechannel in RSA private-key operations (decryption/signing), with no fixed crate release available. Key *generation* is the only thing Notepatra asks of it; Ed25519 and ECDSA go through `ed25519-dalek` / `p256` / `p384` and do not touch it. Carried as a documented ignore in `rust-core/.cargo/audit.toml`, to be re-evaluated when `rsa` 0.10 lands.
 
 ### Internal
-- Suite count 78 → 79 Full (75 → 76 Lite) with the new `test_qss_arrows` lint. Measured from a configured Lite tree, not assumed.
+- Assertion counts this release: `test_passwordgen` 67, `test_passwordgen_panel` 99, `test_npd_parser` 117, `test_mermaid_import` 44, `test_diagram_view` 19 (new suite), and 175 Rust tests. Full offscreen `ctest` is **79/79 green** (76 on Lite). The suite count reached 79 with `test_qss_arrows`, measured from a configured tree rather than assumed.
+- SSH interoperability is asserted against the *system* `ssh-keygen` — `-y` reproduces the public line, `-lf` the fingerprint, `-y -P` opens the encrypted key and rejects the wrong passphrase. Those tests skip where OpenSSH is absent, so a green run on a machine without it proves less.
+- `moc_passwordgen.cpp` removed from version control; `moc_*.cpp` is now ignored.
 
 ---
 

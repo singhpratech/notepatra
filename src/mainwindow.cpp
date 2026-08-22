@@ -979,10 +979,12 @@ ul { margin-top: 4px; }
 
 <h3>Password Generator</h3>
 <ul>
-<li>The icon row (next to <b>AI</b>) or <b>Tools &gt; Password Generator</b> toggles it: pressing it again while the tab is focused closes it. It runs entirely offline — there is no wordlist download, no network call, and no backend.</li>
-<li><b>Two modes.</b> <i>Random characters</i> draws from a-z, A-Z, 0-9 and a shell-safe symbol set (quotes, backslash, backtick and pipe are left out so a password survives being pasted into a command line, a YAML file or a connection string); you can add your own characters, exclude the look-alikes <code>0 O 1 l I</code>, and require at least one character from every set. <i>Passphrase</i> joins words from a 2,048-word built-in list, so each word is worth exactly 11 bits.</li>
+<li>The icon row (next to <b>AI</b>) or <b>Tools &gt; Password Generator — Passwords / Passphrases / SSH keys</b> toggles it: pressing it again while the tab is focused closes it. It runs entirely offline — there is no wordlist download, no network call, and no backend.</li>
+<li><b>Three pages</b>, chosen from the left rail with <code>Alt+1</code>, <code>Alt+2</code> and <code>Alt+3</code>. <i>Password</i> draws single characters from a-z, A-Z, 0-9 and a shell-safe symbol set (quotes, backslash, backtick and pipe are left out so a password survives being pasted into a command line, a YAML file or a connection string); you can add your own characters, exclude the look-alikes <code>0 O 1 l I</code>, and require at least one character from every set. <i>Passphrase</i> joins words from a 2,048-word built-in list, so each word is worth exactly 11 bits.</li>
+<li><b>SSH key.</b> Generates an OpenSSH pair — Ed25519 (recommended), ECDSA P-256 / P-384, RSA 3072 / 4096, or RSA 2048 (legacy) — with an optional passphrase that encrypts the private key the same way <code>ssh-keygen</code> does. The comment is left <b>empty</b> on purpose: <code>ssh-keygen</code> would put <code>user@host</code> there, which copies your username and machine name into every <code>authorized_keys</code> the key is pasted into. The public line and its SHA256 fingerprint are shown at once; the private key stays hidden until you tick <b>Show private key</b>. <b>Save private key…</b> sets the file to <code>0600</code> before writing, refuses to overwrite, and writes the <code>.pub</code> beside it. Generation happens off the UI thread, so RSA-4096 takes a few seconds without freezing the window.</li>
 <li><b>The bits figure is the real one.</b> It is the base-2 logarithm of how many distinct values the current settings can produce, not a guess at how complicated the result looks. Ticking <b>At least one from each set</b> makes the number drop slightly — that is correct, because the guarantee rules out every password that misses a set.</li>
-<li><b>Nothing is stored.</b> The tab is not an editor, so nothing it shows is written to <code>session.json</code>, sent to an AI backend, or readable by a connected MCP client. <b>Copy</b> puts the value on the system clipboard and takes it back after 30 seconds, unless you copied something else in the meantime. Use <b>Insert into editor</b> or <b>Open in new tab</b> when you do want it in a file.</li>
+<li><b>Nothing is stored.</b> The tab is not an editor, so nothing it shows is written to <code>session.json</code>, sent to an AI backend, or readable by a connected MCP client. Nothing reaches the disk unless you choose <b>Save private key…</b>. <b>Copy</b> puts the value on the system clipboard and takes it back after 30 seconds, unless you copied something else in the meantime — that wipe arms for the private key, not for the public one. Use <b>Insert into editor</b> or <b>Open in new tab</b> when you do want it in a file.</li>
+<li><b>Randomness</b> comes from the operating system's random source through the Rust core, for passwords, passphrases and keys alike.</li>
 </ul>
 
 <h2>Tools, Utilities, and Panels</h2>
@@ -4045,11 +4047,12 @@ void MainWindow::buildMenus() {
     });
 
     // --- Password Generator ---
-    m_passwordAct = feat->addAction("Password Generator — Random / Passphrase");
+    m_passwordAct = feat->addAction("Password Generator — Passwords / Passphrases / SSH keys");
     m_passwordAct->setCheckable(true);
-    m_passwordAct->setStatusTip("Generate random passwords or word passphrases from the "
-                                "system CSPRNG, with a live entropy readout. Nothing is "
-                                "written to disk and the clipboard self-clears.");
+    m_passwordAct->setStatusTip("Generate random passwords, word passphrases or SSH key pairs "
+                                "(Ed25519, ECDSA, RSA) from the OS random source, with a live "
+                                "entropy readout. Nothing is written to disk until you save "
+                                "a key, and the clipboard self-clears.");
     connect(m_passwordAct, &QAction::triggered, this, [this]() {
         // Same on/off toggle as Noter and Diagram: absent -> create+focus;
         // present-not-current -> focus; present-and-current -> close.
@@ -5856,8 +5859,8 @@ void MainWindow::buildToolbar() {
                        /*showCheckedState=*/true);
     addFeatureShortcut(featureTb, findActionByPrefix(this, "Password Generator"),
                        notepatraToolAccent("Password"), "password", "Password",
-                       "Toggle Password Generator — random or passphrase, "
-                       "offline — ON / OFF",
+                       "Toggle Password Generator — passwords, passphrases "
+                       "and SSH keys, offline — ON / OFF",
                        /*showCheckedState=*/true);
     addFeatureShortcut(featureTb, findActionByPrefix(this, "Terminal"),
                        notepatraToolAccent("Terminal"), "terminal", "Terminal",

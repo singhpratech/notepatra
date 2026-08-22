@@ -22,13 +22,18 @@
 //
 // Edge mapping:
 //   A --> B            → a -> b
-//   A --- B / -.-> / ==>  (any arrow)  → a -> b
+//   A --- B / ==>  (any solid arrow)   → a -> b
+//   A -.-> B           → a -.-> b   (dashed)
 //   A <--> B           → a <-> b
 //   A -->|label| B     → a -> b : label
 //   A -- label --> B   → a -> b : label
 //
-// Anything unrecognized (subgraph, classDef, style, click, %% comments) is
-// dropped or carried over as a `#` comment, so the result always parses.
+// Structure mapping:
+//   graph LR / RL      → direction LR   (TD / TB / BT → direction TB)
+//   subgraph Name … end → group "Name" : <ids seen inside>
+//
+// Anything else unrecognized (classDef, style, click, %% comments) is dropped,
+// so the result always parses.
 // ═══════════════════════════════════════════════════════════════════════
 
 #ifndef NOTEPATRA_MERMAID_IMPORT_H

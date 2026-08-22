@@ -32,29 +32,52 @@ namespace {
 // ── starter templates (every one parses clean + showcases the grammar) ──
 const char *kFlowTemplate =
     "diagram flow\n"
-    "title \"User Login\"\n"
-    "palette ocean\n"
+    "title \"Order checkout\"\n"
+    "palette auto\n"
+    "direction LR\n"
     "\n"
-    "node start (Start) green\n"
-    "node creds [Enter credentials] #1565c0 :: \"Username + password form\"\n"
-    "node check {Valid?} orange\n"
-    "node dash [Dashboard] green :: \"Loads the saved session and open tabs\"\n"
-    "node err [Show error] red :: \"Increment failed-attempt counter; lock after 5 tries\"\n"
-    "icon db :database \"Users\" :: \"Primary auth store\"\n"
+    "# Shapes: (pill) [box] {decision} ([database]) and icon nodes.\n"
+    "node start (Customer) green :: \"Signed-in shopper on the web or mobile app\"\n"
+    "icon gw :gateway \"API gateway\" #1565c0 :: \"Auth, rate limiting, request routing\"\n"
+    "node cart [Cart service] #1565c0 :: \"Owns the basket; idempotent on retry\"\n"
+    "node stock {In stock?} orange\n"
+    "icon pay :card \"Payments\" #c62828 :: \"Third-party PSP — card capture and 3-D Secure\"\n"
+    "node order [Order service] #1565c0 :: \"Writes the order, emits OrderPlaced\"\n"
+    "icon bus :queue \"Event bus\" #6a1b9a :: \"Kafka — at-least-once delivery\"\n"
+    "icon mail :email \"Receipt mailer\" :: \"Fire-and-forget consumer\"\n"
+    "node oos [Back-order] :: \"Customer is told the ETA and may wait or cancel\"\n"
+    "node db ([Orders DB]) #6a1b9a :: \"Postgres — source of truth\"\n"
+    "icon cache :cache \"Cache\" #6a1b9a :: \"Redis — hot order rows, 5-minute TTL\"\n"
     "\n"
-    "start -> creds\n"
-    "creds -> check\n"
-    "check -> dash : yes\n"
-    "check -> err : no\n"
-    "err -> creds : retry\n"
-    "dash -> db\n"
+    "# Groups draw a container around their members.\n"
+    "group \"Edge\" : start gw\n"
+    "group \"Core services\" : cart stock order\n"
+    "group \"Data\" : db cache\n"
     "\n"
-    "textbox \"Happy path plus one error branch with a retry loop.\"\n";
+    "# Edges: chains, labels, a decision with two branches, a dashed async hop,\n"
+    "# and a bidirectional edge.\n"
+    "start <-> gw : HTTPS\n"
+    "gw -> cart : add item\n"
+    "cart -> stock\n"
+    "stock -> order : yes\n"
+    "stock -> oos : no\n"
+    "order -> pay : capture\n"
+    "order -> db : insert\n"
+    "order -> cache : write-through\n"
+    "order -.-> bus -.-> mail : receipt\n"
+    "\n"
+    "# Notes sit beside a node; legend explains any encoding you reuse.\n"
+    "note pay \"Card capture is retried three times with exponential backoff.\"\n"
+    "note bus \"Consumers must be idempotent.\"\n"
+    "legend dashed \"async / best effort\"\n"
+    "legend #c62828 \"third-party call\"\n"
+    "\n"
+    "textbox \"Solid arrows are synchronous; the mailer is fire-and-forget. Hover a node for detail.\"\n";
 
 const char *kErTemplate =
     "diagram er\n"
     "title \"Orders schema\"\n"
-    "palette forest\n"
+    "palette auto\n"
     "\n"
     "node customers ([Customers]) #2e7d32 :: \"id, name, email, created_at\"\n"
     "node products ([Products]) #2e7d32 :: \"id, sku, name, unit_price\"\n"
@@ -70,7 +93,7 @@ const char *kErTemplate =
 const char *kSystemTemplate =
     "diagram system\n"
     "title \"Web app architecture\"\n"
-    "palette clay\n"
+    "palette auto\n"
     "\n"
     "icon user :user \"Browser\" #00838f :: \"End-user web client\"\n"
     "icon cdn :cloud \"CDN\" #00838f :: \"Static assets + edge cache\"\n"
@@ -375,6 +398,8 @@ cloud, gear, table, process, decision, chart</code>.</p>
 <pre>a -&gt; b                  arrow a to b
 a -&gt; b : yes            arrow with a label (space before the colon)
 a &lt;-&gt; b : sync          bidirectional (label optional)
+a -.-&gt; b                dashed — async / optional / best-effort
+a &lt;.-&gt; b                dashed both ways
 a -&gt; b -&gt; c : ok        chain — a to b, then b to c; label rides the last hop</pre>
 <p>Colours go on <b>node</b> lines (see below), not on connection lines.</p>
 
@@ -388,19 +413,34 @@ node proc  [Process] #1565c0
 node check {Valid?} orange
 node err   [Error] red</pre>
 <p>Add a colour <b>after the shape</b> — a <code>#hex</code> value (<code>#1565c0</code>)
-or a common name (green, blue, orange, red, teal, purple…). The border and text
-auto-contrast so it stays readable on any theme. Nodes with no colour keep the
+or a common name (green, blue, orange, red, teal, purple…). On a <b>light</b> palette
+(paper, slate) the node is <b>tinted</b>: a soft wash of the colour, a full-strength
+border and the normal dark text. On a <b>dark</b> palette the node is filled solid with
+auto-contrast text. Either way it stays readable. Nodes with no colour keep the
 diagram <b>palette</b>, so leaving them all uncoloured gives the clean monochrome look.</p>
 <p>Colour works on <b>every node type and every diagram</b> — boxes, pills, decisions,
 database cylinders (<code>node t ([Table]) green</code>) and icons
 (<code>icon db :database "DB" #1565c0</code>) in flow, ER <em>and</em> system diagrams alike.
 The colour goes after the shape and before any <code>::</code> hover.</p>
 
-<h3>Title, palette, caption</h3>
+<h3>Group, annotate, explain</h3>
+<pre>group "Edge tier" : cdn api      draws a labelled container behind those nodes
+note api "Rate-limited to 100 rps"   a small card pinned beside the node
+legend dashed "async"            legend row — a dashed-line swatch
+legend #cc785c "hot path"        legend row — a colour swatch</pre>
+<p>Every id in a <code>group</code> must be a real node, and a node can be in
+<b>one</b> group only. The legend box appears only when you write at least one
+<code>legend</code> line.</p>
+
+<h3>Title, direction, palette, caption</h3>
 <pre>diagram flow            flow | er | system
 title "User Login"
-palette ocean           clay | ocean | forest | mono
+direction LR            TB (top-down, default) | LR (left-to-right)
+palette auto            auto | paper | slate | clay | ocean | forest | mono | default
 textbox "A caption shown under the diagram."</pre>
+<p><b>auto</b> (the default when you write no palette line) follows the app theme:
+the light <b>paper</b> palette in a light theme, the dark <b>default</b> one in a
+dark theme. <b>paper</b> and <b>slate</b> are light; the rest are dark.</p>
 
 <h3>Canvas &amp; export</h3>
 <p>Drag to pan, scroll to zoom, double-click to fit. Export the rendered diagram
@@ -411,7 +451,7 @@ The menu only lists formats this build can actually write.</p>
 <h3>A complete example</h3>
 <pre>diagram flow
 title "User Login"
-palette ocean
+palette auto
 node start (Start) green
 node check {Valid?} orange
 node dash [Dashboard] #1565c0 :: "Loads saved session + tabs"
@@ -436,6 +476,9 @@ void DiagramEditor::emitTitle() {
 }
 
 void DiagramEditor::onThemeChanged() {
+    // `palette auto` resolves against the host theme, so a theme switch has to
+    // re-render the preview, not just restyle the toolbar.
+    if (m_preview && m_edit) renderNow();
     const bool dark = palette().color(QPalette::Window).lightness() < 128;
     const QString barBg = dark ? "#2b2b2b" : "#f3f1ea";
     const QString line = dark ? "#3a3a3a" : "#dcd8cc";

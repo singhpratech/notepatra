@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.128 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.129 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -3081,8 +3081,20 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_passwordgen.cpp")
         test_passwordgen.cpp
         src/passwordgen_core.cpp
     )
-    target_include_directories(test_passwordgen PRIVATE ${CMAKE_SOURCE_DIR})
-    target_link_libraries(test_passwordgen PRIVATE Qt5::Core)
+    add_dependencies(test_passwordgen rust_core)
+    target_include_directories(test_passwordgen PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/rust-core/include)
+    target_link_libraries(test_passwordgen PRIVATE Qt5::Core ${RUST_LIB})
+    if(WIN32)
+        target_link_libraries(test_passwordgen PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32)
+    elseif(APPLE)
+        target_link_libraries(test_passwordgen PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_passwordgen PRIVATE pthread dl m)
+    endif()
     notepatra_add_qt_test(test_passwordgen)
     set_tests_properties(test_passwordgen PROPERTIES
         LABELS "unit;passwordgen" TIMEOUT 120)
@@ -3098,9 +3110,21 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_passwordgen_panel.
         src/passwordgen.cpp
         src/passwordgen_core.cpp
     )
-    target_include_directories(test_passwordgen_panel PRIVATE ${CMAKE_SOURCE_DIR})
+    add_dependencies(test_passwordgen_panel rust_core)
+    target_include_directories(test_passwordgen_panel PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/rust-core/include)
     target_link_libraries(test_passwordgen_panel PRIVATE
-        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Test)
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Test Qt5::Concurrent ${RUST_LIB})
+    if(WIN32)
+        target_link_libraries(test_passwordgen_panel PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32)
+    elseif(APPLE)
+        target_link_libraries(test_passwordgen_panel PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_passwordgen_panel PRIVATE pthread dl m)
+    endif()
     notepatra_add_qt_test(test_passwordgen_panel)
     set_tests_properties(test_passwordgen_panel PROPERTIES
         LABELS "unit;passwordgen;panel" TIMEOUT 120)

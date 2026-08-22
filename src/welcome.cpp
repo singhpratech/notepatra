@@ -470,7 +470,7 @@ void WelcomeWidget::buildFeatureCards(QVBoxLayout *parent) {
         // ASCII glyph, not an emoji — an emoji codepoint tofus on Linux
         // boxes without a colour-emoji font.
         {"(*)", "Password Generator",
-         "Random characters or word passphrases from the system CSPRNG, with a real entropy readout. Fully offline · nothing written to disk · the clipboard clears itself after 30 seconds.",
+         "Random passwords, word passphrases and SSH key pairs (Ed25519 / ECDSA / RSA) from the OS random source, with a real entropy readout. Fully offline · nothing written to disk unless you save a key · the clipboard clears itself after 30 seconds.",
          "PasswordGenerator", hex("Password")},
     };
 

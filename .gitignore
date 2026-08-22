@@ -109,3 +109,6 @@ eval/**/__pycache__/
 # repo root. Not the deployed site; docs/index.html and docs/enterprise.html are.
 /np.html
 /ent.html
+
+# Qt moc output never belongs in git
+moc_*.cpp
