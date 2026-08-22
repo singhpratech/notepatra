@@ -749,6 +749,39 @@ else
     echo "  ⓘ gh unavailable/unauthenticated — skipping version-card gap gate"
 fi
 
+echo "── hero stat strip agrees with the bare-binary claim ──"
+# v0.1.129: the strip says ~<span>12</span> MB, so a "12.6 MB" sed missed it
+# and the site showed ~12 MB next to a 13.4 MB claim for two hours.
+stat_mb=$(grep -oE 'stat-number">~<span>[0-9]+</span> MB' docs/index.html | grep -oE '[0-9]+' | head -1)
+claim_mb=$(grep -oE '\(?[0-9]+\.[0-9]+ MB on Linux x64' docs/index.html | grep -oE '^\(?[0-9]+' | tr -d '(' | head -1)
+if [[ -n "$stat_mb" && -n "$claim_mb" && "$stat_mb" == "$claim_mb" ]]; then
+    echo "  ✓ hero stat (~$stat_mb MB) matches the Linux x64 bare claim (${claim_mb}.x MB)"
+    PASS=$((PASS + 1))
+else
+    echo "  ✗ hero stat strip says ~${stat_mb:-?} MB but the bare-binary claim is ${claim_mb:-?}.x MB on Linux x64"
+    echo "      file: docs/index.html  — the strip is markup-split (~<span>N</span> MB); fix it by hand"
+    FAIL=$((FAIL + 1))
+fi
+
+echo
+echo "── feature cards are the same order of magnitude ──"
+# The grid stretches every row to its tallest card; one 2,300-char card
+# leaves its neighbours half-empty (v0.1.129 Password Generator card).
+longest=$(python3 - <<'PY'
+import re
+s=open('docs/index.html').read(); g=s[s.index('class="features-grid"'):]
+cards=re.findall(r'<div class="feature-card"[^>]*>(.*?)\n            </div>', g, re.S)
+print(max(len(re.sub(r'<[^>]+>','',c)) for c in cards))
+PY
+)
+if [[ "$longest" -le 1200 ]]; then
+    echo "  ✓ longest feature card is $longest chars (cap 1200)"
+    PASS=$((PASS + 1))
+else
+    echo "  ✗ a feature card is $longest chars (cap 1200) — trim it; detail belongs in the release card / docs.html"
+    FAIL=$((FAIL + 1))
+fi
+
 echo
 if (( FAIL == 0 )); then
     echo "=== ALL SURFACES MATCH ($PASS passed) ==="

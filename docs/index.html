@@ -1003,6 +1003,13 @@
             transform: translateY(-4px);
             box-shadow: 0 12px 40px rgba(0,0,0,0.3);
         }
+        .feature-card {
+            display: grid;
+            grid-template-columns: 48px minmax(0, 1fr);
+            column-gap: 16px;
+            align-content: start;
+        }
+        .feature-card > :not(.feature-icon):not(h3) { grid-column: 1 / -1; }
         .feature-icon {
             width: 48px;
             height: 48px;
@@ -1011,8 +1018,10 @@
             align-items: center;
             justify-content: center;
             font-size: 24px;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         }
+        .feature-card h3 { align-self: center; margin-bottom: 16px; }
+        .feature-card h3 > span { white-space: nowrap; display: inline-block; }
         .fi-blue { background: rgba(204,120,92,0.15); }
         .fi-green { background: rgba(76,175,80,0.15); }
         .fi-purple { background: rgba(156,39,176,0.15); }
@@ -1409,7 +1418,7 @@
 
     <!-- Stats -->
     <div class="stats">
-        <div class="stat"><div class="stat-number">~<span>12</span> MB</div><div class="stat-label">Bare Binary</div></div>
+        <div class="stat"><div class="stat-number">~<span>13</span> MB</div><div class="stat-label">Bare Binary</div></div>
         <div class="stat"><div class="stat-number"><span>238</span></div><div class="stat-label">File Types</div></div>
         <div class="stat"><div class="stat-number"><span>82</span></div><div class="stat-label">Language Lexers</div></div>
         <div class="stat"><div class="stat-number"><span>2</span> GB</div><div class="stat-label">Max File Size</div></div>
@@ -1685,7 +1694,7 @@
             <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
                 <div class="feature-icon fi-purple">🔒</div>
                 <h3>Password Generator — passwords, passphrases, SSH keys <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW IN v0.1.129</span> </h3>
-                <p>A left rail switches three pages — <strong>Password</strong>, <strong>Passphrase</strong>, <strong>SSH key</strong> (<code>Alt+1</code> / <code>Alt+2</code> / <code>Alt+3</code>). <strong>Password</strong> — 4 to 256 characters (default 20) from a-z, A-Z, 0-9, a 27-character symbol set and a free-text field for anything else, with optional <em>Exclude look-alikes</em> (drops <code>0 O 1 l I</code>) and <em>At least one from each set</em>. The symbol set leaves out the single quote, double quote, backslash, backtick, pipe and space, because those are the characters that break when a password is pasted into a shell command, a YAML file or a database connection string. <strong>Passphrase</strong> — 3 to 24 words (default 6) from a 2,048-word list compiled into the binary, so each word is worth exactly 11 bits and six words is 66 bits. <strong>SSH key</strong> — a real OpenSSH pair: <strong>Ed25519</strong> (recommended), ECDSA P-256 / P-384, RSA 3072 / 4096, RSA 2048 (legacy). An optional passphrase encrypts the private key with <code>aes256-ctr</code> + <code>bcrypt-pbkdf</code>, the same construction <code>ssh-keygen</code> uses. The <strong>comment is empty by default on purpose</strong> — <code>ssh-keygen</code> defaults it to <code>user@host</code>, which copies your username and machine name into every <code>authorized_keys</code> the key is pasted into. The public line and its SHA256 fingerprint appear immediately; the private key stays hidden until you tick <em>Show private key</em>; <strong>Save private key…</strong> creates the file, sets it to <code>0600</code>, then writes, refuses to overwrite, and drops the <code>.pub</code> beside it. Generation runs off the GUI thread, and the 30-second clipboard wipe arms for the private key only. Interoperability is asserted against the system <code>ssh-keygen</code> in the test suite. The bits readout is the <strong>base-2 logarithm of how many distinct values your current settings can produce</strong>, not a heuristic score of how complicated the result looks — which is why ticking <em>At least one from each set</em> makes it drop slightly: the guarantee rules out every password that misses a set, so there are fewer to guess from. Every draw comes from the <strong>OS random source</strong> (<code>getrandom</code>) through the Rust core, with rejection sampling; Qt’s generator is now only the fallback. The panel is not an editor, so a generated value is never written to <code>session.json</code>, never sent to an AI backend, and not readable by a connected MCP client. <em>Ships in every build including the default Lite binary — no network, fully offline.</em></p>
+                <p>One tab, three pages on a left rail — <strong>Password</strong>, <strong>Passphrase</strong>, <strong>SSH key</strong> (<code>Alt+1</code> / <code>Alt+2</code> / <code>Alt+3</code>). Passwords draw from a shell-safe symbol set; passphrases from a 2,048-word list compiled into the binary (11 bits a word). <strong>SSH key</strong> makes a real OpenSSH pair — <strong>Ed25519</strong>, ECDSA P-256 / P-384, RSA 3072 / 4096 — with an optional passphrase encrypted the way <code>ssh-keygen</code> does it, an empty comment by default (no <code>user@host</code> leak), the private key hidden until you ask, and <strong>Save</strong> that sets <code>0600</code> before writing and never overwrites. The bits readout is a real count, not a score. Every draw comes from the OS random source through the Rust core; nothing is stored, sent to an AI backend, or visible to MCP. Offline, in every build including Lite.</p>
             </div>
             <!-- MCP — the v0.1.118 headline (expanded to 48 tools in v0.1.120), promoted to slot 1 so the
                  grid leads with it. Same Clay-orange halo as the other
