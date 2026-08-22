@@ -328,7 +328,7 @@
   <div class="topbar-left">
     <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">v0.1.128 docs</span>
+    <span class="tag">v0.1.129 docs</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
@@ -435,7 +435,7 @@
   <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock (with a workspace open and a tool-capable model) and the model gets up to 13 native tools — file tools <code>read_file</code>, <code>list_dir</code>, <code>write_file</code>, <code>search</code>, <code>apply_diff</code>; data tools <code>query_sql</code>, <code>csv_query</code>, <code>generate_chart</code>; and read-only git tools <code>git_status</code>, <code>git_diff</code>, <code>git_log</code>, <code>git_branch_list</code>, <code>git_show</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
 
   <div class="callout info">
-    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.128 (August 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
+    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.129 (August 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
   </div>
 
   <h2 id="install" class="anchor-target">Install</h2>
@@ -650,7 +650,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
     <li><strong>macOS:</strong> <code>~/Library/Application Support/notepatra/plugins/&lt;pack&gt;/</code></li>
     <li><strong>Windows:</strong> <code>%APPDATA%/notepatra/plugins/&lt;pack&gt;/</code></li>
   </ul>
-  <p>As of v0.1.120, the Full flavor ships the <em>charts</em> pack bundled on Linux and Windows (it's the same binary — the pack is "installed" if WebEngine was linked at compile time; macOS Full is DuckDB-only and has no inline Vega renderer). The in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation path is scaffolded but not yet wired (still queued as of v0.1.128), so today packs are added by swapping in the Full binary rather than downloaded inside the app.</p>
+  <p>As of v0.1.120, the Full flavor ships the <em>charts</em> pack bundled on Linux and Windows (it's the same binary — the pack is "installed" if WebEngine was linked at compile time; macOS Full is DuckDB-only and has no inline Vega renderer). The in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation path is scaffolded but not yet wired (still queued as of v0.1.129), so today packs are added by swapping in the Full binary rather than downloaded inside the app.</p>
 
   <table>
     <thead>
@@ -667,7 +667,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
         <td><code>pdf</code></td>
         <td>≈ 12 MB</td>
         <td>Rasterises PDFs to PNG pages so vision-capable AI models can read them. Powered by Poppler-Qt5.</td>
-        <td>Still queued (not shipped as of v0.1.128). Until then, dropping a PDF into the AI dock extracts its text via <code>pdftotext</code> (poppler-utils) when available and attaches that as context.</td>
+        <td>Still queued (not shipped as of v0.1.129). Until then, dropping a PDF into the AI dock extracts its text via <code>pdftotext</code> (poppler-utils) when available and attaches that as context.</td>
       </tr>
     </tbody>
   </table>
@@ -716,7 +716,7 @@ make -j$(nproc)
     <li><strong>Do I lose anything by staying on Lite?</strong> No — every editor / lexer / AI / Git / data / plugin feature works identically. The only difference is that <code>generate_chart</code> tool results paint as a "Chart rendering requires the Charts Pack" card instead of as an inline rendered chart. You can still see the spec via [View JSON instead] and copy it elsewhere.</li>
     <li><strong>Can I downgrade Full → Lite?</strong> Yes. Just download the Lite tarball and replace the binary. Your config / chat history / connections are preserved (they live under <code>~/.config/notepatra</code>, not inside the binary).</li>
     <li><strong>Will the chart spec data be lost if I'm on Lite?</strong> No — the AI's tool result is preserved in your chat history just like any other tool result. If you upgrade to Full later, opening the same chat shows the rendered chart for those past results.</li>
-    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.128. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
+    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.129. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
   </ul>
 
   <h2 id="ui-overview" class="anchor-target">UI overview</h2>
@@ -778,7 +778,7 @@ make -j$(nproc)
   <p>The detected encoding label ("UTF-16 LE BOM", "UTF-32 BE BOM", …) travels with the tab, and on save the matching BOM bytes are written back in front of the encoded content. Opening a UTF-16 LE BOM file and pressing <span class="kbd">Ctrl+S</span> writes it back as UTF-16 LE with its BOM intact — the BOM is never silently dropped.</p>
 
   <h2 id="languages-lexers" class="anchor-target">Languages &amp; lexers</h2>
-  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.128 (covering 238 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
+  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.129 (covering 238 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
   <p><strong>Core (Qt-bundled):</strong> Python, JavaScript/TypeScript/JSX, CoffeeScript, C/C++, C#, D, Java/Kotlin, HTML/PHP, CSS/SCSS/LESS, XML, JSON, SQL (ANSI / T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite), Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Matlab, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile.</p>
   <p><strong>v0.1.55 additions (32 dedicated lexers, keyword tables verified against official specs):</strong> Dart · Solidity · Zig · Vala · Hack · Julia · R · Protobuf · F# · HCL/Terraform · Thrift · GraphQL · GDScript · Nim · Cython · Mojo · Crystal · Elixir · Scala · Groovy · Apex · Jinja · Liquid · Twig · Dockerfile · Fish · Nushell · TOML · DotEnv · Gitignore · JSON5 · BibTeX. Each ships with comment / uncomment / block-comment syntax (Ctrl+/ for line, Ctrl+Shift+Q for block) and proper file-extension routing — <code>.dart</code>, <code>.zig</code>, <code>.jl</code>, <code>.toml</code>, <code>.ex</code>, <code>Cargo.toml</code>, <code>Dockerfile</code>, <code>.gitignore</code>, <code>.env</code>, <code>.fish</code>, <code>.json5</code>, <code>.tf</code>, etc. now point at their dedicated lexers instead of falling back to the closest-fit generic.</p>
 
@@ -899,28 +899,80 @@ make -j$(nproc)
   <!-- ══════════════ Plugins ══════════════ -->
 
   <h2 id="password-generator" class="anchor-target">Password generator</h2>
-  <p>A built-in password generator, new in v0.1.128. Open it from the <strong>Built-in Tools</strong> toolbar — the button is labelled <strong>Password</strong> and sits third, immediately after <strong>AI</strong> — or from <code>Tools &rarr; Password Generator — Random / Passphrase</code>. It's a toggle: press it again while its tab is focused and the <strong>Password Generator</strong> tab closes. It ships in <em>every</em> build, including the default Lite binary, and adds no dependency — the randomness comes from Qt Core. There is no network call, no download, no backend and no AI involved, so it works fully offline.</p>
+  <p>A built-in generator for the three secrets a developer actually types: a password, a passphrase, and an SSH key. Open it from the <strong>Built-in Tools</strong> toolbar — the button is labelled <strong>Password</strong> and sits third, immediately after <strong>AI</strong> — or from <code>Tools &rarr; Password Generator — Passwords / Passphrases / SSH keys</code>. It's a toggle: press it again while its tab is focused and the <strong>Password Generator</strong> tab closes. It ships in <em>every</em> build, including the default Lite binary. There is no network call, no download, no backend and no AI involved, so all three pages work fully offline.</p>
+  <p>A <strong>left rail</strong> chooses the page — <strong>Password</strong>, <strong>Passphrase</strong>, <strong>SSH key</strong> — with <span class="kbd">Alt+1</span>, <span class="kbd">Alt+2</span> and <span class="kbd">Alt+3</span> as shortcuts. (Before v0.1.129 the first two were radio buttons and there was no third.)</p>
 
-  <h3>Two modes</h3>
+  <h3>Password and passphrase</h3>
   <table>
-    <thead><tr><th>Mode</th><th>What it draws from</th><th>Bits per unit</th><th>Default</th></tr></thead>
+    <thead><tr><th>Page</th><th>What it draws from</th><th>Bits per unit</th><th>Default</th></tr></thead>
     <tbody>
-      <tr><td><strong>Random characters</strong></td><td>The character sets you tick — <code>a-z</code>, <code>A-Z</code>, <code>0-9</code>, Symbols — plus a free-text <em>extra characters</em> field</td><td>log<sub>2</sub>(alphabet size) per character</td><td>20 characters — 129 bits at the default settings</td></tr>
+      <tr><td><strong>Password</strong></td><td>The character sets you tick — <code>a-z</code>, <code>A-Z</code>, <code>0-9</code>, Symbols — plus a free-text <em>extra characters</em> field</td><td>log<sub>2</sub>(alphabet size) per character</td><td>20 characters — 129 bits at the default settings</td></tr>
       <tr><td><strong>Passphrase</strong></td><td>A built-in 2,048-word list compiled into the binary; no dictionary file is read at runtime</td><td>Exactly 11 bits per word</td><td>6 words — 66 bits</td></tr>
     </tbody>
   </table>
-  <p><strong>Random characters.</strong> Length runs from 4 to 256, default 20. The <em>extra characters</em> field takes anything the four sets don't cover; whitespace and control characters in it are ignored. The symbol set is 27 characters — <code>! # $ % &amp; ( ) * + , - . / : ; &lt; = &gt; ? @ [ ] ^ _ { } ~</code> — and deliberately leaves out the single quote, double quote, backslash, backtick, pipe and space, because those are the characters that break when a password is pasted into a shell command, a YAML file or a database connection string. Two optional switches: <strong>Exclude look-alikes</strong>, which drops <code>0 O 1 l I</code>, and <strong>At least one from each set</strong>, which is on by default.</p>
+  <p><strong>Password.</strong> Length runs from 4 to 256, default 20. The <em>extra characters</em> field takes anything the four sets don't cover; whitespace and control characters in it are ignored. The symbol set is 27 characters — <code>! # $ % &amp; ( ) * + , - . / : ; &lt; = &gt; ? @ [ ] ^ _ { } ~</code> — and deliberately leaves out the single quote, double quote, backslash, backtick, pipe and space, because those are the characters that break when a password is pasted into a shell command, a YAML file or a database connection string. Two optional switches: <strong>Exclude look-alikes</strong>, which drops <code>0 O 1 l I</code>, and <strong>At least one from each set</strong>, which is on by default.</p>
   <p><strong>Passphrase.</strong> 3 to 24 words, default 6. The separator is a hyphen, period, underscore, space, or none. <strong>Capitalise each word</strong> and <strong>Append two digits</strong> are optional; appending two digits adds log<sub>2</sub>(100) bits.</p>
-  <p>Both modes generate 1 to 100 independent values at once, and both offer the same four buttons: <strong>Generate</strong>, <strong>Copy</strong>, <strong>Insert into editor</strong>, and <strong>Open in new tab</strong>.</p>
+  <p>Both pages generate 1 to 100 independent values at once, and both offer the same four buttons: <strong>Generate</strong>, <strong>Copy</strong>, <strong>Insert into editor</strong>, and <strong>Open in new tab</strong>.</p>
+
+  <h3>SSH key (since v0.1.129)</h3>
+  <p>The third page generates a real OpenSSH key pair locally and hands you the two things you actually need — the <code>authorized_keys</code> line and its fingerprint — without writing anything to disk until you ask.</p>
+  <table>
+    <thead><tr><th>Key type</th><th>Strength</th><th>When to pick it</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Ed25519</strong> — recommended</td><td>256-bit key, ~128-bit security</td><td>The default for new keys. One short line in <code>authorized_keys</code>, fast to sign with, constant-time by construction. Supported by OpenSSH 6.5 and newer — everything shipped since 2014.</td></tr>
+      <tr><td>ECDSA P-256</td><td>~128-bit security</td><td>Only when a policy names a NIST curve — a FIPS-constrained environment, or a smartcard that offers nothing else.</td></tr>
+      <tr><td>ECDSA P-384</td><td>~192-bit security</td><td>The same FIPS-constrained case, when the policy asks for more than 128-bit strength.</td></tr>
+      <tr><td>RSA 3072</td><td>~128-bit security</td><td>For an old server or a hardware token that cannot do Ed25519. 3072 is the size that matches Ed25519's strength.</td></tr>
+      <tr><td>RSA 4096</td><td>~140-bit security</td><td>The same old-server case. The extra bits buy little over 3072 and cost noticeably more time to generate and to verify on every connection.</td></tr>
+      <tr><td>RSA 2048 — legacy</td><td>~112-bit security</td><td>The smallest size still worth issuing, and only for hardware that refuses anything bigger. Do not pick it for a key you intend to keep.</td></tr>
+    </tbody>
+  </table>
+  <p><strong>The comment is empty by default, on purpose.</strong> <code>ssh-keygen</code> fills it with <code>user@host</code>, which copies your username and your machine's name into every <code>authorized_keys</code> file the key is ever pasted into — on servers you do not control. Type a label if you want one (<code>work-laptop</code>); nothing is put there for you.</p>
+  <p><strong>The optional passphrase encrypts the private key</strong> with <code>aes256-ctr</code> and <code>bcrypt-pbkdf</code> (16 rounds) — the same construction <code>ssh-keygen</code> writes, so <code>ssh-add</code>, <code>ssh</code> and any other OpenSSH tool read the file directly. Type it twice; a <strong>Show</strong> checkbox reveals both fields so you can check them.</p>
+  <p><strong>What the panel shows.</strong> The public key (the <code>authorized_keys</code> line) and its <strong>SHA256 fingerprint</strong> — in the same form <code>ssh-keygen -l</code> prints — appear as soon as the key is generated. The <strong>private key stays off-screen</strong> until you tick <strong>Show private key</strong>. <strong>Copy private key</strong> arms the 30-second clipboard wipe; <strong>Copy public key</strong> does not, because a public key is not a secret.</p>
+  <p><strong>Saving.</strong> <strong>Save private key…</strong> creates the file, sets its permissions to <code>0600</code>, and only then writes the bytes, so the key is never briefly world-readable. It <strong>refuses to overwrite</strong> an existing file — pick another name rather than losing a key you still use — and it writes the <code>.pub</code> companion (<code>0644</code>) beside it. The suggested filename follows the key type (<code>id_ed25519</code>, <code>id_ecdsa</code>, <code>id_rsa</code>).</p>
+  <p><strong>Generation runs off the GUI thread.</strong> Ed25519 is effectively instant; RSA-4096 measured between 1.6 and 5.9 seconds, during which the button reads <em>Generating…</em> and the window stays responsive.</p>
+
+  <h4>What to do with the key</h4>
+  <p>A generated key does nothing until it is on disk and known to the agent and the server. The whole sequence, on a Linux or macOS client:</p>
+  <pre><code><span class="cm"># 1. Save the private key from the panel into your SSH directory.</span>
+<span class="cm">#    "Save private key…" → ~/.ssh/id_ed25519   (it writes id_ed25519.pub too)</span>
+
+<span class="cm"># 2. Load it into the agent so you type the passphrase once per session.</span>
+ssh-add ~/.ssh/id_ed25519
+
+<span class="cm"># 3. Put the PUBLIC line on the server you want to reach.</span>
+ssh-copy-id -i ~/.ssh/id_ed25519.pub you@server
+<span class="cm">#    …or paste the public line yourself, one key per line:</span>
+<span class="cm">#    ~/.ssh/authorized_keys on the server, mode 0600, in a 0700 ~/.ssh</span>
+
+<span class="cm"># 4. For GitHub / GitLab: Settings → SSH keys → New key,</span>
+<span class="cm">#    paste the same public line (use "Copy public key" in the panel).</span>
+
+<span class="cm"># 5. Check it worked.</span>
+ssh -T git@github.com
+ssh-keygen -lf ~/.ssh/id_ed25519.pub   <span class="cm"># same fingerprint the panel showed</span></code></pre>
+  <p>Never paste the private key anywhere. The only thing that leaves your machine is the public line — the one the panel shows without asking.</p>
 
   <h3>The entropy readout</h3>
   <p>The bits figure is the base-2 logarithm of how many distinct values the current settings can produce. It is <em>not</em> a heuristic score of how complicated the result looks, which is what most password meters show.</p>
   <p>One consequence is visible immediately: with <strong>At least one from each set</strong> ticked, the figure is computed by inclusion-exclusion over the selected sets and therefore <strong>drops slightly</strong>. That is correct — the guarantee rules out every password that misses a set, so there are fewer possible passwords. Most generators advertise the unconstrained number while enforcing the constraint, which overstates the result.</p>
-  <p>The generator is built so that the number stays honest. Draws come from <code>QRandomGenerator::system()</code>, Qt's cryptographic generator — never the seeded <code>global()</code> one. Where those bytes actually come from is worth stating precisely, because it is not the obvious reading: on x86-64 Qt fills from the CPU's <strong>RDRAND</strong> instruction first, and only falls back to the OS entropy pool (<code>getentropy</code>/<code>getrandom</code> on Linux, <code>RtlGenRandom</code> on Windows) for whatever RDRAND declines to supply. Measured under <code>strace</code> on a release build, ~7 million draws issued <em>zero</em> <code>getrandom</code> syscalls. If your threat model excludes the CPU RNG, that means bypassing Qt; there is no setting for it. Each draw uses rejection sampling, so no character is more likely than another merely because the alphabet size doesn't divide 2<sup>32</sup>. And <strong>At least one from each set</strong> is enforced by drawing the whole password again until the constraint holds, not by placing one character from each set and shuffling — placement would make some strings more likely than others, and would make the bits figure a lie.</p>
+  <p><strong>Where the bytes come from — this changed in v0.1.129.</strong> Every draw now goes through the <strong>operating system's random source</strong> (<code>getrandom</code> on Linux, the platform equivalent elsewhere) by way of the Rust core, and so do the SSH keys. Qt's <code>QRandomGenerator::system()</code> is now the fallback, not the source. That is a correction rather than an upgrade claim: before v0.1.129 the source <em>was</em> Qt's generator, and on x86-64 Qt fills from the CPU's <strong>RDRAND</strong> instruction first — measured under <code>strace</code> on a release build, ~7 million draws issued <em>zero</em> <code>getrandom</code> syscalls. Anyone reading "the OS CSPRNG" was reading something else. Everything downstream is unchanged: each draw uses rejection sampling, so no character is more likely than another merely because the alphabet size doesn't divide 2<sup>32</sup>, and <strong>At least one from each set</strong> is enforced by drawing the whole password again until the constraint holds, not by placing one character from each set and shuffling — placement would make some strings more likely than others, and would make the bits figure a lie.</p>
 
   <h3>Privacy</h3>
   <p>The panel is a plain widget, not an editor. Session save/restore, the AI-context sweep and the MCP read verbs are all gated on the tab being an editor, so a generated value is never written to <code>session.json</code>, never sent to an AI backend, and is not readable by a connected MCP client. (Verified by inspecting <code>session.json</code> with the panel open and focused: it recorded zero tabs.)</p>
-  <p><strong>Copy</strong> places the value on the system clipboard and takes it back after 30 seconds — but only if the clipboard still holds that value, so it never clobbers something you copied in the meantime. Nothing is written to disk. Note what is <em>not</em> claimed: the generated strings are not wiped from memory. Qt strings are copy-on-write and cannot be reliably wiped, and the UI doesn't pretend otherwise.</p>
+  <p><strong>Copy</strong> places the value on the system clipboard and takes it back after 30 seconds — but only if the clipboard still holds that value, so it never clobbers something you copied in the meantime. Nothing reaches the disk unless you choose <strong>Save private key…</strong>. Note what is <em>not</em> claimed: the generated strings are not wiped from memory. Qt strings are copy-on-write and cannot be reliably wiped, and the UI doesn't pretend otherwise.</p>
+
+  <div class="callout warning">
+    <strong>Known limitations.</strong>
+    <ul>
+      <li><strong>Windows does not get the <code>0600</code> permission.</strong> The permission call is POSIX and is skipped there, so a saved private key inherits whatever the parent folder grants — check and tighten the file's ACL yourself after saving.</li>
+      <li><strong>RSA-4096 can take several seconds</strong> (1.6–5.9 s measured). That is the algorithm, not a hang. Ed25519 is instant.</li>
+      <li><strong>The 30-second clipboard wipe cannot reach a clipboard-history tool.</strong> It removes the value only if the system clipboard still holds it; a manager that has already stored the entry, or a clipboard shared to another device, keeps its copy.</li>
+      <li><strong>Memory is not wiped</strong>, for the reason above.</li>
+      <li><strong>The RSA code path carries an open advisory.</strong> <code>cargo audit</code> reports RUSTSEC-2023-0071 against <code>rsa</code> 0.9.10, which <code>ssh-key</code> 0.6.7 pulls in for the RSA key types. It describes a timing sidechannel in RSA <em>private-key operations</em> — decryption and signing — and no fixed release of the crate exists. Notepatra only asks it to <strong>generate</strong> a pair, and the Ed25519 and ECDSA types use different crates (<code>ed25519-dalek</code>, <code>p256</code>, <code>p384</code>) that the advisory does not touch. One more reason the default is Ed25519.</li>
+    </ul>
+  </div>
 
   <h2 id="json-tools" class="anchor-target">JSON Tools (inbuilt)</h2>
   <p>Open: <code>Tools → JSON Tools (inbuilt)</code>. Panel opens as a new tab.</p>
@@ -1801,10 +1853,67 @@ node b [Process]        <span class="cm">box — process (default)</span>
 node c {Valid?}         <span class="cm">diamond — decision</span>
 node d ([Users])        <span class="cm">cylinder — database</span>
 icon db :database "DB"  <span class="cm">rich-icon node</span></code></pre>
-  <p><strong>A rich icon set</strong> — ~55 hand-drawn icons (covering system / ER / flowchart vocabularies: <code>database, server, user, patient, hospital, document, cloud, gear, queue, cache, api, lambda, container, kubernetes, loadbalancer, firewall, mobile, browser, table, process, decision, chart</code> and more) with ~150 aliases so familiar names resolve automatically (<code>postgres</code>→database, <code>k8s</code>→kubernetes, …). <strong>Arrows:</strong> <code>a -&gt; b</code> (directed), <code>a -&gt; b : label</code> (labelled — write the colon with a leading space), <code>a &lt;-&gt; b</code> (bidirectional), and chains <code>a -&gt; b -&gt; c</code> (expands to a→b, b→c; a trailing <code>: label</code> rides the last hop). <strong>Optional colour (v0.1.104):</strong> add a <code>#hex</code> or common colour name <em>after a node's shape</em> — <code>node proc [Process] #1565c0</code>, <code>node start (Start) green</code> — and the renderer derives a readable border and auto-contrast label text; leave it off and the node keeps the palette, so diagrams stay monochrome by default. Keep shape text short and put detail on hover: <code>node dash [Dashboard] :: "Loads the saved session"</code>. Set <code>diagram flow|er|system</code>, <code>title "…"</code>, <code>palette clay|ocean|forest|mono</code>, and <code>textbox "caption"</code>.</p>
+  <p><strong>A rich icon set</strong> — ~55 hand-drawn icons (covering system / ER / flowchart vocabularies: <code>database, server, user, patient, hospital, document, cloud, gear, queue, cache, api, lambda, container, kubernetes, loadbalancer, firewall, mobile, browser, table, process, decision, chart</code> and more) with ~150 aliases so familiar names resolve automatically (<code>postgres</code>→database, <code>k8s</code>→kubernetes, …). <strong>Arrows:</strong> <code>a -&gt; b</code> (directed), <code>a -&gt; b : label</code> (labelled — write the colon with a leading space), <code>a &lt;-&gt; b</code> (bidirectional), and chains <code>a -&gt; b -&gt; c</code> (expands to a→b, b→c; a trailing <code>: label</code> rides the last hop). <strong>Optional colour (v0.1.104):</strong> add a <code>#hex</code> or common colour name <em>after a node's shape</em> — <code>node proc [Process] #1565c0</code>, <code>node start (Start) green</code> — and the renderer keeps it readable either way: on a <strong>light</strong> palette (<code>paper</code>, <code>slate</code>) the node is <strong>tinted</strong> — a soft wash of the colour, a full-strength border and the normal dark text — while on a dark palette it is filled solid with auto-contrast text. Leave the colour off and the node keeps the palette, so diagrams stay monochrome by default. Keep shape text short and put detail on hover: <code>node dash [Dashboard] :: "Loads the saved session"</code>.</p>
+
+  <h3>Title, direction, palette, caption</h3>
+  <pre><code>diagram flow            <span class="cm">flow | er | system</span>
+title "User Login"
+direction LR            <span class="cm">TB (top-down, default) | LR (left-to-right)</span>
+palette auto            <span class="cm">auto | paper | slate | clay | ocean | forest | mono | default</span>
+textbox "A caption shown under the diagram."</code></pre>
+
+  <h3>Flat rendering and light palettes (v0.1.129)</h3>
+  <p>Diagrams are drawn <strong>flat</strong>: no gradients, no drop shadows — a 1.5&nbsp;px border, the application's own font, and a tighter grid. Two <strong>light</strong> palettes ship, <code>paper</code> and <code>slate</code>, alongside the older dark ones (<code>clay</code>, <code>ocean</code>, <code>forest</code>, <code>mono</code>, <code>default</code>).</p>
+  <p><strong><code>palette auto</code> is the new default</strong> — the palette a file gets when it has no <code>palette</code> line at all. It follows the app theme: the light <code>paper</code> palette in a light theme, the dark <code>default</code> one in a dark theme, and it re-renders when you switch themes. <strong>This changes how existing files look:</strong> a <code>.npd</code> written before v0.1.129 with no <code>palette</code> line rendered dark and now renders light on a light theme. Add an explicit <code>palette default</code> (or any named dark palette) to pin the old appearance.</p>
+
+  <h3>Direction, groups, notes and a legend (v0.1.129)</h3>
+  <pre><code>direction LR                         <span class="cm">TB (top-down, default) | LR (left-to-right)</span>
+a -.-&gt; b                             <span class="cm">dashed edge — async / optional / best-effort</span>
+a &lt;.-&gt; b                             <span class="cm">dashed, both ways</span>
+group "Edge tier" : cdn api          <span class="cm">a labelled container drawn behind those nodes</span>
+note api "Rate-limited to 100 rps"   <span class="cm">a small card pinned beside the node</span>
+legend dashed "async"                <span class="cm">legend row — dashed-line swatch</span>
+legend #cc785c "hot path"            <span class="cm">legend row — colour swatch</span></code></pre>
+  <p>Every id named in a <code>group</code> must be a real node, and a node can belong to <strong>one</strong> group only. The legend box is drawn only when the file contains at least one <code>legend</code> line. <strong>Import Mermaid</strong> now maps <code>-.-&gt;</code> to a dashed edge and <code>subgraph … end</code> to a <code>group</code>.</p>
+  <div class="callout warning">
+    <strong>New reserved words.</strong> <code>group</code>, <code>note</code>, <code>legend</code>, <code>direction</code> and <code>layout</code> are keywords from v0.1.129. A diagram that used one of them as a <em>node id</em> must rename that id.
+  </div>
+
+  <h3>A complete example</h3>
+  <pre><code>diagram system
+title "Checkout path"
+direction LR
+palette auto
+
+icon user  :user  "Browser"
+icon cdn   :cloud "CDN"
+node api   [API gateway] #cc785c
+node pay   [Payments]
+node queue ([Events])
+
+group "Edge tier" : user cdn
+note api "Rate-limited to 100 rps"
+
+user -&gt; cdn : assets
+cdn  -&gt; api : /checkout
+api  -&gt; pay : charge
+api  -.-&gt; queue : audit event
+
+legend dashed "async"
+legend #cc785c "hot path"
+textbox "Dashed hops are fire-and-forget."</code></pre>
 
   <h3>Canvas &amp; export</h3>
   <p>Drag to pan, scroll to zoom, double-click to fit. Export the rendered diagram with the <strong>Export</strong> button: <strong>PNG / JPEG / PDF</strong> on every build, plus <strong>SVG / HTML</strong> where your Qt has the Svg module and <strong>WebP</strong> where it has the WebP image plugin — the menu shows exactly what your build supports, and unavailable formats are hidden rather than writing a broken file. The headless <code>npd_render &lt;file.npd&gt; &lt;out.{png|jpeg|webp|svg|pdf|html}&gt;</code> utility renders any <code>.npd</code> without launching the GUI (output format taken from the extension) — it is a build-from-source developer utility, not packaged in releases.</p>
+
+  <div class="callout warning">
+    <strong>Known limitations.</strong>
+    <ul>
+      <li><strong>A <code>note</code> is placed to the right of its node</strong> — below it when <code>direction LR</code> — and the layout reserves room for it, so a long note <strong>widens that whole row</strong>. Keep note text short, or expect the diagram to spread. Several notes on one node stack outward.</li>
+      <li><strong>Mermaid bare ids inside a <code>subgraph</code> are not grouped yet.</strong> A node that appears in the block only as a naked id — no shape, no edge — is imported, but ends up outside the generated <code>group</code>. Give it a shape or an edge inside the block and it is grouped correctly.</li>
+      <li><strong><code>palette auto</code> changes the look of existing files</strong> that never named a palette; see above for how to pin the old one.</li>
+    </ul>
+  </div>
 
   <!-- ══════════════ MCP ══════════════ -->
 

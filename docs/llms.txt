@@ -11,7 +11,7 @@ Key facts:
 - AI assistance is local-first: works with Ollama, llama.cpp, OpenRouter, Ollama Cloud, OpenAI, and Azure OpenAI. Cloud is optional; nothing leaves the machine unless a cloud backend is explicitly configured.
 - Data-analyst tools (Full edition): DuckDB/SQLite queries, CSV analysis, charts, SQL formatting.
 - Noter: a built-in text-only meeting-notes tool with templates, checklists, note-bound reminders, and PDF/Markdown export.
-- Password Generator: a built-in, fully offline generator with a random-character mode and a passphrase mode drawn from a compiled-in 2,048-word list, whose strength readout is the real log2 count of how many values the current settings can produce rather than a heuristic score.
+- Password Generator: a built-in, fully offline generator with three pages on a left rail — random characters, a passphrase drawn from a compiled-in 2,048-word list, and an OpenSSH key pair (Ed25519, ECDSA P-256/P-384, RSA 3072/4096/2048) with an optional aes256-ctr + bcrypt-pbkdf passphrase, a SHA256 fingerprint, and a save that sets 0600 before writing and refuses to overwrite. The key comment is empty by default rather than ssh-keygen's user@host. Its strength readout is the real log2 count of how many values the current settings can produce rather than a heuristic score, and every draw comes from the OS random source (getrandom) via the Rust core.
 - Editions: Lite (small, core editing) and Full (data tools); features like font packs are downloaded on demand to keep the base binary small.
 - Large-file friendly: opens multi-hundred-MB files with automatic safeguards.
 
