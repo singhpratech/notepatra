@@ -13,6 +13,35 @@ _Nothing yet._
 
 ---
 
+## [0.1.130] — 2026-10-20
+
+**A Preview pane beside the editor: Markdown and HTML rendered live, Jupyter notebooks shown as notebooks, and plain `.sql` files that run cell by cell.** Open it with View → Preview Pane, `Ctrl+Shift+V`, or the new Preview button on the built-in tools row. Website layout problems on phones are fixed in the same release.
+
+### Added
+- **Preview pane** (`View → Preview Pane`, `Ctrl+Shift+V`, and a **Preview** eye-icon button at the end of the built-in tools row showing ON/OFF). It sits right of the editor tabs in a draggable splitter (55/45 by default), follows the current tab, and shows a one-line placeholder on a tab it cannot preview. Toggling it off returns the full width to the editor. It is not saved in the session.
+- **Markdown (`.md`)** rendered live with Qt's GitHub-dialect parser (headings, emphasis, lists, task lists, pipe tables, fenced code, block quotes, links), re-rendering 250 ms after you stop typing. Relative images resolve against the file's folder; Light, Dark and Monokai each get matching colours. `http`/`https`/`mailto` links open in the system browser, `#anchor` links scroll.
+- **HTML (`.html`, `.htm`, `.xhtml`)**: Lite renders through Qt's built-in rich-text engine (a CSS subset); Full renders with the real Chromium engine, with relative images and stylesheets beside the file loading. JavaScript is disabled, no remote resources load, and the page cannot navigate the pane (meta-refresh, forms and iframes are blocked). HTML over about 1.5 MB falls back to the built-in engine even in Full.
+- **Jupyter notebook viewer (`.ipynb`)**: the file still opens as JSON text; the pane shows markdown cells rendered, code cells with `In [n]:` counts and the kernel language, and outputs (streams, `execute_result` / `display_data` as text, HTML tables or embedded PNG, and error tracebacks with ANSI colours stripped). nbformat 4 only; `<script>` tags in HTML outputs are removed. Read-only: cells are not executed.
+- **SQL cells (`.sql`)**: a file with `-- %%` separator lines becomes a notebook (the VS Code / Jupytext convention; the file stays plain SQL). `-- %% [markdown]` or `-- %% md` starts a notes cell rendered as Markdown. Each SQL cell has a **Run** button, a status line and a result table; **Run All** stops at the first error; **Stop** cancels; `Ctrl+Return` runs the cell under the cursor, only while the pane shows a SQL notebook.
+- **Connection chooser for SQL cells** (the AI assistant's and the MCP server's SQL paths and their read-only gates are untouched): **Scratch (SQLite, temporary)**, **Scratch (DuckDB, temporary)** in Full builds, and every saved connection from Settings. Cells on a saved connection are read-only until **Allow writes** is ticked. Results are capped at 500 rows; queries run off the GUI thread.
+- Two new suites: `test_notebook_render` (49 assertions) and `test_preview_pane` (60+ assertions driving a real MainWindow offscreen).
+
+### Changed
+- **Website layout.** Pages are now verified at desktop width and at 390 px. The download flavour cards and latest release card fit phone screens, the docs page's wide tables and long inline code no longer widen the page, and the top bar wraps on phones.
+- Registered suite count is now **81 on the Full build, 78 on Lite** (was 79 / 76).
+
+### Fixed
+- **FAQ card headings wrapped one word per line**, because the shared card grid assumed an icon column.
+- **Download flavour cards and the latest release card overflowed phone screens.**
+- **The docs page's wide tables and long inline code widened the page.**
+- **The top bar could not wrap on phones.**
+
+### Known issues
+- Stop interrupts DuckDB queries immediately; for SQLite and the Qt SQL drivers it only flags the request and the cell stays busy until the server returns (120-second ceiling).
+- With the Qt SQLite driver, a SQL cell containing several statements runs only the first.
+
+---
+
 ## [0.1.129] — 2026-08-22
 
 **`ssh-keygen` puts your username and your machine's name into every key it makes; this one leaves the comment blank.** The Password Generator's two radio buttons become a left rail — Password / Passphrase / **SSH key** — and the new page generates a real OpenSSH pair locally, off the GUI thread, with the public line and its SHA256 fingerprint shown and the private key hidden until asked for. Separately, `.npd` diagrams are drawn flat, gain two light palettes and a theme-following default, and learn groups, notes, legends and dashed edges.

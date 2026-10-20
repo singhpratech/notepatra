@@ -51,7 +51,7 @@ Not a port. Not a wrapper. Something new — **for everyone**.
 
 I asked: **what would a small native code editor look like if it was built today, in 2026, when AI is part of every developer's workflow, and ran natively on Linux + macOS + Windows from one codebase?**
 
-The answer: a tiny native executable — ~13 MB bare (~13.4 MB on Linux x64) on every platform — with a Rust-powered core, Scintilla editing engine, and local-first AI integration (cloud backends optional). v0.1.129 downloads: 4.7 MB Linux x64 (tarball, Qt from the system), 28.0 MB on macOS (DMG with bundled Qt), 32.8–43.9 MB on Windows (MSI/zip/setup.exe with bundled Qt DLLs). An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your AI to figure it out — local by default, six cloud backends one click away when you want a frontier model. No telemetry. No subscription. No mandatory API key.
+The answer: a tiny native executable — ~13 MB bare (~13.4 MB on Linux x64) on every platform — with a Rust-powered core, Scintilla editing engine, and local-first AI integration (cloud backends optional). v0.1.130 downloads: 4.7 MB Linux x64 (tarball, Qt from the system), 28.0 MB on macOS (DMG with bundled Qt), 32.8–43.9 MB on Windows (MSI/zip/setup.exe with bundled Qt DLLs). An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your AI to figure it out — local by default, six cloud backends one click away when you want a frontier model. No telemetry. No subscription. No mandatory API key.
 
 Notepatra started on Linux — because that's where the gap was. But great tools shouldn't have borders. **Notepatra runs on Linux, Windows, and macOS.** Same codebase. Same features. No one gets left behind.
 
@@ -208,6 +208,7 @@ A first-class diagramming surface that **renders in the default binary on every 
 |---|---|
 | **Built-in Terminal** | `Ctrl+`` — opens as a tab, runs real commands |
 | **REST Client** | `Ctrl+Shift+R` — send HTTP requests, see responses with pretty JSON |
+| **Preview pane** | `Ctrl+Shift+V` — Markdown/HTML live, `.ipynb` viewer, SQL cells with `-- %%` |
 | **Hex Editor** | View > Hex Editor — color-coded hex dump of any binary file |
 | **Markdown Converter** | Features > Markdown — convert selection to table, list, code block, bold, link, heading, or strip HTML to markdown |
 | **File Explorer** | `Ctrl+Shift+E` — tree view sidebar |
@@ -238,12 +239,14 @@ A first-class diagramming surface that **renders in the default binary on every 
 | **View** | `F11` | Full screen |
 | | `Ctrl+=` / `Ctrl+-` | Zoom in / out |
 | | `Alt+0` | Fold all |
+| | `Ctrl+Shift+V` | Preview pane |
 | **Macro** | `Ctrl+Shift+M` | Start recording |
 | | `Ctrl+Shift+T` | Stop recording |
 | | `Ctrl+Shift+P` | Playback |
 | **Features** | `Ctrl+`` | Terminal |
 | | `Ctrl+Shift+A` | AI Assistant |
 | | `Ctrl+Shift+E` | File Explorer |
+| | `Ctrl+Return` | Run SQL cell (preview pane) |
 | **Tabs** | `Ctrl+Tab` | Next tab |
 | | Middle-click | Close tab |
 | | Double-click empty | New tab |
@@ -300,7 +303,7 @@ Full tool reference, Claude Desktop / Agents SDK snippets, security model, and h
 **Why this hybrid?**
 - **C++** because Qt and QScintilla are C++ — zero friction for UI
 - **Rust** because file I/O, text processing, and parsing must never crash — Rust's ownership system guarantees memory safety
-- **Result**: the speed of C++, the safety of Rust. The bare executable is **~13 MB** on every platform (~13.4 MB Linux x64, similar on macOS / Windows). Latest v0.1.129 download sizes: **4.7 MB** Linux x64 tar.gz · **4.4 MB** Linux ARM64 tar.gz · **28.0 MB** macOS DMG (with bundled Qt) · **43.9 MB** Windows MSI · **33.0 MB** Windows NSIS · **37.8 MB** Windows portable zip. _Installed footprint on Windows is ~75-85 MB after the MSI extracts bundled Qt + QScintilla DLLs — normal for any Qt-based installer._
+- **Result**: the speed of C++, the safety of Rust. The bare executable is **~13 MB** on every platform (~13.4 MB Linux x64, similar on macOS / Windows). Latest v0.1.130 download sizes: **4.7 MB** Linux x64 tar.gz · **4.4 MB** Linux ARM64 tar.gz · **28.0 MB** macOS DMG (with bundled Qt) · **43.9 MB** Windows MSI · **33.0 MB** Windows NSIS · **37.8 MB** Windows portable zip. _Installed footprint on Windows is ~75-85 MB after the MSI extracts bundled Qt + QScintilla DLLs — normal for any Qt-based installer._
 
 ---
 
@@ -320,7 +323,7 @@ irm https://notepatra.org/install.ps1 | iex
 
 That's it. Auto-detects your OS, downloads the right binary, installs it, adds to PATH, creates shortcuts.
 
-### Or download manually — [Latest release: v0.1.129](https://github.com/singhpratech/notepatra/releases/latest)
+### Or download manually — [Latest release: v0.1.130](https://github.com/singhpratech/notepatra/releases/latest)
 
 | Platform | Download | Size | What's inside |
 |---|---|---|---|
@@ -345,11 +348,11 @@ For one-time-install-then-every-user-sees-it on a shared machine, or silent push
 
 | OS | Artefact | Silent admin install |
 |---|---|---|
-| 🪟 **Windows** | [`notepatra-x.x.x.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-0.1.129.msi /quiet` — installs to `C:\Program Files\Notepatra\`, adds system PATH, registers HKCR file associations, all-users Start Menu. WiX-built, MajorUpgrade-aware, SCCM-friendly. |
+| 🪟 **Windows** | [`notepatra-x.x.x.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-0.1.130.msi /quiet` — installs to `C:\Program Files\Notepatra\`, adds system PATH, registers HKCR file associations, all-users Start Menu. WiX-built, MajorUpgrade-aware, SCCM-friendly. |
 | 🍎 **macOS** | [`Notepatra.dmg`](https://github.com/singhpratech/notepatra/releases/latest) | Mount + `sudo cp -R "/Volumes/Notepatra/Notepatra.app" /Applications/` from a deployment script. Or open the DMG manually and drag to `/Applications` (admin password). Notarised + stapled. |
-| 🐧 **Debian / Ubuntu / Mint / Pop!_OS** (x64 + ARM64) | [`notepatra_0.1.129_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra_0.1.129_amd64.deb` — installs to `/opt/notepatra/` + symlink at `/usr/bin/notepatra`, hicolor icons, `.desktop` registration. ARM64: replace `amd64` → `arm64`. |
-| 🐧 **Fedora / RHEL / CentOS Stream / Rocky / Alma** (x64 + ARM64) | [`notepatra-0.1.129-1.x86_64.rpm`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo dnf install ./notepatra-0.1.129-1.x86_64.rpm` — same layout as the .deb. ARM64: replace `x86_64` → `aarch64`. Bundles QScintilla 2.14.1 alongside the binary because Fedora ships an incompatible packaging. |
-| 🐧 **Arch / openSUSE Tumbleweed / Manjaro / EndeavourOS / other glibc 2.38+** | [`Notepatra-0.1.129-x86_64.AppImage`](https://github.com/singhpratech/notepatra/releases/latest) | `chmod +x Notepatra-0.1.129-x86_64.AppImage && sudo cp Notepatra-0.1.129-x86_64.AppImage /opt/notepatra.AppImage && sudo ln -s /opt/notepatra.AppImage /usr/local/bin/notepatra`. Requires glibc 2.38+ (Ubuntu 24.04+, Fedora 40+, Arch, Tumbleweed). Older distros: use the .deb / .rpm. |
+| 🐧 **Debian / Ubuntu / Mint / Pop!_OS** (x64 + ARM64) | [`notepatra_0.1.130_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra_0.1.130_amd64.deb` — installs to `/opt/notepatra/` + symlink at `/usr/bin/notepatra`, hicolor icons, `.desktop` registration. ARM64: replace `amd64` → `arm64`. |
+| 🐧 **Fedora / RHEL / CentOS Stream / Rocky / Alma** (x64 + ARM64) | [`notepatra-0.1.130-1.x86_64.rpm`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo dnf install ./notepatra-0.1.130-1.x86_64.rpm` — same layout as the .deb. ARM64: replace `x86_64` → `aarch64`. Bundles QScintilla 2.14.1 alongside the binary because Fedora ships an incompatible packaging. |
+| 🐧 **Arch / openSUSE Tumbleweed / Manjaro / EndeavourOS / other glibc 2.38+** | [`Notepatra-0.1.130-x86_64.AppImage`](https://github.com/singhpratech/notepatra/releases/latest) | `chmod +x Notepatra-0.1.130-x86_64.AppImage && sudo cp Notepatra-0.1.130-x86_64.AppImage /opt/notepatra.AppImage && sudo ln -s /opt/notepatra.AppImage /usr/local/bin/notepatra`. Requires glibc 2.38+ (Ubuntu 24.04+, Fedora 40+, Arch, Tumbleweed). Older distros: use the .deb / .rpm. |
 
 > All artefacts ship with cosign `.sig` + `.pem` for keyless Sigstore verification and SLSA build provenance. See **[Verify your download](#verify-your-download)** below.
 
@@ -359,9 +362,9 @@ For teams that **can't or won't send code to public LLM endpoints** — regulate
 
 | OS | Artefact | Silent admin install |
 |---|---|---|
-| 🪟 **Windows** | [`notepatra-local-ai-0.1.129.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-local-ai-0.1.129.msi /quiet` — installs to `C:\Program Files\Notepatra Local AI\`, distinct UpgradeCode so SCCM treats it as its own product. Add/Remove Programs shows "Notepatra Local AI". |
-| 🐧 **Debian/Ubuntu x64** | [`notepatra-local-ai_0.1.129_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.129_amd64.deb` |
-| 🐧 **Debian/Ubuntu ARM64** | [`notepatra-local-ai_0.1.129_arm64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.129_arm64.deb` |
+| 🪟 **Windows** | [`notepatra-local-ai-0.1.130.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-local-ai-0.1.130.msi /quiet` — installs to `C:\Program Files\Notepatra Local AI\`, distinct UpgradeCode so SCCM treats it as its own product. Add/Remove Programs shows "Notepatra Local AI". |
+| 🐧 **Debian/Ubuntu x64** | [`notepatra-local-ai_0.1.130_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.130_amd64.deb` |
+| 🐧 **Debian/Ubuntu ARM64** | [`notepatra-local-ai_0.1.130_arm64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.130_arm64.deb` |
 
 **The binary physically cannot reach `api.openai.com`, `api.anthropic.com`, `openrouter.ai`, `api.mistral.ai`, `generativelanguage.googleapis.com`, or any other public LLM endpoint.** Every `QNetworkAccessManager` request goes through an allowlist that only accepts:
 
@@ -373,7 +376,7 @@ For teams that **can't or won't send code to public LLM endpoints** — regulate
 
 Local Ollama, local llama.cpp, self-hosted Ollama on the LAN, and any other OpenAI-compatible server you have installed locally or on your private network — **all continue to work** in the cloud-free build. Only public-cloud LLM endpoints are blocked. The cloud-URL paste box is stripped from the UI as well, so users can't even type a public host. Auditors can confirm by running `strings notepatra | grep -c openai.com` — zero hits.
 
-On Linux the two flavors share the same `notepatra` binary name on disk; `apt` Conflicts ensures only one of `notepatra` / `notepatra-local-ai` is installed at a time, swap transactionally with `sudo apt install ./notepatra-local-ai_0.1.129_amd64.deb`. On Windows the two MSIs are independent products (different UpgradeCode + ProductName + install dir) so they can coexist if needed; admins typically push one or the other based on policy. `notepatra --version` self-identifies the build by name — only the bare lite build carries an edition suffix: `Notepatra Lite v0.1.129` for the lite build and `Notepatra v0.1.129` for the full build (DuckDB bundled), plus `Notepatra Local AI Lite v0.1.129` / `Notepatra Local AI v0.1.129` for the cloud-free (local-ai) builds; the same name shows in the window title bar and the About dialog.
+On Linux the two flavors share the same `notepatra` binary name on disk; `apt` Conflicts ensures only one of `notepatra` / `notepatra-local-ai` is installed at a time, swap transactionally with `sudo apt install ./notepatra-local-ai_0.1.130_amd64.deb`. On Windows the two MSIs are independent products (different UpgradeCode + ProductName + install dir) so they can coexist if needed; admins typically push one or the other based on policy. `notepatra --version` self-identifies the build by name — only the bare lite build carries an edition suffix: `Notepatra Lite v0.1.130` for the lite build and `Notepatra v0.1.130` for the full build (DuckDB bundled), plus `Notepatra Local AI Lite v0.1.130` / `Notepatra Local AI v0.1.130` for the cloud-free (local-ai) builds; the same name shows in the window title bar and the About dialog.
 
 ### Verify your download
 
@@ -604,7 +607,7 @@ cl /LD myplugin.cpp /Fe:myplugin.dll
 
 ## Tests
 
-Focused automated regression tests are wired through CMake + CTest and run in CI — **79 test suites** on the Full build (76 on Lite, which omits the two DuckDB suites and the WebEngine-gated Noter-export suite); all green, each with many assertions. A representative sample:
+Focused automated regression tests are wired through CMake + CTest and run in CI — **81 test suites** on the Full build (78 on Lite, which omits the two DuckDB suites and the WebEngine-gated Noter-export suite); all green, each with many assertions. A representative sample:
 
 - `test_lexers` — verifies every shipped QScintilla lexer produces real styling
 - `test_palette` — verifies the canonical 9-hue palette colors and bold/italic styles
@@ -618,6 +621,8 @@ Focused automated regression tests are wired through CMake + CTest and run in CI
 - `test_aifix` — exercises the AI-fix cleanup path against a real Ollama daemon (skips cleanly when offline)
 - `test_llamacpp` — exercises the llama.cpp backend path
 - `test_ai_context` — verifies the AI workspace-context summarizer
+- `test_notebook_render` — 49 assertions across the Markdown, notebook and SQL-cell renderers
+- `test_preview_pane` — drives a real MainWindow offscreen: live refresh, notebook, HTML, scratch-DB cells, read-only refusal, theme switches
 
 Run them locally with:
 
@@ -635,6 +640,7 @@ Notepatra follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic 
 
 | Version | Date | Highlights |
 |---|---|---|
+| [**v0.1.130**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.130) | 2026-10-20 | **A Preview pane beside the editor.** `View > Preview Pane`, `Ctrl+Shift+V`, or the new **Preview** eye-icon button at the end of the built-in tools row opens a pane to the right of the editor tabs (draggable splitter, 55/45 by default; follows the current tab; not saved in the session). **Markdown** renders live with Qt's GitHub-dialect parser (tables, task lists, fenced code), re-rendering 250 ms after you stop typing, theme-aware in Light / Dark / Monokai, relative images resolved against the file. **HTML** renders through Qt's rich-text engine in Lite and through real **Chromium** in Full — **JavaScript off, no remote resources, the page cannot navigate the pane** (meta-refresh, forms, iframes blocked); over ~1.5 MB it falls back to the built-in engine. **Jupyter `.ipynb`** shows as a read-only notebook (markdown cells, `In [n]:` code cells, stream / text / HTML-table / PNG outputs, ANSI-stripped tracebacks; nbformat 4 only, `<script>` removed) while the file still opens as JSON. **SQL cells**: a `.sql` file with `-- %%` separators becomes a notebook — `-- %% [markdown]` notes, a **Run** button and result table per cell, **Run All** (stops at first error), **Stop**, and `Ctrl+Return` to run the cell under the cursor. Connections: **Scratch (SQLite, temporary)** (state persists across cells), **Scratch (DuckDB, temporary)** in Full, and every saved connection — **read-only by default, tick Allow writes** to change data. Results capped at 500 rows, queries run off the GUI thread, 120 s ceiling; Stop is immediate for DuckDB only, and the Qt SQLite driver runs only the first statement of a multi-statement cell. Website layout fixes (FAQ headings, phone overflow on cards, docs tables and inline code, top-bar wrapping), verified at desktop and 390 px. No new dependency, no network; session handling, the Markdown Converter, AI tools and the MCP bridge are unchanged. Suites: `test_notebook_render` 49 · `test_preview_pane` 60+ — **81** suites on Full, **78** on Lite, offscreen ctest green on both. |
 | [**v0.1.129**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.129) | 2026-08-22 | **SSH keys behind a rail, and diagrams that look drawn by an engineer.** The Password Generator's two radio buttons become a **left rail** — **Password** / **Passphrase** / **SSH key** (`Alt+1` / `Alt+2` / `Alt+3`), and `Tools > Password Generator — Passwords / Passphrases / SSH keys`. The new **SSH key** page generates a real OpenSSH pair: **Ed25519** (recommended), **ECDSA P-256 / P-384**, **RSA 3072 / 4096**, **RSA 2048** (legacy); an optional passphrase encrypts the private key with `aes256-ctr` + `bcrypt-pbkdf`, the same construction `ssh-keygen` uses. **The comment field is empty by default on purpose** — `ssh-keygen` defaults it to `user@host`, which copies your username and machine name into every `authorized_keys` the key is pasted into. The public line and its **SHA256 fingerprint** show immediately; the private key stays hidden until **Show private key**; **Save private key…** creates the file, sets `0600`, *then* writes, refuses to overwrite, and drops the `.pub` beside it. Generation runs **off the GUI thread** (RSA-4096 measured 1.6–5.9 s) and the 30-second clipboard wipe arms for the **private key only**. Keys come from the **OS random source** (`getrandom`) via the Rust core — and **every password draw now uses that source too**, with Qt's generator demoted to a fallback. Interop is asserted against the system `ssh-keygen` (`-y`, `-lf`, `-y -P`). Binary grows ~**0.6 MB** for the pure-Rust crypto (RustCrypto `ssh-key`). **Diagrams (`.npd`) are now flat** — no gradients, no shadows, 1.5 px borders, the app font — with two light palettes (`paper`, `slate`) and a new default **`palette auto`** that follows the app theme, so an existing file with no `palette` line now renders **light** on a light theme. New grammar: `direction LR|TB`, dashed edges `a -.-> b`, `group "Label" : a b c`, `note <id> "text"`, and `legend dashed "…"` / `legend #hex "…"`; per-node colours render as tints on light palettes; Mermaid import maps `-.->` and `subgraph`. `group`, `note`, `legend`, `direction` and `layout` are now **reserved words**. Suites: `test_passwordgen` 67 · `test_passwordgen_panel` 99 · `test_npd_parser` 117 · `test_mermaid_import` 44 · `test_diagram_view` 19 · cargo 175 — full offscreen ctest **79/79** green. |
 | [**v0.1.128**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.128) | 2026-08-20 | **A password generator whose entropy figure is a count, not a compliment.** New built-in **Password Generator** — the **Password** button on the Built-in Tools toolbar (third, right after **AI**), or `Tools > Password Generator — Random / Passphrase` — producing either **random characters** (4–256, default 20; a-z / A-Z / 0-9 / a 27-character symbol set that omits the quotes, backslash, backtick, pipe and space so the result survives a shell command, a YAML file or a connection string; free-text extra characters; optional look-alike exclusion) or a **passphrase** (3–24 words from a **2,048-word list compiled into the binary**, so each word is worth exactly **11 bits** and six words is 66 bits), **1 to 100** at a time. **The bits readout is the base-2 logarithm of how many values the current settings can produce** — not a heuristic score of how complicated the output looks — so ticking *at least one from each set* makes the number **drop**, recomputed by inclusion–exclusion because the guarantee rules out every password that misses a set; most generators advertise the unconstrained figure while enforcing the constraint. Draws use `QRandomGenerator::system()` (the OS CSPRNG) with rejection sampling, and the set guarantee is met by **re-drawing** rather than placing-and-shuffling, which would skew the distribution and make the bits figure a lie. The panel is a plain widget, not an editor, so a generated value never reaches `session.json`, an AI backend, or a connected MCP client · **Copy** takes the value back off the clipboard after 30 seconds, but only if it still holds it · nothing is written to disk. Ships in **every build including Lite**, no new dependency, fully offline · two new suites (`test_passwordgen`, `test_passwordgen_panel`) take the Full build to **78/78** ctest green. No MCP verbs, lexers or file extensions changed. |
 | [**v0.1.127**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.127) | 2026-08-07 | **Five doors refused a private key. The sixth handed it over in chunks.** Retesting v0.1.126 found `select_range` + `get_selection` returning credential-file contents that `open_file`, `read_tab`, `find_in_tab`, `search_project` and `resources/read` all correctly refused — `get_selection` had been exempted on the reasoning that a selection is human-made, but `select_range` lets the *client* choose the range, which makes that reasoning false. `apply_edit` was a quieter form of the same thing: reading the buffer as a match **oracle**, so "no match" versus a card naming the match reports a file's contents one probe at a time. **The fix is structural.** This is the third release with the same shape — v0.1.125 unified two hand-maintained copies of the deny *list*, v0.1.126 added the check to four verbs, and the retest found a fifth and sixth. Every fix was correct and none converged, because what kept going stale was the **enumeration**. Buffer text now leaves the editor through exactly one accessor that refuses before returning, `select_range` will not even *stage* a selection over a credential file, and a test lints the bridge source and fails the build on any direct buffer read that bypasses it. **Also fixed:** `read_tab`'s marker claimed `[truncated at 5 MB]` whatever cap actually applied (now `[truncated: showing N of M characters]`, and the v0.1.126 claim that it "always reports truncated and total_chars" is corrected — true of the wire, not the tool result) · `select_range` advertised `tab_id` in its schema and rejected it with `-32602`, so a test now walks the whole tool list asserting every advertised selector is accepted · `list_open_tabs` emitted `id` where verbs take `tab_id`, both ship for one release. |
