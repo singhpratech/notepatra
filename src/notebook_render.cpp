@@ -94,22 +94,23 @@ QString stripAnsi(const QString &s) {
     QString out;
     out.reserve(s.size());
     const int n = s.size();
-    for (int i = 0; i < n; ++i) {
+    int i = 0;
+    while (i < n) {
         const QChar ch = s.at(i);
         if (ch.unicode() != 0x1b) {
             out.append(ch);
+            ++i;
             continue;
         }
         if (i + 1 >= n) break;
         const QChar kind = s.at(i + 1);
+        int j = i + 2;
         if (kind == QLatin1Char('[')) {
             // CSI: parameters/intermediates, then one final byte in 0x40..0x7E.
-            int j = i + 2;
             while (j < n && !(s.at(j).unicode() >= 0x40 && s.at(j).unicode() <= 0x7e)) ++j;
-            i = j;
+            i = j + 1;
         } else if (kind == QLatin1Char(']')) {
             // OSC: terminated by BEL or ESC backslash.
-            int j = i + 2;
             while (j < n) {
                 if (s.at(j).unicode() == 0x07) break;
                 if (s.at(j).unicode() == 0x1b && j + 1 < n && s.at(j + 1) == QLatin1Char('\\')) {
@@ -118,9 +119,9 @@ QString stripAnsi(const QString &s) {
                 }
                 ++j;
             }
-            i = j;
+            i = j + 1;
         } else {
-            i += 1;
+            i += 2;
         }
     }
     return out;
