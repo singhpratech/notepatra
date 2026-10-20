@@ -453,13 +453,23 @@ int main(int argc, char *argv[]) {
     sqlEd->setCursorPosition(sqlEd->lines() - 2, 0);
     mw.setAiDockVisible(true);
     QTest::qWait(60);
+    // Focus hand-off is asynchronous under offscreen Qt (the ARM runner needed
+    // more than 30 ms), so poll for it instead of asserting after one wait.
     AIPanel *dockPanel = nullptr;
-    for (AIPanel *p : mw.findChildren<AIPanel *>())
-        if (p->isVisible()) dockPanel = p;
-    if (dockPanel) dockPanel->focusInput();
-    QTest::qWait(30);
-    QWidget *focus = QApplication::focusWidget();
-    const bool focusInAi = focus && dockPanel && dockPanel->isAncestorOf(focus);
+    QWidget *focus = nullptr;
+    bool focusInAi = false;
+    for (int tries = 0; tries < 60 && !focusInAi; ++tries) {
+        if (!dockPanel)
+            for (AIPanel *p : mw.findChildren<AIPanel *>())
+                if (p->isVisible()) dockPanel = p;
+        if (dockPanel) {
+            QApplication::setActiveWindow(&mw);
+            dockPanel->focusInput();
+        }
+        QTest::qWait(50);
+        focus = QApplication::focusWidget();
+        focusInAi = focus && dockPanel && dockPanel->isAncestorOf(focus);
+    }
     EXPECT_TRUE("k: focus is inside the AI panel", focusInAi);
     if (focusInAi) QTest::keyClick(focus, Qt::Key_Return, Qt::ControlModifier);
     EXPECT_TRUE("k: Ctrl+Return in the AI panel did not start a notebook run",
