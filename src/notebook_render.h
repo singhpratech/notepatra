@@ -9,6 +9,7 @@
 
 #include <QByteArray>
 #include <QString>
+#include <QTextCharFormat>
 #include <QVector>
 
 namespace NotebookRender {
@@ -20,6 +21,11 @@ struct Colors {
 // GitHub-dialect Markdown to HTML via QTextDocument (escaped <pre> on Qt < 5.14).
 // Code is emitted as monospace <pre>/spans; `colors` (optional) tints code and links.
 QString markdownToHtml(const QString &md, const Colors *colors = nullptr);
+
+// True for a fragment the Markdown importer marked as code. Qt >= 5.15.3 sets
+// the fixed-pitch flag; Qt 5.15.2 (CI's Windows Qt) only sets the system
+// fixed font, so the family is checked as well.
+bool isCodeCharFormat(const QTextCharFormat &cf);
 
 // Inner part of an HTML document's <body>, or the input when there is none.
 QString htmlBodyContent(const QString &html);

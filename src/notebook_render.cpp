@@ -9,6 +9,7 @@
 #include <QRegularExpression>
 #include <QStringList>
 #include <QColor>
+#include <QFontDatabase>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -18,6 +19,13 @@ namespace NotebookRender {
 
 QString escapeHtml(const QString &s) {
     return s.toHtmlEscaped();
+}
+
+bool isCodeCharFormat(const QTextCharFormat &cf) {
+    if (cf.fontFixedPitch()) return true;
+    if (!cf.hasProperty(QTextFormat::FontFamily)) return false;
+    const QString mono = QFontDatabase::systemFont(QFontDatabase::FixedFont).family();
+    return !mono.isEmpty() && cf.fontFamily().compare(mono, Qt::CaseInsensitive) == 0;
 }
 
 QString markdownToHtml(const QString &md, const Colors *colors) {
@@ -38,7 +46,7 @@ QString markdownToHtml(const QString &md, const Colors *colors) {
             const QTextFragment f = it.fragment();
             const QTextCharFormat cf = f.charFormat();
             if (cf.isAnchor()) blockSpans.append({f.position(), f.length(), true});
-            if (cf.fontFixedPitch()) blockSpans.append({f.position(), f.length(), false});
+            if (isCodeCharFormat(cf)) blockSpans.append({f.position(), f.length(), false});
             else allFixed = false;
         }
         if (bf.hasProperty(QTextFormat::BlockCodeFence) ||

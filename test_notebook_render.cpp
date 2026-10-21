@@ -5,8 +5,10 @@
 
 #include "notebook_render.h"
 
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QImage>
+#include <QTextCharFormat>
 
 #include <cstdio>
 
@@ -76,6 +78,20 @@ int main(int argc, char *argv[]) {
         EXPECT_TRUE("htmlBodyContent strips the <body> wrapper",
                     !htmlBodyContent(html).contains(QLatin1String("<body")) &&
                         htmlBodyContent(html).contains(QLatin1String("Title Heading")));
+        // Qt 5.15.2's importer marks inline code with setFont(systemFont(FixedFont))
+        // only, no fixed-pitch flag (Windows CI); 5.15.3+ adds the flag.
+        QTextCharFormat qt5152;
+        qt5152.setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+        qt5152.setFontFixedPitch(false);
+        EXPECT_TRUE("5.15.2-shaped inline code (mono family, no flag) is code",
+                    isCodeCharFormat(qt5152));
+        QTextCharFormat flagged;
+        flagged.setFontFixedPitch(true);
+        EXPECT_TRUE("fixed-pitch flag alone is code", isCodeCharFormat(flagged));
+        QTextCharFormat plain;
+        plain.setFontFamily(QStringLiteral("NotepatraNoSuchProportionalFont"));
+        EXPECT_TRUE("proportional family without flag is not code", !isCodeCharFormat(plain));
+        EXPECT_TRUE("empty format is not code", !isCodeCharFormat(QTextCharFormat()));
     }
 
     std::printf("-- stripAnsi --\n");
