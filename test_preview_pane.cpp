@@ -453,8 +453,10 @@ int main(int argc, char *argv[]) {
     sqlEd->setCursorPosition(sqlEd->lines() - 2, 0);
     mw.setAiDockVisible(true);
     QTest::qWait(60);
-    // Focus hand-off is asynchronous under offscreen Qt (the ARM runner needed
-    // more than 30 ms), so poll for it instead of asserting after one wait.
+    // Offline CI has no Ollama, so the chat input is DISABLED ("(Ollama offline)")
+    // and setFocus on it is a no-op. The guard only needs focus somewhere inside
+    // the panel, so fall back to any enabled, focusable child. Poll: the hand-off
+    // is asynchronous under offscreen Qt.
     AIPanel *dockPanel = nullptr;
     QWidget *focus = nullptr;
     bool focusInAi = false;
@@ -465,11 +467,21 @@ int main(int argc, char *argv[]) {
         if (dockPanel) {
             QApplication::setActiveWindow(&mw);
             dockPanel->focusInput();
+            focus = QApplication::focusWidget();
+            if (!(focus && dockPanel->isAncestorOf(focus))) {
+                for (QWidget *w : dockPanel->findChildren<QWidget *>()) {
+                    if (w->isVisible() && w->isEnabled() && (w->focusPolicy() & Qt::TabFocus)) {
+                        w->setFocus(Qt::OtherFocusReason);
+                        if (QApplication::focusWidget() == w) break;
+                    }
+                }
+            }
         }
         QTest::qWait(50);
         focus = QApplication::focusWidget();
         focusInAi = focus && dockPanel && dockPanel->isAncestorOf(focus);
     }
+    if (focus) std::printf("     (focus widget: %s)\n", focus->metaObject()->className());
     EXPECT_TRUE("k: focus is inside the AI panel", focusInAi);
     if (focusInAi) QTest::keyClick(focus, Qt::Key_Return, Qt::ControlModifier);
     EXPECT_TRUE("k: Ctrl+Return in the AI panel did not start a notebook run",
