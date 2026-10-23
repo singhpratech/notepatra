@@ -15,7 +15,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Notepatra MCP — Your editor, readable by your AI</title>
-<meta name="description" content="Notepatra's MCP server (introduced v0.1.118, 49 tools as of v0.1.129): tools that let Claude, Codex, and any spec-compliant MCP client read your open tabs, search your workspace, run read-only SQL, inspect Git — and, only with your explicit per-action approval, edit, save, and create Noter notes. Local socket + stdio, nothing leaves your machine.">
+<meta name="description" content="Notepatra's MCP server (introduced v0.1.118, 49 tools as of v0.1.130): tools that let Claude, Codex, and any spec-compliant MCP client read your open tabs, search your workspace, run read-only SQL, inspect Git — and, only with your explicit per-action approval, edit, save, and create Noter notes. Local socket + stdio, nothing leaves your machine.">
 <link rel="canonical" href="https://notepatra.org/mcp.html">
 <!-- Open Graph / Twitter. og:image is same-origin on purpose: an
      off-domain card is the same class of bug the favicon had. 1200x630
@@ -82,6 +82,8 @@
     border-bottom: 1px solid var(--border);
     padding: 12px 24px;
     display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
     align-items: center;
     justify-content: space-between;
   }
@@ -101,7 +103,8 @@
     font-size: 12px;
     border: 1px solid var(--border);
   }
-  .topbar-right { display: flex; gap: 20px; align-items: center; }
+  .topbar-right { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+  .table-wrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .topbar-right a {
     color: var(--text-mute);
     text-decoration: none;
@@ -153,7 +156,8 @@
     padding: 2px 6px;
     border-radius: 4px;
     border: 1px solid var(--border);
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   main.content pre {
     background: var(--bg-code);
@@ -242,7 +246,7 @@
   <div class="topbar-left">
     <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">MCP · v0.1.129 · 49 tools</span>
+    <span class="tag">MCP · v0.1.130 · 49 tools</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
@@ -258,7 +262,7 @@
   <p class="lead">From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a Model Context Protocol server that lets Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client see what you have open, search your workspace, run read-only SQL over your data files, read your Git status and Noter notes, and — only with your explicit per-action approval — edit, save, and create notes. Everything runs over stdio and a local socket. Nothing leaves your machine.</p>
 
   <div class="callout info">
-    <strong>Release status.</strong> MCP first shipped in v0.1.118; the current release is v0.1.129. The server provides <strong>49 tools</strong> (Git, read-only SQL, Noter write verbs, diagram export) and supports Windows named-pipe transport, and v0.1.120 adds a prebuilt, cosign-signed Windows sidecar (<code>notepatra-mcp-windows-x64.zip</code>) plus a one-click <code>notepatra-mcp.mcpb</code> Claude Desktop bundle as release assets. Everything on this page describes v0.1.129.
+    <strong>Release status.</strong> MCP first shipped in v0.1.118; the current release is v0.1.130. The server provides <strong>49 tools</strong> (Git, read-only SQL, Noter write verbs, diagram export) and supports Windows named-pipe transport, and v0.1.120 adds a prebuilt, cosign-signed Windows sidecar (<code>notepatra-mcp-windows-x64.zip</code>) plus a one-click <code>notepatra-mcp.mcpb</code> Claude Desktop bundle as release assets. Everything on this page describes v0.1.130.
     <br><br>
     <strong>v0.1.125, v0.1.126 and v0.1.127 were all MCP-only releases</strong>, driven by testing this server against a real editor rather than by new features. v0.1.125 fixed a credential leak in <code>search_project</code>, a <code>goto_line</code> that reported success from the wrong line, and a sidecar that hung on every mistyped argument. A retest then found that the credential fix covered only one of four read paths — see <a href="#v127">what changed in v0.1.127</a> below.
   </div>
@@ -293,7 +297,7 @@
   <p><code>notepatra-mcp</code> exposes 49 tools, grouped in three tiers by what they can touch. Read tools observe. Act tools drive visible, non-destructive editor actions. Write tools change buffer contents or disk — and every one of those is gated behind a human approval card.</p>
 
   <h3>Tier 1 — Read (24 tools, no approval needed)</h3>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td><code>list_open_tabs</code></td><td>List the open tabs with <strong>id</strong>, index, title, file path, and modified state. The <code>id</code> is stable; the <code>index</code> is not.</td></tr>
@@ -321,13 +325,13 @@
       <tr><td><code>run_query</code></td><td>Run a read-only <code>SELECT</code> against a saved named connection (PostgreSQL / MySQL / SQL Server / SQLite / DuckDB) — what <code>run_sql</code> cannot reach; mutations rejected. Full edition (DuckDB) for DuckDB-driver connections.</td></tr>
       <tr><td><code>list_tables</code></td><td>List the user tables available over a saved named connection.</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <div class="callout success">
     <strong>How <code>run_sql</code> stays safe.</strong> Every query is checked by the SQL classifier and rejected unless it is a pure <code>SELECT</code> — no <code>INSERT</code>, <code>UPDATE</code>, <code>ATTACH</code>, <code>COPY</code>, or DDL ever runs. On the Full (DuckDB) edition there is a second wall: the target CSV / Parquet / JSON is first materialized into an in-memory table, then DuckDB's external filesystem access is turned off (<code>SET enable_external_access=false</code>) <em>before</em> the untrusted SQL executes — so the query cannot reach host files even through <code>read_text</code>, <code>read_csv_auto</code>, <code>glob</code>, or a replacement scan. The <code>csv_path</code> argument is confined to your open workspace. Results are row- and cell-capped so a single answer can't exfiltrate a whole file.</div>
 
   <h3>Tier 2 — Act (14 tools, visible and non-destructive)</h3>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td><code>open_file</code></td><td>Open a file in a new tab, or focus the tab that already has it.</td></tr>
@@ -345,10 +349,10 @@
       <tr><td><code>open_data_analyst</code></td><td>Reveal and focus the AI dock in Data Analyst mode.</td></tr>
       <tr><td><code>render_chart</code></td><td>Render a chart inline in the Data Analyst transcript (Vega-Lite or the simplified <code>{type,x,y,data}</code> form). Full edition (WebEngine) only.</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h3>Tier 3 — Write, with approval (11 tools, human-gated)</h3>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td><code>insert_text</code></td><td>Insert text into an open tab at the cursor, or at an explicit line/column.</td></tr>
@@ -363,7 +367,7 @@
       <tr><td><code>export_query_results</code></td><td>Run a read-only <code>SELECT</code> against a saved connection and write the results to a CSV or JSON file.</td></tr>
       <tr><td><code>export_chart</code></td><td>Render a chart off-screen and export it to a PNG / SVG / HTML / spec file. Full edition (WebEngine) only.</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h2 id="v127" class="anchor-target">What changed in v0.1.127</h2>
   <p>Retesting v0.1.126 found a <strong>sixth</strong> credential door, and the interesting part is not the door — it is why there kept being another one.</p>
@@ -446,7 +450,7 @@ sudo mv notepatra-mcp /usr/local/bin/</code></pre>
 cargo build --release   # binary at target/release/notepatra-mcp</code></pre>
   <p>Windows named-pipe transport arrived in v0.1.119 but did not actually work: it deadlocked on the first verb after the greeting, so no tool call ever completed. <strong>It is fixed in v0.1.120</strong> — the sidecar connects to the running editor over a named pipe (<code>\\.\pipe\…</code>) and <code>--socket</code> works there for real. As of v0.1.120 the signed release bundle provides a prebuilt Windows binary (<code>notepatra-mcp-windows-x64.zip</code>, cosign-signed like the others) and a one-click Claude Desktop bundle (<code>notepatra-mcp.mcpb</code> — install it from Claude Desktop's Settings → Extensions), so Windows users no longer need to build from source. <code>cargo install notepatra-mcp</code> remains a fully supported alternative on every platform.</p>
 
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Client</th><th>Vendor ecosystem</th><th>How it connects</th><th>Works with Notepatra?</th></tr></thead>
     <tbody>
       <tr><td>Claude Desktop</td><td>Anthropic</td><td>stdio, via <code>claude_desktop_config.json</code> — or one-click via the <code>notepatra-mcp.mcpb</code> bundle from the next release</td><td>Yes</td></tr>
@@ -457,7 +461,7 @@ cargo build --release   # binary at target/release/notepatra-mcp</code></pre>
       <tr><td>ChatGPT connectors</td><td>OpenAI</td><td>Remote URL only</td><td>No — cannot reach a desktop editor (see <a href="#limitations">limitations</a>)</td></tr>
       <tr><td>claude.ai web connectors</td><td>Anthropic</td><td>Remote URL only</td><td>No — cannot reach a desktop editor (see <a href="#limitations">limitations</a>)</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h3>Claude Desktop</h3>
   <p>Add Notepatra to <code>claude_desktop_config.json</code> (Settings → Developer → Edit Config):</p>
@@ -510,14 +514,14 @@ async with MCPServerStdio(
   </ul>
   <p>Clients that support MCP resources (Claude Desktop's attachment picker, for example) can pull a tab or note straight into the conversation without a tool call.</p>
   <h3>Prompts</h3>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Prompt</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td><code>review-current-file</code></td><td>Code-review the file open in the active tab — embeds its live contents and language.</td></tr>
       <tr><td><code>explain-selection</code></td><td>Explain the text currently selected in the editor.</td></tr>
       <tr><td><code>summarize-notes</code></td><td>Summarize your Noter notes (embeds up to the 3 most recent).</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h2 id="limitations" class="anchor-target">Limitations — the honest list</h2>
   <ul>
@@ -562,7 +566,7 @@ async with MCPServerStdio(
 </main>
 
 <footer class="doc-footer">
-  <p>Notepatra is free software under GPL-3.0. The MCP features described on this page ship in v0.1.129.</p>
+  <p>Notepatra is free software under GPL-3.0. The MCP features described on this page ship in v0.1.130.</p>
   <p><a href="/">Home</a> · <a href="/docs.html">Documentation</a> · <a href="https://github.com/singhpratech/notepatra">GitHub</a></p>
 </footer>
 

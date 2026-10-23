@@ -39,6 +39,7 @@ class Editor;
 class QMenu;
 class NotesPanel;
 class NotesReminderEngine;
+class PreviewPane;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -340,6 +341,10 @@ private:
     NotesPanel *ensureNoterTab();
     int newDiagramTab(const QString &source, const QString &title); // Features->Diagram + MCP create_diagram
     QAction *m_passwordAct = nullptr;  // truthful checked-state
+    // Preview pane beside the editor tabs (Markdown / HTML / .ipynb / SQL cells).
+    QPointer<PreviewPane> m_previewPane;
+    QSplitter *m_editorSplit = nullptr;
+    QAction *m_previewAct = nullptr;
     QPointer<Editor> m_lastEditor;     // last EDITOR tab; tool panels hand back to it
     int newPasswordTab();                                          // Tools->Password Generator
     void onNoterTrayMessageClicked();

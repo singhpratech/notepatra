@@ -168,7 +168,7 @@
             border-radius: 6px;
             color: var(--c-text);
         }
-        code { padding: 2px 6px; }
+        code { padding: 2px 6px; overflow-wrap: anywhere; }
         pre {
             padding: 16px 18px;
             overflow-x: auto;
@@ -179,6 +179,7 @@
         pre code { background: transparent; padding: 0; }
 
         /* Tables */
+        .table-wrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
         table {
             width: 100%;
             border-collapse: collapse;
@@ -281,7 +282,7 @@
 
         <section id="snapshot">
             <h2>Snapshot for your software-acceptance form</h2>
-            <table>
+            <div class="table-wrap"><table>
                 <tr><th>Field</th><th>Value</th></tr>
                 <tr><td>Product</td><td>Notepatra</td></tr>
                 <tr><td>Vendor / Author</td><td>Prateek Singh (individual open-source maintainer)</td></tr>
@@ -298,7 +299,7 @@
                 <tr><td>Footprint</td><td>Bare executable under 12 MB (~11.5 MB on Linux x64). Latest Lite (default) downloads: 4.4 MB (Linux x64 tar.gz), 27.5 MB (macOS DMG), 42.4 MB (Windows MSI); the opt-in Full download is larger (bundles DuckDB, plus WebEngine on Linux/Windows). Exact sizes vary release-to-release; the GitHub release page is canonical.</td></tr>
                 <tr><td>Updates</td><td>Manual. No auto-update daemon. No background service.</td></tr>
                 <tr><td>Plugins</td><td>Drop a <code>.so</code>/<code>.dylib</code>/<code>.dll</code> in <code>~/.config/notepatra/plugins/</code>. No remote plugin registry. No auto-install.</td></tr>
-            </table>
+            </table></div>
         </section>
 
         <section id="what-gpl-actually-means">
@@ -306,7 +307,7 @@
 
             <p>The most common concerns about GPL in a corporate setting are about a specific scenario: <strong>linking GPL code into a closed-source product your company ships to customers</strong>. The questions below summarize how the Free Software Foundation — the author of the GPL — describes those concerns. The authoritative source is the FSF's <a href="https://www.gnu.org/licenses/gpl-faq.html">GPL FAQ</a>; your in-house counsel can advise on your specific situation.</p>
 
-            <table>
+            <div class="table-wrap"><table>
                 <tr><th>Common concern</th><th>What the FSF GPL FAQ says (paraphrased)</th></tr>
                 <tr>
                     <td>"If we install GPL software, we'll have to release our source code."</td>
@@ -336,7 +337,7 @@
                     <td>"Anti-tivoization clause?"</td>
                     <td>GPL-3.0 §6 ("Conveying Non-Source Forms") addresses the situation of distributing GPL software inside a device whose firmware prevents user modification. It applies to manufacturers who distribute GPL binaries inside such devices, not to end-user installations on general-purpose workstations.</td>
                 </tr>
-            </table>
+            </table></div>
 
             <div class="callout">
                 <strong>Summary, per the FSF interpretation:</strong> GPL copyleft obligations attach to whoever <em>distributes</em> the software. An end-user organization that installs and runs Notepatra on its workstations is, in the FSF's described interpretation of GPL-3.0, not subject to source-disclosure or license-grant obligations from such use. The authoritative source for these interpretations is the <a href="https://www.gnu.org/licenses/gpl-faq.html">FSF GPL FAQ</a>. Your counsel is the authoritative voice for your specific situation.
@@ -385,7 +386,7 @@
 
         <section id="dependencies">
             <h2>Dependency licenses (what's inside the binary)</h2>
-            <table>
+            <div class="table-wrap"><table>
                 <tr><th>Dependency</th><th>License</th><th>Compatible with GPL-3.0?</th></tr>
                 <tr><td>Qt 5/6 (UI framework)</td><td>LGPL-3.0 (dynamic linking)</td><td><span class="ok">Yes.</span> Standard Qt-app posture.</td></tr>
                 <tr><td>QScintilla (editor widget)</td><td>GPL-3.0 (or commercial)</td><td><span class="ok">Yes.</span> Riverbank Computing dual-licenses this; Notepatra uses the free GPL-3.0 path.</td></tr>
@@ -393,7 +394,7 @@
                 <tr><td>DuckDB v1.1.3 (Data Analyst mode — bundled in the Full prebuilt download on every platform; the Lite default download has CSV + in-memory SQLite only)</td><td>MIT</td><td><span class="ok">Yes.</span></td></tr>
                 <tr><td>Rust crates (memmap2, regex, aho-corasick, encoding_rs, etc.)</td><td>MIT / Apache-2.0 dual</td><td><span class="ok">Yes.</span></td></tr>
                 <tr><td>Vega + Vega-Lite + vega-embed (chart rendering — Full flavor only)</td><td>BSD-3-Clause</td><td><span class="ok">Yes.</span></td></tr>
-            </table>
+            </table></div>
             <p>To the maintainer's knowledge at the time of writing, Notepatra does not include GPL-incompatible dependencies, dependencies with field-of-use restrictions, or "free for non-commercial use" components. The canonical license list for the current release is the LICENSE file in the release tag and the dependency manifests (<code>CMakeLists.txt</code>, <code>rust-core/Cargo.toml</code>) in the same tag.</p>
         </section>
 
@@ -410,7 +411,7 @@
             <h3>Backends shipped in the Notepatra UI dropdown</h3>
             <p>The AI panel's backend dropdown ships <strong>six entries</strong> in the standard build (the <code>notepatra-local-ai</code> "cloud-free" build flavor ships only the two local entries — cloud backends are absent from that build at the binary level):</p>
 
-            <table>
+            <div class="table-wrap"><table>
                 <tr><th>Dropdown entry</th><th>Type</th><th>Backend's own license / terms</th><th>What Notepatra does</th></tr>
                 <tr>
                     <td><strong>Ollama</strong></td>
@@ -448,7 +449,7 @@
                     <td>Microsoft Azure OpenAI Service terms — see <a href="https://azure.microsoft.com/en-us/products/ai-services/openai-service">azure.microsoft.com</a></td>
                     <td>HTTPS client. User supplies own deployment URL + API key. Opt-in.</td>
                 </tr>
-            </table>
+            </table></div>
 
             <h3>Other OpenAI-compatible servers (user-configured passthrough)</h3>
             <p>The <code>llama.cpp (GGUF)</code> entry accepts a user-configured base URL. Many third-party programs expose an OpenAI-compatible HTTP API; a user may, on their own initiative, point this entry at any such program they have separately installed. <strong>Such third-party programs are not "Notepatra backends" — they are not first-class dropdown entries, are not bundled with Notepatra, and are not endorsed or supported by Notepatra.</strong> They are user-configured passthroughs over a standard HTTP protocol. The user is solely responsible for selecting, installing, licensing, configuring, and operating any such program in accordance with that program's own license and terms; Notepatra makes no representation, warranty, or claim about any such program.</p>
@@ -469,7 +470,7 @@
             </div>
 
             <h3>Who is responsible for what</h3>
-            <table>
+            <div class="table-wrap"><table>
                 <tr><th>Activity</th><th>Responsibility</th></tr>
                 <tr>
                     <td>Choosing which backend to use (local vs cloud, which specific provider)</td>
@@ -503,7 +504,7 @@
                     <td>Local logging of AI interactions on the user's own machine (for the user's own audit purposes)</td>
                     <td>An optional Notepatra feature stored in a local SQLite file (<code>~/.config/notepatra/ai-logs/interactions.db</code>) on the user's machine. Pruned to a 7-day window, capped at 50 MB, masked of credentials by a built-in credential scrubber, and toggleable by the user. The log file never leaves the user's machine; Notepatra does not transmit it anywhere.</td>
                 </tr>
-            </table>
+            </table></div>
 
             <h3>Privacy-protective defaults in the current release</h3>
             <ul>

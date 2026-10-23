@@ -91,6 +91,8 @@
     border-bottom: 1px solid var(--border);
     padding: 12px 24px;
     display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
     align-items: center;
     justify-content: space-between;
   }
@@ -109,8 +111,9 @@
     border-radius: 4px;
     font-size: 12px;
     border: 1px solid var(--border);
+    white-space: nowrap;
   }
-  .topbar-right { display: flex; gap: 20px; align-items: center; }
+  .topbar-right { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
   .topbar-right a {
     color: var(--text-mute);
     text-decoration: none;
@@ -218,8 +221,10 @@
     padding: 2px 6px;
     border-radius: 4px;
     border: 1px solid var(--border);
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
+  .table-wrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   main.content pre {
     background: var(--bg-code);
     border: 1px solid var(--border);
@@ -328,7 +333,7 @@
   <div class="topbar-left">
     <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">v0.1.129 docs</span>
+    <span class="tag">v0.1.130 docs</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
@@ -362,6 +367,7 @@
       <li><a href="#show-symbol">Show Symbol — invisible characters</a></li>
       <li><a href="#find-replace">Find &amp; replace</a></li>
       <li><a href="#project-search">Project Search</a></li>
+      <li><a href="#preview-pane">Preview pane</a></li>
       <li><a href="#macros">Macros</a></li>
       <li><a href="#sessions">Sessions &amp; recovery</a></li>
     </ul>
@@ -435,7 +441,7 @@
   <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock (with a workspace open and a tool-capable model) and the model gets up to 13 native tools — file tools <code>read_file</code>, <code>list_dir</code>, <code>write_file</code>, <code>search</code>, <code>apply_diff</code>; data tools <code>query_sql</code>, <code>csv_query</code>, <code>generate_chart</code>; and read-only git tools <code>git_status</code>, <code>git_diff</code>, <code>git_log</code>, <code>git_branch_list</code>, <code>git_show</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
 
   <div class="callout info">
-    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.129 (August 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
+    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.130 (August 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
   </div>
 
   <h2 id="install" class="anchor-target">Install</h2>
@@ -456,7 +462,7 @@
 
   <h3>Manual download</h3>
   <p>Every release is at <a href="https://github.com/singhpratech/notepatra/releases/latest">github.com/singhpratech/notepatra/releases/latest</a>.</p>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Platform</th><th>Asset</th><th>Size</th></tr></thead>
     <tbody>
       <tr><td>🐧 Linux x64</td><td><code>notepatra-linux-x64.tar.gz</code></td><td>~4.7 MB</td></tr>
@@ -466,7 +472,7 @@
       <tr><td>🪟 Windows x64 (installer)</td><td><code>notepatra-setup-&lt;version&gt;.exe</code></td><td>~33.0 MB</td></tr>
       <tr><td>🪟 Windows x64 (portable)</td><td><code>notepatra-windows-x64.zip</code></td><td>~37.8 MB</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <div class="callout warning">
     <strong>Linux: Qt5 required.</strong> The Linux tarball is just the bare binary — Qt5 is expected to be installed system-wide. On Ubuntu/Debian: <code>sudo apt install qtbase5-dev libqscintilla2-qt5-dev</code>. On Fedora: <code>sudo dnf install qt5-qtbase qscintilla-qt5</code>. On Arch: <code>sudo pacman -S qt5-base qscintilla-qt5</code>. Mac/Windows downloads bundle Qt.
@@ -623,7 +629,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
   <h3>Why this split?</h3>
   <p>v0.1.63 bundled QtWebEngine into every release for one specific feature — the AI Data Analyst's inline chart card. Most users will never trigger a chart, but every install paid the disk + download cost. v0.1.64 flipped the default: lite by default, charts move to an optional pack. Same architecture mirrors how Cursor / VS Code / Sublime add language servers and renderers — small core, install what you need.</p>
 
-  <table>
+  <div class="table-wrap"><table>
     <thead>
       <tr><th>Flavor</th><th>Bare binary</th><th>What you get</th><th>What's missing</th></tr>
     </thead>
@@ -641,7 +647,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
         <td>—</td>
       </tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h3 id="packs">Packs — what's installed where</h3>
   <p>The plugin loader (<code>src/plugin_loader.{h,cpp}</code>) tracks which packs are available. Each pack lives under your per-user plugin directory:</p>
@@ -652,7 +658,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
   </ul>
   <p>As of v0.1.120, the Full flavor ships the <em>charts</em> pack bundled on Linux and Windows (it's the same binary — the pack is "installed" if WebEngine was linked at compile time; macOS Full is DuckDB-only and has no inline Vega renderer). The in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation path is scaffolded but not yet wired (still queued as of v0.1.129), so today packs are added by swapping in the Full binary rather than downloaded inside the app.</p>
 
-  <table>
+  <div class="table-wrap"><table>
     <thead>
       <tr><th>Pack ID</th><th>Size</th><th>What it does</th><th>Status</th></tr>
     </thead>
@@ -667,10 +673,10 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
         <td><code>pdf</code></td>
         <td>≈ 12 MB</td>
         <td>Rasterises PDFs to PNG pages so vision-capable AI models can read them. Powered by Poppler-Qt5.</td>
-        <td>Still queued (not shipped as of v0.1.129). Until then, dropping a PDF into the AI dock extracts its text via <code>pdftotext</code> (poppler-utils) when available and attaches that as context.</td>
+        <td>Still queued (not shipped as of v0.1.130). Until then, dropping a PDF into the AI dock extracts its text via <code>pdftotext</code> (poppler-utils) when available and attaches that as context.</td>
       </tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h3 id="font-pack">Font Pack — on-demand editor fonts</h3>
   <p><strong>Settings → Manage Fonts...</strong> downloads premium open-source coding fonts on demand — JetBrains Mono, Fira Code, Cascadia Code, Source Code Pro, IBM Plex Mono, Hack, Geist Mono, and more — so the bare binary stays small. Files are downloaded to your per-user data directory (<code>~/.local/share/notepatra/fonts</code> on Linux) and registered with Qt immediately, no restart needed; the dialog shows per-variant size, license, and origin, and every font is SIL OFL 1.1, Apache 2.0, or MIT — redistributable and royalty-free.</p>
@@ -716,7 +722,7 @@ make -j$(nproc)
     <li><strong>Do I lose anything by staying on Lite?</strong> No — every editor / lexer / AI / Git / data / plugin feature works identically. The only difference is that <code>generate_chart</code> tool results paint as a "Chart rendering requires the Charts Pack" card instead of as an inline rendered chart. You can still see the spec via [View JSON instead] and copy it elsewhere.</li>
     <li><strong>Can I downgrade Full → Lite?</strong> Yes. Just download the Lite tarball and replace the binary. Your config / chat history / connections are preserved (they live under <code>~/.config/notepatra</code>, not inside the binary).</li>
     <li><strong>Will the chart spec data be lost if I'm on Lite?</strong> No — the AI's tool result is preserved in your chat history just like any other tool result. If you upgrade to Full later, opening the same chat shows the rendered chart for those past results.</li>
-    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.129. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
+    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.130. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
   </ul>
 
   <h2 id="ui-overview" class="anchor-target">UI overview</h2>
@@ -756,7 +762,7 @@ make -j$(nproc)
 
   <h2 id="encodings" class="anchor-target">Encodings</h2>
   <p>Encoding detection runs in the Rust core (<code>rust-core/src/file_io.rs</code>) on the first 4 KB of the file, and it runs <em>before</em> the binary-file heuristic — so UTF-16 text (50% null bytes by design) is never mis-flagged as binary. Detected formats:</p>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Format</th><th>How it's detected</th></tr></thead>
     <tbody>
       <tr><td>UTF-8 (no BOM)</td><td>Bytes validate as UTF-8. Also the label for empty files.</td></tr>
@@ -766,7 +772,7 @@ make -j$(nproc)
       <tr><td>UTF-32 LE / BE with BOM</td><td>4-byte BOM, checked before UTF-16 because UTF-32 LE's <code>FF FE 00 00</code> starts with the UTF-16 LE signature.</td></tr>
       <tr><td>Latin-1 / legacy 8-bit</td><td>Fallback when bytes aren't valid UTF-8 — tries Windows-1252 (the Latin-1 superset), then Shift-JIS, EUC-JP, GB18030.</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h3>Encoding menu — reload vs convert</h3>
   <ul>
@@ -778,7 +784,7 @@ make -j$(nproc)
   <p>The detected encoding label ("UTF-16 LE BOM", "UTF-32 BE BOM", …) travels with the tab, and on save the matching BOM bytes are written back in front of the encoded content. Opening a UTF-16 LE BOM file and pressing <span class="kbd">Ctrl+S</span> writes it back as UTF-16 LE with its BOM intact — the BOM is never silently dropped.</p>
 
   <h2 id="languages-lexers" class="anchor-target">Languages &amp; lexers</h2>
-  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.129 (covering 238 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
+  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.130 (covering 238 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
   <p><strong>Core (Qt-bundled):</strong> Python, JavaScript/TypeScript/JSX, CoffeeScript, C/C++, C#, D, Java/Kotlin, HTML/PHP, CSS/SCSS/LESS, XML, JSON, SQL (ANSI / T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite), Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Matlab, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile.</p>
   <p><strong>v0.1.55 additions (32 dedicated lexers, keyword tables verified against official specs):</strong> Dart · Solidity · Zig · Vala · Hack · Julia · R · Protobuf · F# · HCL/Terraform · Thrift · GraphQL · GDScript · Nim · Cython · Mojo · Crystal · Elixir · Scala · Groovy · Apex · Jinja · Liquid · Twig · Dockerfile · Fish · Nushell · TOML · DotEnv · Gitignore · JSON5 · BibTeX. Each ships with comment / uncomment / block-comment syntax (Ctrl+/ for line, Ctrl+Shift+Q for block) and proper file-extension routing — <code>.dart</code>, <code>.zig</code>, <code>.jl</code>, <code>.toml</code>, <code>.ex</code>, <code>Cargo.toml</code>, <code>Dockerfile</code>, <code>.gitignore</code>, <code>.env</code>, <code>.fish</code>, <code>.json5</code>, <code>.tf</code>, etc. now point at their dedicated lexers instead of falling back to the closest-fit generic.</p>
 
@@ -797,7 +803,7 @@ make -j$(nproc)
   <p>A file containing a zero-width space looks exactly like a file without one. <code>View → Show Symbol</code> makes the invisible visible. Notepatra draws <strong>527 invisible codepoints</strong>: the <strong>113</strong> in Notepad++'s own tables (49 non-printing + 64 control / Unicode-EOL), transcribed byte-for-byte so the abbreviations match, plus <strong>414</strong> that Notepad++ does not cover.</p>
 
   <h3>The menu — eight items, in Notepad++'s order</h3>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Menu item</th><th>What it reveals</th></tr></thead>
     <tbody>
       <tr><td><strong>Show Space and Tab</strong></td><td>Spaces as <code>·</code>, tabs as <code>⟶</code>.</td></tr>
@@ -810,7 +816,7 @@ make -j$(nproc)
       <tr><td><strong>Show Indent Guide</strong></td><td>Vertical indentation guides. On by default; behaviour unchanged, but the setting is now persisted.</td></tr>
       <tr><td><strong>Show Wrap Symbol</strong></td><td>Marker at each soft-wrapped line break. Behaviour unchanged, setting now persisted.</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h3>Going past Notepad++</h3>
   <p>Notepad++'s tables are a fixed 113 codepoints, so anything outside them is invisible there too. <strong>Show Every Other Invisible Character</strong> covers the rest of Unicode's format category:</p>
@@ -880,6 +886,86 @@ make -j$(nproc)
     <strong>Tip:</strong> for a quick "is this string anywhere in my project?" use the default plain-text mode with the phrase typed as-is. Regex is only worth the syntax overhead when you actually need backtracking, alternation, or character classes.
   </div>
 
+  <h2 id="preview-pane" class="anchor-target">Preview pane — Markdown, HTML, notebooks, SQL cells</h2>
+  <p>A read-only pane beside the editor that renders the current tab, and turns a <code>.sql</code> file into a notebook you can run cell by cell. It ships in every build; a few modes differ between Lite and Full, as noted below.</p>
+
+  <h3>Opening it</h3>
+  <ul>
+    <li><strong>View &rarr; Preview Pane</strong> (checkable), <span class="kbd">Ctrl+Shift+V</span>, or the <strong>Preview</strong> button (eye icon, showing ON or OFF) at the end of the built-in tools icon row.</li>
+    <li>The pane opens to the right of the editor tabs, inside the editor area, in a splitter that is 55/45 by default and draggable.</li>
+    <li>It follows the current tab. On a tab it cannot preview it shows a one-line placeholder.</li>
+    <li>Toggling it off gives the editor the full width back. It is not saved in the session, so it is closed on the next launch.</li>
+  </ul>
+
+  <h3>Markdown and HTML</h3>
+  <ul>
+    <li><strong>Markdown (<code>.md</code>)</strong> — rendered with Qt's GitHub-dialect parser: headings, emphasis, lists, task lists, pipe tables, fenced code (monospace, tinted), block quotes and links. It re-renders 250 ms after you stop typing. Relative images (<code>![](img.png)</code>) resolve against the file's folder. Light, Dark and Monokai each get matching text, code and table colours.</li>
+    <li><strong>HTML (<code>.html</code>, <code>.htm</code>, <code>.xhtml</code>)</strong> — see the table below.</li>
+    <li><strong>Links</strong> — <code>http</code>, <code>https</code> and <code>mailto</code> links open in the system browser; <code>#anchor</code> links scroll within the pane.</li>
+  </ul>
+
+  <div class="table-wrap"><table>
+    <thead><tr><th>Mode</th><th>Lite</th><th>Full</th></tr></thead>
+    <tbody>
+      <tr><td>HTML engine</td><td>Qt's built-in rich-text engine (a CSS subset: headings, paragraphs, lists, tables, images, basic inline styles)</td><td>The real Chromium engine (WebEngine): full CSS; relative images and stylesheets beside the file load</td></tr>
+      <tr><td>HTML over about 1.5 MB</td><td>Built-in engine</td><td>Falls back to the built-in engine</td></tr>
+      <tr><td>SQL scratch databases</td><td>Scratch (SQLite, temporary)</td><td>Scratch (SQLite, temporary) and Scratch (DuckDB, temporary)</td></tr>
+      <tr><td>DuckDB file connections</td><td>Not available</td><td>Available</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>HTML security posture</h3>
+  <ul>
+    <li><strong>JavaScript is disabled.</strong></li>
+    <li><strong>No remote resources load</strong> — nothing is fetched from the network by the preview.</li>
+    <li><strong>The previewed page cannot navigate the pane</strong> — meta-refresh, forms and iframes are blocked. <code>http</code>, <code>https</code> and <code>mailto</code> link clicks open in the system browser instead.</li>
+  </ul>
+
+  <h3>Jupyter notebooks (<code>.ipynb</code>)</h3>
+  <p>The file still opens as JSON text in the editor. The pane shows a read-only notebook view:</p>
+  <ul>
+    <li>Markdown cells are rendered; code cells appear in monospace with <code>In [n]:</code> counts and the kernel language.</li>
+    <li>Outputs: <code>stdout</code> / <code>stderr</code> streams; <code>execute_result</code> and <code>display_data</code> as text, HTML tables or embedded PNG images; and error tracebacks with ANSI colour codes stripped.</li>
+    <li>Only nbformat 4 is supported. nbformat 3 shows a clear "unsupported" message, and malformed JSON shows the parse error.</li>
+    <li><code>&lt;script&gt;</code> tags inside HTML outputs are removed.</li>
+    <li>This is a viewer: cells are not executed and the notebook is not edited from the pane.</li>
+  </ul>
+
+  <h3>SQL cells (<code>.sql</code>)</h3>
+  <p>A plain <code>.sql</code> file becomes a notebook when it contains <code>-- %%</code> separator lines — the VS Code / Jupytext convention. The file stays a normal SQL file for every other tool.</p>
+<pre><code>-- %% [markdown]
+-- # Orders check
+-- Create a scratch table, then query it.
+
+-- %%
+CREATE TABLE orders (id INTEGER, total REAL);
+-- %%
+SELECT COUNT(*) AS n FROM orders;</code></pre>
+  <ul>
+    <li><code>-- %% [markdown]</code> (or <code>-- %% md</code>) starts a notes cell whose <code>--</code> comment lines are rendered as Markdown.</li>
+    <li>Each SQL cell is a card with a <strong>Run</strong> button, a status line ("3 row(s) in 2 ms", "Done in 4 ms", or the error) and a result table.</li>
+    <li><strong>Run All</strong> runs the cells top to bottom and stops at the first error. <strong>Stop</strong> cancels.</li>
+    <li><span class="kbd">Ctrl+Return</span> in the editor runs the cell under the cursor — only while the pane shows a SQL notebook; otherwise the key is untouched.</li>
+  </ul>
+
+  <h3>Connections and writes</h3>
+  <ul>
+    <li><strong>Scratch (SQLite, temporary)</strong> — a throw-away database in a temp folder. State persists across cells for the session (CREATE in one cell, SELECT in the next), and writes are always allowed.</li>
+    <li><strong>Scratch (DuckDB, temporary)</strong> — the same, in Full builds.</li>
+    <li><strong>Saved connections</strong> from Settings: PostgreSQL, MySQL/MariaDB, SQL Server via ODBC, SQLite files, and DuckDB files in Full.</li>
+    <li><strong>On a saved connection, cells are read-only by default.</strong> A statement that changes data is refused with a message until you tick <strong>Allow writes</strong>.</li>
+    <li>Results are capped at 500 rows; the status says when a result was truncated. Queries run off the GUI thread.</li>
+    <li>The AI assistant's and the MCP server's SQL paths, and their read-only gates, are untouched.</li>
+  </ul>
+
+  <h3>Limits</h3>
+  <ul>
+    <li><strong>Stop</strong> interrupts DuckDB queries immediately. For SQLite and the Qt SQL drivers it only flags the request, and the cell stays busy until the server returns. There is a 120-second ceiling.</li>
+    <li>With the Qt SQLite driver, a cell containing several statements runs only the first.</li>
+    <li>The notebook viewer is nbformat 4 only and read-only.</li>
+    <li>The pane is not saved in the session.</li>
+  </ul>
+
   <h2 id="macros" class="anchor-target">Macros</h2>
   <p>Record keyboard + mouse operations and play them back:</p>
   <ul>
@@ -903,20 +989,20 @@ make -j$(nproc)
   <p>A <strong>left rail</strong> chooses the page — <strong>Password</strong>, <strong>Passphrase</strong>, <strong>SSH key</strong> — with <span class="kbd">Alt+1</span>, <span class="kbd">Alt+2</span> and <span class="kbd">Alt+3</span> as shortcuts. (Before v0.1.129 the first two were radio buttons and there was no third.)</p>
 
   <h3>Password and passphrase</h3>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Page</th><th>What it draws from</th><th>Bits per unit</th><th>Default</th></tr></thead>
     <tbody>
       <tr><td><strong>Password</strong></td><td>The character sets you tick — <code>a-z</code>, <code>A-Z</code>, <code>0-9</code>, Symbols — plus a free-text <em>extra characters</em> field</td><td>log<sub>2</sub>(alphabet size) per character</td><td>20 characters — 129 bits at the default settings</td></tr>
       <tr><td><strong>Passphrase</strong></td><td>A built-in 2,048-word list compiled into the binary; no dictionary file is read at runtime</td><td>Exactly 11 bits per word</td><td>6 words — 66 bits</td></tr>
     </tbody>
-  </table>
+  </table></div>
   <p><strong>Password.</strong> Length runs from 4 to 256, default 20. The <em>extra characters</em> field takes anything the four sets don't cover; whitespace and control characters in it are ignored. The symbol set is 27 characters — <code>! # $ % &amp; ( ) * + , - . / : ; &lt; = &gt; ? @ [ ] ^ _ { } ~</code> — and deliberately leaves out the single quote, double quote, backslash, backtick, pipe and space, because those are the characters that break when a password is pasted into a shell command, a YAML file or a database connection string. Two optional switches: <strong>Exclude look-alikes</strong>, which drops <code>0 O 1 l I</code>, and <strong>At least one from each set</strong>, which is on by default.</p>
   <p><strong>Passphrase.</strong> 3 to 24 words, default 6. The separator is a hyphen, period, underscore, space, or none. <strong>Capitalise each word</strong> and <strong>Append two digits</strong> are optional; appending two digits adds log<sub>2</sub>(100) bits.</p>
   <p>Both pages generate 1 to 100 independent values at once, and both offer the same four buttons: <strong>Generate</strong>, <strong>Copy</strong>, <strong>Insert into editor</strong>, and <strong>Open in new tab</strong>.</p>
 
   <h3>SSH key (since v0.1.129)</h3>
   <p>The third page generates a real OpenSSH key pair locally and hands you the two things you actually need — the <code>authorized_keys</code> line and its fingerprint — without writing anything to disk until you ask.</p>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Key type</th><th>Strength</th><th>When to pick it</th></tr></thead>
     <tbody>
       <tr><td><strong>Ed25519</strong> — recommended</td><td>256-bit key, ~128-bit security</td><td>The default for new keys. One short line in <code>authorized_keys</code>, fast to sign with, constant-time by construction. Supported by OpenSSH 6.5 and newer — everything shipped since 2014.</td></tr>
@@ -926,7 +1012,7 @@ make -j$(nproc)
       <tr><td>RSA 4096</td><td>~140-bit security</td><td>The same old-server case. The extra bits buy little over 3072 and cost noticeably more time to generate and to verify on every connection.</td></tr>
       <tr><td>RSA 2048 — legacy</td><td>~112-bit security</td><td>The smallest size still worth issuing, and only for hardware that refuses anything bigger. Do not pick it for a key you intend to keep.</td></tr>
     </tbody>
-  </table>
+  </table></div>
   <p><strong>The comment is empty by default, on purpose.</strong> <code>ssh-keygen</code> fills it with <code>user@host</code>, which copies your username and your machine's name into every <code>authorized_keys</code> file the key is ever pasted into — on servers you do not control. Type a label if you want one (<code>work-laptop</code>); nothing is put there for you.</p>
   <p><strong>The optional passphrase encrypts the private key</strong> with <code>aes256-ctr</code> and <code>bcrypt-pbkdf</code> (16 rounds) — the same construction <code>ssh-keygen</code> writes, so <code>ssh-add</code>, <code>ssh</code> and any other OpenSSH tool read the file directly. Type it twice; a <strong>Show</strong> checkbox reveals both fields so you can check them.</p>
   <p><strong>What the panel shows.</strong> The public key (the <code>authorized_keys</code> line) and its <strong>SHA256 fingerprint</strong> — in the same form <code>ssh-keygen -l</code> prints — appear as soon as the key is generated. The <strong>private key stays off-screen</strong> until you tick <strong>Show private key</strong>. <strong>Copy private key</strong> arms the 30-second clipboard wipe; <strong>Copy public key</strong> does not, because a public key is not a secret.</p>
@@ -1026,7 +1112,7 @@ ssh-keygen -lf ~/.ssh/id_ed25519.pub   <span class="cm"># same fingerprint the p
   </ol>
 
   <h3>Visual markers</h3>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Row kind</th><th>Background</th><th>Symbol margin</th><th>Character highlight</th></tr></thead>
     <tbody>
       <tr><td>Equal / context</td><td>white</td><td>—</td><td>—</td></tr>
@@ -1035,7 +1121,7 @@ ssh-keygen -lf ~/.ssh/id_ed25519.pub   <span class="cm"># same fingerprint the p
       <tr><td>Deleted (left only)</td><td>salmon <code>#F4D4D4</code></td><td>red − (Minus)</td><td>—</td></tr>
       <tr><td>Placeholder (empty on one side)</td><td>light blue <code>#E8F0F8</code></td><td>green + in margin</td><td>—</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h3>Line numbers</h3>
   <p>Each panel uses a <code>TextMargin</code> with custom per-row text. The LEFT panel shows the original LEFT-source line numbers; the RIGHT panel shows the original RIGHT-source line numbers. They diverge cleanly when there are insertions/deletions — the empty placeholder on one side shows a green <code>+</code> instead of a number.</p>
@@ -1077,7 +1163,7 @@ ssh-keygen -lf ~/.ssh/id_ed25519.pub   <span class="cm"># same fingerprint the p
 
   <h2 id="ai-overview" class="anchor-target">AI integration overview</h2>
   <p>Notepatra's AI is <strong>local-first by default</strong> with optional cloud backends. As of v0.1.55, six backends are available — pick from the AI dock dropdown:</p>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Backend</th><th>Type</th><th>Protocol / URL</th><th>What it gives you</th></tr></thead>
     <tbody>
       <tr><td><strong>Ollama</strong> (default)</td><td>Local</td><td>Native <code>/api/generate</code> · <code>http://localhost:11434</code></td><td>Easiest to install. One-line install, auto-detects models with <code>/api/tags</code>. <code>/api/show</code> capability probe (v0.1.55) auto-detects which models support tools / thinking / vision.</td></tr>
@@ -1087,7 +1173,7 @@ ssh-keygen -lf ~/.ssh/id_ed25519.pub   <span class="cm"># same fingerprint the p
       <tr><td><strong>OpenAI</strong></td><td>Cloud</td><td>OpenAI <code>/v1/chat/completions</code> · <code>https://api.openai.com</code></td><td>Direct OpenAI access for the GPT-4o / GPT-5 / o-series families. Per-provider key slot.</td></tr>
       <tr><td><strong>Azure OpenAI</strong></td><td>Cloud</td><td>Azure deployment URL with <code>?api-version=...</code></td><td>Enterprise OpenAI through your Azure subscription. Configure resource name + deployment name + API version in the dedicated Azure section of the Settings dialog.</td></tr>
     </tbody>
-  </table>
+  </table></div>
   <p>If the selected backend isn't reachable, AI panels show a backend-specific banner (e.g. "Ollama not running — start it: <code>ollama serve</code>", or for cloud backends "OpenRouter key not set — open Settings"). The cloud-config banner is red when keys are missing for the selected backend, green when configured.</p>
   <p><strong>Per-provider key slots (v0.1.55).</strong> The AI Settings dialog has a 4-section layout — OpenRouter, OpenAI, Ollama Cloud, Azure OpenAI — each with its own <em>Test</em> / <em>Save</em> / <em>Forget</em> buttons and key slot. Strict no-cross-provider lookup: the OpenRouter backend will never accidentally use the OpenAI key, and vice-versa. Legacy single-key configs migrate automatically by sniffing the prefix (<code>sk-or-</code> → OpenRouter, <code>sk-</code> → OpenAI).</p>
   <p><strong>Searchable model dropdown (v0.1.55).</strong> Type any provider key (<code>openai</code>, <code>anthropic</code>, <code>google</code>, <code>xai</code>) or alias (<code>grok</code>, <code>claude</code>, <code>gpt</code>, <code>gemini</code>, <code>kimi</code>, <code>qwen</code>) and the dropdown filters to that provider's models — works whether you remember the brand name or the model name.</p>
@@ -1260,7 +1346,7 @@ cmake --build build --config Release -j</code></pre>
 
   <h4>Picking a GGUF</h4>
   <p>GGUF is a quantised single-file model format. Smaller files run faster but lose accuracy. The sweet spot for 7B-13B models is <strong>Q4_K_M</strong>; pick higher only if you have spare VRAM.</p>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Quant</th><th>Size (7B)</th><th>Quality</th><th>When to pick</th></tr></thead>
     <tbody>
       <tr><td><code>Q4_K_M</code></td><td>~4.4 GB</td><td>Good</td><td>Default. Fits on 8 GB RAM / 6 GB VRAM. Recommended.</td></tr>
@@ -1268,7 +1354,7 @@ cmake --build build --config Release -j</code></pre>
       <tr><td><code>Q8_0</code></td><td>~7.7 GB</td><td>Near-lossless</td><td>If you have 16 GB+ and want max fidelity short of full precision.</td></tr>
       <tr><td><code>F16</code> / <code>BF16</code></td><td>~14 GB</td><td>Lossless</td><td>Research / fine-tuning. Overkill for chat.</td></tr>
     </tbody>
-  </table>
+  </table></div>
   <p>For ready-to-use quants, <a href="https://huggingface.co/bartowski">bartowski on Hugging Face</a> publishes consistent re-quants of every popular release with all sizes side by side.</p>
 
   <h4>Running llama-server</h4>
@@ -1545,7 +1631,7 @@ Content-Type: application/json
 
   <h3>Agentic tools</h3>
   <p>The agent gets <strong>up to 13 native tools</strong> — the five core file tools plus <code>query_sql</code> / <code>csv_query</code> / <code>generate_chart</code> and five read-only <code>git_*</code> inspection tools. <code>AiTools::availableTools()</code> registers all 13, but the host sends a <strong>mode-aware subset</strong>: the read-only <em>Ask</em> segment and Data mode never receive <code>write_file</code> / <code>apply_diff</code> — the mutating tools are stripped before the request reaches the model, so only the Compose and Agent segments can write. Every tool call shows up as an inline <code>🔧 toolname (args) → result</code> card in the chat:</p>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td><code>read_file(path, offset?, limit?, with_line_numbers?)</code></td><td>Read a text file from the workspace. Default emits <code>      N\t</code> line-number prefix per line so the model can reference exact lines. <strong>v0.1.40</strong>: pass <code>with_line_numbers=false</code> to get raw content (recommended when feeding lines into <code>apply_diff old_lines</code>).</td></tr>
@@ -1558,7 +1644,7 @@ Content-Type: application/json
       <tr><td><code>generate_chart(...)</code></td><td>Emit a Vega-Lite chart spec for the assistant to render. On Lite the result paints as a "Chart rendering requires the Charts Pack" card; full rendering needs the Charts Pack (WebEngine).</td></tr>
       <tr><td><code>git_status</code> / <code>git_diff</code> / <code>git_log</code> / <code>git_branch_list</code> / <code>git_show</code></td><td>Read-only git inspection (implemented in <code>src/git_tools.cpp</code>; the QProcess verb list is hard-coded so there is no path through these to mutate the repo).</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h3>Three-layer path security</h3>
   <p>Every tool call goes through <code>resolveSafePath</code>:</p>
@@ -1604,13 +1690,13 @@ Content-Type: application/json
   </ul>
 
   <h3>The two new agentic tools</h3>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td><code>csv_query(file_path, sql, max_rows?, max_load_rows?)</code></td><td>Loads a workspace CSV into in-memory SQLite (table name <code>csv</code>, column names from the header) and runs your SQL. Default loads up to 250,000 rows; default returns up to 500. Lets the model ask <em>"SELECT category, SUM(amount) FROM csv WHERE order_date >= '2026-04-01' GROUP BY category ORDER BY 2 DESC"</em> instead of trying to mentally scan a million-line file.</td></tr>
       <tr><td><code>query_sql(connection_name, sql, max_rows?)</code></td><td>Runs SQL against a saved connection. <strong>Read-only by default</strong> (SELECT / WITH / EXPLAIN / PRAGMA / SHOW / DESCRIBE run immediately). A structural SQL classifier catches every data mutation — including CTE-wrapped DML, <code>EXPLAIN ANALYZE</code>, <code>SELECT … INTO</code> and stacked statements — and routes it to a <strong>human Approve/Reject card</strong>; the model's old <code>confirm:true</code> self-approval is gone, and on-disk databases open engine-level read-only. Returns up to 100 rows by default (hard max 500 — the model must raise <code>max_rows</code> to get more).</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h3>Live charts inline in the chat</h3>
   <p><strong>v0.1.64+ note:</strong> charts now ship behind the optional <a href="#packs"><code>charts</code> pack</a>. On a default (lite) install, the AI's <code>generate_chart</code> tool result paints as a <strong>Chart rendering requires the Charts Pack</strong> card with two buttons — <strong>[Install charts pack]</strong> (opens GitHub Releases with the matching <code>-full</code> asset for your OS — on Linux/Windows; <strong>on macOS the <code>-full</code> DMG adds the DuckDB engine only, with no inline Vega rendering</strong>) and <strong>[View JSON instead]</strong> (shows the raw Vega-Lite spec in a fenced code block). See <a href="#lite-vs-full">Lite vs Full</a> for the upgrade paths. The flow described below is what you see once you're on the Full flavor.</p>
@@ -1725,7 +1811,7 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
   </ol>
 
   <h4>Driver availability per OS</h4>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Driver</th><th>Linux (Debian/Ubuntu)</th><th>macOS (Homebrew)</th><th>Windows</th></tr></thead>
     <tbody>
       <tr><td>QSQLITE</td><td>Built into Qt — always available</td><td>Built into Qt — always available</td><td>Built into Qt — always available</td></tr>
@@ -1734,7 +1820,7 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
       <tr><td>QODBC (SQL Server)</td><td><code>sudo apt-get install libqt5sql5-odbc unixodbc-dev msodbcsql18</code> (see <a href="https://learn.microsoft.com/en-us/sql/connect/odbc/linux-mac/installing-the-microsoft-odbc-driver-for-sql-server" rel="noopener">MS install guide</a> for the package repo setup)</td><td><code>brew tap microsoft/mssql-release &amp;&amp; HOMEBREW_ACCEPT_EULA=Y brew install msodbcsql18 unixodbc</code></td><td>Bundled with the Notepatra Windows release (Microsoft ships ODBC drivers with Windows itself)</td></tr>
       <tr><td>DUCKDB</td><td>Bundled in the Full prebuilt download (libduckdb v1.1.3 alongside the binary); runs in-process. Lite (default) reports "support not compiled in."</td><td>Bundled in the Full prebuilt download (libduckdb v1.1.3 alongside the binary); runs in-process. Lite (default) reports "support not compiled in."</td><td>Bundled in the Full prebuilt download (libduckdb v1.1.3 alongside the binary); runs in-process. Lite (default) reports "support not compiled in."</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h4>Troubleshooting</h4>
   <ul>
@@ -1792,7 +1878,7 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
 
   <h2 id="vision-models" class="anchor-target">Vision models &amp; file attachments</h2>
   <p>The 📎 attach button accepts any file type. What happens depends on the kind:</p>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>File kind</th><th>Handled how</th></tr></thead>
     <tbody>
       <tr><td>🖼 Images (png/jpg/webp/gif/bmp)</td><td>Loaded as <code>QImage</code>, downscaled to max 1280px, re-encoded as PNG, base64-encoded, passed in the <code>images</code> field of <code>/api/generate</code>. Vision-capable models (local <code>llava</code>, <code>llama3.2-vision</code>, <code>qwen2.5-vl</code>, <code>gemma3</code>, <code>minicpm-v</code>, <code>moondream</code>, …; cloud Claude 3.5+ / GPT-4o-4.1-5 / Gemini) actually see the image. The image is attached and sent regardless of which model is selected — if the model can't read images, the backend's error is surfaced in the chat transcript rather than the attachment being silently dropped.</td></tr>
@@ -1803,7 +1889,7 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
       <tr><td>📄 Text / code (*.txt / *.md / *.json / *.py / *.cpp / *.js / ...)</td><td>Read raw as UTF-8, capped at 100 KB, appended as context.</td></tr>
       <tr><td>Anything else</td><td>Attempted as text (UTF-8).</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h2 id="ai-interaction-log" class="anchor-target">AI Interaction Log</h2>
   <p><strong>Audit exactly what your AI did — transparency, not just a promise.</strong> Every request <em>and</em> response to any AI backend is recorded to a <strong>local SQLite log</strong> you can open and read. That covers both local backends (Ollama, llama.cpp) and cloud backends (OpenRouter, OpenAI, Azure OpenAI, Ollama Cloud), as well as Noter's AI <strong>Extract</strong>.</p>
@@ -1908,7 +1994,7 @@ textbox "Dashed hops are fire-and-forget."</code></pre>
 
   <h3 id="diagram-vs-mermaid" class="anchor-target">Why not just Mermaid?</h3>
   <p>Mermaid is excellent and Notepatra <strong>imports Mermaid flowcharts</strong>, so nothing you already have is lost. What <code>.npd</code> adds is everything that needs an application rather than a browser:</p>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th></th><th>Notepatra Diagram (<code>.npd</code>)</th><th>Mermaid</th></tr></thead>
     <tbody>
       <tr><td><strong>Renderer</strong></td><td>Native Qt painter in C++ — no browser, no JavaScript, no WebView. Renders in the ~13 MB Lite build.</td><td>Needs a JS runtime: a browser tab, Electron, or a WebView.</td></tr>
@@ -1920,7 +2006,7 @@ textbox "Dashed hops are fire-and-forget."</code></pre>
       <tr><td><strong>Import</strong></td><td>Mermaid <code>graph</code> / <code>flowchart</code>: direction, every node shape, <code>--&gt;</code>, <code>-.-&gt;</code>, <code>==&gt;</code>, <code>&lt;--&gt;</code>, edge labels, <code>subgraph</code> → <code>group</code>.</td><td>—</td></tr>
       <tr><td><strong>Where Mermaid wins</strong></td><td>Flowchart, ER and system diagrams only. GitHub does not render <code>.npd</code> inline — export the PNG for your README.</td><td>Sequence, class, state, Gantt and more; GitHub and most wikis render it in Markdown.</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <div class="callout warning">
     <strong>Known limitations.</strong>
@@ -1939,14 +2025,14 @@ textbox "Dashed hops are fire-and-forget."</code></pre>
   </div>
   <p>From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a standalone stdio JSON-RPC 2.0 <a href="https://modelcontextprotocol.io">Model Context Protocol</a> server (protocol revision <code>2025-06-18</code>; <code>2025-03-26</code> and <code>2024-11-05</code> also accepted) that connects external AI assistants to the running editor over a dedicated per-user local connection (a Unix domain socket on Linux/macOS, or — added in v0.1.119 and working from v0.1.120, which fixed a deadlock that blocked every verb — a Windows named pipe). Pass <code>--socket</code> to target the live editor; without it the server runs against a built-in mock editor for protocol testing. It works with Claude Desktop, Claude Code, OpenAI Codex CLI, the OpenAI Agents SDK, and any spec-compliant stdio MCP client (Cursor, Windsurf, VS Code).</p>
   <p>The server exposes <strong>49 tools</strong> in three tiers:</p>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>Tier</th><th>Tools</th><th>Gate</th></tr></thead>
     <tbody>
       <tr><td><strong>Read</strong> (24)</td><td><code>list_open_tabs</code>, <code>read_tab</code>, <code>get_selection</code>, <code>get_status</code>, <code>app_info</code>, <code>list_recent_files</code>, <code>find_in_tab</code>, <code>search_project</code>, <code>list_notes</code>, <code>read_note</code>, <code>list_reminders</code>, <code>git_status</code>, <code>git_diff</code>, <code>git_log</code>, <code>git_show</code>, <code>git_branch</code>, <code>validate_npd</code>, <code>run_sql</code>, <code>list_languages</code>, <code>get_capabilities</code>, <code>get_diagram_source</code>, <code>list_connections</code>, <code>run_query</code>, <code>list_tables</code></td><td>None — observation only</td></tr>
       <tr><td><strong>Act</strong> (14)</td><td><code>open_file</code>, <code>new_tab</code>, <code>goto_line</code>, <code>select_range</code>, <code>set_language</code>, <code>compare_tabs</code>, <code>format_json</code>, <code>format_sql</code>, <code>format_html</code>, <code>open_note</code>, <code>create_diagram</code>, <code>open_noter</code>, <code>open_data_analyst</code>, <code>render_chart</code></td><td>None — visible, non-destructive editor actions</td></tr>
       <tr><td><strong>Write</strong> (11)</td><td><code>insert_text</code>, <code>replace_selection</code>, <code>apply_edit</code>, <code>save_tab</code>, <code>create_note</code>, <code>append_note</code>, <code>set_reminder</code>, <code>export_diagram</code>, <code>set_diagram_source</code>, <code>export_query_results</code>, <code>export_chart</code></td><td><strong>Human approval card</strong> — see below</td></tr>
     </tbody>
-  </table>
+  </table></div>
   <p><code>find_in_tab</code> and <code>search_project</code> take an optional <code>regex</code> flag (v0.1.119) for regular-expression search. <code>run_sql</code> is <strong>SELECT-only</strong> — the classifier rejects any non-read query — and on the Full/DuckDB edition it runs in an engine sandbox: the target CSV / Parquet / JSON is materialized into an in-memory table, then DuckDB's external filesystem access is disabled (<code>enable_external_access=false</code>) before the untrusted SQL runs, so it cannot read host files even via <code>read_text</code>, <code>read_csv_auto</code>, or a replacement scan.</p>
   <p><strong>What <code>search_project</code> will and will not read.</strong> Filesystem search needs a folder you actually opened. With no workspace open it searches your <strong>open tabs only</strong> and says so — every response carries <code>workspace_searched</code> and <code>scope</code>, so a client cannot mistake a partial search for a complete one. Before v0.1.125 the file explorer's <em>display placeholder</em> (your home directory) was read as a workspace by four separate guards, so a search with no folder open recursed through <code>$HOME</code>. Zero matches is a <strong>successful</strong> search returning an empty list (v0.1.127) — before that, a query that simply missed was reported as "No workspace folder is open", which is a different fact about the world.</p>
 
@@ -1975,7 +2061,7 @@ args = ["--socket"]</code></pre>
   <h2 id="shortcuts" class="anchor-target">Keyboard shortcuts</h2>
 
   <h3>File</h3>
-  <table>
+  <div class="table-wrap"><table>
     <tbody>
       <tr><td><span class="kbd">Ctrl+N</span></td><td>New</td></tr>
       <tr><td><span class="kbd">Ctrl+O</span></td><td>Open</td></tr>
@@ -1985,10 +2071,10 @@ args = ["--socket"]</code></pre>
       <tr><td><span class="kbd">Ctrl+W</span></td><td>Close tab</td></tr>
       <tr><td><span class="kbd">Ctrl+P</span></td><td>Print</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h3>Edit</h3>
-  <table>
+  <div class="table-wrap"><table>
     <tbody>
       <tr><td><span class="kbd">Ctrl+Z</span></td><td>Undo</td></tr>
       <tr><td><span class="kbd">Ctrl+Y</span> / <span class="kbd">Ctrl+Shift+Z</span></td><td>Redo</td></tr>
@@ -2001,10 +2087,10 @@ args = ["--socket"]</code></pre>
       <tr><td><span class="kbd">Ctrl+U</span></td><td>lowercase selection</td></tr>
       <tr><td><span class="kbd">Ctrl+Shift+↑</span> / <span class="kbd">Ctrl+Shift+↓</span></td><td>Move line up / down</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h3>Search</h3>
-  <table>
+  <div class="table-wrap"><table>
     <tbody>
       <tr><td><span class="kbd">Ctrl+F</span></td><td>Find</td></tr>
       <tr><td><span class="kbd">Ctrl+H</span></td><td>Replace</td></tr>
@@ -2015,10 +2101,10 @@ args = ["--socket"]</code></pre>
       <tr><td><span class="kbd">F2</span></td><td>Next bookmark</td></tr>
       <tr><td><span class="kbd">Shift+F2</span></td><td>Previous bookmark</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h3>View / Navigation</h3>
-  <table>
+  <div class="table-wrap"><table>
     <tbody>
       <tr><td><span class="kbd">Ctrl+=</span> / <span class="kbd">Ctrl+-</span></td><td>Zoom in / out</td></tr>
       <tr><td><span class="kbd">Ctrl+0</span></td><td>Reset zoom</td></tr>
@@ -2029,16 +2115,16 @@ args = ["--socket"]</code></pre>
       <tr><td><span class="kbd">Ctrl+Shift+G</span></td><td>Open Project Search</td></tr>
       <tr><td><span class="kbd">F11</span></td><td>Full screen</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h3>Macro</h3>
-  <table>
+  <div class="table-wrap"><table>
     <tbody>
       <tr><td><span class="kbd">Ctrl+Shift+M</span></td><td>Start macro recording</td></tr>
       <tr><td><span class="kbd">Ctrl+Shift+T</span></td><td>Stop macro recording</td></tr>
       <tr><td><span class="kbd">Ctrl+Shift+P</span></td><td>Play last macro</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h2 id="cli" class="anchor-target">Command-line flags</h2>
   <pre><code>notepatra [options] [file1] [file2] ...
@@ -2061,14 +2147,14 @@ Examples:
 
   <h2 id="file-layout" class="anchor-target">Config file layout</h2>
   <p>All persistent state lives under:</p>
-  <table>
+  <div class="table-wrap"><table>
     <thead><tr><th>OS</th><th>Path</th></tr></thead>
     <tbody>
       <tr><td>Linux</td><td><code>~/.config/notepatra/</code> (honours <code>$XDG_CONFIG_HOME</code>)</td></tr>
       <tr><td>macOS</td><td><code>~/Library/Application Support/Notepatra/</code></td></tr>
       <tr><td>Windows</td><td><code>%APPDATA%\Notepatra\</code> (Roaming)</td></tr>
     </tbody>
-  </table>
+  </table></div>
 
   <h3>Files inside that directory</h3>
   <ul>

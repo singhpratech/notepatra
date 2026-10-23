@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.129 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.130 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -1383,6 +1383,76 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_fullscreen_exit
         LABELS "integration;ai;fullscreen;v0168"
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     message(STATUS "Regression test enabled — target: test_ai_fullscreen_exit")
+endif()
+
+# Preview pane: pure renderers (Markdown / .ipynb / "-- %%" SQL cell split).
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notebook_render.cpp")
+    add_executable(test_notebook_render test_notebook_render.cpp src/notebook_render.cpp)
+    target_include_directories(test_notebook_render PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_notebook_render PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets)
+    notepatra_add_qt_test(test_notebook_render)
+    set_tests_properties(test_notebook_render PROPERTIES LABELS "unit;preview" TIMEOUT 60)
+    message(STATUS "Regression test enabled — target: test_notebook_render")
+endif()
+
+# Preview pane integration: drives a real MainWindow (Markdown, HTML, .ipynb,
+# SQL notebook cells against a scratch SQLite, theme switch, Ctrl+Return).
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_preview_pane.cpp")
+    set(PREVIEW_PANE_SOURCES ${SOURCES})
+    list(FILTER PREVIEW_PANE_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_preview_pane
+        test_preview_pane.cpp
+        ${PREVIEW_PANE_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_preview_pane rust_core)
+    target_compile_definitions(test_preview_pane PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_preview_pane PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_preview_pane PRIVATE
+        Qt5::Widgets
+        Qt5::PrintSupport
+        Qt5::Network
+        Qt5::Concurrent
+        Qt5::Sql
+        Qt5::Charts
+        Qt5::Test
+        ${QSCINTILLA_LIB}
+        ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_preview_pane PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_preview_pane PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_preview_pane PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_preview_pane PRIVATE
+            ws2_32 userenv bcrypt ntdll
+            advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_preview_pane PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_preview_pane PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_preview_pane PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_preview_pane PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_preview_pane PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_preview_pane COMMAND $<TARGET_FILE:test_preview_pane>)
+    set_tests_properties(test_preview_pane PROPERTIES
+        LABELS "integration;preview"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 180)
+    message(STATUS "Regression test enabled — target: test_preview_pane")
 endif()
 
 # ─── Change-history strip (v0.1.91) ─────────────────────────────────────

@@ -270,6 +270,8 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include "ai_tools.h"
 #include "dbconnections.h"
 #include "tool_colors.h"
+#include "preview_pane.h"
+#include "sql_notebook.h"
 // v0.1.120 — MCP phase 2 chart verbs (both safe in Lite; the renderer paints
 // an "install charts pack" stub without WebEngine).
 #include "chart_spec_to_vega.h"
@@ -778,6 +780,23 @@ static void drawPasswordFeatureGlyph(QPainter &painter, const QRectF &rect) {
                      QPointF(cx, body.center().y() + 3.0));
 }
 
+static void drawPreviewFeatureGlyph(QPainter &painter, const QRectF &rect) {
+    // An eye: almond outline, iris ring, solid pupil.
+    const QPointF c = rect.center();
+    QPainterPath eye;
+    eye.moveTo(c.x() - 10.0, c.y());
+    eye.quadTo(c.x(), c.y() - 9.5, c.x() + 10.0, c.y());
+    eye.quadTo(c.x(), c.y() + 9.5, c.x() - 10.0, c.y());
+    painter.setPen(QPen(Qt::white, 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(QColor(255, 255, 255, 40));
+    painter.drawPath(eye);
+    painter.setBrush(Qt::NoBrush);
+    painter.drawEllipse(c, 3.6, 3.6);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(Qt::white);
+    painter.drawEllipse(c, 1.6, 1.6);
+}
+
 static QIcon makeFeatureIcon(const QColor &base, const QString &iconKind, const QString &glyph = QString()) {
     // v0.1.51 — paint at native device-pixel resolution so the toolbar
     // icons stay crisp on Windows 150 % display zoom and other fractional
@@ -847,6 +866,8 @@ static QIcon makeFeatureIcon(const QColor &base, const QString &iconKind, const 
         drawDiagramFeatureGlyph(painter, rect);
     } else if (iconKind == "password") {
         drawPasswordFeatureGlyph(painter, rect);
+    } else if (iconKind == "preview") {
+        drawPreviewFeatureGlyph(painter, rect);
     } else {
         QFont font = notepatraCodeFont(glyph.size() > 2 ? 8 : 10, QFont::Bold);
         painter.setFont(font);
@@ -1191,9 +1212,17 @@ MainWindow::MainWindow(bool standaloneNoSession)
         Config::instance().save();
     });
 
-    // Center: tabs
+    // Center: tabs, sharing an inner splitter with the (hidden) preview pane so
+    // m_splitter keeps its [editor group | AI dock host | function list] order.
     m_tabs = new TabManager;
-    m_splitter->addWidget(m_tabs);
+    m_editorSplit = new QSplitter(Qt::Horizontal);
+    m_editorSplit->setChildrenCollapsible(false);
+    m_editorSplit->addWidget(m_tabs);
+    m_previewPane = new PreviewPane;
+    m_previewPane->setVisible(false);
+    m_editorSplit->addWidget(m_previewPane);
+    m_splitter->addWidget(m_editorSplit);
+    connect(this, &MainWindow::themeChanged, m_previewPane, &PreviewPane::onThemeChanged);
 
     // Right: AI Assistant side-dock (hidden by default). Gives users the
     // Cursor / VS Code Copilot 3-column layout on demand:
@@ -1531,6 +1560,7 @@ MainWindow::MainWindow(bool standaloneNoSession)
         }
         updateTitle();
         updateStatusBar();
+        if (m_previewPane) m_previewPane->setSource(currentEditor());
         // v0.1.42 — refresh View menu checkmarks to mirror the new
         // active editor's actual state (whitespace / EOL / wrap /
         // indent guide). Pre-v0.1.42 these stuck on whatever the
@@ -3564,6 +3594,43 @@ void MainWindow::buildMenus() {
     view->addAction("Toggle Full-Screen Mode", this, [this]() {
         isFullScreen() ? showNormal() : showFullScreen();
     }, QKeySequence("F11"));
+    m_previewAct = view->addAction("Preview Pane    Ctrl+Shift+V");
+    m_previewAct->setObjectName("actPreviewPane");
+    m_previewAct->setCheckable(true);
+    m_previewAct->setShortcut(QKeySequence("Ctrl+Shift+V"));
+    connect(m_previewAct, &QAction::toggled, this, [this, sized = false](bool on) mutable {
+        if (!m_previewPane || !m_editorSplit) return;
+        if (on) m_previewPane->setSource(currentEditor());
+        m_previewPane->setVisible(on);
+        if (on && !sized) {
+            sized = true;
+            const int total = qMax(m_editorSplit->width(), 2);
+            m_editorSplit->setSizes({total * 55 / 100, total - total * 55 / 100});
+        }
+    });
+    // Ctrl+Return runs the SQL cell at the cursor; enabled only while the pane
+    // shows a SQL notebook so the key is never swallowed otherwise.
+    auto *runSqlCellAct = new QAction("Run SQL Cell", this);
+    runSqlCellAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Return));
+    runSqlCellAct->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    runSqlCellAct->setEnabled(false);
+    m_tabs->addAction(runSqlCellAct);
+    auto syncRunSqlCell = [this, runSqlCellAct]() {
+        runSqlCellAct->setEnabled(m_previewPane && m_previewPane->isVisible()
+                                  && m_previewPane->mode() == PreviewPane::Mode::SqlNotebook);
+    };
+    connect(m_previewPane, &PreviewPane::modeChanged, this, syncRunSqlCell);
+    connect(m_previewAct, &QAction::toggled, this, syncRunSqlCell);
+    connect(runSqlCellAct, &QAction::triggered, this, [this]() {
+        Editor *ed = currentEditor();
+        if (!ed || !m_previewPane || !m_previewPane->isVisible()) return;
+        if (m_previewPane->source() != ed) m_previewPane->setSource(ed);
+        m_previewPane->refreshNow();
+        if (m_previewPane->mode() != PreviewPane::Mode::SqlNotebook) return;
+        int line = 0, col = 0;
+        ed->getCursorPosition(&line, &col);
+        m_previewPane->sqlNotebook()->runCellAtLine(line);
+    });
     view->addSeparator();
 
     // v0.1.42 — every View toggle now: (1) actually applies to the editor,
@@ -5890,6 +5957,10 @@ void MainWindow::buildToolbar() {
     addFeatureShortcut(featureTb, findActionByPrefix(this, "Diagram"),
                        notepatraToolAccent("Diagram"), "diagram", "Diagram",
                        "Toggle Diagram — flow / ER / system (.npd) — ON / OFF",
+                       /*showCheckedState=*/true);
+    addFeatureShortcut(featureTb, m_previewAct,
+                       notepatraToolAccent("PreviewPane"), "preview", "Preview",
+                       "Toggle Preview — Markdown / HTML / .ipynb / SQL cells (Ctrl+Shift+V) — ON / OFF",
                        /*showCheckedState=*/true);
     // v0.1.61 — dropped the standalone Git Integration toolbar shortcut.
     // Full VS Code-parity Source Control integration inside Coding mode

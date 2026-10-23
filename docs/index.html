@@ -65,7 +65,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. Bare executable is ~13 MB across platforms (13.4 MB on Linux x64); full downloads are 4.7 MB (Linux x64 tar.gz), 28.0 MB (macOS DMG with bundled Qt), 43.9 MB (Windows MSI with bundled Qt DLLs). 238 file types. 82 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server (examples redacted). Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.129",
+      "softwareVersion": "0.1.130",
       "fileSize": "13.4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -167,7 +167,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~13 MB across every platform (13.4 MB on Linux x64). Latest v0.1.129 download sizes: 4.7 MB Linux x64 tar.gz, 4.7 MB Linux ARM64 tar.gz, 28.0 MB macOS DMG (with bundled Qt), 43.9 MB Windows MSI / 33.0 MB NSIS / 37.8 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~13.4 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~13 MB across every platform (13.4 MB on Linux x64). Latest v0.1.130 download sizes: 4.7 MB Linux x64 tar.gz, 4.7 MB Linux ARM64 tar.gz, 28.0 MB macOS DMG (with bundled Qt), 43.9 MB Windows MSI / 33.0 MB NSIS / 37.8 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~13.4 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
           }
         },
         {
@@ -183,7 +183,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 238 file types with 82 language lexers as of v0.1.129: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 238 file types with 82 language lexers as of v0.1.130: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -796,6 +796,7 @@
            dot per release runs down the left edge. */
         .version-list {
             display: grid;
+            grid-template-columns: minmax(0, 1fr);
             gap: 20px;
             position: relative;
             padding-left: 40px;
@@ -924,9 +925,8 @@
             gap: 16px;
             flex-wrap: wrap;
         }
-        .version-meta span:first-child,
-        .version-meta span:last-child { white-space: nowrap; }
-        .version-meta span:not(:first-child):not(:last-child) { white-space: normal; min-width: 0; }
+        .version-meta span:first-child { white-space: nowrap; }
+        .version-meta span:not(:first-child) { white-space: normal; min-width: 0; }
         .version-changes {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -1010,6 +1010,8 @@
             align-content: start;
         }
         .feature-card > :not(.feature-icon):not(h3) { grid-column: 1 / -1; }
+        /* Cards without an icon (FAQ) — the heading must not sit in the 48px icon column. */
+        .feature-card > h3:first-child { grid-column: 1 / -1; }
         .feature-icon {
             width: 48px;
             height: 48px;
@@ -1087,6 +1089,7 @@
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
         /* Comparison */
+        .table-wrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
         .compare-table {
             width: 100%;
             border-collapse: collapse;
@@ -1309,8 +1312,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.129">
-        Download v0.1.129 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.130">
+        Download v0.1.130 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1338,9 +1341,9 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.129 · Now Available · MCP server for AI assistants · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.130 · Now Available · MCP server for AI assistants · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
-        <p>Tiny native binary (~13 MB bare, ~4.7 MB compressed on Linux). C++ and Rust. 238 file types · 82 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints. <strong>New in v0.1.129:</strong> the built-in <a href="#features" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Password Generator</a> gains an <strong>SSH key</strong> page beside passwords and passphrases — Ed25519 / ECDSA / RSA, an optional passphrase-encrypted private key, a SHA256 fingerprint, and a save that sets <code>0600</code> before it writes — and <a href="/docs.html#diagram" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">diagrams</a> are drawn flat, with light palettes, groups, notes, legends and dashed edges. <strong>MCP:</strong> the <a href="/mcp.html" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">MCP server</a> ships a prebuilt signed Windows sidecar and a one-click Claude Desktop bundle — its 49 tools (Git, read-only SQL, saved-connection queries, charts, Noter notes) connect Claude, Codex, or any MCP client straight to your editor.</p>
+        <p>Tiny native binary (~13 MB bare, ~4.7 MB compressed on Linux). C++ and Rust. 238 file types · 82 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints. <strong>New in v0.1.130:</strong> a <a href="/docs.html#preview-pane" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Preview pane</a> beside the editor — <strong>Markdown</strong> and <strong>HTML</strong> rendered live as you type, <strong>Jupyter notebooks</strong> (<code>.ipynb</code>) shown as notebooks with their outputs, and plain <strong><code>.sql</code> files run cell by cell</strong> (<code>-- %%</code> separators, a temporary scratch database or any saved connection, read-only until you say otherwise). <strong>MCP:</strong> the <a href="/mcp.html" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">MCP server</a> ships a prebuilt signed Windows sidecar and a one-click Claude Desktop bundle — its 49 tools (Git, read-only SQL, saved-connection queries, charts, Noter notes) connect Claude, Codex, or any MCP client straight to your editor.</p>
 
         <div class="install-box">
             <div class="install-tabs">
@@ -1422,13 +1425,13 @@
         <div class="stat"><div class="stat-number"><span>238</span></div><div class="stat-label">File Types</div></div>
         <div class="stat"><div class="stat-number"><span>82</span></div><div class="stat-label">Language Lexers</div></div>
         <div class="stat"><div class="stat-number"><span>2</span> GB</div><div class="stat-label">Max File Size</div></div>
-        <div class="stat"><div class="stat-number"><span>79</span></div><div class="stat-label">Regression Suites</div></div>
+        <div class="stat"><div class="stat-number"><span>81</span></div><div class="stat-label">Regression Suites</div></div>
         <div class="stat"><div class="stat-number"><span>0</span></div><div class="stat-label">Electron</div></div>
     </div>
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.129</div>
+        <div class="section-label">Download v0.1.130</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1440,7 +1443,7 @@
              needs to make.  -->
         <div style="max-width: 1120px; margin: 30px auto 24px; padding: 0 24px;">
           <div style="display: grid; gap: 22px;
-                      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));">
+                      grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));">
             <!-- Flavor 1 — regular Notepatra -->
             <div style="position: relative; padding: 28px 26px;
                         background: var(--c-surface);
@@ -1496,7 +1499,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.129 →
+                Get Notepatra v0.1.130 →
               </a>
             </div>
 
@@ -1539,7 +1542,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.129 →
+                Get Notepatra Local AI v0.1.130 →
               </a>
             </div>
           </div>
@@ -1689,11 +1692,17 @@
         <div class="section-desc">Built on QScintilla — a battle-tested Scintilla-based editor engine. Hot-path file I/O and search use Rust for memory safety on untrusted input.</div>
 
         <div class="features-grid">
-            <!-- Password Generator — the v0.1.129 headline, in slot 1.
+            <!-- Preview pane — the v0.1.130 headline, in slot 1. Only the current release carries a NEW pill — see stale-text-check. -->
+            <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
+                <div class="feature-icon fi-teal"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="15" y1="9" x2="19" y2="9"/><line x1="15" y1="13" x2="19" y2="13"/></svg></div>
+                <h3>Preview pane — Markdown, HTML, notebooks, SQL cells <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW IN v0.1.130</span></h3>
+                <p>A pane beside the editor (<code>Ctrl+Shift+V</code>, or the <strong>Preview</strong> button on the tools row). <strong>Markdown</strong> renders live as you type and follows the theme; <strong>HTML</strong> renders with Qt's engine in Lite and with Chromium in Full — JavaScript off, no remote resources, the page cannot navigate the pane. <strong>Jupyter <code>.ipynb</code></strong> shows as a read-only notebook with its outputs. A <code>.sql</code> file with <code>-- %%</code> separators becomes <strong>SQL cells</strong>: Run, Run All, and <code>Ctrl+Return</code> against a temporary scratch database or a saved connection that is <strong>read-only until you tick Allow writes</strong>. No new dependency, no network.</p>
+            </div>
+            <!-- Password Generator — the v0.1.129 headline, now slot 2.
                  Only the current release carries a NEW pill — see stale-text-check. -->
             <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
                 <div class="feature-icon fi-purple">🔒</div>
-                <h3>Password Generator — passwords, passphrases, SSH keys <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW IN v0.1.129</span> </h3>
+                <h3>Password Generator — passwords, passphrases, SSH keys </h3>
                 <p>One tab, three pages on a left rail — <strong>Password</strong>, <strong>Passphrase</strong>, <strong>SSH key</strong> (<code>Alt+1</code> / <code>Alt+2</code> / <code>Alt+3</code>). Passwords draw from a shell-safe symbol set; passphrases from a 2,048-word list compiled into the binary (11 bits a word). <strong>SSH key</strong> makes a real OpenSSH pair — <strong>Ed25519</strong>, ECDSA P-256 / P-384, RSA 3072 / 4096 — with an optional passphrase encrypted the way <code>ssh-keygen</code> does it, an empty comment by default (no <code>user@host</code> leak), the private key hidden until you ask, and <strong>Save</strong> that sets <code>0600</code> before writing and never overwrites. The bits readout is a real count, not a score. Every draw comes from the OS random source through the Rust core; nothing is stored, sent to an AI backend, or visible to MCP. Offline, in every build including Lite.</p>
             </div>
             <!-- MCP — the v0.1.118 headline (expanded to 48 tools in v0.1.120), promoted to slot 1 so the
@@ -1701,7 +1710,7 @@
                  star features. -->
             <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
                 <div class="feature-icon fi-orange">🔌</div>
-                <h3>MCP — your editor, readable by your AI <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">49 TOOLS · v0.1.129</span></h3>
+                <h3>MCP — your editor, readable by your AI <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">49 TOOLS · v0.1.130</span></h3>
                 <p>A built-in <strong>Model Context Protocol server</strong> (<code>notepatra-mcp</code>) connects the assistants you already use — <strong>Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK</strong>, and any spec-compliant MCP client — to the running editor. <strong>49 tools in three tiers</strong>: read (tabs, selection, search, Noter notes, reminders, read-only Git and SQL, diagram source, saved-connection list/query/tables), act (open, compare, format, navigate, select range, open notes, create diagram, open Noter panel, open Data Analyst, render chart), and write (edit, save, create/append notes, set reminders, replace diagram source, export diagrams, export query results, export chart) — where <em>every</em> write shows an <strong>Approve / Deny card inside the editor</strong> and does nothing until you click Approve (auto-deny after 120 s, no headless bypass). Local socket + stdio only — nothing leaves your machine. <a href="/mcp.html" style="color: var(--c-accent);">Read the MCP docs →</a></p>
             </div>
             <!-- AI Assistant at slot 2 — highlighted with a Clay-orange
@@ -1906,7 +1915,7 @@
         <div class="section-label">Why Notepatra</div>
         <div class="section-title">How Notepatra compares</div>
 
-        <table class="compare-table">
+        <div class="table-wrap"><table class="compare-table">
             <thead>
                 <tr>
                     <th>Editor</th>
@@ -2002,7 +2011,7 @@
                     <td class="check">✓</td>
                 </tr>
             </tbody>
-        </table>
+        </table></div>
         <p style="margin-top: 12px; font-size: 12px; color: var(--text-dim);"><sup>†</sup> Notepad++ also opens large files; the ✗ marks "out-of-the-box, no plugins."</p>
     </section>
 
@@ -2055,62 +2064,65 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.129 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.130 <span class="latest-pill">LATEST</span></div>
                     <div class="version-meta">
-                        <span>2026-08-22</span>
-                        <span>· <strong>ssh-keygen puts your username and machine name in every key it makes. This one leaves the comment blank.</strong> The Password Generator grows a left rail and an <strong>SSH key</strong> page, every draw now comes from the OS random source, and <code>.npd</code> diagrams are drawn flat, with light palettes, groups, notes, legends and dashed edges.</span>
+                        <span>2026-10-20</span>
+                        <span>· <strong>A Preview pane beside the editor: Markdown and HTML rendered live, Jupyter notebooks shown as notebooks, and plain <code>.sql</code> files that run cell by cell.</strong> The website's layout is also fixed on phones.</span>
                         <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
                     </div>
                 </div>
                 <div class="version-changes">
                     <div class="version-section">
-                        <h5>New — SSH keys, behind a rail</h5>
+                        <h5>New — Preview pane</h5>
                         <ul>
-                            <li><strong>A left rail replaces the two radio buttons</strong> — <strong>Password</strong>, <strong>Passphrase</strong> and <strong>SSH key</strong>, each its own page, reachable with <code>Alt+1</code> / <code>Alt+2</code> / <code>Alt+3</code>. The menu entry is now <strong>Tools &rarr; Password Generator — Passwords / Passphrases / SSH keys</strong>.</li>
-                            <li><strong>Key types</strong> — <strong>Ed25519</strong> (recommended and the default), <strong>ECDSA P-256</strong> and <strong>P-384</strong>, <strong>RSA 3072</strong> and <strong>4096</strong>, and <strong>RSA 2048</strong> marked <em>legacy</em>. Each entry says in its tooltip when it is the right pick; the honest answer is Ed25519 unless something forces your hand.</li>
-                            <li><strong>The comment field is empty by default, and that is the point.</strong> <code>ssh-keygen</code> defaults the comment to <code>user@host</code>, which copies your username and your machine's name into every <code>authorized_keys</code> file the key is ever pasted into. Type a label if you want one — <code>work-laptop</code> — but nothing is put there for you.</li>
-                            <li><strong>An optional passphrase encrypts the private key</strong> with <code>aes256-ctr</code> and <code>bcrypt-pbkdf</code> (16 rounds) — the same construction <code>ssh-keygen</code> writes, so <code>ssh-add</code> and OpenSSH read it directly.</li>
-                            <li><strong>The public line and its SHA256 fingerprint are shown immediately; the private key is not.</strong> It stays off-screen until you tick <strong>Show private key</strong>. <strong>Copy private key</strong> arms the 30-second clipboard wipe; copying the <em>public</em> line does not, because a public key is not a secret.</li>
-                            <li><strong>Save private key…</strong> creates the file, sets it to <code>0600</code>, and only then writes the bytes, so the key is never briefly world-readable. It <strong>refuses to overwrite</strong> an existing file, and writes the <code>.pub</code> companion (<code>0644</code>) beside it.</li>
-                            <li><strong>Generation runs off the GUI thread</strong> — RSA-4096 measured between 1.6 and 5.9 seconds on the test machine, and the window stays responsive throughout. Ed25519 is effectively instant.</li>
-                            <li><strong>Checked against OpenSSH itself.</strong> The test suite runs the system <code>ssh-keygen</code> over the generated keys: <code>-y</code> reproduces the same public line, <code>-lf</code> the same fingerprint, and <code>-y -P</code> opens the encrypted key and rejects the wrong passphrase.</li>
+                            <li><strong>Open it</strong> with <strong>View &rarr; Preview Pane</strong>, <code>Ctrl+Shift+V</code>, or the new <strong>Preview</strong> button (eye icon, showing ON or OFF) at the end of the built-in tools row. It sits right of the editor tabs in a draggable splitter (55/45 by default), follows the current tab, and shows a one-line placeholder on a tab it cannot preview. Toggle it off and the editor gets the full width back. It is not saved in the session.</li>
+                            <li><strong>Markdown</strong> is rendered live with Qt's GitHub-dialect parser — headings, emphasis, lists, task lists, pipe tables, fenced code, block quotes, links — 250 ms after you stop typing. Relative images resolve against the file's folder, and Light, Dark and Monokai each get matching colours. <code>http</code>, <code>https</code> and <code>mailto</code> links open in the system browser; <code>#anchor</code> links scroll.</li>
+                            <li><strong>HTML</strong> renders through Qt's built-in rich-text engine in Lite (a CSS subset) and through the real <strong>Chromium</strong> engine in Full, where relative images and stylesheets beside the file load. <strong>JavaScript is disabled, no remote resources load, and the page cannot navigate the pane</strong> — meta-refresh, forms and iframes are blocked. Nothing is fetched from the network. HTML over about 1.5 MB falls back to the built-in engine even in Full.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>Where the randomness comes from — changed</h5>
+                        <h5>New — Notebooks</h5>
                         <ul>
-                            <li><strong>Every draw now goes through the OS random source</strong> (<code>getrandom</code> on Linux, the platform equivalent elsewhere) via the Rust core. That covers SSH keys <em>and</em> every password and passphrase; <code>QRandomGenerator::system()</code> is now the fallback, not the source.</li>
-                            <li><strong>This is a correction, not a boast.</strong> Before v0.1.129 the source was Qt's generator, and on x86-64 that means the CPU's <code>RDRAND</code> instruction first — measured at ~7 million draws with <em>zero</em> <code>getrandom</code> syscalls. A reader who assumed "the OS CSPRNG" was reading something else. Now it is what it says. Rejection sampling and the draw-again set guarantee are unchanged, so the bits figure means exactly what it meant before.</li>
-                            <li><strong>Cost:</strong> about <strong>0.6 MB</strong> of binary for the pure-Rust crypto (RustCrypto <code>ssh-key</code>). No new runtime dependency, no download, no network — the SSH page works with the machine offline.</li>
+                            <li><strong><code>.ipynb</code> still opens as JSON text</strong> in the editor; the pane shows a read-only notebook: markdown cells rendered, code cells in monospace with <code>In [n]:</code> counts and the kernel language, and outputs — streams, <code>execute_result</code> and <code>display_data</code> as text, HTML tables or embedded PNG, and error tracebacks with ANSI colours stripped.</li>
+                            <li><strong>nbformat 4 only.</strong> nbformat 3 shows a clear "unsupported" message; malformed JSON shows the parse error. <code>&lt;script&gt;</code> tags inside HTML outputs are removed. Cells are not executed and the notebook is not edited from the pane.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>Diagrams (<code>.npd</code>) — flat, lighter, and able to say more</h5>
+                        <h5>New — SQL cells</h5>
                         <ul>
-                            <li><strong>Flat rendering.</strong> No gradients, no drop shadows: a 1.5 px border, the application's own font, and a tighter grid. It reads like something drawn for a design doc rather than a slide.</li>
-                            <li><strong>Light palettes.</strong> <code>paper</code> and <code>slate</code> join the existing dark ones, and <strong><code>palette auto</code> is the new default</strong> — it follows the app theme, using <code>paper</code> in a light theme and the dark <code>default</code> in a dark one. A per-node colour now renders as a <strong>tint</strong> on a light ground (soft wash, full-strength border, normal dark text) instead of a solid fill.</li>
-                            <li><strong>New grammar:</strong> <code>direction LR</code> (or <code>TB</code>, the default) · dashed edges <code>a -.-&gt; b</code> and <code>a &lt;.-&gt; b</code> for the async, optional or best-effort hop · <code>group "Edge tier" : cdn api</code> draws a labelled container behind those nodes · <code>note api "Rate-limited to 100 rps"</code> pins a card beside one · <code>legend dashed "async"</code> and <code>legend #cc785c "hot path"</code> build a legend box, which appears only when you write at least one <code>legend</code> line.</li>
-                            <li><strong>Mermaid import</strong> now maps <code>-.-&gt;</code> to a dashed edge and <code>subgraph … end</code> to a <code>group</code>.</li>
+                            <li><strong>A plain <code>.sql</code> file becomes a notebook</strong> when it contains <code>-- %%</code> separator lines (the VS Code / Jupytext convention — the file stays ordinary SQL for every other tool). <code>-- %% [markdown]</code> or <code>-- %% md</code> starts a notes cell whose <code>--</code> lines render as Markdown.</li>
+                            <li><strong>Each SQL cell is a card</strong> with a <strong>Run</strong> button, a status line ("3 row(s) in 2 ms", "Done in 4 ms", or the error) and a result table. <strong>Run All</strong> goes top to bottom and stops at the first error; <strong>Stop</strong> cancels; <code>Ctrl+Return</code> runs the cell under the cursor, only while the pane shows a SQL notebook.</li>
+                            <li><strong>Connections:</strong> <strong>Scratch (SQLite, temporary)</strong> — state persists across cells, so a CREATE in one is visible to the next — <strong>Scratch (DuckDB, temporary)</strong> in Full, and every saved connection from Settings. On a saved connection cells are <strong>read-only by default</strong>: a statement that changes data is refused until you tick <strong>Allow writes</strong>.</li>
+                            <li><strong>Limits:</strong> results are capped at 500 rows (the status says when truncated); queries run off the GUI thread with a 120-second ceiling; Stop is immediate for DuckDB but only a request for SQLite and the Qt SQL drivers; the Qt SQLite driver runs only the first statement of a multi-statement cell. The AI assistant's and MCP server's SQL paths and read-only gates are untouched.</li>
                         </ul>
                     </div>
                     <div class="version-section">
-                        <h5>Regressions and known issues — read before upgrading</h5>
+                        <h5>Fixed — website</h5>
                         <ul>
-                            <li><strong>Existing <code>.npd</code> files without a <code>palette</code> line will look different.</strong> They now resolve to <code>palette auto</code>, so on a light theme they render light instead of dark. Pin the old look by adding an explicit <code>palette default</code> (or any named dark palette) to the file.</li>
-                            <li><strong><code>group</code>, <code>note</code>, <code>legend</code>, <code>direction</code> and <code>layout</code> are now reserved words.</strong> A file that used one of them as a node id needs that id renamed.</li>
-                            <li><strong>Windows does not get the <code>0600</code> permission.</strong> The chmod is a POSIX call and is skipped there; check and tighten the file's ACL yourself after saving a private key.</li>
-                            <li><strong>RSA-4096 can take several seconds</strong> (1.6–5.9 s measured). The button shows <em>Generating…</em> and the UI stays responsive, but it is not instant. Ed25519 is.</li>
-                            <li><strong>The clipboard caveat still applies.</strong> The 30-second wipe removes the value only if the clipboard still holds it — it cannot reach into a clipboard-history tool, a manager that has already stored the entry, or another machine's shared clipboard.</li>
-                            <li><strong>Notes are placed to the right of their node</strong> (below it when <code>direction LR</code>), and a long note widens that row. Keep note text short, or expect the layout to spread.</li>
-                            <li><strong>Mermaid bare ids inside a <code>subgraph</code> are not grouped yet</strong> — a node that appears in the block only as a naked id, with no shape and no edge, is imported but left outside the <code>group</code>.</li>
-                            <li><strong>RUSTSEC-2023-0071 stands against <code>rsa</code> 0.9.10</strong>, which <code>ssh-key</code> 0.6.7 pulls in for the RSA key types. It is a timing sidechannel in RSA <em>private-key operations</em> — decryption and signing — with no fixed crate release to move to. Key generation is all Notepatra asks of it, and Ed25519 and ECDSA use different crates entirely, so it is carried as a documented ignore in <code>rust-core/.cargo/audit.toml</code>. One more reason the default is Ed25519.</li>
+                            <li>FAQ card headings no longer wrap one word per line, the download flavour cards and latest release card fit phone screens, wide tables and long inline code on the docs page no longer widen the page, and the top bar wraps on phones. All pages verified at desktop and 390 px.</li>
                         </ul>
                     </div>
                     <div class="version-section">
                         <h5>Verification</h5>
                         <ul>
-                            <li><code>test_passwordgen</code> 67 · <code>test_passwordgen_panel</code> 99 · <code>test_npd_parser</code> 117 · <code>test_mermaid_import</code> 44 · <code>test_diagram_view</code> 19 · 175 Rust tests. Full offscreen <code>ctest</code> is <strong>79/79 green</strong>.</li>
+                            <li>Two new suites: <code>test_notebook_render</code> 53 assertions and <code>test_preview_pane</code> 60+. <strong>81</strong> registered suites on the Full build, <strong>78</strong> on Lite; offscreen <code>ctest</code> green on both.</li>
                         </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.130">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.130">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.129</div>
+                    <div class="version-meta">
+                        <span>2026-08-22</span>
+                        <span>· <strong>ssh-keygen puts your username and machine name in every key it makes. This one leaves the comment blank.</strong> The Password Generator grows a left rail and an <strong>SSH key</strong> page, every draw now comes from the OS random source, and <code>.npd</code> diagrams are drawn flat, with light palettes, groups, notes, legends and dashed edges.</span>
+                        <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
                     </div>
                 </div>
                 <div class="version-actions">
@@ -2119,23 +2131,6 @@
                     <a href="https://github.com/singhpratech/notepatra/commits/v0.1.129">Commits</a>
                 </div>
             </div>
-
-            <div class="version-card">
-                <div class="version-header">
-                    <div class="version-tag">v0.1.128</div>
-                    <div class="version-meta">
-                        <span>2026-08-20</span>
-                        <span>· <strong>Most password meters score how complicated the result looks. This one reports how many values it could have produced.</strong> The built-in Password Generator arrives — random characters or a 2,048-word passphrase, offline, in every build including Lite.</span>
-                        <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
-                    </div>
-                </div>
-                <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.128">Release page</a>
-                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.128">Commits</a>
-                </div>
-            </div>
-
 
             <div class="version-card" style="text-align:center; padding:20px 28px;
                  border:1px solid var(--c-accent);
@@ -2177,7 +2172,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~13 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.129: 238 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (the Full download bundles the DuckDB v1.1.3 engine on every platform), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
+                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~13 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.130: 238 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (the Full download bundles the DuckDB v1.1.3 engine on every platform), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2189,7 +2184,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~13 MB</strong> (13.4 MB on Linux x64) across every platform. v0.1.129 download sizes: <strong>4.7 MB</strong> Linux x64 tar.gz · <strong>4.7 MB</strong> Linux ARM64 tar.gz · <strong>28.0 MB</strong> macOS DMG · <strong>43.9 MB</strong> Windows MSI / <strong>33.0 MB</strong> NSIS / <strong>37.8 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~13 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~13 MB</strong> (13.4 MB on Linux x64) across every platform. v0.1.130 download sizes: <strong>4.7 MB</strong> Linux x64 tar.gz · <strong>4.7 MB</strong> Linux ARM64 tar.gz · <strong>28.0 MB</strong> macOS DMG · <strong>43.9 MB</strong> Windows MSI / <strong>33.0 MB</strong> NSIS / <strong>37.8 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~13 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -2197,7 +2192,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.129 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.130 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>What file encodings are supported?</h3>

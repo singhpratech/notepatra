@@ -28,5 +28,6 @@ QColor notepatraToolAccent(const QString &toolKey) {
     if (k.startsWith(QStringLiteral("password")))        return QColor("#A21CAF"); // fuchsia 294°
     if (k.startsWith(QStringLiteral("git")))             return QColor("#65A30D"); // lime green 74°
     if (k.startsWith(QStringLiteral("hex")))             return QColor("#475569"); // slate gray
+    if (k == QStringLiteral("previewpane"))              return QColor("#0E7490"); // dark cyan; exact match so "preview*.md" tabs stay unaccented
     return QColor();
 }
