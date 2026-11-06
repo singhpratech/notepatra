@@ -606,6 +606,58 @@ int main(int argc, char *argv[]) {
         EXPECT_TRUE("m: language change back to Markdown", pane->mode() == PreviewPane::Mode::Markdown);
     }
 
+    // ── n ──
+    std::printf("-- n: run and advance (Ctrl+Shift+Return) --\n");
+    {
+        const QString advPath = writeFile(work.path(), "advance.sql",
+                                          "select 10 as a;\n-- %%\n\nselect 20 as b;\n-- %%\nselect 30 as c;\n");
+        mw.openFile(advPath);
+        QTest::qWait(30);
+        Editor *adv = mw.currentEditor();
+        QMenu *viewMenu = nullptr;
+        for (QMenu *m : mw.findChildren<QMenu *>())
+            if (m->title() == QLatin1String("&View")) viewMenu = m;
+        QAction *runAct = nullptr, *advAct = nullptr;
+        if (viewMenu)
+            for (QAction *a : viewMenu->actions()) {
+                if (a->text().startsWith(QLatin1String("Run SQL Cell and Advance"))) advAct = a;
+                else if (a->text().startsWith(QLatin1String("Run SQL Cell"))) runAct = a;
+            }
+        EXPECT_TRUE("n: View menu lists Run SQL Cell and Run SQL Cell and Advance", runAct && advAct);
+        EXPECT_TRUE("n: both enabled on a SQL notebook", runAct && advAct && runAct->isEnabled() && advAct->isEnabled());
+        adv->setFocus();
+        adv->setCursorPosition(0, 0);
+        QTest::keyClick(adv, Qt::Key_Return, Qt::ControlModifier | Qt::ShiftModifier);
+        waitIdle(nb);
+        int line = -1, col = -1;
+        adv->getCursorPosition(&line, &col);
+        EXPECT_TRUE("n: cell 0 ran and cursor moved to the next cell's first line",
+                    nb->resultTableAt(0) && nb->resultTableAt(0)->item(0, 0) &&
+                        nb->resultTableAt(0)->item(0, 0)->text() == QLatin1String("10") && line == 3 && col == 0);
+        std::printf("     cursor after 1st advance: %d,%d\n", line, col);
+        QTest::keyClick(adv, Qt::Key_Return, Qt::ControlModifier | Qt::ShiftModifier);
+        waitIdle(nb);
+        adv->getCursorPosition(&line, &col);
+        EXPECT_TRUE("n: cell 1 ran, cursor on the last cell",
+                    nb->resultTableAt(1) && nb->resultTableAt(1)->item(0, 0) &&
+                        nb->resultTableAt(1)->item(0, 0)->text() == QLatin1String("20") && line == 5);
+        QTest::keyClick(adv, Qt::Key_Return, Qt::ControlModifier | Qt::ShiftModifier);
+        waitIdle(nb);
+        adv->getCursorPosition(&line, &col);
+        EXPECT_TRUE("n: last cell ran, cursor stays on it",
+                    nb->resultTableAt(2) && nb->resultTableAt(2)->item(0, 0) &&
+                        nb->resultTableAt(2)->item(0, 0)->text() == QLatin1String("30") && line == 5);
+        EXPECT_TRUE("n: no text inserted by the shortcut", adv->lines() == 7);
+        adv->setCursorPosition(3, 0);
+        QTest::keyClick(adv, Qt::Key_Return, Qt::ControlModifier);
+        waitIdle(nb);
+        adv->getCursorPosition(&line, &col);
+        EXPECT_TRUE("n: Ctrl+Return still runs in place", line == 3);
+        if (tabs) tabs->setCurrentIndex(tabIndexForPath(tabs, mdPath));
+        QTest::qWait(30);
+        EXPECT_TRUE("n: both disabled on a Markdown tab", runAct && advAct && !runAct->isEnabled() && !advAct->isEnabled());
+    }
+
 #ifdef NOTEPATRA_WITH_WEBENGINE
     // ── q ──
     std::printf("-- q: HTML preview loads nothing from the network --\n");

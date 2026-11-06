@@ -182,6 +182,9 @@ int main(int argc, char *argv[]) {
                     md.size() == 2 && md[0].markdown && md[0].text == QLatin1String("## Commented heading"));
         EXPECT_TRUE("leading separator does not create an empty cell 0",
                     md.size() == 2 && md[0].startLine == 0 && md[1].text == QLatin1String("select 3;"));
+        const QVector<SqlCell> gap = splitSqlCells(QStringLiteral("\nselect 1;\n-- %%\n\n  \nselect 2;\n"));
+        EXPECT_TRUE("bodyLine skips blank lines after the separator",
+                    gap.size() == 2 && gap[0].bodyLine == 1 && gap[1].bodyLine == 5);
         EXPECT_TRUE("empty input -> 0 cells", splitSqlCells(QString()).isEmpty());
         EXPECT_TRUE("'--%%' without a space is a separator",
                     splitSqlCells(QStringLiteral("a;\n--%%\nb;")).size() == 2);

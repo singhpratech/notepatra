@@ -332,7 +332,8 @@ void SqlNotebookWidget::rebuildCards() {
             card.run = new QToolButton;
             card.run->setIcon(playIcon);
             card.run->setText(tr("Run"));
-            card.run->setToolTip(tr("Run this cell (Ctrl+Return in the editor)"));
+            card.run->setToolTip(tr("Run this cell (Ctrl+Return in the editor; Ctrl+Shift+Return runs and "
+                                    "moves to the next cell)"));
             card.run->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
             card.run->setAutoRaise(true);
             const int id = m_docs.value(m_doc).value(i).id;
@@ -554,6 +555,14 @@ void SqlNotebookWidget::runNextQueued() {
 
 void SqlNotebookWidget::runCellAtLine(int line) {
     runCell(NotebookRender::cellIndexForLine(m_cells, line));
+}
+
+int SqlNotebookWidget::nextCellLine(int line) const {
+    const int at = NotebookRender::cellIndexForLine(m_cells, line);
+    if (at < 0) return -1;
+    for (int i = at + 1; i < m_cells.size(); ++i)
+        if (!m_cells.at(i).markdown) return m_cells.at(i).bodyLine;
+    return -1;
 }
 
 void SqlNotebookWidget::stop() {

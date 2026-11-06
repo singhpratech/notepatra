@@ -316,6 +316,7 @@ QVector<SqlCell> splitSqlCells(const QString &sql) {
         if (l.endsWith(QLatin1Char('\r'))) l.chop(1);
 
     int start = 0;
+    int bodyStart = 0;
     bool markdown = false;
     QStringList body;
     auto flush = [&](int endLine) {
@@ -324,6 +325,9 @@ QVector<SqlCell> splitSqlCells(const QString &sql) {
             SqlCell c;
             c.startLine = start;
             c.endLine = endLine;
+            c.bodyLine = bodyStart;
+            while (c.bodyLine - bodyStart < body.size() && body.at(c.bodyLine - bodyStart).trimmed().isEmpty())
+                ++c.bodyLine;
             c.text = text;
             c.markdown = markdown;
             cells.append(c);
@@ -335,6 +339,7 @@ QVector<SqlCell> splitSqlCells(const QString &sql) {
         if (parseSeparator(lines.at(i), &rest)) {
             flush(i - 1);
             start = i;
+            bodyStart = i + 1;
             markdown = isMarkdownMarker(rest);
             continue;
         }

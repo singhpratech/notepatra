@@ -39,6 +39,8 @@ public:
     void runCell(int index);
     void runAll();
     void runCellAtLine(int line);
+    // First body line of the next SQL cell after the one at `line`, or -1 on the last cell.
+    int nextCellLine(int line) const;
     void stop();
     void applyColors(const NotebookRender::Colors &c);
     // Re-reads saved connections, keeping the current selection when it still exists.

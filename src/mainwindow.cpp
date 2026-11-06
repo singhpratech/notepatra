@@ -3704,20 +3704,10 @@ void MainWindow::buildMenus() {
         }
     });
     connect(m_editorSplit, &QSplitter::splitterMoved, this, [this]() { rememberPreviewPaneState(); });
-    // Ctrl+Return runs the SQL cell at the cursor; enabled only while the pane
-    // shows a SQL notebook so the key is never swallowed otherwise.
-    auto *runSqlCellAct = new QAction("Run SQL Cell", this);
-    runSqlCellAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Return));
-    runSqlCellAct->setShortcutContext(Qt::WidgetWithChildrenShortcut);
-    runSqlCellAct->setEnabled(false);
-    m_tabs->addAction(runSqlCellAct);
-    auto syncRunSqlCell = [this, runSqlCellAct]() {
-        runSqlCellAct->setEnabled(m_previewPane && m_previewPane->isVisible()
-                                  && m_previewPane->mode() == PreviewPane::Mode::SqlNotebook);
-    };
-    connect(m_previewPane, &PreviewPane::modeChanged, this, syncRunSqlCell);
-    connect(m_previewAct, &QAction::toggled, this, syncRunSqlCell);
-    connect(runSqlCellAct, &QAction::triggered, this, [this]() {
+    // Ctrl+Return runs the SQL cell at the cursor, Ctrl+Shift+Return also moves to
+    // the next cell; enabled only while the pane shows a SQL notebook so the keys
+    // are never swallowed otherwise. The View-menu twins carry no shortcut (no ambiguity).
+    auto runSqlAtCursor = [this](bool advance) {
         Editor *ed = currentEditor();
         if (!ed || !m_previewPane || !m_previewPane->isVisible()) return;
         if (m_previewPane->source() != ed) m_previewPane->setSource(ed);
@@ -3725,8 +3715,39 @@ void MainWindow::buildMenus() {
         if (m_previewPane->mode() != PreviewPane::Mode::SqlNotebook) return;
         int line = 0, col = 0;
         ed->getCursorPosition(&line, &col);
-        m_previewPane->sqlNotebook()->runCellAtLine(line);
-    });
+        SqlNotebookWidget *nb = m_previewPane->sqlNotebook();
+        nb->runCellAtLine(line);
+        if (!advance) return;
+        const int next = nb->nextCellLine(line);
+        if (next < 0) return;
+        ed->setCursorPosition(next, 0);
+        ed->ensureLineVisible(next);
+    };
+    QList<QAction *> sqlCellActs;
+    const struct { const char *text; QKeySequence key; bool advance; } sqlCellDefs[] = {
+        {"Run SQL Cell", QKeySequence(Qt::CTRL | Qt::Key_Return), false},
+        {"Run SQL Cell and Advance", QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Return), true}};
+    for (const auto &d : sqlCellDefs) {
+        auto *keyAct = new QAction(d.text, this);
+        keyAct->setShortcut(d.key);
+        keyAct->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+        m_tabs->addAction(keyAct);
+        auto *menuAct = view->addAction(QStringLiteral("%1    %2").arg(QLatin1String(d.text),
+                                        d.key.toString(QKeySequence::NativeText)));
+        const bool advance = d.advance;
+        for (QAction *a : {keyAct, menuAct}) {
+            a->setEnabled(false);
+            connect(a, &QAction::triggered, this, [runSqlAtCursor, advance]() { runSqlAtCursor(advance); });
+            sqlCellActs << a;
+        }
+    }
+    auto syncRunSqlCell = [this, sqlCellActs]() {
+        const bool on = m_previewPane && m_previewPane->isVisible()
+                        && m_previewPane->mode() == PreviewPane::Mode::SqlNotebook;
+        for (QAction *a : sqlCellActs) a->setEnabled(on);
+    };
+    connect(m_previewPane, &PreviewPane::modeChanged, this, syncRunSqlCell);
+    connect(m_previewAct, &QAction::toggled, this, syncRunSqlCell);
     view->addSeparator();
 
     // v0.1.42 — every View toggle now: (1) actually applies to the editor,

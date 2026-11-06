@@ -49,6 +49,7 @@ QString ipynbToHtml(const QByteArray &json, const Colors &c,
 struct SqlCell {
     int startLine = 0;   // 0-based; the "-- %%" separator line (0 for the leading cell)
     int endLine = 0;     // 0-based, inclusive
+    int bodyLine = 0;    // 0-based, first non-blank line of the body
     QString text;        // cell body without the separator line, trimmed
     bool markdown = false;
 };
