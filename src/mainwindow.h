@@ -109,6 +109,11 @@ public:
     // Public so the session-autosave contract test can drive ticks directly.
     void saveSession();
 
+    // Rename the file behind tab `idx` in place; never overwrites an existing file.
+    enum class RenameResult { Renamed, Unchanged, NoFile, InvalidName, TargetExists,
+                              SaveFailed, RenameFailed };
+    RenameResult renameTabFile(int idx, const QString &newName, QString *errorOut = nullptr);
+
     // Post-show non-modal notice queue (D5) — also used by main() for the
     // crash-recovery / standalone-fallback startup notices.
     void queueStartupNotice(const QString &msg);
@@ -153,6 +158,7 @@ private:
     Editor *newFile();
     void saveFile();
     void saveFileAs();
+    void promptRenameTab(int idx);
     void closeTab(int index);
 
     void updateTitle();

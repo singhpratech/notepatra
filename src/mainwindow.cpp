@@ -1612,21 +1612,7 @@ MainWindow::MainWindow(bool standaloneNoSession)
         }
     });
     connect(m_tabs, &TabManager::tabContextSaveAs, this, [this](int) { saveFileAs(); });
-    connect(m_tabs, &TabManager::tabContextRename, this, [this](int idx) {
-        auto *ed = m_tabs->editorAt(idx);
-        if (!ed || ed->filePath().isEmpty()) return;
-        bool ok;
-        QString name = QInputDialog::getText(this, "Rename", "New filename:",
-            QLineEdit::Normal, QFileInfo(ed->filePath()).fileName(), &ok);
-        if (ok && !name.isEmpty()) {
-            QString newPath = QFileInfo(ed->filePath()).dir().filePath(name);
-            QFile::rename(ed->filePath(), newPath);
-            ed->saveFile(newPath);
-            m_tabs->setTabText(idx, name);
-            m_tabs->setTabToolTip(idx, QDir::toNativeSeparators(newPath));
-            updateTitle();
-        }
-    });
+    connect(m_tabs, &TabManager::tabContextRename, this, &MainWindow::promptRenameTab);
 
     // Function list (hidden by default)
     m_funcList = new FunctionList;
@@ -3243,6 +3229,82 @@ void MainWindow::updateStatusBar() {
     m_statusBar->updateChangeHistory(e->modifiedLineCount(), e->savedLineCount());
 }
 
+MainWindow::RenameResult MainWindow::renameTabFile(int idx, const QString &newName,
+                                                   QString *errorOut) {
+    auto *ed = m_tabs->editorAt(idx);
+    if (!ed || ed->filePath().isEmpty()) return RenameResult::NoFile;
+    const QString oldPath = ed->filePath();
+    const QFileInfo oldFi(oldPath);
+    if (newName == oldFi.fileName()) return RenameResult::Unchanged;
+    if (newName.trimmed().isEmpty() || newName == QLatin1String(".") ||
+        newName == QLatin1String("..") || newName.contains(QLatin1Char('/')) ||
+        newName.contains(QLatin1Char('\\')))
+        return RenameResult::InvalidName;
+    const QString newPath = oldFi.dir().filePath(newName);
+    // A case-only rename on a case-insensitive volume "exists" but is the same file.
+    const bool caseOnly = newName.compare(oldFi.fileName(), Qt::CaseInsensitive) == 0;
+    if (QFileInfo::exists(newPath) &&
+        (!caseOnly || oldFi.dir()
+                          .entryList(QDir::AllEntries | QDir::Hidden | QDir::System)
+                          .contains(newName)))
+        return RenameResult::TargetExists;
+    // Save the buffer to the old path first, so a failed rename loses nothing.
+    if (ed->isModified() && !ed->saveFile()) {
+        if (errorOut) *errorOut = QStringLiteral("Could not save the current changes first.");
+        return RenameResult::SaveFailed;
+    }
+    QFile f(oldPath);
+    if (!f.rename(newPath)) {
+        if (errorOut) *errorOut = f.errorString();
+        return RenameResult::RenameFailed;
+    }
+    if (!ed->saveFile(newPath)) {
+        QFile::rename(newPath, oldPath);  // keep the tab and the disk consistent
+        if (errorOut) *errorOut = QStringLiteral("Could not write the renamed file.");
+        return RenameResult::RenameFailed;
+    }
+    if (m_fileWatcher) {
+        m_fileWatcher->removePath(oldPath);
+        m_fileTimestamps.remove(oldPath);
+        m_fileWatcher->addPath(newPath);
+        m_fileTimestamps[newPath] = QFileInfo(newPath).lastModified();
+    }
+    m_tabs->setTabToolTip(idx, QDir::toNativeSeparators(newPath));
+    updateTabTitle(idx);
+    return RenameResult::Renamed;
+}
+
+void MainWindow::promptRenameTab(int idx) {
+    auto *ed = m_tabs->editorAt(idx);
+    if (!ed || ed->filePath().isEmpty()) return;
+    const QString oldName = QFileInfo(ed->filePath()).fileName();
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, QStringLiteral("Rename"),
+        QStringLiteral("New filename:"), QLineEdit::Normal, oldName, &ok);
+    if (!ok || name.isEmpty()) return;
+    QString err;
+    switch (renameTabFile(idx, name, &err)) {
+    case RenameResult::InvalidName:
+        QMessageBox::warning(this, QStringLiteral("Rename"),
+            QStringLiteral("\"%1\" is not a valid file name. A name cannot contain "
+                           "a path separator.").arg(name));
+        break;
+    case RenameResult::TargetExists:
+        QMessageBox::warning(this, QStringLiteral("Rename"),
+            QStringLiteral("A file named \"%1\" already exists in this folder.\n\n"
+                           "Nothing was renamed.").arg(name));
+        break;
+    case RenameResult::SaveFailed:
+    case RenameResult::RenameFailed:
+        QMessageBox::warning(this, QStringLiteral("Rename failed"),
+            QStringLiteral("Could not rename \"%1\" to \"%2\".\n\n%3")
+                .arg(oldName, name, err));
+        break;
+    default:
+        break;
+    }
+}
+
 void MainWindow::updateTabTitle(int index) {
     if (index < 0) return;
     auto *e = m_tabs->editorAt(index);
@@ -3309,18 +3371,7 @@ void MainWindow::buildMenus() {
         }
     }, QKeySequence("Ctrl+Alt+S"));
     file->addSeparator();
-    file->addAction("Rename...", this, [this, E]() {
-        auto *e = E(); if (!e || e->filePath().isEmpty()) return;
-        bool ok; QString name = QInputDialog::getText(this, "Rename", "New name:", QLineEdit::Normal,
-            QFileInfo(e->filePath()).fileName(), &ok);
-        if (ok && !name.isEmpty()) {
-            QString newPath = QFileInfo(e->filePath()).dir().filePath(name);
-            QFile::rename(e->filePath(), newPath);
-            e->saveFile(newPath);
-            m_tabs->setTabText(m_tabs->currentIndex(), name);
-            updateTitle();
-        }
-    });
+    file->addAction("Rename...", this, [this]() { promptRenameTab(m_tabs->currentIndex()); });
     file->addSeparator();
     file->addAction("&Close", this, [this]() { closeTab(m_tabs->currentIndex()); }, QKeySequence("Ctrl+W"));
     file->addAction("Close All", this, [this]() { closeAllTabs(); });
