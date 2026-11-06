@@ -2,6 +2,7 @@
 
 #include "sql_notebook.h"
 
+#include "crashflag.h"
 #include "fonts.h"
 
 #include <QApplication>
@@ -63,6 +64,10 @@ QThreadPool *notebookPool() {
     static QThreadPool *pool = [] {
         auto *p = new QThreadPool;
         p->setMaxThreadCount(64);
+        // Runs after every notebook's bounded wait: a still-stuck worker may fault teardown.
+        qAddPostRoutine([] {
+            if (notebookPool()->activeThreadCount() > 0) crashFlagDisarm();
+        });
         return p;
     }();
     return pool;

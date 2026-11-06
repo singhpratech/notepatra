@@ -38,6 +38,8 @@ void crashFlagInit(const QString &flagPath) {
 #endif
 }
 
+void crashFlagDisarm() { g_flagPath[0] = 0; }
+
 void crashFlagWrite() {
     if (!g_flagPath[0]) return;
 #ifdef Q_OS_WIN
