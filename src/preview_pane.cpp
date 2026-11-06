@@ -20,7 +20,9 @@
 
 #ifdef NOTEPATRA_WITH_WEBENGINE
 #include <QWebEnginePage>
+#include <QWebEngineProfile>
 #include <QWebEngineSettings>
+#include <QWebEngineUrlRequestInterceptor>
 #include <QWebEngineView>
 #endif
 
@@ -42,6 +44,26 @@ protected:
         }
         return false;
     }
+};
+
+// Every request the preview page makes passes here: only local schemes load, never a subframe.
+class PreviewRequestBlocker : public QWebEngineUrlRequestInterceptor {
+public:
+    explicit PreviewRequestBlocker(PreviewPane::WebRequestLog *log, QObject *parent)
+        : QWebEngineUrlRequestInterceptor(parent), m_log(log) {}
+    void interceptRequest(QWebEngineUrlRequestInfo &info) override {
+        const bool allow = PreviewPane::isLocalPreviewUrl(info.requestUrl()) &&
+                           info.resourceType() != QWebEngineUrlRequestInfo::ResourceTypeSubFrame;
+        info.block(!allow);
+        if (!allow) {
+            ++m_log->blocked;
+            return;
+        }
+        m_log->allowed.append(info.requestUrl().toString().left(200));
+        if (m_log->allowed.size() > 50) m_log->allowed.removeFirst();
+    }
+private:
+    PreviewPane::WebRequestLog *m_log;
 };
 #endif
 
@@ -121,6 +143,11 @@ PreviewPane::Mode PreviewPane::modeFor(const Editor *ed) {
          suffix == QLatin1String("xhtml")))
         return Mode::Html;
     return Mode::None;
+}
+
+bool PreviewPane::isLocalPreviewUrl(const QUrl &url) {
+    const QString s = url.scheme().toLower();
+    return s == QLatin1String("file") || s == QLatin1String("data") || s == QLatin1String("qrc");
 }
 
 QString PreviewPane::headerText() const {
@@ -243,8 +270,12 @@ void PreviewPane::refreshNow() {
 #ifdef NOTEPATRA_WITH_WEBENGINE
             if (text.size() <= kMaxWebHtmlChars) {
                 if (!m_web) {
+                    // Off-the-record profile of its own, so the blocker never touches other web views.
+                    m_webProfile = new QWebEngineProfile(this);
+                    m_webProfile->setHttpCacheType(QWebEngineProfile::MemoryHttpCache);
+                    m_webProfile->setUrlRequestInterceptor(new PreviewRequestBlocker(&m_webLog, m_webProfile));
                     m_web = new QWebEngineView;
-                    m_web->setPage(new PreviewWebPage(m_web));
+                    m_web->setPage(new PreviewWebPage(m_webProfile, m_web));
                     // Static preview of an arbitrary file: no scripts, no network; local images/CSS beside the file still load.
                     QWebEngineSettings *ws = m_web->settings();
                     ws->setAttribute(QWebEngineSettings::JavascriptEnabled, false);

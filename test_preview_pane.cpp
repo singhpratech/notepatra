@@ -577,6 +577,56 @@ int main(int argc, char *argv[]) {
         std::printf("     status[0]=%s\n", qPrintable(nb->statusTextAt(0)));
     }
 
+#ifdef NOTEPATRA_WITH_WEBENGINE
+    // ── q ──
+    std::printf("-- q: HTML preview loads nothing from the network --\n");
+    {
+        QTcpServer server;
+        int hits = 0;
+        QObject::connect(&server, &QTcpServer::newConnection, [&]() {
+            while (QTcpSocket *s = server.nextPendingConnection()) { ++hits; s->close(); s->deleteLater(); }
+        });
+        EXPECT_TRUE("q: probe server listening", server.listen(QHostAddress::LocalHost, 0));
+        const QString port = QString::number(server.serverPort());
+        if (!previewAct->isChecked()) previewAct->trigger();
+        const QByteArray remote = QStringLiteral(
+            "<html><head><link rel='stylesheet' href='http://127.0.0.1:%1/s.css'></head><body><h1>Remote</h1>"
+            "<img src='http://127.0.0.1:%1/x.png'><iframe src='http://127.0.0.1:%1/f.html'></iframe>"
+            "</body></html>").arg(port).toUtf8();
+        const QString remotePath = writeFile(work.path(), "remote.html", remote);
+        mw.openFile(remotePath);
+        QTest::qWait(2000);
+        const int savedHits = hits;
+        std::printf("     saved-file connections: %d\n", savedHits);
+        EXPECT_TRUE("q: saved .html -> 0 connections within 2 s", savedHits == 0);
+        QAction *newAct = findActionByShortcut(&mw, QKeySequence("Ctrl+N"));
+        if (newAct) newAct->trigger();
+        QTest::qWait(30);
+        Editor *u = mw.currentEditor();
+        u->setLanguage(QStringLiteral("HTML"));
+        u->setText(QString::fromUtf8(remote));
+        QTest::qWait(2400);
+        std::printf("     untitled-tab connections: %d (mode Html: %d)\n", hits - savedHits,
+                    int(pane->mode() == PreviewPane::Mode::Html));
+        EXPECT_TRUE("q: untitled HTML tab -> 0 connections within 2 s",
+                    pane->mode() == PreviewPane::Mode::Html && hits == savedHits);
+        EXPECT_TRUE("q: the interceptor blocked the remote requests", pane->webRequestLog().blocked > 0);
+        if (tabs) tabs->setCurrentIndex(tabIndexForPath(tabs, QDir(work.path()).absoluteFilePath("rel.html")));
+        QTest::qWait(1500);
+        bool sawLogo = false;
+        for (const QString &u : pane->webRequestLog().allowed)
+            if (u.startsWith(QLatin1String("file:")) && u.endsWith(QLatin1String("/logo.png"))) sawLogo = true;
+        EXPECT_TRUE("q: a local image beside the file still loads", sawLogo);
+        EXPECT_TRUE("q: only local schemes pass the filter",
+                    PreviewPane::isLocalPreviewUrl(QUrl("file:///x.png")) &&
+                        PreviewPane::isLocalPreviewUrl(QUrl("data:image/png;base64,AA")) &&
+                        PreviewPane::isLocalPreviewUrl(QUrl("qrc:/x.png")) &&
+                        !PreviewPane::isLocalPreviewUrl(QUrl("http://127.0.0.1/x.png")) &&
+                        !PreviewPane::isLocalPreviewUrl(QUrl("https://example.com/")) &&
+                        !PreviewPane::isLocalPreviewUrl(QUrl("ws://127.0.0.1/")));
+    }
+#endif
+
     // ── z ── (last: a stopped SQLite query keeps running in the background)
     std::printf("-- z: Stop / timeout on a Qt-SQL driver --\n");
     {
