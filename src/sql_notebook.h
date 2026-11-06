@@ -69,6 +69,7 @@ private:
         bool hasTable = false;
         QStringList columns;
         QVector<QVector<QString>> rows;
+        QVector<QVector<bool>> nulls;
     };
     // One cell of one document; `id` survives edits so a result follows its cell.
     struct Slot {

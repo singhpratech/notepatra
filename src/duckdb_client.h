@@ -35,6 +35,7 @@ namespace DuckDb {
 // columns, decimals, UUIDs) without us reimplementing per-type formatters.
 struct Row {
     QStringList values;
+    QVector<bool> nulls;  // parallel to values: true where the value is SQL NULL ("NULL" text)
 };
 
 struct ResultSet {

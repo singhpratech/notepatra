@@ -148,6 +148,7 @@ struct QueryResult {
     bool ok = false;
     QStringList columns;
     QVector<QVector<QString>> rows;   // stringified per-cell for portability
+    QVector<QVector<bool>> nulls;     // parallel to rows: true where the value is SQL NULL
     int rowsReturned = 0;
     bool truncated = false;
     QString error;        // driver error text on failure

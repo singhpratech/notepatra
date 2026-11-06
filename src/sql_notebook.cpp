@@ -4,12 +4,16 @@
 
 #include "fonts.h"
 
+#include <QApplication>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QComboBox>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QIcon>
+#include <QKeyEvent>
+#include <QMap>
 #include <QPainter>
 #include <QPixmap>
 #include <QLabel>
@@ -26,6 +30,8 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QtConcurrent>
+
+#include <algorithm>
 
 namespace {
 
@@ -73,6 +79,59 @@ void enableWal(const QString &file) {
     }
     QSqlDatabase::removeDatabase(name);
 }
+
+// Ctrl+C copies the selected cells as TSV: no header row, NULL as an empty field,
+// fields holding a tab, newline or quote are double-quoted (spreadsheet paste).
+class ResultTable : public QTableWidget {
+public:
+    static constexpr int kNullRole = Qt::UserRole + 1;
+
+protected:
+    bool event(QEvent *e) override {
+        // Claim Ctrl+C before the window-wide Edit > Copy shortcut takes it.
+        if (e->type() == QEvent::ShortcutOverride && static_cast<QKeyEvent *>(e) == QKeySequence::Copy) {
+            e->accept();
+            return true;
+        }
+        return QTableWidget::event(e);
+    }
+    void keyPressEvent(QKeyEvent *e) override {
+        if (e == QKeySequence::Copy) {
+            copySelection();
+            e->accept();
+            return;
+        }
+        QTableWidget::keyPressEvent(e);
+    }
+
+private:
+    void copySelection() {
+        const QModelIndexList sel = selectionModel() ? selectionModel()->selectedIndexes() : QModelIndexList();
+        if (sel.isEmpty()) return;
+        QMap<int, QMap<int, QString>> grid;
+        QSet<int> colSet;
+        for (const QModelIndex &ix : sel) {
+            const bool isNull = ix.data(kNullRole).toBool();
+            grid[ix.row()][ix.column()] = isNull ? QString() : ix.data(Qt::DisplayRole).toString();
+            colSet.insert(ix.column());
+        }
+        QList<int> cols = colSet.values();
+        std::sort(cols.begin(), cols.end());
+        QStringList lines;
+        for (auto r = grid.cbegin(); r != grid.cend(); ++r) {
+            QStringList fields;
+            for (int c : cols) {
+                QString v = r.value().value(c);
+                if (v.contains(QLatin1Char('\t')) || v.contains(QLatin1Char('\n')) ||
+                    v.contains(QLatin1Char('\r')) || v.contains(QLatin1Char('"')))
+                    v = QLatin1Char('"') + v.replace(QLatin1Char('"'), QLatin1String("\"\"")) + QLatin1Char('"');
+                fields << v;
+            }
+            lines << fields.join(QLatin1Char('\t'));
+        }
+        QApplication::clipboard()->setText(lines.join(QLatin1Char('\n')));
+    }
+};
 
 } // namespace
 
@@ -363,7 +422,7 @@ void SqlNotebookWidget::rebuildCards() {
             card.status->setWordWrap(true);
             card.status->setTextInteractionFlags(Qt::TextSelectableByMouse);
             v->addWidget(card.status);
-            card.table = new QTableWidget;
+            card.table = new ResultTable;
             card.table->setEditTriggers(QAbstractItemView::NoEditTriggers);
             card.table->verticalHeader()->setDefaultSectionSize(22);
             card.table->hide();
@@ -406,10 +465,25 @@ void SqlNotebookWidget::updateCard(int index) {
     t->setColumnCount(res.columns.size());
     t->setRowCount(res.rows.size());
     t->setHorizontalHeaderLabels(res.columns);
+    // NULL looks the same for every driver: a dimmed italic "NULL" in the theme's dim text colour.
+    const QColor dim = m_colors.dimFg.isEmpty() ? palette().color(QPalette::Disabled, QPalette::Text)
+                                                : QColor(m_colors.dimFg);
+    QFont nullFont = t->font();
+    nullFont.setItalic(true);
     for (int r = 0; r < res.rows.size(); ++r) {
         const QVector<QString> &row = res.rows.at(r);
-        for (int c = 0; c < row.size() && c < res.columns.size(); ++c)
-            t->setItem(r, c, new QTableWidgetItem(row.at(c)));
+        const QVector<bool> nullRow = res.nulls.value(r);
+        for (int c = 0; c < row.size() && c < res.columns.size(); ++c) {
+            if (nullRow.value(c)) {
+                auto *item = new QTableWidgetItem(QStringLiteral("NULL"));
+                item->setForeground(dim);
+                item->setFont(nullFont);
+                item->setData(ResultTable::kNullRole, true);
+                t->setItem(r, c, item);
+            } else {
+                t->setItem(r, c, new QTableWidgetItem(row.at(c)));
+            }
+        }
     }
     t->resizeColumnsToContents();
     const int rowsH = t->verticalHeader()->length() + t->horizontalHeader()->height() +
@@ -510,6 +584,7 @@ void SqlNotebookWidget::onQueryFinished(const DbConnections::QueryResult &qr) {
         res.hasTable = !qr.columns.isEmpty();
         res.columns = qr.columns;
         res.rows = qr.rows;
+        res.nulls = qr.nulls;
         if (res.hasTable) {
             res.status = tr("%n row(s) in %1 ms", nullptr, qr.rowsReturned).arg(ms);
             if (qr.truncated)

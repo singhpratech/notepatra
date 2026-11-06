@@ -658,6 +658,57 @@ int main(int argc, char *argv[]) {
         EXPECT_TRUE("n: both disabled on a Markdown tab", runAct && advAct && !runAct->isEnabled() && !advAct->isEnabled());
     }
 
+    // ── o ──
+    std::printf("-- o: result grid copy + NULL --\n");
+    {
+        const QString nullPath = writeFile(work.path(), "nulls.sql",
+                                           "select 1 as a, 'p' as b, '' as e union all select 2, null, '';\n");
+        mw.openFile(nullPath);
+        QTest::qWait(30);
+        nb->connectionCombo()->setCurrentIndex(0);
+        nb->runCell(0);
+        waitIdle(nb);
+        QTableWidget *t = nb->resultTableAt(0);
+        const bool shaped = t && t->rowCount() == 2 && t->columnCount() == 3 && t->item(1, 1) && t->item(1, 2);
+        EXPECT_TRUE("o: 2x3 result", shaped);
+        EXPECT_TRUE("o: Qt-SQL NULL renders as dimmed NULL",
+                    shaped && t->item(1, 1)->text() == QLatin1String("NULL") &&
+                        t->item(1, 1)->data(Qt::ForegroundRole).isValid() &&
+                        !t->item(1, 0)->data(Qt::ForegroundRole).isValid());
+        EXPECT_TRUE("o: empty string stays empty", shaped && t->item(1, 2)->text().isEmpty() &&
+                    !t->item(1, 2)->data(Qt::ForegroundRole).isValid());
+        if (t) {
+            t->setFocus();
+            t->selectAll();
+            QApplication::clipboard()->clear();
+            QTest::keyClick(t, Qt::Key_C, Qt::ControlModifier);
+            const QString clip = QApplication::clipboard()->text();
+            EXPECT_TRUE("o: Ctrl+C copies the selection as TSV (NULL -> empty)",
+                        clip == QLatin1String("1\tp\t\n2\t\t"));
+            std::printf("     clipboard=%s\n", qPrintable(QString(clip).replace('\t', "\\t").replace('\n', "\\n")));
+        }
+#ifdef NOTEPATRA_HAVE_DUCKDB
+        const int duckIdx = nb->connectionCombo()->findText(QStringLiteral("Scratch (DuckDB, temporary)"));
+        EXPECT_TRUE("o: scratch DuckDB listed", duckIdx >= 0);
+        nb->connectionCombo()->setCurrentIndex(duckIdx);
+        const QString duckPath = writeFile(work.path(), "duck_nulls.sql", "select 1 as a, null as b, 'NULL' as c;\n");
+        mw.openFile(duckPath);
+        QTest::qWait(30);
+        nb->runCell(0);
+        waitIdle(nb);
+        QTableWidget *d = nb->resultTableAt(0);
+        const bool dShaped = d && d->rowCount() == 1 && d->columnCount() == 3 && d->item(0, 1) && d->item(0, 2);
+        EXPECT_TRUE("o: DuckDB NULL renders as dimmed NULL",
+                    dShaped && d->item(0, 1)->text() == QLatin1String("NULL") &&
+                        d->item(0, 1)->data(Qt::ForegroundRole).isValid());
+        EXPECT_TRUE("o: DuckDB string 'NULL' is not dimmed",
+                    dShaped && d->item(0, 2)->text() == QLatin1String("NULL") &&
+                        !d->item(0, 2)->data(Qt::ForegroundRole).isValid());
+        if (!dShaped) std::printf("     duck status=%s\n", qPrintable(nb->statusTextAt(0)));
+        nb->connectionCombo()->setCurrentIndex(0);
+#endif
+    }
+
 #ifdef NOTEPATRA_WITH_WEBENGINE
     // ── q ──
     std::printf("-- q: HTML preview loads nothing from the network --\n");

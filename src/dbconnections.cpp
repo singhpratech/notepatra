@@ -1233,6 +1233,7 @@ QueryResult runQuery(const Record &r,
             r2.reserve(row.values.size());
             for (const QString &v : row.values) r2.append(v);
             out.rows.append(r2);
+            out.nulls.append(row.nulls);
         }
         out.ok = true;
         return out;
@@ -1267,12 +1268,16 @@ QueryResult runQuery(const Record &r,
                     break;
                 }
                 QVector<QString> row;
+                QVector<bool> nullRow;
                 row.reserve(cols);
+                nullRow.reserve(cols);
                 for (int i = 0; i < cols; ++i) {
                     QVariant v = q.value(i);
                     row.append(v.isNull() ? QString() : v.toString());
+                    nullRow.append(v.isNull());
                 }
                 out.rows.append(row);
+                out.nulls.append(nullRow);
                 ++out.rowsReturned;
             }
             out.ok = (out.errorKind.isEmpty());
