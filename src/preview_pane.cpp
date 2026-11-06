@@ -156,9 +156,12 @@ QString PreviewPane::headerText() const {
 
 void PreviewPane::setSource(Editor *ed) {
     if (m_textConn) disconnect(m_textConn);
+    if (m_identityConn) disconnect(m_identityConn);
     m_editor = ed;
-    if (ed)
+    if (ed) {
         m_textConn = connect(ed, &QsciScintilla::textChanged, this, &PreviewPane::scheduleRefresh);
+        m_identityConn = connect(ed, &Editor::documentIdentityChanged, this, &PreviewPane::onIdentityChanged);
+    }
     m_debounce->stop();
     m_dirty = true;
     m_sourceChanged = true;
@@ -174,6 +177,22 @@ void PreviewPane::setSource(Editor *ed) {
 void PreviewPane::scheduleRefresh() {
     m_dirty = true;
     if (isVisible()) m_debounce->start();
+}
+
+void PreviewPane::onIdentityChanged() {
+    m_dirty = true;
+    if (m_identityPending) return;
+    m_identityPending = true;  // Save As emits twice when the language changes too
+    QTimer::singleShot(0, this, [this]() {
+        m_identityPending = false;
+        if (isVisible()) {
+            refreshNow();
+            return;
+        }
+        const Mode previous = m_mode;
+        m_mode = modeFor(m_editor.data());
+        if (previous != m_mode) emit modeChanged();
+    });
 }
 
 void PreviewPane::showEvent(QShowEvent *event) {

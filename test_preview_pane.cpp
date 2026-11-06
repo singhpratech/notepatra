@@ -577,6 +577,35 @@ int main(int argc, char *argv[]) {
         std::printf("     status[0]=%s\n", qPrintable(nb->statusTextAt(0)));
     }
 
+    // ── m ──
+    std::printf("-- m: Save As / language change refresh the pane --\n");
+    {
+        QAction *newAct = findActionByShortcut(&mw, QKeySequence("Ctrl+N"));
+        EXPECT_TRUE("m: New action found", newAct != nullptr);
+        if (newAct) newAct->trigger();
+        QTest::qWait(30);
+        Editor *untitled = mw.currentEditor();
+        untitled->setText(QStringLiteral("# Saved Heading\n\ntext\n"));
+        QTest::qWait(400);
+        EXPECT_TRUE("m: untitled plain text -> no preview", pane->mode() == PreviewPane::Mode::None);
+        const QString xPath = QDir(work.path()).absoluteFilePath("x.md");
+        EXPECT_TRUE("m: programmatic save to x.md", untitled->saveFile(xPath));
+        QTest::qWait(400);
+        EXPECT_TRUE("m: after Save As to x.md -> Markdown preview without a keystroke",
+                    pane->mode() == PreviewPane::Mode::Markdown &&
+                        pane->headerText().contains(QLatin1String("x.md")) &&
+                        pane->browser()->toPlainText().contains(QLatin1String("Saved Heading")));
+        std::printf("     header=%s\n", qPrintable(pane->headerText()));
+        untitled->setLanguage(QStringLiteral("SQL"));
+        QTest::qWait(400);
+        EXPECT_TRUE("m: language change to SQL -> SQL notebook",
+                    pane->mode() == PreviewPane::Mode::SqlNotebook &&
+                        pane->headerText().startsWith(QLatin1String("SQL notebook")));
+        untitled->setLanguage(QStringLiteral("Markdown"));
+        QTest::qWait(400);
+        EXPECT_TRUE("m: language change back to Markdown", pane->mode() == PreviewPane::Mode::Markdown);
+    }
+
 #ifdef NOTEPATRA_WITH_WEBENGINE
     // ── q ──
     std::printf("-- q: HTML preview loads nothing from the network --\n");

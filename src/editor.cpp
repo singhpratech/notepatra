@@ -1035,11 +1035,13 @@ bool Editor::saveFile(const QString &path) {
         }
     }
     setModified(false);
+    if (pathChanged) emit documentIdentityChanged();
     return true;
 }
 
 void Editor::setLanguage(const QString &lang) {
     applyLexer(lang);
+    emit documentIdentityChanged();
 }
 
 void Editor::applyLexer(const QString &lang) {

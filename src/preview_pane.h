@@ -67,6 +67,8 @@ protected:
 
 private:
     void scheduleRefresh();
+    // Save As / rename / Language menu: re-pick the mode and header without waiting for a keystroke.
+    void onIdentityChanged();
     // Resolves the theme once (System = an OS probe) and caches it in m_colors.
     void applyChrome();
     void showPlaceholder(const QString &text);
@@ -74,6 +76,8 @@ private:
 
     QPointer<Editor> m_editor;
     QMetaObject::Connection m_textConn;
+    QMetaObject::Connection m_identityConn;
+    bool m_identityPending = false;
     QTimer *m_debounce = nullptr;
     QLabel *m_header = nullptr;
     QStackedWidget *m_stack = nullptr;
