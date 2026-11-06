@@ -260,6 +260,10 @@ public:
     // across launches so vendor / node_modules stay hidden after restart.
     QStringList explorerHiddenPaths;
 
+    // v0.1.131 — Preview pane open/closed and its [tabs, pane] splitter sizes.
+    bool previewPaneVisible = false;
+    QList<int> previewPaneSizes;
+
     // Window
     int windowX = -1, windowY = -1, windowW = 1280, windowH = 800;
     bool maximized = false;
@@ -355,6 +359,11 @@ public:
         explorerHiddenPaths.clear();
         for (const auto &v : o.value("explorerHiddenPaths").toArray())
             explorerHiddenPaths.append(v.toString());
+
+        previewPaneVisible = o.value("previewPaneVisible").toBool(previewPaneVisible);
+        const QJsonArray paneSizes = o.value("previewPaneSizes").toArray();
+        if (paneSizes.size() == 2)
+            previewPaneSizes = {paneSizes.at(0).toInt(), paneSizes.at(1).toInt()};
     }
 
     void save() {
@@ -427,6 +436,10 @@ public:
         QJsonArray hidden;
         for (const auto &p : explorerHiddenPaths) hidden.append(p);
         o["explorerHiddenPaths"] = hidden;
+        o["previewPaneVisible"] = previewPaneVisible;
+        QJsonArray paneSizes;
+        for (int v : previewPaneSizes) paneSizes.append(v);
+        o["previewPaneSizes"] = paneSizes;
 
         QFile f(configPath());
         if (f.open(QIODevice::WriteOnly))

@@ -351,6 +351,8 @@ private:
     QPointer<PreviewPane> m_previewPane;
     QSplitter *m_editorSplit = nullptr;
     QAction *m_previewAct = nullptr;
+    // Copies the pane's open state + splitter sizes into Config (sizes only while visible).
+    void rememberPreviewPaneState();
     QPointer<Editor> m_lastEditor;     // last EDITOR tab; tool panels hand back to it
     int newPasswordTab();                                          // Tools->Password Generator
     void onNoterTrayMessageClicked();

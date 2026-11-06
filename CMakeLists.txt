@@ -1481,6 +1481,65 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_preview_pane.cpp")
     message(STATUS "Regression test enabled — target: test_preview_pane")
 endif()
 
+# Preview pane open/closed + splitter sizes survive a relaunch (two MainWindows).
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_preview_persist.cpp")
+    set(PREVIEW_PERSIST_SOURCES ${SOURCES})
+    list(FILTER PREVIEW_PERSIST_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_preview_persist
+        test_preview_persist.cpp
+        ${PREVIEW_PERSIST_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_preview_persist rust_core)
+    target_compile_definitions(test_preview_persist PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_preview_persist PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_preview_persist PRIVATE
+        Qt5::Widgets
+        Qt5::PrintSupport
+        Qt5::Network
+        Qt5::Concurrent
+        Qt5::Sql
+        Qt5::Charts
+        Qt5::Test
+        ${QSCINTILLA_LIB}
+        ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_preview_persist PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_preview_persist PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_preview_persist PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_preview_persist PRIVATE
+            ws2_32 userenv bcrypt ntdll
+            advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_preview_persist PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_preview_persist PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_preview_persist PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_preview_persist PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_preview_persist PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_preview_persist COMMAND $<TARGET_FILE:test_preview_persist>)
+    set_tests_properties(test_preview_persist PROPERTIES
+        LABELS "integration;preview"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_preview_persist")
+endif()
+
 # ─── Change-history strip (v0.1.91) ─────────────────────────────────────
 # Asserts Notepad++-style orange-on-edit / green-on-save behaviour against
 # Notepatra's actual Editor class. Reuses the same source set as the

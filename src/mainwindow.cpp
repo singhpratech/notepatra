@@ -1825,6 +1825,7 @@ MainWindow::MainWindow(bool standaloneNoSession)
             cfg.windowX = x(); cfg.windowY = y();
             cfg.windowW = width(); cfg.windowH = height();
             cfg.maximized = isMaximized();
+            rememberPreviewPaneState();
             cfg.save();
         }
     });
@@ -3689,6 +3690,7 @@ void MainWindow::buildMenus() {
     m_previewAct->setShortcut(QKeySequence("Ctrl+Shift+V"));
     connect(m_previewAct, &QAction::toggled, this, [this, sized = false](bool on) mutable {
         if (!m_previewPane || !m_editorSplit) return;
+        if (!on) rememberPreviewPaneState();
         if (on) m_previewPane->setSource(currentEditor());
         m_previewPane->setVisible(on);
         if (on && !sized) {
@@ -3696,7 +3698,12 @@ void MainWindow::buildMenus() {
             const int total = qMax(m_editorSplit->width(), 2);
             m_editorSplit->setSizes({total * 55 / 100, total - total * 55 / 100});
         }
+        if (!m_standaloneNoSession) {
+            Config::instance().previewPaneVisible = on;
+            Config::instance().save();
+        }
     });
+    connect(m_editorSplit, &QSplitter::splitterMoved, this, [this]() { rememberPreviewPaneState(); });
     // Ctrl+Return runs the SQL cell at the cursor; enabled only while the pane
     // shows a SQL notebook so the key is never swallowed otherwise.
     auto *runSqlCellAct = new QAction("Run SQL Cell", this);
@@ -6611,6 +6618,15 @@ void MainWindow::showEvent(QShowEvent *event) {
     QMainWindow::showEvent(event);
     if (m_everShown) return;
     m_everShown = true;
+    // Restore the Preview pane once the splitter has a real width (it is 0 in the ctor).
+    QTimer::singleShot(0, this, [this]() {
+        const Config &cfg = Config::instance();
+        if (!cfg.previewPaneVisible || !m_previewAct || !m_editorSplit || m_previewAct->isChecked()) return;
+        const QList<int> sizes = cfg.previewPaneSizes;
+        m_previewAct->setChecked(true);
+        if (sizes.size() == 2 && sizes.at(0) > 0 && sizes.at(1) > 0) m_editorSplit->setSizes(sizes);
+        rememberPreviewPaneState();
+    });
     if (!m_startupNotices.isEmpty() && !m_startupNoticeFlushScheduled) {
         m_startupNoticeFlushScheduled = true;
         QTimer::singleShot(0, this, &MainWindow::flushStartupNotices);
@@ -6621,6 +6637,15 @@ void MainWindow::showEvent(QShowEvent *event) {
         for (const QString &p : deferred)
             QTimer::singleShot(0, this, [this, p]() { onWatchedFileChanged(p); });
     }
+}
+
+void MainWindow::rememberPreviewPaneState() {
+    if (m_standaloneNoSession || !m_previewPane || !m_editorSplit || !m_previewAct) return;
+    Config &cfg = Config::instance();
+    cfg.previewPaneVisible = m_previewAct->isChecked();
+    const QList<int> sizes = m_editorSplit->sizes();
+    if (m_previewPane->isVisible() && sizes.size() == 2 && sizes.at(0) > 0 && sizes.at(1) > 0)
+        cfg.previewPaneSizes = sizes;
 }
 
 void MainWindow::changeEvent(QEvent *event) {
@@ -6816,6 +6841,10 @@ void MainWindow::closeEvent(QCloseEvent *event) {
 
     // Save session including unsaved buffers and untitled tabs.
     saveSession();   // no-ops in both session-less modes
+    if (!m_standaloneNoSession) {
+        rememberPreviewPaneState();
+        Config::instance().save();
+    }
 
     // Session-less windows must not destroy the owner's crash evidence.
     if (!sessionless) {
