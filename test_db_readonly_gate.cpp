@@ -231,6 +231,55 @@ static void testV0131Gaps() {
           insertVia(false, QString()) == "inserted");
 }
 
+// v0.1.131 review findings: CR-terminated comments and string table references.
+static void testV0131ReviewFindings() {
+    auto ro = [](const QString &sql, bool rf) {
+        const SqlVerdict v = classifySql(sql, rf);
+        return v.singleStatement && v.readOnly;
+    };
+    std::printf("== F1: any line terminator ends a -- / # comment ==\n");
+    const QChar ends[] = {QChar(0x0D), QChar(0x0B), QChar(0x0C), QChar(0x85),
+                          QChar(0x2028), QChar(0x2029)};
+    for (const QChar e : ends) {
+        const QString sql = QStringLiteral("SELECT 1 -- x") + e + QStringLiteral("; DROP TABLE t");
+        const QString label = QStringLiteral("-- comment ended by U+%1 exposes the stacked DROP")
+                                  .arg(int(e.unicode()), 4, 16, QLatin1Char('0'));
+        check(label.toUtf8().constData(), !isReadOnlyQuery(sql) && isMutation(sql));
+    }
+    check("# comment ended by CR exposes the stacked DROP (MySQL reading)",
+          !isReadOnlyQuery(QStringLiteral("SELECT 1 # x\r; DROP TABLE t")));
+    check("T-SQL strict: CR-ended comment then DROP (no ';') is a mutation",
+          classifySql(QStringLiteral("SELECT 1 -- x\rDROP TABLE t"), false, true).mutation);
+    check("';' inside a comment on the same line stays harmless",
+          isReadOnlyQuery(QStringLiteral("SELECT a -- c; DROP TABLE t\nFROM t")));
+    check("CRLF-separated read stays read-only",
+          isReadOnlyQuery(QStringLiteral("SELECT a -- note\r\nFROM t")));
+
+    std::printf("== F2: a quoted string used as a table is a file/URL scan (RF=true) ==\n");
+    check("FROM 'http://…/leak.csv' rejected",
+          !ro(QStringLiteral("SELECT * FROM 'http://127.0.0.1:1/leak.csv'"), true));
+    check("comma-join FROM t, 'x.csv' rejected", !ro(QStringLiteral("SELECT * FROM t, 'x.csv'"), true));
+    check("JOIN 'x.parquet' rejected",
+          !ro(QStringLiteral("SELECT * FROM t JOIN 'x.parquet' USING (id)"), true));
+    check("subquery FROM 'x.csv' rejected",
+          !ro(QStringLiteral("SELECT * FROM (SELECT * FROM 'x.csv')"), true));
+    check("dollar-quoted FROM $$x.csv$$ rejected", !ro(QStringLiteral("SELECT * FROM $$x.csv$$"), true));
+    check("E-string FROM E'x.csv' rejected", !ro(QStringLiteral("SELECT * FROM E'x.csv'"), true));
+    check("rejection reason names the quoted-table form",
+          classifySql(QStringLiteral("SELECT * FROM 'x.csv'"), true).reason.contains(
+              QStringLiteral("quoted string used as a table")));
+    check("string literals in the select list stay allowed",
+          ro(QStringLiteral("SELECT 'a', 'b' FROM t"), true));
+    check("IN ('a','b') after FROM stays allowed",
+          ro(QStringLiteral("SELECT * FROM t WHERE y IN ('a','b')"), true));
+    check("ON u.k = 'x' stays allowed", ro(QStringLiteral("SELECT * FROM t JOIN u ON u.k = 'x'"), true));
+    check("ORDER BY 'x' stays allowed", ro(QStringLiteral("SELECT * FROM t ORDER BY 'x'"), true));
+    check("WHERE s = 'FROM' stays allowed", ro(QStringLiteral("SELECT * FROM t WHERE s = 'FROM'"), true));
+    check("dollar string before FROM stays allowed", ro(QStringLiteral("SELECT $$x$$ AS s FROM t"), true));
+    check("desktop UNCHANGED: FROM 'x.csv' readOnly (RF=false)",
+          ro(QStringLiteral("SELECT * FROM 'x.csv'"), false));
+}
+
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
     // Unbuffered so a hard crash mid-run still shows how far we got (offscreen
@@ -682,6 +731,7 @@ int main(int argc, char **argv) {
     }
 
     testV0131Gaps();
+    testV0131ReviewFindings();
 
     std::printf("\n=== Summary: %d passed, %d failed ===\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

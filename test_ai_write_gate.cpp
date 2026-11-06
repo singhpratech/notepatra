@@ -56,6 +56,7 @@
 #include <QPair>
 #include <QString>
 #include <QStringList>
+#include <QTcpServer>
 #include <QTemporaryDir>
 #include <QVector>
 #ifdef NOTEPATRA_HAVE_DUCKDB
@@ -809,6 +810,21 @@ static void testV0131SqlGaps(const QString &scratch) {
             "query_sql", sqlArgs("duck_https", "SELECT * FROM '" + csvLit + "'"));
         check("G1: a remote connection cannot read a local file",
               h.isError && !h.content.contains("TOPSECRET"));
+        {
+            // Review F1/F2: no outbound fetch from a quoted URL or a CR-hidden stacked COPY.
+            QTcpServer sink;
+            const bool listening = sink.listen(QHostAddress::LocalHost, 0);
+            const QString url = QStringLiteral("http://127.0.0.1:%1/leak.csv").arg(sink.serverPort());
+            const AiTools::ToolResult u =
+                runTool("query_sql", sqlArgs("duck_https", "SELECT * FROM '" + url + "'"));
+            const AiTools::ToolResult w = runTool("query_sql", sqlArgs("duck_https",
+                "SELECT 1 -- x\r; COPY (SELECT 1) TO '" + url + "'"));
+            check("review F2: quoted URL as a table is refused on a remote connection",
+                  u.isError && u.content.contains("quoted string used as a table"));
+            check("review F1: CR-hidden stacked COPY is refused", w.isError);
+            check("review: the refused queries opened no connection to the sink",
+                  listening && !sink.waitForNewConnection(500));
+        }
         {
             DbConnections::Record https;
             DbConnections::findByName("duck_https", &https);

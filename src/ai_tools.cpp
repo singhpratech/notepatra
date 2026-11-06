@@ -1772,6 +1772,7 @@ ToolResult executeQuerySql(const ToolCall &call,
         QString msg = qr.error;
         if (!allowMutation
             && (msg.contains(QLatin1String("filesystem-reading function"))
+                || msg.contains(QLatin1String("quoted string used as a table"))
                 || msg.contains(QLatin1String("disabled through configuration"))
                 || msg.contains(QLatin1String("has been disabled"))))
             msg += QLatin1String(kAddFileAsConnectionHint);

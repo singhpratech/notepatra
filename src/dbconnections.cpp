@@ -331,6 +331,13 @@ static QString quotedIdToken(const QString &name) {
     return QStringLiteral(" qid_") + name + QLatin1Char(' ');
 }
 
+// Engines end a line comment at CR, NEL, U+2028/9, VT and FF too, not only at LF.
+static bool isLineEnd(QChar c) {
+    const ushort u = c.unicode();
+    return u == '\n' || u == '\r' || u == 0x0B || u == 0x0C || u == 0x85
+        || u == 0x2028 || u == 0x2029;
+}
+
 // Replace comments with a space and string / quoted-identifier literals with
 // neutral placeholders, so keywords appearing inside them can never be
 // mistaken for SQL verbs. Structural characters (';', parens) are preserved.
@@ -345,12 +352,12 @@ static QString stripSqlNoise(const QString &sql, const LexMode &m = LexMode()) {
         if (c == QLatin1Char('-') && i + 1 < n && sql[i + 1] == QLatin1Char('-')
             && (!m.mysqlComments || i + 2 >= n || sql[i + 2].isSpace()
                 || sql[i + 2].category() == QChar::Other_Control)) {
-            while (i < n && sql[i] != QLatin1Char('\n')) ++i;
+            while (i < n && !isLineEnd(sql[i])) ++i;
             out += QLatin1Char(' ');
             continue;
         }
         if (m.mysqlComments && c == QLatin1Char('#')) {
-            while (i < n && sql[i] != QLatin1Char('\n')) ++i;
+            while (i < n && !isLineEnd(sql[i])) ++i;
             out += QLatin1Char(' ');
             continue;
         }
@@ -441,7 +448,7 @@ static QString stripSqlNoise(const QString &sql, const LexMode &m = LexMode()) {
                 const QString tag = sql.mid(i, j - i + 1);   // "$tag$" or "$$"
                 const int close = sql.indexOf(tag, j + 1);
                 i = (close < 0) ? n : close + tag.size();
-                out += QLatin1Char(' ');
+                out += QStringLiteral(" ' ");      // a string, like '...'
                 continue;
             }
         }
@@ -719,6 +726,40 @@ static const QSet<QString> &tsqlBatchKeywords() {
     return k;
 }
 
+// DuckDB reads FROM 'path-or-url' (and FROM t, 'x' / JOIN 'x') as a file scan.
+static bool stringUsedAsTable(const QString &stmt) {
+    QVector<bool> inFrom{false};
+    QString prev, prev2;  // previous two significant tokens at any depth
+    const int n = stmt.size();
+    for (int i = 0; i < n;) {
+        const QChar c = stmt[i];
+        if (c.isSpace()) { ++i; continue; }
+        if (isWordChar(c)) {
+            int j = i;
+            while (j < n && isWordChar(stmt[j])) ++j;
+            const QString w = stmt.mid(i, j - i).toUpper();
+            static const QSet<QString> enders = {
+                "WHERE", "GROUP", "ORDER", "HAVING", "LIMIT", "QUALIFY", "WINDOW",
+                "UNION", "EXCEPT", "INTERSECT", "SELECT", "ON", "USING", "OFFSET",
+                "FETCH", "RETURNING", "SET", "VALUES"};
+            if (w == QLatin1String("FROM") || w == QLatin1String("JOIN")) inFrom.last() = true;
+            else if (enders.contains(w)) inFrom.last() = false;
+            prev2 = prev; prev = w; i = j;
+            continue;
+        }
+        if (c == QLatin1Char('(')) inFrom.append(false);
+        else if (c == QLatin1Char(')') && inFrom.size() > 1) inFrom.removeLast();
+        else if (c == QLatin1Char('\'') && inFrom.last()) {
+            static const QSet<QString> lead = {"FROM", "JOIN", ","};
+            static const QSet<QString> prefix = {"E", "N", "X", "B", "U"};
+            if (lead.contains(prev) || (prefix.contains(prev) && lead.contains(prev2)))
+                return true;
+        }
+        prev2 = prev; prev = QString(c); ++i;
+    }
+    return false;
+}
+
 // Classify one already-stripped statement. Sets *mutation / *readOnly and, on
 // rejection, *why.
 static void classifyOneStatement(const QString &stmt, bool *mutation,
@@ -740,6 +781,12 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
                           && base != QStringLiteral("REPLACE");
 
     *mutation = mutationBaseKeywords().contains(base) || hasReturning || selectInto;
+
+    if (restrictFilesystem && stringUsedAsTable(stmt)) {
+        if (why) *why = QStringLiteral(
+            "a quoted string used as a table name is read as a file or URL and is not allowed");
+        return;
+    }
 
     // F2 — side-effecting / pass-through FUNCTION names and the T-SQL
     // NEXT VALUE FOR sequence-consumption keyword sequence. A bare function name
