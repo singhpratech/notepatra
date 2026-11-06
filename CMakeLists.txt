@@ -1739,6 +1739,59 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_remote_open.cpp")
     message(STATUS "Regression test enabled — target: test_remote_open")
 endif()
 
+# macOS Finder/Dock opens: QEvent::FileOpen routed into MainWindow, queued pre-window.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_file_open_event.cpp")
+    set(FILE_OPEN_EVENT_SOURCES ${SOURCES})
+    list(FILTER FILE_OPEN_EVENT_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_file_open_event
+        test_file_open_event.cpp
+        ${FILE_OPEN_EVENT_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_file_open_event rust_core)
+    target_compile_definitions(test_file_open_event PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+        NOTEPATRA_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    )
+    target_include_directories(test_file_open_event PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_file_open_event PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_file_open_event PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_file_open_event PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_file_open_event PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_file_open_event PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_file_open_event PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_file_open_event PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_file_open_event PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_file_open_event PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_file_open_event PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_file_open_event COMMAND $<TARGET_FILE:test_file_open_event>)
+    set_tests_properties(test_file_open_event PROPERTIES
+        LABELS "integration;mainwindow;macos;fileopen"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_file_open_event")
+endif()
+
+
 # D3 (win-open-ghost) — status-bar word count: cached + debounced + capped.
 # Sections 6/7 are QElapsedTimer ceilings that fail on the old regex path.
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_statusbar_wordcount_perf.cpp")
