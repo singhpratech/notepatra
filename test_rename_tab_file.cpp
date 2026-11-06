@@ -142,6 +142,30 @@ int main(int argc, char *argv[]) {
         EXPECT("buffer marked saved", e && !e->isModified());
     }
 
+    // (e) rename never rewrites: external edits on disk survive, lexer follows ext.
+    std::printf("\n(e) external edit + rename keeps disk bytes; language follows\n");
+    {
+        const QString x = d + QStringLiteral("/x.txt");
+        const QString x2 = d + QStringLiteral("/x.py");
+        writeFile(x, "buffer text\n");
+        mw->openFile(x);
+        QApplication::processEvents();
+        const int idx = tabFor(tm, x);
+        Editor *e = idx >= 0 ? tm->editorAt(idx) : nullptr;
+        EXPECT("x.txt opened in a tab", e != nullptr);
+        EXPECT("buffer unmodified", e && !e->isModified());
+        const QByteArray external("print('edited outside')\r\n\xEF\xBB\xBF");
+        writeFile(x, external);  // behind the editor's back; no event loop turn
+        const auto r = mw->renameTabFile(idx, QStringLiteral("x.py"));
+        EXPECT("result is Renamed", r == MainWindow::RenameResult::Renamed);
+        EXPECT("renamed file holds the on-disk bytes, not the buffer",
+               readFile(x2) == external);
+        EXPECT("tab path updated", e && QFileInfo(e->filePath()) == QFileInfo(x2));
+        EXPECT("language follows the new extension",
+               e && e->language() == QStringLiteral("Python"));
+        EXPECT("buffer still unmodified", e && !e->isModified());
+    }
+
     // (d) guard rails: same name is a no-op, separators are rejected.
     std::printf("\n(d) same name / invalid name\n");
     {

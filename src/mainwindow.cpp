@@ -3296,11 +3296,7 @@ MainWindow::RenameResult MainWindow::renameTabFile(int idx, const QString &newNa
         if (errorOut) *errorOut = f.errorString();
         return RenameResult::RenameFailed;
     }
-    if (!ed->saveFile(newPath)) {
-        QFile::rename(newPath, oldPath);  // keep the tab and the disk consistent
-        if (errorOut) *errorOut = QStringLiteral("Could not write the renamed file.");
-        return RenameResult::RenameFailed;
-    }
+    ed->retargetPath(newPath);  // the bytes already moved; rewriting would clobber external edits
     if (m_fileWatcher) {
         m_fileWatcher->removePath(oldPath);
         m_fileTimestamps.remove(oldPath);

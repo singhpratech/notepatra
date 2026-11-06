@@ -19,6 +19,8 @@ public:
 
     bool loadFile(const QString &path, QString *errorOut = nullptr);
     bool saveFile(const QString &path = QString());
+    // Point the buffer at a file already moved on disk; never writes.
+    void retargetPath(const QString &newPath);
     void setLanguage(const QString &lang);
     void applyTheme(const QString &themeName);
     void setDocumentRulersVisible(bool visible);
@@ -197,6 +199,7 @@ private:
     void setupEditor();
     void setupMargins();
     void applyLexer(const QString &lang);
+    bool setPathAndLanguage(const QString &path, const QString &text);
     void applySyntaxColors(QsciLexer *lexer, const QString &themeName);
     void syncMeasurementUi();
     void updateMeasurementTheme();

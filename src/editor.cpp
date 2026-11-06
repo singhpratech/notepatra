@@ -1026,17 +1026,26 @@ bool Editor::saveFile(const QString &path) {
     // status bar language indicator reflect the new file type live.
     // Pre-fix: post-Save-As the editor kept the old language indefinitely
     // until the user re-opened the file. User-reported.
-    const bool pathChanged = (m_filePath != savePath);
-    m_filePath = savePath;
+    const bool pathChanged = setPathAndLanguage(savePath, textOut);
+    setModified(false);
+    if (pathChanged) emit documentIdentityChanged();
+    return true;
+}
+
+bool Editor::setPathAndLanguage(const QString &path, const QString &text) {
+    const bool pathChanged = (m_filePath != path);
+    m_filePath = path;
     if (pathChanged) {
-        const QString newLang = detectLanguageFromPath(savePath, textOut);
+        const QString newLang = detectLanguageFromPath(path, text);
         if (!newLang.isEmpty() && newLang != m_language) {
             applyLexer(newLang);
         }
     }
-    setModified(false);
-    if (pathChanged) emit documentIdentityChanged();
-    return true;
+    return pathChanged;
+}
+
+void Editor::retargetPath(const QString &newPath) {
+    if (setPathAndLanguage(newPath, text())) emit documentIdentityChanged();
 }
 
 void Editor::setLanguage(const QString &lang) {
