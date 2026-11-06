@@ -445,6 +445,7 @@
   <pre><code>tar xzf notepatra-mcp-linux-x64.tar.gz
 chmod +x notepatra-mcp
 sudo mv notepatra-mcp /usr/local/bin/</code></pre>
+  <p><strong>macOS:</strong> Notepatra and the sidecar are not notarized yet. First launch of the app: right-click › Open (or System Settings › Privacy &amp; Security › Open Anyway). If macOS blocks the sidecar binary, clear its quarantine flag: <code>xattr -d com.apple.quarantine /usr/local/bin/notepatra-mcp</code> (use your path).</p>
   <p>Or build it from source — the sidecar lives in <code>notepatra-mcp/</code> in the repo and needs only stable Rust, no other dependencies:</p>
   <pre><code>cd notepatra-mcp
 cargo build --release   # binary at target/release/notepatra-mcp</code></pre>
