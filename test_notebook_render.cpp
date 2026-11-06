@@ -226,6 +226,18 @@ int main(int argc, char *argv[]) {
                     splitSqlStatements(QStringLiteral("select $1; select 2;")).size() == 2);
         EXPECT_TRUE("empty -> none", splitSqlStatements(QString()).isEmpty() &&
                                          statementIndexAt({}, 0) == -1);
+        // A -- comment ends at any line terminator, not only \n (CR-only files).
+        const char16_t terms[] = {u'\r', 0x0B, 0x0C, 0x85, 0x2028, 0x2029};
+        for (const char16_t t : terms) {
+            const QString term = QString(QChar(ushort(t)));
+            const QString src = QStringLiteral("a; -- note") + term + QStringLiteral("b;") + term +
+                                QStringLiteral("c;");
+            const QVector<SqlStatementSpan> cs = splitSqlStatements(src);
+            const QString label = QStringLiteral("-- comment ends at U+%1")
+                                      .arg(QString::number(uint(t), 16).toUpper().rightJustified(4, QLatin1Char('0')));
+            EXPECT_TRUE(qPrintable(label),
+                        cs.size() == 3 && src.mid(cs[2].start, cs[2].end - cs[2].start) == QLatin1String("c;"));
+        }
     }
 
     std::printf("\n%d passed, %d failed\n", g_passed, g_failed);

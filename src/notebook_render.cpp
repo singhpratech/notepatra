@@ -376,8 +376,9 @@ QVector<SqlStatementSpan> splitSqlStatements(const QString &sql) {
         const QChar next = i + 1 < n ? sql.at(i + 1) : QChar();
         if (start < 0 && !c.isSpace()) start = i;
         if (c == QLatin1Char('-') && next == QLatin1Char('-')) {
-            const int nl = sql.indexOf(QLatin1Char('\n'), i);
-            i = nl < 0 ? n : nl;
+            // Ends at any line terminator: \n \r VT FF NEL LS PS.
+            i += 2;
+            while (i < n && !QStringLiteral("\n\r\v\f\u0085\u2028\u2029").contains(sql.at(i))) ++i;
             continue;
         }
         if (c == QLatin1Char('/') && next == QLatin1Char('*')) {
