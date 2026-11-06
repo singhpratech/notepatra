@@ -538,6 +538,45 @@ int main(int argc, char *argv[]) {
     EXPECT_TRUE("k: pane hidden -> Ctrl+Return goes to the SQL editor, no run",
                 probe2.hits == 1 && !nb->isBusy() && nb->statusTextAt(sevenCell).isEmpty());
 
+    // ── l ──
+    std::printf("-- l: results kept per document --\n");
+    if (!previewAct->isChecked()) previewAct->trigger();
+    QTest::qWait(30);
+    const QString aPath = writeFile(work.path(), "a.sql",
+                                    "select 1 as v union all select 2;\n-- %%\n"
+                                    "select 1 as v union all select 2;\n");
+    const QString bPath = writeFile(work.path(), "b.sql", "select 'b' as other;\n");
+    mw.openFile(aPath);
+    QTest::qWait(30);
+    Editor *aEd = mw.currentEditor();
+    nb->connectionCombo()->setCurrentIndex(0);
+    EXPECT_TRUE("l: a.sql has 2 cells", pane->mode() == PreviewPane::Mode::SqlNotebook && nb->cellCount() == 2);
+    nb->runCell(0);
+    waitIdle(nb);
+    EXPECT_TRUE("l: cell 0 ran", nb->resultTableAt(0) && nb->resultTableAt(0)->rowCount() == 2);
+    EXPECT_TRUE("l: identical cell 1 does not share cell 0's result",
+                nb->statusTextAt(1).isEmpty() && nb->resultTableAt(1) && !nb->resultTableAt(1)->isVisibleTo(nb));
+    mw.openFile(bPath);
+    QTest::qWait(30);
+    EXPECT_TRUE("l: b.sql shown", nb->cellCount() == 1 && pane->headerText().contains(QLatin1String("b.sql")));
+    if (tabs) tabs->setCurrentIndex(tabIndexForPath(tabs, aPath));
+    QTest::qWait(30);
+    {
+        QTableWidget *ra = nb->resultTableAt(0);
+        EXPECT_TRUE("l: a.sql result survives a.sql -> b.sql -> a.sql",
+                    ra && ra->rowCount() > 0 && ra->isVisibleTo(nb));
+    }
+    if (aEd) aEd->setText(QStringLiteral("select 1 as v union all select 2 union all select 3;\n-- %%\n"
+                                         "select 1 as v union all select 2;\n"));
+    QTest::qWait(400);
+    {
+        QTableWidget *ra = nb->resultTableAt(0);
+        EXPECT_TRUE("l: edited cell keeps its previous result, marked stale",
+                    ra && ra->rowCount() == 2 && ra->isVisibleTo(nb) &&
+                        nb->statusTextAt(0).contains(QLatin1String("stale"), Qt::CaseInsensitive));
+        std::printf("     status[0]=%s\n", qPrintable(nb->statusTextAt(0)));
+    }
+
     // ── z ── (last: a stopped SQLite query keeps running in the background)
     std::printf("-- z: Stop / timeout on a Qt-SQL driver --\n");
     {

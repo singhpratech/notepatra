@@ -226,23 +226,78 @@ bool SqlNotebookWidget::currentRecord(DbConnections::Record *out, QString *err) 
     return true;
 }
 
-void SqlNotebookWidget::setCells(const QVector<NotebookRender::SqlCell> &cells) {
+void SqlNotebookWidget::setCells(const QVector<NotebookRender::SqlCell> &cells, QObject *doc) {
     if (m_conn->count() == 0) refreshConnections();
-    bool sameShape = cells.size() == m_cells.size();
+    const bool switched = doc != m_doc;
+    if (doc && !m_docs.contains(doc)) {
+        connect(doc, &QObject::destroyed, this, [this, doc]() {
+            m_docs.remove(doc);
+            if (m_doc == doc) m_doc = nullptr;
+            if (m_queueDoc == doc) m_queue.clear();
+        });
+    }
+    m_doc = doc;
+    QVector<Slot> &docSlots = m_docs[doc];
+    bool sameShape = !switched && cells.size() == m_cells.size();
     for (int i = 0; sameShape && i < cells.size(); ++i)
         sameShape = cells.at(i).text == m_cells.at(i).text &&
                     cells.at(i).markdown == m_cells.at(i).markdown;
+    mergeCells(docSlots, cells);
     m_cells = cells;
-    if (sameShape) return;
+    if (!sameShape) rebuildCards();
+}
 
-    QSet<QString> live;
-    for (const auto &c : m_cells) live.insert(keyFor(c));
-    if (m_busy) live.insert(m_runningKey);
-    for (auto it = m_results.begin(); it != m_results.end();) {
-        if (!live.contains(it.key())) it = m_results.erase(it);
-        else ++it;
+void SqlNotebookWidget::mergeCells(QVector<Slot> &cellSlots, const QVector<NotebookRender::SqlCell> &cells) {
+    const QVector<Slot> old = cellSlots;
+    const int n = old.size(), m = cells.size();
+    auto same = [](const NotebookRender::SqlCell &a, const NotebookRender::SqlCell &b) {
+        return a.text == b.text && a.markdown == b.markdown;
+    };
+    int pre = 0;
+    while (pre < n && pre < m && same(old.at(pre).cell, cells.at(pre))) ++pre;
+    int suf = 0;
+    while (suf < n - pre && suf < m - pre && same(old.at(n - 1 - suf).cell, cells.at(m - 1 - suf))) ++suf;
+
+    QVector<Slot> out(m);
+    QVector<bool> used(n, false);
+    for (int i = 0; i < pre; ++i) { out[i] = old.at(i); used[i] = true; }
+    for (int k = 0; k < suf; ++k) { out[m - 1 - k] = old.at(n - 1 - k); used[n - 1 - k] = true; }
+    const int oldMid = n - pre - suf, newMid = m - pre - suf;
+    for (int j = 0; j < newMid; ++j) {
+        const int ni = pre + j;
+        int match = -1;
+        if (oldMid == newMid) {
+            // Same number of cells: the j-th changed cell is the j-th edited one.
+            if (old.at(pre + j).cell.markdown == cells.at(ni).markdown) match = pre + j;
+        } else {
+            for (int oi = pre; oi < n - suf && match < 0; ++oi)
+                if (!used[oi] && same(old.at(oi).cell, cells.at(ni))) match = oi;
+        }
+        if (match >= 0) {
+            out[ni] = old.at(match);
+            used[match] = true;
+        } else {
+            out[ni].id = m_nextId++;
+        }
     }
-    rebuildCards();
+    for (int i = 0; i < m; ++i) out[i].cell = cells.at(i);
+    cellSlots = out;
+}
+
+SqlNotebookWidget::Slot *SqlNotebookWidget::findSlot(QObject *doc, int id) {
+    auto it = m_docs.find(doc);
+    if (it == m_docs.end()) return nullptr;
+    for (Slot &s : it.value())
+        if (s.id == id) return &s;
+    return nullptr;
+}
+
+int SqlNotebookWidget::indexOfId(int id) const {
+    const auto it = m_docs.constFind(m_doc);
+    if (it == m_docs.constEnd()) return -1;
+    for (int i = 0; i < it.value().size(); ++i)
+        if (it.value().at(i).id == id) return i;
+    return -1;
 }
 
 void SqlNotebookWidget::rebuildCards() {
@@ -280,11 +335,8 @@ void SqlNotebookWidget::rebuildCards() {
             card.run->setToolTip(tr("Run this cell (Ctrl+Return in the editor)"));
             card.run->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
             card.run->setAutoRaise(true);
-            const QString key = keyFor(cell);
-            connect(card.run, &QToolButton::clicked, this, [this, key]() {
-                for (int k = 0; k < m_cells.size(); ++k)
-                    if (keyFor(m_cells.at(k)) == key) { runCell(k); return; }
-            });
+            const int id = m_docs.value(m_doc).value(i).id;
+            connect(card.run, &QToolButton::clicked, this, [this, id]() { runCell(indexOfId(id)); });
             head->addWidget(card.run);
         }
         v->addLayout(head);
@@ -326,21 +378,25 @@ void SqlNotebookWidget::updateCard(int index) {
     if (index < 0 || index >= m_cards.size() || index >= m_cells.size()) return;
     const Card &card = m_cards.at(index);
     if (!card.status) return;
-    const QString key = keyFor(m_cells.at(index));
-    const bool running = m_busy && key == m_runningKey;
+    const auto docIt = m_docs.constFind(m_doc);
+    if (docIt == m_docs.constEnd() || index >= docIt.value().size()) return;
+    const Slot &slot = docIt.value().at(index);
+    const bool running = m_busy && m_runDoc == m_doc && m_runId == slot.id;
     if (card.run) card.run->setEnabled(!m_busy);
-    const auto it = m_results.constFind(key);
-    if (it == m_results.constEnd()) {
+    if (!slot.hasResult || running) {
         card.status->setText(running ? tr("Running...") : QString());
         card.status->setVisible(running);
+        card.status->setStyleSheet(QString());
         card.table->hide();
         return;
     }
-    const CellResult &res = it.value();
-    card.status->setText(res.status);
-    card.status->setVisible(!res.status.isEmpty());
+    const CellResult &res = slot.result;
+    const bool stale = slot.ranText != slot.cell.text;
+    card.status->setText(stale ? tr("(stale: the cell changed since this run) %1").arg(res.status)
+                               : res.status);
+    card.status->setVisible(!card.status->text().isEmpty());
     card.status->setStyleSheet(res.error ? QStringLiteral("color:#d9534f;") : QString());
-    if (!res.hasTable || running) {
+    if (!res.hasTable) {
         card.table->hide();
         return;
     }
@@ -375,30 +431,35 @@ void SqlNotebookWidget::setBusy(bool busy) {
 }
 
 void SqlNotebookWidget::runCell(int index) {
-    if (m_busy || index < 0 || index >= m_cells.size()) return;
-    const NotebookRender::SqlCell cell = m_cells.at(index);
-    if (cell.markdown) return;
-    const QString key = keyFor(cell);
+    if (m_busy || index < 0 || index >= m_cells.size() || m_cells.at(index).markdown) return;
+    const int id = m_docs.value(m_doc).value(index).id;
+    startRun(m_doc, id, m_cells.at(index).text);
+}
 
+void SqlNotebookWidget::startRun(QObject *doc, int id, const QString &sql) {
+    Slot *slot = findSlot(doc, id);
+    if (m_busy || !slot || slot->cell.markdown) return;
     DbConnections::Record rec;
     QString err;
     if (!currentRecord(&rec, &err)) {
-        CellResult res;
-        res.status = tr("Error: %1").arg(err);
-        res.error = true;
-        m_results.insert(key, res);
+        slot->hasResult = true;
+        slot->result = CellResult();
+        slot->result.status = tr("Error: %1").arg(err);
+        slot->result.error = true;
+        slot->ranText = slot->cell.text;
         m_queue.clear();
-        updateCard(index);
+        if (doc == m_doc) updateAllCards();
         return;
     }
     const bool allow = m_allowWrites->isChecked();
     m_runInterruptible = rec.driver.compare(QLatin1String("DUCKDB"), Qt::CaseInsensitive) == 0;
-    m_results.remove(key);
-    m_runningKey = key;
+    slot->hasResult = false;
+    m_runDoc = doc;
+    m_runId = id;
+    m_runText = slot->cell.text;
     m_token = std::make_shared<DbConnections::QueryInterruptToken>();
     auto token = m_token;
     auto keepDir = m_scratchDir;  // the temp DB outlives this widget until the worker returns
-    const QString sql = cell.text;
     setBusy(true);
     updateAllCards();
     m_elapsed.start();
@@ -426,10 +487,18 @@ void SqlNotebookWidget::abandonRun(const QString &status) {
         : status + QLatin1Char(' ') +
               tr("The database may still finish the query in the background; its result is discarded.");
     res.error = true;
-    m_results.insert(m_runningKey, res);
+    storeRunResult(res);
     m_token.reset();
     setBusy(false);
     updateAllCards();
+}
+
+void SqlNotebookWidget::storeRunResult(const CellResult &res) {
+    if (Slot *slot = findSlot(m_runDoc, m_runId)) {
+        slot->hasResult = true;
+        slot->result = res;
+        slot->ranText = m_runText;
+    }
 }
 
 void SqlNotebookWidget::onQueryFinished(const DbConnections::QueryResult &qr) {
@@ -458,7 +527,7 @@ void SqlNotebookWidget::onQueryFinished(const DbConnections::QueryResult &qr) {
         else
             res.status = tr("Error: %1").arg(qr.error.isEmpty() ? qr.errorKind : qr.error);
     }
-    m_results.insert(m_runningKey, res);
+    storeRunResult(res);
     const bool continueQueue = qr.ok && !(m_token && m_token->interruptRequested());
     m_token.reset();
     setBusy(false);
@@ -470,20 +539,16 @@ void SqlNotebookWidget::onQueryFinished(const DbConnections::QueryResult &qr) {
 void SqlNotebookWidget::runAll() {
     if (m_busy) return;
     m_queue.clear();
-    for (const auto &c : qAsConst(m_cells))
-        if (!c.markdown) m_queue << keyFor(c);
+    m_queueDoc = m_doc;
+    for (const Slot &slot : m_docs.value(m_doc))
+        if (!slot.cell.markdown) m_queue << slot.id;
     runNextQueued();
 }
 
 void SqlNotebookWidget::runNextQueued() {
     while (!m_queue.isEmpty() && !m_busy) {
-        const QString key = m_queue.takeFirst();
-        for (int k = 0; k < m_cells.size(); ++k) {
-            if (keyFor(m_cells.at(k)) == key && !m_cells.at(k).markdown) {
-                runCell(k);
-                break;
-            }
-        }
+        const int id = m_queue.takeFirst();
+        if (const Slot *slot = findSlot(m_queueDoc, id)) startRun(m_queueDoc, id, slot->cell.text);
     }
 }
 

@@ -279,7 +279,7 @@ void PreviewPane::refreshNow() {
             }
         } else if (m_mode == Mode::SqlNotebook) {
             if (m_sourceChanged || previous != Mode::SqlNotebook) m_sql->refreshConnections();
-            m_sql->setCells(NotebookRender::splitSqlCells(text));
+            m_sql->setCells(NotebookRender::splitSqlCells(text), ed);
             m_stack->setCurrentWidget(m_sql);
         }
     }

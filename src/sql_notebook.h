@@ -34,7 +34,8 @@ public:
     explicit SqlNotebookWidget(QWidget *parent = nullptr);
     ~SqlNotebookWidget() override;
 
-    void setCells(const QVector<NotebookRender::SqlCell> &cells);
+    // `doc` (normally the Editor) owns the results; each document keeps its own.
+    void setCells(const QVector<NotebookRender::SqlCell> &cells, QObject *doc = nullptr);
     void runCell(int index);
     void runAll();
     void runCellAtLine(int line);
@@ -67,6 +68,14 @@ private:
         QStringList columns;
         QVector<QVector<QString>> rows;
     };
+    // One cell of one document; `id` survives edits so a result follows its cell.
+    struct Slot {
+        int id = 0;
+        NotebookRender::SqlCell cell;
+        bool hasResult = false;
+        CellResult result;
+        QString ranText;  // cell text when the result was produced (differs = stale)
+    };
     struct Card {
         QFrame *frame = nullptr;
         QToolButton *run = nullptr;
@@ -74,7 +83,11 @@ private:
         QTableWidget *table = nullptr;
     };
 
-    static QString keyFor(const NotebookRender::SqlCell &c) { return c.text.trimmed(); }
+    // Carries results across an edit: common prefix/suffix by text, the changed middle by position.
+    void mergeCells(QVector<Slot> &cellSlots, const QVector<NotebookRender::SqlCell> &cells);
+    Slot *findSlot(QObject *doc, int id);
+    int indexOfId(int id) const;
+    void startRun(QObject *doc, int id, const QString &sql);
     void rebuildCards();
     void updateCard(int index);
     void updateAllCards();
@@ -82,6 +95,7 @@ private:
     void onQueryFinished(const DbConnections::QueryResult &qr);
     // Frees the UI now; a Qt-SQL worker cannot be interrupted, so its late result is dropped.
     void abandonRun(const QString &status);
+    void storeRunResult(const CellResult &res);
     void onConnectionChanged();
     bool currentRecord(DbConnections::Record *out, QString *err);
     void runNextQueued();
@@ -94,11 +108,16 @@ private:
     QWidget *m_cardHost = nullptr;
     QVBoxLayout *m_cardLayout = nullptr;
 
-    QVector<NotebookRender::SqlCell> m_cells;
+    QVector<NotebookRender::SqlCell> m_cells;  // the shown document's cells
     QVector<Card> m_cards;
-    QHash<QString, CellResult> m_results;
-    QStringList m_queue;
-    QString m_runningKey;
+    QHash<QObject *, QVector<Slot>> m_docs;    // entry dropped when the document is destroyed
+    QObject *m_doc = nullptr;
+    int m_nextId = 1;
+    QObject *m_runDoc = nullptr;
+    int m_runId = 0;
+    QString m_runText;
+    QObject *m_queueDoc = nullptr;
+    QVector<int> m_queue;
     bool m_busy = false;
     NotebookRender::Colors m_colors;
 
