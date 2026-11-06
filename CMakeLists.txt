@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.130 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.131 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -643,6 +643,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_db_readonly_gate.c
     add_executable(test_db_readonly_gate
         test_db_readonly_gate.cpp
         src/dbconnections.cpp
+        src/atomic_write.cpp
     )
     target_include_directories(test_db_readonly_gate PRIVATE ${CMAKE_SOURCE_DIR}/src)
     target_link_libraries(test_db_readonly_gate PRIVATE
@@ -825,6 +826,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_storage.cpp"
     add_executable(test_notes_storage
         test_notes_storage.cpp
         src/notes_storage.cpp
+        src/atomic_write.cpp
         src/notes_template.cpp
     )
     target_include_directories(test_notes_storage PRIVATE
@@ -834,6 +836,23 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_storage.cpp"
     add_test(NAME test_notes_storage COMMAND $<TARGET_FILE:test_notes_storage>)
     set_tests_properties(test_notes_storage PROPERTIES LABELS "unit;noter;storage")
     message(STATUS "Regression test enabled — target: test_notes_storage")
+endif()
+
+# ── Durable replace (src/atomic_write.h) ──
+# Pins the contract of NpAtomic::replaceFile and — critically — carries a
+# source-level guard against reintroducing the remove-then-rename idiom
+# that shipped in notes_storage.cpp and ai_tools.cpp: it deleted the
+# target BEFORE the rename and deleted the temp too when the rename
+# failed, losing both copies of the user's file on Windows.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_atomic_write.cpp")
+    add_executable(test_atomic_write test_atomic_write.cpp src/atomic_write.cpp)
+    target_include_directories(test_atomic_write PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_definitions(test_atomic_write PRIVATE
+        NOTEPATRA_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_link_libraries(test_atomic_write PRIVATE Qt5::Core Qt5::Test)
+    add_test(NAME test_atomic_write COMMAND $<TARGET_FILE:test_atomic_write>)
+    set_tests_properties(test_atomic_write PROPERTIES LABELS "unit;storage;durability" TIMEOUT 60)
+    message(STATUS "Regression test enabled — target: test_atomic_write")
 endif()
 
 # ── Noter — SQLite todos + reminder engine test (172 cases) ──
@@ -880,6 +899,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_extract_appl
         src/notes_extract_apply.cpp
         src/notes_sweep_prompt.cpp
         src/notes_storage.cpp
+        src/atomic_write.cpp
         src/notes_template.cpp
     )
     target_include_directories(test_notes_extract_apply PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -901,6 +921,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_panels.cpp")
         test_notes_panels.cpp
         src/notes.cpp
         src/notes_storage.cpp
+        src/atomic_write.cpp
         src/notes_template.cpp
         src/notes_todos.cpp
         src/notes_reminder.cpp
@@ -930,6 +951,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_panel_widget
         test_notes_panel_widget.cpp
         src/notes.cpp
         src/notes_storage.cpp
+        src/atomic_write.cpp
         src/notes_template.cpp
         src/notes_todos.cpp
         src/notes_reminder.cpp
@@ -959,6 +981,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_noter_render.cpp")
         test_noter_render.cpp
         src/notes.cpp
         src/notes_storage.cpp
+        src/atomic_write.cpp
         src/notes_template.cpp
         src/notes_todos.cpp
         src/notes_reminder.cpp
@@ -1118,6 +1141,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_tools.cpp")
         test_ai_tools.cpp
         src/ai_tools.cpp
         src/path_denylist.cpp
+        src/atomic_write.cpp
         src/git_tools.cpp
         src/csvanalyst.cpp
         src/dbconnections.cpp
@@ -1141,6 +1165,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_git_tools_e2e.cpp"
         test_git_tools_e2e.cpp
         src/ai_tools.cpp
         src/path_denylist.cpp
+        src/atomic_write.cpp
         src/git_tools.cpp
         src/csvanalyst.cpp
         src/dbconnections.cpp
@@ -1164,6 +1189,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_dataanalyst.cpp
         src/ai_systemprompt.cpp
         src/ai_tools.cpp
         src/path_denylist.cpp
+        src/atomic_write.cpp
         src/git_tools.cpp
         src/chartrender.cpp
         src/chart_modal.cpp
@@ -1455,6 +1481,65 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_preview_pane.cpp")
     message(STATUS "Regression test enabled — target: test_preview_pane")
 endif()
 
+# Preview pane open/closed + splitter sizes survive a relaunch (two MainWindows).
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_preview_persist.cpp")
+    set(PREVIEW_PERSIST_SOURCES ${SOURCES})
+    list(FILTER PREVIEW_PERSIST_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_preview_persist
+        test_preview_persist.cpp
+        ${PREVIEW_PERSIST_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_preview_persist rust_core)
+    target_compile_definitions(test_preview_persist PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_preview_persist PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_preview_persist PRIVATE
+        Qt5::Widgets
+        Qt5::PrintSupport
+        Qt5::Network
+        Qt5::Concurrent
+        Qt5::Sql
+        Qt5::Charts
+        Qt5::Test
+        ${QSCINTILLA_LIB}
+        ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_preview_persist PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_preview_persist PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_preview_persist PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_preview_persist PRIVATE
+            ws2_32 userenv bcrypt ntdll
+            advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_preview_persist PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_preview_persist PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_preview_persist PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_preview_persist PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_preview_persist PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_preview_persist COMMAND $<TARGET_FILE:test_preview_persist>)
+    set_tests_properties(test_preview_persist PROPERTIES
+        LABELS "integration;preview"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_preview_persist")
+endif()
+
 # ─── Change-history strip (v0.1.91) ─────────────────────────────────────
 # Asserts Notepad++-style orange-on-edit / green-on-save behaviour against
 # Notepatra's actual Editor class. Reuses the same source set as the
@@ -1711,6 +1796,110 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_remote_open.cpp")
         LABELS "integration;mainwindow;remoteopen;singleinstance"
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     message(STATUS "Regression test enabled — target: test_remote_open")
+endif()
+
+# macOS Finder/Dock opens: QEvent::FileOpen routed into MainWindow, queued pre-window.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_file_open_event.cpp")
+    set(FILE_OPEN_EVENT_SOURCES ${SOURCES})
+    list(FILTER FILE_OPEN_EVENT_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_file_open_event
+        test_file_open_event.cpp
+        ${FILE_OPEN_EVENT_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_file_open_event rust_core)
+    target_compile_definitions(test_file_open_event PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+        NOTEPATRA_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    )
+    target_include_directories(test_file_open_event PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_file_open_event PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_file_open_event PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_file_open_event PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_file_open_event PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_file_open_event PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_file_open_event PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_file_open_event PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_file_open_event PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_file_open_event PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_file_open_event PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_file_open_event COMMAND $<TARGET_FILE:test_file_open_event>)
+    set_tests_properties(test_file_open_event PROPERTIES
+        LABELS "integration;mainwindow;macos;fileopen"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_file_open_event")
+endif()
+
+# Menu shortcut collisions, macOS menu roles, Welcome cards + Help entries, no emoji.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_shortcuts_discoverability.cpp")
+    set(SHORTCUTS_DISCOVERABILITY_SOURCES ${SOURCES})
+    list(FILTER SHORTCUTS_DISCOVERABILITY_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_shortcuts_discoverability
+        test_shortcuts_discoverability.cpp
+        ${SHORTCUTS_DISCOVERABILITY_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_shortcuts_discoverability rust_core)
+    target_compile_definitions(test_shortcuts_discoverability PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+        NOTEPATRA_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    )
+    target_include_directories(test_shortcuts_discoverability PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_shortcuts_discoverability PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_shortcuts_discoverability PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_shortcuts_discoverability PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_shortcuts_discoverability PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_shortcuts_discoverability PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_shortcuts_discoverability PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_shortcuts_discoverability PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_shortcuts_discoverability PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_shortcuts_discoverability PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_shortcuts_discoverability PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_shortcuts_discoverability COMMAND $<TARGET_FILE:test_shortcuts_discoverability>)
+    set_tests_properties(test_shortcuts_discoverability PROPERTIES
+        LABELS "integration;mainwindow;macos;shortcuts;welcome"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_shortcuts_discoverability")
 endif()
 
 # D3 (win-open-ghost) — status-bar word count: cached + debounced + capped.
@@ -2120,6 +2309,57 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_session_autosave_g
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         TIMEOUT 180)
     message(STATUS "Regression test enabled — target: test_session_autosave_guard")
+endif()
+
+# Rename must refuse to overwrite an existing file (tab menu + File > Rename).
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_rename_tab_file.cpp")
+    set(RENAME_TAB_SOURCES ${SOURCES})
+    list(FILTER RENAME_TAB_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_rename_tab_file
+        test_rename_tab_file.cpp
+        ${RENAME_TAB_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_rename_tab_file rust_core)
+    target_compile_definitions(test_rename_tab_file PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_rename_tab_file PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_rename_tab_file PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_rename_tab_file PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_rename_tab_file PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_rename_tab_file PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_rename_tab_file PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_rename_tab_file PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_rename_tab_file PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_rename_tab_file PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_rename_tab_file PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_rename_tab_file PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_rename_tab_file COMMAND $<TARGET_FILE:test_rename_tab_file>)
+    set_tests_properties(test_rename_tab_file PROPERTIES
+        LABELS "integration;mainwindow;rename"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_rename_tab_file")
 endif()
 
 # D8 (win-open-ghost) — double-click occurrence highlight: doc-size
@@ -2722,6 +2962,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_bridge.cpp")
         # v0.1.118 — list_notes/read_note go through the real NotesStorage
         # layer (QtCore-only; notes_template.cpp resolves shellHtml).
         src/notes_storage.cpp
+        src/atomic_write.cpp
         src/notes_template.cpp
         # v0.1.119 — validate_npd calls the REAL parse-only entry point
         # Npd::parse (pure QtCore, no widgets).
@@ -2867,6 +3108,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_db_query_runner.cp
     add_executable(test_db_query_runner
         test_db_query_runner.cpp
         src/dbconnections.cpp
+        src/atomic_write.cpp
         src/duckdb_client.cpp
     )
     target_include_directories(test_db_query_runner PRIVATE
@@ -3222,6 +3464,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_vega_chart.cpp")
         test_vega_chart.cpp
         src/ai_tools.cpp
         src/path_denylist.cpp
+        src/atomic_write.cpp
         src/git_tools.cpp
         src/csvanalyst.cpp
         src/dbconnections.cpp

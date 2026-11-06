@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "aipanel.h"
+
+#include "atomic_write.h"
 #include "ai_context.h"
 #include "ai_intent.h"
 #include "ai_systemprompt.h"
@@ -5976,7 +5978,9 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
         sanitized.remove(QStringLiteral("_notepatra_host_approved"));
         call.args = sanitized;
         const QString sql = sanitized.value(QStringLiteral("sql")).toString();
-        if (DbConnections::isMutation(sql) && !m_turnWriteApprovalSql) {
+        // Same verdict the executors use (driver-aware: T-SQL batches on QODBC).
+        const bool mutation = AiTools::sqlToolVerdict(name, sanitized).mutation;
+        if (mutation && !m_turnWriteApprovalSql) {
             QString sqlContext;
             if (name == QLatin1String("query_sql"))
                 sqlContext = tr("connection '%1'")
@@ -5988,7 +5992,8 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
             return;  // withheld until the user approves the mutation
         }
         // Read-only (or "approve all queries this turn" already granted) — run guarded.
-        result = runDbToolGuarded(call, /*approvedMutation=*/m_turnWriteApprovalSql);
+        // The grant covers mutations only; a read still goes through the read gate.
+        result = runDbToolGuarded(call, /*approvedMutation=*/mutation && m_turnWriteApprovalSql);
         // Re-resolve turn state: the nested event loop may have processed a Stop
         // / mode-switch that tore the turn down while we waited.
         if (!m_chatLayout || !m_toolsActiveThisTurn) return;
@@ -7141,10 +7146,16 @@ void AIPanel::saveChatHistory() {
     const QString tmp = m_chatHistoryPath + ".tmp";
     QFile f(tmp);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return;
-    f.write(bytes);
+    const qint64 written = f.write(bytes);
+    NpAtomic::syncData(f);
     f.close();
-    QFile::remove(m_chatHistoryPath);  // Windows rename can't overwrite
-    QFile::rename(tmp, m_chatHistoryPath);
+    if (written != bytes.size()) {
+        QFile::remove(tmp);
+        return;
+    }
+    QString replaceErr;  // on failure the previous history file is left intact
+    if (!NpAtomic::replaceFile(tmp, m_chatHistoryPath, &replaceErr))
+        qWarning("[ai] chat history not saved: %s", qPrintable(replaceErr));
 }
 
 void AIPanel::loadChatHistory() {

@@ -12,7 +12,15 @@
 //   i. AI dock opens beside a visible preview
 //   j. theme switches (Dark / Monokai / Light) re-render the pane
 //   k. Ctrl+Return runs the SQL cell at the cursor only inside the editor tabs
+//   l. results kept per document / per cell; edits keep a stale result
+//   m. Save As and language changes refresh the pane
+//   n. Ctrl+Shift+Return runs and advances; View-menu entries
+//   o. result grid TSV copy; NULL rendering (Qt SQL + DuckDB)
+//   p. plain .sql without -- %% runs the statement under the cursor
+//   q. (WebEngine) HTML preview makes no network connections
+//   z. Stop / injected timeout free the UI on SQLite; exit not blocked
 
+#include "shortcut_hints.h"
 #include "mainwindow.h"
 #include "aipanel.h"
 #include "dbconnections.h"
@@ -23,23 +31,33 @@
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QComboBox>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QHostAddress>
+#include <QLabel>
 #include <QMenu>
 #include <QSplitter>
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QTabWidget>
 #include <QTableWidget>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTextBrowser>
 #include <QTextDocument>
+#include <QThreadPool>
 #include <QVariant>
 
+#include <atomic>
+#include <chrono>
 #include <cstdio>
+#include <cstdlib>
+#include <thread>
 
 static int g_passed = 0;
 static int g_failed = 0;
@@ -50,6 +68,32 @@ static int g_failed = 0;
         else { ++g_failed; std::printf("  [FAIL] %s\n", label); } \
         std::fflush(stdout); \
     } while (0)
+
+// A wedged run (or an exit blocked by a still-running worker) fails fast instead of hanging ctest.
+static std::atomic<bool> g_mainDone{false};
+static void startWatchdog() {
+    std::thread([]() {
+        using clock = std::chrono::steady_clock;
+        const auto start = clock::now();
+        auto doneAt = clock::time_point();
+        for (;;) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            const auto now = clock::now();
+            if (g_mainDone.load()) {
+                if (doneAt == clock::time_point()) doneAt = now;
+                if (now - doneAt > std::chrono::seconds(20)) {
+                    std::printf("WATCHDOG: process exit blocked for 20 s\n");
+                    std::fflush(stdout);
+                    std::_Exit(4);
+                }
+            } else if (now - start > std::chrono::seconds(170)) {
+                std::printf("WATCHDOG: test exceeded 170 s\n");
+                std::fflush(stdout);
+                std::_Exit(3);
+            }
+        }
+    }).detach();
+}
 
 static QString writeFile(const QString &dir, const QString &name, const QByteArray &content) {
     const QString path = QDir(dir).absoluteFilePath(name);
@@ -124,10 +168,16 @@ static const char *kNotebook = R"NB({
 
 int main(int argc, char *argv[]) {
     setvbuf(stdout, nullptr, _IONBF, 0);
+    startWatchdog();
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QTemporaryDir cfgDir;
     qputenv("XDG_CONFIG_HOME", cfgDir.path().toUtf8());
     qputenv("XDG_DATA_HOME", cfgDir.path().toUtf8());
+#ifdef Q_OS_WIN
+    // Config::appConfigDir() reads APPDATA on Windows; without this every test shares one config.
+    qputenv("APPDATA",     cfgDir.path().toUtf8());
+    qputenv("USERPROFILE", cfgDir.path().toUtf8());
+#endif
     qputenv("HOME", cfgDir.path().toUtf8());
     QApplication app(argc, argv);
 
@@ -169,7 +219,7 @@ int main(int argc, char *argv[]) {
     std::printf("-- a: startup layout --\n");
     EXPECT_TRUE("a: pane hidden at startup", !pane->isVisible());
     EXPECT_TRUE("a: action text and shortcut",
-                previewAct->text() == QLatin1String("Preview Pane    Ctrl+Shift+V") &&
+                previewAct->text() == QLatin1String("Preview Pane") &&
                     previewAct->shortcut() == QKeySequence("Ctrl+Shift+V") && previewAct->isCheckable());
     QSplitter *mainSplit = nullptr;
     for (AIPanel *p : mw.findChildren<AIPanel *>()) {
@@ -360,7 +410,7 @@ int main(int argc, char *argv[]) {
     std::printf("-- i: AI dock beside preview --\n");
     previewAct->trigger();
     QTest::qWait(30);
-    QAction *aiToggle = findActionByShortcut(&mw, QKeySequence("Ctrl+Q"));
+    QAction *aiToggle = findActionByShortcut(&mw, Shortcuts::aiAssistant().first());
     EXPECT_TRUE("i: AI Assistant action found", aiToggle != nullptr);
     if (aiToggle) aiToggle->trigger();
     QTest::qWait(60);
@@ -500,6 +550,333 @@ int main(int argc, char *argv[]) {
     sqlEd->removeEventFilter(&probe2);
     EXPECT_TRUE("k: pane hidden -> Ctrl+Return goes to the SQL editor, no run",
                 probe2.hits == 1 && !nb->isBusy() && nb->statusTextAt(sevenCell).isEmpty());
+
+    // ── l ──
+    std::printf("-- l: results kept per document --\n");
+    if (!previewAct->isChecked()) previewAct->trigger();
+    QTest::qWait(30);
+    const QString aPath = writeFile(work.path(), "a.sql",
+                                    "select 1 as v union all select 2;\n-- %%\n"
+                                    "select 1 as v union all select 2;\n");
+    const QString bPath = writeFile(work.path(), "b.sql", "select 'b' as other;\n");
+    mw.openFile(aPath);
+    QTest::qWait(30);
+    Editor *aEd = mw.currentEditor();
+    nb->connectionCombo()->setCurrentIndex(0);
+    EXPECT_TRUE("l: a.sql has 2 cells", pane->mode() == PreviewPane::Mode::SqlNotebook && nb->cellCount() == 2);
+    nb->runCell(0);
+    waitIdle(nb);
+    EXPECT_TRUE("l: cell 0 ran", nb->resultTableAt(0) && nb->resultTableAt(0)->rowCount() == 2);
+    EXPECT_TRUE("l: identical cell 1 does not share cell 0's result",
+                nb->statusTextAt(1).isEmpty() && nb->resultTableAt(1) && !nb->resultTableAt(1)->isVisibleTo(nb));
+    mw.openFile(bPath);
+    QTest::qWait(30);
+    EXPECT_TRUE("l: b.sql shown", nb->cellCount() == 1 && pane->headerText().contains(QLatin1String("b.sql")));
+    if (tabs) tabs->setCurrentIndex(tabIndexForPath(tabs, aPath));
+    QTest::qWait(30);
+    {
+        QTableWidget *ra = nb->resultTableAt(0);
+        EXPECT_TRUE("l: a.sql result survives a.sql -> b.sql -> a.sql",
+                    ra && ra->rowCount() > 0 && ra->isVisibleTo(nb));
+    }
+    if (aEd) aEd->setText(QStringLiteral("select 1 as v union all select 2 union all select 3;\n-- %%\n"
+                                         "select 1 as v union all select 2;\n"));
+    QTest::qWait(400);
+    {
+        QTableWidget *ra = nb->resultTableAt(0);
+        EXPECT_TRUE("l: edited cell keeps its previous result, marked stale",
+                    ra && ra->rowCount() == 2 && ra->isVisibleTo(nb) &&
+                        nb->statusTextAt(0).contains(QLatin1String("stale"), Qt::CaseInsensitive));
+        std::printf("     status[0]=%s\n", qPrintable(nb->statusTextAt(0)));
+    }
+
+    // ── m ──
+    std::printf("-- m: Save As / language change refresh the pane --\n");
+    {
+        QAction *newAct = findActionByShortcut(&mw, QKeySequence("Ctrl+N"));
+        EXPECT_TRUE("m: New action found", newAct != nullptr);
+        if (newAct) newAct->trigger();
+        QTest::qWait(30);
+        Editor *untitled = mw.currentEditor();
+        untitled->setText(QStringLiteral("# Saved Heading\n\ntext\n"));
+        QTest::qWait(400);
+        EXPECT_TRUE("m: untitled plain text -> no preview", pane->mode() == PreviewPane::Mode::None);
+        const QString xPath = QDir(work.path()).absoluteFilePath("x.md");
+        EXPECT_TRUE("m: programmatic save to x.md", untitled->saveFile(xPath));
+        QTest::qWait(400);
+        EXPECT_TRUE("m: after Save As to x.md -> Markdown preview without a keystroke",
+                    pane->mode() == PreviewPane::Mode::Markdown &&
+                        pane->headerText().contains(QLatin1String("x.md")) &&
+                        pane->browser()->toPlainText().contains(QLatin1String("Saved Heading")));
+        std::printf("     header=%s\n", qPrintable(pane->headerText()));
+        untitled->setLanguage(QStringLiteral("SQL"));
+        QTest::qWait(400);
+        EXPECT_TRUE("m: language change to SQL -> SQL notebook",
+                    pane->mode() == PreviewPane::Mode::SqlNotebook &&
+                        pane->headerText().startsWith(QLatin1String("SQL notebook")));
+        untitled->setLanguage(QStringLiteral("Markdown"));
+        QTest::qWait(400);
+        EXPECT_TRUE("m: language change back to Markdown", pane->mode() == PreviewPane::Mode::Markdown);
+    }
+
+    // ── n ──
+    std::printf("-- n: run and advance (Ctrl+Shift+Return) --\n");
+    {
+        const QString advPath = writeFile(work.path(), "advance.sql",
+                                          "select 10 as a;\n-- %%\n\nselect 20 as b;\n-- %%\nselect 30 as c;\n");
+        mw.openFile(advPath);
+        QTest::qWait(30);
+        Editor *adv = mw.currentEditor();
+        QMenu *viewMenu = nullptr;
+        for (QMenu *m : mw.findChildren<QMenu *>())
+            if (m->title() == QLatin1String("&View")) viewMenu = m;
+        QAction *runAct = nullptr, *advAct = nullptr;
+        if (viewMenu)
+            for (QAction *a : viewMenu->actions()) {
+                if (a->text().startsWith(QLatin1String("Run SQL Cell and Advance"))) advAct = a;
+                else if (a->text().startsWith(QLatin1String("Run SQL Cell"))) runAct = a;
+            }
+        EXPECT_TRUE("n: View menu lists Run SQL Cell and Run SQL Cell and Advance", runAct && advAct);
+        EXPECT_TRUE("n: both enabled on a SQL notebook", runAct && advAct && runAct->isEnabled() && advAct->isEnabled());
+        adv->setFocus();
+        adv->setCursorPosition(0, 0);
+        QTest::keyClick(adv, Qt::Key_Return, Qt::ControlModifier | Qt::ShiftModifier);
+        waitIdle(nb);
+        int line = -1, col = -1;
+        adv->getCursorPosition(&line, &col);
+        EXPECT_TRUE("n: cell 0 ran and cursor moved to the next cell's first line",
+                    nb->resultTableAt(0) && nb->resultTableAt(0)->item(0, 0) &&
+                        nb->resultTableAt(0)->item(0, 0)->text() == QLatin1String("10") && line == 3 && col == 0);
+        std::printf("     cursor after 1st advance: %d,%d\n", line, col);
+        QTest::keyClick(adv, Qt::Key_Return, Qt::ControlModifier | Qt::ShiftModifier);
+        waitIdle(nb);
+        adv->getCursorPosition(&line, &col);
+        EXPECT_TRUE("n: cell 1 ran, cursor on the last cell",
+                    nb->resultTableAt(1) && nb->resultTableAt(1)->item(0, 0) &&
+                        nb->resultTableAt(1)->item(0, 0)->text() == QLatin1String("20") && line == 5);
+        QTest::keyClick(adv, Qt::Key_Return, Qt::ControlModifier | Qt::ShiftModifier);
+        waitIdle(nb);
+        adv->getCursorPosition(&line, &col);
+        EXPECT_TRUE("n: last cell ran, cursor stays on it",
+                    nb->resultTableAt(2) && nb->resultTableAt(2)->item(0, 0) &&
+                        nb->resultTableAt(2)->item(0, 0)->text() == QLatin1String("30") && line == 5);
+        EXPECT_TRUE("n: no text inserted by the shortcut", adv->lines() == 7);
+        adv->setCursorPosition(3, 0);
+        QTest::keyClick(adv, Qt::Key_Return, Qt::ControlModifier);
+        waitIdle(nb);
+        adv->getCursorPosition(&line, &col);
+        EXPECT_TRUE("n: Ctrl+Return still runs in place", line == 3);
+        if (tabs) tabs->setCurrentIndex(tabIndexForPath(tabs, mdPath));
+        QTest::qWait(30);
+        EXPECT_TRUE("n: both disabled on a Markdown tab", runAct && advAct && !runAct->isEnabled() && !advAct->isEnabled());
+    }
+
+    // ── o ──
+    std::printf("-- o: result grid copy + NULL --\n");
+    {
+        const QString nullPath = writeFile(work.path(), "nulls.sql",
+                                           "select 1 as a, 'p' as b, '' as e union all select 2, null, '';\n");
+        mw.openFile(nullPath);
+        QTest::qWait(30);
+        nb->connectionCombo()->setCurrentIndex(0);
+        nb->runCell(0);
+        waitIdle(nb);
+        QTableWidget *t = nb->resultTableAt(0);
+        const bool shaped = t && t->rowCount() == 2 && t->columnCount() == 3 && t->item(1, 1) && t->item(1, 2);
+        EXPECT_TRUE("o: 2x3 result", shaped);
+        EXPECT_TRUE("o: Qt-SQL NULL renders as dimmed NULL",
+                    shaped && t->item(1, 1)->text() == QLatin1String("NULL") &&
+                        t->item(1, 1)->data(Qt::ForegroundRole).isValid() &&
+                        !t->item(1, 0)->data(Qt::ForegroundRole).isValid());
+        EXPECT_TRUE("o: empty string stays empty", shaped && t->item(1, 2)->text().isEmpty() &&
+                    !t->item(1, 2)->data(Qt::ForegroundRole).isValid());
+        if (t) {
+            t->setFocus();
+            t->selectAll();
+            QApplication::clipboard()->clear();
+            QTest::keyClick(t, Qt::Key_C, Qt::ControlModifier);
+            const QString clip = QApplication::clipboard()->text();
+            EXPECT_TRUE("o: Ctrl+C copies the selection as TSV (NULL -> empty)",
+                        clip == QLatin1String("1\tp\t\n2\t\t"));
+            std::printf("     clipboard=%s\n", qPrintable(QString(clip).replace('\t', "\\t").replace('\n', "\\n")));
+        }
+#ifdef NOTEPATRA_HAVE_DUCKDB
+        const int duckIdx = nb->connectionCombo()->findText(QStringLiteral("Scratch (DuckDB, temporary)"));
+        EXPECT_TRUE("o: scratch DuckDB listed", duckIdx >= 0);
+        nb->connectionCombo()->setCurrentIndex(duckIdx);
+        const QString duckPath = writeFile(work.path(), "duck_nulls.sql", "select 1 as a, null as b, 'NULL' as c;\n");
+        mw.openFile(duckPath);
+        QTest::qWait(30);
+        nb->runCell(0);
+        waitIdle(nb);
+        QTableWidget *d = nb->resultTableAt(0);
+        const bool dShaped = d && d->rowCount() == 1 && d->columnCount() == 3 && d->item(0, 1) && d->item(0, 2);
+        EXPECT_TRUE("o: DuckDB NULL renders as dimmed NULL",
+                    dShaped && d->item(0, 1)->text() == QLatin1String("NULL") &&
+                        d->item(0, 1)->data(Qt::ForegroundRole).isValid());
+        EXPECT_TRUE("o: DuckDB string 'NULL' is not dimmed",
+                    dShaped && d->item(0, 2)->text() == QLatin1String("NULL") &&
+                        !d->item(0, 2)->data(Qt::ForegroundRole).isValid());
+        if (!dShaped) std::printf("     duck status=%s\n", qPrintable(nb->statusTextAt(0)));
+        nb->connectionCombo()->setCurrentIndex(0);
+#endif
+    }
+
+    // ── p ──
+    std::printf("-- p: plain .sql without -- %%%% separators --\n");
+    {
+        const QString plainPath = writeFile(work.path(), "plain.sql", "select 1 as first;\nselect 2 as second;\n");
+        mw.openFile(plainPath);
+        QTest::qWait(30);
+        Editor *pl = mw.currentEditor();
+        nb->connectionCombo()->setCurrentIndex(0);
+        auto *hint = nb->findChild<QLabel *>(QStringLiteral("sqlNotebookHint"));
+        EXPECT_TRUE("p: header hint suggests -- %% cells",
+                    hint && hint->isVisibleTo(nb) && hint->text().contains(QLatin1String("Tip: add -- %% lines")));
+        pl->setFocus();
+        pl->setCursorPosition(1, 3);
+        QTest::keyClick(pl, Qt::Key_Return, Qt::ControlModifier);
+        waitIdle(nb);
+        QTableWidget *t = nb->resultTableAt(0);
+        std::printf("     status=%s\n", qPrintable(nb->statusTextAt(0)));
+        EXPECT_TRUE("p: Ctrl+Return ran only the statement under the cursor",
+                    t && t->isVisibleTo(nb) && t->rowCount() == 1 && t->columnCount() == 1 &&
+                        t->horizontalHeaderItem(0) && t->horizontalHeaderItem(0)->text() == QLatin1String("second") &&
+                        t->item(0, 0) && t->item(0, 0)->text() == QLatin1String("2"));
+        pl->setCursorPosition(0, 0);
+        QTest::keyClick(pl, Qt::Key_Return, Qt::ControlModifier);
+        waitIdle(nb);
+        t = nb->resultTableAt(0);
+        EXPECT_TRUE("p: cursor on the first statement runs the first",
+                    t && t->horizontalHeaderItem(0) && t->horizontalHeaderItem(0)->text() == QLatin1String("first"));
+        pl->setCursorPosition(0, 2);
+        QTest::keyClick(pl, Qt::Key_Return, Qt::ControlModifier | Qt::ShiftModifier);
+        waitIdle(nb);
+        int pLine = -1, pCol = -1;
+        pl->getCursorPosition(&pLine, &pCol);
+        EXPECT_TRUE("p: Ctrl+Shift+Return moves to the next statement", pLine == 1 && pCol == 0);
+        if (tabs) tabs->setCurrentIndex(tabIndexForPath(tabs, sqlPath));
+        QTest::qWait(30);
+        EXPECT_TRUE("p: no hint on a file with -- %% cells", hint && !hint->isVisibleTo(nb));
+
+        // Cursor columns count code points; a non-BMP char earlier on the line must not shift them.
+        const QString emojiPath = writeFile(work.path(), "emoji.sql",
+            QString::fromUtf8("SELECT '\xF0\x9F\x98\x80\xF0\x9F\x98\x80\xF0\x9F\x98\x80\xF0\x9F\x98\x80' AS a; "
+                              "SELECT 2 AS b; SELECT 3 AS c;\n").toUtf8());
+        mw.openFile(emojiPath);
+        QTest::qWait(30);
+        Editor *em = mw.currentEditor();
+        em->setFocus();
+        em->setCursorPosition(0, 21);  // the 'E' of "SELECT 2" (code-point column)
+        std::printf("     emoji: byte pos=%ld\n", long(em->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS)));
+        QTest::keyClick(em, Qt::Key_Return, Qt::ControlModifier);
+        waitIdle(nb);
+        t = nb->resultTableAt(0);
+        EXPECT_TRUE("p: emoji earlier on the line, Ctrl+Return runs statement 2",
+                    t && t->horizontalHeaderItem(0) && t->horizontalHeaderItem(0)->text() == QLatin1String("b"));
+        em->setCursorPosition(0, 21);
+        QTest::keyClick(em, Qt::Key_Return, Qt::ControlModifier | Qt::ShiftModifier);
+        waitIdle(nb);
+        int eLine = -1, eCol = -1;
+        em->getCursorPosition(&eLine, &eCol);
+        std::printf("     emoji: advanced to %d:%d\n", eLine, eCol);
+        EXPECT_TRUE("p: emoji line, Ctrl+Shift+Return lands on statement 3's first column",
+                    eLine == 0 && eCol == 35);
+    }
+
+#ifdef NOTEPATRA_WITH_WEBENGINE
+    // ── q ──
+    std::printf("-- q: HTML preview loads nothing from the network --\n");
+    {
+        QTcpServer server;
+        int hits = 0;
+        QObject::connect(&server, &QTcpServer::newConnection, [&]() {
+            while (QTcpSocket *s = server.nextPendingConnection()) { ++hits; s->close(); s->deleteLater(); }
+        });
+        EXPECT_TRUE("q: probe server listening", server.listen(QHostAddress::LocalHost, 0));
+        const QString port = QString::number(server.serverPort());
+        if (!previewAct->isChecked()) previewAct->trigger();
+        const QByteArray remote = QStringLiteral(
+            "<html><head><link rel='stylesheet' href='http://127.0.0.1:%1/s.css'></head><body><h1>Remote</h1>"
+            "<img src='http://127.0.0.1:%1/x.png'><iframe src='http://127.0.0.1:%1/f.html'></iframe>"
+            "</body></html>").arg(port).toUtf8();
+        const QString remotePath = writeFile(work.path(), "remote.html", remote);
+        mw.openFile(remotePath);
+        QTest::qWait(2000);
+        const int savedHits = hits;
+        std::printf("     saved-file connections: %d\n", savedHits);
+        EXPECT_TRUE("q: saved .html -> 0 connections within 2 s", savedHits == 0);
+        QAction *newAct = findActionByShortcut(&mw, QKeySequence("Ctrl+N"));
+        if (newAct) newAct->trigger();
+        QTest::qWait(30);
+        Editor *u = mw.currentEditor();
+        u->setLanguage(QStringLiteral("HTML"));
+        u->setText(QString::fromUtf8(remote));
+        QTest::qWait(2400);
+        std::printf("     untitled-tab connections: %d (mode Html: %d)\n", hits - savedHits,
+                    int(pane->mode() == PreviewPane::Mode::Html));
+        EXPECT_TRUE("q: untitled HTML tab -> 0 connections within 2 s",
+                    pane->mode() == PreviewPane::Mode::Html && hits == savedHits);
+        EXPECT_TRUE("q: the interceptor blocked the remote requests", pane->webRequestLog().blocked > 0);
+        if (tabs) tabs->setCurrentIndex(tabIndexForPath(tabs, QDir(work.path()).absoluteFilePath("rel.html")));
+        QTest::qWait(1500);
+        bool sawLogo = false;
+        for (const QString &u : pane->webRequestLog().allowed)
+            if (u.startsWith(QLatin1String("file:")) && u.endsWith(QLatin1String("/logo.png"))) sawLogo = true;
+        EXPECT_TRUE("q: a local image beside the file still loads", sawLogo);
+        EXPECT_TRUE("q: only local schemes pass the filter",
+                    PreviewPane::isLocalPreviewUrl(QUrl("file:///x.png")) &&
+                        PreviewPane::isLocalPreviewUrl(QUrl("data:image/png;base64,AA")) &&
+                        PreviewPane::isLocalPreviewUrl(QUrl("qrc:/x.png")) &&
+                        !PreviewPane::isLocalPreviewUrl(QUrl("http://127.0.0.1/x.png")) &&
+                        !PreviewPane::isLocalPreviewUrl(QUrl("https://example.com/")) &&
+                        !PreviewPane::isLocalPreviewUrl(QUrl("ws://127.0.0.1/")));
+    }
+#endif
+
+    // ── z ── (last: a stopped SQLite query keeps running in the background)
+    std::printf("-- z: Stop / timeout on a Qt-SQL driver --\n");
+    {
+        if (!previewAct->isChecked()) previewAct->trigger();
+        const QString runawayPath = writeFile(work.path(), "runaway.sql",
+            "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c) SELECT count(*) FROM c;\n"
+            "-- %%\ncreate table after_stop(a int);\n-- %%\nselect 5 as five;\n");
+        mw.openFile(runawayPath);
+        QTest::qWait(30);
+        nb->connectionCombo()->setCurrentIndex(0);
+        nb->runCell(0);
+        QTest::qWait(300);
+        EXPECT_TRUE("z: runaway query busy", nb->isBusy());
+        QElapsedTimer st;
+        st.start();
+        nb->stop();
+        while (nb->isBusy() && st.elapsed() < 1000) QTest::qWait(20);
+        EXPECT_TRUE("z: Stop frees the UI within 1 s", !nb->isBusy());
+        EXPECT_TRUE("z: status says Stopped", nb->statusTextAt(0).contains(QLatin1String("Stopped")));
+        EXPECT_TRUE("z: connection combo re-enabled", nb->connectionCombo()->isEnabled());
+        std::printf("     status[0]=%s\n", qPrintable(nb->statusTextAt(0)));
+        nb->runCell(1);
+        waitIdle(nb, 8000);
+        nb->runCell(2);
+        waitIdle(nb, 8000);
+        EXPECT_TRUE("z: scratch DB still writable + readable after a Stop",
+                    !nb->statusTextAt(1).startsWith(QLatin1String("Error")) && nb->resultTableAt(2) &&
+                        nb->resultTableAt(2)->item(0, 0) && nb->resultTableAt(2)->item(0, 0)->text() == QLatin1String("5"));
+        std::printf("     status[1]=%s | status[2]=%s\n", qPrintable(nb->statusTextAt(1)),
+                    qPrintable(nb->statusTextAt(2)));
+        EXPECT_TRUE("z: stopped worker is not in the global pool (app exit is not blocked)",
+                    QThreadPool::globalInstance()->activeThreadCount() == 0);
+        nb->setTimeoutMs(500);
+        nb->runCell(0);
+        QElapsedTimer tt;
+        tt.start();
+        while (nb->isBusy() && tt.elapsed() < 3000) QTest::qWait(20);
+        EXPECT_TRUE("z: injected timeout frees the UI", !nb->isBusy());
+        EXPECT_TRUE("z: status says Timed out", nb->statusTextAt(0).startsWith(QLatin1String("Timed out after")));
+        std::printf("     status[0]=%s\n", qPrintable(nb->statusTextAt(0)));
+        nb->setTimeoutMs(SqlNotebookWidget::kTimeoutMs);
+    }
+    g_mainDone.store(true);
 
     std::printf("\n=== %d passed, %d failed ===\n", g_passed, g_failed);
     return g_failed == 0 ? 0 : 1;

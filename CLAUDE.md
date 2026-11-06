@@ -87,7 +87,7 @@ Two languages, one C FFI boundary, one optional sidecar process.
 Full list with rationale in `MAINTAINING.md` §6. The ones most likely to bite a new change:
 
 - Scintilla colours are BGR COLORREFs, not `QColor::rgb()`.
-- `QFile::rename` will not overwrite an existing target. Never remove-then-rename (a failed rename loses both copies); use `QSaveFile`. Four such sites still exist on main (`dbconnections.cpp`, `notes_storage.cpp`, `ai_tools.cpp`, `aipanel.cpp` chat history); the proper fix lives on the unmerged `noter-home-row` branch.
+- `QFile::rename` will not overwrite an existing target. Never remove-then-rename (a failed rename loses both copies); use `NpAtomic::replaceFile` (`src/atomic_write.h`) or `QSaveFile`. `test_atomic_write` scans `src/` and fails if the pattern comes back. Also check `QFile::rename`'s result before writing to the new path (Rename once saved over an existing file that way).
 - No emoji codepoints as UI icons; use `QStyle::standardIcon`.
 - `QRegularExpression::match(str, offset)` in a loop is quadratic; use `indexOf`.
 - Never call `abort()` inside a socket's own `readyRead`.

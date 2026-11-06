@@ -8,3 +8,6 @@ void crashFlagInit(const QString &flagPath);
 
 // Async-signal-safe flag write. No-op before crashFlagInit / on overlong paths.
 void crashFlagWrite();
+
+// Turns every later crashFlagWrite into a no-op (exit with a known-stuck worker).
+void crashFlagDisarm();

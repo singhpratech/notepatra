@@ -308,6 +308,7 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include <QDesktopServices>
 #include <QUrl>
 #include <Qsci/qsciscintilla.h>
+#include "shortcut_hints.h"
 
 static QAction *findActionByPrefix(QObject *root, const QString &prefix) {
     for (QAction *action : root->findChildren<QAction *>()) {
@@ -1008,6 +1009,36 @@ ul { margin-top: 4px; }
 <li><b>Randomness</b> comes from the operating system's random source through the Rust core, for passwords, passphrases and keys alike.</li>
 </ul>
 
+<h3>Preview Pane</h3>
+<ul>
+<li><b>View &gt; Preview Pane</b> (<code>%7</code>, or <b>Preview</b> in the icon row) opens a pane beside the editor that renders the current tab and follows you when you switch tabs.</li>
+<li><b>Markdown</b> and <b>HTML</b> tabs render live as you type.</li>
+<li><b>Jupyter notebooks</b> (<code>.ipynb</code>) show read-only: markdown and code cells with their saved outputs.</li>
+<li><b>SQL notebooks:</b> a SQL file split on <code>-- %%</code> lines becomes a list of cells. Pick a saved connection, then press <b>Run</b> on a cell, <b>Run All</b>, or <code>%8</code> in the editor to run the cell at the cursor. Cells run one at a time.</li>
+</ul>
+
+<h3>Data Analyst</h3>
+<ul>
+<li>A mode of the AI dock: open the dock (<code>%3</code>) and choose <b>Data</b>. Ask about your data in plain words; the assistant queries CSV files and your saved database connections and draws charts inline in the chat.</li>
+<li>Data mode needs at least one saved connection. Add one with <b>Manage Connections…</b> in the Data row: SQLite, PostgreSQL, MySQL or SQL Server, plus DuckDB in the Full edition.</li>
+</ul>
+
+<h3>Diagram</h3>
+<ul>
+<li><b>Tools &gt; Diagram — Flow / ER / System (.npd)</b> (or <b>Diagram</b> in the icon row) toggles a Diagram tab: <code>.npd</code> text on one side, a live canvas on the other.</li>
+<li><b>New</b> starts from a Flow chart, ER diagram or System design template. <b>AI Generate</b> turns a description into <code>.npd</code> that you review before it is inserted; <b>Import Mermaid</b> converts a pasted Mermaid flowchart.</li>
+<li><b>Export</b> writes PNG, JPEG or PDF, plus SVG and HTML when the build includes Qt SVG.</li>
+</ul>
+
+<h3>MCP sidecar (notepatra-mcp)</h3>
+<ul>
+<li><code>notepatra-mcp</code> is a separate, optional program that lets Claude Desktop, Claude Code and other MCP clients see your open tabs, search, read Noter notes and, with your approval, edit and save.</li>
+<li>Install it with <code>cargo install notepatra-mcp</code> or from the release page, then register it with your client using the <code>--socket</code> flag so it talks to the running editor.</li>
+<li>It is local only: the client starts it over stdio and it reaches Notepatra through a per-user local socket (a named pipe on Windows).</li>
+<li>Every write shows an <b>Approve / Deny</b> card inside Notepatra and is denied automatically if you do not answer. Credential files (SSH keys, <code>.env</code>, <code>*.pem</code> and similar) are never readable through it.</li>
+<li>Setup snippets for each client: <a href="https://notepatra.org/mcp.html">notepatra.org/mcp.html</a>.</li>
+</ul>
+
 <h2>Tools, Utilities, and Panels</h2>
 <ul>
 <li><b>Markdown tools:</b> convert selections into lists, tables, headings, links, and code blocks.</li>
@@ -1030,17 +1061,23 @@ ul { margin-top: 4px; }
 <h2>Useful Shortcuts</h2>
 <ul>
 <li><code>Ctrl+N</code> new file, <code>Ctrl+O</code> open, <code>Ctrl+S</code> save, <code>Ctrl+W</code> close tab</li>
-<li><code>Ctrl+F</code> find, <code>Ctrl+H</code> replace, <code>Ctrl+Shift+F</code> find in files, <code>Ctrl+G</code> go to line</li>
-<li><code>Ctrl+Shift+A</code> AI Assistant, <code>Ctrl+`</code> Terminal, <code>Ctrl+Shift+R</code> REST Client, <code>Ctrl+Shift+E</code> Workspace</li>
+<li><code>Ctrl+F</code> find, <code>%4</code> replace, <code>Ctrl+Shift+F</code> find in files, <code>Ctrl+G</code> go to line</li>
+<li><code>%3</code> AI Assistant, <code>%5</code> Terminal, <code>Ctrl+Shift+R</code> REST Client, <code>Ctrl+Shift+E</code> Workspace</li>
 <li><code>Ctrl+Alt+N</code> toggle Noter, <code>Ctrl+Alt+M</code> new note in Noter (full Noter shortcut list in the Noter section above)</li>
-<li><code>F11</code> full screen, <code>Ctrl+=</code> / <code>Ctrl+-</code> zoom, <code>Ctrl+0</code> reset zoom</li>
+<li><code>%6</code> full screen, <code>Ctrl+=</code> / <code>Ctrl+-</code> zoom, <code>Ctrl+0</code> reset zoom</li>
 </ul>
 
 <h2>Practical Tip</h2>
 <p>If you are unsure where a feature lives, first check the top <b>?</b> menu for this guide and the shortcut list. Then use the icon row for the main workflows and the <b>Features</b>, <b>Tools</b>, and <b>Plugins</b> menus for the deeper editing and utility commands.</p>
 </body>
 </html>
-)HTML").arg(notepatraUiCssFamily(), notepatraCodeCssFamily());
+)HTML").arg(notepatraUiCssFamily(), notepatraCodeCssFamily(),
+                Shortcuts::aiAssistantHint().toHtmlEscaped(),
+                Shortcuts::nativeText(Shortcuts::replace()).toHtmlEscaped(),
+                Shortcuts::nativeText(Shortcuts::terminal()).toHtmlEscaped(),
+                Shortcuts::nativeText(Shortcuts::fullScreen()).toHtmlEscaped(),
+                Shortcuts::nativeText(QKeySequence("Ctrl+Shift+V")).toHtmlEscaped(),
+                Shortcuts::nativeText(QKeySequence(Qt::CTRL | Qt::Key_Return)).toHtmlEscaped());
 }
 
 static void showRichHelpDialog(QWidget *parent, const QString &title, const QString &html) {
@@ -1612,21 +1649,7 @@ MainWindow::MainWindow(bool standaloneNoSession)
         }
     });
     connect(m_tabs, &TabManager::tabContextSaveAs, this, [this](int) { saveFileAs(); });
-    connect(m_tabs, &TabManager::tabContextRename, this, [this](int idx) {
-        auto *ed = m_tabs->editorAt(idx);
-        if (!ed || ed->filePath().isEmpty()) return;
-        bool ok;
-        QString name = QInputDialog::getText(this, "Rename", "New filename:",
-            QLineEdit::Normal, QFileInfo(ed->filePath()).fileName(), &ok);
-        if (ok && !name.isEmpty()) {
-            QString newPath = QFileInfo(ed->filePath()).dir().filePath(name);
-            QFile::rename(ed->filePath(), newPath);
-            ed->saveFile(newPath);
-            m_tabs->setTabText(idx, name);
-            m_tabs->setTabToolTip(idx, QDir::toNativeSeparators(newPath));
-            updateTitle();
-        }
-    });
+    connect(m_tabs, &TabManager::tabContextRename, this, &MainWindow::promptRenameTab);
 
     // Function list (hidden by default)
     m_funcList = new FunctionList;
@@ -1802,6 +1825,7 @@ MainWindow::MainWindow(bool standaloneNoSession)
             cfg.windowX = x(); cfg.windowY = y();
             cfg.windowW = width(); cfg.windowH = height();
             cfg.maximized = isMaximized();
+            rememberPreviewPaneState();
             cfg.save();
         }
     });
@@ -3243,6 +3267,78 @@ void MainWindow::updateStatusBar() {
     m_statusBar->updateChangeHistory(e->modifiedLineCount(), e->savedLineCount());
 }
 
+MainWindow::RenameResult MainWindow::renameTabFile(int idx, const QString &newName,
+                                                   QString *errorOut) {
+    auto *ed = m_tabs->editorAt(idx);
+    if (!ed || ed->filePath().isEmpty()) return RenameResult::NoFile;
+    const QString oldPath = ed->filePath();
+    const QFileInfo oldFi(oldPath);
+    if (newName == oldFi.fileName()) return RenameResult::Unchanged;
+    if (newName.trimmed().isEmpty() || newName == QLatin1String(".") ||
+        newName == QLatin1String("..") || newName.contains(QLatin1Char('/')) ||
+        newName.contains(QLatin1Char('\\')))
+        return RenameResult::InvalidName;
+    const QString newPath = oldFi.dir().filePath(newName);
+    // A case-only rename on a case-insensitive volume "exists" but is the same file.
+    const bool caseOnly = newName.compare(oldFi.fileName(), Qt::CaseInsensitive) == 0;
+    if (QFileInfo::exists(newPath) &&
+        (!caseOnly || oldFi.dir()
+                          .entryList(QDir::AllEntries | QDir::Hidden | QDir::System)
+                          .contains(newName)))
+        return RenameResult::TargetExists;
+    // Save the buffer to the old path first, so a failed rename loses nothing.
+    if (ed->isModified() && !ed->saveFile()) {
+        if (errorOut) *errorOut = QStringLiteral("Could not save the current changes first.");
+        return RenameResult::SaveFailed;
+    }
+    QFile f(oldPath);
+    if (!f.rename(newPath)) {
+        if (errorOut) *errorOut = f.errorString();
+        return RenameResult::RenameFailed;
+    }
+    ed->retargetPath(newPath);  // the bytes already moved; rewriting would clobber external edits
+    if (m_fileWatcher) {
+        m_fileWatcher->removePath(oldPath);
+        m_fileTimestamps.remove(oldPath);
+        m_fileWatcher->addPath(newPath);
+        m_fileTimestamps[newPath] = QFileInfo(newPath).lastModified();
+    }
+    m_tabs->setTabToolTip(idx, QDir::toNativeSeparators(newPath));
+    updateTabTitle(idx);
+    return RenameResult::Renamed;
+}
+
+void MainWindow::promptRenameTab(int idx) {
+    auto *ed = m_tabs->editorAt(idx);
+    if (!ed || ed->filePath().isEmpty()) return;
+    const QString oldName = QFileInfo(ed->filePath()).fileName();
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, QStringLiteral("Rename"),
+        QStringLiteral("New filename:"), QLineEdit::Normal, oldName, &ok);
+    if (!ok || name.isEmpty()) return;
+    QString err;
+    switch (renameTabFile(idx, name, &err)) {
+    case RenameResult::InvalidName:
+        QMessageBox::warning(this, QStringLiteral("Rename"),
+            QStringLiteral("\"%1\" is not a valid file name. A name cannot contain "
+                           "a path separator.").arg(name));
+        break;
+    case RenameResult::TargetExists:
+        QMessageBox::warning(this, QStringLiteral("Rename"),
+            QStringLiteral("A file named \"%1\" already exists in this folder.\n\n"
+                           "Nothing was renamed.").arg(name));
+        break;
+    case RenameResult::SaveFailed:
+    case RenameResult::RenameFailed:
+        QMessageBox::warning(this, QStringLiteral("Rename failed"),
+            QStringLiteral("Could not rename \"%1\" to \"%2\".\n\n%3")
+                .arg(oldName, name, err));
+        break;
+    default:
+        break;
+    }
+}
+
 void MainWindow::updateTabTitle(int index) {
     if (index < 0) return;
     auto *e = m_tabs->editorAt(index);
@@ -3309,18 +3405,7 @@ void MainWindow::buildMenus() {
         }
     }, QKeySequence("Ctrl+Alt+S"));
     file->addSeparator();
-    file->addAction("Rename...", this, [this, E]() {
-        auto *e = E(); if (!e || e->filePath().isEmpty()) return;
-        bool ok; QString name = QInputDialog::getText(this, "Rename", "New name:", QLineEdit::Normal,
-            QFileInfo(e->filePath()).fileName(), &ok);
-        if (ok && !name.isEmpty()) {
-            QString newPath = QFileInfo(e->filePath()).dir().filePath(name);
-            QFile::rename(e->filePath(), newPath);
-            e->saveFile(newPath);
-            m_tabs->setTabText(m_tabs->currentIndex(), name);
-            updateTitle();
-        }
-    });
+    file->addAction("Rename...", this, [this]() { promptRenameTab(m_tabs->currentIndex()); });
     file->addSeparator();
     file->addAction("&Close", this, [this]() { closeTab(m_tabs->currentIndex()); }, QKeySequence("Ctrl+W"));
     file->addAction("Close All", this, [this]() { closeAllTabs(); });
@@ -3350,7 +3435,8 @@ void MainWindow::buildMenus() {
     m_recentMenu = file->addMenu("Recent &Files");
     updateRecentMenu();
     file->addSeparator();
-    file->addAction("E&xit", this, &QMainWindow::close, QKeySequence("Alt+F4"));
+    auto *exitAct = file->addAction("E&xit", this, &QMainWindow::close, Shortcuts::quit());
+    exitAct->setMenuRole(QAction::QuitRole);
 
     // ═══ EDIT ═══
     auto *edit = mb->addMenu("&Edit");
@@ -3539,7 +3625,7 @@ void MainWindow::buildMenus() {
         else FD()->showFind();
     }, QKeySequence("Shift+F3"));
     search->addSeparator();
-    search->addAction("&Replace...", this, [FD]() { FD()->showReplace(); }, QKeySequence("Ctrl+H"));
+    search->addAction("&Replace...", this, [FD]() { FD()->showReplace(); }, Shortcuts::replace());
     search->addAction("&Mark...", this, [FD]() { FD()->showMark(); });
     search->addSeparator();
     search->addAction("&Go to Line...", this, [FD]() { FD()->showGoto(); }, QKeySequence("Ctrl+G"));
@@ -3591,15 +3677,16 @@ void MainWindow::buildMenus() {
         setWindowFlags(flags ^ Qt::WindowStaysOnTopHint);
         show();
     })->setCheckable(true);
-    view->addAction("Toggle Full-Screen Mode", this, [this]() {
+    auto *fullScreenAct = view->addAction("Toggle Full-Screen Mode", this, [this]() {
         isFullScreen() ? showNormal() : showFullScreen();
     }, QKeySequence("F11"));
-    m_previewAct = view->addAction("Preview Pane    Ctrl+Shift+V");
+    m_previewAct = view->addAction("Preview Pane");
     m_previewAct->setObjectName("actPreviewPane");
     m_previewAct->setCheckable(true);
     m_previewAct->setShortcut(QKeySequence("Ctrl+Shift+V"));
     connect(m_previewAct, &QAction::toggled, this, [this, sized = false](bool on) mutable {
         if (!m_previewPane || !m_editorSplit) return;
+        if (!on) rememberPreviewPaneState();
         if (on) m_previewPane->setSource(currentEditor());
         m_previewPane->setVisible(on);
         if (on && !sized) {
@@ -3607,21 +3694,16 @@ void MainWindow::buildMenus() {
             const int total = qMax(m_editorSplit->width(), 2);
             m_editorSplit->setSizes({total * 55 / 100, total - total * 55 / 100});
         }
+        if (!m_standaloneNoSession) {
+            Config::instance().previewPaneVisible = on;
+            Config::instance().save();
+        }
     });
-    // Ctrl+Return runs the SQL cell at the cursor; enabled only while the pane
-    // shows a SQL notebook so the key is never swallowed otherwise.
-    auto *runSqlCellAct = new QAction("Run SQL Cell", this);
-    runSqlCellAct->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Return));
-    runSqlCellAct->setShortcutContext(Qt::WidgetWithChildrenShortcut);
-    runSqlCellAct->setEnabled(false);
-    m_tabs->addAction(runSqlCellAct);
-    auto syncRunSqlCell = [this, runSqlCellAct]() {
-        runSqlCellAct->setEnabled(m_previewPane && m_previewPane->isVisible()
-                                  && m_previewPane->mode() == PreviewPane::Mode::SqlNotebook);
-    };
-    connect(m_previewPane, &PreviewPane::modeChanged, this, syncRunSqlCell);
-    connect(m_previewAct, &QAction::toggled, this, syncRunSqlCell);
-    connect(runSqlCellAct, &QAction::triggered, this, [this]() {
+    connect(m_editorSplit, &QSplitter::splitterMoved, this, [this]() { rememberPreviewPaneState(); });
+    // Ctrl+Return runs the SQL cell at the cursor, Ctrl+Shift+Return also moves to
+    // the next cell; enabled only while the pane shows a SQL notebook so the keys
+    // are never swallowed otherwise. The View-menu twins carry no shortcut (no ambiguity).
+    auto runSqlAtCursor = [this](bool advance) {
         Editor *ed = currentEditor();
         if (!ed || !m_previewPane || !m_previewPane->isVisible()) return;
         if (m_previewPane->source() != ed) m_previewPane->setSource(ed);
@@ -3629,8 +3711,39 @@ void MainWindow::buildMenus() {
         if (m_previewPane->mode() != PreviewPane::Mode::SqlNotebook) return;
         int line = 0, col = 0;
         ed->getCursorPosition(&line, &col);
-        m_previewPane->sqlNotebook()->runCellAtLine(line);
-    });
+        SqlNotebookWidget *nb = m_previewPane->sqlNotebook();
+        const QString text = ed->text();
+        nb->runAtCursor(text, line, col);
+        int nextLine = 0, nextCol = 0;
+        if (!advance || !nb->nextRunTarget(text, line, col, &nextLine, &nextCol)) return;
+        ed->setCursorPosition(nextLine, nextCol);
+        ed->ensureLineVisible(nextLine);
+    };
+    QList<QAction *> sqlCellActs;
+    const struct { const char *text; QKeySequence key; bool advance; } sqlCellDefs[] = {
+        {"Run SQL Cell", QKeySequence(Qt::CTRL | Qt::Key_Return), false},
+        {"Run SQL Cell and Advance", QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Return), true}};
+    for (const auto &d : sqlCellDefs) {
+        auto *keyAct = new QAction(d.text, this);
+        keyAct->setShortcut(d.key);
+        keyAct->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+        m_tabs->addAction(keyAct);
+        auto *menuAct = view->addAction(QStringLiteral("%1    %2").arg(QLatin1String(d.text),
+                                        d.key.toString(QKeySequence::NativeText)));
+        const bool advance = d.advance;
+        for (QAction *a : {keyAct, menuAct}) {
+            a->setEnabled(false);
+            connect(a, &QAction::triggered, this, [runSqlAtCursor, advance]() { runSqlAtCursor(advance); });
+            sqlCellActs << a;
+        }
+    }
+    auto syncRunSqlCell = [this, sqlCellActs]() {
+        const bool on = m_previewPane && m_previewPane->isVisible()
+                        && m_previewPane->mode() == PreviewPane::Mode::SqlNotebook;
+        for (QAction *a : sqlCellActs) a->setEnabled(on);
+    };
+    connect(m_previewPane, &PreviewPane::modeChanged, this, syncRunSqlCell);
+    connect(m_previewAct, &QAction::toggled, this, syncRunSqlCell);
     view->addSeparator();
 
     // v0.1.42 — every View toggle now: (1) actually applies to the editor,
@@ -3887,11 +4000,11 @@ void MainWindow::buildMenus() {
     // spawning a new editor tab. One chat, always in the same place, so
     // switching between files doesn't reset the conversation. Matches
     // the Cursor / VS Code layout the user asked for.
-    // v0.1.70 — shortcut moved from Ctrl+Shift+A → Ctrl+Q (user preference;
-    // closer to left hand). Both still register the same toggle.
-    auto *aiAct = feat->addAction("AI Assistant      Ctrl+Q");
+    // v0.1.70 — Ctrl+Q + Ctrl+Shift+A; macOS keeps only the latter (Cmd+Q = Quit).
+    auto *aiAct = feat->addAction("AI Assistant");
+    aiAct->setObjectName("actAiAssistant");
     aiAct->setCheckable(true);
-    aiAct->setShortcuts({QKeySequence("Ctrl+Q"), QKeySequence("Ctrl+Shift+A")});
+    aiAct->setShortcuts(Shortcuts::aiAssistant());
     aiAct->setStatusTip("Toggle the AI Assistant dock (right side). Persistent chat that sees all your open files + workspace. Configure backends in Settings → Preferences → AI.");
     connect(aiAct, &QAction::triggered, this, [this, aiAct]() {
         toggleAiDock();
@@ -3964,8 +4077,8 @@ void MainWindow::buildMenus() {
     // --- Terminal ---
     // Not checkable — every trigger opens a NEW terminal tab, so a
     // checked state would lie about visibility.
-    auto *termAct = feat->addAction("Terminal                  Ctrl+`");
-    termAct->setShortcut(QKeySequence("Ctrl+`"));
+    auto *termAct = feat->addAction("Terminal");
+    termAct->setShortcut(Shortcuts::terminal());
     termAct->setStatusTip("Opens a terminal in a new tab.");
     connect(termAct, &QAction::triggered, this, [this, E]() {
         auto *term = new TerminalWidget;
@@ -4331,7 +4444,7 @@ void MainWindow::buildMenus() {
 
     // ═══ SETTINGS ═══
     auto *settings = mb->addMenu("&Settings");
-    settings->addAction("&Preferences...", this, [this]() {
+    auto *prefsAct = settings->addAction("&Preferences...", this, [this]() {
         PreferencesDialog dlg(this);
         // v0.1.42 — when the user clicks OK / Apply, propagate Config
         // to every editor + chrome (toolbar, tab bar, etc.). Pre-v0.1.42
@@ -4341,6 +4454,7 @@ void MainWindow::buildMenus() {
                          this, &MainWindow::applyConfigEverywhere);
         dlg.exec();
     });
+    prefsAct->setMenuRole(QAction::PreferencesRole);
     // v0.1.75 — runtime font-pack installer. Lite binary stays lite;
     // ~27 premium fonts (JetBrains Mono / Fira Code / Cascadia / IBM
     // Plex / Geist / Inter / Source Serif …) are fetched on demand to
@@ -5562,6 +5676,14 @@ void MainWindow::buildMenus() {
         showRichHelpDialog(this, "Notepatra Help Guide", featureGuideHtml());
     });
     guideAct->setStatusTip("Open the built-in help guide to Notepatra's features and tools");
+    auto *docsAct = help->addAction("Documentation", this, []() {
+        QDesktopServices::openUrl(QUrl("https://notepatra.org/docs.html"));
+    });
+    docsAct->setObjectName("actHelpDocumentation");
+    docsAct->setStatusTip("Open the online documentation at notepatra.org/docs.html");
+    auto *welcomeAct = help->addAction("Show Welcome Tab", this, [this]() { showWelcomeTab(); });
+    welcomeAct->setObjectName("actShowWelcomeTab");
+    welcomeAct->setStatusTip("Open the Welcome tab (or switch to it if it is already open)");
 
     // AI help entry — explains the three supported backends in one
     // place so new users don't wonder "do I need Ollama? What's llama.cpp?"
@@ -5569,7 +5691,7 @@ void MainWindow::buildMenus() {
         QMessageBox msg(this);
         msg.setWindowTitle("How the AI Assistant works");
         msg.setTextFormat(Qt::RichText);
-        msg.setText(
+        msg.setText(QString(
             "<h3>Notepatra AI is local-first</h3>"
             "<p>By default, your code <b>never leaves your machine</b>. No mandatory "
             "API key, no telemetry. The default backend is local (Ollama / llama.cpp).</p>"
@@ -5595,10 +5717,10 @@ void MainWindow::buildMenus() {
             "<p>For CPU-only / 16 GB laptops, Notepatra auto-picks the "
             "smallest installed model: qwen2.5-coder:3b → qwen2.5:3b → "
             "gemma2:2b → gemma3:4b → llama3.2:3b.</p>"
-            "<p>Shortcut: <b>Ctrl+Shift+A</b></p>"
+            "<p>Shortcut: <b>%1</b></p>"
             "<p>Full docs: <a href='https://notepatra.org/docs.html#ai-overview'>"
             "notepatra.org/docs.html#ai-overview</a></p>"
-        );
+        ).arg(Shortcuts::aiAssistantHint().toHtmlEscaped()));
         msg.setStandardButtons(QMessageBox::Ok);
         msg.exec();
     })->setStatusTip("Explains Notepatra's three AI backends: Ollama, llama.cpp, OpenAI-compat.");
@@ -5606,7 +5728,10 @@ void MainWindow::buildMenus() {
     help->addSeparator();
 
     help->addAction("Keyboard Shortcuts", this, [this]() {
-        QMessageBox::information(this, "Keyboard Shortcuts",
+        const auto col = [](const QKeySequence &k) {
+            return Shortcuts::nativeText(k).leftJustified(15) + QLatin1Char(' ');
+        };
+        QMessageBox::information(this, "Keyboard Shortcuts", QString(
             "FILE\n"
             "  Ctrl+N          New\n"
             "  Ctrl+O          Open\n"
@@ -5626,7 +5751,7 @@ void MainWindow::buildMenus() {
             "  Ctrl+U          lowercase\n\n"
             "SEARCH\n"
             "  Ctrl+F          Find\n"
-            "  Ctrl+H          Replace\n"
+            "  %1Replace\n"
             "  Ctrl+Shift+F    Find in Files\n"
             "  F3              Find Next\n"
             "  Shift+F3        Find Previous\n"
@@ -5635,15 +5760,15 @@ void MainWindow::buildMenus() {
             "  Ctrl+F2         Toggle Bookmark\n"
             "  F2              Next Bookmark\n\n"
             "VIEW\n"
-            "  F11             Full Screen\n"
+            "  %2Full Screen\n"
             "  Ctrl+=          Zoom In\n"
             "  Ctrl+-          Zoom Out\n"
             "  Ctrl+0          Zoom Reset\n"
             "  Alt+0           Fold All\n"
             "  Alt+Shift+0     Unfold All\n\n"
             "PANELS\n"
-            "  Ctrl+`          Terminal\n"
-            "  Ctrl+Shift+A    AI Assistant\n"
+            "  %3Terminal\n"
+            "  %4AI Assistant\n"
             "  Ctrl+Shift+R    REST Client\n"
             "  Ctrl+Shift+E    File Explorer\n"
             "  Ctrl+Shift+M    Record Macro (Macro menu)\n\n"
@@ -5651,7 +5776,10 @@ void MainWindow::buildMenus() {
             "  Ctrl+Tab        Next Tab\n"
             "  Ctrl+Shift+Tab  Previous Tab\n"
             "  Middle-click    Close Tab\n"
-            "  Double-click    New Tab (on empty area)");
+            "  Double-click    New Tab (on empty area)")
+            .arg(col(Shortcuts::replace()), col(Shortcuts::fullScreen()),
+                 col(Shortcuts::terminal()),
+                 Shortcuts::aiAssistantHint().leftJustified(15) + QLatin1Char(' ')));
     });
 
     help->addSeparator();
@@ -5679,7 +5807,7 @@ void MainWindow::buildMenus() {
 
     help->addSeparator();
 
-    help->addAction("About Notepatra", this, [this]() {
+    auto *aboutAct = help->addAction("About Notepatra", this, [this]() {
         // NOTEPATRA_VERSION is injected at compile time from CMakeLists.txt's
         // project(Notepatra VERSION X.Y.Z) so the About dialog never goes
         // stale. Rich-text format so the website + GitHub links are
@@ -5708,6 +5836,10 @@ void MainWindow::buildMenus() {
             .arg(version));
         box.exec();
     });
+    aboutAct->setMenuRole(QAction::AboutRole);
+
+    // F11 elsewhere; macOS uses the standard Ctrl+Cmd+F.
+    fullScreenAct->setShortcut(Shortcuts::fullScreen());
 }
 
 // ── Noter app-lifetime reminder service ────────────────────────────────
@@ -5922,7 +6054,8 @@ void MainWindow::buildToolbar() {
                        "Recursively search file names + contents (Ctrl+Shift+G)");
     addFeatureShortcut(featureTb, findActionByPrefix(this, "AI Assistant"),
                        notepatraToolAccent("AI"), "ai", "AI",
-                       "Toggle AI Assistant dock (Ctrl+Q) — ON / OFF",
+                       QStringLiteral("Toggle AI Assistant dock (%1) — ON / OFF")
+                           .arg(Shortcuts::aiAssistantPrimary()),
                        /*showCheckedState=*/true);
     addFeatureShortcut(featureTb, findActionByPrefix(this, "Password Generator"),
                        notepatraToolAccent("Password"), "password", "Password",
@@ -5960,7 +6093,8 @@ void MainWindow::buildToolbar() {
                        /*showCheckedState=*/true);
     addFeatureShortcut(featureTb, m_previewAct,
                        notepatraToolAccent("PreviewPane"), "preview", "Preview",
-                       "Toggle Preview — Markdown / HTML / .ipynb / SQL cells (Ctrl+Shift+V) — ON / OFF",
+                       QString("Toggle Preview — Markdown / HTML / .ipynb / SQL cells (%1) — ON / OFF")
+                           .arg(Shortcuts::nativeText(m_previewAct->shortcut())),
                        /*showCheckedState=*/true);
     // v0.1.61 — dropped the standalone Git Integration toolbar shortcut.
     // Full VS Code-parity Source Control integration inside Coding mode
@@ -6502,6 +6636,15 @@ void MainWindow::showEvent(QShowEvent *event) {
     QMainWindow::showEvent(event);
     if (m_everShown) return;
     m_everShown = true;
+    // Restore the Preview pane once the splitter has a real width (it is 0 in the ctor).
+    QTimer::singleShot(0, this, [this]() {
+        const Config &cfg = Config::instance();
+        if (!cfg.previewPaneVisible || !m_previewAct || !m_editorSplit || m_previewAct->isChecked()) return;
+        const QList<int> sizes = cfg.previewPaneSizes;
+        m_previewAct->setChecked(true);
+        if (sizes.size() == 2 && sizes.at(0) > 0 && sizes.at(1) > 0) m_editorSplit->setSizes(sizes);
+        rememberPreviewPaneState();
+    });
     if (!m_startupNotices.isEmpty() && !m_startupNoticeFlushScheduled) {
         m_startupNoticeFlushScheduled = true;
         QTimer::singleShot(0, this, &MainWindow::flushStartupNotices);
@@ -6512,6 +6655,15 @@ void MainWindow::showEvent(QShowEvent *event) {
         for (const QString &p : deferred)
             QTimer::singleShot(0, this, [this, p]() { onWatchedFileChanged(p); });
     }
+}
+
+void MainWindow::rememberPreviewPaneState() {
+    if (m_standaloneNoSession || !m_previewPane || !m_editorSplit || !m_previewAct) return;
+    Config &cfg = Config::instance();
+    cfg.previewPaneVisible = m_previewAct->isChecked();
+    const QList<int> sizes = m_editorSplit->sizes();
+    if (m_previewPane->isVisible() && sizes.size() == 2 && sizes.at(0) > 0 && sizes.at(1) > 0)
+        cfg.previewPaneSizes = sizes;
 }
 
 void MainWindow::changeEvent(QEvent *event) {
@@ -6707,6 +6859,10 @@ void MainWindow::closeEvent(QCloseEvent *event) {
 
     // Save session including unsaved buffers and untitled tabs.
     saveSession();   // no-ops in both session-less modes
+    if (!m_standaloneNoSession) {
+        rememberPreviewPaneState();
+        Config::instance().save();
+    }
 
     // Session-less windows must not destroy the owner's crash evidence.
     if (!sessionless) {
@@ -6845,8 +7001,8 @@ void MainWindow::applyThemeToAll(const Theme &t) {
                                 tr("Workspace: %1").arg(QDir::toNativeSeparators(dir)), 4000);
                         } else {
                             statusBar()->showMessage(
-                                tr("Workspace set to %1 — enable Coding mode in the AI dock (Ctrl+Q) to browse it.")
-                                    .arg(QDir::toNativeSeparators(dir)), 6000);
+                                tr("Workspace set to %1 — enable Coding mode in the AI dock (%2) to browse it.")
+                                    .arg(QDir::toNativeSeparators(dir), Shortcuts::aiAssistantPrimary()), 6000);
                         }
                     }
                 });
@@ -7242,8 +7398,8 @@ int MainWindow::showWelcomeTab() {
                     tr("Workspace: %1").arg(QDir::toNativeSeparators(dir)), 4000);
             } else {
                 statusBar()->showMessage(
-                    tr("Workspace set to %1 — enable Coding mode in the AI dock (Ctrl+Q) to browse it.")
-                        .arg(QDir::toNativeSeparators(dir)), 6000);
+                    tr("Workspace set to %1 — enable Coding mode in the AI dock (%2) to browse it.")
+                        .arg(QDir::toNativeSeparators(dir), Shortcuts::aiAssistantPrimary()), 6000);
             }
         }
     });
@@ -7275,7 +7431,22 @@ void MainWindow::triggerMenuAction(const QString &actionId) {
         {"RESTClient",    "REST Client"},
         {"Noter",         "Noter — Meeting Thinkpad"},
         {"PasswordGenerator", "Password Generator"},
+        {"Diagram",       "Diagram"},
     };
+    if (actionId == QLatin1String("PreviewPane")) {
+        if (m_previewAct) m_previewAct->setChecked(true);
+        return;
+    }
+    if (actionId == QLatin1String("DataAnalyst")) {
+        if (!m_aiDockPanel) return;
+        showAiDockForInvocation();
+        m_aiDockPanel->showDataMode();
+        return;
+    }
+    if (actionId == QLatin1String("MCP")) {
+        QDesktopServices::openUrl(QUrl("https://notepatra.org/mcp.html"));
+        return;
+    }
     QString prefix = idToPrefix.value(actionId);
     if (prefix.isEmpty()) return;
     if (QAction *act = findActionByPrefix(this, prefix)) act->trigger();

@@ -65,7 +65,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. Bare executable is ~13 MB across platforms (13.4 MB on Linux x64); full downloads are 4.7 MB (Linux x64 tar.gz), 28.0 MB (macOS DMG with bundled Qt), 43.9 MB (Windows MSI with bundled Qt DLLs). 238 file types. 82 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server (examples redacted). Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.130",
+      "softwareVersion": "0.1.131",
       "fileSize": "13.4 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -167,7 +167,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~13 MB across every platform (13.4 MB on Linux x64). Latest v0.1.130 download sizes: 4.7 MB Linux x64 tar.gz, 4.7 MB Linux ARM64 tar.gz, 28.0 MB macOS DMG (with bundled Qt), 43.9 MB Windows MSI / 33.0 MB NSIS / 37.8 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~13.4 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~13 MB across every platform (13.4 MB on Linux x64). Latest v0.1.131 download sizes: 4.7 MB Linux x64 tar.gz, 4.7 MB Linux ARM64 tar.gz, 28.0 MB macOS DMG (with bundled Qt), 43.9 MB Windows MSI / 33.0 MB NSIS / 37.8 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~13.4 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
           }
         },
         {
@@ -183,7 +183,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 238 file types with 82 language lexers as of v0.1.130: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 238 file types with 82 language lexers as of v0.1.131: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -776,6 +776,11 @@
             margin-bottom: 8px;
             flex-grow: 1;
         }
+        .download-card p.download-note {
+            font-size: 9.5px;
+            font-style: italic;
+            flex-grow: 0;
+        }
         .download-btn {
             display: inline-block;
             padding: 5px 10px;
@@ -1312,8 +1317,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.130">
-        Download v0.1.130 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.131">
+        Download v0.1.131 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1341,9 +1346,9 @@
 
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.130 · Now Available · MCP server for AI assistants · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.131 · Now Available · MCP server for AI assistants · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
-        <p>Tiny native binary (~13 MB bare, ~4.7 MB compressed on Linux). C++ and Rust. 238 file types · 82 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints. <strong>New in v0.1.130:</strong> a <a href="/docs.html#preview-pane" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Preview pane</a> beside the editor — <strong>Markdown</strong> and <strong>HTML</strong> rendered live as you type, <strong>Jupyter notebooks</strong> (<code>.ipynb</code>) shown as notebooks with their outputs, and plain <strong><code>.sql</code> files run cell by cell</strong> (<code>-- %%</code> separators, a temporary scratch database or any saved connection, read-only until you say otherwise). <strong>MCP:</strong> the <a href="/mcp.html" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">MCP server</a> ships a prebuilt signed Windows sidecar and a one-click Claude Desktop bundle — its 49 tools (Git, read-only SQL, saved-connection queries, charts, Noter notes) connect Claude, Codex, or any MCP client straight to your editor.</p>
+        <p>Tiny native binary (~13 MB bare, ~4.7 MB compressed on Linux). C++ and Rust. 238 file types · 82 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints. <strong>New in v0.1.131:</strong> a <a href="/docs.html#preview-pane" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Preview pane</a> beside the editor — <strong>Markdown</strong> and <strong>HTML</strong> rendered live as you type, <strong>Jupyter notebooks</strong> (<code>.ipynb</code>) shown as notebooks with their outputs, and plain <strong><code>.sql</code> files run cell by cell</strong> (<code>-- %%</code> separators, a temporary scratch database or any saved connection, read-only until you say otherwise). <strong>MCP:</strong> the <a href="/mcp.html" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">MCP server</a> ships a prebuilt signed Windows sidecar and a one-click Claude Desktop bundle — its 49 tools (Git, read-only SQL, saved-connection queries, charts, Noter notes) connect Claude, Codex, or any MCP client straight to your editor.</p>
 
         <div class="install-box">
             <div class="install-tabs">
@@ -1425,13 +1430,13 @@
         <div class="stat"><div class="stat-number"><span>238</span></div><div class="stat-label">File Types</div></div>
         <div class="stat"><div class="stat-number"><span>82</span></div><div class="stat-label">Language Lexers</div></div>
         <div class="stat"><div class="stat-number"><span>2</span> GB</div><div class="stat-label">Max File Size</div></div>
-        <div class="stat"><div class="stat-number"><span>81</span></div><div class="stat-label">Regression Suites</div></div>
+        <div class="stat"><div class="stat-number"><span>86</span></div><div class="stat-label">Regression Suites</div></div>
         <div class="stat"><div class="stat-number"><span>0</span></div><div class="stat-label">Electron</div></div>
     </div>
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.130</div>
+        <div class="section-label">Download v0.1.131</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1499,7 +1504,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.130 →
+                Get Notepatra v0.1.131 →
               </a>
             </div>
 
@@ -1542,7 +1547,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.130 →
+                Get Notepatra Local AI v0.1.131 →
               </a>
             </div>
           </div>
@@ -1570,6 +1575,7 @@
                 <div class="download-os">🍎</div>
                 <h4>macOS Apple Silicon</h4>
                 <p>M1 / M2 / M3 / M4 · 28.0 MB .dmg</p>
+                <p class="download-note">Not notarized yet. First launch: right-click › Open (or System Settings › Privacy &amp; Security › Open Anyway).</p>
                 <span class="download-btn">.dmg</span>
             </a>
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
@@ -1692,11 +1698,11 @@
         <div class="section-desc">Built on QScintilla — a battle-tested Scintilla-based editor engine. Hot-path file I/O and search use Rust for memory safety on untrusted input.</div>
 
         <div class="features-grid">
-            <!-- Preview pane — the v0.1.130 headline, in slot 1. Only the current release carries a NEW pill — see stale-text-check. -->
+            <!-- Preview pane — v0.1.131 headline, improved in v0.1.131, in slot 1. Only the current release carries a NEW pill — see stale-text-check. -->
             <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
                 <div class="feature-icon fi-teal"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="15" y1="9" x2="19" y2="9"/><line x1="15" y1="13" x2="19" y2="13"/></svg></div>
-                <h3>Preview pane — Markdown, HTML, notebooks, SQL cells <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">NEW IN v0.1.130</span></h3>
-                <p>A pane beside the editor (<code>Ctrl+Shift+V</code>, or the <strong>Preview</strong> button on the tools row). <strong>Markdown</strong> renders live as you type and follows the theme; <strong>HTML</strong> renders with Qt's engine in Lite and with Chromium in Full — JavaScript off, no remote resources, the page cannot navigate the pane. <strong>Jupyter <code>.ipynb</code></strong> shows as a read-only notebook with its outputs. A <code>.sql</code> file with <code>-- %%</code> separators becomes <strong>SQL cells</strong>: Run, Run All, and <code>Ctrl+Return</code> against a temporary scratch database or a saved connection that is <strong>read-only until you tick Allow writes</strong>. No new dependency, no network.</p>
+                <h3>Preview pane — Markdown, HTML, notebooks, SQL cells <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">IMPROVED IN v0.1.131</span></h3>
+                <p>A pane beside the editor (<code>Ctrl+Shift+V</code>, or the <strong>Preview</strong> button on the tools row). <strong>Markdown</strong> renders live as you type and follows the theme; <strong>HTML</strong> renders with Qt's engine in Lite and with Chromium in Full — JavaScript off, no remote resources, the page cannot navigate the pane. <strong>Jupyter <code>.ipynb</code></strong> shows as a read-only notebook with its outputs. A <code>.sql</code> file runs as <strong>SQL cells</strong> split by <code>-- %%</code>: Run, Run All, Stop, and <code>Ctrl+Return</code> against a temporary scratch database or a saved connection that is <strong>read-only until you tick Allow writes</strong>. No new dependency, no network.</p>
             </div>
             <!-- Password Generator — the v0.1.129 headline, now slot 2.
                  Only the current release carries a NEW pill — see stale-text-check. -->
@@ -1710,7 +1716,7 @@
                  star features. -->
             <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
                 <div class="feature-icon fi-orange">🔌</div>
-                <h3>MCP — your editor, readable by your AI <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">49 TOOLS · v0.1.130</span></h3>
+                <h3>MCP — your editor, readable by your AI <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">49 TOOLS · v0.1.131</span></h3>
                 <p>A built-in <strong>Model Context Protocol server</strong> (<code>notepatra-mcp</code>) connects the assistants you already use — <strong>Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK</strong>, and any spec-compliant MCP client — to the running editor. <strong>49 tools in three tiers</strong>: read (tabs, selection, search, Noter notes, reminders, read-only Git and SQL, diagram source, saved-connection list/query/tables), act (open, compare, format, navigate, select range, open notes, create diagram, open Noter panel, open Data Analyst, render chart), and write (edit, save, create/append notes, set reminders, replace diagram source, export diagrams, export query results, export chart) — where <em>every</em> write shows an <strong>Approve / Deny card inside the editor</strong> and does nothing until you click Approve (auto-deny after 120 s, no headless bypass). Local socket + stdio only — nothing leaves your machine. <a href="/mcp.html" style="color: var(--c-accent);">Read the MCP docs →</a></p>
             </div>
             <!-- AI Assistant at slot 2 — highlighted with a Clay-orange
@@ -2064,71 +2070,69 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.130 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.131 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-11-06</span>
+                        <span>· <strong>Safer saves, a tighter AI SQL gate, a Preview pane that keeps its promises, and macOS that opens files from Finder.</strong></span>
+                        <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>Fixed — your files</h5>
+                        <ul>
+                            <li><strong>Saves never delete the old copy first.</strong> Noter notes, the AI's <code>apply_diff</code> edits, saved database connections and chat history used to delete the original before renaming the new copy in; if that rename failed, both were gone. They now replace the file in one step and leave the original untouched on failure.</li>
+                            <li><strong>Rename no longer overwrites another file.</strong> Renaming a tab to an existing file's name used to save your document over that file. It is now refused, and nothing changes if any step fails.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>Fixed — AI SQL gate</h5>
+                        <ul>
+                            <li><strong>The AI cannot read files from SQL.</strong> <code>read_text('~/.ssh/id_rsa')</code> or <code>FROM 'file.csv'</code> on a DuckDB connection used to return the contents; unapproved queries now run with DuckDB's filesystem locked.</li>
+                            <li><strong>No hidden second statement.</strong> SQL Server batches without <code>;</code>, escaped strings, MySQL comment forms and a carriage return inside a <code>--</code> comment could all hide a write behind a SELECT. Each now goes to the approval card or is refused.</li>
+                            <li>Read-only SQLite connections open read-only in the driver, and "Approve all queries" covers writes only.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>Improved — Preview pane</h5>
+                        <ul>
+                            <li><strong>Stop and the 120-second timeout work on every driver</strong>, not only DuckDB. <strong>The HTML preview really loads nothing from the network</strong>, which a test showed v0.1.130 did not guarantee.</li>
+                            <li>SQL results survive tab switches and edits, the pane is remembered across launches, <code>Ctrl+Shift+Return</code> runs a cell and moves on, a <code>.sql</code> file without <code>-- %%</code> runs the statement under the cursor, and <code>Ctrl+C</code> copies results as tab-separated text.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>Fixed — macOS</h5>
+                        <ul>
+                            <li><strong>Double-click in Finder, Open With and Dock drops open the file.</strong> <strong>⌘Q quits</strong> (the AI panel moves to ⇧⌘A), Replace leaves ⌘H, the DMG has an Applications link, and on macOS 15 a stopped Ollama shows the start-it hint instead of "Unknown error". The download card explains first launch, since the app is not notarized yet.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>Verification</h5>
+                        <ul>
+                            <li>Five new suites, each first run red against the old code. <strong>86</strong> registered suites on the Full build, <strong>83</strong> on Lite; offscreen <code>ctest</code> green on both.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.131">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.131">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.130</div>
                     <div class="version-meta">
                         <span>2026-10-20</span>
                         <span>· <strong>A Preview pane beside the editor: Markdown and HTML rendered live, Jupyter notebooks shown as notebooks, and plain <code>.sql</code> files that run cell by cell.</strong> The website's layout is also fixed on phones.</span>
                         <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
                     </div>
                 </div>
-                <div class="version-changes">
-                    <div class="version-section">
-                        <h5>New — Preview pane</h5>
-                        <ul>
-                            <li><strong>Open it</strong> with <strong>View &rarr; Preview Pane</strong>, <code>Ctrl+Shift+V</code>, or the new <strong>Preview</strong> button (eye icon, showing ON or OFF) at the end of the built-in tools row. It sits right of the editor tabs in a draggable splitter (55/45 by default), follows the current tab, and shows a one-line placeholder on a tab it cannot preview. Toggle it off and the editor gets the full width back. It is not saved in the session.</li>
-                            <li><strong>Markdown</strong> is rendered live with Qt's GitHub-dialect parser — headings, emphasis, lists, task lists, pipe tables, fenced code, block quotes, links — 250 ms after you stop typing. Relative images resolve against the file's folder, and Light, Dark and Monokai each get matching colours. <code>http</code>, <code>https</code> and <code>mailto</code> links open in the system browser; <code>#anchor</code> links scroll.</li>
-                            <li><strong>HTML</strong> renders through Qt's built-in rich-text engine in Lite (a CSS subset) and through the real <strong>Chromium</strong> engine in Full, where relative images and stylesheets beside the file load. <strong>JavaScript is disabled, no remote resources load, and the page cannot navigate the pane</strong> — meta-refresh, forms and iframes are blocked. Nothing is fetched from the network. HTML over about 1.5 MB falls back to the built-in engine even in Full.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>New — Notebooks</h5>
-                        <ul>
-                            <li><strong><code>.ipynb</code> still opens as JSON text</strong> in the editor; the pane shows a read-only notebook: markdown cells rendered, code cells in monospace with <code>In [n]:</code> counts and the kernel language, and outputs — streams, <code>execute_result</code> and <code>display_data</code> as text, HTML tables or embedded PNG, and error tracebacks with ANSI colours stripped.</li>
-                            <li><strong>nbformat 4 only.</strong> nbformat 3 shows a clear "unsupported" message; malformed JSON shows the parse error. <code>&lt;script&gt;</code> tags inside HTML outputs are removed. Cells are not executed and the notebook is not edited from the pane.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>New — SQL cells</h5>
-                        <ul>
-                            <li><strong>A plain <code>.sql</code> file becomes a notebook</strong> when it contains <code>-- %%</code> separator lines (the VS Code / Jupytext convention — the file stays ordinary SQL for every other tool). <code>-- %% [markdown]</code> or <code>-- %% md</code> starts a notes cell whose <code>--</code> lines render as Markdown.</li>
-                            <li><strong>Each SQL cell is a card</strong> with a <strong>Run</strong> button, a status line ("3 row(s) in 2 ms", "Done in 4 ms", or the error) and a result table. <strong>Run All</strong> goes top to bottom and stops at the first error; <strong>Stop</strong> cancels; <code>Ctrl+Return</code> runs the cell under the cursor, only while the pane shows a SQL notebook.</li>
-                            <li><strong>Connections:</strong> <strong>Scratch (SQLite, temporary)</strong> — state persists across cells, so a CREATE in one is visible to the next — <strong>Scratch (DuckDB, temporary)</strong> in Full, and every saved connection from Settings. On a saved connection cells are <strong>read-only by default</strong>: a statement that changes data is refused until you tick <strong>Allow writes</strong>.</li>
-                            <li><strong>Limits:</strong> results are capped at 500 rows (the status says when truncated); queries run off the GUI thread with a 120-second ceiling; Stop is immediate for DuckDB but only a request for SQLite and the Qt SQL drivers; the Qt SQLite driver runs only the first statement of a multi-statement cell. The AI assistant's and MCP server's SQL paths and read-only gates are untouched.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>Fixed — website</h5>
-                        <ul>
-                            <li>FAQ card headings no longer wrap one word per line, the download flavour cards and latest release card fit phone screens, wide tables and long inline code on the docs page no longer widen the page, and the top bar wraps on phones. All pages verified at desktop and 390 px.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>Verification</h5>
-                        <ul>
-                            <li>Two new suites: <code>test_notebook_render</code> 53 assertions and <code>test_preview_pane</code> 60+. <strong>81</strong> registered suites on the Full build, <strong>78</strong> on Lite; offscreen <code>ctest</code> green on both.</li>
-                        </ul>
-                    </div>
-                </div>
                 <div class="version-actions">
                     <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.130">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
                     <a href="https://github.com/singhpratech/notepatra/commits/v0.1.130">Commits</a>
-                </div>
-            </div>
-
-            <div class="version-card">
-                <div class="version-header">
-                    <div class="version-tag">v0.1.129</div>
-                    <div class="version-meta">
-                        <span>2026-08-22</span>
-                        <span>· <strong>ssh-keygen puts your username and machine name in every key it makes. This one leaves the comment blank.</strong> The Password Generator grows a left rail and an <strong>SSH key</strong> page, every draw now comes from the OS random source, and <code>.npd</code> diagrams are drawn flat, with light palettes, groups, notes, legends and dashed edges.</span>
-                        <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
-                    </div>
-                </div>
-                <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.129">Release page</a>
-                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.129">Commits</a>
                 </div>
             </div>
 
@@ -2172,7 +2176,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~13 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.130: 238 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (the Full download bundles the DuckDB v1.1.3 engine on every platform), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
+                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~13 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.131: 238 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (the Full download bundles the DuckDB v1.1.3 engine on every platform), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2184,7 +2188,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~13 MB</strong> (13.4 MB on Linux x64) across every platform. v0.1.130 download sizes: <strong>4.7 MB</strong> Linux x64 tar.gz · <strong>4.7 MB</strong> Linux ARM64 tar.gz · <strong>28.0 MB</strong> macOS DMG · <strong>43.9 MB</strong> Windows MSI / <strong>33.0 MB</strong> NSIS / <strong>37.8 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~13 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~13 MB</strong> (13.4 MB on Linux x64) across every platform. v0.1.131 download sizes: <strong>4.7 MB</strong> Linux x64 tar.gz · <strong>4.7 MB</strong> Linux ARM64 tar.gz · <strong>28.0 MB</strong> macOS DMG · <strong>43.9 MB</strong> Windows MSI / <strong>33.0 MB</strong> NSIS / <strong>37.8 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~13 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -2192,7 +2196,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.130 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.131 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>What file encodings are supported?</h3>

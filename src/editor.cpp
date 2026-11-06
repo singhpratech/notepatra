@@ -1026,20 +1026,31 @@ bool Editor::saveFile(const QString &path) {
     // status bar language indicator reflect the new file type live.
     // Pre-fix: post-Save-As the editor kept the old language indefinitely
     // until the user re-opened the file. User-reported.
-    const bool pathChanged = (m_filePath != savePath);
-    m_filePath = savePath;
+    const bool pathChanged = setPathAndLanguage(savePath, textOut);
+    setModified(false);
+    if (pathChanged) emit documentIdentityChanged();
+    return true;
+}
+
+bool Editor::setPathAndLanguage(const QString &path, const QString &text) {
+    const bool pathChanged = (m_filePath != path);
+    m_filePath = path;
     if (pathChanged) {
-        const QString newLang = detectLanguageFromPath(savePath, textOut);
+        const QString newLang = detectLanguageFromPath(path, text);
         if (!newLang.isEmpty() && newLang != m_language) {
             applyLexer(newLang);
         }
     }
-    setModified(false);
-    return true;
+    return pathChanged;
+}
+
+void Editor::retargetPath(const QString &newPath) {
+    if (setPathAndLanguage(newPath, text())) emit documentIdentityChanged();
 }
 
 void Editor::setLanguage(const QString &lang) {
     applyLexer(lang);
+    emit documentIdentityChanged();
 }
 
 void Editor::applyLexer(const QString &lang) {
@@ -1818,7 +1829,7 @@ void Editor::contextMenuEvent(QContextMenuEvent *event) {
             ? tr("Toggle &Line Comment  (no syntax for %1)").arg(m_language)
             : tr("Toggle &Line Comment  (%1)").arg(cs.line.trimmed().isEmpty() ? cs.line : cs.line.trimmed()),
         this, [this]() { toggleComment(); });
-    lineAct->setShortcut(QKeySequence("Ctrl+Q"));
+    lineAct->setShortcut(QKeySequence("Ctrl+/"));  // Ctrl+Q is the AI toggle
     lineAct->setEnabled(!cs.line.isEmpty());
 
     auto *blockAct = menu.addAction(

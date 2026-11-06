@@ -13,6 +13,39 @@ _Nothing yet._
 
 ---
 
+## [0.1.131] — 2026-11-06
+
+**Safer saves, a tighter AI SQL gate, a Preview pane that keeps its promises, and macOS that opens files from Finder.**
+
+### Fixed
+- **Saves deleted the original before the new copy was in place.** Noter note saves, the AI's `apply_diff`, saved database connections and chat history removed the target, then renamed the temp file onto it; a failed rename lost both. A single `NpAtomic::replaceFile` helper now replaces in one step (MoveFileExW / rename(2) + fsync) and keeps the target's permissions. A source-guard test fails if the pattern reappears anywhere under `src/`.
+- **Rename overwrote an unrelated file.** Tab-menu and File › Rename ignored a failed rename, then saved the document under the new name, over any existing file there. Rename now refuses an existing name, saves unsaved edits first, and rolls back on failure.
+- **AI `query_sql` could read any local file on DuckDB connections** (`read_text`, `read_csv_auto`, quoted function names, `FROM 'file'` scans). Unapproved AI queries now run with DuckDB's filesystem locked (`enable_external_access=false`, or local disk disabled plus `lock_configuration` for https/s3 connections) and the restricted classifier refuses file readers and quoted-string table references.
+- **Writes could hide behind a read.** SQL Server batches without `;` (`SELECT 1 DROP TABLE t`), backslash and E-string escapes, `$tag$` strings, MySQL `#` / `--1` / `/*! */` comments, and a carriage return ending a `--` comment could all smuggle a second statement. The classifier now reads each query under every dialect's lexing rules and needs all of them to agree it is a single read; on ODBC any state-changing T-SQL verb needs approval.
+- **Read-only SQLite connections were opened read-write**; they now use `QSQLITE_OPEN_READONLY`. `csv_query` uses the same read-only verdict as `query_sql`. "Approve all queries this turn" no longer lifts the read-only check on later reads.
+- **Preview pane Stop and the 120 s timeout only worked for DuckDB.** On Qt SQL drivers a runaway cell stayed busy forever and could block quitting. Stop now frees the cell at once and discards the late result.
+- **The HTML preview could load remote resources** (saved and untitled tabs both connected out). It now uses a private profile whose request interceptor allows only `file:`, `data:` and `qrc:`.
+- SQL cell results were wiped by tab switches and edits; the pane did not refresh after Save As, rename or a language change.
+- **macOS:** files opened from Finder, Open With or the Dock opened nothing (no `QFileOpenEvent` handler); ⌘Q toggled the AI panel instead of quitting; Replace sat on ⌘H (system Hide); on macOS 15 a stopped Ollama or llama-server showed "Unknown error" instead of the hint to start it.
+- Line Comment's context-menu hint showed Ctrl+Q, and the AI shortcut was listed three different ways.
+
+### Added
+- Preview pane: remembered across launches with its width; `Ctrl+Shift+Return` runs a SQL cell and advances; Run SQL Cell commands in the View menu; a `.sql` file without `-- %%` runs the statement under the cursor; `Ctrl+C` copies result cells as TSV; NULL shown dimmed on every driver.
+- macOS: DMG with an Applications link; explicit Quit / Preferences / About menu roles; Gatekeeper first-launch note on the download card and the MCP page.
+- Welcome tab cards and Feature Guide sections for the Preview pane, Data analyst, Diagram and the MCP sidecar (Welcome icons no longer use emoji); Help › Documentation and Help › Show Welcome Tab.
+- New suites `test_atomic_write`, `test_rename_tab_file`, `test_file_open_event`, `test_shortcuts_discoverability`, `test_preview_persist`; registered suite count is now **86 on Full, 83 on Lite** (was 81 / 78).
+
+### Changed
+- v0.1.130's notes said the HTML preview loaded nothing remote and that a multi-statement SQLite cell ran its first statement. Neither was true; the docs now say what the code does.
+
+### Known issues
+- A stopped SQLite query keeps one CPU core busy until it ends or the app quits.
+- The Qt SQLite driver still refuses cells with several statements.
+- The macOS app is not notarized.
+- RUSTSEC-2026-0387 (`crypto-bigint` 0.5.5 timing variability, via `ssh-key` → `p256`/`p384`) has no compatible fix; carried as a documented ignore because ECDSA keys are only generated locally, once, offline.
+
+---
+
 ## [0.1.130] — 2026-10-20
 
 **A Preview pane beside the editor: Markdown and HTML rendered live, Jupyter notebooks shown as notebooks, and plain `.sql` files that run cell by cell.** Open it with View → Preview Pane, `Ctrl+Shift+V`, or the new Preview button on the built-in tools row. Website layout problems on phones are fixed in the same release.

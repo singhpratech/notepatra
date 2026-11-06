@@ -19,6 +19,8 @@ public:
 
     bool loadFile(const QString &path, QString *errorOut = nullptr);
     bool saveFile(const QString &path = QString());
+    // Point the buffer at a file already moved on disk; never writes.
+    void retargetPath(const QString &newPath);
     void setLanguage(const QString &lang);
     void applyTheme(const QString &themeName);
     void setDocumentRulersVisible(bool visible);
@@ -169,6 +171,8 @@ signals:
     // v0.1.92 — emitted whenever m_modifiedLines / m_savedLines changes so
     // the status bar can refresh its "N unsaved · M saved" counter.
     void changeHistoryUpdated();
+    // The file path (Save As / rename) or the language changed.
+    void documentIdentityChanged();
 
 protected:
     void mouseDoubleClickEvent(QMouseEvent *event) override;
@@ -195,6 +199,7 @@ private:
     void setupEditor();
     void setupMargins();
     void applyLexer(const QString &lang);
+    bool setPathAndLanguage(const QString &path, const QString &text);
     void applySyntaxColors(QsciLexer *lexer, const QString &themeName);
     void syncMeasurementUi();
     void updateMeasurementTheme();

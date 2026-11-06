@@ -22,6 +22,7 @@
 // source of truth that AIPanel::forceExitFullscreen() drives.
 // ═══════════════════════════════════════════════════════════════════════
 
+#include "shortcut_hints.h"
 #include "mainwindow.h"
 #include "aipanel.h"
 #include "config.h"
@@ -157,7 +158,7 @@ int main(int argc, char *argv[]) {
     // ───────────────────────────────────────────────────────────────
     // v0.1.70 — primary shortcut moved from Ctrl+Shift+A → Ctrl+Q.
     // Ctrl+Shift+A is still registered as a secondary shortcut.
-    QAction *aiToggle = findActionByShortcut(&mw, QKeySequence("Ctrl+Q"));
+    QAction *aiToggle = findActionByShortcut(&mw, Shortcuts::aiAssistant().first());
     EXPECT_TRUE("AI Assistant action found (Ctrl+Q)", aiToggle != nullptr);
     if (aiToggle) aiToggle->trigger();
     QApplication::processEvents();
@@ -304,7 +305,7 @@ int main(int argc, char *argv[]) {
         EXPECT_TRUE("S6 setup: m_tabs VISIBLE in Data mode (50/50, no auto-fullscreen)",
                     tabs->isVisible());
 
-        QAction *termAct = findActionByShortcut(&mw, QKeySequence("Ctrl+`"));
+        QAction *termAct = findActionByShortcut(&mw, Shortcuts::terminal());
         EXPECT_TRUE("S6: Terminal action found (Ctrl+`)", termAct != nullptr);
         if (termAct) {
             termAct->trigger();
@@ -454,7 +455,7 @@ int main(int argc, char *argv[]) {
     // SCENARIO 15: Ctrl+Q shortcut maps to AI toggle.
     // ───────────────────────────────────────────────────────────────
     std::printf("\n-- Scenario 15: Ctrl+Q action exists + triggers toggle --\n");
-    QAction *ctrlQAction = findActionByShortcut(&mw, QKeySequence("Ctrl+Q"));
+    QAction *ctrlQAction = findActionByShortcut(&mw, Shortcuts::aiAssistant().first());
     EXPECT_TRUE("S15: Ctrl+Q action found (the new AI toggle shortcut)",
                 ctrlQAction != nullptr);
     if (ctrlQAction) {

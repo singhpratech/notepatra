@@ -142,8 +142,10 @@ static void fillResultSet(duckdb_result *result, ResultSet &rs, int rowCap) {
     for (idx_t r = 0; r < cap; ++r) {
         Row row;
         row.values.reserve(static_cast<int>(cols));
+        row.nulls.reserve(static_cast<int>(cols));
         for (idx_t c = 0; c < cols; ++c) {
             char *valStr = duckdb_value_varchar(result, c, r);
+            row.nulls.append(valStr == nullptr);
             if (valStr) {
                 row.values.append(QString::fromUtf8(valStr));
                 duckdb_free(valStr);

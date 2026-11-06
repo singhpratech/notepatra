@@ -121,6 +121,12 @@ int main(int argc, char *argv[]) {
     EXPECT("non-ASCII flag content is \"crashed\"",
            readAllOf(flag2) == QByteArray("crashed"));
 
+    // ── 9. Disarm (quit with a stuck SQL worker): later writes are no-ops ──
+    EXPECT("flag2 removed before disarm phase", QFile::remove(flag2));
+    crashFlagDisarm();
+    crashFlagWrite();
+    EXPECT("write after disarm creates no flag", !QFile::exists(flag2));
+
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
     fflush(stdout);
     return g_fail;

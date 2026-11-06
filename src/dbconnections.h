@@ -56,6 +56,7 @@ struct Record {
     // (file read exactly once) and then issues `SET enable_external_access=
     // false` so the engine refuses every subsequent local-file access. Default
     // false keeps every existing desktop caller byte-for-byte unchanged.
+    // v0.1.131: also set for unapproved AI query_sql; remote targets keep the network.
     bool sandboxFilesystem = false;
 
     QJsonObject toJson() const;
@@ -113,7 +114,12 @@ struct SqlVerdict {
 // The desktop data-analyst leaves it false so a power user can still type
 // read_csv_auto('x.csv') directly. Legit CSV ingestion (Client::registerCsv)
 // never goes through classifySql, so this only affects user-typed SQL.
-SqlVerdict classifySql(const QString &sql, bool restrictFilesystem = false);
+// `strictBatch` (QODBC): a bare T-SQL verb anywhere is a mutation (SELECT 1 DROP TABLE x).
+SqlVerdict classifySql(const QString &sql, bool restrictFilesystem = false,
+                       bool strictBatch = false);
+
+// True for drivers whose server executes a whole batch without ';' separators.
+bool driverRunsUnterminatedBatches(const QString &driver);
 
 // Convenience wrappers over classifySql.
 //   isReadOnlyQuery: safe to run in the default (no-approval) path.
@@ -142,6 +148,7 @@ struct QueryResult {
     bool ok = false;
     QStringList columns;
     QVector<QVector<QString>> rows;   // stringified per-cell for portability
+    QVector<QVector<bool>> nulls;     // parallel to rows: true where the value is SQL NULL
     int rowsReturned = 0;
     bool truncated = false;
     QString error;        // driver error text on failure

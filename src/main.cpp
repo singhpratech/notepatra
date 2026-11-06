@@ -41,6 +41,7 @@
 #include "fonts.h"
 #include "fontpack.h"
 #include "build_flavor.h"
+#include "file_open_filter.h"
 
 // NOTEPATRA_VERSION is injected at compile time from CMakeLists.txt's
 // project(Notepatra VERSION X.Y.Z ...) so a single bump in CMake propagates
@@ -249,6 +250,10 @@ int main(int argc, char *argv[]) {
     app.setOrganizationName("Notepatra");
     app.setApplicationVersion(NOTEPATRA_VERSION);
 
+    // macOS Finder/Dock opens (QFileOpenEvent) queue here until setHandler().
+    FileOpenFilter fileOpenFilter;
+    app.installEventFilter(&fileOpenFilter);
+
     // Precompute the crash-flag path: Config::appConfigDir allocates, and
     // signal handlers must not. crashedLastRun is captured BEFORE MainWindow
     // construction so it is immune to ctor reordering by other code.
@@ -444,6 +449,10 @@ int main(int argc, char *argv[]) {
     // D1 — CLI files + --line are applied by the deferred startup slot,
     // after the window is visible.
     window.setStartupActions(filesToOpen, gotoLine);
+    // Same path as a forwarded second-instance open: parked until restore.
+    fileOpenFilter.setHandler([&window](const QStringList &paths) {
+        window.handleRemoteOpen(paths, -1);
+    });
 
     window.show();
 

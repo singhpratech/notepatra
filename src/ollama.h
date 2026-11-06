@@ -166,6 +166,7 @@ private:
     // BOTH onFinished* transport-error short-circuits route through it, so
     // the friendly hint surfaces no matter which path catches the failure.
     QString friendlyTransportMessage(const QString &raw) const;
+    QString friendlyTransportMessage(const QNetworkReply *reply) const;
 
     QNetworkAccessManager *m_nam;
     QNetworkReply *m_reply = nullptr;

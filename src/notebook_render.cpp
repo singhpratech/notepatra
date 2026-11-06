@@ -316,6 +316,7 @@ QVector<SqlCell> splitSqlCells(const QString &sql) {
         if (l.endsWith(QLatin1Char('\r'))) l.chop(1);
 
     int start = 0;
+    int bodyStart = 0;
     bool markdown = false;
     QStringList body;
     auto flush = [&](int endLine) {
@@ -324,6 +325,9 @@ QVector<SqlCell> splitSqlCells(const QString &sql) {
             SqlCell c;
             c.startLine = start;
             c.endLine = endLine;
+            c.bodyLine = bodyStart;
+            while (c.bodyLine - bodyStart < body.size() && body.at(c.bodyLine - bodyStart).trimmed().isEmpty())
+                ++c.bodyLine;
             c.text = text;
             c.markdown = markdown;
             cells.append(c);
@@ -335,6 +339,7 @@ QVector<SqlCell> splitSqlCells(const QString &sql) {
         if (parseSeparator(lines.at(i), &rest)) {
             flush(i - 1);
             start = i;
+            bodyStart = i + 1;
             markdown = isMarkdownMarker(rest);
             continue;
         }
@@ -342,6 +347,92 @@ QVector<SqlCell> splitSqlCells(const QString &sql) {
     }
     flush(lines.size() - 1);
     return cells;
+}
+
+bool hasSqlCellSeparators(const QString &sql) {
+    const QStringList lines = sql.split(QLatin1Char('\n'));
+    QString rest;
+    for (QString l : lines) {
+        if (l.endsWith(QLatin1Char('\r'))) l.chop(1);
+        if (parseSeparator(l, &rest)) return true;
+    }
+    return false;
+}
+
+QVector<SqlStatementSpan> splitSqlStatements(const QString &sql) {
+    QVector<SqlStatementSpan> out;
+    const int n = sql.size();
+    int start = -1;
+    bool hasCode = false;
+    auto close = [&](int end) {
+        if (start >= 0 && hasCode) out.append({start, end});
+        start = -1;
+        hasCode = false;
+    };
+    auto isIdent = [](QChar c) { return c.isLetterOrNumber() || c == QLatin1Char('_'); };
+    int i = 0;
+    while (i < n) {
+        const QChar c = sql.at(i);
+        const QChar next = i + 1 < n ? sql.at(i + 1) : QChar();
+        if (start < 0 && !c.isSpace()) start = i;
+        if (c == QLatin1Char('-') && next == QLatin1Char('-')) {
+            // Ends at any line terminator: \n \r VT FF NEL LS PS.
+            i += 2;
+            while (i < n && !QStringLiteral("\n\r\v\f\u0085\u2028\u2029").contains(sql.at(i))) ++i;
+            continue;
+        }
+        if (c == QLatin1Char('/') && next == QLatin1Char('*')) {
+            const int e = sql.indexOf(QLatin1String("*/"), i + 2);
+            i = e < 0 ? n : e + 2;
+            continue;
+        }
+        if (c == QLatin1Char(';')) {
+            close(i + 1);
+            ++i;
+            continue;
+        }
+        if (!c.isSpace()) hasCode = true;
+        if (c == QLatin1Char('\'') || c == QLatin1Char('"') || c == QLatin1Char('`') ||
+            c == QLatin1Char('[')) {
+            const QChar endCh = c == QLatin1Char('[') ? QLatin1Char(']') : c;
+            int j = i + 1;
+            while (j < n) {
+                if (sql.at(j) == endCh) {
+                    if (endCh != QLatin1Char(']') && j + 1 < n && sql.at(j + 1) == endCh) {
+                        j += 2;  // doubled quote escape
+                        continue;
+                    }
+                    break;
+                }
+                ++j;
+            }
+            i = j < n ? j + 1 : n;
+            continue;
+        }
+        if (c == QLatin1Char('$') && (i == 0 || !isIdent(sql.at(i - 1)))) {
+            int j = i + 1;
+            while (j < n && isIdent(sql.at(j)) && !sql.at(j).isDigit()) ++j;
+            if (j < n && sql.at(j) == QLatin1Char('$')) {
+                const QString tag = sql.mid(i, j - i + 1);
+                const int e = sql.indexOf(tag, j + 1);
+                i = e < 0 ? n : e + tag.size();
+                continue;
+            }
+        }
+        ++i;
+    }
+    close(n);
+    return out;
+}
+
+int statementIndexAt(const QVector<SqlStatementSpan> &spans, int pos) {
+    int before = -1;
+    for (int i = 0; i < spans.size(); ++i) {
+        if (pos >= spans.at(i).start && pos <= spans.at(i).end) return i;
+        if (spans.at(i).end <= pos) before = i;
+    }
+    if (before >= 0) return before;
+    return spans.isEmpty() ? -1 : 0;
 }
 
 int cellIndexForLine(const QVector<SqlCell> &cells, int line) {

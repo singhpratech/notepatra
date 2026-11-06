@@ -49,6 +49,7 @@ QString ipynbToHtml(const QByteArray &json, const Colors &c,
 struct SqlCell {
     int startLine = 0;   // 0-based; the "-- %%" separator line (0 for the leading cell)
     int endLine = 0;     // 0-based, inclusive
+    int bodyLine = 0;    // 0-based, first non-blank line of the body
     QString text;        // cell body without the separator line, trimmed
     bool markdown = false;
 };
@@ -59,6 +60,22 @@ QVector<SqlCell> splitSqlCells(const QString &sql);
 
 // Index of the cell containing 0-based `line`, or -1.
 int cellIndexForLine(const QVector<SqlCell> &cells, int line);
+
+// True when any line is a "-- %%" cell separator.
+bool hasSqlCellSeparators(const QString &sql);
+
+// A statement as [start, end) offsets into the ORIGINAL text; end is past its ';'.
+struct SqlStatementSpan {
+    int start = 0;
+    int end = 0;
+};
+
+// Splits on ';' outside quotes, [identifiers], $tag$ bodies and comments. Leading
+// comments belong to the next statement; comment-only pieces are dropped.
+QVector<SqlStatementSpan> splitSqlStatements(const QString &sql);
+
+// The statement containing offset `pos`, else the one before it, else the first; -1 if none.
+int statementIndexAt(const QVector<SqlStatementSpan> &spans, int pos);
 
 } // namespace NotebookRender
 

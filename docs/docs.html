@@ -333,7 +333,7 @@
   <div class="topbar-left">
     <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">v0.1.130 docs</span>
+    <span class="tag">v0.1.131 docs</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
@@ -441,7 +441,7 @@
   <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock (with a workspace open and a tool-capable model) and the model gets up to 13 native tools — file tools <code>read_file</code>, <code>list_dir</code>, <code>write_file</code>, <code>search</code>, <code>apply_diff</code>; data tools <code>query_sql</code>, <code>csv_query</code>, <code>generate_chart</code>; and read-only git tools <code>git_status</code>, <code>git_diff</code>, <code>git_log</code>, <code>git_branch_list</code>, <code>git_show</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
 
   <div class="callout info">
-    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.130 (August 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
+    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.131 (August 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
   </div>
 
   <h2 id="install" class="anchor-target">Install</h2>
@@ -673,7 +673,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
         <td><code>pdf</code></td>
         <td>≈ 12 MB</td>
         <td>Rasterises PDFs to PNG pages so vision-capable AI models can read them. Powered by Poppler-Qt5.</td>
-        <td>Still queued (not shipped as of v0.1.130). Until then, dropping a PDF into the AI dock extracts its text via <code>pdftotext</code> (poppler-utils) when available and attaches that as context.</td>
+        <td>Still queued (not shipped as of v0.1.131). Until then, dropping a PDF into the AI dock extracts its text via <code>pdftotext</code> (poppler-utils) when available and attaches that as context.</td>
       </tr>
     </tbody>
   </table></div>
@@ -722,7 +722,7 @@ make -j$(nproc)
     <li><strong>Do I lose anything by staying on Lite?</strong> No — every editor / lexer / AI / Git / data / plugin feature works identically. The only difference is that <code>generate_chart</code> tool results paint as a "Chart rendering requires the Charts Pack" card instead of as an inline rendered chart. You can still see the spec via [View JSON instead] and copy it elsewhere.</li>
     <li><strong>Can I downgrade Full → Lite?</strong> Yes. Just download the Lite tarball and replace the binary. Your config / chat history / connections are preserved (they live under <code>~/.config/notepatra</code>, not inside the binary).</li>
     <li><strong>Will the chart spec data be lost if I'm on Lite?</strong> No — the AI's tool result is preserved in your chat history just like any other tool result. If you upgrade to Full later, opening the same chat shows the rendered chart for those past results.</li>
-    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.130. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
+    <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.131. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
   </ul>
 
   <h2 id="ui-overview" class="anchor-target">UI overview</h2>
@@ -784,7 +784,7 @@ make -j$(nproc)
   <p>The detected encoding label ("UTF-16 LE BOM", "UTF-32 BE BOM", …) travels with the tab, and on save the matching BOM bytes are written back in front of the encoded content. Opening a UTF-16 LE BOM file and pressing <span class="kbd">Ctrl+S</span> writes it back as UTF-16 LE with its BOM intact — the BOM is never silently dropped.</p>
 
   <h2 id="languages-lexers" class="anchor-target">Languages &amp; lexers</h2>
-  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.130 (covering 238 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
+  <p>Notepatra ships <strong>82 language lexers</strong> as of v0.1.131 (covering 238 file extensions). The Language menu is split into a narrow two-tier layout — <em>Common</em> + <em>SQL Dialects</em> at the top, <em>More Languages</em> as an alphabetical submenu of the rest. Extensions are auto-detected from the filename.</p>
   <p><strong>Core (Qt-bundled):</strong> Python, JavaScript/TypeScript/JSX, CoffeeScript, C/C++, C#, D, Java/Kotlin, HTML/PHP, CSS/SCSS/LESS, XML, JSON, SQL (ANSI / T-SQL / PL/SQL / MySQL / PostgreSQL / SQLite), Bash, Batch, Ruby, Perl, Lua, TCL, Fortran, Matlab, Octave, IDL, NASM, MASM, Verilog, VHDL, TeX, PostScript, POV, Spice, AVS, Properties, PO, IntelHex, SRecord, Markdown, YAML, Diff, Pascal, CMake, Makefile.</p>
   <p><strong>v0.1.55 additions (32 dedicated lexers, keyword tables verified against official specs):</strong> Dart · Solidity · Zig · Vala · Hack · Julia · R · Protobuf · F# · HCL/Terraform · Thrift · GraphQL · GDScript · Nim · Cython · Mojo · Crystal · Elixir · Scala · Groovy · Apex · Jinja · Liquid · Twig · Dockerfile · Fish · Nushell · TOML · DotEnv · Gitignore · JSON5 · BibTeX. Each ships with comment / uncomment / block-comment syntax (Ctrl+/ for line, Ctrl+Shift+Q for block) and proper file-extension routing — <code>.dart</code>, <code>.zig</code>, <code>.jl</code>, <code>.toml</code>, <code>.ex</code>, <code>Cargo.toml</code>, <code>Dockerfile</code>, <code>.gitignore</code>, <code>.env</code>, <code>.fish</code>, <code>.json5</code>, <code>.tf</code>, etc. now point at their dedicated lexers instead of falling back to the closest-fit generic.</p>
 
@@ -894,14 +894,15 @@ make -j$(nproc)
     <li><strong>View &rarr; Preview Pane</strong> (checkable), <span class="kbd">Ctrl+Shift+V</span>, or the <strong>Preview</strong> button (eye icon, showing ON or OFF) at the end of the built-in tools icon row.</li>
     <li>The pane opens to the right of the editor tabs, inside the editor area, in a splitter that is 55/45 by default and draggable.</li>
     <li>It follows the current tab. On a tab it cannot preview it shows a one-line placeholder.</li>
-    <li>Toggling it off gives the editor the full width back. It is not saved in the session, so it is closed on the next launch.</li>
+    <li>Toggling it off gives the editor the full width back. Whether it is open, and its width, are remembered across launches.</li>
+    <li>It refreshes after Save As, a rename or a language change without another keystroke.</li>
   </ul>
 
   <h3>Markdown and HTML</h3>
   <ul>
     <li><strong>Markdown (<code>.md</code>)</strong> — rendered with Qt's GitHub-dialect parser: headings, emphasis, lists, task lists, pipe tables, fenced code (monospace, tinted), block quotes and links. It re-renders 250 ms after you stop typing. Relative images (<code>![](img.png)</code>) resolve against the file's folder. Light, Dark and Monokai each get matching text, code and table colours.</li>
     <li><strong>HTML (<code>.html</code>, <code>.htm</code>, <code>.xhtml</code>)</strong> — see the table below.</li>
-    <li><strong>Links</strong> — <code>http</code>, <code>https</code> and <code>mailto</code> links open in the system browser; <code>#anchor</code> links scroll within the pane.</li>
+    <li><strong>Links</strong> — <code>http</code>, <code>https</code> and <code>mailto</code> links open in the system browser.</li>
   </ul>
 
   <div class="table-wrap"><table>
@@ -917,7 +918,7 @@ make -j$(nproc)
   <h3>HTML security posture</h3>
   <ul>
     <li><strong>JavaScript is disabled.</strong></li>
-    <li><strong>No remote resources load</strong> — nothing is fetched from the network by the preview.</li>
+    <li><strong>No remote resources load</strong> — the preview runs in its own private browser profile that allows only local files and embedded data, so nothing is fetched from the network, for saved and untitled tabs alike. (Before v0.1.131 remote images could load.)</li>
     <li><strong>The previewed page cannot navigate the pane</strong> — meta-refresh, forms and iframes are blocked. <code>http</code>, <code>https</code> and <code>mailto</code> link clicks open in the system browser instead.</li>
   </ul>
 
@@ -932,7 +933,7 @@ make -j$(nproc)
   </ul>
 
   <h3>SQL cells (<code>.sql</code>)</h3>
-  <p>A plain <code>.sql</code> file becomes a notebook when it contains <code>-- %%</code> separator lines — the VS Code / Jupytext convention. The file stays a normal SQL file for every other tool.</p>
+  <p>Any <code>.sql</code> tab shows as a SQL notebook. <code>-- %%</code> separator lines split it into cells — the VS Code / Jupytext convention — and the file stays a normal SQL file for every other tool. Without separators the whole file is one cell, and <span class="kbd">Ctrl+Return</span> runs just the statement under the cursor.</p>
 <pre><code>-- %% [markdown]
 -- # Orders check
 -- Create a scratch table, then query it.
@@ -944,8 +945,10 @@ SELECT COUNT(*) AS n FROM orders;</code></pre>
   <ul>
     <li><code>-- %% [markdown]</code> (or <code>-- %% md</code>) starts a notes cell whose <code>--</code> comment lines are rendered as Markdown.</li>
     <li>Each SQL cell is a card with a <strong>Run</strong> button, a status line ("3 row(s) in 2 ms", "Done in 4 ms", or the error) and a result table.</li>
-    <li><strong>Run All</strong> runs the cells top to bottom and stops at the first error. <strong>Stop</strong> cancels.</li>
-    <li><span class="kbd">Ctrl+Return</span> in the editor runs the cell under the cursor — only while the pane shows a SQL notebook; otherwise the key is untouched.</li>
+    <li><strong>Run All</strong> runs the cells top to bottom and stops at the first error. <strong>Stop</strong> frees the cell at once on every driver and discards the late result; the database may still finish the query in the background. A query times out after 120 seconds the same way.</li>
+    <li><span class="kbd">Ctrl+Return</span> in the editor runs the cell under the cursor, and <span class="kbd">Ctrl+Shift+Return</span> runs it and moves to the next cell — only while the pane shows a SQL notebook; otherwise the keys are untouched. Both are also in the View menu.</li>
+    <li>Results stay with their file when you switch tabs; an edited cell keeps its last result, marked stale.</li>
+    <li><span class="kbd">Ctrl+C</span> on a result table copies the selection as tab-separated text. NULL shows as a dimmed <em>NULL</em> on every driver.</li>
   </ul>
 
   <h3>Connections and writes</h3>
@@ -960,10 +963,9 @@ SELECT COUNT(*) AS n FROM orders;</code></pre>
 
   <h3>Limits</h3>
   <ul>
-    <li><strong>Stop</strong> interrupts DuckDB queries immediately. For SQLite and the Qt SQL drivers it only flags the request, and the cell stays busy until the server returns. There is a 120-second ceiling.</li>
-    <li>With the Qt SQLite driver, a cell containing several statements runs only the first.</li>
+    <li>A stopped SQLite query keeps running in the background, using one CPU core, until it ends or you quit.</li>
+    <li>The Qt SQLite driver refuses a cell containing several statements ("Unable to execute multiple statements at a time"); split them into cells.</li>
     <li>The notebook viewer is nbformat 4 only and read-only.</li>
-    <li>The pane is not saved in the session.</li>
   </ul>
 
   <h2 id="macros" class="anchor-target">Macros</h2>
@@ -1056,7 +1058,8 @@ ssh-keygen -lf ~/.ssh/id_ed25519.pub   <span class="cm"># same fingerprint the p
       <li><strong>RSA-4096 can take several seconds</strong> (1.6–5.9 s measured). That is the algorithm, not a hang. Ed25519 is instant.</li>
       <li><strong>The 30-second clipboard wipe cannot reach a clipboard-history tool.</strong> It removes the value only if the system clipboard still holds it; a manager that has already stored the entry, or a clipboard shared to another device, keeps its copy.</li>
       <li><strong>Memory is not wiped</strong>, for the reason above.</li>
-      <li><strong>The RSA code path carries an open advisory.</strong> RUSTSEC-2023-0071 stands against <code>rsa</code> 0.9.10, which <code>ssh-key</code> 0.6.7 pulls in for the RSA key types. It describes a timing sidechannel in RSA <em>private-key operations</em> — decryption and signing — and no fixed release of the crate exists. Notepatra only asks it to <strong>generate</strong> a pair, and the Ed25519 and ECDSA types use different crates (<code>ed25519-dalek</code>, <code>p256</code>, <code>p384</code>) that the advisory does not touch, so it is carried as a documented ignore in <code>rust-core/.cargo/audit.toml</code> rather than hidden. One more reason the default is Ed25519.</li>
+      <li><strong>The RSA code path carries an open advisory.</strong> RUSTSEC-2023-0071 stands against <code>rsa</code> 0.9.10, which <code>ssh-key</code> 0.6.7 pulls in for the RSA key types. It describes a timing sidechannel in RSA <em>private-key operations</em> — decryption and signing — and no fixed release of the crate exists. Notepatra only asks it to <strong>generate</strong> a pair, so it is carried as a documented ignore in <code>rust-core/.cargo/audit.toml</code> rather than hidden.</li>
+      <li><strong>The ECDSA code path carries one too (since v0.1.131's audit).</strong> RUSTSEC-2026-0387 reports timing variability in <code>crypto-bigint</code> 0.5.5, which <code>p256</code> and <code>p384</code> pull in through <code>elliptic-curve</code> 0.13. The fixed release needs a newer <code>elliptic-curve</code> than <code>ssh-key</code> 0.6.7 supports. A timing attack needs someone measuring repeated operations on the secret; Notepatra generates the key once, on your machine, offline. It is also a documented ignore. Ed25519, the default, uses neither crate.</li>
     </ul>
   </div>
 
@@ -1693,8 +1696,8 @@ Content-Type: application/json
   <div class="table-wrap"><table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>csv_query(file_path, sql, max_rows?, max_load_rows?)</code></td><td>Loads a workspace CSV into in-memory SQLite (table name <code>csv</code>, column names from the header) and runs your SQL. Default loads up to 250,000 rows; default returns up to 500. Lets the model ask <em>"SELECT category, SUM(amount) FROM csv WHERE order_date >= '2026-04-01' GROUP BY category ORDER BY 2 DESC"</em> instead of trying to mentally scan a million-line file.</td></tr>
-      <tr><td><code>query_sql(connection_name, sql, max_rows?)</code></td><td>Runs SQL against a saved connection. <strong>Read-only by default</strong> (SELECT / WITH / EXPLAIN / PRAGMA / SHOW / DESCRIBE run immediately). A structural SQL classifier catches every data mutation — including CTE-wrapped DML, <code>EXPLAIN ANALYZE</code>, <code>SELECT … INTO</code> and stacked statements — and routes it to a <strong>human Approve/Reject card</strong>; the model's old <code>confirm:true</code> self-approval is gone, and on-disk databases open engine-level read-only. Returns up to 100 rows by default (hard max 500 — the model must raise <code>max_rows</code> to get more).</td></tr>
+      <tr><td><code>csv_query(file_path, sql, max_rows?, max_load_rows?)</code></td><td>Loads a workspace CSV into in-memory SQLite (table name <code>csv</code>, column names from the header) and runs your SQL. Default loads up to 250,000 rows; default returns up to 500. Lets the model ask <em>"SELECT category, SUM(amount) FROM csv WHERE order_date >= '2026-04-01' GROUP BY category ORDER BY 2 DESC"</em> instead of trying to mentally scan a million-line file. The same read-only check as <code>query_sql</code> applies.</td></tr>
+      <tr><td><code>query_sql(connection_name, sql, max_rows?)</code></td><td>Runs SQL against a saved connection. <strong>Read-only by default</strong> (SELECT / WITH / EXPLAIN / PRAGMA / SHOW / DESCRIBE run immediately). A structural SQL classifier catches every data mutation — including CTE-wrapped DML, <code>EXPLAIN ANALYZE</code>, <code>SELECT … INTO</code> and stacked statements — and routes it to a <strong>human Approve/Reject card</strong>; the model's old <code>confirm:true</code> self-approval is gone, and on-disk databases open engine-level read-only. <strong>The AI cannot read files from SQL</strong>: an unapproved query runs with DuckDB's filesystem locked, and <code>read_text</code>, <code>read_csv_auto</code> or <code>FROM 'file.csv'</code> are refused with a hint to add the file as a connection. Returns up to 100 rows by default (hard max 500 — the model must raise <code>max_rows</code> to get more).</td></tr>
     </tbody>
   </table></div>
 

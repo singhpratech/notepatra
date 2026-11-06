@@ -9,6 +9,8 @@
 #include "notebook_render.h"
 
 #include <QPointer>
+#include <QStringList>
+#include <QUrl>
 #include <QWidget>
 
 class Editor;
@@ -18,6 +20,7 @@ class QTextBrowser;
 class QTimer;
 class SqlNotebookWidget;
 #ifdef NOTEPATRA_WITH_WEBENGINE
+class QWebEngineProfile;
 class QWebEngineView;
 #endif
 
@@ -42,6 +45,14 @@ public:
     QLabel *placeholder() { return m_placeholder; }
     QString headerText() const;
 
+    // The HTML preview may only fetch file:, data: and qrc: URLs.
+    static bool isLocalPreviewUrl(const QUrl &url);
+    struct WebRequestLog {
+        int blocked = 0;
+        QStringList allowed;
+    };
+    const WebRequestLog &webRequestLog() const { return m_webLog; }
+
     static constexpr int kDebounceMs = 250;
     static constexpr int kMaxPreviewChars = 8 * 1024 * 1024;
 
@@ -56,6 +67,8 @@ protected:
 
 private:
     void scheduleRefresh();
+    // Save As / rename / Language menu: re-pick the mode and header without waiting for a keystroke.
+    void onIdentityChanged();
     // Resolves the theme once (System = an OS probe) and caches it in m_colors.
     void applyChrome();
     void showPlaceholder(const QString &text);
@@ -63,6 +76,8 @@ private:
 
     QPointer<Editor> m_editor;
     QMetaObject::Connection m_textConn;
+    QMetaObject::Connection m_identityConn;
+    bool m_identityPending = false;
     QTimer *m_debounce = nullptr;
     QLabel *m_header = nullptr;
     QStackedWidget *m_stack = nullptr;
@@ -70,7 +85,9 @@ private:
     QTextBrowser *m_browser = nullptr;
 #ifdef NOTEPATRA_WITH_WEBENGINE
     QWebEngineView *m_web = nullptr;
+    QWebEngineProfile *m_webProfile = nullptr;
 #endif
+    WebRequestLog m_webLog;
     SqlNotebookWidget *m_sql = nullptr;
     Mode m_mode = Mode::None;
     bool m_dirty = true;

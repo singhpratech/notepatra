@@ -182,11 +182,62 @@ int main(int argc, char *argv[]) {
                     md.size() == 2 && md[0].markdown && md[0].text == QLatin1String("## Commented heading"));
         EXPECT_TRUE("leading separator does not create an empty cell 0",
                     md.size() == 2 && md[0].startLine == 0 && md[1].text == QLatin1String("select 3;"));
+        const QVector<SqlCell> gap = splitSqlCells(QStringLiteral("\nselect 1;\n-- %%\n\n  \nselect 2;\n"));
+        EXPECT_TRUE("bodyLine skips blank lines after the separator",
+                    gap.size() == 2 && gap[0].bodyLine == 1 && gap[1].bodyLine == 5);
         EXPECT_TRUE("empty input -> 0 cells", splitSqlCells(QString()).isEmpty());
         EXPECT_TRUE("'--%%' without a space is a separator",
                     splitSqlCells(QStringLiteral("a;\n--%%\nb;")).size() == 2);
         EXPECT_TRUE("an ordinary comment is not a separator",
                     splitSqlCells(QStringLiteral("a;\n-- note\nb;")).size() == 1);
+    }
+
+    std::printf("-- splitSqlStatements --\n");
+    {
+        EXPECT_TRUE("hasSqlCellSeparators: plain file", !hasSqlCellSeparators(QStringLiteral("a;\nb;")));
+        EXPECT_TRUE("hasSqlCellSeparators: -- %% line", hasSqlCellSeparators(QStringLiteral("a;\r\n-- %%\r\nb;")));
+        const QString sql = QStringLiteral(
+            "select 'a;b' as s;\n"           // 0..18 quoted ';'
+            "-- lead; comment\n"
+            "select \"x;y\", [p;q] from t;\n"
+            "/* c; */ select $$ ; $$, $tag$ ; $tag$;\n"
+            "select 4\n");                    // no trailing ';'
+        const QVector<SqlStatementSpan> sp = splitSqlStatements(sql);
+        EXPECT_TRUE("4 statements (quotes, brackets, comments, dollar bodies hide ';')", sp.size() == 4);
+        if (sp.size() == 4) {
+            const auto text = [&](int i) { return sql.mid(sp[i].start, sp[i].end - sp[i].start); };
+            EXPECT_TRUE("offsets index the ORIGINAL text", text(0) == QLatin1String("select 'a;b' as s;"));
+            EXPECT_TRUE("leading comment belongs to the next statement",
+                        text(1).startsWith(QLatin1String("-- lead; comment\nselect")) &&
+                            text(1).endsWith(QLatin1String("from t;")));
+            EXPECT_TRUE("block comment + dollar quotes", text(2).startsWith(QLatin1String("/* c; */")) &&
+                        text(2).endsWith(QLatin1String("$tag$;")));
+            EXPECT_TRUE("unterminated last statement", text(3).trimmed() == QLatin1String("select 4"));
+            EXPECT_TRUE("statementIndexAt inside", statementIndexAt(sp, sp[1].start + 3) == 1);
+            EXPECT_TRUE("statementIndexAt right after ';' -> that statement", statementIndexAt(sp, sp[0].end) == 0);
+        }
+        const QVector<SqlStatementSpan> gap = splitSqlStatements(QStringLiteral("a;\n\n\nb;\n-- tail only\n"));
+        EXPECT_TRUE("comment-only tail dropped", gap.size() == 2);
+        EXPECT_TRUE("blank line between -> previous statement", gap.size() == 2 && statementIndexAt(gap, 3) == 0);
+        EXPECT_TRUE("past the end -> last statement", gap.size() == 2 && statementIndexAt(gap, 30) == 1);
+        EXPECT_TRUE("escaped quote '' stays inside the string",
+                    splitSqlStatements(QStringLiteral("select 'it''s;'; select 2;")).size() == 2);
+        EXPECT_TRUE("$1 parameter is not a dollar quote",
+                    splitSqlStatements(QStringLiteral("select $1; select 2;")).size() == 2);
+        EXPECT_TRUE("empty -> none", splitSqlStatements(QString()).isEmpty() &&
+                                         statementIndexAt({}, 0) == -1);
+        // A -- comment ends at any line terminator, not only \n (CR-only files).
+        const char16_t terms[] = {u'\r', 0x0B, 0x0C, 0x85, 0x2028, 0x2029};
+        for (const char16_t t : terms) {
+            const QString term = QString(QChar(ushort(t)));
+            const QString src = QStringLiteral("a; -- note") + term + QStringLiteral("b;") + term +
+                                QStringLiteral("c;");
+            const QVector<SqlStatementSpan> cs = splitSqlStatements(src);
+            const QString label = QStringLiteral("-- comment ends at U+%1")
+                                      .arg(QString::number(uint(t), 16).toUpper().rightJustified(4, QLatin1Char('0')));
+            EXPECT_TRUE(qPrintable(label),
+                        cs.size() == 3 && src.mid(cs[2].start, cs[2].end - cs[2].start) == QLatin1String("c;"));
+        }
     }
 
     std::printf("\n%d passed, %d failed\n", g_passed, g_failed);

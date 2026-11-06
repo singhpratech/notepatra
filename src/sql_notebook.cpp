@@ -2,14 +2,20 @@
 
 #include "sql_notebook.h"
 
+#include "crashflag.h"
 #include "fonts.h"
+#include "shortcut_hints.h"
 
+#include <QApplication>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QComboBox>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QIcon>
+#include <QKeyEvent>
+#include <QMap>
 #include <QPainter>
 #include <QPixmap>
 #include <QLabel>
@@ -18,11 +24,16 @@
 #include <QSet>
 #include <QStyle>
 #include <QTableWidget>
+#include <QSqlDatabase>
+#include <QSqlQuery>
 #include <QTemporaryDir>
+#include <QThreadPool>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QtConcurrent>
+
+#include <algorithm>
 
 namespace {
 
@@ -47,6 +58,86 @@ QIcon tintedStandardIcon(QStyle *style, QStyle::StandardPixmap which, const QCol
     p.end();
     return QIcon(pm);
 }
+
+// Never destroyed: ~QThreadPool (like the global pool at app exit) would wait for a
+// stopped Qt-SQL query that is still running.
+QThreadPool *notebookPool() {
+    static QThreadPool *pool = [] {
+        auto *p = new QThreadPool;
+        p->setMaxThreadCount(64);
+        // Runs after every notebook's bounded wait: a still-stuck worker may fault teardown.
+        qAddPostRoutine([] {
+            if (notebookPool()->activeThreadCount() > 0) crashFlagDisarm();
+        });
+        return p;
+    }();
+    return pool;
+}
+
+// WAL lets later cells write while a stopped query still holds a read transaction.
+void enableWal(const QString &file) {
+    const QString name = QStringLiteral("notepatra-notebook-wal");
+    {
+        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), name);
+        db.setDatabaseName(file);
+        if (db.open()) QSqlQuery(db).exec(QStringLiteral("PRAGMA journal_mode=WAL"));
+        db.close();
+    }
+    QSqlDatabase::removeDatabase(name);
+}
+
+// Ctrl+C copies the selected cells as TSV: no header row, NULL as an empty field,
+// fields holding a tab, newline or quote are double-quoted (spreadsheet paste).
+class ResultTable : public QTableWidget {
+public:
+    static constexpr int kNullRole = Qt::UserRole + 1;
+
+protected:
+    bool event(QEvent *e) override {
+        // Claim Ctrl+C before the window-wide Edit > Copy shortcut takes it.
+        if (e->type() == QEvent::ShortcutOverride && static_cast<QKeyEvent *>(e) == QKeySequence::Copy) {
+            e->accept();
+            return true;
+        }
+        return QTableWidget::event(e);
+    }
+    void keyPressEvent(QKeyEvent *e) override {
+        if (e == QKeySequence::Copy) {
+            copySelection();
+            e->accept();
+            return;
+        }
+        QTableWidget::keyPressEvent(e);
+    }
+
+private:
+    void copySelection() {
+        const QModelIndexList sel = selectionModel() ? selectionModel()->selectedIndexes() : QModelIndexList();
+        if (sel.isEmpty()) return;
+        QMap<int, QMap<int, QString>> grid;
+        QSet<int> colSet;
+        for (const QModelIndex &ix : sel) {
+            const bool isNull = ix.data(kNullRole).toBool();
+            grid[ix.row()][ix.column()] = isNull ? QString() : ix.data(Qt::DisplayRole).toString();
+            colSet.insert(ix.column());
+        }
+        QList<int> cols = colSet.values();
+        std::sort(cols.begin(), cols.end());
+        QStringList lines;
+        for (auto r = grid.cbegin(); r != grid.cend(); ++r) {
+            QStringList fields;
+            for (int c : cols) {
+                QString v = r.value().value(c);
+                if (v.contains(QLatin1Char('\t')) || v.contains(QLatin1Char('\n')) ||
+                    v.contains(QLatin1Char('\r')) || v.contains(QLatin1Char('"')))
+                    v = QLatin1Char('"') + v.replace(QLatin1Char('"'), QLatin1String("\"\"")) + QLatin1Char('"');
+                fields << v;
+            }
+            lines << fields.join(QLatin1Char('\t'));
+        }
+        QApplication::clipboard()->setText(lines.join(QLatin1Char('\n')));
+    }
+};
 
 } // namespace
 
@@ -84,6 +175,13 @@ SqlNotebookWidget::SqlNotebookWidget(QWidget *parent) : QWidget(parent) {
     barLayout->addWidget(m_runAllBtn);
     barLayout->addWidget(m_stopBtn);
     root->addWidget(bar);
+    m_hint = new QLabel(tr("Tip: add -- %% lines to split this file into cells"));
+    m_hint->setObjectName(QStringLiteral("sqlNotebookHint"));
+    m_hint->setWordWrap(true);
+    m_hint->setToolTip(tr("Without -- %% lines, %1 runs the statement under the cursor.")
+                           .arg(Shortcuts::nativeText(QKeySequence(QStringLiteral("Ctrl+Return")))));
+    m_hint->hide();
+    root->addWidget(m_hint);
 
     auto *scroll = new QScrollArea;
     scroll->setWidgetResizable(true);
@@ -103,17 +201,12 @@ SqlNotebookWidget::SqlNotebookWidget(QWidget *parent) : QWidget(parent) {
     scroll->setWidget(m_cardHost);
     root->addWidget(scroll, 1);
 
-    m_watcher = new QFutureWatcher<DbConnections::QueryResult>(this);
-    connect(m_watcher, &QFutureWatcher<DbConnections::QueryResult>::finished, this,
-            &SqlNotebookWidget::onQueryFinished);
     m_timeout = new QTimer(this);
     m_timeout->setSingleShot(true);
-    m_timeout->setInterval(kTimeoutMs);
+    m_timeout->setInterval(m_timeoutMs);
     connect(m_timeout, &QTimer::timeout, this, [this]() {
-        if (!m_busy || !m_token) return;
-        m_token->requestInterrupt();
-        m_results[m_runningKey].status = tr("Timed out after %1 s, stopping...").arg(kTimeoutMs / 1000);
-        updateAllCards();
+        abandonRun(m_timeoutMs % 1000 == 0 ? tr("Timed out after %1 s.").arg(m_timeoutMs / 1000)
+                                            : tr("Timed out after %1 ms.").arg(m_timeoutMs));
     });
 
     connect(m_conn, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
@@ -123,8 +216,15 @@ SqlNotebookWidget::SqlNotebookWidget(QWidget *parent) : QWidget(parent) {
 }
 
 SqlNotebookWidget::~SqlNotebookWidget() {
-    // The worker keeps its own token/temp-dir references; just ask it to stop.
+    // The worker keeps its own token/temp-dir references; ask it to stop and give an
+    // interruptible (DuckDB) query a bounded moment to unwind.
     if (m_busy && m_token) m_token->requestInterrupt();
+    notebookPool()->waitForDone(2000);
+}
+
+void SqlNotebookWidget::setTimeoutMs(int ms) {
+    m_timeoutMs = qMax(1, ms);
+    m_timeout->setInterval(m_timeoutMs);
 }
 
 void SqlNotebookWidget::refreshConnections() {
@@ -189,28 +289,87 @@ bool SqlNotebookWidget::currentRecord(DbConnections::Record *out, QString *err) 
         r.driver = QStringLiteral("QSQLITE");
         // A file, not :memory:, because runQuery opens a fresh connection per call.
         r.database = m_scratchDir->filePath(QStringLiteral("notebook.sqlite"));
+        if (!m_scratchWalDone) {
+            m_scratchWalDone = true;
+            enableWal(r.database);
+        }
     }
     *out = r;
     return true;
 }
 
-void SqlNotebookWidget::setCells(const QVector<NotebookRender::SqlCell> &cells) {
+void SqlNotebookWidget::setCells(const QVector<NotebookRender::SqlCell> &cells, QObject *doc) {
     if (m_conn->count() == 0) refreshConnections();
-    bool sameShape = cells.size() == m_cells.size();
+    const bool switched = doc != m_doc;
+    if (doc && !m_docs.contains(doc)) {
+        connect(doc, &QObject::destroyed, this, [this, doc]() {
+            m_docs.remove(doc);
+            if (m_doc == doc) m_doc = nullptr;
+            if (m_queueDoc == doc) m_queue.clear();
+        });
+    }
+    m_doc = doc;
+    QVector<Slot> &docSlots = m_docs[doc];
+    bool sameShape = !switched && cells.size() == m_cells.size();
     for (int i = 0; sameShape && i < cells.size(); ++i)
         sameShape = cells.at(i).text == m_cells.at(i).text &&
                     cells.at(i).markdown == m_cells.at(i).markdown;
+    mergeCells(docSlots, cells);
     m_cells = cells;
-    if (sameShape) return;
+    if (!sameShape) rebuildCards();
+}
 
-    QSet<QString> live;
-    for (const auto &c : m_cells) live.insert(keyFor(c));
-    if (m_busy) live.insert(m_runningKey);
-    for (auto it = m_results.begin(); it != m_results.end();) {
-        if (!live.contains(it.key())) it = m_results.erase(it);
-        else ++it;
+void SqlNotebookWidget::mergeCells(QVector<Slot> &cellSlots, const QVector<NotebookRender::SqlCell> &cells) {
+    const QVector<Slot> old = cellSlots;
+    const int n = old.size(), m = cells.size();
+    auto same = [](const NotebookRender::SqlCell &a, const NotebookRender::SqlCell &b) {
+        return a.text == b.text && a.markdown == b.markdown;
+    };
+    int pre = 0;
+    while (pre < n && pre < m && same(old.at(pre).cell, cells.at(pre))) ++pre;
+    int suf = 0;
+    while (suf < n - pre && suf < m - pre && same(old.at(n - 1 - suf).cell, cells.at(m - 1 - suf))) ++suf;
+
+    QVector<Slot> out(m);
+    QVector<bool> used(n, false);
+    for (int i = 0; i < pre; ++i) { out[i] = old.at(i); used[i] = true; }
+    for (int k = 0; k < suf; ++k) { out[m - 1 - k] = old.at(n - 1 - k); used[n - 1 - k] = true; }
+    const int oldMid = n - pre - suf, newMid = m - pre - suf;
+    for (int j = 0; j < newMid; ++j) {
+        const int ni = pre + j;
+        int match = -1;
+        if (oldMid == newMid) {
+            // Same number of cells: the j-th changed cell is the j-th edited one.
+            if (old.at(pre + j).cell.markdown == cells.at(ni).markdown) match = pre + j;
+        } else {
+            for (int oi = pre; oi < n - suf && match < 0; ++oi)
+                if (!used[oi] && same(old.at(oi).cell, cells.at(ni))) match = oi;
+        }
+        if (match >= 0) {
+            out[ni] = old.at(match);
+            used[match] = true;
+        } else {
+            out[ni].id = m_nextId++;
+        }
     }
-    rebuildCards();
+    for (int i = 0; i < m; ++i) out[i].cell = cells.at(i);
+    cellSlots = out;
+}
+
+SqlNotebookWidget::Slot *SqlNotebookWidget::findSlot(QObject *doc, int id) {
+    auto it = m_docs.find(doc);
+    if (it == m_docs.end()) return nullptr;
+    for (Slot &s : it.value())
+        if (s.id == id) return &s;
+    return nullptr;
+}
+
+int SqlNotebookWidget::indexOfId(int id) const {
+    const auto it = m_docs.constFind(m_doc);
+    if (it == m_docs.constEnd()) return -1;
+    for (int i = 0; i < it.value().size(); ++i)
+        if (it.value().at(i).id == id) return i;
+    return -1;
 }
 
 void SqlNotebookWidget::rebuildCards() {
@@ -245,14 +404,14 @@ void SqlNotebookWidget::rebuildCards() {
             card.run = new QToolButton;
             card.run->setIcon(playIcon);
             card.run->setText(tr("Run"));
-            card.run->setToolTip(tr("Run this cell (Ctrl+Return in the editor)"));
+            card.run->setToolTip(tr("Run this cell (%1 in the editor; %2 runs and moves to the next cell)")
+                                     .arg(Shortcuts::nativeText(QKeySequence(QStringLiteral("Ctrl+Return"))),
+                                          Shortcuts::nativeText(
+                                              QKeySequence(QStringLiteral("Ctrl+Shift+Return")))));
             card.run->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
             card.run->setAutoRaise(true);
-            const QString key = keyFor(cell);
-            connect(card.run, &QToolButton::clicked, this, [this, key]() {
-                for (int k = 0; k < m_cells.size(); ++k)
-                    if (keyFor(m_cells.at(k)) == key) { runCell(k); return; }
-            });
+            const int id = m_docs.value(m_doc).value(i).id;
+            connect(card.run, &QToolButton::clicked, this, [this, id]() { runCell(indexOfId(id)); });
             head->addWidget(card.run);
         }
         v->addLayout(head);
@@ -278,7 +437,7 @@ void SqlNotebookWidget::rebuildCards() {
             card.status->setWordWrap(true);
             card.status->setTextInteractionFlags(Qt::TextSelectableByMouse);
             v->addWidget(card.status);
-            card.table = new QTableWidget;
+            card.table = new ResultTable;
             card.table->setEditTriggers(QAbstractItemView::NoEditTriggers);
             card.table->verticalHeader()->setDefaultSectionSize(22);
             card.table->hide();
@@ -294,21 +453,25 @@ void SqlNotebookWidget::updateCard(int index) {
     if (index < 0 || index >= m_cards.size() || index >= m_cells.size()) return;
     const Card &card = m_cards.at(index);
     if (!card.status) return;
-    const QString key = keyFor(m_cells.at(index));
-    const bool running = m_busy && key == m_runningKey;
+    const auto docIt = m_docs.constFind(m_doc);
+    if (docIt == m_docs.constEnd() || index >= docIt.value().size()) return;
+    const Slot &slot = docIt.value().at(index);
+    const bool running = m_busy && m_runDoc == m_doc && m_runId == slot.id;
     if (card.run) card.run->setEnabled(!m_busy);
-    const auto it = m_results.constFind(key);
-    if (it == m_results.constEnd()) {
+    if (!slot.hasResult || running) {
         card.status->setText(running ? tr("Running...") : QString());
         card.status->setVisible(running);
+        card.status->setStyleSheet(QString());
         card.table->hide();
         return;
     }
-    const CellResult &res = it.value();
-    card.status->setText(res.status);
-    card.status->setVisible(!res.status.isEmpty());
+    const CellResult &res = slot.result;
+    const bool stale = slot.ranText != slot.cell.text;
+    card.status->setText(stale ? tr("(stale: the cell changed since this run) %1").arg(res.status)
+                               : res.status);
+    card.status->setVisible(!card.status->text().isEmpty());
     card.status->setStyleSheet(res.error ? QStringLiteral("color:#d9534f;") : QString());
-    if (!res.hasTable || running) {
+    if (!res.hasTable) {
         card.table->hide();
         return;
     }
@@ -317,10 +480,25 @@ void SqlNotebookWidget::updateCard(int index) {
     t->setColumnCount(res.columns.size());
     t->setRowCount(res.rows.size());
     t->setHorizontalHeaderLabels(res.columns);
+    // NULL looks the same for every driver: a dimmed italic "NULL" in the theme's dim text colour.
+    const QColor dim = m_colors.dimFg.isEmpty() ? palette().color(QPalette::Disabled, QPalette::Text)
+                                                : QColor(m_colors.dimFg);
+    QFont nullFont = t->font();
+    nullFont.setItalic(true);
     for (int r = 0; r < res.rows.size(); ++r) {
         const QVector<QString> &row = res.rows.at(r);
-        for (int c = 0; c < row.size() && c < res.columns.size(); ++c)
-            t->setItem(r, c, new QTableWidgetItem(row.at(c)));
+        const QVector<bool> nullRow = res.nulls.value(r);
+        for (int c = 0; c < row.size() && c < res.columns.size(); ++c) {
+            if (nullRow.value(c)) {
+                auto *item = new QTableWidgetItem(QStringLiteral("NULL"));
+                item->setForeground(dim);
+                item->setFont(nullFont);
+                item->setData(ResultTable::kNullRole, true);
+                t->setItem(r, c, item);
+            } else {
+                t->setItem(r, c, new QTableWidgetItem(row.at(c)));
+            }
+        }
     }
     t->resizeColumnsToContents();
     const int rowsH = t->verticalHeader()->length() + t->horizontalHeader()->height() +
@@ -343,47 +521,87 @@ void SqlNotebookWidget::setBusy(bool busy) {
 }
 
 void SqlNotebookWidget::runCell(int index) {
-    if (m_busy || index < 0 || index >= m_cells.size()) return;
-    const NotebookRender::SqlCell cell = m_cells.at(index);
-    if (cell.markdown) return;
-    const QString key = keyFor(cell);
+    if (m_busy || index < 0 || index >= m_cells.size() || m_cells.at(index).markdown) return;
+    const int id = m_docs.value(m_doc).value(index).id;
+    startRun(m_doc, id, m_cells.at(index).text);
+}
 
+void SqlNotebookWidget::startRun(QObject *doc, int id, const QString &sql, const QString &statusPrefix) {
+    Slot *slot = findSlot(doc, id);
+    if (m_busy || !slot || slot->cell.markdown) return;
     DbConnections::Record rec;
     QString err;
     if (!currentRecord(&rec, &err)) {
-        CellResult res;
-        res.status = tr("Error: %1").arg(err);
-        res.error = true;
-        m_results.insert(key, res);
+        slot->hasResult = true;
+        slot->result = CellResult();
+        slot->result.status = tr("Error: %1").arg(err);
+        slot->result.error = true;
+        slot->ranText = slot->cell.text;
         m_queue.clear();
-        updateCard(index);
+        if (doc == m_doc) updateAllCards();
         return;
     }
     const bool allow = m_allowWrites->isChecked();
-    m_results.remove(key);
-    m_runningKey = key;
+    m_runInterruptible = rec.driver.compare(QLatin1String("DUCKDB"), Qt::CaseInsensitive) == 0;
+    slot->hasResult = false;
+    m_runDoc = doc;
+    m_runId = id;
+    m_runText = slot->cell.text;
+    m_runPrefix = statusPrefix;
     m_token = std::make_shared<DbConnections::QueryInterruptToken>();
     auto token = m_token;
     auto keepDir = m_scratchDir;  // the temp DB outlives this widget until the worker returns
-    const QString sql = cell.text;
     setBusy(true);
     updateAllCards();
     m_elapsed.start();
     m_timeout->start();
-    m_watcher->setFuture(QtConcurrent::run([rec, sql, allow, token, keepDir]() {
+    const quint64 gen = ++m_generation;
+    auto *watcher = new QFutureWatcher<DbConnections::QueryResult>(this);
+    connect(watcher, &QFutureWatcher<DbConnections::QueryResult>::finished, this, [this, watcher, gen]() {
+        watcher->deleteLater();
+        if (gen == m_generation && m_busy) onQueryFinished(watcher->result());
+    });
+    watcher->setFuture(QtConcurrent::run(notebookPool(), [rec, sql, allow, token, keepDir]() {
         return DbConnections::runQuery(rec, sql, kMaxRows, allow, token.get());
     }));
 }
 
-void SqlNotebookWidget::onQueryFinished() {
+void SqlNotebookWidget::abandonRun(const QString &status) {
+    m_queue.clear();
+    if (!m_busy) return;
+    if (m_token) m_token->requestInterrupt();  // real interrupt on DuckDB, a flag only on Qt SQL
+    ++m_generation;
     m_timeout->stop();
-    const DbConnections::QueryResult qr = m_watcher->result();
+    CellResult res;
+    res.status = m_runInterruptible
+        ? status
+        : status + QLatin1Char(' ') +
+              tr("The database may still finish the query in the background; its result is discarded.");
+    res.error = true;
+    storeRunResult(res);
+    m_token.reset();
+    setBusy(false);
+    updateAllCards();
+}
+
+void SqlNotebookWidget::storeRunResult(const CellResult &res) {
+    if (Slot *slot = findSlot(m_runDoc, m_runId)) {
+        slot->hasResult = true;
+        slot->result = res;
+        slot->result.status.prepend(m_runPrefix);
+        slot->ranText = m_runText;
+    }
+}
+
+void SqlNotebookWidget::onQueryFinished(const DbConnections::QueryResult &qr) {
+    m_timeout->stop();
     const qint64 ms = m_elapsed.elapsed();
     CellResult res;
     if (qr.ok) {
         res.hasTable = !qr.columns.isEmpty();
         res.columns = qr.columns;
         res.rows = qr.rows;
+        res.nulls = qr.nulls;
         if (res.hasTable) {
             res.status = tr("%n row(s) in %1 ms", nullptr, qr.rowsReturned).arg(ms);
             if (qr.truncated)
@@ -402,7 +620,7 @@ void SqlNotebookWidget::onQueryFinished() {
         else
             res.status = tr("Error: %1").arg(qr.error.isEmpty() ? qr.errorKind : qr.error);
     }
-    m_results.insert(m_runningKey, res);
+    storeRunResult(res);
     const bool continueQueue = qr.ok && !(m_token && m_token->interruptRequested());
     m_token.reset();
     setBusy(false);
@@ -414,20 +632,16 @@ void SqlNotebookWidget::onQueryFinished() {
 void SqlNotebookWidget::runAll() {
     if (m_busy) return;
     m_queue.clear();
-    for (const auto &c : qAsConst(m_cells))
-        if (!c.markdown) m_queue << keyFor(c);
+    m_queueDoc = m_doc;
+    for (const Slot &slot : m_docs.value(m_doc))
+        if (!slot.cell.markdown) m_queue << slot.id;
     runNextQueued();
 }
 
 void SqlNotebookWidget::runNextQueued() {
     while (!m_queue.isEmpty() && !m_busy) {
-        const QString key = m_queue.takeFirst();
-        for (int k = 0; k < m_cells.size(); ++k) {
-            if (keyFor(m_cells.at(k)) == key && !m_cells.at(k).markdown) {
-                runCell(k);
-                break;
-            }
-        }
+        const int id = m_queue.takeFirst();
+        if (const Slot *slot = findSlot(m_queueDoc, id)) startRun(m_queueDoc, id, slot->cell.text);
     }
 }
 
@@ -435,12 +649,72 @@ void SqlNotebookWidget::runCellAtLine(int line) {
     runCell(NotebookRender::cellIndexForLine(m_cells, line));
 }
 
+namespace {
+int offsetAt(const QString &text, int line, int col) {
+    int pos = 0;
+    for (int l = 0; l < line; ++l) {
+        const int nl = text.indexOf(QLatin1Char('\n'), pos);
+        if (nl < 0) return text.size();
+        pos = nl + 1;
+    }
+    int lineEnd = text.indexOf(QLatin1Char('\n'), pos);
+    if (lineEnd < 0) lineEnd = text.size();
+    // col counts code points (QScintilla); step over surrogate pairs as one.
+    for (int c = 0; c < col && pos < lineEnd; ++c)
+        pos += (text.at(pos).isHighSurrogate() && pos + 1 < lineEnd &&
+                text.at(pos + 1).isLowSurrogate()) ? 2 : 1;
+    return pos;
+}
+
+void lineColAt(const QString &text, int pos, int *line, int *col) {
+    *line = text.left(pos).count(QLatin1Char('\n'));
+    int i = text.lastIndexOf(QLatin1Char('\n'), pos - 1) + 1;
+    for (*col = 0; i < pos; ++*col)
+        i += (text.at(i).isHighSurrogate() && i + 1 < pos && text.at(i + 1).isLowSurrogate()) ? 2 : 1;
+}
+} // namespace
+
+void SqlNotebookWidget::runAtCursor(const QString &text, int line, int col) {
+    if (NotebookRender::hasSqlCellSeparators(text)) {
+        runCellAtLine(line);
+        return;
+    }
+    if (m_busy || m_cells.isEmpty() || m_cells.at(0).markdown) return;
+    const QVector<NotebookRender::SqlStatementSpan> spans = NotebookRender::splitSqlStatements(text);
+    const int at = NotebookRender::statementIndexAt(spans, offsetAt(text, line, col));
+    if (at < 0) return;
+    const auto &sp = spans.at(at);
+    int stmtLine = 0, stmtCol = 0;
+    lineColAt(text, sp.start, &stmtLine, &stmtCol);
+    startRun(m_doc, m_docs.value(m_doc).value(0).id, text.mid(sp.start, sp.end - sp.start).trimmed(),
+             tr("Statement at line %1: ").arg(stmtLine + 1));
+}
+
+bool SqlNotebookWidget::nextRunTarget(const QString &text, int line, int col, int *outLine, int *outCol) const {
+    if (NotebookRender::hasSqlCellSeparators(text)) {
+        const int at = NotebookRender::cellIndexForLine(m_cells, line);
+        if (at < 0) return false;
+        for (int i = at + 1; i < m_cells.size(); ++i) {
+            if (m_cells.at(i).markdown) continue;
+            *outLine = m_cells.at(i).bodyLine;
+            *outCol = 0;
+            return true;
+        }
+        return false;
+    }
+    const QVector<NotebookRender::SqlStatementSpan> spans = NotebookRender::splitSqlStatements(text);
+    const int at = NotebookRender::statementIndexAt(spans, offsetAt(text, line, col));
+    if (at < 0 || at + 1 >= spans.size()) return false;
+    lineColAt(text, spans.at(at + 1).start, outLine, outCol);
+    return true;
+}
+
+void SqlNotebookWidget::setSeparatorHintVisible(bool on) {
+    m_hint->setVisible(on);
+}
+
 void SqlNotebookWidget::stop() {
-    m_queue.clear();
-    if (!m_busy || !m_token) return;
-    m_token->requestInterrupt();
-    m_results[m_runningKey].status = tr("Stopping...");
-    updateAllCards();
+    abandonRun(tr("Stopped."));
 }
 
 QTableWidget *SqlNotebookWidget::resultTableAt(int index) {
@@ -457,6 +731,7 @@ void SqlNotebookWidget::applyColors(const NotebookRender::Colors &c) {
     m_colors = c;
     setStyleSheet(QStringLiteral(
         "QWidget#sqlNotebookCells { background: %1; }"
+        "QLabel#sqlNotebookHint { background: %1; color: %3; padding: 2px 8px; }"
         "QFrame#sqlNotebookCell { background: %1; border: 1px solid %5; border-radius: 4px; }"
         "QFrame#sqlNotebookCell QLabel { color: %2; border: none; }"
         "QLabel#sqlCellTitle { color: %6; font-weight: 600; }"
