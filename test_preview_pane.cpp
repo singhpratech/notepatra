@@ -213,7 +213,7 @@ int main(int argc, char *argv[]) {
     std::printf("-- a: startup layout --\n");
     EXPECT_TRUE("a: pane hidden at startup", !pane->isVisible());
     EXPECT_TRUE("a: action text and shortcut",
-                previewAct->text() == QLatin1String("Preview Pane    Ctrl+Shift+V") &&
+                previewAct->text() == QLatin1String("Preview Pane") &&
                     previewAct->shortcut() == QKeySequence("Ctrl+Shift+V") && previewAct->isCheckable());
     QSplitter *mainSplit = nullptr;
     for (AIPanel *p : mw.findChildren<AIPanel *>()) {

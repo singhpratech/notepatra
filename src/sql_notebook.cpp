@@ -4,6 +4,7 @@
 
 #include "crashflag.h"
 #include "fonts.h"
+#include "shortcut_hints.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -177,7 +178,8 @@ SqlNotebookWidget::SqlNotebookWidget(QWidget *parent) : QWidget(parent) {
     m_hint = new QLabel(tr("Tip: add -- %% lines to split this file into cells"));
     m_hint->setObjectName(QStringLiteral("sqlNotebookHint"));
     m_hint->setWordWrap(true);
-    m_hint->setToolTip(tr("Without -- %% lines, Ctrl+Return runs the statement under the cursor."));
+    m_hint->setToolTip(tr("Without -- %% lines, %1 runs the statement under the cursor.")
+                           .arg(Shortcuts::nativeText(QKeySequence(QStringLiteral("Ctrl+Return")))));
     m_hint->hide();
     root->addWidget(m_hint);
 
@@ -402,8 +404,10 @@ void SqlNotebookWidget::rebuildCards() {
             card.run = new QToolButton;
             card.run->setIcon(playIcon);
             card.run->setText(tr("Run"));
-            card.run->setToolTip(tr("Run this cell (Ctrl+Return in the editor; Ctrl+Shift+Return runs and "
-                                    "moves to the next cell)"));
+            card.run->setToolTip(tr("Run this cell (%1 in the editor; %2 runs and moves to the next cell)")
+                                     .arg(Shortcuts::nativeText(QKeySequence(QStringLiteral("Ctrl+Return"))),
+                                          Shortcuts::nativeText(
+                                              QKeySequence(QStringLiteral("Ctrl+Shift+Return")))));
             card.run->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
             card.run->setAutoRaise(true);
             const int id = m_docs.value(m_doc).value(i).id;

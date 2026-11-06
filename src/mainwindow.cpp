@@ -3680,7 +3680,7 @@ void MainWindow::buildMenus() {
     auto *fullScreenAct = view->addAction("Toggle Full-Screen Mode", this, [this]() {
         isFullScreen() ? showNormal() : showFullScreen();
     }, QKeySequence("F11"));
-    m_previewAct = view->addAction("Preview Pane    Ctrl+Shift+V");
+    m_previewAct = view->addAction("Preview Pane");
     m_previewAct->setObjectName("actPreviewPane");
     m_previewAct->setCheckable(true);
     m_previewAct->setShortcut(QKeySequence("Ctrl+Shift+V"));
@@ -6093,7 +6093,8 @@ void MainWindow::buildToolbar() {
                        /*showCheckedState=*/true);
     addFeatureShortcut(featureTb, m_previewAct,
                        notepatraToolAccent("PreviewPane"), "preview", "Preview",
-                       "Toggle Preview — Markdown / HTML / .ipynb / SQL cells (Ctrl+Shift+V) — ON / OFF",
+                       QString("Toggle Preview — Markdown / HTML / .ipynb / SQL cells (%1) — ON / OFF")
+                           .arg(Shortcuts::nativeText(m_previewAct->shortcut())),
                        /*showCheckedState=*/true);
     // v0.1.61 — dropped the standalone Git Integration toolbar shortcut.
     // Full VS Code-parity Source Control integration inside Coding mode
