@@ -659,12 +659,18 @@ int offsetAt(const QString &text, int line, int col) {
     }
     int lineEnd = text.indexOf(QLatin1Char('\n'), pos);
     if (lineEnd < 0) lineEnd = text.size();
-    return qMin(pos + qMax(0, col), lineEnd);
+    // col counts code points (QScintilla); step over surrogate pairs as one.
+    for (int c = 0; c < col && pos < lineEnd; ++c)
+        pos += (text.at(pos).isHighSurrogate() && pos + 1 < lineEnd &&
+                text.at(pos + 1).isLowSurrogate()) ? 2 : 1;
+    return pos;
 }
 
 void lineColAt(const QString &text, int pos, int *line, int *col) {
     *line = text.left(pos).count(QLatin1Char('\n'));
-    *col = pos - (text.lastIndexOf(QLatin1Char('\n'), pos - 1) + 1);
+    int i = text.lastIndexOf(QLatin1Char('\n'), pos - 1) + 1;
+    for (*col = 0; i < pos; ++*col)
+        i += (text.at(i).isHighSurrogate() && i + 1 < pos && text.at(i + 1).isLowSurrogate()) ? 2 : 1;
 }
 } // namespace
 

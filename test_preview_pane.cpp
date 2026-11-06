@@ -752,6 +752,30 @@ int main(int argc, char *argv[]) {
         if (tabs) tabs->setCurrentIndex(tabIndexForPath(tabs, sqlPath));
         QTest::qWait(30);
         EXPECT_TRUE("p: no hint on a file with -- %% cells", hint && !hint->isVisibleTo(nb));
+
+        // Cursor columns count code points; a non-BMP char earlier on the line must not shift them.
+        const QString emojiPath = writeFile(work.path(), "emoji.sql",
+            QString::fromUtf8("SELECT '\xF0\x9F\x98\x80\xF0\x9F\x98\x80\xF0\x9F\x98\x80\xF0\x9F\x98\x80' AS a; "
+                              "SELECT 2 AS b; SELECT 3 AS c;\n").toUtf8());
+        mw.openFile(emojiPath);
+        QTest::qWait(30);
+        Editor *em = mw.currentEditor();
+        em->setFocus();
+        em->setCursorPosition(0, 21);  // the 'E' of "SELECT 2" (code-point column)
+        std::printf("     emoji: byte pos=%ld\n", long(em->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS)));
+        QTest::keyClick(em, Qt::Key_Return, Qt::ControlModifier);
+        waitIdle(nb);
+        t = nb->resultTableAt(0);
+        EXPECT_TRUE("p: emoji earlier on the line, Ctrl+Return runs statement 2",
+                    t && t->horizontalHeaderItem(0) && t->horizontalHeaderItem(0)->text() == QLatin1String("b"));
+        em->setCursorPosition(0, 21);
+        QTest::keyClick(em, Qt::Key_Return, Qt::ControlModifier | Qt::ShiftModifier);
+        waitIdle(nb);
+        int eLine = -1, eCol = -1;
+        em->getCursorPosition(&eLine, &eCol);
+        std::printf("     emoji: advanced to %d:%d\n", eLine, eCol);
+        EXPECT_TRUE("p: emoji line, Ctrl+Shift+Return lands on statement 3's first column",
+                    eLine == 0 && eCol == 35);
     }
 
 #ifdef NOTEPATRA_WITH_WEBENGINE
