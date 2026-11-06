@@ -45,6 +45,7 @@
 namespace DbConnections {
 class QueryInterruptToken;
 struct QueryResult;
+struct SqlVerdict;
 }
 
 namespace AiTools {
@@ -146,6 +147,9 @@ ToolResult execute(const ToolCall &call, const QString &workspaceRoot,
 QJsonObject buildQuerySqlResultBody(const QString &connectionName,
                                     const QString &driver,
                                     const DbConnections::QueryResult &qr);
+
+// Shared read-only / mutation verdict for AI query_sql / csv_query (approval routing + csv gate).
+DbConnections::SqlVerdict sqlToolVerdict(const QString &toolName, const QJsonObject &args);
 
 // ── Path safety helpers (exposed for unit testing) ────────────────────
 

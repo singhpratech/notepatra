@@ -47,14 +47,20 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFrame>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
+#include <QSqlDatabase>
+#include <QSqlQuery>
 #include <QList>
 #include <QPair>
 #include <QString>
 #include <QStringList>
 #include <QTemporaryDir>
 #include <QVector>
+#ifdef NOTEPATRA_HAVE_DUCKDB
+#include "duckdb_client.h"
+#endif
 
 #include <cstdio>
 #include <cstdlib>
@@ -94,6 +100,11 @@ public:
     // Result queue — a gated call withholds its result (queue stays empty)
     // until the human decides.
     static int pendingToolResultCount(AIPanel *p) { return p->m_pendingToolResults.size(); }
+    static QString lastPendingContent(AIPanel *p) {
+        return p->m_pendingToolResults.isEmpty()
+            ? QString()
+            : p->m_pendingToolResults.last().toObject().value("content").toString();
+    }
 
     static void setWorkspace(AIPanel *p, const QString &dir) { p->m_workspaceRoot = dir; }
 
@@ -634,6 +645,197 @@ static void testTruncationReasonMap() {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// v0.1.131 — AI SQL gate gaps. Saved connections live in the isolated config
+// dir main() points HOME / XDG_CONFIG_HOME / APPDATA at.
+// ═══════════════════════════════════════════════════════════════════════
+static bool saveConnections(const QVector<DbConnections::Record> &recs) {
+    return DbConnections::saveAll(recs);
+}
+
+static DbConnections::Record rec(const QString &name, const QString &driver,
+                                 const QString &database) {
+    DbConnections::Record r;
+    r.name = name;
+    r.driver = driver;
+    r.database = database;
+    return r;
+}
+
+static AiTools::ToolResult runTool(const QString &name, const QJsonObject &args,
+                                   const QString &ws = QString()) {
+    AiTools::ToolCall c;
+    c.id = QStringLiteral("t");
+    c.name = name;
+    c.args = args;
+    return AiTools::execute(c, ws);
+}
+
+static QJsonObject sqlArgs(const QString &conn, const QString &sql) {
+    QJsonObject a;
+    a["connection_name"] = conn;
+    a["sql"] = sql;
+    return a;
+}
+
+static void testV0131SqlGaps(const QString &scratch) {
+    std::printf("\n=== v0.1.131: AI SQL gate (G1 file reads, G2 T-SQL batches, G5, G6) ===\n");
+    QDir().mkpath(scratch);
+    const QString secretPath = scratch + "/secret.txt";
+    const QString csvPath = scratch + "/leak.csv";
+    const QString sqlitePath = scratch + "/g6.db";
+    {
+        QFile f(secretPath);
+        f.open(QIODevice::WriteOnly);
+        f.write("TOPSECRET-G1\n");
+        QFile c(csvPath);
+        c.open(QIODevice::WriteOnly);
+        c.write("k\nTOPSECRET-CSV\n");
+    }
+    if (QSqlDatabase::drivers().contains("QSQLITE")) {
+        QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", "g6-setup");
+        db.setDatabaseName(sqlitePath);
+        db.open();
+        QSqlQuery q(db);
+        q.exec("CREATE TABLE t (id INTEGER)");
+        db.close();
+    }
+    QSqlDatabase::removeDatabase("g6-setup");
+
+    QVector<DbConnections::Record> recs;
+    DbConnections::Record mssql = rec("mssql", "QODBC", "master");
+    mssql.host = QStringLiteral("127.0.0.1");
+    mssql.port = 1;
+    recs << mssql << rec("g6", "QSQLITE", sqlitePath);
+#ifdef NOTEPATRA_HAVE_DUCKDB
+    const QString duckFile = scratch + "/g1.duckdb";
+    {
+        DuckDb::Client c;
+        c.open(duckFile);
+        c.exec("CREATE TABLE t AS SELECT 7 AS n", 0);
+    }
+    recs << rec("duck_mem", "DUCKDB", ":memory:") << rec("duck_csv", "DUCKDB", csvPath)
+         << rec("duck_file", "DUCKDB", duckFile)
+         << rec("duck_https", "DUCKDB", "https://example.invalid/data/");
+#endif
+    check("isolated db-connections.json saved", saveConnections(recs));
+
+    // G2 — a T-SQL batch with no ';' is a mutation on QODBC: it must open a card.
+    {
+        AIPanel panel;
+        AIPanelTestAccess::callHandleToolCall(
+            &panel, "b1", "query_sql", sqlArgs("mssql", "SELECT 1 DROP TABLE users"));
+        check("G2: QODBC 'SELECT 1 DROP TABLE users' opens an approval card",
+              AIPanelTestAccess::openApprovalCount(&panel) == 1);
+        check("G2: the batch did not execute (result withheld)",
+              AIPanelTestAccess::pendingToolResultCount(&panel) == 0);
+        const int cards = AIPanelTestAccess::openApprovalCount(&panel);
+        AIPanelTestAccess::callHandleToolCall(
+            &panel, "b2", "query_sql", sqlArgs("mssql", "SELECT update_time FROM t"));
+        check("G2: a plain QODBC read opens no card",
+              AIPanelTestAccess::openApprovalCount(&panel) == cards);
+        const AiTools::ToolResult r =
+            runTool("query_sql", sqlArgs("mssql", "SELECT 1 DROP TABLE users"));
+        check("G2: executor rejects the unapproved batch as non_select",
+              r.isError && r.content.contains("non_select"));
+    }
+
+    // G5 — csv_query uses the same read-only verdict as query_sql.
+    {
+        QJsonObject a;
+        a["file_path"] = csvPath;
+        a["sql"] = QStringLiteral("PRAGMA writable_schema=ON");
+        const AiTools::ToolResult r = runTool("csv_query", a, scratch);
+        check("G5: csv_query PRAGMA writable_schema=ON -> non_select",
+              r.isError && r.content.contains("non_select"));
+        a["sql"] = QStringLiteral("SELECT * FROM csv");
+        const AiTools::ToolResult ok = runTool("csv_query", a, scratch);
+        check("G5: csv_query plain SELECT still runs",
+              !ok.isError && ok.content.contains("TOPSECRET-CSV"));
+    }
+
+    // G6 — "approve all queries" covers mutations only; a later non-read stays gated.
+    {
+        AIPanel panel;
+        AIPanelTestAccess::setTurnWriteApprovalSql(&panel, true);
+        AIPanelTestAccess::setToolsActiveThisTurn(&panel, true);
+        AIPanelTestAccess::callHandleToolCall(
+            &panel, "g6", "query_sql", sqlArgs("g6", "PRAGMA writable_schema=ON"));
+        const QString c = AIPanelTestAccess::lastPendingContent(&panel);
+        check("G6: approve-all does not let a non-mutation skip the read gate",
+              c.contains("non_select"));
+        AIPanelTestAccess::callHandleToolCall(
+            &panel, "g6b", "query_sql", sqlArgs("g6", "INSERT INTO t VALUES (1)"));
+        check("G6: approve-all still runs a later mutation without a card",
+              AIPanelTestAccess::openApprovalCount(&panel) == 0
+              && !AIPanelTestAccess::lastPendingContent(&panel).contains("error_kind"));
+    }
+
+#ifdef NOTEPATRA_HAVE_DUCKDB
+    // G1 — unapproved AI SQL on DuckDB cannot read files outside its connection.
+    {
+        const QString lit = QString(secretPath).replace("'", "''");
+        const QString csvLit = QString(csvPath).replace("'", "''");
+        const AiTools::ToolResult a = runTool(
+            "query_sql", sqlArgs("duck_mem", "SELECT * FROM read_text('" + lit + "')"));
+        check("G1: read_text(<file>) on :memory: is refused",
+              a.isError && !a.content.contains("TOPSECRET"));
+        check("G1: refusal tells the user to add the file as a connection",
+              a.content.contains("add it as a connection"));
+        const AiTools::ToolResult b = runTool(
+            "query_sql", sqlArgs("duck_mem", "SELECT * FROM '" + csvLit + "'"));
+        check("G1: replacement scan FROM '<file>.csv' is refused",
+              b.isError && !b.content.contains("TOPSECRET"));
+        check("G1: engine refusal also carries the connection hint",
+              b.content.contains("add it as a connection"));
+        const AiTools::ToolResult c = runTool(
+            "query_sql", sqlArgs("duck_mem", "SELECT * FROM \"read_text\"('" + lit + "')"));
+        check("G1: quoted \"read_text\"(<file>) is refused",
+              c.isError && !c.content.contains("TOPSECRET"));
+        const AiTools::ToolResult d =
+            runTool("query_sql", sqlArgs("duck_mem", "SELECT 42 AS answer"));
+        check("G1: a plain read on :memory: still works", !d.isError && d.content.contains("42"));
+        const AiTools::ToolResult e =
+            runTool("query_sql", sqlArgs("duck_csv", "SELECT * FROM data"));
+        check("G1: a saved CSV connection still loads its own file",
+              !e.isError && e.content.contains("TOPSECRET-CSV"));
+        const AiTools::ToolResult f =
+            runTool("query_sql", sqlArgs("duck_file", "SELECT n FROM t"));
+        check("G1: a saved .duckdb file connection still reads", !f.isError && f.content.contains("7"));
+        const AiTools::ToolResult g =
+            runTool("query_sql", sqlArgs("duck_https", "SELECT 42 AS answer"));
+        check("G1: a remote (https) connection still opens and reads", !g.isError);
+        const AiTools::ToolResult h = runTool(
+            "query_sql", sqlArgs("duck_https", "SELECT * FROM '" + csvLit + "'"));
+        check("G1: a remote connection cannot read a local file",
+              h.isError && !h.content.contains("TOPSECRET"));
+        {
+            DbConnections::Record https;
+            DbConnections::findByName("duck_https", &https);
+            https.sandboxFilesystem = true;
+            DuckDb::Client cl;
+            QString err, kind;
+            const bool opened = DbConnections::openDuckDbForRecord(https, false, cl, &err, &kind);
+            check("G1: sandboxed remote record opens", opened);
+            check("G1: the remote lockdown cannot be undone at the engine",
+                  opened && !cl.exec("SET disabled_filesystems=''", 0).errorMessage.isEmpty());
+            check("G1: engine still refuses read_text after the undo attempt",
+                  opened && !cl.exec("SELECT * FROM read_text('" + lit + "')", 0)
+                                 .errorMessage.isEmpty());
+        }
+        // Desktop SQL console / notebook path (no sandbox) is unchanged.
+        DbConnections::Record mem;
+        DbConnections::findByName("duck_mem", &mem);
+        const DbConnections::QueryResult qr = DbConnections::runQuery(
+            mem, "SELECT * FROM read_text('" + lit + "')", 10, false);
+        bool leaked = false;
+        for (const QVector<QString> &row : qr.rows)
+            for (const QString &cell : row) leaked = leaked || cell.contains("TOPSECRET");
+        check("G1: desktop runQuery (no sandbox) still reads files", qr.ok && leaked);
+    }
+#endif
+}
+
 int main(int argc, char *argv[]) {
     // Unbuffered stdout so a crash mid-section still shows progress under ctest.
     setvbuf(stdout, nullptr, _IONBF, 0);
@@ -641,6 +843,11 @@ int main(int argc, char *argv[]) {
     // Offscreen platform BEFORE QApplication so AIPanel's widget tree lives on
     // an offscreen surface. Never call app.exec().
     qputenv("QT_QPA_PLATFORM", "offscreen");
+    // Isolate the config dir (db-connections.json) from the user's real one.
+    QTemporaryDir isoHome;
+    qputenv("HOME", isoHome.path().toUtf8());
+    qputenv("XDG_CONFIG_HOME", (isoHome.path() + "/.config").toUtf8());
+    qputenv("APPDATA", (isoHome.path() + "/AppData").toUtf8());
     QApplication app(argc, argv);
 
     // Force Chat as the default mode regardless of the user's on-disk config
@@ -658,6 +865,7 @@ int main(int argc, char *argv[]) {
     testAtomicWrite();
     testByteExactRollback();
     testTruncationReasonMap();
+    testV0131SqlGaps(isoHome.path() + "/scratch");
 
     std::printf("\n=== Summary: %d passed, %d failed, %d skipped ===\n",
                 g_pass, g_fail, g_skip);

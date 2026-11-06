@@ -5978,7 +5978,9 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
         sanitized.remove(QStringLiteral("_notepatra_host_approved"));
         call.args = sanitized;
         const QString sql = sanitized.value(QStringLiteral("sql")).toString();
-        if (DbConnections::isMutation(sql) && !m_turnWriteApprovalSql) {
+        // Same verdict the executors use (driver-aware: T-SQL batches on QODBC).
+        const bool mutation = AiTools::sqlToolVerdict(name, sanitized).mutation;
+        if (mutation && !m_turnWriteApprovalSql) {
             QString sqlContext;
             if (name == QLatin1String("query_sql"))
                 sqlContext = tr("connection '%1'")
@@ -5990,7 +5992,8 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
             return;  // withheld until the user approves the mutation
         }
         // Read-only (or "approve all queries this turn" already granted) — run guarded.
-        result = runDbToolGuarded(call, /*approvedMutation=*/m_turnWriteApprovalSql);
+        // The grant covers mutations only; a read still goes through the read gate.
+        result = runDbToolGuarded(call, /*approvedMutation=*/mutation && m_turnWriteApprovalSql);
         // Re-resolve turn state: the nested event loop may have processed a Stop
         // / mode-switch that tore the turn down while we waited.
         if (!m_chatLayout || !m_toolsActiveThisTurn) return;

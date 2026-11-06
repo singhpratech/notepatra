@@ -32,7 +32,11 @@
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
+#include <QSqlDatabase>
+#include <QSqlError>
+#include <QSqlQuery>
 #include <QString>
+#include <QTemporaryDir>
 #include <cstdio>
 #include <cstdlib>
 
@@ -72,6 +76,159 @@ static void expectMut(const char *what, const QString &sql, bool wantMutation) {
                     wantMutation ? "true" : "false", got ? "true" : "false");
         ++g_fail;
     }
+}
+
+// v0.1.131 gaps G1-G4 (AI SQL gate). Strict = the QODBC / SQL Server verdict.
+static void testV0131Gaps() {
+    auto strictVerdict = [](const QString &sql) { return classifySql(sql, false, true); };
+    auto rejectedRF = [](const QString &sql) {
+        const SqlVerdict v = classifySql(sql, /*restrictFilesystem=*/true);
+        return !(v.singleStatement && v.readOnly);
+    };
+
+    std::printf("== G1: quoted file-reader names are still file readers (RF=true) ==\n");
+    check("\"read_text\"('/etc/passwd') rejected",
+          rejectedRF("SELECT * FROM \"read_text\"('/etc/passwd')"));
+    check("\"Read_Csv_Auto\" ('/x') rejected",
+          rejectedRF("SELECT * FROM \"Read_Csv_Auto\" ('/x')"));
+    check("`load_file`('/etc/passwd') rejected",
+          rejectedRF("SELECT `load_file`('/etc/passwd')"));
+    check("quoted reader reason names the function",
+          classifySql("SELECT * FROM \"read_text\"('/x')", true).reason
+              == QStringLiteral("filesystem-reading function 'READ_TEXT' is not allowed"));
+    check("quoted column \"read_text\" still allowed (RF=true)",
+          !rejectedRF("SELECT \"read_text\" FROM t"));
+    check("file reader + outer DELETE is still a mutation (RF=true)",
+          classifySql("WITH c AS (SELECT read_text('x')) DELETE FROM t", true).mutation);
+    expectMut("quoted side-effect call \"writefile\"(...) is a mutation",
+              "SELECT \"writefile\"('/tmp/x', 'y')", true);
+    {
+        const SqlVerdict off = classifySql("SELECT * FROM \"read_text\"('x')", false);
+        check("desktop UNCHANGED: quoted read_text readOnly (RF=false)",
+              off.singleStatement && off.readOnly);
+    }
+
+    std::printf("== G2: T-SQL batches without ';' (strict, QODBC) ==\n");
+    check("QODBC runs unterminated batches",
+          DbConnections::driverRunsUnterminatedBatches("QODBC"));
+    check("QSQLITE/QPSQL/QMYSQL/DUCKDB do not",
+          !DbConnections::driverRunsUnterminatedBatches("QSQLITE")
+          && !DbConnections::driverRunsUnterminatedBatches("QPSQL")
+          && !DbConnections::driverRunsUnterminatedBatches("QMYSQL")
+          && !DbConnections::driverRunsUnterminatedBatches("DUCKDB"));
+    const char *batches[] = {
+        "SELECT 1 DROP TABLE users",
+        "SELECT * FROM t EXEC xp_cmdshell 'dir'",
+        "SELECT 1 EXEC('DROP TABLE t')",
+        "SELECT name FROM t UPDATE t SET x = 1",
+        "SELECT 1 SHUTDOWN WITH NOWAIT",
+        "SELECT 1 [x] DELETE FROM y",
+        "SELECT [a'] DROP TABLE t SELECT [']",   // ']' hides a quote only in T-SQL
+        "SELECT 1 DISABLE TRIGGER ALL ON t",
+        "SELECT (SELECT 1) TRUNCATE TABLE logs",
+        "SELECT 1 AS 'x' DROP TABLE t",          // string alias is not an AS slot
+        "SELECT 1 USE hint",                     // USE <db>, not OPTION (USE HINT(...))
+    };
+    for (const char *b : batches) {
+        const SqlVerdict v = strictVerdict(QString::fromUtf8(b));
+        const QByteArray l1 = QByteArray("strict rejects: ") + b;
+        const QByteArray l2 = QByteArray("strict flags mutation: ") + b;
+        check(l1.constData(), !v.readOnly);
+        check(l2.constData(), v.mutation);
+    }
+    const char *greens[] = {
+        "SELECT update_time FROM t",
+        "SELECT \"delete\" FROM t",
+        "SELECT t.drop FROM t",
+        "SELECT * FROM t WHERE status = 'DROP'",
+        "SELECT [update], [drop] FROM [order details]",
+        "SELECT x AS [delete], y AS drop FROM t",
+        "SELECT a.id FROM a INNER MERGE JOIN b ON a.id = b.id",
+        "SELECT * FROM t OPTION (RECOMPILE)",
+        "SELECT * FROM t WITH (NOLOCK) ORDER BY id OFFSET 5 ROWS FETCH NEXT 5 ROWS ONLY",
+        "SELECT disable, enable FROM t",
+        "SELECT * FROM t WHERE note = 'x -- DROP TABLE t'",
+    };
+    for (const char *g : greens) {
+        const SqlVerdict v = strictVerdict(QString::fromUtf8(g));
+        const QByteArray l = QByteArray("strict still read-only: ") + g;
+        check(l.constData(), v.singleStatement && v.readOnly && !v.mutation);
+    }
+
+    std::printf("== G3: backslash / dollar / MySQL-comment lexing cannot hide a ';' ==\n");
+    const char *hidden[] = {
+        "SELECT E'x\\''; DROP TABLE t",                 // Postgres E-string
+        "SELECT 'a\\' , ' ; DROP TABLE t; -- '",        // MySQL backslash escape
+        "SELECT \"a\\\" , \" ; DROP TABLE t; -- \"",    // MySQL "..." string
+        "SELECT 'x\\'; DROP TABLE t; -- '",
+        "SELECT $$'$$; DROP TABLE t; SELECT '$$'",      // Postgres dollar quoting
+        "SELECT $q$'$q$; DROP TABLE t; SELECT '$q$'",
+        "SELECT 1 # '\n; DROP TABLE t; -- '",           // MySQL '#' comment
+        "SELECT 1 --1 ; DROP TABLE t",                  // MySQL: '--1' is not a comment
+        "SELECT 1 /*! ; DROP TABLE t */",               // MySQL executable comment
+        "SELECT 1 /*!50000 INTO OUTFILE '/tmp/x' */",
+        "SELECT 'a\\' # \\' \n ; DROP TABLE t -- '",    // MySQL NO_BACKSLASH_ESCAPES
+    };
+    for (const char *h : hidden) {
+        const QByteArray l1 = QByteArray("rejected: ") + h;
+        const QByteArray l2 = QByteArray("mutation: ") + h;
+        expectRO(l1.constData(), QString::fromUtf8(h), false);
+        expectMut(l2.constData(), QString::fromUtf8(h), true);
+    }
+    const char *safe[] = {
+        "SELECT 'it''s' FROM t",
+        "SELECT 'C:\\data\\x' AS p FROM t",
+        "SELECT E'a\\nb' FROM t",
+        "SELECT a FROM t WHERE b LIKE '%\\_%'",
+        "SELECT price FROM t -- trailing note",
+        "SELECT j #> '{a}' FROM t",
+        "SELECT a$b FROM t",
+        "SELECT * FROM t WHERE status = 'DROP'",
+    };
+    for (const char *g : safe) {
+        const QByteArray l1 = QByteArray("still read-only: ") + g;
+        const QByteArray l2 = QByteArray("not a mutation: ") + g;
+        expectRO(l1.constData(), QString::fromUtf8(g), true);
+        expectMut(l2.constData(), QString::fromUtf8(g), false);
+    }
+
+    std::printf("== G4: a read-only SQLite connection is opened read-only ==\n");
+    QTemporaryDir dir;
+    if (!dir.isValid() || !QSqlDatabase::drivers().contains("QSQLITE")) {
+        check("temp dir + QSQLITE available", false);
+        return;
+    }
+    const QString path = dir.filePath("g4.db");
+    {
+        QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", "g4-setup");
+        db.setDatabaseName(path);
+        check("fixture db opens", db.open());
+        QSqlQuery q(db);
+        check("fixture table created", q.exec("CREATE TABLE t (id INTEGER)"));
+        db.close();
+    }
+    QSqlDatabase::removeDatabase("g4-setup");
+    auto insertVia = [&](bool readOnly, const QString &options) {
+        DbConnections::Record r;
+        r.name = "g4";
+        r.driver = "QSQLITE";
+        r.database = path;
+        r.options = options;
+        QString cname, err;
+        if (!DbConnections::open(r, &cname, &err, readOnly)) return QStringLiteral("open-failed");
+        bool ok;
+        {
+            QSqlQuery q(QSqlDatabase::database(cname));
+            ok = q.exec("INSERT INTO t VALUES (1)");
+        }
+        QSqlDatabase::removeDatabase(cname);
+        return ok ? QStringLiteral("inserted") : QStringLiteral("refused");
+    };
+    check("readOnly open REFUSES a raw INSERT", insertVia(true, QString()) == "refused");
+    check("readOnly + user options still refuses INSERT",
+          insertVia(true, "QSQLITE_BUSY_TIMEOUT=50") == "refused");
+    check("read-write open (approved mutation) still inserts",
+          insertVia(false, QString()) == "inserted");
 }
 
 int main(int argc, char **argv) {
@@ -523,6 +680,8 @@ int main(int argc, char **argv) {
         std::printf("    (classified %d chars in %lld ms)\n",
                     int(big.size()), static_cast<long long>(ms));
     }
+
+    testV0131Gaps();
 
     std::printf("\n=== Summary: %d passed, %d failed ===\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

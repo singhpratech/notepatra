@@ -237,6 +237,11 @@ bool open(const Record &r, QString *outConnectionName, QString *outError,
     QSqlDatabase db = QSqlDatabase::addDatabase(r.driver, cname);
     if (r.driver == QStringLiteral("QSQLITE")) {
         db.setDatabaseName(r.database);
+        QString opts = r.options.trimmed();
+        if (readOnly)  // engine-level guard: SQLite has no session read-only knob
+            opts += (opts.isEmpty() ? QString() : QStringLiteral(";"))
+                  + QStringLiteral("QSQLITE_OPEN_READONLY");
+        if (!opts.isEmpty()) db.setConnectOptions(opts);
     } else if (r.driver == QStringLiteral("QODBC")) {
         // v0.1.70 — QODBC fix. Qt's QODBC driver treats setDatabaseName as
         // either a DSN name (single token) OR a full DSN-less ODBC
@@ -306,22 +311,68 @@ bool open(const Record &r, QString *outConnectionName, QString *outError,
 // enforces a single statement, and scans every token (so DML embedded in a
 // CTE or wrapped in EXPLAIN is caught).
 
+// One engine family's string / comment syntax (classifySql lexes under each).
+struct LexMode {
+    bool backslashSingle = false;  // MySQL / legacy Postgres: '\' escapes in '...'
+    bool backslashDouble = false;  // MySQL (no ANSI_QUOTES): "..." is a string with escapes
+    bool backslashE = false;     // Postgres/DuckDB: '\' escapes only inside E'...'
+    bool dollarQuotes = false;   // Postgres/DuckDB: $tag$ ... $tag$ strings
+    bool mysqlComments = false;  // '#' comments, '--' needs whitespace, /*! */ is code
+    bool brackets = false;       // T-SQL: [identifier]
+};
+
+static bool isWordChar(QChar c) { return c.isLetterOrNumber() || c == QLatin1Char('_'); }
+
+// Quoted identifier placeholder; QID_<name> keeps "read_text"('...') visible.
+static QString quotedIdToken(const QString &name) {
+    if (name.isEmpty()) return QStringLiteral(" qid ");
+    for (const QChar c : name)
+        if (!isWordChar(c)) return QStringLiteral(" qid ");
+    return QStringLiteral(" qid_") + name + QLatin1Char(' ');
+}
+
 // Replace comments with a space and string / quoted-identifier literals with
 // neutral placeholders, so keywords appearing inside them can never be
 // mistaken for SQL verbs. Structural characters (';', parens) are preserved.
-static QString stripSqlNoise(const QString &sql) {
+static QString stripSqlNoise(const QString &sql, const LexMode &m = LexMode()) {
     QString out;
     out.reserve(sql.size());
     const int n = sql.size();
     int i = 0;
+    bool inExecComment = false;  // inside a MySQL /*! ... */ executable comment
     while (i < n) {
         const QChar c = sql[i];
-        if (c == QLatin1Char('-') && i + 1 < n && sql[i + 1] == QLatin1Char('-')) {
+        if (c == QLatin1Char('-') && i + 1 < n && sql[i + 1] == QLatin1Char('-')
+            && (!m.mysqlComments || i + 2 >= n || sql[i + 2].isSpace()
+                || sql[i + 2].category() == QChar::Other_Control)) {
             while (i < n && sql[i] != QLatin1Char('\n')) ++i;
             out += QLatin1Char(' ');
             continue;
         }
+        if (m.mysqlComments && c == QLatin1Char('#')) {
+            while (i < n && sql[i] != QLatin1Char('\n')) ++i;
+            out += QLatin1Char(' ');
+            continue;
+        }
+        if (inExecComment && c == QLatin1Char('*') && i + 1 < n && sql[i + 1] == QLatin1Char('/')) {
+            inExecComment = false;
+            i += 2;
+            out += QLatin1Char(' ');
+            continue;
+        }
         if (c == QLatin1Char('/') && i + 1 < n && sql[i + 1] == QLatin1Char('*')) {
+            if (m.mysqlComments && !inExecComment) {
+                int j = i + 2;
+                if (j < n && sql[j] == QLatin1Char('M')) ++j;  // MariaDB /*M! */
+                if (j < n && sql[j] == QLatin1Char('!')) {
+                    ++j;
+                    while (j < n && sql[j].isDigit()) ++j;     // optional version
+                    inExecComment = true;
+                    i = j;
+                    out += QLatin1Char(' ');
+                    continue;
+                }
+            }
             i += 2;
             while (i + 1 < n && !(sql[i] == QLatin1Char('*') && sql[i + 1] == QLatin1Char('/'))) ++i;
             i = (i + 1 < n) ? i + 2 : n;
@@ -329,8 +380,13 @@ static QString stripSqlNoise(const QString &sql) {
             continue;
         }
         if (c == QLatin1Char('\'')) {              // single-quoted string
+            const bool ePrefix = m.backslashE && i > 0
+                && (sql[i - 1] == QLatin1Char('E') || sql[i - 1] == QLatin1Char('e'))
+                && (i < 2 || !isWordChar(sql[i - 2]));
+            const bool bs = m.backslashSingle || ePrefix;
             ++i;
             while (i < n) {
+                if (bs && sql[i] == QLatin1Char('\\')) { i += 2; continue; }
                 if (sql[i] == QLatin1Char('\'')) {
                     if (i + 1 < n && sql[i + 1] == QLatin1Char('\'')) { i += 2; continue; }
                     ++i;
@@ -338,28 +394,56 @@ static QString stripSqlNoise(const QString &sql) {
                 }
                 ++i;
             }
-            out += QLatin1Char(' ');               // no word chars → drops out
+            out += QStringLiteral(" ' ");          // no word chars; breaks adjacency
             continue;
         }
         if (c == QLatin1Char('"')) {               // double-quoted identifier
-            ++i;
+            const int from = ++i;
+            int to = n;
             while (i < n) {
+                if (m.backslashDouble && sql[i] == QLatin1Char('\\')) { i += 2; continue; }
                 if (sql[i] == QLatin1Char('"')) {
                     if (i + 1 < n && sql[i + 1] == QLatin1Char('"')) { i += 2; continue; }
-                    ++i;
+                    to = i++;
                     break;
                 }
                 ++i;
             }
-            out += QStringLiteral(" qid ");         // neutral placeholder token
+            out += quotedIdToken(sql.mid(from, qMin(to, n) - from));
             continue;
         }
         if (c == QLatin1Char('`')) {               // backtick identifier (MySQL)
-            ++i;
+            const int from = ++i;
             while (i < n && sql[i] != QLatin1Char('`')) ++i;
+            const QString name = sql.mid(from, i - from);
             if (i < n) ++i;
-            out += QStringLiteral(" qid ");
+            out += quotedIdToken(name);
             continue;
+        }
+        if (m.brackets && c == QLatin1Char('[')) {  // T-SQL [identifier], ']]' escapes
+            const int from = ++i;
+            while (i < n) {
+                if (sql[i] == QLatin1Char(']')) {
+                    if (i + 1 < n && sql[i + 1] == QLatin1Char(']')) { i += 2; continue; }
+                    break;
+                }
+                ++i;
+            }
+            const QString name = sql.mid(from, i - from);
+            if (i < n) ++i;
+            out += quotedIdToken(name);
+            continue;
+        }
+        if (m.dollarQuotes && c == QLatin1Char('$') && (i == 0 || !isWordChar(sql[i - 1]))) {
+            int j = i + 1;
+            while (j < n && isWordChar(sql[j])) ++j;
+            if (j < n && sql[j] == QLatin1Char('$') && !(j > i + 1 && sql[i + 1].isDigit())) {
+                const QString tag = sql.mid(i, j - i + 1);   // "$tag$" or "$$"
+                const int close = sql.indexOf(tag, j + 1);
+                i = (close < 0) ? n : close + tag.size();
+                out += QLatin1Char(' ');
+                continue;
+            }
         }
         out += c;
         ++i;
@@ -402,6 +486,8 @@ struct StructToken {
                          // EXPLAIN / ANALYZE, or the OUTER-query leading token
                          // of a leading-CTE (WITH …) statement.
     bool callsFunction;  // the next significant char is '(' — a function call
+    bool afterDot = false;  // qualified name part (t.drop) — never a statement verb
+    bool afterAs = false;   // alias right after AS
 };
 
 // Tokenize an already-noise-stripped statement, tracking structural context.
@@ -443,7 +529,10 @@ static QVector<StructToken> structTokens(const QString &stmt) {
             int k = j;
             while (k < n && stmt[k].isSpace()) ++k;
             const bool call = (k < n && stmt[k] == QLatin1Char('('));
-            out.append({up, verb, call});
+            int b = i - 1;
+            while (b >= 0 && stmt[b].isSpace()) --b;
+            out.append({up, verb, call, b >= 0 && stmt[b] == QLatin1Char('.'),
+                        prevWord == QStringLiteral("AS")});
             if (atStart && up == QStringLiteral("WITH")) inWith = true;
             pendingOuterStart = false;  // consumed by the outer-query token
             prevWord = up;
@@ -618,11 +707,24 @@ static const QSet<QString> &settablePragmas() {
     return k;
 }
 
+// State-changing T-SQL verbs; all reserved, so a bare one can only begin a statement.
+static const QSet<QString> &tsqlBatchKeywords() {
+    static const QSet<QString> k = {
+        "INSERT", "UPDATE", "DELETE", "MERGE", "TRUNCATE", "CREATE", "DROP",
+        "ALTER", "GRANT", "REVOKE", "DENY", "EXEC", "EXECUTE", "SET", "USE",
+        "BEGIN", "COMMIT", "ROLLBACK", "SAVE", "BACKUP", "RESTORE", "BULK",
+        "DBCC", "KILL", "SHUTDOWN", "RECONFIGURE", "WAITFOR", "CHECKPOINT",
+        "SETUSER", "REVERT", "UPDATETEXT", "WRITETEXT", "ENABLE", "DISABLE"
+    };
+    return k;
+}
+
 // Classify one already-stripped statement. Sets *mutation / *readOnly and, on
 // rejection, *why.
 static void classifyOneStatement(const QString &stmt, bool *mutation,
                                  bool *readOnly, QString *why,
-                                 bool restrictFilesystem = false) {
+                                 bool restrictFilesystem = false,
+                                 bool strictBatch = false) {
     const QStringList toks = wordTokens(stmt);
     const QVector<StructToken> stoks = structTokens(stmt);
     *mutation = false;
@@ -647,11 +749,13 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
     // read-only AND flagged as a mutation.
     for (int idx = 0; idx < stoks.size(); ++idx) {
         const StructToken &tk = stoks[idx];
-        if (tk.callsFunction && sideEffectFunctions().contains(tk.text)) {
+        // "read_text"(...) / `load_file`(...) — a quoted name is still a call.
+        const QString fn = tk.text.startsWith(QLatin1String("QID_")) ? tk.text.mid(4) : tk.text;
+        if (tk.callsFunction && sideEffectFunctions().contains(fn)) {
             *mutation = true;
             if (why) *why = QStringLiteral(
                 "call to the side-effecting function '%1' requires approval")
-                .arg(tk.text);
+                .arg(fn);
             return;
         }
         // MCP run_sql path only: DuckDB filesystem-reading functions are a
@@ -659,9 +763,9 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
         // they leak arbitrary files. Reject call-form use; a column/string
         // literal of the same name (callsFunction==false) stays safe.
         if (restrictFilesystem && tk.callsFunction
-            && fileReadingFunctions().contains(tk.text)) {
+            && fileReadingFunctions().contains(fn)) {
             if (why) *why = QStringLiteral(
-                "filesystem-reading function '%1' is not allowed").arg(tk.text);
+                "filesystem-reading function '%1' is not allowed").arg(fn);
             return;
         }
         if (tk.text == QStringLiteral("NEXT") && idx + 2 < stoks.size()
@@ -670,6 +774,29 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
             *mutation = true;
             if (why) *why = QStringLiteral(
                 "NEXT VALUE FOR advances a sequence (a state change)");
+            return;
+        }
+    }
+
+    // SQL Server runs `SELECT 1 DROP TABLE x` as two statements (no ';' needed).
+    if (strictBatch) {
+        for (int idx = 0; idx < stoks.size(); ++idx) {
+            const StructToken &tk = stoks[idx];
+            if (tk.afterDot || tk.afterAs || !tsqlBatchKeywords().contains(tk.text)) continue;
+            const QString next = (idx + 1 < stoks.size()) ? stoks[idx + 1].text : QString();
+            if (tk.text == QStringLiteral("MERGE")
+                && (next == QStringLiteral("JOIN") || next == QStringLiteral("UNION")))
+                continue;  // INNER MERGE JOIN / OPTION (MERGE JOIN|UNION)
+            if (tk.text == QStringLiteral("USE") && next == QStringLiteral("HINT")
+                && stoks[idx + 1].callsFunction)
+                continue;  // OPTION (..., USE HINT (...))
+            if ((tk.text == QStringLiteral("ENABLE") || tk.text == QStringLiteral("DISABLE"))
+                && next != QStringLiteral("TRIGGER"))
+                continue;
+            *mutation = true;
+            if (why) *why = QStringLiteral(
+                "T-SQL statement keyword '%1' starts another statement "
+                "(this driver runs batches without ';')").arg(tk.text);
             return;
         }
     }
@@ -750,9 +877,11 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
     *readOnly = true;
 }
 
-SqlVerdict classifySql(const QString &sql, bool restrictFilesystem) {
+// Classify under one lexing mode.
+static SqlVerdict classifyLexed(const QString &sql, const LexMode &mode,
+                                bool restrictFilesystem, bool strictBatch) {
     SqlVerdict v;
-    const QStringList stmts = splitStatements(stripSqlNoise(sql));
+    const QStringList stmts = splitStatements(stripSqlNoise(sql, mode));
     if (stmts.isEmpty()) {
         v.reason = QStringLiteral("empty query");
         return v;
@@ -765,7 +894,7 @@ SqlVerdict classifySql(const QString &sql, bool restrictFilesystem) {
     for (const QString &st : stmts) {
         bool mut = false, ro = false;
         QString why;
-        classifyOneStatement(st, &mut, &ro, &why, restrictFilesystem);
+        classifyOneStatement(st, &mut, &ro, &why, restrictFilesystem, strictBatch);
         if (mut) anyMutation = true;
         if (!ro) {
             allReadOnly = false;
@@ -784,6 +913,42 @@ SqlVerdict classifySql(const QString &sql, bool restrictFilesystem) {
                    : firstReason);
     }
     return v;
+}
+
+SqlVerdict classifySql(const QString &sql, bool restrictFilesystem, bool strictBatch) {
+    // Std, [brackets], Postgres, legacy PG, MySQL x3: read-only only if all agree.
+    static const QVector<LexMode> modes = [] {
+        LexMode std_, brk, pg, pgOld, my, myAnsi, myNoBs;
+        brk.brackets = true;
+        pg.backslashE = pg.dollarQuotes = true;
+        pgOld.backslashSingle = pgOld.dollarQuotes = true;
+        my.backslashSingle = my.backslashDouble = my.mysqlComments = true;
+        myAnsi.backslashSingle = myAnsi.mysqlComments = true;
+        myNoBs.mysqlComments = true;
+        return QVector<LexMode>{std_, brk, pg, pgOld, my, myAnsi, myNoBs};
+    }();
+
+    SqlVerdict out;
+    out.singleStatement = true;
+    out.readOnly = true;
+    for (const LexMode &m : modes) {
+        // The batch-keyword scan models SQL Server's own (bracket-aware) lexing.
+        const SqlVerdict v = classifyLexed(sql, m, restrictFilesystem, strictBatch && m.brackets);
+        out.mutation = out.mutation || v.mutation;
+        out.singleStatement = out.singleStatement && v.singleStatement;
+        if (!v.readOnly && out.readOnly) {
+            out.readOnly = false;
+            out.reason = v.reason;  // first (standard-first) rejection wins
+        }
+    }
+    // A file-reader rejection returns early; keep the full mutation verdict.
+    if (restrictFilesystem && !out.mutation)
+        out.mutation = classifySql(sql, false, strictBatch).mutation;
+    return out;
+}
+
+bool driverRunsUnterminatedBatches(const QString &driver) {
+    return driver == QStringLiteral("QODBC") || driver == QStringLiteral("QODBC3");
 }
 
 bool isReadOnlyQuery(const QString &sql) {
@@ -871,6 +1036,8 @@ bool openDuckDbForRecord(const Record &r, bool allowMutation,
     QString openPath = QStringLiteral(":memory:");
     QString registerCsv, registerParquet, registerJson;
     const bool isS3 = dbField.startsWith("s3://", Qt::CaseInsensitive);
+    const bool isRemote = isS3 || dbField.startsWith("http://", Qt::CaseInsensitive)
+                       || dbField.startsWith("https://", Qt::CaseInsensitive);
     // Only an actual on-disk DuckDB *database file* is opened READ_ONLY (and
     // only when not mutating). The :memory: scratch DB used to hold CSV /
     // Parquet / JSON views must stay writable for ingestion.
@@ -920,8 +1087,18 @@ bool openDuckDbForRecord(const Record &r, bool allowMutation,
     // file. This is the authoritative control that closes the MCP run_sql
     // arbitrary-file-read hole (replacement scan + quoted read_text/read_csv_auto
     // /read_blob/glob), independent of the SQL string classifier.
-    if (sandbox && !client.disableExternalAccess(&openErr))
+    if (sandbox && isRemote) {
+        // Remote targets need httpfs: disable only the local disk, then lock settings.
+        if (!isS3) client.installAndLoad(QStringLiteral("httpfs"));  // best effort
+        for (const QString &stmt : {QStringLiteral("SET disabled_filesystems='LocalFileSystem'"),
+                                    QStringLiteral("SET lock_configuration=true")}) {
+            const DuckDb::ResultSet rs = client.exec(stmt, 0);
+            if (!rs.errorMessage.isEmpty())
+                return fail(rs.errorMessage, QStringLiteral("open_failed"));
+        }
+    } else if (sandbox && !client.disableExternalAccess(&openErr)) {
         return fail(openErr, QStringLiteral("open_failed"));
+    }
     return true;
 }
 #endif  // NOTEPATRA_HAVE_DUCKDB
@@ -957,8 +1134,9 @@ QueryResult runQuery(const Record &r,
     // statement, no CTE-embedded DML, no EXPLAIN-wrapped DML, no SELECT
     // INTO, no stacking, restricted PRAGMA). allowMutation=true bypasses it
     // only after the ai_tools human-approval gate has cleared the write.
-    if (!allowMutation && !isReadOnlyQuery(sql)) {
-        const SqlVerdict v = classifySql(sql);
+    const SqlVerdict v = allowMutation ? SqlVerdict()
+        : classifySql(sql, r.sandboxFilesystem, driverRunsUnterminatedBatches(r.driver));
+    if (!allowMutation && !(v.singleStatement && v.readOnly)) {
         out.error = QStringLiteral(
             "Only read-only, single-statement queries are allowed by default "
             "(%1). To run a mutation, it must go through the approval gate "
