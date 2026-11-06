@@ -4,6 +4,7 @@
 #include "config.h"
 #include "fonts.h"
 #include "tool_colors.h"
+#include "shortcut_hints.h"
 
 #include <QCheckBox>
 #include <QCoreApplication>
@@ -19,6 +20,7 @@
 #include <QPixmap>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QStyle>
 #include <QVBoxLayout>
 #include <functional>
 
@@ -337,7 +339,7 @@ void WelcomeWidget::buildRecentFiles(QVBoxLayout *parent) {
     parent->addWidget(list);
 }
 
-QWidget *WelcomeWidget::makeFeatureCard(const QString &icon, const QString &title,
+QWidget *WelcomeWidget::makeFeatureCard(QStyle::StandardPixmap icon, const QString &title,
                                         const QString &description, const QString &actionId,
                                         const QString &accentColor) {
     const auto p = welcomePalette();
@@ -372,17 +374,11 @@ QWidget *WelcomeWidget::makeFeatureCard(const QString &icon, const QString &titl
     layout->setContentsMargins(18, 16, 18, 16);
     layout->setSpacing(8);
 
-    auto *iconLabel = new QLabel(icon);
-    // v0.1.55 — emoji-aware font for the welcome card icons (🌐 💡 🔀 🔎 🤖
-    // etc.). Without setFamilies, Linux's primary UI family (DejaVu Sans /
-    // Cantarell / Inter) has no color-emoji glyphs and renders these as
-    // tofu boxes □. notepatraUiFontWithEmoji adds the emoji fallback
-    // chain (Noto Color Emoji on Linux, Apple Color / Segoe UI Emoji on
-    // macOS / Windows) so Qt walks the list and finds a glyph.
-    QFont iconFont = notepatraUiFontWithEmoji();
-    iconFont.setPointSize(22);
-    iconLabel->setFont(iconFont);
-    iconLabel->setStyleSheet(QString("background: transparent; color: %1;").arg(accentColor));
+    // QStyle icons, never emoji glyphs: those tofu without a colour-emoji font.
+    auto *iconLabel = new QLabel;
+    iconLabel->setPixmap(card->style()->standardIcon(icon).pixmap(28, 28));
+    iconLabel->setFixedHeight(32);
+    iconLabel->setStyleSheet("background: transparent;");
 
     auto *titleLabel = new QLabel(title);
     QFont tFont = notepatraUiFont();
@@ -426,7 +422,8 @@ void WelcomeWidget::buildFeatureCards(QVBoxLayout *parent) {
     grid->setContentsMargins(0, 0, 0, 0);
 
     struct Feat {
-        QString icon, title, desc, actionId, accent;
+        QStyle::StandardPixmap icon;
+        QString title, desc, actionId, accent;
     };
     // v0.1.94 — accent hex sourced from notepatraToolAccent() so the
     // Welcome card matches the tab strip AND the feature-toolbar icon
@@ -434,44 +431,55 @@ void WelcomeWidget::buildFeatureCards(QVBoxLayout *parent) {
     auto hex = [](const char *key) {
         return notepatraToolAccent(QString::fromLatin1(key)).name();
     };
+    auto key = [](const char *k) { return Shortcuts::nativeText(QKeySequence(QString::fromLatin1(k))); };
     const QList<Feat> features = {
         // Project Search promoted to slot 1 — the single most-used
         // productivity feature. AI Assistant follows, then the rest.
-        {"🔎", "Project Search (Ctrl+Shift+G)",
+        {QStyle::SP_FileDialogContentsView, QString("Project Search (%1)").arg(key("Ctrl+Shift+G")),
          "Lightning-fast recursive search across file names AND contents. Any size, any language. Exact line:col coordinates — double-click a match to jump the caret to the exact character.",
          "ProjectSearch", hex("ProjectSearch")},
-        {"🤖", "AI Assistant",
+        {QStyle::SP_MessageBoxInformation, "AI Assistant",
          "Local-first AI — Ollama · llama.cpp (GGUF) · LM Studio · any OpenAI-compatible server. Cloud backends optional: OpenRouter, OpenAI, Azure, Ollama Cloud. Explain · Find Bugs · Refactor · Tests. Zero telemetry.",
          "AIAssistant", hex("AI")},
-        {"⌨", "Terminal",
+        {QStyle::SP_ComputerIcon, "Terminal",
          "Built-in shell tab. Run git, npm, make, cargo — without leaving the editor.",
          "Terminal", hex("Terminal")},
-        {"🔀", "Compare",
+        {QStyle::SP_FileDialogDetailedView, "Compare",
          "Word-level diff with red/green intra-line highlighting. Pick any two tabs or any file on disk.",
          "Compare", hex("Compare")},
-        {"{ }", "JSON Tools",
+        {QStyle::SP_FileIcon, "JSON Tools",
          "Format · Minify · Fix+Format · AI Fix. Tolerant parser fixes missing commas, unquoted keys, single quotes.",
          "JSONTools", hex("JSON")},
-        {"</>", "HTML Tools",
+        {QStyle::SP_FileLinkIcon, "HTML Tools",
          "Format with configurable indent, minify, auto-close unclosed tags, AI Fix suggestions.",
          "HTMLTools", hex("HTML")},
-        {"SQL", "SQL Formatter",
+        {QStyle::SP_DriveHDIcon, "SQL Formatter",
          "T-SQL · PL/SQL · MySQL · PostgreSQL · SQLite. UPPERCASE/lowercase keywords, custom indent.",
          "SQLFormatter", hex("SQL")},
-        {"{ }", "Bracket Tools",
+        {QStyle::SP_BrowserReload, "Bracket Tools",
          "Checks for mismatched brackets / braces / parens. Auto-fix + AI Fix for anything the parser can't repair.",
          "BracketTools", hex("Bracket")},
-        {"🌐", "REST Client",
+        {QStyle::SP_DriveNetIcon, "REST Client",
          "Built-in HTTP request tester. Pretty-prints JSON responses. Import curl commands.",
          "RESTClient", hex("REST")},
-        {"📝", "Noter (Ctrl+Alt+N)",
+        {QStyle::SP_DirOpenIcon, QString("Noter (%1)").arg(key("Ctrl+Alt+N")),
          "Meeting notes. AI Extract pulls a summary + action items; reminders fire while Notepatra runs (Noter tab not required), all in a central Reminders list. Local-first, no bots.",
          "Noter", hex("Noter")},
-        // ASCII glyph, not an emoji — an emoji codepoint tofus on Linux
-        // boxes without a colour-emoji font.
-        {"(*)", "Password Generator",
+        {QStyle::SP_DialogYesButton, "Password Generator",
          "Random passwords, word passphrases and SSH key pairs (Ed25519 / ECDSA / RSA) from the OS random source, with a real entropy readout. Fully offline · nothing written to disk unless you save a key · the clipboard clears itself after 30 seconds.",
          "PasswordGenerator", hex("Password")},
+        {QStyle::SP_FileDialogInfoView, QString("Preview Pane (%1)").arg(key("Ctrl+Shift+V")),
+         QString("Live Markdown and HTML preview beside the editor, a read-only Jupyter .ipynb viewer, and SQL notebook cells (split on \"-- %%\" lines) you run one at a time with %1.").arg(key("Ctrl+Return")),
+         "PreviewPane", hex("PreviewPane")},
+        {QStyle::SP_FileDialogListView, "Data Analyst",
+         "The Data mode of the AI dock: ask about your CSV files and saved database connections in plain words and get answers with charts inline. Add sources with Manage Connections…",
+         "DataAnalyst", hex("DataAnalyst")},
+        {QStyle::SP_DesktopIcon, "Diagram",
+         "Write flow charts, ER diagrams and system designs as .npd text with a live canvas beside it. AI Generate, Mermaid import, PNG and PDF export. Tools › Diagram.",
+         "Diagram", hex("Diagram")},
+        {QStyle::SP_DirLinkIcon, "MCP",
+         "The notepatra-mcp sidecar lets Claude Desktop and other MCP clients read and edit your open tabs, local only. Every write waits for your Approve in this window. Click for the setup guide.",
+         "MCP", hex("MCP")},
     };
 
     int col = 0, row = 0;
@@ -499,9 +507,8 @@ QWidget *WelcomeWidget::makeShortcutRow(const QString &keys, const QString &acti
     kb->setFont(kbFont);
     kb->setStyleSheet(QString(
         "background: %1; color: %2; border-radius: 4px; "
-        "padding: 2px 8px; min-width: 140px;"
+        "padding: 2px 8px; min-width: 216px; max-width: 216px;"
     ).arg(p.shortcutBg, p.shortcutText));
-    kb->setFixedWidth(160);
 
     auto *act = new QLabel(action);
     QFont actFont = notepatraUiFont();
@@ -531,29 +538,34 @@ void WelcomeWidget::buildShortcutsSection(QVBoxLayout *parent) {
     grid->setHorizontalSpacing(40);
     grid->setVerticalSpacing(4);
 
-    struct SC { QString keys, action; };
+    struct SC { QList<QKeySequence> keys; QString action; };
+    auto ks = [](const char *k) { return QKeySequence(QString::fromLatin1(k)); };
     const QList<SC> shortcuts = {
-        {"Ctrl+N",         "New file"},
-        {"Ctrl+O",         "Open file"},
-        {"Ctrl+S",         "Save"},
-        {"Ctrl+Shift+S",   "Save As…"},
-        {"Ctrl+Alt+S",     "Save All"},
-        {"Ctrl+W",         "Close tab"},
-        {"Ctrl+F",         "Find"},
-        {"Ctrl+H",         "Replace"},
-        {"Ctrl+G",         "Go to line"},
-        {"Ctrl+D",         "Duplicate line"},
-        {"Ctrl+/",         "Toggle comment"},
-        {"Ctrl+B",         "Jump to matching brace"},
-        {"F3 / Shift+F3",  "Find next / previous"},
-        {"Ctrl+Shift+A",   "AI Assistant"},
-        {"Ctrl+`",         "Terminal"},
-        {"Alt+0",          "Fold all"},
+        {{ks("Ctrl+N")},              "New file"},
+        {{ks("Ctrl+O")},              "Open file"},
+        {{ks("Ctrl+S")},              "Save"},
+        {{ks("Ctrl+Shift+S")},        "Save As…"},
+        {{ks("Ctrl+Alt+S")},          "Save All"},
+        {{ks("Ctrl+W")},              "Close tab"},
+        {{ks("Ctrl+F")},              "Find"},
+        {{Shortcuts::replace()},      "Replace"},
+        {{ks("Ctrl+G")},              "Go to line"},
+        {{ks("Ctrl+D")},              "Duplicate line"},
+        {{ks("Ctrl+/")},              "Toggle comment"},
+        {{ks("Ctrl+B")},              "Jump to matching brace"},
+        {{ks("F3"), ks("Shift+F3")},  "Find next / previous"},
+        {Shortcuts::aiAssistant(),    "AI Assistant"},
+        {{Shortcuts::terminal()},     "Terminal"},
+        {{ks("Alt+0")},               "Fold all"},
     };
 
     int col = 0, rowIdx = 0;
     for (const SC &sc : shortcuts) {
-        grid->addWidget(makeShortcutRow(sc.keys, sc.action), rowIdx, col);
+        const QString keys = sc.action.contains(QLatin1Char('/'))
+                                 ? Shortcuts::nativeText(sc.keys.value(0)) + " / "
+                                       + Shortcuts::nativeText(sc.keys.value(1))
+                                 : Shortcuts::hint(sc.keys);
+        grid->addWidget(makeShortcutRow(keys, sc.action), rowIdx, col);
         if (++col >= 2) { col = 0; ++rowIdx; }
     }
 
@@ -576,7 +588,7 @@ void WelcomeWidget::buildFooter(QVBoxLayout *parent) {
     row->setSpacing(16);
 
     auto *hint = new QLabel(
-        "💡 Tip: run <code>ollama pull qwen2.5-coder:3b</code> for a local AI Assistant. "
+        "Tip: run <code>ollama pull qwen2.5-coder:3b</code> for a local AI Assistant. "
         "With Ollama, your code stays on your machine. Cloud backends "
         "(OpenAI, OpenRouter, Azure, Ollama Cloud) are available too — opt-in.");
     QFont hintFont = notepatraUiFont();

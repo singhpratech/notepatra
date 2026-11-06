@@ -308,6 +308,7 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include <QDesktopServices>
 #include <QUrl>
 #include <Qsci/qsciscintilla.h>
+#include "shortcut_hints.h"
 
 static QAction *findActionByPrefix(QObject *root, const QString &prefix) {
     for (QAction *action : root->findChildren<QAction *>()) {
@@ -1008,6 +1009,36 @@ ul { margin-top: 4px; }
 <li><b>Randomness</b> comes from the operating system's random source through the Rust core, for passwords, passphrases and keys alike.</li>
 </ul>
 
+<h3>Preview Pane</h3>
+<ul>
+<li><b>View &gt; Preview Pane</b> (<code>%7</code>, or <b>Preview</b> in the icon row) opens a pane beside the editor that renders the current tab and follows you when you switch tabs.</li>
+<li><b>Markdown</b> and <b>HTML</b> tabs render live as you type.</li>
+<li><b>Jupyter notebooks</b> (<code>.ipynb</code>) show read-only: markdown and code cells with their saved outputs.</li>
+<li><b>SQL notebooks:</b> a SQL file split on <code>-- %%</code> lines becomes a list of cells. Pick a saved connection, then press <b>Run</b> on a cell, <b>Run All</b>, or <code>%8</code> in the editor to run the cell at the cursor. Cells run one at a time.</li>
+</ul>
+
+<h3>Data Analyst</h3>
+<ul>
+<li>A mode of the AI dock: open the dock (<code>%3</code>) and choose <b>Data</b>. Ask about your data in plain words; the assistant queries CSV files and your saved database connections and draws charts inline in the chat.</li>
+<li>Data mode needs at least one saved connection. Add one with <b>Manage Connections…</b> in the Data row: SQLite, PostgreSQL, MySQL or SQL Server, plus DuckDB in the Full edition.</li>
+</ul>
+
+<h3>Diagram</h3>
+<ul>
+<li><b>Tools &gt; Diagram — Flow / ER / System (.npd)</b> (or <b>Diagram</b> in the icon row) toggles a Diagram tab: <code>.npd</code> text on one side, a live canvas on the other.</li>
+<li><b>New</b> starts from a Flow chart, ER diagram or System design template. <b>AI Generate</b> turns a description into <code>.npd</code> that you review before it is inserted; <b>Import Mermaid</b> converts a pasted Mermaid flowchart.</li>
+<li><b>Export</b> writes PNG, JPEG or PDF, plus SVG and HTML when the build includes Qt SVG.</li>
+</ul>
+
+<h3>MCP sidecar (notepatra-mcp)</h3>
+<ul>
+<li><code>notepatra-mcp</code> is a separate, optional program that lets Claude Desktop, Claude Code and other MCP clients see your open tabs, search, read Noter notes and, with your approval, edit and save.</li>
+<li>Install it with <code>cargo install notepatra-mcp</code> or from the release page, then register it with your client using the <code>--socket</code> flag so it talks to the running editor.</li>
+<li>It is local only: the client starts it over stdio and it reaches Notepatra through a per-user local socket (a named pipe on Windows).</li>
+<li>Every write shows an <b>Approve / Deny</b> card inside Notepatra and is denied automatically if you do not answer. Credential files (SSH keys, <code>.env</code>, <code>*.pem</code> and similar) are never readable through it.</li>
+<li>Setup snippets for each client: <a href="https://notepatra.org/mcp.html">notepatra.org/mcp.html</a>.</li>
+</ul>
+
 <h2>Tools, Utilities, and Panels</h2>
 <ul>
 <li><b>Markdown tools:</b> convert selections into lists, tables, headings, links, and code blocks.</li>
@@ -1030,17 +1061,23 @@ ul { margin-top: 4px; }
 <h2>Useful Shortcuts</h2>
 <ul>
 <li><code>Ctrl+N</code> new file, <code>Ctrl+O</code> open, <code>Ctrl+S</code> save, <code>Ctrl+W</code> close tab</li>
-<li><code>Ctrl+F</code> find, <code>Ctrl+H</code> replace, <code>Ctrl+Shift+F</code> find in files, <code>Ctrl+G</code> go to line</li>
-<li><code>Ctrl+Shift+A</code> AI Assistant, <code>Ctrl+`</code> Terminal, <code>Ctrl+Shift+R</code> REST Client, <code>Ctrl+Shift+E</code> Workspace</li>
+<li><code>Ctrl+F</code> find, <code>%4</code> replace, <code>Ctrl+Shift+F</code> find in files, <code>Ctrl+G</code> go to line</li>
+<li><code>%3</code> AI Assistant, <code>%5</code> Terminal, <code>Ctrl+Shift+R</code> REST Client, <code>Ctrl+Shift+E</code> Workspace</li>
 <li><code>Ctrl+Alt+N</code> toggle Noter, <code>Ctrl+Alt+M</code> new note in Noter (full Noter shortcut list in the Noter section above)</li>
-<li><code>F11</code> full screen, <code>Ctrl+=</code> / <code>Ctrl+-</code> zoom, <code>Ctrl+0</code> reset zoom</li>
+<li><code>%6</code> full screen, <code>Ctrl+=</code> / <code>Ctrl+-</code> zoom, <code>Ctrl+0</code> reset zoom</li>
 </ul>
 
 <h2>Practical Tip</h2>
 <p>If you are unsure where a feature lives, first check the top <b>?</b> menu for this guide and the shortcut list. Then use the icon row for the main workflows and the <b>Features</b>, <b>Tools</b>, and <b>Plugins</b> menus for the deeper editing and utility commands.</p>
 </body>
 </html>
-)HTML").arg(notepatraUiCssFamily(), notepatraCodeCssFamily());
+)HTML").arg(notepatraUiCssFamily(), notepatraCodeCssFamily(),
+                Shortcuts::aiAssistantHint().toHtmlEscaped(),
+                Shortcuts::nativeText(Shortcuts::replace()).toHtmlEscaped(),
+                Shortcuts::nativeText(Shortcuts::terminal()).toHtmlEscaped(),
+                Shortcuts::nativeText(Shortcuts::fullScreen()).toHtmlEscaped(),
+                Shortcuts::nativeText(QKeySequence("Ctrl+Shift+V")).toHtmlEscaped(),
+                Shortcuts::nativeText(QKeySequence(Qt::CTRL | Qt::Key_Return)).toHtmlEscaped());
 }
 
 static void showRichHelpDialog(QWidget *parent, const QString &title, const QString &html) {
@@ -3401,7 +3438,8 @@ void MainWindow::buildMenus() {
     m_recentMenu = file->addMenu("Recent &Files");
     updateRecentMenu();
     file->addSeparator();
-    file->addAction("E&xit", this, &QMainWindow::close, QKeySequence("Alt+F4"));
+    auto *exitAct = file->addAction("E&xit", this, &QMainWindow::close, Shortcuts::quit());
+    exitAct->setMenuRole(QAction::QuitRole);
 
     // ═══ EDIT ═══
     auto *edit = mb->addMenu("&Edit");
@@ -3590,7 +3628,7 @@ void MainWindow::buildMenus() {
         else FD()->showFind();
     }, QKeySequence("Shift+F3"));
     search->addSeparator();
-    search->addAction("&Replace...", this, [FD]() { FD()->showReplace(); }, QKeySequence("Ctrl+H"));
+    search->addAction("&Replace...", this, [FD]() { FD()->showReplace(); }, Shortcuts::replace());
     search->addAction("&Mark...", this, [FD]() { FD()->showMark(); });
     search->addSeparator();
     search->addAction("&Go to Line...", this, [FD]() { FD()->showGoto(); }, QKeySequence("Ctrl+G"));
@@ -3642,7 +3680,7 @@ void MainWindow::buildMenus() {
         setWindowFlags(flags ^ Qt::WindowStaysOnTopHint);
         show();
     })->setCheckable(true);
-    view->addAction("Toggle Full-Screen Mode", this, [this]() {
+    auto *fullScreenAct = view->addAction("Toggle Full-Screen Mode", this, [this]() {
         isFullScreen() ? showNormal() : showFullScreen();
     }, QKeySequence("F11"));
     m_previewAct = view->addAction("Preview Pane    Ctrl+Shift+V");
@@ -3938,11 +3976,11 @@ void MainWindow::buildMenus() {
     // spawning a new editor tab. One chat, always in the same place, so
     // switching between files doesn't reset the conversation. Matches
     // the Cursor / VS Code layout the user asked for.
-    // v0.1.70 — shortcut moved from Ctrl+Shift+A → Ctrl+Q (user preference;
-    // closer to left hand). Both still register the same toggle.
-    auto *aiAct = feat->addAction("AI Assistant      Ctrl+Q");
+    // v0.1.70 — Ctrl+Q + Ctrl+Shift+A; macOS keeps only the latter (Cmd+Q = Quit).
+    auto *aiAct = feat->addAction("AI Assistant");
+    aiAct->setObjectName("actAiAssistant");
     aiAct->setCheckable(true);
-    aiAct->setShortcuts({QKeySequence("Ctrl+Q"), QKeySequence("Ctrl+Shift+A")});
+    aiAct->setShortcuts(Shortcuts::aiAssistant());
     aiAct->setStatusTip("Toggle the AI Assistant dock (right side). Persistent chat that sees all your open files + workspace. Configure backends in Settings → Preferences → AI.");
     connect(aiAct, &QAction::triggered, this, [this, aiAct]() {
         toggleAiDock();
@@ -4015,8 +4053,8 @@ void MainWindow::buildMenus() {
     // --- Terminal ---
     // Not checkable — every trigger opens a NEW terminal tab, so a
     // checked state would lie about visibility.
-    auto *termAct = feat->addAction("Terminal                  Ctrl+`");
-    termAct->setShortcut(QKeySequence("Ctrl+`"));
+    auto *termAct = feat->addAction("Terminal");
+    termAct->setShortcut(Shortcuts::terminal());
     termAct->setStatusTip("Opens a terminal in a new tab.");
     connect(termAct, &QAction::triggered, this, [this, E]() {
         auto *term = new TerminalWidget;
@@ -4382,7 +4420,7 @@ void MainWindow::buildMenus() {
 
     // ═══ SETTINGS ═══
     auto *settings = mb->addMenu("&Settings");
-    settings->addAction("&Preferences...", this, [this]() {
+    auto *prefsAct = settings->addAction("&Preferences...", this, [this]() {
         PreferencesDialog dlg(this);
         // v0.1.42 — when the user clicks OK / Apply, propagate Config
         // to every editor + chrome (toolbar, tab bar, etc.). Pre-v0.1.42
@@ -4392,6 +4430,7 @@ void MainWindow::buildMenus() {
                          this, &MainWindow::applyConfigEverywhere);
         dlg.exec();
     });
+    prefsAct->setMenuRole(QAction::PreferencesRole);
     // v0.1.75 — runtime font-pack installer. Lite binary stays lite;
     // ~27 premium fonts (JetBrains Mono / Fira Code / Cascadia / IBM
     // Plex / Geist / Inter / Source Serif …) are fetched on demand to
@@ -5613,6 +5652,14 @@ void MainWindow::buildMenus() {
         showRichHelpDialog(this, "Notepatra Help Guide", featureGuideHtml());
     });
     guideAct->setStatusTip("Open the built-in help guide to Notepatra's features and tools");
+    auto *docsAct = help->addAction("Documentation", this, []() {
+        QDesktopServices::openUrl(QUrl("https://notepatra.org/docs.html"));
+    });
+    docsAct->setObjectName("actHelpDocumentation");
+    docsAct->setStatusTip("Open the online documentation at notepatra.org/docs.html");
+    auto *welcomeAct = help->addAction("Show Welcome Tab", this, [this]() { showWelcomeTab(); });
+    welcomeAct->setObjectName("actShowWelcomeTab");
+    welcomeAct->setStatusTip("Open the Welcome tab (or switch to it if it is already open)");
 
     // AI help entry — explains the three supported backends in one
     // place so new users don't wonder "do I need Ollama? What's llama.cpp?"
@@ -5620,7 +5667,7 @@ void MainWindow::buildMenus() {
         QMessageBox msg(this);
         msg.setWindowTitle("How the AI Assistant works");
         msg.setTextFormat(Qt::RichText);
-        msg.setText(
+        msg.setText(QString(
             "<h3>Notepatra AI is local-first</h3>"
             "<p>By default, your code <b>never leaves your machine</b>. No mandatory "
             "API key, no telemetry. The default backend is local (Ollama / llama.cpp).</p>"
@@ -5646,10 +5693,10 @@ void MainWindow::buildMenus() {
             "<p>For CPU-only / 16 GB laptops, Notepatra auto-picks the "
             "smallest installed model: qwen2.5-coder:3b → qwen2.5:3b → "
             "gemma2:2b → gemma3:4b → llama3.2:3b.</p>"
-            "<p>Shortcut: <b>Ctrl+Shift+A</b></p>"
+            "<p>Shortcut: <b>%1</b></p>"
             "<p>Full docs: <a href='https://notepatra.org/docs.html#ai-overview'>"
             "notepatra.org/docs.html#ai-overview</a></p>"
-        );
+        ).arg(Shortcuts::aiAssistantHint().toHtmlEscaped()));
         msg.setStandardButtons(QMessageBox::Ok);
         msg.exec();
     })->setStatusTip("Explains Notepatra's three AI backends: Ollama, llama.cpp, OpenAI-compat.");
@@ -5657,7 +5704,10 @@ void MainWindow::buildMenus() {
     help->addSeparator();
 
     help->addAction("Keyboard Shortcuts", this, [this]() {
-        QMessageBox::information(this, "Keyboard Shortcuts",
+        const auto col = [](const QKeySequence &k) {
+            return Shortcuts::nativeText(k).leftJustified(15) + QLatin1Char(' ');
+        };
+        QMessageBox::information(this, "Keyboard Shortcuts", QString(
             "FILE\n"
             "  Ctrl+N          New\n"
             "  Ctrl+O          Open\n"
@@ -5677,7 +5727,7 @@ void MainWindow::buildMenus() {
             "  Ctrl+U          lowercase\n\n"
             "SEARCH\n"
             "  Ctrl+F          Find\n"
-            "  Ctrl+H          Replace\n"
+            "  %1Replace\n"
             "  Ctrl+Shift+F    Find in Files\n"
             "  F3              Find Next\n"
             "  Shift+F3        Find Previous\n"
@@ -5686,15 +5736,15 @@ void MainWindow::buildMenus() {
             "  Ctrl+F2         Toggle Bookmark\n"
             "  F2              Next Bookmark\n\n"
             "VIEW\n"
-            "  F11             Full Screen\n"
+            "  %2Full Screen\n"
             "  Ctrl+=          Zoom In\n"
             "  Ctrl+-          Zoom Out\n"
             "  Ctrl+0          Zoom Reset\n"
             "  Alt+0           Fold All\n"
             "  Alt+Shift+0     Unfold All\n\n"
             "PANELS\n"
-            "  Ctrl+`          Terminal\n"
-            "  Ctrl+Shift+A    AI Assistant\n"
+            "  %3Terminal\n"
+            "  %4AI Assistant\n"
             "  Ctrl+Shift+R    REST Client\n"
             "  Ctrl+Shift+E    File Explorer\n"
             "  Ctrl+Shift+M    Record Macro (Macro menu)\n\n"
@@ -5702,7 +5752,10 @@ void MainWindow::buildMenus() {
             "  Ctrl+Tab        Next Tab\n"
             "  Ctrl+Shift+Tab  Previous Tab\n"
             "  Middle-click    Close Tab\n"
-            "  Double-click    New Tab (on empty area)");
+            "  Double-click    New Tab (on empty area)")
+            .arg(col(Shortcuts::replace()), col(Shortcuts::fullScreen()),
+                 col(Shortcuts::terminal()),
+                 Shortcuts::aiAssistantHint().leftJustified(15) + QLatin1Char(' ')));
     });
 
     help->addSeparator();
@@ -5730,7 +5783,7 @@ void MainWindow::buildMenus() {
 
     help->addSeparator();
 
-    help->addAction("About Notepatra", this, [this]() {
+    auto *aboutAct = help->addAction("About Notepatra", this, [this]() {
         // NOTEPATRA_VERSION is injected at compile time from CMakeLists.txt's
         // project(Notepatra VERSION X.Y.Z) so the About dialog never goes
         // stale. Rich-text format so the website + GitHub links are
@@ -5759,6 +5812,10 @@ void MainWindow::buildMenus() {
             .arg(version));
         box.exec();
     });
+    aboutAct->setMenuRole(QAction::AboutRole);
+
+    // F11 elsewhere; macOS uses the standard Ctrl+Cmd+F.
+    fullScreenAct->setShortcut(Shortcuts::fullScreen());
 }
 
 // ── Noter app-lifetime reminder service ────────────────────────────────
@@ -5973,7 +6030,8 @@ void MainWindow::buildToolbar() {
                        "Recursively search file names + contents (Ctrl+Shift+G)");
     addFeatureShortcut(featureTb, findActionByPrefix(this, "AI Assistant"),
                        notepatraToolAccent("AI"), "ai", "AI",
-                       "Toggle AI Assistant dock (Ctrl+Q) — ON / OFF",
+                       QStringLiteral("Toggle AI Assistant dock (%1) — ON / OFF")
+                           .arg(Shortcuts::aiAssistantPrimary()),
                        /*showCheckedState=*/true);
     addFeatureShortcut(featureTb, findActionByPrefix(this, "Password Generator"),
                        notepatraToolAccent("Password"), "password", "Password",
@@ -6896,8 +6954,8 @@ void MainWindow::applyThemeToAll(const Theme &t) {
                                 tr("Workspace: %1").arg(QDir::toNativeSeparators(dir)), 4000);
                         } else {
                             statusBar()->showMessage(
-                                tr("Workspace set to %1 — enable Coding mode in the AI dock (Ctrl+Q) to browse it.")
-                                    .arg(QDir::toNativeSeparators(dir)), 6000);
+                                tr("Workspace set to %1 — enable Coding mode in the AI dock (%2) to browse it.")
+                                    .arg(QDir::toNativeSeparators(dir), Shortcuts::aiAssistantPrimary()), 6000);
                         }
                     }
                 });
@@ -7293,8 +7351,8 @@ int MainWindow::showWelcomeTab() {
                     tr("Workspace: %1").arg(QDir::toNativeSeparators(dir)), 4000);
             } else {
                 statusBar()->showMessage(
-                    tr("Workspace set to %1 — enable Coding mode in the AI dock (Ctrl+Q) to browse it.")
-                        .arg(QDir::toNativeSeparators(dir)), 6000);
+                    tr("Workspace set to %1 — enable Coding mode in the AI dock (%2) to browse it.")
+                        .arg(QDir::toNativeSeparators(dir), Shortcuts::aiAssistantPrimary()), 6000);
             }
         }
     });
@@ -7326,7 +7384,22 @@ void MainWindow::triggerMenuAction(const QString &actionId) {
         {"RESTClient",    "REST Client"},
         {"Noter",         "Noter — Meeting Thinkpad"},
         {"PasswordGenerator", "Password Generator"},
+        {"Diagram",       "Diagram"},
     };
+    if (actionId == QLatin1String("PreviewPane")) {
+        if (m_previewAct) m_previewAct->setChecked(true);
+        return;
+    }
+    if (actionId == QLatin1String("DataAnalyst")) {
+        if (!m_aiDockPanel) return;
+        showAiDockForInvocation();
+        m_aiDockPanel->showDataMode();
+        return;
+    }
+    if (actionId == QLatin1String("MCP")) {
+        QDesktopServices::openUrl(QUrl("https://notepatra.org/mcp.html"));
+        return;
+    }
     QString prefix = idToPrefix.value(actionId);
     if (prefix.isEmpty()) return;
     if (QAction *act = findActionByPrefix(this, prefix)) act->trigger();

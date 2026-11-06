@@ -5,6 +5,7 @@
 
 #include <QWidget>
 #include <QString>
+#include <QStyle>
 
 class QLabel;
 class QScrollArea;
@@ -20,9 +21,9 @@ class QVBoxLayout;
  *   • Hero block — "Welcome to Notepatra" + tagline + version
  *   • Quick actions — New File / Open File / Open Folder
  *   • Recent files list (clickable; reads from Config)
- *   • Feature showcase — 11 cards covering the inbuilt plugins (AI,
- *     Terminal, Compare, JSON/HTML/SQL, REST, Brackets, Noter,
- *     Password Generator)
+ *   • Feature showcase — one card per built-in tool (AI, Terminal,
+ *     Compare, JSON/HTML/SQL, REST, Brackets, Noter, Password Generator,
+ *     Preview Pane, Data Analyst, Diagram, MCP)
  *   • Keyboard shortcuts reference
  *   • Links to docs + the Ollama setup page
  *   • "Don't show again" checkbox that persists to Config
@@ -51,7 +52,7 @@ private:
     void buildShortcutsSection(QVBoxLayout *parent);
     void buildFooter(QVBoxLayout *parent);
 
-    QWidget *makeFeatureCard(const QString &icon, const QString &title,
+    QWidget *makeFeatureCard(QStyle::StandardPixmap icon, const QString &title,
                              const QString &description, const QString &actionId,
                              const QString &accentColor);
     QWidget *makeShortcutRow(const QString &keys, const QString &action);

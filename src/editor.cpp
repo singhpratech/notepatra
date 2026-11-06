@@ -1818,7 +1818,7 @@ void Editor::contextMenuEvent(QContextMenuEvent *event) {
             ? tr("Toggle &Line Comment  (no syntax for %1)").arg(m_language)
             : tr("Toggle &Line Comment  (%1)").arg(cs.line.trimmed().isEmpty() ? cs.line : cs.line.trimmed()),
         this, [this]() { toggleComment(); });
-    lineAct->setShortcut(QKeySequence("Ctrl+Q"));
+    lineAct->setShortcut(QKeySequence("Ctrl+/"));  // Ctrl+Q is the AI toggle
     lineAct->setEnabled(!cs.line.isEmpty());
 
     auto *blockAct = menu.addAction(
