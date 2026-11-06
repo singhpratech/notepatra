@@ -13,7 +13,7 @@ _Nothing yet._
 
 ---
 
-## [0.1.131] — 2026-11-05
+## [0.1.131] — 2026-11-06
 
 **Safer saves, a tighter AI SQL gate, a Preview pane that keeps its promises, and macOS that opens files from Finder.**
 
@@ -26,7 +26,7 @@ _Nothing yet._
 - **Preview pane Stop and the 120 s timeout only worked for DuckDB.** On Qt SQL drivers a runaway cell stayed busy forever and could block quitting. Stop now frees the cell at once and discards the late result.
 - **The HTML preview could load remote resources** (saved and untitled tabs both connected out). It now uses a private profile whose request interceptor allows only `file:`, `data:` and `qrc:`.
 - SQL cell results were wiped by tab switches and edits; the pane did not refresh after Save As, rename or a language change.
-- **macOS:** files opened from Finder, Open With or the Dock opened nothing (no `QFileOpenEvent` handler); ⌘Q toggled the AI panel instead of quitting; Replace sat on ⌘H (system Hide).
+- **macOS:** files opened from Finder, Open With or the Dock opened nothing (no `QFileOpenEvent` handler); ⌘Q toggled the AI panel instead of quitting; Replace sat on ⌘H (system Hide); on macOS 15 a stopped Ollama or llama-server showed "Unknown error" instead of the hint to start it.
 - Line Comment's context-menu hint showed Ctrl+Q, and the AI shortcut was listed three different ways.
 
 ### Added
