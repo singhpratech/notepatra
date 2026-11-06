@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "aipanel.h"
+
+#include "atomic_write.h"
 #include "ai_context.h"
 #include "ai_intent.h"
 #include "ai_systemprompt.h"
@@ -7141,10 +7143,16 @@ void AIPanel::saveChatHistory() {
     const QString tmp = m_chatHistoryPath + ".tmp";
     QFile f(tmp);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return;
-    f.write(bytes);
+    const qint64 written = f.write(bytes);
+    NpAtomic::syncData(f);
     f.close();
-    QFile::remove(m_chatHistoryPath);  // Windows rename can't overwrite
-    QFile::rename(tmp, m_chatHistoryPath);
+    if (written != bytes.size()) {
+        QFile::remove(tmp);
+        return;
+    }
+    QString replaceErr;  // on failure the previous history file is left intact
+    if (!NpAtomic::replaceFile(tmp, m_chatHistoryPath, &replaceErr))
+        qWarning("[ai] chat history not saved: %s", qPrintable(replaceErr));
 }
 
 void AIPanel::loadChatHistory() {

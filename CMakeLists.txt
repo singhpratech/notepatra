@@ -643,6 +643,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_db_readonly_gate.c
     add_executable(test_db_readonly_gate
         test_db_readonly_gate.cpp
         src/dbconnections.cpp
+        src/atomic_write.cpp
     )
     target_include_directories(test_db_readonly_gate PRIVATE ${CMAKE_SOURCE_DIR}/src)
     target_link_libraries(test_db_readonly_gate PRIVATE
@@ -825,6 +826,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_storage.cpp"
     add_executable(test_notes_storage
         test_notes_storage.cpp
         src/notes_storage.cpp
+        src/atomic_write.cpp
         src/notes_template.cpp
     )
     target_include_directories(test_notes_storage PRIVATE
@@ -834,6 +836,23 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_storage.cpp"
     add_test(NAME test_notes_storage COMMAND $<TARGET_FILE:test_notes_storage>)
     set_tests_properties(test_notes_storage PROPERTIES LABELS "unit;noter;storage")
     message(STATUS "Regression test enabled — target: test_notes_storage")
+endif()
+
+# ── Durable replace (src/atomic_write.h) ──
+# Pins the contract of NpAtomic::replaceFile and — critically — carries a
+# source-level guard against reintroducing the remove-then-rename idiom
+# that shipped in notes_storage.cpp and ai_tools.cpp: it deleted the
+# target BEFORE the rename and deleted the temp too when the rename
+# failed, losing both copies of the user's file on Windows.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_atomic_write.cpp")
+    add_executable(test_atomic_write test_atomic_write.cpp src/atomic_write.cpp)
+    target_include_directories(test_atomic_write PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_definitions(test_atomic_write PRIVATE
+        NOTEPATRA_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_link_libraries(test_atomic_write PRIVATE Qt5::Core Qt5::Test)
+    add_test(NAME test_atomic_write COMMAND $<TARGET_FILE:test_atomic_write>)
+    set_tests_properties(test_atomic_write PROPERTIES LABELS "unit;storage;durability" TIMEOUT 60)
+    message(STATUS "Regression test enabled — target: test_atomic_write")
 endif()
 
 # ── Noter — SQLite todos + reminder engine test (172 cases) ──
@@ -880,6 +899,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_extract_appl
         src/notes_extract_apply.cpp
         src/notes_sweep_prompt.cpp
         src/notes_storage.cpp
+        src/atomic_write.cpp
         src/notes_template.cpp
     )
     target_include_directories(test_notes_extract_apply PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -901,6 +921,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_panels.cpp")
         test_notes_panels.cpp
         src/notes.cpp
         src/notes_storage.cpp
+        src/atomic_write.cpp
         src/notes_template.cpp
         src/notes_todos.cpp
         src/notes_reminder.cpp
@@ -930,6 +951,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_panel_widget
         test_notes_panel_widget.cpp
         src/notes.cpp
         src/notes_storage.cpp
+        src/atomic_write.cpp
         src/notes_template.cpp
         src/notes_todos.cpp
         src/notes_reminder.cpp
@@ -959,6 +981,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_noter_render.cpp")
         test_noter_render.cpp
         src/notes.cpp
         src/notes_storage.cpp
+        src/atomic_write.cpp
         src/notes_template.cpp
         src/notes_todos.cpp
         src/notes_reminder.cpp
@@ -1118,6 +1141,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_tools.cpp")
         test_ai_tools.cpp
         src/ai_tools.cpp
         src/path_denylist.cpp
+        src/atomic_write.cpp
         src/git_tools.cpp
         src/csvanalyst.cpp
         src/dbconnections.cpp
@@ -1141,6 +1165,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_git_tools_e2e.cpp"
         test_git_tools_e2e.cpp
         src/ai_tools.cpp
         src/path_denylist.cpp
+        src/atomic_write.cpp
         src/git_tools.cpp
         src/csvanalyst.cpp
         src/dbconnections.cpp
@@ -1164,6 +1189,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_dataanalyst.cpp
         src/ai_systemprompt.cpp
         src/ai_tools.cpp
         src/path_denylist.cpp
+        src/atomic_write.cpp
         src/git_tools.cpp
         src/chartrender.cpp
         src/chart_modal.cpp
@@ -2722,6 +2748,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_bridge.cpp")
         # v0.1.118 — list_notes/read_note go through the real NotesStorage
         # layer (QtCore-only; notes_template.cpp resolves shellHtml).
         src/notes_storage.cpp
+        src/atomic_write.cpp
         src/notes_template.cpp
         # v0.1.119 — validate_npd calls the REAL parse-only entry point
         # Npd::parse (pure QtCore, no widgets).
@@ -2867,6 +2894,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_db_query_runner.cp
     add_executable(test_db_query_runner
         test_db_query_runner.cpp
         src/dbconnections.cpp
+        src/atomic_write.cpp
         src/duckdb_client.cpp
     )
     target_include_directories(test_db_query_runner PRIVATE
@@ -3222,6 +3250,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_vega_chart.cpp")
         test_vega_chart.cpp
         src/ai_tools.cpp
         src/path_denylist.cpp
+        src/atomic_write.cpp
         src/git_tools.cpp
         src/csvanalyst.cpp
         src/dbconnections.cpp

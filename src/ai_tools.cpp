@@ -4,6 +4,7 @@
 
 #include "path_denylist.h"
 
+#include "atomic_write.h"
 #include "csvanalyst.h"
 #include "dbconnections.h"
 #include "git_tools.h"
@@ -1692,29 +1693,19 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
     }
     QByteArray outBytes = out.toUtf8();
     qint64 w = tmp.write(outBytes);
+    // fsync before the replace so a power loss cannot publish a truncated file.
+    NpAtomic::syncData(tmp);
     tmp.close();
     if (w != outBytes.size()) {
         QFile::remove(tmpPath);
         return makeError(call, "io_error", "Short write to temp file.");
     }
-    // QSaveFile-style rename with overwrite. Qt's QFile::rename refuses
-    // to overwrite a target that already exists, so use the platform's
-    // posix rename() directly — that IS atomic on Linux/macOS. On
-    // Windows the C-runtime rename() also can't overwrite, so do the
-    // remove+rename two-step there.
-#ifdef Q_OS_WIN
-    QFile::remove(canonical);
-    if (!QFile::rename(tmpPath, canonical)) {
-        QFile::remove(tmpPath);
-        return makeError(call, "io_error", "Failed to atomically rename temp file.");
+    // Never remove-then-rename: a failed rename would lose both copies.
+    {
+        QString replaceErr;
+        if (!NpAtomic::replaceFile(tmpPath, canonical, &replaceErr))
+            return makeError(call, "io_error", replaceErr);
     }
-#else
-    if (std::rename(tmpPath.toLocal8Bit().constData(),
-                    canonical.toLocal8Bit().constData()) != 0) {
-        QFile::remove(tmpPath);
-        return makeError(call, "io_error", "Failed to atomically rename temp file.");
-    }
-#endif
 
     QJsonObject result;
     result["path"]          = QDir(workspaceRoot).relativeFilePath(canonical);

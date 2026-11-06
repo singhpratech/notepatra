@@ -2,6 +2,8 @@
 
 #include "notes_storage.h"
 
+#include "atomic_write.h"
+
 #include <QByteArray>
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -193,10 +195,8 @@ bool NotesStorage::validateBody(const QString &fullHtml, QString *errorOut) cons
 //
 // Design choice: we use explicit `.tmp + rename` instead of QSaveFile.
 // Two reasons —
-//   1. QFile::rename refuses to overwrite the target on Windows;
-//      src/ai_tools.cpp already established the manual posix
-//      std::rename / Win32 remove+rename idiom and we mirror it here for
-//      consistency.
+//   1. The replace goes through NpAtomic::replaceFile (src/atomic_write.h),
+//      shared with the other durable-save sites.
 //   2. QSaveFile silently leaves a `.qsave` orphan when the process
 //      dies between commitWithReplace and dtor — the explicit form
 //      makes the orphan path predictable so listAllNotes can filter it.
@@ -284,36 +284,14 @@ bool NotesStorage::saveNote(const QString &absolutePath, const QString &fullHtml
         }
     }
 
-#ifdef Q_OS_WIN
-    QFile::remove(absolutePath);
-    if (!QFile::rename(tmpPath, absolutePath)) {
-        QFile::remove(tmpPath);
-        if (errorOut) *errorOut = QStringLiteral("Atomic rename failed");
-        return false;
-    }
-#else
-    if (std::rename(tmpPath.toLocal8Bit().constData(),
-                    absolutePath.toLocal8Bit().constData()) != 0) {
-        QFile::remove(tmpPath);
-        if (errorOut) *errorOut = QStringLiteral("Atomic rename failed");
-        return false;
-    }
-    // Flush the DIRECTORY entry too — on POSIX the rename itself lives
-    // in the directory's metadata; without this a power loss right after
-    // rename(2) could still roll the directory back to the old entry.
-    // Best-effort: a failure here never fails the save (the data fsync
-    // above already guarantees no torn content). No-op on Windows, where
-    // MoveFileEx-style metadata is journalled by NTFS.
+    // Single-step replace + directory fsync; see src/atomic_write.h.
     {
-        const QByteArray dirPath =
-            QFileInfo(absolutePath).absolutePath().toLocal8Bit();
-        const int dfd = ::open(dirPath.constData(), O_RDONLY);
-        if (dfd >= 0) {
-            ::fsync(dfd);
-            ::close(dfd);
+        QString replaceErr;
+        if (!NpAtomic::replaceFile(tmpPath, absolutePath, &replaceErr)) {
+            if (errorOut) *errorOut = replaceErr;
+            return false;
         }
     }
-#endif
 
     // (6) Emit signal + clear the draft sidecar (a successful save
     //     supersedes any outstanding draft). Drop the title-resolver
@@ -337,6 +315,7 @@ void NotesStorage::rotateBackups(const QString &absolutePath) {
         const QString src = absolutePath + QStringLiteral(".bak%1").arg(i - 1);
         const QString dst = absolutePath + QStringLiteral(".bak%1").arg(i);
         if (!QFile::exists(src)) continue;
+        // NP-ATOMIC-REVIEWED: dst is the oldest backup, meant to be superseded.
         QFile::remove(dst);    // ignore failure; rename below will tell us
         if (!QFile::rename(src, dst)) {
             std::fprintf(stderr,

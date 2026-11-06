@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "dbconnections.h"
+#include "atomic_write.h"
 #include "config.h"
 #ifdef NOTEPATRA_HAVE_DUCKDB
 #include "duckdb_client.h"
@@ -152,10 +153,16 @@ bool saveAll(const QVector<Record> &records) {
     const QString tmp = path + QStringLiteral(".tmp");
     QFile f(tmp);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
-    f.write(QJsonDocument(arr).toJson(QJsonDocument::Indented));
+    const QByteArray bytes = QJsonDocument(arr).toJson(QJsonDocument::Indented);
+    const qint64 written = f.write(bytes);
+    NpAtomic::syncData(f);
     f.close();
-    QFile::remove(path);
-    return QFile::rename(tmp, path);
+    if (written != bytes.size()) {
+        QFile::remove(tmp);
+        return false;
+    }
+    // Never remove-then-rename: a failed rename would lose both copies.
+    return NpAtomic::replaceFile(tmp, path);
 }
 
 bool findByName(const QString &name, Record *out) {

@@ -590,6 +590,7 @@ bool installReleaseInteractive(QWidget *parent,
     // delete a mounted image's backing file, so the old remove()+rename()
     // wedged on every retry. POSIX rename is atomic within the same dir.
     QString dest = finalPath;
+    // NP-ATOMIC-REVIEWED: conditional remove of a stale download; falls back to a fresh name.
     if (QFile::exists(dest) && !QFile::remove(dest))
         dest = uniqueDestPath(finalPath);
     if (!QFile::rename(partPath, dest)) {
