@@ -42,6 +42,7 @@ _Nothing yet._
 - A stopped SQLite query keeps one CPU core busy until it ends or the app quits.
 - The Qt SQLite driver still refuses cells with several statements.
 - The macOS app is not notarized.
+- RUSTSEC-2026-0387 (`crypto-bigint` 0.5.5 timing variability, via `ssh-key` → `p256`/`p384`) has no compatible fix; carried as a documented ignore because ECDSA keys are only generated locally, once, offline.
 
 ---
 
