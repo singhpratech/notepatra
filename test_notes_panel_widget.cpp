@@ -2411,7 +2411,7 @@ int main(int argc, char *argv[]) {
             panel.openNoteFile(pX);                    // records X's disk stamp
             QApplication::processEvents();
             ed->insertPlainText(QStringLiteral("\nX_TYPED_DELTA"));
-            QApplication::processEvents();
+            // No processEvents() here: the 5s autosave tick could save X before the external rewrite (seen on ARM CI).
             {                                          // external rewrite of X
                 QFile f(pX);
                 f.open(QIODevice::WriteOnly | QIODevice::Truncate);
