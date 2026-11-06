@@ -376,7 +376,7 @@ jobs:
   # Macs (M1/M2/M3/M4). Intel Mac users can build from source.
 
   build-macos-arm:
-    runs-on: macos-14
+    runs-on: macos-15
     # Fail fast instead of burning the 360-minute default on a wedge.
     timeout-minutes: 120
     steps:
