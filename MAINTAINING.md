@@ -101,6 +101,8 @@ CI traps:
 
 ## 7. Current state & fix queues (as of 2026-07-05)
 
+> **Status update (v0.1.131, 2026-11-05):** most of this section is history. Priorities (1)-(3) were largely fixed in v0.1.115 (the commit that wrote this table), and v0.1.131 closed the rest: atomic replace at all four remove-then-rename sites, the AI SQL file-read sandbox, T-SQL batch / escape / CR-comment stacking, read-only SQLite opens, and Stop/timeout for Qt SQL drivers in the Preview pane. The line references below point at code that has since moved. Re-audit against the code before trusting any row.
+
 Recent formal grades (fleet-reviewed, source-verified — full reports in `eval/GRADE_REVIEW_2026-07-05.md`, plus the 05-31 docs in `eval/`):
 
 | Area | Grade | Top blockers |
