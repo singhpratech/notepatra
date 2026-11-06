@@ -3716,12 +3716,12 @@ void MainWindow::buildMenus() {
         int line = 0, col = 0;
         ed->getCursorPosition(&line, &col);
         SqlNotebookWidget *nb = m_previewPane->sqlNotebook();
-        nb->runCellAtLine(line);
-        if (!advance) return;
-        const int next = nb->nextCellLine(line);
-        if (next < 0) return;
-        ed->setCursorPosition(next, 0);
-        ed->ensureLineVisible(next);
+        const QString text = ed->text();
+        nb->runAtCursor(text, line, col);
+        int nextLine = 0, nextCol = 0;
+        if (!advance || !nb->nextRunTarget(text, line, col, &nextLine, &nextCol)) return;
+        ed->setCursorPosition(nextLine, nextCol);
+        ed->ensureLineVisible(nextLine);
     };
     QList<QAction *> sqlCellActs;
     const struct { const char *text; QKeySequence key; bool advance; } sqlCellDefs[] = {

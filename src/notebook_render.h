@@ -61,6 +61,22 @@ QVector<SqlCell> splitSqlCells(const QString &sql);
 // Index of the cell containing 0-based `line`, or -1.
 int cellIndexForLine(const QVector<SqlCell> &cells, int line);
 
+// True when any line is a "-- %%" cell separator.
+bool hasSqlCellSeparators(const QString &sql);
+
+// A statement as [start, end) offsets into the ORIGINAL text; end is past its ';'.
+struct SqlStatementSpan {
+    int start = 0;
+    int end = 0;
+};
+
+// Splits on ';' outside quotes, [identifiers], $tag$ bodies and comments. Leading
+// comments belong to the next statement; comment-only pieces are dropped.
+QVector<SqlStatementSpan> splitSqlStatements(const QString &sql);
+
+// The statement containing offset `pos`, else the one before it, else the first; -1 if none.
+int statementIndexAt(const QVector<SqlStatementSpan> &spans, int pos);
+
 } // namespace NotebookRender
 
 #endif // NOTEPATRA_NOTEBOOK_RENDER_H

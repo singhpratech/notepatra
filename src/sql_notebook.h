@@ -39,8 +39,12 @@ public:
     void runCell(int index);
     void runAll();
     void runCellAtLine(int line);
-    // First body line of the next SQL cell after the one at `line`, or -1 on the last cell.
-    int nextCellLine(int line) const;
+    // Runs the cell under the cursor; in a file without "-- %%" lines, the statement under it.
+    void runAtCursor(const QString &text, int line, int col);
+    // Where Run-and-Advance moves the cursor next; false on the last cell / statement.
+    bool nextRunTarget(const QString &text, int line, int col, int *outLine, int *outCol) const;
+    // "Tip: add -- %% lines ..." under the toolbar, for files with no separators.
+    void setSeparatorHintVisible(bool on);
     void stop();
     void applyColors(const NotebookRender::Colors &c);
     // Re-reads saved connections, keeping the current selection when it still exists.
@@ -90,7 +94,7 @@ private:
     void mergeCells(QVector<Slot> &cellSlots, const QVector<NotebookRender::SqlCell> &cells);
     Slot *findSlot(QObject *doc, int id);
     int indexOfId(int id) const;
-    void startRun(QObject *doc, int id, const QString &sql);
+    void startRun(QObject *doc, int id, const QString &sql, const QString &statusPrefix = QString());
     void rebuildCards();
     void updateCard(int index);
     void updateAllCards();
@@ -108,6 +112,7 @@ private:
     QToolButton *m_runAllBtn = nullptr;
     QToolButton *m_stopBtn = nullptr;
     QLabel *m_emptyLabel = nullptr;
+    QLabel *m_hint = nullptr;
     QWidget *m_cardHost = nullptr;
     QVBoxLayout *m_cardLayout = nullptr;
 
@@ -119,6 +124,7 @@ private:
     QObject *m_runDoc = nullptr;
     int m_runId = 0;
     QString m_runText;
+    QString m_runPrefix;
     QObject *m_queueDoc = nullptr;
     QVector<int> m_queue;
     bool m_busy = false;

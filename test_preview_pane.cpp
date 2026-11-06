@@ -12,6 +12,13 @@
 //   i. AI dock opens beside a visible preview
 //   j. theme switches (Dark / Monokai / Light) re-render the pane
 //   k. Ctrl+Return runs the SQL cell at the cursor only inside the editor tabs
+//   l. results kept per document / per cell; edits keep a stale result
+//   m. Save As and language changes refresh the pane
+//   n. Ctrl+Shift+Return runs and advances; View-menu entries
+//   o. result grid TSV copy; NULL rendering (Qt SQL + DuckDB)
+//   p. plain .sql without -- %% runs the statement under the cursor
+//   q. (WebEngine) HTML preview makes no network connections
+//   z. Stop / injected timeout free the UI on SQLite; exit not blocked
 
 #include "mainwindow.h"
 #include "aipanel.h"
@@ -707,6 +714,44 @@ int main(int argc, char *argv[]) {
         if (!dShaped) std::printf("     duck status=%s\n", qPrintable(nb->statusTextAt(0)));
         nb->connectionCombo()->setCurrentIndex(0);
 #endif
+    }
+
+    // ── p ──
+    std::printf("-- p: plain .sql without -- %%%% separators --\n");
+    {
+        const QString plainPath = writeFile(work.path(), "plain.sql", "select 1 as first;\nselect 2 as second;\n");
+        mw.openFile(plainPath);
+        QTest::qWait(30);
+        Editor *pl = mw.currentEditor();
+        nb->connectionCombo()->setCurrentIndex(0);
+        auto *hint = nb->findChild<QLabel *>(QStringLiteral("sqlNotebookHint"));
+        EXPECT_TRUE("p: header hint suggests -- %% cells",
+                    hint && hint->isVisibleTo(nb) && hint->text().contains(QLatin1String("Tip: add -- %% lines")));
+        pl->setFocus();
+        pl->setCursorPosition(1, 3);
+        QTest::keyClick(pl, Qt::Key_Return, Qt::ControlModifier);
+        waitIdle(nb);
+        QTableWidget *t = nb->resultTableAt(0);
+        std::printf("     status=%s\n", qPrintable(nb->statusTextAt(0)));
+        EXPECT_TRUE("p: Ctrl+Return ran only the statement under the cursor",
+                    t && t->isVisibleTo(nb) && t->rowCount() == 1 && t->columnCount() == 1 &&
+                        t->horizontalHeaderItem(0) && t->horizontalHeaderItem(0)->text() == QLatin1String("second") &&
+                        t->item(0, 0) && t->item(0, 0)->text() == QLatin1String("2"));
+        pl->setCursorPosition(0, 0);
+        QTest::keyClick(pl, Qt::Key_Return, Qt::ControlModifier);
+        waitIdle(nb);
+        t = nb->resultTableAt(0);
+        EXPECT_TRUE("p: cursor on the first statement runs the first",
+                    t && t->horizontalHeaderItem(0) && t->horizontalHeaderItem(0)->text() == QLatin1String("first"));
+        pl->setCursorPosition(0, 2);
+        QTest::keyClick(pl, Qt::Key_Return, Qt::ControlModifier | Qt::ShiftModifier);
+        waitIdle(nb);
+        int pLine = -1, pCol = -1;
+        pl->getCursorPosition(&pLine, &pCol);
+        EXPECT_TRUE("p: Ctrl+Shift+Return moves to the next statement", pLine == 1 && pCol == 0);
+        if (tabs) tabs->setCurrentIndex(tabIndexForPath(tabs, sqlPath));
+        QTest::qWait(30);
+        EXPECT_TRUE("p: no hint on a file with -- %% cells", hint && !hint->isVisibleTo(nb));
     }
 
 #ifdef NOTEPATRA_WITH_WEBENGINE

@@ -169,6 +169,12 @@ SqlNotebookWidget::SqlNotebookWidget(QWidget *parent) : QWidget(parent) {
     barLayout->addWidget(m_runAllBtn);
     barLayout->addWidget(m_stopBtn);
     root->addWidget(bar);
+    m_hint = new QLabel(tr("Tip: add -- %% lines to split this file into cells"));
+    m_hint->setObjectName(QStringLiteral("sqlNotebookHint"));
+    m_hint->setWordWrap(true);
+    m_hint->setToolTip(tr("Without -- %% lines, Ctrl+Return runs the statement under the cursor."));
+    m_hint->hide();
+    root->addWidget(m_hint);
 
     auto *scroll = new QScrollArea;
     scroll->setWidgetResizable(true);
@@ -511,7 +517,7 @@ void SqlNotebookWidget::runCell(int index) {
     startRun(m_doc, id, m_cells.at(index).text);
 }
 
-void SqlNotebookWidget::startRun(QObject *doc, int id, const QString &sql) {
+void SqlNotebookWidget::startRun(QObject *doc, int id, const QString &sql, const QString &statusPrefix) {
     Slot *slot = findSlot(doc, id);
     if (m_busy || !slot || slot->cell.markdown) return;
     DbConnections::Record rec;
@@ -532,6 +538,7 @@ void SqlNotebookWidget::startRun(QObject *doc, int id, const QString &sql) {
     m_runDoc = doc;
     m_runId = id;
     m_runText = slot->cell.text;
+    m_runPrefix = statusPrefix;
     m_token = std::make_shared<DbConnections::QueryInterruptToken>();
     auto token = m_token;
     auto keepDir = m_scratchDir;  // the temp DB outlives this widget until the worker returns
@@ -572,6 +579,7 @@ void SqlNotebookWidget::storeRunResult(const CellResult &res) {
     if (Slot *slot = findSlot(m_runDoc, m_runId)) {
         slot->hasResult = true;
         slot->result = res;
+        slot->result.status.prepend(m_runPrefix);
         slot->ranText = m_runText;
     }
 }
@@ -632,12 +640,62 @@ void SqlNotebookWidget::runCellAtLine(int line) {
     runCell(NotebookRender::cellIndexForLine(m_cells, line));
 }
 
-int SqlNotebookWidget::nextCellLine(int line) const {
-    const int at = NotebookRender::cellIndexForLine(m_cells, line);
-    if (at < 0) return -1;
-    for (int i = at + 1; i < m_cells.size(); ++i)
-        if (!m_cells.at(i).markdown) return m_cells.at(i).bodyLine;
-    return -1;
+namespace {
+int offsetAt(const QString &text, int line, int col) {
+    int pos = 0;
+    for (int l = 0; l < line; ++l) {
+        const int nl = text.indexOf(QLatin1Char('\n'), pos);
+        if (nl < 0) return text.size();
+        pos = nl + 1;
+    }
+    int lineEnd = text.indexOf(QLatin1Char('\n'), pos);
+    if (lineEnd < 0) lineEnd = text.size();
+    return qMin(pos + qMax(0, col), lineEnd);
+}
+
+void lineColAt(const QString &text, int pos, int *line, int *col) {
+    *line = text.left(pos).count(QLatin1Char('\n'));
+    *col = pos - (text.lastIndexOf(QLatin1Char('\n'), pos - 1) + 1);
+}
+} // namespace
+
+void SqlNotebookWidget::runAtCursor(const QString &text, int line, int col) {
+    if (NotebookRender::hasSqlCellSeparators(text)) {
+        runCellAtLine(line);
+        return;
+    }
+    if (m_busy || m_cells.isEmpty() || m_cells.at(0).markdown) return;
+    const QVector<NotebookRender::SqlStatementSpan> spans = NotebookRender::splitSqlStatements(text);
+    const int at = NotebookRender::statementIndexAt(spans, offsetAt(text, line, col));
+    if (at < 0) return;
+    const auto &sp = spans.at(at);
+    int stmtLine = 0, stmtCol = 0;
+    lineColAt(text, sp.start, &stmtLine, &stmtCol);
+    startRun(m_doc, m_docs.value(m_doc).value(0).id, text.mid(sp.start, sp.end - sp.start).trimmed(),
+             tr("Statement at line %1: ").arg(stmtLine + 1));
+}
+
+bool SqlNotebookWidget::nextRunTarget(const QString &text, int line, int col, int *outLine, int *outCol) const {
+    if (NotebookRender::hasSqlCellSeparators(text)) {
+        const int at = NotebookRender::cellIndexForLine(m_cells, line);
+        if (at < 0) return false;
+        for (int i = at + 1; i < m_cells.size(); ++i) {
+            if (m_cells.at(i).markdown) continue;
+            *outLine = m_cells.at(i).bodyLine;
+            *outCol = 0;
+            return true;
+        }
+        return false;
+    }
+    const QVector<NotebookRender::SqlStatementSpan> spans = NotebookRender::splitSqlStatements(text);
+    const int at = NotebookRender::statementIndexAt(spans, offsetAt(text, line, col));
+    if (at < 0 || at + 1 >= spans.size()) return false;
+    lineColAt(text, spans.at(at + 1).start, outLine, outCol);
+    return true;
+}
+
+void SqlNotebookWidget::setSeparatorHintVisible(bool on) {
+    m_hint->setVisible(on);
 }
 
 void SqlNotebookWidget::stop() {
@@ -658,6 +716,7 @@ void SqlNotebookWidget::applyColors(const NotebookRender::Colors &c) {
     m_colors = c;
     setStyleSheet(QStringLiteral(
         "QWidget#sqlNotebookCells { background: %1; }"
+        "QLabel#sqlNotebookHint { background: %1; color: %3; padding: 2px 8px; }"
         "QFrame#sqlNotebookCell { background: %1; border: 1px solid %5; border-radius: 4px; }"
         "QFrame#sqlNotebookCell QLabel { color: %2; border: none; }"
         "QLabel#sqlCellTitle { color: %6; font-weight: 600; }"

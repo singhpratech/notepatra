@@ -329,7 +329,9 @@ void PreviewPane::refreshNow() {
             }
         } else if (m_mode == Mode::SqlNotebook) {
             if (m_sourceChanged || previous != Mode::SqlNotebook) m_sql->refreshConnections();
-            m_sql->setCells(NotebookRender::splitSqlCells(text), ed);
+            const QVector<NotebookRender::SqlCell> cells = NotebookRender::splitSqlCells(text);
+            m_sql->setCells(cells, ed);
+            m_sql->setSeparatorHintVisible(!cells.isEmpty() && !NotebookRender::hasSqlCellSeparators(text));
             m_stack->setCurrentWidget(m_sql);
         }
     }

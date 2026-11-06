@@ -192,6 +192,42 @@ int main(int argc, char *argv[]) {
                     splitSqlCells(QStringLiteral("a;\n-- note\nb;")).size() == 1);
     }
 
+    std::printf("-- splitSqlStatements --\n");
+    {
+        EXPECT_TRUE("hasSqlCellSeparators: plain file", !hasSqlCellSeparators(QStringLiteral("a;\nb;")));
+        EXPECT_TRUE("hasSqlCellSeparators: -- %% line", hasSqlCellSeparators(QStringLiteral("a;\r\n-- %%\r\nb;")));
+        const QString sql = QStringLiteral(
+            "select 'a;b' as s;\n"           // 0..18 quoted ';'
+            "-- lead; comment\n"
+            "select \"x;y\", [p;q] from t;\n"
+            "/* c; */ select $$ ; $$, $tag$ ; $tag$;\n"
+            "select 4\n");                    // no trailing ';'
+        const QVector<SqlStatementSpan> sp = splitSqlStatements(sql);
+        EXPECT_TRUE("4 statements (quotes, brackets, comments, dollar bodies hide ';')", sp.size() == 4);
+        if (sp.size() == 4) {
+            const auto text = [&](int i) { return sql.mid(sp[i].start, sp[i].end - sp[i].start); };
+            EXPECT_TRUE("offsets index the ORIGINAL text", text(0) == QLatin1String("select 'a;b' as s;"));
+            EXPECT_TRUE("leading comment belongs to the next statement",
+                        text(1).startsWith(QLatin1String("-- lead; comment\nselect")) &&
+                            text(1).endsWith(QLatin1String("from t;")));
+            EXPECT_TRUE("block comment + dollar quotes", text(2).startsWith(QLatin1String("/* c; */")) &&
+                        text(2).endsWith(QLatin1String("$tag$;")));
+            EXPECT_TRUE("unterminated last statement", text(3).trimmed() == QLatin1String("select 4"));
+            EXPECT_TRUE("statementIndexAt inside", statementIndexAt(sp, sp[1].start + 3) == 1);
+            EXPECT_TRUE("statementIndexAt right after ';' -> that statement", statementIndexAt(sp, sp[0].end) == 0);
+        }
+        const QVector<SqlStatementSpan> gap = splitSqlStatements(QStringLiteral("a;\n\n\nb;\n-- tail only\n"));
+        EXPECT_TRUE("comment-only tail dropped", gap.size() == 2);
+        EXPECT_TRUE("blank line between -> previous statement", gap.size() == 2 && statementIndexAt(gap, 3) == 0);
+        EXPECT_TRUE("past the end -> last statement", gap.size() == 2 && statementIndexAt(gap, 30) == 1);
+        EXPECT_TRUE("escaped quote '' stays inside the string",
+                    splitSqlStatements(QStringLiteral("select 'it''s;'; select 2;")).size() == 2);
+        EXPECT_TRUE("$1 parameter is not a dollar quote",
+                    splitSqlStatements(QStringLiteral("select $1; select 2;")).size() == 2);
+        EXPECT_TRUE("empty -> none", splitSqlStatements(QString()).isEmpty() &&
+                                         statementIndexAt({}, 0) == -1);
+    }
+
     std::printf("\n%d passed, %d failed\n", g_passed, g_failed);
     return g_failed == 0 ? 0 : 1;
 }
