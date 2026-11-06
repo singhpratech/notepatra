@@ -18,7 +18,10 @@
 #include <QSet>
 #include <QStyle>
 #include <QTableWidget>
+#include <QSqlDatabase>
+#include <QSqlQuery>
 #include <QTemporaryDir>
+#include <QThreadPool>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -46,6 +49,29 @@ QIcon tintedStandardIcon(QStyle *style, QStyle::StandardPixmap which, const QCol
     p.fillRect(pm.rect(), color);
     p.end();
     return QIcon(pm);
+}
+
+// Never destroyed: ~QThreadPool (like the global pool at app exit) would wait for a
+// stopped Qt-SQL query that is still running.
+QThreadPool *notebookPool() {
+    static QThreadPool *pool = [] {
+        auto *p = new QThreadPool;
+        p->setMaxThreadCount(64);
+        return p;
+    }();
+    return pool;
+}
+
+// WAL lets later cells write while a stopped query still holds a read transaction.
+void enableWal(const QString &file) {
+    const QString name = QStringLiteral("notepatra-notebook-wal");
+    {
+        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), name);
+        db.setDatabaseName(file);
+        if (db.open()) QSqlQuery(db).exec(QStringLiteral("PRAGMA journal_mode=WAL"));
+        db.close();
+    }
+    QSqlDatabase::removeDatabase(name);
 }
 
 } // namespace
@@ -103,17 +129,12 @@ SqlNotebookWidget::SqlNotebookWidget(QWidget *parent) : QWidget(parent) {
     scroll->setWidget(m_cardHost);
     root->addWidget(scroll, 1);
 
-    m_watcher = new QFutureWatcher<DbConnections::QueryResult>(this);
-    connect(m_watcher, &QFutureWatcher<DbConnections::QueryResult>::finished, this,
-            &SqlNotebookWidget::onQueryFinished);
     m_timeout = new QTimer(this);
     m_timeout->setSingleShot(true);
-    m_timeout->setInterval(kTimeoutMs);
+    m_timeout->setInterval(m_timeoutMs);
     connect(m_timeout, &QTimer::timeout, this, [this]() {
-        if (!m_busy || !m_token) return;
-        m_token->requestInterrupt();
-        m_results[m_runningKey].status = tr("Timed out after %1 s, stopping...").arg(kTimeoutMs / 1000);
-        updateAllCards();
+        abandonRun(m_timeoutMs % 1000 == 0 ? tr("Timed out after %1 s.").arg(m_timeoutMs / 1000)
+                                            : tr("Timed out after %1 ms.").arg(m_timeoutMs));
     });
 
     connect(m_conn, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
@@ -123,8 +144,15 @@ SqlNotebookWidget::SqlNotebookWidget(QWidget *parent) : QWidget(parent) {
 }
 
 SqlNotebookWidget::~SqlNotebookWidget() {
-    // The worker keeps its own token/temp-dir references; just ask it to stop.
+    // The worker keeps its own token/temp-dir references; ask it to stop and give an
+    // interruptible (DuckDB) query a bounded moment to unwind.
     if (m_busy && m_token) m_token->requestInterrupt();
+    notebookPool()->waitForDone(2000);
+}
+
+void SqlNotebookWidget::setTimeoutMs(int ms) {
+    m_timeoutMs = qMax(1, ms);
+    m_timeout->setInterval(m_timeoutMs);
 }
 
 void SqlNotebookWidget::refreshConnections() {
@@ -189,6 +217,10 @@ bool SqlNotebookWidget::currentRecord(DbConnections::Record *out, QString *err) 
         r.driver = QStringLiteral("QSQLITE");
         // A file, not :memory:, because runQuery opens a fresh connection per call.
         r.database = m_scratchDir->filePath(QStringLiteral("notebook.sqlite"));
+        if (!m_scratchWalDone) {
+            m_scratchWalDone = true;
+            enableWal(r.database);
+        }
     }
     *out = r;
     return true;
@@ -360,6 +392,7 @@ void SqlNotebookWidget::runCell(int index) {
         return;
     }
     const bool allow = m_allowWrites->isChecked();
+    m_runInterruptible = rec.driver.compare(QLatin1String("DUCKDB"), Qt::CaseInsensitive) == 0;
     m_results.remove(key);
     m_runningKey = key;
     m_token = std::make_shared<DbConnections::QueryInterruptToken>();
@@ -370,14 +403,37 @@ void SqlNotebookWidget::runCell(int index) {
     updateAllCards();
     m_elapsed.start();
     m_timeout->start();
-    m_watcher->setFuture(QtConcurrent::run([rec, sql, allow, token, keepDir]() {
+    const quint64 gen = ++m_generation;
+    auto *watcher = new QFutureWatcher<DbConnections::QueryResult>(this);
+    connect(watcher, &QFutureWatcher<DbConnections::QueryResult>::finished, this, [this, watcher, gen]() {
+        watcher->deleteLater();
+        if (gen == m_generation && m_busy) onQueryFinished(watcher->result());
+    });
+    watcher->setFuture(QtConcurrent::run(notebookPool(), [rec, sql, allow, token, keepDir]() {
         return DbConnections::runQuery(rec, sql, kMaxRows, allow, token.get());
     }));
 }
 
-void SqlNotebookWidget::onQueryFinished() {
+void SqlNotebookWidget::abandonRun(const QString &status) {
+    m_queue.clear();
+    if (!m_busy) return;
+    if (m_token) m_token->requestInterrupt();  // real interrupt on DuckDB, a flag only on Qt SQL
+    ++m_generation;
     m_timeout->stop();
-    const DbConnections::QueryResult qr = m_watcher->result();
+    CellResult res;
+    res.status = m_runInterruptible
+        ? status
+        : status + QLatin1Char(' ') +
+              tr("The database may still finish the query in the background; its result is discarded.");
+    res.error = true;
+    m_results.insert(m_runningKey, res);
+    m_token.reset();
+    setBusy(false);
+    updateAllCards();
+}
+
+void SqlNotebookWidget::onQueryFinished(const DbConnections::QueryResult &qr) {
+    m_timeout->stop();
     const qint64 ms = m_elapsed.elapsed();
     CellResult res;
     if (qr.ok) {
@@ -436,11 +492,7 @@ void SqlNotebookWidget::runCellAtLine(int line) {
 }
 
 void SqlNotebookWidget::stop() {
-    m_queue.clear();
-    if (!m_busy || !m_token) return;
-    m_token->requestInterrupt();
-    m_results[m_runningKey].status = tr("Stopping...");
-    updateAllCards();
+    abandonRun(tr("Stopped."));
 }
 
 QTableWidget *SqlNotebookWidget::resultTableAt(int index) {

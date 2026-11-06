@@ -51,6 +51,7 @@ public:
     QString statusTextAt(int index);
     QComboBox *connectionCombo() const { return m_conn; }
     QCheckBox *allowWritesBox() const { return m_allowWrites; }
+    void setTimeoutMs(int ms);
 
     static constexpr int kMaxRows = 500;
     static constexpr int kTimeoutMs = 120000;
@@ -78,7 +79,9 @@ private:
     void updateCard(int index);
     void updateAllCards();
     void setBusy(bool busy);
-    void onQueryFinished();
+    void onQueryFinished(const DbConnections::QueryResult &qr);
+    // Frees the UI now; a Qt-SQL worker cannot be interrupted, so its late result is dropped.
+    void abandonRun(const QString &status);
     void onConnectionChanged();
     bool currentRecord(DbConnections::Record *out, QString *err);
     void runNextQueued();
@@ -102,8 +105,11 @@ private:
     QVector<DbConnections::Record> m_saved;
     std::shared_ptr<QTemporaryDir> m_scratchDir;
     std::shared_ptr<DbConnections::QueryInterruptToken> m_token;
-    QFutureWatcher<DbConnections::QueryResult> *m_watcher = nullptr;
+    quint64 m_generation = 0;  // bumped per run and on Stop/timeout; stale results are dropped
+    bool m_scratchWalDone = false;
+    bool m_runInterruptible = false;  // DuckDB honours the token; Qt SQL drivers do not
     QTimer *m_timeout = nullptr;
+    int m_timeoutMs = kTimeoutMs;
     QElapsedTimer m_elapsed;
 };
 

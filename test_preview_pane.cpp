@@ -23,23 +23,33 @@
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QComboBox>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QHostAddress>
+#include <QLabel>
 #include <QMenu>
 #include <QSplitter>
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QTabWidget>
 #include <QTableWidget>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTextBrowser>
 #include <QTextDocument>
+#include <QThreadPool>
 #include <QVariant>
 
+#include <atomic>
+#include <chrono>
 #include <cstdio>
+#include <cstdlib>
+#include <thread>
 
 static int g_passed = 0;
 static int g_failed = 0;
@@ -50,6 +60,32 @@ static int g_failed = 0;
         else { ++g_failed; std::printf("  [FAIL] %s\n", label); } \
         std::fflush(stdout); \
     } while (0)
+
+// A wedged run (or an exit blocked by a still-running worker) fails fast instead of hanging ctest.
+static std::atomic<bool> g_mainDone{false};
+static void startWatchdog() {
+    std::thread([]() {
+        using clock = std::chrono::steady_clock;
+        const auto start = clock::now();
+        auto doneAt = clock::time_point();
+        for (;;) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            const auto now = clock::now();
+            if (g_mainDone.load()) {
+                if (doneAt == clock::time_point()) doneAt = now;
+                if (now - doneAt > std::chrono::seconds(20)) {
+                    std::printf("WATCHDOG: process exit blocked for 20 s\n");
+                    std::fflush(stdout);
+                    std::_Exit(4);
+                }
+            } else if (now - start > std::chrono::seconds(170)) {
+                std::printf("WATCHDOG: test exceeded 170 s\n");
+                std::fflush(stdout);
+                std::_Exit(3);
+            }
+        }
+    }).detach();
+}
 
 static QString writeFile(const QString &dir, const QString &name, const QByteArray &content) {
     const QString path = QDir(dir).absoluteFilePath(name);
@@ -124,6 +160,7 @@ static const char *kNotebook = R"NB({
 
 int main(int argc, char *argv[]) {
     setvbuf(stdout, nullptr, _IONBF, 0);
+    startWatchdog();
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QTemporaryDir cfgDir;
     qputenv("XDG_CONFIG_HOME", cfgDir.path().toUtf8());
@@ -500,6 +537,50 @@ int main(int argc, char *argv[]) {
     sqlEd->removeEventFilter(&probe2);
     EXPECT_TRUE("k: pane hidden -> Ctrl+Return goes to the SQL editor, no run",
                 probe2.hits == 1 && !nb->isBusy() && nb->statusTextAt(sevenCell).isEmpty());
+
+    // ── z ── (last: a stopped SQLite query keeps running in the background)
+    std::printf("-- z: Stop / timeout on a Qt-SQL driver --\n");
+    {
+        if (!previewAct->isChecked()) previewAct->trigger();
+        const QString runawayPath = writeFile(work.path(), "runaway.sql",
+            "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c) SELECT count(*) FROM c;\n"
+            "-- %%\ncreate table after_stop(a int);\n-- %%\nselect 5 as five;\n");
+        mw.openFile(runawayPath);
+        QTest::qWait(30);
+        nb->connectionCombo()->setCurrentIndex(0);
+        nb->runCell(0);
+        QTest::qWait(300);
+        EXPECT_TRUE("z: runaway query busy", nb->isBusy());
+        QElapsedTimer st;
+        st.start();
+        nb->stop();
+        while (nb->isBusy() && st.elapsed() < 1000) QTest::qWait(20);
+        EXPECT_TRUE("z: Stop frees the UI within 1 s", !nb->isBusy());
+        EXPECT_TRUE("z: status says Stopped", nb->statusTextAt(0).contains(QLatin1String("Stopped")));
+        EXPECT_TRUE("z: connection combo re-enabled", nb->connectionCombo()->isEnabled());
+        std::printf("     status[0]=%s\n", qPrintable(nb->statusTextAt(0)));
+        nb->runCell(1);
+        waitIdle(nb, 8000);
+        nb->runCell(2);
+        waitIdle(nb, 8000);
+        EXPECT_TRUE("z: scratch DB still writable + readable after a Stop",
+                    !nb->statusTextAt(1).startsWith(QLatin1String("Error")) && nb->resultTableAt(2) &&
+                        nb->resultTableAt(2)->item(0, 0) && nb->resultTableAt(2)->item(0, 0)->text() == QLatin1String("5"));
+        std::printf("     status[1]=%s | status[2]=%s\n", qPrintable(nb->statusTextAt(1)),
+                    qPrintable(nb->statusTextAt(2)));
+        EXPECT_TRUE("z: stopped worker is not in the global pool (app exit is not blocked)",
+                    QThreadPool::globalInstance()->activeThreadCount() == 0);
+        nb->setTimeoutMs(500);
+        nb->runCell(0);
+        QElapsedTimer tt;
+        tt.start();
+        while (nb->isBusy() && tt.elapsed() < 3000) QTest::qWait(20);
+        EXPECT_TRUE("z: injected timeout frees the UI", !nb->isBusy());
+        EXPECT_TRUE("z: status says Timed out", nb->statusTextAt(0).startsWith(QLatin1String("Timed out after")));
+        std::printf("     status[0]=%s\n", qPrintable(nb->statusTextAt(0)));
+        nb->setTimeoutMs(SqlNotebookWidget::kTimeoutMs);
+    }
+    g_mainDone.store(true);
 
     std::printf("\n=== %d passed, %d failed ===\n", g_passed, g_failed);
     return g_failed == 0 ? 0 : 1;
