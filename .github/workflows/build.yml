@@ -688,9 +688,17 @@ jobs:
           # CI runners when a previous mount hasn't fully settled. Retry
           # up to 3 times with an increasing pause — the workaround
           # documented in multiple well-known Qt CI pipelines.
+          # .app + /Applications symlink = drag-to-install; ditto keeps the signature.
+          DMG_STAGE="$(mktemp -d)/Notepatra"
+          mkdir -p "$DMG_STAGE"
+          ditto "$APP" "$DMG_STAGE/Notepatra.app"
+          ln -s /Applications "$DMG_STAGE/Applications"
+          codesign -v "$DMG_STAGE/Notepatra.app" || {
+            echo "::error::staged bundle lost its signature"; exit 1
+          }
           rm -f build/Notepatra.dmg
           for attempt in 1 2 3; do
-            if hdiutil create -volname "Notepatra" -srcfolder "$APP" -ov \
+            if hdiutil create -volname "Notepatra" -srcfolder "$DMG_STAGE" -ov \
                               -format UDZO -nospotlight build/Notepatra.dmg; then
               echo "✓ DMG built on attempt $attempt"
               break
@@ -889,9 +897,17 @@ jobs:
           echo "✓ Full bundle signed with hardened runtime + entitlements"
 
           # ─── Step 8: Create the DMG
+          # .app + /Applications symlink = drag-to-install; ditto keeps the signature.
+          DMG_STAGE="$(mktemp -d)/Notepatra"
+          mkdir -p "$DMG_STAGE"
+          ditto "$APP" "$DMG_STAGE/Notepatra.app"
+          ln -s /Applications "$DMG_STAGE/Applications"
+          codesign -v "$DMG_STAGE/Notepatra.app" || {
+            echo "::error::staged bundle lost its signature"; exit 1
+          }
           rm -f build-full/Notepatra-full.dmg
           for attempt in 1 2 3; do
-            if hdiutil create -volname "Notepatra" -srcfolder "$APP" -ov \
+            if hdiutil create -volname "Notepatra" -srcfolder "$DMG_STAGE" -ov \
                               -format UDZO -nospotlight build-full/Notepatra-full.dmg; then
               echo "✓ Full DMG built on attempt $attempt"
               break
