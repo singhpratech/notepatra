@@ -71,6 +71,11 @@ int main(int argc, char *argv[]) {
     QTemporaryDir cfgDir;
     qputenv("XDG_CONFIG_HOME", cfgDir.path().toUtf8());
     qputenv("XDG_DATA_HOME", cfgDir.path().toUtf8());
+#ifdef Q_OS_WIN
+    // Config::appConfigDir() reads APPDATA on Windows; without this every test shares one config.
+    qputenv("APPDATA",     cfgDir.path().toUtf8());
+    qputenv("USERPROFILE", cfgDir.path().toUtf8());
+#endif
     qputenv("HOME", cfgDir.path().toUtf8());
     QApplication app(argc, argv);
     std::printf("=== test_preview_persist ===\n");

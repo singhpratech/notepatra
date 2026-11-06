@@ -20,6 +20,7 @@
 //   q. (WebEngine) HTML preview makes no network connections
 //   z. Stop / injected timeout free the UI on SQLite; exit not blocked
 
+#include "shortcut_hints.h"
 #include "mainwindow.h"
 #include "aipanel.h"
 #include "dbconnections.h"
@@ -172,6 +173,11 @@ int main(int argc, char *argv[]) {
     QTemporaryDir cfgDir;
     qputenv("XDG_CONFIG_HOME", cfgDir.path().toUtf8());
     qputenv("XDG_DATA_HOME", cfgDir.path().toUtf8());
+#ifdef Q_OS_WIN
+    // Config::appConfigDir() reads APPDATA on Windows; without this every test shares one config.
+    qputenv("APPDATA",     cfgDir.path().toUtf8());
+    qputenv("USERPROFILE", cfgDir.path().toUtf8());
+#endif
     qputenv("HOME", cfgDir.path().toUtf8());
     QApplication app(argc, argv);
 
@@ -404,7 +410,7 @@ int main(int argc, char *argv[]) {
     std::printf("-- i: AI dock beside preview --\n");
     previewAct->trigger();
     QTest::qWait(30);
-    QAction *aiToggle = findActionByShortcut(&mw, QKeySequence("Ctrl+Q"));
+    QAction *aiToggle = findActionByShortcut(&mw, Shortcuts::aiAssistant().first());
     EXPECT_TRUE("i: AI Assistant action found", aiToggle != nullptr);
     if (aiToggle) aiToggle->trigger();
     QTest::qWait(60);

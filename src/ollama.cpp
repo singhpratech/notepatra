@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "ollama.h"
+
+#include <QHostAddress>
 #include "config.h"
 #include "ai_interaction_log.h"
 #include <QJsonArray>
@@ -717,7 +719,7 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
     connect(m_reply, &QNetworkReply::finished, this, [this]() {
         if (m_reply && m_reply->error() != QNetworkReply::NoError && !m_done) {
             m_done = true;
-            emit error(friendlyTransportMessage(m_reply->errorString()));
+            emit error(friendlyTransportMessage(m_reply));
         }
     });
 }
@@ -1233,8 +1235,8 @@ void OllamaClient::onFinishedOllama() {
         // friendly "start the server" hint instead.
         const QString msg = (httpStatus >= 400)
             ? httpErrorMessage(httpStatus, remaining,
-                               friendlyTransportMessage(m_reply->errorString()))
-            : friendlyTransportMessage(m_reply->errorString());
+                               friendlyTransportMessage(m_reply))
+            : friendlyTransportMessage(m_reply);
         m_done = true;
         m_reply->deleteLater();
         m_reply = nullptr;
@@ -1306,7 +1308,7 @@ void OllamaClient::onFinishedOpenAI() {
         // so "llama-server not running. Start it: …" actually surfaces.
         const QString msg =
             httpErrorMessage(sc, m_sseBuffer,
-                             friendlyTransportMessage(m_reply->errorString()));
+                             friendlyTransportMessage(m_reply));
         m_done = true;
         m_sseBuffer.clear();
         m_reply->deleteLater();
@@ -1368,6 +1370,18 @@ void OllamaClient::onFinishedOpenAI() {
 // the v0.1.98 OpenAI fix does), which Qt guarantees to fire after every
 // errorOccurred and which also have the response body for rich HTTP
 // messages.
+QString OllamaClient::friendlyTransportMessage(const QNetworkReply *reply) const {
+    if (!reply) return friendlyTransportMessage(QString());
+    const QNetworkReply::NetworkError code = reply->error();
+    // macOS 15 + Qt 5 reports a closed localhost port as UnknownNetworkError ("Unknown error").
+    const QString host = reply->url().host();
+    const bool loopback = host == QLatin1String("localhost") || QHostAddress(host).isLoopback();
+    if (code == QNetworkReply::ConnectionRefusedError ||
+        (code == QNetworkReply::UnknownNetworkError && loopback))
+        return friendlyTransportMessage(QStringLiteral("Connection refused"));
+    return friendlyTransportMessage(reply->errorString());
+}
+
 QString OllamaClient::friendlyTransportMessage(const QString &raw) const {
     QString msg = raw.isEmpty() ? QStringLiteral("Connection failed") : raw;
     if (msg.contains(QLatin1String("Connection refused"), Qt::CaseInsensitive)) {
@@ -1389,6 +1403,5 @@ void OllamaClient::onError(QNetworkReply::NetworkError) {
     // contract — never error() after finished() or a second error().
     if (m_done) return;
     m_done = true;
-    emit error(friendlyTransportMessage(
-        m_reply ? m_reply->errorString() : QString()));
+    emit error(friendlyTransportMessage(m_reply));
 }

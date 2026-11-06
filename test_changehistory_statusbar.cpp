@@ -44,6 +44,11 @@ int main(int argc, char *argv[]) {
     QTemporaryDir cfg;
     qputenv("XDG_CONFIG_HOME", cfg.path().toUtf8());
     qputenv("XDG_DATA_HOME",   cfg.path().toUtf8());
+#ifdef Q_OS_WIN
+    // Config::appConfigDir() reads APPDATA on Windows; without this every test shares one config.
+    qputenv("APPDATA",     cfg.path().toUtf8());
+    qputenv("USERPROFILE", cfg.path().toUtf8());
+#endif
     qputenv("QT_QPA_PLATFORM", "offscreen");
 
     QApplication app(argc, argv);
