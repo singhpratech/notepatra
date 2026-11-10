@@ -37,7 +37,7 @@
 <meta name="twitter:image" content="https://notepatra.org/og-card.png">
 <meta name="twitter:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~13 MB native, zero Electron, 49-tool MCP server.">
 
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://api.github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://api.github.com; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
 
@@ -69,6 +69,27 @@
      jarring pure-black-with-orange that did not match the homepage. */
 
   * { box-sizing: border-box; }
+
+  /* Anchors land below the sticky top bar (53 px on desktop; the phone
+     value is in the 768px block). Replaces the old per-class
+     .anchor-target scroll-margin, which missed headings without it. */
+  html { scroll-padding-top: 64px; }
+
+  /* Skip link: off-screen until it receives keyboard focus. */
+  .skip-link {
+    position: absolute;
+    left: 8px;
+    top: -100px;
+    z-index: 30;
+    padding: 10px 16px;
+    background: var(--text);
+    color: #FFFFFF;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .skip-link:focus { top: 8px; }
 
   html, body {
     margin: 0;
@@ -298,19 +319,87 @@
     white-space: nowrap;
   }
 
-  .anchor-target {
-    scroll-margin-top: 80px;
-  }
+  /* The sidebar's lists sit in a <details> so the same list doubles as
+     the phone table of contents. On desktop it is always open and its
+     summary is hidden, so the sidebar looks exactly as before. */
+  aside.sidebar details > summary { display: none; }
+  .to-top { display: none; }
 
   /* Mobile */
   @media (max-width: 900px) {
+    .layout { flex-direction: column; }
     aside.sidebar {
-      display: none;
+      width: auto;
+      height: auto;
+      position: static;
+      overflow: visible;
+      padding: 16px 24px 0 24px;
+      border-right: 0;
     }
+    aside.sidebar details {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-alt);
+    }
+    aside.sidebar details > summary {
+      display: list-item;
+      cursor: pointer;
+      padding: 12px 16px;
+      min-height: 44px;
+      font-weight: 600;
+      font-size: 15px;
+      color: var(--text);
+    }
+    aside.sidebar .toc-body {
+      max-height: 60vh;
+      overflow-y: auto;
+      padding: 4px 12px 16px 12px;
+      border-top: 1px solid var(--border);
+    }
+    aside.sidebar .section-label:first-child { margin-top: 12px; }
+    aside.sidebar a { padding: 8px 10px; }
     main.content {
       padding: 32px 24px 64px 24px;
       max-width: 100%;
     }
+    /* Small back-to-top link for the long single-column page. */
+    .to-top {
+      display: block;
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      z-index: 20;
+      padding: 10px 14px;
+      background: var(--bg-alt);
+      color: var(--text-mute);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      box-shadow: 0 2px 8px rgba(20,20,19,0.08);
+    }
+  }
+
+  /* Phone top bar: the links become one horizontally scrollable row
+     under the logo, with tap-sized padding and a right-edge fade. */
+  @media (max-width: 768px) {
+    html { scroll-padding-top: 92px; }
+    .topbar { padding: 10px 16px 0 16px; row-gap: 0; }
+    .topbar-right {
+      width: 100%;
+      flex-wrap: nowrap;
+      gap: 18px;
+      padding-right: 28px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+      mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    }
+    .topbar-right::-webkit-scrollbar { display: none; }
+    .topbar-right a { flex-shrink: 0; white-space: nowrap; padding: 11px 0; }
+    footer.doc-footer a { display: inline-block; padding: 10px 2px; }
   }
 
   /* Footer */
@@ -329,6 +418,8 @@
 </head>
 <body>
 
+<a class="skip-link" href="#main">Skip to content</a>
+
 <header class="topbar">
   <div class="topbar-left">
     <img src="/icon-192.png" alt="Notepatra" width="192" height="192">
@@ -337,16 +428,20 @@
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
-    <a href="/docs.html">Docs</a>
+    <a href="/docs.html" aria-current="page">Docs</a>
     <a href="/mcp.html">MCP</a>
-    <a href="https://github.com/singhpratech/notepatra/releases/latest">Download</a>
+    <a href="/enterprise.html">Enterprise</a>
+    <a href="/#download">Download</a>
     <a href="https://github.com/singhpratech/notepatra">GitHub</a>
   </nav>
 </header>
 
 <div class="layout">
 
-  <aside class="sidebar">
+  <aside class="sidebar" aria-label="Contents">
+    <details id="toc" open>
+    <summary>Contents</summary>
+    <div class="toc-body">
     <div class="section-label">Getting started</div>
     <ul>
       <li><a href="#introduction">Introduction</a></li>
@@ -425,9 +520,24 @@
       <li><a href="#security">Security policy</a></li>
       <li><a href="#license">License</a></li>
     </ul>
+    </div>
+    </details>
+    <script>
+      // The contents list starts collapsed on narrow screens (it sits above
+      // the article there) and open on desktop (where it is the sidebar).
+      // Runs here, before the article is parsed, so nothing jumps.
+      (function () {
+        var toc = document.getElementById('toc');
+        var mq = window.matchMedia('(max-width: 900px)');
+        function sync() { toc.open = !mq.matches; }
+        sync();
+        if (mq.addEventListener) mq.addEventListener('change', sync);
+        else if (mq.addListener) mq.addListener(sync);
+      })();
+    </script>
   </aside>
 
-  <main class="content">
+  <main class="content" id="main">
 
   <h1>Notepatra Documentation</h1>
   <p class="lead">A native C++/Rust code editor with local-first AI — six backends in the dropdown (Ollama, llama.cpp, Ollama Cloud, OpenRouter, OpenAI, Azure OpenAI), plus any OpenAI-compatible server reachable via the llama.cpp entry. Fast, portable, free forever under GPL-3.0. This is the complete reference for installing, using, customizing, and extending Notepatra.</p>
@@ -473,12 +583,12 @@
       <tr><td>🪟 Windows x64 (MSI)</td><td><code>notepatra-&lt;version&gt;.msi</code></td><td>~44.1 MB</td></tr>
       <tr><td>🪟 Windows x64 (installer)</td><td><code>notepatra-setup-&lt;version&gt;.exe</code></td><td>~33.1 MB</td></tr>
       <tr><td>🪟 Windows x64 (portable)</td><td><code>notepatra-windows-x64.zip</code></td><td>~37.8 MB</td></tr>
-      <tr><td>Linux x64 / ARM64 (.deb)</td><td><code>notepatra_&lt;version&gt;_amd64.deb</code> / <code>_arm64.deb</code></td><td>~19.8 / 18.5 MB</td></tr>
-      <tr><td>Linux x64 / ARM64 (.rpm)</td><td><code>notepatra-&lt;version&gt;-1.x86_64.rpm</code> / <code>.aarch64.rpm</code></td><td>~24.5 / 23.2 MB</td></tr>
+      <tr><td>Linux x64 / ARM64 (.deb)</td><td><code>notepatra_&lt;version&gt;_amd64.deb</code> / <code>_arm64.deb</code></td><td>~19.8 MB / 18.5 MB</td></tr>
+      <tr><td>Linux x64 / ARM64 (.rpm)</td><td><code>notepatra-&lt;version&gt;-1.x86_64.rpm</code> / <code>.aarch64.rpm</code></td><td>~24.5 MB / 23.2 MB</td></tr>
       <tr><td>Linux x64 (AppImage)</td><td><code>Notepatra-&lt;version&gt;-x86_64.AppImage</code></td><td>~54.8 MB</td></tr>
-      <tr><td>Full: Linux x64 / ARM64</td><td><code>notepatra-linux-x64-full.tar.gz</code> / <code>notepatra-linux-arm64-full.tar.gz</code></td><td>~22.7 / 21.3 MB</td></tr>
+      <tr><td>Full: Linux x64 / ARM64</td><td><code>notepatra-linux-x64-full.tar.gz</code> / <code>notepatra-linux-arm64-full.tar.gz</code></td><td>~22.7 MB / 21.3 MB</td></tr>
       <tr><td>Full: macOS Apple Silicon</td><td><code>notepatra-macos-arm64-full.dmg</code></td><td>~91.1 MB</td></tr>
-      <tr><td>Full: Windows x64</td><td><code>notepatra-setup-&lt;version&gt;-full.exe</code> / <code>notepatra-windows-x64-full.zip</code></td><td>~81.6 / 103.4 MB</td></tr>
+      <tr><td>Full: Windows x64</td><td><code>notepatra-setup-&lt;version&gt;-full.exe</code> / <code>notepatra-windows-x64-full.zip</code></td><td>~81.6 MB / 103.4 MB</td></tr>
     </tbody>
   </table></div>
   <p>Install a <code>.deb</code> with <code>sudo apt install ./notepatra_&lt;version&gt;_amd64.deb</code> (it installs to <code>/opt/notepatra</code> and pulls in the Qt packages) and an <code>.rpm</code> with <code>sudo dnf install ./notepatra-&lt;version&gt;-1.x86_64.rpm</code>; remove them with <code>sudo apt remove notepatra</code> or <code>sudo dnf remove notepatra</code>. The AppImage is x86_64 only: <code>chmod +x</code> it and run it.</p>
@@ -2324,17 +2434,33 @@ sha256sum -c SHA256SUMS --ignore-missing</code></pre>
 
   <footer class="doc-footer">
     Notepatra — <strong>Envisioned by <a href="https://theaivibe.org/about">Prateek Singh</a>. Built with Claude.</strong><br>
-    © 2026 Prateek Singh · GPL-3.0 · <a href="/">notepatra.org</a> · <a href="https://github.com/singhpratech/notepatra">GitHub</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Changelog</a>
+    © 2026 Prateek Singh · GPL-3.0<br>
+    <a href="/">Home</a> · <a href="/docs.html" aria-current="page">Docs</a> · <a href="/mcp.html">MCP</a> · <a href="/enterprise.html">Enterprise</a> · <a href="https://github.com/singhpratech/notepatra">GitHub</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Changelog</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">Security</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE">License</a>
   </footer>
 
   </main>
 </div>
+
+<a class="to-top" href="#top">Back to top <span aria-hidden="true">↑</span></a>
 
 <script>
   // Highlight sidebar link matching the current scroll position
   (function () {
     const links = document.querySelectorAll('aside.sidebar a[href^="#"]');
     const ids = Array.from(links).map(a => a.getAttribute('href').slice(1));
+    const sidebar = document.querySelector('aside.sidebar');
+    const toc = document.getElementById('toc');
+    const desktop = window.matchMedia('(min-width: 901px)');
+    let lastActive = null;
+    // Keep the active link visible inside the sidebar's own scroll box.
+    // Adjusts sidebar.scrollTop directly, so the page itself never moves.
+    function revealInSidebar(link) {
+      if (!desktop.matches || sidebar.scrollHeight <= sidebar.clientHeight) return;
+      const r = link.getBoundingClientRect();
+      const s = sidebar.getBoundingClientRect();
+      if (r.top < s.top + 8) sidebar.scrollTop -= (s.top + 8) - r.top;
+      else if (r.bottom > s.bottom - 8) sidebar.scrollTop += r.bottom - (s.bottom - 8);
+    }
     function setActive() {
       let active = ids[0];
       const scrollPos = window.scrollY + 120;
@@ -2343,9 +2469,17 @@ sha256sum -c SHA256SUMS --ignore-missing</code></pre>
         if (el && el.offsetTop <= scrollPos) active = id;
       }
       links.forEach(a => {
-        a.classList.toggle('active', a.getAttribute('href') === '#' + active);
+        const on = a.getAttribute('href') === '#' + active;
+        a.classList.toggle('active', on);
+        if (on && active !== lastActive) revealInSidebar(a);
       });
+      lastActive = active;
     }
+    // On narrow screens the contents list sits above the article: close
+    // it after a pick so the reader lands on the section, not the list.
+    links.forEach(a => a.addEventListener('click', () => {
+      if (!desktop.matches) toc.open = false;
+    }));
     window.addEventListener('scroll', setActive, { passive: true });
     window.addEventListener('hashchange', setActive);
     setActive();

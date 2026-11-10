@@ -56,7 +56,25 @@
             --c-bad:         #B71C1C;
         }
 
-        html { scroll-behavior: smooth; }
+        /* scroll-padding-top = the sticky nav's height, so #anchors land
+           below it (phone value in the 720px block). */
+        html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+
+        /* Skip link: off-screen until it receives keyboard focus. */
+        .skip-link {
+            position: absolute;
+            left: 8px;
+            top: -100px;
+            z-index: 300;
+            padding: 10px 16px;
+            background: var(--c-text);
+            color: #FFFFFF;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .skip-link:focus { top: 8px; }
 
         body {
             font-family: "Söhne", "Inter", -apple-system, BlinkMacSystemFont,
@@ -88,12 +106,15 @@
             align-items: center;
         }
         .nav-logo {
+            display: inline-flex;
+            align-items: center;
             font-weight: 700;
             font-size: 18px;
             color: var(--c-text);
             text-decoration: none;
             letter-spacing: -0.01em;
         }
+        .nav-logo img { width: 28px; height: 28px; margin-right: 10px; }
         .nav-logo span { color: var(--c-accent); }
         .nav-links a {
             color: var(--c-text-muted);
@@ -245,7 +266,30 @@
         footer a { color: var(--c-text-muted); }
         footer a:hover { color: var(--c-text); }
 
+        /* AI backends: keep the four columns readable on phones; the
+           table scrolls inside its .table-wrap instead of squeezing. */
+        #ai-backends table { min-width: 640px; }
+
         @media (max-width: 720px) {
+            /* Phone nav: links in one horizontally scrollable row under
+               the logo, tap-sized, with a right-edge fade. */
+            html { scroll-padding-top: 94px; }
+            nav { padding: 10px 22px 0; }
+            .nav-inner { flex-wrap: wrap; }
+            .nav-links {
+                display: flex;
+                width: 100%;
+                gap: 18px;
+                padding-right: 28px;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+                -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+                mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+            }
+            .nav-links::-webkit-scrollbar { display: none; }
+            .nav-links a { margin-left: 0; flex-shrink: 0; white-space: nowrap; padding: 11px 0; }
+            footer a { display: inline-block; padding: 10px 2px; }
             h1 { font-size: 32px; }
             .page { padding: 36px 22px 64px; }
             table { font-size: 13.5px; }
@@ -254,18 +298,23 @@
     </style>
 </head>
 <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
     <nav>
         <div class="nav-inner">
-            <a href="/" class="nav-logo">Notepatra<span>.</span></a>
+            <a href="/" class="nav-logo"><img src="/icon-192.png" alt="" width="192" height="192">Notepatra<span>.</span></a>
             <div class="nav-links">
                 <a href="/">Home</a>
                 <a href="/docs.html">Docs</a>
+                <a href="/mcp.html">MCP</a>
+                <a href="/enterprise.html" aria-current="page">Enterprise</a>
+                <a href="/#download">Download</a>
                 <a href="https://github.com/singhpratech/notepatra">GitHub</a>
             </div>
         </div>
     </nav>
 
-    <div class="page">
+    <main class="page" id="main">
 
         <span class="hero-tag">For IT · Legal · Procurement</span>
         <h1>Notepatra for Enterprise</h1>
@@ -597,15 +646,19 @@
             <p>General issues and feature requests: <a href="https://github.com/singhpratech/notepatra/issues">GitHub Issues</a>.</p>
         </section>
 
-    </div>
+    </main>
 
     <footer>
         <p>© 2026 Prateek Singh. Source code licensed under <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE">GNU General Public License v3.0</a>.</p>
         <p style="margin-top:10px;">
             <a href="/">Home</a> ·
             <a href="/docs.html">Docs</a> ·
+            <a href="/mcp.html">MCP</a> ·
+            <a href="/enterprise.html" aria-current="page">Enterprise</a> ·
             <a href="https://github.com/singhpratech/notepatra">GitHub</a> ·
-            <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">Security</a>
+            <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Changelog</a> ·
+            <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">Security</a> ·
+            <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE">License</a>
         </p>
     </footer>
 </body>
