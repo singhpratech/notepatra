@@ -6,7 +6,32 @@ set -e
 
 REPO="singhpratech/notepatra"
 INSTALL_DIR="$HOME/.local/bin"
+# Full on Linux: the binary and libduckdb.so live together here (the binary
+# finds the library through RUNPATH $ORIGIN, i.e. its own real directory) and
+# $INSTALL_DIR/notepatra is a symlink to the binary. Lite stays a plain file.
+OPT_DIR="$HOME/.local/opt/notepatra"
 APP_NAME="notepatra"
+
+print_build_from_source() {
+    echo "  Build from source:"
+    echo ""
+    echo "    # Dependencies"
+    if [ "$OS" = "linux" ]; then
+        echo "    sudo apt install cmake qtbase5-dev libqscintilla2-qt5-dev"
+    elif [ "$OS" = "darwin" ]; then
+        echo "    brew install qt@5 cmake"
+    fi
+    echo "    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+    echo "    source ~/.cargo/env"
+    echo ""
+    echo "    # Build"
+    echo "    git clone https://github.com/$REPO.git"
+    echo "    cd notepatra"
+    echo "    cd rust-core && cargo build --release && cd .."
+    echo "    mkdir build && cd build && cmake .. && make -j\$(nproc)"
+    echo "    ./notepatra"
+    echo ""
+}
 
 echo ""
 echo "  ╔══════════════════════════════════════╗"
@@ -46,7 +71,14 @@ case "$OS" in
         EXT="dmg"
         case "$ARCH" in
             arm64) BASE="notepatra-macos-arm64" ;;
-            x86_64) BASE="notepatra-macos-x64" ;;
+            x86_64)
+                # No Intel macOS build is published (Apple Silicon only).
+                echo "  Intel Macs (x86_64) have no pre-built Notepatra download."
+                echo "  Releases ship for Apple Silicon (arm64) macOS only."
+                echo ""
+                print_build_from_source
+                exit 1
+                ;;
             *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
         esac
         ;;
@@ -71,36 +103,44 @@ echo ""
 
 # Get latest release URL
 echo "  Fetching latest release..."
+if ! API_JSON=$(curl -sL "https://api.github.com/repos/$REPO/releases/latest"); then
+    API_JSON=""
+fi
+if [ -z "$API_JSON" ]; then
+    echo ""
+    echo "  ❌ Could not reach the GitHub API (api.github.com)."
+    echo "     Check your network or proxy, or download manually from:"
+    echo "     https://github.com/$REPO/releases/latest"
+    echo ""
+    exit 1
+fi
+if ! printf '%s\n' "$API_JSON" | grep -q '"tag_name"'; then
+    # Rate limit (60 requests/hour per IP without a token, so shared NAT and
+    # corporate networks hit it), an outage, or a proxy page: no release data.
+    API_MSG=$(printf '%s\n' "$API_JSON" | grep -F '"message"' | head -1 | cut -d '"' -f 4)
+    echo ""
+    echo "  ❌ The GitHub API did not return the latest release."
+    [ -n "$API_MSG" ] && echo "     GitHub said: $API_MSG"
+    echo "     If this is a rate limit, wait an hour and retry, or download manually from:"
+    echo "     https://github.com/$REPO/releases/latest"
+    echo ""
+    exit 1
+fi
 # Match the EXACT asset filename: the leading "/" and trailing '"' anchor it
 # so "notepatra-macos-arm64.dmg" never matches "…-full.dmg" or "…dmg.pem/.sig".
 # grep -F keeps the "." literal (not a regex wildcard).
-RELEASE_URL=$(curl -sL "https://api.github.com/repos/$REPO/releases/latest" | \
+RELEASE_URL=$(printf '%s\n' "$API_JSON" | \
     grep -F "/${ASSET}\"" | \
     head -1 | cut -d '"' -f 4)
 
 if [ -z "$RELEASE_URL" ]; then
+    LATEST_TAG=$(printf '%s\n' "$API_JSON" | grep -F '"tag_name"' | head -1 | cut -d '"' -f 4)
     echo ""
-    echo "  No release found. Downloading from latest build..."
+    echo "  ❌ The latest release (${LATEST_TAG:-unknown}) has no asset named $ASSET."
+    echo "     See what it does ship: https://github.com/$REPO/releases/latest"
     echo ""
-    echo "  Building from source instead:"
-    echo ""
-    echo "    # Dependencies"
-    if [ "$OS" = "linux" ]; then
-        echo "    sudo apt install cmake qtbase5-dev libqscintilla2-qt5-dev"
-    elif [ "$OS" = "darwin" ]; then
-        echo "    brew install qt@5 cmake"
-    fi
-    echo "    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
-    echo "    source ~/.cargo/env"
-    echo ""
-    echo "    # Build"
-    echo "    git clone https://github.com/$REPO.git"
-    echo "    cd notepatra"
-    echo "    cd rust-core && cargo build --release && cd .."
-    echo "    mkdir build && cd build && cmake .. && make -j\$(nproc)"
-    echo "    ./notepatra"
-    echo ""
-    exit 0
+    print_build_from_source
+    exit 1
 fi
 
 echo "  Downloading: $RELEASE_URL"
@@ -135,7 +175,6 @@ verify_sha256() {
 # Fetch SHA256SUMS for the same release tag (sibling of $RELEASE_URL)
 RELEASE_TAG=$(echo "$RELEASE_URL" | sed -E 's|.*/download/([^/]+)/.*|\1|')
 SHA_URL="https://github.com/$REPO/releases/download/$RELEASE_TAG/SHA256SUMS"
-SHA_FALLBACK_URL="https://notepatra.org/SHA256SUMS.${RELEASE_TAG}.txt"
 
 # Create install directory
 mkdir -p "$INSTALL_DIR"
@@ -154,12 +193,10 @@ if [ "$OS" = "darwin" ]; then
     # SHA-256 verification — HARD REQUIRED. Refuse install if checksums unreachable
     # or the artifact is not listed in them. (Previously soft-fail: an attacker who
     # could MITM SHA256SUMS while letting the binary through bypassed verification.)
-    if ! curl --proto '=https' --tlsv1.2 -fsSL "$SHA_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null \
-       && ! curl --proto '=https' --tlsv1.2 -fsSL "$SHA_FALLBACK_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null; then
+    if ! curl --proto '=https' --tlsv1.2 -fsSL "$SHA_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null; then
         echo ""
         echo "  ❌ Could not fetch SHA256SUMS for release $RELEASE_TAG"
         echo "     Tried: $SHA_URL"
-        echo "     Tried: $SHA_FALLBACK_URL"
         echo "  Refusing to install an unverified binary."
         echo ""
         rm -rf "$TMPDIR"
@@ -369,12 +406,10 @@ else
     TMPDIR=$(mktemp -d)
     curl --proto '=https' --tlsv1.2 -fsSL "$RELEASE_URL" -o "$TMPDIR/notepatra.tar.gz"
     # SHA-256 verification — HARD REQUIRED. (See macOS block above for rationale.)
-    if ! curl --proto '=https' --tlsv1.2 -fsSL "$SHA_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null \
-       && ! curl --proto '=https' --tlsv1.2 -fsSL "$SHA_FALLBACK_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null; then
+    if ! curl --proto '=https' --tlsv1.2 -fsSL "$SHA_URL" -o "$TMPDIR/SHA256SUMS" 2>/dev/null; then
         echo ""
         echo "  ❌ Could not fetch SHA256SUMS for release $RELEASE_TAG"
         echo "     Tried: $SHA_URL"
-        echo "     Tried: $SHA_FALLBACK_URL"
         echo "  Refusing to install an unverified binary."
         echo ""
         rm -rf "$TMPDIR"
@@ -417,9 +452,48 @@ else
         fi
     fi
     cd "$TMPDIR"
-    tar xzf notepatra.tar.gz
-    chmod +x notepatra
-    mv notepatra "$INSTALL_DIR/"
+    mkdir "$TMPDIR/pkg"
+    tar xzf notepatra.tar.gz -C "$TMPDIR/pkg"
+    if [ ! -f "$TMPDIR/pkg/notepatra" ]; then
+        echo "  ❌ Archive did not contain the notepatra binary"
+        rm -rf "$TMPDIR"
+        exit 1
+    fi
+    chmod +x "$TMPDIR/pkg/notepatra"
+    BIN_PATH="$INSTALL_DIR/notepatra"
+    # Stage next to the target, then rename over it. rename() replaces the
+    # directory entry itself, so an existing symlink (a previous Full install)
+    # is swapped out rather than written through, and a running copy is safe.
+    rm -f "$INSTALL_DIR/.notepatra.new"
+    if [ -n "$FLAVOR" ]; then
+        # Full: the binary needs libduckdb.so beside it (RUNPATH $ORIGIN, which
+        # the loader resolves from the binary's REAL path). Install the whole
+        # tarball into $OPT_DIR and symlink $BIN_PATH to it. Build the new
+        # directory first and swap it in, so a failed copy leaves the old one.
+        mkdir -p "$(dirname "$OPT_DIR")"
+        rm -rf "$OPT_DIR.new" "$OPT_DIR.old"
+        mv "$TMPDIR/pkg" "$OPT_DIR.new"
+        if [ -e "$OPT_DIR" ] || [ -L "$OPT_DIR" ]; then
+            mv "$OPT_DIR" "$OPT_DIR.old"
+        fi
+        if ! mv "$OPT_DIR.new" "$OPT_DIR"; then
+            [ -e "$OPT_DIR.old" ] && mv "$OPT_DIR.old" "$OPT_DIR"
+            echo "  ❌ Could not move the new build into $OPT_DIR"
+            rm -rf "$TMPDIR" "$OPT_DIR.new"
+            exit 1
+        fi
+        rm -rf "$OPT_DIR.old"
+        ln -s "$OPT_DIR/notepatra" "$INSTALL_DIR/.notepatra.new"
+        mv -f "$INSTALL_DIR/.notepatra.new" "$BIN_PATH"
+    else
+        cp "$TMPDIR/pkg/notepatra" "$INSTALL_DIR/.notepatra.new"
+        mv -f "$INSTALL_DIR/.notepatra.new" "$BIN_PATH"
+        # Switching from Full to Lite: the old Full directory is now unused.
+        if [ -d "$OPT_DIR" ] && [ ! -L "$OPT_DIR" ]; then
+            rm -rf "$OPT_DIR"
+            echo "  Removed the previous Full build at $OPT_DIR"
+        fi
+    fi
 
     # Add to PATH if needed
     if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
@@ -462,8 +536,34 @@ EOF
 
     rm -rf "$TMPDIR"
 
+    # Can the binary actually start? ldd lists every shared library it needs;
+    # a "not found" means it would fail at exec. Check the REAL path: the
+    # loader expands $ORIGIN from it, not from the symlink's directory.
+    if command -v ldd >/dev/null 2>&1; then
+        REAL_BIN=$(readlink -f "$BIN_PATH" 2>/dev/null || true)
+        [ -n "$REAL_BIN" ] || REAL_BIN="$BIN_PATH"
+        MISSING=$(ldd "$REAL_BIN" 2>/dev/null | grep 'not found' || true)
+        if [ -n "$MISSING" ]; then
+            echo ""
+            echo "  ❌ Notepatra was copied to $BIN_PATH but cannot start yet."
+            echo "     These shared libraries are missing:"
+            printf '%s\n' "$MISSING" | sed 's/^[[:space:]]*/       /'
+            echo ""
+            echo "  Install your distribution's Qt 5 runtime packages that provide them"
+            echo "  (on Debian/Ubuntu: apt-file search <library>), then run: notepatra"
+            echo "  The .deb, .rpm and AppImage downloads pull these in for you:"
+            echo "  https://github.com/$REPO/releases/latest"
+            echo ""
+            exit 1
+        fi
+    fi
+
     echo ""
-    echo "  ✅ Installed to $INSTALL_DIR/notepatra"
+    if [ -n "$FLAVOR" ]; then
+        echo "  ✅ Installed to $OPT_DIR (linked from $BIN_PATH)"
+    else
+        echo "  ✅ Installed to $BIN_PATH"
+    fi
     echo ""
     echo "  Run:  notepatra"
     echo "  Or find 'Notepatra' in your app menu."

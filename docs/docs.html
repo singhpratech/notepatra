@@ -15,7 +15,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Notepatra Documentation — The Code Editor for the AI Era</title>
-<meta name="description" content="Complete Notepatra documentation: installation, features, plugins, AI integration, keyboard shortcuts, compare/diff, configuration, building from source, verifying releases, troubleshooting.">
+<meta name="description" content="Notepatra docs: install, AI backends, the MCP server, Data Analyst, shortcuts, compare/diff, configuration, building from source, troubleshooting.">
 <link rel="canonical" href="https://notepatra.org/docs.html">
 <!-- Open Graph / Twitter. og:image is same-origin on purpose: an
      off-domain card is the same class of bug the favicon had. 1200x630
@@ -25,7 +25,7 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://notepatra.org/docs.html">
 <meta property="og:title" content="Notepatra Documentation — Install, Features, Plugins, AI, MCP">
-<meta property="og:description" content="Complete Notepatra documentation: installation, the Password Generator and other plugins, AI integration, the MCP server, keyboard shortcuts, compare/diff, configuration, building from source, verifying releases, troubleshooting.">
+<meta property="og:description" content="Complete Notepatra documentation: installation, the Password Generator and other built-in tools, AI integration, the MCP server, keyboard shortcuts, compare/diff, configuration, building from source, verifying releases, troubleshooting.">
 <meta property="og:image" content="https://notepatra.org/og-card.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -33,11 +33,11 @@
 <meta property="og:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~13 MB native, zero Electron, 49-tool MCP server.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Notepatra Documentation — Install, Features, Plugins, AI, MCP">
-<meta name="twitter:description" content="Complete Notepatra documentation: installation, the Password Generator and other plugins, AI integration, the MCP server, keyboard shortcuts, compare/diff, configuration, building from source, verifying releases, troubleshooting.">
+<meta name="twitter:description" content="Complete Notepatra documentation: installation, the Password Generator and other built-in tools, AI integration, the MCP server, keyboard shortcuts, compare/diff, configuration, building from source, verifying releases, troubleshooting.">
 <meta name="twitter:image" content="https://notepatra.org/og-card.png">
 <meta name="twitter:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~13 MB native, zero Electron, 49-tool MCP server.">
 
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://api.github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://api.github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
 
@@ -331,7 +331,7 @@
 
 <header class="topbar">
   <div class="topbar-left">
-    <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
+    <img src="/icon-192.png" alt="Notepatra" width="192" height="192">
     <a href="/" class="brand">Notepatra</a>
     <span class="tag">v0.1.131 docs</span>
   </div>
@@ -430,7 +430,7 @@
   <main class="content">
 
   <h1>Notepatra Documentation</h1>
-  <p class="lead">A native C++/Rust code editor with local-first AI — six backends in the dropdown (Ollama, llama.cpp, Ollama Cloud, OpenRouter, OpenAI, Azure OpenAI), plus any OpenAI-compatible server (any OpenAI-compatible server) reachable via the llama.cpp entry. Fast, portable, free forever under GPL-3.0. This is the complete reference for installing, using, customizing, and extending Notepatra.</p>
+  <p class="lead">A native C++/Rust code editor with local-first AI — six backends in the dropdown (Ollama, llama.cpp, Ollama Cloud, OpenRouter, OpenAI, Azure OpenAI), plus any OpenAI-compatible server reachable via the llama.cpp entry. Fast, portable, free forever under GPL-3.0. This is the complete reference for installing, using, customizing, and extending Notepatra.</p>
 
   <!-- ══════════════ Getting started ══════════════ -->
 
@@ -438,10 +438,10 @@
   <p>Notepatra is a <strong>native</strong> code editor written in C++17 with a Rust core for the heavy-lifting (memory-mapped file I/O, Aho-Corasick search, Myers diff, formatters). It targets <strong>Linux x64 / ARM64, macOS Apple Silicon, and Windows x64</strong>. The bare executable is ~13 MB (13.6 MB on Linux x64) on each platform; downloads range 4.5 MB (Linux ARM64) to ~44.1 MB (Windows MSI with Qt DLLs bundled).</p>
   <p>Unlike Electron-based editors, Notepatra does not ship a browser runtime. It uses Qt5 + QScintilla — a battle-tested Scintilla-based editor engine — so 238 file types, 82 language lexers, brace matching, folding, and code completion are built in.</p>
   <p>Unlike cloud-first editors, Notepatra's AI is <strong>local-first</strong>. The AI dock dropdown ships <strong>six backends</strong>: <a href="https://ollama.com">Ollama</a> (default · <code>localhost:11434</code>), <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>'s llama-server (loads any GGUF directly · <code>localhost:8080</code>), <a href="https://openrouter.ai">OpenRouter</a> (cloud · 100+ models — Claude, GPT, Gemini, Grok, Kimi, …), <a href="https://ollama.com/cloud">Ollama Cloud</a> (cloud · gpt-oss:120b, qwen3-coder:480b, deepseek-v3.1:671b), <a href="https://openai.com">OpenAI</a> direct, and <a href="https://azure.microsoft.com/en-us/products/ai-services/openai-service">Azure OpenAI</a> (enterprise). The <code>llama.cpp</code> entry also accepts a user-configured base URL via Settings → Preferences → AI, so it can reach any OpenAI-compatible HTTP server you've installed. Nothing leaves your computer unless you pick a cloud backend. No mandatory API keys, no subscription, no telemetry.</p>
-  <p><strong>The AI runs as an agent.</strong> Tick <strong>Coding Mode</strong> in the AI dock (with a workspace open and a tool-capable model) and the model gets up to 13 native tools — file tools <code>read_file</code>, <code>list_dir</code>, <code>write_file</code>, <code>search</code>, <code>apply_diff</code>; data tools <code>query_sql</code>, <code>csv_query</code>, <code>generate_chart</code>; and read-only git tools <code>git_status</code>, <code>git_diff</code>, <code>git_log</code>, <code>git_branch_list</code>, <code>git_show</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
+  <p><strong>The AI runs as an agent.</strong> Click <strong>Coding</strong> in the AI dock header (with a workspace open and a tool-capable model) and the model gets up to 13 native tools — file tools <code>read_file</code>, <code>list_dir</code>, <code>write_file</code>, <code>search</code>, <code>apply_diff</code>; data tools <code>query_sql</code>, <code>csv_query</code>, <code>generate_chart</code>; and read-only git tools <code>git_status</code>, <code>git_diff</code>, <code>git_log</code>, <code>git_branch_list</code>, <code>git_show</code> — plus three-layer path safety, a 25-call hard cap per turn, and persistent per-workspace chat history. See <a href="#ai-coding-mode">Coding Mode (agentic)</a> below for the full surface.</p>
 
   <div class="callout info">
-    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.131 (August 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
+    <strong>What "0.1.x" means.</strong> Notepatra is built by a one-person team in the open and is not yet feature-complete relative to mature editors. The roadmap is deliberately public. Latest release is v0.1.131 (November 2026). See <a href="#faq">the FAQ</a> for what's shipped vs. planned.
   </div>
 
   <h2 id="install" class="anchor-target">Install</h2>
@@ -454,11 +454,13 @@
 
   <h4>macOS (Apple Silicon only)</h4>
   <pre><code>curl -fsSL https://notepatra.org/install.sh | sh</code></pre>
-  <p>Same script. Downloads <code>.dmg</code>, mounts it, copies <code>Notepatra.app</code> to <code>/Applications</code>, unmounts. Intel Macs are not shipped pre-built — build from source.</p>
+  <p>Same script. Downloads <code>.dmg</code>, mounts it, copies <code>Notepatra.app</code> to <code>/Applications</code> (or <code>~/Applications</code> without admin rights), clears the quarantine flag, links <code>~/.local/bin/notepatra</code>, unmounts. Intel Macs are not shipped pre-built — build from source.</p>
 
   <h4>Windows (PowerShell)</h4>
   <pre><code>irm https://notepatra.org/install.ps1 | iex</code></pre>
   <p>Downloads the portable <code>notepatra-windows-x64.zip</code>, extracts it to <code>%LOCALAPPDATA%\Notepatra</code>, adds that directory to your user <code>PATH</code>, creates Start Menu + Desktop shortcuts, and writes its own uninstall entry (registered in Settings → Apps → Installed apps via an <code>HKCU</code> Uninstall key + bundled <code>uninstall.ps1</code>). No NSIS installer or <code>notepatra-setup.exe</code> is involved.</p>
+
+  <p><strong>Full build.</strong> The scripts install the Lite build. For the Full build (adds the bundled DuckDB engine) put <code>NOTEPATRA_FULL=1</code> on the <code>sh</code> side of the pipe: <code>curl -fsSL https://notepatra.org/install.sh | NOTEPATRA_FULL=1 sh</code> (Linux, macOS), or <code>$env:NOTEPATRA_FULL=1; irm https://notepatra.org/install.ps1 | iex</code> (Windows). Full on Linux also needs your distro's Qt WebEngine (<code>libqt5webenginewidgets5</code> on Debian/Ubuntu, <code>qt5-qtwebengine</code> on Fedora).</p>
 
   <h3>Manual download</h3>
   <p>Every release is at <a href="https://github.com/singhpratech/notepatra/releases/latest">github.com/singhpratech/notepatra/releases/latest</a>.</p>
@@ -471,11 +473,18 @@
       <tr><td>🪟 Windows x64 (MSI)</td><td><code>notepatra-&lt;version&gt;.msi</code></td><td>~44.1 MB</td></tr>
       <tr><td>🪟 Windows x64 (installer)</td><td><code>notepatra-setup-&lt;version&gt;.exe</code></td><td>~33.1 MB</td></tr>
       <tr><td>🪟 Windows x64 (portable)</td><td><code>notepatra-windows-x64.zip</code></td><td>~37.8 MB</td></tr>
+      <tr><td>Linux x64 / ARM64 (.deb)</td><td><code>notepatra_&lt;version&gt;_amd64.deb</code> / <code>_arm64.deb</code></td><td>~19.8 / 18.5 MB</td></tr>
+      <tr><td>Linux x64 / ARM64 (.rpm)</td><td><code>notepatra-&lt;version&gt;-1.x86_64.rpm</code> / <code>.aarch64.rpm</code></td><td>~24.5 / 23.2 MB</td></tr>
+      <tr><td>Linux x64 (AppImage)</td><td><code>Notepatra-&lt;version&gt;-x86_64.AppImage</code></td><td>~54.8 MB</td></tr>
+      <tr><td>Full: Linux x64 / ARM64</td><td><code>notepatra-linux-x64-full.tar.gz</code> / <code>notepatra-linux-arm64-full.tar.gz</code></td><td>~22.7 / 21.3 MB</td></tr>
+      <tr><td>Full: macOS Apple Silicon</td><td><code>notepatra-macos-arm64-full.dmg</code></td><td>~91.1 MB</td></tr>
+      <tr><td>Full: Windows x64</td><td><code>notepatra-setup-&lt;version&gt;-full.exe</code> / <code>notepatra-windows-x64-full.zip</code></td><td>~81.6 / 103.4 MB</td></tr>
     </tbody>
   </table></div>
+  <p>Install a <code>.deb</code> with <code>sudo apt install ./notepatra_&lt;version&gt;_amd64.deb</code> (it installs to <code>/opt/notepatra</code> and pulls in the Qt packages) and an <code>.rpm</code> with <code>sudo dnf install ./notepatra-&lt;version&gt;-1.x86_64.rpm</code>; remove them with <code>sudo apt remove notepatra</code> or <code>sudo dnf remove notepatra</code>. The AppImage is x86_64 only: <code>chmod +x</code> it and run it.</p>
 
   <div class="callout warning">
-    <strong>Linux: Qt5 required.</strong> The Linux tarball is just the bare binary — Qt5 is expected to be installed system-wide. On Ubuntu/Debian: <code>sudo apt install qtbase5-dev libqscintilla2-qt5-dev</code>. On Fedora: <code>sudo dnf install qt5-qtbase qscintilla-qt5</code>. On Arch: <code>sudo pacman -S qt5-base qscintilla-qt5</code>. Mac/Windows downloads bundle Qt.
+    <strong>Linux: Qt5 required.</strong> The Linux tarball is just the bare binary — Qt5 (Widgets, Network, PrintSupport, Concurrent, Sql with the SQLite driver, Charts, Svg) and QScintilla are expected to be installed system-wide. On Ubuntu/Debian: <code>sudo apt install libqt5widgets5 libqt5network5 libqt5printsupport5 libqt5concurrent5 libqt5sql5-sqlite libqt5charts5 libqt5svg5 libqscintilla2-qt5-15</code>. On Fedora, use the <code>.rpm</code> from the release page, which bundles QScintilla and pulls in the Qt packages for you. Mac/Windows downloads bundle Qt.
   </div>
 
   <h2 id="uninstall" class="anchor-target">Uninstall</h2>
@@ -502,7 +511,8 @@ rm -rf ~/Applications/Notepatra.app
 rm -f ~/.local/bin/notepatra
 
 # Remove user config + cache + saved state
-rm -rf ~/.config/notepatra
+rm -rf ~/Library/Application\ Support/Notepatra
+rm -rf ~/.config/notepatra   # legacy, pre-v0.1.96
 rm -rf ~/Library/Preferences/com.notepatra.editor.plist
 rm -rf ~/Library/Saved\ Application\ State/com.notepatra.editor.savedState
 rm -rf ~/Library/Caches/com.notepatra.editor</code></pre>
@@ -656,7 +666,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
     <li><strong>macOS:</strong> <code>~/Library/Application Support/notepatra/plugins/&lt;pack&gt;/</code></li>
     <li><strong>Windows:</strong> <code>%APPDATA%/notepatra/plugins/&lt;pack&gt;/</code></li>
   </ul>
-  <p>As of v0.1.120, the Full flavor ships the <em>charts</em> pack bundled on Linux and Windows (it's the same binary — the pack is "installed" if WebEngine was linked at compile time; macOS Full is DuckDB-only and has no inline Vega renderer). The in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation path is scaffolded but not yet wired (still queued as of v0.1.129), so today packs are added by swapping in the Full binary rather than downloaded inside the app.</p>
+  <p>As of v0.1.120, the Full flavor ships the <em>charts</em> pack bundled on Linux and Windows (it's the same binary — the pack is "installed" if WebEngine was linked at compile time; macOS Full is DuckDB-only and has no inline Vega renderer). The in-app download / SHA-256 verification / runtime <code>QPluginLoader</code> activation path is scaffolded but not yet wired (still queued as of v0.1.131), so today packs are added by swapping in the Full binary rather than downloaded inside the app.</p>
 
   <div class="table-wrap"><table>
     <thead>
@@ -667,7 +677,7 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
         <td><code>charts</code></td>
         <td>In Full binary</td>
         <td>Renders Vega-Lite charts (bar / line / scatter / area / composite) inline in the chat transcript. Powered by QtWebEngine + vega-embed — Linux &amp; Windows Full only.</td>
-        <td>Bundled in the Full flavor on Linux x64 / Linux ARM64 (tar.gz) and Windows (MSI / zip). <strong>The macOS DMG does not include it</strong> — macOS Full is DuckDB-only (Homebrew qt@5 dropped QtWebEngine). All platforms have explicit Lite (default) and Full downloads; Full bundles DuckDB everywhere, plus the WebEngine inline Vega-Lite renderer on Linux/Windows.</td>
+        <td>Bundled in the Full flavor on Linux x64 / Linux ARM64 (tar.gz) and Windows (setup .exe / zip). <strong>The macOS DMG does not include it</strong> — macOS Full is DuckDB-only (Homebrew qt@5 dropped QtWebEngine). All platforms have explicit Lite (default) and Full downloads; Full bundles DuckDB everywhere, plus the WebEngine inline Vega-Lite renderer on Linux/Windows.</td>
       </tr>
       <tr id="pdf-pack">
         <td><code>pdf</code></td>
@@ -695,10 +705,10 @@ Remove-Item -Recurse -Force "$env:APPDATA\Notepatra"</code></pre>
   <h4>Path B — Download the Full flavor manually</h4>
   <p>On <a href="https://github.com/singhpratech/notepatra/releases/latest" rel="noopener">the GitHub Releases page</a> pick the file with <code>-full</code> in the name:</p>
   <ul>
-    <li><strong>Linux x64:</strong> <code>notepatra-linux-x64-full.tar.gz</code> — extract it, then replace <code>~/.local/bin/notepatra</code> (or wherever you installed). Your config, chat history, and connections live outside the binary and are preserved.</li>
+    <li><strong>Linux x64:</strong> <code>notepatra-linux-x64-full.tar.gz</code> — extract it and keep <code>notepatra</code> and <code>libduckdb.so</code> together in one folder (the binary loads <code>libduckdb.so</code> from its own folder), then run or link that <code>notepatra</code> in place of your old one. Full also needs your distro's Qt WebEngine (<code>libqt5webenginewidgets5</code> / <code>qt5-qtwebengine</code>). Your config, chat history, and connections live outside the binary and are preserved.</li>
     <li><strong>Linux ARM64:</strong> <code>notepatra-linux-arm64-full.tar.gz</code> — same pattern.</li>
-    <li><strong>macOS:</strong> <code>Notepatra-full.dmg</code> — the Full flavor with the <strong>DuckDB engine</strong> bundled. (macOS Full is DuckDB-only; inline Vega-Lite charts need QtWebEngine, which Homebrew <code>qt@5</code> no longer ships.) Drag to Applications as usual; your config, chat history, and connections are preserved.</li>
-    <li><strong>Windows:</strong> <code>notepatra-full-*.msi</code> or <code>notepatra-windows-x64-full.zip</code> — MSI installs the Full flavor; zip is the portable equivalent. Your config, chat history, and connections are preserved.</li>
+    <li><strong>macOS:</strong> <code>notepatra-macos-arm64-full.dmg</code> — the Full flavor with the <strong>DuckDB engine</strong> bundled. (macOS Full is DuckDB-only; inline Vega-Lite charts need QtWebEngine, which Homebrew <code>qt@5</code> no longer ships.) Drag to Applications as usual; your config, chat history, and connections are preserved.</li>
+    <li><strong>Windows:</strong> <code>notepatra-setup-&lt;version&gt;-full.exe</code> (installer) or <code>notepatra-windows-x64-full.zip</code> (portable). Your config, chat history, and connections are preserved.</li>
   </ul>
 
   <h4>Path C — Build from source with <code>-DNOTEPATRA_WITH_WEBENGINE=ON</code></h4>
@@ -720,7 +730,7 @@ make -j$(nproc)
   <h3 id="lite-vs-full-faq">FAQ</h3>
   <ul>
     <li><strong>Do I lose anything by staying on Lite?</strong> No — every editor / lexer / AI / Git / data / plugin feature works identically. The only difference is that <code>generate_chart</code> tool results paint as a "Chart rendering requires the Charts Pack" card instead of as an inline rendered chart. You can still see the spec via [View JSON instead] and copy it elsewhere.</li>
-    <li><strong>Can I downgrade Full → Lite?</strong> Yes. Just download the Lite tarball and replace the binary. Your config / chat history / connections are preserved (they live under <code>~/.config/notepatra</code>, not inside the binary).</li>
+    <li><strong>Can I downgrade Full → Lite?</strong> Yes. Just download the Lite tarball and replace the binary. Your config / chat history / connections are preserved (they live in your config directory — <code>~/.config/notepatra</code> on Linux, <code>~/Library/Application Support/Notepatra</code> on macOS, <code>%APPDATA%\Notepatra</code> on Windows — not inside the binary).</li>
     <li><strong>Will the chart spec data be lost if I'm on Lite?</strong> No — the AI's tool result is preserved in your chat history just like any other tool result. If you upgrade to Full later, opening the same chat shows the rendered chart for those past results.</li>
     <li><strong>When does the in-app installer ship?</strong> Still queued as of v0.1.131. The architectural pieces (plugin_loader, manifest schema, download path) are scaffolded in v0.1.66; what's left is the actual HTTP fetch + SHA-256 verify + <code>QPluginLoader::load</code> wiring, plus testing across macOS / Windows runners.</li>
   </ul>
@@ -728,7 +738,7 @@ make -j$(nproc)
   <h2 id="ui-overview" class="anchor-target">UI overview</h2>
   <ul>
     <li><strong>Menu bar</strong> — File, Edit, Search, View, Tools, Encoding, Language, Settings, Utilities, Plugins, Macro, Run, Window, Help. Most actions have keyboard shortcuts (<a href="#shortcuts">full list</a>).</li>
-    <li><strong>Toolbar</strong> — the <strong>Built-in Tools</strong> bar with tool-launch buttons: Project Search, AI, Password, Terminal, Compare, JSON, HTML, SQL, Brackets, REST, Noter, Diagram.</li>
+    <li><strong>Toolbar</strong> — the <strong>Built-in Tools</strong> bar with tool-launch buttons: Project Search, AI, Password, Terminal, Compare, JSON, HTML, SQL, Brackets, REST, Noter, Diagram, Preview.</li>
     <li><strong>Tab bar</strong> — one tab per open file. Modified tabs show a dot. Close with the <code>×</code> or middle-click.</li>
     <li><strong>Editor area</strong> — Scintilla-based editor with line numbers, code folding, brace matching, syntax highlighting, caret-line highlight, word-wrap toggle, EOL visibility toggle, rulers, optional crosshair.</li>
     <li><strong>Status bar</strong> — language, file length, line count, word count, cursor line/col, EOL type (CRLF/LF), encoding, INS/OVR.</li>
@@ -795,8 +805,8 @@ make -j$(nproc)
   <h2 id="rulers-crosshair" class="anchor-target">Rulers &amp; crosshair overlay</h2>
   <p>Optional visual aids for long files and precise cursor placement:</p>
   <ul>
-    <li><strong>Document rulers</strong> — thin horizontal + vertical ruler bands showing pixel offsets from the top-left corner. Toggle: <code>View → Document Rulers</code>.</li>
-    <li><strong>Crosshair overlay</strong> — a thin line extending from the caret position to both edges of the editor, making the current line + column unmistakable. Toggle: <code>View → Crosshair</code>.</li>
+    <li><strong>Document rulers</strong> — thin horizontal + vertical ruler bands showing pixel offsets from the top-left corner. Toggle: <code>Utilities → Measurement → Document Rulers</code>.</li>
+    <li><strong>Crosshair overlay</strong> — a thin line extending from the caret position to both edges of the editor, making the current line + column unmistakable. Toggle: <code>Utilities → Measurement → Crosshair Pixel Measure</code>.</li>
   </ul>
 
   <h2 id="show-symbol" class="anchor-target">Show Symbol — invisible characters (v0.1.124)</h2>
@@ -833,7 +843,7 @@ make -j$(nproc)
   <p>The abbreviations are Notepad++'s own, not colloquial ones: U+FEFF reads <code>ZWNBSP</code> rather than "BOM", U+1680 reads <code>OSPM</code>, U+0099 reads <code>SGCI</code>. Someone comparing the two editors sees the same four letters.</p>
 
   <h3>Persistence and scope</h3>
-  <p>Every Show Symbol setting is <strong>saved in <code>config.json</code> and restored on the next launch</strong>, and applies to every open tab rather than just the active one. Before v0.1.124 none of them were saved. Defaults match Notepad++: everything off except the control-character display — so <strong>non-printing characters are off out of the box</strong>; turn them on from <code>View → Show Symbol</code>.</p>
+  <p>Every Show Symbol setting is <strong>saved in <code>config.json</code> and restored on the next launch</strong>, and applies to every open tab rather than just the active one. Before v0.1.124 none of them were saved. Defaults match Notepad++: everything off except the control-character display and indent guides — so <strong>non-printing characters are off out of the box</strong>; turn them on from <code>View → Show Symbol</code>.</p>
   <p>Symbols are drawn in the Compare panes and the formatter output panels too. Comparing two files that differ only by an invisible character used to show two identical-looking lines while the diff insisted they differed.</p>
 
   <h2 id="find-replace" class="anchor-target">Find &amp; replace</h2>
@@ -908,7 +918,7 @@ make -j$(nproc)
   <div class="table-wrap"><table>
     <thead><tr><th>Mode</th><th>Lite</th><th>Full</th></tr></thead>
     <tbody>
-      <tr><td>HTML engine</td><td>Qt's built-in rich-text engine (a CSS subset: headings, paragraphs, lists, tables, images, basic inline styles)</td><td>The real Chromium engine (WebEngine): full CSS; relative images and stylesheets beside the file load</td></tr>
+      <tr><td>HTML engine</td><td>Qt's built-in rich-text engine (a CSS subset: headings, paragraphs, lists, tables, images, basic inline styles)</td><td>The real Chromium engine (WebEngine) on Linux / Windows Full (macOS Full uses the built-in engine): full CSS; relative images and stylesheets beside the file load</td></tr>
       <tr><td>HTML over about 1.5 MB</td><td>Built-in engine</td><td>Falls back to the built-in engine</td></tr>
       <tr><td>SQL scratch databases</td><td>Scratch (SQLite, temporary)</td><td>Scratch (SQLite, temporary) and Scratch (DuckDB, temporary)</td></tr>
       <tr><td>DuckDB file connections</td><td>Not available</td><td>Available</td></tr>
@@ -1100,7 +1110,7 @@ ssh-keygen -lf ~/.ssh/id_ed25519.pub   <span class="cm"># same fingerprint the p
   <p>Dialect-specific keyword sets are fed to Scintilla via <code>SCI_SETKEYWORDS</code> (since <code>QsciLexerSQL::setKeywords</code> is protected). T-SQL adds DECLARE/MERGE/OUTPUT/PIVOT/OVER/PARTITION, PL/SQL adds PLS_INTEGER/SYSDATE/NVL/DECODE/CONNECT BY, etc.</p>
 
   <h2 id="compare" class="anchor-target">Compare</h2>
-  <p>A side-by-side diff view; open via <code>Tools → Compare with File...</code> (current tab vs a file on disk) or <code>Tools → Compare Two Open Tabs...</code>. Backed by Rust's Myers diff (<code>similar</code> crate) and a custom <code>CompareWidget</code> rendered with Qt.</p>
+  <p>A side-by-side diff view; open via <code>Utilities → Compare with File...</code> (current tab vs a file on disk), <code>Utilities → Compare Two Open Tabs...</code>, or <code>Tools → Compare (inbuilt)</code>. Backed by Rust's Myers diff (<code>similar</code> crate) and a custom <code>CompareWidget</code> rendered with Qt.</p>
 
   <blockquote>
     Visual UX inspired by <a href="https://github.com/pnedev/comparePlus">ComparePlus</a> by Pavel Nedev. Notepatra's implementation is a fresh Qt + Rust port in a different codebase, but the visual conventions are credit to Pavel.
@@ -1143,7 +1153,7 @@ ssh-keygen -lf ~/.ssh/id_ed25519.pub   <span class="cm"># same fingerprint the p
   <p>Both vertical <em>and</em> horizontal scrollbars are mirrored. Drag either side's scrollbar and both panels move together. Qt's built-in <code>valueChanged</code> signal is naturally cycle-safe because <code>setValue(x)</code> is a no-op when <code>x == current</code>.</p>
 
   <h2 id="git-panel" class="anchor-target">Git integration</h2>
-  <p>Opens as a dockable panel. Shows:</p>
+  <p>Opens as a tab. Shows:</p>
   <ul>
     <li>Current branch name with upstream tracking status</li>
     <li><strong>Changed files</strong> list — added (green), modified (yellow), deleted (red), untracked</li>
@@ -1214,7 +1224,7 @@ ssh-keygen -lf ~/.ssh/id_ed25519.pub   <span class="cm"># same fingerprint the p
     <li><strong>Install llama.cpp</strong> — <code>brew install llama.cpp</code> (macOS) or build from <a href="https://github.com/ggml-org/llama.cpp">the repo</a> (Linux / Windows).</li>
     <li><strong>Download a GGUF model</strong> from <a href="https://huggingface.co">huggingface.co</a>. Try <code>Qwen2.5-Coder-3B-Instruct-Q4_K_M.gguf</code> (~2 GB, excellent for code).</li>
     <li><strong>Run the server</strong> — <code>llama-server -m path/to/model.gguf --port 8080</code>. Exposes OpenAI-compatible endpoints at <code>http://localhost:8080/v1/</code>.</li>
-    <li><strong>In Notepatra</strong> → Settings → Preferences → AI → pick "llama.cpp" → Save. Done.</li>
+    <li><strong>In Notepatra</strong> → Settings → Preferences → AI → pick "llama.cpp" → OK. Done.</li>
   </ol>
 
   <h2 id="ai-setup-full" class="anchor-target">AI backend setup — full guide</h2>
@@ -1241,7 +1251,7 @@ journalctl -u ollama -f         # follow logs</code></pre>
       <pre><code>ollama list                     # should show the model
 curl http://localhost:11434/api/tags    # JSON list of installed models</code></pre>
     </li>
-    <li><strong>Notepatra config</strong> — open the AI dock, pick "Ollama" in the backend dropdown. The model dropdown auto-populates. No URL field to set; <code>http://localhost:11434</code> is hard-wired.</li>
+    <li><strong>Notepatra config</strong> — open the AI dock, pick "Ollama" in the backend dropdown. The model dropdown auto-populates. No URL needed; it defaults to <code>http://localhost:11434</code> (a different host/port can be set as Base URL in Settings → Preferences → AI; picking a backend in the dock dropdown resets it).</li>
   </ol>
 
   <h4>🪟 Windows</h4>
@@ -1280,7 +1290,7 @@ curl http://localhost:11434/api/tags</code></pre>
   <p>Notepatra polls <code>http://localhost:11434</code> and the banner stays red while the probe fails. Causes:</p>
   <ul>
     <li><strong>Daemon not started</strong> — <code>systemctl start ollama</code> (Linux) / launch the app (Win/macOS) / <code>ollama serve</code> (manual).</li>
-    <li><strong>Wrong port</strong> — Ollama only binds <code>11434</code>. If you set <code>OLLAMA_HOST=0.0.0.0:11500</code> or similar, Notepatra won't find it. Either unset that env var or restart Ollama on the default port.</li>
+    <li><strong>Wrong port</strong> — Ollama only binds <code>11434</code>. If you set <code>OLLAMA_HOST=0.0.0.0:11500</code> or similar, Notepatra won't find it unless you set that address as Base URL in Settings → Preferences → AI. Either unset that env var or restart Ollama on the default port.</li>
     <li><strong>Firewall</strong> — uncommon on localhost, but Windows Defender has been known to block first-time loopback connections. Allow <code>ollama.exe</code> when prompted.</li>
     <li><strong>Refresh</strong> — click the refresh button in the AI panel status bar to re-probe immediately instead of waiting for the next poll cycle.</li>
   </ul>
@@ -1381,7 +1391,7 @@ cmake --build build --config Release -j</code></pre>
     <li><strong>Wrong port</strong> — Notepatra expects <code>8080</code>. If you started <code>--port 8000</code>, restart with <code>--port 8080</code>.</li>
     <li><strong>Bound to a non-localhost interface</strong> — if you used <code>--host 192.168.x.x</code>, Notepatra won't probe that. Use <code>--host 127.0.0.1</code> (default) or <code>0.0.0.0</code>.</li>
     <li><strong>Server still loading the model</strong> — large GGUFs take 30-60 s to mmap on first start. Watch the terminal until you see <code>HTTP server listening</code>, then click refresh in Notepatra.</li>
-    <li><strong>API key set on the server but not in Notepatra</strong> — if you started with <code>--api-key</code>, paste the same key in Settings → AI → OpenAI-compat. Most users skip <code>--api-key</code> entirely.</li>
+    <li><strong>API key set on the server but not in Notepatra</strong> — if you started with <code>--api-key</code>, paste the same key in Settings → Preferences → AI → API Key. Most users skip <code>--api-key</code> entirely.</li>
   </ul>
 
   <h5>Curated catalog showing instead of my loaded model</h5>
@@ -1393,20 +1403,20 @@ cmake --build build --config Release -j</code></pre>
   </ul>
 
   <h3 id="setup-cloud">Cloud backends (OpenAI, OpenRouter, Azure, Ollama Cloud)</h3>
-  <p>Cloud backends need a key. Notepatra has <strong>per-provider key slots</strong> — keys never cross-pollinate between providers. Open Settings → Preferences → AI to see the four sections (OpenRouter, OpenAI, Ollama Cloud, Azure OpenAI), each with its own Test / Save / Forget buttons.</p>
+  <p>Cloud backends need a key. Notepatra has <strong>per-provider key slots</strong> — keys never cross-pollinate between providers. Open the AI panel and click its ⚙ Settings button to see the four sections (OpenRouter, OpenAI, Ollama Cloud, Azure OpenAI), each with its own Test / Save / Forget buttons.</p>
 
   <h4>OpenRouter (recommended cloud — one key, many models)</h4>
   <ol>
     <li><strong>Sign up</strong> at <a href="https://openrouter.ai">openrouter.ai</a>. Add a few dollars credit; pay-as-you-go per token, no subscription.</li>
     <li><strong>Create a key</strong> — Account → Keys → Create. Copy the <code>sk-or-v1-...</code> string.</li>
-    <li><strong>Paste in Notepatra</strong> — Settings → AI → <em>OpenRouter</em> section → API Key field → click <em>Test</em>. Green = good. Click <em>Save</em>.</li>
+    <li><strong>Paste in Notepatra</strong> — AI panel → ⚙ Settings → <em>OpenRouter</em> section → API Key field → click <em>Test</em>. Green = good. Click <em>Save</em>.</li>
     <li><strong>Pick "OpenRouter" in the backend dropdown</strong>. The model dropdown lists hundreds of models — type <code>claude</code>, <code>gpt</code>, <code>gemini</code>, <code>grok</code>, <code>kimi</code>, <code>qwen</code>, etc. to filter.</li>
   </ol>
 
   <h4>OpenAI direct</h4>
   <ol>
     <li><strong>Get a key</strong> at <a href="https://platform.openai.com/api-keys">platform.openai.com/api-keys</a>. The string starts with <code>sk-</code> (or <code>sk-proj-</code> for project keys).</li>
-    <li><strong>Paste</strong> in Settings → AI → <em>OpenAI</em> section → Test → Save.</li>
+    <li><strong>Paste</strong> in AI panel → ⚙ Settings → <em>OpenAI</em> section → Test → Save.</li>
     <li><strong>Pick "OpenAI"</strong> in the backend dropdown. Curated list of the GPT-4o / GPT-5 / o-series families; type <code>gpt-5</code> or <code>o4</code> to filter.</li>
   </ol>
 
@@ -1421,7 +1431,7 @@ cmake --build build --config Release -j</code></pre>
         <li><strong>Key</strong> — Azure portal → your resource → Keys and Endpoint.</li>
       </ul>
     </li>
-    <li><strong>Settings → AI → Azure OpenAI</strong> — fill all four fields. Notepatra builds the URL <code>https://{resource}.openai.azure.com/openai/deployments/{deployment}/chat/completions?api-version={version}</code> for you.</li>
+    <li><strong>AI panel → ⚙ Settings → Azure OpenAI</strong> — fill all four fields. Notepatra builds the URL <code>https://{resource}.openai.azure.com/openai/deployments/{deployment}/chat/completions?api-version={version}</code> for you.</li>
     <li><strong>Test</strong> — green = the deployment answered. <em>Save</em>, then pick "Azure OpenAI" in the backend dropdown.</li>
   </ol>
 
@@ -1429,7 +1439,7 @@ cmake --build build --config Release -j</code></pre>
   <p>Same Ollama models, served from Ollama's hosted infra. Useful when you want Ollama's catalog without the local RAM cost.</p>
   <ol>
     <li><strong>Sign up</strong> at <a href="https://ollama.com">ollama.com</a> and create an API key in your account settings.</li>
-    <li><strong>Settings → AI → Ollama Cloud</strong> — paste the key → Test → Save.</li>
+    <li><strong>AI panel → ⚙ Settings → Ollama Cloud</strong> — paste the key → Test → Save.</li>
     <li><strong>Pick "Ollama Cloud"</strong> in the backend dropdown. The model list is the cloud catalog.</li>
   </ol>
 
@@ -1551,12 +1561,12 @@ Content-Type: application/json
   <p>Without explicit instructions, models love to <strong>reformat</strong> and <strong>reorder keys alphabetically</strong>. That's useless for a diff — every line looks different even when only one comma was missing. The strict prompt tells the model to preserve the original line order, key order, and indentation, and patch only the broken parts. Show Diff then shows just the actual fixes.</p>
 
   <h2 id="ai-assistant" class="anchor-target">AI Assistant dock</h2>
-  <p>Open: <code>Ctrl+Shift+A</code>, <code>View → AI Assistant</code>, or from the status bar. The panel is a persistent right-side dock (not an editor tab) — one conversation, preserved across tab switches. Layout:</p>
+  <p>Open: <code>Ctrl+Shift+A</code> or <code>Ctrl+Q</code> (<code>⇧⌘A</code> on macOS), <code>Tools → AI Assistant</code>, or the AI button on the built-in tools bar. The panel is a persistent right-side dock (not an editor tab) — one conversation, preserved across tab switches. Layout:</p>
   <ul>
-    <li><strong>Backend dropdown</strong> — six entries in the standard build: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI. The <code>notepatra-local-ai</code> cloud-free build ships only Ollama + llama.cpp. The llama.cpp entry accepts a user-configured base URL (Settings → Preferences → AI) so it can reach any OpenAI-compatible server you've installed (any OpenAI-compatible server — separate programs the user installs). API key edits inline.</li>
+    <li><strong>Backend dropdown</strong> — six entries in the standard build: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI. The <code>notepatra-local-ai</code> cloud-free build ships only Ollama + llama.cpp. The llama.cpp entry accepts a user-configured base URL (Settings → Preferences → AI) so it can reach any OpenAI-compatible server you've installed (separate programs the user installs). API key edits inline.</li>
     <li><strong>Model dropdown</strong> — populated live from the backend's tags / models endpoint with a ↻ refresh button.</li>
     <li><strong>Coding Mode</strong> toggle — flips the panel into 3-pane layout (file tree · editor · AI chat) and turns on agentic tools (see below).</li>
-    <li><strong>Show thinking</strong> checkbox — toggle reasoning for Qwen3 / DeepSeek-R1 / GPT-OSS / Hermes-3.</li>
+    <li><strong>Think</strong> checkbox — toggle reasoning for Qwen3 / DeepSeek-R1 / GPT-OSS / Hermes-3.</li>
     <li><strong>Reset</strong> button — wipes chat history (in-memory + the on-disk per-workspace history file).</li>
     <li><strong>Red close button</strong> (<code>×</code> in <code>#E81123</code>) — closes the dock; chat session is preserved.</li>
     <li><strong>Chat area</strong> — user bubbles right-aligned; assistant bubbles left-aligned with the model name in the header. Per-code-block <strong>⧉ Copy code</strong> buttons inside every response. Streaming stats render live (<code>tok / tok-s / s</code>).</li>
@@ -1599,12 +1609,12 @@ Content-Type: application/json
   <p>Implementation lives in <code>src/ai_intent.{h,cpp}</code>. 51 assertions in <code>test_ai_intent</code> cover positive intents (case-insensitive, mixed phrasing), negatives (explain / describe / teach / show / list / find / grep), and edge cases (multi-line, <code>@file</code> mention, generic "fix my code").</p>
 
   <h2 id="ai-coding-mode" class="anchor-target">Coding Mode — agentic tool-using AI (v0.1.35+)</h2>
-  <p>Tick <strong>Coding Mode</strong> in the AI dock and Notepatra becomes an <strong>agent</strong>: the model can read your files, list directories, search, write files, and apply line-level edits — all on its own. The dock flips into a 3-pane layout (file tree · editor · AI chat).</p>
+  <p>Click <strong>Coding</strong> in the AI dock header and Notepatra becomes an <strong>agent</strong>: the model can read your files, list directories, search, write files, and apply line-level edits — all on its own. The dock flips into a 3-pane layout (file tree · editor · AI chat).</p>
 
-  <h3>Bottom segmented toggle — Chat / Compose / Agent (v0.1.61+)</h3>
+  <h3>Bottom segmented toggle — Ask / Compose / Agent (v0.1.61+)</h3>
   <p>The old top-of-panel <code>Chat | Composer</code> tabs are gone. v0.1.61 introduced a 3-segment toggle at the <strong>bottom</strong> of the AI dock — matching the iOS / Slack keyboard-accessory mental model that Continue.dev, Copilot Chat, and Cursor 3.0 all converged on:</p>
   <ul>
-    <li><strong>Chat</strong> — free-form conversation. The agent reads + searches but doesn't write.</li>
+    <li><strong>Ask</strong> — read-only: the agent reads and searches but never writes.</li>
     <li><strong>Compose</strong> — agent's write_file / apply_diff results land in the inline <strong>Edit Plan</strong> with per-file dry-run diffs. Nothing hits disk until you click <strong>Apply Selected</strong> or <strong>Apply All</strong>.</li>
     <li><strong>Agent</strong> — write_file / apply_diff execute immediately (still subject to the path-safety / per-turn budget guards). The editor reloads the buffer automatically when a file the agent touched is currently open.</li>
   </ul>
@@ -1616,7 +1626,7 @@ Content-Type: application/json
     <li><strong>Revert hunk</strong> — reverses the patch direction so the working tree matches HEAD for just that hunk.</li>
     <li><strong>Copy diff</strong> — drops the synthesized diff to your clipboard.</li>
   </ul>
-  <p>The Compare widget (Tools → Compare Files) gets the same buttons in a docked strip — one row per contiguous diff region (<code>Hunk N/M · rows a–b · [Stage] [Revert] [Jump →]</code>).</p>
+  <p>The Compare widget (Tools → Compare (inbuilt)) gets the same buttons in a docked strip — one row per contiguous diff region (<code>Hunk N/M · rows a–b · [Stage] [Revert] [Jump →]</code>).</p>
 
   <h3>Marker-based merge resolution (v0.1.62+)</h3>
   <p>Files with <code>UU</code> (both-modified) status in the Git panel now show a <strong>Resolve</strong> button instead of the +/− shortcuts. Clicking it opens the merge helper widget which scans column-0 <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code> / <code>=======</code> / <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code> markers and surfaces <strong>Take ours</strong> / <strong>Take theirs</strong> / <strong>Take both</strong> / <strong>Jump →</strong> buttons per conflict region, plus QScintilla annotation labels above each conflict. Full 3-way LOCAL/BASE/REMOTE merge editor is v0.2 scope; the marker-based path covers ~90% of conflicts.</p>
@@ -1627,7 +1637,7 @@ Content-Type: application/json
   <h3>Smart input gating + context guards (v0.1.61+)</h3>
   <p>The chat input + Send button now <strong>disable</strong> whenever the model dropdown is in a placeholder state — <code>(detecting…)</code>, <code>(Ollama offline)</code>, <code>(no models installed)</code>, <code>(API key required)</code>. State-specific placeholders explain <em>why</em> with concrete next steps (<code>ollama serve</code>, <code>ollama pull qwen2.5-coder:7b</code>, click ⚙). Additional guards:</p>
   <ul>
-    <li><strong>Coding Mode</strong> without a workspace → points you to File → Open Folder.</li>
+    <li><strong>Coding Mode</strong> without a workspace → points you to File → Open Folder as Workspace...</li>
     <li><strong>Data Mode</strong> without a saved DB connection → points you to Manage Connections.</li>
     <li><strong>Wrong-capability model</strong> in Coding mode → refusal card lists tool-capable alternatives.</li>
   </ul>
@@ -1680,7 +1690,7 @@ Content-Type: application/json
   <p>Models <strong>not</strong> recommended: phi-3-mini / phi-3.5 (no tool support), gemma-2-2b (sometimes hallucinates tool calls), tinyllama, llama 3 base.</p>
 
   <h2 id="ai-data-analyst" class="anchor-target">Data Analyst Mode (v0.1.43+)</h2>
-  <p>Tick the new <strong>Data</strong> checkbox in the AI dock header (next to <em>Coding</em>) and the AI assistant becomes a <strong>data analyst</strong>: it can query attached CSVs, run SQL against your saved database connections, and emit live charts inline in the chat. Mutually exclusive with Coding Mode so the panel stays focused.</p>
+  <p>Click <strong>Data</strong> in the AI dock header (next to <em>Chat</em> and <em>Coding</em>) and the AI assistant becomes a <strong>data analyst</strong>: it can query attached CSVs, run SQL against your saved database connections, and emit live charts inline in the chat. Mutually exclusive with Coding Mode so the panel stays focused.</p>
 
   <h3>What changes when Data Mode is on</h3>
   <ul>
@@ -1877,7 +1887,7 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
     <li>Appends <code>/no_think</code> to the system prompt (honored by some models as a slash-command)</li>
     <li>Regex-strips <code>&lt;think&gt;...&lt;/think&gt;</code> from the final response as a defensive backup</li>
   </ol>
-  <p>For the AI Assistant chat, you can toggle <strong>Show thinking</strong> to see the reasoning if you're curious.</p>
+  <p>For the AI Assistant chat, you can toggle the <strong>Think</strong> checkbox to see the reasoning if you're curious.</p>
 
   <h2 id="vision-models" class="anchor-target">Vision models &amp; file attachments</h2>
   <p>The 📎 attach button accepts any file type. What happens depends on the kind:</p>
@@ -1896,10 +1906,10 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
 
   <h2 id="ai-interaction-log" class="anchor-target">AI Interaction Log</h2>
   <p><strong>Audit exactly what your AI did — transparency, not just a promise.</strong> Every request <em>and</em> response to any AI backend is recorded to a <strong>local SQLite log</strong> you can open and read. That covers both local backends (Ollama, llama.cpp) and cloud backends (OpenRouter, OpenAI, Azure OpenAI, Ollama Cloud), as well as Noter's AI <strong>Extract</strong>.</p>
-  <p>Each entry stores the <strong>timestamp</strong>, <strong>backend</strong>, <strong>model</strong>, the <strong>full prompt and response</strong>, <strong>token counts</strong>, and <strong>latency</strong>. Open it from <strong>Features → AI Interaction Log…</strong></p>
+  <p>Each entry stores the <strong>timestamp</strong>, <strong>backend</strong>, <strong>model</strong>, the <strong>full prompt and response</strong>, <strong>token counts</strong>, and <strong>latency</strong>. Open it from <strong>Tools → AI Interaction Log…</strong></p>
 
   <div class="callout success">
-    <strong>🛡 Privacy by design.</strong> The log lives entirely on your machine — there is <strong>zero network egress</strong>. Before anything is written, a <strong>credential scrubber</strong> masks API keys, bearer tokens, and PEM private keys. Entries <strong>auto-prune after 7 days</strong>. The feature is <strong>on by default</strong> with a <strong>one-click opt-out</strong> in Settings.
+    <strong>🛡 Privacy by design.</strong> The log lives entirely on your machine — there is <strong>zero network egress</strong>. Before anything is written, a <strong>credential scrubber</strong> masks API keys, bearer tokens, and PEM private keys. Entries <strong>auto-prune after 7 days</strong>. The feature is <strong>on by default</strong>; to opt out, untick <strong>Log AI interactions</strong> in the Tools → AI Interaction Log… window.
   </div>
 
   <h3>What the viewer gives you</h3>
@@ -1925,7 +1935,7 @@ bash scripts/sql-server-local-setup.sh --wipe          # also drop the data volu
   <!-- ══════════════ Diagram ══════════════ -->
 
   <h2 id="diagram" class="anchor-target">Diagram tool (.npd)</h2>
-  <p>The <strong>Diagram</strong> tool authors flow charts, ER diagrams and system designs from a small purpose-built text DSL (<code>.npd</code>). It's <strong>text-first</strong>: the <code>.npd</code> source is the single source of truth and the canvas is a live projection of it, so undo/redo, version control and AI editing all work on plain text. Open it from the <strong>Built-in Tools</strong> toolbar ("Diagram", next to Noter) or <strong>Features → Diagram — Flow / ER / System (.npd)</strong>. The tab is a split view: <code>.npd</code> source on the left, live canvas on the right. <em>Renders in every build</em> — as of v0.1.103 the diagram is drawn by a native Qt renderer (<code>QPainter</code>), so it works in the default binary on every platform, including macOS Apple Silicon and the Windows installer, with no embedded browser and no separate "Full" download.</p>
+  <p>The <strong>Diagram</strong> tool authors flow charts, ER diagrams and system designs from a small purpose-built text DSL (<code>.npd</code>). It's <strong>text-first</strong>: the <code>.npd</code> source is the single source of truth and the canvas is a live projection of it, so undo/redo, version control and AI editing all work on plain text. Open it from the <strong>Built-in Tools</strong> toolbar ("Diagram", next to Noter) or <strong>Tools → Diagram — Flow / ER / System (.npd)</strong>. The tab is a split view: <code>.npd</code> source on the left, live canvas on the right. <em>Renders in every build</em> — as of v0.1.103 the diagram is drawn by a native Qt renderer (<code>QPainter</code>), so it works in the default binary on every platform, including macOS Apple Silicon and the Windows installer, with no embedded browser and no separate "Full" download.</p>
 
   <h3>Three ways to create one</h3>
   <ol>
@@ -2005,7 +2015,7 @@ textbox "Dashed hops are fire-and-forget."</code></pre>
       <tr><td><strong>AI</strong></td><td><strong>AI Generate</strong> writes the <code>.npd</code> from a sentence with a local model, into a review pane first. Your MCP client can read, create, replace and <code>export_diagram</code> — behind Approve / Deny.</td><td>Nothing built in; you paste text between tools.</td></tr>
       <tr><td><strong>Notes, legends, icons</strong></td><td><code>note</code> callouts pinned to a node, <code>legend</code> lines for what dashed or coloured means, ~55 built-in icons (gateway, card, queue, mail, cache…), free <code>textbox</code>.</td><td>Notes are <code>%%</code> comments or workarounds; icons need FontAwesome from a CDN.</td></tr>
       <tr><td><strong>Theming</strong></td><td><code>palette auto</code> follows the app theme; <code>paper</code> / <code>slate</code> are designed for light grounds (tinted nodes), the dark palettes for dark.</td><td>One global theme via <code>%%{init}</code> config.</td></tr>
-      <tr><td><strong>Export</strong></td><td>PNG / JPEG / PDF on every build, SVG / HTML on Full — from the tab, or from an MCP tool without clicking.</td><td>CLI needs Puppeteer + Chromium; or the web editor.</td></tr>
+      <tr><td><strong>Export</strong></td><td>PNG / JPEG / PDF on every build, plus SVG / HTML wherever Qt Svg is present (the release builds) — from the tab, or from an MCP tool without clicking.</td><td>CLI needs Puppeteer + Chromium; or the web editor.</td></tr>
       <tr><td><strong>Import</strong></td><td>Mermaid <code>graph</code> / <code>flowchart</code>: direction, every node shape, <code>--&gt;</code>, <code>-.-&gt;</code>, <code>==&gt;</code>, <code>&lt;--&gt;</code>, edge labels, <code>subgraph</code> → <code>group</code>.</td><td>—</td></tr>
       <tr><td><strong>Where Mermaid wins</strong></td><td>Flowchart, ER and system diagrams only. GitHub does not render <code>.npd</code> inline — export the PNG for your README.</td><td>Sequence, class, state, Gantt and more; GitHub and most wikis render it in Markdown.</td></tr>
     </tbody>
@@ -2024,7 +2034,7 @@ textbox "Dashed hops are fire-and-forget."</code></pre>
 
   <h2 id="mcp" class="anchor-target">MCP server — your editor, readable by your AI (since v0.1.118)</h2>
   <div class="callout info">
-    <strong>New in v0.1.118, expanded to 49 tools (saved-connection SQL + charts).</strong> Full details, per-client setup snippets, and the FAQ live on the dedicated <a href="/mcp.html">MCP page</a>.
+    <strong>Since v0.1.118; 49 tools as of v0.1.131 (saved-connection SQL + charts).</strong> Full details, per-client setup snippets, and the FAQ live on the dedicated <a href="/mcp.html">MCP page</a>.
   </div>
   <p>From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a standalone stdio JSON-RPC 2.0 <a href="https://modelcontextprotocol.io">Model Context Protocol</a> server (protocol revision <code>2025-06-18</code>; <code>2025-03-26</code> and <code>2024-11-05</code> also accepted) that connects external AI assistants to the running editor over a dedicated per-user local connection (a Unix domain socket on Linux/macOS, or — added in v0.1.119 and working from v0.1.120, which fixed a deadlock that blocked every verb — a Windows named pipe). Pass <code>--socket</code> to target the live editor; without it the server runs against a built-in mock editor for protocol testing. It works with Claude Desktop, Claude Code, OpenAI Codex CLI, the OpenAI Agents SDK, and any spec-compliant stdio MCP client (Cursor, Windsurf, VS Code).</p>
   <p>The server exposes <strong>49 tools</strong> in three tiers:</p>
@@ -2036,7 +2046,7 @@ textbox "Dashed hops are fire-and-forget."</code></pre>
       <tr><td><strong>Write</strong> (11)</td><td><code>insert_text</code>, <code>replace_selection</code>, <code>apply_edit</code>, <code>save_tab</code>, <code>create_note</code>, <code>append_note</code>, <code>set_reminder</code>, <code>export_diagram</code>, <code>set_diagram_source</code>, <code>export_query_results</code>, <code>export_chart</code></td><td><strong>Human approval card</strong> — see below</td></tr>
     </tbody>
   </table></div>
-  <p><code>find_in_tab</code> and <code>search_project</code> take an optional <code>regex</code> flag (v0.1.119) for regular-expression search. <code>run_sql</code> is <strong>SELECT-only</strong> — the classifier rejects any non-read query — and on the Full/DuckDB edition it runs in an engine sandbox: the target CSV / Parquet / JSON is materialized into an in-memory table, then DuckDB's external filesystem access is disabled (<code>enable_external_access=false</code>) before the untrusted SQL runs, so it cannot read host files even via <code>read_text</code>, <code>read_csv_auto</code>, or a replacement scan.</p>
+  <p><code>find_in_tab</code> and <code>search_project</code> take an optional <code>regex</code> flag (v0.1.119) for regular-expression search. <code>run_sql</code> is <strong>SELECT-only</strong> — the classifier rejects any non-read query. Over a file in your open workspace folder (<code>csv_path</code>) it needs the Full edition; with no <code>csv_path</code> it queries an empty in-memory SQLite scratch database. On the Full/DuckDB edition it runs in an engine sandbox: the target CSV / Parquet / JSON is materialized into an in-memory table, then DuckDB's external filesystem access is disabled (<code>enable_external_access=false</code>) before the untrusted SQL runs, so it cannot read host files even via <code>read_text</code>, <code>read_csv_auto</code>, or a replacement scan.</p>
   <p><strong>What <code>search_project</code> will and will not read.</strong> Filesystem search needs a folder you actually opened. With no workspace open it searches your <strong>open tabs only</strong> and says so — every response carries <code>workspace_searched</code> and <code>scope</code>, so a client cannot mistake a partial search for a complete one. Before v0.1.125 the file explorer's <em>display placeholder</em> (your home directory) was read as a workspace by four separate guards, so a search with no folder open recursed through <code>$HOME</code>. Zero matches is a <strong>successful</strong> search returning an empty list (v0.1.127) — before that, a query that simply missed was reported as "No workspace folder is open", which is a different fact about the world.</p>
 
   <p><strong>The credential deny-list covers every read path (since v0.1.126, completed in v0.1.127).</strong> <code>open_file</code>, <code>read_tab</code>, <code>find_in_tab</code> and both legs of <code>search_project</code> refuse files matching <code>src/path_denylist.h</code> — <code>.ssh</code>, <code>.gnupg</code>, <code>.aws</code>, <code>.env</code> files, <code>id_rsa</code> anywhere on a path, <code>*.pem</code>, <code>*.key</code>, <code>*.pfx</code>, <code>*.p12</code>, <code>*.jks</code>, <code>*.tfvars</code>, <code>*.tfstate</code>. In v0.1.125 that check ran only in the filesystem walk, so asking for a key <em>by name</em> still opened it and <code>read_tab</code> returned the whole body; a credential file already open in a tab was read straight out of the buffer. <code>open_file</code> now refuses before the tab exists, so the file never reaches the screen either. Open it yourself if you need to see it — the deny-list constrains the MCP surface, not you.</p>
@@ -2046,7 +2056,7 @@ textbox "Dashed hops are fire-and-forget."</code></pre>
   <p><strong>Bounded reads (since v0.1.126).</strong> <code>read_tab</code> takes an optional <code>max_bytes</code>, and a capped read ends with a marker naming the applied cap and the full length, so a multi-megabyte buffer can be paged instead of filling an assistant's whole context in one call. The editor's own 5 MB ceiling still applies on top.</p>
 
   <p><strong>Running without <code>--socket</code> (since v0.1.126).</strong> <code>notepatra-mcp</code> with no socket answers from an in-memory demo editor so any MCP client can exercise the protocol with nothing installed. Every result from it now carries a <code>[MOCK DATA]</code> content block and <code>_meta.mock</code>, and <code>initialize</code> reports <code>serverInfo.mock</code> — before v0.1.127 a config that had lost its <code>--socket</code> served fabricated tabs that were indistinguishable from a real editor.</p>
-  <p>Phase 2 (48 tools) adds <strong>saved-connection SQL</strong> — <code>list_connections</code> / <code>run_query</code> / <code>list_tables</code> read your named PostgreSQL / MySQL / SQL Server / SQLite / DuckDB connections (SELECT-only; mutations rejected) that <code>run_sql</code> cannot reach — and <strong>charts</strong>: <code>render_chart</code> draws inline in the Data Analyst transcript and <code>export_chart</code> writes PNG / SVG / HTML / spec to disk (both Full/WebEngine only).</p>
+  <p>Phase 2 (v0.1.120) adds <strong>saved-connection SQL</strong> — <code>list_connections</code> / <code>run_query</code> / <code>list_tables</code> read your named PostgreSQL / MySQL / SQL Server / SQLite / DuckDB connections (SELECT-only; mutations rejected) that <code>run_sql</code> cannot reach — and <strong>charts</strong>: <code>render_chart</code> draws inline in the Data Analyst transcript and <code>export_chart</code> writes PNG / SVG / HTML / spec to disk (both need WebEngine: Full edition on Linux and Windows only; macOS Full has none).</p>
   <p><strong>The write-approval model.</strong> The eleven write tools never execute on arrival. Each request shows a non-modal approval card inside the editor window with a preview and <strong>Approve</strong> / <strong>Deny</strong> buttons. No response within 120 seconds auto-denies (<code>approval timed out</code>); an explicit Deny returns <code>denied by user</code> to the assistant. Pending writes queue one card at a time (FIFO), and there is no headless fallback: without a visible window the write is denied with <code>approval unavailable</code>. The gate lives in the editor process, not in the sidecar, so no MCP client can write without a human click.</p>
   <p>Beyond tools, the server publishes MCP <strong>resources</strong> — every open tab as <code>notepatra://tab/N</code> and every Noter note as <code>notepatra://note/&lt;basename&gt;</code> — and three <strong>prompts</strong>: <code>review-current-file</code>, <code>explain-selection</code>, and <code>summarize-notes</code>.</p>
   <p>Quick start with the two CLI-first clients (from v0.1.118):</p>
@@ -2062,6 +2072,7 @@ args = ["--socket"]</code></pre>
   <!-- ══════════════ Reference ══════════════ -->
 
   <h2 id="shortcuts" class="anchor-target">Keyboard shortcuts</h2>
+  <p>On macOS, Ctrl in this list is ⌘ (Cmd). Exceptions on macOS: Replace is ⌥⌘F, Full screen is ⌃⌘F, the Terminal is ⌃` and ⌘Q quits; the AI Assistant is ⇧⌘A only.</p>
 
   <h3>File</h3>
   <div class="table-wrap"><table>
@@ -2096,7 +2107,7 @@ args = ["--socket"]</code></pre>
   <div class="table-wrap"><table>
     <tbody>
       <tr><td><span class="kbd">Ctrl+F</span></td><td>Find</td></tr>
-      <tr><td><span class="kbd">Ctrl+H</span></td><td>Replace</td></tr>
+      <tr><td><span class="kbd">Ctrl+H</span> (macOS <span class="kbd">⌥⌘F</span>)</td><td>Replace</td></tr>
       <tr><td><span class="kbd">F3</span> / <span class="kbd">Shift+F3</span></td><td>Find next / previous</td></tr>
       <tr><td><span class="kbd">Ctrl+G</span></td><td>Go to line</td></tr>
       <tr><td><span class="kbd">Ctrl+B</span></td><td>Go to matching brace (swivels between open/close)</td></tr>
@@ -2113,10 +2124,11 @@ args = ["--socket"]</code></pre>
       <tr><td><span class="kbd">Ctrl+0</span></td><td>Reset zoom</td></tr>
       <tr><td><span class="kbd">Ctrl+Tab</span></td><td>Next tab</td></tr>
       <tr><td><span class="kbd">Ctrl+Shift+Tab</span></td><td>Previous tab</td></tr>
-      <tr><td><span class="kbd">Ctrl+Shift+E</span></td><td>Toggle File Explorer sidebar</td></tr>
-      <tr><td><span class="kbd">Ctrl+Shift+A</span></td><td>Toggle AI Assistant dock</td></tr>
+      <tr><td><span class="kbd">Ctrl+Shift+E</span></td><td>Toggle the Folder as Workspace sidebar (Coding mode)</td></tr>
+      <tr><td><span class="kbd">Ctrl+Q</span> / <span class="kbd">Ctrl+Shift+A</span> (macOS <span class="kbd">⇧⌘A</span>)</td><td>Toggle AI Assistant dock</td></tr>
+      <tr><td><span class="kbd">Ctrl+`</span> (macOS <span class="kbd">⌃`</span>)</td><td>Terminal</td></tr>
       <tr><td><span class="kbd">Ctrl+Shift+G</span></td><td>Open Project Search</td></tr>
-      <tr><td><span class="kbd">F11</span></td><td>Full screen</td></tr>
+      <tr><td><span class="kbd">F11</span> (macOS <span class="kbd">⌃⌘F</span>)</td><td>Full screen</td></tr>
     </tbody>
   </table></div>
 
@@ -2163,7 +2175,7 @@ Examples:
   <ul>
     <li><code>config.json</code> — editor preferences: theme, font, tab width, word wrap, line numbers, etc.</li>
     <li><code>session.json</code> — open tabs, cursor positions, window geometry</li>
-    <li><code>recovery/</code> — auto-save backups of unsaved buffers (every 5s by default, configurable 1–300s)</li>
+    <li><code>recovery/</code> — the crash flag (<code>.crash_flag</code>); unsaved buffers are written into <code>session.json</code> every 5 s by default (1–300 s)</li>
     <li><code>plugins/</code> — user-installed external plugins</li>
     <li><code>ai-logs/interactions.db</code> — the AI Interaction Log (SQLite; on by default, auto-pruned after 7 days)</li>
   </ul>
@@ -2241,10 +2253,10 @@ sha256sum -c SHA256SUMS --ignore-missing</code></pre>
   </ol>
 
   <h3>Windows: "This program can't start because ... was not found"</h3>
-  <p>The NSIS installer bundles Qt DLLs, but the portable <code>.zip</code> depends on the Visual C++ Redistributable. Install the <a href="https://aka.ms/vs/17/release/vc_redist.x64.exe">latest VC++ Redistributable</a> and relaunch.</p>
+  <p>If a DLL such as <code>VCRUNTIME140.dll</code> is reported missing, install the <a href="https://aka.ms/vs/17/release/vc_redist.x64.exe">latest Visual C++ Redistributable (x64)</a> and relaunch.</p>
 
   <h3>macOS: "Notepatra can't be opened because it is from an unidentified developer"</h3>
-  <p>macOS Gatekeeper. Right-click the <code>.app</code>, choose Open, then Open again in the warning dialog. Or run <code>xattr -cr Notepatra.app</code> to clear the quarantine attribute.</p>
+  <p>macOS Gatekeeper (the app is not notarized yet). Open it once, then go to System Settings › Privacy &amp; Security and click Open Anyway. On macOS 14 and earlier, right-click the <code>.app</code> › Open, then Open again in the warning dialog, also works. Or run <code>xattr -cr /Applications/Notepatra.app</code> to clear the quarantine attribute.</p>
 
   <h3>Linux ARM64 binary doesn't launch</h3>
   <p>Make sure the file is executable: <code>chmod +x notepatra</code>. Check Qt5 is installed for your architecture.</p>
@@ -2267,7 +2279,7 @@ sha256sum -c SHA256SUMS --ignore-missing</code></pre>
   <p>The bare executable is ~13 MB (~13.6 MB on Linux x64) on every platform — no Electron, no bundled browser runtime. Download sizes differ because Linux links Qt from your distro while macOS and Windows bundle it: roughly 4.8 MB (Linux x64 tar.gz), 27.8 MB (macOS DMG with Qt), 44.1 MB (Windows MSI with the Qt DLLs). The GitHub release page is always canonical for exact bytes.</p>
 
   <h4>Does my code go to the cloud? Is there any telemetry?</h4>
-  <p>No telemetry, no analytics, no account — the editor starts fully offline. Every outbound connection is one you trigger: (1) your selected AI backend — a <em>local</em> Ollama (<code>localhost:11434</code>) or llama-server (<code>localhost:8080</code>) by default, or whichever URL you set on the llama.cpp entry; (2) <code>git push/pull</code> from the Git panel; (3) the REST client when you send a request; (4) one GitHub-API call at launch if the update check is enabled. Cloud AI backends (Ollama Cloud / OpenRouter / OpenAI / Azure OpenAI) are <strong>opt-in</strong> from the dropdown and use <em>your</em> key — your code leaves the machine only when you pick one and send it. All of this is verifiable with <code>strace</code>, and the built-in AI Interaction Log records exactly what was sent so you never have to take our word for it.</p>
+  <p>No telemetry, no analytics, no account — the editor starts fully offline. Apart from the update check in (4), every outbound connection is one you trigger: (1) your selected AI backend — a <em>local</em> Ollama (<code>localhost:11434</code>) or llama-server (<code>localhost:8080</code>) by default, or whichever URL you set on the llama.cpp entry; (2) <code>git push/pull</code> from the Git panel; (3) the REST client when you send a request; (4) the update check: about 3 seconds after launch, at most once every 24 hours, one request to <code>api.github.com</code> for the latest release tag. It is on by default; set <code>updates/checkOnStartup=false</code> in Notepatra's QSettings file to turn it off. Cloud AI backends (Ollama Cloud / OpenRouter / OpenAI / Azure OpenAI) are <strong>opt-in</strong> from the dropdown and use <em>your</em> key — your code leaves the machine only when you pick one and send it. All of this is verifiable with <code>strace</code>, and the built-in AI Interaction Log records exactly what was sent so you never have to take our word for it.</p>
 
   <h4>Do I need an API key or a subscription?</h4>
   <p>No. Point the AI dock at a local Ollama or llama.cpp model and it's free and offline forever — no key, no account, no usage cap beyond your own hardware. API keys only matter if you opt into a cloud backend, and then it's <em>your</em> key billed by <em>that</em> provider. Notepatra itself has no subscription, no paid tier, and takes no cut.</p>
@@ -2305,7 +2317,7 @@ sha256sum -c SHA256SUMS --ignore-missing</code></pre>
   </ul>
 
   <h2 id="security" class="anchor-target">Security policy</h2>
-  <p>See <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">SECURITY.md</a> and <code>/.well-known/security.txt</code>. Reports via GitHub private vulnerability reporting. 90-day disclosure window by default.</p>
+  <p>See <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">SECURITY.md</a> and <code>/.well-known/security.txt</code>. Reports via GitHub private vulnerability reporting. Reports are acknowledged within 72 hours; coordinated disclosure is welcome.</p>
 
   <h2 id="license" class="anchor-target">License</h2>
   <p>Notepatra is licensed under the <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE">GNU General Public License v3.0</a>. No warranty. See GPL-3.0 §15 and §16 for the disclaimer of warranty and limitation of liability.</p>

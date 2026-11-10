@@ -57,7 +57,7 @@ if ($expected -ne $actual) { Write-Error 'CHECKSUM MISMATCH — DO NOT RUN' } el
 
 The `install.sh` and `install.ps1` scripts on `notepatra.org` perform this check automatically and **refuse to install if SHA256SUMS is unreachable** or the checksum doesn't match. (This was tightened to hard-fail in v0.1.82 — prior versions silently skipped the check when SHA256SUMS returned a network error, which has been fixed.)
 
-Per-release `SHA256SUMS` files live with the release artifacts at `https://github.com/singhpratech/notepatra/releases/download/<tag>/SHA256SUMS`. The legacy pinned copy at <https://notepatra.org/SHA256SUMS.v0.1.0.txt> is preserved for v0.1.0 only; all other tags are served from the GitHub Releases asset.
+Per-release `SHA256SUMS` files live with the release artifacts at `https://github.com/singhpratech/notepatra/releases/download/<tag>/SHA256SUMS`, and that is the only place the install scripts fetch them from: there is no mirror or fallback copy, so if that URL cannot be fetched the scripts stop. Because `SHA256SUMS` comes from the same GitHub release as the binary, this check proves the download is intact and is the file that release lists; it does not by itself prove who built the release. That is what the cosign signatures below are for.
 
 ### 2. Cosign signatures (Sigstore, keyless)
 

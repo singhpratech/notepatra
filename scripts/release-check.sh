@@ -70,11 +70,11 @@ else
 fi
 
 echo
-echo "── install-script artifact selection (lite/full prefix-collision lock) ──"
+echo "── install.sh regression lock (asset selection, Linux Full layout, failure exits) ──"
 if bash scripts/test-install-selection.sh >/tmp/install-sel-check.log 2>&1; then
-    check "test-install-selection.sh: install.sh download-name == hash-name for every OS/arch/flavor" "true"
+    check "test-install-selection.sh: real docs/install.sh picks + verifies + installs the right asset (incl. Linux Full layout, failure exits)" "true"
 else
-    check "test-install-selection.sh: install.sh download-name == hash-name for every OS/arch/flavor" "false"
+    check "test-install-selection.sh: real docs/install.sh picks + verifies + installs the right asset (incl. Linux Full layout, failure exits)" "false"
     sed 's/^/    /' /tmp/install-sel-check.log | tail -30 || true
 fi
 

@@ -24,7 +24,7 @@ Written 2026-07-05 @ v0.1.114 (main @ fe35cf7). This is the institutional-knowle
 | `rust-core/` | Rust 2021 static lib via FFI (diff via `similar` crate, search, file I/O) |
 | `test_*.cpp` (repo root) | Regression tests — must be registered in `CMakeLists.txt` to count (see §4 phantom-test warning) |
 | `eval/` | Model eval harnesses (coding-model + data-analyst). **Git-excluded via `.git/info/exclude`** — exists on one machine only |
-| `docs/` | Website + install scripts (`install.sh`, `install.ps1`) |
+| `docs/` | Website + install scripts (`install.sh`, `uninstall.sh`, `install.ps1`, `uninstall.ps1`). These are the only copies: notepatra.org serves them from here, and `stale-text-check.sh` fails on a copy anywhere else (a stale root `install.sh` once kept a fixed bug alive) |
 | `scripts/` | Release gates (see §5) |
 | `planning/` | `next_phase_plan.md` incl. the 20-rule anti-digression playbook |
 
@@ -59,7 +59,7 @@ Written 2026-07-05 @ v0.1.114 (main @ fe35cf7). This is the institutional-knowle
 
 Flow (the `np-release` skill orchestrates this): bump `CMakeLists.txt` VERSION **and `notepatra-mcp/Cargo.toml`** → `release_notes/vX.md` → append `CHANGELOG.md` → `scripts/release-check.sh` → PII sweep → commit → tag → push → watch CI → verify GitHub Release assets + Pages → **`cd notepatra-mcp && cargo publish`**.
 
-Gates in `scripts/` (release-check.sh calls most): `stale-text-check.sh` (canonical counts, capability claims, installer filenames), `verify-download-sizes.sh` (published bytes vs docs claims), `test-install-selection.sh` (lite/full artifact pick), `post-release-verify.sh`, `bump_version.sh`, `smoke-multiprocess.sh`.
+Gates in `scripts/` (release-check.sh calls most): `stale-text-check.sh` (canonical counts, capability claims, installer filenames), `verify-download-sizes.sh` (published bytes vs docs claims), `test-install-selection.sh` (runs the real `docs/install.sh` offline with stub `curl`/`uname`: lite/full artifact pick, Linux Full layout in `~/.local/opt/notepatra`, failure exits), `post-release-verify.sh`, `bump_version.sh`, `smoke-multiprocess.sh`.
 
 **Meta-rule: memory must be a gate, not a post-it.** Any "remember to check X every release" where X is mechanical (grep/count/hash/version match) gets promoted into `release-check.sh`/CI immediately. Several past releases shipped stale claims while the reminder existed only as a note.
 
