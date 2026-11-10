@@ -3,6 +3,9 @@
 # Or: powershell -ExecutionPolicy Bypass -Command "irm https://notepatra.org/install.ps1 | iex"
 
 $ErrorActionPreference = "Stop"
+# Windows PowerShell 5.1 redraws Invoke-WebRequest's progress bar per chunk,
+# which makes a 40-110 MB download crawl. Hide it.
+$ProgressPreference = "SilentlyContinue"
 
 # Ensure the console renders our UTF-8 box-drawing chars, em-dashes, and the
 # final "installed" check correctly. Without this, the Windows console falls
@@ -57,7 +60,7 @@ try {
 } catch {
     Write-Host ""
     Write-Host "  No release available yet. Download manually from:" -ForegroundColor Red
-    Write-Host "  https://github.com/$repo/actions" -ForegroundColor White
+    Write-Host "  https://github.com/$repo/releases" -ForegroundColor White
     Write-Host ""
     Write-Host "  Or build from source:" -ForegroundColor Yellow
     Write-Host "    1. Install Qt5, Rust, CMake, Visual Studio 2022" -ForegroundColor Gray
@@ -79,26 +82,17 @@ Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -UseBasicParsing
 # while blocking SHA256SUMS and bypass verification.)
 $tag = $release.tag_name
 $shaUrl = "https://github.com/$repo/releases/download/$tag/SHA256SUMS"
-$shaFallback = "https://notepatra.org/SHA256SUMS.$tag.txt"
 $shaFile = "$env:TEMP\SHA256SUMS"
-$shaOk = $false
 try {
     Invoke-WebRequest -Uri $shaUrl -OutFile $shaFile -UseBasicParsing -ErrorAction Stop
-    $shaOk = $true
 } catch {
-    try {
-        Invoke-WebRequest -Uri $shaFallback -OutFile $shaFile -UseBasicParsing -ErrorAction Stop
-        $shaOk = $true
-    } catch {
-        Write-Host ""
-        Write-Host "  ERROR: Could not fetch SHA256SUMS for release $tag" -ForegroundColor Red
-        Write-Host "    Tried: $shaUrl" -ForegroundColor Red
-        Write-Host "    Tried: $shaFallback" -ForegroundColor Red
-        Write-Host "  Refusing to install an unverified binary." -ForegroundColor Red
-        Write-Host ""
-        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-        exit 1
-    }
+    Write-Host ""
+    Write-Host "  ERROR: Could not fetch SHA256SUMS for release $tag" -ForegroundColor Red
+    Write-Host "    Tried: $shaUrl" -ForegroundColor Red
+    Write-Host "  Refusing to install an unverified binary." -ForegroundColor Red
+    Write-Host ""
+    Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+    exit 1
 }
 $expected = (Get-Content $shaFile | Select-String -Pattern $fileName -SimpleMatch | Select-Object -First 1) -replace '^([a-f0-9]+).*','$1'
 if (-not $expected) {

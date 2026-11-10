@@ -15,7 +15,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Notepatra — The Code Editor Built for the AI Era</title>
-    <meta name="description" content="Native C++/Rust code editor built for the AI era. ~13 MB bare native executable. 238 file types. 82 language lexers. JSON/HTML/SQL fixers. Data Analyst mode (CSV + in-memory SQLite; the Full download bundles the DuckDB v1.1.3 engine on every platform). AI dock dropdown: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI — plus any OpenAI-compatible server. Free forever. Linux, Windows, macOS.">
+    <meta name="description" content="Native C++/Rust code editor for the AI era: ~13 MB, 238 file types, 82 language lexers, local-first AI, Data Analyst mode. Free on Linux, Windows, macOS.">
     <meta name="keywords" content="notepatra, code editor, linux, windows, mac, macos, AI code editor, ollama, llama.cpp, openrouter, azure openai, duckdb, data analyst, JSON formatter, HTML fixer, rust, c++, qscintilla, native, lightweight">
     <meta name="author" content="Prateek Singh">
     <link rel="canonical" href="https://notepatra.org/">
@@ -48,7 +48,7 @@
 
 
     <!-- Security headers (via meta tag — GitHub Pages doesn't allow custom HTTP headers) -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://raw.githubusercontent.com https://img.shields.io; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://api.github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://api.github.com; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
     <meta http-equiv="X-Content-Type-Options" content="nosniff">
     <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
     <meta http-equiv="Permissions-Policy" content="geolocation=(), camera=(), microphone=(), payment=(), usb=()">
@@ -64,13 +64,13 @@
       "operatingSystem": ["Linux", "Windows", "macOS"],
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
-      "description": "Native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. Bare executable is ~13 MB across platforms (13.6 MB on Linux x64); full downloads are 4.8 MB (Linux x64 tar.gz), 27.8 MB (macOS DMG with bundled Qt), 44.1 MB (Windows MSI with bundled Qt DLLs). 238 file types. 82 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server (examples redacted). Free forever. Linux, Windows, macOS.",
+      "description": "Native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. Bare executable is ~13 MB across platforms (13.6 MB on Linux x64); Lite downloads are 4.8 MB (Linux x64 tar.gz), 27.8 MB (macOS DMG with bundled Qt), 44.1 MB (Windows MSI with bundled Qt DLLs). 238 file types. 82 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
       "softwareVersion": "0.1.131",
       "fileSize": "13.6 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
       "softwareRequirements": "Qt5; optional AI backend selected by the user (Ollama or llama.cpp locally, or any OpenAI-compatible server reachable via the llama.cpp dropdown entry's user-configured URL)",
-      "screenshot": "https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-512.png",
+      "screenshot": "https://notepatra.org/screenshots/editor-code.png",
       "license": "https://www.gnu.org/licenses/gpl-3.0.html",
       "offers": {
         "@type": "Offer",
@@ -87,7 +87,7 @@
         "@type": "Organization",
         "name": "Notepatra",
         "url": "https://notepatra.org",
-        "logo": "https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-512.png"
+        "logo": "https://notepatra.org/icon-512.png"
       },
       "featureList": [
         "238 file types with 82 language lexers",
@@ -98,7 +98,7 @@
         "Macro recording and playback",
         "Session persistence and crash recovery",
         "Plugin system (.so / .dll / .dylib)",
-        "Local-first AI. Six dropdown backends — two local (Ollama, llama.cpp/GGUF) and four cloud (Ollama Cloud, OpenRouter, OpenAI, Azure OpenAI). The llama.cpp entry also accepts a user-configured base URL, so it can reach any OpenAI-compatible server (any OpenAI-compatible server). No telemetry."
+        "Local-first AI. Six dropdown backends — two local (Ollama, llama.cpp/GGUF) and four cloud (Ollama Cloud, OpenRouter, OpenAI, Azure OpenAI). The llama.cpp entry also accepts a user-configured base URL, so it can reach any OpenAI-compatible server. No telemetry."
       ]
     }
     </script>
@@ -110,24 +110,10 @@
       "@type": "Organization",
       "name": "Notepatra",
       "url": "https://notepatra.org",
-      "logo": "https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-512.png",
+      "logo": "https://notepatra.org/icon-512.png",
       "sameAs": [
         "https://github.com/singhpratech/notepatra",
         "https://github.com/singhpratech"
-      ]
-    }
-    </script>
-
-    <!-- BreadcrumbList for navigation hierarchy -->
-    <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "BreadcrumbList",
-      "itemListElement": [
-        { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://notepatra.org/" },
-        { "@type": "ListItem", "position": 2, "name": "Features", "item": "https://notepatra.org/#features" },
-        { "@type": "ListItem", "position": 3, "name": "Download", "item": "https://notepatra.org/#download" },
-        { "@type": "ListItem", "position": 4, "name": "Security", "item": "https://notepatra.org/#security" }
       ]
     }
     </script>
@@ -167,7 +153,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~13 MB across every platform (13.6 MB on Linux x64). Latest v0.1.131 download sizes: 4.8 MB Linux x64 tar.gz, 4.5 MB Linux ARM64 tar.gz, 27.8 MB macOS DMG (with bundled Qt), 44.1 MB Windows MSI / 33.1 MB NSIS / 37.8 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~13.6 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~12–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~13 MB across every platform (13.6 MB on Linux x64). Latest v0.1.131 download sizes: 4.8 MB Linux x64 tar.gz, 4.5 MB Linux ARM64 tar.gz, 27.8 MB macOS DMG (with bundled Qt), 44.1 MB Windows MSI / 33.1 MB NSIS / 37.8 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~13.6 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~13.6–85 MB depending on platform."
           }
         },
         {
@@ -175,7 +161,7 @@
           "name": "Does Notepatra send my code to the cloud?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "No. Notepatra is local-first. The AI panel ships two local dropdown backends — Ollama and llama.cpp (llama-server, loads any GGUF directly) — and the llama.cpp entry also accepts a user-configured base URL so you can point it at any OpenAI-compatible server you have installed (examples redacted — those are separate programs that the user installs and licenses, not bundled with Notepatra). There is no telemetry, no analytics, no mandatory API key, no remote server, no phone-home in the current release. The only outbound network connections are: your chosen AI backend (when you click an AI button), git push/pull (when you click those buttons), and the REST client tab (when you explicitly send a request)."
+            "text": "No. Notepatra is local-first. The AI panel ships two local dropdown backends — Ollama and llama.cpp (llama-server, loads any GGUF directly) — and the llama.cpp entry also accepts a user-configured base URL so you can point it at any OpenAI-compatible server you have installed (those are separate programs that the user installs and licenses, not bundled with Notepatra). There is no telemetry, no analytics, no mandatory API key and no Notepatra server in the current release. The only outbound network connections are: your chosen AI backend (when you click an AI button), git push/pull (when you click those buttons), the REST client tab (when you explicitly send a request), and a once-a-day update check to api.github.com (on by default)."
           }
         },
         {
@@ -191,7 +177,7 @@
           "name": "How do I install Notepatra?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "On Linux or macOS run: curl -fsSL https://notepatra.org/install.sh | sh — on Windows PowerShell run: irm https://notepatra.org/install.ps1 | iex. Both scripts auto-detect your OS, download the right binary, verify the SHA-256 checksum, and install. You can also download binaries directly from the GitHub Releases page."
+            "text": "On Linux or macOS run: curl -fsSL https://notepatra.org/install.sh | sh — on Windows PowerShell run: irm https://notepatra.org/install.ps1 | iex. Both scripts auto-detect your OS, download the right binary, verify the SHA-256 checksum, and install the Lite build. For the Full build (adds the bundled DuckDB engine) run: curl -fsSL https://notepatra.org/install.sh | NOTEPATRA_FULL=1 sh — or on Windows: $env:NOTEPATRA_FULL=1; irm https://notepatra.org/install.ps1 | iex. You can also download binaries directly from the GitHub Releases page."
           }
         },
         {
@@ -199,7 +185,7 @@
           "name": "How do I verify the Notepatra binary I downloaded is genuine?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Every release ships with three independent integrity checks: SHA-256 checksums (sha256sum -c SHA256SUMS), Sigstore cosign signatures (keyless OIDC, recorded in the public Rekor transparency log), and SLSA build provenance attestations (verifiable with gh attestation verify). Full instructions in SECURITY.md."
+            "text": "Every release ships with three independent integrity checks: SHA-256 checksums (sha256sum -c SHA256SUMS --ignore-missing), Sigstore cosign signatures (keyless OIDC, recorded in the public Rekor transparency log), and SLSA build provenance attestations (verifiable with gh attestation verify). Full instructions in SECURITY.md."
           }
         },
         {
@@ -253,7 +239,25 @@
             --border:      var(--c-border);
         }
 
-        html { scroll-behavior: smooth; }
+        /* scroll-padding-top = the fixed nav's height, so #anchors land
+           below it rather than under it (phone value in the 768px block). */
+        html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+
+        /* Skip link: off-screen until it receives keyboard focus. */
+        .skip-link {
+            position: absolute;
+            left: 8px;
+            top: -100px;
+            z-index: 300;
+            padding: 10px 16px;
+            background: var(--c-text);
+            color: #FFFFFF;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .skip-link:focus { top: 8px; }
 
         body {
             /* v0.1.54 — append the platform emoji fonts AND the CSS
@@ -330,6 +334,10 @@
             transition: color 0.2s;
         }
         .nav-links a:hover { color: var(--c-text); }
+        /* The GitHub button sits inside .nav-links; without this the grey
+           .nav-links a colour above beats .btn-primary's white text. */
+        .nav-links a.btn-primary,
+        .nav-links a.btn-primary:hover { color: #FFFFFF; }
 
         /* Hero */
         .hero {
@@ -429,6 +437,7 @@
             font-weight: 600;
             transition: all 0.2s;
         }
+        .install-cmd .cmd-text { white-space: pre; }
         .install-cmd .copy-btn:hover { background: rgba(204,120,92,0.2); }
         .install-cmd .copy-btn.copied { background: var(--green); color: var(--darker); }
 
@@ -484,6 +493,18 @@
             max-width: 1120px;
             margin: 20px auto 40px;
             padding: 0 24px;
+        }
+        /* The two hero screenshots: side by side, one column on phones. */
+        .showcase-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+        @media (max-width: 640px) {
+            .showcase-grid { grid-template-columns: 1fr; padding: 0; }
         }
         .showcase-frame {
             background: var(--c-surface);
@@ -739,6 +760,12 @@
         @media (max-width: 420px) {
             .download-grid { grid-template-columns: 1fr !important; }
         }
+        /* Four narrow cards (421-640px): let the format pill wrap rather
+           than spill past its card. */
+        @media (min-width: 421px) and (max-width: 640px) {
+            .download-card .download-btn,
+            .download-card h4 { white-space: normal; }
+        }
         .download-card {
             background: var(--card-bg);
             border: 1px solid var(--border);
@@ -771,13 +798,13 @@
         }
         .download-card p {
             color: var(--text-dim);
-            font-size: 10px;
+            font-size: 12px;
             line-height: 1.3;
             margin-bottom: 8px;
             flex-grow: 1;
         }
         .download-card p.download-note {
-            font-size: 9.5px;
+            font-size: 12px;
             font-style: italic;
             flex-grow: 0;
         }
@@ -788,7 +815,7 @@
             border: 1px solid rgba(204,120,92,0.3);
             color: var(--green);
             border-radius: 5px;
-            font-size: 10px;
+            font-size: 12px;
             font-weight: 600;
             margin-top: auto;
             white-space: nowrap;
@@ -934,7 +961,7 @@
         .version-meta span:not(:first-child) { white-space: normal; min-width: 0; }
         .version-changes {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
             gap: 20px;
         }
         .version-section h5 {
@@ -1222,10 +1249,54 @@
             .ai-grid { grid-template-columns: 1fr; }
             .ai-section { padding: 32px 24px; }
             .stats { gap: 24px; }
-            .nav-links a:not(.btn) { display: none; }
             .hero { padding-top: 130px; }
+        }
+        /* Narrow screens: the nav links no longer fit beside the logo
+           (about 1,050 px of content), so they become one horizontally
+           scrollable row under it (no JS, no menu). The right-edge fade
+           hints that the row scrolls; padding-right lets the last link
+           scroll fully clear of the fade. */
+        @media (max-width: 1080px) {
+            html { scroll-padding-top: 100px; }
+            nav { padding: 10px 0 0; }
+            .nav-inner { flex-wrap: wrap; }
+            .nav-links {
+                order: 3;
+                width: 100%;
+                gap: 20px;
+                margin-top: 2px;
+                padding-right: 28px;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+                -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+                mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+            }
+            .nav-links::-webkit-scrollbar { display: none; }
+            .nav-links a { flex-shrink: 0; white-space: nowrap; padding: 12px 0; }
+            .nav-links a.btn-primary { padding: 6px 14px !important; margin: 6px 0; }
+        }
+        @media (max-width: 768px) {
             section { padding: 60px 20px; }
             .install-cmd { font-size: 12px; padding: 18px; }
+            /* Copy button beside the command, not on top of it: the
+               command scrolls in its own box and the button stays put. */
+            .install-cmd.active {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 10px 10px 10px 16px;
+            }
+            .install-cmd .cmd-text { flex: 1; min-width: 0; overflow-x: auto; padding: 8px 0; }
+            .install-cmd .copy-btn {
+                position: static;
+                order: 2;
+                flex-shrink: 0;
+                min-height: 44px;
+                padding: 10px 16px;
+            }
+            /* Footer link tap targets */
+            footer a { display: inline-block; padding: 10px 2px; }
             .compare-table { font-size: 12px; }
             .compare-table th, .compare-table td { padding: 10px 8px; }
         }
@@ -1290,14 +1361,24 @@
             opacity: 0;
             transform: translateY(80px);
             pointer-events: none;
+            /* visibility keeps the hidden button out of the Tab order; its
+               0s step is delayed to the end of the fade so the fade-out
+               still plays. */
+            visibility: hidden;
             transition: opacity 0.35s ease-out,
                         transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
-                        box-shadow 0.2s;
+                        box-shadow 0.2s,
+                        visibility 0s linear 0.35s;
         }
         #sticky-cta.visible {
             opacity: 1;
             transform: translateY(0);
             pointer-events: auto;
+            visibility: visible;
+            transition: opacity 0.35s ease-out,
+                        transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+                        box-shadow 0.2s,
+                        visibility 0s linear 0s;
         }
         #sticky-cta:hover {
             transform: translateY(-2px);
@@ -1313,6 +1394,8 @@
     </style>
 </head>
 <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
     <!-- Scroll progress bar — fills as the user scrolls down. -->
     <div id="scroll-progress" aria-hidden="true"></div>
 
@@ -1326,15 +1409,16 @@
     <nav>
         <div class="nav-inner">
             <a href="#" class="nav-logo">
-                <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra logo" width="36" height="36" loading="eager" decoding="async">
+                <img src="/icon-192.png" alt="Notepatra logo" width="36" height="36" loading="eager" decoding="async">
                 Notepatra
             </a>
             <div class="nav-links">
-                <a href="mcp.html">MCP</a>
+                <a href="/docs.html">Docs</a>
+                <a href="/mcp.html">MCP</a>
+                <a href="/enterprise.html">Enterprise</a>
                 <a href="#ai">AI</a>
                 <a href="#features">Features</a>
                 <a href="#plugins">Plugins</a>
-                <a href="docs.html">Docs</a>
                 <a href="#security">Security</a>
                 <a href="#faq">FAQ</a>
                 <a href="#versions">Versions</a>
@@ -1344,21 +1428,22 @@
         </div>
     </nav>
 
+    <main id="main">
     <!-- Hero -->
     <div class="hero">
         <div class="hero-badge">v0.1.131 · Now Available · MCP server for AI assistants · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
-        <p>Tiny native binary (~13 MB bare, ~4.8 MB compressed on Linux). C++ and Rust. 238 file types · 82 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public endpoints. <strong>New in v0.1.131:</strong> a <a href="/docs.html#preview-pane" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Preview pane</a> beside the editor — <strong>Markdown</strong> and <strong>HTML</strong> rendered live as you type, <strong>Jupyter notebooks</strong> (<code>.ipynb</code>) shown as notebooks with their outputs, and plain <strong><code>.sql</code> files run cell by cell</strong> (<code>-- %%</code> separators, a temporary scratch database or any saved connection, read-only until you say otherwise). <strong>MCP:</strong> the <a href="/mcp.html" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">MCP server</a> ships a prebuilt signed Windows sidecar and a one-click Claude Desktop bundle — its 49 tools (Git, read-only SQL, saved-connection queries, charts, Noter notes) connect Claude, Codex, or any MCP client straight to your editor.</p>
+        <p>Tiny native binary (~13 MB bare, ~4.8 MB compressed on Linux). C++ and Rust. 238 file types · 82 language lexers. JSON / HTML / SQL fixers — regex first, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public AI endpoints. <strong>New in v0.1.131:</strong> safer saves (a save never deletes the old copy first), a tighter AI SQL gate, <a href="/docs.html#preview-pane" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Preview pane</a> fixes (Stop works on every driver, the HTML preview stays fully offline, results survive tab switches), and files opening from Finder on macOS. <strong>MCP:</strong> the 49 tools of the <a href="/mcp.html" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">MCP server</a> (Git, read-only SQL, saved-connection queries, charts, Noter notes) connect Claude, Codex, or any MCP client straight to your editor.</p>
 
         <div class="install-box">
-            <div class="install-tabs">
-                <button class="install-tab active" data-tab="linux">🐧 Linux</button>
-                <button class="install-tab" data-tab="mac">🍎 macOS</button>
-                <button class="install-tab" data-tab="windows">🪟 Windows</button>
+            <div class="install-tabs" role="tablist" aria-label="Install command by operating system">
+                <button class="install-tab active" data-tab="linux" role="tab" id="tab-linux" aria-selected="true" aria-controls="cmd-linux">🐧 Linux</button>
+                <button class="install-tab" data-tab="mac" role="tab" id="tab-mac" aria-selected="false" aria-controls="cmd-mac">🍎 macOS</button>
+                <button class="install-tab" data-tab="windows" role="tab" id="tab-windows" aria-selected="false" aria-controls="cmd-windows">🪟 Windows</button>
             </div>
-            <div class="install-cmd active" id="cmd-linux"><button class="copy-btn" onclick="copyCmd(this, 'curl -fsSL https://notepatra.org/install.sh | sh')">Copy</button><span class="prompt">$ </span>curl -fsSL https://notepatra.org/install.sh | sh</div>
-            <div class="install-cmd" id="cmd-mac"><button class="copy-btn" onclick="copyCmd(this, 'curl -fsSL https://notepatra.org/install.sh | sh')">Copy</button><span class="prompt">$ </span>curl -fsSL https://notepatra.org/install.sh | sh</div>
-            <div class="install-cmd" id="cmd-windows"><button class="copy-btn" onclick="copyCmd(this, 'irm https://notepatra.org/install.ps1 | iex')">Copy</button><span class="prompt">PS&gt; </span>irm https://notepatra.org/install.ps1 | iex</div>
+            <div class="install-cmd active" id="cmd-linux" role="tabpanel" aria-labelledby="tab-linux"><button class="copy-btn" onclick="copyCmd(this, 'curl -fsSL https://notepatra.org/install.sh | sh')">Copy</button><span class="cmd-text"><span class="prompt">$ </span>curl -fsSL https://notepatra.org/install.sh | sh</span></div>
+            <div class="install-cmd" id="cmd-mac" role="tabpanel" aria-labelledby="tab-mac"><button class="copy-btn" onclick="copyCmd(this, 'curl -fsSL https://notepatra.org/install.sh | sh')">Copy</button><span class="cmd-text"><span class="prompt">$ </span>curl -fsSL https://notepatra.org/install.sh | sh</span></div>
+            <div class="install-cmd" id="cmd-windows" role="tabpanel" aria-labelledby="tab-windows"><button class="copy-btn" onclick="copyCmd(this, 'irm https://notepatra.org/install.ps1 | iex')">Copy</button><span class="cmd-text"><span class="prompt">PS&gt; </span>irm https://notepatra.org/install.ps1 | iex</span></div>
         </div>
 
         <div class="hero-buttons">
@@ -1381,17 +1466,17 @@
          exposure) with clean re-captures that show only Notepatra's
          UI chrome and code content. -->
     <section class="showcase" aria-label="Product screenshots">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1200px; margin: 0 auto; padding: 0 24px;">
+        <div class="showcase-grid">
             <figure style="margin: 0;">
-                <img src="screenshots/welcome-clean.png" alt="Notepatra Welcome tab — Dark theme" loading="lazy"
-                     style="width: 100%; border-radius: 14px; box-shadow: 0 30px 60px -20px rgba(20,20,19,0.25), 0 0 0 1px rgba(20,20,19,0.05); display: block;">
+                <img src="screenshots/welcome-clean.png" alt="Notepatra Welcome tab — Dark theme" loading="lazy" width="900" height="454"
+                     style="width: 100%; height: auto; aspect-ratio: 900 / 454; border-radius: 14px; box-shadow: 0 30px 60px -20px rgba(20,20,19,0.25), 0 0 0 1px rgba(20,20,19,0.05); display: block;">
                 <figcaption style="text-align: center; margin-top: 12px; color: var(--text-dim); font-size: 13px;">
-                    <strong style="color: var(--c-text);">Welcome tab</strong> — 10-icon toolbar, hero card, recent-files placeholder
+                    <strong style="color: var(--c-text);">Welcome tab</strong> — built-in tools bar, hero card, recent-files placeholder
                 </figcaption>
             </figure>
             <figure style="margin: 0;">
-                <img src="screenshots/editor-code.png" alt="Notepatra editor — C++ source with 9-hue canonical syntax highlighting" loading="lazy"
-                     style="width: 100%; border-radius: 14px; box-shadow: 0 30px 60px -20px rgba(20,20,19,0.25), 0 0 0 1px rgba(20,20,19,0.05); display: block;">
+                <img src="screenshots/editor-code.png" alt="Notepatra editor — C++ source with 9-hue canonical syntax highlighting" loading="lazy" width="900" height="454"
+                     style="width: 100%; height: auto; aspect-ratio: 900 / 454; border-radius: 14px; box-shadow: 0 30px 60px -20px rgba(20,20,19,0.25), 0 0 0 1px rgba(20,20,19,0.05); display: block;">
                 <figcaption style="text-align: center; margin-top: 12px; color: var(--text-dim); font-size: 13px;">
                     <strong style="color: var(--c-text);">Editor</strong> — C++ source, 9-hue canonical palette
                 </figcaption>
@@ -1414,7 +1499,7 @@
             <div class="pillar">
                 <div class="pillar-glyph">🛡</div>
                 <h3>Private by design.</h3>
-                <p>Local-first AI. Default backends are Ollama / llama.cpp on your own machine. No telemetry, no analytics, no mandatory API key. Cloud LLMs (OpenAI / OpenRouter / Anthropic-via-proxy / Gemini-via-OpenRouter) are <em>opt-in</em> via the OpenAI-compatible backend — pick your runner in Preferences → AI. Your code stays on your machine unless you opt into a cloud backend or click "git push".</p>
+                <p>Local-first AI. Default backends are Ollama / llama.cpp on your own machine. No telemetry, no analytics, no mandatory API key. Cloud LLMs (OpenRouter, OpenAI, Azure OpenAI, Ollama Cloud) are <em>opt-in</em> from the AI dock's backend dropdown — enter the key under the dock's ⚙ Settings. Your code stays on your machine unless you opt into a cloud backend or click "git push".</p>
             </div>
             <div class="pillar">
                 <div class="pillar-glyph">✦</div>
@@ -1429,7 +1514,7 @@
         <div class="stat"><div class="stat-number">~<span>13</span> MB</div><div class="stat-label">Bare Binary</div></div>
         <div class="stat"><div class="stat-number"><span>238</span></div><div class="stat-label">File Types</div></div>
         <div class="stat"><div class="stat-number"><span>82</span></div><div class="stat-label">Language Lexers</div></div>
-        <div class="stat"><div class="stat-number"><span>2</span> GB</div><div class="stat-label">Max File Size</div></div>
+        <div class="stat"><div class="stat-number">~<span>1.86</span> GB</div><div class="stat-label">Full-Load Limit</div></div>
         <div class="stat"><div class="stat-number"><span>86</span></div><div class="stat-label">Regression Suites</div></div>
         <div class="stat"><div class="stat-number"><span>0</span></div><div class="stat-label">Electron</div></div>
     </div>
@@ -1468,7 +1553,7 @@
               <p style="margin: 0 0 14px; color: var(--c-text); font-size: 14.5px; line-height: 1.55;">
                 <strong>Local AI out of the box · cloud LLMs opt-in.</strong>
                 Talk to Ollama or llama.cpp locally by default, or any OpenAI-compatible server via the llama.cpp entry's user-configured URL.
-                Paste an OpenAI / Anthropic / OpenRouter / Mistral / Azure URL in Settings if you want cloud — fully optional, no key required for local use.
+                Pick OpenRouter / OpenAI / Azure OpenAI / Ollama Cloud in the AI dock and paste your key under ⚙ Settings if you want cloud — fully optional, no key required for local use.
               </p>
               <p style="margin: 0 0 16px; color: var(--text-dim); font-size: 13px; line-height: 1.55;">
                 Pick this if you want maximum flexibility — local first, with cloud available when you need a flagship model on a hard problem. Most users.
@@ -1554,7 +1639,7 @@
 
           <p style="margin: 18px auto 0; max-width: 760px; text-align: center;
                     font-size: 12.5px; color: var(--text-dim); line-height: 1.6;">
-            Both flavors are local-first by default. The regular build adds optional cloud LLM URLs you paste in Settings; the Local AI build refuses them at the network layer for auditable compliance. <code style="color:var(--green); font-size:12px;">notepatra --version</code> tells you which flavor you have installed.
+            Both flavors are local-first by default. The regular build adds optional cloud backends you pick in the AI dock; the Local AI build refuses them at the network layer for auditable compliance. <code style="color:var(--green); font-size:12px;">notepatra --version</code> tells you which flavor you have installed. The install scripts fetch the Lite build; for the Full build (adds the bundled DuckDB engine) run <code style="color:var(--green); font-size:12px;">curl -fsSL https://notepatra.org/install.sh | NOTEPATRA_FULL=1 sh</code>, or on Windows <code style="color:var(--green); font-size:12px;">$env:NOTEPATRA_FULL=1; irm https://notepatra.org/install.ps1 | iex</code>. Full on Linux also needs your distro's Qt WebEngine (<code style="color:var(--green); font-size:12px;">libqt5webenginewidgets5</code> / <code style="color:var(--green); font-size:12px;">qt5-qtwebengine</code>).
           </p>
         </div>
 
@@ -1575,13 +1660,14 @@
                 <div class="download-os">🍎</div>
                 <h4>macOS Apple Silicon</h4>
                 <p>M1 / M2 / M3 / M4 · 27.8 MB .dmg</p>
-                <p class="download-note">Not notarized yet. First launch: right-click › Open (or System Settings › Privacy &amp; Security › Open Anyway).</p>
+                <p class="download-note">Not notarized yet. First launch: open it once, then System Settings › Privacy &amp; Security › Open Anyway (macOS 15+); right-click › Open on macOS 14 and earlier.</p>
                 <span class="download-btn">.dmg</span>
             </a>
             <a class="download-card" href="https://github.com/singhpratech/notepatra/releases/latest">
                 <div class="download-os">🪟</div>
                 <h4>Windows x64</h4>
                 <p>37.8 MB zip · 44.1 MB MSI · 33.1 MB setup.exe</p>
+                <p class="download-note">Not Authenticode-signed yet. If SmartScreen warns: More info › Run anyway.</p>
                 <span class="download-btn">.zip / .msi / .exe</span>
             </a>
         </div>
@@ -1617,10 +1703,10 @@
         <div class="section-title" style="margin-bottom: 12px;">Welcome → editor → search.</div>
         <p class="section-desc" style="margin: 0 auto 28px; max-width: 720px;">Welcome screen · C++ source with full syntax highlighting · Project Search streaming results incrementally. Captured from running Notepatra on Linux + Windows.</p>
         <div style="position: relative; max-width: 960px; margin: 28px auto 0; background: var(--c-surface); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px -20px rgba(20,20,19,0.18);">
-            <img src="screenshots/tour-clean.gif"
+            <img src="screenshots/tour-clean.gif" width="900" height="454"
                  alt="Notepatra tour — Welcome screen, then editor.cpp source with syntax highlighting, then Project Search with live streaming results"
                  loading="lazy"
-                 style="display: block; width: 100%; height: auto;">
+                 style="display: block; width: 100%; height: auto; aspect-ratio: 900 / 454;">
         </div>
         <div style="margin-top: 14px; font-size: 12px; color: var(--text-dim);">
             Real capture — not a mockup. <a href="https://github.com/singhpratech/notepatra#readme" style="color: var(--c-accent); text-decoration: none;">More on GitHub →</a>
@@ -1636,7 +1722,7 @@
             <div>
                 <div class="section-label">AI Powered · Local-first, cloud-optional</div>
                 <div class="section-title">Your AI. Your machine. Your choice.</div>
-                <p style="color: var(--text-dim); margin-bottom: 16px;">Notepatra's AI runs locally by default — pick <strong>Ollama</strong>, <strong>llama.cpp</strong> (loads any GGUF), or any OpenAI-compatible server (any OpenAI-compatible server). When you'd rather use a frontier model, four cloud backends are wired in too: <strong>Ollama Cloud</strong>, <strong>OpenRouter</strong>, <strong>OpenAI</strong>, <strong>Azure OpenAI</strong> — six total backends in the dropdown alongside the local Ollama + llama.cpp entries. No mandatory API key. No subscription. No telemetry.</p>
+                <p style="color: var(--text-dim); margin-bottom: 16px;">Notepatra's AI runs locally by default — pick <strong>Ollama</strong>, <strong>llama.cpp</strong> (loads any GGUF), or any OpenAI-compatible server. When you'd rather use a frontier model, four cloud backends are wired in too: <strong>Ollama Cloud</strong>, <strong>OpenRouter</strong>, <strong>OpenAI</strong>, <strong>Azure OpenAI</strong> — six total backends in the dropdown alongside the local Ollama + llama.cpp entries. No mandatory API key. No subscription. No telemetry.</p>
                 <p style="color: var(--text-dim); margin-bottom: 24px;">When the regex fixer can't repair your broken JSON — the AI can. Hybrid approach: speed of regex, intelligence of AI.</p>
                 <div class="ai-actions">
                     <span class="ai-tag">Explain Code</span>
@@ -1702,7 +1788,7 @@
             <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
                 <div class="feature-icon fi-teal"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="15" y1="9" x2="19" y2="9"/><line x1="15" y1="13" x2="19" y2="13"/></svg></div>
                 <h3>Preview pane — Markdown, HTML, notebooks, SQL cells <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">IMPROVED IN v0.1.131</span></h3>
-                <p>A pane beside the editor (<code>Ctrl+Shift+V</code>, or the <strong>Preview</strong> button on the tools row). <strong>Markdown</strong> renders live as you type and follows the theme; <strong>HTML</strong> renders with Qt's engine in Lite and with Chromium in Full — JavaScript off, no remote resources, the page cannot navigate the pane. <strong>Jupyter <code>.ipynb</code></strong> shows as a read-only notebook with its outputs. A <code>.sql</code> file runs as <strong>SQL cells</strong> split by <code>-- %%</code>: Run, Run All, Stop, and <code>Ctrl+Return</code> against a temporary scratch database or a saved connection that is <strong>read-only until you tick Allow writes</strong>. No new dependency, no network.</p>
+                <p>A pane beside the editor (<code>Ctrl+Shift+V</code>, or the <strong>Preview</strong> button on the tools row). <strong>Markdown</strong> renders live as you type and follows the theme; <strong>HTML</strong> renders with Qt's engine in Lite and with Chromium in Full on Linux and Windows (macOS Full uses Qt's engine) — JavaScript off, no remote resources, the page cannot navigate the pane. <strong>Jupyter <code>.ipynb</code></strong> shows as a read-only notebook with its outputs. A <code>.sql</code> file runs as <strong>SQL cells</strong> split by <code>-- %%</code>: Run, Run All, Stop, and <code>Ctrl+Return</code> against a temporary scratch database or a saved connection that is <strong>read-only until you tick Allow writes</strong>. No new dependency, no network.</p>
             </div>
             <!-- Password Generator — the v0.1.129 headline, now slot 2.
                  Only the current release carries a NEW pill — see stale-text-check. -->
@@ -1711,7 +1797,7 @@
                 <h3>Password Generator — passwords, passphrases, SSH keys </h3>
                 <p>One tab, three pages on a left rail — <strong>Password</strong>, <strong>Passphrase</strong>, <strong>SSH key</strong> (<code>Alt+1</code> / <code>Alt+2</code> / <code>Alt+3</code>). Passwords draw from a shell-safe symbol set; passphrases from a 2,048-word list compiled into the binary (11 bits a word). <strong>SSH key</strong> makes a real OpenSSH pair — <strong>Ed25519</strong>, ECDSA P-256 / P-384, RSA 3072 / 4096 — with an optional passphrase encrypted the way <code>ssh-keygen</code> does it, an empty comment by default (no <code>user@host</code> leak), the private key hidden until you ask, and <strong>Save</strong> that sets <code>0600</code> before writing and never overwrites. The bits readout is a real count, not a score. Every draw comes from the OS random source through the Rust core; nothing is stored, sent to an AI backend, or visible to MCP. Offline, in every build including Lite.</p>
             </div>
-            <!-- MCP — the v0.1.118 headline (expanded to 48 tools in v0.1.120), promoted to slot 1 so the
+            <!-- MCP — the v0.1.118 headline (expanded to 48 tools in v0.1.120, 49 by v0.1.131), promoted to slot 1 so the
                  grid leads with it. Same Clay-orange halo as the other
                  star features. -->
             <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
@@ -1756,7 +1842,7 @@
             <div class="feature-card" style="border-color: rgba(204,120,92,0.35); box-shadow: 0 10px 30px rgba(204,120,92,0.10);">
                 <div class="feature-icon fi-orange">🔍</div>
                 <h3>AI Interaction Log</h3>
-                <p><strong>Audit exactly what your AI did — transparency, not just a promise.</strong> Every request <em>and</em> response to any backend — local (Ollama / llama.cpp) or cloud (OpenRouter / OpenAI / Azure / Ollama Cloud), including Noter's Extract — is recorded to a <strong>local SQLite log</strong> you can open and read: timestamp, backend, model, full prompt + response, tokens, latency. Entries auto-prune after 7 days; a credential scrubber masks API keys / tokens / PEM keys before writing. The viewer has filters, Export JSON, and Prune-now. On by default with one-click opt-out in Settings. <strong>Zero network egress — purely local.</strong> Open from <strong>Features → AI Interaction Log…</strong></p>
+                <p><strong>Audit exactly what your AI did — transparency, not just a promise.</strong> Every request <em>and</em> response to any backend — local (Ollama / llama.cpp) or cloud (OpenRouter / OpenAI / Azure / Ollama Cloud), including Noter's Extract — is recorded to a <strong>local SQLite log</strong> you can open and read: timestamp, backend, model, full prompt + response, tokens, latency. Entries auto-prune after 7 days; a credential scrubber masks API keys / tokens / PEM keys before writing. The viewer has filters, Export JSON, and Prune-now. On by default; untick 'Log AI interactions' in the Tools → AI Interaction Log… window to opt out. <strong>Zero network egress — purely local.</strong> Open from <strong>Tools → AI Interaction Log…</strong></p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon fi-blue">⚡</div>
@@ -1791,7 +1877,7 @@
             <div class="feature-card">
                 <div class="feature-icon fi-orange">📁</div>
                 <h3>Session Persistence</h3>
-                <p>Close Notepatra, reopen tomorrow — same files, same cursors, same window size. Crash recovery saves unsaved work every 5 seconds by default (interval configurable).</p>
+                <p>Close Notepatra, reopen tomorrow — same files, same cursors, same window size. Crash recovery saves unsaved work every 5 seconds by default (interval configurable in config.json).</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon fi-red">👁</div>
@@ -1825,7 +1911,7 @@
             <div class="feature-card">
                 <div class="feature-icon fi-green">🔭</div>
                 <h3>Find &amp; Replace</h3>
-                <p>In-document find / replace / extended mode (\n, \t, \xNN) / regex. Ctrl+F to find, Ctrl+H to replace. For searching across multiple files, use <strong>Project Search</strong> (Ctrl+Shift+G) at the top of this grid instead.</p>
+                <p>In-document find / replace / extended mode (\n, \t, \xNN) / regex. Ctrl+F to find, Ctrl+H to replace (⌥⌘F on macOS). For searching across multiple files, use <strong>Project Search</strong> (Ctrl+Shift+G) at the top of this grid instead.</p>
             </div>
         </div>
     </section>
@@ -1882,7 +1968,7 @@
                 <div class="plugin-icon">⎇</div>
                 <div>
                     <h4>Git Integration</h4>
-                    <p>Changed files panel. Branch display. Push/Pull. Git gutter margins. Open on GitHub.</p>
+                    <p>Changed files panel. Branch display. Commit / Fetch / Pull / Push. Git gutter margins.</p>
                 </div>
             </div>
             <div class="plugin-card">
@@ -1910,7 +1996,7 @@
                 <div class="plugin-icon">***</div>
                 <div>
                     <h4>Password Generator</h4>
-                    <p>Random characters or a passphrase from a built-in 2,048-word list, drawn from the operating system CSPRNG. The bits readout counts how many values your settings can produce, so it drops when you require one character from each set.</p>
+                    <p>Random characters, a passphrase from a built-in 2,048-word list, or an OpenSSH key pair, all drawn from the operating system CSPRNG. The bits readout counts how many values your settings can produce, so it drops when you require one character from each set.</p>
                 </div>
             </div>
         </div>
@@ -2025,7 +2111,7 @@
     <section id="security">
         <div class="section-label">Security</div>
         <div class="section-title">Verifiable. Local. Hands off your data.</div>
-        <div class="section-desc">No analytics, no telemetry. Network traffic only on explicit actions — AI request, git push/pull, REST client, update check. Every release is checksummed and cryptographically signed. Verify before you run.</div>
+        <div class="section-desc">No analytics, no telemetry. Network traffic only on explicit actions — AI request, git push/pull, REST client — plus a once-a-day update check (on by default). Every release is checksummed and cryptographically signed. Verify before you run.</div>
 
         <div class="features-grid">
             <div class="feature-card">
@@ -2051,7 +2137,7 @@
             <div class="feature-card">
                 <div class="feature-icon fi-red">🚫</div>
                 <h3>Zero telemetry</h3>
-                <p>No analytics, no error reporting, no phone-home. The only outbound connections are: localhost Ollama (when you use AI), git push/pull (when you click), and HTTP requests you explicitly send via the REST tab. Verifiable with <code style="color:var(--green);font-size:12px;">strace</code>.</p>
+                <p>No analytics, no error reporting. The only outbound connections are: localhost Ollama (when you use AI), git push/pull (when you click), HTTP requests you explicitly send via the REST tab, and a once-a-day update check to api.github.com (on by default). Verifiable with <code style="color:var(--green);font-size:12px;">strace</code>.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon fi-teal">📬</div>
@@ -2156,7 +2242,7 @@
                onmouseout="this.style.borderColor='var(--c-border)';this.style.color='var(--c-text-muted)';">
                 <span style="font-size:16px; color:var(--c-text); font-weight:600;">See every release on GitHub</span><br>
                 <span>Full version history from v0.1.0 onwards — release notes, signed artifacts, SHA-256 checksums, cosign signatures, SLSA build provenance.</span><br>
-                <span style="color:var(--green); font-weight:600;">github.com/singhpratech/notepatra/releases →</span>
+                <span style="color:var(--green); font-weight:600; overflow-wrap:anywhere;">github.com/singhpratech/notepatra/releases →</span>
             </a>
 
 
@@ -2184,7 +2270,7 @@
             </div>
             <div class="feature-card">
                 <h3>Can I install Notepatra at my company?</h3>
-                <p>Yes — same license posture as Notepad++, GIMP, vim, and Linux (all GPL). Notepatra is a standalone end-user editor: under the GPL, using Notepatra as an editor does not place obligations on the files you edit (see the <a href="https://www.gnu.org/licenses/gpl-faq.html" style="color:var(--green);">FSF GPL FAQ</a>), and it doesn't phone home. For IT, legal, or procurement teams reviewing the install: see the <a href="/enterprise.html" style="color:var(--green);">For Enterprise</a> page — plain-English explainer, supply-chain provenance (SHA-256 + cosign + SLSA), and a copy-paste block for your software-acceptance request.</p>
+                <p>Yes — same license posture as Notepad++, GIMP, vim, and Linux (all GPL). Notepatra is a standalone end-user editor: under the GPL, using Notepatra as an editor does not place obligations on the files you edit (see the <a href="https://www.gnu.org/licenses/gpl-faq.html" style="color:var(--green);">FSF GPL FAQ</a>), and it sends no telemetry. For IT, legal, or procurement teams reviewing the install: see the <a href="/enterprise.html" style="color:var(--green);">For Enterprise</a> page — plain-English explainer, supply-chain provenance (SHA-256 + cosign + SLSA), and a copy-paste block for your software-acceptance request.</p>
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
@@ -2192,11 +2278,11 @@
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
-                <p>By default no — Notepatra is local-first. Pick a local AI backend (Ollama on <code>localhost:11434</code> or llama.cpp's llama-server on <code>localhost:8080</code>) and nothing leaves your machine. The llama.cpp entry also accepts a user-configured URL, so you can route it to any OpenAI-compatible server you've installed (any OpenAI-compatible server — those are separate programs you install and license). Cloud backends (OpenRouter, OpenAI, Azure OpenAI, Ollama Cloud) are <strong>opt-in</strong> from the AI dock dropdown. Even when you opt in, the v0.1.55 credential scrubber strips API keys / tokens / private-key blocks from any code or chat content before it leaves the machine, and the privacy "Share file with AI" toggle (default OFF) controls whether the active editor file is even visible to the model. Verifiable with <code style="color:var(--green);font-size:12px;">strace</code>.</p>
+                <p>By default no — Notepatra is local-first. Pick a local AI backend (Ollama on <code>localhost:11434</code> or llama.cpp's llama-server on <code>localhost:8080</code>) and nothing leaves your machine. The llama.cpp entry also accepts a user-configured URL, so you can route it to any OpenAI-compatible server you've installed (those are separate programs you install and license). Cloud backends (OpenRouter, OpenAI, Azure OpenAI, Ollama Cloud) are <strong>opt-in</strong> from the AI dock dropdown. Even when you opt in, the v0.1.55 credential scrubber strips API keys / tokens / private-key blocks from any code or chat content before it leaves the machine, and the "Auto-attach open file" toggle (default OFF, Coding mode only) controls whether the active editor file is even visible to the model. Verifiable with <code style="color:var(--green);font-size:12px;">strace</code>.</p>
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.131 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+Q / Ctrl+Shift+Q) and proper file-extension routing.</p>
+                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.131 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+/ for line, Ctrl+Shift+Q for block) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>What file encodings are supported?</h3>
@@ -2212,7 +2298,7 @@
             </div>
             <div class="feature-card">
                 <h3>Can I write plugins?</h3>
-                <p>Yes. Drop a <code style="color:var(--green);font-size:12px;">.so</code>/<code style="color:var(--green);font-size:12px;">.dylib</code>/<code style="color:var(--green);font-size:12px;">.dll</code> in <code style="color:var(--green);font-size:12px;">~/.config/notepatra/plugins/</code>. The plugin C API is two functions: <code style="color:var(--green);font-size:12px;">notepatra_plugin_name()</code> and <code style="color:var(--green);font-size:12px;">notepatra_plugin_run(text, len)</code>. Example in the README.</p>
+                <p>Yes. Drop a <code style="color:var(--green);font-size:12px;">.so</code>/<code style="color:var(--green);font-size:12px;">.dylib</code>/<code style="color:var(--green);font-size:12px;">.dll</code> in the <code style="color:var(--green);font-size:12px;">plugins</code> folder of your config directory (<code style="color:var(--green);font-size:12px;">~/.config/notepatra/plugins</code> on Linux, <code style="color:var(--green);font-size:12px;">~/Library/Application Support/Notepatra/plugins</code> on macOS, <code style="color:var(--green);font-size:12px;">%APPDATA%\Notepatra\plugins</code> on Windows), or use Plugins → Open Plugins Folder. The plugin C API is two functions: <code style="color:var(--green);font-size:12px;">notepatra_plugin_name()</code> and <code style="color:var(--green);font-size:12px;">notepatra_plugin_run(text, len)</code>. Example in the README.</p>
             </div>
             <div class="feature-card">
                 <h3>Who built it and why?</h3>
@@ -2239,6 +2325,7 @@
             <a href="https://github.com/singhpratech/notepatra" class="btn btn-secondary">Star on GitHub</a>
         </div>
     </div>
+    </main>
 
     <!-- Footer -->
     <footer>
@@ -2267,7 +2354,7 @@
 
         <p><strong>Notepatra</strong></p>
         <p>Envisioned by <a href="https://theaivibe.org/about">Prateek Singh</a>. Built with Claude.</p>
-        <p>Free forever · GPL-3.0 · <a href="https://github.com/singhpratech/notepatra">Source on GitHub</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Changelog</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">Security</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE">License</a> · <a href="/enterprise.html">For Enterprise</a></p>
+        <p>Free forever · GPL-3.0 · <a href="/" aria-current="page">Home</a> · <a href="/docs.html">Docs</a> · <a href="/mcp.html">MCP</a> · <a href="/enterprise.html">Enterprise</a> · <a href="https://github.com/singhpratech/notepatra">GitHub</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Changelog</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">Security</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE">License</a></p>
         <p class="quote">"I didn't build Notepatra because the world needed another text editor.<br>I built it because every developer deserves one that's fast, free, and AI-friendly."</p>
 
         <div style="max-width: 720px; margin: 32px auto 0; padding: 20px 24px; background: var(--c-accent-soft); border: 1px solid var(--c-accent); border-radius: 12px; text-align: left;">
@@ -2285,13 +2372,27 @@
 
     <script>
         // Tab switching for install commands
-        document.querySelectorAll('.install-tab').forEach(tab => {
+        const installTabs = Array.from(document.querySelectorAll('.install-tab'));
+        installTabs.forEach((tab, i) => {
             tab.addEventListener('click', () => {
                 const target = tab.dataset.tab;
-                document.querySelectorAll('.install-tab').forEach(t => t.classList.remove('active'));
+                installTabs.forEach(t => {
+                    t.classList.remove('active');
+                    t.setAttribute('aria-selected', 'false');
+                });
                 document.querySelectorAll('.install-cmd').forEach(c => c.classList.remove('active'));
                 tab.classList.add('active');
+                tab.setAttribute('aria-selected', 'true');
                 document.getElementById('cmd-' + target).classList.add('active');
+            });
+            // Left/Right arrows move between the OS tabs (ARIA tabs pattern).
+            tab.addEventListener('keydown', e => {
+                if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+                e.preventDefault();
+                const n = installTabs.length;
+                const next = installTabs[(i + (e.key === 'ArrowRight' ? 1 : n - 1)) % n];
+                next.focus();
+                next.click();
             });
         });
 
@@ -2351,15 +2452,42 @@
                 return null;
             };
 
-            fetch('https://api.github.com/repos/singhpratech/notepatra/releases?per_page=100', {
+            const render = (counts, at) => {
+                const fmt = (n) => n.toLocaleString('en-US');
+                elLinux.textContent   = fmt(counts.linux);
+                elMac.textContent     = fmt(counts.mac);
+                elWindows.textContent = fmt(counts.windows);
+                const total = counts.linux + counts.mac + counts.windows;
+                elTotal.textContent = `${fmt(total)} GitHub asset downloads · all installer formats, every fetch (incl. bots / CI / mirrors) — not unique installs · live from the GitHub Releases API · refreshed ${new Date(at).toLocaleTimeString()}`;
+            };
+
+            // Repeat views in the same browser session reuse the last result
+            // instead of re-fetching (each fetch costs one of the visitor's
+            // 60 unauthenticated API calls per hour). Storage can be blocked
+            // or throw; the page then just fetches as before.
+            const CACHE_KEY = 'notepatra-dl-counts-v1';
+            try {
+                const cached = JSON.parse(sessionStorage.getItem(CACHE_KEY) || 'null');
+                if (cached && cached.counts && typeof cached.at === 'number') {
+                    render(cached.counts, cached.at);
+                    return;
+                }
+            } catch (e) { /* no storage: fall through to a live fetch */ }
+
+            // The repo has more than 100 releases, so follow the pagination:
+            // the Link header's rel="next" when it is readable, otherwise
+            // the next page number while pages keep coming back full.
+            const PER_PAGE = 100;
+            const counts = { linux: 0, mac: 0, windows: 0 };
+            const loadPage = (url, page) => fetch(url, {
                 headers: { 'Accept': 'application/vnd.github+json' }
             })
             .then(r => {
                 if (!r.ok) throw new Error('GitHub API HTTP ' + r.status);
-                return r.json();
+                const link = r.headers.get('Link') || '';
+                return r.json().then(releases => ({ releases, link }));
             })
-            .then(releases => {
-                const counts = { linux: 0, mac: 0, windows: 0 };
+            .then(({ releases, link }) => {
                 for (const rel of releases) {
                     for (const a of (rel.assets || [])) {
                         if (!isPrimaryAsset(a.name)) continue;
@@ -2367,12 +2495,19 @@
                         if (p) counts[p] += a.download_count;
                     }
                 }
-                const fmt = (n) => n.toLocaleString('en-US');
-                elLinux.textContent   = fmt(counts.linux);
-                elMac.textContent     = fmt(counts.mac);
-                elWindows.textContent = fmt(counts.windows);
-                const total = counts.linux + counts.mac + counts.windows;
-                elTotal.textContent = `${fmt(total)} GitHub asset downloads · all installer formats, every fetch (incl. bots / CI / mirrors) — not unique installs · live from the GitHub Releases API · refreshed ${new Date().toLocaleTimeString()}`;
+                const m = link.match(/<([^>]+)>;\s*rel="next"/);
+                let next = m ? m[1] : null;
+                if (!next && !link && releases.length === PER_PAGE) {
+                    next = `https://api.github.com/repos/singhpratech/notepatra/releases?per_page=${PER_PAGE}&page=${page + 1}`;
+                }
+                if (next && page < 20) return loadPage(next, page + 1);
+            });
+
+            loadPage(`https://api.github.com/repos/singhpratech/notepatra/releases?per_page=${PER_PAGE}`, 1)
+            .then(() => {
+                const at = Date.now();
+                render(counts, at);
+                try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ counts, at })); } catch (e) { /* ignore */ }
             })
             .catch(err => {
                 elTotal.textContent = 'GitHub API rate-limited — try refreshing in a minute';
@@ -2386,7 +2521,11 @@
         document.querySelectorAll('.version-card:not(.latest) .version-header').forEach(h => {
             h.setAttribute('role', 'button');
             h.setAttribute('tabindex', '0');
-            const toggle = () => h.parentElement.classList.toggle('expanded');
+            h.setAttribute('aria-expanded', 'false');
+            const toggle = () => {
+                const open = h.parentElement.classList.toggle('expanded');
+                h.setAttribute('aria-expanded', open ? 'true' : 'false');
+            };
             h.addEventListener('click', toggle);
             h.addEventListener('keydown', e => {
                 if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }

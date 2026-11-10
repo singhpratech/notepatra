@@ -11,6 +11,8 @@
 set -e
 
 INSTALL_DIR="$HOME/.local/bin"
+# Full build on Linux: binary + libduckdb.so (install.sh links $INSTALL_DIR/notepatra here)
+OPT_DIR="$HOME/.local/opt/notepatra"
 APP_NAME="notepatra"
 
 echo ""
@@ -36,12 +38,21 @@ if [ "$OS" = "darwin" ]; then
         echo "  (no app found at /Applications/Notepatra.app)"
     fi
 
+    # install.sh falls back to ~/Applications when /Applications is not writable
+    if [ -d "$HOME/Applications/Notepatra.app" ]; then
+        echo "  Removing $HOME/Applications/Notepatra.app..."
+        rm -rf "$HOME/Applications/Notepatra.app"
+    fi
+
     if [ -L "$INSTALL_DIR/notepatra" ] || [ -f "$INSTALL_DIR/notepatra" ]; then
         echo "  Removing CLI symlink at $INSTALL_DIR/notepatra..."
         rm -f "$INSTALL_DIR/notepatra"
     fi
 
     echo "  Removing user config + cache..."
+    # Config dir since v0.1.96 (settings, sessions, saved API keys)
+    rm -rf "$HOME/Library/Application Support/Notepatra"
+    # Legacy pre-v0.1.96 location, still read once as a migration source
     rm -rf "$HOME/.config/notepatra"
     rm -rf "$HOME/Library/Preferences/com.notepatra.editor.plist"
     rm -rf "$HOME/Library/Saved Application State/com.notepatra.editor.savedState"
@@ -65,6 +76,11 @@ elif [ "$OS" = "linux" ]; then
         echo "  (no binary found at $INSTALL_DIR/notepatra)"
     fi
 
+    if [ -d "$OPT_DIR" ]; then
+        echo "  Removing $OPT_DIR (Full build)..."
+        rm -rf "$OPT_DIR"
+    fi
+
     echo "  Removing desktop entry..."
     rm -f "$HOME/.local/share/applications/notepatra.desktop"
 
@@ -77,6 +93,10 @@ elif [ "$OS" = "linux" ]; then
 
     echo "  Removing user config + cache + recovery..."
     rm -rf "$HOME/.config/notepatra"
+    # The app honours $XDG_CONFIG_HOME when it is set
+    if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+        rm -rf "$XDG_CONFIG_HOME/notepatra"
+    fi
 
     echo ""
     echo "  ✅ Notepatra removed."

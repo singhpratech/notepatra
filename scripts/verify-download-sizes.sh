@@ -100,7 +100,17 @@ for spec in \
     "notepatra-macos-arm64.dmg|macOS DMG" \
     "notepatra-[0-9]*.msi|Windows MSI" \
     "notepatra-setup-*[0-9].exe|Windows NSIS .exe" \
-    "notepatra-windows-x64.zip|Windows portable .zip"
+    "notepatra-windows-x64.zip|Windows portable .zip" \
+    "notepatra_[0-9]*_amd64.deb|Linux x64 .deb" \
+    "notepatra_[0-9]*_arm64.deb|Linux ARM64 .deb" \
+    "notepatra-[0-9]*.x86_64.rpm|Linux x64 .rpm" \
+    "notepatra-[0-9]*.aarch64.rpm|Linux ARM64 .rpm" \
+    "Notepatra-[0-9]*.AppImage|Linux AppImage" \
+    "notepatra-linux-x64-full.tar.gz|Linux x64 Full tar.gz" \
+    "notepatra-linux-arm64-full.tar.gz|Linux ARM64 Full tar.gz" \
+    "notepatra-macos-arm64-full.dmg|macOS Full DMG" \
+    "notepatra-setup-*-full.exe|Windows Full setup.exe" \
+    "notepatra-windows-x64-full.zip|Windows Full zip"
 do
     glob="${spec%%|*}"; label="${spec##*|}"
     check_artifact "$glob" "$label" || failed=$((failed + 1))

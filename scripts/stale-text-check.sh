@@ -783,6 +783,71 @@ else
 fi
 
 echo
+echo "── sitemap.xml lists only real, indexable pages ──"
+# Every <loc> must be a file that exists in docs/ (the published site), and
+# 404.html must never be listed. Offline and deterministic on purpose: no git
+# dates, so uncommitted page edits cannot make it flap.
+sitemap_bad=""
+sitemap_n=0
+while IFS= read -r loc; do
+    [[ -z "$loc" ]] && continue
+    sitemap_n=$((sitemap_n + 1))
+    rel="${loc#https://notepatra.org/}"
+    [[ -z "$rel" || "$rel" == */ ]] && rel="${rel}index.html"
+    if [[ "$loc" != https://notepatra.org/* ]]; then
+        sitemap_bad="$sitemap_bad $loc(off-site)"
+    elif [[ "$(basename "$rel")" == "404.html" ]]; then
+        sitemap_bad="$sitemap_bad $loc(404 page)"
+    elif [[ ! -f "docs/$rel" ]]; then
+        sitemap_bad="$sitemap_bad $loc(no docs/$rel)"
+    fi
+done < <(grep -oE '<loc>[^<]*</loc>' docs/sitemap.xml | sed -E 's#</?loc>##g' || true)
+if [[ "$sitemap_n" -gt 0 && -z "$sitemap_bad" ]]; then
+    echo "  ✓ sitemap.xml: all $sitemap_n <loc> entries exist in docs/, 404.html not listed"
+    PASS=$((PASS + 1))
+else
+    echo "  ✗ sitemap.xml has bad <loc> entries:${sitemap_bad:- (none found at all)}"
+    echo "      file: docs/sitemap.xml"
+    FAIL=$((FAIL + 1))
+fi
+
+echo
+echo "── security.txt copies are identical ──"
+# /.well-known/security.txt is canonical (RFC 9116); /security.txt is a
+# convenience copy and must not drift from it (fields or Expires).
+if cmp -s docs/.well-known/security.txt docs/security.txt; then
+    echo "  ✓ docs/security.txt is byte-identical to docs/.well-known/security.txt"
+    PASS=$((PASS + 1))
+else
+    echo "  ✗ docs/security.txt differs from the canonical docs/.well-known/security.txt"
+    echo "      fix: cp docs/.well-known/security.txt docs/security.txt"
+    FAIL=$((FAIL + 1))
+fi
+
+echo
+echo "── install scripts exist exactly once (docs/) ──"
+# A stale root-level install.sh (last synced v0.1.82) kept the v0.1.111
+# lite/full prefix bug for months after docs/install.sh was fixed, and raised
+# a false "tampered" alarm for anyone who ran it from a checkout. The served
+# scripts are docs/{install,uninstall}.{sh,ps1}; any other copy, by name or by
+# its header line, is drift waiting to happen.
+dup_install=$(
+    {
+        git ls-files --cached --others --exclude-standard 2>/dev/null \
+            | grep -E '(^|/)(un)?install\.(sh|ps1)$' || true
+        git grep --untracked -l -E '^# Notepatra (Un)?[Ii]nstaller( —| for Windows)' 2>/dev/null || true
+    } | grep -vxE 'docs/(un)?install\.(sh|ps1)' | sort -u || true
+)
+if [[ -z "$dup_install" ]]; then
+    echo "  ✓ no second copy of install.sh / uninstall.sh / install.ps1 / uninstall.ps1 outside docs/"
+    PASS=$((PASS + 1))
+else
+    echo "  ✗ install-script copies outside docs/ (delete them; docs/ is what notepatra.org serves):"
+    echo "$dup_install" | sed 's/^/      /'
+    FAIL=$((FAIL + 1))
+fi
+
+echo
 if (( FAIL == 0 )); then
     echo "=== ALL SURFACES MATCH ($PASS passed) ==="
     exit 0

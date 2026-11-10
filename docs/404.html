@@ -15,50 +15,140 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>404 — Notepatra</title>
+    <meta name="description" content="This page does not exist on notepatra.org. Go back to the Notepatra home page, the documentation or the MCP guide.">
+    <meta name="robots" content="noindex">
+    <!-- Same warm palette and type as index/docs/mcp/enterprise. Every
+         link is root-absolute because GitHub Pages serves this file for
+         any missing path, at any depth. -->
     <style>
+        :root {
+            --bg:       #F5F4EE;
+            --bg-alt:   #FAF9F5;
+            --border:   #E8E6DC;
+            --text:     #141413;
+            --text-2:   #3D3D3A;
+            --text-dim: #6B6A65;
+            --accent:   #CC785C;
+            --accent-hover: #B8684F;
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #080E14;
-            color: #E0E0E0;
+            font-family: "Söhne", "Inter", -apple-system, BlinkMacSystemFont,
+                         ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
             display: flex;
+            flex-direction: column;
+            -webkit-font-smoothing: antialiased;
+        }
+        .skip-link {
+            position: absolute;
+            left: 8px;
+            top: -100px;
+            z-index: 30;
+            padding: 10px 16px;
+            background: var(--text);
+            color: #FFFFFF;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .skip-link:focus { top: 8px; }
+        header {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 4px 16px;
+            padding: 12px 24px;
+            border-bottom: 1px solid var(--border);
+        }
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 16px;
+        }
+        .brand img { width: 28px; height: 28px; }
+        header nav { display: flex; flex-wrap: wrap; gap: 0 16px; }
+        header nav a {
+            color: var(--text-2);
+            text-decoration: none;
+            font-size: 14px;
+            padding: 11px 0;
+        }
+        header nav a:hover { color: var(--text); }
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            min-height: 100vh;
             text-align: center;
+            padding: 56px 24px 72px;
         }
-        .container { max-width: 480px; padding: 40px; }
-        img { width: 96px; height: 96px; border-radius: 18px; margin-bottom: 24px; }
-        h1 {
+        .code {
             font-size: 96px;
             font-weight: 800;
-            background: linear-gradient(135deg, #39FF14, #1A73E8);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
             line-height: 1;
+            letter-spacing: -0.03em;
+            color: var(--text);
         }
-        h2 { color: white; font-size: 24px; margin: 16px 0; }
-        p { color: #8899AA; margin-bottom: 28px; }
-        a {
+        h1 { font-size: 26px; font-weight: 700; margin: 16px 0 8px; }
+        main p { color: var(--text-dim); max-width: 420px; margin-bottom: 28px; }
+        .btn {
             display: inline-block;
             padding: 12px 28px;
-            background: #1A73E8;
-            color: white;
+            background: var(--accent);
+            color: #FFFFFF;
             text-decoration: none;
-            border-radius: 10px;
+            border-radius: 12px;
             font-weight: 600;
-            transition: transform 0.2s;
         }
-        a:hover { transform: translateY(-2px); }
+        .btn:hover { background: var(--accent-hover); }
+        /* Phone: links in one horizontally scrollable row, as on the
+           other pages. */
+        @media (max-width: 768px) {
+            header { padding: 10px 16px 0; }
+            header nav {
+                width: 100%;
+                flex-wrap: nowrap;
+                gap: 0 18px;
+                padding-right: 28px;
+                overflow-x: auto;
+                scrollbar-width: none;
+                -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+                mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+            }
+            header nav::-webkit-scrollbar { display: none; }
+            header nav a { flex-shrink: 0; white-space: nowrap; }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-256.png" alt="Notepatra">
-        <h1>404</h1>
-        <h2>Page not found</h2>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header>
+        <a href="/" class="brand"><img src="/icon-192.png" alt="" width="192" height="192">Notepatra</a>
+        <nav aria-label="Site">
+            <a href="/">Home</a>
+            <a href="/docs.html">Docs</a>
+            <a href="/mcp.html">MCP</a>
+            <a href="/enterprise.html">Enterprise</a>
+            <a href="/#download">Download</a>
+            <a href="https://github.com/singhpratech/notepatra">GitHub</a>
+        </nav>
+    </header>
+    <main id="main">
+        <div class="code" aria-hidden="true">404</div>
+        <h1>Page not found</h1>
         <p>Like an unclosed bracket — looks like this page is missing.</p>
-        <a href="/">← Back to Notepatra</a>
-    </div>
+        <a class="btn" href="/">← Back to Notepatra</a>
+    </main>
 </body>
 </html>

@@ -15,7 +15,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Notepatra MCP — Your editor, readable by your AI</title>
-<meta name="description" content="Notepatra's MCP server (introduced v0.1.118, 49 tools as of v0.1.131): tools that let Claude, Codex, and any spec-compliant MCP client read your open tabs, search your workspace, run read-only SQL, inspect Git — and, only with your explicit per-action approval, edit, save, and create Noter notes. Local socket + stdio, nothing leaves your machine.">
+<meta name="description" content="Notepatra's MCP server: 49 tools let Claude, Codex or any MCP client read tabs, search, run read-only SQL and inspect Git. Writes need your approval.">
 <link rel="canonical" href="https://notepatra.org/mcp.html">
 <!-- Open Graph / Twitter. og:image is same-origin on purpose: an
      off-domain card is the same class of bug the favicon had. 1200x630
@@ -37,7 +37,7 @@
 <meta name="twitter:image" content="https://notepatra.org/og-card.png">
 <meta name="twitter:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~13 MB native, zero Electron, 49-tool MCP server.">
 
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://api.github.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://api.github.com; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
 
@@ -60,6 +60,26 @@
   }
 
   * { box-sizing: border-box; }
+
+  /* Anchors land below the sticky top bar (53 px on desktop; the phone
+     value is in the 768px block). Replaces the old .anchor-target rule. */
+  html { scroll-padding-top: 64px; }
+
+  /* Skip link: off-screen until it receives keyboard focus. */
+  .skip-link {
+    position: absolute;
+    left: 8px;
+    top: -100px;
+    z-index: 30;
+    padding: 10px 16px;
+    background: var(--text);
+    color: #FFFFFF;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .skip-link:focus { top: 8px; }
 
   html, body {
     margin: 0;
@@ -195,6 +215,10 @@
     vertical-align: top;
   }
   main.content table tr:hover td { background: var(--bg-alt); }
+  /* Tool names never break mid-identifier; on narrow screens the table
+     keeps a readable width and scrolls inside its .table-wrap instead. */
+  main.content table { min-width: 560px; }
+  main.content td:first-child code { white-space: nowrap; overflow-wrap: normal; }
 
   .callout {
     padding: 14px 18px;
@@ -209,7 +233,6 @@
   .callout.success { border-left: 4px solid #10b981; }
   .callout strong { color: var(--text); }
 
-  .anchor-target { scroll-margin-top: 80px; }
 
   /* On-page contents strip */
   nav.pagenav {
@@ -227,6 +250,27 @@
     main.content { padding: 32px 24px 64px 24px; max-width: 100%; }
   }
 
+  /* Phone top bar: the links become one horizontally scrollable row
+     under the logo, with tap-sized padding and a right-edge fade. */
+  @media (max-width: 768px) {
+    html { scroll-padding-top: 92px; }
+    .topbar { padding: 10px 16px 0 16px; row-gap: 0; }
+    .topbar-right {
+      width: 100%;
+      flex-wrap: nowrap;
+      gap: 18px;
+      padding-right: 28px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+      mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    }
+    .topbar-right::-webkit-scrollbar { display: none; }
+    .topbar-right a { flex-shrink: 0; white-space: nowrap; padding: 11px 0; }
+    footer.doc-footer a { display: inline-block; padding: 10px 2px; }
+  }
+
   footer.doc-footer {
     max-width: var(--content-max);
     margin: 64px auto 0 auto;
@@ -242,24 +286,28 @@
 </head>
 <body>
 
+<a class="skip-link" href="#main">Skip to content</a>
+
 <header class="topbar">
   <div class="topbar-left">
-    <img src="https://raw.githubusercontent.com/singhpratech/notepatra/main/resources/notepatra-64.png" alt="Notepatra">
+    <img src="/icon-192.png" alt="Notepatra" width="192" height="192">
     <a href="/" class="brand">Notepatra</a>
     <span class="tag">MCP · v0.1.131 · 49 tools</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
     <a href="/docs.html">Docs</a>
-    <a href="https://github.com/singhpratech/notepatra/releases/latest">Download</a>
+    <a href="/mcp.html" aria-current="page">MCP</a>
+    <a href="/enterprise.html">Enterprise</a>
+    <a href="/#download">Download</a>
     <a href="https://github.com/singhpratech/notepatra">GitHub</a>
   </nav>
 </header>
 
-<main class="content">
+<main class="content" id="main">
 
   <h1>Your editor, readable by your AI</h1>
-  <p class="lead">From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a Model Context Protocol server that lets Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client see what you have open, search your workspace, run read-only SQL over your data files, read your Git status and Noter notes, and — only with your explicit per-action approval — edit, save, and create notes. Everything runs over stdio and a local socket. Nothing leaves your machine.</p>
+  <p class="lead">From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a Model Context Protocol server that lets Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client see what you have open, search your workspace, run read-only SQL (over data files in the Full edition), read your Git status and Noter notes, and — only with your explicit per-action approval — edit, save, and create notes. Everything runs over stdio and a local socket. Nothing leaves your machine.</p>
 
   <div class="callout info">
     <strong>Release status.</strong> MCP first shipped in v0.1.118; the current release is v0.1.131. The server provides <strong>49 tools</strong> (Git, read-only SQL, Noter write verbs, diagram export) and supports Windows named-pipe transport, and v0.1.120 adds a prebuilt, cosign-signed Windows sidecar (<code>notepatra-mcp-windows-x64.zip</code>) plus a one-click <code>notepatra-mcp.mcpb</code> Claude Desktop bundle as release assets. Everything on this page describes v0.1.131.
@@ -287,8 +335,8 @@
   notepatra-mcp  ──local socket──▶  Notepatra (the running editor)</code></pre>
   <ul>
     <li><strong>Transport:</strong> a stdio JSON-RPC 2.0 MCP server. It speaks MCP protocol revision <code>2025-06-18</code> and also accepts <code>2025-03-26</code> and <code>2024-11-05</code> from older clients.</li>
-    <li><strong>Editor connection:</strong> pass <code>--socket</code> and the server talks to the running editor over a dedicated per-user local socket (a Unix domain socket; the editor opens it on launch). Without <code>--socket</code>, the server runs against a built-in mock editor, so you can exercise the protocol without Notepatra running.</li>
-    <li><strong>Capabilities:</strong> tools (48 of them), resources (your open tabs and Noter notes), and prompts (three ready-made ones).</li>
+    <li><strong>Editor connection:</strong> pass <code>--socket</code> and the server talks to the running editor over a dedicated per-user local socket (a Unix domain socket on Linux and macOS, a named pipe on Windows; the editor opens it on launch). Without <code>--socket</code>, the server runs against a built-in mock editor, so you can exercise the protocol without Notepatra running.</li>
+    <li><strong>Capabilities:</strong> tools (49 of them), resources (your open tabs and Noter notes), and prompts (three ready-made ones).</li>
     <li><strong>Safety:</strong> reads never need permission; every write shows an approval card inside the editor window and does nothing until you click Approve. Details <a href="#approval">below</a>.</li>
   </ul>
   <p>In practice: ask your assistant "what do I have open?", "find where the config is parsed", "diff these two tabs", "format this JSON and put it in a new tab" — and it drives the actual editor on your screen.</p>
@@ -301,23 +349,23 @@
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td><code>list_open_tabs</code></td><td>List the open tabs with <strong>id</strong>, index, title, file path, and modified state. The <code>id</code> is stable; the <code>index</code> is not.</td></tr>
-      <tr><td><code>read_tab</code></td><td>Read the text of one open tab, selected by <code>tab_id</code>, index, or title. Takes <code>max_bytes</code> and reports <code>truncated</code> + <code>total_chars</code>, so a large buffer can be paged instead of swallowing your whole context.</td></tr>
+      <tr><td><code>read_tab</code></td><td>Read the text of one open tab, selected by <code>tab_id</code>, <code>tab_index</code>, or title. Takes <code>max_bytes</code> and reports <code>truncated</code> + <code>total_chars</code>, so a large buffer can be paged instead of swallowing your whole context.</td></tr>
       <tr><td><code>get_selection</code></td><td>Get the currently selected text, with the tab it belongs to.</td></tr>
       <tr><td><code>get_status</code></td><td>Editor state: active tab, file path, language, encoding, cursor position.</td></tr>
       <tr><td><code>app_info</code></td><td>Application info: name, version, edition (Lite/Full), platform.</td></tr>
       <tr><td><code>list_recent_files</code></td><td>List recently opened file paths.</td></tr>
-      <tr><td><code>find_in_tab</code></td><td>Find text inside one open tab (default: the active tab), selected by <code>tab_id</code>, index, or title — a literal substring, or a regular expression with <code>{regex: true}</code>.</td></tr>
+      <tr><td><code>find_in_tab</code></td><td>Find text inside one open tab (default: the active tab), selected by <code>tab_id</code>, <code>tab_index</code>, or title — a literal substring, or a regular expression with <code>{regex: true}</code>.</td></tr>
       <tr><td><code>search_project</code></td><td>Search all open tabs plus files under the workspace folder, case-insensitive (capped at 200 matches) — a literal substring, or a regular expression with <code>{regex: true}</code>. Reports <code>workspace_searched</code> and <code>scope</code>, so a tabs-only search can never pass for a project-wide one.</td></tr>
       <tr><td><code>list_notes</code></td><td>List Noter notes with title, file name, and last-modified time.</td></tr>
       <tr><td><code>read_note</code></td><td>Read one Noter note by its file path.</td></tr>
-      <tr><td><code>list_reminders</code></td><td>List your Noter reminders with note title, due time, and bucket (overdue / today / upcoming).</td></tr>
+      <tr><td><code>list_reminders</code></td><td>List your Noter reminders with note title, due time, and bucket (Overdue / Today / This week / Later).</td></tr>
       <tr><td><code>git_status</code></td><td>Read-only <code>git status</code> for the workspace repository.</td></tr>
       <tr><td><code>git_diff</code></td><td>Read-only <code>git diff</code>, optionally scoped to one path.</td></tr>
       <tr><td><code>git_log</code></td><td>Read-only <code>git log</code> (recent commits; default 20, capped at 100).</td></tr>
       <tr><td><code>git_show</code></td><td>Read-only <code>git show</code> for a commit or ref.</td></tr>
       <tr><td><code>git_branch</code></td><td>Read-only list of branches in the workspace repository.</td></tr>
       <tr><td><code>validate_npd</code></td><td>Validate a Notepatra diagram (<code>.npd</code>) — a tab or supplied source; returns parse errors with line numbers.</td></tr>
-      <tr><td><code>run_sql</code></td><td>Run a read-only <code>SELECT</code> over a CSV / Parquet / JSON file (or the active tab) and return columns + rows. SELECT-only and sandboxed — see the note below.</td></tr>
+      <tr><td><code>run_sql</code></td><td>Run a read-only <code>SELECT</code> and return columns + rows — over a CSV / Parquet / JSON file in your open workspace folder (<code>csv_path</code>, Full edition only), or, with no <code>csv_path</code>, an empty in-memory SQLite scratch database. SELECT-only and sandboxed — see the note below.</td></tr>
       <tr><td><code>list_languages</code></td><td>List the canonical language names <code>set_language</code> accepts (as shown in the Language menu).</td></tr>
       <tr><td><code>get_capabilities</code></td><td>Editor capability profile: edition, platform, version, tool count and tiers, and feature flags (DuckDB, WebEngine, Noter).</td></tr>
       <tr><td><code>get_diagram_source</code></td><td>Read the <code>.npd</code> source of an open Diagram tab.</td></tr>
@@ -337,7 +385,7 @@
       <tr><td><code>open_file</code></td><td>Open a file in a new tab, or focus the tab that already has it.</td></tr>
       <tr><td><code>new_tab</code></td><td>Create a new untitled tab, optionally pre-filled with text.</td></tr>
       <tr><td><code>goto_line</code></td><td>Move the cursor to a line in a tab — for pointing you at a location.</td></tr>
-      <tr><td><code>select_range</code></td><td>Select a range of text in a tab by line/column or character offset, so <code>replace_selection</code> has a selection to act on.</td></tr>
+      <tr><td><code>select_range</code></td><td>Select a range of text in a tab by 1-based line/column (columns clamp to the line), so <code>replace_selection</code> has a selection to act on.</td></tr>
       <tr><td><code>set_language</code></td><td>Set a tab's syntax-highlighting language. Accepts friendly aliases (<code>python</code>, <code>js</code>, <code>cpp</code>, <code>go</code>) and resolves them to the canonical name.</td></tr>
       <tr><td><code>compare_tabs</code></td><td>Open Notepatra's side-by-side Compare view for two open tabs.</td></tr>
       <tr><td><code>format_json</code></td><td>Format JSON text and return the result (fails on invalid JSON).</td></tr>
@@ -347,7 +395,7 @@
       <tr><td><code>create_diagram</code></td><td>Create a new Diagram (<code>.npd</code>) tab — optionally pre-filled — and focus it; reports parse validity.</td></tr>
       <tr><td><code>open_noter</code></td><td>Open or focus the Noter panel tab.</td></tr>
       <tr><td><code>open_data_analyst</code></td><td>Reveal and focus the AI dock in Data Analyst mode.</td></tr>
-      <tr><td><code>render_chart</code></td><td>Render a chart inline in the Data Analyst transcript (Vega-Lite or the simplified <code>{type,x,y,data}</code> form). Full edition (WebEngine) only.</td></tr>
+      <tr><td><code>render_chart</code></td><td>Render a chart inline in the Data Analyst transcript (Vega-Lite or the simplified <code>{type,x,y,data}</code> form). Full edition on Linux and Windows only (needs WebEngine; macOS Full has none).</td></tr>
     </tbody>
   </table></div>
 
@@ -365,7 +413,7 @@
       <tr><td><code>export_diagram</code></td><td>Export a diagram tab to a PNG or PDF file on disk.</td></tr>
       <tr><td><code>set_diagram_source</code></td><td>Replace the entire <code>.npd</code> source of a Diagram tab; the canvas re-renders.</td></tr>
       <tr><td><code>export_query_results</code></td><td>Run a read-only <code>SELECT</code> against a saved connection and write the results to a CSV or JSON file.</td></tr>
-      <tr><td><code>export_chart</code></td><td>Render a chart off-screen and export it to a PNG / SVG / HTML / spec file. Full edition (WebEngine) only.</td></tr>
+      <tr><td><code>export_chart</code></td><td>Render a chart off-screen and export it to a PNG / SVG / HTML / spec file. Full edition on Linux and Windows only (needs WebEngine; macOS Full has none).</td></tr>
     </tbody>
   </table></div>
 
@@ -440,12 +488,14 @@
     <li><code>notepatra-mcp-linux-x64.tar.gz</code></li>
     <li><code>notepatra-mcp-linux-arm64.tar.gz</code></li>
     <li><code>notepatra-mcp-macos-arm64.tar.gz</code></li>
+    <li><code>notepatra-mcp-windows-x64.zip</code></li>
+    <li><code>notepatra-mcp.mcpb</code> (Claude Desktop one-click)</li>
   </ul>
   <p>Extract, <code>chmod +x notepatra-mcp</code>, and put it somewhere on your <code>PATH</code>:</p>
   <pre><code>tar xzf notepatra-mcp-linux-x64.tar.gz
 chmod +x notepatra-mcp
 sudo mv notepatra-mcp /usr/local/bin/</code></pre>
-  <p><strong>macOS:</strong> Notepatra and the sidecar are not notarized yet. First launch of the app: right-click › Open (or System Settings › Privacy &amp; Security › Open Anyway). If macOS blocks the sidecar binary, clear its quarantine flag: <code>xattr -d com.apple.quarantine /usr/local/bin/notepatra-mcp</code> (use your path).</p>
+  <p><strong>macOS:</strong> Notepatra and the sidecar are not notarized yet. First launch of the app: open it once, then go to System Settings › Privacy &amp; Security and click Open Anyway (on macOS 14 and earlier, right-click › Open also works). If macOS blocks the sidecar binary, clear its quarantine flag: <code>xattr -d com.apple.quarantine /usr/local/bin/notepatra-mcp</code> (use your path).</p>
   <p>Or build it from source — the sidecar lives in <code>notepatra-mcp/</code> in the repo and needs only stable Rust, no other dependencies:</p>
   <pre><code>cd notepatra-mcp
 cargo build --release   # binary at target/release/notepatra-mcp</code></pre>
@@ -454,7 +504,7 @@ cargo build --release   # binary at target/release/notepatra-mcp</code></pre>
   <div class="table-wrap"><table>
     <thead><tr><th>Client</th><th>Vendor ecosystem</th><th>How it connects</th><th>Works with Notepatra?</th></tr></thead>
     <tbody>
-      <tr><td>Claude Desktop</td><td>Anthropic</td><td>stdio, via <code>claude_desktop_config.json</code> — or one-click via the <code>notepatra-mcp.mcpb</code> bundle from the next release</td><td>Yes</td></tr>
+      <tr><td>Claude Desktop</td><td>Anthropic</td><td>stdio, via <code>claude_desktop_config.json</code> — or one-click via the <code>notepatra-mcp.mcpb</code> bundle (Settings → Extensions)</td><td>Yes</td></tr>
       <tr><td>Claude Code</td><td>Anthropic</td><td>stdio, via <code>claude mcp add</code></td><td>Yes</td></tr>
       <tr><td>Codex CLI</td><td>OpenAI</td><td>stdio, via <code>config.toml</code></td><td>Yes</td></tr>
       <tr><td>OpenAI Agents SDK</td><td>OpenAI</td><td>stdio, via <code>MCPServerStdio</code></td><td>Yes</td></tr>
@@ -557,7 +607,7 @@ async with MCPServerStdio(
   <h3>Is this the same as Notepatra's built-in AI Assistant?</h3>
   <p>No — they're complementary. The AI Assistant dock (Ctrl+Shift+A) is Notepatra talking to a model you configure. MCP is the reverse direction: an external assistant you already use (Claude, Codex, ...) talking to Notepatra. Neither requires the other.</p>
   <h3>Does it work with the Lite build?</h3>
-  <p>Yes. The MCP bridge is part of the editor from v0.1.118 on both editions, and <code>app_info</code> reports which edition is running.</p>
+  <p>Yes. The MCP bridge is part of the editor from v0.1.118 on both editions, and <code>app_info</code> reports which edition is running. On Lite, <code>run_sql</code> over a file (<code>csv_path</code>), DuckDB connections in <code>run_query</code>, and the chart tools (<code>render_chart</code>, <code>export_chart</code>) return an error saying they need the Full edition.</p>
   <h3>Which tab is index 0?</h3>
   <p>Tab indices are zero-based, exactly as shown in the tab bar — including the Welcome tab when it's open. Use <code>list_open_tabs</code> first rather than guessing indices. Better still, use the <code>id</code> it returns: an index is positional and moves the moment a tab closes, while an id belongs to the document for as long as it is open.</p>
 
@@ -568,7 +618,7 @@ async with MCPServerStdio(
 
 <footer class="doc-footer">
   <p>Notepatra is free software under GPL-3.0. The MCP features described on this page ship in v0.1.131.</p>
-  <p><a href="/">Home</a> · <a href="/docs.html">Documentation</a> · <a href="https://github.com/singhpratech/notepatra">GitHub</a></p>
+  <p><a href="/">Home</a> · <a href="/docs.html">Docs</a> · <a href="/mcp.html" aria-current="page">MCP</a> · <a href="/enterprise.html">Enterprise</a> · <a href="https://github.com/singhpratech/notepatra">GitHub</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Changelog</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">Security</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE">License</a></p>
 </footer>
 
 </body>
