@@ -130,6 +130,11 @@ TextResult npc_minify_json(const char *text, size_t len);
 /* Strict validation: empty text = valid JSON, otherwise
  * "line L, column C: <what was found, what was expected>". */
 TextResult npc_json_parse_error(const char *text, size_t len);
+/* Why npc_format_json (minify = 0) / npc_minify_json (minify != 0) would
+ * return the input unchanged, or empty text when it will transform it:
+ * "not valid JSON: line L, column C: ..." or "left unchanged: <size limit>"
+ * (a size limit never calls a valid document invalid). */
+TextResult npc_json_format_refusal(const char *text, size_t len, int indent, int minify);
 /* Conservative repair: valid JSON with the same content, or the input
  * unchanged when the right repair would be a guess. */
 TextResult npc_fix_json(const char *text, size_t len);

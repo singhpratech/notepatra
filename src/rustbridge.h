@@ -90,12 +90,17 @@ QString formatSqlCompact(const QString &text, int indentWidth = 4, bool uppercas
 
 // JSON
 // formatJson / minifyJson change whitespace only and never repair: invalid
-// input comes back unchanged and a TransformNote Error (transform_note.h)
-// carries "line L, column C: ..." for the formatter panel.
+// or over-limit input comes back unchanged and a TransformNote Error
+// (transform_note.h) carries jsonFormatRefusal's text for the formatter panel.
 QString formatJson(const QString &text, int indent = 4);
 // Strict validation — "" when the text is valid JSON, otherwise
-// "line L, column C: <found / expected>".
+// "line L, column C: <found / expected>" (or "left unchanged: input larger
+// than 50 MB ..." past the size limit, which is not a parse error).
 QString jsonParseError(const QString &text);
+// Why formatJson (minify = false) / minifyJson would leave `text` unchanged,
+// "" when it will transform it: "not valid JSON: line L, column C: ..." or
+// "left unchanged: <size limit>". Callers show it verbatim, unprefixed.
+QString jsonFormatRefusal(const QString &text, int indent, bool minify);
 QString minifyJson(const QString &text);
 // Conservative repair. Unchanged text + a TransformNote Error when the
 // repair would be a guess; an Info note summarising the changes otherwise.

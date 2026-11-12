@@ -642,56 +642,72 @@ fn scan_literal(s: &str, start: usize) -> Result<usize, JsonError> {
 
 // ── public API ────────────────────────────────────────────────────────────
 
+const MB: usize = 1024 * 1024;
+
+/// A size refusal is not a parse error: its text never calls the document
+/// invalid (v0.1.133 review: a valid 60 MB file was reported as
+/// "invalid JSON: input too large").
 fn too_large(input: &str) -> Option<JsonError> {
     (input.len() > MAX_INPUT_BYTES).then(|| {
         JsonError::new(
             0,
             format!(
-                "input too large for the JSON tools ({} bytes, max {} bytes)",
-                input.len(),
-                MAX_INPUT_BYTES
+                "left unchanged: input larger than {} MB ({} bytes)",
+                MAX_INPUT_BYTES / MB,
+                input.len()
             ),
         )
     })
 }
 
-/// Strict RFC-8259 validation: `""` when `input` is valid JSON, otherwise
-/// "line L, column C: <what was found, what was expected>".
-///
-/// Over MCP there is no human in the loop: v0.1.125 turned `[1,2` into
-/// `[1,2]` and reported success, so the MCP `format_json` tool validates
-/// first through here. Since the v0.1.133 rewrite Format itself never
-/// repairs either, so the two always agree.
-pub fn json_parse_error(input: &str) -> String {
+fn output_too_large(size: usize, deepest: usize) -> String {
+    format!(
+        "left unchanged: formatted output would exceed {} MB (about {} MB; the nesting is \
+         {} levels deep). Minify still works on this document",
+        MAX_PRETTY_BYTES / MB,
+        size / MB,
+        deepest
+    )
+}
+
+/// Why Format (`minify == false`) or Minify would return `input` unchanged,
+/// or `""` when it will transform it. A parse error reads
+/// "not valid JSON: line L, column C: ..."; a size limit reads
+/// "left unchanged: ..." and never calls a valid document invalid. Without
+/// this the panel learned only of parse errors: a valid document whose
+/// pretty form would pass the output cap came back unchanged and the panel
+/// said "Done".
+pub fn format_refusal(input: &str, indent: usize, minify: bool) -> String {
     if let Some(e) = too_large(input) {
         return e.msg;
     }
-    match scan(input, |_, _, _, _| {}) {
-        Ok(()) => String::new(),
-        Err(e) => e.describe(input),
+    let measured = if minify {
+        scan(input, |_, _, _, _| {}).map(|()| (0, 0))
+    } else {
+        pretty_size(input, indent.min(16))
+    };
+    match measured {
+        Err(e) => format!("not valid JSON: {}", e.describe(input)),
+        Ok((size, deepest)) if size > MAX_PRETTY_BYTES => output_too_large(size, deepest),
+        Ok(_) => String::new(),
     }
 }
 
-/// Pretty-print, changing whitespace only.
-pub fn pretty(input: &str, indent: usize) -> Result<String, JsonError> {
-    if let Some(e) = too_large(input) {
-        return Err(e);
-    }
-    let indent = indent.min(16);
+fn newline_style(input: &str) -> &'static str {
     let b = input.as_bytes();
     // Valid JSON has no raw line breaks inside strings, so any "\r\n" is
     // whitespace: keep the file's line-ending style.
-    let nl: &str = match input.find('\n') {
+    match input.find('\n') {
         Some(p) if p > 0 && b[p - 1] == b'\r' => "\r\n",
         _ => "\n",
-    };
-    let trailing_nl = {
-        let t = input.trim_end_matches([' ', '\t']);
-        t.ends_with('\n') || t.ends_with('\r')
-    };
+    }
+}
 
-    // Pass 1: validate and measure, so deep nesting is refused before any
-    // allocation instead of after writing gigabytes of indentation.
+/// Pass 1 of `pretty`: validate and measure the output (bytes, deepest
+/// nesting), so deep nesting is refused before any allocation instead of
+/// after writing gigabytes of indentation.
+fn pretty_size(input: &str, indent: usize) -> Result<(usize, usize), JsonError> {
+    let nl = newline_style(input);
     let mut size = input.len() + nl.len();
     let mut pending_open = false;
     let mut deepest = 0usize;
@@ -721,15 +737,42 @@ pub fn pretty(input: &str, indent: usize) -> Result<String, JsonError> {
             }
         }
     })?;
+    Ok((size, deepest))
+}
+
+/// Strict RFC-8259 validation: `""` when `input` is valid JSON, otherwise
+/// "line L, column C: <what was found, what was expected>".
+///
+/// Over MCP there is no human in the loop: v0.1.125 turned `[1,2` into
+/// `[1,2]` and reported success, so the MCP `format_json` tool validates
+/// first through here. Since the v0.1.133 rewrite Format itself never
+/// repairs either, so the two always agree.
+pub fn json_parse_error(input: &str) -> String {
+    if let Some(e) = too_large(input) {
+        return e.msg;
+    }
+    match scan(input, |_, _, _, _| {}) {
+        Ok(()) => String::new(),
+        Err(e) => e.describe(input),
+    }
+}
+
+/// Pretty-print, changing whitespace only.
+pub fn pretty(input: &str, indent: usize) -> Result<String, JsonError> {
+    if let Some(e) = too_large(input) {
+        return Err(e);
+    }
+    let indent = indent.min(16);
+    let nl = newline_style(input);
+    let trailing_nl = {
+        let t = input.trim_end_matches([' ', '\t']);
+        t.ends_with('\n') || t.ends_with('\r')
+    };
+
+    // Pass 1: validate and measure.
+    let (size, deepest) = pretty_size(input, indent)?;
     if size > MAX_PRETTY_BYTES {
-        return Err(JsonError::new(
-            0,
-            format!(
-                "pretty-printing would produce about {} MB (the nesting is {} levels deep); Minify still works on this document",
-                size / (1024 * 1024),
-                deepest
-            ),
-        ));
+        return Err(JsonError::new(0, output_too_large(size, deepest)));
     }
 
     // Pass 2: write.
@@ -794,7 +837,7 @@ pub fn minify(input: &str) -> Result<String, JsonError> {
 }
 
 /// FFI-level Format: the pretty-printed text, or the input UNCHANGED when it
-/// is not valid JSON (the caller learns why from `json_parse_error`).
+/// is not valid JSON or a size limit applies (`format_refusal` says which).
 pub fn format_json(input: &str, indent: usize) -> String {
     pretty(input, indent).unwrap_or_else(|_| input.to_string())
 }
@@ -915,7 +958,55 @@ mod tests {
     fn over_max_size_is_safe() {
         let input = "{".repeat(MAX_INPUT_BYTES + 1);
         assert!(format_json(&input, 2) == input);
-        assert!(json_parse_error(&input).starts_with("input too large"));
+        assert!(json_parse_error(&input).starts_with("left unchanged: input larger than 50 MB"));
+    }
+
+    /// v0.1.133 review: a size limit is reported as a size limit, never as
+    /// "invalid", and a refused Format is never silent.
+    #[test]
+    fn size_refusals_never_call_valid_json_invalid() {
+        // Valid, just over the input cap.
+        let big = format!("\"{}\"", "a".repeat(MAX_INPUT_BYTES));
+        assert!(json_parse_error(&format!("\"{}\"", "a".repeat(1000))).is_empty());
+        for msg in [
+            format_refusal(&big, 4, false),
+            format_refusal(&big, 4, true),
+            json_parse_error(&big),
+            fix_json_with_report(&big).1,
+        ] {
+            assert!(
+                msg.starts_with("left unchanged: input larger than 50 MB"),
+                "{msg}"
+            );
+            assert!(!msg.to_lowercase().contains("invalid"), "{msg}");
+            assert!(!msg.contains("not valid"), "{msg}");
+        }
+        assert_eq!(format_json(&big, 4), big);
+
+        // Valid and small, but pretty-printing would pass the output cap.
+        let deep = format!("{}{}", "[".repeat(5000), "]".repeat(5000));
+        assert!(json_parse_error(&deep).is_empty());
+        let msg = format_refusal(&deep, 16, false);
+        assert!(
+            msg.starts_with("left unchanged: formatted output would exceed 256 MB"),
+            "{msg}"
+        );
+        assert!(msg.contains("5000 levels deep"), "{msg}");
+        assert!(!msg.to_lowercase().contains("invalid"), "{msg}");
+        assert_eq!(format_json(&deep, 16), deep);
+        assert_eq!(pretty(&deep, 16).unwrap_err().msg, msg);
+        // Minify has no output cap and works.
+        assert_eq!(format_refusal(&deep, 16, true), "");
+        assert_eq!(minify_json(&deep), deep);
+    }
+
+    #[test]
+    fn format_refusal_reports_parse_errors_and_passes_valid_input() {
+        assert_eq!(format_refusal("{\"a\": [1, 2]}", 4, false), "");
+        assert_eq!(format_refusal("{\"a\": [1, 2]}", 4, true), "");
+        let bad = format_refusal("[1, 2", 4, false);
+        assert!(bad.starts_with("not valid JSON: line 1, column 6"), "{bad}");
+        assert_eq!(format_refusal("[1, 2", 4, true), bad);
     }
 
     #[test]

@@ -130,6 +130,29 @@ int main(int argc, char *argv[]) {
         check(p.inputText() == s, "Minify(Format(x)) == x for minified x", p.inputText());
     }
 
+    // ── Format refused by the output size cap: said so, never "invalid" ──
+    // Valid JSON whose pretty form would pass 256 MB came back unchanged with
+    // no message and the panel said "Done" (v0.1.133 review).
+    {
+        FormatterPanel p("JSON Tools", "JSON");
+        FormatterTools::addJsonButtons(&p);
+        const QString deep = QString("[").repeated(10000) + QString("]").repeated(10000);
+        check(RustCore::jsonParseError(deep).isEmpty(), "deep nesting is valid JSON (vacuity)");
+        p.setInput(deep);
+        click(p, "Format");
+        check(p.inputText() == deep, "over-cap Format leaves the text untouched");
+        check(p.statusIsError() &&
+                  p.statusText().startsWith(
+                      "Not changed: Format — left unchanged: formatted output would exceed 256 MB"),
+              "over-cap Format says why", p.statusText());
+        check(!p.statusText().contains("invalid", Qt::CaseInsensitive) &&
+                  !p.statusText().contains("not valid"),
+              "over-cap Format does not call valid JSON invalid", p.statusText());
+        click(p, "Minify");
+        check(p.statusText().startsWith("Done: Minify") && !p.statusIsError(),
+              "Minify still works on it", p.statusText());
+    }
+
     // ── Fix + Format: output is only JSON, report in the banner ──────────
     {
         FormatterPanel p("JSON Tools", "JSON");

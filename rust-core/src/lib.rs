@@ -447,6 +447,24 @@ pub unsafe extern "C" fn npc_json_parse_error(text: *const c_char, text_len: siz
     text_to_result(json_fmt::json_parse_error(input))
 }
 
+/// Why npc_format_json (minify == 0) or npc_minify_json (minify != 0) would
+/// return the input unchanged, or an empty string when it will transform it.
+/// "not valid JSON: line L, column C: ..." or "left unchanged: <size limit>".
+#[no_mangle]
+pub unsafe extern "C" fn npc_json_format_refusal(
+    text: *const c_char,
+    text_len: size_t,
+    indent: c_int,
+    minify: c_int,
+) -> TextResult {
+    let input = unsafe { str_from_raw(text, text_len) };
+    text_to_result(json_fmt::format_refusal(
+        input,
+        indent.clamp(0, 16) as usize,
+        minify != 0,
+    ))
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn npc_minify_json(text: *const c_char, text_len: size_t) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };

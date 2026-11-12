@@ -238,14 +238,20 @@ static QString fixDetails(const QString &report) {
                           "Show Diff shows both sides.");
 }
 
-QString formatJson(const QString &text, int indent) {
+QString jsonFormatRefusal(const QString &text, int indent, bool minify) {
     QByteArray b = text.toUtf8();
-    const QString err = textFromResult(npc_json_parse_error(b.constData(), b.size()));
-    if (!err.isEmpty()) {
-        TransformNote::post(TransformNote::Kind::Error,
-                            QStringLiteral("not valid JSON: %1").arg(err));
+    return textFromResult(
+        npc_json_format_refusal(b.constData(), b.size(), indent, minify ? 1 : 0));
+}
+QString formatJson(const QString &text, int indent) {
+    // A parse error or a size limit: say which (a valid document is never
+    // called invalid, and a refusal is never a silent "Done").
+    const QString why = jsonFormatRefusal(text, indent, false);
+    if (!why.isEmpty()) {
+        TransformNote::post(TransformNote::Kind::Error, why);
         return text;
     }
+    QByteArray b = text.toUtf8();
     return textFromResult(npc_format_json(b.constData(), b.size(), indent));
 }
 QString jsonParseError(const QString &text) {
@@ -253,13 +259,12 @@ QString jsonParseError(const QString &text) {
     return textFromResult(npc_json_parse_error(b.constData(), b.size()));
 }
 QString minifyJson(const QString &text) {
-    QByteArray b = text.toUtf8();
-    const QString err = textFromResult(npc_json_parse_error(b.constData(), b.size()));
-    if (!err.isEmpty()) {
-        TransformNote::post(TransformNote::Kind::Error,
-                            QStringLiteral("not valid JSON: %1").arg(err));
+    const QString why = jsonFormatRefusal(text, 0, true);
+    if (!why.isEmpty()) {
+        TransformNote::post(TransformNote::Kind::Error, why);
         return text;
     }
+    QByteArray b = text.toUtf8();
     return textFromResult(npc_minify_json(b.constData(), b.size()));
 }
 QString fixJson(const QString &text) {
