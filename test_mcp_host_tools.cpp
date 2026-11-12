@@ -101,6 +101,7 @@ QJsonObject callCard(const QString &verb, const QJsonObject &args, bool approve)
 
 bool ok(const QJsonObject &r) { return r.value(QLatin1String("ok")).toBool(); }
 QJsonObject res(const QJsonObject &r) { return r.value(QLatin1String("result")).toObject(); }
+QString errOf(const QJsonObject &r) { return r.value(QLatin1String("error")).toString(); }
 
 bool writeFile(const QString &path, const QByteArray &bytes) {
     QFile f(path);
@@ -273,6 +274,20 @@ int main(int argc, char *argv[]) {
     EXPECT("format_json indent 2", res(r).value("text").toString().contains("\n  \"a\""));
     r = call("format_text", {{"kind", "json"}, {"text", "[1,2"}, {"minify", true}});
     EXPECT("format_json still refuses invalid JSON with options", !ok(r));
+    EXPECT("W1: the parse error is the formatter's own words, unprefixed",
+           errOf(r).startsWith("not valid JSON: line 1") && !errOf(r).contains("invalid JSON"));
+    {
+        // Valid, 24 KB, but its pretty output (16-space indent, 12000 deep)
+        // would be gigabytes: a size refusal, never "invalid", never success.
+        const QString deep = QString(12000, QLatin1Char('[')) + QString(12000, QLatin1Char(']'));
+        r = call("format_text", {{"kind", "json"}, {"text", deep}, {"indent", 16}});
+        EXPECT("W1: a valid document too large to pretty-print is refused as a size limit",
+               !ok(r) && !errOf(r).isEmpty() && !errOf(r).contains("invalid") &&
+                   !errOf(r).startsWith("not valid"));
+        r = call("format_text", {{"kind", "json"}, {"text", deep}});
+        EXPECT("W1: ...also on the default (format_json) path",
+               !ok(r) && !errOf(r).isEmpty() && !errOf(r).contains("invalid"));
+    }
     r = call("repair_json", {{"text", "{'a': 1,}"}});
     EXPECT("repair_json is the explicit repair",
            ok(r) && res(r).value("fixed").toString().contains("\"a\"") &&

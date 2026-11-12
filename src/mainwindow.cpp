@@ -2102,11 +2102,12 @@ MainWindow::MainWindow(bool standaloneNoSession)
                     // fabricated data the user never had. The tool's own
                     // description has always said "Fails on invalid JSON";
                     // this makes that true. The panel keeps its fixer.
-                    const QString parseErr = RustCore::jsonParseError(text);
-                    if (!parseErr.isEmpty()) {
-                        if (errorOut)
-                            *errorOut =
-                                QStringLiteral("invalid JSON: %1").arg(parseErr);
+                    // The formatter's own verdict, verbatim: "not valid JSON:
+                    // line L, column C: ..." or a size limit (a valid file over
+                    // the limit is never called invalid, never a silent no-op).
+                    const QString refusal = RustCore::jsonFormatRefusal(text, 4, false);
+                    if (!refusal.isEmpty()) {
+                        if (errorOut) *errorOut = refusal;
                         return QString();
                     }
                     out = RustCore::formatJson(text);
@@ -3300,10 +3301,13 @@ MainWindow::MainWindow(bool standaloneNoSession)
                 const int indent = a.value(QLatin1String("indent")).toInt();
                 QString out;
                 if (kind == QLatin1String("json")) {
-                    // Strict first, as format_json always has (NP-09).
-                    const QString perr = RustCore::jsonParseError(text);
-                    if (!perr.isEmpty()) {
-                        *err = QStringLiteral("invalid JSON: %1").arg(perr);
+                    // Strict first, as format_json always has (NP-09): the
+                    // formatter's own refusal (parse error or size limit),
+                    // unprefixed, never a silent unchanged "success".
+                    const QString refusal = RustCore::jsonFormatRefusal(
+                        text, indent, a.value(QLatin1String("minify")).toBool());
+                    if (!refusal.isEmpty()) {
+                        *err = refusal;
                         return r;
                     }
                     out = a.value(QLatin1String("minify")).toBool()
